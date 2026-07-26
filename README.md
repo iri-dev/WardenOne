@@ -11,6 +11,14 @@
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WebWarden/issues/new/choose)
 
+<p>
+  <a href="https://github.com/iri-dev/WebWarden/issues/new/choose"><b>🐛 Report a bug</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/iri-dev/WebWarden/issues/new/choose"><b>💡 Request a feature</b></a>
+  &nbsp;·&nbsp;
+  <a href="#install"><b>⬇️ Install</b></a>
+</p>
+
 </div>
 
 <p align="center">
@@ -24,6 +32,9 @@ tracker blocking, anti-fingerprinting, phishing and scam defence, credential- an
 payment-theft protection, download scanning, IP-leak protection, media / device
 permission control, and memory management. Every feature is individually toggleable,
 and none of it phones home.
+
+> [!TIP]
+> **Found a bug or have an idea?** [**Open an issue »**](https://github.com/iri-dev/WebWarden/issues/new/choose) — a guided form walks you through it in about 30 seconds. Bug reports and feature requests are always welcome.
 
 ---
 
