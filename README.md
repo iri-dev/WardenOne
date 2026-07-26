@@ -169,6 +169,10 @@ switch on yourself (download domain age, VirusTotal, breach checks) send only th
 minimum: a source domain, a link you paste, or a hashed query — never your full
 history. Login tokens and passwords are never stored or transmitted.
 
+## Feedback &amp; bug reports
+
+Found a site WebWarden breaks, or have an idea? **[Open an issue](https://github.com/iri-dev/WebWarden/issues/new/choose)** — there are quick templates for bug reports and feature requests. For bugs, the **site URL** and **which toggle is involved** are the most useful details.
+
 ## License
 
 **GNU General Public License v3** — see [LICENSE](LICENSE).

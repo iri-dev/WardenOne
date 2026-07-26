@@ -1,0 +1,82 @@
+name: Bug report
+description: A site broke, a feature misbehaved, or something didn't work as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve **WebWarden**! The two most useful things are **which site** it happened on and **which protection** was involved — if turning one toggle off fixes it, that's the one.
+  - type: input
+    id: site
+    attributes:
+      label: Which site / page?
+      description: Where it happened. A full URL is ideal.
+      placeholder: https://github.com/owner/repo
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What went wrong?
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        The page went blank / content was hidden / a button stopped working...
+    validations:
+      required: true
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Which protection seems responsible?
+      description: If turning one toggle off fixes it, pick that. Otherwise choose "Not sure".
+      options:
+        - Not sure
+        - AdShield (ad blocking)
+        - Anti-tracking / cookies
+        - Anti-fingerprinting
+        - Script Shield
+        - Popups, redirects & overlay remover
+        - Phishing / scam protection
+        - Credential / payment / clipboard protection
+        - Download Shield
+        - Network / IP protection
+        - Media & device control
+        - Forget Me & Logins
+        - EyeShield (display)
+        - Memory Shield / performance
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See ...
+  - type: input
+    id: browser
+    attributes:
+      label: Browser & version
+      placeholder: Brave 1.69 / Chrome 127 / Edge 127
+    validations:
+      required: true
+  - type: input
+    id: ww-version
+    attributes:
+      label: WebWarden version
+      description: Shown at the top of the extension popup.
+      placeholder: 1.0.0
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors & screenshots (optional)
+      description: Open DevTools (F12) → Console and paste anything in red. A screenshot of the broken page helps a lot.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Quick checks
+      options:
+        - label: I reloaded the page with WebWarden's master switch off to confirm it's WebWarden.
+        - label: I searched existing issues and didn't find a duplicate.
