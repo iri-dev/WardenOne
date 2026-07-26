@@ -12,7 +12,7 @@
 (function () {
   "use strict";
 
-  var YT_MODULE_VERSION = "3.22.73";
+  var YT_MODULE_VERSION = "1.0.0";
   if (window.__webWardenYouTubeReadyVersion === YT_MODULE_VERSION) return;
   window.__webWardenYouTubeVersion = YT_MODULE_VERSION;
 

@@ -1,6 +1,6 @@
 !function(){
   "use strict";
-  const __WW_RUNTIME_VERSION="3.22.73";
+  const __WW_RUNTIME_VERSION="1.0.0";
   if(window.__webWardenReadyVersion===__WW_RUNTIME_VERSION)return;
   const GRABBER_DOMAINS=["02ip.ru",
   "2no.co",

@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const BRIDGE_VERSION = '3.22.73';
+  const BRIDGE_VERSION = '1.0.0';
   if (window.__webWardenBridgeVersion === BRIDGE_VERSION) {
     try {
       if (typeof window.__webWardenBridgeReplay === 'function') {

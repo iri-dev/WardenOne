@@ -1,7 +1,7 @@
 # WebWarden — Chrome Web Store submission notes
 
 Copy the text below into the matching fields of the Web Store developer dashboard
-(**Privacy practices** tab). Everything here is grounded in the actual v3.22.73 code.
+(**Privacy practices** tab). Everything here is grounded in the actual v1.0.0 code.
 
 > **Do not ship this file (or PRIVACY.md) inside the packaged .zip** — they are for the
 > listing/hosting, not the runtime. Also exclude the Chrome-generated `_metadata/` folder

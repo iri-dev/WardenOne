@@ -12,7 +12,7 @@
 (function webWardenTwitchAdblock() {
   'use strict';
 
-  const VERSION = '3.22.73';
+  const VERSION = '1.0.0';
   const TWITCH_HOST_RE = /(^|\.)twitch\.tv$/i;
   const GQL_URL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
   const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
