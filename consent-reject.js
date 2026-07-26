@@ -20,6 +20,7 @@
   if (/^(drive|docs|mail|calendar|classroom|meet|chat|myaccount)\.google\.com$/i.test(compatibilityHost)
       || /(^|\.)ucas\.com$/i.test(compatibilityHost)
       || /\.ac\.uk$|\.edu$|\.edu\.au$|\.ac\.nz$|\.ac\.za$|\.ac\.in$|\.edu\.sg$|\.edu\.hk$/i.test(compatibilityHost)
+      || /(^|\.)github\.com$/i.test(compatibilityHost)
       || /(^|\.)(openathens\.net|shibboleth\.net)$/i.test(compatibilityHost)) return;
   if (!isTopFrame && !CONSENT_FRAME_HINT_RE.test(String(location.hostname || '') + ' ' + String(location.pathname || ''))) {
     return;
