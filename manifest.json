@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WebWarden",
-  "version": "3.22.73",
+  "version": "1.0.0",
   "description": "Elite defense against phishing, malware downloads, redirect chains, IP grabbers, trackers, token theft, bad certs, and risky sites.",
   "permissions": [
     "declarativeNetRequest",

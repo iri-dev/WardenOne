@@ -32,7 +32,7 @@ const consent = read('consent-reject.js');
 const antiRedirect = read('anti-redirect.js');
 const permissionChain = read('permission-chain.js');
 
-assert(version === '3.22.73', 'manifest version should be 3.22.73 for the stress-hardening release');
+assert(version === '1.0.0', 'manifest version should be 1.0.0 for the stress-hardening release');
 
 assert(content.includes('const __WW_RUNTIME_VERSION="' + version + '"'), 'content source should use manifest-matched runtime version');
 assert(compact(runtime).includes('const__WW_RUNTIME_VERSION="' + version + '"'), 'runtime bundle should include manifest-matched runtime version');

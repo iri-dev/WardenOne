@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const CONSENT_REJECT_VERSION = '3.22.73';
+  const CONSENT_REJECT_VERSION = '1.0.0';
   if (window.__webWardenConsentRejectReadyVersion === CONSENT_REJECT_VERSION) return;
   window.__webWardenConsentRejectVersion = CONSENT_REJECT_VERSION;
 
