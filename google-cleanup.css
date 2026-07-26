@@ -1,0 +1,29 @@
+/*
+ * WebWarden Google Search cleanup pre-paint CSS.
+ * Registered dynamically only when Hide Google AI & sponsored results is on.
+ * The content script still performs the careful shell collapse; this file exists
+ * to stop AI/sponsored modules from flashing during first paint.
+ */
+#tads,
+#tadsb,
+#bottomads,
+.commercial-unit-desktop-top,
+.commercial-unit-desktop-rhs,
+.commercial-unit-mobile-top,
+.pla-unit,
+[data-text-ad],
+[data-pla],
+div[aria-label="Ads"],
+div[aria-label="Sponsored"],
+:is(.MjjYud, div[data-hveid], div[jscontroller], div[jsname], g-section-with-header, section, aside):has(#m-x-content, .uEierd, [data-google-query-id]):not(:has(#rso, #search, #res, #center_col, .related-question-pair)),
+:is(#m-x-content, .uEierd, [data-google-query-id]):not(:has(#rso, #search, #res, #center_col)) {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+:is(html, #rso, #search, #res, #center_col) .related-question-pair :is(#m-x-content, .uEierd, [data-google-query-id], div[aria-label="Sponsored"], div[aria-label="Ads"]) {
+  display: block !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WebWarden Twitch Rewind Harness</title>
+  <style>
+    html{height:100%;font-size:62.5%}body{height:100%;margin:0;background:#0e0e10;color:#efeff1;font:16px Arial,sans-serif}
+    main{display:grid;place-items:center;min-height:100%;gap:12px;align-content:center}
+    .video-player{position:relative;width:min(900px,80vw);aspect-ratio:16/9;overflow:hidden;background:#18181b}.video-player__container{position:absolute;inset:0;overflow:hidden}.video-ref{position:absolute;inset:0}.video-ref video{display:block;width:100%;height:100%;object-fit:contain}
+    .player-controls{position:absolute;z-index:5;right:0;bottom:0;left:0;display:flex;align-items:center;height:48px;padding:0 10px;background:linear-gradient(transparent,rgba(0,0,0,.82))}.player-controls__left-control-group{display:flex;align-items:center;height:48px}.player-controls button{display:grid;place-items:center;width:30px;height:30px;border:0;border-radius:4px;background:transparent;color:#fff;cursor:pointer}.player-controls button:hover{background:rgba(255,255,255,.16)}
+    canvas{display:none}.note,.telemetry{color:#adadb8}.telemetry{font:600 13px/1.3 monospace}.fullscreen{border:1px solid #9147ff;border-radius:6px;background:#772ce8;color:white;padding:8px 12px;font-weight:700;cursor:pointer}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Local Twitch rewind test stream</h1>
+    <div class="video-player">
+      <div class="video-player__container">
+        <div class="video-ref"><video autoplay muted playsinline aria-label="Twitch video player"></video></div>
+        <div class="player-controls">
+          <div class="player-controls__left-control-group">
+            <div><button type="button" data-a-target="player-play-pause-button" aria-label="Pause">⏸</button></div>
+            <div><button type="button" data-a-target="player-mute-unmute-button" aria-label="Mute">🔊</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Animated locally; no network media or Twitch credentials are used.</p>
+    <output class="telemetry" data-segment-id="" data-current-time="0" data-paused="false" data-ready-state="0" data-source-time="0" data-total-frames="0">Live source</output>
+    <button type="button" class="fullscreen">Test fullscreen</button>
+    <canvas width="1920" height="1080"></canvas>
+  </main>
+  <script>
+    const harnessMinutes = Number(new URLSearchParams(location.search).get('minutes')) || undefined;
+    window.chrome = {
+      storage: {
+        local: { get: (_key, done) => done({ webwarden_config: { enabled: true, twitchRewind: true, twitchRewindMinutes: harnessMinutes } }) },
+        onChanged: { addListener: () => {} },
+      },
+    };
+    const canvas = document.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const started = performance.now();
+    let canvasVideoTrack = null;
+    function paint() {
+      const now = performance.now();
+      const seconds = (now - started) / 1000;
+      const hue = Math.round((seconds * 35) % 360);
+      ctx.fillStyle = `hsl(${hue} 62% 28%)`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 72px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('LIVE ' + seconds.toFixed(1) + 's', canvas.width / 2, canvas.height / 2);
+      if (canvasVideoTrack && typeof canvasVideoTrack.requestFrame === 'function') canvasVideoTrack.requestFrame();
+    }
+    paint();
+    setInterval(paint, 1000 / 60);
+    const video = document.querySelector('video');
+    const canvasStream = canvas.captureStream(0);
+    canvasVideoTrack = canvasStream.getVideoTracks()[0] || null;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    const includeAudio = new URLSearchParams(location.search).has('audio');
+    const audioContext = AudioContextClass && includeAudio ? new AudioContextClass() : null;
+    let testStream = canvasStream;
+    if (audioContext) {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const audioDestination = audioContext.createMediaStreamDestination();
+      oscillator.frequency.value = 220;
+      gain.gain.value = 0.015;
+      oscillator.connect(gain).connect(audioDestination);
+      oscillator.start();
+      testStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioDestination.stream.getAudioTracks()]);
+    }
+    video.srcObject = testStream;
+    // Feed the exact synthetic tracks to the recorder. Chromium's native
+    // HTMLMediaElement.captureStream() can omit frames when the media element
+    // itself is backed by a MediaStream, which would make this harness test the
+    // browser quirk instead of WebWarden's rotation and replay code.
+    video.captureStream = () => testStream;
+    video.play().catch(() => {});
+    const nativePlaybackButton = document.querySelector('[data-a-target="player-play-pause-button"]');
+    function syncNativePlaybackButton() {
+      const paused = video.paused;
+      nativePlaybackButton.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+      nativePlaybackButton.textContent = paused ? '▶' : '⏸';
+    }
+    nativePlaybackButton.addEventListener('click', () => {
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    });
+    video.addEventListener('play', syncNativePlaybackButton);
+    video.addEventListener('pause', syncNativePlaybackButton);
+    syncNativePlaybackButton();
+    const telemetry = document.querySelector('.telemetry');
+    setInterval(() => {
+      const activeReplay = document.querySelector('video[data-webwarden-replay][data-webwarden-active="true"]');
+      const segmentId = activeReplay ? activeReplay.dataset.webwardenSegmentId || '' : '';
+      const currentTime = activeReplay ? Number(activeReplay.currentTime) || 0 : 0;
+      const paused = activeReplay ? activeReplay.paused : false;
+      const readyState = activeReplay ? activeReplay.readyState : 0;
+      const quality = activeReplay && typeof activeReplay.getVideoPlaybackQuality === 'function'
+        ? activeReplay.getVideoPlaybackQuality()
+        : null;
+      telemetry.dataset.segmentId = segmentId;
+      telemetry.dataset.currentTime = currentTime.toFixed(3);
+      telemetry.dataset.paused = String(paused);
+      telemetry.dataset.readyState = String(readyState);
+      telemetry.dataset.sourceTime = (Number(video.currentTime) || 0).toFixed(3);
+      telemetry.dataset.totalFrames = String(quality ? quality.totalVideoFrames : 0);
+      telemetry.textContent = activeReplay
+        ? `Replay segment ${segmentId} at ${currentTime.toFixed(2)}s${paused ? ' (paused)' : ''}`
+        : 'Live source';
+    }, 100);
+    document.querySelector('.fullscreen').addEventListener('click', () => {
+      document.querySelector('.video-player').requestFullscreen().catch(() => {});
+    });
+    function loadRewindHarness() {
+      if (window.__webWardenHarnessScriptLoaded) return;
+      window.__webWardenHarnessScriptLoaded = true;
+      const script = document.createElement('script');
+      script.src = '../twitch-rewind.js';
+      document.body.appendChild(script);
+    }
+    if (audioContext) {
+      // Start Web Audio before MediaRecorder is constructed. A recorder created
+      // against a browser-suspended audio track can emit header-only WebM blobs,
+      // which is not representative of Twitch's already-active audio stream.
+      document.addEventListener('pointerdown', () => {
+        audioContext.resume().catch(() => {});
+        setTimeout(loadRewindHarness, 120);
+      }, { once: true });
+    } else {
+      loadRewindHarness();
+    }
+  </script>
+</body>
+</html>

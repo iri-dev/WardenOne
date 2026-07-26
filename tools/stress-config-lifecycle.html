@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WebWarden config lifecycle stress fixture</title>
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; }
+    #candidate {
+      position: fixed;
+      z-index: 500;
+      left: 50%;
+      top: 50%;
+      width: 420px;
+      height: 180px;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 1px solid #999;
+    }
+  </style>
+  <script src="../src/content.js"></script>
+</head>
+<body>
+  <main id="app">Application remains interactive</main>
+  <div id="candidate" role="dialog" aria-modal="true">Subscribe to our newsletter</div>
+  <output id="result" data-stage="boot">boot</output>
+  <script>
+    (() => {
+      const token = 'stress-config-token';
+      const candidate = document.getElementById('candidate');
+      const result = document.getElementById('result');
+      const visible = () => getComputedStyle(candidate).display !== 'none';
+      const send = (overrides) => window.postMessage({
+        source: 'webwarden',
+        kind: 'config',
+        token,
+        overrides,
+      }, location.origin);
+
+      window.postMessage({ source: 'webwarden-handshake', token }, location.origin);
+      setTimeout(() => {
+        result.dataset.preConfigVisible = String(visible());
+        send({ enabled: true, removeOverlays: true, showBadge: false, showToasts: false });
+      }, 150);
+      setTimeout(() => {
+        result.dataset.onHidden = String(!visible());
+        send({ enabled: false, removeOverlays: false });
+      }, 350);
+      setTimeout(() => {
+        result.dataset.restored = String(visible());
+        result.dataset.hardCssRemoved = String(!document.getElementById('rg-hard-overlay-css'));
+        result.dataset.stage = 'done';
+        result.textContent = JSON.stringify({
+          preConfigVisible: result.dataset.preConfigVisible,
+          onHidden: result.dataset.onHidden,
+          restored: result.dataset.restored,
+          hardCssRemoved: result.dataset.hardCssRemoved,
+        });
+      }, 1000);
+    })();
+  </script>
+</body>
+</html>

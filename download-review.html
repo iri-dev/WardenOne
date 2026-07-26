@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebWarden Download Guard</title>
+<style>
+  :root {
+    --bg: #efe2f7;
+    --panel: #fbf6fe;
+    --panel-2: #f4ebfb;
+    --ink: #3d2a52;
+    --soft: #7a5f93;
+    --faint: #a98fc0;
+    --line: #e3d3f1;
+    --purple: #8b3fb0;
+    --green: #2e9e5b;
+    --orange: #bd7a2a;
+    --red: #c0392b;
+    --critical: #7f1d1d;
+    --display: "Quicksand", "Nunito", "Segoe UI Rounded", system-ui, sans-serif;
+    --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    min-width: 360px;
+    margin: 0;
+    background:
+      radial-gradient(110% 75% at 0% 0%, #e3cdf4 0%, transparent 56%),
+      radial-gradient(110% 75% at 100% 0%, #f2cee4 0%, transparent 52%),
+      linear-gradient(180deg, var(--bg), #ead8f5);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    padding: 18px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .shield {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(150deg, #b06fd6 0%, #e07aae 100%);
+    box-shadow: 0 5px 16px rgba(139, 63, 176, 0.32);
+    flex: none;
+  }
+  .shield svg { width: 25px; height: 25px; }
+  .kicker {
+    font-family: var(--display);
+    color: var(--purple);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 2px 0 0;
+    font-family: var(--display);
+    font-size: 19px;
+    line-height: 1.15;
+    letter-spacing: 0;
+  }
+  .grade-band {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 13px;
+    border-radius: 8px;
+    background: rgba(255,255,255,.55);
+    border: 1px solid var(--line);
+    margin-bottom: 12px;
+  }
+  .grade {
+    height: 54px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 30px;
+    background: var(--purple);
+  }
+  .status {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 16px;
+  }
+  .score {
+    color: var(--soft);
+    font-size: 11px;
+    margin-top: 3px;
+  }
+  .details {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .detail-row {
+    display: grid;
+    grid-template-columns: 74px 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .detail-row:last-child { border-bottom: 0; }
+  .label {
+    color: var(--faint);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .value {
+    min-width: 0;
+    color: var(--ink);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  .panel {
+    background: rgba(255,255,255,.48);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .panel h2 {
+    margin: 0 0 8px;
+    font-family: var(--display);
+    font-size: 12px;
+    color: var(--purple);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--soft);
+    line-height: 1.45;
+  }
+  li + li { margin-top: 5px; }
+  .recommendation {
+    color: var(--ink);
+    font-weight: 700;
+    line-height: 1.45;
+  }
+  .note {
+    color: var(--soft);
+    font-size: 11.5px;
+    line-height: 1.45;
+    margin-top: 7px;
+  }
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+    margin-top: 14px;
+  }
+  button {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--soft);
+    background: #e9d8f4;
+  }
+  button:hover { filter: brightness(.98); }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+  }
+  .primary {
+    color: #fff;
+    background: linear-gradient(135deg, #b06fd6 0%, #e07aae 100%);
+    box-shadow: 0 4px 14px rgba(139, 63, 176, .28);
+  }
+  .danger {
+    color: #fff;
+    background: var(--red);
+  }
+  .quiet {
+    background: transparent;
+    border: 1px solid var(--line);
+  }
+  .trust {
+    color: var(--purple);
+    background: rgba(139, 63, 176, .09);
+    border: 1px solid rgba(139, 63, 176, .18);
+  }
+  .advanced {
+    display: none;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .advanced.show {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .result {
+    min-height: 18px;
+    margin-top: 10px;
+    color: var(--soft);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  .grade-a .grade, .grade-b .grade { background: var(--green); }
+  .grade-c .grade { background: var(--purple); }
+  .grade-d .grade { background: var(--orange); }
+  .grade-e .grade { background: var(--red); }
+  .grade-f .grade {
+    background: var(--critical);
+    box-shadow: 0 0 0 4px rgba(127, 29, 29, .12);
+  }
+  .grade-f .grade-band {
+    border-color: rgba(127, 29, 29, .28);
+    background: rgba(255, 235, 235, .62);
+  }
+  .compact .panel {
+    margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div class="shield" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 2.5c2.6 1.4 5 1.8 7 1.9.3 4.9-.6 11.3-7 15.1C5.6 15.7 4.7 9.3 5 4.4c2 0 4.4-.5 7-1.9z" fill="#fff" fill-opacity=".22"/>
+          <path d="M8.3 12.2l2.6 2.6 5-5.6" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="kicker">WebWarden Download Guard</div>
+        <h1 id="title">Reviewing download</h1>
+      </div>
+    </header>
+
+    <section class="grade-band">
+      <div class="grade" id="grade">?</div>
+      <div>
+        <div class="status" id="status">Checking...</div>
+        <div class="score" id="score"></div>
+      </div>
+    </section>
+
+    <section class="details">
+      <div class="detail-row">
+        <div class="label">File</div>
+        <div class="value" id="file">Loading...</div>
+      </div>
+      <div class="detail-row">
+        <div class="label">Source</div>
+        <div class="value" id="source">Loading...</div>
+      </div>
+      <div class="detail-row" id="mime-row">
+        <div class="label">Type</div>
+        <div class="value" id="mime"></div>
+      </div>
+      <div class="detail-row" id="scanner-row" style="display:none;">
+        <div class="label">Scanner</div>
+        <div class="value" id="scanner"></div>
+      </div>
+      <div class="detail-row" id="domain-age-row" style="display:none;">
+        <div class="label">Age</div>
+        <div class="value" id="domain-age"></div>
+      </div>
+      <div class="detail-row" id="external-row" style="display:none;">
+        <div class="label">Repute</div>
+        <div class="value" id="external"></div>
+      </div>
+      <div class="detail-row" id="file-hash-row" style="display:none;">
+        <div class="label">Hash</div>
+        <div class="value" id="file-hash"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="reasons-panel">
+      <h2>Reasons</h2>
+      <ul id="reasons"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>Recommendation</h2>
+      <div class="recommendation" id="recommendation"></div>
+      <div class="note" id="pause-note"></div>
+    </section>
+
+    <div class="actions">
+      <button class="danger" id="cancel">Cancel Download</button>
+      <button class="trust" id="trust-continue" hidden>Trust Site &amp; Continue</button>
+      <button class="primary" id="continue">Continue Download</button>
+      <button class="quiet" id="advanced" hidden>Advanced</button>
+    </div>
+    <div class="advanced" id="advanced-panel">
+      <button class="quiet" id="continue-anyway">Continue Anyway</button>
+    </div>
+    <div class="result" id="result" aria-live="polite"></div>
+  </main>
+  <script src="download-review.js"></script>
+</body>
+</html>

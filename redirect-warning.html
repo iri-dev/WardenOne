@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebWarden - Redirect Check</title>
+<style>
+  :root {
+    --bg: #ece0f7;
+    --bg-2: #f7e5f2;
+    --paper: #fffafd;
+    --paper-soft: #f7effb;
+    --ink: #3d2a52;
+    --ink-soft: #72568e;
+    --ink-faint: #9a7eb1;
+    --line: #dcc7ed;
+    --plum: #7b3f98;
+    --violet: #b06fd6;
+    --rose: #d65f9a;
+    --green: #35c779;
+    --shadow: 0 28px 90px rgba(72, 38, 96, .18);
+    --display: "Quicksand", "Nunito", "Segoe UI Rounded", system-ui, sans-serif;
+    --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 30px 18px;
+    color: var(--ink);
+    font: 15px/1.58 var(--body);
+    background:
+      radial-gradient(70% 60% at 0% 0%, rgba(176,111,214,.28), transparent 62%),
+      radial-gradient(62% 54% at 100% 4%, rgba(214,95,154,.22), transparent 58%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+  }
+  .panel {
+    width: min(760px, 100%);
+    overflow: hidden;
+    border: 1px solid rgba(122, 63, 152, .2);
+    border-radius: 24px;
+    background: linear-gradient(160deg, var(--paper), var(--paper-soft));
+    box-shadow: var(--shadow);
+  }
+  .hero {
+    padding: 30px;
+    color: #fff;
+    background:
+      radial-gradient(80% 120% at 95% 0%, rgba(223,108,169,.46), transparent 60%),
+      linear-gradient(135deg, #6a3a86 0%, #9a55b5 50%, #d65f9a 100%);
+  }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .mark {
+    width: 48px; height: 48px; border-radius: 14px;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, #c77ee0, #df6ca9);
+    box-shadow: 0 16px 34px rgba(54, 25, 71, .25);
+    font: 900 25px/1 var(--display);
+  }
+  .eyebrow {
+    color: rgba(255,255,255,.82);
+    font: 900 11px/1 var(--display);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  h1 {
+    max-width: 620px;
+    margin: 8px 0 10px;
+    font: 900 clamp(34px, 6vw, 58px)/.95 var(--display);
+    letter-spacing: 0;
+  }
+  .lead { max-width: 610px; color: rgba(255,255,255,.9); font-size: 17px; }
+  .content { padding: 26px 30px 30px; }
+  .route {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .route-card {
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 16px;
+    background: rgba(255,255,255,.68);
+  }
+  .label {
+    margin-bottom: 7px;
+    color: var(--plum);
+    font: 900 11px/1 var(--display);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .host { font: 900 18px/1.25 var(--display); color: var(--ink); word-break: break-word; }
+  .url { margin-top: 6px; color: var(--ink-soft); font-size: 12px; word-break: break-all; }
+  .reason {
+    border: 1px solid rgba(214,95,154,.24);
+    border-radius: 18px;
+    padding: 14px 16px;
+    background: rgba(246, 224, 243, .56);
+    color: var(--ink-soft);
+  }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+  button {
+    min-height: 44px;
+    border: 1px solid rgba(122,63,152,.22);
+    border-radius: 14px;
+    padding: 0 18px;
+    cursor: pointer;
+    color: var(--ink);
+    background: #f0e3f6;
+    font: 900 13px/1 var(--display);
+  }
+  button.primary {
+    color: #fff;
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--violet), var(--rose));
+    box-shadow: 0 14px 26px rgba(139,63,176,.28);
+  }
+  button.continue { color: var(--ink-soft); background: rgba(255,255,255,.62); }
+  .fineprint { margin-top: 16px; color: var(--ink-faint); font-size: 12px; }
+  @media (max-width: 640px) {
+    .hero, .content { padding: 24px; }
+    .route { grid-template-columns: 1fr; }
+    .actions { display: grid; }
+  }
+</style>
+</head>
+<body>
+  <main class="panel">
+    <section class="hero">
+      <div class="brand">
+        <div class="mark">✓</div>
+        <div>
+          <div class="eyebrow">WebWarden redirect check</div>
+          <h1>This site tried to send you somewhere else.</h1>
+        </div>
+      </div>
+      <p class="lead">A click or script tried to jump to a different domain than WebWarden expected. Continue only if you trust the destination.</p>
+    </section>
+    <section class="content">
+      <div class="route">
+        <div class="route-card">
+          <div class="label">From</div>
+          <div class="host" id="from-host">Unknown site</div>
+          <div class="url" id="from-url"></div>
+        </div>
+        <div class="route-card">
+          <div class="label">Destination</div>
+          <div class="host" id="to-host">Unknown destination</div>
+          <div class="url" id="to-url"></div>
+        </div>
+      </div>
+      <div class="reason" id="reason">This click did not target the destination site.</div>
+      <div class="actions">
+        <button class="primary" id="back">Go back</button>
+        <button class="continue" id="continue">Continue to destination</button>
+      </div>
+      <p class="fineprint">WebWarden shows this for unexpected cross-site jumps, like a search icon opening an unrelated ad or download page.</p>
+    </section>
+  </main>
+  <script src="redirect-warning.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Normalize all text files to LF in the repo and working tree, on every platform.
+# This keeps the content.min.js byte-exact rebuild check (tools/build-content.js
+# --check) from fighting Windows CRLF conversion, and avoids spurious
+# whole-file "changes" when switching machines.
+* text=auto eol=lf
+
+# Binary assets — never normalize or diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.crx binary
+*.pem binary

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "paymentProcessorDomains": [
+    "mollie.com",
+    "mollie.nl",
+    "paystack.com",
+    "razorpay.com",
+    "razorpay.me",
+    "payu.com",
+    "payu.in",
+    "2checkout.com",
+    "verifone.com",
+    "worldpay.com",
+    "worldpay.io",
+    "authorize.net"
+  ],
+  "adultDomains": [],
+  "ipLoggerDomains": []
+}
