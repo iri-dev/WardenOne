@@ -1,0 +1,2769 @@
+[
+  {
+    "id": 1,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "grabify.link"
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "grabify.com"
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "grabify.org"
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplogger.org"
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplogger.com"
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplogger.ru"
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplogger.co"
+      ]
+    }
+  },
+  {
+    "id": 8,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplogger.info"
+      ]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplis.ru"
+      ]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ipgrabber.ru"
+      ]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ipgraber.ru"
+      ]
+    }
+  },
+  {
+    "id": 12,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "2no.co"
+      ]
+    }
+  },
+  {
+    "id": 13,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "2no.it"
+      ]
+    }
+  },
+  {
+    "id": 14,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "yip.su"
+      ]
+    }
+  },
+  {
+    "id": 15,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplog.network"
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "blasze.tk"
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "blasze.com"
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ipgun.com"
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ezstat.ru"
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "whatstheirip.com"
+      ]
+    }
+  },
+  {
+    "id": 21,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "gyazo.nl"
+      ]
+    }
+  },
+  {
+    "id": 22,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "stopify.co"
+      ]
+    }
+  },
+  {
+    "id": 23,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "notmy.club"
+      ]
+    }
+  },
+  {
+    "id": 24,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "fvip.info"
+      ]
+    }
+  },
+  {
+    "id": 25,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "trackmyip.cc"
+      ]
+    }
+  },
+  {
+    "id": 26,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "quickmessage.us"
+      ]
+    }
+  },
+  {
+    "id": 27,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "locationtracker.cc"
+      ]
+    }
+  },
+  {
+    "id": 28,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "crxtra.com"
+      ]
+    }
+  },
+  {
+    "id": 29,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ipsniffer.com"
+      ]
+    }
+  },
+  {
+    "id": 30,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "gl1tch.me"
+      ]
+    }
+  },
+  {
+    "id": 31,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "joingroups.pro"
+      ]
+    }
+  },
+  {
+    "id": 32,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ip-tracker.org"
+      ]
+    }
+  },
+  {
+    "id": 33,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "catchify.net"
+      ]
+    }
+  },
+  {
+    "id": 34,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "maper.info"
+      ]
+    }
+  },
+  {
+    "id": 35,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "urlto.me"
+      ]
+    }
+  },
+  {
+    "id": 36,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "hd.gd"
+      ]
+    }
+  },
+  {
+    "id": 37,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "onbit.pro"
+      ]
+    }
+  },
+  {
+    "id": 38,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "snifferip.com"
+      ]
+    }
+  },
+  {
+    "id": 39,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "unl.one"
+      ]
+    }
+  },
+  {
+    "id": 40,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "screenshare.pics"
+      ]
+    }
+  },
+  {
+    "id": 41,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "noodshare.pics"
+      ]
+    }
+  },
+  {
+    "id": 42,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "cheapcinema.club"
+      ]
+    }
+  },
+  {
+    "id": 43,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "shhh.lol"
+      ]
+    }
+  },
+  {
+    "id": 44,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "partpicker.shop"
+      ]
+    }
+  },
+  {
+    "id": 45,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "sportshub.bar"
+      ]
+    }
+  },
+  {
+    "id": 46,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "locations.quest"
+      ]
+    }
+  },
+  {
+    "id": 47,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "lovebird.guru"
+      ]
+    }
+  },
+  {
+    "id": 48,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "truelove.guru"
+      ]
+    }
+  },
+  {
+    "id": 49,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "dateing.club"
+      ]
+    }
+  },
+  {
+    "id": 50,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "sherkis.life"
+      ]
+    }
+  },
+  {
+    "id": 51,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "headshot.monster"
+      ]
+    }
+  },
+  {
+    "id": 52,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "gaming-at-my.best"
+      ]
+    }
+  },
+  {
+    "id": 53,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "programming.monster"
+      ]
+    }
+  },
+  {
+    "id": 54,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "yourmy.monster"
+      ]
+    }
+  },
+  {
+    "id": 55,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "imageshare.best"
+      ]
+    }
+  },
+  {
+    "id": 56,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "screenshot.best"
+      ]
+    }
+  },
+  {
+    "id": 57,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "gamingfun.me"
+      ]
+    }
+  },
+  {
+    "id": 58,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "catsnthings.fun"
+      ]
+    }
+  },
+  {
+    "id": 59,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "catsnthings.com"
+      ]
+    }
+  },
+  {
+    "id": 60,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "joinmy.site"
+      ]
+    }
+  },
+  {
+    "id": 61,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "fortnitechat.site"
+      ]
+    }
+  },
+  {
+    "id": 62,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "fortnight.space"
+      ]
+    }
+  },
+  {
+    "id": 63,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "freegiftcards.co"
+      ]
+    }
+  },
+  {
+    "id": 64,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "leancoding.co"
+      ]
+    }
+  },
+  {
+    "id": 65,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "curiouscat.club"
+      ]
+    }
+  },
+  {
+    "id": 66,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "mymassive.yachts"
+      ]
+    }
+  },
+  {
+    "id": 67,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "stonks.boats"
+      ]
+    }
+  },
+  {
+    "id": 68,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "stonks.fun"
+      ]
+    }
+  },
+  {
+    "id": 69,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "toes.beauty"
+      ]
+    }
+  },
+  {
+    "id": 70,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "barefoot.pics"
+      ]
+    }
+  },
+  {
+    "id": 71,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "shareit.pics"
+      ]
+    }
+  },
+  {
+    "id": 72,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "gamer.tattoo"
+      ]
+    }
+  },
+  {
+    "id": 73,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "shipment.website"
+      ]
+    }
+  },
+  {
+    "id": 74,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "imagevault.cloud"
+      ]
+    }
+  },
+  {
+    "id": 75,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "sugma.mom"
+      ]
+    }
+  },
+  {
+    "id": 76,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "yum.mom"
+      ]
+    }
+  },
+  {
+    "id": 77,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "plz.life"
+      ]
+    }
+  },
+  {
+    "id": 78,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "massive.mom"
+      ]
+    }
+  },
+  {
+    "id": 79,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "massive.boats"
+      ]
+    }
+  },
+  {
+    "id": 80,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "mymassive.store"
+      ]
+    }
+  },
+  {
+    "id": 81,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "mymassive.top"
+      ]
+    }
+  },
+  {
+    "id": 82,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "gamer.hair"
+      ]
+    }
+  },
+  {
+    "id": 83,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "myprivate.pics"
+      ]
+    }
+  },
+  {
+    "id": 84,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "grabb.site"
+      ]
+    }
+  },
+  {
+    "id": 85,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "grabify.icu"
+      ]
+    }
+  },
+  {
+    "id": 86,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "grabify.world"
+      ]
+    }
+  },
+  {
+    "id": 87,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "grabifyicu.com"
+      ]
+    }
+  },
+  {
+    "id": 88,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "location.cyou"
+      ]
+    }
+  },
+  {
+    "id": 89,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "mymap.icu"
+      ]
+    }
+  },
+  {
+    "id": 90,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "mymap.quest"
+      ]
+    }
+  },
+  {
+    "id": 91,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "map-s.online"
+      ]
+    }
+  },
+  {
+    "id": 92,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "crypto-o.click"
+      ]
+    }
+  },
+  {
+    "id": 93,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "cryp-o.online"
+      ]
+    }
+  },
+  {
+    "id": 94,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "account.beauty"
+      ]
+    }
+  },
+  {
+    "id": 95,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "photospace.life"
+      ]
+    }
+  },
+  {
+    "id": 96,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "photovault.store"
+      ]
+    }
+  },
+  {
+    "id": 97,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "imagehub.fun"
+      ]
+    }
+  },
+  {
+    "id": 98,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "sharevault.cloud"
+      ]
+    }
+  },
+  {
+    "id": 99,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "xtube.chat"
+      ]
+    }
+  },
+  {
+    "id": 100,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "screensnaps.top"
+      ]
+    }
+  },
+  {
+    "id": 101,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "photovault.pics"
+      ]
+    }
+  },
+  {
+    "id": 102,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "foot.wiki"
+      ]
+    }
+  },
+  {
+    "id": 103,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "gamergirl.pro"
+      ]
+    }
+  },
+  {
+    "id": 104,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "picshost.pics"
+      ]
+    }
+  },
+  {
+    "id": 105,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "pichost.pics"
+      ]
+    }
+  },
+  {
+    "id": 106,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "imghost.pics"
+      ]
+    }
+  },
+  {
+    "id": 107,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "shrekis.life"
+      ]
+    }
+  },
+  {
+    "id": 108,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplist.ru"
+      ]
+    }
+  },
+  {
+    "id": 109,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "02ip.ru"
+      ]
+    }
+  },
+  {
+    "id": 110,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "wl.gl"
+      ]
+    }
+  },
+  {
+    "id": 111,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ed.tc"
+      ]
+    }
+  },
+  {
+    "id": 112,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "bc.ax"
+      ]
+    }
+  },
+  {
+    "id": 113,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplog.co"
+      ]
+    }
+  },
+  {
+    "id": 114,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplogger.cn"
+      ]
+    }
+  },
+  {
+    "id": 115,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ps3cfw.com"
+      ]
+    }
+  },
+  {
+    "id": 116,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "goo.by"
+      ]
+    }
+  },
+  {
+    "id": 117,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ikwyd.com"
+      ]
+    }
+  },
+  {
+    "id": 118,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ip-trap.com"
+      ]
+    }
+  },
+  {
+    "id": 119,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "ythingy.com"
+      ]
+    }
+  },
+  {
+    "id": 120,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "cob.soy"
+      ]
+    }
+  },
+  {
+    "id": 155,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iptrackeronline.com"
+      ]
+    }
+  },
+  {
+    "id": 156,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iptracker.org"
+      ]
+    }
+  },
+  {
+    "id": 157,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "lancremasteredpcps.com"
+      ]
+    }
+  },
+  {
+    "id": 160,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "bmw.gs"
+      ]
+    }
+  },
+  {
+    "id": 161,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "cliip.net"
+      ]
+    }
+  },
+  {
+    "id": 163,
+    "priority": 2000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "urlFilter": "||static.doubleclick.net/instream/ad_status.js",
+      "resourceTypes": [
+        "script",
+        "xmlhttprequest"
+      ]
+    }
+  },
+  {
+    "id": 164,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "initiatorDomains": [
+        "github.com"
+      ],
+      "requestDomains": [
+        "github.com",
+        "githubassets.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "avatars.githubusercontent.com",
+        "camo.githubusercontent.com",
+        "media.githubusercontent.com",
+        "user-images.githubusercontent.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  },
+  {
+    "id": 165,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "initiatorDomains": [
+        "google.com"
+      ],
+      "requestDomains": [
+        "google.com",
+        "googleapis.com",
+        "gstatic.com",
+        "googleusercontent.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  },
+  {
+    "id": 166,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "initiatorDomains": [
+        "gamedrive.org"
+      ],
+      "requestDomains": [
+        "gamedrive.org"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  },
+  {
+    "id": 167,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "requestDomains": [
+        "accounts.google.com",
+        "oauth2.googleapis.com",
+        "apis.google.com",
+        "login.microsoftonline.com",
+        "login.live.com",
+        "appleid.apple.com",
+        "okta.com",
+        "oktacdn.com",
+        "auth0.com",
+        "onelogin.com",
+        "duosecurity.com",
+        "openathens.net",
+        "shibboleth.net",
+        "pingidentity.com",
+        "pingone.com",
+        "b2clogin.com",
+        "ciamlogin.com",
+        "hcaptcha.com",
+        "recaptcha.net",
+        "challenges.cloudflare.com",
+        "turnstile.cloudflare.com",
+        "amazoncognito.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  }
+]

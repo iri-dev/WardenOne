@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebWarden - Network Protection</title>
+<style>
+  :root {
+    --bg: #ece0f7;
+    --bg-2: #e7d9f4;
+    --bg-3: #faf6fd;
+    --paper: #fff;
+    --paper-soft: #fbf6fe;
+    --mist: #f2def2;
+    --mist-strong: #dec5ed;
+    --ink: #3d2a52;
+    --ink-soft: #705689;
+    --ink-faint: #9a7eb1;
+    --line: #dfcdec;
+    --line-strong: #c8aedf;
+    --plum: #8b3fb0;
+    --plum-deep: #5f2779;
+    --violet: #b06fd6;
+    --rose: #d65f9a;
+    --pink: #df6ca9;
+    --green: #2e9e5b;
+    --amber: #bd7a2a;
+    --shadow: 0 28px 80px rgba(72, 38, 96, .16);
+    --display: "Quicksand", "Nunito", "Segoe UI Rounded", "SF Pro Rounded", system-ui, sans-serif;
+    --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+  body {
+    min-height: 100vh;
+    color: var(--ink);
+    font: 15px/1.62 var(--body);
+    background:
+      radial-gradient(70% 60% at 0% 0%, rgba(176, 111, 214, .28) 0%, transparent 62%),
+      radial-gradient(62% 54% at 100% 2%, rgba(214, 95, 154, .2) 0%, transparent 58%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 48%, var(--bg-3) 100%);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  :focus-visible { outline: 3px solid rgba(176, 111, 214, .38); outline-offset: 3px; }
+  .wrap { width: min(1180px, calc(100% - 44px)); margin: 0 auto; }
+
+  .topbar {
+    position: relative;
+    z-index: 5;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(42, 28, 58, .48), rgba(42, 28, 58, .18)),
+      radial-gradient(86% 190% at 94% 100%, rgba(223, 108, 169, .34), transparent 56%),
+      radial-gradient(70% 160% at 12% -70%, rgba(255, 255, 255, .13), transparent 62%),
+      linear-gradient(135deg, rgba(91, 56, 122, .96), rgba(142, 67, 169, .92) 52%, rgba(218, 100, 166, .88));
+  }
+  .topbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 22px;
+    background: linear-gradient(90deg, transparent 18%, rgba(223, 108, 169, .48) 64%, rgba(223, 108, 169, .72));
+    filter: blur(8px);
+    opacity: .9;
+    pointer-events: none;
+  }
+  .topbar-inner {
+    position: relative;
+    z-index: 1;
+    width: min(1520px, calc(100% - 72px));
+    min-height: 86px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 28px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    min-width: 340px;
+    padding-right: 26px;
+    position: relative;
+    color: #fff;
+  }
+  .brand::after {
+    content: "";
+    width: 1px;
+    height: 44px;
+    margin-left: auto;
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, .18), transparent);
+  }
+  .brand-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(150deg, rgba(176, 111, 214, .98), rgba(224, 122, 174, .96));
+    box-shadow: 0 16px 36px rgba(55, 21, 78, .24);
+  }
+  .brand-mark img { width: 34px; height: 34px; display: block; }
+  .brand-name { display: block; font: 900 21px/1.05 var(--display); letter-spacing: -.01em; }
+  .brand-sub { display: block; margin-top: 3px; font: 900 10px/1 var(--display); text-transform: uppercase; letter-spacing: .13em; opacity: .82; }
+  .top-links {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 30px;
+    flex: 1;
+    min-width: 0;
+    color: #fff;
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 30px;
+    flex-wrap: wrap;
+  }
+  .nav a {
+    position: relative;
+    min-height: 86px;
+    display: inline-flex;
+    align-items: center;
+    color: rgba(244, 224, 249, .72);
+    font: 800 13px/1 var(--body);
+    transition: color .15s ease;
+  }
+  .nav a::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    border-radius: 999px 999px 0 0;
+    background: linear-gradient(90deg, var(--violet), var(--pink));
+    opacity: 0;
+    transform: scaleX(.4);
+    transition: opacity .15s ease, transform .15s ease;
+  }
+  .nav a.is-active,
+  .nav a:hover { color: #fff; }
+  .nav a.is-active::after,
+  .nav a:hover::after { opacity: 1; transform: scaleX(1); }
+  .dev-credit {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 86px;
+    padding-left: 26px;
+    border-left: 1px solid rgba(255, 255, 255, .14);
+    color: rgba(244, 224, 249, .72);
+    font: 800 13px/1 var(--body);
+    white-space: nowrap;
+  }
+  .dev-credit::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #49c879;
+    box-shadow: 0 0 0 4px rgba(73, 200, 121, .16);
+  }
+  .dev-credit strong { color: #fff; font-weight: 900; }
+
+  .hero {
+    position: relative;
+    overflow: hidden;
+    color: #fff;
+    padding: 78px 0 64px;
+    background:
+      radial-gradient(56% 86% at 74% 38%, rgba(255, 255, 255, .16), transparent 60%),
+      radial-gradient(42% 70% at 20% 100%, rgba(223, 108, 169, .28), transparent 62%),
+      linear-gradient(135deg, rgba(91, 56, 122, .96), rgba(142, 67, 169, .92) 52%, rgba(218, 100, 166, .88));
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 54px;
+    background: linear-gradient(180deg, rgba(236, 224, 247, 0), rgba(236, 224, 247, .42));
+    pointer-events: none;
+  }
+  .hero-inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(300px, .72fr);
+    gap: 42px;
+    align-items: center;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 20px;
+    color: rgba(255, 255, 255, .9);
+    font: 900 11px/1 var(--display);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #49c879;
+    box-shadow: 0 0 0 6px rgba(73, 200, 121, .12);
+  }
+  h1 { font: 900 clamp(44px, 5vw, 68px)/1.02 var(--display); letter-spacing: -.03em; max-width: 760px; }
+  .lead {
+    max-width: 740px;
+    margin-top: 18px;
+    color: rgba(255, 255, 255, .88);
+    font-size: 17px;
+  }
+  .lead strong { color: #fff; }
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+  .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 13px;
+    padding: 13px 18px;
+    background: rgba(242, 222, 242, .2);
+    color: #fff;
+    cursor: pointer;
+    font: 900 13px/1 var(--display);
+    box-shadow: 0 18px 40px rgba(48, 24, 62, .16);
+    transition: transform .15s ease, background .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); background: rgba(242, 222, 242, .3); }
+  .btn.primary {
+    border-color: transparent;
+    background: linear-gradient(135deg, #b861d6 0%, #df6ca9 100%);
+    box-shadow: 0 22px 50px rgba(89, 34, 112, .28);
+  }
+  .btn.primary:hover { background: linear-gradient(135deg, #c26ddb 0%, #e673b0 100%); }
+  .hero-card {
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 22px;
+    padding: 24px;
+    background: rgba(242, 222, 242, .2);
+    box-shadow: 0 18px 40px rgba(48, 24, 62, .16);
+  }
+  .hero-card h2 { font: 900 24px/1.08 var(--display); color: #fff; }
+  .hero-card p { margin-top: 10px; color: rgba(255, 255, 255, .78); }
+  .hero-list { display: grid; gap: 10px; margin-top: 18px; }
+  .hero-list span {
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(242, 222, 242, .18);
+    border: 1px solid rgba(255, 255, 255, .16);
+    color: rgba(255, 255, 255, .92);
+    font-weight: 800;
+  }
+
+  .section { padding: 38px 0; }
+  .section-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, .42fr);
+    gap: 30px;
+    align-items: end;
+    margin-bottom: 18px;
+  }
+  .section-kicker {
+    color: var(--plum);
+    font: 900 11px/1 var(--display);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  h2 { margin-top: 9px; color: var(--ink); font: 900 clamp(28px, 3.2vw, 40px)/1.05 var(--display); letter-spacing: -.02em; }
+  .section-head p { color: var(--ink-soft); }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .panel {
+    overflow: hidden;
+    border: 1px solid rgba(200, 174, 223, .76);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .76), rgba(246, 238, 251, .76));
+    box-shadow: var(--shadow);
+  }
+  .panel-top {
+    padding: 22px 24px;
+    color: #fff;
+    background:
+      radial-gradient(120% 160% at 100% 0%, rgba(223, 108, 169, .22), transparent 54%),
+      linear-gradient(135deg, rgba(83, 50, 112, .98), rgba(128, 64, 155, .94) 58%, rgba(195, 85, 151, .9));
+  }
+  .panel-kicker {
+    display: block;
+    color: rgba(255, 255, 255, .78);
+    font: 900 10px/1 var(--display);
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .panel-top h3 { font: 900 21px/1.1 var(--display); color: #fff; }
+  .panel-body { padding: 22px 24px; color: var(--ink-soft); }
+  .panel-body b,
+  .panel-body strong { color: var(--ink); }
+  .mini {
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+    min-height: 170px;
+  }
+  .mini h3 { color: var(--ink); font: 900 18px/1.15 var(--display); }
+  .mini p { color: var(--ink-soft); }
+  .mini .num {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 13px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--violet), var(--pink));
+    font: 900 16px/1 var(--display);
+    box-shadow: 0 14px 26px rgba(139, 63, 176, .18);
+  }
+
+  .provider-table-wrap { overflow-x: auto; }
+  table { width: 100%; min-width: 700px; border-collapse: collapse; font-size: 14px; }
+  th,
+  td { text-align: left; padding: 15px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th {
+    color: var(--plum);
+    font: 900 10.5px/1 var(--display);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  td b { color: var(--ink); font-weight: 900; }
+  tr:last-child td { border-bottom: 0; }
+  code {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    border-radius: 999px;
+    padding: 4px 9px;
+    background: rgba(176, 111, 214, .14);
+    color: var(--plum-deep);
+    font: 800 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .note {
+    margin-top: 15px;
+    color: var(--ink-faint);
+    font-size: 13px;
+  }
+  .steps {
+    counter-reset: step;
+    display: grid;
+    gap: 13px;
+    list-style: none;
+  }
+  .steps li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 13px;
+    align-items: start;
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .56);
+    border: 1px solid rgba(223, 205, 236, .9);
+  }
+  .steps li::before {
+    content: counter(step);
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--violet), var(--pink));
+    font: 900 15px/1 var(--display);
+  }
+  .steps li > span { min-width: 0; }
+  .check { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 18px; }
+  .check .btn { border-color: transparent; background: linear-gradient(135deg, var(--violet), var(--pink)); }
+  .check .btn:disabled { opacity: .68; cursor: wait; transform: none; }
+  .result {
+    display: none;
+    margin-top: 18px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .result.show { display: block; }
+  .result.on { background: #e4f5ec; border: 1px solid rgba(46, 158, 91, .28); color: #236d42; }
+  .result.off { background: #f7e6d6; border: 1px solid rgba(189, 122, 42, .3); color: #805517; }
+  .result.err { background: #f6dced; border: 1px solid rgba(214, 95, 154, .34); color: #9e315f; }
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 24px 0 54px;
+    color: var(--plum);
+    font: 900 13px/1 var(--display);
+  }
+
+  @media (max-width: 900px) {
+    .topbar-inner,
+    .hero-inner,
+    .section-head,
+    .grid-2,
+    .grid-3 { grid-template-columns: 1fr; }
+    .topbar-inner { width: min(1180px, calc(100% - 32px)); padding: 14px 0; align-items: flex-start; flex-direction: column; }
+    .brand { min-width: 0; padding-right: 0; }
+    .brand::after { content: none; }
+    .top-links { flex-wrap: wrap; justify-content: flex-start; gap: 18px; }
+    .nav { justify-content: flex-start; gap: 18px; }
+    .nav a,
+    .dev-credit { min-height: auto; padding: 0; }
+    .dev-credit { border-left: 0; }
+    .hero { padding: 54px 0 44px; }
+  }
+  @media (max-width: 560px) {
+    .wrap { width: min(100% - 28px, 1180px); }
+    .brand { min-width: 0; }
+    .brand-name { font-size: 18px; }
+    .nav a,
+    .dev-credit { padding: 10px 12px; }
+    .hero-card { padding: 18px; border-radius: 18px; }
+    .panel { border-radius: 18px; }
+    .panel-top,
+    .panel-body { padding: 18px; }
+    .btn { width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="popup.html" aria-label="Back to WebWarden popup">
+        <span class="brand-mark" aria-hidden="true"><img src="icons/icon128.png" alt=""></span>
+        <span>
+          <span class="brand-name">WebWarden</span>
+          <span class="brand-sub">Network protection</span>
+        </span>
+      </a>
+      <div class="top-links">
+        <nav class="nav" aria-label="Network guide sections">
+          <a class="is-active" href="#providers" aria-current="location">DNS filters</a>
+          <a href="#setup">Setup</a>
+          <a href="#verify">Verify</a>
+        </nav>
+        <div class="dev-credit">Developer <strong>iri.dev</strong></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <div>
+          <div class="eyebrow">Router-level safety guide</div>
+          <h1>Make protection harder to bypass.</h1>
+          <p class="lead"><strong>WebWarden protects the browser.</strong> DNS filtering protects the network underneath it, blocking risky domains before pages, apps, consoles, or phones can connect.</p>
+          <div class="hero-actions">
+            <a class="btn primary" href="#providers">Pick a DNS filter</a>
+            <a class="btn" href="#setup">Set it up</a>
+            <a class="btn" href="#verify">Run a check</a>
+          </div>
+        </div>
+        <aside class="hero-card" aria-label="Why DNS protection matters">
+          <h2>Why this layer matters</h2>
+          <p>A browser extension can be disabled, bypassed, or missed by another app. DNS filtering sits earlier in the chain.</p>
+          <div class="hero-list">
+            <span>Covers every device on your Wi-Fi</span>
+            <span>Blocks before a site can load</span>
+            <span>Works even outside this browser</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section" id="why">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">Defense in depth</div>
+            <h2>DNS is the safety floor.</h2>
+          </div>
+          <p>Keep WebWarden for page-level protection, redirects, downloads, cookies, and session checks. Add DNS filtering so obvious adult, malware, phishing, and scam domains are stopped before a browser decision even happens.</p>
+        </div>
+        <div class="grid-3">
+          <article class="panel mini">
+            <span class="num">1</span>
+            <h3>Browser protection</h3>
+            <p>WebWarden reacts inside the browser: popups, redirects, risky forms, trackers, downloads, and page behavior.</p>
+          </article>
+          <article class="panel mini">
+            <span class="num">2</span>
+            <h3>Network protection</h3>
+            <p>DNS filtering blocks whole domains for every device using the network, including devices without this extension.</p>
+          </article>
+          <article class="panel mini">
+            <span class="num">3</span>
+            <h3>Family safety</h3>
+            <p>For a child or shared home network, router-level DNS is the layer that users cannot casually click past.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="providers">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">Step 1</div>
+            <h2>Pick a DNS filter.</h2>
+          </div>
+          <p>Use a provider that matches what you want to block. CleanBrowsing is easiest. NextDNS gives the most control.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-top">
+            <span class="panel-kicker">Recommended providers</span>
+            <h3>Choose one pair of DNS addresses</h3>
+          </div>
+          <div class="panel-body">
+            <div class="provider-table-wrap">
+              <table>
+                <tr><th>Provider</th><th>Best for</th><th>Blocks</th><th>Primary / Secondary DNS</th></tr>
+                <tr><td><b>CleanBrowsing Family</b></td><td>Set and forget</td><td>Adult + malicious</td><td><code>185.228.168.168</code> / <code>185.228.169.168</code></td></tr>
+                <tr><td><b>OpenDNS FamilyShield</b></td><td>Simple family filter</td><td>Adult content</td><td><code>208.67.222.123</code> / <code>208.67.220.123</code></td></tr>
+                <tr><td><b>Quad9</b></td><td>Security only</td><td>Malware + phishing</td><td><code>9.9.9.9</code> / <code>149.112.112.112</code></td></tr>
+                <tr><td><b>NextDNS</b></td><td>Most control</td><td>Configurable categories</td><td>Sign up at nextdns.io for your IDs</td></tr>
+              </table>
+            </div>
+            <p class="note"><b>Best practical choice:</b> use NextDNS if you want logs and custom blocklists, or CleanBrowsing Family if you want a quick router setup with no account.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="setup">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">Step 2</div>
+            <h2>Apply it where it matters.</h2>
+          </div>
+          <p>Router setup is strongest because every device that joins the Wi-Fi gets the same filtering automatically.</p>
+        </div>
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-top">
+              <span class="panel-kicker">Best option</span>
+              <h3>Set DNS on your router</h3>
+            </div>
+            <div class="panel-body">
+              <ol class="steps">
+                <li><span>Open your router admin page, usually <code>192.168.1.1</code> or <code>192.168.0.1</code>.</span></li>
+                <li><span>Log in using the router sticker, ISP app, or admin password.</span></li>
+                <li><span>Find DNS settings under Internet, WAN, LAN, or DHCP.</span></li>
+                <li><span>Replace the DNS servers with your provider's two addresses.</span></li>
+                <li><span>Save, reboot the router, then reconnect your devices.</span></li>
+              </ol>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-top">
+              <span class="panel-kicker">Per-device fallback</span>
+              <h3>Use this if router access is blocked</h3>
+            </div>
+            <div class="panel-body">
+              <ol class="steps">
+                <li><span><b>Windows:</b> Settings &rarr; Network &rarr; DNS server assignment.</span></li>
+                <li><span><b>macOS:</b> System Settings &rarr; Network &rarr; DNS.</span></li>
+                <li><span><b>iPhone / Android:</b> use the DNS provider profile or app.</span></li>
+                <li><span><b>Chrome:</b> turn off Secure DNS, or set it to the same provider.</span></li>
+              </ol>
+              <p class="note">Per-device setup is useful for laptops and phones, but router setup is still the cleanest home-network option.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="verify">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">Step 3</div>
+            <h2>Verify your protection.</h2>
+          </div>
+          <p>This makes harmless test requests to see whether known adult and malware test domains are being filtered from this browser.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-top">
+            <span class="panel-kicker">Local check</span>
+            <h3>DNS filtering test</h3>
+          </div>
+          <div class="panel-body">
+            <p>The result is a practical signal, not a certificate. Some providers return a block page instead of refusing the connection, and VPNs or browser Secure DNS can change the result.</p>
+            <div class="check">
+              <button class="btn primary" id="run">Test my DNS filtering</button>
+              <span class="note">No account needed. The page only makes the test requests.</span>
+            </div>
+            <div class="result" id="result"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <a class="back-link" href="#" id="back">&larr; Back to activity</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="network.js"></script>
+</body>
+</html>

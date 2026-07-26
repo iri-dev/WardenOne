@@ -1,0 +1,929 @@
+/*
+ * Behavioral compatibility harness for twitch-adblock.js's worker runtime.
+ *
+ * The runtime is extracted from the dedicated MAIN-world module and executed
+ * in a VM with Twitch-shaped HLS/GQL traffic. No legacy content-script hook is
+ * used by this suite.
+ *
+ * Run: node tools/test-twitch-playlist-compatibility.js
+ */
+'use strict';
+
+const fs = require('fs');
+const vm = require('vm');
+const { performance } = require('perf_hooks');
+
+const MODULE_SOURCE = fs.readFileSync('twitch-adblock.js', 'utf8');
+const RUNTIME_VERSION = (/const VERSION = '([^']+)'/.exec(MODULE_SOURCE) || [])[1];
+const RUNTIME_START = MODULE_SOURCE.indexOf('function twitchWorkerRuntime(');
+const RUNTIME_END = MODULE_SOURCE.indexOf('\n  function installWorkerHook()', RUNTIME_START);
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function equal(actual, expected, message) {
+  const left = JSON.stringify(actual);
+  const right = JSON.stringify(expected);
+  assert(left === right, message + '\nexpected: ' + right + '\nactual:   ' + left);
+}
+
+assert(RUNTIME_VERSION, 'could not read dedicated Twitch module version');
+assert(RUNTIME_START >= 0 && RUNTIME_END > RUNTIME_START,
+  'could not locate twitchWorkerRuntime in dedicated module');
+const WORKER_RUNTIME_SOURCE = MODULE_SOURCE.slice(RUNTIME_START, RUNTIME_END).trim();
+
+const FLAG = '__wwTwitchAdblock';
+const CHANNEL = 'fixturechannel';
+const GQL_URL = 'https://gql.twitch.tv/gql';
+const MASTER_URL = 'https://usher.ttvnw.net/api/v2/channel/hls/' + CHANNEL
+  + '.m3u8?allow_source=true&allow_audio_only=true&p=fixture&parent_domains=twitch.tv';
+const ORIGINAL_MEDIA_URL = 'https://video-edge-fixture.ttvnw.net/original/chunked/index-dvr.m3u8?token=original';
+
+const ORIGINAL_MASTER = `#EXTM3U
+#EXT-X-TWITCH-INFO:ORIGIN="s3",CLUSTER="fixture",MANIFEST-CLUSTER="fixture"
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1080p60 (source)",AUTOSELECT=YES,DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${ORIGINAL_MEDIA_URL}
+`;
+
+const CLEAN_MEDIA = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:99100
+#EXT-X-PROGRAM-DATE-TIME:2026-07-23T00:00:00.000Z
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/99100.ts
+#EXT-X-PROGRAM-DATE-TIME:2026-07-23T00:00:02.000Z
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/99101.ts
+`;
+
+function markedAd(marker, suffix, title) {
+  const segmentTitle = title === undefined ? 'advertisement' : title;
+  return `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:501
+${marker}
+#EXTINF:2.000,${segmentTitle}
+https://video-weaver-fixture.ttvnw.net/commercial/${suffix || '501'}.ts
+`;
+}
+
+const STITCHED_AD = markedAd(
+  '#EXT-X-DATERANGE:ID="stitched-ad-1784764800",CLASS="twitch-stitched-ad",DURATION=30.0',
+  'stitched');
+const CUE_OUT_AD = markedAd('#EXT-X-CUE-OUT:30', 'cue-out');
+const MAF_AD = markedAd('#EXT-X-DATERANGE:ID="maf-1",CLASS="twitch-maf-ad",DURATION=30.0', 'maf');
+const TRIGGER_AD = markedAd('#EXT-X-DATERANGE:ID="trigger-1",CLASS="twitch-trigger",DURATION=30.0', 'trigger');
+const QUARTILE_ONLY = markedAd('#EXT-X-TWITCH-AD-QUARTILE:FIRST', 'quartile-only', '');
+const STALE_STITCHED_MARKER = markedAd(
+  '#EXT-X-DATERANGE:ID="stitched-ad-stale",CLASS="twitch-stitched-ad",DURATION=30.0',
+  'stale-marker',
+  'live');
+const STRONG_METADATA_ALL_AD = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:610
+#EXT-X-DATERANGE:ID="stitched-ad-strong",CLASS="twitch-stitched-ad",DURATION=4.0,X-TV-TWITCH-AD-RADS-TOKEN="strong-fixture"
+#EXTINF:2.000,
+https://video-weaver-fixture.ttvnw.net/commercial/strong-610.ts
+#EXTINF:2.000,
+https://video-weaver-fixture.ttvnw.net/commercial/strong-611.ts
+`;
+const KNOWN_AD_URI_NO_MARKER = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:710
+#EXTINF:2.000,live
+https://video-weaver-fixture.ttvnw.net/adsquared/710.ts
+`;
+const STITCHED_AD_URI_WITH_LIVE_TITLE = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:720
+#EXTINF:2.000,live
+https://video-weaver-fixture.ttvnw.net/live/stitched-ad-123.ts
+`;
+const SLID_MARKER_CONFIRMED_AD = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:900
+#EXT-X-DATERANGE:ID="stitched-ad-slide",CLASS="twitch-stitched-ad",DURATION=2.0
+#EXT-X-CUE-OUT:2
+#EXTINF:2.000,
+https://video-weaver-fixture.ttvnw.net/commercial/confirmed-900.ts
+`;
+const SLID_MARKER_GENERIC_TAIL = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:901
+#EXTINF:2.000,
+https://video-edge-fixture.ttvnw.net/live/generic-tail-901.ts
+`;
+const SCTE35_TIMED_PLAYLIST = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:820
+#EXT-X-PROGRAM-DATE-TIME:2026-07-23T00:00:00.000Z
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/scte-before-820.ts
+#EXT-X-DATERANGE:ID="scte35-out-fixture",START-DATE="2026-07-23T00:00:02.000Z",DURATION=2.000,SCTE35-OUT=0xFC302000
+#EXTINF:2.000,live
+https://video-weaver-fixture.ttvnw.net/live/scte-overlap-821.ts
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/scte-after-822.ts
+`;
+const MIXED_CUE_PLAYLIST = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:810
+#EXTINF:2.000,
+relative-live-before.ts
+#EXT-X-CUE-OUT:2
+#EXTINF:2.000,
+relative-ad-inside-cue.ts
+#EXT-X-CUE-IN
+#EXTINF:2.000,
+relative-live-after.ts
+`;
+
+function hlsResponse(body, status) {
+  return new Response(String(body), {
+    status: status == null ? 200 : status,
+    headers: { 'content-type': 'application/vnd.apple.mpegurl' },
+  });
+}
+
+function jsonResponse(value, status) {
+  return new Response(typeof value === 'string' ? value : JSON.stringify(value), {
+    status: status == null ? 200 : status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function backupMaster(signature) {
+  return `#EXTM3U
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked-av1",NAME="1080p60 AV1"
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1080p60 (source)"
+#EXT-X-STREAM-INF:BANDWIDTH=7000000,CODECS="av01.0.08M.08,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked-av1",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/${signature}/av1-1080.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/${signature}/h264-1080.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,CODECS="avc1.4D401F,mp4a.40.2",RESOLUTION=1280x720,VIDEO="720p60",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/${signature}/h264-720.m3u8
+`;
+}
+
+function nestedToken(playerType) {
+  return {
+    data: {
+      streamPlaybackAccessToken: {
+        value: 'token-' + playerType,
+        signature: 'sig-' + playerType,
+        authorization: { isForbidden: false, forbiddenReasonCode: null },
+      },
+    },
+  };
+}
+
+function explicitLivePoll(sequence, suffix) {
+  return `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:${sequence}
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/${suffix}.ts
+`;
+}
+
+function assertSilentHold(body, original, label) {
+  assert(body && body !== original, label + ' returned the original ad playlist');
+  assert(body.includes('#EXT-X-DISCONTINUITY'), label + ' omitted the hold discontinuity');
+  assert(body.includes('#EXTINF:1.000,live'), label + ' omitted the silent hold segment');
+  assert(body.includes('data:video/mp4;base64,'), label + ' did not use the local silent segment');
+  assert(!body.includes('video-weaver-fixture.ttvnw.net'), label + ' retained an ad media URI');
+  const originalSequence = Number((/#EXT-X-MEDIA-SEQUENCE:(\d+)/i.exec(original) || [])[1]);
+  const holdSequence = Number((/#EXT-X-MEDIA-SEQUENCE:(\d+)/i.exec(body) || [])[1]);
+  assert(Number.isFinite(holdSequence) && holdSequence > originalSequence,
+    label + ' did not advance the media sequence');
+}
+
+function createRuntime(options) {
+  options = options || {};
+  const messageListeners = [];
+  const nativeSetTimeout = setTimeout;
+  const nativeClearTimeout = clearTimeout;
+  const state = {
+    calls: [],
+    messages: [],
+    gqlRequests: [],
+    timers: [],
+    dispatches: [],
+    clearedTimers: 0,
+    now: options.now == null ? Date.now() : Number(options.now),
+  };
+
+  function dispatchMessage(data) {
+    state.dispatches.push({ type: data && data.type, id: data && data.id,
+      status: data && data.response && data.response.status, error: data && data.error });
+    const event = { data: data };
+    for (const callback of messageListeners.slice()) callback(event);
+  }
+
+  async function nativeFetch(input, init) {
+    const url = typeof input === 'string' ? input : String(input && input.url || input || '');
+    state.calls.push({ url: url, init: init });
+    const value = await (options.fetchRoute
+      ? options.fetchRoute(url, init, state)
+      : hlsResponse(''));
+    if (value instanceof Response) return value;
+    if (value && value.error) throw value.error;
+    if (value && Object.prototype.hasOwnProperty.call(value, 'json')) {
+      return jsonResponse(value.json, value.status);
+    }
+    return hlsResponse(value == null ? '' : value);
+  }
+
+  const workerGlobal = {
+    fetch: nativeFetch,
+    addEventListener(type, callback) {
+      if (type === 'message') messageListeners.push(callback);
+    },
+    postMessage(message) {
+      state.messages.push(message);
+      if (!message || message.type !== 'gql-request') return;
+      // The worker posts the GQL request body as an already-parsed OBJECT under
+      // message.body (see proxyGql/post in twitch-adblock.js); the page stringifies
+      // it and adds identity headers. Older fixtures expected message.options.body
+      // as a JSON string, which silently produced a null body.
+      const parsedBody = message.body || null;
+      state.gqlRequests.push({
+        body: parsedBody,
+        headers: Object.assign({}, message.headers || {}),
+        message: message,
+      });
+      Promise.resolve().then(async () => {
+        const value = options.gqlRoute
+          ? await options.gqlRoute(message, state)
+          : jsonResponse(nestedToken(parsedBody && parsedBody.variables && parsedBody.variables.playerType || 'site'));
+        if (value && value.hang) return;
+        if (value && value.error) throw value.error;
+        const response = value instanceof Response
+          ? value
+          : jsonResponse(value && Object.prototype.hasOwnProperty.call(value, 'json') ? value.json : value,
+            value && value.status);
+        const body = await response.text();
+        dispatchMessage({
+          [FLAG]: RUNTIME_VERSION,
+          type: 'gql-response',
+          id: message.id,
+          response: {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Array.from(response.headers.entries()),
+            body: body,
+          },
+        });
+      }).catch((error) => {
+        dispatchMessage({
+          [FLAG]: RUNTIME_VERSION,
+          type: 'gql-response',
+          id: message.id,
+          error: String(error && error.message || error),
+        });
+      });
+    },
+  };
+
+  const RuntimeDate = options.fakeClock ? class RuntimeDate extends Date {
+    static now() { return state.now; }
+  } : Date;
+  const sandbox = {
+    self: workerGlobal,
+    URL,
+    Response,
+    Headers,
+    Request,
+    AbortController,
+    Map,
+    Set,
+    Date: RuntimeDate,
+    Math,
+    Promise,
+    Error,
+    console,
+    setTimeout(callback, ms) {
+      state.timers.push(Number(ms));
+      return nativeSetTimeout(callback, ms);
+    },
+    clearTimeout(timer) {
+      state.clearedTimers++;
+      return nativeClearTimeout(timer);
+    },
+  };
+  sandbox.__initialState = options.initialState || {};
+  vm.createContext(sandbox);
+  vm.runInContext('(' + WORKER_RUNTIME_SOURCE + ')("", __initialState, ' +
+    JSON.stringify(RUNTIME_VERSION) + ');', sandbox, { filename: 'twitch-adblock.js:worker-runtime' });
+
+  return {
+    fetch: workerGlobal.fetch,
+    state: state,
+    configure(enabled) {
+      dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'config', enabled: enabled });
+    },
+    updateClientState(next) {
+      dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'client-state', state: next });
+    },
+    advance(ms) {
+      state.now += Number(ms) || 0;
+    },
+  };
+}
+
+function standardFetchRoute(options) {
+  options = options || {};
+  const originalMedia = options.originalMedia || CLEAN_MEDIA;
+  const backupMedia = options.backupMedia || CLEAN_MEDIA;
+  return async (url, init, state) => {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'gql.twitch.tv') return jsonResponse([]);
+    if (parsed.hostname === 'usher.ttvnw.net') {
+      const signature = parsed.searchParams.get('sig');
+      if (!signature) return hlsResponse(options.originalMaster || ORIGINAL_MASTER);
+      return hlsResponse((options.backupMaster || backupMaster)(signature, url, state));
+    }
+    if (parsed.pathname === new URL(ORIGINAL_MEDIA_URL).pathname) {
+      if (typeof originalMedia === 'function') return hlsResponse(await originalMedia(url, init, state));
+      return hlsResponse(originalMedia);
+    }
+    if (parsed.pathname.includes('/backup/')) {
+      if (typeof backupMedia === 'function') return hlsResponse(await backupMedia(url, init, state));
+      return hlsResponse(backupMedia);
+    }
+    throw new Error('unexpected fixture request: ' + url);
+  };
+}
+
+async function mapMaster(runtime) {
+  const response = await runtime.fetch(MASTER_URL);
+  assert(response.ok, 'original V2 Usher master request failed');
+  return response;
+}
+
+const tests = [];
+function test(name, fn) {
+  tests.push({ name, fn });
+}
+
+test('exact ad markers are blocked while twitch-ad-quartile alone is ignored', async () => {
+  const fixtures = new Map([
+    ['https://video-edge-fixture.ttvnw.net/unmapped/stitched.m3u8', STITCHED_AD],
+    ['https://video-edge-fixture.ttvnw.net/unmapped/cue-out.m3u8', CUE_OUT_AD],
+    ['https://video-edge-fixture.ttvnw.net/unmapped/maf.m3u8', MAF_AD],
+    ['https://video-edge-fixture.ttvnw.net/unmapped/trigger.m3u8', TRIGGER_AD],
+    ['https://video-edge-fixture.ttvnw.net/unmapped/quartile.m3u8', QUARTILE_ONLY],
+  ]);
+  const runtime = createRuntime({
+    fetchRoute(url) {
+      if (!fixtures.has(url)) throw new Error('unexpected marker fixture request: ' + url);
+      return hlsResponse(fixtures.get(url));
+    },
+  });
+
+  for (const name of ['stitched', 'cue-out', 'maf', 'trigger']) {
+    const url = 'https://video-edge-fixture.ttvnw.net/unmapped/' + name + '.m3u8';
+    const body = await (await runtime.fetch(url)).text();
+    assertSilentHold(body, fixtures.get(url), name + ' marker');
+  }
+
+  const quartileUrl = 'https://video-edge-fixture.ttvnw.net/unmapped/quartile.m3u8';
+  const quartileBody = await (await runtime.fetch(quartileUrl)).text();
+  assert(quartileBody === QUARTILE_ONLY,
+    'twitch-ad-quartile alone was incorrectly classified as an ad marker');
+  assert(runtime.state.gqlRequests.length === 0, 'unmapped marker checks unexpectedly requested tokens');
+});
+
+test('stale stitched metadata attached to explicitly live media passes through unchanged', async () => {
+  const url = 'https://video-edge-fixture.ttvnw.net/unmapped/stale-marker.m3u8';
+  const runtime = createRuntime({
+    fetchRoute(requestUrl) {
+      if (requestUrl !== url) throw new Error('unexpected stale-marker request: ' + requestUrl);
+      return hlsResponse(STALE_STITCHED_MARKER);
+    },
+  });
+  const body = await (await runtime.fetch(url)).text();
+  assert(body === STALE_STITCHED_MARKER,
+    'marker-only CSAI snapshot was falsely destroyed as server-side ad media');
+  assert(runtime.state.gqlRequests.length === 0, 'unmapped stale marker started backup traffic');
+});
+
+test('known ad URI is blocked even when no Twitch marker is present', async () => {
+  const url = 'https://video-edge-fixture.ttvnw.net/unmapped/known-uri.m3u8';
+  const runtime = createRuntime({
+    fetchRoute(requestUrl) {
+      if (requestUrl !== url) throw new Error('unexpected known-ad-URI request: ' + requestUrl);
+      return hlsResponse(KNOWN_AD_URI_NO_MARKER);
+    },
+  });
+  const body = await (await runtime.fetch(url)).text();
+  assertSilentHold(body, KNOWN_AD_URI_NO_MARKER, 'known ad URI without marker');
+});
+
+test('stitched-ad media URI is blocked even when EXTINF explicitly says live', async () => {
+  const url = 'https://video-edge-fixture.ttvnw.net/unmapped/stitched-ad-uri.m3u8';
+  const runtime = createRuntime({
+    fetchRoute(requestUrl) {
+      if (requestUrl !== url) throw new Error('unexpected stitched-ad-URI request: ' + requestUrl);
+      return hlsResponse(STITCHED_AD_URI_WITH_LIVE_TITLE);
+    },
+  });
+  const body = await (await runtime.fetch(url)).text();
+  assertSilentHold(body, STITCHED_AD_URI_WITH_LIVE_TITLE, 'stitched-ad URI with live title');
+});
+
+test('slid-out markers cannot leak generic tails and release needs three explicit live polls', async () => {
+  const livePolls = [
+    explicitLivePoll(902, 'explicit-live-902'),
+    explicitLivePoll(903, 'explicit-live-903'),
+    explicitLivePoll(904, 'explicit-live-904'),
+  ];
+  const nativePolls = [
+    SLID_MARKER_CONFIRMED_AD,
+    SLID_MARKER_GENERIC_TAIL,
+    livePolls[0],
+    livePolls[1],
+    livePolls[2],
+    markedAd('#EXT-X-DATERANGE:ID="stitched-ad-after-learning",CLASS="twitch-stitched-ad",DURATION=2.0',
+      'after-learning'),
+  ];
+  let nativePollIndex = 0;
+  let failCachedBackup = false;
+  let rejectNewTokens = false;
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia() {
+        assert(nativePollIndex < nativePolls.length, 'stateful native fixture was polled too many times');
+        return nativePolls[nativePollIndex++];
+      },
+      backupMedia() {
+        if (failCachedBackup) throw new Error('fixture cached backup expired');
+        return CLEAN_MEDIA;
+      },
+    }),
+    gqlRoute(message) {
+      if (rejectNewTokens) return jsonResponse({ errors: [{ message: 'fixture reject' }] }, 403);
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+
+  const adBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(adBody === CLEAN_MEDIA, 'confirmed stitched/CUE poll did not activate the clean backup');
+
+  const genericBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(genericBody !== SLID_MARKER_GENERIC_TAIL && !genericBody.includes('generic-tail-901.ts'),
+    'marker slide-out leaked the generic empty-title tail segment');
+
+  const firstExplicit = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(firstExplicit !== livePolls[0] && !firstExplicit.includes('explicit-live-902.ts'),
+    'one explicit live poll released or learned native media too early');
+  const secondExplicit = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(secondExplicit !== livePolls[1] && !secondExplicit.includes('explicit-live-903.ts'),
+    'two explicit live polls released or learned native media too early');
+  const thirdExplicit = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(thirdExplicit === livePolls[2],
+    'native media was not released on the third consecutive explicit live poll');
+
+  failCachedBackup = true;
+  rejectNewTokens = true;
+  const learnedBridge = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(learnedBridge === livePolls[2],
+    'third explicit live poll was not learned as the safe native bridge snapshot');
+  assert(!learnedBridge.includes('after-learning'),
+    'post-learning ad media leaked when the cached backup failed');
+});
+
+test('SCTE35-OUT DATERANGE gaps only media overlapping its timed range', async () => {
+  const url = 'https://video-edge-fixture.ttvnw.net/unmapped/scte35-timed.m3u8';
+  const runtime = createRuntime({
+    fetchRoute(requestUrl) {
+      if (requestUrl !== url) throw new Error('unexpected SCTE35 fixture request: ' + requestUrl);
+      return hlsResponse(SCTE35_TIMED_PLAYLIST);
+    },
+  });
+  const body = await (await runtime.fetch(url)).text();
+  const lines = body.replace(/\r/g, '').split('\n');
+  const gapIndexes = [];
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index] === '#EXT-X-GAP') gapIndexes.push(index);
+  }
+  assert(gapIndexes.length === 1, 'timed SCTE35 range must gap exactly one overlapping segment');
+  assert(lines[gapIndexes[0] + 1] ===
+    'https://video-weaver-fixture.ttvnw.net/live/scte-overlap-821.ts',
+  'SCTE35 gap was not attached to the overlapping media segment');
+  for (const cleanUri of [
+    'https://video-edge-fixture.ttvnw.net/live/scte-before-820.ts',
+    'https://video-edge-fixture.ttvnw.net/live/scte-after-822.ts',
+  ]) {
+    const index = lines.indexOf(cleanUri);
+    assert(index >= 0, 'timed SCTE35 stripping removed clean media: ' + cleanUri);
+    assert(lines[index - 1] !== '#EXT-X-GAP', 'timed SCTE35 range gapped non-overlapping media: ' + cleanUri);
+  }
+});
+
+test('mixed CUE playlists gap only segments inside CUE-OUT/CUE-IN', async () => {
+  const url = 'https://video-edge-fixture.ttvnw.net/unmapped/mixed-cue.m3u8';
+  const runtime = createRuntime({
+    fetchRoute(requestUrl) {
+      if (requestUrl !== url) throw new Error('unexpected mixed-CUE request: ' + requestUrl);
+      return hlsResponse(MIXED_CUE_PLAYLIST);
+    },
+  });
+  const body = await (await runtime.fetch(url)).text();
+  const lines = body.replace(/\r/g, '').split('\n');
+  const gapIndexes = [];
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index] === '#EXT-X-GAP') gapIndexes.push(index);
+  }
+  assert(gapIndexes.length === 1, 'mixed CUE playlist must gap exactly one in-cue segment');
+  assert(lines[gapIndexes[0] + 1] === 'relative-ad-inside-cue.ts',
+    'mixed CUE gap was not scoped to the in-cue ad segment');
+  assert(lines.includes('relative-live-before.ts') && lines.includes('relative-live-after.ts'),
+    'mixed CUE stripping removed clean segments');
+  assert(lines[lines.indexOf('relative-live-before.ts') - 1] !== '#EXT-X-GAP',
+    'clean segment before CUE-OUT was gapped');
+  assert(lines[lines.indexOf('relative-live-after.ts') - 1] !== '#EXT-X-GAP',
+    'clean segment after CUE-IN was gapped');
+  assert(!lines.some((line) => /^#EXT-X-CUE-(?:OUT|IN)/i.test(line)),
+    'mixed CUE stripping left ad-control markers in the returned playlist');
+});
+
+test('worker captures persisted GQL identity, preserves a batch, and keeps Usher V2', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA }),
+    gqlRoute(message) {
+      const body = message.body;
+      return jsonResponse(nestedToken(body.variables.playerType));
+    },
+  });
+  const unrelated = {
+    operationName: 'ChannelShell',
+    variables: { login: CHANNEL },
+    extensions: { persistedQuery: { version: 1, sha256Hash: 'unrelated-hash' } },
+  };
+  const token = {
+    operationName: 'PlaybackAccessToken',
+    variables: {
+      isLive: true,
+      login: CHANNEL,
+      isVod: false,
+      vodID: '',
+      playerType: 'picture-by-picture',
+      platform: 'android',
+      retained: 'fixture-retained',
+    },
+    extensions: { persistedQuery: { version: 1, sha256Hash: 'fixture-persisted-hash' } },
+  };
+  const directBody = JSON.stringify([unrelated, token]);
+  await runtime.fetch(GQL_URL, {
+    method: 'POST',
+    headers: {
+      'Client-ID': 'fixture-client-id',
+      'X-Device-Id': 'fixture-device-id',
+      'Client-Version': 'fixture-client-version',
+      'Client-Session-Id': 'fixture-session-id',
+      'Client-Integrity': 'fixture-integrity',
+      Authorization: 'OAuth fixture-authorization',
+    },
+    body: directBody,
+  });
+  const directCall = runtime.state.calls[0];
+  assert(typeof directCall.init.body === 'string' && directCall.init.body.length > 2,
+    'worker GQL force produced an empty request body');
+  const forwardedBatch = JSON.parse(directCall.init.body);
+  equal(forwardedBatch[0], unrelated, 'worker changed an unrelated batched GQL query');
+  assert(forwardedBatch[1].variables.playerType === 'popout', 'worker did not force token query to popout');
+  assert(forwardedBatch[1].variables.platform === 'web', 'worker forced popout with a non-web platform');
+  assert(forwardedBatch[1].variables.retained === 'fixture-retained', 'worker discarded token variables');
+
+  await mapMaster(runtime);
+  const replaced = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(replaced === CLEAN_MEDIA, 'captured-token backup did not replace the ad playlist');
+  assert(runtime.state.gqlRequests.length === 4, 'primary backup phase did not issue four bounded token requests');
+  for (const request of runtime.state.gqlRequests) {
+    // Identity headers (Client-ID / Authorization / ...) are attached by the PAGE
+    // when it proxies the worker's gql-request; the worker posts only { id, body }
+    // (identity deliberately stays on the page), so they are not present here.
+    // What the worker MUST preserve is the captured token template it will reuse
+    // for backup requests: the persisted-query hash and template-specific vars.
+    assert(request.body.extensions.persistedQuery.sha256Hash === 'fixture-persisted-hash',
+      'backup GQL lost the captured persisted-query hash');
+    assert(request.body.variables.retained === 'fixture-retained',
+      'backup GQL did not retain captured token-template variables');
+  }
+
+  const usherCalls = runtime.state.calls.filter((call) => {
+    const url = new URL(call.url);
+    return url.hostname === 'usher.ttvnw.net';
+  });
+  assert(usherCalls.length >= 2, 'backup flow did not request a replacement Usher master');
+  for (const call of usherCalls) {
+    const url = new URL(call.url);
+    assert(url.pathname === '/api/v2/channel/hls/' + CHANNEL + '.m3u8',
+      'Usher request downgraded or changed its V2 path: ' + url.pathname);
+    assert(url.searchParams.get('allow_source') === 'true', 'Usher request lost allow_source');
+    assert(url.searchParams.get('allow_audio_only') === 'true', 'Usher request lost allow_audio_only');
+    assert(url.searchParams.get('p') === 'fixture', 'Usher request lost unrelated query state');
+    assert(!url.searchParams.has('parent_domains'), 'worker leaked parent_domains into an Usher request');
+  }
+});
+
+test('nested standard tokens and top-level sig/token aliases are accepted', async () => {
+  const cases = [
+    {
+      label: 'nested signature/value',
+      response: { data: { streamPlaybackAccessToken: { signature: 'nested-signature', value: 'nested-value' } } },
+      signature: 'nested-signature',
+      value: 'nested-value',
+    },
+    {
+      label: 'top-level sig/token',
+      response: { sig: 'top-sig', token: 'top-token' },
+      signature: 'top-sig',
+      value: 'top-token',
+    },
+  ];
+
+  for (const fixture of cases) {
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA }),
+      gqlRoute() { return jsonResponse(fixture.response); },
+    });
+    await mapMaster(runtime);
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(body === CLEAN_MEDIA, fixture.label + ' token was not accepted');
+    const backupUsher = runtime.state.calls.map((call) => new URL(call.url)).find((url) =>
+      url.hostname === 'usher.ttvnw.net' && url.searchParams.has('sig'));
+    assert(backupUsher, fixture.label + ' did not reach backup Usher');
+    assert(backupUsher.searchParams.get('sig') === fixture.signature,
+      fixture.label + ' signature alias was not applied');
+    assert(backupUsher.searchParams.get('token') === fixture.value,
+      fixture.label + ' token/value alias was not applied');
+  }
+});
+
+test('backup types are exactly site/popout/mobile_web/embed, never autoplay/frontpage', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA }),
+    gqlRoute() {
+      return jsonResponse({ errors: [{ message: 'fixture reject' }] }, 403);
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const types = runtime.state.gqlRequests.map((request) => request.body.variables.playerType);
+  assertSilentHold(body, STITCHED_AD, 'exhausted source-capable types');
+  equal(types, ['site', 'popout', 'mobile_web', 'embed'], 'backup player-type set changed');
+  assert(!types.some((type) => /autoplay|frontpage|carousel/i.test(type)),
+    'unsafe low-quality/player-shell fallback entered the committed backup cycle');
+  for (const request of runtime.state.gqlRequests) {
+    assert(request.body.variables.platform === 'web',
+      request.body.variables.playerType + ' backup used an unexpected platform: ' + request.body.variables.platform);
+  }
+});
+
+test('backup selection never crosses the original H.264 codec family', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia: STITCHED_AD,
+      backupMedia(url) {
+        if (/av1-1080|h264-720/.test(url)) {
+          throw new Error('codec/quality picker fetched an unsafe variant: ' + url);
+        }
+        assert(/h264-1080/.test(url), 'unexpected backup variant: ' + url);
+        return CLEAN_MEDIA;
+      },
+    }),
+    gqlRoute(message) {
+      const body = message.body;
+      return jsonResponse(nestedToken(body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body === CLEAN_MEDIA, 'codec-safe H.264 backup was not returned');
+  const mediaCalls = runtime.state.calls.filter((call) => /\/backup\//.test(call.url) && call.url.includes('.m3u8'));
+  assert(mediaCalls.length > 0, 'no backup media variants were fetched');
+  assert(mediaCalls.every((call) => /h264-1080\.m3u8/.test(call.url)),
+    'backup selection changed codec or resolution');
+});
+
+test('relative backup variant URIs are absolutized against the V2 Usher master', async () => {
+  const relativeVariant = 'relative-media/h264-1080.m3u8';
+  const expected = 'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/h264-1080.m3u8';
+  const relativeMedia = `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MAP:URI="../init/init.mp4"
+#EXT-X-KEY:METHOD=AES-128,URI="keys/key.bin"
+#EXT-X-PART:DURATION=0.500,URI="parts/part-1.m4s"
+#EXT-X-PRELOAD-HINT:TYPE=PART,URI="parts/part-2.m4s"
+#EXTINF:2.000,live
+segments/live-1.ts
+#EXT-X-TWITCH-PREFETCH:prefetch/live-2.ts
+`;
+  const runtime = createRuntime({
+    fetchRoute(url) {
+      const parsed = new URL(url);
+      if (parsed.hostname === 'usher.ttvnw.net' &&
+          parsed.pathname === '/api/v2/channel/hls/' + CHANNEL + '.m3u8') {
+        if (!parsed.searchParams.has('sig')) return hlsResponse(ORIGINAL_MASTER);
+        return hlsResponse(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${relativeVariant}
+`);
+      }
+      if (url === expected) return hlsResponse(relativeMedia);
+      if (parsed.pathname === new URL(ORIGINAL_MEDIA_URL).pathname) return hlsResponse(STITCHED_AD);
+      throw new Error('relative variant was not absolutized correctly: ' + url);
+    },
+    gqlRoute(message) {
+      const body = message.body;
+      return jsonResponse(nestedToken(body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(runtime.state.calls.some((call) => call.url === expected),
+    'worker never fetched the absolutized relative backup URI');
+  for (const absolute of [
+    'https://usher.ttvnw.net/api/v2/channel/hls/init/init.mp4',
+    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/keys/key.bin',
+    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/parts/part-1.m4s',
+    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/parts/part-2.m4s',
+    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/segments/live-1.ts',
+    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/prefetch/live-2.ts',
+  ]) {
+    assert(body.includes(absolute), 'returned backup left a relative media URI unresolved: ' + absolute);
+  }
+  for (const rawLine of body.replace(/\r/g, '').split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line[0] !== '#') {
+      assert(/^https?:\/\//i.test(line), 'returned backup retained relative media line: ' + line);
+    }
+    for (const match of line.matchAll(/\bURI="([^"]+)"/gi)) {
+      assert(/^https?:\/\//i.test(match[1]), 'returned backup retained relative URI attribute: ' + match[1]);
+    }
+    const prefetch = /^#EXT-X-TWITCH-PREFETCH:(.+)$/i.exec(line);
+    if (prefetch) {
+      assert(/^https?:\/\//i.test(prefetch[1].trim()),
+        'returned backup retained relative Twitch prefetch URI: ' + prefetch[1].trim());
+    }
+  }
+});
+
+test('strong-metadata all-ad backups return a silent hold within 250ms', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia: STRONG_METADATA_ALL_AD,
+      backupMedia: STRONG_METADATA_ALL_AD,
+    }),
+    gqlRoute(message) {
+      const body = message.body;
+      return jsonResponse(nestedToken(body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const started = performance.now();
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+  assert(elapsed <= 250, 'all-ad fallback exceeded 250ms: ' + elapsed.toFixed(1) + 'ms');
+  assertSilentHold(body, STRONG_METADATA_ALL_AD, 'strong-metadata all-ad fallback');
+  const types = runtime.state.gqlRequests.map((request) => request.body.variables.playerType);
+  equal(types, ['site', 'popout', 'mobile_web', 'embed'],
+    'all-ad fallback did not stop after the four source-capable web types');
+});
+
+test('50 clean media requests take a zero-backup fast path', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: CLEAN_MEDIA, backupMedia: CLEAN_MEDIA }),
+  });
+  await mapMaster(runtime);
+  const before = runtime.state.calls.length;
+  for (let index = 0; index < 50; index++) {
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(body === CLEAN_MEDIA, 'clean playlist body changed at request ' + index);
+  }
+  assert(runtime.state.calls.length === before + 50, 'clean path made hidden network requests');
+  assert(runtime.state.gqlRequests.length === 0, 'clean path requested a backup access token');
+  assert(runtime.state.timers.length === 0, 'clean path scheduled backup or timeout work');
+  assert(!runtime.state.calls.some((call) => /\/backup\//.test(call.url)), 'clean path fetched a backup variant');
+});
+
+test('concurrent ad playlists share one bounded backup flight', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA }),
+    gqlRoute(message) {
+      const body = message.body;
+      return jsonResponse(nestedToken(body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const responses = await Promise.all(Array.from({ length: 24 }, () => runtime.fetch(ORIGINAL_MEDIA_URL)));
+  const bodies = await Promise.all(responses.map((response) => response.text()));
+  assert(bodies.every((body) => body === CLEAN_MEDIA), 'single-flight callers did not all receive clean media');
+  assert(runtime.state.gqlRequests.length === 4,
+    'concurrent ads multiplied token flights: ' + runtime.state.gqlRequests.length);
+  const backupMasters = runtime.state.calls.filter((call) => {
+    const url = new URL(call.url);
+    return url.hostname === 'usher.ttvnw.net' && url.searchParams.has('sig');
+  });
+  assert(backupMasters.length === 4,
+    'concurrent ads multiplied backup master requests: ' + backupMasters.length);
+});
+
+test('negative backup cache stays bounded and never returns its failed sentinel as success', async () => {
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: 100000,
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: STITCHED_AD }),
+    gqlRoute() {
+      return jsonResponse({ errors: [{ message: 'fixture reject' }] }, 403);
+    },
+  });
+  await mapMaster(runtime);
+  const firstWave = await Promise.all(Array.from({ length: 16 }, () => runtime.fetch(ORIGINAL_MEDIA_URL)));
+  const firstBodies = await Promise.all(firstWave.map((response) => response.text()));
+  assert(firstBodies.every((body) => {
+    try {
+      assertSilentHold(body, STITCHED_AD, 'failed single-flight caller');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }), 'failed single-flight callers did not all receive non-empty silent holds');
+  assert(runtime.state.gqlRequests.length === 4,
+    'failed concurrent flight was not bounded to four source-capable token requests');
+
+  const beforeRetry = runtime.state.gqlRequests.length;
+  const retryBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(runtime.state.gqlRequests.length === beforeRetry,
+    'negative-cache retry launched another token flight inside its TTL');
+  assert(typeof retryBody === 'string' && retryBody.length > 0,
+    'failed-cache sentinel became an empty successful playlist');
+  assertSilentHold(retryBody, STITCHED_AD, 'negative-cache retry inside TTL');
+
+  runtime.advance(30001);
+  const expiredBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(runtime.state.gqlRequests.length === beforeRetry + 4,
+    'expired negative sentinel was not deleted and retried exactly once');
+  assertSilentHold(expiredBody, STITCHED_AD, 'negative-cache retry after TTL');
+});
+
+test('worker config-off is a byte-for-byte pass-through with no backup work', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA }),
+  });
+  runtime.configure(false);
+  const master = await runtime.fetch(MASTER_URL);
+  assert(master.ok, 'config-off master request failed');
+  const adBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(adBody === STITCHED_AD, 'config-off worker changed the media playlist');
+
+  const gqlBody = JSON.stringify([{
+    operationName: 'PlaybackAccessToken',
+    variables: { isLive: true, login: CHANNEL, playerType: 'site', platform: 'android' },
+  }]);
+  await runtime.fetch(GQL_URL, { method: 'POST', body: gqlBody, headers: { 'Client-ID': 'off' } });
+  const gqlCall = runtime.state.calls.find((call) => call.url === GQL_URL);
+  assert(gqlCall && gqlCall.init.body === gqlBody, 'config-off worker changed the GQL body');
+  assert(runtime.state.gqlRequests.length === 0, 'config-off worker initiated backup GQL');
+  assert(runtime.state.timers.length === 0, 'config-off worker scheduled backup/timeout work');
+  const masterCall = runtime.state.calls.find((call) => call.url.includes('/api/v2/channel/hls/'));
+  assert(masterCall && new URL(masterCall.url).searchParams.has('parent_domains'),
+    'config-off worker still rewrote the Usher URL');
+});
+
+(async () => {
+  let passed = 0;
+  let failed = 0;
+  for (const item of tests) {
+    try {
+      await item.fn();
+      passed++;
+      console.log('  ok  - ' + item.name);
+    } catch (error) {
+      failed++;
+      console.error('  FAIL - ' + item.name + ' :: ' + (error && error.message || error));
+    }
+  }
+  console.log('\n' + passed + ' passed, ' + failed + ' failed');
+  if (failed) process.exit(1);
+})().catch((error) => {
+  console.error(error && error.stack || error);
+  process.exit(1);
+});

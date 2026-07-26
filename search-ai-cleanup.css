@@ -1,0 +1,22 @@
+/*
+ * WebWarden search AI-answer pre-paint CSS.
+ * Registered only when "Hide search AI answers" is on. Runtime JS still does
+ * careful shell collapse; this stops Google/Brave AI panels flashing first.
+ */
+:is(.MjjYud, div[data-hveid], div[jscontroller], div[jsname], g-section-with-header, section, aside):has(#m-x-content):not(:has(#rso, #search, #res, #center_col, .related-question-pair)),
+:is(#m-x-content):not(:has(#rso, #search, #res, #center_col)),
+#llm-answer,
+.llm-answer,
+[data-testid="llm-answer"],
+[data-testid="ai-answer"],
+[data-testid="answer-with-ai"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+:is(html, #rso, #search, #res, #center_col) .related-question-pair #m-x-content {
+  display: block !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}

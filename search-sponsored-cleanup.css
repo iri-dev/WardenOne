@@ -1,0 +1,34 @@
+/*
+ * WebWarden sponsored search pre-paint CSS.
+ * Registered only when "Hide sponsored search results" is on.
+ */
+#tads,
+#tadsb,
+#bottomads,
+#taw,
+#tvcap,
+.commercial-unit-desktop-top,
+.commercial-unit-desktop-rhs,
+.commercial-unit-mobile-top,
+.pla-unit,
+.uEierd,
+[data-text-ad],
+[data-pla],
+[data-google-query-id],
+div[aria-label="Ads"],
+div[aria-label="Sponsored"],
+[data-testid="ad"],
+[data-testid="ad-result"],
+[data-testid="sponsored-result"],
+.ad-result,
+.sponsored-result {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+:is(html, #rso, #search, #res, #center_col) .related-question-pair :is(div[aria-label="Sponsored"], div[aria-label="Ads"]) {
+  display: block !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}

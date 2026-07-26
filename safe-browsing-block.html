@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebWarden - Dangerous Site Blocked</title>
+<style>
+  :root{
+    --bg:#ece0f7;--card:#f7f0fc;--card-2:#f1e7fa;
+    --ink:#3d2a52;--ink-soft:#7a5f93;--ink-faint:#a98fc0;
+    --line:#e0cef2;--plum:#8b3fb0;--danger:#c0392b;--danger-bg:#f6dced;
+    --display:"Quicksand","Nunito","Segoe UI Rounded",system-ui,sans-serif;
+    --body:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    min-height:100vh;display:grid;place-items:center;padding:32px 20px;
+    background:
+      radial-gradient(85% 55% at 0% 0%, #e6d2f6 0%, transparent 58%),
+      radial-gradient(70% 50% at 100% 0%, #f4d2e6 0%, transparent 55%),
+      linear-gradient(180deg,#ece0f7 0%,#e8daf5 100%);
+    color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.55;
+  }
+  .panel{
+    width:min(720px,100%);background:linear-gradient(160deg,var(--card),var(--card-2));
+    border:1px solid rgba(255,255,255,.68);border-radius:20px;padding:30px;
+    box-shadow:0 18px 54px rgba(80,30,110,.18);
+  }
+  .top{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+  .badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--danger-bg);color:var(--danger);flex:none}
+  .badge svg{width:30px;height:30px}
+  h1{font-family:var(--display);font-size:28px;line-height:1.15;color:var(--ink);font-weight:800;letter-spacing:0}
+  .site{font-size:13px;color:var(--ink-soft);word-break:break-all;margin-top:4px}
+  .status{display:inline-flex;align-items:center;gap:8px;margin:4px 0 18px;padding:7px 11px;border-radius:999px;background:rgba(192,57,43,.1);color:var(--danger);font-weight:800;font-size:12px;font-family:var(--display)}
+  .item{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+  .label{font-family:var(--display);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--plum);font-weight:800;margin-bottom:3px}
+  .value{color:var(--ink-soft);word-break:break-word}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+  button{
+    border:0;border-radius:12px;padding:11px 16px;font-family:var(--display);
+    font-weight:800;font-size:13px;cursor:pointer;background:#e2d2f2;color:var(--ink-soft);
+  }
+  button.primary{background:linear-gradient(135deg,#b06fd6,#e07aae);color:#fff;box-shadow:0 4px 14px rgba(139,63,176,.32)}
+  .note{font-size:12px;color:var(--ink-faint);margin-top:18px}
+  @media (max-width:560px){
+    .panel{padding:22px}
+    .top{align-items:flex-start}
+    h1{font-size:24px}
+    .actions{display:grid}
+  }
+</style>
+</head>
+<body>
+  <main class="panel">
+    <div class="top">
+      <div class="badge">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.8 12.2l2.2 2.2 4.2-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 6v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <h1>Dangerous Site Blocked</h1>
+        <div class="site" id="site"></div>
+      </div>
+    </div>
+    <div class="status" id="provider">Blocked by WebWarden + URL reputation</div>
+    <div class="item">
+      <div class="label">Reason</div>
+      <div class="value" id="reason">An external reputation provider flagged this URL.</div>
+    </div>
+    <div class="item">
+      <div class="label">Risk</div>
+      <div class="value">This site may be used for malware, phishing, unwanted software, or harmful application delivery.</div>
+    </div>
+    <div class="actions">
+      <button class="primary" id="back">Go back</button>
+      <button id="activity">Open activity</button>
+    </div>
+    <div class="note">This is a confirmed external reputation hit. WebWarden does not offer a bypass from this screen.</div>
+  </main>
+  <script src="safe-browsing-block.js"></script>
+</body>
+</html>

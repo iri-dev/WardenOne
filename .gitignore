@@ -1,0 +1,35 @@
+# Chrome-generated extension artifacts (created when the unpacked extension is
+# loaded into the browser — not source, regenerated on load).
+_metadata/
+*.crx
+*.pem
+key.pem
+
+# Machine-local tool settings.
+.*/settings.local.json
+
+# Dependencies (none today — guard against future npm/tooling use).
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# OS cruft
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs and scratch
+*.log
+*.tmp
+tmp/
+
+# Local backups of the ad-block engines before the rewrite (not published)
+backup/

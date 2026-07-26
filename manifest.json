@@ -1,0 +1,241 @@
+{
+  "manifest_version": 3,
+  "name": "WebWarden",
+  "version": "3.22.73",
+  "description": "Elite defense against phishing, malware downloads, redirect chains, IP grabbers, trackers, token theft, bad certs, and risky sites.",
+  "permissions": [
+    "declarativeNetRequest",
+    "storage",
+    "activeTab",
+    "scripting",
+    "webRequest",
+    "webNavigation",
+    "alarms",
+    "browsingData",
+    "cookies",
+    "history",
+    "management",
+    "contentSettings",
+    "downloads",
+    "notifications",
+    "tabs",
+    "tabGroups"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.pwnedpasswords.com/*",
+    "https://haveibeenpwned.com/*",
+    "https://rdap.org/*",
+    "https://safebrowsing.googleapis.com/*",
+    "https://www.virustotal.com/*",
+    "https://checkurl.phishtank.com/*",
+    "https://urlhaus-api.abuse.ch/*",
+    "https://api.abuseipdb.com/*",
+    "https://www.whoisxmlapi.com/*",
+    "https://domain-reputation.whoisxmlapi.com/*",
+    "https://threat-intelligence.whoisxmlapi.com/*",
+    "https://raw.githubusercontent.com/openphish/public_feed/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "WebWarden",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "history.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "grabbers",
+        "enabled": true,
+        "path": "rules.json"
+      },
+      {
+        "id": "adshield_easylist",
+        "enabled": true,
+        "path": "rules-adshield.json"
+      },
+      {
+        "id": "trackers",
+        "enabled": true,
+        "path": "rules-trackers.json"
+      },
+      {
+        "id": "easyprivacy",
+        "enabled": true,
+        "path": "rules-easyprivacy.json"
+      }
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "twitch-adblock.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "exclude_matches": [
+        "*://*.youtube.googleapis.com/*",
+        "https://accounts.google.com/*",
+        "https://*.accounts.google.com/*",
+        "https://mail.google.com/*",
+        "https://drive.google.com/*",
+        "https://docs.google.com/*",
+        "https://calendar.google.com/*",
+        "https://classroom.google.com/*",
+        "https://meet.google.com/*",
+        "https://chat.google.com/*",
+        "https://myaccount.google.com/*",
+        "https://oauth2.googleapis.com/*",
+        "https://apis.google.com/*",
+        "https://*.ucas.com/*",
+        "https://*.ac.uk/*",
+        "https://*.edu/*",
+        "https://*.edu.au/*",
+        "https://*.ac.nz/*",
+        "https://*.ac.za/*",
+        "https://*.ac.in/*",
+        "https://*.edu.sg/*",
+        "https://*.edu.hk/*",
+        "https://login.microsoftonline.com/*",
+        "https://login.live.com/*",
+        "https://appleid.apple.com/*",
+        "https://okta.com/*",
+        "https://*.okta.com/*",
+        "https://oktacdn.com/*",
+        "https://*.oktacdn.com/*",
+        "https://auth0.com/*",
+        "https://*.auth0.com/*",
+        "https://cdn.auth0.com/*",
+        "https://onelogin.com/*",
+        "https://*.onelogin.com/*",
+        "https://duosecurity.com/*",
+        "https://*.duosecurity.com/*",
+        "https://openathens.net/*",
+        "https://*.openathens.net/*",
+        "https://shibboleth.net/*",
+        "https://*.shibboleth.net/*",
+        "https://pingidentity.com/*",
+        "https://*.pingidentity.com/*",
+        "https://*.pingone.com/*",
+        "https://*.b2clogin.com/*",
+        "https://*.ciamlogin.com/*",
+        "https://hcaptcha.com/*",
+        "https://*.hcaptcha.com/*",
+        "https://recaptcha.net/*",
+        "https://*.recaptcha.net/*",
+        "https://challenges.cloudflare.com/*",
+        "https://turnstile.cloudflare.com/*",
+        "https://amazoncognito.com/*",
+        "https://*.amazoncognito.com/*",
+        "https://shopify.com/*",
+        "https://*.shopify.com/*",
+        "https://github.com/login/oauth/*",
+        "https://discord.com/oauth2/*",
+        "https://discord.com/api/oauth2/*",
+        "https://discordapp.com/oauth2/*",
+        "https://discordapp.com/api/oauth2/*"
+      ],
+      "js": [
+        "content.min.js",
+        "permission-chain.js",
+        "anti-redirect.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*",
+        "*://*.youtube.googleapis.com/*"
+      ],
+      "js": [
+        "permission-chain.js",
+        "yt-adblock.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "match_about_blank": true,
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "twitch-rewind.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false,
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "twitch-vod-rewind.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false,
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "https://accounts.google.com/*",
+        "https://login.microsoftonline.com/*",
+        "https://login.live.com/*",
+        "https://github.com/login/oauth/*",
+        "https://discord.com/oauth2/*",
+        "https://discord.com/api/oauth2/*",
+        "https://discordapp.com/oauth2/*",
+        "https://discordapp.com/api/oauth2/*"
+      ],
+      "js": [
+        "oauth-guard.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false,
+      "world": "ISOLATED"
+    }
+  ]
+}

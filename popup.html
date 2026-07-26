@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebWarden</title>
+<style>
+  :root {
+    --bg: #ece0f7;
+    --bg-2: #e2d2f2;
+    --card: #f4ebfb;
+    --card-2: #ede1f8;
+    --ink: #3d2a52;
+    --ink-soft: #7a5f93;
+    --ink-faint: #a98fc0;
+    --line: #e4d4f3;
+    --line-2: #dac7ee;
+    --grad-a: #a855d6;
+    --grad-b: #d96aa2;
+    --plum: #8b3fb0;
+    --rose-deep: #c84f8b;
+    --warn: #d98b4a;
+    --rose: #d65f9a;
+    --shadow: 0 6px 24px rgba(120, 55, 160, 0.18);
+    --shadow-sm: 0 2px 12px rgba(120, 55, 160, 0.13);
+    --display: "Quicksand", "Nunito", "Segoe UI Rounded", "SF Pro Rounded", system-ui, sans-serif;
+    --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 348px;
+    background:
+      radial-gradient(125% 80% at 0% 0%, #e3cdf4 0%, transparent 55%),
+      radial-gradient(125% 80% at 100% 0%, #f2cee4 0%, transparent 52%),
+      linear-gradient(180deg, #ece0f7 0%, #e7d9f4 100%);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .head {
+    padding: 18px 18px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+  }
+  .credit {
+    position: absolute;
+    top: 13px;
+    right: 14px;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 2px;
+    font-family: var(--display);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0;
+    color: var(--plum);
+    opacity: 0.9;
+    text-transform: lowercase;
+  }
+  .credit span {
+    color: var(--plum);
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .credit strong {
+    color: #8b3fb0;
+    font-size: 11.5px;
+    font-weight: 800;
+  }
+  .shield {
+    width: 40px; height: 40px;
+    display: grid; place-items: center;
+    background: linear-gradient(150deg, #b06fd6 0%, #e07aae 100%);
+    border-radius: 13px;
+    box-shadow: 0 4px 14px rgba(139, 63, 176, 0.38);
+  }
+  .shield svg { width: 24px; height: 24px; }
+  .title { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: 0.01em; color: var(--ink); }
+  .sub { color: var(--ink-faint); font-size: 11px; font-weight: 600; margin-top: 1px; }
+  .master {
+    margin: 6px 16px 4px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .master .lbl { font-family: var(--display); font-weight: 700; font-size: 14px; }
+  .master .state { font-size: 11px; font-weight: 700; margin-top: 2px; }
+  .master .state.on { color: var(--plum); }
+  .master .state.off { color: var(--rose); }
+  .health-panel {
+    margin: 6px 16px 4px;
+    padding: 0;
+    background: linear-gradient(160deg, #faf3fe 0%, #f3e7fb 100%);
+    border: 1px solid var(--line-2);
+    border-radius: 16px;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .health-panel.is-warning { border-color: rgba(217, 139, 74, 0.4); }
+  .health-panel.is-danger { border-color: rgba(200, 79, 139, 0.42); }
+  .health-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    user-select: none;
+  }
+  .health-summary::-webkit-details-marker { display: none; }
+  .health-summary::after {
+    content: '+';
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(142, 57, 191, 0.1);
+    color: var(--plum);
+    font: 700 13px/1 var(--display);
+  }
+  .health-panel[open] .health-summary::after { content: '\2212'; }
+  .health-icon {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, #b06fd6, #e07aae);
+    box-shadow: 0 3px 9px rgba(176, 106, 212, 0.34);
+  }
+  .health-icon svg { width: 17px; height: 17px; display: block; }
+  .health-panel.is-warning .health-icon { background: linear-gradient(135deg, #e0a86a, #e07a5f); box-shadow: 0 3px 9px rgba(217, 139, 74, 0.32); }
+  .health-panel.is-danger .health-icon { background: linear-gradient(135deg, #d76a9a, #c0392b); box-shadow: 0 3px 9px rgba(200, 79, 139, 0.32); }
+  .health-body {
+    padding: 2px 13px 13px;
+  }
+  .health-title-wrap {
+    min-width: 0;
+    flex: 1;
+  }
+  .health-dot {
+    display: none;
+  }
+  .health-title {
+    color: var(--plum);
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: .005em;
+  }
+  .health-detail {
+    margin-top: 2px;
+    color: var(--ink-soft);
+    font-size: 10.6px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .health-chip {
+    flex: none;
+    max-width: 92px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(142, 57, 191, 0.1);
+    border: 1px solid rgba(174, 126, 211, 0.36);
+    color: var(--plum);
+    font: 700 9.2px/1.2 var(--display);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .health-panel.is-warning .health-chip {
+    background: rgba(217, 139, 74, 0.12);
+    border-color: rgba(217, 139, 74, 0.26);
+    color: #a7672d;
+  }
+  .health-panel.is-danger .health-chip {
+    background: rgba(200, 79, 139, 0.12);
+    border-color: rgba(200, 79, 139, 0.26);
+    color: #b2352a;
+  }
+  .health-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 0;
+  }
+  .health-stat {
+    min-width: 0;
+    text-align: center;
+    padding: 9px 6px;
+    border-radius: 12px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.6), rgba(240, 229, 250, 0.32));
+    border: 1px solid var(--line-2);
+  }
+  .health-stat strong {
+    display: block;
+    color: var(--plum);
+    font: 800 15px/1 var(--display);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .health-stat span {
+    display: block;
+    margin-top: 4px;
+    color: var(--ink-faint);
+    font: 700 8.4px/1.1 var(--display);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .health-issues {
+    display: none;
+    margin-top: 11px;
+    gap: 5px;
+  }
+  .health-panel[open] .health-issues.is-visible { display: grid; }
+  .health-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.42);
+    border: 1px solid var(--line-2);
+  }
+  .health-note-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    margin-top: 4px;
+    border-radius: 50%;
+    background: var(--plum);
+  }
+  .health-note.is-warn .health-note-dot { background: var(--warn); }
+  .health-note.is-danger .health-note-dot { background: var(--rose-deep); }
+  .health-note span {
+    color: var(--ink-soft);
+    font-size: 10.8px;
+    line-height: 1.4;
+    font-weight: 600;
+  }
+  .top-quick {
+    margin: 8px 16px 2px;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .top-quick .btn {
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+  }
+  .group { padding: 0 16px; }
+  .card-group {
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: var(--shadow-sm);
+    padding: 4px 14px;
+    margin: 12px 0;
+  }
+  .group h3 {
+    font-family: var(--display);
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--plum); margin: 16px 2px 4px; font-weight: 700;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 0; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: none; }
+  .row .name { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .row .desc { font-size: 11px; color: var(--ink-faint); margin-top: 2px; max-width: 230px; line-height: 1.4; }
+  /* toggle */
+  .tg { position: relative; width: 42px; height: 24px; flex: none; cursor: pointer; }
+  .tg input { opacity: 0; width: 0; height: 0; }
+  .tg .track {
+    position: absolute; inset: 0; background: #e2d2ef;
+    border-radius: 999px; transition: background .2s ease;
+  }
+  .tg .knob {
+    position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; transition: transform .22s cubic-bezier(.34,1.56,.64,1);
+    box-shadow: 0 1px 3px rgba(110,50,140,.28);
+  }
+  .tg input:checked + .track { background: linear-gradient(135deg, #b06fd6 0%, #e07aae 100%); }
+  .tg input:checked + .track + .knob { transform: translateX(18px); }
+  .tg.disabled { opacity: 0.45; pointer-events: none; }
+  .foot {
+    margin: 4px 16px 0; padding: 14px 0 6px;
+    display: flex; gap: 10px;
+  }
+  .bmc-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin: 4px 16px 16px; padding: 11px 14px; border-radius: 12px;
+    text-decoration: none; cursor: pointer;
+    font-family: var(--display); font-weight: 700; font-size: 12.5px; color: var(--plum);
+    background: var(--bg-2);
+    transition: transform .12s ease, background .12s;
+  }
+  .bmc-btn:hover { background: #e1cdf0; transform: translateY(-1px); }
+  .bmc-btn:active { transform: translateY(0); }
+  .bmc-cup { flex: none; }
+  .support-links {
+    display: grid;
+    gap: 8px;
+    margin: 4px 16px 16px;
+  }
+  .support-links .bmc-btn {
+    margin: 0;
+  }
+  .support-copy {
+    display: grid;
+    gap: 2px;
+    line-height: 1.12;
+    text-align: center;
+  }
+  .support-copy strong {
+    color: var(--plum);
+    font: 800 12.5px/1 var(--display);
+  }
+  .support-copy span {
+    color: var(--ink-faint);
+    font: 700 10.5px/1 var(--display);
+  }
+  .btn {
+    flex: 1; padding: 11px; border-radius: 12px; border: none;
+    background: var(--bg-2); color: var(--ink-soft); font-family: var(--display);
+    font-size: 12px; font-weight: 700; cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, background .12s;
+  }
+  .btn:hover { background: #e1cdf0; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn.primary {
+    background: linear-gradient(135deg, #b06fd6 0%, #e07aae 100%);
+    color: #fff; box-shadow: 0 4px 14px rgba(139, 63, 176, 0.34);
+  }
+  .btn.primary:hover { box-shadow: 0 6px 18px rgba(139, 63, 176, 0.44); }
+  .tracker-mode-buttons { display:flex; flex:none; flex-wrap:wrap; justify-content:flex-end; gap:4px; max-width:112px; }
+  .tracker-mode-btn {
+    flex:none; min-width:34px; padding:5px 7px; border-radius:8px;
+    border:1px solid var(--line); font-size:10px;
+  }
+  .tracker-mode-btn[aria-pressed="true"] {
+    background: linear-gradient(135deg, #b06fd6 0%, #e07aae 100%);
+    color:#fff; border-color:transparent; box-shadow:0 2px 8px rgba(139,63,176,.22);
+  }
+  .script-trust-btn:disabled { opacity:.5; pointer-events:none; }
+  .script-trust-row .perm-list { margin-top:7px; }
+  .script-trust-btn { width:100%; margin-top:7px; font-size:11px; }
+  .script-mini-note { margin-top:6px; font-size:10.5px; line-height:1.35; color:var(--ink-faint); }
+  .tool-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px; }
+  .tool-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:9px 0; }
+  .tool-actions .btn { padding:9px 10px; border-radius:11px; }
+  .btn.soft-danger { color:#b94882; background:#f1d5e8; border:1px solid #ecc2dc; }
+  .btn.soft-danger:hover { background:#edc8df; }
+  .shortcut-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:9px; }
+  .shortcut-grid .btn { padding:8px 9px; border-radius:999px; font-size:11px; }
+  .tool-divider { height:1px; background:var(--line); margin:11px 0; }
+  .inline-version { font-size:11px; font-weight:700; color:var(--ink-soft); white-space:nowrap; }
+  .nav-btn { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--plum); }
+  .nav-btn svg { flex: none; opacity: 0.85; }
+  .nav-btn:hover { color: #7d39b8; background: #ecdcf7; }
+  .ck { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink); padding:4px 0; cursor:pointer; }
+  .ck input { width:15px; height:15px; accent-color:#b06fd6; cursor:pointer; }
+  .note {
+    font-size: 11px; color: var(--ink-faint); padding: 6px 18px 8px; line-height: 1.5;
+  }
+  .note a { color: var(--rose-deep); font-weight: 600; }
+  .saved { color: var(--plum); font-weight: 700; }
+  .foot-links { padding: 2px 18px 18px; }
+  .perm-list {
+    margin-top: 6px; background: #fff; border-radius: 12px;
+    box-shadow: 0 1px 6px rgba(140,70,175,.07); overflow: hidden;
+  }
+  .perm-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 7px 11px; border-bottom: 1px solid var(--line);
+  }
+  .perm-row:last-child { border-bottom: none; }
+  .perm-row-label { font-size: 11px; font-weight: 600; color: var(--ink-soft); flex: 1; min-width: 0; }
+  .perm-row-saving { opacity: 0.45; pointer-events: none; }
+  .perm-pick {
+    font-family: var(--display); font-size: 10px; font-weight: 700;
+    border-radius: 8px; padding: 3px 20px 3px 8px; cursor: pointer;
+    appearance: none; -webkit-appearance: none; border: 1px solid var(--line);
+    background-repeat: no-repeat; background-position: right 6px center; min-width: 72px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M6 9l6 6 6-6' stroke='%237a5f93' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  .perm-pick:focus { outline: 2px solid rgba(176,111,214,.35); outline-offset: 1px; }
+  .perm-pick-allow { color: #c0392b; background-color: rgba(192,57,43,.08); border-color: rgba(192,57,43,.18); }
+  .perm-pick-block { color: #2e9e5b; background-color: rgba(46,158,91,.08); border-color: rgba(46,158,91,.18); }
+  .perm-pick-ask { color: var(--plum); background-color: rgba(139,63,176,.08); border-color: var(--line); }
+  .perm-pick-session_only { color: #bd7a2a; background-color: rgba(207,155,74,.1); border-color: rgba(207,155,74,.22); }
+  .api-config { display:grid; gap:7px; margin-top:8px; }
+  .api-field {
+    width:100%; border:1px solid var(--line); border-radius:8px;
+    padding:7px 9px; font-family:var(--body); font-size:11px;
+    color:var(--ink); background:rgba(255,255,255,.62); outline:none;
+  }
+  .api-field:focus { border-color:rgba(139,63,176,.38); box-shadow:0 0 0 2px rgba(139,63,176,.12); }
+  .api-status { margin-top:7px; font-size:11px; color:var(--ink-faint); line-height:1.4; }
+  .advanced-providers { border-bottom:1px solid var(--line); }
+  .advanced-providers summary {
+    list-style:none; cursor:pointer; padding:10px 0;
+    font-family:var(--display); font-size:12px; font-weight:800; color:var(--plum);
+  }
+  .advanced-providers summary::-webkit-details-marker { display:none; }
+  .advanced-providers summary::after { content:"+"; float:right; color:var(--ink-faint); }
+  .advanced-providers[open] summary::after { content:"-"; }
+  .advanced-providers .row { padding-left:0; padding-right:0; }
+  .rewind-drop > summary {
+    list-style:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    font-family:var(--display); font-size:11px; letter-spacing:0.06em;
+    text-transform:uppercase; color:var(--plum); font-weight:700;
+    margin:16px 2px 4px;
+  }
+  .rewind-drop > summary::-webkit-details-marker { display:none; }
+  .rewind-drop .rewind-caret { font-size:12px; line-height:1; transition:transform .15s ease; }
+  .rewind-drop[open] .rewind-caret { transform:rotate(180deg); }
+  .rewind-drop[open] .card-group { margin-top:6px; }
+
+.ww-search-panel{
+  margin:18px 16px 6px;padding:12px 14px;border:0;border-radius:14px;
+  background:var(--card);
+  box-shadow:none;
+}
+.ww-search-label{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--plum);font-family:var(--display);font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;}
+.ww-search-label span:first-child{display:inline-flex;align-items:center;gap:6px;}
+.ww-search-label span:first-child::before{content:none;}
+.ww-search-count{display:none;flex:none;padding:3px 8px;border-radius:999px;background:rgba(176,111,214,.1);color:var(--plum);font-size:10px;font-weight:800;letter-spacing:0;text-transform:none;}
+.ww-search-count.has-results{display:inline-flex;}
+.ww-searchbar{
+  position:relative;display:flex;align-items:center;margin-top:9px;border-radius:13px;
+  background:rgba(255,255,255,.48);box-shadow:0 1px 0 rgba(255,255,255,.7);
+}
+.ww-searchbar:focus-within{box-shadow:0 0 0 3px rgba(176,111,214,.14),0 6px 14px rgba(67,42,94,.08);}
+.ww-search{
+  display:block;width:100%;height:38px;margin:0;padding:9px 37px 9px 37px;border:1px solid rgba(218,199,238,.72);
+  border-radius:13px;background:transparent;color:var(--ink);
+  font:700 12.5px/1.2 var(--body);outline:none;-webkit-appearance:none;appearance:none;
+  transition:border-color .15s ease,box-shadow .15s ease,background .15s ease;
+}
+.ww-search::placeholder{color:rgba(143,120,167,.56);font-weight:600;}
+.ww-search:focus{border-color:rgba(176,111,214,.45);background:rgba(255,255,255,.5);box-shadow:none;}
+.ww-search::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
+.ww-search-ico{
+  position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;
+  color:#9b76b5;pointer-events:none;transition:color .15s ease,transform .15s ease;
+}
+.ww-search:focus~.ww-search-ico{color:var(--plum);transform:translateY(-50%) scale(1.04);}
+.ww-search-clear{
+  position:absolute;right:8px;top:50%;transform:translateY(-50%);display:none;align-items:center;justify-content:center;
+  width:24px;height:24px;padding:0;border:1px solid rgba(218,199,238,.62);border-radius:9px;background:rgba(247,241,251,.74);color:var(--ink-soft);
+  font-size:18px;line-height:1;cursor:pointer;transition:background .12s ease,color .12s ease,border-color .12s ease,transform .12s ease;
+}
+.ww-search-clear:hover{background:#fff;border-color:rgba(176,111,214,.28);color:var(--plum);}
+.ww-search-presets{display:none;}
+.ww-search-chip{
+  flex:none;padding:4px 9px;border:1px solid rgba(218,199,238,.58);border-radius:999px;background:rgba(255,255,255,.38);
+  color:var(--ink-soft);font-family:var(--display);font-size:10.5px;font-weight:800;cursor:pointer;
+  transition:background .12s ease,color .12s ease,transform .12s ease,border-color .12s ease,box-shadow .12s ease;
+}
+.ww-search-chip:hover{background:rgba(255,255,255,.7);color:var(--plum);border-color:rgba(176,111,214,.28);box-shadow:0 4px 10px rgba(67,42,94,.06);transform:translateY(-1px);}
+.ww-hidden{display:none!important;}
+.ww-noresult{
+  display:none;margin:8px 16px 4px;padding:12px 13px;border:1px solid rgba(218,199,238,.9);border-radius:14px;
+  background:linear-gradient(145deg,rgba(255,255,255,.78),rgba(246,241,251,.92));color:var(--ink-soft);font-size:12px;line-height:1.45;
+  box-shadow:0 7px 18px rgba(67,42,94,.08);
+}
+.ww-noresult strong{display:block;color:var(--ink);font-family:var(--display);font-size:12.5px;margin-bottom:2px;}
+.eyeshield-panel{
+  margin:14px 16px 6px;padding:14px;border:1px solid rgba(218,199,238,.74);border-radius:16px;
+  background:linear-gradient(145deg,rgba(244,235,251,.96),rgba(237,225,248,.9));
+  box-shadow:0 7px 20px rgba(67,42,94,.08);
+}
+.group .eyeshield-panel{margin:0 0 14px;padding:12px 14px;}
+.eyeshield-panel.is-disabled{opacity:.55;}
+.eyeshield-value{
+  min-width:48px;text-align:right;font-family:var(--display);font-size:13px;font-weight:800;color:var(--plum);
+  padding:2px 5px;border-radius:8px;cursor:text;outline:0;user-select:text;
+  transition:background .12s ease,box-shadow .12s ease,color .12s ease;
+}
+.eyeshield-value:hover{background:rgba(255,255,255,.46);}
+.eyeshield-value:focus,.eyeshield-value.is-editing{
+  background:#fff;color:#7f3f91;box-shadow:0 0 0 2px rgba(176,111,214,.22),0 3px 10px rgba(67,42,94,.1);
+}
+.eyeshield-value.is-disabled{cursor:default;opacity:.72;background:transparent;box-shadow:none;}
+.eyeshield-modes{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:4px;
+  border:1px solid rgba(218,199,238,.7);border-radius:13px;background:rgba(255,255,255,.42);
+}
+.eyeshield-mode{
+  height:30px;border:0;border-radius:10px;background:transparent;color:var(--ink-soft);
+  font-family:var(--display);font-size:11.5px;font-weight:800;cursor:pointer;
+  transition:background .12s ease,color .12s ease,box-shadow .12s ease,transform .12s ease;
+}
+.eyeshield-mode:hover{color:var(--plum);background:rgba(255,255,255,.56);}
+.eyeshield-mode[aria-pressed="true"]{color:#fff;background:linear-gradient(135deg,#9e61d1,#dd72aa);box-shadow:0 3px 10px rgba(139,63,176,.2);}
+.eyeshield-mode[aria-pressed="true"][data-eyeshield-mode="light"]{
+  color:#6f3b86;background:linear-gradient(135deg,#fff,#f7f2fb);box-shadow:0 3px 10px rgba(120,55,160,.12);border:1px solid rgba(176,111,214,.28);
+}
+.eyeshield-mode[aria-pressed="true"][data-eyeshield-mode="dark"]{background:linear-gradient(135deg,#39404d,#8f579d);}
+.eyeshield-mode[aria-pressed="true"][data-eyeshield-mode="ultra"]{background:linear-gradient(135deg,#111217,#7f3f91);}
+.eyeshield-slider-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;color:var(--ink-faint);font-size:11px;font-weight:700;}
+.eyeshield-host{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.eyeshield-range{
+  width:100%;height:22px;margin-top:5px;accent-color:var(--plum);cursor:pointer;background:transparent;
+}
+.eyeshield-range::-webkit-slider-runnable-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#d8c0ed,#d96aa2);}
+.eyeshield-range::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:18px;height:18px;margin-top:-6px;border-radius:50%;
+  background:#fff;border:2px solid #b06fd6;box-shadow:0 2px 8px rgba(67,42,94,.18);
+}
+.eyeshield-range::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#d8c0ed,#d96aa2);}
+.eyeshield-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #b06fd6;box-shadow:0 2px 8px rgba(67,42,94,.18);}
+.eyeshield-panel.is-disabled .eyeshield-mode,.eyeshield-panel.is-disabled .eyeshield-range{pointer-events:none;}
+.eyeshield-extras{margin-top:12px;border-top:1px solid rgba(218,199,238,.6);}
+.eyeshield-extras summary{
+  list-style:none;cursor:pointer;padding:9px 0 1px;color:var(--ink-faint);
+  font-family:var(--display);font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;
+}
+.eyeshield-extras summary::-webkit-details-marker{display:none;}
+.eyeshield-extras summary::after{content:"+";float:right;color:var(--ink-faint);font-weight:800;}
+.eyeshield-extras[open] summary::after{content:"\2212";}
+.eyeshield-panel.is-disabled .eyeshield-extras{pointer-events:none;opacity:.85;}
+.eyeshield-reset{
+  margin-top:11px;width:100%;height:30px;border:0;border-radius:12px;
+  background:var(--bg-2);color:var(--ink-soft);font-family:var(--display);font-size:11.5px;font-weight:700;
+  cursor:pointer;transition:transform .12s ease,background .12s ease,box-shadow .12s ease;
+}
+.eyeshield-reset:hover{background:#e1cdf0;color:var(--ink-soft);transform:translateY(-1px);}
+.eyeshield-reset:active{transform:translateY(0);}
+.eyeshield-panel.is-disabled .eyeshield-reset{pointer-events:none;opacity:.85;}
+.ww-footer-link{margin:18px 16px 16px;text-align:center;}
+.ww-footer-link a{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:6px 0;border:0;border-radius:0;background:transparent;color:var(--ink);text-decoration:none;cursor:pointer;
+}
+.ww-footer-link a::after{content:"\2192";color:var(--plum);font-size:14px;font-weight:900;line-height:1;transition:transform .12s ease;}
+.ww-footer-link a:hover strong{text-decoration:underline;text-underline-offset:2px;}
+.ww-footer-link a:hover::after{transform:translateX(2px);}
+.ww-footer-icon{display:none;}
+.ww-footer-copy{display:block;min-width:0;text-align:left;}
+.ww-footer-copy strong{display:block;color:var(--plum);font-family:var(--display);font-size:12.5px;font-weight:800;line-height:1.15;}
+.ww-footer-copy small{display:block;color:var(--ink-faint);font-size:10.5px;font-weight:700;margin-top:2px;}
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="credit"><span>by</span><strong>iri.dev</strong></div>
+    <div class="shield">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2.5c2.6 1.4 5 1.8 7 1.9.3 4.9-.6 11.3-7 15.1C5.6 15.7 4.7 9.3 5 4.4c2 0 4.4-.5 7-1.9z" fill="#ffffff" fill-opacity="0.22"/>
+        <path d="M8.3 12.2l2.6 2.6 5-5.6" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="title">WebWarden</div>
+      <div class="sub">Keeping you safe online</div>
+    </div>
+  </div>
+
+  <div class="master">
+    <div>
+      <div class="lbl">Master switch</div>
+      <div class="state on" id="master-state">Enabled</div>
+    </div>
+    <label class="tg"><input type="checkbox" id="enabled" checked><span class="track"></span><span class="knob"></span></label>
+  </div>
+
+  <div class="top-quick">
+    <button class="btn primary" id="all-on" type="button">Turn everything on</button>
+  </div>
+
+  <details class="health-panel" id="protection-health-panel" aria-live="polite">
+    <summary class="health-summary">
+      <span class="health-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2l6.5 2.6v4.8c0 4.1-2.8 7.2-6.5 8.4-3.7-1.2-6.5-4.3-6.5-8.4V5.8L12 3.2z" fill="#fff" opacity=".95"/><path d="M9 12l2 2 4-4.4" stroke="#b06fd6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <div class="health-title-wrap">
+        <div class="health-title" id="health-status-title">Checking protection</div>
+        <div class="health-detail" id="health-status-detail">Reading local shield status...</div>
+      </div>
+      <div class="health-chip" id="health-status-chip">Checking</div>
+    </summary>
+    <div class="health-body">
+      <div class="health-grid">
+        <div class="health-stat"><strong id="health-active-count">-</strong><span>Active shields</span></div>
+        <div class="health-stat"><strong id="health-blocked-count">-</strong><span>Blocked 24h</span></div>
+        <div class="health-stat"><strong id="health-list-updated">-</strong><span>Lists</span></div>
+      </div>
+      <div class="health-issues" id="health-issues"></div>
+    </div>
+  </details>
+
+  <div class="ww-search-panel" role="search" aria-label="Search WebWarden settings">
+    <div class="ww-search-label">
+      <span>Search protections</span>
+      <span class="ww-search-count" id="ww-search-count" aria-live="polite"></span>
+    </div>
+    <div class="ww-searchbar">
+      <input id="ww-settings-search" class="ww-search" type="search" placeholder="Try phishing, trackers, cookies..." autocomplete="off" spellcheck="false">
+      <svg class="ww-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.6" y2="15.6"></line></svg>
+      <button type="button" id="ww-search-clear" class="ww-search-clear" aria-label="Clear search" title="Clear search">&times;</button>
+    </div>
+    <div class="ww-search-presets" aria-label="Quick searches">
+      <button type="button" class="ww-search-chip" data-search-preset="phishing">Phishing</button>
+      <button type="button" class="ww-search-chip" data-search-preset="downloads">Downloads</button>
+      <button type="button" class="ww-search-chip" data-search-preset="trackers">Trackers</button>
+      <button type="button" class="ww-search-chip" data-search-preset="youtube">YouTube</button>
+    </div>
+  </div>
+  <div class="ww-noresult" id="ww-noresult"><strong>No matches yet</strong><span>Try download, tracker, cookie, login, or phishing.</span></div>
+
+  <h3 style="margin:14px 18px 4px;font-family:var(--display);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--plum);font-weight:700;">Script Shield</h3>
+  <div class="card-group" id="js-shield" style="margin:0 16px 4px;padding:4px 14px;">
+    <div class="row" style="display:block;padding:8px 0 6px;border-bottom:none;">
+      <div class="desc" id="js-shield-desc">Blocks JavaScript, WebAssembly startup, inline scripts, and script-driven active content. Smart uses trusted script hosts below; Lockdown only allows sites you trust. Reload after changing.</div>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Block scripts everywhere</div><div class="desc">Lockdown: stop scripts on every site until you allow that site below.</div></div>
+      <label class="tg" id="js-global-wrap"><input type="checkbox" id="js-global"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;" id="js-site-name">Block scripts on this site</div><div class="desc" id="js-site-desc">Only the site in your active tab.</div></div>
+      <label class="tg" id="js-site-wrap"><input type="checkbox" id="js-site"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Limit fingerprinting JavaScript</div><div class="desc">Block known fingerprinting script files while normal JavaScript keeps working.</div></div>
+      <label class="tg" id="js-privacy-wrap"><input type="checkbox" id="js-privacy-limits" data-key="blockFingerprintScripts"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Smart trusted-script shield</div><div class="desc">Block third-party script files unless their host is trusted below.</div></div>
+      <label class="tg" id="js-smart-wrap"><input type="checkbox" id="js-smart"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row script-trust-row" style="display:block;">
+      <div class="name" style="font-size:12px;">Trusted script sites</div>
+      <div class="desc">Used by Smart shield for third-party script files. Lockdown still uses the site toggle below.</div>
+      <div class="perm-list" id="script-trust-list"></div>
+      <button class="btn script-trust-btn" id="script-trust-add-current" type="button">Trust current site for scripts</button>
+      <div id="script-trust-result" class="script-mini-note" style="display:none;"></div>
+    </div>
+  </div>
+
+  <div class="group" id="groups">
+
+    <h3>Redirects & popups</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Block forced popups</div><div class="desc">Stops popunders and new tabs a page opens without a real user action. Catches timer-based window.open tricks, hidden ad tabs, and background popups that appear after the page loads. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockForcedPopups"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Strict ad-popup shield</div><div class="desc">Block ad/affiliate tabs opened on click (Avast-style installer ads, "download + ad tab" tricks). Keeps real downloads &amp; logins working. Aggressive — opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="strictPopupShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block in-page popups &amp; overlays</div><div class="desc">Removes fake notification bells, subscribe panels, adblock nags, cookie/continue walls, and download-gate popups that sit on top of videos or pages. Shows an Undo chip when it hides something. Turn off if a site hides real content.</div></div>
+      <label class="tg"><input type="checkbox" data-key="removeOverlays"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Auto-skip download ads</div><div class="desc">On download-gate pages, silently follows the site's own "No thanks", "continue", or real download path so the ad layer disappears and the intended file can continue. Useful for fake "Download Now" ad funnels.</div></div>
+      <label class="tg"><input type="checkbox" data-key="autoSkipDownloadAds"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block gestureless redirects</div><div class="desc">Blocks the page from sending you to a different site when there was no recent click, form submit, or other real gesture. Catches delayed ad hops, adult redirects, and fake-download redirects.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockGesturelessNav"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Detect redirect chains</div><div class="desc">Watches server-side redirect hops and freezes long or rotating CPA chains before the final landing page. Helps when the URL changes too quickly for normal in-page checks.</div></div>
+      <label class="tg"><input type="checkbox" data-key="detectRedirectChains"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block meta-refresh bounces</div><div class="desc">Stops pages from using &lt;meta refresh&gt; or refresh-style timers to move you off-site after a countdown. These are common on fake download and traffic-exchange pages.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockMetaRefresh"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>IP protection</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Block IP-grabber beacons</div><div class="desc">Stop embedded logger pixels/fetches before they send</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockGrabberResources"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Warn on IP-logger pages</div><div class="desc">Flag known grabber domains (Grabify, IPLogger…)</div></div>
+      <label class="tg"><input type="checkbox" data-key="warnGrabberDomains"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">IP privacy guard</div><div class="desc">Hide WebRTC IP leaks from page scripts and block common third-party IP lookup APIs. A VPN or proxy is still needed to hide your IP from sites you directly visit.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockWebRTCLeak"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Force HTTPS</div><div class="desc">Automatically upgrade insecure http:// pages to secure https:// before they load. Seamless on sites that support it.</div></div>
+      <label class="tg"><input type="checkbox" data-key="forceHttps"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block bad certificates</div><div class="desc">Show a WebWarden trust block when Chrome reports expired, revoked, self-signed, hostname-mismatch, or broken TLS certificates.</div></div>
+      <label class="tg"><input type="checkbox" data-key="certificateGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>Download Shield</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Download Shield</div><div class="desc">No-account scanner. Grades downloads A-F from the URL, source, filename, file type, Chrome signals, trust list, and local blocklists. Known-bad sources are blocked outright; risky ones show a review you can cancel.</div></div>
+      <label class="tg"><input type="checkbox" data-key="downloadReputation"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Check download domain age</div><div class="desc">Opt-in domain-age lookup for suspicious downloads. Uses RDAP by default, or WhoisXML enrichment when enabled. Sends only the source domain, never the file or full URL.</div></div>
+      <label class="tg"><input type="checkbox" data-key="downloadDomainAge"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <details class="advanced-providers">
+      <summary>Advanced reputation providers</summary>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">Google Safe Browsing URL checks</div>
+            <div class="desc">Optional URL reputation. Requires your own API key. Checks downloads, dangerous page visits, suspicious links, and sensitive form destinations only when enabled.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="downloadSafeBrowsing"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="Safe Browsing API key" data-config-text="downloadSafeBrowsingKey">
+          <button class="btn" id="sb-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test Safe Browsing key</button>
+          <div class="api-status" id="sb-key-status"></div>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">VirusTotal reputation</div>
+            <div class="desc">Optional URL report lookup. Requires your own API key. The same key is used for URL-content hash lookup below.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="downloadVirusTotal"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="VirusTotal API key (URL/hash)" data-config-text="downloadVirusTotalKey">
+          <button class="btn" id="vt-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test VirusTotal key</button>
+          <div class="api-status" id="vt-key-status"></div>
+        </div>
+      </div>
+      <div class="row">
+        <div><div class="name" style="font-size:12px;">VirusTotal URL-content hash lookup</div><div class="desc">Optional for small risky downloads. Chrome does not let extensions read saved files, so WebWarden re-fetches up to 50 MB from the download URL, hashes that response locally, and sends only the hash. Never uploads contents.</div></div>
+        <label class="tg"><input type="checkbox" data-key="downloadVirusTotalHash"><span class="track"></span><span class="knob"></span></label>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">URLhaus</div>
+            <div class="desc">Malware URL intelligence from abuse.ch. Blocks known malware delivery URLs in page, link, form, paste, and download flows.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="urlHaus"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="URLhaus Auth-Key" data-config-text="urlHausKey">
+          <button class="btn" id="urlhaus-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test URLhaus key</button>
+          <div class="api-status" id="urlhaus-key-status"></div>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">AbuseIPDB</div>
+            <div class="desc">Raw-IP server reputation. Blocks high-confidence abusive IPs and warns on suspicious IP report scores.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="abuseIpDb"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="AbuseIPDB API key" data-config-text="abuseIpDbKey">
+          <button class="btn" id="abuseipdb-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test AbuseIPDB key</button>
+          <div class="api-status" id="abuseipdb-key-status"></div>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">OpenPhish</div>
+            <div class="desc">Phishing intelligence feed. Uses the official keyless Community feed; optional token field is reserved for premium feed support.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="openPhish"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="Optional OpenPhish token" data-config-text="openPhishKey">
+          <button class="btn" id="openphish-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test OpenPhish feed</button>
+          <div class="api-status" id="openphish-key-status"></div>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">PhishTank</div>
+            <div class="desc">Community phishing database checks. Blocks verified current phishing URLs in risky link, form, paste, page, and download flows.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="phishTank"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="PhishTank API key" data-config-text="phishTankKey">
+          <button class="btn" id="phishtank-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test PhishTank key</button>
+          <div class="api-status" id="phishtank-key-status"></div>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">WhoisXML API</div>
+            <div class="desc">Domain registration enrichment. Adds age, registrar, name server, privacy/redaction, and ownership-country clues to risky domains.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="whoisXml"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="WhoisXML API key" data-config-text="whoisXmlKey">
+          <button class="btn" id="whoisxml-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test WhoisXML key</button>
+          <div class="api-status" id="whoisxml-key-status"></div>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">WhoisXML Domain Reputation</div>
+            <div class="desc">Uses the WhoisXML key above to score domain safety and surface malware/phishing blocklist warnings.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="whoisXmlReputation"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <button class="btn" id="whoisxml-reputation-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test WhoisXML reputation</button>
+          <div class="api-status" id="whoisxml-reputation-status"></div>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head" style="margin-bottom:4px;">
+          <div>
+            <div class="name" style="font-size:12px;">WhoisXML Threat Intelligence</div>
+            <div class="desc">Uses the WhoisXML key above for IoC matches against malicious domains, URLs, IPs, and threat types.</div>
+          </div>
+          <label class="tg"><input type="checkbox" data-key="whoisXmlThreatIntel"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="api-config">
+          <button class="btn" id="whoisxml-threat-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test WhoisXML threat intel</button>
+          <div class="api-status" id="whoisxml-threat-status"></div>
+        </div>
+      </div>
+    </details>
+    <div class="row" style="display:block;">
+      <div class="name" style="font-size:12px;">VirusTotal URL scanner</div>
+      <div class="desc">Paste any link to check it against VirusTotal before you visit. Uses the VirusTotal API key you set above.</div>
+      <div class="api-config" style="margin-top:7px;">
+        <input class="api-field" type="text" autocomplete="off" spellcheck="false" placeholder="https://example.com/suspicious-link" id="vt-scan-url">
+        <button class="btn" id="vt-scan-go" style="width:100%;padding:8px 10px;font-size:11px;">Scan URL with VirusTotal</button>
+        <div class="api-status" id="vt-scan-result"></div>
+      </div>
+    </div>
+    <div class="row" style="display:block;">
+      <div class="name" style="font-size:12px;">Trusted download sites</div>
+      <div class="desc">Trusted sources are graded more gently, but critical filename tricks and known-bad sources still trigger review.</div>
+      <div class="perm-list" id="download-trust-list"></div>
+      <button class="btn" id="download-trust-add-current" style="width:100%;margin-top:7px;font-size:11px;">Trust current site for downloads</button>
+      <div id="download-trust-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+    </div>
+    </div>
+<h3>Privacy</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Block trackers &amp; ad analytics</div><div class="desc">Hard-block third-party tracking networks (Google Analytics, DoubleClick, Facebook Pixel, etc.)</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockTrackers"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Do Not Track &amp; privacy signals</div><div class="desc">Tell sites you opt out of tracking via Do-Not-Track and Global Privacy Control (GPC has legal weight under CCPA)</div></div>
+      <label class="tg"><input type="checkbox" data-key="sendPrivacySignals"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional randomization for canvas, WebGL vendor strings, audio buffers, and coarse hardware hints. It can break canvas-heavy sites and may make rare setups more unique, so it stays opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="antiFingerprintNoise"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Fingerprint probe detection</div><div class="desc">Detect canvas, audio, WebGL, font, layout, and device probing without changing values. Feeds the local risk detector and tracker learner.</div></div>
+      <label class="tg"><input type="checkbox" data-key="fingerprintProbeDetection"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block known fingerprinting scripts</div><div class="desc">Blocks a third-party-only list of known fingerprinting vendors before random spoofing. Keeps compatibility higher.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockFingerprintScripts"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block third-party cookies</div><div class="desc">Strips Set-Cookie from embedded third-party frames, so they can't store new cross-site tracking cookies. Cookies a site already saved can still be sent. First-party logins keep working.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockThirdPartyCookies"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Login compatibility</div><div class="desc">Keeps anti-tracking on, but exempts official sign-in, CAPTCHA, and payment endpoints so Google/Microsoft/Apple/Okta/Auth0/PayPal/Stripe-style logins can finish. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="loginCompatibility"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">No persistent cookies</div><div class="desc">Wipes every cookie when you fully close the browser, so nothing tracks you across sessions. Logins still work while you browse (you may just re-sign-in next launch). For trackers, use Block third-party cookies. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockAllCookies"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block first-party trackers</div><div class="desc">Catch analytics proxied through the site's own domain (the trick used to dodge blocklists). Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockFirstPartyTrackers"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Local tracker learner</div><div class="desc">Learn third-party trackers locally after they appear across multiple sites. No browsing profile leaves this device.</div></div>
+      <label class="tg"><input type="checkbox" data-key="trackerLearner"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">De-AMP pages</div><div class="desc">Skip Google/AMP cache pages and go straight to the real article. Rewrites AMP links and redirects AMP pages to their original URL. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="deAmp"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Trim referrer to origin</div><div class="desc">Only tell the next site which domain you came from, not the full page address. Cuts what trackers learn about your browsing. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="capReferrer"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Auto-reject cookie banners</div><div class="desc">Automatically rejects cookie/consent pop-ups, opens choices when needed, disables optional tracking, and never clicks Accept. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="autoRejectConsent"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Clean tracking redirects on links</div><div class="desc">Rewrite outbound links that hide the real destination behind a tracker (Facebook l.php, Google /url, Reddit out, etc.) so a click goes straight there.</div></div>
+      <label class="tg"><input type="checkbox" data-key="unshimLinks"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Clean links on copy</div><div class="desc">Strips tracking junk (utm_, fbclid, YouTube si, Amazon ref and similar) from links whenever you copy them — selected text, page links, and site Copy-link buttons all land clean on your clipboard. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="cleanCopyLinks"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Click to load social embeds</div><div class="desc">Replace Facebook, X, Instagram and TikTok embeds with a placeholder so they can't load or track you until you click. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="socialWidgetGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Clear tracker supercookies</div><div class="desc">Wipe localStorage in known third-party tracker frames (Scorecard, Criteo, Taboola, etc.) so they can't re-identify you after a cookie clear.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockSupercookies"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>AdShield</h3>
+    <div class="card-group">
+    <div class="row">
+<div><div class="name">AdShield: General sites</div><div class="desc">Blocks ad-server requests and hides ad elements across the web (EasyList/uBlock-style filters: network + cosmetic + anti-adblock scriptlets).</div></div>
+      <label class="tg"><input type="checkbox" data-key="adShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+<div><div class="name" style="font-size:12px;">AdShield: YouTube</div><div class="desc">YouTube-specific AdShield engine (video ads) - blocks ad breaks and ad UI while keeping playback stable through YouTube updates.</div></div>
+      <label class="tg"><input type="checkbox" data-key="scriptletEngine"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+<div><div class="name" style="font-size:12px;">AdShield: Twitch</div><div class="desc">Twitch-specific AdShield engine (stream ads) - removes the pre-roll and mid-roll ads Twitch stitches into the video stream, while keeping playback stable.</div></div>
+      <label class="tg"><input type="checkbox" data-key="twitchAdBlock"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+<div><div class="name" style="font-size:12px;">Hide search AI answers</div><div class="desc">Blocks Google AI Overview and Brave Search AI answers at pre-paint so the generated answer panel does not flash in first.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockSearchAiAnswers"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+<div><div class="name" style="font-size:12px;">Hide sponsored search results</div><div class="desc">Removes sponsored Google/Brave search blocks and blocks their ad-click wrappers and advertiser destinations from that results page.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockSponsoredSearchResults"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<details class="rewind-drop">
+      <summary>Twitch local rewind<span class="rewind-caret" aria-hidden="true">&#9662;</span></summary>
+    <div class="card-group">
+    <div class="row">
+<div><div class="name" style="font-size:12px;">Watch from earlier (stream rewind)</div><div class="desc">Adds a "Rewind" button by the player controls that lets you jump back to before you opened the tab — from when you joined, 30 minutes back, or the very start — and watch what you missed in Twitch's normal player. Works only when the streamer saves past broadcasts (VODs); the button appears only on streams where it's available. No recording, no extra memory. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="twitchVodRewind"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+<div><div class="name" style="font-size:12px;">Twitch local rewind (DVR)</div><div class="desc">Adds 10s / 30s / 1m / 5m rewind buttons and a scrub timeline beside Twitch's volume control, plus speed (1–2×, eases back to live) and keyboard control (←/→ seek 10s, ,/. frame-step). Delayed playback keeps running until you press LIVE. It records the live stream into your computer's memory while the tab is open, so it uses noticeably more RAM and CPU (and more with a longer buffer or higher stream quality). It cannot recover video from before the tab started watching. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="twitchRewind"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Buffer length (minutes)</div><div class="desc">How far back you can rewind. A longer buffer uses more RAM and CPU. Default 5; range 1–30.</div></div>
+      <input class="api-field" type="number" id="tr-minutes" min="1" max="30" step="1" style="width:66px;flex:none;text-align:center;">
+    </div>
+    </div>
+    </details>
+<h3>Memory Shield</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Sleep inactive tabs</div><div class="desc">Saves RAM by putting unused tabs to sleep (keeps them in the tab bar; they reload on click). Nothing is closed.</div></div>
+      <label class="tg"><input type="checkbox" data-key="memoryShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row" style="display:block;">
+      <div class="name" style="margin-bottom:7px;">Mode</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;" id="mem-modes">
+        <button class="btn mem-mode" data-mode="gentle" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Gentle<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">2 hours</span></button>
+        <button class="btn mem-mode" data-mode="balanced" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Balanced<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">30 min</span></button>
+        <button class="btn mem-mode" data-mode="aggressive" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Aggressive<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">10 min</span></button>
+        <button class="btn mem-mode" data-mode="emergency" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Emergency<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">~1 min</span></button>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Never sleep pinned tabs</div></div>
+      <label class="tg"><input type="checkbox" data-key="memoryNeverPinned"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Never sleep tabs playing audio</div></div>
+      <label class="tg"><input type="checkbox" data-key="memoryNeverAudio"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Never sleep tabs with unsaved forms</div></div>
+      <label class="tg"><input type="checkbox" data-key="memoryNeverForms"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Never sleep login / payment pages</div></div>
+      <label class="tg"><input type="checkbox" data-key="memoryNeverPayment"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Tab Limit</div><div class="desc">Over your limit, sleeps (or closes) the oldest unused tab. Skips active, pinned, audio, form, login, and allowlisted tabs.</div></div>
+      <label class="tg"><input type="checkbox" id="tl-guard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Maximum tabs</div><div class="desc">Acts when a new tab pushes the window past this count.</div></div>
+      <input class="api-field" type="number" id="tl-max" min="2" max="200" step="1" style="width:66px;flex:none;text-align:center;">
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Minimum inactive time</div><div class="desc">Minutes a tab must be idle before it's put to sleep (sleep mode only). Close mode is a hard cap — it always closes your least-recently-used tabs to stay under the limit. Active, pinned, audio, and unsaved-form tabs are never touched.</div></div>
+      <input class="api-field" type="number" id="tl-idle" min="0" max="1440" step="5" style="width:66px;flex:none;text-align:center;">
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Close instead of sleeping (aggressive)</div><div class="desc">Off = sleep the oldest tab (reversible — it reloads on click). On = actually close it.</div></div>
+      <label class="tg"><input type="checkbox" id="tl-close"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Notify me when a tab is closed</div><div class="desc">A heads-up so a closed tab is never a surprise.</div></div>
+      <label class="tg"><input type="checkbox" id="tl-warn"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row" style="display:block;">
+      <div id="mem-score" style="font-size:12px;color:var(--ink-soft,#7a5f93);line-height:1.6;margin-bottom:9px;">Checking memory usage…</div>
+      <button class="btn" id="mem-free" style="width:100%;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Free RAM now</button>
+      <div id="mem-free-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <button class="btn" id="mem-dupes" style="width:100%;margin-top:7px;">Check for duplicate tabs</button>
+      <div id="mem-dupes-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <div id="mem-heavy" style="margin-top:10px;font-size:11px;line-height:1.5;"></div>
+      <button class="btn" id="mem-tab-usage" style="width:100%;margin-top:7px;">Show all tabs</button>
+      <div id="mem-tab-usage-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <button class="btn" id="mem-zombies" style="width:100%;margin-top:7px;">Find zombie tabs (idle 6h+)</button>
+      <div id="mem-zombies-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+    </div>
+    <div class="row" style="display:block;padding-bottom:4px;">
+      <div class="name" style="margin-bottom:2px;">Resource Saver</div>
+      <div class="desc" style="margin-bottom:4px;">Cut CPU, battery, and data on the pages you visit. All off by default — turn on what you want.</div>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Block autoplay video &amp; audio</div><div class="desc">Stops video and audio from playing on their own, including muted video (it still uses GPU/data). Click-to-play always works. Big CPU/battery/data saver.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockAutoplay"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Throttle background tabs</div><div class="desc">Pauses animations and video playback in tabs that aren't visible, and slows their background work, to save CPU and battery. Resumes instantly when you switch back.</div></div>
+      <label class="tg"><input type="checkbox" data-key="throttleBackgroundTabs"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Block prefetch &amp; preload</div><div class="desc">Stop sites from pre-downloading pages and resources you may never open. Saves data on metered/mobile connections.</div></div>
+      <label class="tg"><input type="checkbox" data-key="killPrefetch"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Lazy-load offscreen images</div><div class="desc">Only load images and embeds as you scroll to them, instead of all at once. Saves data and memory. May rarely affect image-heavy sites.</div></div>
+      <label class="tg"><input type="checkbox" data-key="lazyLoadMedia"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>Forget Me</h3>
+    <div class="card-group">
+    <div class="row" style="display:block;">
+      <div class="name" style="margin-bottom:7px;">When I leave a site, wipe it</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;" id="forget-modes">
+        <button class="btn forget-mode" data-mode="off" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Off</button>
+        <button class="btn forget-mode" data-mode="list" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Chosen sites</button>
+        <button class="btn forget-mode" data-mode="all" style="flex:1;min-width:70px;padding:7px;font-size:11px;">All sites</button>
+      </div>
+      <div class="desc" style="margin-top:6px;max-width:none;">Clears cookies and site storage when a site's last tab closes or navigates away. "All sites" skips your allowlist.</div>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Also clear browser history for the site</div><div class="desc">Most private. Off keeps your history.</div></div>
+      <label class="tg"><input type="checkbox" id="forget-history"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row" style="display:block;">
+      <button class="btn" id="forget-add-site" style="width:100%;">Forget this site when I leave</button>
+      <div id="forget-list" style="margin-top:8px;font-size:11px;line-height:1.5;"></div>
+      <button class="btn" id="forget-now" style="width:100%;margin-top:7px;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Forget this site now</button>
+      <div id="forget-now-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+    </div>
+    </div>
+<h3>Media Shield</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Media Shield</div><div class="desc">Watch camera, microphone, screen-share, hidden media, and autoplay abuse</div></div>
+      <label class="tg"><input type="checkbox" data-key="mediaShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block camera &amp; microphone</div><div class="desc">Stop sites from opening mic/camera prompts or hidden capture streams</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockCameraMic"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block screen capture</div><div class="desc">Stop pages from requesting screen-share capture</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockScreenCapture"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block location requests</div><div class="desc">Deny browser location prompts, kill location watches, mask page timezone/language hints, and ask Chrome to block location access globally. A VPN is still needed to hide IP-based location.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockGeolocation"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block hidden media abuse</div><div class="desc">Stop hidden background players while leaving normal visible videos alone</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockAutoplayMedia"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>Adult-site safety</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Warn on adult-site redirects</div><div class="desc">"Are you sure?" screen on unwanted 18+ arrivals</div></div>
+      <label class="tg"><input type="checkbox" data-key="gateAdultSites"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Catch unlisted adult sites</div><div class="desc">Heuristic for sites not on the list (some false hits)</div></div>
+      <label class="tg"><input type="checkbox" data-key="adultHeuristics"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>Advanced detection (catches rotating/custom domains)</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Warn on redirecting links</div><div class="desc">Flag links that route through ?url=/?redirect= to another site</div></div>
+      <label class="tg"><input type="checkbox" data-key="warnRedirectParams"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Warn on shortened links</div><div class="desc">Flag bit.ly, tinyurl, etc. that hide their destination</div></div>
+      <label class="tg"><input type="checkbox" data-key="warnShorteners"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Monitor for tracker requests</div><div class="desc">Warn when a page hits a logging endpoint on another domain</div></div>
+      <label class="tg"><input type="checkbox" data-key="monitorLoggerApi"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Detect fake / phishing sites</div><div class="desc">Warn when a domain imitates a known brand (paypal, bank, etc.)</div></div>
+      <label class="tg"><input type="checkbox" data-key="detectPhishing"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Login page age check</div><div class="desc">When a site asks for a password, checks how recently its domain was registered (free, no key — uses RDAP). A brand-new domain with a login form is a strong phishing signal, so it warns before you sign in. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="loginAgeCheck"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block high-confidence look-alikes</div><div class="desc">For the clearest fakes (visual look-alikes like g00gle, keyboard typos, brand-on-wrong-TLD, homographs), show a full blocking screen instead of just a warning. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockHighConfidencePhishing"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Behavioral risk detection</div><div class="desc">Catches brand-new / unknown sites that behave like trackers or scams — phoning home on arrival, random throwaway domains — even when they're on no blocklist. Warns; doesn't block.</div></div>
+      <label class="tg"><input type="checkbox" data-key="behavioralScan"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Script drift guard</div><div class="desc">Baselines third-party script hashes and warns when the same CDN/script URL later serves changed code with new behavior or outbound hosts. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="scriptDriftGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Risky-site mode</div><div class="desc">New-looking or suspicious domains get stricter third-party scripts, frames, media, and background calls.</div></div>
+      <label class="tg"><input type="checkbox" data-key="riskySiteMode"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Anti-clickjacking checks</div><div class="desc">Warn before sensitive clicks in hidden, covered, or suspicious embedded frames.</div></div>
+      <label class="tg"><input type="checkbox" data-key="antiClickjacking"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Intranet/router protection</div><div class="desc">Public pages cannot silently send fetch, XHR, forms, beacons, or sockets to local admin panels.</div></div>
+      <label class="tg"><input type="checkbox" data-key="intranetProtection"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>SessionShield — login &amp; session protection</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">SessionShield</div><div class="desc">Watch for login/session tokens exposed in risky places (localStorage, URLs, etc.) and check cookie safety. Never stores or shows full tokens.</div></div>
+      <label class="tg"><input type="checkbox" data-key="sessionShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Protect session tokens</div><div class="desc">Block token-shaped values from leaving a site for another domain. Keeps protection on, but treats noisy trusted services more calmly in the activity log.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockTokenExfil"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Continuous token watch</div><div class="desc">Detect tokens the moment they're written to storage (e.g. after login), not just at page load.</div></div>
+      <label class="tg"><input type="checkbox" data-key="continuousTokenScan"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Detect &amp; block form skimmers</div><div class="desc">Spots third-party scripts reading password/card fields on payment pages, and blocks card or password data being sent to an off-site address (Magecart-style theft).</div></div>
+      <label class="tg"><input type="checkbox" data-key="detectSkimmers"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Payment card guard</div><div class="desc">Warns before card details leave scammy, very new, suspicious, or reputation-flagged checkout pages, and blocks cards on insecure, look-alike, raw-IP, or known-dangerous payment forms. Keeps normal processors quiet.</div></div>
+      <label class="tg"><input type="checkbox" data-key="paymentCardGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Clipboard hijack protection</div><div class="desc">Stop sites that secretly swap your clipboard — e.g. replacing a copied crypto wallet address with an attacker's. Keeps normal Copy buttons working. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="clipboardGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Clipboard swap detection</div><div class="desc">Catches clipboard-swapping malware at paste time: if you paste a crypto address that differs from the one you just copied (same coin, within 2 minutes), it warns and shows both so you can check before sending. Works even against malware outside the browser. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="clipboardSwapDetect"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Keystroke pressure detector</div><div class="desc">Warns when a page attaches an unusually large number of global keystroke listeners — the pattern a keylogger uses. It's a rough heuristic: rich editors and AI chat apps also attach many, so it can over-warn. Off by default; turn on if you want it.</div></div>
+      <label class="tg"><input type="checkbox" data-key="keystrokePressure"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Honeytoken mode</div><div class="desc">Plants fake decoy secrets (api-key, token...) in page memory that real site code never touches. If a script reads one, it's credential-recon behavior and you're warned. Experimental and safe (it yields if the page actually uses a name), but off by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="honeytokenMode"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Command paste guard</div><div class="desc">Blocks the "ClickFix" scam where a page tells you to press Win+R or open PowerShell and paste a command to "verify you're human." Warns you and stops the command reaching your clipboard. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="commandPasteGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Tech-support scam guard</div><div class="desc">Detects fake "your computer is infected / locked — call this number" pages and browser-lockers (pop-up dialog spam). Neutralizes the lock, frees you to leave, and shows a calm warning that your PC is fine. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="scamLockGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Paste protection</div><div class="desc">Warns before you paste a password, API token, private key, or seed phrase into a risky page — an insecure http:// page, a look-alike/phishing domain, or a form that submits to a different site. Stays silent on normal secure login forms. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="pasteProtection"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Form trap detector</div><div class="desc">Inspects login forms and warns if one looks fake or credential-stealing — e.g. it posts your password to a different site or raw IP, claims to be a brand the site isn't, or is an injected overlay. Known sign-in providers (Google, Microsoft, Okta...) are trusted, so real logins stay silent. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="formTrapDetector"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Fake update detector</div><div class="desc">Warns on "your browser/Windows is out of date — update now" pages that aren't a real vendor (Google, Microsoft, Mozilla...). Real updates never come from a web page, so a fake-update lure plus an installer download or off-site button is a common malware scam. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="fakeUpdateDetector"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">OAuth grant guard</div><div class="desc">Warns on risky Google, Microsoft, GitHub, or Discord consent grants, like email, contacts, repositories, admin, offline access, or unsafe redirect combinations. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="oauthGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Breach &amp; site-history checks</div><div class="desc">Allow the "has this site been breached?" lookup below. Contacts the public Have I Been Pwned database. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="breachCheck"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+<h3>Blocklist (auto-updating)</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Block known malicious sites</div><div class="desc">Hard-block malware, phishing &amp; scam domains from vetted threat feeds</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockMalwareSites"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Auto-update blocklist</div><div class="desc">Pull fresh phishing, scam, IP-logger, adult-warning, and page-protection lists daily</div></div>
+      <label class="tg"><input type="checkbox" data-key="autoUpdateLists"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row" style="border-bottom:none;">
+      <div><div class="name" id="list-status">Blocklist: built-in</div><div class="desc" id="list-updated">Updates automatically once a day</div></div>
+      <button class="btn" id="update-now" style="flex:none;padding:8px 14px;">Update now</button>
+    </div>
+    </div>
+<h3 id="eyeshield-title">EyeShield</h3>
+    <section class="eyeshield-panel" id="eyeshield-panel" aria-labelledby="eyeshield-title">
+      <div class="eyeshield-modes" id="eyeshield-modes" role="group" aria-label="EyeShield mode">
+        <button type="button" class="eyeshield-mode" data-eyeshield-mode="off" aria-pressed="true">Normal</button>
+        <button type="button" class="eyeshield-mode" data-eyeshield-mode="light" aria-pressed="false">Light</button>
+        <button type="button" class="eyeshield-mode" data-eyeshield-mode="dark" aria-pressed="false">Dark</button>
+        <button type="button" class="eyeshield-mode" data-eyeshield-mode="ultra" aria-pressed="false" title="OLED-black background, readable text">Ultra</button>
+      </div>
+      <label class="eyeshield-slider-row" for="eyeshield-brightness">
+        <span class="eyeshield-host" id="eyeshield-host">This site brightness</span>
+        <span class="eyeshield-value" id="eyeshield-value">100%</span>
+      </label>
+      <input id="eyeshield-brightness" class="eyeshield-range" type="range" min="0" max="200" step="1" value="100">
+      <details class="eyeshield-extras" id="eyeshield-extras">
+        <summary>Extras</summary>
+        <label class="eyeshield-slider-row" for="eyeshield-contrast">
+          <span class="eyeshield-host" id="eyeshield-contrast-host">This site contrast</span>
+          <span class="eyeshield-value" id="eyeshield-contrast-value">100%</span>
+        </label>
+        <input id="eyeshield-contrast" class="eyeshield-range" type="range" min="0" max="300" step="1" value="100">
+        <label class="eyeshield-slider-row" for="eyeshield-saturation">
+          <span class="eyeshield-host" id="eyeshield-saturation-host">This site saturation</span>
+          <span class="eyeshield-value" id="eyeshield-saturation-value">100%</span>
+        </label>
+        <input id="eyeshield-saturation" class="eyeshield-range" type="range" min="0" max="300" step="1" value="100">
+        <label class="eyeshield-slider-row" for="eyeshield-warmth">
+          <span class="eyeshield-host" id="eyeshield-warmth-host">This site warmth</span>
+          <span class="eyeshield-value" id="eyeshield-warmth-value">0%</span>
+        </label>
+        <input id="eyeshield-warmth" class="eyeshield-range" type="range" min="0" max="100" step="1" value="0">
+        <label class="eyeshield-slider-row" for="eyeshield-grayscale">
+          <span class="eyeshield-host" id="eyeshield-grayscale-host">This site grayscale</span>
+          <span class="eyeshield-value" id="eyeshield-grayscale-value">0%</span>
+        </label>
+        <input id="eyeshield-grayscale" class="eyeshield-range" type="range" min="0" max="100" step="1" value="0">
+        <button type="button" class="eyeshield-reset" id="eyeshield-reset">Reset to default</button>
+      </details>
+    </section>
+<h3>Interface</h3>
+    <div class="card-group">
+    <div class="row">
+      <div><div class="name">Show block notifications</div><div class="desc">Pop-up toast when something is blocked, with the reason</div></div>
+      <label class="tg"><input type="checkbox" data-key="showToasts"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Show on-page badge</div><div class="desc">A soft, fading guard badge in the corner - brightens when it blocks something, warns if a component breaks</div></div>
+      <label class="tg"><input type="checkbox" data-key="showBadge"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Silent mode</div><div class="desc">Full protection stays on, but WebWarden hides non-critical popups, badges, and notifications. The download bar still appears.</div></div>
+      <label class="tg"><input type="checkbox" data-key="silentMode"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    </div>
+
+    <div class="card-group" style="margin-top:10px;">
+      <div class="row" style="display:block;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px;">
+          <div class="name">Scan this site</div>
+          <button class="btn" id="ss-scan" style="padding:7px 13px;font-size:12px;">Scan</button>
+        </div>
+        <div class="desc" style="margin-bottom:0;">Where this site keeps login tokens and whether they're exposed. Scans automatically when you open this popup. Full tokens are never shown or stored.</div>
+        <div id="ss-result" style="margin-top:10px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:3px;">Has this site been breached?</div>
+        <div class="desc" style="margin-bottom:7px;">Checks public breach records for this domain so you know its track record.</div>
+        <button class="btn" id="ss-sitebreach" style="width:100%;">Check breach history</button>
+        <div id="ss-sitebreach-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:3px;">How old is this domain?</div>
+        <div class="desc" style="margin-bottom:7px;">Scam sites are often brand-new. Checks the registration date. Sends only this domain to the public RDAP/WHOIS service when you click.</div>
+        <button class="btn" id="ss-domage" style="width:100%;">Check domain age</button>
+        <div id="ss-domage-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:3px;">Emergency logout</div>
+        <div class="desc" style="margin-bottom:7px;">Think you've been compromised? Clear cookies &amp; session data and sign out everywhere in one click.</div>
+        <button class="btn" id="ss-clear" style="width:100%;margin-bottom:7px;border:1px solid #f0c8da;color:#c84f8b;">Clear data for this site only</button>
+        <button class="btn" id="ss-panic" style="width:100%;background:linear-gradient(135deg,#d65a7a,#c0392b);color:#fff;border:none;">Log out of EVERYTHING</button>
+        <div id="ss-panic-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+    </div>
+<h3>Privacy cleaner</h3>
+    <div class="card-group">
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:6px;">Clean browser data</div>
+        <div class="desc" style="margin-bottom:9px;">Select what to clear, then clean. This wipes the chosen data for all sites on this device.</div>
+        <label class="ck"><input type="checkbox" id="cl-cache" checked> Cache</label>
+        <label class="ck"><input type="checkbox" id="cl-cookies"> Cookies &amp; sign-ins</label>
+        <label class="ck"><input type="checkbox" id="cl-history"> Browsing history</label>
+        <label class="ck"><input type="checkbox" id="cl-downloads"> Download history</label>
+        <label class="ck"><input type="checkbox" id="cl-storage"> Local storage &amp; IndexedDB</label>
+        <label class="ck"><input type="checkbox" id="cl-sw"> Service workers</label>
+        <label class="ck"><input type="checkbox" id="cl-form"> Saved form data</label>
+        <button class="btn" id="cl-run" style="width:100%;margin-top:10px;">Clean selected</button>
+        <div id="cl-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+      <div class="row">
+        <div><div class="name">Watch for extension permission changes</div><div class="desc">Alerts you if an installed extension gains high-risk permissions in an update (e.g. suddenly "read & change data on all sites") — the sign of a sold or compromised extension. On by default.</div></div>
+        <label class="tg"><input type="checkbox" data-key="watchExtensionPermissions"><span class="track"></span><span class="knob"></span></label>
+      </div>
+      <div class="row">
+        <div><div class="name">Startup security check</div><div class="desc">When Chrome starts, WebWarden scans your restored tabs and recently installed extensions for risky signs, then shows a report. Download Shield reviews risky downloads live as they happen instead of re-scanning old files on every launch. On by default.</div></div>
+        <label class="tg"><input type="checkbox" data-key="startupCheck"><span class="track"></span><span class="knob"></span></label>
+      </div>
+      <div class="row" style="display:block;" id="startup-report-row">
+        <div class="name" style="margin-bottom:3px;">Last security check</div>
+        <div class="desc" id="startup-empty" style="margin-bottom:8px;">No issues found in the last check. You can run a check now.</div>
+        <div id="startup-list" style="display:none;margin-bottom:8px;"></div>
+        <button class="btn" id="startup-run" style="width:100%;font-size:11px;">Run security check now</button>
+        <button class="btn" id="startup-clear" style="width:100%;margin-top:6px;font-size:11px;display:none;">Clear report</button>
+      </div>
+      <div class="row" style="display:block;" id="ext-alerts-row">
+        <div class="name" style="margin-bottom:3px;">Extension permission alerts</div>
+        <div class="desc" id="ext-alerts-empty" style="margin-bottom:8px;">No permission changes detected. You'll be alerted here if an extension gains risky access.</div>
+        <div id="ext-alerts-list" style="display:none;"></div>
+        <button class="btn" id="ext-alerts-clear" style="width:100%;margin-top:7px;font-size:11px;display:none;">Clear alerts</button>
+      </div>
+      <div class="row">
+        <div><div class="name">Permission chain guard</div><div class="desc">Warns when one site asks for a risky chain of capabilities, like notifications plus camera, clipboard, location, screen share, or file access. On by default.</div></div>
+        <label class="tg"><input type="checkbox" data-key="permissionChainGuard"><span class="track"></span><span class="knob"></span></label>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:3px;">Review installed extensions</div>
+        <div class="desc" style="margin-bottom:8px;">Lists your extensions and flags ones with high-risk permissions. Note: Chrome doesn't allow any extension to scan others for malware or block installs — this is a permissions reviewer, not a scanner.</div>
+        <button class="btn" id="ext-review" style="width:100%;">Review my extensions</button>
+        <div id="ext-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head">
+          <div>
+            <div class="name">Site permission scanner</div>
+            <div class="desc" id="perm-host">Scan this site, then allow, block, or ask for each permission — e.g. block images until you turn them back on.</div>
+          </div>
+        </div>
+        <div class="tool-actions">
+          <button class="btn soft-danger" id="perm-reset">Reset all</button>
+          <button class="btn primary" id="perm-scan">Scan</button>
+        </div>
+        <div id="perm-result" style="display:none;"></div>
+        <div class="shortcut-grid">
+          <button class="btn perm-link" data-perm="camera">Camera</button>
+          <button class="btn perm-link" data-perm="microphone">Mic</button>
+          <button class="btn perm-link" data-perm="notifications">Notifications</button>
+          <button class="btn perm-link" data-perm="location">Location</button>
+        </div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="tool-head">
+          <div>
+            <div class="name">Update Guardian</div>
+            <div class="desc" id="ug-note">Keeping your browser updated protects you from known security bugs.</div>
+          </div>
+          <span class="inline-version" id="ug-name">-</span>
+        </div>
+        <button class="btn" id="ug-btn" style="width:100%;">Check for browser updates</button>
+      </div>
+    </div>
+</div>
+
+  <div class="foot">
+    <button class="btn" id="allowlist">Allowlist this site</button>
+    <button class="btn primary" id="save">Save <span id="saved-tick"></span></button>
+  </div>
+  <div class="note" id="note">Changes apply on the next page load. The master switch and per-site allowlist take effect on reload.</div>
+
+  <div style="padding:0 16px 6px;">
+    <button class="btn" id="verify-repair" style="width:100%;">Verify &amp; repair</button>
+    <div id="repair-result" style="font-size:11px;color:var(--ink-faint);line-height:1.5;margin-top:8px;display:none;"></div>
+  </div>
+  <div class="foot" style="padding-top:6px;padding-bottom:8px;">
+    <button class="btn nav-btn" id="open-activity">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Activity log
+    </button>
+    <button class="btn nav-btn" id="open-network">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" stroke="currentColor" stroke-width="2"/></svg>
+      Network (DNS)
+    </button>
+  </div>
+  <div class="support-links">
+    <a href="https://buymeacoffee.com/iri.dev" target="_blank" rel="noopener noreferrer" class="bmc-btn" aria-label="Buy me a coffee">
+      <svg class="bmc-cup" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="M4 8h11v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M15 9h2.6a2.4 2.4 0 0 1 0 4.8H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 2.8c-.5.9-.5 1.8 0 2.7M10.5 2.8c-.5.9-.5 1.8 0 2.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Buy me a coffee
+    </a>
+    <a href="https://github.com/iri-dev" target="_blank" rel="noopener noreferrer" class="bmc-btn" aria-label="GitHub">
+      <svg class="bmc-cup" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="M9 19c-4 1.2-4-2-5.5-2.5M15 22v-3.8c0-1 .1-1.4-.5-2 2.8-.3 5.8-1.4 5.8-6.3 0-1.4-.5-2.6-1.3-3.5.1-.3.6-1.7-.1-3.5 0 0-1.1-.4-3.6 1.3a12.4 12.4 0 00-6.6 0C6.2 2.5 5.1 2.9 5.1 2.9c-.7 1.8-.2 3.2-.1 3.5a5 5 0 00-1.3 3.5c0 4.9 3 6 5.8 6.3-.4.4-.6.9-.6 1.8V22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="support-copy"><strong>GitHub</strong><span>Follow for updates</span></span>
+    </a>
+  </div>
+
+  <script src="domain-utils.js"></script>
+  <div class="ww-footer-link">
+    <a id="ww-perms-link" href="permissions.html" target="_blank" rel="noopener">
+      <span class="ww-footer-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none"><path d="M12 3.5c2.1 1.2 4.1 1.6 5.8 1.7.2 4.2-.7 9.3-5.8 12.4C6.9 14.5 6 9.4 6.2 5.2c1.7-.1 3.7-.5 5.8-1.7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.4 12.2l1.7 1.7 3.7-4.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="ww-footer-copy"><strong>Why these permissions?</strong><small>Plain-English trust guide</small></span>
+    </a>
+  </div>
+<script src="popup.js"></script>
+</body>
+</html>
