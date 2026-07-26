@@ -9,6 +9,7 @@
 [![Latest release](https://img.shields.io/github/v/release/iri-dev/WebWarden?color=e84393&label=release)](https://github.com/iri-dev/WebWarden/releases)
 ![Protections](https://img.shields.io/badge/protections-80%2B-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
+[![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WebWarden/issues/new/choose)
 
 </div>
 
