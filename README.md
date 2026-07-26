@@ -93,7 +93,7 @@ one switch, with fine-grained control over every piece.
 - **Location-request blocking**, a **permission-chain guard**, and a **per-site permission scanner** (allow / block / ask for camera, mic, notifications, location).
 
 ### Site data, session &amp; extension control
-- **Forget Me** — auto-wipe a site's cookies and storage on leave (off / chosen / all sites).
+- **Forget Me &amp; Logins** — one toggle for "never let sites remember me": wipe a site's cookies and storage when you leave, so nothing keeps you logged in or recognises you next visit (allowlisted sites are kept), plus a one-click "forget this site now".
 - **Emergency Logout**, a **Privacy Cleaner** (selective wipe), a **live per-site Session Security grade** (A–F: connection, JWT exposure, token storage, cookie security), and an **extension watchdog** that flags installed extensions gaining risky permissions in an update.
 - **Startup security check** — on browser launch, scans restored tabs and recently-installed extensions for risky signs.
 - **On-demand site tools** — check a domain's age (RDAP), look it up against Have I Been Pwned, scan where a site stores login tokens, or review every installed extension's permissions.
