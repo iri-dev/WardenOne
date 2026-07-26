@@ -242,52 +242,20 @@ function paintMemoryModes() {
 // gets wiped -- no risk of the two drifting.
 
 function paintForgetMe() {
-  const wrap = $('forget-modes');
-  if (!wrap) return;
-  const cur = (config.forgetMeMode === 'list' || config.forgetMeMode === 'all') ? config.forgetMeMode : 'off';
-  document.querySelectorAll('.forget-mode').forEach((b) => {
-    const on = b.getAttribute('data-mode') === cur;
-    b.style.background = on ? 'linear-gradient(135deg,#b06ad4,#e07ab0)' : '';
-    b.style.color = on ? '#fff' : '';
-    b.style.border = on ? 'none' : '';
-  });
-  const hist = $('forget-history');
-  if (hist) hist.checked = config.forgetMeHistory === true;
-  renderForgetList();
-}
-
-function renderForgetList() {
-  const box = $('forget-list');
-  if (!box) return;
-  box.textContent = '';
-  if (config.forgetMeMode !== 'list') { box.style.display = 'none'; return; }
-  box.style.display = 'block';
-  const list = Array.isArray(config.forgetMeList) ? config.forgetMeList : [];
-  if (!list.length) {
-    const e = document.createElement('div');
-    e.style.color = 'var(--ink-faint,#a98fc0)';
-    e.textContent = 'No sites chosen yet — open a site and use "Forget this site when I leave".';
-    box.appendChild(e);
+  const toggle = $('forget-enable');
+  if (!toggle) return;
+  // The old "Chosen sites" mode was retired in favour of one global toggle.
+  // Normalise any leftover 'list' config to off so the UI and behaviour agree.
+  if (config.forgetMeMode === 'list') {
+    config.forgetMeMode = 'off';
+    config.forgetMeList = [];
+    save();
     return;
   }
-  list.forEach((d) => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:3px 0;';
-    const name = document.createElement('span');
-    name.style.color = 'var(--ink-soft,#7a5f93)';
-    name.textContent = d;
-    const rm = document.createElement('button');
-    rm.className = 'btn';
-    rm.style.cssText = 'padding:3px 9px;font-size:10.5px;';
-    rm.textContent = 'Remove';
-    rm.addEventListener('click', () => {
-      config.forgetMeList = (config.forgetMeList || []).filter((x) => x !== d);
-      save();
-    });
-    row.appendChild(name);
-    row.appendChild(rm);
-    box.appendChild(row);
-  });
+  // "Never let sites remember me" == wipe-on-leave for all sites (allowlist exempt).
+  toggle.checked = config.forgetMeMode === 'all' && Number(config.forgetMeAllConfirmedAt || 0) > 0;
+  const hist = $('forget-history');
+  if (hist) hist.checked = config.forgetMeHistory === true;
 }
 
 // Reflect saved Tab Limit config into its (non-data-key) controls. Kept out
@@ -2758,22 +2726,20 @@ function renderPermResults(out, hostname, res) {
 
 // ----- Forget Me UI -----
 (function initForgetMe() {
-  const wrap = $('forget-modes');
-  if (!wrap) return;
+  const toggle = $('forget-enable');
+  if (!toggle) return;
 
-  document.querySelectorAll('.forget-mode').forEach((b) => {
-    b.addEventListener('click', () => {
-      const mode = b.getAttribute('data-mode');
-      if (mode === 'all') {
-        const ok = window.confirm('Forget Me for all sites will clear cookies and site storage when the last tab for each site closes, except sites on your allowlist. Turn this on?');
-        if (!ok) { applyToUI(); return; }
-        config.forgetMeAllConfirmedAt = Date.now();
-      } else {
-        config.forgetMeAllConfirmedAt = 0;
-      }
-      config.forgetMeMode = mode;
-      save();
-    });
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      const ok = window.confirm('Turn on "Never let sites remember me"?\n\nWhen you close a site, WebWarden will clear its cookies and stored data — so you\'ll be logged out and it can\'t recognise you next time. Sites on your allowlist are left alone.');
+      if (!ok) { toggle.checked = false; return; }
+      config.forgetMeMode = 'all';
+      config.forgetMeAllConfirmedAt = Date.now();
+    } else {
+      config.forgetMeMode = 'off';
+      config.forgetMeAllConfirmedAt = 0;
+    }
+    save();
   });
 
   const hist = $('forget-history');
@@ -2792,25 +2758,6 @@ function renderPermResults(out, hostname, res) {
       });
     } catch (_) { cb('', ''); }
   };
-
-  const addBtn = $('forget-add-site');
-  if (addBtn) addBtn.addEventListener('click', () => {
-    currentHost((host) => {
-      if (!host || !/\./.test(host)) {
-        addBtn.textContent = 'No site to add here';
-        setTimeout(() => { addBtn.textContent = 'Forget this site when I leave'; }, 1500);
-        return;
-      }
-      const d = registrableDomain(host);
-      const list = Array.isArray(config.forgetMeList) ? config.forgetMeList.slice() : [];
-      if (!list.includes(d)) list.push(d);
-      config.forgetMeList = list;
-      if (config.forgetMeMode !== 'all') config.forgetMeMode = 'list';
-      save();
-      addBtn.textContent = 'Added ' + d;
-      setTimeout(() => { addBtn.textContent = 'Forget this site when I leave'; }, 1500);
-    });
-  });
 
   const nowBtn = $('forget-now');
   const nowRes = $('forget-now-result');
@@ -3321,7 +3268,7 @@ $('verify-repair').addEventListener('click', () => {
       ['review','extension','extensions','permission','permissions','manage','management','reviewer'],
       ['scan','scanner','scanning','check','audit','inspect'],
       ['panic','emergency','logout','clear','clean','cleanup','wipe','reset'],
-      ['forget','forgetme','leave','wipe','clean','clear','history'],
+      ['forget','forgetme','leave','wipe','clean','clear','history','login','logins','remember','remembered','stay','logged','signin','session'],
       ['badge','indicator','icon','toolbar','action'],
       ['search','query','filter','find','explore']
     ];
@@ -3396,7 +3343,6 @@ $('verify-repair').addEventListener('click', () => {
     });
     // Additional action buttons in Memory Shield (mode buttons)
     document.querySelectorAll('.mem-mode').forEach(function(el){rows.push(buildKeywords(el));});
-    document.querySelectorAll('.forget-mode').forEach(function(el){rows.push(buildKeywords(el));});
     // Tab limit controls
     ['tl-guard','tl-max','tl-idle','tl-close','tl-warn'].forEach(function(id){
       var el=$(id);
