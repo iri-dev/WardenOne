@@ -5972,7 +5972,7 @@ const CONSENT_REJECT_EXCLUDE_MATCHES = [
   'https://recaptcha.net/*', 'https://*.recaptcha.net/*',
   'https://challenges.cloudflare.com/*', 'https://turnstile.cloudflare.com/*',
   'https://amazoncognito.com/*', 'https://*.amazoncognito.com/*',
-  'https://github.com/login/*',
+  'https://github.com/*', 'https://*.github.com/*',
   'https://discord.com/oauth2/*', 'https://discord.com/api/oauth2/*',
   'https://paypal.com/*', 'https://*.paypal.com/*',
   'https://checkout.stripe.com/*', 'https://js.stripe.com/*',
@@ -5986,7 +5986,7 @@ const CONSENT_REJECT_EXCLUDE_MATCHES = [
 ];
 // Top-frame URL guard for the one-time catch-up injection into already-open tabs
 // (executeScript can't honor excludeMatches the way registerContentScripts does).
-const CONSENT_REJECT_EXCLUDE_RE = /(^|\.)(accounts\.google\.com|oauth2\.googleapis\.com|apis\.google\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|okta\.com|oktacdn\.com|auth0\.com|onelogin\.com|duosecurity\.com|hcaptcha\.com|recaptcha\.net|challenges\.cloudflare\.com|turnstile\.cloudflare\.com|amazoncognito\.com|paypal\.com|stripe\.com|checkout\.com|adyen\.com|braintreepayments\.com|braintreegateway\.com|klarna\.com|squareup\.com|cash\.app)$/i;
+const CONSENT_REJECT_EXCLUDE_RE = /(^|\.)(accounts\.google\.com|oauth2\.googleapis\.com|apis\.google\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|okta\.com|oktacdn\.com|auth0\.com|onelogin\.com|duosecurity\.com|hcaptcha\.com|recaptcha\.net|challenges\.cloudflare\.com|turnstile\.cloudflare\.com|amazoncognito\.com|github\.com|paypal\.com|stripe\.com|checkout\.com|adyen\.com|braintreepayments\.com|braintreegateway\.com|klarna\.com|squareup\.com|cash\.app)$/i;
 function consentRejectExcludedUrl(url) {
   try { return CONSENT_REJECT_EXCLUDE_RE.test(new URL(url).hostname); } catch (_) { return false; }
 }
