@@ -12658,7 +12658,7 @@
         error:String(e)
       })
     }
-    if(WW.removeOverlays&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$/i.test(location.hostname)&&(!isGoogleSearchResults()||WW.blockSearchAiAnswers||WW.blockSponsoredSearchResults||WW.googleSearchResultCleanup)){
+    if(WW.removeOverlays&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WW.blockSearchAiAnswers||WW.blockSponsoredSearchResults||WW.googleSearchResultCleanup)){
       const NUISANCE=/(cookie|consent|gdpr|newsletter|subscribe|sign[\s-]?up for|mailing list|email list|ad ?block|adblock|disable your ad|whitelist|allow ads|notification|push|paywall|register to (read|continue)|create (a )?free account|allow notifications?|turn on notifications?|enable notifications?|click (the )?bell)/i,
       AD_SIGNAL=/(advertisement|sponsored|ad\s*choices|adchoices|download now|continue to (your )?(download|the site)|no thanks,? (i|continue)|skip ad|your download will (begin|start)|presented by)/i,
       BAIT_SIGNAL=/(notification|push|bell|subscribe|download now|watch now|continue to (download|watch|stream)|allow notifications?|enable notifications?)/i,
@@ -12901,6 +12901,7 @@
           el.getAttribute("data-role")].filter(Boolean).join(" "),
           blob=text+" "+attrs+" "+(el.className||"")+" "+(el.id||"");
           if(PROTECT.test(text))return!1;
+          if(el.querySelector&&el.querySelector('main,[role="main"]'))return!1;
           r.width,
           innerWidth;
           const coversLots=r.width*r.height>=innerWidth*innerHeight*.45,
