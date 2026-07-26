@@ -67,6 +67,7 @@ every feature underneath is individually controllable.
 
 ### Network & IP protection
 - **WebRTC IP-leak guard**, IP-grabber beacon blocking, logger-domain warnings (Grabify, IPLogger), **Force HTTPS**, and **bad-certificate** blocking.
+- **Intranet / router protection** — public web pages can't silently reach your local admin panels (router, NAS, dev servers) via fetch, forms, beacons, or sockets, shutting down DNS-rebinding-style local-network attacks.
 
 ### Media & device control
 - **Media Shield** — block camera, microphone, screen-capture, and hidden background media.
@@ -74,7 +75,9 @@ every feature underneath is individually controllable.
 
 ### Site data, session & extension control
 - **Forget Me** — auto-wipe a site's cookies and storage on leave (off / chosen / all sites).
-- **Emergency Logout**, a **Privacy Cleaner** (selective wipe), a **live per-site Session Security grade** (A–F: connection, JWT exposure, token storage, cookie security), and an **extension watchdog** that flags installed extensions gaining risky permissions.
+- **Emergency Logout**, a **Privacy Cleaner** (selective wipe), a **live per-site Session Security grade** (A–F: connection, JWT exposure, token storage, cookie security), and an **extension watchdog** that flags installed extensions gaining risky permissions in an update (the sign of a sold or compromised extension).
+- **Startup security check** — on browser launch, scans your restored tabs and recently-installed extensions for risky signs and shows a report.
+- **On-demand site tools** — check a domain's age (RDAP), look it up against Have I Been Pwned, scan where a site stores login tokens, or review every installed extension's permissions — right from the popup.
 
 ### Threat blocklist
 - Hard-block known malicious sites from vetted threat feeds, **auto-updated daily** (tens of thousands of domains, millions across the feeds).
@@ -83,8 +86,10 @@ every feature underneath is individually controllable.
 - **Memory Shield** — sleep inactive tabs (Gentle → Balanced → Aggressive → Emergency) with never-sleep rules for pinned / audio / form / login tabs; free RAM on demand, find duplicate and zombie tabs.
 - **Resource Saver** — block autoplay media, throttle background tabs, lazy-load images, and stop prefetch / preload.
 
-### Extras
-- **Twitch Local Rewind** (scrub back through a live stream, or jump to where you joined), an **EyeShield** eye-comfort filter, and an **Update Guardian** that nudges you when your browser is behind on security patches.
+### Comfort & extras
+- **EyeShield** — a per-site display tuner with Normal / Light / Dark / **Ultra (OLED-black)** modes, plus brightness, contrast, saturation, warmth, and grayscale sliders, remembered per site.
+- **Twitch Local Rewind** — scrub back through a live stream, or jump straight to the moment you joined.
+- **Update Guardian** — nudges you when your browser is behind on security patches.
 
 ## Not just a settings page
 
@@ -103,6 +108,15 @@ WebWarden ships real interfaces, not only toggles.
 ![Permissions explained](docs/permissions.png)
 
 There's also a **Network / DNS protection guide** for router-level filtering and a one-minute **onboarding** flow.
+
+## Set it up your way
+
+On first run, pick **Recommended** (the safe default) or **Maximum privacy** — which
+also turns on the hardened set: active anti-fingerprinting, first-party tracker
+blocking, breach & password checks, clipboard guard, and referrer / AMP trimming.
+Choose **Normal** notifications or **Silent mode**, where protection stays fully on
+but popups and badges stay hidden. Every one of the 80+ features is individually
+toggleable, and any site can be allowlisted from the popup in one click.
 
 ## Install (from source)
 
