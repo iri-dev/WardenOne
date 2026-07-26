@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest a new protection or an improvement
+title: "[Idea]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like WebWarden to do?
+      placeholder: Describe the protection or improvement...
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it useful?
+      description: What problem does it solve, or what threat does it stop?
+  - type: input
+    id: sites
+    attributes:
+      label: Where does this matter? (optional)
+      placeholder: A specific site, or "everywhere"
