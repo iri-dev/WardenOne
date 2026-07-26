@@ -8901,6 +8901,8 @@
       var __wwTwRl0=0,
       __wwTwRlW=0,
       __wwTwRlN=0,
+      __wwTwErr0=0,
+      __wwTwHardRl=(function(){try{return Number(sessionStorage.getItem("ww_tw_hardrl"))||0}catch(_){return 0}})(),
       __wwTwRoot=function(){
         try{
           var rn=document.querySelector("#root");
@@ -9096,18 +9098,22 @@
       },
       __wwTwWatch=function(){
         try{
+          var now=Date.now();
           var __vp=document.querySelector('[data-a-target="video-player"]')||document.querySelector(".video-player");
-          if(__wwTwLooksError(__vp)){
-            __wwTwReload();
-            return
-          }
           var cont=document.querySelector('[data-test-selector="video-player__video-container"]'),
           v=cont&&cont.querySelector("video");
-          if(v&&v.error){
+          if(__wwTwLooksError(__vp)||v&&v.error){
+            __wwTwErr0||(__wwTwErr0=now);
             __wwTwReload();
+            if(now-__wwTwErr0>9e3&&now-__wwTwHardRl>3e5){
+              __wwTwHardRl=now;
+              try{sessionStorage.setItem("ww_tw_hardrl",String(now))}catch(_){}
+              try{log("scriptlet_twitch_hard_reload",{})}catch(_){}
+              try{location.reload()}catch(_){}
+            }
             return
           }
-          var now=Date.now();
+          __wwTwErr0=0;
           if(!v||v.ended){
             __wwTwVLast=-1,
             __wwTwVStall=0,
