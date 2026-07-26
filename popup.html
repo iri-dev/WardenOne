@@ -1057,25 +1057,19 @@
       <label class="tg"><input type="checkbox" data-key="lazyLoadMedia"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>Forget Me</h3>
+<h3>Forget Me &amp; Logins</h3>
     <div class="card-group">
-    <div class="row" style="display:block;">
-      <div class="name" style="margin-bottom:7px;">When I leave a site, wipe it</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;" id="forget-modes">
-        <button class="btn forget-mode" data-mode="off" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Off</button>
-        <button class="btn forget-mode" data-mode="list" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Chosen sites</button>
-        <button class="btn forget-mode" data-mode="all" style="flex:1;min-width:70px;padding:7px;font-size:11px;">All sites</button>
-      </div>
-      <div class="desc" style="margin-top:6px;max-width:none;">Clears cookies and site storage when a site's last tab closes or navigates away. "All sites" skips your allowlist.</div>
+    <div class="row">
+      <div><div class="name">Never let sites remember me</div><div class="desc">When you close a site, WebWarden wipes its cookies and stored data &mdash; so it can't keep you logged in or recognise you next time. Sites on your allowlist stay logged in as normal.</div></div>
+      <label class="tg"><input type="checkbox" id="forget-enable"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name" style="font-size:12px;">Also clear browser history for the site</div><div class="desc">Most private. Off keeps your history.</div></div>
+      <div><div class="name" style="font-size:12px;">Also clear the site's browser history</div><div class="desc">Most private. Off keeps your history.</div></div>
       <label class="tg"><input type="checkbox" id="forget-history"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="display:block;">
-      <button class="btn" id="forget-add-site" style="width:100%;">Forget this site when I leave</button>
-      <div id="forget-list" style="margin-top:8px;font-size:11px;line-height:1.5;"></div>
-      <button class="btn" id="forget-now" style="width:100%;margin-top:7px;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Forget this site now</button>
+      <div class="desc" style="margin-bottom:7px;max-width:none;">One-time: log out of the current site and wipe its cookies &amp; storage right now.</div>
+      <button class="btn" id="forget-now" style="width:100%;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Forget this site now</button>
       <div id="forget-now-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
     </div>
     </div>
