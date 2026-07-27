@@ -82,7 +82,12 @@ one switch, with fine-grained control over every piece.
 - **Look-alike / homograph blocking** — full-screen block on `g00gle`-style typos, wrong-TLD, and homographs.
 - **Login-page age check** — warns when a password form sits on a brand-new domain (RDAP, no API key).
 - **Behavioral risk detection** — flags brand-new sites that phone home or act like scams even when they're on no blocklist.
-- **ClickFix command-paste guard**, a **tech-support-scam / browser-locker** neutraliser, **fake-update lure** detection, adult-site redirect warnings, a script-drift guard, risky-site mode, anti-clickjacking, and warnings on redirecting &amp; shortened links.
+- **ClickFix command-paste guard**, a **tech-support-scam / browser-locker** neutraliser, **fake-update lure** detection, a script-drift guard, risky-site mode, anti-clickjacking, and warnings on redirecting &amp; shortened links.
+
+### Family &amp; content safety
+- **Adult-site guard** — an optional "18+ — are you sure?" screen on unwanted adult-site arrivals, so a mistyped address or a sneaky redirect never drops you (or a kid on the family computer) straight onto explicit content.
+- **Catches the unlisted ones** — a heuristic flags adult sites that aren't on any blocklist yet, not just the known names.
+- **Adult redirect blocking** — stops gestureless hops that fling you to an 18+ page with no click, backed by an adult-warning list that **auto-updates daily**.
 
 ### Credential, payment &amp; clipboard protection
 - **Form-skimmer / Magecart detection** — blocks scripts reading password / card fields and exfiltrating them off-site.
