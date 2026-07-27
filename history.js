@@ -1,4 +1,4 @@
-/* WebWarden activity log */
+/* Warden One activity log */
 
 const DOWNLOAD_TRUSTED_KEY = 'webwarden_download_trusted_sites';
 const ADSHIELD_ALLOWLIST_KEY = 'webwarden_adshield_allowlist';
@@ -401,7 +401,7 @@ function render(hist) {
     big.className = 'big';
     big.textContent = 'All clear';
     empty.appendChild(big);
-    empty.appendChild(document.createTextNode('Nothing to report yet. WebWarden will log blocks and warnings here as they happen.'));
+    empty.appendChild(document.createTextNode('Nothing to report yet. Warden One will log blocks and warnings here as they happen.'));
     rows.appendChild(empty);
     return;
   }
@@ -461,20 +461,20 @@ function checkedLocalSet(obj, done) {
     chrome.storage.local.set(obj, () => {
       const err = chrome.runtime.lastError;
       if (err) {
-        try { alert('WebWarden could not save this change: ' + (err.message || String(err))); } catch (_) {}
+        try { alert('Warden One could not save this change: ' + (err.message || String(err))); } catch (_) {}
         if (done) done(err);
         return;
       }
       if (done) done(null);
     });
   } catch (e) {
-    try { alert('WebWarden could not save this change: ' + String(e)); } catch (_) {}
+    try { alert('Warden One could not save this change: ' + String(e)); } catch (_) {}
     if (done) done(e);
   }
 }
 
 document.getElementById('clear').addEventListener('click', () => {
-  if (confirm('Clear all WebWarden activity history? This cannot be undone.')) {
+  if (confirm('Clear all Warden One activity history? This cannot be undone.')) {
     checkedLocalSet({ webwarden_history: [] }, (err) => { if (!err) load(); });
   }
 });
@@ -487,7 +487,7 @@ function loadLearned() {
     box.textContent = '';
     if (!res || !res.ok || !res.items || !res.items.length) {
       const e = document.createElement('div'); e.className = 'empty';
-      e.textContent = 'None yet - WebWarden learns these as you browse.';
+      e.textContent = 'None yet - Warden One learns these as you browse.';
       box.appendChild(e);
       return;
     }
@@ -525,8 +525,8 @@ function allowedItemsFromStore(store) {
       kind: 'main',
       host,
       title: host,
-      category: 'WebWarden allowlist',
-      detail: 'All WebWarden protections stay passive on this site after reload.',
+      category: 'Warden One allowlist',
+      detail: 'All Warden One protections stay passive on this site after reload.',
     });
   });
   (Array.isArray(store && store[DOWNLOAD_TRUSTED_KEY]) ? store[DOWNLOAD_TRUSTED_KEY] : []).forEach((host) => {

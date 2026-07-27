@@ -1,4 +1,4 @@
-# WebWarden — Chrome Web Store submission notes
+# Warden One — Chrome Web Store submission notes
 
 Copy the text below into the matching fields of the Web Store developer dashboard
 (**Privacy practices** tab). Everything here is grounded in the actual v1.0.0 code.
@@ -11,7 +11,7 @@ Copy the text below into the matching fields of the Web Store developer dashboar
 
 ## Single purpose (one sentence)
 
-> WebWarden is a browser security tool that protects the user from web-based threats —
+> Warden One is a browser security tool that protects the user from web-based threats —
 > phishing and look-alike sites, malicious or unwanted network requests and trackers,
 > dangerous downloads, redirect and tab-under abuse, IP-grabber links, session/token
 > theft, and unsafe certificates — by inspecting pages, requests, and downloads locally
@@ -27,7 +27,7 @@ Paste each into that permission's justification box.
 malicious, tracking, ad, and IP-grabber requests without reading request contents. This
 is the primary protection mechanism and runs entirely on-device.
 
-**scripting** — Injects WebWarden's on-page protections (phishing/grabber detection,
+**scripting** — Injects Warden One's on-page protections (phishing/grabber detection,
 redirect and clickjacking guards, payment-field protection) and registers some features
 dynamically only when the user enables them, to minimize overhead.
 
@@ -56,10 +56,10 @@ geolocation, or cookies for a specific site.
 user chooses what to clear and confirms.
 
 **history** — Used solely by the "Forget this site" tool to remove history entries for a
-domain the user selects. WebWarden does not continuously read or transmit browsing history.
+domain the user selects. Warden One does not continuously read or transmit browsing history.
 
 **management** — Lists the user's installed extensions and flags newly installed or
-high-risk ones for the user to review. WebWarden **cannot and does not** disable, install,
+high-risk ones for the user to review. Warden One **cannot and does not** disable, install,
 modify, or scan other extensions — it is read-only surfacing for the user's own review.
 
 **tabs** — Reads tab URLs/titles for the per-tab safety badge, the startup safety check
@@ -101,13 +101,13 @@ the reputation providers, supplies their own API key).
 These are attestations **you** are legally making — confirm them yourself; when in doubt,
 disclose rather than under-report. Based on the code:
 
-- **Data collected by the developer:** none. WebWarden has no servers and no analytics;
+- **Data collected by the developer:** none. Warden One has no servers and no analytics;
   nothing is transmitted to us. Processing is on-device.
 - **The three required certifications** appear to hold and can be checked:
   - *Not selling/transferring data to third parties outside approved use cases* — yes.
   - *Not using/transferring data for purposes unrelated to the single purpose* — yes.
   - *Not using/transferring data for creditworthiness/lending* — yes.
-- **Judgment call — "Website content" / "Web history" categories:** WebWarden reads page
+- **Judgment call — "Website content" / "Web history" categories:** Warden One reads page
   content and URLs **locally** for protection and does not send them to the developer. The
   opt-in reputation features transmit a specific URL/hash to a **third-party service the
   user chose and keyed**, and the opt-in breach check sends a 5-char password-hash prefix

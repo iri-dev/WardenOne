@@ -1,45 +1,45 @@
 <div align="center">
 
-# WebWarden
+# Warden One
 
 ### The all-in-one privacy, security &amp; anti-scam extension for Chromium browsers
 
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
-[![Latest release](https://img.shields.io/github/v/release/iri-dev/WebWarden?color=e84393&label=release)](https://github.com/iri-dev/WebWarden/releases)
+[![Latest release](https://img.shields.io/github/v/release/iri-dev/WardenOne?color=e84393&label=release)](https://github.com/iri-dev/WardenOne/releases)
 ![Protections](https://img.shields.io/badge/protections-80%2B-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
-[![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WebWarden/issues/new/choose)
+[![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
 
 </div>
 
 <p align="center">
-  <img src="docs/onboarding.png" alt="Welcome to WebWarden" width="840">
+  <img src="docs/onboarding.png" alt="Welcome to Warden One" width="840">
 </p>
 
 > **One master switch. 80+ protections. No account, no telemetry — everything runs on your device.**
 
-WebWarden folds a whole stack of security tools into a single extension: ad and
+Warden One folds a whole stack of security tools into a single extension: ad and
 tracker blocking, anti-fingerprinting, phishing and scam defence, credential- and
 payment-theft protection, download scanning, IP-leak protection, media / device
 permission control, and memory management. Every feature is individually toggleable,
 and none of it phones home.
 
 > [!TIP]
-> **Found a bug or have an idea?** [**Open an issue »**](https://github.com/iri-dev/WebWarden/issues/new/choose) — a guided form walks you through it in about 30 seconds. Bug reports and feature requests are always welcome.
+> **Found a bug or have an idea?** [**Open an issue »**](https://github.com/iri-dev/WardenOne/issues/new/choose) — a guided form walks you through it in about 30 seconds. Bug reports and feature requests are always welcome.
 
 ---
 
-## Why WebWarden
+## Why Warden One
 
 Staying safe online usually means bolting together half a dozen extensions — uBlock
 Origin, a fingerprint blocker, a popup blocker, a download scanner, a password-field
-guard, a tab suspender — and hoping they cooperate. WebWarden does all of that, plus
+guard, a tab suspender — and hoping they cooperate. Warden One does all of that, plus
 the phishing, scam, and credential-theft protection most blockers leave out — behind
 one switch, with fine-grained control over every piece.
 
 <p align="center">
-  <img src="docs/popup.png" alt="WebWarden control panel" width="300">
+  <img src="docs/popup.png" alt="Warden One control panel" width="300">
 </p>
 <p align="center"><em>The control panel — every protection in one place, with a live per-site security scan.</em></p>
 
@@ -116,7 +116,7 @@ one switch, with fine-grained control over every piece.
 
 ## More than a settings page
 
-WebWarden ships real interfaces, not just toggles.
+Warden One ships real interfaces, not just toggles.
 
 <table>
 <tr>
@@ -140,7 +140,7 @@ Extend protection past the browser to every device on your network.
 <td width="50%" valign="top">
 <img src="docs/permissions.png" alt="Permissions, explained" width="100%"><br>
 <strong>Permissions, explained</strong><br>
-A plain-English ledger of every permission WebWarden uses and where its reach stops.
+A plain-English ledger of every permission Warden One uses and where its reach stops.
 </td>
 </tr>
 </table>
@@ -157,9 +157,9 @@ toggleable, and any site can be allowlisted from the popup in one click.
 ## Install
 
 **From a release (no clone needed):**
-1. Download the latest `WebWarden-vX.Y.Z.zip` from the [Releases](https://github.com/iri-dev/WebWarden/releases) page and unzip it.
+1. Download the latest `WardenOne-vX.Y.Z.zip` from the [Releases](https://github.com/iri-dev/WardenOne/releases) page and unzip it.
 2. Open `chrome://extensions` and enable **Developer mode** (top-right).
-3. Click **Load unpacked** and select the unzipped `webwarden` folder.
+3. Click **Load unpacked** and select the unzipped `warden-one` folder.
 
 **From source:** clone this repository and load the project folder the same way.
 
@@ -175,12 +175,12 @@ history. Login tokens and passwords are never stored or transmitted.
 
 ## Feedback &amp; bug reports
 
-Found a site WebWarden breaks, or have an idea? **[Open an issue](https://github.com/iri-dev/WebWarden/issues/new/choose)** — there are quick templates for bug reports and feature requests. For bugs, the **site URL** and **which toggle is involved** are the most useful details.
+Found a site Warden One breaks, or have an idea? **[Open an issue](https://github.com/iri-dev/WardenOne/issues/new/choose)** — there are quick templates for bug reports and feature requests. For bugs, the **site URL** and **which toggle is involved** are the most useful details.
 
 ## License
 
 **GNU General Public License v3** — see [LICENSE](LICENSE).
 
-WebWarden builds on the open-source blocking community. Sources are credited in
+Warden One builds on the open-source blocking community. Sources are credited in
 [CREDITS.md](CREDITS.md): AdGuard (YouTube rules), EasyList / EasyPrivacy (tracker
 rules), and TwitchAdSolutions (Twitch strategy).

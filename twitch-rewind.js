@@ -1,5 +1,5 @@
 /*
- * WebWarden Twitch Local DVR.
+ * Warden One Twitch Local DVR.
  *
  * Twitch removed rewind on live streams, and its own MediaSource history
  * cannot be extended safely (the transmux/playlist state is already gone, so an
@@ -391,7 +391,7 @@
         .speeds{display:flex;align-items:center;gap:4px;margin-top:10px}.speedLabel{margin-right:4px;color:#adadb8;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}.spd{flex:1;padding:5px 0;background:rgba(255,255,255,.08);font-size:11px}.spd:hover:not(:disabled){background:rgba(255,255,255,.18)}.spd.active{background:#772ce8}.spd.active:hover{background:#9147ff}
         @media(max-width:700px){.position{min-width:42px;padding:0 5px}.popover{width:270px}}
       </style>
-      <div class="controls" role="group" aria-label="WebWarden Twitch local rewind">
+      <div class="controls" role="group" aria-label="Warden One Twitch local rewind">
         <button type="button" class="icon back10" title="Rewind 10 seconds" aria-label="Rewind 10 seconds">${rewindIcon(10)}</button>
         <button type="button" class="icon back30" title="Rewind 30 seconds" aria-label="Rewind 30 seconds">${rewindIcon(30)}</button>
         <button type="button" class="icon back60" title="Rewind 1 minute, or to the oldest locally buffered point" aria-label="Rewind 1 minute">${rewindIcon('1m')}</button>

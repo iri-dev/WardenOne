@@ -1,4 +1,4 @@
-/* WebWarden — DNS filtering verification.
+/* Warden One — DNS filtering verification.
  *
  * How the test works: most family/security DNS filters block known adult or
  * malware test domains by refusing to resolve them (the request fails fast or

@@ -1,5 +1,5 @@
 /*
- * WebWarden search AI-answer pre-paint CSS.
+ * Warden One search AI-answer pre-paint CSS.
  * Registered only when "Hide search AI answers" is on. Runtime JS still does
  * careful shell collapse; this stops Google/Brave AI panels flashing first.
  */

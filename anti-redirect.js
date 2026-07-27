@@ -1,5 +1,5 @@
 /*
- * WebWarden anti-redirect hardener
+ * Warden One anti-redirect hardener
  * --------------------------------
  * The main content guard already blocks gestureless redirects. This layer is
  * stricter, with different rules per navigation shape:

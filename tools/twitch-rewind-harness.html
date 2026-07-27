@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>WebWarden Twitch Rewind Harness</title>
+  <title>Warden One Twitch Rewind Harness</title>
   <style>
     html{height:100%;font-size:62.5%}body{height:100%;margin:0;background:#0e0e10;color:#efeff1;font:16px Arial,sans-serif}
     main{display:grid;place-items:center;min-height:100%;gap:12px;align-content:center}
@@ -78,7 +78,7 @@
     // Feed the exact synthetic tracks to the recorder. Chromium's native
     // HTMLMediaElement.captureStream() can omit frames when the media element
     // itself is backed by a MediaStream, which would make this harness test the
-    // browser quirk instead of WebWarden's rotation and replay code.
+    // browser quirk instead of Warden One's rotation and replay code.
     video.captureStream = () => testStream;
     video.play().catch(() => {});
     const nativePlaybackButton = document.querySelector('[data-a-target="player-play-pause-button"]');

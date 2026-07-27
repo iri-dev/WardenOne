@@ -14,7 +14,7 @@
   if (site) site.textContent = url;
 
   const providerEl = document.getElementById('provider');
-  if (providerEl) providerEl.textContent = 'Blocked by WebWarden + ' + provider;
+  if (providerEl) providerEl.textContent = 'Blocked by Warden One + ' + provider;
 
   const reason = document.getElementById('reason');
   if (reason) {

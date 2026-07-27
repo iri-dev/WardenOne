@@ -1,5 +1,5 @@
 /*
- * WebWarden Google Search cleanup pre-paint CSS.
+ * Warden One Google Search cleanup pre-paint CSS.
  * Registered dynamically only when Hide Google AI & sponsored results is on.
  * The content script still performs the careful shell collapse; this file exists
  * to stop AI/sponsored modules from flashing during first paint.
