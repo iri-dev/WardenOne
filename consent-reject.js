@@ -2,8 +2,8 @@
   'use strict';
 
   const CONSENT_REJECT_VERSION = '1.0.0';
-  if (window.__webWardenConsentRejectReadyVersion === CONSENT_REJECT_VERSION) return;
-  window.__webWardenConsentRejectVersion = CONSENT_REJECT_VERSION;
+  if (window.__wardenOneConsentRejectReadyVersion === CONSENT_REJECT_VERSION) return;
+  window.__wardenOneConsentRejectVersion = CONSENT_REJECT_VERSION;
 
   const DEFAULTS = {
     enabled: true,
@@ -147,8 +147,8 @@
 
   function loadConfig(done) {
     try {
-      chrome.storage.local.get('webwarden_config', (res) => {
-        config = Object.assign({}, DEFAULTS, (res && res.webwarden_config) || {});
+      chrome.storage.local.get('wardenone_config', (res) => {
+        config = Object.assign({}, DEFAULTS, (res && res.wardenone_config) || {});
         updateActive();
         if (typeof done === 'function') done();
       });
@@ -689,8 +689,8 @@
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes.webwarden_config) return;
-      config = Object.assign({}, DEFAULTS, changes.webwarden_config.newValue || {});
+      if (area !== 'local' || !changes.wardenone_config) return;
+      config = Object.assign({}, DEFAULTS, changes.wardenone_config.newValue || {});
       const wasActive = active;
       updateActive();
       if (active) {
@@ -705,5 +705,5 @@
 
   if (document.documentElement) start();
   else document.addEventListener('DOMContentLoaded', start, { once: true });
-  window.__webWardenConsentRejectReadyVersion = CONSENT_REJECT_VERSION;
+  window.__wardenOneConsentRejectReadyVersion = CONSENT_REJECT_VERSION;
 })();

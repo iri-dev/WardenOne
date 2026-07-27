@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Warden One</title>
+<title>WardenOne</title>
 <style>
   :root {
     --bg: #ece0f7;
@@ -428,55 +428,55 @@
   .rewind-drop[open] .rewind-caret { transform:rotate(180deg); }
   .rewind-drop[open] .card-group { margin-top:6px; }
 
-.ww-search-panel{
+.wo-search-panel{
   margin:18px 16px 6px;padding:12px 14px;border:0;border-radius:14px;
   background:var(--card);
   box-shadow:none;
 }
-.ww-search-label{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--plum);font-family:var(--display);font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;}
-.ww-search-label span:first-child{display:inline-flex;align-items:center;gap:6px;}
-.ww-search-label span:first-child::before{content:none;}
-.ww-search-count{display:none;flex:none;padding:3px 8px;border-radius:999px;background:rgba(176,111,214,.1);color:var(--plum);font-size:10px;font-weight:800;letter-spacing:0;text-transform:none;}
-.ww-search-count.has-results{display:inline-flex;}
-.ww-searchbar{
+.wo-search-label{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--plum);font-family:var(--display);font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;}
+.wo-search-label span:first-child{display:inline-flex;align-items:center;gap:6px;}
+.wo-search-label span:first-child::before{content:none;}
+.wo-search-count{display:none;flex:none;padding:3px 8px;border-radius:999px;background:rgba(176,111,214,.1);color:var(--plum);font-size:10px;font-weight:800;letter-spacing:0;text-transform:none;}
+.wo-search-count.has-results{display:inline-flex;}
+.wo-searchbar{
   position:relative;display:flex;align-items:center;margin-top:9px;border-radius:13px;
   background:rgba(255,255,255,.48);box-shadow:0 1px 0 rgba(255,255,255,.7);
 }
-.ww-searchbar:focus-within{box-shadow:0 0 0 3px rgba(176,111,214,.14),0 6px 14px rgba(67,42,94,.08);}
-.ww-search{
+.wo-searchbar:focus-within{box-shadow:0 0 0 3px rgba(176,111,214,.14),0 6px 14px rgba(67,42,94,.08);}
+.wo-search{
   display:block;width:100%;height:38px;margin:0;padding:9px 37px 9px 37px;border:1px solid rgba(218,199,238,.72);
   border-radius:13px;background:transparent;color:var(--ink);
   font:700 12.5px/1.2 var(--body);outline:none;-webkit-appearance:none;appearance:none;
   transition:border-color .15s ease,box-shadow .15s ease,background .15s ease;
 }
-.ww-search::placeholder{color:rgba(143,120,167,.56);font-weight:600;}
-.ww-search:focus{border-color:rgba(176,111,214,.45);background:rgba(255,255,255,.5);box-shadow:none;}
-.ww-search::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
-.ww-search-ico{
+.wo-search::placeholder{color:rgba(143,120,167,.56);font-weight:600;}
+.wo-search:focus{border-color:rgba(176,111,214,.45);background:rgba(255,255,255,.5);box-shadow:none;}
+.wo-search::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
+.wo-search-ico{
   position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;
   color:#9b76b5;pointer-events:none;transition:color .15s ease,transform .15s ease;
 }
-.ww-search:focus~.ww-search-ico{color:var(--plum);transform:translateY(-50%) scale(1.04);}
-.ww-search-clear{
+.wo-search:focus~.wo-search-ico{color:var(--plum);transform:translateY(-50%) scale(1.04);}
+.wo-search-clear{
   position:absolute;right:8px;top:50%;transform:translateY(-50%);display:none;align-items:center;justify-content:center;
   width:24px;height:24px;padding:0;border:1px solid rgba(218,199,238,.62);border-radius:9px;background:rgba(247,241,251,.74);color:var(--ink-soft);
   font-size:18px;line-height:1;cursor:pointer;transition:background .12s ease,color .12s ease,border-color .12s ease,transform .12s ease;
 }
-.ww-search-clear:hover{background:#fff;border-color:rgba(176,111,214,.28);color:var(--plum);}
-.ww-search-presets{display:none;}
-.ww-search-chip{
+.wo-search-clear:hover{background:#fff;border-color:rgba(176,111,214,.28);color:var(--plum);}
+.wo-search-presets{display:none;}
+.wo-search-chip{
   flex:none;padding:4px 9px;border:1px solid rgba(218,199,238,.58);border-radius:999px;background:rgba(255,255,255,.38);
   color:var(--ink-soft);font-family:var(--display);font-size:10.5px;font-weight:800;cursor:pointer;
   transition:background .12s ease,color .12s ease,transform .12s ease,border-color .12s ease,box-shadow .12s ease;
 }
-.ww-search-chip:hover{background:rgba(255,255,255,.7);color:var(--plum);border-color:rgba(176,111,214,.28);box-shadow:0 4px 10px rgba(67,42,94,.06);transform:translateY(-1px);}
-.ww-hidden{display:none!important;}
-.ww-noresult{
+.wo-search-chip:hover{background:rgba(255,255,255,.7);color:var(--plum);border-color:rgba(176,111,214,.28);box-shadow:0 4px 10px rgba(67,42,94,.06);transform:translateY(-1px);}
+.wo-hidden{display:none!important;}
+.wo-noresult{
   display:none;margin:8px 16px 4px;padding:12px 13px;border:1px solid rgba(218,199,238,.9);border-radius:14px;
   background:linear-gradient(145deg,rgba(255,255,255,.78),rgba(246,241,251,.92));color:var(--ink-soft);font-size:12px;line-height:1.45;
   box-shadow:0 7px 18px rgba(67,42,94,.08);
 }
-.ww-noresult strong{display:block;color:var(--ink);font-family:var(--display);font-size:12.5px;margin-bottom:2px;}
+.wo-noresult strong{display:block;color:var(--ink);font-family:var(--display);font-size:12.5px;margin-bottom:2px;}
 .eyeshield-panel{
   margin:14px 16px 6px;padding:14px;border:1px solid rgba(218,199,238,.74);border-radius:16px;
   background:linear-gradient(145deg,rgba(244,235,251,.96),rgba(237,225,248,.9));
@@ -540,17 +540,17 @@
 .eyeshield-reset:hover{background:#e1cdf0;color:var(--ink-soft);transform:translateY(-1px);}
 .eyeshield-reset:active{transform:translateY(0);}
 .eyeshield-panel.is-disabled .eyeshield-reset{pointer-events:none;opacity:.85;}
-.ww-footer-link{margin:18px 16px 16px;text-align:center;}
-.ww-footer-link a{
+.wo-footer-link{margin:18px 16px 16px;text-align:center;}
+.wo-footer-link a{
   display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:6px 0;border:0;border-radius:0;background:transparent;color:var(--ink);text-decoration:none;cursor:pointer;
 }
-.ww-footer-link a::after{content:"\2192";color:var(--plum);font-size:14px;font-weight:900;line-height:1;transition:transform .12s ease;}
-.ww-footer-link a:hover strong{text-decoration:underline;text-underline-offset:2px;}
-.ww-footer-link a:hover::after{transform:translateX(2px);}
-.ww-footer-icon{display:none;}
-.ww-footer-copy{display:block;min-width:0;text-align:left;}
-.ww-footer-copy strong{display:block;color:var(--plum);font-family:var(--display);font-size:12.5px;font-weight:800;line-height:1.15;}
-.ww-footer-copy small{display:block;color:var(--ink-faint);font-size:10.5px;font-weight:700;margin-top:2px;}
+.wo-footer-link a::after{content:"\2192";color:var(--plum);font-size:14px;font-weight:900;line-height:1;transition:transform .12s ease;}
+.wo-footer-link a:hover strong{text-decoration:underline;text-underline-offset:2px;}
+.wo-footer-link a:hover::after{transform:translateX(2px);}
+.wo-footer-icon{display:none;}
+.wo-footer-copy{display:block;min-width:0;text-align:left;}
+.wo-footer-copy strong{display:block;color:var(--plum);font-family:var(--display);font-size:12.5px;font-weight:800;line-height:1.15;}
+.wo-footer-copy small{display:block;color:var(--ink-faint);font-size:10.5px;font-weight:700;margin-top:2px;}
 </style>
 </head>
 <body>
@@ -563,7 +563,7 @@
       </svg>
     </div>
     <div>
-      <div class="title">Warden One</div>
+      <div class="title">WardenOne</div>
       <div class="sub">Keeping you safe online</div>
     </div>
   </div>
@@ -599,24 +599,24 @@
     </div>
   </details>
 
-  <div class="ww-search-panel" role="search" aria-label="Search Warden One settings">
-    <div class="ww-search-label">
+  <div class="wo-search-panel" role="search" aria-label="Search WardenOne settings">
+    <div class="wo-search-label">
       <span>Search protections</span>
-      <span class="ww-search-count" id="ww-search-count" aria-live="polite"></span>
+      <span class="wo-search-count" id="wo-search-count" aria-live="polite"></span>
     </div>
-    <div class="ww-searchbar">
-      <input id="ww-settings-search" class="ww-search" type="search" placeholder="Try phishing, trackers, cookies..." autocomplete="off" spellcheck="false">
-      <svg class="ww-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.6" y2="15.6"></line></svg>
-      <button type="button" id="ww-search-clear" class="ww-search-clear" aria-label="Clear search" title="Clear search">&times;</button>
+    <div class="wo-searchbar">
+      <input id="wo-settings-search" class="wo-search" type="search" placeholder="Try phishing, trackers, cookies..." autocomplete="off" spellcheck="false">
+      <svg class="wo-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.6" y2="15.6"></line></svg>
+      <button type="button" id="wo-search-clear" class="wo-search-clear" aria-label="Clear search" title="Clear search">&times;</button>
     </div>
-    <div class="ww-search-presets" aria-label="Quick searches">
-      <button type="button" class="ww-search-chip" data-search-preset="phishing">Phishing</button>
-      <button type="button" class="ww-search-chip" data-search-preset="downloads">Downloads</button>
-      <button type="button" class="ww-search-chip" data-search-preset="trackers">Trackers</button>
-      <button type="button" class="ww-search-chip" data-search-preset="youtube">YouTube</button>
+    <div class="wo-search-presets" aria-label="Quick searches">
+      <button type="button" class="wo-search-chip" data-search-preset="phishing">Phishing</button>
+      <button type="button" class="wo-search-chip" data-search-preset="downloads">Downloads</button>
+      <button type="button" class="wo-search-chip" data-search-preset="trackers">Trackers</button>
+      <button type="button" class="wo-search-chip" data-search-preset="youtube">YouTube</button>
     </div>
   </div>
-  <div class="ww-noresult" id="ww-noresult"><strong>No matches yet</strong><span>Try download, tracker, cookie, login, or phishing.</span></div>
+  <div class="wo-noresult" id="wo-noresult"><strong>No matches yet</strong><span>Try download, tracker, cookie, login, or phishing.</span></div>
 
   <h3 style="margin:14px 18px 4px;font-family:var(--display);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--plum);font-weight:700;">Script Shield</h3>
   <div class="card-group" id="js-shield" style="margin:0 16px 4px;padding:4px 14px;">
@@ -700,7 +700,7 @@
       <label class="tg"><input type="checkbox" data-key="forceHttps"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block bad certificates</div><div class="desc">Show a Warden One trust block when Chrome reports expired, revoked, self-signed, hostname-mismatch, or broken TLS certificates.</div></div>
+      <div><div class="name">Block bad certificates</div><div class="desc">Show a WardenOne trust block when Chrome reports expired, revoked, self-signed, hostname-mismatch, or broken TLS certificates.</div></div>
       <label class="tg"><input type="checkbox" data-key="certificateGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
@@ -745,7 +745,7 @@
         </div>
       </div>
       <div class="row">
-        <div><div class="name" style="font-size:12px;">VirusTotal URL-content hash lookup</div><div class="desc">Optional for small risky downloads. Chrome does not let extensions read saved files, so Warden One re-fetches up to 50 MB from the download URL, hashes that response locally, and sends only the hash. Never uploads contents.</div></div>
+        <div><div class="name" style="font-size:12px;">VirusTotal URL-content hash lookup</div><div class="desc">Optional for small risky downloads. Chrome does not let extensions read saved files, so WardenOne re-fetches up to 50 MB from the download URL, hashes that response locally, and sends only the hash. Never uploads contents.</div></div>
         <label class="tg"><input type="checkbox" data-key="downloadVirusTotalHash"><span class="track"></span><span class="knob"></span></label>
       </div>
       <div class="row" style="display:block;">
@@ -1060,7 +1060,7 @@
 <h3>Forget Me &amp; Logins</h3>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Never let sites remember me</div><div class="desc">When you close a site, Warden One wipes its cookies and stored data &mdash; so it can't keep you logged in or recognise you next time. Sites on your allowlist stay logged in as normal.</div></div>
+      <div><div class="name">Never let sites remember me</div><div class="desc">When you close a site, WardenOne wipes its cookies and stored data &mdash; so it can't keep you logged in or recognise you next time. Sites on your allowlist stay logged in as normal.</div></div>
       <label class="tg"><input type="checkbox" id="forget-enable"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1285,7 +1285,7 @@
       <label class="tg"><input type="checkbox" data-key="showBadge"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Silent mode</div><div class="desc">Full protection stays on, but Warden One hides non-critical popups, badges, and notifications. The download bar still appears.</div></div>
+      <div><div class="name">Silent mode</div><div class="desc">Full protection stays on, but WardenOne hides non-critical popups, badges, and notifications. The download bar still appears.</div></div>
       <label class="tg"><input type="checkbox" data-key="silentMode"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
@@ -1339,7 +1339,7 @@
         <label class="tg"><input type="checkbox" data-key="watchExtensionPermissions"><span class="track"></span><span class="knob"></span></label>
       </div>
       <div class="row">
-        <div><div class="name">Startup security check</div><div class="desc">When Chrome starts, Warden One scans your restored tabs and recently installed extensions for risky signs, then shows a report. Download Shield reviews risky downloads live as they happen instead of re-scanning old files on every launch. On by default.</div></div>
+        <div><div class="name">Startup security check</div><div class="desc">When Chrome starts, WardenOne scans your restored tabs and recently installed extensions for risky signs, then shows a report. Download Shield reviews risky downloads live as they happen instead of re-scanning old files on every launch. On by default.</div></div>
         <label class="tg"><input type="checkbox" data-key="startupCheck"><span class="track"></span><span class="knob"></span></label>
       </div>
       <div class="row" style="display:block;" id="startup-report-row">
@@ -1429,12 +1429,12 @@
   </div>
 
   <script src="domain-utils.js"></script>
-  <div class="ww-footer-link">
-    <a id="ww-perms-link" href="permissions.html" target="_blank" rel="noopener">
-      <span class="ww-footer-icon" aria-hidden="true">
+  <div class="wo-footer-link">
+    <a id="wo-perms-link" href="permissions.html" target="_blank" rel="noopener">
+      <span class="wo-footer-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none"><path d="M12 3.5c2.1 1.2 4.1 1.6 5.8 1.7.2 4.2-.7 9.3-5.8 12.4C6.9 14.5 6 9.4 6.2 5.2c1.7-.1 3.7-.5 5.8-1.7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.4 12.2l1.7 1.7 3.7-4.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
-      <span class="ww-footer-copy"><strong>Why these permissions?</strong><small>Plain-English trust guide</small></span>
+      <span class="wo-footer-copy"><strong>Why these permissions?</strong><small>Plain-English trust guide</small></span>
     </a>
   </div>
 <script src="popup.js"></script>

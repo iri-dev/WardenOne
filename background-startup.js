@@ -1,5 +1,5 @@
 /*
- * Warden One -- startup security check module (MV3 service worker)
+ * WardenOne -- startup security check module (MV3 service worker)
  * Loaded synchronously from background.js with importScripts().
  *
  * Shared globals provided by background.js/domain-utils.js:
@@ -21,20 +21,20 @@
  * notable. HONEST SCOPE: this surfaces things to review -- it doesn't auto-close
  * tabs or delete anything (that stays your decision, or the Recovery actions).
  * ========================================================================== */
-var STARTUP_REPORT_KEY = 'webwarden_startup_report';
+var STARTUP_REPORT_KEY = 'wardenone_startup_report';
 
 async function startupCheckEnabled() {
   try {
-    const s = await localGet('webwarden_config');
-    const cfg = (s && s.webwarden_config) || {};
+    const s = await localGet('wardenone_config');
+    const cfg = (s && s.wardenone_config) || {};
     return cfg.enabled !== false && cfg.startupCheck !== false;
   } catch (_) { return false; }
 }
 
 async function extensionUiAllowed() {
   try {
-    const s = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.webwarden_config) || {});
+    const s = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {});
     return cfg.enabled !== false && cfg.silentMode !== true;
   } catch (_) { return true; }
 }
@@ -226,9 +226,9 @@ async function runStartupCheck(reason, opts = {}) {
   if (total > 0 && await extensionUiAllowed()) {
     try { chrome.action.setBadgeText({ text: String(total > 9 ? '9+' : total) }); chrome.action.setBadgeBackgroundColor({ color: '#c0392b' }); } catch (_) {}
     try {
-      chrome.notifications.create('ww-startup-' + Date.now(), {
+      chrome.notifications.create('wo-startup-' + Date.now(), {
         type: 'basic', iconUrl: 'icons/icon128.png',
-        title: 'Warden One startup check', priority: 1,
+        title: 'WardenOne startup check', priority: 1,
         message: total + ' thing' + (total === 1 ? '' : 's') + ' to review: ' +
           [findings.tabs.length ? findings.tabs.length + ' tab(s)' : '', findings.extensions.length ? findings.extensions.length + ' new extension(s)' : ''].filter(Boolean).join(', '),
       });
@@ -245,6 +245,6 @@ try {
     // Fast path runs shortly after startup; the alarm is a backstop in case the MV3
     // worker is torn down before the setTimeout fires (it would otherwise be lost).
     setTimeout(() => runStartupCheck('startup'), 2500);
-    try { chrome.alarms.create('webwarden-startup-check', { delayInMinutes: 0.5 }); } catch (_) {}
+    try { chrome.alarms.create('wardenone-startup-check', { delayInMinutes: 0.5 }); } catch (_) {}
   });
 } catch (_) {}

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Feed-extensible IP-grabber / IP-logger domains. These are applied as DYNAMIC declarativeNetRequest block rules so new grabber front-ends (operators rotate TLDs constantly) can be blocked WITHOUT shipping a new extension version. The hand-curated static seed still lives in rules.json. Extend coverage by editing the array below, or by writing an array/object to chrome.storage.local key 'webwarden_grabber_domains' (both sources are merged on load and on change). Seeded with mirror-TLD variants of grabber families already blocked in rules.json.",
+  "note": "Feed-extensible IP-grabber / IP-logger domains. These are applied as DYNAMIC declarativeNetRequest block rules so new grabber front-ends (operators rotate TLDs constantly) can be blocked WITHOUT shipping a new extension version. The hand-curated static seed still lives in rules.json. Extend coverage by editing the array below, or by writing an array/object to chrome.storage.local key 'wardenone_grabber_domains' (both sources are merged on load and on change). Seeded with mirror-TLD variants of grabber families already blocked in rules.json.",
   "domains": [
     "iplogger.io",
     "iplogger.cn",

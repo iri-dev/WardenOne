@@ -11,7 +11,7 @@ function loadMemoryShield() {
     URL,
     setTimeout,
     clearTimeout,
-    __WEBWARDEN_TEST__: true,
+    __WARDENONE_TEST__: true,
     globalThis: null,
     chrome: {
       alarms: { create() {} },
@@ -36,7 +36,7 @@ function loadMemoryShield() {
       },
       notifications: { create() {} },
     },
-    localGet: async () => ({ webwarden_config: {} }),
+    localGet: async () => ({ wardenone_config: {} }),
     normalizeAllowlistHosts(list) {
       return Array.isArray(list) ? list.map((h) => String(h).toLowerCase()) : [];
     },
@@ -55,7 +55,7 @@ function loadMemoryShield() {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync('background-memory.js', 'utf8'), sandbox, { filename: 'background-memory.js' });
-  return { memory: sandbox.__wwMemoryTest, sandbox };
+  return { memory: sandbox.__woMemoryTest, sandbox };
 }
 
 async function main() {

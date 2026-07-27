@@ -33,7 +33,7 @@ assert(RUNTIME_START >= 0 && RUNTIME_END > RUNTIME_START,
   'could not locate twitchWorkerRuntime in dedicated module');
 const WORKER_RUNTIME_SOURCE = MODULE_SOURCE.slice(RUNTIME_START, RUNTIME_END).trim();
 
-const FLAG = '__wwTwitchAdblock';
+const FLAG = '__woTwitchAdblock';
 const CHANNEL = 'fixturechannel';
 const GQL_URL = 'https://gql.twitch.tv/gql';
 const MASTER_URL = 'https://usher.ttvnw.net/api/v2/channel/hls/' + CHANNEL

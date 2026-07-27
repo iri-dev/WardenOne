@@ -29,7 +29,7 @@
 
   const FOOT = {
     welcome: 'Takes about a minute. You can change anything later.',
-    pin: 'Pinning is optional, but it keeps Warden One one click away.',
+    pin: 'Pinning is optional, but it keeps WardenOne one click away.',
     protect: 'Recommended is the safe default. Tweak any switch later from the popup.',
     explore: 'That\'s everything. Hit Finish whenever you\'re ready.',
     done: 'One last step — then you\'re free to go.',
@@ -151,7 +151,7 @@
         chrome.runtime.sendMessage(message, (res) => {
           const err = chrome.runtime.lastError;
           if (err) resolve({ ok: false, error: err.message || String(err) });
-          else resolve(res || { ok: false, error: 'No response from Warden One.' });
+          else resolve(res || { ok: false, error: 'No response from WardenOne.' });
         });
       } catch (e) {
         resolve({ ok: false, error: String(e && e.message || e) });
@@ -193,9 +193,9 @@
       setStatus((res && res.error) || 'Could not apply the recommended settings.', 'bad');
       return;
     }
-    await storageSet({ webwarden_onboarding_recommended_at: Date.now() });
+    await storageSet({ wardenone_onboarding_recommended_at: Date.now() });
     markApplyDone();
-    setStatus('Recommended protection is on. Pin Warden One next to keep controls one click away.', 'good');
+    setStatus('Recommended protection is on. Pin WardenOne next to keep controls one click away.', 'good');
   }
 
   // ---- apply maximum privacy (opt-in, superset of recommended) -------------
@@ -220,7 +220,7 @@
       setStatus((res && res.error) || 'Could not apply the maximum-privacy settings.', 'bad');
       return;
     }
-    await storageSet({ webwarden_onboarding_recommended_at: Date.now(), webwarden_onboarding_maxprivacy_at: Date.now() });
+    await storageSet({ wardenone_onboarding_recommended_at: Date.now(), wardenone_onboarding_maxprivacy_at: Date.now() });
     markMaxApplyDone();
     setStatus('Maximum privacy is on. If a site ever looks off, allowlist it from the popup — every part of this is reversible there.', 'good');
   }
@@ -248,7 +248,7 @@
   }
 
   function guideToToolbar() {
-    setStatus('Click the Warden One shield in your toolbar to open the controls — pin it first if you don\'t see it.', 'good');
+    setStatus('Click the WardenOne shield in your toolbar to open the controls — pin it first if you don\'t see it.', 'good');
     flashPinArrow();
   }
 
@@ -324,10 +324,10 @@
 
   async function setSilentMode(isSilent) {
     setStatus('');
-    const store = await storageGet('webwarden_config');
-    const current = (store && store.webwarden_config && typeof store.webwarden_config === 'object') ? store.webwarden_config : {};
+    const store = await storageGet('wardenone_config');
+    const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
     const next = Object.assign({}, current, { silentMode: !!isSilent, showDownloadBar: true });
-    const ok = await storageSet({ webwarden_config: next });
+    const ok = await storageSet({ wardenone_config: next });
     if (!ok) { setStatus('Could not save your notification choice.', 'bad'); return; }
     paintMode(!!isSilent);
     setStatus(isSilent ? 'Silent Mode saved.' : 'Normal notifications saved.', 'good');
@@ -337,7 +337,7 @@
   async function finishSetup() {
     if (phase !== 'wizard') { showClosed(); return; }
     setButtonBusy(nextBtn, true, 'Saving...');
-    const ok = await storageSet({ webwarden_onboarding_done_at: Date.now() });
+    const ok = await storageSet({ wardenone_onboarding_done_at: Date.now() });
     if (!ok) {
       setButtonBusy(nextBtn, false);
       nextBtn.textContent = 'Finish setup';
@@ -385,12 +385,12 @@
     });
 
     // restore prior state
-    storageGet(['webwarden_config', 'webwarden_onboarding_recommended_at', 'webwarden_onboarding_maxprivacy_at', 'webwarden_onboarding_done_at'])
+    storageGet(['wardenone_config', 'wardenone_onboarding_recommended_at', 'wardenone_onboarding_maxprivacy_at', 'wardenone_onboarding_done_at'])
       .then((store) => {
-        const cfg = (store && store.webwarden_config) || {};
+        const cfg = (store && store.wardenone_config) || {};
         paintMode(cfg.silentMode === true);
-        if (store && store.webwarden_onboarding_maxprivacy_at) markMaxApplyDone();
-        else if (store && store.webwarden_onboarding_recommended_at) markApplyDone();
+        if (store && store.wardenone_onboarding_maxprivacy_at) markMaxApplyDone();
+        else if (store && store.wardenone_onboarding_recommended_at) markApplyDone();
       });
 
     render();

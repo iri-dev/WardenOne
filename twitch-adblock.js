@@ -1,5 +1,5 @@
 /*
- * Warden One Twitch ad blocker.
+ * WardenOne Twitch ad blocker.
  *
  * Installs before Twitch's player and handles both server-side HLS ads and the
  * current display/audio-ad shells. The clean-stream strategy is informed by
@@ -9,7 +9,7 @@
  * remote proxy. If Twitch offers no clean alternate playlist, confirmed ad
  * media is replaced with standard HLS gaps or a local silent hold segment.
  */
-(function webWardenTwitchAdblock() {
+(function wardenOneTwitchAdblock() {
   'use strict';
 
   const VERSION = '1.0.0';
@@ -17,7 +17,7 @@
   const GQL_URL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
   const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
   const DEFAULT_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
-  const MESSAGE_FLAG = '__wwTwitchAdblock';
+  const MESSAGE_FLAG = '__woTwitchAdblock';
 
   if (!TWITCH_HOST_RE.test(location.hostname)) return;
   if (window.top !== window) {
@@ -26,8 +26,8 @@
     if (!embedFrame) return;
   }
   if (/^clips\.twitch\.tv$/i.test(location.hostname) || /^\/[^/]+\/clip\//i.test(location.pathname || '')) return;
-  if (window.__webWardenTwitchAdblockReady) return;
-  window.__webWardenTwitchAdblockReady = VERSION;
+  if (window.__wardenOneTwitchAdblockReady) return;
+  window.__wardenOneTwitchAdblockReady = VERSION;
 
   let enabled = true;
   let bridgeToken = '';
@@ -51,7 +51,7 @@
   };
 
   const adCss = document.createElement('style');
-  adCss.id = 'ww-twitch-adblock-css';
+  adCss.id = 'wo-twitch-adblock-css';
   adCss.textContent = [
     '[aria-label="Advertisement"]',
     '#player-ads',
@@ -60,7 +60,7 @@
     '[data-a-target="video-ad-countdown"]',
     '[data-a-target="ad-countdown-timer"]',
     '[data-test-selector="sad-overlay"]',
-    'video[data-ww-twitch-independent-ad="true"]',
+    'video[data-wo-twitch-independent-ad="true"]',
     '[class*="stream-display-ad__wrapper"]',
     '[class*="stream-display-ad__container"]',
     '[class*="stream-display-ad__iframe"]',
@@ -94,7 +94,7 @@
       video.defaultMuted = state.defaultMuted;
       video.muted = state.muted;
       video.volume = state.volume;
-      video.removeAttribute('data-ww-twitch-independent-ad');
+      video.removeAttribute('data-wo-twitch-independent-ad');
     } catch (_) {}
     independentAdVideos.delete(video);
   }
@@ -189,7 +189,7 @@
       if (!video.defaultMuted) video.defaultMuted = true;
       if (!video.muted) video.muted = true;
       if (video.volume !== 0) video.volume = 0;
-      video.setAttribute('data-ww-twitch-independent-ad', 'true');
+      video.setAttribute('data-wo-twitch-independent-ad', 'true');
       return true;
     } catch (_) {
       restoreIndependentAdVideo(video);
@@ -261,7 +261,7 @@
   }
 
   function updateEnabled() {
-    const config = window.__WW_CONFIG__;
+    const config = window.__WO_CONFIG__;
     enabled = !config || (config.enabled !== false && config.twitchAdBlock !== false);
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
@@ -272,16 +272,16 @@
     }
   }
 
-  document.addEventListener('ww-config-change', updateEnabled);
+  document.addEventListener('wo-config-change', updateEnabled);
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const message = event.data;
     if (!message || typeof message !== 'object') return;
-    if (message.source === 'webwarden-handshake' && typeof message.token === 'string' && !bridgeToken) {
+    if (message.source === 'wardenone-handshake' && typeof message.token === 'string' && !bridgeToken) {
       bridgeToken = message.token;
       return;
     }
-    if (message.source !== 'webwarden' || message.kind !== 'config' || !bridgeToken || message.token !== bridgeToken) return;
+    if (message.source !== 'wardenone' || message.kind !== 'config' || !bridgeToken || message.token !== bridgeToken) return;
     const config = message.overrides || {};
     enabled = config.enabled !== false && config.twitchAdBlock !== false;
     adCss.disabled = !enabled;
@@ -396,7 +396,7 @@
   }
 
   function installFetchHook() {
-    if (typeof nativeFetch !== 'function' || nativeFetch.__wwTwitchCurrent) return;
+    if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent) return;
     function twitchFetch(input, init) {
       const url = requestUrl(input);
       if (!enabled || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
@@ -416,7 +416,7 @@
       return nativeFetch.call(this, input, init);
     }
     try {
-      Object.defineProperty(twitchFetch, '__wwTwitchCurrent', { value: VERSION });
+      Object.defineProperty(twitchFetch, '__woTwitchCurrent', { value: VERSION });
       Object.defineProperty(twitchFetch, 'name', { value: 'fetch' });
       Object.defineProperty(twitchFetch, 'length', { value: 1 });
       twitchFetch.toString = Function.prototype.toString.bind(nativeFetch);
@@ -513,7 +513,7 @@
   function twitchWorkerRuntime(originalSource, initialState, runtimeVersion) {
     'use strict';
 
-    const FLAG = '__wwTwitchAdblock';
+    const FLAG = '__woTwitchAdblock';
     const AD_MARKER_RE = /stitched-ad|#EXT-X-CUE-OUT|twitch-stitched|CLASS="twitch-maf-ad"|CLASS="twitch-trigger"/i;
     const STRONG_AD_METADATA_RE = /X-TV-TWITCH-AD-(?:RADS-TOKEN|ROLL-TYPE|POD-|ADVERTISER|CREATIVE|LINE-ITEM|ORDER-ID)/i;
     const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
@@ -1375,18 +1375,18 @@
   }
 
   function installWorkerHook() {
-    if (typeof NativeWorker !== 'function' || NativeWorker.__wwTwitchCurrent) return;
+    if (typeof NativeWorker !== 'function' || NativeWorker.__woTwitchCurrent) return;
 
     function TwitchWorker(scriptUrl, options) {
       let protocol = '';
       try { protocol = new URL(String(scriptUrl), location.href).protocol; } catch (_) {}
-      var wwTwitchBlob = protocol === 'blob:' && !(options && options.type === 'module') && workerOriginIsTwitch(scriptUrl);
-      if (!enabled || !wwTwitchBlob) {
-        if (wwTwitchBlob) { try { console.log('[WW-Twitch] worker skipped (adblock disabled)'); } catch (_) {} }
+      var woTwitchBlob = protocol === 'blob:' && !(options && options.type === 'module') && workerOriginIsTwitch(scriptUrl);
+      if (!enabled || !woTwitchBlob) {
+        if (woTwitchBlob) { try { console.log('[WO-Twitch] worker skipped (adblock disabled)'); } catch (_) {} }
         return new NativeWorker(scriptUrl, options);
       }
       const originalSource = readWorkerSource(scriptUrl);
-      if (!originalSource) { try { console.log('[WW-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} return new NativeWorker(scriptUrl, options); }
+      if (!originalSource) { try { console.log('[WO-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} return new NativeWorker(scriptUrl, options); }
 
       let wrapperUrl = '';
       try {
@@ -1394,7 +1394,7 @@
           'null,' + JSON.stringify(publicClientState()) + ',' + JSON.stringify(VERSION) + ');\n';
         wrapperUrl = URL.createObjectURL(new Blob([bootstrap, originalSource], { type: 'application/javascript' }));
         const worker = new NativeWorker(wrapperUrl, options);
-        try { console.log('[WW-Twitch] worker HOOKED — ad interception active'); } catch (_) {}
+        try { console.log('[WO-Twitch] worker HOOKED — ad interception active'); } catch (_) {}
         workers.add(worker);
         let revokeTimer = setTimeout(() => {
           try { URL.revokeObjectURL(wrapperUrl); } catch (_) {}
@@ -1417,10 +1417,10 @@
             proxyWorkerGql(worker, message);
           } else if (message.type === 'ad-state') {
             try {
-              document.documentElement.setAttribute('data-ww-twitch-adblock', String(message.state || 'active'));
+              document.documentElement.setAttribute('data-wo-twitch-adblock', String(message.state || 'active'));
             } catch (_) {}
           } else if (message.type === 'log') {
-            try { console.log('[WW-Twitch]', message.m); } catch (_) {}
+            try { console.log('[WO-Twitch]', message.m); } catch (_) {}
           }
         });
         worker.addEventListener('error', () => workers.delete(worker), { once: true });
@@ -1436,7 +1436,7 @@
     try {
       TwitchWorker.prototype = NativeWorker.prototype;
       Object.setPrototypeOf(TwitchWorker, NativeWorker);
-      Object.defineProperty(TwitchWorker, '__wwTwitchCurrent', { value: VERSION });
+      Object.defineProperty(TwitchWorker, '__woTwitchCurrent', { value: VERSION });
       Object.defineProperty(TwitchWorker, 'name', { value: 'Worker' });
       TwitchWorker.toString = Function.prototype.toString.bind(NativeWorker);
     } catch (_) {}

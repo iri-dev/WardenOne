@@ -475,8 +475,8 @@ async function main() {
       return Promise.resolve(new FakeResponse(JSON.stringify(coldSample()), { status: 200 }));
     };
     vm.runInContext(src, ctx);
-    ctx.__postWindowMessage({ source: "webwarden-handshake", token: "master-off-test" });
-    ctx.__postWindowMessage({ source: "webwarden", kind: "config", token: "master-off-test", overrides: { enabled: false } });
+    ctx.__postWindowMessage({ source: "wardenone-handshake", token: "master-off-test" });
+    ctx.__postWindowMessage({ source: "wardenone", kind: "config", token: "master-off-test", overrides: { enabled: false } });
     const body = { context: { client: { clientName: "WEB", userAgent: "UA" } }, videoId: "off", playbackContext: { contentPlaybackContext: {} } };
     const resp = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", { method: "POST", body: JSON.stringify(body) });
     const sent = JSON.parse(receivedBody);

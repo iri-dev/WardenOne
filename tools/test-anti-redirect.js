@@ -127,7 +127,7 @@ function build(opts) {
   sandbox.document = {
     activeElement: null,
     addEventListener() {},
-    dispatchEvent(ev) { if (ev && ev.type === 'ww-event') state.emits.push(ev.detail); },
+    dispatchEvent(ev) { if (ev && ev.type === 'wo-event') state.emits.push(ev.detail); },
     getElementsByTagName(tag) {
       tag = String(tag || '').toLowerCase();
       if (tag === 'video') return videos;
@@ -180,7 +180,7 @@ function build(opts) {
     submit(form) { sandbox.HTMLFormElement.prototype.submit.call(form); },
     lastEmit() { return state.emits[state.emits.length - 1] || null; },
     handshake() {
-      api.fire('message', { source: innerWindow, data: { source: 'webwarden-handshake', token: 'tok' } });
+      api.fire('message', { source: innerWindow, data: { source: 'wardenone-handshake', token: 'tok' } });
     },
   };
   api.handshake();

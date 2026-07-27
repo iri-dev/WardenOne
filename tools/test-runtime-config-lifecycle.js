@@ -23,21 +23,21 @@ function check(name, condition) {
 }
 
 check('main runtime starts from authenticated saved config',
-  /const __wwStartWhenConfigured=\(\)=>\{\s*window\.__WW_CONFIG__&&window\.__WW_CONFIG__\.__configReady&&__wwStartRuntime\(\)/.test(source));
+  /const __woStartWhenConfigured=\(\)=>\{\s*window\.__WO_CONFIG__&&window\.__WO_CONFIG__\.__configReady&&__woStartRuntime\(\)/.test(source));
 check('main runtime has a bounded bridge-failure fallback',
-  /setTimeout\(__wwStartRuntime,\s*1500\)/.test(source));
+  /setTimeout\(__woStartRuntime,\s*1500\)/.test(source));
 check('overlay cleanup waits for authenticated config',
-  /overlayCleanerOn=\(\)=>!!\(window\.__WW_CONFIG__&&window\.__WW_CONFIG__\.__configReady&&WW\.enabled&&WW\.removeOverlays\)/.test(source));
+  /overlayCleanerOn=\(\)=>!!\(window\.__WO_CONFIG__&&window\.__WO_CONFIG__\.__configReady&&WO\.enabled&&WO\.removeOverlays\)/.test(source));
 check('overlay sweep refuses to mutate while cleanup is inactive',
   /sweep=\(\)=>\{\s*if\(!overlayCleanerOn\(\)\)return;/.test(source));
 check('download auto-skip also respects config readiness',
-  /tryAutoSkip=\(\)=>\{\s*if\(!overlayCleanerOn\(\)\|\|!WW\.autoSkipDownloadAds/.test(source));
+  /tryAutoSkip=\(\)=>\{\s*if\(!overlayCleanerOn\(\)\|\|!WO\.autoSkipDownloadAds/.test(source));
 check('disabled cleanup restores hidden or removed nodes',
   /const restoreCleanerChanges=\(\)=>\{[\s\S]*undoStack\.pop\(\)\(\)[\s\S]*rg-hard-overlay-css[\s\S]*rg-undo-chip[\s\S]*rg-dl-bar/.test(source));
 check('live config changes start or restore the cleaner',
-  /document\.addEventListener\("ww-config-change",\s*\(\)=>\{\s*overlayCleanerOn\(\)\?start\(\):restoreCleanerChanges\(\)/.test(source));
+  /document\.addEventListener\("wo-config-change",\s*\(\)=>\{\s*overlayCleanerOn\(\)\?start\(\):restoreCleanerChanges\(\)/.test(source));
 check('normal WebRTC transport is not rewritten by the IP lookup guard',
-  /if\(WW\.blockWebRTCLeak&&!trustedMediaHost&&WW\.blockSuspiciousWebRTC\)try\{/.test(source));
+  /if\(WO\.blockWebRTCLeak&&!trustedMediaHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(source));
 check('runtime reports compatibility-preserving WebRTC behavior',
   source.includes('log("webrtc_transport_preserved"'));
 

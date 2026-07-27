@@ -13,7 +13,7 @@ const vm = require('vm');
 const assert = require('assert');
 
 const MIN = fs.readFileSync('content.min.js', 'utf8');
-const START = MIN.indexOf('if(WW.paymentCardGuard)try{const currentHost=');
+const START = MIN.indexOf('if(WO.paymentCardGuard)try{const currentHost=');
 const END = MIN.indexOf('log("sessionshield_pro_active"', START);
 if (START < 0 || END < START) {
   console.error('FATAL: payment-card guard markers not found in content.min.js');
@@ -150,7 +150,7 @@ function makeSandbox(opts = {}) {
       pathname: url.pathname,
       search: url.search,
     },
-    WW: Object.assign({ paymentCardGuard: true }, opts.WW || {}),
+    WO: Object.assign({ paymentCardGuard: true }, opts.WO || {}),
     log(type, detail) {
       logs.push({ type, detail });
     },
@@ -298,7 +298,7 @@ check('suspicious or new checkout warns on submit instead of firing everywhere',
     url: 'https://secure-pay-deal.xyz/checkout',
     inputs: [field],
     forms: [form],
-    WW: { __pageRisk: { newDomain: true } },
+    WO: { __pageRisk: { newDomain: true } },
   }));
   const event = trigger(s, 'submit', form);
   assert.strictEqual(event.prevented, false);
@@ -347,7 +347,7 @@ check('young domain alone stays quiet until another payment risk appears', () =>
     url: 'https://shop.example/checkout',
     inputs: [field],
     forms: [form],
-    WW: { __pageRisk: { youngDomain: true } },
+    WO: { __pageRisk: { youngDomain: true } },
   }));
   const event = trigger(s, 'submit', form);
   assert.strictEqual(event.prevented, false);
@@ -362,7 +362,7 @@ check('phishing checkout still blocks card submission', () => {
     url: 'https://paypa1-login.example/checkout',
     inputs: [field],
     forms: [form],
-    WW: { __pageRisk: { phishing: true, brand: 'paypal' } },
+    WO: { __pageRisk: { phishing: true, brand: 'paypal' } },
   }));
   const event = trigger(s, 'submit', form);
   assert.strictEqual(event.prevented, true);
@@ -395,7 +395,7 @@ check('a new/young domain on a clean host no longer warns by itself', () => {
     url: 'https://newstore.example/checkout',
     inputs: [field],
     forms: [form],
-    WW: { __pageRisk: { newDomain: true } },
+    WO: { __pageRisk: { newDomain: true } },
   }));
   const event = trigger(s, 'submit', form);
   assert.strictEqual(event.prevented, false);
@@ -506,7 +506,7 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
       url: 'https://shop.example/checkout',
       inputs: [field],
       forms: [form],
-      WW: { trustedPaymentHostsExtra: ['processor.example'] },
+      WO: { trustedPaymentHostsExtra: ['processor.example'] },
       reputationResult: {
         hit: false,
         warning: false,
@@ -529,7 +529,7 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
       url: 'https://shop.example/checkout',
       inputs: [field],
       forms: [form],
-      WW: {
+      WO: {
         trustedPaymentHostsExtra: ['processor.example'],
         __pageRisk: { phishing: true, brand: 'paypal' },
       },
@@ -576,12 +576,12 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
       title: 'Payment',
       bodyText: 'Payment card checkout',
       inputs: [field],
-      WW: { __pageRisk: { newDomain: true } },
+      WO: { __pageRisk: { newDomain: true } },
       confirmResult: false,
     }));
     await assert.rejects(
       s.fetch('https://secure-pay-deal.xyz/charge', { body: 'card=' + validCard() }),
-      /Blocked by Warden One Payment Card Guard/
+      /Blocked by WardenOne Payment Card Guard/
     );
     assert.strictEqual(hasLog(s, 'warned_payment_card_entry'), true);
     assert.strictEqual(s.__confirmCalls.length, 1);
@@ -604,7 +604,7 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
     }));
     await assert.rejects(
       s.fetch('https://processor.example/charge', { body: 'card=' + validCard() }),
-      /Blocked by Warden One Payment Card Guard/
+      /Blocked by WardenOne Payment Card Guard/
     );
     assert.strictEqual(hasLog(s, 'blocked_payment_card_submit'), true);
     assert.strictEqual(s.__fetches.length, 0);
@@ -618,7 +618,7 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
       title: 'Payment',
       bodyText: 'Payment card checkout',
       inputs: [field],
-      WW: { __pageRisk: { newDomain: true } },
+      WO: { __pageRisk: { newDomain: true } },
       confirmResult: false,
     }));
     const xhr = new s.XMLHttpRequest();

@@ -1,4 +1,4 @@
-/* Warden One popup logic */
+/* WardenOne popup logic */
 
 // Cached element lookup. Replaces ~135 raw getElementById calls: shorter,
 // one obvious place to typo-check an id, and it caches the node so repeated lookups of
@@ -71,9 +71,9 @@ let config = Object.assign({}, DEFAULTS);
 let eyeShieldHost = '';
 let eyeShieldSaveTimer = 0;
 
-const POPUP_SCROLL_KEY = 'webwarden_popup_scroll_memory';
-const ADVANCED_PROVIDERS_OPEN_KEY = 'webwarden_advanced_providers_open';
-const POPUP_SEARCH_KEY = 'webwarden_popup_search_memory';
+const POPUP_SCROLL_KEY = 'wardenone_popup_scroll_memory';
+const ADVANCED_PROVIDERS_OPEN_KEY = 'wardenone_advanced_providers_open';
+const POPUP_SEARCH_KEY = 'wardenone_popup_search_memory';
 // Reassigned by the settings-search block once it's wired; restores the last query
 // on popup open so reopening jumps straight back to what you were looking at.
 let restorePopupSearch = (done) => { if (typeof done === 'function') done(); };
@@ -596,8 +596,8 @@ function publicConfig(cfg) {
 }
 
 function load() {
-  chrome.storage.local.get('webwarden_config', (res) => {
-    const saved = (res && res.webwarden_config) || null;
+  chrome.storage.local.get('wardenone_config', (res) => {
+    const saved = (res && res.wardenone_config) || null;
     if (saved) config = Object.assign({}, DEFAULTS, saved);
     if (saved && saved.googleSearchResultCleanup === true) {
       if (typeof saved.blockSearchAiAnswers === 'undefined') config.blockSearchAiAnswers = true;
@@ -632,7 +632,7 @@ function setSavedTick(text, isError) {
 }
 
 function saveConfig(label, afterSave) {
-  chrome.storage.local.set({ webwarden_config: config }, () => {
+  chrome.storage.local.set({ wardenone_config: config }, () => {
     const err = chrome.runtime.lastError;
     if (err) {
       setSavedTick('Save failed', true);
@@ -823,7 +823,7 @@ function allowlistCurrent() {
     if (idx >= 0) {
       // already allowlisted -> remove (re-enable protection here)
       config.allowlist.splice(idx, 1);
-      chrome.storage.local.set({ webwarden_config: config }, () => {
+      chrome.storage.local.set({ wardenone_config: config }, () => {
         const err = chrome.runtime.lastError;
         if (err) {
           setNote(note, [{ t: 'Could not save allowlist change: ' + (err.message || String(err)) }]);
@@ -840,7 +840,7 @@ function allowlistCurrent() {
       });
     } else {
       config.allowlist.push(host);
-      chrome.storage.local.set({ webwarden_config: config }, () => {
+      chrome.storage.local.set({ wardenone_config: config }, () => {
         const err = chrome.runtime.lastError;
         if (err) {
           setNote(note, [{ t: 'Could not save allowlist change: ' + (err.message || String(err)) }]);
@@ -850,7 +850,7 @@ function allowlistCurrent() {
         }
         setNote(note, [
           { t: host, cls: 'saved' },
-          { t: ' allowlisted — Warden One stays passive there after reload.' },
+          { t: ' allowlisted — WardenOne stays passive there after reload.' },
         ]);
         updateAllowlistBtn();
       });
@@ -1586,9 +1586,9 @@ function listMetaActiveCount(meta) {
   return Number((meta && (meta.activeCount || meta.activeRuleCount)) || 0);
 }
 function renderListMeta() {
-  chrome.storage.local.get(['webwarden_list_meta', 'webwarden_aux_list_meta'], (x) => {
-    const meta = x && x.webwarden_list_meta;
-    const auxMeta = x && x.webwarden_aux_list_meta;
+  chrome.storage.local.get(['wardenone_list_meta', 'wardenone_aux_list_meta'], (x) => {
+    const meta = x && x.wardenone_list_meta;
+    const auxMeta = x && x.wardenone_aux_list_meta;
     const statusEl = $('list-status');
     const updEl = $('list-updated');
     const count = listMetaCount(meta);
@@ -1691,9 +1691,9 @@ $('update-now').addEventListener('click', () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.webwarden_list_meta || changes.webwarden_aux_list_meta)) renderListMeta();
-  if (area === 'local' && (changes.webwarden_config || changes.webwarden_history || changes.webwarden_list_meta || changes.webwarden_aux_list_meta || changes.webwarden_ext_alerts || changes.webwarden_startup_report)) renderProtectionHealth();
-  if (area === 'local' && changes.webwarden_tracker_learner) renderTrackerLearner();
+  if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta)) renderListMeta();
+  if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
+  if (area === 'local' && changes.wardenone_tracker_learner) renderTrackerLearner();
 });
 
 initPopupScrollMemory();
@@ -1732,7 +1732,7 @@ function runSessionScan(isAuto) {
     }
     try { ssCurrentOrigin = new URL(tab.url).origin; } catch { ssCurrentOrigin = null; }
     chrome.scripting.executeScript(
-      { target: { tabId: tab.id }, world: 'MAIN', func: () => window.__WW_SESSION__ || null },
+      { target: { tabId: tab.id }, world: 'MAIN', func: () => window.__WO_SESSION__ || null },
       (res) => {
         btn.disabled = false; btn.textContent = 'Re-scan';
         const data = res && res[0] && res[0].result;
@@ -1936,7 +1936,7 @@ function clearAllStorageTokens(btnEl) {
       world: 'MAIN',
       func: () => {
         try {
-          const s = (window.__WW_SESSION__ && window.__WW_SESSION__.findings) || [];
+          const s = (window.__WO_SESSION__ && window.__WO_SESSION__.findings) || [];
           let n = 0;
           for (const f of s) {
             if (f.where === 'localStorage' && f.key) { localStorage.removeItem(f.key); n++; }
@@ -2731,7 +2731,7 @@ function renderPermResults(out, hostname, res) {
 
   toggle.addEventListener('change', () => {
     if (toggle.checked) {
-      const ok = window.confirm('Turn on "Never let sites remember me"?\n\nWhen you close a site, Warden One will clear its cookies and stored data — so you\'ll be logged out and it can\'t recognise you next time. Sites on your allowlist are left alone.');
+      const ok = window.confirm('Turn on "Never let sites remember me"?\n\nWhen you close a site, WardenOne will clear its cookies and stored data — so you\'ll be logged out and it can\'t recognise you next time. Sites on your allowlist are left alone.');
       if (!ok) { toggle.checked = false; return; }
       config.forgetMeMode = 'all';
       config.forgetMeAllConfirmedAt = Date.now();
@@ -3220,11 +3220,11 @@ $('verify-repair').addEventListener('click', () => {
 });
 
 ;(function(){
-  var inp=document.getElementById('ww-settings-search');
+  var inp=document.getElementById('wo-settings-search');
   if(inp){
-    var nores=document.getElementById('ww-noresult');
-    var clearBtn=document.getElementById('ww-search-clear');
-    var countEl=document.getElementById('ww-search-count');
+    var nores=document.getElementById('wo-noresult');
+    var clearBtn=document.getElementById('wo-search-clear');
+    var countEl=document.getElementById('wo-search-count');
 
     // Related-term groups. Matching any word in a group also surfaces settings
     // described with any other word in the same group, so "adblock" finds the
@@ -3334,7 +3334,7 @@ $('verify-repair').addEventListener('click', () => {
       if(el)rows.push(buildKeywords(el));
     });
     // Search preset chips
-    document.querySelectorAll('.ww-search-chip').forEach(function(el){rows.push(buildKeywords(el));});
+    document.querySelectorAll('.wo-search-chip').forEach(function(el){rows.push(buildKeywords(el));});
     // The no-result area is status UI, not a searchable setting.
     // Scan site / breach / domain age buttons
     ['ss-scan','ss-sitebreach','ss-domage','ss-clear','ss-panic','cl-run','ext-review','verify-repair','startup-run','mem-free','mem-dupes','mem-tab-usage','mem-zombies','perm-scan','perm-reset','ug-btn'].forEach(function(id){
@@ -3431,15 +3431,15 @@ $('verify-repair').addEventListener('click', () => {
           var sc=scoreMatch(qts[t],row);
           if(sc===0){ok=false;break;}
         }
-        row.el.classList.toggle('ww-hidden',!ok);
+        row.el.classList.toggle('wo-hidden',!ok);
         if(ok)shown++;
       }
       // Hide/show card-groups based on whether they have any visible .row
       document.querySelectorAll('.card-group').forEach(function(g){
-        var hide=!!q&&!g.querySelector('.row:not(.ww-hidden)');
-        g.classList.toggle('ww-hidden',hide);
+        var hide=!!q&&!g.querySelector('.row:not(.wo-hidden)');
+        g.classList.toggle('wo-hidden',hide);
         var hh=g.previousElementSibling;
-        if(hh&&hh.tagName==='H3')hh.classList.toggle('ww-hidden',hide);
+        if(hh&&hh.tagName==='H3')hh.classList.toggle('wo-hidden',hide);
       });
       // Hide/show EyeShield panel based on whether any of its indexed children are visible
       var eyePanel=$('eyeshield-panel');
@@ -3450,30 +3450,30 @@ $('verify-repair').addEventListener('click', () => {
           // Check all indexed eyeShield children within the panel
           var eyeSelectors='.eyeshield-mode, .eyeshield-slider-row, .eyeshield-extras, .eyeshield-reset, .eyeshield-modes, .eyeshield-range, .eyeshield-value';
           var eyeKids=eyePanel.querySelectorAll(eyeSelectors);
-          for(var ei=0;ei<eyeKids.length;ei++){if(!eyeKids[ei].classList.contains('ww-hidden')){eyeVisible=true;break;}}
+          for(var ei=0;ei<eyeKids.length;ei++){if(!eyeKids[ei].classList.contains('wo-hidden')){eyeVisible=true;break;}}
         }
-        eyePanel.classList.toggle('ww-hidden',!eyeVisible);
+        eyePanel.classList.toggle('wo-hidden',!eyeVisible);
         var eyeH3=eyePanel.previousElementSibling;
-        if(eyeH3&&eyeH3.tagName==='H3')eyeH3.classList.toggle('ww-hidden',!eyeVisible);
+        if(eyeH3&&eyeH3.tagName==='H3')eyeH3.classList.toggle('wo-hidden',!eyeVisible);
       }
       // Hide/show master switch + Turn everything on when searching
       var masterArea=document.querySelector('.master');
       if(masterArea){
-        var masterVisible=!q||!masterArea.querySelector('.ww-hidden');
-        masterArea.classList.toggle('ww-hidden',!masterVisible);
+        var masterVisible=!q||!masterArea.querySelector('.wo-hidden');
+        masterArea.classList.toggle('wo-hidden',!masterVisible);
       }
       var topQuick=document.querySelector('.top-quick');
       if(topQuick){
-        var tqVisible=!q||!topQuick.querySelector('.ww-hidden');
-        topQuick.classList.toggle('ww-hidden',!tqVisible);
+        var tqVisible=!q||!topQuick.querySelector('.wo-hidden');
+        topQuick.classList.toggle('wo-hidden',!tqVisible);
       }
       // Hide/show the JavaScript shield section
       var jsShield=$('js-shield');
       if(jsShield){
-        var jsVisible=!q||!jsShield.querySelector('.ww-hidden');
-        jsShield.classList.toggle('ww-hidden',!jsVisible);
+        var jsVisible=!q||!jsShield.querySelector('.wo-hidden');
+        jsShield.classList.toggle('wo-hidden',!jsVisible);
         var jsH3=jsShield.previousElementSibling;
-        if(jsH3&&jsH3.tagName==='H3')jsH3.classList.toggle('ww-hidden',!jsVisible);
+        if(jsH3&&jsH3.tagName==='H3')jsH3.classList.toggle('wo-hidden',!jsVisible);
       }
       // Hide/show the search panel itself when there's a query that matches nothing?
       // (Leave it visible always so user can clear the search)
@@ -3522,6 +3522,6 @@ $('verify-repair').addEventListener('click', () => {
     window.addEventListener('pagehide',flushSearch);
     document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden')flushSearch(); });
   }
-  var pl=document.getElementById('ww-perms-link');
+  var pl=document.getElementById('wo-perms-link');
   if(pl)pl.addEventListener('click',function(e){try{e.preventDefault();chrome.tabs.create({url:chrome.runtime.getURL('permissions.html')});}catch(_){}});
 })();

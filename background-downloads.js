@@ -1,5 +1,5 @@
 /*
- * Warden One Download Guard runtime
+ * WardenOne Download Guard runtime
  * =================================
  * Owns download scoring, review storage/UI, hash-reputation hooks, trusted
  * download sites, Chrome downloads listeners, and critical hard-block handling.
@@ -8,10 +8,10 @@
 
 // ---- Download Guard -------------------------------------------------------
 // Download review. A/B downloads continue quietly; C-F downloads are paused and
-// reviewed in a Warden One window before the user chooses continue or cancel.
+// reviewed in a WardenOne window before the user chooses continue or cancel.
 // External reputation is opt-in. Chrome extensions cannot read arbitrary saved
 // download bytes from disk, so hash checks use a fresh URL re-fetch fingerprint.
-// VirusTotal receives only that SHA-256; Warden One never uploads file contents.
+// VirusTotal receives only that SHA-256; WardenOne never uploads file contents.
 const DANGEROUS_EXT = /\.(exe|scr|msi|msix|bat|cmd|com|pif|cpl|jar|vbs|vbe|vbscript|js|jse|wsf|wsh|ws|ps1|ps2|psc1|ps1xml|hta|reg|dll|sys|apk|dmg|pkg|app|deb|rpm|gadget|inf|lnk|msc|msp|msu|diagcab|ade|adp|chm|mht|mhtml|url|scf|application|appref-ms|jnlp|xll|settingcontent-ms|library-ms|iqy|slk|desktop|crx|xpi|scptd|terminal)$/i;
 const ARCHIVE_EXT = /\.(zip|rar|7z|gz|tar|cab|ace|arj|tgz|bz2|xz|lzh)$/i;
 // disk-image / container formats increasingly used to smuggle executables past
@@ -19,9 +19,9 @@ const ARCHIVE_EXT = /\.(zip|rar|7z|gz|tar|cab|ace|arj|tgz|bz2|xz|lzh)$/i;
 const CONTAINER_EXT = /\.(iso|img|vhd|vhdx|udf)$/i;
 const MACRO_DOC_EXT = /\.(docm|xlsm|pptm|dotm|xlam|xltm|xlsb)$/i;
 const INSTALLER_HINT = /(setup|install|update|crack|keygen|patch|activator|loader|nulled|warez|serial|cracked|repack|pre-?activated|free-?download)/i;
-const DOWNLOAD_PENDING_KEY = 'webwarden_pending_downloads';
-const DOWNLOAD_HANDLED_KEY = 'webwarden_download_handled';
-const DOWNLOAD_TRUSTED_KEY = 'webwarden_download_trusted_sites';
+const DOWNLOAD_PENDING_KEY = 'wardenone_pending_downloads';
+const DOWNLOAD_HANDLED_KEY = 'wardenone_download_handled';
+const DOWNLOAD_TRUSTED_KEY = 'wardenone_download_trusted_sites';
 try { globalThis.DOWNLOAD_TRUSTED_KEY = DOWNLOAD_TRUSTED_KEY; } catch (_) {}
 
 const DOWNLOAD_HASH_TIMEOUT_MS = 15000;
@@ -106,12 +106,12 @@ const DOWNLOAD_SAFE_LOGGED = new Set();
 // the browser reopens and shows all of them"). We stamp the session start so a
 // scan can tell a download began in THIS session vs a previous one.
 let SESSION_STARTED_AT = 0;
-localGet('webwarden_session_started_at').then((x) => {
-  SESSION_STARTED_AT = (x && x.webwarden_session_started_at) || 0;
+localGet('wardenone_session_started_at').then((x) => {
+  SESSION_STARTED_AT = (x && x.wardenone_session_started_at) || 0;
 }).catch(() => {});
 async function markBrowserSessionStart() {
   SESSION_STARTED_AT = Date.now();
-  try { await localSet({ webwarden_session_started_at: SESSION_STARTED_AT }); } catch (_) {}
+  try { await localSet({ wardenone_session_started_at: SESSION_STARTED_AT }); } catch (_) {}
 }
 function downloadStartedBeforeSession(item) {
   if (!SESSION_STARTED_AT) return false;               // unknown (first run) -> don't suppress
@@ -600,7 +600,7 @@ function downloadHashSourceMeta(fetched, kind, extra) {
 
 // ---- Local keyless known-malware hash set --------------------------------------
 // Default-ON URL-content fingerprint check that needs NO API key: for reviewed web
-// downloads, Warden One re-fetches the download URL, hashes that response, and matches
+// downloads, WardenOne re-fetches the download URL, hashes that response, and matches
 // it against a bundled/feed-extensible known-malware set. This is useful when the URL
 // serves stable public bytes, but it is not a saved-file hash. Signed, authenticated,
 // one-time, blob, or personalized downloads can differ from the re-fetched response.
@@ -622,8 +622,8 @@ async function loadMalwareHashes() {
   } catch (_) {}
   // runtime/feed-supplied set: a future hash-feed integration just writes this storage key
   try {
-    const x = await localGet('webwarden_malware_hashes');
-    const stored = x && x.webwarden_malware_hashes;
+    const x = await localGet('wardenone_malware_hashes');
+    const stored = x && x.wardenone_malware_hashes;
     addMalwareHashes(Array.isArray(stored) ? stored : (stored && stored.sha256));
   } catch (_) {}
 }
@@ -1086,7 +1086,7 @@ async function openDownloadReview(review) {
   const canNotify = await extensionUiAllowed();
   if (canNotify) {
     try {
-      chrome.notifications.create('ww-dl-' + review.id, {
+      chrome.notifications.create('wo-dl-' + review.id, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title: 'Download Shield: ' + (review.status || ('Grade ' + review.grade)),
@@ -1186,7 +1186,7 @@ async function handleDownloadDecision(id, decision, sender) {
   const review = await getPendingDownload(id);
   if (!review) return { ok: false, error: 'This download review is no longer available.' };
   if (messageSenderIsTab(sender)) {
-    return { ok: false, error: 'Download review decisions must come from the Warden One review window.' };
+    return { ok: false, error: 'Download review decisions must come from the WardenOne review window.' };
   }
   const grade = String(review.grade || '').toUpperCase();
   if (decision === 'continue' || decision === 'keep' || decision === 'trust-continue') {
@@ -1876,8 +1876,8 @@ async function runDownloadGuardScan(id, hint, reason) {
       return;
     }
 
-    const cfgStore = await localGet(['webwarden_config', DOWNLOAD_TRUSTED_KEY]);
-    const cfg = (cfgStore && cfgStore.webwarden_config) || {};
+    const cfgStore = await localGet(['wardenone_config', DOWNLOAD_TRUSTED_KEY]);
+    const cfg = (cfgStore && cfgStore.wardenone_config) || {};
     if (cfg.enabled === false || cfg.downloadReputation === false) {
       // Guard is off -> never leave a file stuck in the onCreated early-pause.
       if (EARLY_PAUSED.has(key)) { Promise.resolve(downloadApiCall('resume', item.id)).catch(() => {}); EARLY_PAUSED.delete(key); }
@@ -2038,8 +2038,8 @@ try {
 } catch (_) {}
 
 try {
-  if (globalThis.__WEBWARDEN_TEST__) {
-    globalThis.__wwDownloadTest = Object.freeze({
+  if (globalThis.__WARDENONE_TEST__) {
+    globalThis.__woDownloadTest = Object.freeze({
       DOWNLOAD_GRADE_META,
       DOWNLOAD_HASH_SOURCE,
       DL_WEIGHT,
