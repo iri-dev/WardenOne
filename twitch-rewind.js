@@ -1,5 +1,5 @@
 /*
- * Warden One Twitch Local DVR.
+ * WardenOne Twitch Local DVR.
  *
  * Twitch removed rewind on live streams, and its own MediaSource history
  * cannot be extended safely (the transmux/playlist state is already gone, so an
@@ -19,8 +19,8 @@
 (function () {
   'use strict';
 
-  if (window.top !== window || window.__webWardenTwitchRewindReady) return;
-  window.__webWardenTwitchRewindReady = true;
+  if (window.top !== window || window.__wardenOneTwitchRewindReady) return;
+  window.__wardenOneTwitchRewindReady = true;
 
   const isHarness = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
   const DEFAULT_BUFFER_SECONDS = 300;
@@ -136,7 +136,7 @@
   function findPrimaryVideo() {
     let best = null;
     let bestScore = 0;
-    document.querySelectorAll('video:not([data-webwarden-replay])').forEach((video) => {
+    document.querySelectorAll('video:not([data-wardenone-replay])').forEach((video) => {
       const rect = video.getBoundingClientRect();
       if (rect.width < 300 || rect.height < 160) return;
       const style = getComputedStyle(video);
@@ -371,7 +371,7 @@
   function createControls() {
     if (controlsRoot || !document.documentElement) return;
     controlsRoot = document.createElement('div');
-    controlsRoot.id = 'webwarden-twitch-rewind';
+    controlsRoot.id = 'wardenone-twitch-rewind';
     controlsRoot.style.cssText = 'all:initial;position:relative;z-index:2147483647;display:inline-flex;align-items:center;height:3rem;flex:0 0 auto;';
     controlsShadow = controlsRoot.attachShadow({ mode: 'open' });
     controlsShadow.innerHTML = `
@@ -391,7 +391,7 @@
         .speeds{display:flex;align-items:center;gap:4px;margin-top:10px}.speedLabel{margin-right:4px;color:#adadb8;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}.spd{flex:1;padding:5px 0;background:rgba(255,255,255,.08);font-size:11px}.spd:hover:not(:disabled){background:rgba(255,255,255,.18)}.spd.active{background:#772ce8}.spd.active:hover{background:#9147ff}
         @media(max-width:700px){.position{min-width:42px;padding:0 5px}.popover{width:270px}}
       </style>
-      <div class="controls" role="group" aria-label="Warden One Twitch local rewind">
+      <div class="controls" role="group" aria-label="WardenOne Twitch local rewind">
         <button type="button" class="icon back10" title="Rewind 10 seconds" aria-label="Rewind 10 seconds">${rewindIcon(10)}</button>
         <button type="button" class="icon back30" title="Rewind 30 seconds" aria-label="Rewind 30 seconds">${rewindIcon(30)}</button>
         <button type="button" class="icon back60" title="Rewind 1 minute, or to the oldest locally buffered point" aria-label="Rewind 1 minute">${rewindIcon('1m')}</button>
@@ -460,11 +460,11 @@
   function ensurePlaybackControlStyle() {
     if (playbackControlStyle || !document.documentElement) return;
     playbackControlStyle = document.createElement('style');
-    playbackControlStyle.id = 'webwarden-twitch-playback-style';
+    playbackControlStyle.id = 'wardenone-twitch-playback-style';
     playbackControlStyle.textContent = `
-      [data-a-target="player-play-pause-button"][data-webwarden-replay-paused="true"]{position:relative!important;color:transparent!important}
-      [data-a-target="player-play-pause-button"][data-webwarden-replay-paused="true"] svg{visibility:hidden!important}
-      [data-a-target="player-play-pause-button"][data-webwarden-replay-paused="true"]::after{content:"";position:absolute;left:50%;top:50%;width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent;border-left:13px solid #efeff1;transform:translate(-42%,-50%)}
+      [data-a-target="player-play-pause-button"][data-wardenone-replay-paused="true"]{position:relative!important;color:transparent!important}
+      [data-a-target="player-play-pause-button"][data-wardenone-replay-paused="true"] svg{visibility:hidden!important}
+      [data-a-target="player-play-pause-button"][data-wardenone-replay-paused="true"]::after{content:"";position:absolute;left:50%;top:50%;width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent;border-left:13px solid #efeff1;transform:translate(-42%,-50%)}
     `;
     document.documentElement.appendChild(playbackControlStyle);
   }
@@ -480,7 +480,7 @@
   function restoreNativePlaybackButton(button) {
     if (!button) return;
     const original = nativePlaybackButtonOriginals.get(button);
-    delete button.dataset.webwardenReplayPaused;
+    delete button.dataset.wardenoneReplayPaused;
     if (!original) return;
     if (original.ariaLabel === null) button.removeAttribute('aria-label');
     else button.setAttribute('aria-label', original.ariaLabel);
@@ -504,8 +504,8 @@
     rememberNativePlaybackButton(button);
     const pausedValue = String(replayPausedByUser);
     const label = replayPausedByUser ? 'Play' : 'Pause';
-    if (button.dataset.webwardenReplayPaused !== pausedValue) {
-      button.dataset.webwardenReplayPaused = pausedValue;
+    if (button.dataset.wardenoneReplayPaused !== pausedValue) {
+      button.dataset.wardenoneReplayPaused = pausedValue;
     }
     if (button.getAttribute('aria-label') !== label) {
       button.setAttribute('aria-label', label);
@@ -626,8 +626,8 @@
 
   function createReplayVideo() {
     const video = document.createElement('video');
-    video.dataset.webwardenReplay = 'true';
-    video.dataset.webwardenActive = 'false';
+    video.dataset.wardenoneReplay = 'true';
+    video.dataset.wardenoneActive = 'false';
     video.playsInline = true;
     video.preload = 'auto';
     video.disablePictureInPicture = true;
@@ -661,7 +661,7 @@
     if (!sourceVideo) return;
     if (!replayLayer) {
       replayLayer = document.createElement('div');
-      replayLayer.id = 'webwarden-twitch-replay-layer';
+      replayLayer.id = 'wardenone-twitch-replay-layer';
       replayLayer.style.cssText = 'position:absolute;z-index:1;inset:0;display:none;overflow:hidden;background:transparent;pointer-events:none;';
       replayVideos = [createReplayVideo(), createReplayVideo()];
       frontVideo = null;
@@ -688,7 +688,7 @@
       replayLoadControllers.delete(video);
       controller.cancel();
     }
-    video.dataset.webwardenLoadId = String(++replayLoadSerial);
+    video.dataset.wardenoneLoadId = String(++replayLoadSerial);
   }
 
   function resetReplayVideo(video) {
@@ -699,7 +699,7 @@
     loadedInfo.delete(video);
     video.removeAttribute('src');
     video.playbackRate = 1;
-    video.dataset.webwardenActive = 'false';
+    video.dataset.wardenoneActive = 'false';
     video.style.zIndex = '1';
     video.style.opacity = '0';
     video.style.visibility = 'visible';
@@ -722,8 +722,8 @@
     if (!video || !recording || !recording.chunks.length || sessionToken !== replayToken) return 0;
     resetReplayVideo(video);
     const loadId = ++replayLoadSerial;
-    video.dataset.webwardenLoadId = String(loadId);
-    video.dataset.webwardenSegmentId = String(recording.id);
+    video.dataset.wardenoneLoadId = String(loadId);
+    video.dataset.wardenoneSegmentId = String(recording.id);
     video.volume = clamp(savedVolume, 0, 1);
     video.muted = true;
     const snapshotEnd = recordingMediaSeconds(recording);
@@ -742,7 +742,7 @@
     const listeners = [];
     const timers = [];
     const valid = () => sessionToken === replayToken
-      && video.dataset.webwardenLoadId === String(loadId)
+      && video.dataset.wardenoneLoadId === String(loadId)
       && replayActive;
     const listen = (type, handler, options) => {
       video.addEventListener(type, handler, options);
@@ -880,7 +880,7 @@
         return;
       }
       frontVideo = video;
-      replayVideos.forEach((surface) => { surface.dataset.webwardenActive = surface === video ? 'true' : 'false'; });
+      replayVideos.forEach((surface) => { surface.dataset.wardenoneActive = surface === video ? 'true' : 'false'; });
       video.style.opacity = '1';
       if (replayLayer) replayLayer.style.background = '#000';
       if (previous && previous !== video) {
@@ -1238,7 +1238,7 @@
       && sourceVideo && !sourceVideo.ended
       && performance.now() - activeRecording.lastAt > RECORDING_STALL_MS);
     if (isHarness) {
-      controlsRoot.dataset.webwardenHarnessState = JSON.stringify({
+      controlsRoot.dataset.wardenoneHarnessState = JSON.stringify({
         recordings: recordings.length,
         bytes: totalBytes,
         recorder: activeRecording ? activeRecording.recorder.state : 'none',
@@ -1431,9 +1431,9 @@
     if (!path.includes(controlsRoot)) setPopoverOpen(false);
   }, true);
   try {
-    chrome.storage.local.get('webwarden_config', (result) => applyConfig(result && result.webwarden_config));
+    chrome.storage.local.get('wardenone_config', (result) => applyConfig(result && result.wardenone_config));
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.webwarden_config) applyConfig(changes.webwarden_config.newValue || {});
+      if (area === 'local' && changes.wardenone_config) applyConfig(changes.wardenone_config.newValue || {});
     });
   } catch (_) {}
   window.addEventListener('pagehide', shutdown, { once: true });

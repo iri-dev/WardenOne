@@ -218,7 +218,7 @@ function runOverlayProbe(pageUrl, surface) {
     },
     innerWidth: 1280,
     innerHeight: 800,
-    WW: {
+    WO: {
       removeOverlays: true,
       autoSkipDownloadAds: false,
       showDownloadBar: false,
@@ -247,7 +247,7 @@ function runOverlayProbe(pageUrl, surface) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   const overlayRuntime = sourceBetween(
-    'if(WW.removeOverlays',
+    'if(WO.removeOverlays',
     'try{window.addEventListener("keydown"',
   );
   vm.runInContext(overlayRuntime, sandbox, { filename: 'content.min.js:x-overlay-compatibility' });
@@ -289,7 +289,7 @@ function installSessionShield(pageUrl) {
     sessionStorage: emptyStorage(),
     document: { cookie: '' },
     navigator: { sendBeacon() { return true; } },
-    WW: {
+    WO: {
       blockTokenExfil: true,
       continuousTokenScan: false,
       detectSkimmers: false,
@@ -307,8 +307,8 @@ function installSessionShield(pageUrl) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   const guardRuntime = sourceBetween(
-    'if(WW.blockTokenExfil||WW.continuousTokenScan||WW.detectSkimmers||WW.paymentCardGuard)try{',
-    'if(WW.continuousTokenScan){',
+    'if(WO.blockTokenExfil||WO.continuousTokenScan||WO.detectSkimmers||WO.paymentCardGuard)try{',
+    'if(WO.continuousTokenScan){',
     false,
   );
   vm.runInContext('{' + guardRuntime + '}', sandbox, {

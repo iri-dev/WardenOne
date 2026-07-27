@@ -1,4 +1,4 @@
-/* Warden One EyeShield: dynamic site theming (dark / ultra / light / brightness)
+/* WardenOne EyeShield: dynamic site theming (dark / ultra / light / brightness)
  *
  * Instead of slapping `filter: invert()` on <html> (which negative-izes every
  * image and washes everything to muddy mid-grays), we rewrite the COLOR VALUES
@@ -20,14 +20,14 @@
 (function () {
   'use strict';
 
-  if (window.__webWardenEyeShieldInstalled) {
+  if (window.__wardenOneEyeShieldInstalled) {
     try {
-      if (typeof window.__webWardenEyeShieldRefresh === 'function') window.__webWardenEyeShieldRefresh();
+      if (typeof window.__wardenOneEyeShieldRefresh === 'function') window.__wardenOneEyeShieldRefresh();
     } catch (e) {}
     return;
   }
-  window.__webWardenEyeShieldInstalled = true;
-  window.__webWardenEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-webwarden-owned-ui+readability-guard-v2+twitch-video-scoped-adjust';
+  window.__wardenOneEyeShieldInstalled = true;
+  window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust';
 
   // Twitch EXTENSION overlay iframes (*.ext-twitch.tv) sit transparently ON TOP of the
   // stream <video>. They are NOT matched by isTwitchHost() (the "-twitch.tv" suffix), so
@@ -41,11 +41,11 @@
       || /(^|\.)ucas\.com$/i.test(compatibilityHost)
       || /\.ac\.uk$|\.edu$|\.edu\.au$|\.ac\.nz$|\.ac\.za$|\.ac\.in$|\.edu\.sg$|\.edu\.hk$/i.test(compatibilityHost)) return;
 
-  const THEME_ID = 'webwarden-eyeshield-theme';
-  const SCRIM_ID = 'webwarden-eyeshield-scrim';
-  const ADJUST_ID = 'webwarden-eyeshield-adjust';
-  const PRELOAD_ID = 'webwarden-eyeshield-preload';
-  const MODE_CACHE_KEY = '__wwEyeShieldMode';
+  const THEME_ID = 'wardenone-eyeshield-theme';
+  const SCRIM_ID = 'wardenone-eyeshield-scrim';
+  const ADJUST_ID = 'wardenone-eyeshield-adjust';
+  const PRELOAD_ID = 'wardenone-eyeshield-preload';
+  const MODE_CACHE_KEY = '__woEyeShieldMode';
   const DEFAULTS = {
     enabled: true,
     eyeShieldMode: 'off',
@@ -123,9 +123,9 @@
     return AMAZON_HOST_RE.test(String(location.hostname || '').toLowerCase());
   }
 
-  function isWebWardenOwnedNode(node) {
+  function isWardenOneOwnedNode(node) {
     if (!node || node.nodeType !== 1) return false;
-    const ownedSel = '#rg-toast-host,#rg-badge-host,#ww-sb-block,#rg-reload-loop,[data-ww-ui="1"]';
+    const ownedSel = '#rg-toast-host,#rg-badge-host,#wo-sb-block,#rg-reload-loop,[data-wo-ui="1"]';
     if (node.id === THEME_ID || node.id === SCRIM_ID || node.id === PRELOAD_ID) return true;
     try {
       if (node.matches && node.matches(ownedSel)) return true;
@@ -479,7 +479,7 @@
     while (stack.length && budget > 0) {
       const root = stack.pop();
       budget -= walkElements(root, budget, (el) => {
-        if (isWebWardenOwnedNode(el)) return;
+        if (isWardenOneOwnedNode(el)) return;
         const sr = el.shadowRoot;
         if (sr) { roots.push(sr); stack.push(sr); }
       });
@@ -648,7 +648,7 @@
   // removeThemeEls() — there is nothing to remove until a theme has been built.
   let themedOnce = false;
   function removeAllThemeStyleEls() {
-    const sel = 'style#' + THEME_ID + ',style[data-ww-eyeshield="1"]';
+    const sel = 'style#' + THEME_ID + ',style[data-wo-eyeshield="1"]';
     const roots = rootsList();
     for (let r = 0; r < roots.length; r++) {
       let nodes;
@@ -678,8 +678,8 @@
     if (!css) return;
     const st = document.createElement('style');
     st.id = THEME_ID;
-    st.setAttribute('data-ww-eyeshield', '1');
-    st.setAttribute('data-ww-eyeshield-mode', mode);
+    st.setAttribute('data-wo-eyeshield', '1');
+    st.setAttribute('data-wo-eyeshield-mode', mode);
     try { sr.appendChild(st); st.textContent = css; themeEls.push(st); } catch (e) {}
   }
   function applyTheme(mode, roots) {
@@ -695,8 +695,8 @@
       if (!css) continue;
       const st = document.createElement('style');
       st.id = THEME_ID;
-      st.setAttribute('data-ww-eyeshield', '1');
-      st.setAttribute('data-ww-eyeshield-mode', mode);
+      st.setAttribute('data-wo-eyeshield', '1');
+      st.setAttribute('data-wo-eyeshield-mode', mode);
       try { (root === document ? (document.head || document.documentElement) : root).appendChild(st); } catch (e) { continue; }
       st.textContent = css;
       themeEls.push(st);
@@ -793,11 +793,11 @@
     ewRestoreStyle(el, 'color', original && original.color);
     ewRestoreStyle(el, '-webkit-text-fill-color', original && original.textFill);
     ewRestoreStyle(el, 'text-shadow', original && original.textShadow);
-    try { el.removeAttribute('data-ww-contrast'); } catch (_) {}
+    try { el.removeAttribute('data-wo-contrast'); } catch (_) {}
     try { __ewContrastOriginals.delete(el); } catch (_) {}
   }
   function clearContrastFixes() {
-    let nodes; try { nodes = document.querySelectorAll('[data-ww-contrast]'); } catch (_) { return; }
+    let nodes; try { nodes = document.querySelectorAll('[data-wo-contrast]'); } catch (_) { return; }
     for (let i = 0; i < nodes.length; i++) {
       try { ewClearContrastFixNode(nodes[i]); } catch (_) {}
     }
@@ -810,8 +810,8 @@
     walkElements(document.body, managed ? 8000 : 14000, (el) => {
       if (budget <= 0) return false;
       if (el === document.body) return;
-      if (isWebWardenOwnedNode(el)) return;
-      if (el.hasAttribute('data-ww-contrast')) ewClearContrastFixNode(el);
+      if (isWardenOneOwnedNode(el)) return;
+      if (el.hasAttribute('data-wo-contrast')) ewClearContrastFixNode(el);
       if (!ewReadableTextCandidate(el)) return;
       budget--;
       let cs; try { cs = getComputedStyle(el); } catch (_) { return; }
@@ -830,7 +830,7 @@
         el.style.setProperty('color', safe, 'important');
         el.style.setProperty('-webkit-text-fill-color', 'currentColor', 'important');
         if (cs.textShadow && cs.textShadow !== 'none') el.style.setProperty('text-shadow', 'none', 'important');
-        el.setAttribute('data-ww-contrast', '1');
+        el.setAttribute('data-wo-contrast', '1');
       } catch (_) {}
     });
   }
@@ -870,7 +870,7 @@
     }
     for (let i = 0; i < nodes.length; i++) {
       const el = nodes[i];
-      if (el.id === SCRIM_ID || el.id === THEME_ID || el.__wwInline || isWebWardenOwnedNode(el)) continue;
+      if (el.id === SCRIM_ID || el.id === THEME_ID || el.__woInline || isWardenOneOwnedNode(el)) continue;
       let touched = false;
       for (let j = 0; j < COLOR_PROPS.length; j++) {
         const prop = COLOR_PROPS[j];
@@ -884,7 +884,7 @@
         el.style.setProperty(prop, nv, 'important');
         touched = true;
       }
-      if (touched) el.__wwInline = true;
+      if (touched) el.__woInline = true;
     }
   }
   function restoreInline() {
@@ -893,8 +893,8 @@
       try {
         if (c.prev) c.el.style.setProperty(c.prop, c.prev, c.pri);
         else c.el.style.removeProperty(c.prop);
-        c.el.__wwInline = false;
-        if (c.el.__wwInlineProps) delete c.el.__wwInlineProps[c.prop];
+        c.el.__woInline = false;
+        if (c.el.__woInlineProps) delete c.el.__woInlineProps[c.prop];
       } catch (e) { /* element gone */ }
     }
     inlineChanges = [];
@@ -909,15 +909,15 @@
 
   function setTrackedInline(el, prop, value) {
     if (!el || !el.style) return;
-    if (!el.__wwInlineProps) el.__wwInlineProps = Object.create(null);
-    if (el.__wwInlineProps[prop] === value) return;
+    if (!el.__woInlineProps) el.__woInlineProps = Object.create(null);
+    if (el.__woInlineProps[prop] === value) return;
     const prev = el.style.getPropertyValue(prop);
     const pri = el.style.getPropertyPriority(prop);
     if (prev === value && pri === 'important') return;
     inlineChanges.push({ el: el, prop: prop, prev: prev, pri: pri });
     el.style.setProperty(prop, value, 'important');
-    el.__wwInline = true;
-    el.__wwInlineProps[prop] = value;
+    el.__woInline = true;
+    el.__woInlineProps[prop] = value;
   }
 
   function applyGoogleLightInline(root) {
@@ -986,7 +986,7 @@
     const textSel = 'p,li,span,a,b,strong,em,small,cite,h1,h2,h3,h4,h5,h6,label,button,td,th,dt,dd,figcaption,[role="heading"]';
     for (let i = 0; i < nodes.length; i++) {
       const el = nodes[i];
-      if (!el || el.nodeType !== 1 || !el.isConnected || el.id === THEME_ID || el.id === SCRIM_ID || isWebWardenOwnedNode(el)) continue;
+      if (!el || el.nodeType !== 1 || !el.isConnected || el.id === THEME_ID || el.id === SCRIM_ID || isWardenOneOwnedNode(el)) continue;
       let cs; try { cs = getComputedStyle(el); } catch (e) { continue; }
       let isMedia = false; try { isMedia = el.matches(mediaSel); } catch (e) {}
       if (!isMedia) {
@@ -1073,7 +1073,7 @@
       // twitch-rewind replay surfaces) while staying a cheap per-video GPU shader.
       const sel = 'html :is(.persistent-player,.video-player,.video-player__container,'
         + '[data-a-target="video-player"],[data-a-target="video-ref"],.live-video-player,'
-        + '.channel-root__player,.twilight-player-root) video, html video[data-webwarden-replay]';
+        + '.channel-root__player,.twilight-player-root) video, html video[data-wardenone-replay]';
       setAdjustStyle(sel + '{filter:' + filter + ' !important;}');
       return;
     }
@@ -1145,7 +1145,7 @@
           // Ignore text nodes (our own <style> textContent updates land here —
           // observing them is what caused an infinite 250ms rebuild loop) and our
           // own theme/scrim elements.
-          if (n.nodeType !== 1 || n.id === THEME_ID || n.id === SCRIM_ID || isWebWardenOwnedNode(n)) continue;
+          if (n.nodeType !== 1 || n.id === THEME_ID || n.id === SCRIM_ID || isWardenOneOwnedNode(n)) continue;
           if (isStylesheetNode(n)) pendingSheet = true; else pendingNodes.push(n);
           trigger = true;
         }
@@ -1276,9 +1276,9 @@
     try {
       const st = document.createElement('style');
       st.id = THEME_ID; // so buildThemeCSS / collectForeignHrefs skip it
-      st.setAttribute('data-ww-eyeshield', '1');
-      st.setAttribute('data-ww-eyeshield-mode', mode);
-      st.setAttribute('data-ww-foreign', '1');
+      st.setAttribute('data-wo-eyeshield', '1');
+      st.setAttribute('data-wo-eyeshield-mode', mode);
+      st.setAttribute('data-wo-foreign', '1');
       (document.head || document.documentElement).appendChild(st);
       st.textContent = css;
       foreignEls.push(st);
@@ -2920,12 +2920,12 @@
   }
   // Re-inject Spotify's theme <style> at the END of <head> so it beats Spotify's own
   // stylesheets (which load AFTER our early inject) in the source-order/!important tie.
-  let __wwSpotReapplyScheduled = false;
+  let __woSpotReapplyScheduled = false;
   function injectSpotifyTheme(mode) {
     if (!isSpotifyHost()) return;
     removeThemeEls(); activeRemap = mode; themedOnce = true;
     const sst = document.createElement('style');
-    sst.id = THEME_ID; sst.setAttribute('data-ww-eyeshield', '1'); sst.setAttribute('data-ww-eyeshield-mode', mode);
+    sst.id = THEME_ID; sst.setAttribute('data-wo-eyeshield', '1'); sst.setAttribute('data-wo-eyeshield-mode', mode);
     sst.textContent = spotifyThemeCSS(mode);
     try { (document.head || document.documentElement).appendChild(sst); themeEls.push(sst); } catch (e) {}
   }
@@ -3057,8 +3057,8 @@
       }
       // Spotify hydrates + loads its CSS async; re-inject a few times after load so our style
       // ends up last and wins (this is what a manual Dark->Light swap was doing by hand).
-      if (!__wwSpotReapplyScheduled) {
-        __wwSpotReapplyScheduled = true;
+      if (!__woSpotReapplyScheduled) {
+        __woSpotReapplyScheduled = true;
         var reinj = function () { try { if (cfg.enabled !== false && normalizeMode(cfg.eyeShieldMode) !== 'off' && isSpotifyHost()) injectSpotifyTheme(normalizeMode(cfg.eyeShieldMode)); } catch (e) {} };
         [500, 1500, 3500, 6000].forEach(function (ms) { try { setTimeout(reinj, ms); } catch (e) {} });
         try { window.addEventListener('load', function () { setTimeout(reinj, 300); }, { once: true }); } catch (e) {}
@@ -3119,14 +3119,14 @@
 
   function loadConfig() {
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.get('webwarden_config', (res) => { setConfig(res && res.webwarden_config); });
+    chrome.storage.local.get('wardenone_config', (res) => { setConfig(res && res.wardenone_config); });
   }
 
-  window.__webWardenEyeShieldApplyConfig = setConfig;
-  window.__webWardenEyeShieldRefresh = function () {
+  window.__wardenOneEyeShieldApplyConfig = setConfig;
+  window.__wardenOneEyeShieldRefresh = function () {
     try {
       if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
-      chrome.storage.local.get('webwarden_config', (res) => { setConfig(res && res.webwarden_config); });
+      chrome.storage.local.get('wardenone_config', (res) => { setConfig(res && res.wardenone_config); });
     } catch (e) {}
   };
 
@@ -3141,8 +3141,8 @@
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.webwarden_config) {
-        setConfig(changes.webwarden_config.newValue || {});
+      if (area === 'local' && changes.wardenone_config) {
+        setConfig(changes.wardenone_config.newValue || {});
       }
     });
   } catch (e) {}

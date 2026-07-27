@@ -1,5 +1,5 @@
 /*
- * Warden One -- shared registrable-domain (eTLD+1) helpers.
+ * WardenOne -- shared registrable-domain (eTLD+1) helpers.
  * ======================================================
  * Loaded by BOTH the background service worker (via importScripts) and the popup/options
  * pages (via a <script> tag) so the two can never disagree about what "this site" is for

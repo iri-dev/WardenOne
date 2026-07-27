@@ -80,7 +80,7 @@ ${helperSlice}
 const sandbox = { URL, Date, console, globalThis: {} };
 vm.createContext(sandbox);
 vm.runInContext(harness, sandbox, { filename: 'supplemental-list-helpers.js' });
-const api = sandbox.globalThis.__webWardenSupplementalListTest;
+const api = sandbox.globalThis.__wardenOneSupplementalListTest;
 if (!api) {
   console.error('FATAL: supplemental-list test API not exposed');
   process.exit(2);

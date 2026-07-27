@@ -21,9 +21,9 @@ function check(name, cond, extra) {
 }
 
 check('legacy main-world auto-reject block is disabled in source',
-  src.includes('if(!1&&WW.autoRejectConsent&&'));
+  src.includes('if(!1&&WO.autoRejectConsent&&'));
 check('legacy main-world auto-reject block is disabled in runtime',
-  min.includes('if(!1&&WW.autoRejectConsent&&'));
+  min.includes('if(!1&&WO.autoRejectConsent&&'));
 check('legacy remove-overlays consent click helper no-ops in source',
   src.includes('clickConsentReject=root=>') && src.includes('try{\n          return!1;'));
 check('legacy remove-overlays consent click helper no-ops in runtime',

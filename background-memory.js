@@ -1,5 +1,5 @@
 /*
- * Warden One Memory Shield runtime
+ * WardenOne Memory Shield runtime
  * =================================
  * Owns tab sleeping, RAM scoring, duplicate/zombie tab helpers, tab-limit
  * enforcement, and popup-facing memory actions. Loaded by background.js with
@@ -55,8 +55,8 @@ try {
 } catch (_) {}
 
 async function getMemoryConfig() {
-  const store = await localGet('webwarden_config');
-  const cfg = (store && store.webwarden_config) || {};
+  const store = await localGet('wardenone_config');
+  const cfg = (store && store.wardenone_config) || {};
   const m = {};
   for (const k in MEMORY_DEFAULTS) m[k] = (cfg[k] === undefined ? MEMORY_DEFAULTS[k] : cfg[k]);
   // resolve threshold minutes
@@ -282,7 +282,7 @@ async function memoryScore() {
 }
 
 function scheduleMemorySweep() {
-  try { chrome.alarms.create('webwarden-memory-sweep', { periodInMinutes: 5 }); } catch (_) {}
+  try { chrome.alarms.create('wardenone-memory-sweep', { periodInMinutes: 5 }); } catch (_) {}
 }
 scheduleMemorySweep();
 
@@ -308,7 +308,7 @@ function fmtIdleMinutes(min) {
 async function notifyTabLimitClosed(host, idleMin) {
   if (!(await extensionUiAllowed())) return;
   try {
-    chrome.notifications.create('ww-tablimit-' + Date.now(), {
+    chrome.notifications.create('wo-tablimit-' + Date.now(), {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
       title: 'Tab Limit',
@@ -642,8 +642,8 @@ async function throttleInactiveTabs(cfgArg) {
 }
 
 try {
-  if (globalThis.__WEBWARDEN_TEST__) {
-    globalThis.__wwMemoryTest = Object.freeze({
+  if (globalThis.__WARDENONE_TEST__) {
+    globalThis.__woMemoryTest = Object.freeze({
       MEMORY_DEFAULTS,
       MEMORY_MODES,
       tabKeepReason,

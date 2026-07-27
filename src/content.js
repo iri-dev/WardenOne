@@ -1,7 +1,7 @@
 !function(){
   "use strict";
-  const __WW_RUNTIME_VERSION="1.0.0";
-  if(window.__webWardenReadyVersion===__WW_RUNTIME_VERSION)return;
+  const __WO_RUNTIME_VERSION="1.0.0";
+  if(window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
   const GRABBER_DOMAINS=["02ip.ru",
   "2no.co",
   "2no.it",
@@ -513,18 +513,18 @@
     }
     return out
   }
-  window.__WW_CONFIG__=buildConfig(null),
-  window.__WW_CONFIG__.__configReady=!1;
-  let __wwToken=null;
-  const __wwEventQueue=[],
-  __wwRequestQueue=[],
-  __wwPendingRequests=new Map;
-  function __wwEmit(detail){
-    if(null!==__wwToken)try{
-      document.dispatchEvent(new CustomEvent("ww-event",
+  window.__WO_CONFIG__=buildConfig(null),
+  window.__WO_CONFIG__.__configReady=!1;
+  let __woToken=null;
+  const __woEventQueue=[],
+  __woRequestQueue=[],
+  __woPendingRequests=new Map;
+  function __woEmit(detail){
+    if(null!==__woToken)try{
+      document.dispatchEvent(new CustomEvent("wo-event",
       {
         detail:Object.assign({
-          token:__wwToken
+          token:__woToken
         },
         detail)
       }))
@@ -532,18 +532,18 @@
     catch(_){
 
     }
-    else __wwEventQueue.push(detail)
+    else __woEventQueue.push(detail)
   }
-  function __wwDispatchRequest(entry){
-    if(null===__wwToken)return void __wwRequestQueue.push(entry);
+  function __woDispatchRequest(entry){
+    if(null===__woToken)return void __woRequestQueue.push(entry);
     const timeout=setTimeout(()=>{
-      const pending=__wwPendingRequests.get(entry.id);
+      const pending=__woPendingRequests.get(entry.id);
       if(pending){
-        __wwPendingRequests.delete(entry.id);
+        __woPendingRequests.delete(entry.id);
         try{
           pending.callback({
             ok:!1,
-            error:"Timed out waiting for Warden One bridge."
+            error:"Timed out waiting for WardenOne bridge."
           })
         }
         catch(_){
@@ -554,16 +554,16 @@
 
     },
     entry.timeoutMs||6e3);
-    __wwPendingRequests.set(entry.id,
+    __woPendingRequests.set(entry.id,
     {
       callback:entry.callback,
       timeout:timeout
     });
     try{
-      document.dispatchEvent(new CustomEvent("ww-background-message",
+      document.dispatchEvent(new CustomEvent("wo-background-message",
       {
         detail:{
-          token:__wwToken,
+          token:__woToken,
           id:entry.id,
           message:entry.message
         }
@@ -572,11 +572,11 @@
     }
     catch(_){
       clearTimeout(timeout),
-      __wwPendingRequests.delete(entry.id);
+      __woPendingRequests.delete(entry.id);
       try{
         entry.callback({
           ok:!1,
-          error:"Could not reach Warden One bridge."
+          error:"Could not reach WardenOne bridge."
         })
       }
       catch(_){
@@ -586,10 +586,10 @@
     }
 
   }
-  function __wwBackgroundRequest(message,
+  function __woBackgroundRequest(message,
   callback,
   timeoutMs){
-    __wwDispatchRequest({
+    __woDispatchRequest({
       id:"rg-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2),
       message:message,
       callback:"function"==typeof callback?callback:()=>{
@@ -602,15 +602,15 @@
   e=>{
     if(e.source!==window)return;
     const m=e.data;
-    if(!m||"webwarden-bg-response"!==m.source||m.token!==__wwToken)return;
-    const pending=__wwPendingRequests.get(String(m.id||""));
+    if(!m||"wardenone-bg-response"!==m.source||m.token!==__woToken)return;
+    const pending=__woPendingRequests.get(String(m.id||""));
     if(pending){
-      __wwPendingRequests.delete(String(m.id||"")),
+      __woPendingRequests.delete(String(m.id||"")),
       clearTimeout(pending.timeout);
       try{
         pending.callback(m.result||{
           ok:!1,
-          error:"No response from Warden One."
+          error:"No response from WardenOne."
         })
       }
       catch(_){
@@ -624,22 +624,22 @@
   e=>{
     if(e.source!==window)return;
     const m=e.data;
-    if(m&&"object"==typeof m)if("webwarden-handshake"!==m.source||"string"!=typeof m.token){
-      if("webwarden"===m.source&&"config"===m.kind&&m.overrides){
-        if(null===__wwToken||m.token!==__wwToken)return void __wwEmit({
+    if(m&&"object"==typeof m)if("wardenone-handshake"!==m.source||"string"!=typeof m.token){
+      if("wardenone"===m.source&&"config"===m.kind&&m.overrides){
+        if(null===__woToken||m.token!==__woToken)return void __woEmit({
           type:"blocked_config_spoof"
         });
         (overrides=>{
-          const prev=window.__WW_CONFIG__||{
+          const prev=window.__WO_CONFIG__||{
 
           },
           next=buildConfig(overrides);
           Object.assign(prev,
           next),
           prev.__configReady=!0,
-          window.__WW_CONFIG__=prev;
+          window.__WO_CONFIG__=prev;
           try{
-            document.dispatchEvent(new CustomEvent("ww-config-change",
+            document.dispatchEvent(new CustomEvent("wo-config-change",
             {
               detail:{
                 config:prev
@@ -655,18 +655,18 @@
       }
 
     }
-    else null===__wwToken&&(__wwToken=m.token,
+    else null===__woToken&&(__woToken=m.token,
     function(){
-      if(null!==__wwToken){
+      if(null!==__woToken){
         for(;
-        __wwEventQueue.length;
+        __woEventQueue.length;
         ){
-          const d=__wwEventQueue.shift();
+          const d=__woEventQueue.shift();
           try{
-            document.dispatchEvent(new CustomEvent("ww-event",
+            document.dispatchEvent(new CustomEvent("wo-event",
             {
               detail:Object.assign({
-                token:__wwToken
+                token:__woToken
               },
               d)
             }))
@@ -677,36 +677,36 @@
 
         }
         for(;
-        __wwRequestQueue.length;
-        )__wwDispatchRequest(__wwRequestQueue.shift())
+        __woRequestQueue.length;
+        )__woDispatchRequest(__woRequestQueue.shift())
       }
 
     }
     ())
   });
-  let __wwRuntimeStarted=!1;
-  const __wwStartRuntime=()=>{
-    if(__wwRuntimeStarted)return;
-    __wwRuntimeStarted=!0;
-    if(window.__webWardenInstalled===__WW_RUNTIME_VERSION&&window.__webWardenReadyVersion===__WW_RUNTIME_VERSION)return;
+  let __woRuntimeStarted=!1;
+  const __woStartRuntime=()=>{
+    if(__woRuntimeStarted)return;
+    __woRuntimeStarted=!0;
+    if(window.__wardenOneInstalled===__WO_RUNTIME_VERSION&&window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
     if(/(^|\.)amazon\.[a-z.]+$/i.test(location.hostname)||/(^|\.)shopify\.com$/i.test(location.hostname)){
-      window.__webWardenInstalled=__WW_RUNTIME_VERSION;
-      window.__webWardenReadyVersion=__WW_RUNTIME_VERSION;
+      window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
+      window.__wardenOneReadyVersion=__WO_RUNTIME_VERSION;
       return
     }
-    window.__webWardenInstalled=__WW_RUNTIME_VERSION;
-    const __wwMoConsumers=[];
-    let __wwMoStarted=!1;
-    function wwObserve(cb){
-      if(__wwMoConsumers.push(cb),
-      !__wwMoStarted&&document.documentElement){
-        __wwMoStarted=!0;
+    window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
+    const __woMoConsumers=[];
+    let __woMoStarted=!1;
+    function woObserve(cb){
+      if(__woMoConsumers.push(cb),
+      !__woMoStarted&&document.documentElement){
+        __woMoStarted=!0;
         try{
           new MutationObserver(muts=>{
             for(let i=0;
-            i<__wwMoConsumers.length;
+            i<__woMoConsumers.length;
             i++)try{
-              __wwMoConsumers[i](muts)
+              __woMoConsumers[i](muts)
             }
             catch(_){
 
@@ -725,8 +725,8 @@
       }
 
     }
-    const WW=(()=>{
-      const cfg=window.__WW_CONFIG__||{
+    const WO=(()=>{
+      const cfg=window.__WO_CONFIG__||{
 
       },
       host=String(location.hostname||"").replace(/^www\./,
@@ -757,7 +757,7 @@
       safe.__youtubeRecoveryMode=!1,
       safe
     })(),
-    WW_TOP=window===window.top,
+    WO_TOP=window===window.top,
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
     isGoogleSearchResults=()=>/(^|\.)google\.[a-z.]+$/i.test(location.hostname)&&/^\/(search|webhp)?$/i.test(location.pathname||"/"),
@@ -765,7 +765,7 @@
     CRYPTO_ADDR_RE=/\b(0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{20,71}|[LM][a-km-zA-HJ-NP-Z1-9]{26,33}|r[0-9a-zA-Z]{24,34}|T[a-zA-Z0-9]{33}|4[0-9AB][0-9a-zA-Z]{93,104})\b/,
     log=(type,
     detail)=>{
-      __wwEmit({
+      __woEmit({
         type:type,
         detail:detail,
         at:Date.now()
@@ -776,7 +776,7 @@
       return threats.length?threats.map(t=>String(t||"").replace(/_/g,
       " ").toLowerCase()).join(", "):"known dangerous URL"
     },
-    urlReputationOn=()=>!0===WW.downloadSafeBrowsing||!0===WW.phishTank||!0===WW.openPhish||!0===WW.abuseIpDb||!0===WW.urlHaus||!0===WW.whoisXml||!0===WW.whoisXmlReputation||!0===WW.whoisXmlThreatIntel,
+    urlReputationOn=()=>!0===WO.downloadSafeBrowsing||!0===WO.phishTank||!0===WO.openPhish||!0===WO.abuseIpDb||!0===WO.urlHaus||!0===WO.whoisXml||!0===WO.whoisXmlReputation||!0===WO.whoisXmlThreatIntel,
     urlReputationProvider=verdict=>String(verdict&&verdict.provider||"URL reputation"),
     reputationWarningType=verdict=>"AbuseIPDB"===urlReputationProvider(verdict)?"warned_abuseipdb_server":"warned_url_reputation",
     logReputationWarning=(type,
@@ -816,8 +816,8 @@
       window.addEventListener("message",
       e=>{
         const m=e&&e.data;
-        if(e.source!==window||!m||"webwarden-safe-browsing"!==m.source)return;
-        if(null===__wwToken||m.token!==__wwToken)return;
+        if(e.source!==window||!m||"wardenone-safe-browsing"!==m.source)return;
+        if(null===__woToken||m.token!==__woToken)return;
         const id=String(m.id||""),
         pending=safeBrowsingPending.get(id);
         pending&&(safeBrowsingPending.delete(id),
@@ -882,13 +882,13 @@
 
         });
         try{
-          document.dispatchEvent(new CustomEvent("ww-safe-browsing-check",
+          document.dispatchEvent(new CustomEvent("wo-safe-browsing-check",
           {
             detail:{
               id:id,
               url:href,
               context:context||"",
-              token:__wwToken
+              token:__woToken
             }
 
           }))
@@ -909,11 +909,11 @@
     verdict,
     url)=>{
       try{
-        const old=document.getElementById("ww-sb-block");
+        const old=document.getElementById("wo-sb-block");
         if(old&&old.remove(),
         !document.body&&!document.documentElement)return;
         const wrap=document.createElement("div");
-        wrap.id="ww-sb-block",
+        wrap.id="wo-sb-block",
         wrap.setAttribute("style",
         "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:460px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
         const tag=document.createElement("div");
@@ -929,7 +929,7 @@
         const body=document.createElement("div");
         body.setAttribute("style",
         "font-size:12.5px!important;color:#4a3661!important;line-height:1.55!important;margin:0 0 10px 0!important;"),
-        body.textContent=urlReputationProvider(verdict)+" flagged this URL as "+safeBrowsingThreatText(verdict)+". Warden One stopped the action.",
+        body.textContent=urlReputationProvider(verdict)+" flagged this URL as "+safeBrowsingThreatText(verdict)+". WardenOne stopped the action.",
         wrap.appendChild(body);
         const code=document.createElement("div");
         code.setAttribute("style",
@@ -966,16 +966,16 @@
         if(window.top!==window.self)return;
         if(/(^|\.)amazon\.[a-z.]+$/i.test(host)){
           try{
-            sessionStorage.removeItem("__ww_rl_"+host),
-            sessionStorage.removeItem("__ww_rlstop_"+host)
+            sessionStorage.removeItem("__wo_rl_"+host),
+            sessionStorage.removeItem("__wo_rlstop_"+host)
           }
           catch(_){
 
           }
           return
         }
-        const KEY="__ww_rl_"+host,
-        STOP_KEY="__ww_rlstop_"+host,
+        const KEY="__wo_rl_"+host,
+        STOP_KEY="__wo_rlstop_"+host,
         now=Date.now(),
         WINDOW_MS=6e3,
         THRESHOLD=4;
@@ -1058,7 +1058,7 @@
           const body=document.createElement("div");
           body.setAttribute("style",
           "font-size:12.5px!important;color:#6a5685!important;line-height:1.5!important;margin:0 0 12px 0!important;"),
-          body.textContent="This site keeps reloading because Warden One is blocking its cookies and it can't start a session. Cookies are still blocked. You can allow cookies just for this site to use it normally.",
+          body.textContent="This site keeps reloading because WardenOne is blocking its cookies and it can't start a session. Cookies are still blocked. You can allow cookies just for this site to use it normally.",
           wrap.appendChild(body);
           const row=document.createElement("div");
           row.setAttribute("style",
@@ -1066,7 +1066,7 @@
           const allow=document.createElement("button");
           allow.setAttribute("style",
           "flex:none!important;border:none!important;cursor:pointer!important;background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;border-radius:10px!important;padding:9px 15px!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
-          allow.setAttribute("data-ww-cookie-allow",
+          allow.setAttribute("data-wo-cookie-allow",
           "1"),
           allow.textContent="Allow cookies here",
           allow.addEventListener("click",
@@ -1177,7 +1177,7 @@
         if(!u||!/^https?:$/.test(u.protocol))return!1;
         const host=regDomain(u.hostname),
         text=u.href;
-        if(((window.__WW_CONFIG__&&window.__WW_CONFIG__.grabberDomains)||[]).some(d=>host===d||host.endsWith("."+d)))return!0;
+        if(((window.__WO_CONFIG__&&window.__WO_CONFIG__.grabberDomains)||[]).some(d=>host===d||host.endsWith("."+d)))return!0;
         if(/(^|\.)(popads|popcash|propellerads|adsterra|hilltopads|exoclick|trafficjunky|clickadu|ad-maven|admaven|onclickads|popunder[a-z]*|bidvertiser|clickaine|adskeeper|galaksion)\./i.test(host))return!0;
         return/(adurl|popunder|onclickad|affiliate|utm_source=ad|doubleclick|adservice)/i.test(text)&&/\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|monster|lol)$/i.test(host)
       }
@@ -1346,7 +1346,7 @@
       })()
     },
     realGoBack=()=>{
-      if(WW.__frozen=!1,
+      if(WO.__frozen=!1,
       history.length>1)try{
         return void REAL.back()
       }
@@ -1354,7 +1354,7 @@
 
       }
       (url=>{
-        if(WW.__frozen=!1,
+        if(WO.__frozen=!1,
         REAL.hrefSet)try{
           return void REAL.hrefSet(url)
         }
@@ -1588,16 +1588,16 @@
         o&&o.remove();
         const s=document.getElementById(styleId);
         s&&s.remove(),
-        WW.__frozen=!1
+        WO.__frozen=!1
       }
 
     };
-    if(WW.gateAdultSites&&Array.isArray(WW.adultDomains)&&WW.adultDomains.length){
+    if(WO.gateAdultSites&&Array.isArray(WO.adultDomains)&&WO.adultDomains.length){
       const here=regDomain(location.hostname),
-      onList=WW.adultDomains.find(d=>here===d||here.endsWith("."+d));
+      onList=WO.adultDomains.find(d=>here===d||here.endsWith("."+d));
       let heuristicHit=!1,
       heuristicReasons=[];
-      if(WW.adultHeuristics&&!onList){
+      if(WO.adultHeuristics&&!onList){
         const host=here,
         STRONG_LONG=/(xvideos|xnxx|xhamster|hentai|camgirl|camsex|sexcam|cumshot|creampie|gangbang|deepthroat|bukkake|onlyfans|rule34|pornhub|brazzers|shemale|blowjob|handjob|cumming)/i,
         STRONG_SHORT=/(^|[-_.0-9])(milf|bdsm|nsfw|xxx|jizz|fap)([-_.0-9]|$)/i,
@@ -1627,7 +1627,7 @@
         score+=checkTitle(),
         score>=4?heuristicHit=!0:score>=1&&document.addEventListener("DOMContentLoaded",
         ()=>{
-          if(WW.__adultGateShown)return;
+          if(WO.__adultGateShown)return;
           const extra=checkTitle();
           score+extra>=4&&maybeGateAdult(!0,
           heuristicReasons.concat("explicit title"))
@@ -1639,16 +1639,16 @@
       reasonsIn){
         adultReaskForceHeuristic=!!forceHeuristic,
         adultReaskReasons=reasonsIn||heuristicReasons,
-        WW.__adultGateReaskBound||(WW.__adultGateReaskBound=!0,
+        WO.__adultGateReaskBound||(WO.__adultGateReaskBound=!0,
         window.addEventListener("pagehide",
         ()=>{
-          WW.__adultGateAllowedThisPage=!1,
-          WW.__adultGateShown=!1
+          WO.__adultGateAllowedThisPage=!1,
+          WO.__adultGateShown=!1
         }),
         window.addEventListener("pageshow",
         e=>{
-          e.persisted&&(WW.__adultGateAllowedThisPage=!1,
-          WW.__adultGateShown=!1,
+          e.persisted&&(WO.__adultGateAllowedThisPage=!1,
+          WO.__adultGateShown=!1,
           setTimeout(()=>maybeGateAdult(adultReaskForceHeuristic,
           adultReaskReasons),
           0))
@@ -1656,7 +1656,7 @@
       }
       function maybeGateAdult(forceHeuristic,
       reasonsIn){
-        if(WW.__adultGateShown)return;
+        if(WO.__adultGateShown)return;
         let refHost="";
         try{
           refHost=document.referrer?regDomain(new URL(document.referrer).hostname):""
@@ -1665,10 +1665,10 @@
 
         }
         const cameFromElsewhere=refHost&&refHost!==here&&!here.endsWith("."+refHost)&&!refHost.endsWith("."+here);
-        if(!0!==WW.__adultGateAllowedThisPage&&(cameFromElsewhere||!refHost)){
+        if(!0!==WO.__adultGateAllowedThisPage&&(cameFromElsewhere||!refHost)){
           armAdultGateReask(forceHeuristic,
           reasonsIn),
-          WW.__frozen=!0;
+          WO.__frozen=!0;
           const CARD="background:rgba(250,243,253,.94)!important;color:#3d2a52!important;max-width:560px!important;width:100%!important;border:1px solid rgba(176,106,212,.28)!important;border-radius:20px!important;padding:30px!important;text-align:left!important;backdrop-filter:blur(20px) saturate(1.25)!important;-webkit-backdrop-filter:blur(20px) saturate(1.25)!important;box-shadow:0 24px 70px rgba(80,30,110,.4)!important;font-family:Quicksand,Nunito,system-ui,sans-serif!important;",
           TITLE_ROW="display:flex!important;align-items:center!important;gap:11px!important;margin:0 0 10px 0!important;",
           BADGE="flex:none!important;width:38px!important;height:38px!important;border-radius:11px!important;background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;display:flex!important;align-items:center!important;justify-content:center!important;box-shadow:0 6px 16px rgba(176,106,212,.4)!important;",
@@ -1695,7 +1695,7 @@
             "Adult site ahead");
             const msg=oDiv(card,
             SUB,
-            "Warden One paused this adult (18+) site before it loaded.");
+            "WardenOne paused this adult (18+) site before it loaded.");
             cameFromElsewhere&&(appendText(msg,
             " You were redirected here"),
             refHost&&(appendText(msg,
@@ -1723,7 +1723,7 @@
             BGO,
             "I'm sure, continue",
             ()=>{
-              WW.__adultGateAllowedThisPage=!0,
+              WO.__adultGateAllowedThisPage=!0,
               teardown&&teardown()
             }),
             oDiv(card,
@@ -1733,7 +1733,7 @@
           };
           teardown=mountBlocker("rg-adult-gate",
           paint),
-          WW.__adultGateShown=!0,
+          WO.__adultGateShown=!0,
           log("gated_adult_site",
           {
             host:here,
@@ -1750,7 +1750,7 @@
     let unshimLogCount=0;
     function stripTracking(href){
       if(href=function(href){
-        if(!WW.unshimLinks)return href;
+        if(!WO.unshimLinks)return href;
         const u=toURL(href);
         if(!u||!/^https?:$/i.test(u.protocol))return href;
         const host=u.hostname.replace(/^www\./,
@@ -1769,14 +1769,14 @@
         dest.toString()):href
       }
       (href),
-      !WW.stripTrackingParams)return href;
+      !WO.stripTrackingParams)return href;
       const u=toURL(href);
       if(!u)return href;
       let changed=!1;
       for(const key of[...u.searchParams.keys()])TRACKING_PARAMS.some(re=>re.test(key))&&(u.searchParams.delete(key),
       changed=!0);
       let out=changed?u.toString():href;
-      if(!0===WW.cleanCopyLinks){
+      if(!0===WO.cleanCopyLinks){
         const c2=cleanCopyUrl(out);
         c2!==out&&(out=c2)
       }
@@ -1784,7 +1784,7 @@
     }
     const scrubDomLink=el=>{
       try{
-        if(!WW.unshimLinks&&!WW.stripTrackingParams||!el||!el.tagName)return;
+        if(!WO.unshimLinks&&!WO.stripTrackingParams||!el||!el.tagName)return;
         if("A"===el.tagName||"AREA"===el.tagName){
           const old=el.getAttribute("href");
           if(!old)return;
@@ -1808,7 +1808,7 @@
     },
     sweepDomLinks=root=>{
       try{
-        if(!WW.unshimLinks&&!WW.stripTrackingParams)return;
+        if(!WO.unshimLinks&&!WO.stripTrackingParams)return;
         (root||document).querySelectorAll("a[href],area[href],form[action]").forEach(scrubDomLink)
       }
       catch(_){
@@ -1818,11 +1818,11 @@
     };
     document.documentElement&&sweepDomLinks(document);
     try{
-      wwObserve(muts=>{
+      woObserve(muts=>{
         for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&scrubDomLink(n),
         n&&n.querySelectorAll&&sweepDomLinks(n)
       }),
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       ()=>sweepDomLinks(document))
     }
     catch(_){
@@ -1839,7 +1839,7 @@
       window.addEventListener("copy",
       e=>{
         try{
-          if(!0!==WW.cleanCopyLinks)return;
+          if(!0!==WO.cleanCopyLinks)return;
           const cd=e.clipboardData;
           if(!cd)return;
           let text="";
@@ -1874,7 +1874,7 @@
         const realCleanWT=navigator.clipboard.writeText.bind(navigator.clipboard);
         navigator.clipboard.writeText=function(text){
           try{
-            if(!0===WW.cleanCopyLinks&&"string"==typeof text){
+            if(!0===WO.cleanCopyLinks&&"string"==typeof text){
               const cleaned=cleanCopyText(text);
               if(cleaned!==text)return noteCleanCopy(),
               realCleanWT(cleaned)
@@ -1896,7 +1896,7 @@
     let lastGestureAt=0,
     gestureSpent=!1,
     lastLoginIntentAt=0;
-    const gestureWindowMs=()=>Number((window.__WW_CONFIG__||WW).gestureWindowMs)||2400,
+    const gestureWindowMs=()=>Number((window.__WO_CONFIG__||WO).gestureWindowMs)||2400,
     loginIntentFresh=()=>Date.now()-lastLoginIntentAt<Math.max(gestureWindowMs()*4,
     8e3);
     function markGesture(e){
@@ -1939,7 +1939,7 @@
     "touchend"].forEach(ev=>window.addEventListener(ev,
     markGesture,
     !0));
-    if(WW.blockMetaRefresh){
+    if(WO.blockMetaRefresh){
       const killMeta=()=>{
         document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(m=>{
           const c=m.getAttribute("content")||"",
@@ -1947,23 +1947,23 @@
           if(match){
             const dest=match[1].trim().replace(/^['"]|['"]$/g,
             "");
-            !WW.__frozen&&(sameSite(location.href,
-            dest)||isFederatedAuthTarget(dest)||!isHighRiskNavigationTarget(dest))||(m.setAttribute("data-ww-disabled",
+            !WO.__frozen&&(sameSite(location.href,
+            dest)||isFederatedAuthTarget(dest)||!isHighRiskNavigationTarget(dest))||(m.setAttribute("data-wo-disabled",
             c),
             m.removeAttribute("content"),
             log("blocked_meta_refresh",
             {
               content:c,
-              frozen:!!WW.__frozen
+              frozen:!!WO.__frozen
             }))
           }
 
         })
       };
       killMeta(),
-      wwObserve(killMeta)
+      woObserve(killMeta)
     }
-    if(WW.detectRedirectChains){
+    if(WO.detectRedirectChains){
       const ABUSE_TLDS=/\.(cfd|sbs|icu|top|xyz|click|link|rest|cyou|cam|monster|quest|host|store|online|site|shop|fit|makeup|skin|hair|lol|bond|autos|boats|christmas|beauty)$/i,
       HOSTWORDS=/(storage|generate|download|file|redirect|track|click|landing|offer|cdn|fetch|deliver|secure|verify|gate|link|go)\w*\d/i,
       RANDOMISH_LABEL=/^[a-z]{3,}[0-9a-f]{2,}$|^[a-z]+\d+[a-z]*$/i,
@@ -2047,9 +2047,9 @@
       }
       const sig=chainSignal();
       if(sig){
-        WW.__frozen=!0,
+        WO.__frozen=!0,
         document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(m=>{
-          m.setAttribute("data-ww-disabled",
+          m.setAttribute("data-wo-disabled",
           m.getAttribute("content")||""),
           m.removeAttribute("content")
         }),
@@ -2076,7 +2076,7 @@
           "Redirect chain blocked"),
           oDiv(card,
           "color:#7a5f93!important;margin:0 0 18px 0!important;font-size:13.5px!important;line-height:1.55!important;font-family:Nunito,system-ui,sans-serif!important;",
-          "This page is a relay in a redirect chain  -  the kind used by fake-download and ad-spam sites. It was about to send you onward automatically. Warden One stopped it.");
+          "This page is a relay in a redirect chain  -  the kind used by fake-download and ad-spam sites. It was about to send you onward automatically. WardenOne stopped it.");
           const ROW="background:rgba(176,106,212,.08)!important;border:1px solid rgba(176,106,212,.2)!important;border-radius:10px!important;padding:10px 12px!important;margin:6px 0!important;word-break:break-all!important;font-family:ui-monospace,monospace!important;font-size:12px!important;color:#5a4570!important;",
           LBL="color:#a98fc0!important;font-size:11px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.05em!important;margin:10px 0 3px 0!important;font-family:Nunito,system-ui,sans-serif!important;";
           oDiv(card,
@@ -2118,14 +2118,14 @@
       }
 
     }
-    if(WW.blockGrabberResources&&Array.isArray(WW.grabberDomains)&&WW.grabberDomains.length){
-      let __wwGrabSet=null,
-      __wwGrabSrc=null;
+    if(WO.blockGrabberResources&&Array.isArray(WO.grabberDomains)&&WO.grabberDomains.length){
+      let __woGrabSet=null,
+      __woGrabSrc=null;
       const isGrabberURL=input=>{
         try{
-          if(__wwGrabSrc!==WW.grabberDomains){
-            __wwGrabSrc=WW.grabberDomains;
-            __wwGrabSet=new Set(WW.grabberDomains)
+          if(__woGrabSrc!==WO.grabberDomains){
+            __woGrabSrc=WO.grabberDomains;
+            __woGrabSet=new Set(WO.grabberDomains)
           }
           const url="string"==typeof input?input:input&&input.url?input.url:String(input),
           h=new URL(url,
@@ -2134,7 +2134,7 @@
           for(let p=h;
           p;
           ){
-            if(__wwGrabSet.has(p))return p;
+            if(__woGrabSet.has(p))return p;
             const dot=p.indexOf(".");
             if(dot<0)break;
             p=p.slice(dot+1)
@@ -2169,7 +2169,7 @@
           {
             matched:hit
           }),
-          this.__wwBlocked=!0,
+          this.__woBlocked=!0,
           realXHROpen.call(this,
           method,
           "about:blank")):realXHROpen.apply(this,
@@ -2226,7 +2226,7 @@
           root.querySelectorAll&&root.querySelectorAll("img[src],script[src],iframe[src]").forEach(el=>{
             const hit=isGrabberURL(el.getAttribute("src"));
             hit&&(el.removeAttribute("src"),
-            el.setAttribute("data-ww-blocked",
+            el.setAttribute("data-wo-blocked",
             hit),
             log("blocked_grabber_element",
             {
@@ -2241,11 +2241,11 @@
 
       };
       sweepNodes(document),
-      wwObserve(muts=>{
+      woObserve(muts=>{
         for(const m of muts)for(const n of m.addedNodes)if(1===n.nodeType){
           const hit=n.getAttribute&&isGrabberURL(n.getAttribute("src"));
           hit&&(n.removeAttribute("src"),
-          n.setAttribute("data-ww-blocked",
+          n.setAttribute("data-wo-blocked",
           hit),
           log("blocked_grabber_element",
           {
@@ -2352,13 +2352,13 @@
         here=regDom(location.hostname),
         dest=regDom(url.hostname),
         sbTargets=[];
-        if(WW.warnShorteners&&SHORTENERS.some(s=>dest===s||dest.endsWith("."+s))&&(canWarn()&&(lastLinkWarn=now,
+        if(WO.warnShorteners&&SHORTENERS.some(s=>dest===s||dest.endsWith("."+s))&&(canWarn()&&(lastLinkWarn=now,
         log("warned_shortener",
         {
           matched:dest
         })),
         sbTargets.push(url.href)),
-        WW.warnRedirectParams){
+        WO.warnRedirectParams){
           const linkHost=dest;
           for(const p of REDIRECT_PARAMS){
             const v=url.searchParams.get(p);
@@ -2416,7 +2416,7 @@
 
       },
       !0),
-      WW.monitorLoggerApi){
+      WO.monitorLoggerApi){
         const here=regDom(location.hostname),
         isTrustedGoogleNoise=(page,
         dest)=>/(^|\.)(google\.com|google\.co\.uk|googleusercontent\.com)$/i.test(page)&&/(^|\.)(google\.com|google\.co\.uk|googleapis\.com|gstatic\.com|googleusercontent\.com|gvt1\.com|gvt2\.com|ggpht\.com|youtube\.com|ytimg\.com|googlevideo\.com)$/i.test(dest),
@@ -2462,7 +2462,7 @@
       }
 
     }
-    if(WW.blockFirstPartyTrackers)try{
+    if(WO.blockFirstPartyTrackers)try{
       const FP_TRACKER_PATHS=/(^|\/)(g\/collect|j\/collect|r\/collect|gtm\.js|gtag\/js|analytics\.js|ga\.js|__utm\.gif|__gtm|piwik\.php|matomo\.php|pixel\.gif|p\.gif|b\.gif|track\.gif|beacon\?|tr\?id=|insight\/track|i\/adsct)/i,
       looksLikeTracker=input=>{
         try{
@@ -2513,7 +2513,7 @@
         RX.prototype.open=function(method,
         url,
         ...rest){
-          return this.__ww_tracker=looksLikeTracker(url),
+          return this.__wo_tracker=looksLikeTracker(url),
           origOpen.call(this,
           method,
           url,
@@ -2521,7 +2521,7 @@
         };
         const origSend=RX.prototype.send;
         RX.prototype.send=function(...args){
-          if(!this.__ww_tracker)return origSend.apply(this,
+          if(!this.__wo_tracker)return origSend.apply(this,
           args);
           noteBlock();
           try{
@@ -2545,7 +2545,7 @@
         error:String(e)
       })
     }
-    if(WW.trackerLearner)try{
+    if(WO.trackerLearner)try{
       const TRACKER_HOST_HINTS=/(^|\.)(google-analytics\.com|googletagmanager\.com|doubleclick\.net|googlesyndication\.com|facebook\.com|connect\.facebook\.net|fbcdn\.net|scorecardresearch\.com|criteo\.com|criteo\.net|taboola\.com|outbrain\.com|quantserve\.com|adsrvr\.org|adnxs\.com|rubiconproject\.com|openx\.net|pubmatic\.com|rlcdn\.com|mathtag\.com|bluekai\.com|demdex\.net|everesttech\.net|lijit\.com|sharethrough\.com|yieldmo\.com|segment\.com|segment\.io|amplitude\.com|mixpanel\.com|hotjar\.com|fullstory\.com|clarity\.ms|mouseflow\.com|crazyegg\.com|optimizely\.com)$/i,
       TRACKER_PATH_HINTS=/(^|\/|[?&])(collect|beacon|pixel|track|tracking|analytics|telemetry|event|events|conversion|impression|pageview|identify|visitor|session|stats|tr|utag|gtm|gtag)(\/|$|[?&=._-])/i,
       TRACKER_QUERY_HINTS=/(^|&)(utm_|fbp=|fbc=|gclid=|dclid=|msclkid=|ga=|gid=|cid=|uid=|user_id=|visitor=|session=|device_id=|adid=|email=|hashed_email=|eid=|event=|conversion=)/i,
@@ -2555,7 +2555,7 @@
       kind,
       extraSignal)=>{
         try{
-          if(!WW.trackerLearner||trackerSeen.size>80)return;
+          if(!WO.trackerLearner||trackerSeen.size>80)return;
           const u=u2(raw);
           if(!u||!/^https?:$/i.test(u.protocol))return;
           const here=regDom(location.hostname),
@@ -2657,7 +2657,7 @@
       };
       document.documentElement&&sweepTrackerNodes(document);
       try{
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&noteTracker(srcOf(n),
           kindOf(n),
           "resource-url"),
@@ -2707,7 +2707,7 @@
       }
 
     };
-    if(WW.intranetProtection&&publicPage())try{
+    if(WO.intranetProtection&&publicPage())try{
       const blockLocal=(raw,
       how)=>{
         if(!localAdminTarget(raw))return!1;
@@ -2726,7 +2726,7 @@
         init){
           const url="string"==typeof input?input:input&&input.url||"";
           return blockLocal(url,
-          "fetch")?Promise.reject(new DOMException("Blocked by Warden One Intranet Guard",
+          "fetch")?Promise.reject(new DOMException("Blocked by WardenOne Intranet Guard",
           "SecurityError")):rf.apply(this,
           arguments)
         }
@@ -2738,16 +2738,16 @@
         RX.prototype.open=function(method,
         url,
         ...rest){
-          this.__ww_local_block=blockLocal(url,
+          this.__wo_local_block=blockLocal(url,
           "xhr");
-          return this.__ww_local_block?void 0:oOpen.call(this,
+          return this.__wo_local_block?void 0:oOpen.call(this,
           method,
           url,
           ...rest)
         };
         const oSend=RX.prototype.send;
         RX.prototype.send=function(...args){
-          if(this.__ww_local_block){
+          if(this.__wo_local_block){
             try{
               this.abort()
             }
@@ -2766,7 +2766,7 @@
         window.WebSocket=function(url,
         protocols){
           if(blockLocal(url,
-          "websocket"))throw new DOMException("Blocked by Warden One Intranet Guard",
+          "websocket"))throw new DOMException("Blocked by WardenOne Intranet Guard",
           "SecurityError");
           return void 0===protocols?new RealWS(url):new RealWS(url,
           protocols)
@@ -2825,7 +2825,7 @@
         if(kind&&blockLocal(localResourceUrl(el),
         kind)){
           try{
-            "FORM"===String(el.tagName||"").toUpperCase()?el.removeAttribute("action"):("SCRIPT"===String(el.tagName||"").toUpperCase()&&(el.type="javascript/blocked-by-webwarden"),
+            "FORM"===String(el.tagName||"").toUpperCase()?el.removeAttribute("action"):("SCRIPT"===String(el.tagName||"").toUpperCase()&&(el.type="javascript/blocked-by-wardenone"),
             el.removeAttribute("src"),
             el.removeAttribute("href"),
             el.removeAttribute("data"),
@@ -2899,7 +2899,7 @@
 
       };
       document.documentElement&&sweepLocal(document),
-      wwObserve(muts=>{
+      woObserve(muts=>{
         for(const mu of muts)for(const n of mu.addedNodes)n&&1===n.nodeType&&(guardLocalNode(n),
         n.querySelectorAll&&sweepLocal(n))
       })
@@ -2910,7 +2910,7 @@
         error:String(e)
       })
     }
-    if(WW.riskySiteMode&&publicPage())try{
+    if(WO.riskySiteMode&&publicPage())try{
       const here=regDom(location.hostname),
       full=location.hostname.toLowerCase(),
       label=full.split(".")[0]||"",
@@ -2962,7 +2962,7 @@
         if(kind&&blockRisk(srcOf(el),
         kind)){
           try{
-            "SCRIPT"===String(el.tagName||"").toUpperCase()?el.type="javascript/blocked-by-webwarden":el.removeAttribute("src"),
+            "SCRIPT"===String(el.tagName||"").toUpperCase()?el.type="javascript/blocked-by-wardenone":el.removeAttribute("src"),
             el.remove()
           }
           catch(_){
@@ -3010,7 +3010,7 @@
           init){
             const url="string"==typeof input?input:input&&input.url||"";
             return blockRisk(url,
-            "fetch")?Promise.reject(new DOMException("Blocked by Warden One Risky-site Mode",
+            "fetch")?Promise.reject(new DOMException("Blocked by WardenOne Risky-site Mode",
             "SecurityError")):rf.apply(this,
             arguments)
           }
@@ -3022,16 +3022,16 @@
           RX.prototype.open=function(method,
           url,
           ...rest){
-            this.__ww_risky_block=blockRisk(url,
+            this.__wo_risky_block=blockRisk(url,
             "xhr");
-            return this.__ww_risky_block?void 0:oOpen.call(this,
+            return this.__wo_risky_block?void 0:oOpen.call(this,
             method,
             url,
             ...rest)
           };
           const oSend=RX.prototype.send;
           RX.prototype.send=function(...args){
-            if(this.__ww_risky_block){
+            if(this.__wo_risky_block){
               try{
                 this.abort()
               }
@@ -3050,7 +3050,7 @@
           window.WebSocket=function(url,
           protocols){
             if(blockRisk(url,
-            "websocket"))throw new DOMException("Blocked by Warden One Risky-site Mode",
+            "websocket"))throw new DOMException("Blocked by WardenOne Risky-site Mode",
             "SecurityError");
             return void 0===protocols?new RealWS(url):new RealWS(url,
             protocols)
@@ -3085,7 +3085,7 @@
 
         };
         document.documentElement&&sweep(document),
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)n&&1===n.nodeType&&(guardNode(n),
           n.querySelectorAll&&sweep(n))
         }),
@@ -3102,7 +3102,7 @@
         error:String(e)
       })
     }
-    if(WW.antiClickjacking)try{
+    if(WO.antiClickjacking)try{
       const warnedClick=new WeakSet,
       SENSITIVE_CLICK=/\b(log\s?in|sign\s?in|password|checkout|pay|buy|transfer|authorize|allow|approve|connect|wallet|seed|download|install|submit|continue|verify)\b/i,
       clickText=el=>{
@@ -3175,7 +3175,7 @@
           framed:window.top!==window,
           why:"sensitive click happened in an embedded or covered context"
         });
-        const ok=confirm("Warden One clickjacking check: this sensitive button is inside a frame or covered context. Continue?");
+        const ok=confirm("WardenOne clickjacking check: this sensitive button is inside a frame or covered context. Continue?");
         ok&&setTimeout(()=>target.click(),
         20)
       },
@@ -3203,8 +3203,8 @@
         cookieBlockerInstalled=!1,
         cookieBlockerOriginalOwnDesc=null;
         try{
-          document.__wwCookieBlockerActive=!1,
-          document.__wwCookieBlockerReason=""
+          document.__woCookieBlockerActive=!1,
+          document.__woCookieBlockerReason=""
         }
         catch(_){
 
@@ -3215,7 +3215,7 @@
     },
     applyCookieBlocker=()=>{
       const knownTrackerFrame=/(^|\.)(scorecardresearch\.com|criteo\.(com|net)|taboola\.com|outbrain\.com|doubleclick\.net|googlesyndication\.com|google-analytics\.com|googletagmanager\.com|quantserve\.com|adsrvr\.org|adnxs\.com|rubiconproject\.com|openx\.net|pubmatic\.com|bluekai\.com|demdex\.net|everesttech\.net|hotjar\.com|fullstory\.com|mouseflow\.com)$/i.test(location.hostname),
-      reason=WW.blockThirdPartyCookies&&knownTrackerFrame&&(()=>{
+      reason=WO.blockThirdPartyCookies&&knownTrackerFrame&&(()=>{
         try{
           if(window.top===window.self)return!1;
           try{
@@ -3232,7 +3232,7 @@
 
       })()?"thirdparty":"";
       if(reason){
-        if(!cookieBlockerInstalled||document.__wwCookieBlockerReason!==reason){
+        if(!cookieBlockerInstalled||document.__woCookieBlockerReason!==reason){
           restoreCookieBlocker();
           try{
             cookieBlockerOriginalOwnDesc=Object.prototype.hasOwnProperty.call(document,
@@ -3251,8 +3251,8 @@
             }),
             cookieBlockerInstalled=!0;
             try{
-              document.__wwCookieBlockerActive=!0,
-              document.__wwCookieBlockerReason=reason
+              document.__woCookieBlockerActive=!0,
+              document.__woCookieBlockerReason=reason
             }
             catch(_){
 
@@ -3276,7 +3276,7 @@
     };
     applyCookieBlocker();
     try{
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       applyCookieBlocker)
     }
     catch(_){
@@ -3284,7 +3284,7 @@
     }
     let supercookieGuardInstalled=!1;
     const installSupercookieGuard=()=>{
-      if(supercookieGuardInstalled||!WW.blockSupercookies)return;
+      if(supercookieGuardInstalled||!WO.blockSupercookies)return;
       const TRACKER_STORAGE_HOSTS=/(^|\.)(scorecardresearch\.com|criteo\.com|criteo\.net|taboola\.com|outbrain\.com|doubleclick\.net|googlesyndication\.com|google-analytics\.com|googletagmanager\.com|quantserve\.com|adsrvr\.org|adnxs\.com|rubiconproject\.com|openx\.net|pubmatic\.com|rlcdn\.com|mathtag\.com|bluekai\.com|demdex\.net|everesttech\.net|lijit\.com|sharethrough\.com|yieldmo\.com|facebook\.com|fbcdn\.net)$/i;
       if(!(()=>{
         if(!TRACKER_STORAGE_HOSTS.test(location.hostname))return!1;
@@ -3378,7 +3378,7 @@
         Storage.prototype.clear=function(){
 
         },
-        Storage.prototype.__wwSupercookieOriginalSetItem=oSet
+        Storage.prototype.__woSupercookieOriginalSetItem=oSet
       }
       catch(_){
 
@@ -3390,13 +3390,13 @@
     };
     installSupercookieGuard();
     try{
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       installSupercookieGuard)
     }
     catch(_){
 
     }
-    if(WW.sessionShield)try{
+    if(WO.sessionShield)try{
       const mask=v=>(v=String(v||"")).length<=12?"****":v.slice(0,
       6)+"...hidden..."+v.slice(-4),
       looksLikeJWT=v=>/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(String(v||"")),
@@ -3533,7 +3533,7 @@
       catch(_){
 
       }
-      window.__WW_SESSION__={
+      window.__WO_SESSION__={
         host:location.hostname,
         findings:findings.slice(0,
         25),
@@ -3565,7 +3565,7 @@
         error:String(e)
       })
     }
-    if(WW.blockTokenExfil||WW.continuousTokenScan||WW.detectSkimmers||WW.paymentCardGuard)try{
+    if(WO.blockTokenExfil||WO.continuousTokenScan||WO.detectSkimmers||WO.paymentCardGuard)try{
       const here=regDomain(location.hostname),
       TOKEN_EXFIL_TRUST_POLICY=(()=>{
         const normalizeHost=host=>String(host||"").trim().replace(/^\.+|\.+$/g,
@@ -3920,7 +3920,7 @@
         }
 
       };
-      if(WW.blockTokenExfil){
+      if(WO.blockTokenExfil){
         let exfilCount=0;
         const flagExfil=dest=>{
           ++exfilCount<=50&&log("blocked_token_exfil",
@@ -3943,7 +3943,7 @@
                 if(bodyHasToken(body,
                 url,
                 headers))return flagExfil(dest),
-                Promise.reject(new DOMException("Blocked by Warden One SessionShield",
+                Promise.reject(new DOMException("Blocked by WardenOne SessionShield",
                 "SecurityError"))
               }
 
@@ -3974,9 +3974,9 @@
           RX.prototype.open=function(m,
           url,
           ...rest){
-            return this.__ww_dest=destIsForeign(url),
-            this.__ww_url=url,
-            this.__ww_headers=[],
+            return this.__wo_dest=destIsForeign(url),
+            this.__wo_url=url,
+            this.__wo_headers=[],
             oOpen.call(this,
             m,
             url,
@@ -3986,7 +3986,7 @@
           oSetHeader&&(RX.prototype.setRequestHeader=function(name,
           value){
             try{
-              this.__ww_headers&&this.__ww_headers.push(String(name)+": "+String(value))
+              this.__wo_headers&&this.__wo_headers.push(String(name)+": "+String(value))
             }
             catch(_){
 
@@ -3997,11 +3997,11 @@
           });
           const oSend=RX.prototype.send;
           RX.prototype.send=function(body){
-            if(!this.__ww_dest||!bodyHasToken(body,
-            this.__ww_url,
-            this.__ww_headers&&this.__ww_headers.join("\n")))return oSend.apply(this,
+            if(!this.__wo_dest||!bodyHasToken(body,
+            this.__wo_url,
+            this.__wo_headers&&this.__wo_headers.join("\n")))return oSend.apply(this,
             arguments);
-            flagExfil(this.__ww_dest);
+            flagExfil(this.__wo_dest);
             try{
               this.abort()
             }
@@ -4014,7 +4014,7 @@
         }
 
       }
-      if(WW.continuousTokenScan){
+      if(WO.continuousTokenScan){
         const watchStore=(proto,
         label)=>{
           try{
@@ -4077,7 +4077,7 @@
         }
 
       }
-      if(WW.detectSkimmers){
+      if(WO.detectSkimmers){
         const isSensitiveField=el=>el&&"INPUT"===el.tagName&&("password"===el.type||/card|cvv|cvc|ccnum|cardnumber|creditcard|securitycode/i.test((el.name||"")+(el.autocomplete||"")+(el.id||""))||/cc-(number|csc)/i.test(el.autocomplete||"")),
         skimmerPageSensitive=()=>{
           try{
@@ -4144,7 +4144,7 @@
             listener,
             opts){
               try{
-                if(WW.detectSkimmers&&isSensitiveField(this)&&/^(keydown|keyup|keypress|input|change)$/.test(type)){
+                if(WO.detectSkimmers&&isSensitiveField(this)&&/^(keydown|keyup|keypress|input|change)$/.test(type)){
                   const foreign=callerForeign();
                   foreign&&warnSkim("third-party script ("+foreign+") is reading a "+("password"===this.type?"password":"card")+" field")
                 }
@@ -4220,10 +4220,10 @@
               try{
                 const url="string"==typeof input?input:input&&input.url,
                 body=init&&init.body||input&&input.body;
-                if(WW.detectSkimmers&&url&&carriesCardData(body,
+                if(WO.detectSkimmers&&url&&carriesCardData(body,
                 url))return flagSkimExfil(url),
                 warnSkim("blocked card/password data being sent off-site"),
-                Promise.reject(new DOMException("Blocked by Warden One skimmer guard",
+                Promise.reject(new DOMException("Blocked by WardenOne skimmer guard",
                 "SecurityError"))
               }
               catch(_){
@@ -4238,7 +4238,7 @@
             const rb=navigator.sendBeacon.bind(navigator);
             navigator.sendBeacon=function(url,
             data){
-              return WW.detectSkimmers&&url&&carriesCardData(data,
+              return WO.detectSkimmers&&url&&carriesCardData(data,
               url)?(flagSkimExfil(url),
               warnSkim("blocked card data beacon"),
               !1):rb(url,
@@ -4252,7 +4252,7 @@
             RX.prototype.open=function(m,
             url,
             ...rest){
-              return this.__ww_skurl=url,
+              return this.__wo_skurl=url,
               oOpen.call(this,
               m,
               url,
@@ -4261,9 +4261,9 @@
             const oSend=RX.prototype.send;
             RX.prototype.send=function(body){
               try{
-                if(WW.detectSkimmers&&this.__ww_skurl&&carriesCardData(body,
-                this.__ww_skurl)){
-                  flagSkimExfil(this.__ww_skurl),
+                if(WO.detectSkimmers&&this.__wo_skurl&&carriesCardData(body,
+                this.__wo_skurl)){
+                  flagSkimExfil(this.__wo_skurl),
                   warnSkim("blocked card data via XHR");
                   try{
                     this.abort()
@@ -4287,7 +4287,7 @@
         };
         let skimmerArmed=!1;
         const maybeArmSkimmer=force=>{
-          skimmerArmed||!WW.detectSkimmers||!force&&!skimmerPageSensitive()||(skimmerArmed=!0,
+          skimmerArmed||!WO.detectSkimmers||!force&&!skimmerPageSensitive()||(skimmerArmed=!0,
           armSkimmerGuard())
         };
         maybeArmSkimmer(!1),
@@ -4308,7 +4308,7 @@
         },
         !0))
       }
-      if(WW.paymentCardGuard)try{
+      if(WO.paymentCardGuard)try{
         const currentHost=String(location.hostname||"").replace(/^www\./,
         "").toLowerCase(),
         staticTrustedPaymentHosts=["stripe.com",
@@ -4337,7 +4337,7 @@
         "pay.google.com",
         "shopify.com",
         "myshopify.com"],
-        remoteTrustedPaymentHosts=(Array.isArray(WW.trustedPaymentHostsExtra)?WW.trustedPaymentHostsExtra:[]).map(d=>String(d||"").replace(/^www\./,
+        remoteTrustedPaymentHosts=(Array.isArray(WO.trustedPaymentHostsExtra)?WO.trustedPaymentHostsExtra:[]).map(d=>String(d||"").replace(/^www\./,
         "").replace(/^\.+|\.+$/g,
         "").toLowerCase()).filter(d=>/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(d)&&!/(^|\.)xn--/i.test(d)&&!/\.(cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|zip|mov|hair|tattoo)$/i.test(d)&&!/^[a-f0-9]{12,}$/i.test(d.split(".")[0]||"")).slice(0,
         300),
@@ -4535,7 +4535,7 @@
             out.score+=pts||0,
             hard&&(out.hard=!0)
           },
-          pr=WW.__pageRisk||{
+          pr=WO.__pageRisk||{
 
           };
           pr.phishing&&add("this page looks like a fake/look-alike of "+(pr.brand||"a real site"),
@@ -4626,9 +4626,9 @@
             hard=!0,
             reasons.push("this checkout page is not HTTPS")
           }
-          if(WW.__pageRisk&&WW.__pageRisk.phishing){
+          if(WO.__pageRisk&&WO.__pageRisk.phishing){
             hard=!0,
-            reasons.push("this page looks like a fake/look-alike of "+(WW.__pageRisk.brand||"a real site"))
+            reasons.push("this page looks like a fake/look-alike of "+(WO.__pageRisk.brand||"a real site"))
           }
           if(rawHost(location.hostname)){
             hard=!0,
@@ -4678,7 +4678,7 @@
         paymentRiskDialog=risk=>{
           const reasons=(risk&&risk.reasons&&risk.reasons.length?risk.reasons:["risky card entry"]).slice(0,
           5);
-          return"Warden One Payment Guard\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+reasons.join("\n- ")+"\n\nWhat to do:\n"+paymentRiskAction(risk)+"\n\nContinue sending card details?"
+          return"WardenOne Payment Guard\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+reasons.join("\n- ")+"\n\nWhat to do:\n"+paymentRiskAction(risk)+"\n\nContinue sending card details?"
         },
         notePayment=(type,
         risk)=>{
@@ -4689,7 +4689,7 @@
           log(type,
           detail))
         },
-        paymentBlockedError=()=>new DOMException("Blocked by Warden One Payment Card Guard",
+        paymentBlockedError=()=>new DOMException("Blocked by WardenOne Payment Card Guard",
         "SecurityError"),
         confirmPaymentRisk=risk=>{
           if(!risk||"warn"!==risk.level)return!0;
@@ -4728,7 +4728,7 @@
           notePayment("blocked_payment_card_submit",
           risk);
           if(paymentBlocked<=2)try{
-            alert("Warden One blocked this card submission.\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+((risk.reasons&&risk.reasons.length?risk.reasons:["risky card entry"]).slice(0,
+            alert("WardenOne blocked this card submission.\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+((risk.reasons&&risk.reasons.length?risk.reasons:["risky card entry"]).slice(0,
             5).join("\n- "))+"\n\nWhat to do:\n"+paymentRiskAction(risk))
           }
           catch(_){
@@ -4745,7 +4745,7 @@
             location.href),
             h=String(u.hostname||"").replace(/^www\./,
             "").toLowerCase();
-            return!!(h&&!sameSiteHost(h)&&!trustedPaymentHost(h)||suspiciousPaymentHost(location.hostname)||(WW.__pageRisk&&(WW.__pageRisk.newDomain||WW.__pageRisk.youngDomain||Number(WW.__pageRisk.behavioralScore||0)>=30)))
+            return!!(h&&!sameSiteHost(h)&&!trustedPaymentHost(h)||suspiciousPaymentHost(location.hostname)||(WO.__pageRisk&&(WO.__pageRisk.newDomain||WO.__pageRisk.youngDomain||Number(WO.__pageRisk.behavioralScore||0)>=30)))
           }
           catch(_){
             return!!(risk&&risk.level)
@@ -4766,7 +4766,7 @@
         document.addEventListener("input",
         e=>{
           try{
-            WW.paymentCardGuard&&fieldLooksCard(e.target)&&setTimeout(cardValues,
+            WO.paymentCardGuard&&fieldLooksCard(e.target)&&setTimeout(cardValues,
             0)
           }
           catch(_){
@@ -4780,7 +4780,7 @@
         e=>{
           try{
             const form=e.target;
-            if(!WW.paymentCardGuard||!form||allowedForms.has(form)||!cardEntered())return;
+            if(!WO.paymentCardGuard||!form||allowedForms.has(form)||!cardEntered())return;
             const action=form.action||location.href,
             risk=riskFor(action),
             askOrContinue=finalRisk=>{
@@ -4827,7 +4827,7 @@
             try{
               const url="string"==typeof input?input:input&&input.url,
               body=init&&init.body||input&&input.body;
-              if(WW.paymentCardGuard&&payloadHasCard(body,
+              if(WO.paymentCardGuard&&payloadHasCard(body,
               url)){
                 const risk=riskFor(url);
                 if("block"===risk.level)return blockCardSend(risk,
@@ -4862,7 +4862,7 @@
           const rb=navigator.sendBeacon.bind(navigator);
           navigator.sendBeacon=function(url,
           data){
-            if(WW.paymentCardGuard&&payloadHasCard(data,
+            if(WO.paymentCardGuard&&payloadHasCard(data,
             url)){
               const risk=riskFor(url);
               if("block"===risk.level)return blockCardSend(risk,
@@ -4880,7 +4880,7 @@
           RX.prototype.open=function(method,
           url,
           ...rest){
-            return this.__ww_payment_url=url,
+            return this.__wo_payment_url=url,
             oOpen.call(this,
             method,
             url,
@@ -4889,9 +4889,9 @@
           const oSend=RX.prototype.send;
           RX.prototype.send=function(body){
             try{
-              if(WW.paymentCardGuard&&payloadHasCard(body,
-              this.__ww_payment_url)){
-                const risk=riskFor(this.__ww_payment_url);
+              if(WO.paymentCardGuard&&payloadHasCard(body,
+              this.__wo_payment_url)){
+                const risk=riskFor(this.__wo_payment_url);
                 if("block"===risk.level){
                   blockCardSend(risk,
                   !1);
@@ -4926,7 +4926,7 @@
         try{
           const urlExfilRisk=u=>{
             try{
-              if(!WW.paymentCardGuard||!seenCards.size)return null;
+              if(!WO.paymentCardGuard||!seenCards.size)return null;
               const s=String(u||"");
               if(s.length<20||!payloadHasCard(null,
               s))return null;
@@ -4980,7 +4980,7 @@
           if(window.WebSocket&&window.WebSocket.prototype&&window.WebSocket.prototype.send){
             const oWsSend=window.WebSocket.prototype.send;
             window.WebSocket.prototype.send=function(data){
-              if(WW.paymentCardGuard&&seenCards.size)try{
+              if(WO.paymentCardGuard&&seenCards.size)try{
                 if(payloadHasCard(data,
                 this.url)){
                   const risk=riskFor(this.url);
@@ -5022,7 +5022,7 @@
         error:String(e)
       })
     }
-    if(WW.clipboardGuard)try{
+    if(WO.clipboardGuard)try{
       const extractAddr=s=>{
         const m=String(s||"").match(CRYPTO_ADDR_RE);
         return m?m[0]:null
@@ -5077,7 +5077,7 @@
         navigator.clipboard.writeText=function(text){
           const hit=isHijack(text);
           if(hit)return noteBlock(hit.reason),
-          Promise.reject(new DOMException("Blocked by Warden One clipboard guard",
+          Promise.reject(new DOMException("Blocked by WardenOne clipboard guard",
           "NotAllowedError"));
           const a=extractAddr(text);
           return a&&(lastCopiedAddr=a),
@@ -5089,7 +5089,7 @@
         const realWriteItems=navigator.clipboard.write.bind(navigator.clipboard);
         navigator.clipboard.write=function(items){
           return hasRecentGesture()?realWriteItems(items):(noteBlock("gestureless clipboard write()"),
-          Promise.reject(new DOMException("Blocked by Warden One clipboard guard",
+          Promise.reject(new DOMException("Blocked by WardenOne clipboard guard",
           "NotAllowedError")))
         }
 
@@ -5149,7 +5149,7 @@
         error:String(e)
       })
     }
-    if(WW.clipboardSwapDetect&&WW_TOP)try{
+    if(WO.clipboardSwapDetect&&WO_TOP)try{
       const swapExtract=s=>{
         const m=String(s||"").match(CRYPTO_ADDR_RE);
         return m?m[0]:null
@@ -5177,10 +5177,10 @@
       const showSwapPanel=(copiedAddr,
       pastedAddr)=>{
         try{
-          if(document.getElementById("ww-clip-swap"))return;
+          if(document.getElementById("wo-clip-swap"))return;
           if(!document.body&&!document.documentElement)return;
           const wrap=document.createElement("div");
-          wrap.id="ww-clip-swap",
+          wrap.id="wo-clip-swap",
           wrap.setAttribute("style",
           "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:480px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
           const tag=document.createElement("div");
@@ -5279,7 +5279,7 @@
         error:String(e)
       })
     }
-    if(WW.keystrokePressure&&WW_TOP)try{
+    if(WO.keystrokePressure&&WO_TOP)try{
       const KP_SKIP=new Set(["google",
       "bing",
       "duckduckgo",
@@ -5430,7 +5430,7 @@
         error:String(e)
       })
     }
-    if(WW.honeytokenMode&&WW_TOP)try{
+    if(WO.honeytokenMode&&WO_TOP)try{
       let htFlagged=0;
       const htFlag=(token,
       where)=>{
@@ -5547,7 +5547,7 @@
         error:String(e)
       })
     }
-    if(WW.scamLockGuard&&WW_TOP)try{
+    if(WO.scamLockGuard&&WO_TOP)try{
       let scamShown=!1;
       const FEAR=/(your\s+(computer|pc|system|device|access)\s+(to\s+this\s+pc\s+)?(has\s+been\s+|is\s+)?(locked|blocked|disabled|suspended|compromised|infected)|do\s+not\s+(close|restart|shut\s?down|turn\s+off)\s+(this\s+)?(window|computer|pc|browser)|your\s+(windows\s+)?(computer|pc)\s+is\s+infected|critical\s+(security\s+)?(alert|warning)\b|windows\s+(defender\s+)?security\s+(alert|center)|access\s+to\s+this\s+(pc|computer)\s+has\s+been\s+blocked|do\s+not\s+ignore\s+this\s+(warning|alert)|your\s+(data|files|identity)\s+(is|are|may be)\s+at\s+risk)/i,
       CALL=/(call\s+(us\s+)?(now|immediately|toll[-\s]?free|microsoft|apple|windows|support)\b|call\s+(this\s+|the\s+)?(number|helpline|toll[-\s]?free)\b|contact\s+(microsoft|apple|windows)\s+support|technical\s+support\s+(number|line|helpline)|(1[-.\s]?)?8(00|33|44|55|66|77|88)[-.\s]?\d{3}[-.\s]?\d{4}|(anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|remote\s+(access|assistance|desktop|support|control|connection))|enter\s+(this\s+|the\s+)?(code|key|pin)\b|(install|download|run)\s+(the\s+)?(support|remote|cleanup)\s+(tool|software|app))/i,
@@ -5602,11 +5602,11 @@
             60)
           });
           try{
-            if(document.getElementById("ww-scam-lock"))return;
+            if(document.getElementById("wo-scam-lock"))return;
             const root=document.documentElement||document.body;
             if(!root)return;
             const wrap=document.createElement("div");
-            wrap.id="ww-scam-lock",
+            wrap.id="wo-scam-lock",
             wrap.setAttribute("style",
             "all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;display:flex!important;align-items:center!important;justify-content:center!important;background:rgba(20,8,28,.86)!important;backdrop-filter:blur(6px)!important;-webkit-backdrop-filter:blur(6px)!important;font-family:Nunito,system-ui,sans-serif!important;");
             const card=document.createElement("div");
@@ -5716,7 +5716,7 @@
       });
       try{
         let sPending=!1;
-        wwObserve(()=>{
+        woObserve(()=>{
           scamShown||sPending||(sPending=!0,
           setTimeout(()=>{
             sPending=!1,
@@ -5739,7 +5739,7 @@
         error:String(e)
       })
     }
-    if(WW.commandPasteGuard)try{
+    if(WO.commandPasteGuard)try{
       const CMD_PATTERNS=[/powershell(\.exe)?\s+.*-(enc|encodedcommand|e)\b/i,
       /\b(iwr|irm|invoke-(webrequest|expression)|iex)\b[\s\S]*\|\s*iex\b/i,
       /\bcurl\b[\s\S]*\|\s*(bash|sh|zsh)\b/i,
@@ -5758,10 +5758,10 @@
       let cmdWarned=!1;
       const showCommandPanel=sample=>{
         try{
-          if(document.getElementById("ww-cmd-warn"))return;
+          if(document.getElementById("wo-cmd-warn"))return;
           if(!document.body&&!document.documentElement)return;
           const wrap=document.createElement("div");
-          wrap.id="ww-cmd-warn",
+          wrap.id="wo-cmd-warn",
           wrap.setAttribute("style",
           "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:460px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
           const tag=document.createElement("div");
@@ -5824,7 +5824,7 @@
         navigator.clipboard.writeText=function(text){
           return looksLikeCommand(text)?(warnCommand("clipboard",
           text),
-          Promise.reject(new DOMException("Blocked by Warden One command-paste guard",
+          Promise.reject(new DOMException("Blocked by WardenOne command-paste guard",
           "NotAllowedError"))):realW(text)
         }
 
@@ -5879,7 +5879,7 @@
         }
 
       };
-      if(WW_TOP){
+      if(WO_TOP){
         document.body?scanPageForClickFix():document.addEventListener("DOMContentLoaded",
         scanPageForClickFix,
         {
@@ -5887,7 +5887,7 @@
         });
         try{
           let pending=!1;
-          wwObserve(()=>{
+          woObserve(()=>{
             cmdWarned||pending||(pending=!0,
             setTimeout(()=>{
               pending=!1,
@@ -5912,7 +5912,7 @@
         error:String(e)
       })
     }
-    if(WW.fakeUpdateDetector&&WW_TOP)try{
+    if(WO.fakeUpdateDetector&&WO_TOP)try{
       const FU_VENDOR=/(^|\.)(google\.com|chrome\.com|gstatic\.com|microsoft\.com|microsoftedge\.com|windowsupdate\.com|live\.com|mozilla\.org|firefox\.com|getfirefox\.com|apple\.com|adobe\.com|java\.com|oracle\.com|brave\.com|opera\.com|vivaldi\.com|browser-update\.org)$/i,
       fuHere=regDomain(location.hostname),
       FU_LURE=/(your\s+(browser|chrome|edge|firefox|safari|opera|windows|system|flash\s*player)\s+(is\s+)?(severely\s+)?(out\s?-?of\s?-?date|outdated|not\s+up\s?to\s?date)|(browser|chrome|edge|firefox|flash\s*player|windows|java)\s+update\s+(is\s+)?(required|needed|available|recommended)|critical\s+(security\s+|browser\s+)?update\s+(required|needed)|update\s+(your\s+)?(chrome|edge|firefox|browser|windows|flash)\b|your\s+version\s+of\s+(chrome|edge|firefox|windows|flash)\b[^.]{0,40}(out\s?of\s?date|outdated|old)|download\s+the\s+(latest|new)\s+version\s+of\s+(chrome|edge|firefox|flash)|(adobe\s+)?flash\s*player\s+(is\s+)?(out\s?of\s?date|outdated|needs?\s+(an?\s+)?update))/i,
@@ -5963,7 +5963,7 @@
       });
       try{
         let fuPending=!1;
-        wwObserve(()=>{
+        woObserve(()=>{
           fuWarned||fuPending||(fuPending=!0,
           setTimeout(()=>{
             fuPending=!1,
@@ -5983,7 +5983,7 @@
         error:String(e)
       })
     }
-    if(WW.pasteProtection)try{
+    if(WO.pasteProtection)try{
       const regHost=h=>String(h||"").replace(/^www\./,
       "").toLowerCase(),
       here=regHost(location.hostname),
@@ -6032,16 +6032,16 @@
         }
 
       },
-      pageRiskReason=el=>WW.__pageRisk&&WW.__pageRisk.phishing?"This page looks like a fake/look-alike of "+(WW.__pageRisk.brand||"a real site"):isInsecure?"This page is not secure (http://)  -  anything you paste can be read in transit":formGoesForeign(el)?"This form sends what you type to a different website":"";
+      pageRiskReason=el=>WO.__pageRisk&&WO.__pageRisk.phishing?"This page looks like a fake/look-alike of "+(WO.__pageRisk.brand||"a real site"):isInsecure?"This page is not secure (http://)  -  anything you paste can be read in transit":formGoesForeign(el)?"This form sends what you type to a different website":"";
       let pasteWarned=!1;
       const showPastePanel=(reason,
       onConfirm)=>{
         try{
-          const old=document.getElementById("ww-paste-warn");
+          const old=document.getElementById("wo-paste-warn");
           if(old&&old.remove(),
           !document.body&&!document.documentElement)return;
           const wrap=document.createElement("div");
-          wrap.id="ww-paste-warn",
+          wrap.id="wo-paste-warn",
           wrap.setAttribute("style",
           "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:440px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
           const tag=document.createElement("div");
@@ -6347,7 +6347,7 @@
         error:String(e)
       })
     }
-    if(WW.formTrapDetector)try{
+    if(WO.formTrapDetector)try{
       const regHost=h=>String(h||"").replace(/^www\./,
       "").toLowerCase(),
       here=regHost(location.hostname),
@@ -6473,7 +6473,7 @@
       },
       onGrabberList=host=>{
         try{
-          return(WW.grabberDomains||[]).some(d=>host===d||host.endsWith("."+d))
+          return(WO.grabberDomains||[]).some(d=>host===d||host.endsWith("."+d))
         }
         catch(_){
           return!1
@@ -6509,8 +6509,8 @@
         reasons.push("it sends your password to a different website ("+actionHost+")")),
         "http:"===actionProto&&"https:"===location.protocol&&(score+=5,
         reasons.push("it sends your password over an insecure (http) connection"))),
-        WW.__pageRisk&&WW.__pageRisk.phishing&&(score+=3,
-        reasons.push("this page is a look-alike of "+(WW.__pageRisk.brand||"a real site")));
+        WO.__pageRisk&&WO.__pageRisk.phishing&&(score+=3,
+        reasons.push("this page is a look-alike of "+(WO.__pageRisk.brand||"a real site")));
         const brand=brandClaimMismatch(form);
         return brand&&(score+=4,
         reasons.push("it claims to be "+brand+", but this site is not "+brand)),
@@ -6526,10 +6526,10 @@
       },
       showTrapPanel=reasons=>{
         try{
-          if(document.getElementById("ww-formtrap-warn"))return;
+          if(document.getElementById("wo-formtrap-warn"))return;
           if(!document.body&&!document.documentElement)return;
           const wrap=document.createElement("div");
-          wrap.id="ww-formtrap-warn",
+          wrap.id="wo-formtrap-warn",
           wrap.setAttribute("style",
           "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:460px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
           const tag=document.createElement("div");
@@ -6545,7 +6545,7 @@
           const body=document.createElement("div");
           body.setAttribute("style",
           "font-size:12.5px!important;color:#4a3661!important;line-height:1.55!important;margin:0 0 8px 0!important;"),
-          body.textContent="Warden One noticed signs that this sign-in box may be fake or stealing credentials:",
+          body.textContent="WardenOne noticed signs that this sign-in box may be fake or stealing credentials:",
           wrap.appendChild(body);
           const ul=document.createElement("div");
           ul.setAttribute("style",
@@ -6627,7 +6627,7 @@
       });
       try{
         let pending=!1;
-        wwObserve(muts=>{
+        woObserve(muts=>{
           if(!trapWarned){
             for(const m of muts)for(const node of m.addedNodes)1===node.nodeType&&(node.matches&&node.matches('input[type="password"]')?[node]:node.querySelectorAll?node.querySelectorAll('input[type="password"]'):[]).forEach(pw=>{
               initialPw.has(pw)||injectedForms.add(pw)
@@ -6656,7 +6656,7 @@
         error:String(e)
       })
     }
-    if(WW.adShield)try{
+    if(WO.adShield)try{
       const host=location.hostname,
       googleSearchResults=isGoogleSearchResults(),
       allowGoogleSearchCosmetics=()=>!googleSearchResults,
@@ -6846,7 +6846,7 @@
 
         }
         const boom=()=>{
-          throw new ReferenceError("Warden One:"+path)
+          throw new ReferenceError("WardenOne:"+path)
         };
         try{
           Object.defineProperty(parent,
@@ -6893,7 +6893,7 @@
               try{
                 const cs=document.currentScript,
                 txt=cs&&cs.textContent||"";
-                if(!re||re.test(txt))throw new ReferenceError("Warden One:acs:"+path)
+                if(!re||re.test(txt))throw new ReferenceError("WardenOne:acs:"+path)
               }
               catch(e){
                 if(e instanceof ReferenceError)throw e
@@ -6963,7 +6963,7 @@
         Real.prototype.open=function(method,
         url){
           try{
-            this.__wwBlock=re.test(String(url))
+            this.__woBlock=re.test(String(url))
           }
           catch(_){
 
@@ -6972,7 +6972,7 @@
           arguments)
         },
         Real.prototype.send=function(){
-          if(!this.__wwBlock)return realSend.apply(this,
+          if(!this.__woBlock)return realSend.apply(this,
           arguments);
           try{
             const xhr=this;
@@ -7590,7 +7590,7 @@
             });
             try{
               let collapsePending=!1;
-              wwObserve(()=>{
+              woObserve(()=>{
                 if(styleEl&&!styleEl.isConnected)try{
                   (document.head||document.documentElement).appendChild(styleEl)
                 }
@@ -7616,7 +7616,7 @@
             }
 
           }
-          __wwBackgroundRequest({
+          __woBackgroundRequest({
             kind:"adshield-cosmetic",
             hostname:host
           },
@@ -7646,7 +7646,7 @@
               try{
                 let procPending=!1,
                 collapsePending=!1;
-                wwObserve(()=>{
+                woObserve(()=>{
                   if(styleEl&&!styleEl.isConnected)try{
                     (document.head||document.documentElement).appendChild(styleEl)
                   }
@@ -7741,12 +7741,12 @@
       "[data-testid='answer-with-ai']"],
       GOOGLE_PAA_SEL=".related-question-pair",
       GOOGLE_AI_TARGET_SEL="#m-x-content",
-      GOOGLE_CLEANUP_TARGET_SEL=GOOGLE_AI_TARGET_SEL+",[data-ww-google-search-cleaned]",
+      GOOGLE_CLEANUP_TARGET_SEL=GOOGLE_AI_TARGET_SEL+",[data-wo-google-search-cleaned]",
       GOOGLE_AI_SHELL_SEL=":is(.MjjYud,div[data-hveid],div[jscontroller],div[jsname],g-section-with-header,section,aside):has("+GOOGLE_AI_TARGET_SEL+"):not(:has(#rso,#search,#res,#center_col,"+GOOGLE_PAA_SEL+"))",
       SEARCH_IS_GOOGLE="function"==typeof isGoogleSearchResults&&isGoogleSearchResults(),
       SEARCH_IS_BRAVE="function"==typeof isBraveSearchResults&&isBraveSearchResults(),
-      SEARCH_AI_ON=!!(WW.blockSearchAiAnswers||WW.googleSearchResultCleanup),
-      SEARCH_ADS_ON=!!(WW.blockSponsoredSearchResults||WW.googleSearchResultCleanup),
+      SEARCH_AI_ON=!!(WO.blockSearchAiAnswers||WO.googleSearchResultCleanup),
+      SEARCH_ADS_ON=!!(WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup),
       searchSponsoredSelectors=()=>SEARCH_IS_BRAVE?BRAVE_SPONSORED_SELECTORS:GOOGLE_CLEANUP_SELECTORS,
       searchAiSelectors=()=>SEARCH_IS_BRAVE?BRAVE_AI_SELECTORS:GOOGLE_AI_TARGET_SEL.split(","),
       searchCleanupSelectors=()=>SEARCH_ADS_ON?searchSponsoredSelectors():[],
@@ -7783,7 +7783,7 @@
       googleHasCleanupTarget=el=>{
         try{
           if(!el)return!1;
-          const selectors=["[data-ww-google-search-cleaned]"];
+          const selectors=["[data-wo-google-search-cleaned]"];
           SEARCH_AI_ON&&selectors.push(...searchAiSelectors());
           SEARCH_ADS_ON&&selectors.push(...searchSponsoredSelectors());
           const sel=selectors.join(",");
@@ -7900,7 +7900,7 @@
             n.style.setProperty("overflow",
             "hidden",
             "important"),
-            n.setAttribute("data-ww-google-search-collapsed",
+            n.setAttribute("data-wo-google-search-collapsed",
             "1")
           }
 
@@ -8019,7 +8019,7 @@
       searchRememberSponsoredLinks=root=>{
         try{
           if(!SEARCH_ADS_ON||!root||!root.querySelectorAll)return;
-          root.setAttribute&&root.setAttribute("data-ww-sponsored-search-result",
+          root.setAttribute&&root.setAttribute("data-wo-sponsored-search-result",
           "1");
           root.querySelectorAll("a[href],area[href]").forEach(a=>{
             const raw=a.getAttribute&&a.getAttribute("href")||a.href||"",
@@ -8054,7 +8054,7 @@
           n&&n!==document.body&&n!==document.documentElement&&i<8;
           n=n.parentElement,
           i++){
-            if(n.getAttribute&&"1"===n.getAttribute("data-ww-sponsored-search-result"))return!0;
+            if(n.getAttribute&&"1"===n.getAttribute("data-wo-sponsored-search-result"))return!0;
             if(n.matches&&SEARCH_ADS_ON&&n.matches(searchSponsoredSelectors().join(",")))return!0;
             if(/^(rso|search|res|center_col|rcnt|appbar|main|cnt|top)$/i.test(n.id||""))break
           }
@@ -8114,7 +8114,7 @@
           el.style.setProperty("visibility",
           "hidden",
           "important"),
-          el.setAttribute("data-ww-google-search-cleaned",
+          el.setAttribute("data-wo-google-search-cleaned",
           "1");
           return!0
         }
@@ -8179,7 +8179,7 @@
             if(inPaa(el))return;
             const lr=el.getBoundingClientRect&&el.getBoundingClientRect(),
             labelVisible=!!lr&&lr.width>=8&&lr.height>=8,
-            hiddenByUs=!!(el.closest&&el.closest("#m-x-content,.uEierd,[data-google-query-id],[data-ww-google-search-cleaned]"));
+            hiddenByUs=!!(el.closest&&el.closest("#m-x-content,.uEierd,[data-google-query-id],[data-wo-google-search-cleaned]"));
             if(!labelVisible&&!hiddenByUs)return;
             const mod=googleModuleFor(el,
             isAi?"ai":"ad");
@@ -8201,7 +8201,7 @@
         let pending=!1,
         runs=0;
         try{
-          wwObserve(muts=>{
+          woObserve(muts=>{
             if(runs>80)return;
             let useful=!1;
             for(const m of muts){
@@ -8239,7 +8239,7 @@
         })
       };
       maybeStartGoogleCleanup(),
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       maybeStartGoogleCleanup)
     }
     catch(e){
@@ -8248,9 +8248,9 @@
         error:String(e)
       })
     }
-    if(WW.scriptletEngine||WW.twitchAdBlock)try{
+    if(WO.scriptletEngine||WO.twitchAdBlock)try{
       const host=location.hostname;
-      if(!1&&WW.twitchAdBlock&&/(^|\.)twitch\.tv$/i.test(location.hostname)&&"undefined"!=typeof Worker)try{
+      if(!1&&WO.twitchAdBlock&&/(^|\.)twitch\.tv$/i.test(location.hostname)&&"undefined"!=typeof Worker)try{
         const installTwitchHook=function(){
           const AD_RE=/stitched|twitch-ad-quartile|x-tv-twitch-ad/i,
           realFetch=self.fetch.bind(self),
@@ -8410,7 +8410,7 @@
             let lastErr=null,
             fb=null,
             fbVars=null;
-            const __wwAtt=async pt=>{
+            const __woAtt=async pt=>{
               const t=await token(info.channel,
               pt),
               u=new URL(info.master);
@@ -8439,11 +8439,11 @@
               }
 
             };
-            const __wwJobs=BACKUP_PLAYER_TYPES.map(pt=>__wwAtt(pt).then(r=>r,
+            const __woJobs=BACKUP_PLAYER_TYPES.map(pt=>__woAtt(pt).then(r=>r,
             e=>({
               __e:e
             })));
-            for(const __j of __wwJobs){
+            for(const __j of __woJobs){
               const v=await __j;
               if(v&&v.__e){
                 lastErr=v.__e;
@@ -8557,7 +8557,7 @@
                 return t
               })(),
               new Promise((_,
-              r)=>setTimeout(()=>r(new Error("ww backup timeout")),
+              r)=>setTimeout(()=>r(new Error("wo backup timeout")),
               5e3))]);
               return m3u8(bText)
             }
@@ -8619,16 +8619,16 @@
           options)
         };
         twitchWorker.prototype=RealWorker.prototype,
-        window.Worker.__wwTw||(twitchWorker.__wwTw=!0,
+        window.Worker.__woTw||(twitchWorker.__woTw=!0,
         window.Worker=twitchWorker),
         log("scriptlet_twitch_adblock",
         {
 
         });
         try{
-          var __wwRealFetch=window.fetch;
-          if("function"==typeof __wwRealFetch&&!__wwRealFetch.__wwTwForced){
-            var __wwForcedFetch=function(input,
+          var __woRealFetch=window.fetch;
+          if("function"==typeof __woRealFetch&&!__woRealFetch.__woTwForced){
+            var __woForcedFetch=function(input,
             init){
               try{
                 if(init&&"string"==typeof init.body&&init.body.indexOf("PlaybackAccessToken")>=0){
@@ -8636,7 +8636,7 @@
                   arr=Array.isArray(b)?b:[b];
                   if(arr.length&&arr.every(function(o){
                     return o&&o.variables&&"picture-by-picture"===o.variables.playerType
-                  }))return __wwRealFetch.call(window,
+                  }))return __woRealFetch.call(window,
                   input,
                   Object.assign({
 
@@ -8666,19 +8666,19 @@
               catch(_){
 
               }
-              return __wwRealFetch.call(window,
+              return __woRealFetch.call(window,
               input,
               init)
             };
             try{
-              __wwForcedFetch.__wwTwForced=!0
+              __woForcedFetch.__woTwForced=!0
             }
             catch(_){
 
             }
-            window.fetch=__wwForcedFetch;
+            window.fetch=__woForcedFetch;
             ;
-            /*__wwTwReassert*/(function(){
+            /*__woTwReassert*/(function(){
               function mk(p){
                 var w=function(input,
                 init){
@@ -8723,7 +8723,7 @@
                   init)
                 };
                 try{
-                  w.__wwTwForced=!0
+                  w.__woTwForced=!0
                 }
                 catch(_){
 
@@ -8733,7 +8733,7 @@
               function ra(){
                 try{
                   var c=window.fetch;
-                  if(c&&c.__wwTwForced)return;
+                  if(c&&c.__woTwForced)return;
                   window.fetch=mk(c)
                 }
                 catch(_){
@@ -8789,27 +8789,27 @@
         error:String(e)
       })
     }
-    if(!1&&WW.twitchAdBlock&&/(^|\.)twitch\.tv$/i.test(location.hostname))try{
-      if(window.__wwTwDisplayGuard)return;
-      window.__wwTwDisplayGuard=!0;
-      var __wwTwAdMark='[data-a-target="video-ad-label"],[data-a-target="video-ad-countdown"],[data-a-target="ad-countdown-timer"],[data-test-selector="sad-overlay"],.circle-countdown--text';
-      var __wwTwStyleId="ww-twitch-ad-css";
-      var __wwTwAddCss=function(){
-        if(document.getElementById(__wwTwStyleId))return;
+    if(!1&&WO.twitchAdBlock&&/(^|\.)twitch\.tv$/i.test(location.hostname))try{
+      if(window.__woTwDisplayGuard)return;
+      window.__woTwDisplayGuard=!0;
+      var __woTwAdMark='[data-a-target="video-ad-label"],[data-a-target="video-ad-countdown"],[data-a-target="ad-countdown-timer"],[data-test-selector="sad-overlay"],.circle-countdown--text';
+      var __woTwStyleId="wo-twitch-ad-css";
+      var __woTwAddCss=function(){
+        if(document.getElementById(__woTwStyleId))return;
         var s=document.createElement("style");
-        s.id=__wwTwStyleId;
+        s.id=__woTwStyleId;
         s.textContent='[aria-label="Advertisement"],#player-ads,[data-test-selector="sda-wrapper"],[class*="stream-display-ad__wrapper"],[class*="stream-display-ad__iframe"],button[aria-label="Learn more about this ad"]{display:none!important;visibility:hidden!important;pointer-events:none!important;}[class*="video-player--stream-display-ad"]{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;inset:0 auto auto 0!important;transform:none!important;}[class*="stream-display-ad__lower-third"]{height:100%!important;}.video-player__overlay .player-overlay-background:has(> div[class^="Layout-"] > div[class^="Layout-"] > div[class^="Layout-"] > a:is([href*="/how-to-allow-ads-browser"],[href="https://www.twitch.tv/turbo"])){display:none!important;}';
         (document.head||document.documentElement).appendChild(s)
       };
-      var __wwTwSweep=function(){
+      var __woTwSweep=function(){
         try{
-          __wwTwAddCss();
+          __woTwAddCss();
           var cont=document.querySelector('[data-test-selector="video-player__video-container"]');
           var streamVid=cont&&cont.querySelector("video");
           var adActive=!1;
           document.querySelectorAll(".picture-by-picture-player").forEach(function(box){
             if(streamVid&&box.contains(streamVid))return;
-            if(!box.querySelector(__wwTwAdMark))return;
+            if(!box.querySelector(__woTwAdMark))return;
             box.style.setProperty("display",
             "none",
             "important");
@@ -8835,16 +8835,16 @@
           {
 
           }));
-          var __wwMainAd=!1;
+          var __woMainAd=!1;
           if(cont&&streamVid){
             try{
               var __root=cont.closest('[data-a-target="video-player"]')||cont.parentElement||cont;
-              var __mk=__root.querySelectorAll(__wwTwAdMark);
+              var __mk=__root.querySelectorAll(__woTwAdMark);
               for(var __i=0;
               __i<__mk.length;
               __i++){
                 if(__mk[__i].getClientRects&&__mk[__i].getClientRects().length){
-                  __wwMainAd=!0;
+                  __woMainAd=!0;
                   break
                 }
 
@@ -8856,23 +8856,23 @@
             }
 
           }
-          if(__wwMainAd&&streamVid){
-            if(!streamVid.__wwAdMuted){
-              streamVid.__wwPrevMuted=streamVid.muted;
-              streamVid.__wwAdMuted=!0
+          if(__woMainAd&&streamVid){
+            if(!streamVid.__woAdMuted){
+              streamVid.__woPrevMuted=streamVid.muted;
+              streamVid.__woAdMuted=!0
             }
             streamVid.muted=!0
           }
-          else if(streamVid&&streamVid.__wwAdMuted){
+          else if(streamVid&&streamVid.__woAdMuted){
             try{
-              streamVid.muted=streamVid.__wwPrevMuted
+              streamVid.muted=streamVid.__woPrevMuted
             }
             catch(_){
 
             }
-            streamVid.__wwAdMuted=!1
+            streamVid.__woAdMuted=!1
           }
-          __wwTwAdActive=__wwMainAd;
+          __woTwAdActive=__woMainAd;
 
         }
         catch(_){
@@ -8880,16 +8880,16 @@
         }
 
       };
-      var __wwTwPending=!1,
-      __wwTwSchedule=function(){
-        __wwTwPending||(__wwTwPending=!0,
+      var __woTwPending=!1,
+      __woTwSchedule=function(){
+        __woTwPending||(__woTwPending=!0,
         (window.requestAnimationFrame||window.setTimeout)(function(){
-          __wwTwPending=!1,
-          __wwTwSweep()
+          __woTwPending=!1,
+          __woTwSweep()
         }))
       };
       try{
-        new MutationObserver(__wwTwSchedule).observe(document.documentElement,
+        new MutationObserver(__woTwSchedule).observe(document.documentElement,
         {
           childList:!0,
           subtree:!0
@@ -8898,12 +8898,12 @@
       catch(_){
 
       }
-      var __wwTwRl0=0,
-      __wwTwRlW=0,
-      __wwTwRlN=0,
-      __wwTwErr0=0,
-      __wwTwHardRl=(function(){try{return Number(sessionStorage.getItem("ww_tw_hardrl"))||0}catch(_){return 0}})(),
-      __wwTwRoot=function(){
+      var __woTwRl0=0,
+      __woTwRlW=0,
+      __woTwRlN=0,
+      __woTwErr0=0,
+      __woTwHardRl=(function(){try{return Number(sessionStorage.getItem("wo_tw_hardrl"))||0}catch(_){return 0}})(),
+      __woTwRoot=function(){
         try{
           var rn=document.querySelector("#root");
           if(rn&&rn._reactRootContainer&&rn._reactRootContainer._internalRoot&&rn._reactRootContainer._internalRoot.current)return rn._reactRootContainer._internalRoot.current;
@@ -8920,7 +8920,7 @@
         }
         return null
       },
-      __wwTwFind=function(root,
+      __woTwFind=function(root,
       c){
         if(!root)return null;
         try{
@@ -8932,23 +8932,23 @@
         var n=root.child,
         r;
         while(n){
-          r=__wwTwFind(n,
+          r=__woTwFind(n,
           c);
           if(r)return r;
           n=n.sibling
         }
         return null
       },
-      __wwTwGetPlayer=function(){
-        var root=__wwTwRoot();
+      __woTwGetPlayer=function(){
+        var root=__woTwRoot();
         if(!root)return null;
-        var p=__wwTwFind(root,
+        var p=__woTwFind(root,
         function(n){
           return n.setPlayerActive&&n.props&&n.props.mediaPlayerInstance
         });
         p=p&&p.props&&p.props.mediaPlayerInstance?p.props.mediaPlayerInstance:null;
         if(p&&p.playerInstance)p=p.playerInstance;
-        var st=__wwTwFind(root,
+        var st=__woTwFind(root,
         function(n){
           return n.setSrc&&n.setInitialPlaybackSettings
         });
@@ -8958,23 +8958,23 @@
         }
 
       },
-      __wwTwReload=function(){
+      __woTwReload=function(){
         var now=Date.now();
-        if(now-__wwTwRlW>6e4){
-          __wwTwRlW=now,
-          __wwTwRlN=0
+        if(now-__woTwRlW>6e4){
+          __woTwRlW=now,
+          __woTwRlN=0
         }
-        if(__wwTwRlN>=6||now-__wwTwRl0<5e3)return;
+        if(__woTwRlN>=6||now-__woTwRl0<5e3)return;
         var ps;
         try{
-          ps=__wwTwGetPlayer()
+          ps=__woTwGetPlayer()
         }
         catch(_){
           return
         }
         if(!ps||!ps.state||"function"!=typeof ps.state.setSrc)return;
-        __wwTwRl0=now,
-        __wwTwRlN++;
+        __woTwRl0=now,
+        __woTwRlN++;
         var q,
         m,
         vol;
@@ -9027,14 +9027,14 @@
         }
 
       };
-      var __wwTwAdActive=!1,
-      __wwTwVLast=-1,
-      __wwTwVStall=0,
-      __wwTwVFix=0,
-      __wwTwVTries=0,
-      __wwTwSpinSince=0,
-      __wwTwSpinFix=0,
-      __wwTwLooksLoading=function(root){
+      var __woTwAdActive=!1,
+      __woTwVLast=-1,
+      __woTwVStall=0,
+      __woTwVFix=0,
+      __woTwVTries=0,
+      __woTwSpinSince=0,
+      __woTwSpinFix=0,
+      __woTwLooksLoading=function(root){
         try{
           return !!(root&&root.querySelector('[data-a-target*="spinner"],[class*="spinner"],[role="progressbar"],[aria-busy="true"],[data-a-target*="loading"],[class*="loading"]'))
         }
@@ -9043,7 +9043,7 @@
         }
 
       },
-      __wwTwLooksError=function(root){
+      __woTwLooksError=function(root){
         try{
           var nodes=root&&root.querySelectorAll('[data-a-target*="error"],[data-test-selector*="error"],[class*="error"],[role="alert"],[data-a-target*="player-overlay"]');
           if(!nodes)return!1;
@@ -9059,7 +9059,7 @@
         }
         return!1
       },
-      __wwTwUnstall=function(v,
+      __woTwUnstall=function(v,
       hard){
         try{
           var s=v.seekable;
@@ -9096,38 +9096,38 @@
         }
         else go()
       },
-      __wwTwWatch=function(){
+      __woTwWatch=function(){
         try{
           var now=Date.now();
           var __vp=document.querySelector('[data-a-target="video-player"]')||document.querySelector(".video-player");
           var cont=document.querySelector('[data-test-selector="video-player__video-container"]'),
           v=cont&&cont.querySelector("video");
-          if(__wwTwLooksError(__vp)||v&&v.error){
-            __wwTwErr0||(__wwTwErr0=now);
-            __wwTwReload();
-            if(now-__wwTwErr0>9e3&&now-__wwTwHardRl>3e5){
-              __wwTwHardRl=now;
-              try{sessionStorage.setItem("ww_tw_hardrl",String(now))}catch(_){}
+          if(__woTwLooksError(__vp)||v&&v.error){
+            __woTwErr0||(__woTwErr0=now);
+            __woTwReload();
+            if(now-__woTwErr0>9e3&&now-__woTwHardRl>3e5){
+              __woTwHardRl=now;
+              try{sessionStorage.setItem("wo_tw_hardrl",String(now))}catch(_){}
               try{log("scriptlet_twitch_hard_reload",{})}catch(_){}
               try{location.reload()}catch(_){}
             }
             return
           }
-          __wwTwErr0=0;
+          __woTwErr0=0;
           if(!v||v.ended){
-            __wwTwVLast=-1,
-            __wwTwVStall=0,
-            __wwTwSpinSince=0;
+            __woTwVLast=-1,
+            __woTwVStall=0,
+            __woTwSpinSince=0;
             return
           }
-          if(v.paused&&v.readyState<3&&__wwTwLooksLoading(__vp)){
-            __wwTwSpinSince||(__wwTwSpinSince=now);
-            if(now-__wwTwSpinSince>8e3&&now-__wwTwSpinFix>3e4){
-              __wwTwSpinFix=now,
-              __wwTwSpinSince=0,
-              __wwTwVLast=-1,
-              __wwTwVStall=0,
-              __wwTwReload(),
+          if(v.paused&&v.readyState<3&&__woTwLooksLoading(__vp)){
+            __woTwSpinSince||(__woTwSpinSince=now);
+            if(now-__woTwSpinSince>8e3&&now-__woTwSpinFix>3e4){
+              __woTwSpinFix=now,
+              __woTwSpinSince=0,
+              __woTwVLast=-1,
+              __woTwVStall=0,
+              __woTwReload(),
               log("scriptlet_twitch_spinner_recover",
               {
 
@@ -9135,26 +9135,26 @@
             }
             return
           }
-          __wwTwSpinSince=0;
+          __woTwSpinSince=0;
           if(v.paused){
-            __wwTwVLast=-1,
-            __wwTwVStall=0;
+            __woTwVLast=-1,
+            __woTwVStall=0;
             return
           }
           var t=v.currentTime;
-          Math.abs(t-__wwTwVLast)<.05&&t>0?__wwTwVStall++:__wwTwVStall=0,
-          __wwTwVLast=t;
-          if(__wwTwVStall>=3&&now-__wwTwVFix>6e3){
-            __wwTwVTries=__wwTwVFix&&now-__wwTwVFix<15e3?__wwTwVTries+1:1,
-            __wwTwVFix=now,
-            __wwTwVStall=0,
-            __wwTwAdActive?__wwTwUnstall(v,
-            __wwTwVTries>=2):(v.readyState<3||__wwTwVTries>=2?__wwTwReload():__wwTwUnstall(v,
+          Math.abs(t-__woTwVLast)<.05&&t>0?__woTwVStall++:__woTwVStall=0,
+          __woTwVLast=t;
+          if(__woTwVStall>=3&&now-__woTwVFix>6e3){
+            __woTwVTries=__woTwVFix&&now-__woTwVFix<15e3?__woTwVTries+1:1,
+            __woTwVFix=now,
+            __woTwVStall=0,
+            __woTwAdActive?__woTwUnstall(v,
+            __woTwVTries>=2):(v.readyState<3||__woTwVTries>=2?__woTwReload():__woTwUnstall(v,
             !1)),
             log("scriptlet_twitch_unstall",
             {
-              n:__wwTwVTries,
-              ad:!!__wwTwAdActive
+              n:__woTwVTries,
+              ad:!!__woTwAdActive
             })
           }
 
@@ -9164,16 +9164,16 @@
         }
 
       };
-      setInterval(__wwTwWatch,
+      setInterval(__woTwWatch,
       1e3);
-      var __wwTwOnVis=function(){
+      var __woTwOnVis=function(){
         if("visible"!==document.visibilityState)return;
         setTimeout(function(){
           try{
             var vp=document.querySelector('[data-a-target="video-player"]')||document.querySelector(".video-player"),
             cont=document.querySelector('[data-test-selector="video-player__video-container"]'),
             v=cont&&cont.querySelector("video");
-            if(__wwTwLooksError(vp)||v&&v.error)__wwTwReload()
+            if(__woTwLooksError(vp)||v&&v.error)__woTwReload()
           }
           catch(_){
 
@@ -9184,16 +9184,16 @@
       };
       try{
         document.addEventListener("visibilitychange",
-        __wwTwOnVis),
+        __woTwOnVis),
         window.addEventListener("focus",
-        __wwTwOnVis)
+        __woTwOnVis)
       }
       catch(_){
 
       }
-      setInterval(__wwTwSweep,
+      setInterval(__woTwSweep,
       1e3),
-      __wwTwSweep(),
+      __woTwSweep(),
       log("scriptlet_twitch_displayad",
       {
 
@@ -9205,7 +9205,7 @@
         error:String(e)
       })
     }
-    if(WW.blockAutoplay)try{
+    if(WO.blockAutoplay)try{
       let userGestured=!1;
       ["click",
       "keydown",
@@ -9244,7 +9244,7 @@
               catch(_){
 
               }
-              return Promise.reject(new DOMException("Autoplay blocked by Warden One",
+              return Promise.reject(new DOMException("Autoplay blocked by WardenOne",
               "NotAllowedError"))
             }
             return realPlay.apply(this,
@@ -9268,7 +9268,7 @@
       };
       document.documentElement&&sweepMedia(document);
       try{
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&/^(VIDEO|AUDIO)$/.test(n.tagName)?tameMedia(n):n&&n.querySelectorAll&&sweepMedia(n)
         })
       }
@@ -9283,7 +9283,7 @@
     catch(_){
 
     }
-    if(WW.lazyLoadMedia)try{
+    if(WO.lazyLoadMedia)try{
       let io=null;
       try{
         io=new IntersectionObserver(entries=>{
@@ -9291,9 +9291,9 @@
             if(en.isIntersecting){
               const el=en.target;
               try{
-                const s=el.getAttribute("data-ww-src");
+                const s=el.getAttribute("data-wo-src");
                 s&&(el.src=s,
-                el.removeAttribute("data-ww-src"))
+                el.removeAttribute("data-wo-src"))
               }
               catch(_){
 
@@ -9347,7 +9347,7 @@
       };
       document.documentElement&&sweepLazy(document);
       try{
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&/^(IMG|IFRAME)$/.test(n.tagName)?lazify(n):n&&n.querySelectorAll&&sweepLazy(n)
         })
       }
@@ -9364,14 +9364,14 @@
     }
     let socialWidgetGuardInstalled=!1;
     const installSocialWidgetGuard=()=>{
-      if(socialWidgetGuardInstalled||!WW.socialWidgetGuard||/(^|\.)(x\.com|twitter\.com)$/i.test(location.hostname))return;
+      if(socialWidgetGuardInstalled||!WO.socialWidgetGuard||/(^|\.)(x\.com|twitter\.com)$/i.test(location.hostname))return;
       socialWidgetGuardInstalled=!0;
       const makeSocialPlaceholder=(provider,
       restore,
       minHeight)=>{
         const holder=document.createElement("div"),
         btn=document.createElement("button");
-        return holder.setAttribute("data-ww-social-placeholder",
+        return holder.setAttribute("data-wo-social-placeholder",
         provider),
         holder.setAttribute("style",
         "box-sizing:border-box;display:grid;place-items:center;min-height:"+Math.max(96,
@@ -9401,7 +9401,7 @@
       },
       guardSocialNode=el=>{
         try{
-          if(!WW.socialWidgetGuard||!el||!el.tagName||el.getAttribute("data-ww-social-loaded")||el.getAttribute("data-ww-social-placeholder"))return;
+          if(!WO.socialWidgetGuard||!el||!el.tagName||el.getAttribute("data-wo-social-loaded")||el.getAttribute("data-wo-social-placeholder"))return;
           if("SCRIPT"===el.tagName)return;
           const provider=(el=>{
             try{
@@ -9436,7 +9436,7 @@
             return""
           })(el);
           if(!provider)return;
-          if("SCRIPT"===el.tagName)return el.setAttribute("data-ww-social-guarded",
+          if("SCRIPT"===el.tagName)return el.setAttribute("data-wo-social-guarded",
           "1"),
           el.parentNode&&el.parentNode.removeChild(el),
           void log("blocked_social_widget",
@@ -9452,14 +9452,14 @@
             const src=el.getAttribute("src")||el.src||"",
             holder=makeSocialPlaceholder(provider,
             ()=>{
-              el.setAttribute("data-ww-social-loaded",
+              el.setAttribute("data-wo-social-loaded",
               "1"),
               src&&el.setAttribute("src",
               src),
               holder.replaceWith(el)
             },
             minHeight);
-            return src&&(el.setAttribute("data-ww-social-src",
+            return src&&(el.setAttribute("data-wo-social-src",
             src),
             el.removeAttribute("src")),
             el.parentNode&&el.parentNode.replaceChild(holder,
@@ -9473,7 +9473,7 @@
           const clone=el.cloneNode(!0),
           holder=makeSocialPlaceholder(provider,
           ()=>{
-            clone.setAttribute&&clone.setAttribute("data-ww-social-loaded",
+            clone.setAttribute&&clone.setAttribute("data-wo-social-loaded",
             "1"),
             holder.replaceWith(clone),
             (provider=>{
@@ -9489,7 +9489,7 @@
                 const s=document.createElement("script");
                 s.async=!0,
                 s.src=src,
-                s.setAttribute("data-ww-social-loaded",
+                s.setAttribute("data-wo-social-loaded",
                 "1"),
                 (document.head||document.documentElement).appendChild(s)
               }
@@ -9524,7 +9524,7 @@
       };
       document.documentElement&&sweepSocialWidgets(document);
       try{
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&guardSocialNode(n),
           n&&n.querySelectorAll&&sweepSocialWidgets(n)
         })
@@ -9539,13 +9539,13 @@
     };
     installSocialWidgetGuard();
     try{
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       installSocialWidgetGuard)
     }
     catch(_){
 
     }
-    if(WW.killPrefetch)try{
+    if(WO.killPrefetch)try{
       const SPEC_REL=/^(prefetch|prerender|preload|dns-prefetch|preconnect|modulepreload)$/i,
       killLink=el=>{
         try{
@@ -9571,7 +9571,7 @@
       };
       document.documentElement&&sweepLinks(document);
       try{
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)!n||"LINK"!==n.tagName&&"SCRIPT"!==n.tagName?n&&n.querySelectorAll&&sweepLinks(n):killLink(n)
         })
       }
@@ -9586,7 +9586,7 @@
     catch(_){
 
     }
-    if(WW.throttleBackgroundTabs)try{
+    if(WO.throttleBackgroundTabs)try{
       let pauseStyle=null;
       const setHiddenStyle=on=>{
         try{
@@ -9677,7 +9677,7 @@
     catch(_){
 
     }
-    if(WW.deAmp)try{
+    if(WO.deAmp)try{
       const findCanonical=()=>{
         try{
           const html=document.documentElement;
@@ -9767,7 +9767,7 @@
       };
       document.body&&fixLinks(document);
       try{
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)if(n&&"A"===n.tagName){
             const fx=deAmpUrl(n.getAttribute&&n.getAttribute("href"));
             fx&&n.setAttribute("href",
@@ -9787,7 +9787,7 @@
     catch(_){
 
     }
-    if(WW.capReferrer)try{
+    if(WO.capReferrer)try{
       const setMeta=()=>{
         try{
           if(document.querySelector('meta[name="referrer"][data-rg]'))return;
@@ -9830,7 +9830,7 @@
       };
       document.documentElement&&sweepRef(document);
       try{
-        wwObserve(muts=>{
+        woObserve(muts=>{
           for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&stampRef(n),
           n&&n.querySelectorAll&&sweepRef(n)
         })
@@ -9846,7 +9846,7 @@
     catch(_){
 
     }
-    if(!1&&WW.autoRejectConsent&&!/(^|\.)(paypal\.com|stripe\.com|checkout\.com|adyen\.com|braintreepayments\.com|braintreegateway\.com|klarna\.com|squareup\.com|cash\.app)$/i.test(location.hostname))try{
+    if(!1&&WO.autoRejectConsent&&!/(^|\.)(paypal\.com|stripe\.com|checkout\.com|adyen\.com|braintreepayments\.com|braintreegateway\.com|klarna\.com|squareup\.com|cash\.app)$/i.test(location.hostname))try{
       const REJECT_TEXT=[/^reject all$/i,
       /^reject all non-essential/i,
       /^reject optional/i,
@@ -10026,7 +10026,7 @@
     catch(_){
 
     }
-    if(WW.behavioralScan||WW.fingerprintProbeDetection)try{
+    if(WO.behavioralScan||WO.fingerprintProbeDetection)try{
       const here=regDomain(location.hostname),
       fullHost=location.hostname.toLowerCase(),
       KNOWN_GOOD_BEHAVE=/(google|gstatic|googleapis|youtube|googlevideo|ytimg|twitch|ttvnw|jtvnw|twitchcdn|facebook|fbcdn|instagram|apple|icloud|microsoft|live|office|windows|amazon|cloudflare|akamai|fastly|github|wikipedia|mozilla|stripe|paypal|cloudfront|jsdelivr|unpkg)\./i;
@@ -10039,7 +10039,7 @@
         riskBand=()=>score>=100?3:score>=60?2:score>=30?1:0,
         updatePageRisk=key=>{
           try{
-            const risk=WW.__pageRisk||{
+            const risk=WO.__pageRisk||{
 
             };
             risk.behavioralScore=score,
@@ -10048,7 +10048,7 @@
             10),
             "new-domain"===key&&(risk.newDomain=!0),
             "young-domain"===key&&(risk.youngDomain=!0),
-            WW.__pageRisk=risk
+            WO.__pageRisk=risk
           }
           catch(_){
 
@@ -10065,7 +10065,7 @@
           updatePageRisk(sigKey),
           maybeWarn())
         },
-        knownLogger=(WW.grabberDomains||[]).find(d=>here===d||here.endsWith("."+d));
+        knownLogger=(WO.grabberDomains||[]).find(d=>here===d||here.endsWith("."+d));
         knownLogger&&addSignal(100,
         "Known IP logger domain ("+knownLogger+")",
         "known-logger");
@@ -10167,7 +10167,7 @@
           url,
           ...rest){
             try{
-              this.__ww_beh_url=url,
+              this.__wo_beh_url=url,
               sawForeignCall(url,
               "xhr")
             }
@@ -10208,7 +10208,7 @@
         catch(_){
 
         }
-        document.addEventListener("ww-event",
+        document.addEventListener("wo-event",
         e=>{
           try{
             const t=e.detail&&e.detail.type;
@@ -10227,7 +10227,7 @@
         !0);
         let fpHits=0;
         const noteFingerprint=why=>{
-          if(!WW.fingerprintProbeDetection)return;
+          if(!WO.fingerprintProbeDetection)return;
           fpHits++,
           fpHits>=3?addSignal(40,
           "Heavy browser fingerprinting behavior",
@@ -10326,7 +10326,7 @@
 
         }
         try{
-          __wwBackgroundRequest({
+          __woBackgroundRequest({
             kind:"domain-age",
             domain:fullHost
           },
@@ -10370,7 +10370,7 @@
         error:String(e)
       })
     }
-    if(!1!==WW.detectPhishing&&(fn=>{
+    if(!1!==WO.detectPhishing&&(fn=>{
       try{
         if("function"==typeof window.requestIdleCallback)return window.requestIdleCallback(fn,
         {
@@ -10562,7 +10562,7 @@
         truist:["truist.com"]
       };
       try{
-        const cb=WW.customBrands||{
+        const cb=WO.customBrands||{
 
         };
         for(const k of Object.keys(cb)){
@@ -10739,7 +10739,7 @@
       phishHit.confidence="high"),
       phishHit){
         try{
-          WW.__pageRisk={
+          WO.__pageRisk={
             phishing:!0,
             brand:phishHit.brand,
             kind:phishHit.kind,
@@ -10757,7 +10757,7 @@
           kind:phishHit.kind,
           confidence:phishHit.confidence
         }),
-        WW.blockHighConfidencePhishing&&"high"===phishHit.confidence)return log("blocked_phishing",
+        WO.blockHighConfidencePhishing&&"high"===phishHit.confidence)return log("blocked_phishing",
         {
           matched:fullHost,
           brand:phishHit.brand,
@@ -10879,14 +10879,14 @@
       }
 
     }),
-    WW.warnGrabberDomains&&Array.isArray(WW.grabberDomains)){
+    WO.warnGrabberDomains&&Array.isArray(WO.grabberDomains)){
       const host=(location.hostname||"").replace(/^www\./,
       "").toLowerCase(),
-      hit=WW.grabberDomains.find(d=>host===d||host.endsWith("."+d));
+      hit=WO.grabberDomains.find(d=>host===d||host.endsWith("."+d));
       if(hit){
-        WW.__frozen=!0,
+        WO.__frozen=!0,
         document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(m=>{
-          m.setAttribute("data-ww-disabled",
+          m.setAttribute("data-wo-disabled",
           m.getAttribute("content")||""),
           m.removeAttribute("content")
         }),
@@ -10940,7 +10940,7 @@
       }
 
     }
-    if(!1!==WW.sendPrivacySignals)try{
+    if(!1!==WO.sendPrivacySignals)try{
       const defprop=(obj,
       name,
       val)=>{
@@ -10996,7 +10996,7 @@
         error:String(e)
       })
     }
-    if(WW.antiFingerprintNoise||WW.antiFingerprint)try{
+    if(WO.antiFingerprintNoise||WO.antiFingerprint)try{
       let _s=(()=>{
         try{
           const a=new Uint32Array(2);
@@ -11008,8 +11008,8 @@
         }
 
       })();
-      const __wwCloak=new WeakMap;
-      try{const _oFTS=Function.prototype.toString,_cFTS=function toString(){const n=__wwCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)};__wwCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
+      const __woCloak=new WeakMap;
+      try{const _oFTS=Function.prototype.toString,_cFTS=function toString(){const n=__woCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)};__woCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
       const _sk=_s>>>0,
       rnd=()=>(_s=1664525*_s+1013904223>>>0,
       _s/4294967296),
@@ -11018,7 +11018,7 @@
       makeRnd=seed=>{let s=(seed>>>0)||1;return()=>(s=1664525*s+1013904223>>>0,s/4294967296)},
       hashBytes=data=>{let h=(_sk^2166136261)>>>0,step=Math.max(1,data.length>>12);for(let i=0;i<data.length;i+=step)h=Math.imul(h^data[i],16777619)>>>0;return(h^data.length)>>>0},
       seededTiny=(key,scale=0.01)=>(makeRnd(mixSeed(key))()-.5)*scale,
-      cloak=(fn,name)=>{try{__wwCloak.set(fn,name)}catch(_){}return fn},
+      cloak=(fn,name)=>{try{__woCloak.set(fn,name)}catch(_){}return fn},
       noisify=canvas=>{
         try{
           const ctx=canvas.getContext&&canvas.getContext("2d");
@@ -11203,11 +11203,11 @@
       catch(_){
 
       }
-      /* Per-session plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a Warden One tell. Seeded from the same per-load key as the canvas noise: cores, RAM and GPU vendor+renderer agree within a page but differ each load and across users. */
-      const wwPick=(arr,key)=>arr[Math.floor(makeRnd(mixSeed(key))()*arr.length)%arr.length];
-      const wwCores=wwPick([4,8,8,12,16],"hwc"),
-      wwMem=wwPick([4,8,8],"devmem"),
-      wwGpu=wwPick([
+      /* Per-session plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WardenOne tell. Seeded from the same per-load key as the canvas noise: cores, RAM and GPU vendor+renderer agree within a page but differ each load and across users. */
+      const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixSeed(key))()*arr.length)%arr.length];
+      const woCores=woPick([4,8,8,12,16],"hwc"),
+      woMem=woPick([4,8,8],"devmem"),
+      woGpu=woPick([
         {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)"},
         {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) HD Graphics 630 (0x0000591B) Direct3D11 vs_5_0 ps_5_0, D3D11)"},
         {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)"},
@@ -11218,7 +11218,7 @@
         if(!proto||!proto.getParameter)return;
         const orig=proto.getParameter;
         proto.getParameter=function(p){
-          return 37445===p?wwGpu.v:37446===p?wwGpu.r:orig.call(this,
+          return 37445===p?woGpu.v:37446===p?woGpu.r:orig.call(this,
           p)
         };
         try{
@@ -11367,10 +11367,10 @@
       };
       defp(Navigator.prototype,
       "hardwareConcurrency",
-      wwCores),
+      woCores),
       defp(Navigator.prototype,
       "deviceMemory",
-      wwMem),
+      woMem),
       defp(Navigator.prototype,
       "maxTouchPoints",
       0);
@@ -11545,7 +11545,7 @@
         error:String(e)
       })
     }
-    if(WW.blockWebRTCLeak)try{
+    if(WO.blockWebRTCLeak)try{
       const IP_LOOKUP_HOST_RE=/(^|\.)(api\.ipify\.org|api64\.ipify\.org|ipify\.org|ipinfo\.io|ifconfig\.me|icanhazip\.com|ident\.me|checkip\.amazonaws\.com|ip-api\.com|ipapi\.co|ipwho\.is|myexternalip\.com|wtfismyip\.com|ipecho\.net|jsonip\.com|seeip\.org|ip2location\.io|ipdata\.co|db-ip\.com)$/i,
       ipLookupUrl=input=>{
         try{
@@ -11573,32 +11573,32 @@
           return Promise.resolve(new Response("",
           {
             status:403,
-            statusText:"Blocked by Warden One"
+            statusText:"Blocked by WardenOne"
           }))
         }
         catch(_){
-          return Promise.reject(new DOMException("IP lookup blocked by Warden One",
+          return Promise.reject(new DOMException("IP lookup blocked by WardenOne",
           "SecurityError"))
         }
 
       };
       if(window.fetch){
         const realFetch=window.fetch;
-        realFetch.__webwardenIpPrivacy||(window.fetch=function(input,
+        realFetch.__wardenoneIpPrivacy||(window.fetch=function(input,
         init){
           const hit=ipLookupUrl(input);
           return hit?blockedIpLookupResponse(hit):realFetch.apply(this,
           arguments)
         },
         Object.defineProperty(window.fetch,
-        "__webwardenIpPrivacy",
+        "__wardenoneIpPrivacy",
         {
           value:!0
         }))
       }
       if(navigator.sendBeacon){
         const realBeacon=navigator.sendBeacon.bind(navigator);
-        realBeacon.__webwardenIpPrivacy||(navigator.sendBeacon=function(url,
+        realBeacon.__wardenoneIpPrivacy||(navigator.sendBeacon=function(url,
         data){
           const hit=ipLookupUrl(url);
           return hit?(noteIpLookup(hit),
@@ -11606,7 +11606,7 @@
           data)
         },
         Object.defineProperty(navigator.sendBeacon,
-        "__webwardenIpPrivacy",
+        "__wardenoneIpPrivacy",
         {
           value:!0
         }))
@@ -11615,24 +11615,24 @@
         const RX=window.XMLHttpRequest,
         realOpen=RX.prototype.open,
         realSend=RX.prototype.send;
-        realOpen.__webwardenIpPrivacy||(RX.prototype.open=function(method,
+        realOpen.__wardenoneIpPrivacy||(RX.prototype.open=function(method,
         url,
         ...rest){
-          this.__ww_ip_lookup_url=ipLookupUrl(url);
+          this.__wo_ip_lookup_url=ipLookupUrl(url);
           return realOpen.call(this,
           method,
           url,
           ...rest)
         },
         Object.defineProperty(RX.prototype.open,
-        "__webwardenIpPrivacy",
+        "__wardenoneIpPrivacy",
         {
           value:!0
         }));
-        realSend.__webwardenIpPrivacy||(RX.prototype.send=function(...args){
-          if(!this.__ww_ip_lookup_url)return realSend.apply(this,
+        realSend.__wardenoneIpPrivacy||(RX.prototype.send=function(...args){
+          if(!this.__wo_ip_lookup_url)return realSend.apply(this,
           args);
-          noteIpLookup(this.__ww_ip_lookup_url);
+          noteIpLookup(this.__wo_ip_lookup_url);
           try{
             this.abort()
           }
@@ -11642,18 +11642,18 @@
 
         },
         Object.defineProperty(RX.prototype.send,
-        "__webwardenIpPrivacy",
+        "__wardenoneIpPrivacy",
         {
           value:!0
         }))
       }
       if(window.WebSocket){
         const RealWS=window.WebSocket;
-        RealWS.__webwardenIpPrivacy||(window.WebSocket=function(url,
+        RealWS.__wardenoneIpPrivacy||(window.WebSocket=function(url,
         protocols){
           const hit=ipLookupUrl(url);
           if(hit)throw noteIpLookup(hit),
-          new DOMException("IP lookup socket blocked by Warden One",
+          new DOMException("IP lookup socket blocked by WardenOne",
           "SecurityError");
           return new RealWS(url,
           protocols)
@@ -11662,18 +11662,18 @@
         Object.setPrototypeOf&&Object.setPrototypeOf(window.WebSocket,
         RealWS),
         Object.defineProperty(window.WebSocket,
-        "__webwardenIpPrivacy",
+        "__wardenoneIpPrivacy",
         {
           value:!0
         }))
       }
       if(window.EventSource){
         const RealES=window.EventSource;
-        RealES.__webwardenIpPrivacy||(window.EventSource=function(url,
+        RealES.__wardenoneIpPrivacy||(window.EventSource=function(url,
         config){
           const hit=ipLookupUrl(url);
           if(hit)throw noteIpLookup(hit),
-          new DOMException("IP lookup stream blocked by Warden One",
+          new DOMException("IP lookup stream blocked by WardenOne",
           "SecurityError");
           return new RealES(url,
           config)
@@ -11682,7 +11682,7 @@
         Object.setPrototypeOf&&Object.setPrototypeOf(window.EventSource,
         RealES),
         Object.defineProperty(window.EventSource,
-        "__webwardenIpPrivacy",
+        "__wardenoneIpPrivacy",
         {
           value:!0
         }))
@@ -11699,7 +11699,7 @@
       })
     }
     const trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname);
-    if(WW.blockWebRTCLeak&&!trustedMediaHost&&WW.blockSuspiciousWebRTC)try{
+    if(WO.blockWebRTCLeak&&!trustedMediaHost&&WO.blockSuspiciousWebRTC)try{
       const RTC=window.RTCPeerConnection||window.webkitRTCPeerConnection||window.mozRTCPeerConnection;
       if(RTC){
         const Patched=function(cfg,
@@ -11927,13 +11927,13 @@
         error:String(e)
       })
     }
-    WW.blockWebRTCLeak&&log("webrtc_transport_preserved",
+    WO.blockWebRTCLeak&&log("webrtc_transport_preserved",
     {
       why:"IP-echo requests are blocked without rewriting WebRTC calls, ICE candidates, SDP, or stats."
     });
     try{
       let locationEventCount=0;
-      const locationPrivacyOn=()=>!0===WW.blockGeolocation,
+      const locationPrivacyOn=()=>!0===WO.blockGeolocation,
       noteLocation=(type,
       detail)=>{
         if(!(++locationEventCount>80))try{
@@ -11952,7 +11952,7 @@
       },
       blockedLocationError=()=>({
         code:1,
-        message:"Location access blocked by Warden One",
+        message:"Location access blocked by WardenOne",
         PERMISSION_DENIED:1,
         POSITION_UNAVAILABLE:2,
         TIMEOUT:3
@@ -11962,16 +11962,16 @@
       replacement)=>{
         try{
           const real=owner&&owner[name];
-          if("function"!=typeof real||real.__webwardenLocationGuard||real.__webwardenMediaShield)return!1;
+          if("function"!=typeof real||real.__wardenoneLocationGuard||real.__wardenoneMediaShield)return!1;
           const wrapped=replacement(real.bind(owner));
           try{
             Object.defineProperty(wrapped,
-            "__webwardenLocationGuard",
+            "__wardenoneLocationGuard",
             {
               value:!0
             }),
             Object.defineProperty(wrapped,
-            "__webwardenMediaShield",
+            "__wardenoneMediaShield",
             {
               value:!0
             })
@@ -12025,13 +12025,13 @@
           catch(_){
             return value
           }})();
-          if(desc&&desc.get&&desc.get.__webwardenLocationGuard)return;
+          if(desc&&desc.get&&desc.get.__wardenoneLocationGuard)return;
           const getter=function(){
             return"function"==typeof value?value():value
           };
           try{
             Object.defineProperty(getter,
-            "__webwardenLocationGuard",
+            "__wardenoneLocationGuard",
             {
               value:!0
             })
@@ -12165,7 +12165,7 @@
           }
 
         }),
-        document.addEventListener("ww-config-change",
+        document.addEventListener("wo-config-change",
         ()=>{
           locationPrivacyOn()&&clearLiveGeoWatches()
         })
@@ -12213,7 +12213,7 @@
       try{
         const proto=Intl&&Intl.DateTimeFormat&&Intl.DateTimeFormat.prototype,
         real=proto&&proto.resolvedOptions;
-        real&&!real.__webwardenLocationGuard&&(proto.resolvedOptions=function(){
+        real&&!real.__wardenoneLocationGuard&&(proto.resolvedOptions=function(){
           const out=real.apply(this,
           arguments);
           if(locationPrivacyOn())try{
@@ -12231,7 +12231,7 @@
           return out
         },
         Object.defineProperty(proto.resolvedOptions,
-        "__webwardenLocationGuard",
+        "__wardenoneLocationGuard",
         {
           value:!0
         }))
@@ -12241,12 +12241,12 @@
       }
       try{
         const real=Date.prototype.getTimezoneOffset;
-        real&&!real.__webwardenLocationGuard&&(Date.prototype.getTimezoneOffset=function(){
+        real&&!real.__wardenoneLocationGuard&&(Date.prototype.getTimezoneOffset=function(){
           return locationPrivacyOn()?0:real.apply(this,
           arguments)
         },
         Object.defineProperty(Date.prototype.getTimezoneOffset,
-        "__webwardenLocationGuard",
+        "__wardenoneLocationGuard",
         {
           value:!0
         }))
@@ -12261,7 +12261,7 @@
         error:String(e)
       })
     }
-    if(WW.mediaShield)try{
+    if(WO.mediaShield)try{
       let mediaEventCount=0;
       const recentMediaGesture=()=>freshGesture(),
       mediaRisk={
@@ -12290,11 +12290,11 @@
       detail,
       message)=>(noteMedia(type,
       detail),
-      Promise.reject(new DOMException(message||"Blocked by Warden One Media Shield",
+      Promise.reject(new DOMException(message||"Blocked by WardenOne Media Shield",
       "NotAllowedError"))),
       blockedLocationError=()=>({
         code:1,
-        message:"Location access blocked by Warden One",
+        message:"Location access blocked by WardenOne",
         PERMISSION_DENIED:1,
         POSITION_UNAVAILABLE:2,
         TIMEOUT:3
@@ -12310,11 +12310,11 @@
       replacement)=>{
         try{
           const real=owner&&owner[name];
-          if("function"!=typeof real||real.__webwardenMediaShield)return!1;
+          if("function"!=typeof real||real.__wardenoneMediaShield)return!1;
           const wrapped=replacement(real.bind(owner));
           try{
             Object.defineProperty(wrapped,
-            "__webwardenMediaShield",
+            "__wardenoneMediaShield",
             {
               value:!0
             })
@@ -12344,7 +12344,7 @@
       md=navigator.mediaDevices;
       if(navigator.geolocation){
         const geo=navigator.geolocation,
-        geoBlockOn=()=>!0===WW.blockGeolocation;
+        geoBlockOn=()=>!0===WO.blockGeolocation;
         patchMethod(geo,
         "getCurrentPosition",
         real=>function(success,
@@ -12428,9 +12428,9 @@
           risk:mediaRisk.capture,
           why:gestureDetail()
         };
-        if((kinds.audio||kinds.video)&&!1!==WW.blockCameraMic&&!trustedMediaHost)return blockedPromise("blocked_media_capture",
+        if((kinds.audio||kinds.video)&&!1!==WO.blockCameraMic&&!trustedMediaHost)return blockedPromise("blocked_media_capture",
         detail,
-        "Camera/microphone access blocked by Warden One");
+        "Camera/microphone access blocked by WardenOne");
         noteMedia(recentMediaGesture()?"warned_media_capture":"warned_hidden_media_capture",
         detail);
         try{
@@ -12438,7 +12438,7 @@
           return ret&&ret.then?ret.then(stream=>{
             try{
               window.postMessage({
-                source:"webwarden-media",
+                source:"wardenone-media",
                 active:!0
               },
               "*");
@@ -12447,7 +12447,7 @@
               ()=>{
                 try{
                   tracks.some(x=>"live"===x.readyState)||window.postMessage({
-                    source:"webwarden-media",
+                    source:"wardenone-media",
                     active:!1
                   },
                   "*")
@@ -12478,11 +12478,11 @@
           risk:mediaRisk.screen,
           why:gestureDetail()
         };
-        return!1===WW.blockScreenCapture||trustedMediaHost?(noteMedia(recentMediaGesture()?"warned_screen_capture":"warned_hidden_screen_capture",
+        return!1===WO.blockScreenCapture||trustedMediaHost?(noteMedia(recentMediaGesture()?"warned_screen_capture":"warned_hidden_screen_capture",
         detail),
         real(constraints)):blockedPromise("blocked_screen_capture",
         detail,
-        "Screen capture blocked by Warden One")
+        "Screen capture blocked by WardenOne")
       }),
       ["getUserMedia",
       "webkitGetUserMedia",
@@ -12502,7 +12502,7 @@
             why:gestureDetail(),
             legacy:!0
           };
-          if(!kinds.audio&&!kinds.video||!1===WW.blockCameraMic||trustedMediaHost)return noteMedia(recentMediaGesture()?"warned_media_capture":"warned_hidden_media_capture",
+          if(!kinds.audio&&!kinds.video||!1===WO.blockCameraMic||trustedMediaHost)return noteMedia(recentMediaGesture()?"warned_media_capture":"warned_hidden_media_capture",
           detail),
           real(constraints,
           onSuccess,
@@ -12510,7 +12510,7 @@
           noteMedia("blocked_media_capture",
           detail);
           try{
-            "function"==typeof onError&&setTimeout(()=>onError(new DOMException("Camera/microphone access blocked by Warden One",
+            "function"==typeof onError&&setTimeout(()=>onError(new DOMException("Camera/microphone access blocked by WardenOne",
             "NotAllowedError")),
             0)
           }
@@ -12520,7 +12520,7 @@
 
         })
       }),
-      !1!==WW.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement){
+      !1!==WO.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement){
         const mediaLogged=new WeakSet,
         isMediaElement=el=>el&&/^(AUDIO|VIDEO)$/i.test(el.tagName||""),
         hiddenMedia=el=>{
@@ -12597,7 +12597,7 @@
           once:!0
         });
         try{
-          wwObserve(muts=>{
+          woObserve(muts=>{
             for(const m of muts)for(const n of m.addedNodes||[])scanMedia(n)
           })
         }
@@ -12606,11 +12606,11 @@
         }
 
       }
-      if(!0===WW.blockSuspiciousWebRTC&&!trustedMediaHost){
+      if(!0===WO.blockSuspiciousWebRTC&&!trustedMediaHost){
         const patchRTC=name=>{
           try{
             const RTC=window[name];
-            if("function"!=typeof RTC||RTC.__webwardenMediaShield)return;
+            if("function"!=typeof RTC||RTC.__wardenoneMediaShield)return;
             const ShieldedRTC=function(cfg,
             constraints){
               if(!recentMediaGesture())throw noteMedia("blocked_suspicious_webrtc",
@@ -12619,7 +12619,7 @@
                 risk:mediaRisk.webrtc,
                 why:"Created without a recent user action"
               }),
-              new DOMException("Suspicious WebRTC connection blocked by Warden One",
+              new DOMException("Suspicious WebRTC connection blocked by WardenOne",
               "SecurityError");
               return new RTC(cfg,
               constraints)
@@ -12634,7 +12634,7 @@
             }
             try{
               Object.defineProperty(ShieldedRTC,
-              "__webwardenMediaShield",
+              "__wardenoneMediaShield",
               {
                 value:!0
               })
@@ -12664,14 +12664,14 @@
         error:String(e)
       })
     }
-    if(WW.removeOverlays&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WW.blockSearchAiAnswers||WW.blockSponsoredSearchResults||WW.googleSearchResultCleanup)){
+    if(WO.removeOverlays&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
       const NUISANCE=/(cookie|consent|gdpr|newsletter|subscribe|sign[\s-]?up for|mailing list|email list|ad ?block|adblock|disable your ad|whitelist|allow ads|notification|push|paywall|register to (read|continue)|create (a )?free account|allow notifications?|turn on notifications?|enable notifications?|click (the )?bell)/i,
       AD_SIGNAL=/(advertisement|sponsored|ad\s*choices|adchoices|download now|continue to (your )?(download|the site)|no thanks,? (i|continue)|skip ad|your download will (begin|start)|presented by)/i,
       BAIT_SIGNAL=/(notification|push|bell|subscribe|download now|watch now|continue to (download|watch|stream)|allow notifications?|enable notifications?)/i,
       PROTECT=/(password|sign[\s-]?in|log[\s-]?in|checkout|payment|card number|billing address|add to (cart|basket)|two[\s-]?factor|verification code|confirm (your )?(order|payment|transaction)|delete|are you sure|accept (all )?cookies)/i,
       seen=new WeakSet,
       undoStack=[],
-      overlayCleanerOn=()=>!!(window.__WW_CONFIG__&&window.__WW_CONFIG__.__configReady&&WW.enabled&&WW.removeOverlays),
+      overlayCleanerOn=()=>!!(window.__WO_CONFIG__&&window.__WO_CONFIG__.__configReady&&WO.enabled&&WO.removeOverlays),
       installHardOverlayCss=()=>{
         try{
           if(!overlayCleanerOn())return;
@@ -13183,7 +13183,7 @@
             60),
             why:"download-gate ad removed"
           }),
-          dlHere&&!1!==WW.showDownloadBar&&!document.getElementById("rg-dl-bar"))try{
+          dlHere&&!1!==WO.showDownloadBar&&!document.getElementById("rg-dl-bar"))try{
             const bar=document.createElement("div");
             bar.id="rg-dl-bar",
             bar.setAttribute("style",
@@ -13338,7 +13338,7 @@
       },
       sweep=()=>{
         if(!overlayCleanerOn())return;
-        if(WW.__overlaysDone)return;
+        if(WO.__overlaysDone)return;
         installHardOverlayCss();
         const candidates=document.querySelectorAll('div,section,aside,a,button,span,i,svg,img,canvas,[onclick],[role="button"],[style*="position:fixed"],[style*="position: fixed"],[style*="position:absolute"],[style*="position: absolute"],[class*="bell"],[id*="bell"],[class*="notif"],[id*="notif"],[class*="notify"],[id*="notify"],[class*="push"],[id*="push"],[class*="subscribe"],[id*="subscribe"]');
         let count=0;
@@ -13426,7 +13426,7 @@
 
       },
       tryAutoSkip=()=>{
-        if(!overlayCleanerOn()||!WW.autoSkipDownloadAds||WW.__autoSkippedOnce)return!1;
+        if(!overlayCleanerOn()||!WO.autoSkipDownloadAds||WO.__autoSkippedOnce)return!1;
         let adPresent=!1;
         const scan=document.querySelectorAll('div,section,aside,dialog,[role="dialog"],[aria-modal="true"],[data-campaign-id],[class*="box-c21"]');
         for(const el of scan)try{
@@ -13442,7 +13442,7 @@
         }
         if(!adPresent)return!1;
         const dl=findDownloadUrl();
-        if(dl)return WW.__autoSkippedOnce=!0,
+        if(dl)return WO.__autoSkippedOnce=!0,
         removeAdModal(),
         log("blocked_overlay",
         {
@@ -13463,7 +13463,7 @@
         const link=findContinueLink(document);
         if(link){
           const label=(link.innerText||link.textContent||"").trim();
-          if(SAFE_AUTOCLICK.test(label))return WW.__autoSkippedOnce=!0,
+          if(SAFE_AUTOCLICK.test(label))return WO.__autoSkippedOnce=!0,
           setTimeout(()=>{
             try{
               link.click()
@@ -13564,7 +13564,7 @@
 
         }
       };
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       ()=>{
         overlayCleanerOn()?start():restoreCleanerChanges()
       }),
@@ -13612,11 +13612,11 @@
         b)=>b.z-a.z);
         const top=report.slice(0,
         12);
-        console.log("%c[Warden One inspect]",
+        console.log("%c[WardenOne inspect]",
         "color:#9a4fd0;font-weight:bold",
         "on-screen overlays/iframes (top by z-index):"),
         console.table(top),
-        console.log("[Warden One inspect] full JSON (copy this to report a missed pop-up):\n"+JSON.stringify(top,
+        console.log("[WardenOne inspect] full JSON (copy this to report a missed pop-up):\n"+JSON.stringify(top,
         null,
         2)),
         log("diagnostic_inspect",
@@ -13629,7 +13629,7 @@
           const note=document.createElement("div");
           note.setAttribute("style",
           "all:initial!important;position:fixed!important;top:16px!important;left:50%!important;transform:translateX(-50%)!important;z-index:2147483647!important;background:#3d2a52!important;color:#fff!important;font-family:system-ui,sans-serif!important;font-size:13px!important;padding:10px 16px!important;border-radius:10px!important;box-shadow:0 6px 20px rgba(0,0,0,.4)!important;"),
-          note.textContent="Warden One inspected "+report.length+" element(s)  -  see the browser Console (F12) and the activity log.",
+          note.textContent="WardenOne inspected "+report.length+" element(s)  -  see the browser Console (F12) and the activity log.",
           document.documentElement.appendChild(note),
           setTimeout(()=>note.remove(),
           4e3)
@@ -13644,7 +13644,7 @@
     catch(_){
 
     }
-    if(!1!==WW.showToasts&&WW_TOP){
+    if(!1!==WO.showToasts&&WO_TOP){
       const TOAST_INFO={
         blocked_popup:{
           title:"Popup blocked",
@@ -13684,7 +13684,7 @@
         },
         blocked_ip_lookup:{
           title:"IP lookup blocked",
-          why:"A page script tried to ask a third-party IP echo service for your address. Warden One stopped the request."
+          why:"A page script tried to ask a third-party IP echo service for your address. WardenOne stopped the request."
         },
         blocked_grabber_element:{
           title:"Grabber element removed",
@@ -13704,15 +13704,15 @@
         },
         blocked_token_exfil:{
           title:"Sensitive request protected",
-          why:"A token-shaped value was leaving this site for another domain. Warden One blocked it quietly."
+          why:"A token-shaped value was leaving this site for another domain. WardenOne blocked it quietly."
         },
         blocked_skimmer_exfil:{
           title:"Card/password theft blocked",
-          why:"Sensitive form data was about to leave this page for another domain. Warden One stopped it."
+          why:"Sensitive form data was about to leave this page for another domain. WardenOne stopped it."
         },
         blocked_payment_card_submit:{
           title:"Card submission blocked",
-          why:"This checkout looked risky, so Warden One stopped credit/debit card details before they were sent.",
+          why:"This checkout looked risky, so WardenOne stopped credit/debit card details before they were sent.",
           severity:"High",
           action:"Card details were not sent. Leave unless you can verify the merchant and address."
         },
@@ -13726,7 +13726,7 @@
         },
         blocked_geolocation:{
           title:"Location blocked",
-          why:"This site asked for your precise location. Warden One denied it because Block location requests is on."
+          why:"This site asked for your precise location. WardenOne denied it because Block location requests is on."
         },
         blocked_autoplay_media:{
           title:"Autoplay media blocked",
@@ -13796,7 +13796,7 @@
         },
         warned_honeytoken_read:{
           title:"Suspicious script behaviour detected",
-          why:"A script on this page read a decoy credential Warden One planted in memory. Real site code has no reason to read a secret it didn't create  -  this is how credential-stealing scripts probe. Be cautious here."
+          why:"A script on this page read a decoy credential WardenOne planted in memory. Real site code has no reason to read a secret it didn't create  -  this is how credential-stealing scripts probe. Be cautious here."
         },
         behavioral_risk:{
           title:"Suspicious site behavior",
@@ -13852,7 +13852,7 @@
       };
       const showToast=(type,
       detail)=>{
-        if(!WW.enabled||!WW.showToasts||shouldQuietToast(type,
+        if(!WO.enabled||!WO.showToasts||shouldQuietToast(type,
         detail))return;
         const info=TOAST_INFO[type];
         if(!info)return;
@@ -13866,7 +13866,7 @@
         if(!wrap)return;
         const detailWhy=detail&&detail.why?String(detail.why):info.why,
         severity=detail&&detail.severity?String(detail.severity):info.severity||(/^blocked_/.test(type)?"Blocked":/^warned_/.test(type)?"Warning":"Notice"),
-        action=detail&&detail.action?String(detail.action):info.action||(/^blocked_/.test(type)?"Warden One stopped it. No action is needed unless you expected this.":/^warned_/.test(type)?"Check the address and only continue if you trust this site.":"Review this page before sharing sensitive information.");
+        action=detail&&detail.action?String(detail.action):info.action||(/^blocked_/.test(type)?"WardenOne stopped it. No action is needed unless you expected this.":/^warned_/.test(type)?"Check the address and only continue if you trust this site.":"Review this page before sharing sensitive information.");
         const card=document.createElement("div");
         S(card,
         'all:initial!important;box-sizing:border-box!important;display:flex!important;gap:11px!important;align-items:flex-start!important;background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;border-left:4px solid #9d54c9!important;border-radius:14px!important;padding:13px 15px!important;box-shadow:0 8px 28px rgba(120,55,160,.26)!important;color:#3d2a52!important;font-family:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;opacity:0!important;transform:translateX(120%)!important;transition:transform .34s cubic-bezier(.34,1.56,.64,1),opacity .25s!important;');
@@ -13916,7 +13916,7 @@
         wrap.children.length>4;
         )wrap.removeChild(wrap.firstChild)
       };
-      document.addEventListener("ww-event",
+      document.addEventListener("wo-event",
       e=>{
         const d=e&&e.detail||{
 
@@ -13924,9 +13924,9 @@
         (/^blocked_|^detected_|^warned_/.test(d.type||"")||"behavioral_risk"===d.type)&&showToast(d.type,
         d.detail)
       }),
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       ()=>{
-        if(!WW.enabled||!WW.showToasts)try{
+        if(!WO.enabled||!WO.showToasts)try{
           toastHostEl&&toastHostEl.remove(),
           toastHostEl=null
         }
@@ -13997,7 +13997,7 @@
         badge.appendChild(label),
         panel.className="panel",
         panel.id="rg-p",
-        title.textContent="Warden One",
+        title.textContent="WardenOne",
         list.id="rg-list",
         list.className="empty",
         list.textContent="Nothing blocked yet  -  all clear",
@@ -14008,7 +14008,7 @@
         root.appendChild(panel)
       },
       mount=()=>{
-        if(!1!==WW.showBadge){
+        if(!1!==WO.showBadge){
           if(!badgeHost||!document.documentElement.contains(badgeHost))try{
             const host=badgeHost=document.createElement("div");
             host.id="rg-badge-host",
@@ -14068,14 +14068,14 @@
               if(!badgeHost||!badgeHost.shadowRoot)return;
               const nEl=host.shadowRoot.getElementById("rg-n"),
               listEl=host.shadowRoot.getElementById("rg-list");
-              if(WW.__damaged){
+              if(WO.__damaged){
                 bEl.classList.add("damaged"),
                 nEl.textContent="Guard damaged",
                 listEl.className="empty",
                 listEl.textContent="Nothing blocked yet.";
                 const warn=document.createElement("div");
                 return warn.className="warn",
-                warn.textContent="A component hit an error on this page. Try reloading; if it keeps happening, toggle Warden One off and on in the popup.",
+                warn.textContent="A component hit an error on this page. Try reloading; if it keeps happening, toggle WardenOne off and on in the popup.",
                 void listEl.appendChild(warn)
               }
               total>0&&(bEl.classList.add("hot"),
@@ -14111,10 +14111,10 @@
               "blocked_hidden_media",
               "blocked_autoplay_media",
               "blocked_token_exfil"]);
-              document.addEventListener("ww-event",
+              document.addEventListener("wo-event",
               e=>{
                 const t=e.detail&&e.detail.type||"";
-                if("detected_download_gate"!==t&&!NO_BADGE_TYPES.has(t))return t&&/_failed$/.test(t)?(WW.__damaged=!0,
+                if("detected_download_gate"!==t&&!NO_BADGE_TYPES.has(t))return t&&/_failed$/.test(t)?(WO.__damaged=!0,
                 void renderBadge()):void(/^blocked_|^detected_|^gated_/.test(t)&&(counts[t]=(counts[t]||0)+1,
                 total++,
                 renderBadge(),
@@ -14122,7 +14122,7 @@
                 brightenBadge()))
               })
             }
-            WW.__damaged&&renderBadge(),
+            WO.__damaged&&renderBadge(),
             renderBadge()
           }
           catch(e){
@@ -14136,29 +14136,29 @@
         else removeBadge()
       },
       syncBadgeVisibility=()=>{
-        !1===WW.showBadge?removeBadge():mount()
+        !1===WO.showBadge?removeBadge():mount()
       };
-      document.addEventListener("ww-config-change",
+      document.addEventListener("wo-config-change",
       syncBadgeVisibility),
       document.body?syncBadgeVisibility():document.addEventListener("DOMContentLoaded",
       syncBadgeVisibility)
     };
       try{
-        let __wwAdCollapseStarted=!1;
-        const __wwMaybeAdCollapse=()=>{
-          if(__wwAdCollapseStarted||!WW.adShield||!(!isGoogleSearchResults()||WW.blockSponsoredSearchResults||WW.googleSearchResultCleanup))return;
-        __wwAdCollapseStarted=!0;
-        window.__wwAdCollapse=1;
+        let __woAdCollapseStarted=!1;
+        const __woMaybeAdCollapse=()=>{
+          if(__woAdCollapseStarted||!WO.adShield||!(!isGoogleSearchResults()||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup))return;
+        __woAdCollapseStarted=!0;
+        window.__woAdCollapse=1;
         try{
-          var __wwAS=document.createElement("style");
-          __wwAS.textContent='[aria-label="Advertisement"]{display:none!important}';
-          (document.head||document.documentElement).appendChild(__wwAS)
+          var __woAS=document.createElement("style");
+          __woAS.textContent='[aria-label="Advertisement"]{display:none!important}';
+          (document.head||document.documentElement).appendChild(__woAS)
         }
         catch(e){
 
         }
-        var __wwAH=/(^|\.)(doubleclick\.net|googlesyndication\.com|googleadservices\.com|adservice\.google\.[a-z.]+|amazon-adsystem\.com|adnxs\.com|adsrvr\.org|2mdn\.net|moatads\.com|rubiconproject\.com|pubmatic\.com|criteo\.(com|net)|taboola\.com|outbrain\.com|scorecardresearch\.com|adsafeprotected\.com|adform\.net|smartadserver\.com|teads\.tv|3lift\.com|casalemedia\.com)$/i;
-        var __wwHostOf=function(u){
+        var __woAH=/(^|\.)(doubleclick\.net|googlesyndication\.com|googleadservices\.com|adservice\.google\.[a-z.]+|amazon-adsystem\.com|adnxs\.com|adsrvr\.org|2mdn\.net|moatads\.com|rubiconproject\.com|pubmatic\.com|criteo\.(com|net)|taboola\.com|outbrain\.com|scorecardresearch\.com|adsafeprotected\.com|adform\.net|smartadserver\.com|teads\.tv|3lift\.com|casalemedia\.com)$/i;
+        var __woHostOf=function(u){
           try{
             return new URL(u,
             location.href).hostname
@@ -14168,13 +14168,13 @@
           }
 
         };
-        var __wwHideAd=function(el){
+        var __woHideAd=function(el){
           try{
-            if(el&&el.style&&el.getAttribute("data-ww-collapsed")!=="1"){
+            if(el&&el.style&&el.getAttribute("data-wo-collapsed")!=="1"){
               el.style.setProperty("display",
               "none",
               "important");
-              el.setAttribute("data-ww-collapsed",
+              el.setAttribute("data-wo-collapsed",
               "1")
             }
 
@@ -14184,21 +14184,21 @@
           }
 
         };
-        var __wwAdIdRe=/(^|[-_ ])(ad|ads|advert|advertisement|sponsor|sponsored|promo|banner)([-_ ]|s?$)/i;
-        var __wwSweepAds=function(){
+        var __woAdIdRe=/(^|[-_ ])(ad|ads|advert|advertisement|sponsor|sponsored|promo|banner)([-_ ]|s?$)/i;
+        var __woSweepAds=function(){
           try{
-            document.querySelectorAll('ins.adsbygoogle,[id^="google_ads_iframe"],[id^="div-gpt-ad"],[id^="aswift_"],[data-google-query-id],iframe[id^="google_ads"]').forEach(__wwHideAd);
+            document.querySelectorAll('ins.adsbygoogle,[id^="google_ads_iframe"],[id^="div-gpt-ad"],[id^="aswift_"],[data-google-query-id],iframe[id^="google_ads"]').forEach(__woHideAd);
             var ifr=document.querySelectorAll("iframe[src]");
             for(var i=0;
             i<ifr.length;
             i++){
               var fr=ifr[i],
-              h=__wwHostOf(fr.src);
-              if(__wwAH.test(h)){
-                __wwHideAd(fr);
+              h=__woHostOf(fr.src);
+              if(__woAH.test(h)){
+                __woHideAd(fr);
                 var p=fr.parentElement;
-                if(p&&p.children.length===1&&/^(div|ins|aside|section)$/i.test(p.tagName)&&__wwAdIdRe.test((p.id||"")+" "+(typeof p.className==="string"?p.className:""))){
-                  __wwHideAd(p)
+                if(p&&p.children.length===1&&/^(div|ins|aside|section)$/i.test(p.tagName)&&__woAdIdRe.test((p.id||"")+" "+(typeof p.className==="string"?p.className:""))){
+                  __woHideAd(p)
                 }
 
               }
@@ -14211,21 +14211,21 @@
           }
 
         };
-        var __wwAdPend=0,
-        __wwSchedAds=function(){
-          if(__wwAdPend)return;
-          __wwAdPend=1;
+        var __woAdPend=0,
+        __woSchedAds=function(){
+          if(__woAdPend)return;
+          __woAdPend=1;
           setTimeout(function(){
-            __wwAdPend=0;
-            __wwSweepAds()
+            __woAdPend=0;
+            __woSweepAds()
           },
           400)
         };
-        if(document.readyState!=="loading")__wwSweepAds();
+        if(document.readyState!=="loading")__woSweepAds();
         document.addEventListener("DOMContentLoaded",
-        __wwSweepAds);
+        __woSweepAds);
         try{
-          new MutationObserver(__wwSchedAds).observe(document.documentElement,
+          new MutationObserver(__woSchedAds).observe(document.documentElement,
           {
             childList:!0,
             subtree:!0
@@ -14236,9 +14236,9 @@
         }
 
       };
-      __wwMaybeAdCollapse(),
-      document.addEventListener("ww-config-change",
-      __wwMaybeAdCollapse)
+      __woMaybeAdCollapse(),
+      document.addEventListener("wo-config-change",
+      __woMaybeAdCollapse)
     }
     catch(e){
 
@@ -14246,22 +14246,22 @@
     log("installed",
     {
       href:location.href,
-      version:__WW_RUNTIME_VERSION
+      version:__WO_RUNTIME_VERSION
     }),
-    window.__webWardenReadyVersion=__WW_RUNTIME_VERSION
+    window.__wardenOneReadyVersion=__WO_RUNTIME_VERSION
   };
-  const __wwStartWhenConfigured=()=>{
-    window.__WW_CONFIG__&&window.__WW_CONFIG__.__configReady&&__wwStartRuntime()
+  const __woStartWhenConfigured=()=>{
+    window.__WO_CONFIG__&&window.__WO_CONFIG__.__configReady&&__woStartRuntime()
   };
   try{
-    document.addEventListener("ww-config-change",
-    __wwStartWhenConfigured)
+    document.addEventListener("wo-config-change",
+    __woStartWhenConfigured)
   }
   catch(_){
 
   }
-  __wwStartWhenConfigured(),
-  setTimeout(__wwStartRuntime,
+  __woStartWhenConfigured(),
+  setTimeout(__woStartRuntime,
   1500)
 }
 ();

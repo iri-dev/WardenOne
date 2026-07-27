@@ -21,13 +21,13 @@ function normalizeHost(value) {
 
 function loadDownloadGuard() {
   const store = {
-    webwarden_config: {
+    wardenone_config: {
       enabled: true,
       downloadReputation: true,
       downloadHardBlockCritical: true,
       downloadHashCheck: false,
     },
-    webwarden_session_started_at: 0,
+    wardenone_session_started_at: 0,
   };
   const calls = [];
   const downloadItems = [];
@@ -41,7 +41,7 @@ function loadDownloadGuard() {
     encodeURIComponent,
     setTimeout() { return 1; },
     clearTimeout() {},
-    __WEBWARDEN_TEST__: true,
+    __WARDENONE_TEST__: true,
     globalThis: null,
     store,
     calls,
@@ -49,11 +49,11 @@ function loadDownloadGuard() {
     BLOCKED_DOMAINS: new Set(),
     DEFAULT_CONFIG: {},
     __cfgCacheValid: true,
-    __cfgCache: store.webwarden_config,
+    __cfgCache: store.wardenone_config,
     chrome: {
       runtime: {
         lastError: null,
-        getURL(path) { return 'chrome-extension://webwarden/' + String(path || '').replace(/^\/+/, ''); },
+        getURL(path) { return 'chrome-extension://wardenone/' + String(path || '').replace(/^\/+/, ''); },
         sendMessage(_msg, callback) { if (callback) callback({ ok: true }); },
         onStartup: { addListener },
       },
@@ -153,7 +153,7 @@ function loadDownloadGuard() {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync('background-downloads.js', 'utf8'), sandbox, { filename: 'background-downloads.js' });
-  return { guard: sandbox.__wwDownloadTest, sandbox };
+  return { guard: sandbox.__woDownloadTest, sandbox };
 }
 
 function reasonIncludes(rep, text) {
@@ -292,7 +292,7 @@ async function main() {
   assert(callNames.includes('removeFile:42'), 'critical scan should remove written bytes');
   assert(callNames.includes('erase:42'), 'critical scan should erase the downloads entry');
 
-  const pending = sandbox.store.webwarden_pending_downloads && sandbox.store.webwarden_pending_downloads['42'];
+  const pending = sandbox.store.wardenone_pending_downloads && sandbox.store.wardenone_pending_downloads['42'];
   assert(pending, 'critical scan should leave a review record');
   assert.strictEqual(pending.grade, 'F');
   assert.strictEqual(pending.autoBlocked, true);
@@ -300,7 +300,7 @@ async function main() {
   assert.strictEqual(pending.removed.cancelled, true);
   assert.strictEqual(pending.removed.removedFile, true);
   assert.strictEqual(pending.removed.erased, true);
-  assert.strictEqual(sandbox.store.webwarden_download_handled['42'].decision, 'auto-blocked');
+  assert.strictEqual(sandbox.store.wardenone_download_handled['42'].decision, 'auto-blocked');
 
   sandbox.redirectForDownload = { hops: 3, domains: 2, flagged: true, blocklisted: true, chain: ['malware.test', 'cdn.example'] };
   const redirectItem = {
@@ -316,12 +316,12 @@ async function main() {
   };
   sandbox.downloadItems.push(redirectItem);
   await guard.runDownloadGuardScan(43, redirectItem, 'redirect-unit-test');
-  const redirectPending = sandbox.store.webwarden_pending_downloads && sandbox.store.webwarden_pending_downloads['43'];
+  const redirectPending = sandbox.store.wardenone_pending_downloads && sandbox.store.wardenone_pending_downloads['43'];
   assert(redirectPending, 'redirect-critical scan should leave a review record');
   assert.strictEqual(redirectPending.grade, 'F');
   assert.strictEqual(redirectPending.autoBlocked, true);
   assert(redirectPending.redirectChain && redirectPending.redirectChain.blocklisted);
-  assert.strictEqual(sandbox.store.webwarden_download_handled['43'].decision, 'auto-blocked');
+  assert.strictEqual(sandbox.store.wardenone_download_handled['43'].decision, 'auto-blocked');
 
   console.log('[ok] download guard tests passed');
 }

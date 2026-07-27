@@ -104,8 +104,8 @@ function loadRemoteListCommitGuard(options = {}) {
     removeAllCalls: 0,
   };
   const sandbox = {
-    localGet: async () => ({ webwarden_config: Object.assign({}, state.config) }),
-    removeWebWardenDynamicRules: async () => { state.removeAllCalls += 1; },
+    localGet: async () => ({ wardenone_config: Object.assign({}, state.config) }),
+    removeWardenOneDynamicRules: async () => { state.removeAllCalls += 1; },
     chrome: {
       declarativeNetRequest: {
         updateDynamicRules: async (update) => {
@@ -143,7 +143,7 @@ function loadExactDomainRuleHelpers() {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    sourceBetween('function domainToRule', '\nfunction isWebWardenDynamicRuleId')
+    sourceBetween('function domainToRule', '\nfunction isWardenOneDynamicRuleId')
       + '\n'
       + sourceBetween('function loginCompatibilityRuleCondition', '\nasync function applyLoginCompatibilityRules')
       + '\nthis.__api = { domainToRule, loginCompatibilityRuleCondition };',
@@ -285,7 +285,7 @@ test('remote-list commit cannot reinstall DNR rules after the master switch turn
   assert.strictEqual(beforeCommit.state.updates.length, 0,
     'stale refresh reinstalled rules after the master switch turned off');
   assert.strictEqual(beforeCommit.state.removeAllCalls, 1,
-    'disabled commit did not reconcile stale Warden One rules');
+    'disabled commit did not reconcile stale WardenOne rules');
 
   const duringCommit = loadRemoteListCommitGuard({
     onUpdate: async (state) => { state.config.enabled = false; },

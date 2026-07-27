@@ -44,12 +44,12 @@ function runCase(options) {
       return [];
     },
     createElement() { return element(''); },
-    getElementById(id) { return id === 'ww-oauth-guard' ? modal : null; },
+    getElementById(id) { return id === 'wo-oauth-guard' ? modal : null; },
     addEventListener() {},
   };
   body.appendChild = function (child) {
     this.children.push(child);
-    if (child && child.id === 'ww-oauth-guard') {
+    if (child && child.id === 'wo-oauth-guard') {
       modal = child;
       state.modals.push(child);
     }
@@ -63,7 +63,7 @@ function runCase(options) {
     history: { length: 1, back() {} },
     chrome: {
       storage: {
-        local: { get(_key, callback) { callback({ webwarden_config: { enabled: true, oauthGuard: true, silentMode: false } }); } },
+        local: { get(_key, callback) { callback({ wardenone_config: { enabled: true, oauthGuard: true, silentMode: false } }); } },
         onChanged: { addListener() {} },
       },
       runtime: {

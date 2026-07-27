@@ -1,7 +1,7 @@
-/* Warden One activity log */
+/* WardenOne activity log */
 
-const DOWNLOAD_TRUSTED_KEY = 'webwarden_download_trusted_sites';
-const ADSHIELD_ALLOWLIST_KEY = 'webwarden_adshield_allowlist';
+const DOWNLOAD_TRUSTED_KEY = 'wardenone_download_trusted_sites';
+const ADSHIELD_ALLOWLIST_KEY = 'wardenone_adshield_allowlist';
 
 const LABELS = {
   blocked_popup: 'Popup blocked',
@@ -401,7 +401,7 @@ function render(hist) {
     big.className = 'big';
     big.textContent = 'All clear';
     empty.appendChild(big);
-    empty.appendChild(document.createTextNode('Nothing to report yet. Warden One will log blocks and warnings here as they happen.'));
+    empty.appendChild(document.createTextNode('Nothing to report yet. WardenOne will log blocks and warnings here as they happen.'));
     rows.appendChild(empty);
     return;
   }
@@ -451,8 +451,8 @@ function render(hist) {
 }
 
 function load() {
-  chrome.storage.local.get('webwarden_history', (x) => {
-    render((x && x.webwarden_history) || []);
+  chrome.storage.local.get('wardenone_history', (x) => {
+    render((x && x.wardenone_history) || []);
   });
 }
 
@@ -461,21 +461,21 @@ function checkedLocalSet(obj, done) {
     chrome.storage.local.set(obj, () => {
       const err = chrome.runtime.lastError;
       if (err) {
-        try { alert('Warden One could not save this change: ' + (err.message || String(err))); } catch (_) {}
+        try { alert('WardenOne could not save this change: ' + (err.message || String(err))); } catch (_) {}
         if (done) done(err);
         return;
       }
       if (done) done(null);
     });
   } catch (e) {
-    try { alert('Warden One could not save this change: ' + String(e)); } catch (_) {}
+    try { alert('WardenOne could not save this change: ' + String(e)); } catch (_) {}
     if (done) done(e);
   }
 }
 
 document.getElementById('clear').addEventListener('click', () => {
-  if (confirm('Clear all Warden One activity history? This cannot be undone.')) {
-    checkedLocalSet({ webwarden_history: [] }, (err) => { if (!err) load(); });
+  if (confirm('Clear all WardenOne activity history? This cannot be undone.')) {
+    checkedLocalSet({ wardenone_history: [] }, (err) => { if (!err) load(); });
   }
 });
 
@@ -487,7 +487,7 @@ function loadLearned() {
     box.textContent = '';
     if (!res || !res.ok || !res.items || !res.items.length) {
       const e = document.createElement('div'); e.className = 'empty';
-      e.textContent = 'None yet - Warden One learns these as you browse.';
+      e.textContent = 'None yet - WardenOne learns these as you browse.';
       box.appendChild(e);
       return;
     }
@@ -518,15 +518,15 @@ document.getElementById('clear-learned').addEventListener('click', () => {
 });
 
 function allowedItemsFromStore(store) {
-  const cfg = (store && store.webwarden_config) || {};
+  const cfg = (store && store.wardenone_config) || {};
   const items = [];
   (Array.isArray(cfg.allowlist) ? cfg.allowlist : []).forEach((host) => {
     items.push({
       kind: 'main',
       host,
       title: host,
-      category: 'Warden One allowlist',
-      detail: 'All Warden One protections stay passive on this site after reload.',
+      category: 'WardenOne allowlist',
+      detail: 'All WardenOne protections stay passive on this site after reload.',
     });
   });
   (Array.isArray(store && store[DOWNLOAD_TRUSTED_KEY]) ? store[DOWNLOAD_TRUSTED_KEY] : []).forEach((host) => {
@@ -553,10 +553,10 @@ function allowedItemsFromStore(store) {
 function removeAllowedItem(item, done) {
   if (!item || !item.host) { if (done) done(); return; }
   if (item.kind === 'main') {
-    chrome.storage.local.get('webwarden_config', (store) => {
-      const cfg = Object.assign({}, (store && store.webwarden_config) || {});
+    chrome.storage.local.get('wardenone_config', (store) => {
+      const cfg = Object.assign({}, (store && store.wardenone_config) || {});
       cfg.allowlist = (Array.isArray(cfg.allowlist) ? cfg.allowlist : []).filter((host) => host !== item.host);
-      checkedLocalSet({ webwarden_config: cfg }, () => { if (done) done(); });
+      checkedLocalSet({ wardenone_config: cfg }, () => { if (done) done(); });
     });
     return;
   }
@@ -614,7 +614,7 @@ function renderAllowed(items) {
 }
 
 function loadAllowed() {
-  chrome.storage.local.get(['webwarden_config', DOWNLOAD_TRUSTED_KEY, ADSHIELD_ALLOWLIST_KEY], (store) => {
+  chrome.storage.local.get(['wardenone_config', DOWNLOAD_TRUSTED_KEY, ADSHIELD_ALLOWLIST_KEY], (store) => {
     renderAllowed(allowedItemsFromStore(store || {}));
   });
 }
@@ -704,7 +704,7 @@ loadLearned();
 loadAllowed();
 // live refresh if new events arrive while the page is open
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.webwarden_history) load();
-  if (area === 'local' && changes.webwarden_learned) loadLearned();
-  if (area === 'local' && (changes.webwarden_config || changes[DOWNLOAD_TRUSTED_KEY] || changes[ADSHIELD_ALLOWLIST_KEY])) loadAllowed();
+  if (area === 'local' && changes.wardenone_history) load();
+  if (area === 'local' && changes.wardenone_learned) loadLearned();
+  if (area === 'local' && (changes.wardenone_config || changes[DOWNLOAD_TRUSTED_KEY] || changes[ADSHIELD_ALLOWLIST_KEY])) loadAllowed();
 });

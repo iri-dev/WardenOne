@@ -1,4 +1,4 @@
-# Warden One Maintainability Notes
+# WardenOne Maintainability Notes
 
 ## Current Runtime Map
 

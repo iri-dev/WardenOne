@@ -86,7 +86,7 @@ assert(/function recoverReplay/.test(rewind) && /REPLAY_STALL_TIMEOUT_MS/.test(r
 assert(/REPLAY_MONITOR_MS/.test(rewind) && !/replayBoundaryRaf/.test(rewind), 'stall monitoring should use a low-frequency timer, not per-frame polling');
 assert(/REPLAY_LOAD_TIMEOUT_MS/.test(rewind) && /replayLoadControllers/.test(rewind), 'replay loads should be cancellable and have a hard watchdog');
 assert(/function setReplayPaused\(paused\)/.test(rewind) && /replayPausedByUser/.test(rewind), 'intentional pause must not be treated as a playback stall');
-assert(/dataset\.webwardenReplay/.test(rewind) && /video:not\(\[data-webwarden-replay\]\)/.test(rewind), 'replay surfaces must be excluded from live-video discovery');
+assert(/dataset\.wardenoneReplay/.test(rewind) && /video:not\(\[data-wardenone-replay\]\)/.test(rewind), 'replay surfaces must be excluded from live-video discovery');
 
 // ---- Survive ad breaks / quality changes without wiping the buffer ----------
 assert(/function releaseSource\(\)/.test(rewind) && /function detachSource\(\)/.test(rewind), 'element swap (releaseSource) must be separate from channel-change teardown (detachSource)');
@@ -121,7 +121,7 @@ assert(/aria-label="Rewind 1 minute"/.test(rewind) && /aria-label="Rewind 5 minu
 assert(/class="rowLive"/.test(rewind) && /rowLiveButton\.addEventListener\('click', goLive\)/.test(rewind), 'delayed playback should expose a persistent LIVE control');
 assert(/input type="range"/.test(rewind), 'DVR popover should expose an arbitrary-position timeline');
 assert(/handleNativePlaybackClick/.test(rewind) && /handleNativePlaybackKey/.test(rewind), 'Twitch click and keyboard playback controls should operate delayed replay');
-assert(/data-webwarden-replay-paused/.test(rewind) && /syncNativePlaybackButton/.test(rewind), 'Twitch play control should visibly reflect delayed pause state');
+assert(/data-wardenone-replay-paused/.test(rewind) && /syncNativePlaybackButton/.test(rewind), 'Twitch play control should visibly reflect delayed pause state');
 assert(/video-player__overlay/.test(rewind) && /nextOverlay\.style\.zIndex = '20'/.test(rewind), 'Twitch controls should stay above the replay picture');
 assert(/sourceVideo\.muted = true/.test(rewind), 'live audio should be silenced while local replay audio plays');
 
@@ -143,7 +143,7 @@ assert(!/PlaybackAccessToken|streamPlaybackAccessToken/.test(rewind), 'rewind mu
 // six-second load before its watchdog can settle it.
 function createRecoveryHarness() {
   const hook = `
-    window.__webWardenRecoveryTest = {
+    window.__wardenOneRecoveryTest = {
       configure: function (front, back, recording) {
         replayToken = 1;
         replayActive = true;
@@ -187,7 +187,7 @@ function createRecoveryHarness() {
     chrome: {
       storage: {
         local: { get: function (_key, callback) {
-          callback({ webwarden_config: { enabled: true, twitchRewind: false } });
+          callback({ wardenone_config: { enabled: true, twitchRewind: false } });
         } },
         onChanged: { addListener: function () {} }
       }
@@ -225,7 +225,7 @@ function createRecoveryHarness() {
   }
 
   return {
-    api: fakeWindow.__webWardenRecoveryTest,
+    api: fakeWindow.__wardenOneRecoveryTest,
     front: fakeVideo(5),
     back: fakeVideo(0),
     recording: {

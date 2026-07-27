@@ -204,18 +204,18 @@ function makeContext(doc, w, h, opts) {
   opts = opts || {};
   const host = opts.host || 'www.google.com';
   const path = opts.path || '/search';
-  const ww = Object.assign({
+  const wo = Object.assign({
     blockSearchAiAnswers: opts.ai !== false,
     blockSponsoredSearchResults: opts.ads !== false,
     googleSearchResultCleanup: false,
-  }, opts.WW || {});
+  }, opts.WO || {});
   const ctx = vm.createContext({
     document: doc,
     innerWidth: w == null ? 1830 : w,
     innerHeight: h == null ? 900 : h,
     location: { hostname: host, pathname: path, origin: 'https://' + host, href: 'https://' + host + path + '?q=test' },
     URL: URL,
-    WW: ww,
+    WO: wo,
     isGoogleSearchResults: function () { return /(^|\.)google\.[a-z.]+$/i.test(host) && /^\/(search|webhp)?$/i.test(path || '/'); },
     isBraveSearchResults: function () { return host === 'search.brave.com' && path === '/search'; },
     log: function () {},
@@ -286,7 +286,7 @@ function gone(el) { const r = el.getBoundingClientRect(); return r.width === 0 &
 function visible(el) { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
 function hiddenOrCollapsed(el) {
   return el._style.display === 'none' || el._style.height === '0' || el._style.height === '0px' ||
-    el.attrs['data-ww-google-search-collapsed'] != null;
+    el.attrs['data-wo-google-search-collapsed'] != null;
 }
 function describe(el) {
   return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') +
@@ -310,8 +310,8 @@ function paaViolations(doc) {
   const errs = [];
   for (const pairEl of doc.documentElement.querySelectorAll('.related-question-pair')) {
     for (const n of subtree(pairEl)) {
-      if (n._style.display === 'none' || n.attrs['data-ww-google-search-cleaned'] != null ||
-        n.attrs['data-ww-google-search-collapsed'] != null || n._style.height === '0')
+      if (n._style.display === 'none' || n.attrs['data-wo-google-search-cleaned'] != null ||
+        n.attrs['data-wo-google-search-collapsed'] != null || n._style.height === '0')
         errs.push(describe(n));
     }
   }
@@ -435,8 +435,8 @@ function runFeature(doc, t, w, h) {
   runFeature(s.doc, t);
 
   const touched = subtree(s.html).filter((n) =>
-    n._style.display === 'none' || n.attrs['data-ww-google-search-cleaned'] != null ||
-    n.attrs['data-ww-google-search-collapsed'] != null);
+    n._style.display === 'none' || n.attrs['data-wo-google-search-cleaned'] != null ||
+    n.attrs['data-wo-google-search-collapsed'] != null);
   check('S4 hidden template label hides nothing at all', touched.length === 0, touched.map(describe));
   check('S4 all 6 organic results still visible', organics.every(visible));
   const inv = invariantViolations(s.doc);
@@ -482,7 +482,7 @@ function runFeature(doc, t, w, h) {
   check('S6 shellDiv collapsed (display:none or height 0 + collapsed attr)',
     gone(ai.shellDiv) ||
     ai.shellDiv._style.display === 'none' ||
-    (ai.shellDiv._style.height === '0' && ai.shellDiv.attrs['data-ww-google-search-collapsed'] === '1'),
+    (ai.shellDiv._style.height === '0' && ai.shellDiv.attrs['data-wo-google-search-collapsed'] === '1'),
     ai.shellDiv._style);
   check('S6 "Show more" button is gone', gone(ai.showMore), ai.showMore._style);
   check('S6 no visible leftover inside aiWrap', subtree(ai.aiWrap).every((n) => n === ai.aiWrap || gone(n)));
@@ -516,7 +516,7 @@ function runFeature(doc, t, w, h) {
   check('S7 late "Show more" button is gone after an already-hidden AI body is swept again',
     gone(lateShowMore), lateShowMore._style);
   check('S7 spacer shell collapsed, not left as blank page space',
-    gone(shellDiv) || shellDiv.attrs['data-ww-google-search-collapsed'] === '1', shellDiv._style);
+    gone(shellDiv) || shellDiv.attrs['data-wo-google-search-collapsed'] === '1', shellDiv._style);
   check('S7 all 6 organic results still visible', organics.every(visible));
   const inv = invariantViolations(s.doc);
   check('S7 invariant: results containers untouched', inv.length === 0, inv);
