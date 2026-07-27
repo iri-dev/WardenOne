@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Warden One",
+  "name": "WardenOne",
   "version": "1.0.0",
-  "description": "Elite defense against phishing, malware downloads, redirect chains, IP grabbers, trackers, token theft, bad certs, and risky sites.",
+  "description": "One extension. Every defence. Blocks ads, trackers, phishing, scams, malware downloads & IP grabbers. No account, no telemetry.",
   "permissions": [
     "declarativeNetRequest",
     "storage",
@@ -44,7 +44,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Warden One",
+    "default_title": "WardenOne",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

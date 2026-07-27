@@ -1,4 +1,4 @@
-// Warden One — Twitch "watch from earlier" (live VOD rewind)
+// WardenOne — Twitch "watch from earlier" (live VOD rewind)
 //
 // The chunk-URL walk-back approach is impossible on Twitch (segment URLs are
 // opaque signed tokens, not a walkable index). But when a streamer has "Store
@@ -117,8 +117,8 @@
   // ---- Browser runtime --------------------------------------------------
 
   if (typeof window === 'undefined' || window.top !== window) return;
-  if (window.__webWardenVodRewind) return;
-  window.__webWardenVodRewind = true;
+  if (window.__wardenOneVodRewind) return;
+  window.__wardenOneVodRewind = true;
 
   // Public Twitch web client id — the same one the site sends for anonymous
   // reads. We only read public video metadata; we never request a playback
@@ -144,25 +144,25 @@
   var styleEl = null;
 
   // Plain-English diagnostics so it's never a mystery why the button is/ isn't
-  // there. Open DevTools console (F12) and filter for "Warden One Rewind".
-  function report(msg) { try { console.info('[Warden One Rewind] ' + msg); } catch (_) {} }
+  // there. Open DevTools console (F12) and filter for "WardenOne Rewind".
+  function report(msg) { try { console.info('[WardenOne Rewind] ' + msg); } catch (_) {} }
 
   function ensureStyle() {
     if (styleEl || !document.documentElement) return;
     styleEl = document.createElement('style');
-    styleEl.id = 'webwarden-vod-rewind-style';
+    styleEl.id = 'wardenone-vod-rewind-style';
     styleEl.textContent = [
-      '.ww-vodr-btn{display:inline-flex;align-items:center;justify-content:center;height:30px;min-width:30px;padding:0 8px;margin:0 2px;border:0;background:transparent;color:#efeff1;cursor:pointer;border-radius:4px;font:600 12px/1 Inter,Roobert,Helvetica,Arial,sans-serif;position:relative}',
-      '.ww-vodr-btn:hover{background:rgba(255,255,255,.16)}',
-      '.ww-vodr-btn svg{width:20px;height:20px;fill:currentColor;flex:none}',
-      '.ww-vodr-btn .ww-vodr-lbl{margin-left:6px;white-space:nowrap}',
-      '.ww-vodr-pop{position:absolute;bottom:40px;left:0;background:#18181b;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:6px;min-width:210px;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:2147483000;display:none;flex-direction:column;gap:2px}',
-      '.ww-vodr-pop.open{display:flex}',
-      '.ww-vodr-title{color:#adadb8;font:600 11px/1.4 Inter,Helvetica,Arial,sans-serif;padding:4px 8px 6px;text-transform:uppercase;letter-spacing:.04em}',
-      '.ww-vodr-opt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:transparent;border:0;color:#efeff1;text-align:left;padding:8px 10px;border-radius:4px;cursor:pointer;font:600 13px/1.2 Inter,Helvetica,Arial,sans-serif;width:100%}',
-      '.ww-vodr-opt:hover{background:rgba(145,71,255,.25)}',
-      '.ww-vodr-opt .ww-vodr-sub{color:#adadb8;font-weight:400;font-size:11px}',
-      '.ww-vodr-note{color:#adadb8;font:400 11px/1.4 Inter,Helvetica,Arial,sans-serif;padding:8px 10px 4px;border-top:1px solid rgba(255,255,255,.1);margin-top:4px}'
+      '.wo-vodr-btn{display:inline-flex;align-items:center;justify-content:center;height:30px;min-width:30px;padding:0 8px;margin:0 2px;border:0;background:transparent;color:#efeff1;cursor:pointer;border-radius:4px;font:600 12px/1 Inter,Roobert,Helvetica,Arial,sans-serif;position:relative}',
+      '.wo-vodr-btn:hover{background:rgba(255,255,255,.16)}',
+      '.wo-vodr-btn svg{width:20px;height:20px;fill:currentColor;flex:none}',
+      '.wo-vodr-btn .wo-vodr-lbl{margin-left:6px;white-space:nowrap}',
+      '.wo-vodr-pop{position:absolute;bottom:40px;left:0;background:#18181b;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:6px;min-width:210px;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:2147483000;display:none;flex-direction:column;gap:2px}',
+      '.wo-vodr-pop.open{display:flex}',
+      '.wo-vodr-title{color:#adadb8;font:600 11px/1.4 Inter,Helvetica,Arial,sans-serif;padding:4px 8px 6px;text-transform:uppercase;letter-spacing:.04em}',
+      '.wo-vodr-opt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:transparent;border:0;color:#efeff1;text-align:left;padding:8px 10px;border-radius:4px;cursor:pointer;font:600 13px/1.2 Inter,Helvetica,Arial,sans-serif;width:100%}',
+      '.wo-vodr-opt:hover{background:rgba(145,71,255,.25)}',
+      '.wo-vodr-opt .wo-vodr-sub{color:#adadb8;font-weight:400;font-size:11px}',
+      '.wo-vodr-note{color:#adadb8;font:400 11px/1.4 Inter,Helvetica,Arial,sans-serif;padding:8px 10px 4px;border-top:1px solid rgba(255,255,255,.1);margin-top:4px}'
     ].join('\n');
     document.documentElement.appendChild(styleEl);
   }
@@ -205,9 +205,9 @@
 
   function buildPopover() {
     var pop = document.createElement('div');
-    pop.className = 'ww-vodr-pop';
+    pop.className = 'wo-vodr-pop';
     var title = document.createElement('div');
-    title.className = 'ww-vodr-title';
+    title.className = 'wo-vodr-title';
     title.textContent = 'Rewind this stream';
     pop.appendChild(title);
     [
@@ -217,13 +217,13 @@
     ].forEach(function (o) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'ww-vodr-opt';
+      b.className = 'wo-vodr-opt';
       var main = document.createElement('span');
       main.textContent = o.label;
       b.appendChild(main);
       if (o.sub) {
         var sub = document.createElement('span');
-        sub.className = 'ww-vodr-sub';
+        sub.className = 'wo-vodr-sub';
         sub.textContent = o.sub;
         b.appendChild(sub);
       }
@@ -238,7 +238,7 @@
     // set the expectation once, always: if this streamer locks VODs to subs,
     // Twitch itself shows a clear "subscribe to watch" prompt on open.
     var note = document.createElement('div');
-    note.className = 'ww-vodr-note';
+    note.className = 'wo-vodr-note';
     note.textContent = 'If a streamer keeps past broadcasts for subscribers, Twitch will show a subscribe prompt.';
     pop.appendChild(note);
     return pop;
@@ -247,12 +247,12 @@
   function buildButton() {
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'ww-vodr-btn';
+    btn.className = 'wo-vodr-btn';
     btn.setAttribute('aria-label', 'Rewind this stream to earlier');
     btn.title = 'Watch from earlier in this stream (opens the broadcast VOD)';
     btn.appendChild(makeIcon());
     var lbl = document.createElement('span');
-    lbl.className = 'ww-vodr-lbl';
+    lbl.className = 'wo-vodr-lbl';
     lbl.textContent = 'Rewind';
     btn.appendChild(lbl);
     popover = buildPopover();
@@ -404,11 +404,11 @@
   }
 
   try {
-    chrome.storage.local.get('webwarden_config', function (result) {
-      applyConfig(result && result.webwarden_config);
+    chrome.storage.local.get('wardenone_config', function (result) {
+      applyConfig(result && result.wardenone_config);
     });
     chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area === 'local' && changes.webwarden_config) applyConfig(changes.webwarden_config.newValue || {});
+      if (area === 'local' && changes.wardenone_config) applyConfig(changes.wardenone_config.newValue || {});
     });
   } catch (_) {}
   window.addEventListener('pagehide', shutdown, { once: true });

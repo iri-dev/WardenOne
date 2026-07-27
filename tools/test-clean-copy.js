@@ -39,7 +39,7 @@ function installCopyHook(opts = {}) {
   const runtime = {
     URL,
     location: { href: 'https://current.example/page' },
-    WW: { cleanCopyLinks: opts.enabled !== false },
+    WO: { cleanCopyLinks: opts.enabled !== false },
     log(type, detail) {
       logs.push({ type, detail });
     },

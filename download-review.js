@@ -1,4 +1,4 @@
-/* Warden One Download Guard review window */
+/* WardenOne Download Guard review window */
 
 const params = new URLSearchParams(location.search);
 const reviewId = params.get('id') || '';
@@ -329,7 +329,7 @@ function render(review) {
 
   const pauseNote = byId('pause-note');
   if (review.autoBlocked) {
-    pauseNote.textContent = 'Warden One blocked this critical download and removed it from your computer. No further action is needed.';
+    pauseNote.textContent = 'WardenOne blocked this critical download and removed it from your computer. No further action is needed.';
   } else if (review.paused) {
     pauseNote.textContent = 'This download is paused until you choose Continue or Cancel.';
   } else {

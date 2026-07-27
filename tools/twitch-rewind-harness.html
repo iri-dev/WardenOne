@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Warden One Twitch Rewind Harness</title>
+  <title>WardenOne Twitch Rewind Harness</title>
   <style>
     html{height:100%;font-size:62.5%}body{height:100%;margin:0;background:#0e0e10;color:#efeff1;font:16px Arial,sans-serif}
     main{display:grid;place-items:center;min-height:100%;gap:12px;align-content:center}
@@ -35,7 +35,7 @@
     const harnessMinutes = Number(new URLSearchParams(location.search).get('minutes')) || undefined;
     window.chrome = {
       storage: {
-        local: { get: (_key, done) => done({ webwarden_config: { enabled: true, twitchRewind: true, twitchRewindMinutes: harnessMinutes } }) },
+        local: { get: (_key, done) => done({ wardenone_config: { enabled: true, twitchRewind: true, twitchRewindMinutes: harnessMinutes } }) },
         onChanged: { addListener: () => {} },
       },
     };
@@ -78,7 +78,7 @@
     // Feed the exact synthetic tracks to the recorder. Chromium's native
     // HTMLMediaElement.captureStream() can omit frames when the media element
     // itself is backed by a MediaStream, which would make this harness test the
-    // browser quirk instead of Warden One's rotation and replay code.
+    // browser quirk instead of WardenOne's rotation and replay code.
     video.captureStream = () => testStream;
     video.play().catch(() => {});
     const nativePlaybackButton = document.querySelector('[data-a-target="player-play-pause-button"]');
@@ -96,8 +96,8 @@
     syncNativePlaybackButton();
     const telemetry = document.querySelector('.telemetry');
     setInterval(() => {
-      const activeReplay = document.querySelector('video[data-webwarden-replay][data-webwarden-active="true"]');
-      const segmentId = activeReplay ? activeReplay.dataset.webwardenSegmentId || '' : '';
+      const activeReplay = document.querySelector('video[data-wardenone-replay][data-wardenone-active="true"]');
+      const segmentId = activeReplay ? activeReplay.dataset.wardenoneSegmentId || '' : '';
       const currentTime = activeReplay ? Number(activeReplay.currentTime) || 0 : 0;
       const paused = activeReplay ? activeReplay.paused : false;
       const readyState = activeReplay ? activeReplay.readyState : 0;
@@ -118,8 +118,8 @@
       document.querySelector('.video-player').requestFullscreen().catch(() => {});
     });
     function loadRewindHarness() {
-      if (window.__webWardenHarnessScriptLoaded) return;
-      window.__webWardenHarnessScriptLoaded = true;
+      if (window.__wardenOneHarnessScriptLoaded) return;
+      window.__wardenOneHarnessScriptLoaded = true;
       const script = document.createElement('script');
       script.src = '../twitch-rewind.js';
       document.body.appendChild(script);

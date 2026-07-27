@@ -1,5 +1,5 @@
 /*
- * Warden One anti-redirect hardener
+ * WardenOne anti-redirect hardener
  * --------------------------------
  * The main content guard already blocks gestureless redirects. This layer is
  * stricter, with different rules per navigation shape:
@@ -27,8 +27,8 @@
 (function () {
   'use strict';
 
-  if (window.__webWardenAntiRedirectHardener) return;
-  window.__webWardenAntiRedirectHardener = true;
+  if (window.__wardenOneAntiRedirectHardener) return;
+  window.__wardenOneAntiRedirectHardener = true;
 
   let token = null;
   let queuedEvents = [];
@@ -56,7 +56,7 @@
   const KNOWN_GOOD = /(^|\.)(google|gstatic|googleusercontent|accounts\.google|recaptcha|hcaptcha|facebook|connect\.facebook|fbcdn|apple|cdn-apple|icloud|microsoft|microsoftonline|msauth|msftauth|live|office|paypal|paypalobjects|stripe|stripe\.network|checkout\.stripe|braintreegateway|braintreepayments|adyen|adyenpayments|twitter|x|linkedin|github|gitlab|amazon|amazonaws|amazoncognito|spotify|accounts\.spotify|login\.spotify|youtube|googlevideo|ytimg|twitch|ttvnw|jtvnw|twitchcdn|zoom|slack|dropbox|okta|oktacdn|oktapreview|okta-emea|auth0|onelogin|duosecurity|pingidentity|pingone|forgerock|jumpcloud|miniorange|b2clogin|ciamlogin|workos|frontegg|descope|stytch|openathens|shibboleth|cloudflare)\.[a-z.]+$|(^|\.)t\.co$/i;
 
   function cfg() {
-    return window.__WW_CONFIG__ || {};
+    return window.__WO_CONFIG__ || {};
   }
 
   function enabled() {
@@ -432,7 +432,7 @@
       return;
     }
     try {
-      document.dispatchEvent(new CustomEvent('ww-event', {
+      document.dispatchEvent(new CustomEvent('wo-event', {
         detail: Object.assign({ token }, payload),
       }));
     } catch (_) {}
@@ -640,7 +640,7 @@
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const msg = event.data || {};
-    if (msg.source === 'webwarden-handshake' && typeof msg.token === 'string' && !token) {
+    if (msg.source === 'wardenone-handshake' && typeof msg.token === 'string' && !token) {
       token = msg.token;
       flushEvents();
     }

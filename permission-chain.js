@@ -1,15 +1,15 @@
 /*
- * Warden One Permission Chain Guard (MAIN world)
+ * WardenOne Permission Chain Guard (MAIN world)
  * Watches for sensitive browser capability requests in sequence. It does not
  * read clipboard contents, file names, media streams, or location values.
  */
 (function () {
   'use strict';
 
-  if (window.__webWardenPermissionChainInstalled) return;
-  window.__webWardenPermissionChainInstalled = true;
+  if (window.__wardenOnePermissionChainInstalled) return;
+  window.__wardenOnePermissionChainInstalled = true;
 
-  let wwToken = null;
+  let woToken = null;
   let chainEnabled = false;
   const queued = [];
   const lastSignalAt = Object.create(null);
@@ -78,28 +78,28 @@
     if (lastSignalAt[bucket] && t - lastSignalAt[bucket] < 2500) return;
     lastSignalAt[bucket] = t;
     const detail = Object.assign({
-      token: wwToken,
+      token: woToken,
       permission: key,
       action: act,
       userGesture: hasRecentGesture(),
     }, extra && typeof extra === 'object' ? extra : {});
-    if (!wwToken) {
+    if (!woToken) {
       queued.push(detail);
       if (queued.length > 40) queued.shift();
       return;
     }
     try {
-      document.dispatchEvent(new CustomEvent('ww-permission-signal', { detail }));
+      document.dispatchEvent(new CustomEvent('wo-permission-signal', { detail }));
     } catch (_) {}
   }
 
   function flushQueued() {
-    if (!wwToken) return;
+    if (!woToken) return;
     while (queued.length) {
       const detail = queued.shift();
-      detail.token = wwToken;
+      detail.token = woToken;
       try {
-        document.dispatchEvent(new CustomEvent('ww-permission-signal', { detail }));
+        document.dispatchEvent(new CustomEvent('wo-permission-signal', { detail }));
       } catch (_) {}
     }
   }
@@ -109,12 +109,12 @@
       if (e.source !== window) return;
       const m = e.data;
       if (!m || typeof m !== 'object') return;
-      if (m.source === 'webwarden-handshake' && typeof m.token === 'string' && !wwToken) {
-        wwToken = m.token;
+      if (m.source === 'wardenone-handshake' && typeof m.token === 'string' && !woToken) {
+        woToken = m.token;
         flushQueued();
         return;
       }
-      if (m.source === 'webwarden' && m.kind === 'config' && (!wwToken || m.token === wwToken)) {
+      if (m.source === 'wardenone' && m.kind === 'config' && (!woToken || m.token === woToken)) {
         const cfg = m.overrides || {};
         chainEnabled = cfg.enabled !== false && cfg.permissionChainGuard !== false && !hostAllowedByUser(cfg);
       }
@@ -123,17 +123,17 @@
 
   function wrapMethod(obj, name, wrapper) {
     try {
-      if (!obj || obj.__wwPermChainPatched && obj.__wwPermChainPatched[name]) return;
+      if (!obj || obj.__woPermChainPatched && obj.__woPermChainPatched[name]) return;
       const original = obj[name];
       if (typeof original !== 'function') return;
       const wrapped = wrapper(original);
       try { Object.defineProperty(wrapped, 'name', { value: original.name || name }); } catch (_) {}
       try { Object.defineProperty(wrapped, 'length', { value: original.length }); } catch (_) {}
       obj[name] = wrapped;
-      if (!obj.__wwPermChainPatched) {
-        try { Object.defineProperty(obj, '__wwPermChainPatched', { value: Object.create(null) }); } catch (_) { obj.__wwPermChainPatched = Object.create(null); }
+      if (!obj.__woPermChainPatched) {
+        try { Object.defineProperty(obj, '__woPermChainPatched', { value: Object.create(null) }); } catch (_) { obj.__woPermChainPatched = Object.create(null); }
       }
-      obj.__wwPermChainPatched[name] = true;
+      obj.__woPermChainPatched[name] = true;
     } catch (_) {}
   }
 
@@ -150,7 +150,7 @@
   function patchNotifications() {
     try {
       const N = window.Notification;
-      if (!N || typeof N.requestPermission !== 'function' || N.__wwPermChainRequest) return;
+      if (!N || typeof N.requestPermission !== 'function' || N.__woPermChainRequest) return;
       const original = N.requestPermission;
       const wrapped = function (callback) {
         emit('notifications', 'request');
@@ -172,7 +172,7 @@
       };
       try { Object.defineProperty(wrapped, 'name', { value: original.name || 'requestPermission' }); } catch (_) {}
       N.requestPermission = wrapped;
-      try { Object.defineProperty(N, '__wwPermChainRequest', { value: true }); } catch (_) { N.__wwPermChainRequest = true; }
+      try { Object.defineProperty(N, '__woPermChainRequest', { value: true }); } catch (_) { N.__woPermChainRequest = true; }
     } catch (_) {}
   }
 

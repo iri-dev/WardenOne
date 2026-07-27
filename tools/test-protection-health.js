@@ -32,8 +32,8 @@ assert(manifest.version === '1.0.0', 'manifest version should be 1.0.0 for the s
 assert(/kind === 'protection-health'/.test(background), 'background should expose protection-health endpoint');
 assert(/buildProtectionHealthSummary/.test(background), 'background should build protection health summary');
 assert(/HEALTH_SHIELD_KEYS/.test(background), 'health summary should count active shields');
-assert(/webwarden_history/.test(background) && /blocked24h/.test(background), 'health summary should report recent blocked count');
-assert(/webwarden_list_meta/.test(background) && /SUPPLEMENTAL_LIST_META_KEY/.test(background), 'health summary should report list metadata');
+assert(/wardenone_history/.test(background) && /blocked24h/.test(background), 'health summary should report recent blocked count');
+assert(/wardenone_list_meta/.test(background) && /SUPPLEMENTAL_LIST_META_KEY/.test(background), 'health summary should report list metadata');
 
 assert(/<details class="health-panel" id="protection-health-panel"/.test(popupHtml), 'popup should render protection health as a collapsed details dropdown');
 assert(/class="health-summary"/.test(popupHtml), 'popup health dropdown should have a compact summary row');

@@ -155,7 +155,7 @@ function createPageHarness(config, harnessOptions) {
 
   class HarnessURL extends URL {}
   HarnessURL.createObjectURL = (blob) => {
-    const url = 'blob:webwarden-twitch-' + (++blobId);
+    const url = 'blob:wardenone-twitch-' + (++blobId);
     state.blobSources.set(url, String(blob && blob.source || ''));
     return url;
   };
@@ -192,7 +192,7 @@ function createPageHarness(config, harnessOptions) {
     overrideMimeType() {}
 
     send() {
-      this.responseText = 'self.__webWardenOriginalWorkerRan = true;';
+      this.responseText = 'self.__wardenOneOriginalWorkerRan = true;';
     }
   }
 
@@ -308,7 +308,7 @@ function createPageHarness(config, harnessOptions) {
     hostname: 'www.twitch.tv',
     href: 'https://www.twitch.tv/fixturechannel',
   };
-  window.__WW_CONFIG__ = Object.assign({ enabled: true, twitchAdBlock: true }, config || {});
+  window.__WO_CONFIG__ = Object.assign({ enabled: true, twitchAdBlock: true }, config || {});
   window.Worker = NativeWorker;
 
   async function nativeFetch(input, init) {
@@ -417,7 +417,7 @@ function videoPresentation(video) {
     defaultMuted: video.defaultMuted,
     muted: video.muted,
     volume: video.volume,
-    guardAttribute: video.getAttribute('data-ww-twitch-independent-ad'),
+    guardAttribute: video.getAttribute('data-wo-twitch-independent-ad'),
   };
 }
 
@@ -434,7 +434,7 @@ function assertGuarded(video, label) {
   assert(video.defaultMuted === true, label + ' did not set defaultMuted');
   assert(video.muted === true, label + ' did not mute');
   assert(video.volume === 0, label + ' did not zero volume');
-  assert(video.getAttribute('data-ww-twitch-independent-ad') === 'true',
+  assert(video.getAttribute('data-wo-twitch-independent-ad') === 'true',
     label + ' omitted the guard marker attribute');
 }
 
@@ -464,15 +464,15 @@ test('manifest injects the dedicated Twitch module in MAIN at document_start', (
 });
 
 test('legacy worker hook and watchdog remain hard-disabled', () => {
-  const sourceGates = LEGACY_SOURCE.match(/if\(!1&&WW\.twitchAdBlock/g) || [];
-  const runtimeGates = LEGACY_RUNTIME.match(/if\(!1&&WW\.twitchAdBlock/g) || [];
+  const sourceGates = LEGACY_SOURCE.match(/if\(!1&&WO\.twitchAdBlock/g) || [];
+  const runtimeGates = LEGACY_RUNTIME.match(/if\(!1&&WO\.twitchAdBlock/g) || [];
   assert(sourceGates.length === 2,
     'src/content.js must hard-disable both the legacy worker hook and legacy watchdog');
   assert(runtimeGates.length === 2,
     'content.min.js must ship both legacy Twitch blocks behind constant-false gates');
   assert(MODULE_SOURCE.includes('function twitchWorkerRuntime('),
     'dedicated module no longer contains the current worker runtime');
-  assert(!MODULE_SOURCE.includes('__wwTwWatch') && !MODULE_SOURCE.includes('installTwitchHook'),
+  assert(!MODULE_SOURCE.includes('__woTwWatch') && !MODULE_SOURCE.includes('installTwitchHook'),
     'dedicated module accidentally reintroduced a legacy Twitch hook/watchdog');
 });
 
@@ -525,7 +525,7 @@ test('page hook preserves a mixed GQL batch while forcing token player type', as
 
   const worker = new harness.window.Worker('blob:https://www.twitch.tv/fixture-player-worker');
   assert(worker instanceof harness.NativeWorker, 'dedicated wrapper did not construct the native worker');
-  assert(/^blob:webwarden-twitch-/.test(worker.url), 'Twitch worker was not wrapped (url=' + worker.url +
+  assert(/^blob:wardenone-twitch-/.test(worker.url), 'Twitch worker was not wrapped (url=' + worker.url +
     ', instances=' + harness.state.workerInstances.length + ', blobs=' + harness.state.blobSources.size + ')');
   const wrapper = harness.state.blobSources.get(worker.url) || '';
   // The worker blob carries only the PUBLIC token state (hash/template). The
@@ -559,7 +559,7 @@ test('page hook preserves a mixed GQL batch while forcing token player type', as
   worker.dispatchEvent({
     type: 'message',
     data: {
-      __wwTwitchAdblock: harness.window.__webWardenTwitchAdblockReady,
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
       type: 'gql-request',
       id: 'fixture-proxy-request',
       body: proxyBody,
@@ -660,7 +660,7 @@ test('label fallback requires a distinct blob primary and never guards primary o
     label: 'Video Advertisement',
   });
   withoutPrimary.fireMedia('playing', loneLabel);
-  assert(loneLabel.getAttribute('data-ww-twitch-independent-ad') === null,
+  assert(loneLabel.getAttribute('data-wo-twitch-independent-ad') === null,
     'label-only video was guarded without a distinct blob primary');
 
   const harness = createPageHarness();
@@ -670,7 +670,7 @@ test('label fallback requires a distinct blob primary and never guards primary o
     inPlayer: true,
   });
   harness.fireMedia('playing', primary);
-  assert(primary.getAttribute('data-ww-twitch-independent-ad') === null,
+  assert(primary.getAttribute('data-wo-twitch-independent-ad') === null,
     'primary blob video was guarded by its label');
   assert(primary.muted === false && primary.volume === 1 && primary.pauseCalls === 0,
     'primary blob video presentation/playback was changed');
@@ -684,12 +684,12 @@ test('label fallback requires a distinct blob primary and never guards primary o
 
   const unresolved = harness.createVideo({ label: 'Video Advertisement' });
   harness.fireMedia('playing', unresolved);
-  assert(unresolved.getAttribute('data-ww-twitch-independent-ad') === null,
+  assert(unresolved.getAttribute('data-wo-twitch-independent-ad') === null,
     'unresolved label-only video was guarded without a concrete non-blob source');
   assert(unresolved.muted === false && unresolved.volume === 1 && unresolved.pauseCalls === 0,
     'unresolved label-only video presentation/playback was changed');
 
-  const css = harness.document.head.children.find((node) => node.id === 'ww-twitch-adblock-css');
+  const css = harness.document.head.children.find((node) => node.id === 'wo-twitch-adblock-css');
   assert(css && !/video\[(?:aria-label|src)/i.test(css.textContent),
     'blanket video CSS bypasses the independent-video source/primary safety checks');
 });
@@ -726,8 +726,8 @@ test('guard re-silences volume changes, restores on source reuse, and restores e
   video.currentSrc = 'https://cdn.media-amazon.com/twitch/reused-ad-again.mp4';
   harness.fireMedia('loadedmetadata', video);
   assertGuarded(video, 'reused independent ad');
-  harness.window.__WW_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'ww-config-change', target: harness.document });
+  harness.window.__WO_CONFIG__.twitchAdBlock = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
   equal(videoPresentation(video), original, 'toggle-off did not restore exact original presentation state');
   assert(video.pauseCalls === 0, 'toggle-off paused an attached guarded video');
   assert(harness.state.mutationObservers[0].disconnected === true,
@@ -754,8 +754,8 @@ test('toggle-off pauses then restores a detached ad before blob-video reuse', ()
   video.operations.length = 0;
   video.pauseCalls = 0;
   video.isConnected = false;
-  harness.window.__WW_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'ww-config-change', target: harness.document });
+  harness.window.__WO_CONFIG__.twitchAdBlock = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
   assertDetachedCleanup(video, original, 'toggle-off detached cleanup');
 
   video.currentSrc = 'blob:https://www.twitch.tv/reused-after-toggle';
@@ -791,7 +791,7 @@ test('10-second prune pauses then restores a detached ad before blob-video reuse
   }]);
   harness.advance(9999);
   assert(video.pauseCalls === 0, 'detached ad was pruned before the 10-second grace period');
-  assert(video.getAttribute('data-ww-twitch-independent-ad') === 'true' &&
+  assert(video.getAttribute('data-wo-twitch-independent-ad') === 'true' &&
     video.style.getPropertyValue('display') === 'none' && video.muted === true && video.volume === 0,
   'detached ad lost suppression before its prune deadline');
 

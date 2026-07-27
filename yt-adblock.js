@@ -1,9 +1,9 @@
-/* Warden One YouTube module
+/* WardenOne YouTube module
  *
  * Rebuilt from the active AdGuard YouTube filter rules in:
  *   Extension/filters/chromium/filter_2.txt, lines 37700-37732
  *
- * This file intentionally avoids Warden One's older YouTube heuristics. The
+ * This file intentionally avoids WardenOne's older YouTube heuristics. The
  * behavior here is a compact, readable port of AdGuard's current YouTube rules:
  * JSON pruning for ad schedule fields, anti-abnormality defusing, native
  * fetch/Request iframe workaround, SSAP timeout/segment handling, and AdGuard's
@@ -13,24 +13,24 @@
   "use strict";
 
   var YT_MODULE_VERSION = "1.0.0";
-  if (window.__webWardenYouTubeReadyVersion === YT_MODULE_VERSION) return;
-  window.__webWardenYouTubeVersion = YT_MODULE_VERSION;
+  if (window.__wardenOneYouTubeReadyVersion === YT_MODULE_VERSION) return;
+  window.__wardenOneYouTubeVersion = YT_MODULE_VERSION;
 
   var realFetch = self.fetch;
   var realParse = JSON.parse;
   var realStringify = JSON.stringify;
-  var wwConfigToken = null;
-  var wwMasterEnabled = true;
+  var woConfigToken = null;
+  var woMasterEnabled = true;
   var cosmeticStyle = null;
   var installSsapPushCapture = function () {};
   var restoreSsapPushCapture = function () {};
 
   function masterEnabled() {
-    return wwMasterEnabled !== false;
+    return woMasterEnabled !== false;
   }
 
   function setMasterEnabled(value) {
-    wwMasterEnabled = value !== false;
+    woMasterEnabled = value !== false;
     if (!masterEnabled()) {
       restoreSsapPushCapture();
       restoreVisibility();
@@ -46,12 +46,12 @@
       if (event.source !== window) return;
       var message = event.data;
       if (!message || typeof message !== "object") return;
-      if (message.source === "webwarden-handshake" && typeof message.token === "string" && wwConfigToken === null) {
-        wwConfigToken = message.token;
+      if (message.source === "wardenone-handshake" && typeof message.token === "string" && woConfigToken === null) {
+        woConfigToken = message.token;
         return;
       }
-      if (message.source !== "webwarden" || message.kind !== "config" || !message.overrides) return;
-      if (wwConfigToken === null || message.token !== wwConfigToken) return;
+      if (message.source !== "wardenone" || message.kind !== "config" || !message.overrides) return;
+      if (woConfigToken === null || message.token !== woConfigToken) return;
       setMasterEnabled(message.overrides.enabled !== false);
     });
   } catch (_) {}
@@ -924,5 +924,5 @@
   }
 
   applyCosmetics();
-  window.__webWardenYouTubeReadyVersion = YT_MODULE_VERSION;
+  window.__wardenOneYouTubeReadyVersion = YT_MODULE_VERSION;
 })();

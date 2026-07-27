@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Warden One config lifecycle stress fixture</title>
+  <title>WardenOne config lifecycle stress fixture</title>
   <style>
     html, body { width: 100%; height: 100%; margin: 0; }
     #candidate {
@@ -30,13 +30,13 @@
       const result = document.getElementById('result');
       const visible = () => getComputedStyle(candidate).display !== 'none';
       const send = (overrides) => window.postMessage({
-        source: 'webwarden',
+        source: 'wardenone',
         kind: 'config',
         token,
         overrides,
       }, location.origin);
 
-      window.postMessage({ source: 'webwarden-handshake', token }, location.origin);
+      window.postMessage({ source: 'wardenone-handshake', token }, location.origin);
       setTimeout(() => {
         result.dataset.preConfigVisible = String(visible());
         send({ enabled: true, removeOverlays: true, showBadge: false, showToasts: false });

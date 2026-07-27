@@ -17,7 +17,7 @@ const vm = require('vm');
 
 const MIN = fs.readFileSync(path.join(__dirname, '..', 'content.min.js'), 'utf8');
 const START = MIN.indexOf('try{let locationEventCount=0;const locationPrivacyOn=');
-const END = MIN.indexOf('if(WW.mediaShield)try{', START);
+const END = MIN.indexOf('if(WO.mediaShield)try{', START);
 if (START < 0 || END < 0 || END <= START) {
   console.error('FATAL: location guard markers not found in content.min.js');
   process.exit(1);
@@ -74,7 +74,7 @@ function makeSandbox(blocked) {
 
   const listeners = {};
   const sandbox = {
-    WW: { blockGeolocation: !!blocked },
+    WO: { blockGeolocation: !!blocked },
     log(type, detail) { logs.push({ type, detail }); },
     location: { hostname: 'example.test' },
     navigator,
@@ -134,7 +134,7 @@ function makeSandbox(blocked) {
 
   const s2 = makeSandbox(false);
   const realWatch = s2.navigator.geolocation.watchPosition(() => {});
-  s2.WW.blockGeolocation = true;
+  s2.WO.blockGeolocation = true;
   s2.navigator.geolocation.getCurrentPosition(() => {}, () => {});
   check('turning blocking on clears a previously-live watch', realWatch === 42 && s2.__state.cleared.includes(42),
     { realWatch, cleared: s2.__state.cleared });

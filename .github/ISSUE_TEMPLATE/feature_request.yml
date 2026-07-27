@@ -6,7 +6,7 @@ body:
   - type: textarea
     id: idea
     attributes:
-      label: What would you like Warden One to do?
+      label: What would you like WardenOne to do?
       placeholder: Describe the protection or improvement...
     validations:
       required: true

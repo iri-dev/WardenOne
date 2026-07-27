@@ -175,7 +175,7 @@ function runtimeHarness(initialPath) {
     chrome: {
       storage: {
         local: { get: function (_key, callback) {
-          callback({ webwarden_config: { enabled: true, twitchVodRewind: true } });
+          callback({ wardenone_config: { enabled: true, twitchVodRewind: true } });
         } },
         onChanged: { addListener: function () {} }
       }

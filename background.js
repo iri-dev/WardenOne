@@ -1,7 +1,7 @@
 /*
- * Warden One -- background service worker (MV3)
+ * WardenOne -- background service worker (MV3)
  * ============================================
- * Maintains the toolbar badge: a per-tab count of how many things Warden One
+ * Maintains the toolbar badge: a per-tab count of how many things WardenOne
  * blocked/gated on that tab. Counts come from the bridge (which hears them from
  * the main-world trap). Resets when a tab navigates to a new page.
  */
@@ -14,7 +14,7 @@ importScripts('domain-utils.js');
 const counts = {};
 // Version reported to external reputation APIs (Safe Browsing, PhishTank). Sourced
 // from the manifest so it tracks releases instead of drifting stale (was '3.10.0').
-const WW_CLIENT_VERSION = (() => { try { return (chrome.runtime.getManifest().version) || '0'; } catch (_) { return '0'; } })();
+const WO_CLIENT_VERSION = (() => { try { return (chrome.runtime.getManifest().version) || '0'; } catch (_) { return '0'; } })();
 const TAB_MESSAGE_RATE = Object.create(null);
 const TAB_MESSAGE_RATE_MAX_KEYS = 512;
 const TAB_MESSAGE_RATE_MAX_WINDOW_MS = 5 * 60 * 1000;
@@ -110,7 +110,7 @@ function normalizeTabBlockMessage(msg, sender) {
   out.detail = Object.assign({}, detailObj, {
     pageHost,
     targetHost,
-    why: 'A token-shaped value tried to leave this page for another domain. Warden One blocked the request; on large sites this can also be a noisy embedded-service call.',
+    why: 'A token-shaped value tried to leave this page for another domain. WardenOne blocked the request; on large sites this can also be a noisy embedded-service call.',
   });
   return out;
 }
@@ -162,7 +162,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     // behavioral reputation hits once they reach Suspicious/Dangerous. Caution
     // still shows in history without poisoning the future blocklist.
     try {
-      // SECURITY: ww-events arrive via a DOM CustomEvent the MAIN-world page shares,
+      // SECURITY: wo-events arrive via a DOM CustomEvent the MAIN-world page shares,
       // so a malicious page can FORGE them. Never learn an attacker-supplied domain
       // (msg.detail.host / matched) -- that would let any site poison the auto-block
       // "learned bad sites" list with arbitrary third parties (e.g. a bank, google).
@@ -210,11 +210,11 @@ function persistHistBufferNow() {
   __histPersistTimer = null;
   try {
     if (!__histBuffer.length) {
-      try { chrome.storage.session.remove('__webwarden_hist_buffer').catch(() => {}); } catch (_) {}
+      try { chrome.storage.session.remove('__wardenone_hist_buffer').catch(() => {}); } catch (_) {}
       return;
     }
     const slice = __histBuffer.length > 100 ? __histBuffer.slice(-100) : __histBuffer;
-    chrome.storage.session.set({ __webwarden_hist_buffer: slice }).catch(() => {});
+    chrome.storage.session.set({ __wardenone_hist_buffer: slice }).catch(() => {});
   } catch (_) {}
 }
 function persistHistBuffer() {
@@ -230,9 +230,9 @@ function queueHistory(entry) {
 // SW lifecycle. This runs synchronously (inline promise) before event listeners
 // are registered, so the buffer is populated before any new messages arrive.
 try {
-  chrome.storage.session.get('__webwarden_hist_buffer', (x) => {
-    if (x && Array.isArray(x.__webwarden_hist_buffer) && x.__webwarden_hist_buffer.length) {
-      __histBuffer = x.__webwarden_hist_buffer;
+  chrome.storage.session.get('__wardenone_hist_buffer', (x) => {
+    if (x && Array.isArray(x.__wardenone_hist_buffer) && x.__wardenone_hist_buffer.length) {
+      __histBuffer = x.__wardenone_hist_buffer;
       // schedule a flush immediately to persist survivors to local storage
       scheduleHistoryFlush();
     }
@@ -255,14 +255,14 @@ function flushHistory() {
   const pending = __histBuffer;
   __histBuffer = [];
   // Clear the session-storage buffer now that we're about to persist to local.
-  try { chrome.storage.session.remove('__webwarden_hist_buffer').catch(() => {}); } catch (_) {}
+  try { chrome.storage.session.remove('__wardenone_hist_buffer').catch(() => {}); } catch (_) {}
   try {
-    chrome.storage.local.get('webwarden_history', (x) => {
-      const hist = (x && x.webwarden_history) || [];
+    chrome.storage.local.get('wardenone_history', (x) => {
+      const hist = (x && x.wardenone_history) || [];
       // pending is oldest-first; unshift in reverse so newest ends up at index 0
       for (let i = pending.length - 1; i >= 0; i--) hist.unshift(pending[i]);
       if (hist.length > 200) hist.length = 200;
-      chrome.storage.local.set({ webwarden_history: hist }, () => {
+      chrome.storage.local.set({ wardenone_history: hist }, () => {
         const err = chrome.runtime.lastError;
         if (err) {
           __histBuffer = pending.concat(__histBuffer);
@@ -453,7 +453,7 @@ async function evaluateRedirectChain(details) {
   if (!chain || chain.hops.length === 0) return;
   delete REDIRECT_CHAINS[details.tabId];
   let cfg = {};
-  try { const s = await localGet('webwarden_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.webwarden_config) || {}); } catch (_) {}
+  try { const s = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); } catch (_) {}
   if (cfg.enabled === false || cfg.detectRedirectChains === false) return;
   const hops = chain.hops.length;
   const distinctDomains = chain.domains.length;
@@ -710,11 +710,11 @@ const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
 });
 
 chrome.runtime.onInstalled.addListener((details) => {
-  chrome.storage.local.get('webwarden_config', (res) => {
-    if (!res || !res.webwarden_config) {
-      localSet({ webwarden_config: Object.assign({}, DEFAULT_CONFIG) }).catch(() => {});
+  chrome.storage.local.get('wardenone_config', (res) => {
+    if (!res || !res.wardenone_config) {
+      localSet({ wardenone_config: Object.assign({}, DEFAULT_CONFIG) }).catch(() => {});
     } else if (details && details.reason === 'update') {
-      const cfg = Object.assign({}, res.webwarden_config || {});
+      const cfg = Object.assign({}, res.wardenone_config || {});
       let changed = false;
       if (cfg.__locationPrivacyV344Enabled !== true) {
         // Preserve an explicit user choice from older releases. The migration is
@@ -731,7 +731,7 @@ chrome.runtime.onInstalled.addListener((details) => {
         cfg.__searchCleanupSplitV352Enabled = true;
         changed = true;
       }
-      if (changed) localSet({ webwarden_config: cfg }).catch(() => {});
+      if (changed) localSet({ wardenone_config: cfg }).catch(() => {});
     }
   });
   if (details && details.reason === 'install') {
@@ -768,8 +768,8 @@ chrome.runtime.onStartup?.addListener(() => {
  * does NOT let us block another extension's update or scan it for malware. This
  * is an early-warning system so YOU can review/remove, not a hard block.
  * ========================================================================== */
-const EXT_BASELINE_KEY = 'webwarden_ext_baseline';
-const EXT_ALERTS_KEY = 'webwarden_ext_alerts';
+const EXT_BASELINE_KEY = 'wardenone_ext_baseline';
+const EXT_ALERTS_KEY = 'wardenone_ext_alerts';
 const EXT_ALERTS_MAX = 30;
 // permissions we consider high-risk if newly gained (label shown to the user)
 const EXT_HIGH_RISK_PERMS = {
@@ -802,8 +802,8 @@ function extPermSet(ext) {
 
 async function watcherEnabled() {
   try {
-    const s = await localGet('webwarden_config');
-    const cfg = (s && s.webwarden_config) || {};
+    const s = await localGet('wardenone_config');
+    const cfg = (s && s.wardenone_config) || {};
     return cfg.enabled !== false && cfg.watchExtensionPermissions !== false;
   } catch (_) { return false; }
 }
@@ -863,11 +863,11 @@ async function checkExtensionForNewPermissions(ext) {
       if (await extensionUiAllowed()) {
         // a visible notification -- this is important enough to surface immediately
         try {
-          chrome.notifications.create('ww-extperm-' + ext.id + '-' + Date.now(), {
+          chrome.notifications.create('wo-extperm-' + ext.id + '-' + Date.now(), {
             type: 'basic',
             iconUrl: 'icons/icon128.png',
             title: 'Extension gained new permissions',
-            message: (ext.name || 'An extension') + ' ' + alert.gained[0] + (alert.gained.length > 1 ? ' (and ' + (alert.gained.length - 1) + ' more)' : '') + '. Tap Warden One to review.',
+            message: (ext.name || 'An extension') + ' ' + alert.gained[0] + (alert.gained.length > 1 ? ' (and ' + (alert.gained.length - 1) + ' more)' : '') + '. Tap WardenOne to review.',
             priority: 2,
           });
         } catch (_) {}
@@ -923,7 +923,7 @@ importScripts('background-startup.js');
 // as the services rotate them, so pulling daily keeps the block current without
 // shipping a new extension version. Add/remove sources freely.
 //
-// NOTE: these are community lists -- Warden One validates every entry (must be a
+// NOTE: these are community lists -- WardenOne validates every entry (must be a
 // well-formed domain) and caps the total, so a compromised/garbage source can't
 // inject arbitrary rules. Plain-domain and uBlock(`||domain^`, `domain/*`)
 // formats are both parsed.
@@ -1049,10 +1049,10 @@ const REMOTE_LIST_URL = '';
 // DNR blocklists cover network blocking, but some protections need data inside
 // the content script: the adult-site warning gate, page-visible IP-grabber
 // warnings, and the payment guard's known processor hints. These are data-only
-// feeds, cached separately from webwarden_config so they can grow without
+// feeds, cached separately from wardenone_config so they can grow without
 // bloating user settings or requiring an extension update.
-const SUPPLEMENTAL_LIST_STORAGE_KEY = 'webwarden_aux_lists';
-const SUPPLEMENTAL_LIST_META_KEY = 'webwarden_aux_list_meta';
+const SUPPLEMENTAL_LIST_STORAGE_KEY = 'wardenone_aux_lists';
+const SUPPLEMENTAL_LIST_META_KEY = 'wardenone_aux_list_meta';
 const SUPPLEMENTAL_LIST_VERSION = 1;
 const SUPPLEMENTAL_LIST_CAPS = {
   adultDomainsExtra: 3000,
@@ -1078,19 +1078,19 @@ const SUPPLEMENTAL_LIST_SOURCES = [
 ];
 
 // Payment processors relax warnings, so they are NOT pulled from community
-// blocklists. If Warden One ships an owner-controlled manifest, it can include:
+// blocklists. If WardenOne ships an owner-controlled manifest, it can include:
 // { "version": 1, "adultDomains": [], "ipLoggerDomains": [],
 //   "paymentProcessorDomains": [], "scamDomains": [], "phishingDomains": [] }
 // Scam/phishing manifest entries are parsed for future use but the existing DNR
 // updater remains the enforcement path for those categories. Set this to a
-// Warden One-owned HTTPS JSON endpoint once that endpoint exists; keeping it as a
+// WardenOne-owned HTTPS JSON endpoint once that endpoint exists; keeping it as a
 // single audited constant avoids adding arbitrary remote config fetches.
 const SUPPLEMENTAL_BUNDLED_MANIFEST_PATH = 'supplemental-manifest.json';
 const SUPPLEMENTAL_MANIFEST_URL = '';
 const SUPPLEMENTAL_MANIFEST_SOURCES = [
-  { url: 'webwarden-bundled:' + SUPPLEMENTAL_BUNDLED_MANIFEST_PATH, bucket: 'manifest', label: 'webwarden-bundled-manifest', manifest: true, localPath: SUPPLEMENTAL_BUNDLED_MANIFEST_PATH },
+  { url: 'wardenone-bundled:' + SUPPLEMENTAL_BUNDLED_MANIFEST_PATH, bucket: 'manifest', label: 'wardenone-bundled-manifest', manifest: true, localPath: SUPPLEMENTAL_BUNDLED_MANIFEST_PATH },
   SUPPLEMENTAL_MANIFEST_URL,
-].filter(Boolean).map((source) => typeof source === 'string' ? { url: source, bucket: 'manifest', label: 'webwarden-manifest', manifest: true } : source);
+].filter(Boolean).map((source) => typeof source === 'string' ? { url: source, bucket: 'manifest', label: 'wardenone-manifest', manifest: true } : source);
 const SUPPLEMENTAL_SOURCE_URLS = SUPPLEMENTAL_LIST_SOURCES.concat(SUPPLEMENTAL_MANIFEST_SOURCES).map((s) => s.url);
 
 // ======================= AdShield cosmetic engine =======================
@@ -1358,30 +1358,30 @@ async function updateAdShieldCosmetics() {
     if (!combinedText.trim()) return; // keep whatever we had
     const parsed = parseCosmeticFilters(combinedText);
     const hash = await sha256TextHex(JSON.stringify(parsed));
-    const old = await localGet(['webwarden_adshield_cosmetic_hash']);
-    if (hash && old && old.webwarden_adshield_cosmetic_hash === hash) {
-      await localSet({ webwarden_adshield_cosmetic_checked_at: Date.now() });
+    const old = await localGet(['wardenone_adshield_cosmetic_hash']);
+    if (hash && old && old.wardenone_adshield_cosmetic_hash === hash) {
+      await localSet({ wardenone_adshield_cosmetic_checked_at: Date.now() });
       await writeStorageTelemetry('adshield-cosmetic-unchanged', { cosmeticHash: hash });
       return;
     }
     try {
       await localSet({
-        webwarden_adshield_cosmetic: parsed,
-        webwarden_adshield_cosmetic_at: Date.now(),
-        webwarden_adshield_cosmetic_hash: hash,
+        wardenone_adshield_cosmetic: parsed,
+        wardenone_adshield_cosmetic_at: Date.now(),
+        wardenone_adshield_cosmetic_hash: hash,
       });
     } catch (e) {
       await pruneStorageIfNeeded('adshield-cosmetic-quota');
       await localSet({
-        webwarden_adshield_cosmetic: parsed,
-        webwarden_adshield_cosmetic_at: Date.now(),
-        webwarden_adshield_cosmetic_hash: hash,
+        wardenone_adshield_cosmetic: parsed,
+        wardenone_adshield_cosmetic_at: Date.now(),
+        wardenone_adshield_cosmetic_hash: hash,
       });
     }
     invalidateCosmeticCache(); // fresh blob written -- drop the in-memory copy so the next request reloads it
     await pruneStorageIfNeeded('adshield-cosmetic');
   } catch (e) {
-    console.warn('[Warden One] AdShield cosmetic update failed', e);
+    console.warn('[WardenOne] AdShield cosmetic update failed', e);
   }
 }
 
@@ -1410,12 +1410,12 @@ function invalidateCosmeticCache() {
 async function getCosmeticMem() {
   if (__cosmeticMem) return __cosmeticMem;
   const store = await chrome.storage.local.get([
-    'webwarden_adshield_cosmetic', 'webwarden_config', 'webwarden_adshield_allowlist',
+    'wardenone_adshield_cosmetic', 'wardenone_config', 'wardenone_adshield_allowlist',
   ]);
   __cosmeticMem = {
-    data: store.webwarden_adshield_cosmetic || null,
-    cfg: store.webwarden_config || {},
-    allow: normalizeAllowlistHosts(store.webwarden_adshield_allowlist || []),
+    data: store.wardenone_adshield_cosmetic || null,
+    cfg: store.wardenone_config || {},
+    allow: normalizeAllowlistHosts(store.wardenone_adshield_allowlist || []),
   };
   return __cosmeticMem;
 }
@@ -1564,7 +1564,7 @@ const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDG
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET;
 // Guards: assert at module load that the budget fits, catching silent drift.
 if (TOTAL_DYNAMIC_BUDGET > 30000) {
-  console.error('[Warden One] Dynamic rule budget exceeds Chrome 30k ceiling!');
+  console.error('[WardenOne] Dynamic rule budget exceeds Chrome 30k ceiling!');
 }
 const RESOURCE_TYPES = ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'];
 const LIST_FETCH_TIMEOUT_MS = 12000;
@@ -1749,9 +1749,9 @@ const SCRIPT_SHIELD_RULE_BASE = 930000;
 const SCRIPT_SHIELD_RULE_MAX = 1000;
 const FINGERPRINT_SCRIPT_RULE_BASE = 931500;
 const FINGERPRINT_SCRIPT_RULE_MAX = 80;
-const GOOGLE_CLEANUP_CSS_SCRIPT_ID = 'ww-google-cleanup-prepaint-css';
-const SEARCH_AI_CLEANUP_CSS_SCRIPT_ID = 'ww-search-ai-cleanup-prepaint-css';
-const SEARCH_SPONSORED_CLEANUP_CSS_SCRIPT_ID = 'ww-search-sponsored-cleanup-prepaint-css';
+const GOOGLE_CLEANUP_CSS_SCRIPT_ID = 'wo-google-cleanup-prepaint-css';
+const SEARCH_AI_CLEANUP_CSS_SCRIPT_ID = 'wo-search-ai-cleanup-prepaint-css';
+const SEARCH_SPONSORED_CLEANUP_CSS_SCRIPT_ID = 'wo-search-sponsored-cleanup-prepaint-css';
 const GOOGLE_CLEANUP_CSS_MATCHES = [
   '*://*.google.com/search*', '*://*.google.com/webhp*',
   '*://*.google.co.uk/search*', '*://*.google.co.uk/webhp*',
@@ -1771,8 +1771,8 @@ const GOOGLE_CLEANUP_CSS_MATCHES = [
 ];
 const GOOGLE_SEARCH_ALLOW_RULE_BASE = 931700;
 const GOOGLE_SEARCH_ALLOW_RULE_MAX = 20;
-const SCRIPT_SHIELD_MODE_KEY = 'webwarden_script_shield_mode';
-const SCRIPT_TRUSTED_KEY = 'webwarden_script_trusted_hosts';
+const SCRIPT_SHIELD_MODE_KEY = 'wardenone_script_shield_mode';
+const SCRIPT_TRUSTED_KEY = 'wardenone_script_trusted_hosts';
 
 const LOGIN_COMPAT_RESOURCE_TYPES = [
   'main_frame',
@@ -2009,7 +2009,7 @@ function getRepairFramesForTab(tab) {
 }
 
 // ---- Adaptive "learned bad domains" ------------------------------------
-// When Warden One's behavioral scorer (or a grabber detection) flags a domain
+// When WardenOne's behavioral scorer (or a grabber detection) flags a domain
 // that was NOT on any blocklist, we remember it. On the next visit it's blocked
 // by a dynamic DNR rule. The user sees these in the Activity Log's "Learned bad
 // sites" section and can keep or remove each. This is the adaptive memory that
@@ -2026,7 +2026,7 @@ let LEARNED = {}; // { domain: { firstSeen, reason, hits } }
 // Separate from learned bad domains: this learns tracker-like THIRD-PARTY
 // subresources only after they appear across multiple first-party sites. The
 // store never leaves the device. Per-site controls can force allow/block/auto.
-const TRACKER_LEARNER_KEY = 'webwarden_tracker_learner';
+const TRACKER_LEARNER_KEY = 'wardenone_tracker_learner';
 const TRACKER_RULE_BASE = 720000;
 const TRACKER_RULE_MAX = TRACKER_RULES_BUDGET;
 const TRACKER_LEARN_MIN_SITES = 3;
@@ -2070,8 +2070,8 @@ function loadLearned() {
   if (__initLearned) return __initLearned;
   __initLearned = new Promise((resolve) => {
     try {
-      chrome.storage.local.get('webwarden_learned', (r) => {
-        const raw = (r && r.webwarden_learned) || {};
+      chrome.storage.local.get('wardenone_learned', (r) => {
+        const raw = (r && r.wardenone_learned) || {};
         LEARNED = {};
         Object.keys(raw || {}).forEach((domain) => {
           const d = normalizeLearnedDomain(domain);
@@ -2088,8 +2088,8 @@ async function applyLearnedRules() {
   try {
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const oldIds = existing.filter((x) => x.id >= LEARNED_RULE_BASE && x.id < LEARNED_RULE_BASE + LEARNED_MAX).map((x) => x.id);
-    const cfgStore = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.webwarden_config) || {});
+    const cfgStore = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: [] });
       return;
@@ -2110,7 +2110,7 @@ async function applyLearnedRules() {
     });
     if (changed || Object.keys(normalizedLearned).length !== Object.keys(LEARNED || {}).length) {
       LEARNED = normalizedLearned;
-      localSet({ webwarden_learned: LEARNED }).catch(() => {});
+      localSet({ wardenone_learned: LEARNED }).catch(() => {});
     }
     const domains = Object.keys(LEARNED)
       .sort((a, b) => Number((LEARNED[b] && LEARNED[b].hits) || 0) - Number((LEARNED[a] && LEARNED[a].hits) || 0))
@@ -2122,13 +2122,13 @@ async function applyLearnedRules() {
       condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'] },
     }));
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) { console.warn('[Warden One] learned rules failed', e); }
+  } catch (e) { console.warn('[WardenOne] learned rules failed', e); }
 }
 // ---- Feed-updatable IP-grabber list -------------------------------------------
 // The static grabber ruleset (rules.json) is frozen at ship time, but grabber operators
 // rotate domains/TLDs constantly, so the marquee "IP grabbers" protection decays. This adds
 // a DYNAMIC, feed/user-updatable grabber list (bundled grabber-extra.json seed + the
-// chrome.storage.local 'webwarden_grabber_domains' key) applied as dynamic DNR block rules,
+// chrome.storage.local 'wardenone_grabber_domains' key) applied as dynamic DNR block rules,
 // so new grabber front-ends are blocked WITHOUT shipping a new extension version.
 const GRABBER_FEED_RULE_BASE = 740000;
 const GRABBER_FEED_MAX = 1000;
@@ -2146,7 +2146,7 @@ async function applyGrabberFeedRules() {
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const oldIds = existing.filter((x) => x.id >= GRABBER_FEED_RULE_BASE && x.id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX).map((x) => x.id);
     let cfg = {};
-    try { const s = await localGet('webwarden_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.webwarden_config) || {}); } catch (_) {}
+    try { const s = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); } catch (_) {}
     const grabberOff = cfg.blockGrabberResources === false && cfg.warnGrabberDomains === false && cfg.blockMalwareSites === false;
     const domains = (cfg.enabled === false || grabberOff) ? [] : Array.from(GRABBER_FEED_DOMAINS).slice(0, GRABBER_FEED_MAX);
     const addRules = domains.map((d, i) => ({
@@ -2156,7 +2156,7 @@ async function applyGrabberFeedRules() {
       condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'media', 'object', 'other'] },
     }));
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) { console.warn('[Warden One] grabber feed rules failed', e); }
+  } catch (e) { console.warn('[WardenOne] grabber feed rules failed', e); }
 }
 async function loadGrabberFeed() {
   GRABBER_FEED_DOMAINS.clear();
@@ -2165,8 +2165,8 @@ async function loadGrabberFeed() {
     if (res && res.ok) { const data = await res.json(); addGrabberFeedDomains(Array.isArray(data) ? data : (data && data.domains)); }
   } catch (_) {}
   try {
-    const x = await localGet(['webwarden_grabber_domains', SUPPLEMENTAL_LIST_STORAGE_KEY]);
-    const stored = x && x.webwarden_grabber_domains;
+    const x = await localGet(['wardenone_grabber_domains', SUPPLEMENTAL_LIST_STORAGE_KEY]);
+    const stored = x && x.wardenone_grabber_domains;
     addGrabberFeedDomains(Array.isArray(stored) ? stored : (stored && stored.domains));
     const supplemental = x && x[SUPPLEMENTAL_LIST_STORAGE_KEY];
     addGrabberFeedDomains(supplemental && supplemental.grabberDomainsExtra);
@@ -2183,7 +2183,7 @@ function learnDomain(domain, reason) {
     if (BLOCKED_DOMAINS.has(d)) return;
     if (LEARNED[d]) { LEARNED[d].hits = (LEARNED[d].hits || 1) + 1; }
     else { LEARNED[d] = { firstSeen: Date.now(), reason: String(reason || 'suspicious behavior').slice(0, 80), hits: 1 }; }
-    localSet({ webwarden_learned: LEARNED })
+    localSet({ wardenone_learned: LEARNED })
       .then(() => {
         applyLearnedRules();
         refreshListMetaCounts();
@@ -2309,8 +2309,8 @@ async function applyTrackerLearnerRules() {
     const oldIds = existing
       .filter((x) => x.id >= TRACKER_RULE_BASE && x.id < TRACKER_RULE_BASE + TRACKER_RULE_MAX)
       .map((x) => x.id);
-    const cfgStore = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.webwarden_config) || {});
+    const cfgStore = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false || cfg.trackerLearner === false) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: [] });
       return;
@@ -2343,7 +2343,7 @@ async function applyTrackerLearnerRules() {
       .forEach((domain) => addRule('block', 1800, domain));
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: rules });
   } catch (e) {
-    console.warn('[Warden One] tracker learner rules failed', e);
+    console.warn('[WardenOne] tracker learner rules failed', e);
   }
 }
 
@@ -2361,8 +2361,8 @@ function looksLikeKnownTrackerHost(domain) {
 
 async function noteTrackerObservation(tabUrl, detail) {
   try {
-    const cfgStore = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.webwarden_config) || {});
+    const cfgStore = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false || cfg.trackerLearner === false) return;
     let first = '';
     try { first = normalizeTrackerDomain(new URL(String(tabUrl || '')).hostname); } catch (_) {}
@@ -2415,8 +2415,8 @@ async function trackerLearnerStatus(url) {
   await loadTrackerLearner();
   let enabled = true;
   try {
-    const cfgStore = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.webwarden_config) || {});
+    const cfgStore = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     enabled = cfg.enabled !== false && cfg.trackerLearner !== false;
   } catch (_) {}
   let site = '';
@@ -2487,8 +2487,8 @@ async function setTrackerLearnerSiteMode(url, domain, mode) {
 let BLOCKED_DOMAINS = new Set();
 try {
   __initBlockedDomains = new Promise((resolve) => {
-    chrome.storage.local.get('webwarden_blocked_domains', (r) => {
-      if (r && Array.isArray(r.webwarden_blocked_domains)) BLOCKED_DOMAINS = new Set(r.webwarden_blocked_domains);
+    chrome.storage.local.get('wardenone_blocked_domains', (r) => {
+      if (r && Array.isArray(r.wardenone_blocked_domains)) BLOCKED_DOMAINS = new Set(r.wardenone_blocked_domains);
       resolve();
     });
   });
@@ -2507,10 +2507,10 @@ try {
 // ---- Shared reputation-provider constants --------------------------------
 // Download Guard is implemented in background-downloads.js; these constants stay here
 // because login/page/link reputation checks use the same provider/cache plumbing.
-const DOMAIN_AGE_CACHE_KEY = 'webwarden_domain_age_cache';
+const DOMAIN_AGE_CACHE_KEY = 'wardenone_domain_age_cache';
 const DOMAIN_AGE_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
 const DOMAIN_AGE_TIMEOUT_MS = 4500;
-const WHOISXML_CACHE_KEY = 'webwarden_whoisxml_cache';
+const WHOISXML_CACHE_KEY = 'wardenone_whoisxml_cache';
 const WHOISXML_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
 const WHOISXML_CACHE_MAX = 250;
 const WHOISXML_TIMEOUT_MS = 8500;
@@ -2579,8 +2579,8 @@ function sameStringList(a, b) {
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
-// ---- webwarden_config in-memory cache ----------------------------------------
-// webwarden_config is the single hottest storage key -- it was re-read from
+// ---- wardenone_config in-memory cache ----------------------------------------
+// wardenone_config is the single hottest storage key -- it was re-read from
 // chrome.storage.local on ~40 code paths (every navigation, download scan, message,
 // memory sweep), each an async IPC round-trip that also keeps the service worker awake.
 // We cache it in module memory and keep it fresh from storage.onChanged (and from our own
@@ -2599,12 +2599,12 @@ function __cfgCacheSet(value) {
   __cfgCacheValid = true;
 }
 function localGet(key) {
-  if (key === 'webwarden_config') {
-    if (__cfgCacheValid) return Promise.resolve({ webwarden_config: __cfgClone(__cfgCache) });
-    return new Promise((resolve) => chrome.storage.local.get('webwarden_config', (res) => {
+  if (key === 'wardenone_config') {
+    if (__cfgCacheValid) return Promise.resolve({ wardenone_config: __cfgClone(__cfgCache) });
+    return new Promise((resolve) => chrome.storage.local.get('wardenone_config', (res) => {
       if (chrome.runtime.lastError) { resolve(res || {}); return; } // don't cache a failed read
-      __cfgCacheSet((res && res.webwarden_config) || {});
-      resolve({ webwarden_config: __cfgClone(__cfgCache) });
+      __cfgCacheSet((res && res.wardenone_config) || {});
+      resolve({ wardenone_config: __cfgClone(__cfgCache) });
     }));
   }
   return new Promise((resolve) => chrome.storage.local.get(key, resolve));
@@ -2619,8 +2619,8 @@ function localSet(obj) {
         else {
           // keep the cache fresh immediately on our own writes (before onChanged fires),
           // closing the write->immediate-read staleness window.
-          if (obj && Object.prototype.hasOwnProperty.call(obj, 'webwarden_config')) {
-            __cfgCacheSet(__cfgClone(obj.webwarden_config) || {});
+          if (obj && Object.prototype.hasOwnProperty.call(obj, 'wardenone_config')) {
+            __cfgCacheSet(__cfgClone(obj.wardenone_config) || {});
           }
           resolve();
         }
@@ -2631,7 +2631,7 @@ function localSet(obj) {
   });
 }
 
-const STORAGE_META_KEY = 'webwarden_storage_meta';
+const STORAGE_META_KEY = 'wardenone_storage_meta';
 const STORAGE_SOFT_LIMIT_BYTES = 4 * 1024 * 1024;
 const BLOCKED_DOMAIN_STORAGE_MAX = 30000;
 const BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX = 12000;
@@ -2685,20 +2685,20 @@ async function pruneStorageIfNeeded(reason) {
   const actions = [];
   try {
     const store = await localGet([
-      'webwarden_blocked_domains',
-      'webwarden_history',
+      'wardenone_blocked_domains',
+      'wardenone_history',
       OPENPHISH_CACHE_KEY,
     ]);
 
-    const blocked = store && store.webwarden_blocked_domains;
+    const blocked = store && store.wardenone_blocked_domains;
     if (Array.isArray(blocked) && blocked.length > BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) {
-      await localSet({ webwarden_blocked_domains: blocked.slice(0, BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) });
+      await localSet({ wardenone_blocked_domains: blocked.slice(0, BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) });
       actions.push('blocked_domains:' + blocked.length + '->' + BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX);
     }
 
-    const hist = store && store.webwarden_history;
+    const hist = store && store.wardenone_history;
     if (Array.isArray(hist) && hist.length > HISTORY_STORAGE_PRESSURE_MAX) {
-      await localSet({ webwarden_history: hist.slice(0, HISTORY_STORAGE_PRESSURE_MAX) });
+      await localSet({ wardenone_history: hist.slice(0, HISTORY_STORAGE_PRESSURE_MAX) });
       actions.push('history:' + hist.length + '->' + HISTORY_STORAGE_PRESSURE_MAX);
     }
 
@@ -2729,7 +2729,7 @@ async function persistBlockedDomainsForStorage(domains) {
   for (const cap of caps) {
     try {
       const slice = list.slice(0, cap);
-      await localSet({ webwarden_blocked_domains: slice });
+      await localSet({ wardenone_blocked_domains: slice });
       await pruneStorageIfNeeded('blocked-domains');
       return { ok: true, storedCount: slice.length, cap };
     } catch (e) {
@@ -3031,7 +3031,7 @@ async function checkSafeBrowsingUrl(url, apiKey) {
   if (!key || !url) return null;
   const endpoint = 'https://safebrowsing.googleapis.com/v4/threatMatches:find?key=' + encodeURIComponent(key);
   const body = {
-    client: { clientId: 'webwarden', clientVersion: WW_CLIENT_VERSION },
+    client: { clientId: 'wardenone', clientVersion: WO_CLIENT_VERSION },
     threatInfo: {
       threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
       platformTypes: ['ANY_PLATFORM'],
@@ -3078,22 +3078,22 @@ async function testSafeBrowsingKey(apiKey) {
   }
 }
 
-const SAFE_BROWSING_CACHE_KEY = 'webwarden_safe_browsing_cache';
+const SAFE_BROWSING_CACHE_KEY = 'wardenone_safe_browsing_cache';
 const SAFE_BROWSING_CACHE_MAX = 800;
 const SAFE_BROWSING_CLEAN_TTL_MS = 15 * 60 * 1000;
 const SAFE_BROWSING_HIT_TTL_MS = 5 * 60 * 1000;
-const PHISHTANK_CACHE_KEY = 'webwarden_phishtank_cache';
+const PHISHTANK_CACHE_KEY = 'wardenone_phishtank_cache';
 const PHISHTANK_CACHE_MAX = 1200;
 const PHISHTANK_CLEAN_TTL_MS = 20 * 60 * 1000;
 const PHISHTANK_HIT_TTL_MS = 6 * 60 * 60 * 1000;
 const PHISHTANK_ENDPOINT = 'https://checkurl.phishtank.com/checkurl/';
-const OPENPHISH_CACHE_KEY = 'webwarden_openphish_feed_cache';
+const OPENPHISH_CACHE_KEY = 'wardenone_openphish_feed_cache';
 const OPENPHISH_FEED_URL = 'https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt';
 const OPENPHISH_FEED_TTL_MS = 12 * 60 * 60 * 1000;
 const OPENPHISH_STALE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OPENPHISH_MAX_URLS = 25000;
 const OPENPHISH_FEED_MAX_BYTES = 6 * 1024 * 1024;
-const ABUSEIPDB_CACHE_KEY = 'webwarden_abuseipdb_cache';
+const ABUSEIPDB_CACHE_KEY = 'wardenone_abuseipdb_cache';
 const ABUSEIPDB_CACHE_MAX = 1200;
 const ABUSEIPDB_CLEAN_TTL_MS = 12 * 60 * 60 * 1000;
 const ABUSEIPDB_WARN_TTL_MS = 4 * 60 * 60 * 1000;
@@ -3101,21 +3101,21 @@ const ABUSEIPDB_HIT_TTL_MS = 4 * 60 * 60 * 1000;
 const ABUSEIPDB_ENDPOINT = 'https://api.abuseipdb.com/api/v2/check';
 const ABUSEIPDB_WARN_SCORE = 25;
 const ABUSEIPDB_BLOCK_SCORE = 75;
-const URLHAUS_CACHE_KEY = 'webwarden_urlhaus_cache';
+const URLHAUS_CACHE_KEY = 'wardenone_urlhaus_cache';
 const URLHAUS_CACHE_MAX = 1200;
 const URLHAUS_CLEAN_TTL_MS = 60 * 60 * 1000;
 const URLHAUS_HIT_TTL_MS = 12 * 60 * 60 * 1000;
 const URLHAUS_ENDPOINT = 'https://urlhaus-api.abuse.ch/v1/url/';
 const URLHAUS_HOST_ENDPOINT = 'https://urlhaus-api.abuse.ch/v1/host/';
 const URLHAUS_RECENT_TEST_ENDPOINT = 'https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1/';
-const WHOISXML_REPUTATION_CACHE_KEY = 'webwarden_whoisxml_reputation_cache';
+const WHOISXML_REPUTATION_CACHE_KEY = 'wardenone_whoisxml_reputation_cache';
 const WHOISXML_REPUTATION_CACHE_MAX = 800;
 const WHOISXML_REPUTATION_CLEAN_TTL_MS = 12 * 60 * 60 * 1000;
 const WHOISXML_REPUTATION_WARN_TTL_MS = 6 * 60 * 60 * 1000;
 const WHOISXML_REPUTATION_HIT_TTL_MS = 6 * 60 * 60 * 1000;
 const WHOISXML_REPUTATION_WARN_SCORE = 70;
 const WHOISXML_REPUTATION_BLOCK_SCORE = 20;
-const WHOISXML_THREAT_CACHE_KEY = 'webwarden_whoisxml_threat_cache';
+const WHOISXML_THREAT_CACHE_KEY = 'wardenone_whoisxml_threat_cache';
 const WHOISXML_THREAT_CACHE_MAX = 800;
 const WHOISXML_THREAT_CLEAN_TTL_MS = 12 * 60 * 60 * 1000;
 const WHOISXML_THREAT_HIT_TTL_MS = 6 * 60 * 60 * 1000;
@@ -3148,7 +3148,7 @@ function parseSafeBrowsingDurationMs(value) {
 
 function normalizeSafeBrowsingUrl(url) {
   try {
-    const u = new URL(String(url || ''), 'http://webwarden.local/');
+    const u = new URL(String(url || ''), 'http://wardenone.local/');
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
     if (isLocalOrPrivateHost(u.hostname)) return '';
     u.hash = '';
@@ -3216,8 +3216,8 @@ function scheduleSafeBrowsingCacheWrite() {
 
 async function safeBrowsingConfig() {
   try {
-    const store = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
     const key = String(cfg.downloadSafeBrowsingKey || '').trim();
     return {
       cfg,
@@ -3304,7 +3304,7 @@ async function fetchPhishTankUrl(url, apiKey) {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'X-Warden One-Client': 'webwarden/' + WW_CLIENT_VERSION,
+        'X-WardenOne-Client': 'wardenone/' + WO_CLIENT_VERSION,
       },
       body: body.toString(),
     }, EXTERNAL_REPUTATION_TIMEOUT_MS);
@@ -3370,8 +3370,8 @@ function schedulePhishTankCacheWrite() {
 
 async function phishTankConfig() {
   try {
-    const store = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
     const key = String(cfg.phishTankKey || '').trim();
     return {
       cfg,
@@ -3803,8 +3803,8 @@ function scheduleAbuseIpDbCacheWrite() {
 
 async function abuseIpDbConfig() {
   try {
-    const store = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
     const key = String(cfg.abuseIpDbKey || '').trim();
     return {
       cfg,
@@ -4453,8 +4453,8 @@ async function whoisXmlThreatIntelLookupUrl(url, opts) {
 
 async function urlReputationConfig() {
   try {
-    const store = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
     const key = String(cfg.downloadSafeBrowsingKey || '').trim();
     const phishTankKey = String(cfg.phishTankKey || '').trim();
     const abuseIpDbKey = String(cfg.abuseIpDbKey || '').trim();
@@ -4834,7 +4834,7 @@ async function handleSafeBrowsingNavigation(details) {
       url: safeBrowsingBlockPageUrl({ url, provider: verdict.provider || 'URL reputation', threats: (verdict.threats || []).join(','), context: 'page' }),
     });
   } catch (e) {
-    console.warn('[Warden One] URL reputation page check failed', e);
+    console.warn('[WardenOne] URL reputation page check failed', e);
   }
 }
 
@@ -4915,7 +4915,7 @@ async function testReputationProviderKey(key, opts) {
     const result = await opts.probe(key);
     if (result && result.ok) return { ok: true, message: opts.success };
     if (result && result.rateLimited) {
-      return { ok: true, warning: true, message: label + ' responded but is rate-limited right now. The key is saved and Warden One will retry later.' };
+      return { ok: true, warning: true, message: label + ' responded but is rate-limited right now. The key is saved and WardenOne will retry later.' };
     }
     if (result && result.cloudflare && opts.cloudflare) return { ok: false, error: opts.cloudflare };
     if (result && (result.status === 401 || result.status === 403)) return { ok: false, error: opts.rejected };
@@ -4939,7 +4939,7 @@ function testPhishTankKey(apiKey) {
     probe: (key) => fetchPhishTankUrl('https://www.google.com/', key),
     success: 'PhishTank responded. Verified phishing URL checks are enabled.',
     rejected: 'PhishTank rejected this key or request.',
-    cloudflare: 'PhishTank returned a browser challenge instead of API JSON. Try again later; Warden One did not mark the key as valid.',
+    cloudflare: 'PhishTank returned a browser challenge instead of API JSON. Try again later; WardenOne did not mark the key as valid.',
   });
 }
 
@@ -5293,7 +5293,7 @@ async function applyAllowlistRules(list) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
     __allowlistRulesKey = key;
   } catch (e) {
-    console.warn('[Warden One] allowlist DNR rules failed', e);
+    console.warn('[WardenOne] allowlist DNR rules failed', e);
   }
 }
 
@@ -5361,7 +5361,7 @@ async function applyMediaCompatibilityRules(enabled) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules: frameAllowRules.concat(addRules) });
     __mediaCompatibilityRulesEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] media compatibility DNR rules failed', e);
+    console.warn('[WardenOne] media compatibility DNR rules failed', e);
   }
 }
 
@@ -5396,14 +5396,14 @@ async function applyLoginCompatibilityRules(enabled) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
     __loginCompatibilityRulesEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] login compatibility DNR rules failed', e);
+    console.warn('[WardenOne] login compatibility DNR rules failed', e);
   }
 }
 
 function refreshAllowlistRules() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       if (cfg.enabled === false) { applyAllowlistRules([]); return; }
       applyAllowlistRules(cfg.allowlist || []);
     }).catch(() => {});
@@ -5412,8 +5412,8 @@ function refreshAllowlistRules() {
 
 function refreshMediaCompatibilityRules() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       applyMediaCompatibilityRules(cfg.enabled !== false);
     }).catch(() => {});
   } catch (_) {}
@@ -5421,8 +5421,8 @@ function refreshMediaCompatibilityRules() {
 
 function refreshLoginCompatibilityRules() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       applyLoginCompatibilityRules(cfg.enabled !== false && cfg.loginCompatibility !== false);
     }).catch(() => {});
   } catch (_) {}
@@ -5433,7 +5433,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
   try {
     const cfg = (cfgOverride && typeof cfgOverride === 'object')
       ? cfgOverride
-      : ((await localGet('webwarden_config')).webwarden_config || {});
+      : ((await localGet('wardenone_config')).wardenone_config || {});
     const on = cfg.enabled !== false;
     // the EasyList static pack follows BOTH the master switch and the AdShield toggle
     const adshieldOn = on && cfg.adShield !== false;
@@ -5455,21 +5455,21 @@ async function refreshBlocklistRuleset(cfgOverride) {
     // by the settings-change listener when list composition actually changes; this
     // local refresh path may run on every popup toggle and must stay cheap.
     if (!on) {
-      try { await removeWebWardenDynamicRules(); } catch (_) {}
+      try { await removeWardenOneDynamicRules(); } catch (_) {}
     } else {
       try { applyLearnedRules(); } catch (_) {}
       try { applyTrackerLearnerRules(); } catch (_) {}
     }
   } catch (e) {
-    console.warn('[Warden One] blocklist ruleset toggle failed', e);
+    console.warn('[WardenOne] blocklist ruleset toggle failed', e);
   }
 }
 
-const ALL_COOKIES_BACKUP_KEY = 'webwarden_all_cookies_previous_setting';
+const ALL_COOKIES_BACKUP_KEY = 'wardenone_all_cookies_previous_setting';
 const GLOBAL_COOKIE_PATTERNS = ['<all_urls>', 'http://*/*', 'https://*/*'];
 const COOKIE_SETTING_PROBE_URL = 'https://example.com/';
 const VALID_COOKIE_SETTINGS = new Set(['allow', 'block', 'session_only']);
-const LOCATION_BACKUP_KEY = 'webwarden_location_previous_setting';
+const LOCATION_BACKUP_KEY = 'wardenone_location_previous_setting';
 const GLOBAL_LOCATION_PATTERNS = ['<all_urls>', 'http://*/*', 'https://*/*'];
 const LOCATION_SETTING_PROBE_URL = 'https://example.com/';
 const VALID_LOCATION_SETTINGS = new Set(['allow', 'ask', 'block']);
@@ -5635,7 +5635,7 @@ async function applyAllCookieBlock(enabled) {
     }
     __allCookieBlockEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] all-cookie setting failed', e);
+    console.warn('[WardenOne] all-cookie setting failed', e);
   }
 }
 
@@ -5667,14 +5667,14 @@ async function applyGlobalLocationBlock(enabled) {
     }
     __globalLocationBlockEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] location content setting failed', e);
+    console.warn('[WardenOne] location content setting failed', e);
   }
 }
 
 function refreshAllCookieBlock() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       const on = cfg.enabled !== false;
       applyAllCookieBlock(on && cfg.blockAllCookies === true);
     }).catch(() => {});
@@ -5683,8 +5683,8 @@ function refreshAllCookieBlock() {
 
 function refreshGlobalLocationBlock() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       const on = cfg.enabled !== false;
       applyGlobalLocationBlock(on && cfg.blockGeolocation === true);
     }).catch(() => {});
@@ -5694,8 +5694,8 @@ function refreshGlobalLocationBlock() {
 let __refreshExtensionStateLastKey = '';
 function refreshExtensionState() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       const on = cfg.enabled !== false;
       const stateKey = [
         on ? 1 : 0,
@@ -5861,14 +5861,14 @@ async function reconcileGoogleCleanupCssInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   let cfg = cfgArg;
   if (!cfg) {
-    try { cfg = ((await localGet('webwarden_config')).webwarden_config || {}); } catch (_) { cfg = {}; }
+    try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
   }
   try {
     try { await chrome.scripting.unregisterContentScripts({ ids: [GOOGLE_CLEANUP_CSS_SCRIPT_ID] }); } catch (_) {}
     await reconcileSearchCleanupCssScript(SEARCH_AI_CLEANUP_CSS_SCRIPT_ID, 'search-ai-cleanup.css', searchAiCleanupActive(cfg));
     await reconcileSearchCleanupCssScript(SEARCH_SPONSORED_CLEANUP_CSS_SCRIPT_ID, 'search-sponsored-cleanup.css', searchSponsoredCleanupActive(cfg));
   } catch (e) {
-    console.warn('[Warden One] search cleanup pre-paint CSS registration failed', e);
+    console.warn('[WardenOne] search cleanup pre-paint CSS registration failed', e);
   }
 }
 
@@ -5879,7 +5879,7 @@ async function reconcileGoogleCleanupCssInjection(cfgArg) {
 // script ONLY while theming is actually active, and tear it down otherwise. When
 // active it is the SAME file at document_start (registered with persistAcrossSessions
 // so it runs even while the service worker is asleep -- no flash, no SW wake).
-const EYESHIELD_SCRIPT_ID = 'ww-eyeshield-dynamic';
+const EYESHIELD_SCRIPT_ID = 'wo-eyeshield-dynamic';
 function eyeShieldThemingActive(cfg) {
   cfg = cfg || {};
   if (cfg.enabled === false) return false;
@@ -5919,7 +5919,7 @@ async function reconcileEyeShieldInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   let cfg = cfgArg;
   if (!cfg) {
-    try { cfg = ((await localGet('webwarden_config')).webwarden_config || {}); } catch (_) { cfg = {}; }
+    try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
   }
   const want = eyeShieldThemingActive(cfg);
   let have = false;
@@ -5953,7 +5953,7 @@ async function reconcileEyeShieldInjection(cfgArg) {
 // Auto Reject Consent is ON by default, but still registered lazily from config.
 // Loading its DOM scanner into every frame while the feature is off costs parse
 // time, a storage read, and listeners on every page.
-const CONSENT_REJECT_SCRIPT_ID = 'ww-consent-reject-dynamic';
+const CONSENT_REJECT_SCRIPT_ID = 'wo-consent-reject-dynamic';
 // Origins where auto-consent-reject must NEVER run. consent-reject.js synthetically clicks
 // "reject / opt-out / disable all" controls; on login/SSO/OAuth, captcha challenge frames,
 // and payment/checkout that risks dismissing a real auth/payment step or flipping an
@@ -6015,7 +6015,7 @@ async function reconcileConsentRejectInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   let cfg = cfgArg;
   if (!cfg) {
-    try { cfg = ((await localGet('webwarden_config')).webwarden_config || {}); } catch (_) { cfg = {}; }
+    try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
   }
   const want = consentRejectActive(cfg);
   let have = false;
@@ -6080,7 +6080,7 @@ async function applyPrivacyHeaderRule(enabled) {
     });
     __privacyHeaderRuleEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] privacy header rule failed', e);
+    console.warn('[WardenOne] privacy header rule failed', e);
   }
 }
 
@@ -6112,7 +6112,7 @@ async function applyLocationPrivacyHeaderRule(enabled) {
     });
     __locationPrivacyHeaderRuleEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] location privacy header rule failed', e);
+    console.warn('[WardenOne] location privacy header rule failed', e);
   }
 }
 
@@ -6140,7 +6140,7 @@ async function applyIpLookupBlockRules(enabled) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
     __ipLookupBlockRulesEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] IP lookup block rules failed', e);
+    console.warn('[WardenOne] IP lookup block rules failed', e);
   }
 }
 
@@ -6171,15 +6171,15 @@ async function applyThirdPartyCookieRule(enabled) {
     });
     __thirdPartyCookieRuleEnabled = enabled;
   } catch (e) {
-    console.warn('[Warden One] third-party cookie rule failed', e);
+    console.warn('[WardenOne] third-party cookie rule failed', e);
   }
 }
 
 // Read the setting and apply. Called on install/startup and whenever settings change.
 function refreshPrivacyHeaders() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       const on = cfg.enabled !== false;
       applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false);
       applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false);
@@ -6223,21 +6223,21 @@ async function applyHttpsUpgradeRule(enabled) {
     });
     sessionOk = true;
   } catch (e) {
-    console.warn('[Warden One] https session upgrade rule failed', e);
+    console.warn('[WardenOne] https session upgrade rule failed', e);
   }
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({
       addRules: [httpsUpgradeRule(HTTPS_UPGRADE_DYNAMIC_RULE_ID)],
     });
   } catch (e) {
-    console.warn(sessionOk ? '[Warden One] persistent https upgrade rule failed' : '[Warden One] https upgrade rule failed', e);
+    console.warn(sessionOk ? '[WardenOne] persistent https upgrade rule failed' : '[WardenOne] https upgrade rule failed', e);
   }
   if (sessionOk) __httpsUpgradeRuleEnabled = enabled;
 }
 function refreshHttpsUpgrade() {
   try {
-    localGet('webwarden_config').then((res) => {
-      const cfg = (res && res.webwarden_config) || {};
+    localGet('wardenone_config').then((res) => {
+      const cfg = (res && res.wardenone_config) || {};
       const on = cfg.enabled !== false;
       applyHttpsUpgradeRule(on && cfg.forceHttps === true);
     }).catch(() => {});
@@ -6245,7 +6245,7 @@ function refreshHttpsUpgrade() {
 }
 
 // ---- Certificate Guard ----------------------------------------------------
-// Chrome does the real TLS validation. Warden One listens for top-level
+// Chrome does the real TLS validation. WardenOne listens for top-level
 // certificate/SSL failures, logs them, and replaces the raw browser error with a
 // clear "Connection Not Trusted" block page. Chrome does not expose full cert
 // metadata to MV3 extensions, so we classify from the browser error name.
@@ -6317,7 +6317,7 @@ function classifyTrustError(error, url, cfg, tabId) {
       action: 'Blocked',
       risk: 'This site did not provide a usable HTTPS connection, so traffic could fall back to plain HTTP.',
       problem: 'HTTPS unavailable',
-      why: 'Warden One forced HTTPS before the insecure request was sent, but the site did not complete a secure connection.',
+      why: 'WardenOne forced HTTPS before the insecure request was sent, but the site did not complete a secure connection.',
       host,
       originalUrl: httpRec.url,
     };
@@ -6353,8 +6353,8 @@ async function handleTrustError(details) {
     const url = String(details.url || '');
     if (!/^https?:\/\//i.test(url)) return;
 
-    const store = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
     if (cfg.enabled === false || cfg.certificateGuard === false) return;
 
     const info = classifyTrustError(details.error, url, cfg, details.tabId);
@@ -6387,7 +6387,7 @@ async function handleTrustError(details) {
 
     await tabsUpdate(details.tabId, { url: trustErrorPageUrl(info, url, details.error) });
   } catch (e) {
-    console.warn('[Warden One] certificate guard failed', e);
+    console.warn('[WardenOne] certificate guard failed', e);
   }
 }
 
@@ -6397,40 +6397,40 @@ try {
     { urls: ['<all_urls>'], types: ['main_frame'] }
   );
 } catch (e) {
-  console.warn('[Warden One] certificate guard listener failed', e);
+  console.warn('[WardenOne] certificate guard listener failed', e);
 }
 
 // Re-apply when the user changes settings (session rules are cleared on browser
 // restart, so we also call this on startup below).
 chrome.storage.onChanged.addListener((changes, area) => {
-  // Keep the webwarden_config in-memory cache fresh on writes from ANY source (the popup,
+  // Keep the wardenone_config in-memory cache fresh on writes from ANY source (the popup,
   // other extension contexts, or our own localSet). newValue is the full post-write config.
-  if (area === 'local' && changes.webwarden_config) {
-    __cfgCacheSet(__cfgClone(changes.webwarden_config.newValue) || {});
+  if (area === 'local' && changes.wardenone_config) {
+    __cfgCacheSet(__cfgClone(changes.wardenone_config.newValue) || {});
   }
   // A feed (or manual edit) that updates the local known-malware hash set -> reload it.
-  if (area === 'local' && changes.webwarden_malware_hashes) {
+  if (area === 'local' && changes.wardenone_malware_hashes) {
     loadMalwareHashes();
   }
   // A feed (or manual edit) that updates the grabber domain list -> re-apply its dynamic rules.
-  if (area === 'local' && (changes.webwarden_grabber_domains || changes[SUPPLEMENTAL_LIST_STORAGE_KEY])) {
+  if (area === 'local' && (changes.wardenone_grabber_domains || changes[SUPPLEMENTAL_LIST_STORAGE_KEY])) {
     loadGrabberFeed();
   }
   // Any change to the inputs the cosmetic cache is built from must drop it, so
   // the next page request rebuilds from fresh data (config toggle, per-site
   // allowlist edit, or a refreshed filter blob). updateAdShieldCosmetics also
   // invalidates directly; this covers writes from every other code path.
-  if (area === 'local' && (changes.webwarden_config || changes.webwarden_adshield_allowlist || changes.webwarden_adshield_cosmetic)) {
+  if (area === 'local' && (changes.wardenone_config || changes.wardenone_adshield_allowlist || changes.wardenone_adshield_cosmetic)) {
     invalidateCosmeticCache();
   }
-  if (area === 'local' && changes.webwarden_config) {
+  if (area === 'local' && changes.wardenone_config) {
     scheduleExtensionStateRefresh();
     // If the tab-limit settings changed (enabled, limit, or close mode), enforce right
     // away so excess tabs are trimmed immediately -- not only on the next tab you open.
     try {
-      const o = changes.webwarden_config.oldValue || {};
-      const n = changes.webwarden_config.newValue || {};
-      const hadOldConfig = !!(changes.webwarden_config.oldValue && typeof changes.webwarden_config.oldValue === 'object');
+      const o = changes.wardenone_config.oldValue || {};
+      const n = changes.wardenone_config.newValue || {};
+      const hadOldConfig = !!(changes.wardenone_config.oldValue && typeof changes.wardenone_config.oldValue === 'object');
       const listCompositionChanged = [
         'enabled',
         'blockMalwareSites',
@@ -6459,7 +6459,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 function scheduleUpdates() {
   try {
-    chrome.alarms.create('webwarden-list-update', { periodInMinutes: 1440 }); // daily
+    chrome.alarms.create('wardenone-list-update', { periodInMinutes: 1440 }); // daily
   } catch (_) {}
 }
 
@@ -6470,12 +6470,12 @@ function scheduleUpdates() {
 // missed, then fall back to the normal daily cadence. Integrity rejections and
 // the user's own toggles are NOT transient, so they never trigger a retry.
 const LIST_RETRY_BACKOFF_MIN = [4, 12, 40]; // minutes between retries; then give up until daily
-const LIST_RETRY_ALARM = 'webwarden-list-retry';
+const LIST_RETRY_ALARM = 'wardenone-list-retry';
 async function getListRetryCount() {
-  try { const s = await localGet(['webwarden_list_retry_n']); return (s && s.webwarden_list_retry_n) || 0; } catch (_) { return 0; }
+  try { const s = await localGet(['wardenone_list_retry_n']); return (s && s.wardenone_list_retry_n) || 0; } catch (_) { return 0; }
 }
 async function setListRetryCount(n) {
-  try { if (n) { await localSet({ webwarden_list_retry_n: n }); } else { await chrome.storage.local.remove('webwarden_list_retry_n'); } } catch (_) {}
+  try { if (n) { await localSet({ wardenone_list_retry_n: n }); } else { await chrome.storage.local.remove('wardenone_list_retry_n'); } } catch (_) {}
 }
 function listUpdateNeedsRetry(result) {
   if (!result || result.skipped) return false;                          // disabled / auto-update off
@@ -6511,10 +6511,10 @@ async function updateRemoteListsWithRetry(reason) {
 }
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
-  if (alarm && alarm.name === 'webwarden-list-update') updateRemoteListsWithRetry('alarm');
+  if (alarm && alarm.name === 'wardenone-list-update') updateRemoteListsWithRetry('alarm');
   if (alarm && alarm.name === LIST_RETRY_ALARM) updateRemoteListsWithRetry('retry');
-  if (alarm && alarm.name === 'webwarden-startup-check') runStartupCheck('startup');
-  if (alarm && alarm.name === 'webwarden-memory-sweep') {
+  if (alarm && alarm.name === 'wardenone-startup-check') runStartupCheck('startup');
+  if (alarm && alarm.name === 'wardenone-memory-sweep') {
     // PERF (weak machines): read config ONCE per wake (was 3x storage.get +
     // implicit work even when disabled) and skip all sweep work when Memory
     // Shield is off, so the SW does nothing on wake for users who turned it off.
@@ -6545,8 +6545,8 @@ const FORGET_PERSISTENCE_PROTECTED_DOMAINS = new Set([
 ]);
 
 async function getForgetConfig() {
-  const store = await localGet('webwarden_config');
-  const cfg = (store && store.webwarden_config) || {};
+  const store = await localGet('wardenone_config');
+  const cfg = (store && store.wardenone_config) || {};
   const allConfirmed = cfg.forgetMeMode === 'all' && Number(cfg.forgetMeAllConfirmedAt || 0) > 0;
   return {
     mode: cfg.forgetMeMode === 'list' ? 'list' : allConfirmed ? 'all' : 'off',
@@ -6711,7 +6711,7 @@ function domainToRule(domain, id) {
   };
 }
 
-function isWebWardenDynamicRuleId(id) {
+function isWardenOneDynamicRuleId(id) {
   return (id >= DYNAMIC_RULE_BASE && id < DYNAMIC_RULE_BASE + MAX_DYNAMIC)
     || (id >= OPTION_RULE_BASE && id < OPTION_RULE_BASE + OPTION_RULES_MAX)
     || (id >= LEARNED_RULE_BASE && id < LEARNED_RULE_BASE + LEARNED_MAX)
@@ -6723,9 +6723,9 @@ function isWebWardenDynamicRuleId(id) {
     || (id >= GOOGLE_SEARCH_ALLOW_RULE_BASE && id < GOOGLE_SEARCH_ALLOW_RULE_BASE + GOOGLE_SEARCH_ALLOW_RULE_MAX);
 }
 
-async function removeWebWardenDynamicRules() {
+async function removeWardenOneDynamicRules() {
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
-  const ids = existing.filter((r) => isWebWardenDynamicRuleId(r.id)).map((r) => r.id);
+  const ids = existing.filter((r) => isWardenOneDynamicRuleId(r.id)).map((r) => r.id);
   if (ids.length) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids });
 }
 
@@ -6769,8 +6769,8 @@ async function removeTrustedScriptHost(host) {
 async function applyScriptShieldRules(mode, trustedHosts) {
   try {
     mode = normalizeScriptShieldMode(mode || await getScriptShieldMode());
-    const cfgStore = await localGet('webwarden_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.webwarden_config) || {});
+    const cfgStore = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const oldIds = existing
       .filter((r) => r.id >= SCRIPT_SHIELD_RULE_BASE && r.id < SCRIPT_SHIELD_RULE_BASE + SCRIPT_SHIELD_RULE_MAX)
@@ -6795,7 +6795,7 @@ async function applyScriptShieldRules(mode, trustedHosts) {
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
   } catch (e) {
-    console.warn('[Warden One] Script Shield DNR rules failed', e);
+    console.warn('[WardenOne] Script Shield DNR rules failed', e);
   }
 }
 
@@ -6866,7 +6866,7 @@ async function applyFingerprintScriptRules(enabled) {
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
   } catch (e) {
-    console.warn('[Warden One] fingerprint script rules failed', e);
+    console.warn('[WardenOne] fingerprint script rules failed', e);
   }
 }
 
@@ -6939,7 +6939,7 @@ async function applyGoogleSearchSponsoredAllowRules(enabled) {
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
   } catch (e) {
-    console.warn('[Warden One] Google Search sponsored allow rules failed', e);
+    console.warn('[WardenOne] Google Search sponsored allow rules failed', e);
   }
 }
 
@@ -7049,7 +7049,7 @@ async function applyNeverBlockAllowRules() {
       });
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) { console.warn('[Warden One] never-block allow rules failed', e); }
+  } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); }
 }
 applyNeverBlockAllowRules();
 
@@ -7308,7 +7308,7 @@ function parseList(text) {
 function getListMeta() {
   return new Promise((resolve) => {
     try {
-      chrome.storage.local.get('webwarden_list_meta', (x) => resolve((x && x.webwarden_list_meta) || null));
+      chrome.storage.local.get('wardenone_list_meta', (x) => resolve((x && x.wardenone_list_meta) || null));
     } catch (_) {
       resolve(null);
     }
@@ -7337,18 +7337,18 @@ function buildListMeta(base) {
 
 function refreshListMetaCounts() {
   try {
-    chrome.storage.local.get('webwarden_list_meta', (x) => {
-      const oldMeta = x && x.webwarden_list_meta;
+    chrome.storage.local.get('wardenone_list_meta', (x) => {
+      const oldMeta = x && x.wardenone_list_meta;
       if (!oldMeta) return;
       const remoteCount = Number(oldMeta.remoteCount || oldMeta.count || 0);
       const activeRuleCount = Number(oldMeta.activeRuleCount || Math.min(remoteCount, MAX_DYNAMIC));
       const meta = buildListMeta(Object.assign({}, oldMeta, { remoteCount, activeRuleCount }));
-      localSet({ webwarden_list_meta: meta }).catch(() => {});
+      localSet({ wardenone_list_meta: meta }).catch(() => {});
     });
   } catch (_) {}
 }
 
-const LIST_INTEGRITY_KEY = 'webwarden_list_integrity';
+const LIST_INTEGRITY_KEY = 'wardenone_list_integrity';
 const LIST_SOURCE_MIN_BASELINE = 50;
 const LIST_SOURCE_DROP_RATIO = 0.35;
 const LIST_SOURCE_SPIKE_RATIO = 2.5;
@@ -7404,7 +7404,7 @@ async function saveListIntegrity(integrity, acceptedRecords, alerts, reason) {
   });
     return { sources, alerts: nextAlerts };
   } catch (e) {
-    console.warn('[Warden One] list integrity metadata save failed', e);
+    console.warn('[WardenOne] list integrity metadata save failed', e);
     return integrity || { sources: {}, alerts: [] };
   }
 }
@@ -7531,7 +7531,7 @@ async function fetchListSource(url, reason, integrity) {
       optionRules
     );
     if (!verdict.ok) {
-      console.warn('[Warden One] source integrity rejected (' + reason + '):', url, verdict.reason);
+      console.warn('[WardenOne] source integrity rejected (' + reason + '):', url, verdict.reason);
       return {
         ok: false,
         url,
@@ -7544,7 +7544,7 @@ async function fetchListSource(url, reason, integrity) {
         }),
       };
     }
-    console.log('[Warden One] fetched', domains.length, 'domains,', optionRules.length, 'option-rules from', url);
+    console.log('[WardenOne] fetched', domains.length, 'domains,', optionRules.length, 'option-rules from', url);
     return { ok: true, url, domains, optionRules, integrityRecord: verdict.record };
   } catch (e) {
     const err = String(e);
@@ -7558,7 +7558,7 @@ async function fetchListSource(url, reason, integrity) {
         alert: listIntegrityAlert('source', url, clean),
       };
     }
-    console.warn('[Warden One] source failed (' + reason + '):', url, err);
+    console.warn('[WardenOne] source failed (' + reason + '):', url, err);
     return { ok: false, url, error: err };
   }
 }
@@ -7788,11 +7788,11 @@ function getSupplementalListMeta() {
 }
 
 async function updateSupplementalLists(reason) {
-  const store = await localGet('webwarden_config');
-  const cfg = (store && store.webwarden_config) || {};
+  const store = await localGet('wardenone_config');
+  const cfg = (store && store.wardenone_config) || {};
   const previousMeta = await getSupplementalListMeta();
   const forcedUpdate = /^(manual|settings-change|master-reenable|repair)$/i.test(String(reason || ''));
-  if (cfg.enabled === false) return { ok: false, skipped: true, error: 'Warden One is disabled', meta: previousMeta };
+  if (cfg.enabled === false) return { ok: false, skipped: true, error: 'WardenOne is disabled', meta: previousMeta };
   if (cfg.autoUpdateLists === false && !forcedUpdate) return { ok: false, skipped: true, error: 'Auto-update is disabled', meta: previousMeta };
 
   const sources = SUPPLEMENTAL_LIST_SOURCES.concat(SUPPLEMENTAL_MANIFEST_SOURCES).filter((s) => s && s.url);
@@ -7872,7 +7872,7 @@ async function attachSupplementalListUpdate(result, reason) {
 }
 
 if (typeof globalThis !== 'undefined') {
-  globalThis.__webWardenSupplementalListTest = {
+  globalThis.__wardenOneSupplementalListTest = {
     emptySupplementalLists,
     normalizeSupplementalListDomain,
     sanitizeSupplementalLists,
@@ -7934,27 +7934,27 @@ function prioritizedOptionRuleCandidates(buckets) {
 }
 
 // A list refresh can spend several seconds downloading/parsing sources. The user
-// may turn Warden One off during that work, after refreshBlocklistRuleset() has
+// may turn WardenOne off during that work, after refreshBlocklistRuleset() has
 // already removed the old rules. Re-check the live config at the actual DNR
 // commit boundary so that stale work cannot reinstall blocking behind an off
 // master switch. The post-commit check closes the much smaller race where the
 // setting changes while Chrome is applying the atomic rule update.
 async function commitRemoteListRules(removeRuleIds, addRules) {
   const masterEnabled = async () => {
-    const store = await localGet('webwarden_config');
-    const cfg = (store && store.webwarden_config) || {};
+    const store = await localGet('wardenone_config');
+    const cfg = (store && store.wardenone_config) || {};
     return cfg.enabled !== false;
   };
 
   if (!await masterEnabled()) {
-    await removeWebWardenDynamicRules();
+    await removeWardenOneDynamicRules();
     return { applied: false, disabled: true };
   }
 
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
 
   if (!await masterEnabled()) {
-    await removeWebWardenDynamicRules();
+    await removeWardenOneDynamicRules();
     return { applied: false, disabled: true };
   }
   return { applied: true, disabled: false };
@@ -7964,13 +7964,13 @@ let __remoteListUpdateInFlight = null;
 let __remoteListUpdateQueuedReason = '';
 async function updateRemoteListsCore(reason) {
   // respect the user's toggle
-  const store = await localGet('webwarden_config');
-  const cfg = (store && store.webwarden_config) || {};
+  const store = await localGet('wardenone_config');
+  const cfg = (store && store.wardenone_config) || {};
   const previousMeta = await getListMeta();
   const forcedUpdate = /^(manual|settings-change|master-reenable|repair)$/i.test(String(reason || ''));
   if (cfg.enabled === false) {
-    try { await removeWebWardenDynamicRules(); } catch (_) {}
-    return { ok: false, skipped: true, error: 'Warden One is disabled', meta: previousMeta };
+    try { await removeWardenOneDynamicRules(); } catch (_) {}
+    return { ok: false, skipped: true, error: 'WardenOne is disabled', meta: previousMeta };
   }
   if (cfg.autoUpdateLists === false && !forcedUpdate) {
     return { ok: false, skipped: true, error: 'Auto-update is disabled', meta: previousMeta };
@@ -8056,7 +8056,7 @@ async function updateRemoteListsCore(reason) {
 
   // Fail safe: if EVERY source failed, keep existing dynamic rules untouched.
   if (!anySucceeded || !merged.size) {
-    console.warn('[Warden One] no sources reachable; keeping existing rules');
+    console.warn('[WardenOne] no sources reachable; keeping existing rules');
     await saveListIntegrity(integrity, {}, integrityAlerts, reason);
     await warnIfRemoteListsStale(previousMeta, 'No list sources reachable');
     return { ok: false, error: 'No list sources reachable', meta: previousMeta, sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources } };
@@ -8071,7 +8071,7 @@ async function updateRemoteListsCore(reason) {
       remoteCount,
     });
     await saveListIntegrity(integrity, {}, integrityAlerts.concat(alert), reason);
-    console.warn('[Warden One] combined list integrity rejected:', totalDrift);
+    console.warn('[WardenOne] combined list integrity rejected:', totalDrift);
     return {
       ok: false,
       error: 'List integrity guard rejected update: ' + totalDrift,
@@ -8107,7 +8107,7 @@ async function updateRemoteListsCore(reason) {
       return {
         ok: false,
         skipped: true,
-        error: 'Warden One is disabled',
+        error: 'WardenOne is disabled',
         meta: previousMeta,
         sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
       };
@@ -8117,7 +8117,7 @@ async function updateRemoteListsCore(reason) {
     try {
       storedDomains = await persistBlockedDomainsForStorage([...merged]);
     } catch (e) {
-      console.warn('[Warden One] blocked-domain storage failed:', e);
+      console.warn('[WardenOne] blocked-domain storage failed:', e);
     }
     const savedIntegrity = await saveListIntegrity(integrity, acceptedIntegrityRecords, integrityAlerts, reason);
     const activeDomainBuckets = {
@@ -8151,14 +8151,14 @@ async function updateRemoteListsCore(reason) {
         alerts: integrityAlerts.slice(-5),
       },
     });
-    await localSet({ webwarden_list_meta: meta });
+    await localSet({ wardenone_list_meta: meta });
     await applyLearnedRules();
     await applyTrackerLearnerRules();
     await writeStorageTelemetry('remote-list-update', { storedDomainCount: storedDomains.storedCount || 0 });
-    console.log('[Warden One] updated dynamic blocklist:', domains.length, 'domain rules,', optionRules.length, 'option rules,', remoteCount, 'remote domains (' + reason + ')');
+    console.log('[WardenOne] updated dynamic blocklist:', domains.length, 'domain rules,', optionRules.length, 'option rules,', remoteCount, 'remote domains (' + reason + ')');
     return { ok: true, meta };
   } catch (e) {
-    console.warn('[Warden One] failed applying dynamic rules:', e);
+    console.warn('[WardenOne] failed applying dynamic rules:', e);
     await warnIfRemoteListsStale(previousMeta, String(e));
     return { ok: false, error: String(e), meta: previousMeta, sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources } };
   }
@@ -8405,19 +8405,19 @@ function healthListCounts(meta, auxMeta) {
 async function buildProtectionHealthSummary() {
   const now = Date.now();
   const store = await localGet([
-    'webwarden_config',
-    'webwarden_history',
-    'webwarden_list_meta',
+    'wardenone_config',
+    'wardenone_history',
+    'wardenone_list_meta',
     SUPPLEMENTAL_LIST_META_KEY,
     EXT_ALERTS_KEY,
-    typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'webwarden_startup_report',
+    typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'wardenone_startup_report',
   ]);
-  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
-  const hist = Array.isArray(store && store.webwarden_history) ? store.webwarden_history : [];
+  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
+  const hist = Array.isArray(store && store.wardenone_history) ? store.wardenone_history : [];
   const isBlockLike = (type) => /^blocked_|^gated_|^detected_/.test(String(type || ''));
   const blockedTotal = hist.filter((e) => isBlockLike(e && e.type)).length;
   const blocked24h = hist.filter((e) => isBlockLike(e && e.type) && now - Number((e && e.at) || 0) <= 24 * 60 * 60 * 1000).length;
-  const meta = store && store.webwarden_list_meta;
+  const meta = store && store.wardenone_list_meta;
   const auxMeta = store && store[SUPPLEMENTAL_LIST_META_KEY];
   const list = healthListCounts(meta, auxMeta);
   const listAge = list.updated ? now - list.updated : 0;
@@ -8443,7 +8443,7 @@ async function buildProtectionHealthSummary() {
 
   const alerts = Array.isArray(store && store[EXT_ALERTS_KEY]) ? store[EXT_ALERTS_KEY] : [];
   if (alerts.length) addIssue('danger', alerts.length + ' extension permission alert(s) need review.');
-  const startupReport = store && store[typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'webwarden_startup_report'];
+  const startupReport = store && store[typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'wardenone_startup_report'];
   const startupFindings = (startupReport && Array.isArray(startupReport.tabs) ? startupReport.tabs.length : 0)
     + (startupReport && Array.isArray(startupReport.extensions) ? startupReport.extensions.length : 0);
   if (startupFindings) addIssue('warn', startupFindings + ' startup security finding(s) are waiting in the popup.');
@@ -8466,7 +8466,7 @@ async function buildProtectionHealthSummary() {
   const highest = criticalIssue ? 'danger' : setupIssue ? 'warning' : 'ok';
   const status = cfg.enabled === false ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : "You're safe";
   const detail = cfg.enabled === false
-    ? 'Turn the master switch back on to re-enable Warden One.'
+    ? 'Turn the master switch back on to re-enable WardenOne.'
     : criticalIssue
       ? criticalIssue.text
       : setupIssue
@@ -8626,8 +8626,8 @@ function evaluatePermissionChain(events, granted, host) {
 }
 
 async function recordPermissionChainSignal(sender, msg, granted) {
-  const store = await localGet('webwarden_config');
-  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+  const store = await localGet('wardenone_config');
+  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
   if (cfg.enabled === false || cfg.permissionChainGuard === false) return { ok: true, ignored: 'disabled' };
 
   const tab = (sender && sender.tab) || {};
@@ -8676,7 +8676,7 @@ async function recordPermissionChainSignal(sender, msg, granted) {
     reasons: verdict.reasons,
     events: eventSummary,
     why: verdict.reasons[0] || 'This site requested several sensitive browser capabilities in a short time.',
-    action: 'Review this site in Warden One Site permission scanner or reset unused permissions to Ask/Blocked.',
+    action: 'Review this site in WardenOne Site permission scanner or reset unused permissions to Ask/Blocked.',
   };
 
   const shouldWarn = verdict.risk !== 'Low'
@@ -8761,8 +8761,8 @@ function oauthGrantKey(tabId, detail) {
 }
 
 async function recordOAuthGrantWarning(sender, msg) {
-  const store = await localGet('webwarden_config');
-  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+  const store = await localGet('wardenone_config');
+  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
   if (cfg.enabled === false || cfg.oauthGuard === false) return { ok: true, ignored: 'disabled' };
 
   const tab = (sender && sender.tab) || {};
@@ -8805,7 +8805,7 @@ async function recordOAuthGrantWarning(sender, msg) {
   return { ok: true, logged: true };
 }
 
-const SCRIPT_DRIFT_BASELINE_KEY = 'webwarden_script_drift_baselines';
+const SCRIPT_DRIFT_BASELINE_KEY = 'wardenone_script_drift_baselines';
 const SCRIPT_DRIFT_MAX_BASELINES = 700;
 const SCRIPT_DRIFT_MAX_PER_SCAN = 14;
 const SCRIPT_DRIFT_MAX_BYTES = 3 * 1024 * 1024;
@@ -9009,8 +9009,8 @@ function scriptDriftBuildWarning(entry, current, pageHost) {
 }
 
 async function handleScriptDriftScan(sender, msg) {
-  const store = await localGet('webwarden_config');
-  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+  const store = await localGet('wardenone_config');
+  const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
   if (cfg.enabled === false || cfg.scriptDriftGuard === false) return { ok: true, ignored: 'disabled', warnings: [] };
 
   const tab = (sender && sender.tab) || {};
@@ -9093,7 +9093,7 @@ async function handleScriptDriftScan(sender, msg) {
 // Let the popup trigger a manual refresh.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Defense-in-depth: device-wide DESTRUCTIVE actions (clear ALL site data, wipe a
-  // site) must originate from a Warden One extension page (popup/options), never from
+  // site) must originate from a WardenOne extension page (popup/options), never from
   // a content script running on a web page. Extension-page senders have no
   // sender.tab; content scripts always do. Web pages can't message us at all today
   // (no externally_connectable), but this blocks any future/compromised relay path.
@@ -9163,10 +9163,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'apply-onboarding-recommended' && messageSenderIsExtensionPage(sender)) {
     respond((async () => {
-      const store = await localGet('webwarden_config');
-      const current = (store && store.webwarden_config && typeof store.webwarden_config === 'object') ? store.webwarden_config : {};
+      const store = await localGet('wardenone_config');
+      const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
       const merged = Object.assign({}, DEFAULT_CONFIG, current, ONBOARDING_RECOMMENDED);
-      await localSet({ webwarden_config: merged });
+      await localSet({ wardenone_config: merged });
       try { refreshExtensionState(); } catch (_) {}
       return { ok: true };
     })(), sendResponse);
@@ -9174,10 +9174,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'apply-onboarding-max-privacy' && messageSenderIsExtensionPage(sender)) {
     respond((async () => {
-      const store = await localGet('webwarden_config');
-      const current = (store && store.webwarden_config && typeof store.webwarden_config === 'object') ? store.webwarden_config : {};
+      const store = await localGet('wardenone_config');
+      const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
       const merged = Object.assign({}, DEFAULT_CONFIG, current, ONBOARDING_MAX_PRIVACY);
-      await localSet({ webwarden_config: merged });
+      await localSet({ wardenone_config: merged });
       try { refreshExtensionState(); } catch (_) {}
       return { ok: true };
     })(), sendResponse);
@@ -9202,7 +9202,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg && msg.kind === 'download-review-get') {
     if (!messageSenderIsExtensionPath(sender, 'download-review.html')) {
-      try { sendResponse({ ok: false, error: 'Download review must be opened from the Warden One review window.' }); } catch (_) {}
+      try { sendResponse({ ok: false, error: 'Download review must be opened from the WardenOne review window.' }); } catch (_) {}
       return true;
     }
     getPendingDownload(msg.id)
@@ -9213,7 +9213,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg && msg.kind === 'download-review-decision') {
     if (!messageSenderIsExtensionPath(sender, 'download-review.html')) {
-      try { sendResponse({ ok: false, error: 'Download review decisions must come from the Warden One review window.' }); } catch (_) {}
+      try { sendResponse({ ok: false, error: 'Download review decisions must come from the WardenOne review window.' }); } catch (_) {}
       return true;
     }
     handleDownloadDecision(msg.id, msg.decision, sender)
@@ -9303,8 +9303,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'scan-url-virustotal') {
     (async () => {
       try {
-        const store = await localGet('webwarden_config');
-        const cfg = (store && store.webwarden_config) || {};
+        const store = await localGet('wardenone_config');
+        const cfg = (store && store.wardenone_config) || {};
         const key = String(cfg.downloadVirusTotalKey || '').trim();
         if (!key) { sendResponse({ ok: false, error: 'Add your VirusTotal API key in Download Guard first.' }); return; }
         let url = String(msg.url || '').trim();
@@ -9820,7 +9820,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // themselves live in chrome.contentSettings; this list is the durable source
   // of truth so exceptions survive clear() and mode flips. Per-site ALLOW
   // patterns are more specific than the global block pattern, so they win.
-  const JS_ALLOWLIST_KEY = 'webwarden_js_allowlist';
+  const JS_ALLOWLIST_KEY = 'wardenone_js_allowlist';
   const jsDisplayHost = (rawUrl) => {
     try {
       const u = new URL(String(rawUrl || ''));
@@ -9858,8 +9858,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   const buildJsState = async (rawUrl) => {
     const pageHost = jsDisplayHost(rawUrl);
-    const store = await localGet('webwarden_js_global_block');
-    const globalBlocked = !!(store && store.webwarden_js_global_block);
+    const store = await localGet('wardenone_js_global_block');
+    const globalBlocked = !!(store && store.wardenone_js_global_block);
     const storedMode = await getScriptShieldMode();
     const mode = globalBlocked ? 'lockdown' : (storedMode === 'lockdown' ? 'normal' : storedMode);
     let site = 'allow';
@@ -9888,8 +9888,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // REQUIRES a primaryUrl, so the old jsSettingGet({}) always failed and reported
         // 'allow' even while JS was blocked everywhere -- the "toggle says off but JS is
         // still off on every site" bug.
-        const store = await localGet('webwarden_js_global_block');
-        const globalBlocked = !!(store && store.webwarden_js_global_block);
+        const store = await localGet('wardenone_js_global_block');
+        const globalBlocked = !!(store && store.wardenone_js_global_block);
         let site = 'allow';
         if (msg.url && /^https?:/.test(msg.url)) site = (await jsSettingGet({ primaryUrl: msg.url })) || 'allow';
         // Self-heal a stray global block: if we're NOT globally blocking but this site
@@ -9922,11 +9922,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const allowHosts = await jsAllowlistGet();
           const ok = await reconcileJsRules(true, allowHosts);
           if (!ok) { sendResponse({ ok: false, error: 'Could not update JavaScript setting.' }); return; }
-          await localSet({ webwarden_js_global_block: true, [SCRIPT_SHIELD_MODE_KEY]: 'lockdown' });
+          await localSet({ wardenone_js_global_block: true, [SCRIPT_SHIELD_MODE_KEY]: 'lockdown' });
           await applyScriptShieldRules('lockdown');
         } else {
           await jsClearRules();
-          await localSet({ webwarden_js_global_block: false, [SCRIPT_SHIELD_MODE_KEY]: mode });
+          await localSet({ wardenone_js_global_block: false, [SCRIPT_SHIELD_MODE_KEY]: mode });
           await applyScriptShieldRules(mode);
         }
         sendResponse(await buildJsState(msg.url));
@@ -9969,7 +9969,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const allowHosts = await jsAllowlistGet();
             const ok = await reconcileJsRules(true, allowHosts);
             if (!ok) { sendResponse({ ok: false, error: 'Could not update JavaScript setting.' }); return; }
-            await localSet({ webwarden_js_global_block: true, [SCRIPT_SHIELD_MODE_KEY]: 'lockdown' });
+            await localSet({ wardenone_js_global_block: true, [SCRIPT_SHIELD_MODE_KEY]: 'lockdown' });
             await applyScriptShieldRules('lockdown');
             sendResponse(await buildJsState(msg.url));
           } else {
@@ -9978,7 +9978,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             // nothing stays stuck blocked -- this is what was broken before. The
             // stored allowlist is kept (dormant) for the next time block-all is on.
             await jsClearRules();
-            await localSet({ webwarden_js_global_block: false, [SCRIPT_SHIELD_MODE_KEY]: 'normal' });
+            await localSet({ wardenone_js_global_block: false, [SCRIPT_SHIELD_MODE_KEY]: 'normal' });
             await applyScriptShieldRules('normal');
             sendResponse(await buildJsState(msg.url));
           }
@@ -9990,8 +9990,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!patterns) { sendResponse({ ok: false, error: 'Open a normal web page first.' }); return; }
         const origin = normalizeWebOrigin(msg.url);
         if (!origin || !await activeTabMatchesOrigin(origin)) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
-        const store = await localGet('webwarden_js_global_block');
-        const globalBlocked = !!(store && store.webwarden_js_global_block);
+        const store = await localGet('wardenone_js_global_block');
+        const globalBlocked = !!(store && store.wardenone_js_global_block);
         if (globalBlocked) {
           const host = new URL(msg.url).host;
           let list = await jsAllowlistGet();
@@ -10171,8 +10171,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // hard interstitial verdict, not just a soft banner, when the page is risky.
     (async () => {
       try {
-        const store = await localGet('webwarden_config');
-        const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+        const store = await localGet('wardenone_config');
+        const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
         if (cfg.enabled === false || cfg.loginAgeCheck === false) { sendResponse({ ok: false, disabled: true }); return; }
         const maxDays = Number(cfg.loginAgeMaxDays) > 0 ? Number(cfg.loginAgeMaxDays) : 30;
         const host = messageCleanHost(msg.domain);
@@ -10244,8 +10244,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'adshield-status') {
     (async () => {
       try {
-        const store = await chrome.storage.local.get(['webwarden_adshield_cosmetic', 'webwarden_adshield_cosmetic_at', 'webwarden_adshield_allowlist', 'webwarden_config']);
-        const data = store.webwarden_adshield_cosmetic;
+        const store = await chrome.storage.local.get(['wardenone_adshield_cosmetic', 'wardenone_adshield_cosmetic_at', 'wardenone_adshield_allowlist', 'wardenone_config']);
+        const data = store.wardenone_adshield_cosmetic;
         let selectorCount = 0;
         let proceduralCount = 0;
         let scriptletCount = 0;
@@ -10260,12 +10260,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         sendResponse({
           ok: true,
-          enabled: (store.webwarden_config || {}).adShield !== false,
+          enabled: (store.wardenone_config || {}).adShield !== false,
           selectorCount,
           proceduralCount,
           scriptletCount,
-          updatedAt: store.webwarden_adshield_cosmetic_at || 0,
-          allowlistCount: (store.webwarden_adshield_allowlist || []).length,
+          updatedAt: store.wardenone_adshield_cosmetic_at || 0,
+          allowlistCount: (store.wardenone_adshield_allowlist || []).length,
         });
       } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     })();
@@ -10294,8 +10294,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'adshield-allowlist-toggle' && msg.hostname) {
     (async () => {
       try {
-        const store = await chrome.storage.local.get('webwarden_adshield_allowlist');
-        let allow = normalizeAllowlistHosts(store.webwarden_adshield_allowlist || []);
+        const store = await chrome.storage.local.get('wardenone_adshield_allowlist');
+        let allow = normalizeAllowlistHosts(store.wardenone_adshield_allowlist || []);
         const host = normalizeAllowlistHost(msg.hostname);
         if (!host) {
           sendResponse({ ok: false, error: 'Invalid site.' });
@@ -10312,7 +10312,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           nowAllowlisted = true;
         }
         else { allow.splice(idx, 1); nowAllowlisted = false; }
-        await localSet({ webwarden_adshield_allowlist: allow });
+        await localSet({ wardenone_adshield_allowlist: allow });
         sendResponse({ ok: true, allowlisted: nowAllowlisted, host });
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
@@ -10332,14 +10332,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       const d = normalizeLearnedDomain(msg.domain);
       if (d) delete LEARNED[d];
-      localSet({ webwarden_learned: LEARNED }).then(() => { applyLearnedRules(); sendResponse({ ok: true }); }).catch((e) => sendResponse({ ok: false, error: String(e) }));
+      localSet({ wardenone_learned: LEARNED }).then(() => { applyLearnedRules(); sendResponse({ ok: true }); }).catch((e) => sendResponse({ ok: false, error: String(e) }));
     } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     return true; // async
   }
   if (msg && msg.kind === 'clear-learned') {
     try {
       LEARNED = {};
-      localSet({ webwarden_learned: LEARNED }).then(() => { applyLearnedRules(); sendResponse({ ok: true }); }).catch((e) => sendResponse({ ok: false, error: String(e) }));
+      localSet({ wardenone_learned: LEARNED }).then(() => { applyLearnedRules(); sendResponse({ ok: true }); }).catch((e) => sendResponse({ ok: false, error: String(e) }));
     } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     return true; // async
   }
@@ -10362,8 +10362,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'domain-age' && msg.domain) {
     (async () => {
       try {
-        const store = await localGet('webwarden_config');
-        const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.webwarden_config) || {});
+        const store = await localGet('wardenone_config');
+        const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
         const result = await lookupDomainAge(msg.domain, cfg);
         sendResponse(result);
       } catch (e) {
@@ -10382,7 +10382,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const d = registrableDomainBg(String(msg.domain));
         if (!d || isLocalOrPrivateHost(d)) { sendResponse({ ok: false, error: 'public domain required' }); return; }
 
-        const CACHE_KEY = 'webwarden_breach_cache';
+        const CACHE_KEY = 'wardenone_breach_cache';
         const TTL_MS = 12 * 60 * 60 * 1000;
         const now = Date.now();
         const cstore = await localGet(CACHE_KEY);
@@ -10394,7 +10394,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         const res = await fetch('https://haveibeenpwned.com/api/v3/breaches?Domain=' + encodeURIComponent(d), {
-          headers: { 'User-Agent': 'Warden One-Extension' },
+          headers: { 'User-Agent': 'WardenOne-Extension' },
           credentials: 'omit',
           redirect: 'error',
         });
@@ -10584,11 +10584,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       // 3. saved config is a sane object; if corrupted, reset to defaults
       await new Promise((resolve) => {
-        chrome.storage.local.get('webwarden_config', (x) => {
-          const cfg = x && x.webwarden_config;
+        chrome.storage.local.get('wardenone_config', (x) => {
+          const cfg = x && x.wardenone_config;
           const valid = cfg && typeof cfg === 'object' && !Array.isArray(cfg);
           if (!valid) {
-            localSet({ webwarden_config: Object.assign({}, DEFAULT_CONFIG) }).then(() => {
+            localSet({ wardenone_config: Object.assign({}, DEFAULT_CONFIG) }).then(() => {
               report.repaired.push('Reset corrupted settings to safe defaults');
               report.checks.push({ name: 'Saved settings valid', ok: false });
               resolve();
@@ -10603,7 +10603,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             merged.allowlist = normalizeAllowlistHosts(merged.allowlist || []);
             merged.forgetMeList = normalizeAllowlistHosts(merged.forgetMeList || []);
             if (JSON.stringify(merged) !== JSON.stringify(cfg)) {
-              localSet({ webwarden_config: merged }).then(() => {
+              localSet({ wardenone_config: merged }).then(() => {
                 report.repaired.push('Restored missing setting fields and cleaned saved site lists');
                 report.checks.push({ name: 'Saved settings valid', ok: true });
                 resolve();
@@ -10621,14 +10621,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
 
       try {
-        const hostStore = await localGet([DOWNLOAD_TRUSTED_KEY, 'webwarden_adshield_allowlist']);
+        const hostStore = await localGet([DOWNLOAD_TRUSTED_KEY, 'wardenone_adshield_allowlist']);
         const cleanTrusted = normalizeAllowlistHosts(hostStore && hostStore[DOWNLOAD_TRUSTED_KEY], 1000).sort();
         const rawTrusted = Array.isArray(hostStore && hostStore[DOWNLOAD_TRUSTED_KEY]) ? hostStore[DOWNLOAD_TRUSTED_KEY] : [];
-        const cleanAdShield = normalizeAllowlistHosts(hostStore && hostStore.webwarden_adshield_allowlist, 1000).sort();
-        const rawAdShield = Array.isArray(hostStore && hostStore.webwarden_adshield_allowlist) ? hostStore.webwarden_adshield_allowlist : [];
+        const cleanAdShield = normalizeAllowlistHosts(hostStore && hostStore.wardenone_adshield_allowlist, 1000).sort();
+        const rawAdShield = Array.isArray(hostStore && hostStore.wardenone_adshield_allowlist) ? hostStore.wardenone_adshield_allowlist : [];
         const cleanStores = {};
         if (!sameStringList(rawTrusted, cleanTrusted)) cleanStores[DOWNLOAD_TRUSTED_KEY] = cleanTrusted;
-        if (!sameStringList(rawAdShield, cleanAdShield)) cleanStores.webwarden_adshield_allowlist = cleanAdShield;
+        if (!sameStringList(rawAdShield, cleanAdShield)) cleanStores.wardenone_adshield_allowlist = cleanAdShield;
         if (Object.keys(cleanStores).length) {
           await localSet(cleanStores);
           report.repaired.push('Cleaned saved download and AdShield trusted-site lists');
@@ -10663,7 +10663,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       //    the messenger but no actual guard. We count a tab as re-armed only if
       //    the MAIN-world engine injected successfully.
       try {
-        const repairCfg = await new Promise((r) => chrome.storage.local.get('webwarden_config', (x) => r((x && x.webwarden_config) || {})));
+        const repairCfg = await new Promise((r) => chrome.storage.local.get('wardenone_config', (x) => r((x && x.wardenone_config) || {})));
         const isolatedAlwaysFiles = [];
         if (eyeShieldThemingActive(repairCfg)) isolatedAlwaysFiles.push('eyeshield.js');
         isolatedAlwaysFiles.push('bridge.js');

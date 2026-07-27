@@ -1,20 +1,20 @@
 /*
- * Warden One OAuth Grant Guard (ISOLATED world)
+ * WardenOne OAuth Grant Guard (ISOLATED world)
  * Scores OAuth consent grants from major identity providers. The provider can be
  * legitimate while the requested grant is dangerous.
  */
 (function () {
   'use strict';
 
-  if (window.__webWardenOAuthGuardInstalled) return;
-  window.__webWardenOAuthGuardInstalled = true;
+  if (window.__wardenOneOAuthGuardInstalled) return;
+  window.__wardenOneOAuthGuardInstalled = true;
 
   let config = { enabled: true, oauthGuard: true, silentMode: false };
   let configLoaded = false;
   let lastGrantKey = '';
   let lastWarnAt = 0;
 
-  const WW_MODAL = {
+  const WO_MODAL = {
     overlay: 'all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;display:flex!important;align-items:center!important;justify-content:center!important;background:rgba(61,42,82,.48)!important;color:#3d2a52!important;padding:24px!important;font-family:Nunito,system-ui,sans-serif!important;text-align:left!important;backdrop-filter:blur(10px) saturate(1.2)!important;-webkit-backdrop-filter:blur(10px) saturate(1.2)!important;',
     panel: 'all:initial!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;gap:13px!important;max-width:700px!important;width:min(700px,calc(100vw - 32px))!important;border:1px solid rgba(176,106,212,.34)!important;border-left:4px solid #9d54c9!important;border-radius:16px!important;background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;color:#3d2a52!important;padding:22px!important;box-shadow:0 24px 90px rgba(120,55,160,.32)!important;font-family:Nunito,system-ui,sans-serif!important;',
     tag: (risk) => 'all:initial!important;align-self:flex-start!important;border-radius:999px!important;background:' + (/^high$/i.test(String(risk || '')) ? 'linear-gradient(135deg,#d868a2,#9d54c9)' : 'linear-gradient(135deg,#b06ad4,#e07ab0)') + '!important;color:#fff!important;padding:4px 9px!important;font:800 11px/1 Nunito,system-ui,sans-serif!important;box-shadow:0 6px 16px rgba(157,84,201,.22)!important;',
@@ -66,14 +66,14 @@
   }
 
   try {
-    chrome.storage?.local?.get('webwarden_config', (res) => {
-      config = Object.assign({}, config, (res && res.webwarden_config) || {});
+    chrome.storage?.local?.get('wardenone_config', (res) => {
+      config = Object.assign({}, config, (res && res.wardenone_config) || {});
       configLoaded = true;
       setTimeout(scanOAuthGrant, 150);
     });
     chrome.storage?.onChanged?.addListener((changes, area) => {
-      if (area === 'local' && changes.webwarden_config) {
-        config = Object.assign({}, config, changes.webwarden_config.newValue || {});
+      if (area === 'local' && changes.wardenone_config) {
+        config = Object.assign({}, config, changes.wardenone_config.newValue || {});
         configLoaded = true;
       }
     });
@@ -345,35 +345,35 @@
     lastGrantKey = key;
     lastWarnAt = now;
     try {
-      const old = document.getElementById('ww-oauth-guard');
+      const old = document.getElementById('wo-oauth-guard');
       if (old) old.remove();
       const root = document.body || document.documentElement;
       if (!root) return;
       const wrap = document.createElement('div');
-      wrap.id = 'ww-oauth-guard';
-      wrap.setAttribute('style', WW_MODAL.overlay);
+      wrap.id = 'wo-oauth-guard';
+      wrap.setAttribute('style', WO_MODAL.overlay);
       const box = document.createElement('div');
-      box.setAttribute('style', WW_MODAL.panel);
+      box.setAttribute('style', WO_MODAL.panel);
       const tag = document.createElement('div');
-      tag.setAttribute('style', WW_MODAL.tag(grant.risk));
+      tag.setAttribute('style', WO_MODAL.tag(grant.risk));
       tag.textContent = grant.risk + ' OAuth grant';
       const title = document.createElement('div');
-      title.setAttribute('style', WW_MODAL.title);
+      title.setAttribute('style', WO_MODAL.title);
       title.textContent = grant.providerName + ' is real, but this app is asking for powerful access';
       const body = document.createElement('div');
-      body.setAttribute('style', WW_MODAL.body);
+      body.setAttribute('style', WO_MODAL.body);
       const app = grant.appName ? ('App: ' + grant.appName + '. ') : '';
       body.textContent = app + 'Requested access includes: ' + textList(grant.riskyScopes, 'sensitive OAuth scopes') + '. ' + (grant.reasons.length ? grant.reasons[0] + '. ' : '') + 'Do not approve unless you recognize this app and truly need these permissions.';
       const meta = document.createElement('div');
-      meta.setAttribute('style', WW_MODAL.meta);
+      meta.setAttribute('style', WO_MODAL.meta);
       meta.textContent = 'Redirect host: ' + (grant.redirectHost || 'not visible') + ' | Scopes: ' + textList(grant.scopes, 'not visible in URL');
       const status = document.createElement('div');
-      status.setAttribute('style', WW_MODAL.status);
+      status.setAttribute('style', WO_MODAL.status);
       const actions = document.createElement('div');
-      actions.setAttribute('style', WW_MODAL.actions);
+      actions.setAttribute('style', WO_MODAL.actions);
       const mkBtn = (label, primary) => {
         const btn = document.createElement('button');
-        btn.setAttribute('style', WW_MODAL.button(primary));
+        btn.setAttribute('style', WO_MODAL.button(primary));
         btn.textContent = label;
         return btn;
       };

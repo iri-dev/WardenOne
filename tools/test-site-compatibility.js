@@ -162,11 +162,11 @@ function makeBrowserSandbox(rawPageUrl) {
   sandbox.document = {
     activeElement: null,
     addEventListener() {},
-    dispatchEvent(event) { if (event && event.type === 'ww-event') state.emitted.push(event.detail); },
+    dispatchEvent(event) { if (event && event.type === 'wo-event') state.emitted.push(event.detail); },
     getElementsByTagName() { return []; },
     querySelectorAll() { return []; },
   };
-  sandbox.WW = {
+  sandbox.WO = {
     enabled: true,
     strictPopupShield: true,
     blockGesturelessNav: true,
@@ -243,7 +243,7 @@ function installContentNavigationHarness(pageUrl) {
   // favour of compatibility-safe event/DNR checks, native behavior is already
   // represented by the untouched sandbox and the tests below still apply.
   const startMarker = 'let lastGestureAt=0,gestureSpent=!1,lastLoginIntentAt=0;';
-  const endMarker = 'if(WW.blockMetaRefresh){';
+  const endMarker = 'if(WO.blockMetaRefresh){';
   const start = CONTENT.indexOf(startMarker);
   const end = CONTENT.indexOf(endMarker, start);
   if (start >= 0 && end > start) {
@@ -262,7 +262,7 @@ function installAntiRedirect(pageUrl) {
   vm.runInContext(ANTI_REDIRECT, h.sandbox, { filename: 'anti-redirect.js' });
   h.fire('message', {
     source: h.innerWindow,
-    data: { source: 'webwarden-handshake', token: 'compat-test-token' },
+    data: { source: 'wardenone-handshake', token: 'compat-test-token' },
   });
   return h;
 }
@@ -381,7 +381,7 @@ function runReloadLoopProbe(sharedStorage, isTopFrame, counters) {
   sandbox.window = sandbox;
   sandbox.self = sandbox;
   sandbox.top = isTopFrame ? sandbox : { location: { hostname: 'student.example.ac.uk' } };
-  sandbox.WW_TOP = isTopFrame;
+  sandbox.WO_TOP = isTopFrame;
   sandbox.stop = () => { counters.stops++; };
   vm.createContext(sandbox);
   vm.runInContext(CONTENT.slice(start, end + 4), sandbox, {
@@ -499,7 +499,7 @@ test('clean sensitive login submit keeps the original submitter and page handler
   h.sandbox.setTimeout = (fn, ms) => (Number(ms) >= 2000 ? 0 : setTimeout(fn, ms));
 
   const start = CONTENT.indexOf('if(urlReputationOn())try{const allowedForms=new WeakSet');
-  const end = CONTENT.indexOf('if(WW.formTrapDetector)try{', start);
+  const end = CONTENT.indexOf('if(WO.formTrapDetector)try{', start);
   if (start >= 0 && end > start) {
     vm.runInContext(CONTENT.slice(start, end), h.sandbox, {
       filename: 'content.min.js:safe-browsing-form-compatibility',
@@ -540,13 +540,13 @@ test('reload-loop detector counts top-level loads, not same-page frames', () => 
   if (counters.stops || counters.logs.includes('reload_loop_broken')) {
     throw new Error('subframes falsely tripped the reload-loop breaker');
   }
-  const raw = sharedStorage.get('__ww_rl_student.example.ac.uk') || '[]';
+  const raw = sharedStorage.get('__wo_rl_student.example.ac.uk') || '[]';
   const hits = JSON.parse(raw);
   if (hits.length !== 1) throw new Error('expected one top-frame hit, got ' + hits.length);
 });
 
 test('offscreen authentication iframe keeps its src', () => {
-  const start = CONTENT.indexOf('if(WW.lazyLoadMedia)try{');
+  const start = CONTENT.indexOf('if(WO.lazyLoadMedia)try{');
   const end = CONTENT.indexOf('let socialWidgetGuardInstalled=!1;', start);
   if (start < 0 || end <= start) return;
   const iframe = makeAttributeElement(
@@ -556,7 +556,7 @@ test('offscreen authentication iframe keeps its src', () => {
   );
   const observed = [];
   const sandbox = {
-    WW: { lazyLoadMedia: true },
+    WO: { lazyLoadMedia: true },
     innerHeight: 800,
     document: {
       documentElement: {},
@@ -567,7 +567,7 @@ test('offscreen authentication iframe keeps its src', () => {
       observe(el) { observed.push(el); }
       unobserve() {}
     },
-    wwObserve() {},
+    woObserve() {},
     log() {},
   };
   sandbox.window = sandbox;
@@ -575,14 +575,14 @@ test('offscreen authentication iframe keeps its src', () => {
   vm.runInContext(CONTENT.slice(start, end), sandbox, {
     filename: 'content.min.js:auth-iframe-compatibility',
   });
-  if (!iframe.getAttribute('src') || iframe.getAttribute('data-ww-src')) {
+  if (!iframe.getAttribute('src') || iframe.getAttribute('data-wo-src')) {
     throw new Error('lazy-media guard detached the hidden Google auth iframe (observed=' + observed.length + ')');
   }
 });
 
 test('generic SAML meta refresh remains available to the browser', () => {
-  const start = CONTENT.indexOf('if(WW.blockMetaRefresh){');
-  const end = CONTENT.indexOf('if(WW.detectRedirectChains){', start);
+  const start = CONTENT.indexOf('if(WO.blockMetaRefresh){');
+  const end = CONTENT.indexOf('if(WO.detectRedirectChains){', start);
   if (start < 0 || end <= start) return;
   const original = '0; url=https://idp.identity.example/saml/login?SAMLRequest=test&RelayState=portal';
   const meta = makeAttributeElement('meta', { content: original, 'http-equiv': 'refresh' });
@@ -592,12 +592,12 @@ test('generic SAML meta refresh remains available to the browser', () => {
       href: 'https://student.example.ac.uk/sso/start',
       hostname: 'student.example.ac.uk',
     },
-    WW: { blockMetaRefresh: true, __frozen: false },
+    WO: { blockMetaRefresh: true, __frozen: false },
     regDomain: (host) => String(host || '').replace(/^www\./, '').toLowerCase(),
     document: {
       querySelectorAll(selector) { return selector.includes('meta') ? [meta] : []; },
     },
-    wwObserve() {},
+    woObserve() {},
     log() {},
   };
   sandbox.window = sandbox;
@@ -633,7 +633,7 @@ test('same-party subdomain iframe is not classified as a third-party cookie fram
       hostname: 'accounts.ucas.com',
       ancestorOrigins: ['https://apply.ucas.com'],
     },
-    WW: { blockThirdPartyCookies: true },
+    WO: { blockThirdPartyCookies: true },
     log() {},
   };
   sandbox.window = sandbox;
@@ -643,7 +643,7 @@ test('same-party subdomain iframe is not classified as a third-party cookie fram
   vm.runInContext(CONTENT.slice(start, end), sandbox, {
     filename: 'content.min.js:cookie-party-compatibility',
   });
-  if (document.__wwCookieBlockerActive || document.cookie === '') {
+  if (document.__woCookieBlockerActive || document.cookie === '') {
     throw new Error('accounts.ucas.com iframe was treated as third-party to apply.ucas.com');
   }
 });
@@ -664,7 +664,7 @@ test('background does not close a university portal staged blank popup', async (
     Promise,
     Object,
     DEFAULT_CONFIG: { enabled: true, blockForcedPopups: true },
-    localGet: async () => ({ webwarden_config: {} }),
+    localGet: async () => ({ wardenone_config: {} }),
     counts: Object.create(null),
     setBadge() {},
     queueHistory() {},

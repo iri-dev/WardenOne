@@ -1,5 +1,5 @@
 /*
- * Warden One -- bridge (ISOLATED world)
+ * WardenOne -- bridge (ISOLATED world)
  * ====================================
  * The MAIN-world content script (content.js) does the actual blocking, but it
  * can't talk to the extension's background service worker directly. This bridge
@@ -12,15 +12,15 @@
   'use strict';
 
   const BRIDGE_VERSION = '1.0.0';
-  if (window.__webWardenBridgeVersion === BRIDGE_VERSION) {
+  if (window.__wardenOneBridgeVersion === BRIDGE_VERSION) {
     try {
-      if (typeof window.__webWardenBridgeReplay === 'function') {
-        window.__webWardenBridgeReplay();
+      if (typeof window.__wardenOneBridgeReplay === 'function') {
+        window.__wardenOneBridgeReplay();
         return;
       }
     } catch (_) {}
   }
-  window.__webWardenBridgeVersion = BRIDGE_VERSION;
+  window.__wardenOneBridgeVersion = BRIDGE_VERSION;
 
   // A per-page-load routing token. It keeps accidental/cross-extension messages
   // out, but the MAIN-world page can observe window messages, so background-side
@@ -113,7 +113,7 @@
     };
   }
 
-  const WW_MODAL = {
+  const WO_MODAL = {
     overlay: (align) => 'all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;display:flex!important;align-items:center!important;justify-content:center!important;background:rgba(61,42,82,.48)!important;color:#3d2a52!important;padding:24px!important;font-family:Nunito,system-ui,sans-serif!important;text-align:' + (align || 'left') + '!important;backdrop-filter:blur(10px) saturate(1.2)!important;-webkit-backdrop-filter:blur(10px) saturate(1.2)!important;',
     panel: (width, gap) => 'all:initial!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;gap:' + (gap || '13px') + '!important;max-width:' + (width || '680px') + '!important;width:min(' + (width || '680px') + ',calc(100vw - 32px))!important;border:1px solid rgba(176,106,212,.34)!important;border-left:4px solid #9d54c9!important;border-radius:16px!important;background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;color:#3d2a52!important;padding:22px!important;box-shadow:0 24px 90px rgba(120,55,160,.32)!important;font-family:Nunito,system-ui,sans-serif!important;',
     title: 'all:initial!important;color:#3d2a52!important;font:800 18px/1.25 Nunito,system-ui,sans-serif!important;',
@@ -186,7 +186,7 @@
 
   // Hand the token to the main world once, immediately. content.js captures the
   // first token it sees at document_start and locks it in.
-  postToPage({ source: 'webwarden-handshake', token: TOKEN });
+  postToPage({ source: 'wardenone-handshake', token: TOKEN });
 
   let learnedGrabberDomains = [];
   let supplementalLists = { adultDomainsExtra: [], grabberDomainsExtra: [], trustedPaymentHostsExtra: [] };
@@ -312,8 +312,8 @@
         s.textContent = css;
         (document.head || document.documentElement).appendChild(s);
       };
-      syncOne('ww-search-ai-cleanup-prepaint-css', bridgeSearchAiCleanupOn(), SEARCH_AI_PREPAINT_CSS);
-      syncOne('ww-search-sponsored-cleanup-prepaint-css', bridgeSearchSponsoredCleanupOn(), SEARCH_SPONSORED_PREPAINT_CSS);
+      syncOne('wo-search-ai-cleanup-prepaint-css', bridgeSearchAiCleanupOn(), SEARCH_AI_PREPAINT_CSS);
+      syncOne('wo-search-sponsored-cleanup-prepaint-css', bridgeSearchSponsoredCleanupOn(), SEARCH_SPONSORED_PREPAINT_CSS);
     } catch (_) {}
   }
 
@@ -437,26 +437,26 @@
     const paymentExtras = mergeBridgeHostLists(300, raw.trustedPaymentHostsExtra, supplementalLists.trustedPaymentHostsExtra);
     if (paymentExtras.length) clean.trustedPaymentHostsExtra = paymentExtras;
     else delete clean.trustedPaymentHostsExtra;
-    postToPage({ source: 'webwarden', kind: 'config', token: TOKEN, overrides: clean });
-    try { document.dispatchEvent(new CustomEvent('ww-bridge-config-ready')); } catch (_) {}
+    postToPage({ source: 'wardenone', kind: 'config', token: TOKEN, overrides: clean });
+    try { document.dispatchEvent(new CustomEvent('wo-bridge-config-ready')); } catch (_) {}
   };
   try {
-    window.__webWardenBridgeReplay = () => {
-      postToPage({ source: 'webwarden-handshake', token: TOKEN });
+    window.__wardenOneBridgeReplay = () => {
+      postToPage({ source: 'wardenone-handshake', token: TOKEN });
       if (bridgeConfigReady) sendConfig(bridgeConfig);
     };
   } catch (_) {}
 
   // 1. Listen for the custom events the main-world trap dispatches on document,
   //    and forward block/detection counts to the background for the toolbar badge.
-  document.addEventListener('ww-event', (e) => {
+  document.addEventListener('wo-event', (e) => {
     const d = (e && e.detail) || {};
     // Route only token-bearing events. The token is not treated as a true secret;
     // background learning and privileged actions are separately constrained.
     if (d.token !== TOKEN) return;
     const type = d.type || '';
     if (/^blocked_|^detected_|^gated_|^warned_/.test(type)) {
-      if (!bridgeRateOk('ww-event', 240, 60000)) return;
+      if (!bridgeRateOk('wo-event', 240, 60000)) return;
       try {
         chrome.runtime.sendMessage({ kind: 'rg-block', type, detail: boundedBridgeDetail(d.detail) });
       } catch (_) {
@@ -473,13 +473,13 @@
   });
 
   // 2. Pull any saved config overrides and hand them to the main world.
-  //    The main-world script reads window.__WW_CONFIG__ at install; we also
+  //    The main-world script reads window.__WO_CONFIG__ at install; we also
   //    support a late override via postMessage for when settings change.
   try {
-    chrome.storage?.local?.get(['webwarden_config', 'webwarden_learned', 'webwarden_aux_lists'], (res) => {
-      setLearnedGrabberDomains(res && res.webwarden_learned);
-      setSupplementalLists(res && res.webwarden_aux_lists);
-      const overrides = res && res.webwarden_config;
+    chrome.storage?.local?.get(['wardenone_config', 'wardenone_learned', 'wardenone_aux_lists'], (res) => {
+      setLearnedGrabberDomains(res && res.wardenone_learned);
+      setSupplementalLists(res && res.wardenone_aux_lists);
+      const overrides = res && res.wardenone_config;
       sendConfig(overrides || {});
     });
   } catch (_) {}
@@ -487,15 +487,15 @@
   try {
     chrome.storage?.onChanged?.addListener((changes, area) => {
       if (area !== 'local') return;
-      const learnedChanged = !!changes.webwarden_learned;
-      if (learnedChanged) setLearnedGrabberDomains(changes.webwarden_learned.newValue);
-      const supplementalChanged = !!changes.webwarden_aux_lists;
-      if (supplementalChanged) setSupplementalLists(changes.webwarden_aux_lists.newValue);
-      if (changes.webwarden_config) {
-        sendConfig(changes.webwarden_config.newValue || {});
+      const learnedChanged = !!changes.wardenone_learned;
+      if (learnedChanged) setLearnedGrabberDomains(changes.wardenone_learned.newValue);
+      const supplementalChanged = !!changes.wardenone_aux_lists;
+      if (supplementalChanged) setSupplementalLists(changes.wardenone_aux_lists.newValue);
+      if (changes.wardenone_config) {
+        sendConfig(changes.wardenone_config.newValue || {});
       } else if (learnedChanged || supplementalChanged) {
-        chrome.storage.local.get('webwarden_config', (res) => {
-          const overrides = res && res.webwarden_config;
+        chrome.storage.local.get('wardenone_config', (res) => {
+          const overrides = res && res.wardenone_config;
           sendConfig(overrides || {});
         });
       }
@@ -514,7 +514,7 @@
   // back with the same per-load token used by config messages.
   try {
     const SAFE_BROWSING_CONTEXTS = new Set(['link', 'paste', 'form']);
-    document.addEventListener('ww-safe-browsing-check', (e) => {
+    document.addEventListener('wo-safe-browsing-check', (e) => {
       const d = (e && e.detail) || {};
       const id = String(d.id || '');
       const url = String(d.url || '');
@@ -524,7 +524,7 @@
       if (url.length > 2048 || !SAFE_BROWSING_CONTEXTS.has(context)) return;
       if (!safeBrowsingIntentAllowed(url, context)) {
         postToPage({
-          source: 'webwarden-safe-browsing',
+          source: 'wardenone-safe-browsing',
           token: TOKEN,
           id,
           result: { ok: false, error: 'No recent user intent for this reputation check.' },
@@ -533,16 +533,16 @@
       }
       if (!bridgeRateOk('safe-browsing-check', 45, 60000)) {
         postToPage({
-          source: 'webwarden-safe-browsing',
+          source: 'wardenone-safe-browsing',
           token: TOKEN,
           id,
-          result: { ok: false, error: 'Rate limited by Warden One.' },
+          result: { ok: false, error: 'Rate limited by WardenOne.' },
         });
         return;
       }
       chrome.runtime.sendMessage({ kind: 'safe-browsing-check', url, context }, (res) => {
         postToPage({
-          source: 'webwarden-safe-browsing',
+          source: 'wardenone-safe-browsing',
           token: TOKEN,
           id,
           result: publicSafeBrowsingResult(res),
@@ -577,7 +577,7 @@
       }
       return null;
     };
-    document.addEventListener('ww-background-message', (e) => {
+    document.addEventListener('wo-background-message', (e) => {
       const d = (e && e.detail) || {};
       const id = String(d.id || '');
       if (d.token !== TOKEN || !id) return;
@@ -585,19 +585,19 @@
       if (!message) return;
       if (!bridgeRateOk('background-relay-' + message.kind, 20, 60000)) {
         postToPage({
-          source: 'webwarden-bg-response',
+          source: 'wardenone-bg-response',
           token: TOKEN,
           id,
-          result: { ok: false, error: 'Rate limited by Warden One.' },
+          result: { ok: false, error: 'Rate limited by WardenOne.' },
         });
         return;
       }
       chrome.runtime.sendMessage(message, (res) => {
         postToPage({
-          source: 'webwarden-bg-response',
+          source: 'wardenone-bg-response',
           token: TOKEN,
           id,
-          result: res || { ok: false, error: 'No Warden One response' },
+          result: res || { ok: false, error: 'No WardenOne response' },
         });
       });
     }, true);
@@ -606,14 +606,14 @@
   // Cookie reload-loop escape. This is intentionally not exposed through the
   // generic MAIN-world relay: a page script can observe bridge tokens, but it
   // cannot synthesize a trusted user click. The isolated bridge performs the
-  // privileged permission change only after the user clicks Warden One's button.
+  // privileged permission change only after the user clicks WardenOne's button.
   try {
     let cookieAllowInFlight = false;
-    const cookieStopKey = () => '__ww_rlstop_' + String(location.hostname || '');
+    const cookieStopKey = () => '__wo_rlstop_' + String(location.hostname || '');
     document.addEventListener('click', (e) => {
       if (cookieAllowInFlight || !e || e.isTrusted === false) return;
       const target = e.target;
-      const btn = target && target.closest ? target.closest('#rg-reload-loop [data-ww-cookie-allow="1"]') : null;
+      const btn = target && target.closest ? target.closest('#rg-reload-loop [data-wo-cookie-allow="1"]') : null;
       if (!btn) return;
       cookieAllowInFlight = true;
       try { btn.disabled = true; btn.textContent = 'Allowing...'; } catch (_) {}
@@ -684,7 +684,7 @@
   // MAIN-world (content.js Media Shield) can tell us media went active/inactive.
   try {
     window.addEventListener('message', (e) => {
-      if (e.source === window && e.data && e.data.source === 'webwarden-media') {
+      if (e.source === window && e.data && e.data.source === 'wardenone-media') {
         mediaActive = !!e.data.active;
       }
     });
@@ -764,36 +764,36 @@
         if (key && key === scriptDriftWarnedKey) return;
         scriptDriftWarnedKey = key;
         try {
-          const old = document.getElementById('ww-script-drift');
+          const old = document.getElementById('wo-script-drift');
           if (old) old.remove();
           const root = document.body || document.documentElement;
           if (!root) return;
           const wrap = document.createElement('div');
-          wrap.id = 'ww-script-drift';
-          wrap.setAttribute('style', WW_MODAL.overlay('left'));
+          wrap.id = 'wo-script-drift';
+          wrap.setAttribute('style', WO_MODAL.overlay('left'));
           const box = document.createElement('div');
-          box.setAttribute('style', WW_MODAL.panel('700px'));
+          box.setAttribute('style', WO_MODAL.panel('700px'));
           const tag = document.createElement('div');
           const risk = String(w.risk || 'Medium');
-          tag.setAttribute('style', WW_MODAL.tag(risk));
+          tag.setAttribute('style', WO_MODAL.tag(risk));
           tag.textContent = risk + ' script drift';
           const title = document.createElement('div');
-          title.setAttribute('style', WW_MODAL.title);
+          title.setAttribute('style', WO_MODAL.title);
           title.textContent = 'A third-party script changed unexpectedly';
           const body = document.createElement('div');
-          body.setAttribute('style', WW_MODAL.body);
+          body.setAttribute('style', WO_MODAL.body);
           const newBits = [];
           if (Array.isArray(w.newIndicators) && w.newIndicators.length) newBits.push('new behavior: ' + w.newIndicators.slice(0, 3).join(', '));
           if (Array.isArray(w.newHosts) && w.newHosts.length) newBits.push('new hosts: ' + w.newHosts.slice(0, 3).join(', '));
-          body.textContent = 'Warden One has seen this script URL before, but it now serves different code. ' + (newBits.length ? newBits.join('. ') + '. ' : '') + 'That can happen during normal deploys, but it is also how CDN/supply-chain compromises show up.';
+          body.textContent = 'WardenOne has seen this script URL before, but it now serves different code. ' + (newBits.length ? newBits.join('. ') + '. ' : '') + 'That can happen during normal deploys, but it is also how CDN/supply-chain compromises show up.';
           const meta = document.createElement('div');
-          meta.setAttribute('style', WW_MODAL.meta);
+          meta.setAttribute('style', WO_MODAL.meta);
           meta.textContent = 'Script: ' + String(w.script || w.scriptHost || 'third-party script').slice(0, 220) + ' | Hash ' + String(w.previousHash || '').slice(0, 8) + ' -> ' + String(w.newHash || '').slice(0, 8);
           const actions = document.createElement('div');
-          actions.setAttribute('style', WW_MODAL.actions('flex-end'));
+          actions.setAttribute('style', WO_MODAL.actions('flex-end'));
           const mkBtn = (label, primary) => {
             const btn = document.createElement('button');
-            btn.setAttribute('style', WW_MODAL.button(primary, '12px'));
+            btn.setAttribute('style', WO_MODAL.button(primary, '12px'));
             btn.textContent = label;
             return btn;
           };
@@ -838,7 +838,7 @@
       };
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => scheduleScriptDriftScan(1500), { once: true });
       else scheduleScriptDriftScan(1000);
-      document.addEventListener('ww-bridge-config-ready', () => scheduleScriptDriftScan(300), { once: true });
+      document.addEventListener('wo-bridge-config-ready', () => scheduleScriptDriftScan(300), { once: true });
       try {
         const mo = new MutationObserver((muts) => {
           if (!scriptDriftGuardOn()) return;
@@ -906,35 +906,35 @@
         permChainShownKey = key;
         permChainShownAt = now;
         try {
-          const old = document.getElementById('ww-permission-chain');
+          const old = document.getElementById('wo-permission-chain');
           if (old) old.remove();
           const root = document.body || document.documentElement;
           if (!root) return;
           const wrap = document.createElement('div');
-          wrap.id = 'ww-permission-chain';
-          wrap.setAttribute('style', WW_MODAL.overlay('left'));
+          wrap.id = 'wo-permission-chain';
+          wrap.setAttribute('style', WO_MODAL.overlay('left'));
           const box = document.createElement('div');
-          box.setAttribute('style', WW_MODAL.panel('680px'));
+          box.setAttribute('style', WO_MODAL.panel('680px'));
           const tag = document.createElement('div');
-          tag.setAttribute('style', WW_MODAL.tag(risk));
+          tag.setAttribute('style', WO_MODAL.tag(risk));
           tag.textContent = risk + ' permission chain';
           const title = document.createElement('div');
-          title.setAttribute('style', WW_MODAL.title);
+          title.setAttribute('style', WO_MODAL.title);
           title.textContent = 'This site is asking for a lot of power';
           const body = document.createElement('div');
-          body.setAttribute('style', WW_MODAL.body);
-          body.textContent = 'Warden One saw a chain of sensitive permission requests from this site: ' + textList(v.permissions, 'multiple permissions') + '. ' + (Array.isArray(v.reasons) && v.reasons.length ? v.reasons[0] + '. ' : '') + 'You may want to set unused permissions back to Ask or Block.';
+          body.setAttribute('style', WO_MODAL.body);
+          body.textContent = 'WardenOne saw a chain of sensitive permission requests from this site: ' + textList(v.permissions, 'multiple permissions') + '. ' + (Array.isArray(v.reasons) && v.reasons.length ? v.reasons[0] + '. ' : '') + 'You may want to set unused permissions back to Ask or Block.';
           const allowed = document.createElement('div');
-          allowed.setAttribute('style', WW_MODAL.meta);
+          allowed.setAttribute('style', WO_MODAL.meta);
           allowed.textContent = 'Currently allowed here: ' + textList(v.allowed, 'none detected by Chrome settings');
           const actions = document.createElement('div');
-          actions.setAttribute('style', WW_MODAL.actions('flex-end'));
+          actions.setAttribute('style', WO_MODAL.actions('flex-end'));
           const status = document.createElement('div');
-          status.setAttribute('style', WW_MODAL.status);
+          status.setAttribute('style', WO_MODAL.status);
 
           const mkBtn = (label, primary) => {
             const btn = document.createElement('button');
-            btn.setAttribute('style', WW_MODAL.button(primary, '12px'));
+            btn.setAttribute('style', WO_MODAL.button(primary, '12px'));
             btn.textContent = label;
             return btn;
           };
@@ -982,7 +982,7 @@
         } catch (_) {}
       };
 
-      document.addEventListener('ww-permission-signal', (e) => {
+      document.addEventListener('wo-permission-signal', (e) => {
         const d = (e && e.detail) || {};
         if (d.token !== TOKEN || !permissionChainGuardOn()) return;
         const signal = cleanPermSignal(d);
@@ -1029,27 +1029,27 @@
         if (laShown || !loginAgeGuardOn() || bridgeSilentModeOn()) return;
         laShown = true;
         try {
-          if (document.getElementById('ww-login-age')) return;
+          if (document.getElementById('wo-login-age')) return;
           if (!document.body && !document.documentElement) return;
           const reasons = Array.isArray(verdict && verdict.reasons) ? verdict.reasons : [];
           const domain = String((verdict && verdict.domain) || location.hostname || '');
           const ageDays = typeof (verdict && verdict.ageDays) === 'number' ? verdict.ageDays : null;
           const wrap = document.createElement('div');
-          wrap.id = 'ww-login-age';
-          wrap.setAttribute('style', WW_MODAL.overlay('center') + 'flex-direction:column!important;gap:12px!important;');
+          wrap.id = 'wo-login-age';
+          wrap.setAttribute('style', WO_MODAL.overlay('center') + 'flex-direction:column!important;gap:12px!important;');
           const txt = document.createElement('div');
-          txt.setAttribute('style', WW_MODAL.panel('620px', '12px') + 'text-align:center!important;font:700 15px/1.5 Nunito,system-ui,sans-serif!important;');
+          txt.setAttribute('style', WO_MODAL.panel('620px', '12px') + 'text-align:center!important;font:700 15px/1.5 Nunito,system-ui,sans-serif!important;');
           const age = ageDays <= 1 ? 'today' : ('just ' + ageDays + ' days ago');
           txt.textContent = 'Caution: this site (' + domain + ') was registered ' + age + ', yet it is asking for a password. Brand-new domains with login forms are very often phishing — make sure this is really who you think it is before signing in.';
           const riskSummary = reasons.length ? ' Signals: ' + reasons.slice(0, 4).join('; ') + '.' : '';
           const ageText = typeof ageDays === 'number' ? (ageDays <= 1 ? ' registered today' : ' registered ' + ageDays + ' day(s) ago') : '';
-          txt.textContent = 'Do not enter your password here. Warden One found phishing-risk signals for ' + domain + (ageText ? ' (' + ageText.trim() + ')' : '') + '.' + riskSummary;
+          txt.textContent = 'Do not enter your password here. WardenOne found phishing-risk signals for ' + domain + (ageText ? ' (' + ageText.trim() + ')' : '') + '.' + riskSummary;
           const x = document.createElement('button');
-          x.setAttribute('style', WW_MODAL.button(false, '12px'));
+          x.setAttribute('style', WO_MODAL.button(false, '12px'));
           x.textContent = 'Dismiss warning';
           x.addEventListener('click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
           const leave = document.createElement('button');
-          leave.setAttribute('style', WW_MODAL.button(true, '12px'));
+          leave.setAttribute('style', WO_MODAL.button(true, '12px'));
           leave.textContent = 'Leave site';
           leave.addEventListener('click', (e) => {
             if (e && e.isTrusted === false) return;
@@ -1071,7 +1071,7 @@
       };
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', laCheck, { once: true });
       else laCheck();
-      document.addEventListener('ww-bridge-config-ready', laCheck, { once: true });
+      document.addEventListener('wo-bridge-config-ready', laCheck, { once: true });
       try {
         let laP = false;
         const laMo = new MutationObserver(() => {
@@ -1088,5 +1088,5 @@
       } catch (_) {}
     }
   } catch (_) {}
-  try { window.__webWardenBridgeReadyVersion = BRIDGE_VERSION; } catch (_) {}
+  try { window.__wardenOneBridgeReadyVersion = BRIDGE_VERSION; } catch (_) {}
 })();

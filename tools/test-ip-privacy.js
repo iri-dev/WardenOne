@@ -13,7 +13,7 @@ const path = require('path');
 const vm = require('vm');
 
 const MIN = fs.readFileSync(path.join(__dirname, '..', 'content.min.js'), 'utf8');
-const START = MIN.indexOf('if(WW.blockWebRTCLeak)try{const IP_LOOKUP_HOST_RE=');
+const START = MIN.indexOf('if(WO.blockWebRTCLeak)try{const IP_LOOKUP_HOST_RE=');
 const END = MIN.indexOf('try{let locationEventCount=0;', START);
 if (START < 0 || END < 0 || END <= START) {
   console.error('FATAL: IP privacy markers not found in content.min.js');
@@ -115,7 +115,7 @@ function makeSandbox() {
   });
 
   const sandbox = {
-    WW: { blockWebRTCLeak: true },
+    WO: { blockWebRTCLeak: true },
     log(type, detail) { logs.push({ type, detail }); },
     location: { hostname: 'example.test', href: 'https://example.test/' },
     navigator: {
