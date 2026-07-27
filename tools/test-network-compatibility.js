@@ -285,7 +285,7 @@ test('remote-list commit cannot reinstall DNR rules after the master switch turn
   assert.strictEqual(beforeCommit.state.updates.length, 0,
     'stale refresh reinstalled rules after the master switch turned off');
   assert.strictEqual(beforeCommit.state.removeAllCalls, 1,
-    'disabled commit did not reconcile stale WebWarden rules');
+    'disabled commit did not reconcile stale Warden One rules');
 
   const duringCommit = loadRemoteListCommitGuard({
     onUpdate: async (state) => { state.config.enabled = false; },

@@ -1,5 +1,5 @@
 /*
- * WebWarden Download Guard runtime
+ * Warden One Download Guard runtime
  * =================================
  * Owns download scoring, review storage/UI, hash-reputation hooks, trusted
  * download sites, Chrome downloads listeners, and critical hard-block handling.
@@ -8,10 +8,10 @@
 
 // ---- Download Guard -------------------------------------------------------
 // Download review. A/B downloads continue quietly; C-F downloads are paused and
-// reviewed in a WebWarden window before the user chooses continue or cancel.
+// reviewed in a Warden One window before the user chooses continue or cancel.
 // External reputation is opt-in. Chrome extensions cannot read arbitrary saved
 // download bytes from disk, so hash checks use a fresh URL re-fetch fingerprint.
-// VirusTotal receives only that SHA-256; WebWarden never uploads file contents.
+// VirusTotal receives only that SHA-256; Warden One never uploads file contents.
 const DANGEROUS_EXT = /\.(exe|scr|msi|msix|bat|cmd|com|pif|cpl|jar|vbs|vbe|vbscript|js|jse|wsf|wsh|ws|ps1|ps2|psc1|ps1xml|hta|reg|dll|sys|apk|dmg|pkg|app|deb|rpm|gadget|inf|lnk|msc|msp|msu|diagcab|ade|adp|chm|mht|mhtml|url|scf|application|appref-ms|jnlp|xll|settingcontent-ms|library-ms|iqy|slk|desktop|crx|xpi|scptd|terminal)$/i;
 const ARCHIVE_EXT = /\.(zip|rar|7z|gz|tar|cab|ace|arj|tgz|bz2|xz|lzh)$/i;
 // disk-image / container formats increasingly used to smuggle executables past
@@ -600,7 +600,7 @@ function downloadHashSourceMeta(fetched, kind, extra) {
 
 // ---- Local keyless known-malware hash set --------------------------------------
 // Default-ON URL-content fingerprint check that needs NO API key: for reviewed web
-// downloads, WebWarden re-fetches the download URL, hashes that response, and matches
+// downloads, Warden One re-fetches the download URL, hashes that response, and matches
 // it against a bundled/feed-extensible known-malware set. This is useful when the URL
 // serves stable public bytes, but it is not a saved-file hash. Signed, authenticated,
 // one-time, blob, or personalized downloads can differ from the re-fetched response.
@@ -1186,7 +1186,7 @@ async function handleDownloadDecision(id, decision, sender) {
   const review = await getPendingDownload(id);
   if (!review) return { ok: false, error: 'This download review is no longer available.' };
   if (messageSenderIsTab(sender)) {
-    return { ok: false, error: 'Download review decisions must come from the WebWarden review window.' };
+    return { ok: false, error: 'Download review decisions must come from the Warden One review window.' };
   }
   const grade = String(review.grade || '').toUpperCase();
   if (decision === 'continue' || decision === 'keep' || decision === 'trust-continue') {

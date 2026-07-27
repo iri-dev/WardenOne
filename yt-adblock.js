@@ -1,9 +1,9 @@
-/* WebWarden YouTube module
+/* Warden One YouTube module
  *
  * Rebuilt from the active AdGuard YouTube filter rules in:
  *   Extension/filters/chromium/filter_2.txt, lines 37700-37732
  *
- * This file intentionally avoids WebWarden's older YouTube heuristics. The
+ * This file intentionally avoids Warden One's older YouTube heuristics. The
  * behavior here is a compact, readable port of AdGuard's current YouTube rules:
  * JSON pruning for ad schedule fields, anti-abnormality defusing, native
  * fetch/Request iframe workaround, SSAP timeout/segment handling, and AdGuard's

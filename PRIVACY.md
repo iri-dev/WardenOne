@@ -1,10 +1,10 @@
-# WebWarden — Privacy Policy
+# Warden One — Privacy Policy
 
 **Last updated: July 21, 2026**
 
-WebWarden is a browser security extension that protects you against phishing, malware
+Warden One is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
-risky sites. This policy explains exactly what data WebWarden touches, where it stays,
+risky sites. This policy explains exactly what data Warden One touches, where it stays,
 and the few cases where information leaves your device.
 
 We wrote this to be honest about scope rather than reassuring. If anything here is
@@ -14,7 +14,7 @@ unclear, contact us (see **Contact** below).
 
 ## The short version
 
-- **WebWarden has no servers of its own and no analytics.** It does not track you, does
+- **Warden One has no servers of its own and no analytics.** It does not track you, does
   not send us your browsing history, and does not have user accounts.
 - **By default, all protection runs on your own device.** Nothing about the pages you
   visit is transmitted anywhere.
@@ -28,12 +28,12 @@ unclear, contact us (see **Contact** below).
 
 ## Data stored on your device
 
-WebWarden saves the following in your browser's local extension storage
+Warden One saves the following in your browser's local extension storage
 (`chrome.storage.local`). This stays on your computer, is **not** synced to a cloud
-account by WebWarden, and is **not** uploaded to us:
+account by Warden One, and is **not** uploaded to us:
 
 - Your settings and which protections are enabled.
-- A local activity log of what WebWarden blocked or flagged (for the popup and the
+- A local activity log of what Warden One blocked or flagged (for the popup and the
   Activity/History page).
 - Download-review records for the Download Guard.
 - A short-lived reputation cache and "learned" risky-domain list, so repeat checks are
@@ -44,11 +44,11 @@ account by WebWarden, and is **not** uploaded to us:
 The opt-in Twitch local rewind feature makes short, high-bitrate clips of video and audio
 already playing in the current tab and keeps up to five minutes in volatile browser
 memory. The clips are used only for the in-player replay, are never uploaded or saved to
-disk by WebWarden, and are discarded when the channel, page, or tab closes. To control
+disk by Warden One, and are discarded when the channel, page, or tab closes. To control
 memory use, the oldest clips may be discarded before five minutes on unusually high-
 bitrate streams.
 
-**Deleting this data:** Removing WebWarden from your browser deletes its local storage.
+**Deleting this data:** Removing Warden One from your browser deletes its local storage.
 You can also reset settings from the options page, and the "Forget this site" and
 "Clean browsing data" tools remove data on demand.
 
@@ -58,7 +58,7 @@ You can also reset settings from the options page, and the "Forget this site" an
 
 ### 1. Block-list updates (on when a blocking feature is on)
 
-To keep ad/tracker/malware/phishing blocking current, WebWarden periodically downloads
+To keep ad/tracker/malware/phishing blocking current, Warden One periodically downloads
 **public filter lists** from their maintainers, for example EasyList, AdGuard filter
 lists, Phishing.Army, the urlhaus/malware-filter list, and the OpenPhish public feed
 (fetched from `raw.githubusercontent.com`). These are ordinary downloads of rule files —
@@ -67,7 +67,7 @@ lists, Phishing.Army, the urlhaus/malware-filter list, and the OpenPhish public 
 
 ### 2. Password breach check — "SessionShield" (opt-in, off by default)
 
-If you turn this on and check a password, WebWarden hashes the password **locally** with
+If you turn this on and check a password, Warden One hashes the password **locally** with
 SHA-1 and sends only the **first 5 characters of that hash** to Have I Been Pwned's
 `api.pwnedpasswords.com` range API. This is the industry-standard *k-anonymity* method:
 the service returns a list of matching hash suffixes and the comparison finishes on your
@@ -76,22 +76,22 @@ disabled unless you enable it.
 
 ### 3. Reputation providers (opt-in, off by default, your own API key required)
 
-WebWarden can optionally check a URL, domain, or file hash against third-party threat
+Warden One can optionally check a URL, domain, or file hash against third-party threat
 services **only if you enable that provider and supply your own API key**. All of these
 are **off by default**: Google Safe Browsing, VirusTotal, urlhaus (abuse.ch), AbuseIPDB,
 OpenPhish, PhishTank, WhoisXML, and RDAP (domain age). When you enable one, the specific
 URL/domain/hash being evaluated is sent to that provider so it can return a verdict.
 Those providers are independent data controllers with their own privacy policies; review
-theirs before enabling. WebWarden sends nothing to them until you do.
+theirs before enabling. Warden One sends nothing to them until you do.
 
-**That is the complete list.** WebWarden contacts no other external endpoints, and there
+**That is the complete list.** Warden One contacts no other external endpoints, and there
 is no background telemetry, crash reporting, or usage analytics.
 
 ---
 
 ## Permissions, in plain terms
 
-WebWarden requests broad browser permissions because on-device security requires them.
+Warden One requests broad browser permissions because on-device security requires them.
 None are used to collect data about you. A per-permission justification is published with
 the store listing; in summary:
 
@@ -104,9 +104,9 @@ the store listing; in summary:
   JavaScript/location controls, and the user-initiated "Clean browsing data" and
   "Forget this site" tools.
 - **History** — used only by "Forget this site" to remove entries for a domain you choose;
-  WebWarden does not continuously read or transmit your history.
+  Warden One does not continuously read or transmit your history.
 - **Management** — to **list** your installed extensions and flag newly added or
-  high-risk ones for your review. WebWarden cannot and does not disable, install, or scan
+  high-risk ones for your review. Warden One cannot and does not disable, install, or scan
   other extensions; it only shows you what is there.
 - **Tabs / tab groups / alarms / notifications / storage** — for the toolbar badge, the
   startup safety check, the Memory Shield (sleeping idle tabs), scheduled list updates,
@@ -116,16 +116,16 @@ the store listing; in summary:
 
 ## Data we do **not** collect
 
-WebWarden does not collect or transmit: your browsing history, page contents, form data,
+Warden One does not collect or transmit: your browsing history, page contents, form data,
 keystrokes, credentials, cookies, location, or any personally identifiable information.
 There is no advertising, no data brokerage, and no third-party tracking introduced by
-WebWarden.
+Warden One.
 
 ---
 
 ## Children
 
-WebWarden is a general-audience security tool and is not directed at children under 13.
+Warden One is a general-audience security tool and is not directed at children under 13.
 It does not knowingly collect any personal information from anyone.
 
 ## Changes to this policy
@@ -139,5 +139,5 @@ Questions or privacy requests: **[insert your public contact email or support UR
 
 ---
 
-*WebWarden is provided as a protective tool and does not guarantee detection of every
+*Warden One is provided as a protective tool and does not guarantee detection of every
 threat. It supplements, and does not replace, safe browsing habits.*

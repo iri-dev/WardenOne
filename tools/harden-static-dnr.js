@@ -1,5 +1,5 @@
 /*
- * Deterministically harden WebWarden's small hand-maintained static ruleset.
+ * Deterministically harden Warden One's small hand-maintained static ruleset.
  *
  * Run with:
  *   node tools/harden-static-dnr.js [--check]

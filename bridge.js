@@ -1,5 +1,5 @@
 /*
- * WebWarden -- bridge (ISOLATED world)
+ * Warden One -- bridge (ISOLATED world)
  * ====================================
  * The MAIN-world content script (content.js) does the actual blocking, but it
  * can't talk to the extension's background service worker directly. This bridge
@@ -536,7 +536,7 @@
           source: 'webwarden-safe-browsing',
           token: TOKEN,
           id,
-          result: { ok: false, error: 'Rate limited by WebWarden.' },
+          result: { ok: false, error: 'Rate limited by Warden One.' },
         });
         return;
       }
@@ -588,7 +588,7 @@
           source: 'webwarden-bg-response',
           token: TOKEN,
           id,
-          result: { ok: false, error: 'Rate limited by WebWarden.' },
+          result: { ok: false, error: 'Rate limited by Warden One.' },
         });
         return;
       }
@@ -597,7 +597,7 @@
           source: 'webwarden-bg-response',
           token: TOKEN,
           id,
-          result: res || { ok: false, error: 'No WebWarden response' },
+          result: res || { ok: false, error: 'No Warden One response' },
         });
       });
     }, true);
@@ -606,7 +606,7 @@
   // Cookie reload-loop escape. This is intentionally not exposed through the
   // generic MAIN-world relay: a page script can observe bridge tokens, but it
   // cannot synthesize a trusted user click. The isolated bridge performs the
-  // privileged permission change only after the user clicks WebWarden's button.
+  // privileged permission change only after the user clicks Warden One's button.
   try {
     let cookieAllowInFlight = false;
     const cookieStopKey = () => '__ww_rlstop_' + String(location.hostname || '');
@@ -785,7 +785,7 @@
           const newBits = [];
           if (Array.isArray(w.newIndicators) && w.newIndicators.length) newBits.push('new behavior: ' + w.newIndicators.slice(0, 3).join(', '));
           if (Array.isArray(w.newHosts) && w.newHosts.length) newBits.push('new hosts: ' + w.newHosts.slice(0, 3).join(', '));
-          body.textContent = 'WebWarden has seen this script URL before, but it now serves different code. ' + (newBits.length ? newBits.join('. ') + '. ' : '') + 'That can happen during normal deploys, but it is also how CDN/supply-chain compromises show up.';
+          body.textContent = 'Warden One has seen this script URL before, but it now serves different code. ' + (newBits.length ? newBits.join('. ') + '. ' : '') + 'That can happen during normal deploys, but it is also how CDN/supply-chain compromises show up.';
           const meta = document.createElement('div');
           meta.setAttribute('style', WW_MODAL.meta);
           meta.textContent = 'Script: ' + String(w.script || w.scriptHost || 'third-party script').slice(0, 220) + ' | Hash ' + String(w.previousHash || '').slice(0, 8) + ' -> ' + String(w.newHash || '').slice(0, 8);
@@ -923,7 +923,7 @@
           title.textContent = 'This site is asking for a lot of power';
           const body = document.createElement('div');
           body.setAttribute('style', WW_MODAL.body);
-          body.textContent = 'WebWarden saw a chain of sensitive permission requests from this site: ' + textList(v.permissions, 'multiple permissions') + '. ' + (Array.isArray(v.reasons) && v.reasons.length ? v.reasons[0] + '. ' : '') + 'You may want to set unused permissions back to Ask or Block.';
+          body.textContent = 'Warden One saw a chain of sensitive permission requests from this site: ' + textList(v.permissions, 'multiple permissions') + '. ' + (Array.isArray(v.reasons) && v.reasons.length ? v.reasons[0] + '. ' : '') + 'You may want to set unused permissions back to Ask or Block.';
           const allowed = document.createElement('div');
           allowed.setAttribute('style', WW_MODAL.meta);
           allowed.textContent = 'Currently allowed here: ' + textList(v.allowed, 'none detected by Chrome settings');
@@ -1043,7 +1043,7 @@
           txt.textContent = 'Caution: this site (' + domain + ') was registered ' + age + ', yet it is asking for a password. Brand-new domains with login forms are very often phishing — make sure this is really who you think it is before signing in.';
           const riskSummary = reasons.length ? ' Signals: ' + reasons.slice(0, 4).join('; ') + '.' : '';
           const ageText = typeof ageDays === 'number' ? (ageDays <= 1 ? ' registered today' : ' registered ' + ageDays + ' day(s) ago') : '';
-          txt.textContent = 'Do not enter your password here. WebWarden found phishing-risk signals for ' + domain + (ageText ? ' (' + ageText.trim() + ')' : '') + '.' + riskSummary;
+          txt.textContent = 'Do not enter your password here. Warden One found phishing-risk signals for ' + domain + (ageText ? ' (' + ageText.trim() + ')' : '') + '.' + riskSummary;
           const x = document.createElement('button');
           x.setAttribute('style', WW_MODAL.button(false, '12px'));
           x.textContent = 'Dismiss warning';

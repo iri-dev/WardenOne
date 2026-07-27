@@ -35,7 +35,7 @@
   text('reason', problem + (why ? '. ' + why : ''));
   text('risk', risk);
   text('error', error ? error.replace(/^net::/i, '') : 'Certificate or TLS trust check failed');
-  text('status', 'Blocked by WebWarden');
+  text('status', 'Blocked by Warden One');
 
   document.getElementById('back')?.addEventListener('click', () => {
     if (history.length > 1) history.back();

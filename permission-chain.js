@@ -1,5 +1,5 @@
 /*
- * WebWarden Permission Chain Guard (MAIN world)
+ * Warden One Permission Chain Guard (MAIN world)
  * Watches for sensitive browser capability requests in sequence. It does not
  * read clipboard contents, file names, media streams, or location values.
  */

@@ -1,5 +1,5 @@
 /*
- * WebWarden OAuth Grant Guard (ISOLATED world)
+ * Warden One OAuth Grant Guard (ISOLATED world)
  * Scores OAuth consent grants from major identity providers. The provider can be
  * legitimate while the requested grant is dangerous.
  */

@@ -1,4 +1,4 @@
-// WebWarden — Twitch "watch from earlier" (live VOD rewind)
+// Warden One — Twitch "watch from earlier" (live VOD rewind)
 //
 // The chunk-URL walk-back approach is impossible on Twitch (segment URLs are
 // opaque signed tokens, not a walkable index). But when a streamer has "Store
@@ -144,8 +144,8 @@
   var styleEl = null;
 
   // Plain-English diagnostics so it's never a mystery why the button is/ isn't
-  // there. Open DevTools console (F12) and filter for "WebWarden Rewind".
-  function report(msg) { try { console.info('[WebWarden Rewind] ' + msg); } catch (_) {} }
+  // there. Open DevTools console (F12) and filter for "Warden One Rewind".
+  function report(msg) { try { console.info('[Warden One Rewind] ' + msg); } catch (_) {} }
 
   function ensureStyle() {
     if (styleEl || !document.documentElement) return;

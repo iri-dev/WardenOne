@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "WebWarden",
+  "name": "Warden One",
   "version": "1.0.0",
   "description": "Elite defense against phishing, malware downloads, redirect chains, IP grabbers, trackers, token theft, bad certs, and risky sites.",
   "permissions": [
@@ -44,7 +44,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "WebWarden",
+    "default_title": "Warden One",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

@@ -29,7 +29,7 @@
 
   const FOOT = {
     welcome: 'Takes about a minute. You can change anything later.',
-    pin: 'Pinning is optional, but it keeps WebWarden one click away.',
+    pin: 'Pinning is optional, but it keeps Warden One one click away.',
     protect: 'Recommended is the safe default. Tweak any switch later from the popup.',
     explore: 'That\'s everything. Hit Finish whenever you\'re ready.',
     done: 'One last step — then you\'re free to go.',
@@ -151,7 +151,7 @@
         chrome.runtime.sendMessage(message, (res) => {
           const err = chrome.runtime.lastError;
           if (err) resolve({ ok: false, error: err.message || String(err) });
-          else resolve(res || { ok: false, error: 'No response from WebWarden.' });
+          else resolve(res || { ok: false, error: 'No response from Warden One.' });
         });
       } catch (e) {
         resolve({ ok: false, error: String(e && e.message || e) });
@@ -195,7 +195,7 @@
     }
     await storageSet({ webwarden_onboarding_recommended_at: Date.now() });
     markApplyDone();
-    setStatus('Recommended protection is on. Pin WebWarden next to keep controls one click away.', 'good');
+    setStatus('Recommended protection is on. Pin Warden One next to keep controls one click away.', 'good');
   }
 
   // ---- apply maximum privacy (opt-in, superset of recommended) -------------
@@ -248,7 +248,7 @@
   }
 
   function guideToToolbar() {
-    setStatus('Click the WebWarden shield in your toolbar to open the controls — pin it first if you don\'t see it.', 'good');
+    setStatus('Click the Warden One shield in your toolbar to open the controls — pin it first if you don\'t see it.', 'good');
     flashPinArrow();
   }
 
