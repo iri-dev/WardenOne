@@ -1,5 +1,5 @@
 /*
- * WebWarden Memory Shield runtime
+ * Warden One Memory Shield runtime
  * =================================
  * Owns tab sleeping, RAM scoring, duplicate/zombie tab helpers, tab-limit
  * enforcement, and popup-facing memory actions. Loaded by background.js with

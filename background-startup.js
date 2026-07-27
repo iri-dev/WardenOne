@@ -1,5 +1,5 @@
 /*
- * WebWarden -- startup security check module (MV3 service worker)
+ * Warden One -- startup security check module (MV3 service worker)
  * Loaded synchronously from background.js with importScripts().
  *
  * Shared globals provided by background.js/domain-utils.js:
@@ -228,7 +228,7 @@ async function runStartupCheck(reason, opts = {}) {
     try {
       chrome.notifications.create('ww-startup-' + Date.now(), {
         type: 'basic', iconUrl: 'icons/icon128.png',
-        title: 'WebWarden startup check', priority: 1,
+        title: 'Warden One startup check', priority: 1,
         message: total + ' thing' + (total === 1 ? '' : 's') + ' to review: ' +
           [findings.tabs.length ? findings.tabs.length + ' tab(s)' : '', findings.extensions.length ? findings.extensions.length + ' new extension(s)' : ''].filter(Boolean).join(', '),
       });

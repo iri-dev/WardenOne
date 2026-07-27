@@ -543,7 +543,7 @@
         try{
           pending.callback({
             ok:!1,
-            error:"Timed out waiting for WebWarden bridge."
+            error:"Timed out waiting for Warden One bridge."
           })
         }
         catch(_){
@@ -576,7 +576,7 @@
       try{
         entry.callback({
           ok:!1,
-          error:"Could not reach WebWarden bridge."
+          error:"Could not reach Warden One bridge."
         })
       }
       catch(_){
@@ -610,7 +610,7 @@
       try{
         pending.callback(m.result||{
           ok:!1,
-          error:"No response from WebWarden."
+          error:"No response from Warden One."
         })
       }
       catch(_){
@@ -929,7 +929,7 @@
         const body=document.createElement("div");
         body.setAttribute("style",
         "font-size:12.5px!important;color:#4a3661!important;line-height:1.55!important;margin:0 0 10px 0!important;"),
-        body.textContent=urlReputationProvider(verdict)+" flagged this URL as "+safeBrowsingThreatText(verdict)+". WebWarden stopped the action.",
+        body.textContent=urlReputationProvider(verdict)+" flagged this URL as "+safeBrowsingThreatText(verdict)+". Warden One stopped the action.",
         wrap.appendChild(body);
         const code=document.createElement("div");
         code.setAttribute("style",
@@ -1058,7 +1058,7 @@
           const body=document.createElement("div");
           body.setAttribute("style",
           "font-size:12.5px!important;color:#6a5685!important;line-height:1.5!important;margin:0 0 12px 0!important;"),
-          body.textContent="This site keeps reloading because WebWarden is blocking its cookies and it can't start a session. Cookies are still blocked. You can allow cookies just for this site to use it normally.",
+          body.textContent="This site keeps reloading because Warden One is blocking its cookies and it can't start a session. Cookies are still blocked. You can allow cookies just for this site to use it normally.",
           wrap.appendChild(body);
           const row=document.createElement("div");
           row.setAttribute("style",
@@ -1695,7 +1695,7 @@
             "Adult site ahead");
             const msg=oDiv(card,
             SUB,
-            "WebWarden paused this adult (18+) site before it loaded.");
+            "Warden One paused this adult (18+) site before it loaded.");
             cameFromElsewhere&&(appendText(msg,
             " You were redirected here"),
             refHost&&(appendText(msg,
@@ -2076,7 +2076,7 @@
           "Redirect chain blocked"),
           oDiv(card,
           "color:#7a5f93!important;margin:0 0 18px 0!important;font-size:13.5px!important;line-height:1.55!important;font-family:Nunito,system-ui,sans-serif!important;",
-          "This page is a relay in a redirect chain  -  the kind used by fake-download and ad-spam sites. It was about to send you onward automatically. WebWarden stopped it.");
+          "This page is a relay in a redirect chain  -  the kind used by fake-download and ad-spam sites. It was about to send you onward automatically. Warden One stopped it.");
           const ROW="background:rgba(176,106,212,.08)!important;border:1px solid rgba(176,106,212,.2)!important;border-radius:10px!important;padding:10px 12px!important;margin:6px 0!important;word-break:break-all!important;font-family:ui-monospace,monospace!important;font-size:12px!important;color:#5a4570!important;",
           LBL="color:#a98fc0!important;font-size:11px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.05em!important;margin:10px 0 3px 0!important;font-family:Nunito,system-ui,sans-serif!important;";
           oDiv(card,
@@ -2726,7 +2726,7 @@
         init){
           const url="string"==typeof input?input:input&&input.url||"";
           return blockLocal(url,
-          "fetch")?Promise.reject(new DOMException("Blocked by WebWarden Intranet Guard",
+          "fetch")?Promise.reject(new DOMException("Blocked by Warden One Intranet Guard",
           "SecurityError")):rf.apply(this,
           arguments)
         }
@@ -2766,7 +2766,7 @@
         window.WebSocket=function(url,
         protocols){
           if(blockLocal(url,
-          "websocket"))throw new DOMException("Blocked by WebWarden Intranet Guard",
+          "websocket"))throw new DOMException("Blocked by Warden One Intranet Guard",
           "SecurityError");
           return void 0===protocols?new RealWS(url):new RealWS(url,
           protocols)
@@ -3010,7 +3010,7 @@
           init){
             const url="string"==typeof input?input:input&&input.url||"";
             return blockRisk(url,
-            "fetch")?Promise.reject(new DOMException("Blocked by WebWarden Risky-site Mode",
+            "fetch")?Promise.reject(new DOMException("Blocked by Warden One Risky-site Mode",
             "SecurityError")):rf.apply(this,
             arguments)
           }
@@ -3050,7 +3050,7 @@
           window.WebSocket=function(url,
           protocols){
             if(blockRisk(url,
-            "websocket"))throw new DOMException("Blocked by WebWarden Risky-site Mode",
+            "websocket"))throw new DOMException("Blocked by Warden One Risky-site Mode",
             "SecurityError");
             return void 0===protocols?new RealWS(url):new RealWS(url,
             protocols)
@@ -3175,7 +3175,7 @@
           framed:window.top!==window,
           why:"sensitive click happened in an embedded or covered context"
         });
-        const ok=confirm("WebWarden clickjacking check: this sensitive button is inside a frame or covered context. Continue?");
+        const ok=confirm("Warden One clickjacking check: this sensitive button is inside a frame or covered context. Continue?");
         ok&&setTimeout(()=>target.click(),
         20)
       },
@@ -3943,7 +3943,7 @@
                 if(bodyHasToken(body,
                 url,
                 headers))return flagExfil(dest),
-                Promise.reject(new DOMException("Blocked by WebWarden SessionShield",
+                Promise.reject(new DOMException("Blocked by Warden One SessionShield",
                 "SecurityError"))
               }
 
@@ -4223,7 +4223,7 @@
                 if(WW.detectSkimmers&&url&&carriesCardData(body,
                 url))return flagSkimExfil(url),
                 warnSkim("blocked card/password data being sent off-site"),
-                Promise.reject(new DOMException("Blocked by WebWarden skimmer guard",
+                Promise.reject(new DOMException("Blocked by Warden One skimmer guard",
                 "SecurityError"))
               }
               catch(_){
@@ -4678,7 +4678,7 @@
         paymentRiskDialog=risk=>{
           const reasons=(risk&&risk.reasons&&risk.reasons.length?risk.reasons:["risky card entry"]).slice(0,
           5);
-          return"WebWarden Payment Guard\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+reasons.join("\n- ")+"\n\nWhat to do:\n"+paymentRiskAction(risk)+"\n\nContinue sending card details?"
+          return"Warden One Payment Guard\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+reasons.join("\n- ")+"\n\nWhat to do:\n"+paymentRiskAction(risk)+"\n\nContinue sending card details?"
         },
         notePayment=(type,
         risk)=>{
@@ -4689,7 +4689,7 @@
           log(type,
           detail))
         },
-        paymentBlockedError=()=>new DOMException("Blocked by WebWarden Payment Card Guard",
+        paymentBlockedError=()=>new DOMException("Blocked by Warden One Payment Card Guard",
         "SecurityError"),
         confirmPaymentRisk=risk=>{
           if(!risk||"warn"!==risk.level)return!0;
@@ -4728,7 +4728,7 @@
           notePayment("blocked_payment_card_submit",
           risk);
           if(paymentBlocked<=2)try{
-            alert("WebWarden blocked this card submission.\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+((risk.reasons&&risk.reasons.length?risk.reasons:["risky card entry"]).slice(0,
+            alert("Warden One blocked this card submission.\n\nSeverity: "+paymentRiskSeverity(risk)+"\n\nWhy this fired:\n- "+((risk.reasons&&risk.reasons.length?risk.reasons:["risky card entry"]).slice(0,
             5).join("\n- "))+"\n\nWhat to do:\n"+paymentRiskAction(risk))
           }
           catch(_){
@@ -5077,7 +5077,7 @@
         navigator.clipboard.writeText=function(text){
           const hit=isHijack(text);
           if(hit)return noteBlock(hit.reason),
-          Promise.reject(new DOMException("Blocked by WebWarden clipboard guard",
+          Promise.reject(new DOMException("Blocked by Warden One clipboard guard",
           "NotAllowedError"));
           const a=extractAddr(text);
           return a&&(lastCopiedAddr=a),
@@ -5089,7 +5089,7 @@
         const realWriteItems=navigator.clipboard.write.bind(navigator.clipboard);
         navigator.clipboard.write=function(items){
           return hasRecentGesture()?realWriteItems(items):(noteBlock("gestureless clipboard write()"),
-          Promise.reject(new DOMException("Blocked by WebWarden clipboard guard",
+          Promise.reject(new DOMException("Blocked by Warden One clipboard guard",
           "NotAllowedError")))
         }
 
@@ -5824,7 +5824,7 @@
         navigator.clipboard.writeText=function(text){
           return looksLikeCommand(text)?(warnCommand("clipboard",
           text),
-          Promise.reject(new DOMException("Blocked by WebWarden command-paste guard",
+          Promise.reject(new DOMException("Blocked by Warden One command-paste guard",
           "NotAllowedError"))):realW(text)
         }
 
@@ -6545,7 +6545,7 @@
           const body=document.createElement("div");
           body.setAttribute("style",
           "font-size:12.5px!important;color:#4a3661!important;line-height:1.55!important;margin:0 0 8px 0!important;"),
-          body.textContent="WebWarden noticed signs that this sign-in box may be fake or stealing credentials:",
+          body.textContent="Warden One noticed signs that this sign-in box may be fake or stealing credentials:",
           wrap.appendChild(body);
           const ul=document.createElement("div");
           ul.setAttribute("style",
@@ -6846,7 +6846,7 @@
 
         }
         const boom=()=>{
-          throw new ReferenceError("WebWarden:"+path)
+          throw new ReferenceError("Warden One:"+path)
         };
         try{
           Object.defineProperty(parent,
@@ -6893,7 +6893,7 @@
               try{
                 const cs=document.currentScript,
                 txt=cs&&cs.textContent||"";
-                if(!re||re.test(txt))throw new ReferenceError("WebWarden:acs:"+path)
+                if(!re||re.test(txt))throw new ReferenceError("Warden One:acs:"+path)
               }
               catch(e){
                 if(e instanceof ReferenceError)throw e
@@ -9244,7 +9244,7 @@
               catch(_){
 
               }
-              return Promise.reject(new DOMException("Autoplay blocked by WebWarden",
+              return Promise.reject(new DOMException("Autoplay blocked by Warden One",
               "NotAllowedError"))
             }
             return realPlay.apply(this,
@@ -11203,7 +11203,7 @@
       catch(_){
 
       }
-      /* Per-session plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WebWarden tell. Seeded from the same per-load key as the canvas noise: cores, RAM and GPU vendor+renderer agree within a page but differ each load and across users. */
+      /* Per-session plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a Warden One tell. Seeded from the same per-load key as the canvas noise: cores, RAM and GPU vendor+renderer agree within a page but differ each load and across users. */
       const wwPick=(arr,key)=>arr[Math.floor(makeRnd(mixSeed(key))()*arr.length)%arr.length];
       const wwCores=wwPick([4,8,8,12,16],"hwc"),
       wwMem=wwPick([4,8,8],"devmem"),
@@ -11573,11 +11573,11 @@
           return Promise.resolve(new Response("",
           {
             status:403,
-            statusText:"Blocked by WebWarden"
+            statusText:"Blocked by Warden One"
           }))
         }
         catch(_){
-          return Promise.reject(new DOMException("IP lookup blocked by WebWarden",
+          return Promise.reject(new DOMException("IP lookup blocked by Warden One",
           "SecurityError"))
         }
 
@@ -11653,7 +11653,7 @@
         protocols){
           const hit=ipLookupUrl(url);
           if(hit)throw noteIpLookup(hit),
-          new DOMException("IP lookup socket blocked by WebWarden",
+          new DOMException("IP lookup socket blocked by Warden One",
           "SecurityError");
           return new RealWS(url,
           protocols)
@@ -11673,7 +11673,7 @@
         config){
           const hit=ipLookupUrl(url);
           if(hit)throw noteIpLookup(hit),
-          new DOMException("IP lookup stream blocked by WebWarden",
+          new DOMException("IP lookup stream blocked by Warden One",
           "SecurityError");
           return new RealES(url,
           config)
@@ -11952,7 +11952,7 @@
       },
       blockedLocationError=()=>({
         code:1,
-        message:"Location access blocked by WebWarden",
+        message:"Location access blocked by Warden One",
         PERMISSION_DENIED:1,
         POSITION_UNAVAILABLE:2,
         TIMEOUT:3
@@ -12290,11 +12290,11 @@
       detail,
       message)=>(noteMedia(type,
       detail),
-      Promise.reject(new DOMException(message||"Blocked by WebWarden Media Shield",
+      Promise.reject(new DOMException(message||"Blocked by Warden One Media Shield",
       "NotAllowedError"))),
       blockedLocationError=()=>({
         code:1,
-        message:"Location access blocked by WebWarden",
+        message:"Location access blocked by Warden One",
         PERMISSION_DENIED:1,
         POSITION_UNAVAILABLE:2,
         TIMEOUT:3
@@ -12430,7 +12430,7 @@
         };
         if((kinds.audio||kinds.video)&&!1!==WW.blockCameraMic&&!trustedMediaHost)return blockedPromise("blocked_media_capture",
         detail,
-        "Camera/microphone access blocked by WebWarden");
+        "Camera/microphone access blocked by Warden One");
         noteMedia(recentMediaGesture()?"warned_media_capture":"warned_hidden_media_capture",
         detail);
         try{
@@ -12482,7 +12482,7 @@
         detail),
         real(constraints)):blockedPromise("blocked_screen_capture",
         detail,
-        "Screen capture blocked by WebWarden")
+        "Screen capture blocked by Warden One")
       }),
       ["getUserMedia",
       "webkitGetUserMedia",
@@ -12510,7 +12510,7 @@
           noteMedia("blocked_media_capture",
           detail);
           try{
-            "function"==typeof onError&&setTimeout(()=>onError(new DOMException("Camera/microphone access blocked by WebWarden",
+            "function"==typeof onError&&setTimeout(()=>onError(new DOMException("Camera/microphone access blocked by Warden One",
             "NotAllowedError")),
             0)
           }
@@ -12619,7 +12619,7 @@
                 risk:mediaRisk.webrtc,
                 why:"Created without a recent user action"
               }),
-              new DOMException("Suspicious WebRTC connection blocked by WebWarden",
+              new DOMException("Suspicious WebRTC connection blocked by Warden One",
               "SecurityError");
               return new RTC(cfg,
               constraints)
@@ -13612,11 +13612,11 @@
         b)=>b.z-a.z);
         const top=report.slice(0,
         12);
-        console.log("%c[WebWarden inspect]",
+        console.log("%c[Warden One inspect]",
         "color:#9a4fd0;font-weight:bold",
         "on-screen overlays/iframes (top by z-index):"),
         console.table(top),
-        console.log("[WebWarden inspect] full JSON (copy this to report a missed pop-up):\n"+JSON.stringify(top,
+        console.log("[Warden One inspect] full JSON (copy this to report a missed pop-up):\n"+JSON.stringify(top,
         null,
         2)),
         log("diagnostic_inspect",
@@ -13629,7 +13629,7 @@
           const note=document.createElement("div");
           note.setAttribute("style",
           "all:initial!important;position:fixed!important;top:16px!important;left:50%!important;transform:translateX(-50%)!important;z-index:2147483647!important;background:#3d2a52!important;color:#fff!important;font-family:system-ui,sans-serif!important;font-size:13px!important;padding:10px 16px!important;border-radius:10px!important;box-shadow:0 6px 20px rgba(0,0,0,.4)!important;"),
-          note.textContent="WebWarden inspected "+report.length+" element(s)  -  see the browser Console (F12) and the activity log.",
+          note.textContent="Warden One inspected "+report.length+" element(s)  -  see the browser Console (F12) and the activity log.",
           document.documentElement.appendChild(note),
           setTimeout(()=>note.remove(),
           4e3)
@@ -13684,7 +13684,7 @@
         },
         blocked_ip_lookup:{
           title:"IP lookup blocked",
-          why:"A page script tried to ask a third-party IP echo service for your address. WebWarden stopped the request."
+          why:"A page script tried to ask a third-party IP echo service for your address. Warden One stopped the request."
         },
         blocked_grabber_element:{
           title:"Grabber element removed",
@@ -13704,15 +13704,15 @@
         },
         blocked_token_exfil:{
           title:"Sensitive request protected",
-          why:"A token-shaped value was leaving this site for another domain. WebWarden blocked it quietly."
+          why:"A token-shaped value was leaving this site for another domain. Warden One blocked it quietly."
         },
         blocked_skimmer_exfil:{
           title:"Card/password theft blocked",
-          why:"Sensitive form data was about to leave this page for another domain. WebWarden stopped it."
+          why:"Sensitive form data was about to leave this page for another domain. Warden One stopped it."
         },
         blocked_payment_card_submit:{
           title:"Card submission blocked",
-          why:"This checkout looked risky, so WebWarden stopped credit/debit card details before they were sent.",
+          why:"This checkout looked risky, so Warden One stopped credit/debit card details before they were sent.",
           severity:"High",
           action:"Card details were not sent. Leave unless you can verify the merchant and address."
         },
@@ -13726,7 +13726,7 @@
         },
         blocked_geolocation:{
           title:"Location blocked",
-          why:"This site asked for your precise location. WebWarden denied it because Block location requests is on."
+          why:"This site asked for your precise location. Warden One denied it because Block location requests is on."
         },
         blocked_autoplay_media:{
           title:"Autoplay media blocked",
@@ -13796,7 +13796,7 @@
         },
         warned_honeytoken_read:{
           title:"Suspicious script behaviour detected",
-          why:"A script on this page read a decoy credential WebWarden planted in memory. Real site code has no reason to read a secret it didn't create  -  this is how credential-stealing scripts probe. Be cautious here."
+          why:"A script on this page read a decoy credential Warden One planted in memory. Real site code has no reason to read a secret it didn't create  -  this is how credential-stealing scripts probe. Be cautious here."
         },
         behavioral_risk:{
           title:"Suspicious site behavior",
@@ -13866,7 +13866,7 @@
         if(!wrap)return;
         const detailWhy=detail&&detail.why?String(detail.why):info.why,
         severity=detail&&detail.severity?String(detail.severity):info.severity||(/^blocked_/.test(type)?"Blocked":/^warned_/.test(type)?"Warning":"Notice"),
-        action=detail&&detail.action?String(detail.action):info.action||(/^blocked_/.test(type)?"WebWarden stopped it. No action is needed unless you expected this.":/^warned_/.test(type)?"Check the address and only continue if you trust this site.":"Review this page before sharing sensitive information.");
+        action=detail&&detail.action?String(detail.action):info.action||(/^blocked_/.test(type)?"Warden One stopped it. No action is needed unless you expected this.":/^warned_/.test(type)?"Check the address and only continue if you trust this site.":"Review this page before sharing sensitive information.");
         const card=document.createElement("div");
         S(card,
         'all:initial!important;box-sizing:border-box!important;display:flex!important;gap:11px!important;align-items:flex-start!important;background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;border-left:4px solid #9d54c9!important;border-radius:14px!important;padding:13px 15px!important;box-shadow:0 8px 28px rgba(120,55,160,.26)!important;color:#3d2a52!important;font-family:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;opacity:0!important;transform:translateX(120%)!important;transition:transform .34s cubic-bezier(.34,1.56,.64,1),opacity .25s!important;');
@@ -13997,7 +13997,7 @@
         badge.appendChild(label),
         panel.className="panel",
         panel.id="rg-p",
-        title.textContent="WebWarden",
+        title.textContent="Warden One",
         list.id="rg-list",
         list.className="empty",
         list.textContent="Nothing blocked yet  -  all clear",
@@ -14075,7 +14075,7 @@
                 listEl.textContent="Nothing blocked yet.";
                 const warn=document.createElement("div");
                 return warn.className="warn",
-                warn.textContent="A component hit an error on this page. Try reloading; if it keeps happening, toggle WebWarden off and on in the popup.",
+                warn.textContent="A component hit an error on this page. Try reloading; if it keeps happening, toggle Warden One off and on in the popup.",
                 void listEl.appendChild(warn)
               }
               total>0&&(bEl.classList.add("hot"),

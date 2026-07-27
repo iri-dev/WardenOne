@@ -1,4 +1,4 @@
-/* WebWarden EyeShield: dynamic site theming (dark / ultra / light / brightness)
+/* Warden One EyeShield: dynamic site theming (dark / ultra / light / brightness)
  *
  * Instead of slapping `filter: invert()` on <html> (which negative-izes every
  * image and washes everything to muddy mid-grays), we rewrite the COLOR VALUES

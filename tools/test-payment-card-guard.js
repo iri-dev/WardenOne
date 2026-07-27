@@ -581,7 +581,7 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
     }));
     await assert.rejects(
       s.fetch('https://secure-pay-deal.xyz/charge', { body: 'card=' + validCard() }),
-      /Blocked by WebWarden Payment Card Guard/
+      /Blocked by Warden One Payment Card Guard/
     );
     assert.strictEqual(hasLog(s, 'warned_payment_card_entry'), true);
     assert.strictEqual(s.__confirmCalls.length, 1);
@@ -604,7 +604,7 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
     }));
     await assert.rejects(
       s.fetch('https://processor.example/charge', { body: 'card=' + validCard() }),
-      /Blocked by WebWarden Payment Card Guard/
+      /Blocked by Warden One Payment Card Guard/
     );
     assert.strictEqual(hasLog(s, 'blocked_payment_card_submit'), true);
     assert.strictEqual(s.__fetches.length, 0);

@@ -1,5 +1,5 @@
 /*
- * WebWarden Twitch ad blocker.
+ * Warden One Twitch ad blocker.
  *
  * Installs before Twitch's player and handles both server-side HLS ads and the
  * current display/audio-ad shells. The clean-stream strategy is informed by

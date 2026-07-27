@@ -1,4 +1,4 @@
-/* WebWarden popup logic */
+/* Warden One popup logic */
 
 // Cached element lookup. Replaces ~135 raw getElementById calls: shorter,
 // one obvious place to typo-check an id, and it caches the node so repeated lookups of
@@ -850,7 +850,7 @@ function allowlistCurrent() {
         }
         setNote(note, [
           { t: host, cls: 'saved' },
-          { t: ' allowlisted — WebWarden stays passive there after reload.' },
+          { t: ' allowlisted — Warden One stays passive there after reload.' },
         ]);
         updateAllowlistBtn();
       });
@@ -2731,7 +2731,7 @@ function renderPermResults(out, hostname, res) {
 
   toggle.addEventListener('change', () => {
     if (toggle.checked) {
-      const ok = window.confirm('Turn on "Never let sites remember me"?\n\nWhen you close a site, WebWarden will clear its cookies and stored data — so you\'ll be logged out and it can\'t recognise you next time. Sites on your allowlist are left alone.');
+      const ok = window.confirm('Turn on "Never let sites remember me"?\n\nWhen you close a site, Warden One will clear its cookies and stored data — so you\'ll be logged out and it can\'t recognise you next time. Sites on your allowlist are left alone.');
       if (!ok) { toggle.checked = false; return; }
       config.forgetMeMode = 'all';
       config.forgetMeAllConfirmedAt = Date.now();

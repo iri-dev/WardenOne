@@ -1,7 +1,7 @@
 /*
- * WebWarden -- background service worker (MV3)
+ * Warden One -- background service worker (MV3)
  * ============================================
- * Maintains the toolbar badge: a per-tab count of how many things WebWarden
+ * Maintains the toolbar badge: a per-tab count of how many things Warden One
  * blocked/gated on that tab. Counts come from the bridge (which hears them from
  * the main-world trap). Resets when a tab navigates to a new page.
  */
@@ -110,7 +110,7 @@ function normalizeTabBlockMessage(msg, sender) {
   out.detail = Object.assign({}, detailObj, {
     pageHost,
     targetHost,
-    why: 'A token-shaped value tried to leave this page for another domain. WebWarden blocked the request; on large sites this can also be a noisy embedded-service call.',
+    why: 'A token-shaped value tried to leave this page for another domain. Warden One blocked the request; on large sites this can also be a noisy embedded-service call.',
   });
   return out;
 }
@@ -867,7 +867,7 @@ async function checkExtensionForNewPermissions(ext) {
             type: 'basic',
             iconUrl: 'icons/icon128.png',
             title: 'Extension gained new permissions',
-            message: (ext.name || 'An extension') + ' ' + alert.gained[0] + (alert.gained.length > 1 ? ' (and ' + (alert.gained.length - 1) + ' more)' : '') + '. Tap WebWarden to review.',
+            message: (ext.name || 'An extension') + ' ' + alert.gained[0] + (alert.gained.length > 1 ? ' (and ' + (alert.gained.length - 1) + ' more)' : '') + '. Tap Warden One to review.',
             priority: 2,
           });
         } catch (_) {}
@@ -923,7 +923,7 @@ importScripts('background-startup.js');
 // as the services rotate them, so pulling daily keeps the block current without
 // shipping a new extension version. Add/remove sources freely.
 //
-// NOTE: these are community lists -- WebWarden validates every entry (must be a
+// NOTE: these are community lists -- Warden One validates every entry (must be a
 // well-formed domain) and caps the total, so a compromised/garbage source can't
 // inject arbitrary rules. Plain-domain and uBlock(`||domain^`, `domain/*`)
 // formats are both parsed.
@@ -1078,12 +1078,12 @@ const SUPPLEMENTAL_LIST_SOURCES = [
 ];
 
 // Payment processors relax warnings, so they are NOT pulled from community
-// blocklists. If WebWarden ships an owner-controlled manifest, it can include:
+// blocklists. If Warden One ships an owner-controlled manifest, it can include:
 // { "version": 1, "adultDomains": [], "ipLoggerDomains": [],
 //   "paymentProcessorDomains": [], "scamDomains": [], "phishingDomains": [] }
 // Scam/phishing manifest entries are parsed for future use but the existing DNR
 // updater remains the enforcement path for those categories. Set this to a
-// WebWarden-owned HTTPS JSON endpoint once that endpoint exists; keeping it as a
+// Warden One-owned HTTPS JSON endpoint once that endpoint exists; keeping it as a
 // single audited constant avoids adding arbitrary remote config fetches.
 const SUPPLEMENTAL_BUNDLED_MANIFEST_PATH = 'supplemental-manifest.json';
 const SUPPLEMENTAL_MANIFEST_URL = '';
@@ -1381,7 +1381,7 @@ async function updateAdShieldCosmetics() {
     invalidateCosmeticCache(); // fresh blob written -- drop the in-memory copy so the next request reloads it
     await pruneStorageIfNeeded('adshield-cosmetic');
   } catch (e) {
-    console.warn('[WebWarden] AdShield cosmetic update failed', e);
+    console.warn('[Warden One] AdShield cosmetic update failed', e);
   }
 }
 
@@ -1564,7 +1564,7 @@ const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDG
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET;
 // Guards: assert at module load that the budget fits, catching silent drift.
 if (TOTAL_DYNAMIC_BUDGET > 30000) {
-  console.error('[WebWarden] Dynamic rule budget exceeds Chrome 30k ceiling!');
+  console.error('[Warden One] Dynamic rule budget exceeds Chrome 30k ceiling!');
 }
 const RESOURCE_TYPES = ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'];
 const LIST_FETCH_TIMEOUT_MS = 12000;
@@ -2009,7 +2009,7 @@ function getRepairFramesForTab(tab) {
 }
 
 // ---- Adaptive "learned bad domains" ------------------------------------
-// When WebWarden's behavioral scorer (or a grabber detection) flags a domain
+// When Warden One's behavioral scorer (or a grabber detection) flags a domain
 // that was NOT on any blocklist, we remember it. On the next visit it's blocked
 // by a dynamic DNR rule. The user sees these in the Activity Log's "Learned bad
 // sites" section and can keep or remove each. This is the adaptive memory that
@@ -2122,7 +2122,7 @@ async function applyLearnedRules() {
       condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'] },
     }));
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) { console.warn('[WebWarden] learned rules failed', e); }
+  } catch (e) { console.warn('[Warden One] learned rules failed', e); }
 }
 // ---- Feed-updatable IP-grabber list -------------------------------------------
 // The static grabber ruleset (rules.json) is frozen at ship time, but grabber operators
@@ -2156,7 +2156,7 @@ async function applyGrabberFeedRules() {
       condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'media', 'object', 'other'] },
     }));
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) { console.warn('[WebWarden] grabber feed rules failed', e); }
+  } catch (e) { console.warn('[Warden One] grabber feed rules failed', e); }
 }
 async function loadGrabberFeed() {
   GRABBER_FEED_DOMAINS.clear();
@@ -2343,7 +2343,7 @@ async function applyTrackerLearnerRules() {
       .forEach((domain) => addRule('block', 1800, domain));
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: rules });
   } catch (e) {
-    console.warn('[WebWarden] tracker learner rules failed', e);
+    console.warn('[Warden One] tracker learner rules failed', e);
   }
 }
 
@@ -3304,7 +3304,7 @@ async function fetchPhishTankUrl(url, apiKey) {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'X-WebWarden-Client': 'webwarden/' + WW_CLIENT_VERSION,
+        'X-Warden One-Client': 'webwarden/' + WW_CLIENT_VERSION,
       },
       body: body.toString(),
     }, EXTERNAL_REPUTATION_TIMEOUT_MS);
@@ -4834,7 +4834,7 @@ async function handleSafeBrowsingNavigation(details) {
       url: safeBrowsingBlockPageUrl({ url, provider: verdict.provider || 'URL reputation', threats: (verdict.threats || []).join(','), context: 'page' }),
     });
   } catch (e) {
-    console.warn('[WebWarden] URL reputation page check failed', e);
+    console.warn('[Warden One] URL reputation page check failed', e);
   }
 }
 
@@ -4915,7 +4915,7 @@ async function testReputationProviderKey(key, opts) {
     const result = await opts.probe(key);
     if (result && result.ok) return { ok: true, message: opts.success };
     if (result && result.rateLimited) {
-      return { ok: true, warning: true, message: label + ' responded but is rate-limited right now. The key is saved and WebWarden will retry later.' };
+      return { ok: true, warning: true, message: label + ' responded but is rate-limited right now. The key is saved and Warden One will retry later.' };
     }
     if (result && result.cloudflare && opts.cloudflare) return { ok: false, error: opts.cloudflare };
     if (result && (result.status === 401 || result.status === 403)) return { ok: false, error: opts.rejected };
@@ -4939,7 +4939,7 @@ function testPhishTankKey(apiKey) {
     probe: (key) => fetchPhishTankUrl('https://www.google.com/', key),
     success: 'PhishTank responded. Verified phishing URL checks are enabled.',
     rejected: 'PhishTank rejected this key or request.',
-    cloudflare: 'PhishTank returned a browser challenge instead of API JSON. Try again later; WebWarden did not mark the key as valid.',
+    cloudflare: 'PhishTank returned a browser challenge instead of API JSON. Try again later; Warden One did not mark the key as valid.',
   });
 }
 
@@ -5293,7 +5293,7 @@ async function applyAllowlistRules(list) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
     __allowlistRulesKey = key;
   } catch (e) {
-    console.warn('[WebWarden] allowlist DNR rules failed', e);
+    console.warn('[Warden One] allowlist DNR rules failed', e);
   }
 }
 
@@ -5361,7 +5361,7 @@ async function applyMediaCompatibilityRules(enabled) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules: frameAllowRules.concat(addRules) });
     __mediaCompatibilityRulesEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] media compatibility DNR rules failed', e);
+    console.warn('[Warden One] media compatibility DNR rules failed', e);
   }
 }
 
@@ -5396,7 +5396,7 @@ async function applyLoginCompatibilityRules(enabled) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
     __loginCompatibilityRulesEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] login compatibility DNR rules failed', e);
+    console.warn('[Warden One] login compatibility DNR rules failed', e);
   }
 }
 
@@ -5461,7 +5461,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
       try { applyTrackerLearnerRules(); } catch (_) {}
     }
   } catch (e) {
-    console.warn('[WebWarden] blocklist ruleset toggle failed', e);
+    console.warn('[Warden One] blocklist ruleset toggle failed', e);
   }
 }
 
@@ -5635,7 +5635,7 @@ async function applyAllCookieBlock(enabled) {
     }
     __allCookieBlockEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] all-cookie setting failed', e);
+    console.warn('[Warden One] all-cookie setting failed', e);
   }
 }
 
@@ -5667,7 +5667,7 @@ async function applyGlobalLocationBlock(enabled) {
     }
     __globalLocationBlockEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] location content setting failed', e);
+    console.warn('[Warden One] location content setting failed', e);
   }
 }
 
@@ -5868,7 +5868,7 @@ async function reconcileGoogleCleanupCssInjection(cfgArg) {
     await reconcileSearchCleanupCssScript(SEARCH_AI_CLEANUP_CSS_SCRIPT_ID, 'search-ai-cleanup.css', searchAiCleanupActive(cfg));
     await reconcileSearchCleanupCssScript(SEARCH_SPONSORED_CLEANUP_CSS_SCRIPT_ID, 'search-sponsored-cleanup.css', searchSponsoredCleanupActive(cfg));
   } catch (e) {
-    console.warn('[WebWarden] search cleanup pre-paint CSS registration failed', e);
+    console.warn('[Warden One] search cleanup pre-paint CSS registration failed', e);
   }
 }
 
@@ -6080,7 +6080,7 @@ async function applyPrivacyHeaderRule(enabled) {
     });
     __privacyHeaderRuleEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] privacy header rule failed', e);
+    console.warn('[Warden One] privacy header rule failed', e);
   }
 }
 
@@ -6112,7 +6112,7 @@ async function applyLocationPrivacyHeaderRule(enabled) {
     });
     __locationPrivacyHeaderRuleEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] location privacy header rule failed', e);
+    console.warn('[Warden One] location privacy header rule failed', e);
   }
 }
 
@@ -6140,7 +6140,7 @@ async function applyIpLookupBlockRules(enabled) {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
     __ipLookupBlockRulesEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] IP lookup block rules failed', e);
+    console.warn('[Warden One] IP lookup block rules failed', e);
   }
 }
 
@@ -6171,7 +6171,7 @@ async function applyThirdPartyCookieRule(enabled) {
     });
     __thirdPartyCookieRuleEnabled = enabled;
   } catch (e) {
-    console.warn('[WebWarden] third-party cookie rule failed', e);
+    console.warn('[Warden One] third-party cookie rule failed', e);
   }
 }
 
@@ -6223,14 +6223,14 @@ async function applyHttpsUpgradeRule(enabled) {
     });
     sessionOk = true;
   } catch (e) {
-    console.warn('[WebWarden] https session upgrade rule failed', e);
+    console.warn('[Warden One] https session upgrade rule failed', e);
   }
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({
       addRules: [httpsUpgradeRule(HTTPS_UPGRADE_DYNAMIC_RULE_ID)],
     });
   } catch (e) {
-    console.warn(sessionOk ? '[WebWarden] persistent https upgrade rule failed' : '[WebWarden] https upgrade rule failed', e);
+    console.warn(sessionOk ? '[Warden One] persistent https upgrade rule failed' : '[Warden One] https upgrade rule failed', e);
   }
   if (sessionOk) __httpsUpgradeRuleEnabled = enabled;
 }
@@ -6245,7 +6245,7 @@ function refreshHttpsUpgrade() {
 }
 
 // ---- Certificate Guard ----------------------------------------------------
-// Chrome does the real TLS validation. WebWarden listens for top-level
+// Chrome does the real TLS validation. Warden One listens for top-level
 // certificate/SSL failures, logs them, and replaces the raw browser error with a
 // clear "Connection Not Trusted" block page. Chrome does not expose full cert
 // metadata to MV3 extensions, so we classify from the browser error name.
@@ -6317,7 +6317,7 @@ function classifyTrustError(error, url, cfg, tabId) {
       action: 'Blocked',
       risk: 'This site did not provide a usable HTTPS connection, so traffic could fall back to plain HTTP.',
       problem: 'HTTPS unavailable',
-      why: 'WebWarden forced HTTPS before the insecure request was sent, but the site did not complete a secure connection.',
+      why: 'Warden One forced HTTPS before the insecure request was sent, but the site did not complete a secure connection.',
       host,
       originalUrl: httpRec.url,
     };
@@ -6387,7 +6387,7 @@ async function handleTrustError(details) {
 
     await tabsUpdate(details.tabId, { url: trustErrorPageUrl(info, url, details.error) });
   } catch (e) {
-    console.warn('[WebWarden] certificate guard failed', e);
+    console.warn('[Warden One] certificate guard failed', e);
   }
 }
 
@@ -6397,7 +6397,7 @@ try {
     { urls: ['<all_urls>'], types: ['main_frame'] }
   );
 } catch (e) {
-  console.warn('[WebWarden] certificate guard listener failed', e);
+  console.warn('[Warden One] certificate guard listener failed', e);
 }
 
 // Re-apply when the user changes settings (session rules are cleared on browser
@@ -6795,7 +6795,7 @@ async function applyScriptShieldRules(mode, trustedHosts) {
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
   } catch (e) {
-    console.warn('[WebWarden] Script Shield DNR rules failed', e);
+    console.warn('[Warden One] Script Shield DNR rules failed', e);
   }
 }
 
@@ -6866,7 +6866,7 @@ async function applyFingerprintScriptRules(enabled) {
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
   } catch (e) {
-    console.warn('[WebWarden] fingerprint script rules failed', e);
+    console.warn('[Warden One] fingerprint script rules failed', e);
   }
 }
 
@@ -6939,7 +6939,7 @@ async function applyGoogleSearchSponsoredAllowRules(enabled) {
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
   } catch (e) {
-    console.warn('[WebWarden] Google Search sponsored allow rules failed', e);
+    console.warn('[Warden One] Google Search sponsored allow rules failed', e);
   }
 }
 
@@ -7049,7 +7049,7 @@ async function applyNeverBlockAllowRules() {
       });
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) { console.warn('[WebWarden] never-block allow rules failed', e); }
+  } catch (e) { console.warn('[Warden One] never-block allow rules failed', e); }
 }
 applyNeverBlockAllowRules();
 
@@ -7404,7 +7404,7 @@ async function saveListIntegrity(integrity, acceptedRecords, alerts, reason) {
   });
     return { sources, alerts: nextAlerts };
   } catch (e) {
-    console.warn('[WebWarden] list integrity metadata save failed', e);
+    console.warn('[Warden One] list integrity metadata save failed', e);
     return integrity || { sources: {}, alerts: [] };
   }
 }
@@ -7531,7 +7531,7 @@ async function fetchListSource(url, reason, integrity) {
       optionRules
     );
     if (!verdict.ok) {
-      console.warn('[WebWarden] source integrity rejected (' + reason + '):', url, verdict.reason);
+      console.warn('[Warden One] source integrity rejected (' + reason + '):', url, verdict.reason);
       return {
         ok: false,
         url,
@@ -7544,7 +7544,7 @@ async function fetchListSource(url, reason, integrity) {
         }),
       };
     }
-    console.log('[WebWarden] fetched', domains.length, 'domains,', optionRules.length, 'option-rules from', url);
+    console.log('[Warden One] fetched', domains.length, 'domains,', optionRules.length, 'option-rules from', url);
     return { ok: true, url, domains, optionRules, integrityRecord: verdict.record };
   } catch (e) {
     const err = String(e);
@@ -7558,7 +7558,7 @@ async function fetchListSource(url, reason, integrity) {
         alert: listIntegrityAlert('source', url, clean),
       };
     }
-    console.warn('[WebWarden] source failed (' + reason + '):', url, err);
+    console.warn('[Warden One] source failed (' + reason + '):', url, err);
     return { ok: false, url, error: err };
   }
 }
@@ -7792,7 +7792,7 @@ async function updateSupplementalLists(reason) {
   const cfg = (store && store.webwarden_config) || {};
   const previousMeta = await getSupplementalListMeta();
   const forcedUpdate = /^(manual|settings-change|master-reenable|repair)$/i.test(String(reason || ''));
-  if (cfg.enabled === false) return { ok: false, skipped: true, error: 'WebWarden is disabled', meta: previousMeta };
+  if (cfg.enabled === false) return { ok: false, skipped: true, error: 'Warden One is disabled', meta: previousMeta };
   if (cfg.autoUpdateLists === false && !forcedUpdate) return { ok: false, skipped: true, error: 'Auto-update is disabled', meta: previousMeta };
 
   const sources = SUPPLEMENTAL_LIST_SOURCES.concat(SUPPLEMENTAL_MANIFEST_SOURCES).filter((s) => s && s.url);
@@ -7934,7 +7934,7 @@ function prioritizedOptionRuleCandidates(buckets) {
 }
 
 // A list refresh can spend several seconds downloading/parsing sources. The user
-// may turn WebWarden off during that work, after refreshBlocklistRuleset() has
+// may turn Warden One off during that work, after refreshBlocklistRuleset() has
 // already removed the old rules. Re-check the live config at the actual DNR
 // commit boundary so that stale work cannot reinstall blocking behind an off
 // master switch. The post-commit check closes the much smaller race where the
@@ -7970,7 +7970,7 @@ async function updateRemoteListsCore(reason) {
   const forcedUpdate = /^(manual|settings-change|master-reenable|repair)$/i.test(String(reason || ''));
   if (cfg.enabled === false) {
     try { await removeWebWardenDynamicRules(); } catch (_) {}
-    return { ok: false, skipped: true, error: 'WebWarden is disabled', meta: previousMeta };
+    return { ok: false, skipped: true, error: 'Warden One is disabled', meta: previousMeta };
   }
   if (cfg.autoUpdateLists === false && !forcedUpdate) {
     return { ok: false, skipped: true, error: 'Auto-update is disabled', meta: previousMeta };
@@ -8056,7 +8056,7 @@ async function updateRemoteListsCore(reason) {
 
   // Fail safe: if EVERY source failed, keep existing dynamic rules untouched.
   if (!anySucceeded || !merged.size) {
-    console.warn('[WebWarden] no sources reachable; keeping existing rules');
+    console.warn('[Warden One] no sources reachable; keeping existing rules');
     await saveListIntegrity(integrity, {}, integrityAlerts, reason);
     await warnIfRemoteListsStale(previousMeta, 'No list sources reachable');
     return { ok: false, error: 'No list sources reachable', meta: previousMeta, sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources } };
@@ -8071,7 +8071,7 @@ async function updateRemoteListsCore(reason) {
       remoteCount,
     });
     await saveListIntegrity(integrity, {}, integrityAlerts.concat(alert), reason);
-    console.warn('[WebWarden] combined list integrity rejected:', totalDrift);
+    console.warn('[Warden One] combined list integrity rejected:', totalDrift);
     return {
       ok: false,
       error: 'List integrity guard rejected update: ' + totalDrift,
@@ -8107,7 +8107,7 @@ async function updateRemoteListsCore(reason) {
       return {
         ok: false,
         skipped: true,
-        error: 'WebWarden is disabled',
+        error: 'Warden One is disabled',
         meta: previousMeta,
         sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
       };
@@ -8117,7 +8117,7 @@ async function updateRemoteListsCore(reason) {
     try {
       storedDomains = await persistBlockedDomainsForStorage([...merged]);
     } catch (e) {
-      console.warn('[WebWarden] blocked-domain storage failed:', e);
+      console.warn('[Warden One] blocked-domain storage failed:', e);
     }
     const savedIntegrity = await saveListIntegrity(integrity, acceptedIntegrityRecords, integrityAlerts, reason);
     const activeDomainBuckets = {
@@ -8155,10 +8155,10 @@ async function updateRemoteListsCore(reason) {
     await applyLearnedRules();
     await applyTrackerLearnerRules();
     await writeStorageTelemetry('remote-list-update', { storedDomainCount: storedDomains.storedCount || 0 });
-    console.log('[WebWarden] updated dynamic blocklist:', domains.length, 'domain rules,', optionRules.length, 'option rules,', remoteCount, 'remote domains (' + reason + ')');
+    console.log('[Warden One] updated dynamic blocklist:', domains.length, 'domain rules,', optionRules.length, 'option rules,', remoteCount, 'remote domains (' + reason + ')');
     return { ok: true, meta };
   } catch (e) {
-    console.warn('[WebWarden] failed applying dynamic rules:', e);
+    console.warn('[Warden One] failed applying dynamic rules:', e);
     await warnIfRemoteListsStale(previousMeta, String(e));
     return { ok: false, error: String(e), meta: previousMeta, sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources } };
   }
@@ -8466,7 +8466,7 @@ async function buildProtectionHealthSummary() {
   const highest = criticalIssue ? 'danger' : setupIssue ? 'warning' : 'ok';
   const status = cfg.enabled === false ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : "You're safe";
   const detail = cfg.enabled === false
-    ? 'Turn the master switch back on to re-enable WebWarden.'
+    ? 'Turn the master switch back on to re-enable Warden One.'
     : criticalIssue
       ? criticalIssue.text
       : setupIssue
@@ -8676,7 +8676,7 @@ async function recordPermissionChainSignal(sender, msg, granted) {
     reasons: verdict.reasons,
     events: eventSummary,
     why: verdict.reasons[0] || 'This site requested several sensitive browser capabilities in a short time.',
-    action: 'Review this site in WebWarden Site permission scanner or reset unused permissions to Ask/Blocked.',
+    action: 'Review this site in Warden One Site permission scanner or reset unused permissions to Ask/Blocked.',
   };
 
   const shouldWarn = verdict.risk !== 'Low'
@@ -9093,7 +9093,7 @@ async function handleScriptDriftScan(sender, msg) {
 // Let the popup trigger a manual refresh.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Defense-in-depth: device-wide DESTRUCTIVE actions (clear ALL site data, wipe a
-  // site) must originate from a WebWarden extension page (popup/options), never from
+  // site) must originate from a Warden One extension page (popup/options), never from
   // a content script running on a web page. Extension-page senders have no
   // sender.tab; content scripts always do. Web pages can't message us at all today
   // (no externally_connectable), but this blocks any future/compromised relay path.
@@ -9202,7 +9202,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg && msg.kind === 'download-review-get') {
     if (!messageSenderIsExtensionPath(sender, 'download-review.html')) {
-      try { sendResponse({ ok: false, error: 'Download review must be opened from the WebWarden review window.' }); } catch (_) {}
+      try { sendResponse({ ok: false, error: 'Download review must be opened from the Warden One review window.' }); } catch (_) {}
       return true;
     }
     getPendingDownload(msg.id)
@@ -9213,7 +9213,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg && msg.kind === 'download-review-decision') {
     if (!messageSenderIsExtensionPath(sender, 'download-review.html')) {
-      try { sendResponse({ ok: false, error: 'Download review decisions must come from the WebWarden review window.' }); } catch (_) {}
+      try { sendResponse({ ok: false, error: 'Download review decisions must come from the Warden One review window.' }); } catch (_) {}
       return true;
     }
     handleDownloadDecision(msg.id, msg.decision, sender)
@@ -10394,7 +10394,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         const res = await fetch('https://haveibeenpwned.com/api/v3/breaches?Domain=' + encodeURIComponent(d), {
-          headers: { 'User-Agent': 'WebWarden-Extension' },
+          headers: { 'User-Agent': 'Warden One-Extension' },
           credentials: 'omit',
           redirect: 'error',
         });
