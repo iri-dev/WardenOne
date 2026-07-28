@@ -159,6 +159,7 @@ function checkContentBuild() {
   'tools/test-eyeshield-readability.js',
   'tools/test-protection-health.js',
   'tools/test-twitch-adblock.js',
+  'tools/test-twitch-failopen.js',
   'tools/test-twitch-playlist-compatibility.js',
   'tools/test-twitch-rewind.js',
   'tools/test-twitch-vod-rewind.js',
@@ -166,6 +167,10 @@ function checkContentBuild() {
   'tools/serve-rewind-harness.js',
   'tools/test-runtime-idempotence.js',
   'tools/test-runtime-config-lifecycle.js',
+  'tools/test-network-compatibility.js',
+  'tools/test-script-popup-shield.js',
+  'tools/test-site-compatibility.js',
+  'tools/test-streaming-compatibility.js',
   'tools/test-token-exfil-trust.js',
   'tools/test-bridge-bounds.js',
   'tools/test-static-dnr-compatibility.js',
@@ -193,6 +198,9 @@ checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--che
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
 checkCommand('runtime config lifecycle tests', ['tools/test-runtime-config-lifecycle.js']);
+checkCommand('network compatibility tests', ['tools/test-network-compatibility.js']);
+checkCommand('site compatibility tests', ['tools/test-site-compatibility.js']);
+checkCommand('streaming compatibility tests', ['tools/test-streaming-compatibility.js']);
 checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);
@@ -208,12 +216,14 @@ checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
+checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);
 checkCommand('Twitch playlist compatibility tests', ['tools/test-twitch-playlist-compatibility.js']);
 checkCommand('Twitch rewind tests', ['tools/test-twitch-rewind.js']);
 checkCommand('Twitch VOD rewind tests', ['tools/test-twitch-vod-rewind.js']);
 checkCommand('onboarding bundle tests', ['tools/test-onboarding-bundles.js']);
 checkCommand('runtime idempotence tests', ['tools/test-runtime-idempotence.js']);
 checkCommand('anti redirect tests', ['tools/test-anti-redirect.js']);
+checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js']);
 checkCommand('X compatibility tests', ['tools/test-x-compatibility.js']);
 checkCommand('YouTube adblock tests', ['tools/test-yt-adblock.js']);
 checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);

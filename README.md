@@ -74,7 +74,7 @@ one switch, with fine-grained control over every piece.
 
 ### Popups, redirects &amp; overlays
 - Block **forced popups / popunders** (timer-based `window.open`, hidden ad tabs).
-- **Strict ad-popup shield** for "download + ad tab" installer tricks.
+- **Strict ad-popup shield**, on by default, for "download + ad tab" installer tricks without hijacking player controls or sign-ins.
 - Remove **in-page overlays** — fake notification bells, subscribe walls, adblock nags, cookie / continue walls, download gates — with an Undo chip.
 - **Auto-skip download-ad gates**, block **gestureless redirects**, detect **CPA redirect chains**, and stop **`<meta refresh>` bounces**.
 

@@ -179,8 +179,25 @@ function build(opts) {
     setHref(u) { loc.href = u; },
     submit(form) { sandbox.HTMLFormElement.prototype.submit.call(form); },
     lastEmit() { return state.emits[state.emits.length - 1] || null; },
-    handshake() {
+    handshake(config) {
       api.fire('message', { source: innerWindow, data: { source: 'wardenone-handshake', token: 'tok' } });
+      if (config !== false) {
+        api.fire('message', {
+          source: innerWindow,
+          data: {
+            source: 'wardenone',
+            kind: 'config',
+            token: 'tok',
+            overrides: Object.assign({
+              enabled: true,
+              blockGesturelessNav: true,
+              blockForcedPopups: true,
+              strictPopupShield: true,
+              gestureWindowMs: 2400,
+            }, config || opts.config || {}),
+          },
+        });
+      }
     },
   };
   api.handshake();
@@ -190,7 +207,14 @@ function build(opts) {
 let pass = 0, fail = 0;
 function check(name, cond, extra) {
   if (cond) { pass++; console.log('  ok  - ' + name); }
-  else { fail++; console.log('  FAIL - ' + name + (extra ? ' :: ' + JSON.stringify(extra) : '')); }
+  else {
+    fail++;
+    let detail = '';
+    if (extra) {
+      try { detail = ' :: ' + JSON.stringify(extra); } catch (_) { detail = ' :: [non-serializable value]'; }
+    }
+    console.log('  FAIL - ' + name + detail);
+  }
 }
 
 // T1: gestureless popup blocked
@@ -199,7 +223,7 @@ function check(name, cond, extra) {
   t.open('https://ads1-example.com/x');
   check('T1 gestureless popup blocked', t.state.opened.length === 0, t.state);
   const pop = t.open('https://ads2-example.com/y');
-  check('T1b blocked popup returns null', pop === null, pop);
+  check('T1b blocked popup returns inert closed facade', !!pop && pop.closed === true && pop.document && typeof pop.document.write === 'function', pop);
 }
 
 // T2: plain-element gesture allows ONE non-suspicious popup, second is blocked
@@ -370,20 +394,21 @@ function check(name, cond, extra) {
   check('T13b non-silent (Continue available)', !!e && e.detail.silent === false, e);
 }
 
-// T13c: cross-site link layered over the video player cancelled
+// T13c: a normal same-tab link over the player remains native. Popup overlays
+// are handled only when target=_blank and confirmed/suspicious.
 {
   const t = build({ videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
   const a = makeEl({ tag: 'a', href: 'https://lander-xyz.com/a', attrs: { href: 'https://lander-xyz.com/a' }, rect: { left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 } });
   const ev = t.userClick(a, 300, 300);
-  check('T13c link over video player cancelled', ev.defaultPrevented === true, ev);
+  check('T13c ordinary same-tab link over video player stays native', ev.defaultPrevented === false, ev);
 }
 
-// T13d: cross-site link WRAPPING the video player is still cancelled
+// T13d: a normal link wrapping media is likewise left native.
 {
   const t = build({ videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
   const a = makeEl({ tag: 'a', href: 'https://adult-lander.com/a', attrs: { href: 'https://adult-lander.com/a' }, rect: { left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }, containsVideo: true });
   const ev = t.userClick(a, 300, 300);
-  check('T13d link wrapping video player cancelled', ev.defaultPrevented === true, ev);
+  check('T13d ordinary link wrapping video player stays native', ev.defaultPrevented === false, ev);
 }
 
 // T13e: a script cannot reuse an explicit video-link destination for same-tab redirect
@@ -395,12 +420,12 @@ function check(name, cond, extra) {
   check('T13e video click does not authorize scripted redirect', t.state.assigned.length === 0, t.state.assigned);
 }
 
-// T13f: player-like iframe surfaces get the same protection
+// T13f: an iframe/media rectangle alone is not proof that a real link is an ad.
 {
   const t = build({ iframeRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
   const a = makeEl({ tag: 'a', href: 'https://adult-lander.com/a', attrs: { href: 'https://adult-lander.com/a' }, rect: { left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 } });
   const ev = t.userClick(a, 300, 300);
-  check('T13f link over iframe player cancelled', ev.defaultPrevented === true, ev);
+  check('T13f ordinary link over iframe player stays native', ev.defaultPrevented === false, ev);
 }
 
 // T14: same-site nav always allowed, even gestureless
@@ -464,13 +489,13 @@ function check(name, cond, extra) {
   check('T20 flagged ad-network target blocked silently', t.state.hrefSets.length === 0 && !!e && e.detail.silent === true, e);
 }
 
-// T21: a trusted untainted gesture may synchronously reserve one real blank popup
+// T21: a generic gesture cannot reserve a navigable blank popup.
 {
   const t = build();
   const btn = makeEl({ tag: 'button', text: 'Yes, please' });
   t.userClick(btn, 50, 50);
   const pop = t.open('about:blank');
-  check('T21 label-independent blank popup allowed', t.state.opened.length === 1 && pop && pop.__nativeWindow === true, t.state);
+  check('T21 non-auth blank popup is contained by an inert facade', t.state.opened.length === 0 && pop && pop.closed === true && pop.document && typeof pop.document.write === 'function', t.state);
 }
 
 // T22: native target=_blank is likewise allowed under the fresh gesture
@@ -490,44 +515,44 @@ function check(name, cond, extra) {
   check('T23 login-labeled about:blank returns real handle', t.state.opened.length === 1 && pop === t.state.handles[0], t.state.opened);
 }
 
-// T24: staged about:blank popup remains the real handle when the SDK navigates it
+// T24: an auth-labelled staged popup remains the real handle when the SDK navigates it
 {
   const t = build();
-  const a = makeEl({ tag: 'a', href: 'https://gamedrive.org/game', attrs: { href: 'https://gamedrive.org/game' }, text: 'Open GameDrive' });
+  const a = makeEl({ tag: 'a', href: 'https://gamedrive.org/game', attrs: { href: 'https://gamedrive.org/game' }, text: 'Sign in with GameDrive' });
   t.userClick(a, 50, 50);
   const pop = t.open('about:blank');
   pop.location.href = 'https://gamedrive.org/game';
   check('T24 staged popup navigates through real handle', t.state.opened.length === 1 && t.state.opened[0] === 'about:blank' && pop.location.href === 'https://gamedrive.org/game', t.state);
 }
 
-// T25: the real handle is not a truthy fake/proxy that lies to the page SDK
+// T25: a generic staged popup cannot navigate its inert handle to an ad.
 {
   const t = build();
   const a = makeEl({ tag: 'a', href: 'https://gamedrive.org/game', attrs: { href: 'https://gamedrive.org/game' }, text: 'Open GameDrive' });
   t.userClick(a, 50, 50);
   const pop = t.open('about:blank');
   pop.location.href = 'https://adnetwork-lander.com/pop';
-  check('T25 native popup handle preserves location semantics', pop === t.state.handles[0] && pop.location.href === 'https://adnetwork-lander.com/pop', t.state);
+  check('T25 generic blank popup cannot be navigated to an ad', t.state.opened.length === 0 && pop && pop.closed === true && String(pop.location.href) === 'about:blank', t.state);
 }
 
-// T26: a generic button gets the same staged OAuth/SSO compatibility
+// T26: a generic button does not receive OAuth/SSO blank-window compatibility
 {
   const t = build();
   const btn = makeEl({ tag: 'button', text: 'Open' });
   t.userClick(btn, 50, 50);
   const pop = t.open('about:blank');
   pop.location.assign('https://gamedrive.org/game');
-  check('T26 plain-button staged blank popup works', t.state.opened.length === 1 && pop.location.href === 'https://gamedrive.org/game', t.state);
+  check('T26 plain-button staged blank popup stays inert', t.state.opened.length === 0 && pop && pop.closed === true && String(pop.location.href) === 'about:blank', t.state);
 }
 
-// T27: the blank-window allowance remains single-use per gesture
+// T27: even an auth blank-window allowance remains single-use per gesture
 {
   const t = build();
-  const btn = makeEl({ tag: 'button', text: 'Continue' });
+  const btn = makeEl({ tag: 'button', text: 'Sign in' });
   t.userClick(btn, 50, 50);
   const first = t.open('about:blank');
   const second = t.open('about:blank');
-  check('T27 only one blank popup per gesture', !!first && second === null && t.state.opened.length === 1, t.state);
+  check('T27 only one real auth blank popup per gesture', !!first && first.__nativeWindow === true && second && second.closed === true && t.state.opened.length === 1, t.state);
 }
 
 // T28: do not overwrite a page/identity SDK wrapper on the next gesture

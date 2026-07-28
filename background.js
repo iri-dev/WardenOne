@@ -518,7 +518,7 @@ const DEFAULT_CONFIG = {
   startupCheck: true,
   blockGesturelessNav: true,
   blockForcedPopups: true,
-  strictPopupShield: false,
+  strictPopupShield: true,
   blockMetaRefresh: true,
   detectRedirectChains: true,
   warnGrabberDomains: true,
@@ -673,6 +673,7 @@ const ONBOARDING_RECOMMENDED = {
   enabled: true,
   blockGesturelessNav: true,
   blockForcedPopups: true,
+  strictPopupShield: true,
   blockMetaRefresh: true,
   detectRedirectChains: true,
   warnGrabberDomains: true,
@@ -932,8 +933,6 @@ const REMOTE_LISTS = [
   'https://raw.githubusercontent.com/TMAFE/anti-grabify/master/url_list.txt',
   // The Blocklist Project -- "scam" list includes IP-logger / grabber domains
   'https://raw.githubusercontent.com/blocklistproject/Lists/master/scam.txt',
-  // The Blocklist Project -- tracking (covers many logging/beacon endpoints)
-  'https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt',
   // durablenapkin scam blocklist -- actively maintained scam/grabber hosts
   'https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/hosts.txt',
 ];
@@ -979,6 +978,8 @@ const MALWARE_LISTS = [
 
 // Tracker / ad-analytics domain feeds (toggle: blockTrackers, ON by default).
 const TRACKER_LISTS = [
+  // The Blocklist Project -- tracking (covers many logging/beacon endpoints)
+  'https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt',
   'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext',
   'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/pro.txt',
 ];
@@ -1488,7 +1489,7 @@ function computeCosmeticForHost(rawHost, mem) {
     seenScriptlet.add(key);
     scriptlets.push(sc);
   };
-  if (!videoPlatform) {
+  if (!videoPlatform && mem.cfg.scriptletEngine !== false) {
     (scriptletsByDomain['*'] || []).forEach(pushScriptlet);
     candidates.forEach((d) => { (scriptletsByDomain[d] || []).forEach(pushScriptlet); });
   }
@@ -1977,15 +1978,37 @@ function isMainWorldRepairExcludedUrl(rawUrl) {
   }
 }
 
-function repairMainWorldFilesForUrl(rawUrl) {
+function repairMainWorldFilesForUrl(rawUrl, frameId) {
   try {
     const u = new URL(String(rawUrl || ''));
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-    if (isYouTubeFrameUrl(rawUrl)) return ['permission-chain.js', 'yt-adblock.js'];
     if (isMainWorldRepairExcludedUrl(rawUrl)) return null;
-    return ['content.min.js', 'permission-chain.js', 'anti-redirect.js'];
+    const topFrame = Number(frameId) === 0;
+    const files = [];
+    const add = (file) => { if (!files.includes(file)) files.push(file); };
+    if (topFrame) {
+      add('content.min.js');
+      add('permission-chain.js');
+    }
+    // anti-redirect is the intentionally lightweight all-frame guard.
+    add('anti-redirect.js');
+    if (isTwitchFrameUrl(rawUrl)) add('twitch-adblock.js');
+    if (isYouTubeFrameUrl(rawUrl)) {
+      add('permission-chain.js');
+      add('yt-adblock.js');
+    }
+    return files;
   } catch (_) {
     return null;
+  }
+}
+
+function isTwitchFrameUrl(rawUrl) {
+  try {
+    const host = new URL(String(rawUrl || '')).hostname;
+    return /(^|\.)twitch\.tv$/i.test(host);
+  } catch (_) {
+    return false;
   }
 }
 
@@ -2032,7 +2055,11 @@ const TRACKER_RULE_MAX = TRACKER_RULES_BUDGET;
 const TRACKER_LEARN_MIN_SITES = 3;
 const TRACKER_LEARN_MIN_HITS = 3;
 const TRACKER_LEARN_STORAGE_MAX = 600;
-const TRACKER_RESOURCE_TYPES = ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'];
+// Ambiguous locally-learned tracker candidates are deliberately limited to
+// request-shaped telemetry. A shared player/embed host can legitimately serve
+// both scripts and frames, so learner evidence must never take either of those
+// functional resource types offline.
+const TRACKER_RESOURCE_TYPES = ['image', 'xmlhttprequest', 'ping'];
 const X_APP_COMPAT_DOMAINS = new Set(['x.com', 'twitter.com', 'twimg.com']);
 const TRACKER_PROTECTED_DOMAINS = new Set([
   'google.com', 'gstatic.com', 'googleusercontent.com', 'googleapis.com',
@@ -2366,6 +2393,12 @@ async function noteTrackerObservation(tabUrl, detail) {
     if (cfg.enabled === false || cfg.trackerLearner === false) return;
     let first = '';
     try { first = normalizeTrackerDomain(new URL(String(tabUrl || '')).hostname); } catch (_) {}
+    const signal = String((detail && detail.signal) || 'tracker').slice(0, 40);
+    // DOM discovery only says that a third-party resource exists. Treating a
+    // generic script/iframe/src URL as tracker evidence poisoned shared media
+    // providers after they appeared on a few sites. Only API/path/parameter
+    // evidence reaches the learner.
+    if (signal === 'resource-url') return;
     const third = normalizeTrackerDomain((detail && (detail.domain || detail.host)) || '');
     if (!first || !third || first === third || isProtectedTrackerDomain(third)) return;
     await loadTrackerLearner();
@@ -2382,7 +2415,6 @@ async function noteTrackerObservation(tabUrl, detail) {
     });
     entry.lastSeen = now;
     entry.hits = Math.min(1000000, Number(entry.hits || 0) + 1);
-    const signal = String((detail && detail.signal) || 'tracker').slice(0, 40);
     entry.signals = entry.signals || {};
     entry.signals[signal] = Math.min(1000000, Number(entry.signals[signal] || 0) + 1);
     entry.sites = entry.sites || {};
@@ -6702,13 +6734,36 @@ try {
 // ---- Memory Shield popup/helper tools --------------------------------------
 // Implemented in background-memory.js.
 
-function domainToRule(domain, id) {
+function domainToRule(domain, id, sourceKind) {
+  const kind = remoteRuleSourceKind(sourceKind);
   return {
     id,
-    priority: 1000,
+    priority: kind === 'security' ? 3000 : 1000,
     action: { type: 'block' },
     condition: { requestDomains: [domain], resourceTypes: RESOURCE_TYPES },
   };
+}
+
+// Apply source-aware precedence only at the final DNR boundary. Parser output
+// stays source-neutral and the private source marker never reaches Chrome.
+// A scoped ad/tracker exception can therefore repair a functional site without
+// gaining enough authority to override a malware/security rule.
+function finalizeOptionRule(rule, id, sourceKind) {
+  const kind = remoteRuleSourceKind(sourceKind);
+  const actionType = rule && rule.action && rule.action.type === 'allow' ? 'allow' : 'block';
+  const priority = kind === 'security'
+    ? (actionType === 'allow' ? 4000 : 3000)
+    : (actionType === 'allow' ? 2000 : 1100);
+  return {
+    id,
+    priority,
+    action: { type: actionType },
+    condition: Object.assign({}, (rule && rule.condition) || {}),
+  };
+}
+
+function remoteRuleSourceKind(value) {
+  return value === 'adshield' || value === 'tracker' ? value : 'security';
 }
 
 function isWardenOneDynamicRuleId(id) {
@@ -7883,10 +7938,29 @@ if (typeof globalThis !== 'undefined') {
   };
 }
 
+const REMOTE_SOURCE_KIND_RANK = Object.freeze({ adshield: 1, tracker: 2, security: 3 });
+
+function strongestRemoteListSourceKind(current, candidate) {
+  const next = Object.prototype.hasOwnProperty.call(REMOTE_SOURCE_KIND_RANK, candidate)
+    ? candidate
+    : 'security';
+  if (!current) return next;
+  const previous = Object.prototype.hasOwnProperty.call(REMOTE_SOURCE_KIND_RANK, current)
+    ? current
+    : 'security';
+  return REMOTE_SOURCE_KIND_RANK[next] > REMOTE_SOURCE_KIND_RANK[previous]
+    ? next
+    : previous;
+}
+
 function remoteListSourceKind(url) {
-  if (ADSHIELD_NET_LISTS.includes(url)) return 'adshield';
-  if (TRACKER_LISTS.includes(url)) return 'tracker';
-  return 'security';
+  let kind = '';
+  if (ADSHIELD_NET_LISTS.includes(url)) kind = strongestRemoteListSourceKind(kind, 'adshield');
+  if (TRACKER_LISTS.includes(url)) kind = strongestRemoteListSourceKind(kind, 'tracker');
+  if (REMOTE_LISTS.includes(url) || TOKEN_AND_SCAM_LISTS.includes(url) || MALWARE_LISTS.includes(url)) {
+    kind = strongestRemoteListSourceKind(kind, 'security');
+  }
+  return kind || 'security';
 }
 
 function prioritizedDomainRuleDomains(buckets, merged) {
@@ -7913,6 +7987,15 @@ function prioritizedDomainRuleDomains(buckets, merged) {
 function prioritizedOptionRuleCandidates(buckets) {
   const out = [];
   const seen = new Set();
+  const sourceBySignature = new Map();
+  const sourceRank = { adshield: 1, tracker: 2, security: 3 };
+  for (const kind of ['adshield', 'tracker', 'security']) {
+    for (const rule of (buckets[kind] || [])) {
+      const sig = JSON.stringify([rule && rule.condition, rule && rule.action && rule.action.type]);
+      const previous = sourceBySignature.get(sig);
+      if (!previous || sourceRank[kind] > sourceRank[previous]) sourceBySignature.set(sig, kind);
+    }
+  }
   const take = (items, limit) => {
     const max = Math.max(0, Number(limit) || 0);
     if (!Array.isArray(items) || !max) return;
@@ -7921,7 +8004,7 @@ function prioritizedOptionRuleCandidates(buckets) {
       const sig = JSON.stringify([rule && rule.condition, rule && rule.action && rule.action.type]);
       if (seen.has(sig)) continue;
       seen.add(sig);
-      out.push(rule);
+      out.push(Object.assign({}, rule, { __woSourceKind: sourceBySignature.get(sig) || 'security' }));
       if (out.length >= max) break;
     }
   };
@@ -7931,6 +8014,13 @@ function prioritizedOptionRuleCandidates(buckets) {
   take(buckets.security, ACTIVE_OPTION_RULE_BUDGETS.adshield + ACTIVE_OPTION_RULE_BUDGETS.tracker + ACTIVE_OPTION_RULE_BUDGETS.security);
   take([...(buckets.adshield || []), ...(buckets.tracker || []), ...(buckets.security || [])], OPTION_RULES_MAX);
   return out.slice(0, OPTION_RULES_MAX);
+}
+
+function remoteDomainRuleSourceKind(domain, buckets) {
+  if (buckets && buckets.security && buckets.security.has(domain)) return 'security';
+  if (buckets && buckets.adshield && buckets.adshield.has(domain)) return 'adshield';
+  if (buckets && buckets.tracker && buckets.tracker.has(domain)) return 'tracker';
+  return 'security';
 }
 
 // A list refresh can spend several seconds downloading/parsing sources. The user
@@ -7992,7 +8082,7 @@ async function updateRemoteListsCore(reason) {
     for (const url of list || []) {
       if (!url) continue;
       if (!sourceKinds.has(url)) sources.push(url);
-      if (!sourceKinds.has(url) || kind === 'adshield') sourceKinds.set(url, kind);
+      sourceKinds.set(url, strongestRemoteListSourceKind(sourceKinds.get(url), kind));
     }
   };
   addSources(REMOTE_LISTS, 'security');
@@ -8081,7 +8171,11 @@ async function updateRemoteListsCore(reason) {
   }
 
   const domains = prioritizedDomainRuleDomains(domainBuckets, merged);
-  const addRules = domains.map((d, i) => domainToRule(d, DYNAMIC_RULE_BASE + i));
+  const addRules = domains.map((d, i) => domainToRule(
+    d,
+    DYNAMIC_RULE_BASE + i,
+    remoteDomainRuleSourceKind(d, domainBuckets),
+  ));
 
   // dedup option-rules by condition+action signature, renumber into their band
   const optionRulesRaw = prioritizedOptionRuleCandidates(optionRuleBuckets);
@@ -8091,7 +8185,11 @@ async function updateRemoteListsCore(reason) {
     const sig = JSON.stringify([r.condition, r.action.type]);
     if (optSeen.has(sig)) continue;
     optSeen.add(sig);
-    optionRules.push(Object.assign({}, r, { id: OPTION_RULE_BASE + optionRules.length }));
+    optionRules.push(finalizeOptionRule(
+      r,
+      OPTION_RULE_BASE + optionRules.length,
+      r && r.__woSourceKind,
+    ));
     if (optionRules.length >= OPTION_RULES_MAX) break;
   }
 
@@ -10680,12 +10778,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const frameId = Number(frame.frameId) || 0;
             const frameUrl = String(frame.url || (frameId === 0 ? t.url || '' : ''));
             const target = { tabId: t.id, frameIds: [frameId] };
-            const mainFiles = repairMainWorldFilesForUrl(frameUrl);
+            // Mirror the manifest contract: only frame zero receives the full
+            // engine; child frames receive lightweight/specialized guards only.
+            const mainFiles = repairMainWorldFilesForUrl(frameUrl, frameId);
             if (mainFiles && mainFiles.length) {
-              attemptedEngine = true;
+              const isFullEngineRepair = frameId === 0 && mainFiles.includes('content.min.js');
+              if (isFullEngineRepair) attemptedEngine = true;
               try {
                 await chrome.scripting.executeScript({ target, world: 'MAIN', files: mainFiles });
-                engineOk = true;
+                if (isFullEngineRepair) engineOk = true;
               } catch (_) { /* inaccessible or gone frame */ }
             } else if (isMainWorldRepairExcludedUrl(frameUrl)) {
               skippedCompatFrames++;
