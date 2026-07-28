@@ -58,6 +58,14 @@ https://video-edge-fixture.ttvnw.net/live/99100.ts
 #EXTINF:2.000,live
 https://video-edge-fixture.ttvnw.net/live/99101.ts
 `;
+const CLEAN_FMP4_MEDIA = `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:99100
+#EXT-X-MAP:URI="https://video-edge-fixture.ttvnw.net/live/init.mp4"
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/99100.m4s
+`;
 
 function markedAd(marker, suffix, title) {
   const segmentTitle = title === undefined ? 'advertisement' : title;
@@ -74,6 +82,15 @@ https://video-weaver-fixture.ttvnw.net/commercial/${suffix || '501'}.ts
 const STITCHED_AD = markedAd(
   '#EXT-X-DATERANGE:ID="stitched-ad-1784764800",CLASS="twitch-stitched-ad",DURATION=30.0',
   'stitched');
+const FMP4_STITCHED_AD = `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:501
+#EXT-X-MAP:URI="https://video-edge-fixture.ttvnw.net/original/init.mp4"
+#EXT-X-DATERANGE:ID="stitched-ad-fmp4",CLASS="twitch-stitched-ad",DURATION=2.0
+#EXTINF:2.000,advertisement
+https://video-weaver-fixture.ttvnw.net/commercial/501.m4s
+`;
 const CUE_OUT_AD = markedAd('#EXT-X-CUE-OUT:30', 'cue-out');
 const MAF_AD = markedAd('#EXT-X-DATERANGE:ID="maf-1",CLASS="twitch-maf-ad",DURATION=30.0', 'maf');
 const TRIGGER_AD = markedAd('#EXT-X-DATERANGE:ID="trigger-1",CLASS="twitch-trigger",DURATION=30.0', 'trigger');
@@ -91,6 +108,31 @@ const STRONG_METADATA_ALL_AD = `#EXTM3U
 https://video-weaver-fixture.ttvnw.net/commercial/strong-610.ts
 #EXTINF:2.000,
 https://video-weaver-fixture.ttvnw.net/commercial/strong-611.ts
+`;
+// Low-latency playlist carrying one stitched ad segment plus clean live content.
+const LOW_LATENCY_MIXED_AD = `#EXTM3U
+#EXT-X-VERSION:9
+#EXT-X-TARGETDURATION:2
+#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=1.500
+#EXT-X-PART-INF:PART-TARGET=0.500
+#EXT-X-MEDIA-SEQUENCE:810
+#EXT-X-DATERANGE:ID="stitched-ad-ll",CLASS="twitch-stitched-ad",DURATION=2.0,X-TV-TWITCH-AD-RADS-TOKEN="ll-fixture"
+#EXTINF:2.000,
+https://video-weaver-fixture.ttvnw.net/commercial/ll-810.ts
+#EXTINF:2.000,live
+https://video-weaver-fixture.ttvnw.net/live/ll-811.ts
+#EXT-X-PART:DURATION=0.500,URI="https://video-weaver-fixture.ttvnw.net/live/ll-812-part.m4s"
+#EXT-X-PRELOAD-HINT:TYPE=PART,URI="https://video-weaver-fixture.ttvnw.net/live/ll-813-part.m4s"
+`;
+const PART_ONLY_AD = `#EXTM3U
+#EXT-X-VERSION:9
+#EXT-X-TARGETDURATION:2
+#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=1.500
+#EXT-X-PART-INF:PART-TARGET=0.500
+#EXT-X-MEDIA-SEQUENCE:812
+#EXT-X-DATERANGE:ID="stitched-ad-parts",CLASS="twitch-stitched-ad",DURATION=1.0
+#EXT-X-PART:DURATION=0.500,URI="https://video-weaver-fixture.ttvnw.net/stitched-ad/812.0.m4s"
+#EXT-X-PART:DURATION=0.500,URI="https://video-weaver-fixture.ttvnw.net/stitched-ad/812.1.m4s"
 `;
 const KNOWN_AD_URI_NO_MARKER = `#EXTM3U
 #EXT-X-VERSION:3
@@ -198,16 +240,26 @@ https://video-edge-fixture.ttvnw.net/live/${suffix}.ts
 `;
 }
 
-function assertSilentHold(body, original, label) {
+function assertDecodeSafeGap(body, original, label) {
   assert(body && body !== original, label + ' returned the original ad playlist');
-  assert(body.includes('#EXT-X-DISCONTINUITY'), label + ' omitted the hold discontinuity');
-  assert(body.includes('#EXTINF:1.000,live'), label + ' omitted the silent hold segment');
-  assert(body.includes('data:video/mp4;base64,'), label + ' did not use the local silent segment');
-  assert(!body.includes('video-weaver-fixture.ttvnw.net'), label + ' retained an ad media URI');
+  assert(body.includes('#EXT-X-GAP'), label + ' omitted the standard HLS gap');
+  assert(!body.includes('data:video/mp4'), label + ' injected MP4 bytes into the native stream');
+  assert(!body.includes('#EXT-X-KEY:METHOD=NONE'), label + ' invented an encryption transition');
   const originalSequence = Number((/#EXT-X-MEDIA-SEQUENCE:(\d+)/i.exec(original) || [])[1]);
-  const holdSequence = Number((/#EXT-X-MEDIA-SEQUENCE:(\d+)/i.exec(body) || [])[1]);
-  assert(Number.isFinite(holdSequence) && holdSequence > originalSequence,
-    label + ' did not advance the media sequence');
+  const gapSequence = Number((/#EXT-X-MEDIA-SEQUENCE:(\d+)/i.exec(body) || [])[1]);
+  assert(Number.isFinite(gapSequence) && gapSequence === originalSequence,
+    label + ' rewrote the native media sequence');
+
+  const lines = body.replace(/\r/g, '').split('\n').map((line) => line.trim());
+  const segmentIndexes = lines.map((line, index) => line && line[0] !== '#' ? index : -1)
+    .filter((index) => index >= 0);
+  assert(segmentIndexes.length > 0, label + ' removed every native segment URI');
+  for (const index of segmentIndexes) {
+    let start = index - 1;
+    while (start >= 0 && !/^#EXTINF:/i.test(lines[start])) start--;
+    if (start < 0) start = Math.max(0, index - 3);
+    assert(lines.slice(start, index).includes('#EXT-X-GAP'), label + ' left a media URI fetchable');
+  }
 }
 
 function createRuntime(options) {
@@ -396,7 +448,7 @@ test('exact ad markers are blocked while twitch-ad-quartile alone is ignored', a
   for (const name of ['stitched', 'cue-out', 'maf', 'trigger']) {
     const url = 'https://video-edge-fixture.ttvnw.net/unmapped/' + name + '.m3u8';
     const body = await (await runtime.fetch(url)).text();
-    assertSilentHold(body, fixtures.get(url), name + ' marker');
+    assertDecodeSafeGap(body, fixtures.get(url), name + ' marker');
   }
 
   const quartileUrl = 'https://video-edge-fixture.ttvnw.net/unmapped/quartile.m3u8';
@@ -429,7 +481,7 @@ test('known ad URI is blocked even when no Twitch marker is present', async () =
     },
   });
   const body = await (await runtime.fetch(url)).text();
-  assertSilentHold(body, KNOWN_AD_URI_NO_MARKER, 'known ad URI without marker');
+  assertDecodeSafeGap(body, KNOWN_AD_URI_NO_MARKER, 'known ad URI without marker');
 });
 
 test('stitched-ad media URI is blocked even when EXTINF explicitly says live', async () => {
@@ -441,7 +493,7 @@ test('stitched-ad media URI is blocked even when EXTINF explicitly says live', a
     },
   });
   const body = await (await runtime.fetch(url)).text();
-  assertSilentHold(body, STITCHED_AD_URI_WITH_LIVE_TITLE, 'stitched-ad URI with live title');
+  assertDecodeSafeGap(body, STITCHED_AD_URI_WITH_LIVE_TITLE, 'stitched-ad URI with live title');
 });
 
 test('slid-out markers cannot leak generic tails and release needs three explicit live polls', async () => {
@@ -602,11 +654,14 @@ test('worker captures persisted GQL identity, preserves a batch, and keeps Usher
   });
   const directCall = runtime.state.calls[0];
   assert(typeof directCall.init.body === 'string' && directCall.init.body.length > 2,
-    'worker GQL force produced an empty request body');
+    'worker GQL capture produced an empty request body');
+  assert(directCall.init.body === directBody, 'worker changed the native token request bytes');
   const forwardedBatch = JSON.parse(directCall.init.body);
   equal(forwardedBatch[0], unrelated, 'worker changed an unrelated batched GQL query');
-  assert(forwardedBatch[1].variables.playerType === 'popout', 'worker did not force token query to popout');
-  assert(forwardedBatch[1].variables.platform === 'web', 'worker forced popout with a non-web platform');
+  assert(forwardedBatch[1].variables.playerType === 'picture-by-picture',
+    'worker changed the native token playerType');
+  assert(forwardedBatch[1].variables.platform === 'android',
+    'worker changed the native token platform');
   assert(forwardedBatch[1].variables.retained === 'fixture-retained', 'worker discarded token variables');
 
   await mapMaster(runtime);
@@ -637,7 +692,12 @@ test('worker captures persisted GQL identity, preserves a batch, and keeps Usher
     assert(url.searchParams.get('allow_source') === 'true', 'Usher request lost allow_source');
     assert(url.searchParams.get('allow_audio_only') === 'true', 'Usher request lost allow_audio_only');
     assert(url.searchParams.get('p') === 'fixture', 'Usher request lost unrelated query state');
-    assert(!url.searchParams.has('parent_domains'), 'worker leaked parent_domains into an Usher request');
+    if (url.searchParams.has('sig')) {
+      assert(!url.searchParams.has('parent_domains'), 'backup Usher request leaked parent_domains');
+    } else {
+      assert(url.searchParams.get('parent_domains') === 'twitch.tv',
+        'native Usher request did not preserve its authorization context');
+    }
   }
 });
 
@@ -685,7 +745,7 @@ test('backup types are exactly site/popout/mobile_web/embed, never autoplay/fron
   await mapMaster(runtime);
   const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
   const types = runtime.state.gqlRequests.map((request) => request.body.variables.playerType);
-  assertSilentHold(body, STITCHED_AD, 'exhausted source-capable types');
+  assertDecodeSafeGap(body, STITCHED_AD, 'exhausted source-capable types');
   equal(types, ['site', 'popout', 'mobile_web', 'embed'], 'backup player-type set changed');
   assert(!types.some((type) => /autoplay|frontpage|carousel/i.test(type)),
     'unsafe low-quality/player-shell fallback entered the committed backup cycle');
@@ -721,6 +781,55 @@ test('backup selection never crosses the original H.264 codec family', async () 
     'backup selection changed codec or resolution');
 });
 
+test('backup selection requires the exact codec profile and audio codec', async () => {
+  const wrongProfileMaster = () => `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.4D401F,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/wrong-profile/index.m3u8
+`;
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia: STITCHED_AD,
+      backupMaster: wrongProfileMaster,
+      backupMedia() { throw new Error('same-family wrong-profile media must never be fetched'); },
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assertDecodeSafeGap(body, STITCHED_AD, 'wrong-profile backup rejection');
+  assert(!runtime.state.calls.some((call) => /wrong-profile/.test(call.url)),
+    'H.264 profile change reached the media decoder path');
+});
+
+test('backup selection never crosses MPEG-TS and fragmented-MP4 containers', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_FMP4_MEDIA }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assertDecodeSafeGap(body, STITCHED_AD, 'cross-container backup rejection');
+  assert(!body.includes('#EXT-X-MAP') && !body.includes('.m4s'),
+    'fragmented-MP4 backup was spliced into the MPEG-TS media URL');
+});
+
+test('part-only ad deltas fail open instead of returning an empty or synthetic playlist', async () => {
+  const url = 'https://video-edge-fixture.ttvnw.net/unmapped/part-only.m3u8?_HLS_msn=812&_HLS_part=1';
+  const runtime = createRuntime({
+    fetchRoute(requestUrl) {
+      if (requestUrl !== url) throw new Error('unexpected part-only request: ' + requestUrl);
+      return hlsResponse(PART_ONLY_AD);
+    },
+  });
+  const body = await (await runtime.fetch(url)).text();
+  assert(body === PART_ONLY_AD, 'part-only delta was rewritten into a malformed ordinary playlist');
+  assert(!body.includes('data:video/mp4'), 'part-only delta received synthetic decoder bytes');
+});
+
 test('relative backup variant URIs are absolutized against the V2 Usher master', async () => {
   const relativeVariant = 'relative-media/h264-1080.m3u8';
   const expected = 'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/h264-1080.m3u8';
@@ -747,7 +856,7 @@ ${relativeVariant}
 `);
       }
       if (url === expected) return hlsResponse(relativeMedia);
-      if (parsed.pathname === new URL(ORIGINAL_MEDIA_URL).pathname) return hlsResponse(STITCHED_AD);
+      if (parsed.pathname === new URL(ORIGINAL_MEDIA_URL).pathname) return hlsResponse(FMP4_STITCHED_AD);
       throw new Error('relative variant was not absolutized correctly: ' + url);
     },
     gqlRoute(message) {
@@ -762,10 +871,7 @@ ${relativeVariant}
   for (const absolute of [
     'https://usher.ttvnw.net/api/v2/channel/hls/init/init.mp4',
     'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/keys/key.bin',
-    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/parts/part-1.m4s',
-    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/parts/part-2.m4s',
     'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/segments/live-1.ts',
-    'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/prefetch/live-2.ts',
   ]) {
     assert(body.includes(absolute), 'returned backup left a relative media URI unresolved: ' + absolute);
   }
@@ -786,7 +892,7 @@ ${relativeVariant}
   }
 });
 
-test('strong-metadata all-ad backups return a silent hold within 250ms', async () => {
+test('strong-metadata all-ad backups return a decode-safe gap within 250ms', async () => {
   const runtime = createRuntime({
     fetchRoute: standardFetchRoute({
       originalMedia: STRONG_METADATA_ALL_AD,
@@ -802,7 +908,7 @@ test('strong-metadata all-ad backups return a silent hold within 250ms', async (
   const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
   const elapsed = performance.now() - started;
   assert(elapsed <= 250, 'all-ad fallback exceeded 250ms: ' + elapsed.toFixed(1) + 'ms');
-  assertSilentHold(body, STRONG_METADATA_ALL_AD, 'strong-metadata all-ad fallback');
+  assertDecodeSafeGap(body, STRONG_METADATA_ALL_AD, 'strong-metadata all-ad fallback');
   const types = runtime.state.gqlRequests.map((request) => request.body.variables.playerType);
   equal(types, ['site', 'popout', 'mobile_web', 'embed'],
     'all-ad fallback did not stop after the four source-capable web types');
@@ -860,12 +966,12 @@ test('negative backup cache stays bounded and never returns its failed sentinel 
   const firstBodies = await Promise.all(firstWave.map((response) => response.text()));
   assert(firstBodies.every((body) => {
     try {
-      assertSilentHold(body, STITCHED_AD, 'failed single-flight caller');
+      assertDecodeSafeGap(body, STITCHED_AD, 'failed single-flight caller');
       return true;
     } catch (_) {
       return false;
     }
-  }), 'failed single-flight callers did not all receive non-empty silent holds');
+  }), 'failed single-flight callers did not all receive decode-safe gaps');
   assert(runtime.state.gqlRequests.length === 4,
     'failed concurrent flight was not bounded to four source-capable token requests');
 
@@ -875,13 +981,13 @@ test('negative backup cache stays bounded and never returns its failed sentinel 
     'negative-cache retry launched another token flight inside its TTL');
   assert(typeof retryBody === 'string' && retryBody.length > 0,
     'failed-cache sentinel became an empty successful playlist');
-  assertSilentHold(retryBody, STITCHED_AD, 'negative-cache retry inside TTL');
+  assertDecodeSafeGap(retryBody, STITCHED_AD, 'negative-cache retry inside TTL');
 
   runtime.advance(30001);
   const expiredBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
   assert(runtime.state.gqlRequests.length === beforeRetry + 4,
     'expired negative sentinel was not deleted and retried exactly once');
-  assertSilentHold(expiredBody, STITCHED_AD, 'negative-cache retry after TTL');
+  assertDecodeSafeGap(expiredBody, STITCHED_AD, 'negative-cache retry after TTL');
 });
 
 test('worker config-off is a byte-for-byte pass-through with no backup work', async () => {
@@ -906,6 +1012,59 @@ test('worker config-off is a byte-for-byte pass-through with no backup work', as
   const masterCall = runtime.state.calls.find((call) => call.url.includes('/api/v2/channel/hls/'));
   assert(masterCall && new URL(masterCall.url).searchParams.has('parent_domains'),
     'config-off worker still rewrote the Usher URL');
+});
+
+// A player left in low-latency mode keeps issuing blocking _HLS_msn/_HLS_part
+// reloads for parts an ad-time playlist can no longer supply, which Twitch reports
+// as network "Error #2000". Anything we synthesize during a break must therefore
+// come back as ordinary HLS.
+test('ad-time playlists drop low-latency signalling so the player stops blocking on parts', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia: LOW_LATENCY_MIXED_AD,
+      backupMedia: STRONG_METADATA_ALL_AD,
+    }),
+    gqlRoute(message) {
+      const body = message.body;
+      return jsonResponse(nestedToken(body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  for (const rawLine of body.replace(/\r/g, '').split('\n')) {
+    const line = rawLine.trim();
+    assert(!/^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i.test(line),
+      'ad-time playlist kept low-latency tag: ' + line);
+  }
+  assert(body.includes('https://video-weaver-fixture.ttvnw.net/live/ll-811.ts'),
+    'ad-time playlist dropped the clean live segment');
+});
+
+test('active intervention removes blocking LL-HLS cursors but preserves signed query state', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia: LOW_LATENCY_MIXED_AD,
+      backupMedia: STRONG_METADATA_ALL_AD,
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+
+  const blockingUrl = ORIGINAL_MEDIA_URL + '&_HLS_msn=812&_HLS_part=3&_HLS_skip=YES';
+  const body = await (await runtime.fetch(blockingUrl)).text();
+  const originalPath = new URL(ORIGINAL_MEDIA_URL).pathname;
+  const nativePolls = runtime.state.calls.filter((call) => new URL(call.url).pathname === originalPath);
+  const forwarded = new URL(nativePolls[nativePolls.length - 1].url);
+  assert(forwarded.searchParams.get('token') === 'original',
+    'intervention dropped the native signed query state');
+  assert(!forwarded.searchParams.has('_HLS_msn') && !forwarded.searchParams.has('_HLS_part') &&
+    !forwarded.searchParams.has('_HLS_skip'),
+  'intervention forwarded a blocking LL-HLS cursor that its response cannot satisfy');
+  assert(!/^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP)\b/im.test(body),
+    'cursor-sanitized intervention still returned low-latency signalling');
 });
 
 (async () => {

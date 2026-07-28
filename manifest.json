@@ -98,6 +98,19 @@
       "matches": [
         "<all_urls>"
       ],
+      "js": [
+        "anti-redirect.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
       "exclude_matches": [
         "*://*.youtube.googleapis.com/*",
         "https://accounts.google.com/*",
@@ -162,8 +175,7 @@
       ],
       "js": [
         "content.min.js",
-        "permission-chain.js",
-        "anti-redirect.js"
+        "permission-chain.js"
       ],
       "run_at": "document_start",
       "all_frames": false,

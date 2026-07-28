@@ -281,7 +281,7 @@
     enabled:!0,
     blockGesturelessNav:!0,
     blockForcedPopups:!0,
-    strictPopupShield:!1,
+    strictPopupShield:!0,
     blockMetaRefresh:!0,
     detectRedirectChains:!0,
     warnGrabberDomains:!0,
@@ -2547,8 +2547,8 @@
     }
     if(WO.trackerLearner)try{
       const TRACKER_HOST_HINTS=/(^|\.)(google-analytics\.com|googletagmanager\.com|doubleclick\.net|googlesyndication\.com|facebook\.com|connect\.facebook\.net|fbcdn\.net|scorecardresearch\.com|criteo\.com|criteo\.net|taboola\.com|outbrain\.com|quantserve\.com|adsrvr\.org|adnxs\.com|rubiconproject\.com|openx\.net|pubmatic\.com|rlcdn\.com|mathtag\.com|bluekai\.com|demdex\.net|everesttech\.net|lijit\.com|sharethrough\.com|yieldmo\.com|segment\.com|segment\.io|amplitude\.com|mixpanel\.com|hotjar\.com|fullstory\.com|clarity\.ms|mouseflow\.com|crazyegg\.com|optimizely\.com)$/i,
-      TRACKER_PATH_HINTS=/(^|\/|[?&])(collect|beacon|pixel|track|tracking|analytics|telemetry|event|events|conversion|impression|pageview|identify|visitor|session|stats|tr|utag|gtm|gtag)(\/|$|[?&=._-])/i,
-      TRACKER_QUERY_HINTS=/(^|&)(utm_|fbp=|fbc=|gclid=|dclid=|msclkid=|ga=|gid=|cid=|uid=|user_id=|visitor=|session=|device_id=|adid=|email=|hashed_email=|eid=|event=|conversion=)/i,
+      TRACKER_PATH_HINTS=/(^|\/|[?&])(collect|beacon|pixel|analytics|telemetry|conversion|impression|pageview|utag|gtm|gtag)(\/|$|[?&=._-])/i,
+      TRACKER_QUERY_HINTS=/(^|&)(utm_|fbp=|fbc=|gclid=|dclid=|msclkid=|adid=|conversion=)/i,
       TRACKER_IGNORE=/(^|\.)(gstatic\.com|googleapis\.com|googleusercontent\.com|cloudflare\.com|cloudflare\.net|akamaihd\.net|fastly\.net|jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|bootstrapcdn\.com|githubusercontent\.com)$/i,
       trackerSeen=new Set,
       noteTracker=(raw,
@@ -2626,48 +2626,6 @@
         }
 
       }
-      const srcOf=el=>{
-        try{
-          return el&&(el.getAttribute("src")||el.getAttribute("href")||el.src||el.href)||""
-        }
-        catch(_){
-          return""
-        }
-
-      },
-      kindOf=el=>{
-        const tag=el&&el.tagName||"";
-        if("IMG"===tag){
-          const w=Number(el.getAttribute("width")||el.width||0),
-          h=Number(el.getAttribute("height")||el.height||0);
-          return w>0&&h>0&&w<=2&&h<=2?"pixel":"image"
-        }
-        return"IFRAME"===tag?"iframe":"SCRIPT"===tag?"script":"LINK"===tag?"link":"resource"
-      },
-      sweepTrackerNodes=root=>{
-        try{
-          (root||document).querySelectorAll("script[src],iframe[src],img[src],source[src],link[href]").forEach(el=>noteTracker(srcOf(el),
-          kindOf(el),
-          "resource-url"))
-        }
-        catch(_){
-
-        }
-
-      };
-      document.documentElement&&sweepTrackerNodes(document);
-      try{
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&noteTracker(srcOf(n),
-          kindOf(n),
-          "resource-url"),
-          n&&n.querySelectorAll&&sweepTrackerNodes(n)
-        })
-      }
-      catch(_){
-
-      }
-
     }
     catch(e){
       log("tracker_learner_failed",
@@ -2910,12 +2868,24 @@
         error:String(e)
       })
     }
-    if(WO.riskySiteMode&&publicPage())try{
+    if(publicPage())try{
       const here=regDom(location.hostname),
       full=location.hostname.toLowerCase(),
       label=full.split(".")[0]||"",
       digits=(label.match(/\d/g)||[]).length,
       risky=/^xn--/i.test(full)||/^[a-f0-9]{12,}$/i.test(label)||/[bcdfghjklmnpqrstvwxz]{6,}/i.test(label)||digits>=4&&digits>=.3*label.length||/\.(cfd|sbs|top|xyz|click|link|live|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|skin|bar|fit)$/i.test(full)||((full.match(/-/g)||[]).length>=3||full.length>=40),
+      riskyModeOn=()=>!!(WO.enabled&&WO.riskySiteMode&&risky),
+      RISKY_PLAYER_KINDS=/^(script|frame|media|fetch|xhr|websocket)$/,
+      riskyPlayerPage=()=>{
+        try{
+          if(/(?:^|[\/_-])(?:watch|episodes?|streams?|videos?|embed|player)(?:[\/_.-]|$)/i.test(location.pathname||""))return!0;
+          return!!document.querySelector('video,audio,embed,object,[data-player],[data-video],[class*="player" i],[id*="player" i],iframe[allow*="autoplay" i],iframe[allowfullscreen],iframe[src*="/embed/" i],iframe[src*="/player/" i]')
+        }
+        catch(_){
+          return!1
+        }
+
+      },
       TRUSTED_THIRD_PARTY=/(^|\.)(cloudflare\.com|cloudflare\.net|akamaihd\.net|fastly\.net|jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|bootstrapcdn\.com|gstatic\.com|googleapis\.com|githubusercontent\.com)$/i,
       riskyKind=el=>{
         const tag=el&&String(el.tagName||"").toUpperCase();
@@ -2938,7 +2908,8 @@
       },
       blockRisk=(raw,
       kind)=>{
-        if(!risky||!foreignRiskUrl(raw))return!1;
+        if(!riskyModeOn()||!foreignRiskUrl(raw))return!1;
+        if(RISKY_PLAYER_KINDS.test(String(kind||""))&&riskyPlayerPage())return!1;
         log("blocked_risky_site_resource",
         {
           matched:String(raw||"").slice(0,
@@ -3089,7 +3060,7 @@
           for(const mu of muts)for(const n of mu.addedNodes)n&&1===n.nodeType&&(guardNode(n),
           n.querySelectorAll&&sweep(n))
         }),
-        log("risky_site_mode_active",
+        riskyModeOn()&&log("risky_site_mode_active",
         {
           host:here
         })
@@ -6725,6 +6696,18 @@
       PROC_BUDGET=400;
       let procRules=[];
       const SCRIPTLET_RAN=new Set,
+      scriptletRuntimeOn=()=>!!(WO.enabled&&WO.adShield&&WO.scriptletEngine),
+      scriptletPlayerPage=()=>{
+        try{
+          if(/(?:^|[\/_-])(?:watch|episodes?|streams?|videos?|embed|player)(?:[\/_.-]|$)/i.test(location.pathname||""))return!0;
+          return!!document.querySelector('video,embed,object,[data-player],[data-video],[class*="player" i],[id*="player" i],iframe[allow*="autoplay" i],iframe[allowfullscreen],iframe[src*="/embed/" i],iframe[src*="/player/" i]')
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      networkScriptletRuntimeOn=()=>scriptletRuntimeOn()&&!scriptletPlayerPage(),
       scSearchToRe=s=>{
         if(""===(s=null==s?"":String(s))||"*"===s)return/.?/;
         if(s.length>1&&"/"===s[0]&&s.lastIndexOf("/")>0){
@@ -6922,7 +6905,7 @@
         t){
           try{
             const s="function"==typeof fn?fn.toString():String(fn);
-            if((null==wantDelay||Number(t)===wantDelay)&&re.test(s))return 0
+            if(scriptletRuntimeOn()&&(null==wantDelay||Number(t)===wantDelay)&&re.test(s))return 0
           }
           catch(_){
 
@@ -6933,6 +6916,7 @@
 
       },
       scNoFetchIf=arg=>{
+        if(scriptletPlayerPage())return;
         const realFetch=window.fetch;
         if("function"!=typeof realFetch)return;
         const re=scPropsToRe(arg);
@@ -6940,7 +6924,7 @@
         init){
           try{
             const url="string"==typeof input?input:input&&input.url||"";
-            if(re.test(String(url)))return Promise.resolve(new Response("",
+            if(networkScriptletRuntimeOn()&&re.test(String(url)))return Promise.resolve(new Response("",
             {
               status:200,
               statusText:"OK"
@@ -6955,6 +6939,7 @@
 
       },
       scNoXhrIf=arg=>{
+        if(scriptletPlayerPage())return;
         const Real=window.XMLHttpRequest;
         if("function"!=typeof Real||!Real.prototype)return;
         const re=scPropsToRe(arg),
@@ -6963,7 +6948,7 @@
         Real.prototype.open=function(method,
         url){
           try{
-            this.__woBlock=re.test(String(url))
+            this.__woBlock=networkScriptletRuntimeOn()&&re.test(String(url))
           }
           catch(_){
 
@@ -6972,7 +6957,7 @@
           arguments)
         },
         Real.prototype.send=function(){
-          if(!this.__woBlock)return realSend.apply(this,
+          if(!networkScriptletRuntimeOn()||!this.__woBlock)return realSend.apply(this,
           arguments);
           try{
             const xhr=this;
@@ -7035,7 +7020,7 @@
         fn){
           try{
             const fs="function"==typeof fn?fn.toString():fn&&fn.handleEvent?fn.handleEvent.toString():String(fn);
-            if(typeRe.test(String(t))&&fnRe.test(fs))return
+            if(scriptletRuntimeOn()&&typeRe.test(String(t))&&fnRe.test(fs))return
           }
           catch(_){
 
@@ -7046,18 +7031,33 @@
 
       },
       scNoWindowOpen=arg=>{
-        const real=window.open;
-        if("function"!=typeof real)return;
-        const re=scPropsToRe(arg);
-        window.open=function(url){
-          try{
-            if(re.test(String(url||"")))return null
-          }
-          catch(_){
+        const registry=window.__wardenOnePopupMatchers;
+        if(!registry||"function"!=typeof registry.register)return;
+        const re=scPropsToRe(arg),
+        raw=String(arg||"");
+        let hash=2166136261;
+        for(let i=0;
+        i<raw.length&&i<256;
+        i++)hash=Math.imul(hash^raw.charCodeAt(i),
+        16777619)>>>0;
+        try{
+          registry.register("scriptlet:no-window-open-if:"+hash.toString(36),
+          url=>{
+            if(!scriptletRuntimeOn())return!1;
+            try{
+              re.lastIndex=0;
+              const matched=re.test(String(url||""));
+              re.lastIndex=0;
+              return matched
+            }
+            catch(_){
+              return!1
+            }
 
-          }
-          return real.apply(this,
-          arguments)
+          })
+        }
+        catch(_){
+
         }
 
       },
@@ -7124,6 +7124,7 @@
         req=String(required||"").split(/\s+/).filter(Boolean);
         if(!rem.length)return;
         const prune=obj=>{
+          if(!scriptletRuntimeOn())return obj;
           try{
             if(req.length&&!req.every(p=>scWalkJson(obj,
             p.split("."),
@@ -7280,6 +7281,7 @@
         nowebrtc:()=>scNoWebRtc()
       },
       runScriptlets=list=>{
+        if(!WO.scriptletEngine)return;
         if(!Array.isArray(list)||!list.length)return;
         let n=0;
         for(const sc of list){
@@ -8902,6 +8904,11 @@
       __woTwRlW=0,
       __woTwRlN=0,
       __woTwErr0=0,
+      __woTwUserAct=0,
+      __woTwUserPaused=!1,
+      __woTwPause0=0,
+      __woTwResumeAt=0,
+      __woTwResumeN=0,
       __woTwHardRl=(function(){try{return Number(sessionStorage.getItem("wo_tw_hardrl"))||0}catch(_){return 0}})(),
       __woTwRoot=function(){
         try{
@@ -9139,8 +9146,28 @@
           if(v.paused){
             __woTwVLast=-1,
             __woTwVStall=0;
+            if(__woTwUserPaused||v.ended||"visible"!==document.visibilityState){
+              __woTwPause0=0,
+              __woTwResumeN=0;
+              return
+            }
+            __woTwPause0||(__woTwPause0=now);
+            if(now-__woTwPause0>2500&&now-__woTwResumeAt>4e3){
+              __woTwResumeAt=now,
+              __woTwResumeN++;
+              __woTwResumeN>=3?(__woTwResumeN=0,
+              __woTwPause0=0,
+              __woTwReload()):__woTwUnstall(v,
+              __woTwResumeN>=2),
+              log("scriptlet_twitch_autoresume",
+              {
+                n:__woTwResumeN
+              })
+            }
             return
           }
+          __woTwPause0=0,
+          __woTwResumeN=0;
           var t=v.currentTime;
           Math.abs(t-__woTwVLast)<.05&&t>0?__woTwVStall++:__woTwVStall=0,
           __woTwVLast=t;
@@ -9191,6 +9218,30 @@
       catch(_){
 
       }
+      try{
+        ["pointerdown",
+        "keydown",
+        "click"].forEach(function(ev){
+          document.addEventListener(ev,
+          function(e){
+            e&&!1!==e.isTrusted&&(__woTwUserAct=Date.now())
+          },
+          !0)
+        }),
+        document.addEventListener("pause",
+        function(e){
+          e&&e.target&&"VIDEO"===e.target.tagName&&(__woTwUserPaused=Date.now()-__woTwUserAct<1500)
+        },
+        !0),
+        document.addEventListener("play",
+        function(e){
+          e&&e.target&&"VIDEO"===e.target.tagName&&(__woTwUserPaused=!1)
+        },
+        !0)
+      }
+      catch(_){
+
+      }
       setInterval(__woTwSweep,
       1e3),
       __woTwSweep(),
@@ -9205,7 +9256,7 @@
         error:String(e)
       })
     }
-    if(WO.blockAutoplay)try{
+    if(WO.blockAutoplay&&!/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname))try{
       let userGestured=!1;
       ["click",
       "keydown",
@@ -12678,7 +12729,7 @@
           if(document.getElementById("rg-hard-overlay-css"))return;
           const s=document.createElement("style");
           s.id="rg-hard-overlay-css",
-          s.textContent='#onesignal-bell-container,.onesignal-bell-container,.onesignal-slidedown-container,.webpushr-bell-widget,.pushcrew-chrome-style-notification,.pushengage-bell-widget,[id*="onesignal"],[class*="onesignal"],[id*="webpush"],[class*="webpush"],[id*="pushengage"],[class*="pushengage"],[id*="push-sub"],[class*="push-sub"],[id*="notification-bell"],[class*="notification-bell"],[id*="notify-bell"],[class*="notify-bell"],[id*="subscribe-bell"],[class*="subscribe-bell"]{display:none!important;visibility:hidden!important;pointer-events:none!important;}';
+          s.textContent='#onesignal-bell-container,.onesignal-bell-container,.onesignal-slidedown-container,.webpushr-bell-widget,.pushcrew-chrome-style-notification,.pushengage-bell-widget,[id*="onesignal"],[class*="onesignal"],[id*="webpush"],[class*="webpush"],[id*="pushengage"],[class*="pushengage"],[id*="push-sub"],[class*="push-sub"]{display:none!important;visibility:hidden!important;pointer-events:none!important;}';
           (document.head||document.documentElement).appendChild(s)
         }
         catch(_){
@@ -12758,7 +12809,10 @@
 
         };
         try{
-          document.querySelectorAll('video,iframe,embed,object,[class*="player"],[id*="player"],[class*="video"],[id*="video"],[class*="stream"],[id*="stream"],[data-player],[data-video]').forEach(add)
+          const nodes=document.querySelectorAll('video,iframe,embed,object,[class*="player"],[id*="player"],[class*="video"],[id*="video"],[class*="stream"],[id*="stream"],[data-player],[data-video]');
+          for(let i=0;
+          i<nodes.length&&i<160&&out.length<28;
+          i++)add(nodes[i])
         }
         catch(_){
 
@@ -12799,6 +12853,22 @@
         }
         return null
       },
+      PLAYER_CONTROL=/\b(play|pause|volume|mute|unmute|fullscreen|controls?|seek|progress|caption|subtitle|settings|quality|episodes?|servers?|next|previous)\b/i,
+      mediaUiProtected=(el,
+      blob)=>{
+        try{
+          if(!el||1!==el.nodeType)return!0;
+          const tag=String(el.tagName||"").toUpperCase();
+          if(/^(VIDEO|AUDIO|IFRAME|EMBED|OBJECT|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(tag))return!0;
+          if(el.querySelector&&el.querySelector("video,audio,iframe,embed,object"))return!0;
+          const shell=el.matches&&el.matches('[data-player],[data-video],[class*="player"],[id*="player"],[class*="video"],[id*="video"],[class*="stream"],[id*="stream"]')?el:el.closest&&el.closest('[data-player],[data-video],[class*="player"],[id*="player"],[class*="video"],[id*="video"],[class*="stream"],[id*="stream"]');
+          return!!(shell&&PLAYER_CONTROL.test(String(blob||"")))
+        }
+        catch(_){
+          return!0
+        }
+
+      },
       fakeNotifyVisual=(el,
       r,
       cs,
@@ -12809,6 +12879,8 @@
         try{
           const w=r.width,
           h=r.height;
+          if(mediaUiProtected(el,
+          blob))return!1;
           if(!positioned||w<64||h<64||w>280||h>280)return!1;
           if((text||"").trim().length>42)return!1;
           if(el.querySelector&&el.querySelector("input,textarea,select,video,iframe,embed,object"))return!1;
@@ -12825,9 +12897,8 @@
           media=mediaHitFor(r),
           onMediaEdge=media&&(media.x>.58||media.y>.54),
           viewportFloat=r.right>innerWidth*.52&&r.bottom>innerHeight*.32,
-          smallFloatingFrame="IFRAME"===el.tagName&&positioned&&(elevated||viewportFloat)&&(onMediaEdge||viewportFloat),
           hasBadge=!!(el.querySelector&&el.querySelector('[class*="badge"],[class*="count"],[class*="notif"],[class*="bell"],[style*="red"],[style*="orange"]'));
-          return!!smallFloatingFrame||!!(roundish&&clickish&&(visibleBg||hasBadge||baitSignal)&&(onMediaEdge||viewportFloat))
+          return!!(roundish&&clickish&&(visibleBg||hasBadge||baitSignal)&&(onMediaEdge||viewportFloat))
         }
         catch(_){
           return!1
@@ -12906,6 +12977,8 @@
           el.getAttribute("data-test"),
           el.getAttribute("data-role")].filter(Boolean).join(" "),
           blob=text+" "+attrs+" "+(el.className||"")+" "+(el.id||"");
+          if(mediaUiProtected(el,
+          blob))return!1;
           if(PROTECT.test(text))return!1;
           if(el.querySelector&&el.querySelector('main,[role="main"]'))return!1;
           r.width,
@@ -12919,16 +12992,17 @@
           normalSize=r.width>=220&&r.height>=60,
           smallBait=baitSignal&&r.width>=48&&r.height>=48,
           positioned="fixed"===pos||"sticky"===pos||"absolute"===pos,
-          looksModal=positioned||isCentered||"dialog"===el.getAttribute("role")||"true"===el.getAttribute("aria-modal");
+          looksModal=positioned&&(z>=20||coversLots||isCentered||"dialog"===el.getAttribute("role")||"true"===el.getAttribute("aria-modal")),
+          strongAdEvidence=adSignal||baitSignal&&nuisanceText;
           if(fakeNotifyVisual(el,
           r,
           cs,
           blob,
           text,
           positioned,
-          baitSignal))return!hasLoginUi(el);
+          baitSignal))return looksModal&&strongAdEvidence&&!hasLoginUi(el);
           if(!normalSize&&!smallBait)return!1;
-          return(!!((adSignal||nuisanceText)&&looksModal&&!tooHuge)||!!(baitSignal&&positioned&&isCentered&&!tooHuge))&&!hasLoginUi(el)
+          return!!(strongAdEvidence&&looksModal&&!tooHuge&&!hasLoginUi(el))
         }
         catch{
           return!1
@@ -12938,8 +13012,10 @@
       CONTINUE_TEXT=/(no thanks|continue (to )?(download|the site|reading)?|skip( ad)?|continue anyway|proceed to (download|site)|i.?ll continue|maybe later|not now|close and continue)/i,
       findContinueLink=root=>{
         const clickables=root.querySelectorAll('a,button,[role="button"],[onclick],span,div');
-        let best=null;
+        let best=null,
+        inspected=0;
         for(const c of clickables){
+          if(inspected++>=160)break;
           if(c.tagName==="A"){
             const tgt=(c.getAttribute&&c.getAttribute("target")||"").trim().toLowerCase();
             if(tgt&&tgt!=="_self"&&tgt!=="_top"&&tgt!=="_parent")continue
@@ -12970,87 +13046,6 @@
         }
         catch(_){
           return""
-        }
-
-      },
-      releaseModalLocks=()=>{
-        return;
-        try{
-          const unlock=n=>{
-            if(!n)return;
-            n.style.setProperty("overflow",
-            "auto",
-            "important"),
-            n.style.setProperty("pointer-events",
-            "auto",
-            "important"),
-            n.classList&&["modal-open",
-            "no-scroll",
-            "noscroll",
-            "overflow-hidden",
-            "is-clipped",
-            "ReactModal__Body--open"].forEach(c=>n.classList.remove(c))
-          };
-          unlock(document.body),
-          unlock(document.documentElement);
-          const visibleModal=Array.from(document.querySelectorAll('[aria-modal="true"],dialog[open]')).some(n=>{
-            try{
-              const cs=getComputedStyle(n),
-              r=n.getBoundingClientRect();
-              return"none"!==cs.display&&"hidden"!==cs.visibility&&r.width>8&&r.height>8
-            }
-            catch(_){
-              return!1
-            }
-
-          });
-          document.querySelectorAll("[inert]").forEach(n=>{
-            try{
-              n.removeAttribute("inert")
-            }
-            catch(_){
-
-            }
-
-          }),
-          visibleModal||document.querySelectorAll('body > [aria-hidden="true"],main[aria-hidden="true"],#root[aria-hidden="true"],#app[aria-hidden="true"],[data-reactroot][aria-hidden="true"]').forEach(n=>{
-            try{
-              n.removeAttribute("aria-hidden")
-            }
-            catch(_){
-
-            }
-
-          }),
-          document.querySelectorAll('body > .modal-backdrop,body > [class*="backdrop" i],body > [id*="backdrop" i],body > [class*="overlay" i],body > [id*="overlay" i],body > [class*="scrim" i],body > [id*="scrim" i],body > [class*="veil" i],body > [id*="veil" i]').forEach(n=>{
-            try{
-              if(!n||seen.has(n))return;
-              const cs=getComputedStyle(n),
-              r=n.getBoundingClientRect(),
-              text=(n.innerText||n.textContent||"").trim(),
-              blob=text+" "+(n.id||"")+" "+(n.className||""),
-              full=r.width>=innerWidth*.7&&r.height>=innerHeight*.7&&r.left<=innerWidth*.18&&r.top<=innerHeight*.18,
-              fixed=/^(fixed|absolute|sticky)$/i.test(cs.position),
-              looksBackdrop=/backdrop|overlay|scrim|veil|modal|cookie|consent|cmp|onetrust|didomi|trustarc|usercentrics/i.test(blob);
-              if(!(fixed&&full&&(looksBackdrop||text.length<60)))return;
-              const prevDisplay=n.style.getPropertyValue("display"),
-              prevDisplayPrio=n.style.getPropertyPriority("display");
-              n.style.setProperty("display",
-              "none",
-              "important"),
-              seen.add(n),
-              undoStack.push(()=>n.style.setProperty("display",
-              prevDisplay||"",
-              prevDisplayPrio||""))
-            }
-            catch(_){
-
-            }
-
-          })
-        }
-        catch(_){
-
         }
 
       },
@@ -13098,11 +13093,6 @@
             catch(_){
 
             }
-            releaseModalLocks(),
-            setTimeout(releaseModalLocks,
-            250),
-            setTimeout(releaseModalLocks,
-            900),
             log("consent_rejected",
             {
               matched:label.slice(0,
@@ -13121,17 +13111,7 @@
       why)=>{
         if(seen.has(el))return;
         seen.add(el);
-        const restoreBodyOverflow=()=>{
-          document.body&&document.body.style.setProperty("overflow",
-          "auto",
-          "important"),
-          document.documentElement.style.setProperty("overflow",
-          "auto",
-          "important")
-        },
-        prevBodyOverflow=document.body?document.body.style.getPropertyValue("overflow"):"",
-        prevHtmlOverflow=document.documentElement.style.getPropertyValue("overflow"),
-        consentLike=CONSENT_SIGNAL.test(((el.innerText||el.textContent||"").slice(0,
+        const consentLike=CONSENT_SIGNAL.test(((el.innerText||el.textContent||"").slice(0,
         1200)+" "+(el.id||"")+" "+(el.className||""))),
         cont=findContinueLink(el),
         dlHere=(()=>{
@@ -13175,8 +13155,6 @@
             }
 
           }),
-          restoreBodyOverflow(),
-          releaseModalLocks(),
           log("detected_download_gate",
           {
             matched:(el.id||el.className||"download-gate").toString().slice(0,
@@ -13294,13 +13272,7 @@
 
               }
 
-            }),
-            document.body&&document.body.style.setProperty("overflow",
-            prevBodyOverflow||"",
-            ""),
-            document.documentElement.style.setProperty("overflow",
-            prevHtmlOverflow||"",
-            "");
+            });
             const b=document.getElementById("rg-dl-bar");
             b&&b.remove(),
             seen.delete(el)
@@ -13313,8 +13285,6 @@
         el.style.setProperty("display",
         "none",
         "important"),
-        restoreBodyOverflow(),
-        releaseModalLocks(),
         log("blocked_overlay",
         {
           matched:(el.id||el.className||el.tagName||"").toString().slice(0,
@@ -13325,12 +13295,6 @@
           el.style.setProperty("display",
           prevDisplay||"",
           prevDisplayPrio||""),
-          document.body&&document.body.style.setProperty("overflow",
-          prevBodyOverflow||"",
-          ""),
-          document.documentElement.style.setProperty("overflow",
-          prevHtmlOverflow||"",
-          ""),
           seen.delete(el)
         }),
         showUndoChip(why,
@@ -13341,9 +13305,10 @@
         if(WO.__overlaysDone)return;
         installHardOverlayCss();
         const candidates=document.querySelectorAll('div,section,aside,a,button,span,i,svg,img,canvas,[onclick],[role="button"],[style*="position:fixed"],[style*="position: fixed"],[style*="position:absolute"],[style*="position: absolute"],[class*="bell"],[id*="bell"],[class*="notif"],[id*="notif"],[class*="notify"],[id*="notify"],[class*="push"],[id*="push"],[class*="subscribe"],[id*="subscribe"]');
-        let count=0;
+        let count=0,
+        inspected=0;
         for(const el of candidates){
-          if(count>8)break;
+          if(inspected++>=600||count>=4)break;
           const target=overlayCandidate(el);
           const hit=target&&isOverlay(target)?target:isOverlay(el)?el:null;
           hit&&(hide(hit,
@@ -13411,25 +13376,16 @@
 
           }
 
-        });
-        try{
-          document.body&&document.body.style.setProperty("overflow",
-          "auto",
-          "important"),
-          document.documentElement.style.setProperty("overflow",
-          "auto",
-          "important")
-        }
-        catch(_){
-
-        }
+        })
 
       },
       tryAutoSkip=()=>{
         if(!overlayCleanerOn()||!WO.autoSkipDownloadAds||WO.__autoSkippedOnce)return!1;
         let adPresent=!1;
         const scan=document.querySelectorAll('div,section,aside,dialog,[role="dialog"],[aria-modal="true"],[data-campaign-id],[class*="box-c21"]');
+        let inspected=0;
         for(const el of scan)try{
+          if(inspected++>=160)break;
           const blob=(el.innerText||"")+" "+(el.className||"")+" "+(el.id||"");
           if(AD_SIGNAL.test(blob)||/box-c21|data-campaign/i.test(blob)){
             adPresent=!0;
@@ -13492,8 +13448,8 @@
         let sweeps=0,
         scheduled=!1,
         lastScan=Date.now();
-        const scanGap=220,
-        maxSweeps=40,
+        const scanGap=350,
+        maxSweeps=16,
         scheduleScan=fn=>{
           const delay=Math.max(0,
           scanGap-(Date.now()-lastScan));
@@ -13541,7 +13497,7 @@
           cleanerMonitoring=!1
 
         },
-        12e3)
+        8e3)
       };
       const restoreCleanerChanges=()=>{
         for(;

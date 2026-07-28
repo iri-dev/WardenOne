@@ -7,15 +7,15 @@ gratefully credit the upstream projects below.
 
 ## YouTube ad blocking
 
-- **AdGuard** — <https://adguard.com> · <https://github.com/AdguardTeam/AdguardFilters>
+- **AdGuard Filters** — <https://github.com/AdguardTeam/AdguardFilters>
 
   WardenOne's YouTube engine (`yt-adblock.js`) is a clean re-implementation
   based on AdGuard's publicly published YouTube filter rules (JSON player-response
   pruning, SSAP/segment handling, and the bounded player-request recovery modes).
   The ad/anti-adblock DNR rules in `rules-adshield.json` are likewise derived from
-  AdGuard / AdShield's public rules.
+  publicly available AdGuard and EasyList-compatible filter rules.
 
-  AdGuard filter lists are distributed under the **GNU General Public License v3**.
+  AdGuard Filters are distributed under the **GNU General Public License v3**.
 
 ## Twitch ad blocking
 
@@ -27,24 +27,31 @@ gratefully credit the upstream projects below.
   GQL access-token proxying, and HLS ad-segment gapping as a fallback. It uses no
   remote proxy and none of the upstream React/player-reload machinery.
 
-  TwitchAdSolutions is distributed under the permissive **MIT License**.
+  TwitchAdSolutions is distributed under the permissive **MIT License**:
+  copyright © 2020–present TwitchAdSolutions Contributors. The upstream project
+  was archived on 5 March 2026; the attribution and license remain applicable.
 
 ## Trackers & privacy
 
-- **EasyList & EasyPrivacy** — <https://easylist.to>
+- **EasyList & EasyPrivacy** — <https://github.com/easylist/easylist> ·
+  <https://easylist.to/pages/licence.html>
 
   The tracker- and privacy-blocking rules bundled as `rules-easyprivacy.json`
   and `rules-trackers.json` are derived from the EasyList project's community
   blocklists.
 
-  EasyList / EasyPrivacy are distributed under the **GNU GPL v2** and
-  **Creative Commons Attribution-ShareAlike 3.0 (CC BY-SA 3.0)**.
+  Unless an individual file says otherwise, the EasyList repository is dual
+  licensed under the **GNU GPL v3 or later** or the **Creative Commons
+  Attribution-ShareAlike 3.0 or later (CC BY-SA 3.0+)**. WardenOne attributes
+  the EasyList authors as the source of the compiled list material.
 
 ## Notes
 
 - These lists are compiled into Chrome's Declarative Net Request (DNR) rule
   format for use in this Manifest V3 extension; the underlying rules and
   techniques remain the work of their respective authors.
+- WardenOne's compiled or adapted copies are distributed under this repository's
+  GPLv3 license. Upstream copyright and attribution rights are retained.
 - WardenOne's own code (the Twitch local-DVR/rewind engine, anti-fingerprinting,
   download/phishing guards, onboarding, UI, and integration glue) is original to
   this project.

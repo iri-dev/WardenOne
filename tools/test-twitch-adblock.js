@@ -138,6 +138,19 @@ class ElementHarness extends EventTargetHarness {
 
 function createPageHarness(config, harnessOptions) {
   harnessOptions = harnessOptions || {};
+  const sessionValues = harnessOptions.sessionValues || new Map();
+  const sessionStorage = {
+    getItem(key) {
+      key = String(key);
+      return sessionValues.has(key) ? sessionValues.get(key) : null;
+    },
+    setItem(key, value) {
+      sessionValues.set(String(key), String(value));
+    },
+    removeItem(key) {
+      sessionValues.delete(String(key));
+    },
+  };
   const state = {
     fetchCalls: [],
     workerInstances: [],
@@ -309,6 +322,7 @@ function createPageHarness(config, harnessOptions) {
     href: 'https://www.twitch.tv/fixturechannel',
   };
   window.__WO_CONFIG__ = Object.assign({ enabled: true, twitchAdBlock: true }, config || {});
+  window.sessionStorage = sessionStorage;
   window.Worker = NativeWorker;
 
   async function nativeFetch(input, init) {
@@ -339,6 +353,7 @@ function createPageHarness(config, harnessOptions) {
     Request,
     Response,
     AbortController,
+    sessionStorage,
     Date: HarnessDate,
     setTimeout(callback, ms) {
       const id = ++timerId;
@@ -476,7 +491,7 @@ test('legacy worker hook and watchdog remain hard-disabled', () => {
     'dedicated module accidentally reintroduced a legacy Twitch hook/watchdog');
 });
 
-test('page hook preserves a mixed GQL batch while forcing token player type', async () => {
+test('page hook captures a mixed GQL token template without changing the native request', async () => {
   const harness = createPageHarness();
   const unrelated = {
     operationName: 'ChannelShell',
@@ -513,12 +528,13 @@ test('page hook preserves a mixed GQL batch while forcing token player type', as
   assert(harness.state.fetchCalls.length === 1, 'page GQL hook made extra requests');
   const forwarded = harness.state.fetchCalls[0].init;
   assert(typeof forwarded.body === 'string' && forwarded.body.length > 2,
-    'GQL player-type force corrupted the request into an empty body');
+    'GQL template capture corrupted the request into an empty body');
+  assert(forwarded.body === originalBody, 'page hook changed the native token body bytes');
   const parsed = JSON.parse(forwarded.body);
   assert(Array.isArray(parsed) && parsed.length === 2, 'mixed GQL batch shape changed');
   equal(parsed[0], unrelated, 'non-token query in GQL batch was modified');
-  assert(parsed[1].variables.playerType === 'popout', 'token playerType was not forced to popout');
-  assert(parsed[1].variables.platform === 'web', 'forced popout token did not use web platform');
+  assert(parsed[1].variables.playerType === 'picture-by-picture', 'native token playerType was changed');
+  assert(parsed[1].variables.platform === 'android', 'native token platform was changed');
   assert(parsed[1].variables.retained === 'yes', 'token-specific variables were discarded');
   assert(parsed[1].extensions.persistedQuery.sha256Hash === 'captured-token-hash',
     'captured persisted-query hash was changed');
@@ -610,6 +626,114 @@ test('page config-off path forwards GQL and workers untouched', async () => {
   assert(harness.state.blobSources.size === 0, 'config-off path created a worker wrapper Blob');
   assert(harness.state.mutationObservers.length === 0,
     'config-off path installed the independent-video observer');
+});
+
+test('primary network/decode errors temporarily fail open and restore current config', async () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/fail-open-worker');
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ready',
+    },
+    stopImmediatePropagation() {},
+  });
+  const configs = () => worker.messages.filter((message) => message && message.type === 'config');
+  assert(configs().length === 1 && configs()[0].enabled === true,
+    'ready worker did not receive the enabled user config');
+
+  const independent = harness.createVideo({
+    currentSrc: 'https://cdn.media-amazon.com/twitch/independent-ad.mp4',
+  });
+  harness.fireMedia('loadstart', independent);
+  independent.error = { code: 3 };
+  harness.document.dispatchEvent({ type: 'error', target: independent });
+  assert(configs().length === 1, 'independent ad-video error tripped the stream circuit breaker');
+
+  const primary = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/primary-playback',
+    inPlayer: true,
+  });
+  primary.error = { code: 2 };
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  assert(configs().length === 2 && configs()[1].enabled === false,
+    'primary MEDIA_ERR_NETWORK did not temporarily disable worker interception');
+  assert(harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'network',
+    'network recovery state was not exposed for diagnostics');
+
+  const nativeTokenBody = JSON.stringify([{
+    operationName: 'PlaybackAccessToken',
+    variables: {
+      isLive: true,
+      isVod: false,
+      login: 'fixturechannel',
+      playerType: 'site',
+      platform: 'web',
+    },
+  }]);
+  const nativeInit = { method: 'POST', body: nativeTokenBody };
+  await harness.window.fetch('https://gql.twitch.tv/gql', nativeInit);
+  assert(harness.state.fetchCalls.at(-1).init === nativeInit &&
+    harness.state.fetchCalls.at(-1).init.body === nativeTokenBody,
+  'circuit breaker still rewrote the native recovery token request');
+
+  harness.advance(29999);
+  assert(configs().at(-1).enabled === false, 'worker interception resumed before the 30-second window');
+  harness.advance(1);
+  assert(configs().at(-1).enabled === true, 'worker interception did not automatically resume');
+  assert(harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+    'expired recovery state remained on the page');
+
+  primary.error = { code: 3 };
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  assert(configs().at(-1).enabled === false &&
+    harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'decode',
+  'primary MEDIA_ERR_DECODE did not trip the stream circuit breaker');
+  harness.window.__WO_CONFIG__.twitchAdBlock = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  harness.advance(30000);
+  assert(configs().at(-1).enabled === false,
+    'circuit breaker expiry overrode the user-disabled configuration');
+});
+
+test('the fail-open deadline survives Twitch recovery reloads without extending itself', () => {
+  const sessionValues = new Map();
+  const first = createPageHarness(null, { fakeClock: true, now: 1000, sessionValues });
+  const primary = first.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/reload-primary',
+    inPlayer: true,
+  });
+  primary.error = { code: 2 };
+  first.document.dispatchEvent({ type: 'error', target: primary });
+  const storedDeadline = Number(sessionValues.get('__woTwitchFailOpenUntil'));
+  assert(storedDeadline === 31000, 'page did not persist the original 30-second recovery deadline');
+
+  // Simulate Twitch/content recovery reloading the document nine seconds later.
+  const reloaded = createPageHarness(null, { fakeClock: true, now: 10000, sessionValues });
+  assert(reloaded.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'recovery',
+    'reloaded page did not resume the stored pass-through window');
+  const worker = new reloaded.window.Worker('blob:https://www.twitch.tv/reloaded-player-worker');
+  const wrapper = reloaded.state.blobSources.get(worker.url) || '';
+  assert(wrapper.includes(JSON.stringify(reloaded.window.__wardenOneTwitchAdblockReady) + ',false);'),
+    'replacement worker did not start pass-through before its ready handshake');
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: reloaded.window.__wardenOneTwitchAdblockReady,
+      type: 'ready',
+    },
+    stopImmediatePropagation() {},
+  });
+  const configs = () => worker.messages.filter((message) => message && message.type === 'config');
+  assert(configs().length === 1 && configs()[0].enabled === false,
+    'reloaded worker resumed intervention inside the stored recovery window');
+
+  reloaded.advance(20999);
+  assert(configs().at(-1).enabled === false, 'reload shortened the stored recovery window');
+  reloaded.advance(1);
+  assert(configs().at(-1).enabled === true, 'stored recovery window did not expire at its original deadline');
+  assert(!sessionValues.has('__woTwitchFailOpenUntil'), 'expired recovery deadline remained in session storage');
 });
 
 test('independent-video guard uses one targeted observer plus delegated media events', () => {

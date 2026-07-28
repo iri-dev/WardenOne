@@ -75,7 +75,7 @@ const repairStart = background.indexOf("if (msg && msg.kind === 'verify-repair')
 const repairBody = repairStart >= 0 ? background.slice(repairStart, background.indexOf('sendResponse(report);', repairStart)) : '';
 check('verify-repair enumerates frames before injecting',
   /getRepairFramesForTab\(t\)/.test(repairBody)
-    && /repairMainWorldFilesForUrl\(frameUrl\)/.test(repairBody),
+    && /repairMainWorldFilesForUrl\(frameUrl,\s*frameId\)/.test(repairBody),
   'repair path must be frame-aware');
 check('verify-repair no longer blindly injects into all frames',
   !/allFrames:\s*true/.test(repairBody),
