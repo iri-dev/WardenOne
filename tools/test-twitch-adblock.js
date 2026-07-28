@@ -160,6 +160,7 @@ function createPageHarness(config, harnessOptions) {
     intervals: 0,
     mutationObservers: [],
     videos: [],
+    streamDisplayAdSignal: !!harnessOptions.streamDisplayAdSignal,
     now: harnessOptions.now == null ? Date.now() : Number(harnessOptions.now),
   };
 
@@ -216,6 +217,9 @@ function createPageHarness(config, harnessOptions) {
       this.operations = [];
       this.style = new StyleHarness((operation) => this.operations.push(operation));
       this.currentSrc = String(options.currentSrc || '');
+      this.paused = options.paused === true;
+      this.readyState = options.readyState == null ? 4 : Number(options.readyState);
+      this.error = options.error || null;
       this.defaultMuted = !!options.defaultMuted;
       this.muted = !!options.muted;
       this.volume = options.volume == null ? 1 : Number(options.volume);
@@ -308,6 +312,9 @@ function createPageHarness(config, harnessOptions) {
     return node;
   };
   document.querySelectorAll = (selector) => {
+    if (/stream-display-ad|vertical-video-ad|sda-wrapper|ad-banner-default-container|ad-banner-top|tw-ad-label|tw-ad-countdown/i.test(selector)) {
+      return state.streamDisplayAdSignal ? [root] : [];
+    }
     if (selector === 'video' || selector.includes('video')) {
       return state.videos.filter((video) => video.isConnected &&
         (selector === 'video' || video.inPlayer === true));
@@ -399,6 +406,9 @@ function createPageHarness(config, harnessOptions) {
     },
     fireMedia(type, video) {
       document.dispatchEvent({ type, target: video });
+    },
+    setStreamDisplayAdSignal(value) {
+      state.streamDisplayAdSignal = !!value;
     },
     advance(ms) {
       state.now += Number(ms) || 0;
@@ -607,6 +617,83 @@ test('page hook captures a mixed GQL token template without changing the native 
   'page proxy did not return the GQL response to the requesting worker');
 });
 
+test('current Twitch module workers are wrapped without changing their worker mode', () => {
+  const harness = createPageHarness();
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/module-player-worker', {
+    type: 'module',
+    name: 'twitch-player',
+  });
+  assert(/^blob:wardenone-twitch-/.test(worker.url),
+    'module player worker bypassed playlist interception');
+  assert(worker.options && worker.options.type === 'module' && worker.options.name === 'twitch-player',
+    'module player worker options were changed');
+  const wrapper = harness.state.blobSources.get(worker.url) || '';
+  assert(wrapper.includes('self.__wardenOneOriginalWorkerRan = true;'),
+    'module wrapper omitted the original Twitch worker source');
+});
+
+test('a late delegating Worker wrapper composes with Twitch and non-Twitch workers', () => {
+  const harness = createPageHarness();
+  const installed = harness.window.Worker;
+  const customCalls = [];
+  harness.window.Worker = function LatePageWorker(url, options) {
+    customCalls.push({ url: String(url), options });
+    return new installed(url, options);
+  };
+  assert(harness.window.Worker === installed,
+    'late custom wrapper removed the outer Twitch interception hook');
+
+  const externalUrl = 'https://example.test/ordinary-worker.js';
+  const external = new harness.window.Worker(externalUrl, { name: 'ordinary' });
+  assert(external.url === externalUrl && customCalls.length === 1 && customCalls[0].url === externalUrl,
+    'non-Twitch worker did not pass through the late custom wrapper exactly once');
+
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/late-assignment-player');
+  assert(/^blob:wardenone-twitch-/.test(worker.url),
+    'player worker bypassed interception after a late Worker assignment');
+  assert(customCalls.length === 2 && customCalls[1].url === worker.url,
+    'wrapped Twitch worker did not compose with the late custom wrapper exactly once');
+
+  harness.window.Worker = harness.NativeWorker;
+  const afterCachedNative = new harness.window.Worker('blob:https://www.twitch.tv/cached-native-assignment');
+  assert(/^blob:wardenone-twitch-/.test(afterCachedNative.url),
+    'cached native Worker assignment bypassed Twitch interception');
+  assert(customCalls.length === 3,
+    'cached native assignment unexpectedly discarded the compatible custom delegate');
+});
+
+test('anonymous first-ad token proxy receives a page-scoped device id fallback', async () => {
+  const harness = createPageHarness();
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/anonymous-token-player');
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'gql-request',
+      id: 'anonymous-token',
+      body: {
+        operationName: 'PlaybackAccessToken',
+        variables: {
+          isLive: true,
+          login: 'fixturechannel',
+          isVod: false,
+          vodID: '',
+          playerType: 'embed',
+          platform: 'web',
+        },
+        extensions: { persistedQuery: { version: 1, sha256Hash: 'fixture-hash' } },
+      },
+    },
+    stopImmediatePropagation() {},
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const proxied = harness.state.fetchCalls.at(-1);
+  const deviceId = new Headers(proxied.init && proxied.init.headers).get('X-Device-Id') || '';
+  assert(/^[a-z0-9]{32}$/.test(deviceId),
+    'anonymous backup token request omitted its valid device id fallback');
+});
+
 test('page config-off path forwards GQL and workers untouched', async () => {
   const harness = createPageHarness({ twitchAdBlock: false });
   const body = JSON.stringify([{
@@ -628,7 +715,7 @@ test('page config-off path forwards GQL and workers untouched', async () => {
     'config-off path installed the independent-video observer');
 });
 
-test('primary network/decode errors temporarily fail open and restore current config', async () => {
+test('only intervention-linked network/decode errors enter a short recovery window', async () => {
   const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
   const worker = new harness.window.Worker('blob:https://www.twitch.tv/fail-open-worker');
   worker.dispatchEvent({
@@ -657,8 +744,21 @@ test('primary network/decode errors temporarily fail open and restore current co
   });
   primary.error = { code: 2 };
   harness.document.dispatchEvent({ type: 'error', target: primary });
+  assert(configs().length === 1,
+    'unrelated native player error disabled ad interception');
+
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state: 'blocked-gap',
+    },
+    stopImmediatePropagation() {},
+  });
+  harness.document.dispatchEvent({ type: 'error', target: primary });
   assert(configs().length === 2 && configs()[1].enabled === false,
-    'primary MEDIA_ERR_NETWORK did not temporarily disable worker interception');
+    'intervention-linked MEDIA_ERR_NETWORK did not temporarily disable worker interception');
   assert(harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'network',
     'network recovery state was not exposed for diagnostics');
 
@@ -672,14 +772,36 @@ test('primary network/decode errors temporarily fail open and restore current co
       platform: 'web',
     },
   }]);
-  const nativeInit = { method: 'POST', body: nativeTokenBody };
+  const nativeInit = {
+    method: 'POST',
+    headers: { 'Client-ID': 'recovery-client', 'X-Device-Id': 'recovery-device' },
+    body: nativeTokenBody,
+  };
   await harness.window.fetch('https://gql.twitch.tv/gql', nativeInit);
   assert(harness.state.fetchCalls.at(-1).init === nativeInit &&
     harness.state.fetchCalls.at(-1).init.body === nativeTokenBody,
   'circuit breaker still rewrote the native recovery token request');
 
-  harness.advance(29999);
-  assert(configs().at(-1).enabled === false, 'worker interception resumed before the 30-second window');
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'gql-request',
+      id: 'recovery-proxy-request',
+      body: JSON.parse(nativeTokenBody)[0],
+    },
+    stopImmediatePropagation() {},
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const recoveryProxy = harness.state.fetchCalls.at(-1);
+  const recoveryHeaders = new Headers(recoveryProxy.init && recoveryProxy.init.headers);
+  assert(recoveryHeaders.get('Client-ID') === 'recovery-client' &&
+    recoveryHeaders.get('X-Device-Id') === 'recovery-device',
+  'recovery pass-through stopped passive client-state capture');
+
+  harness.advance(7999);
+  assert(configs().at(-1).enabled === false, 'worker interception resumed before the bounded recovery window');
   harness.advance(1);
   assert(configs().at(-1).enabled === true, 'worker interception did not automatically resume');
   assert(harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
@@ -692,9 +814,93 @@ test('primary network/decode errors temporarily fail open and restore current co
   'primary MEDIA_ERR_DECODE did not trip the stream circuit breaker');
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
   harness.document.dispatchEvent({ type: 'wo-config-change' });
-  harness.advance(30000);
+  harness.advance(8000);
   assert(configs().at(-1).enabled === false,
     'circuit breaker expiry overrode the user-disabled configuration');
+});
+
+test('stable native playback ends intervention recovery early', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/early-resume-worker');
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state: 'blocked-clean',
+    },
+    stopImmediatePropagation() {},
+  });
+  const primary = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/early-resume-primary',
+    inPlayer: true,
+  });
+  primary.error = { code: 3 };
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  const configs = () => worker.messages.filter((message) => message && message.type === 'config');
+  assert(configs().at(-1).enabled === false, 'linked decode error did not enter recovery');
+
+  primary.error = null;
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(1199);
+  assert(configs().at(-1).enabled === false, 'recovery ended before playback settled');
+  harness.advance(1);
+  assert(configs().at(-1).enabled === true, 'stable native playback did not resume ad interception early');
+  assert(harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+    'early recovery completion left stale diagnostics');
+});
+
+test('unstable playback cancels the pending early recovery resume', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/unstable-resume-worker');
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state: 'blocked-clean',
+    },
+    stopImmediatePropagation() {},
+  });
+  const primary = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/unstable-resume-primary',
+    inPlayer: true,
+    error: { code: 2 },
+  });
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  const configs = () => worker.messages.filter((message) => message && message.type === 'config');
+  assert(configs().at(-1).enabled === false, 'linked error did not enter recovery');
+
+  primary.error = null;
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(600);
+  harness.document.dispatchEvent({ type: 'waiting', target: primary });
+  harness.advance(600);
+  assert(configs().at(-1).enabled === false,
+    'stale settle timer re-enabled interception after playback became unstable');
+
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(400);
+  primary.error = { code: 3 };
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  primary.error = null;
+  harness.advance(800);
+  assert(configs().at(-1).enabled === false,
+    'second media error re-enabled interception through a stale resume timer');
+
+  harness.advance(5600);
+  assert(configs().at(-1).enabled === true,
+    'unstable playback extended the original bounded recovery deadline');
 });
 
 test('the fail-open deadline survives Twitch recovery reloads without extending itself', () => {
@@ -704,13 +910,23 @@ test('the fail-open deadline survives Twitch recovery reloads without extending 
     currentSrc: 'blob:https://www.twitch.tv/reload-primary',
     inPlayer: true,
   });
+  const firstWorker = new first.window.Worker('blob:https://www.twitch.tv/first-recovery-worker');
+  firstWorker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: first.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state: 'blocked-gap',
+    },
+    stopImmediatePropagation() {},
+  });
   primary.error = { code: 2 };
   first.document.dispatchEvent({ type: 'error', target: primary });
   const storedDeadline = Number(sessionValues.get('__woTwitchFailOpenUntil'));
-  assert(storedDeadline === 31000, 'page did not persist the original 30-second recovery deadline');
+  assert(storedDeadline === 9000, 'page did not persist the bounded recovery deadline');
 
-  // Simulate Twitch/content recovery reloading the document nine seconds later.
-  const reloaded = createPageHarness(null, { fakeClock: true, now: 10000, sessionValues });
+  // Simulate Twitch/content recovery reloading the document three seconds later.
+  const reloaded = createPageHarness(null, { fakeClock: true, now: 4000, sessionValues });
   assert(reloaded.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'recovery',
     'reloaded page did not resume the stored pass-through window');
   const worker = new reloaded.window.Worker('blob:https://www.twitch.tv/reloaded-player-worker');
@@ -729,7 +945,7 @@ test('the fail-open deadline survives Twitch recovery reloads without extending 
   assert(configs().length === 1 && configs()[0].enabled === false,
     'reloaded worker resumed intervention inside the stored recovery window');
 
-  reloaded.advance(20999);
+  reloaded.advance(4999);
   assert(configs().at(-1).enabled === false, 'reload shortened the stored recovery window');
   reloaded.advance(1);
   assert(configs().at(-1).enabled === true, 'stored recovery window did not expire at its original deadline');
@@ -745,14 +961,78 @@ test('independent-video guard uses one targeted observer plus delegated media ev
   const options = observer.observeCalls[0].options || {};
   assert(options.childList === true && options.subtree === true && options.attributes === true,
     'independent-video observer is missing its targeted subtree/attribute coverage');
-  equal(Array.from(options.attributeFilter || []), ['aria-label', 'src'],
+  assert(options.attributeOldValue === true,
+    'independent-video observer cannot recognize a removed display-ad identity');
+  equal(Array.from(options.attributeFilter || []),
+    ['aria-label', 'src', 'class', 'aria-hidden', 'data-a-target', 'data-test-selector'],
     'independent-video observer watches unexpected attributes');
   for (const eventName of ['loadstart', 'loadedmetadata', 'play', 'playing', 'volumechange']) {
-    assert((harness.document.listeners.get(eventName) || []).length === 1,
+    const expected = eventName === 'playing' ? 2 : 1;
+    assert((harness.document.listeners.get(eventName) || []).length === expected,
       'independent-video guard is missing delegated ' + eventName + ' handling');
   }
   assert((MODULE_SOURCE.match(/new\s+MutationObserver\s*\(/g) || []).length === 1,
     'dedicated Twitch module contains more than one MutationObserver constructor');
+});
+
+test('unrelated attribute mutations never scan descendant subtrees or videos', () => {
+  const harness = createPageHarness();
+  const largeUnrelatedNode = harness.document.createElement('section');
+  largeUnrelatedNode.setAttribute('class', 'chat-scrollable-area__message-container');
+  harness.document.documentElement.appendChild(largeUnrelatedNode);
+  let branch = largeUnrelatedNode;
+  for (let index = 0; index < 250; index++) {
+    const child = harness.document.createElement('div');
+    branch.appendChild(child);
+    branch = child;
+  }
+
+  let descendantQueries = 0;
+  largeUnrelatedNode.querySelector = () => {
+    descendantQueries++;
+    return null;
+  };
+  largeUnrelatedNode.querySelectorAll = () => {
+    descendantQueries++;
+    return [];
+  };
+
+  harness.state.mutationObservers[0].trigger([{
+    type: 'attributes',
+    target: largeUnrelatedNode,
+    attributeName: 'class',
+    oldValue: 'chat-scrollable-area',
+  }]);
+  assert(descendantQueries === 0,
+    'unrelated Twitch attribute mutation traversed a large descendant subtree');
+});
+
+test('display-ad CSS hides creative leaves but never player/root modifiers', () => {
+  const harness = createPageHarness();
+  const style = harness.document.documentElement.children.find((node) => node.id === 'wo-twitch-adblock-css');
+  assert(style && typeof style.textContent === 'string', 'Twitch ad CSS did not mount');
+  const hideEnd = style.textContent.indexOf('{display:none!important');
+  assert(hideEnd > 0, 'Twitch ad CSS hide rule is missing');
+  const hideSelectors = style.textContent.slice(0, hideEnd);
+  for (const selector of [
+    '[data-test-selector*="stream-display-ad" i]',
+    '[data-test-selector*="vertical-video-ad" i]',
+    '[data-a-target*="stream-display-ad" i]',
+    '[data-a-target*="vertical-video-ad" i]',
+    '[class*="stream-display-ad" i]',
+    '[class*="vertical-video-ad" i]',
+    '[class*="video-player--stream-display-ad" i]',
+  ]) {
+    assert(!hideSelectors.includes(selector), 'live player/root selector entered the display:none rule: ' + selector);
+  }
+  assert(hideSelectors.includes('[class*="stream-display-ad__creative"]') &&
+      hideSelectors.includes('[class*="vertical-video-ad__creative"]') &&
+      hideSelectors.includes('[data-test-selector="sda-wrapper"]'),
+    'confirmed display-ad creative leaves are no longer hidden');
+  const layoutRule = style.textContent.slice(hideEnd);
+  assert(layoutRule.includes('[class*="video-player--stream-display-ad" i]') &&
+      layoutRule.includes('[class*="video-player"][class*="vertical-video-ad" i]'),
+    'display/vertical live player modifiers are not restored to full size');
 });
 
 test('media-amazon direct and child sources are guarded without pausing attached media', () => {
@@ -775,6 +1055,54 @@ test('media-amazon direct and child sources are guarded without pausing attached
   }]);
   assertGuarded(childBacked, 'child-source media-amazon video');
   assert(childBacked.pauseCalls === 0, 'attached child-source ad video was paused');
+});
+
+test('active Stream Display Ad shell rescans, guards, and restores with reversed video order', () => {
+  const harness = createPageHarness();
+  const creative = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/display-creative',
+    inPlayer: true,
+    volume: 1,
+  });
+  const live = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/live-stream',
+    inPlayer: true,
+    label: 'Twitch video player',
+    volume: 0.7,
+  });
+  const originalCreative = videoPresentation(creative);
+
+  // Twitch keeps a stream-display scaffold with wrapper-hidden on normal pages.
+  // With no active signal, a second video must remain untouched.
+  harness.fireMedia('loadedmetadata', creative);
+  equal(videoPresentation(creative), originalCreative,
+    'persistent hidden SDA scaffold misclassified the second video');
+
+  const shell = harness.document.createElement('div');
+  shell.setAttribute('data-test-selector', 'sda-wrapper');
+  shell.setAttribute('class', 'stream-display-ad__wrapper');
+  harness.setStreamDisplayAdSignal(true);
+  harness.state.mutationObservers[0].trigger([{
+    type: 'childList',
+    target: harness.document.documentElement,
+    addedNodes: [shell],
+    removedNodes: [],
+  }]);
+  assertGuarded(creative, 'stream-display creative');
+  assert(live.getAttribute('data-wo-twitch-independent-ad') === null && live.volume === 0.7,
+    'stream-display fallback altered the blob-backed live stream');
+
+  shell.setAttribute('class', 'stream-display-ad__wrapper stream-display-ad__wrapper-hidden');
+  harness.setStreamDisplayAdSignal(false);
+  harness.state.mutationObservers[0].trigger([{
+    type: 'attributes',
+    target: shell,
+    attributeName: 'class',
+  }]);
+  equal(videoPresentation(creative), originalCreative,
+    'SDA shell deactivation did not restore the creative video exactly');
+  assert(MODULE_SOURCE.includes('[class*="video-player"][class*="display-ad" i]'),
+    'stream-display fallback no longer restores the live player to full size');
 });
 
 test('label fallback requires a distinct blob primary and never guards primary or unresolved video', () => {
