@@ -19,6 +19,24 @@
   const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
   const DEFAULT_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
   const MESSAGE_FLAG = '__woTwitchAdblock';
+  const STREAM_DISPLAY_AD_IDENTITY_RE = /(?:stream-display-ad|vertical-video-ad|sda-wrapper|ad-banner-(?:default|top)|video-ad-(?:label|countdown)|ad-countdown-timer|tw-ad-(?:label|countdown)|player-twitch-ad-header)/i;
+  const STREAM_DISPLAY_AD_SIGNAL_SELECTOR = [
+    '[data-test-selector="sda-wrapper"]:not([class*="wrapper-hidden" i]):not([aria-hidden="true"])',
+    '[data-test-selector="ad-banner-default-container"]',
+    '[data-test-selector="ad-banner-top"]',
+    '[data-test-selector="unmuted-ads-text"]',
+    '[data-test-selector="muted-ads-text"]',
+    '[data-a-target="video-ad-label"]',
+    '[data-a-target="video-ad-countdown"]',
+    '[data-a-target="ad-countdown-timer"]',
+    '[data-a-target*="vertical-video-ad" i]',
+    '[data-a-target="video-ad"]',
+    '[class*="stream-display-ad__wrapper" i]:not([class*="wrapper-hidden" i]):not([aria-hidden="true"])',
+    '[class*="vertical-video-ad" i]:not([class*="hidden" i]):not([aria-hidden="true"])',
+    '.player-twitch-ad-header',
+    '.tw-ad-label',
+    '.tw-ad-countdown'
+  ].join(',');
 
   if (!TWITCH_HOST_RE.test(location.hostname)) return;
   if (window.top !== window) {
@@ -35,18 +53,48 @@
   let revision = 0;
   const workers = new Set();
   const independentAdVideos = new Map();
+  let primaryLiveVideo = null;
   let independentAdObserver = null;
   let independentAdPruneTimer = 0;
-  const PLAYBACK_FAIL_OPEN_MS = 30 * 1000;
+  // Recovery is deliberately short and intervention-scoped. A blanket 30-second
+  // pass-through made a decoder/network error look fixed by simply allowing the
+  // rest of the current ad pod to play. Only failures immediately following one
+  // of our playlist interventions enter recovery, and native playback can end the
+  // window early once it is playing again.
+  const PLAYBACK_FAIL_OPEN_MS = 8 * 1000;
+  const PLAYBACK_FAIL_OPEN_SETTLE_MS = 1200;
+  const PLAYBACK_INTERVENTION_ERROR_WINDOW_MS = 15 * 1000;
   const PLAYBACK_FAIL_OPEN_STORAGE_KEY = '__woTwitchFailOpenUntil';
   let playbackFailOpenUntil = loadPlaybackFailOpenUntil();
   let playbackFailOpenTimer = 0;
+  let playbackFailOpenResumeTimer = 0;
+  let playbackFailOpenResumeVideo = null;
+  let playbackFailOpenResumeSource = '';
+  let lastStreamInterventionAt = 0;
 
   const nativeFetch = window.fetch;
   const NativeWorker = window.Worker;
+
+  function createEphemeralDeviceId() {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const bytes = new Uint8Array(32);
+    try {
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        window.crypto.getRandomValues(bytes);
+        return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join('');
+      }
+    } catch (_) {}
+    let value = '';
+    for (let index = 0; index < 32; index++) value += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return value;
+  }
+
   const clientState = {
     clientId: DEFAULT_CLIENT_ID,
-    deviceId: '',
+    // Anonymous/pre-roll sessions do not always expose a page GQL request before
+    // the first ad. Twitch expects a device id on alternate token requests, so use
+    // a page-scoped fallback until the real player header is observed.
+    deviceId: createEphemeralDeviceId(),
     clientVersion: '',
     clientSession: '',
     clientIntegrity: '',
@@ -61,6 +109,11 @@
     '[aria-label="Advertisement"]',
     '#player-ads',
     '[data-test-selector="sda-wrapper"]',
+    '[data-test-selector="ad-banner-default-container"]',
+    '[data-test-selector="ad-banner-top"]',
+    '[data-test-selector="unmuted-ads-text"]',
+    '[data-test-selector="muted-ads-text"]',
+    '[data-a-target="video-ad"]',
     '[data-a-target="video-ad-label"]',
     '[data-a-target="video-ad-countdown"]',
     '[data-a-target="ad-countdown-timer"]',
@@ -68,12 +121,24 @@
     'video[data-wo-twitch-independent-ad="true"]',
     '[class*="stream-display-ad__wrapper"]',
     '[class*="stream-display-ad__container"]',
+    '[class*="stream-display-ad__frame"]',
     '[class*="stream-display-ad__iframe"]',
-    '[class*="pushdown-sda"]',
+    '[class*="stream-display-ad__creative"]',
+    '[class*="vertical-video-ad__wrapper"]',
+    '[class*="vertical-video-ad__container"]',
+    '[class*="vertical-video-ad__frame"]',
+    '[class*="vertical-video-ad__iframe"]',
+    '[class*="vertical-video-ad__creative"]',
+    '.player-twitch-ad-header',
+    '.tw-ad-label',
+    '.tw-ad-countdown',
     '.audio-ax-overlay-base',
     'button[aria-label="Learn more about this ad"]'
   ].join(',') + '{display:none!important;visibility:hidden!important;pointer-events:none!important;}\n' +
-    '[class*="video-player--stream-display-ad"]{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;inset:0!important;transform:none!important;}';
+    '[class*="video-player--stream-display-ad" i],' +
+    '[class*="video-player"][class*="display-ad" i],' +
+    '[class*="video-player"][class*="vertical-video-ad" i],' +
+    '[class*="video-player"][class*="pushdown-sda" i]{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;inset:0!important;transform:none!important;}';
 
   function mountCss() {
     if (adCss.isConnected) return;
@@ -110,15 +175,74 @@
 
   function primaryPlayerVideo() {
     try {
+      const allVideos = document.querySelectorAll('video');
+      // Twitch exposes two stable identities for the genuine live element. Use
+      // them before DOM order: current SDA/vertical creatives can also be blob
+      // videos and may be inserted before the live player in the tree.
+      for (const video of allVideos) {
+        if (!(video instanceof HTMLVideoElement) || !video.isConnected || !videoMediaSource(video).startsWith('blob:')) continue;
+        const label = String(video.getAttribute('aria-label') || '').trim().toLowerCase();
+        const parentTarget = String(video.parentElement && video.parentElement.getAttribute('data-a-target') || '').toLowerCase();
+        if (label === 'twitch video player' || parentTarget === 'video-ref') {
+          primaryLiveVideo = video;
+          return video;
+        }
+      }
+      if (primaryLiveVideo instanceof HTMLVideoElement && primaryLiveVideo.isConnected &&
+          videoMediaSource(primaryLiveVideo).startsWith('blob:') && !independentAdVideos.has(primaryLiveVideo)) {
+        return primaryLiveVideo;
+      }
+      primaryLiveVideo = null;
       const players = document.querySelectorAll('[data-a-target="video-player"] video, .video-player video');
       for (const video of players) {
-        if (video instanceof HTMLVideoElement && video.isConnected && videoMediaSource(video).startsWith('blob:')) return video;
+        if (video instanceof HTMLVideoElement && video.isConnected && videoMediaSource(video).startsWith('blob:')) {
+          primaryLiveVideo = video;
+          return video;
+        }
       }
-      for (const video of document.querySelectorAll('video')) {
-        if (video instanceof HTMLVideoElement && video.isConnected && videoMediaSource(video).startsWith('blob:')) return video;
+      for (const video of allVideos) {
+        if (video instanceof HTMLVideoElement && video.isConnected && videoMediaSource(video).startsWith('blob:')) {
+          primaryLiveVideo = video;
+          return video;
+        }
       }
     } catch (_) {}
     return null;
+  }
+
+  function streamDisplayAdSignalPresent() {
+    try {
+      return !!document.querySelector(STREAM_DISPLAY_AD_SIGNAL_SELECTOR);
+    } catch (_) {
+      try { return document.querySelectorAll(STREAM_DISPLAY_AD_SIGNAL_SELECTOR).length > 0; } catch (_) {}
+    }
+    return false;
+  }
+
+  function nodeOwnIdentityTouchesStreamDisplayAdShell(node) {
+    if (!(node instanceof Element)) return false;
+    try {
+      const identity = [
+        node.getAttribute('class'),
+        node.getAttribute('id'),
+        node.getAttribute('data-a-target'),
+        node.getAttribute('data-test-selector'),
+        node.getAttribute('aria-label')
+      ].filter(Boolean).join(' ').toLowerCase();
+      return STREAM_DISPLAY_AD_IDENTITY_RE.test(identity);
+    } catch (_) {}
+    return false;
+  }
+
+  function subtreeTouchesStreamDisplayAdShell(node) {
+    if (!(node instanceof Element)) return false;
+    if (nodeOwnIdentityTouchesStreamDisplayAdShell(node)) return true;
+    try {
+      return !!node.querySelector(STREAM_DISPLAY_AD_SIGNAL_SELECTOR);
+    } catch (_) {
+      try { return node.querySelectorAll(STREAM_DISPLAY_AD_SIGNAL_SELECTOR).length > 0; } catch (_) {}
+    }
+    return false;
   }
 
   function knownIndependentAdVideo(video) {
@@ -136,10 +260,14 @@
     }
     const label = String(video.getAttribute('aria-label') || '').trim().toLowerCase();
     const mediaSource = videoMediaSource(video);
-    if (!mediaSource || mediaSource.startsWith('blob:') ||
-        (label !== 'video advertisement' && !label.startsWith('this advertisement'))) return false;
     const primary = primaryPlayerVideo();
-    return !!primary && primary !== video;
+    if (!mediaSource || !primary || primary === video) return false;
+    if (label === 'video advertisement' || label.startsWith('this advertisement')) return true;
+    // Stream Display/vertical ads can use a separate first-party or MediaSource
+    // video without the old media-amazon host or aria label. Only classify the
+    // extra video while Twitch's own ad shell is present; the first blob-backed
+    // live player remains untouched and is restored to full size by the CSS.
+    return streamDisplayAdSignalPresent();
   }
 
   function clearIndependentAdPruneTimer() {
@@ -216,16 +344,45 @@
     return guarded;
   }
 
+  function guardIndependentAdForAttributeTarget(node) {
+    if (node instanceof HTMLVideoElement) return guardIndependentAdVideo(node) ? 1 : 0;
+    if (!(node instanceof Element)) return 0;
+    try {
+      const video = node.closest('video');
+      return video instanceof HTMLVideoElement && guardIndependentAdVideo(video) ? 1 : 0;
+    } catch (_) {}
+    return 0;
+  }
+
   function installIndependentAdObserver() {
     if (independentAdObserver || typeof MutationObserver !== 'function') return;
     try {
       independentAdObserver = new MutationObserver((records) => {
+        let streamDisplayShellChanged = false;
         for (const record of records) {
           if (record.type === 'attributes') {
-            guardIndependentAdsForNode(record.target);
+            // Attribute records are the hot path on Twitch. Inspect only the
+            // target (or its containing video); never traverse an unrelated
+            // chat/player subtree because a class or aria-hidden value changed.
+            guardIndependentAdForAttributeTarget(record.target);
+            if (nodeOwnIdentityTouchesStreamDisplayAdShell(record.target) ||
+                STREAM_DISPLAY_AD_IDENTITY_RE.test(String(record.oldValue || ''))) {
+              streamDisplayShellChanged = true;
+            }
             continue;
           }
-          for (const node of record.addedNodes) guardIndependentAdsForNode(node);
+          for (const node of record.addedNodes) {
+            guardIndependentAdsForNode(node);
+            if (subtreeTouchesStreamDisplayAdShell(node)) streamDisplayShellChanged = true;
+          }
+          for (const node of record.removedNodes || []) {
+            if (subtreeTouchesStreamDisplayAdShell(node)) streamDisplayShellChanged = true;
+          }
+        }
+        if (streamDisplayShellChanged) {
+          try {
+            for (const video of document.querySelectorAll('video')) guardIndependentAdVideo(video);
+          } catch (_) {}
         }
         pruneIndependentAdVideos();
       });
@@ -233,7 +390,8 @@
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['aria-label', 'src']
+        attributeOldValue: true,
+        attributeFilter: ['aria-label', 'src', 'class', 'aria-hidden', 'data-a-target', 'data-test-selector']
       });
     } catch (_) {
       independentAdObserver = null;
@@ -301,6 +459,23 @@
     }
   }
 
+  function clearPlaybackFailOpenResumeTimer() {
+    if (playbackFailOpenResumeTimer) clearTimeout(playbackFailOpenResumeTimer);
+    playbackFailOpenResumeTimer = 0;
+    playbackFailOpenResumeVideo = null;
+    playbackFailOpenResumeSource = '';
+  }
+
+  function resumeStreamInterception() {
+    if (playbackFailOpenTimer) clearTimeout(playbackFailOpenTimer);
+    playbackFailOpenTimer = 0;
+    clearPlaybackFailOpenResumeTimer();
+    playbackFailOpenUntil = 0;
+    persistPlaybackFailOpenUntil();
+    try { document.documentElement.removeAttribute('data-wo-twitch-fail-open'); } catch (_) {}
+    broadcastStreamConfig();
+  }
+
   function finishPlaybackFailOpen() {
     playbackFailOpenTimer = 0;
     const remaining = playbackFailOpenUntil - Date.now();
@@ -308,23 +483,31 @@
       playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, remaining);
       return;
     }
-    playbackFailOpenUntil = 0;
-    persistPlaybackFailOpenUntil();
-    try { document.documentElement.removeAttribute('data-wo-twitch-fail-open'); } catch (_) {}
-    broadcastStreamConfig();
+    resumeStreamInterception();
   }
 
   function primaryPlaybackVideoFailed(event) {
     const video = event && event.target;
+    if (video === playbackFailOpenResumeVideo) clearPlaybackFailOpenResumeTimer();
     if (!enabled || !(video instanceof HTMLVideoElement) || !video.isConnected) return;
     if (independentAdVideos.has(video) || video.getAttribute('data-wo-twitch-independent-ad') === 'true') return;
     const errorCode = Number(video.error && video.error.code || 0);
     if (errorCode !== 2 && errorCode !== 3) return;
     if (!videoMediaSource(video).startsWith('blob:') || primaryPlayerVideo() !== video) return;
 
-    playbackFailOpenUntil = Date.now() + PLAYBACK_FAIL_OPEN_MS;
+    // Do not blame arbitrary CDN/offline/player failures on the blocker. Turning
+    // interception off for unrelated errors exposes prerolls and midrolls while
+    // doing nothing to repair the underlying network failure.
+    const now = Date.now();
+    if (!lastStreamInterventionAt || now - lastStreamInterventionAt > PLAYBACK_INTERVENTION_ERROR_WINDOW_MS) return;
+    // A second error cancels an optimistic early-resume check without extending
+    // the original bounded deadline.
+    if (playbackFailOpenUntil > now) return;
+
+    playbackFailOpenUntil = now + PLAYBACK_FAIL_OPEN_MS;
     persistPlaybackFailOpenUntil();
     if (playbackFailOpenTimer) clearTimeout(playbackFailOpenTimer);
+    clearPlaybackFailOpenResumeTimer();
     playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, PLAYBACK_FAIL_OPEN_MS);
     try {
       document.documentElement.setAttribute('data-wo-twitch-fail-open', errorCode === 2 ? 'network' : 'decode');
@@ -335,7 +518,38 @@
     broadcastStreamConfig();
   }
 
+  function primaryPlaybackVideoRecovered(event) {
+    if (!enabled || playbackFailOpenUntil <= Date.now() || playbackFailOpenResumeTimer) return;
+    const video = event && event.target;
+    if (!(video instanceof HTMLVideoElement) || !video.isConnected) return;
+    if (!videoMediaSource(video).startsWith('blob:') || primaryPlayerVideo() !== video) return;
+    if (video.error || video.paused === true || Number(video.readyState || 0) < 2) return;
+    // Give Twitch's untouched MediaSource a brief stable-playback window, then
+    // resume blocking instead of leaving the rest of an ad pod unfiltered.
+    playbackFailOpenResumeVideo = video;
+    playbackFailOpenResumeSource = videoMediaSource(video);
+    playbackFailOpenResumeTimer = setTimeout(() => {
+      playbackFailOpenResumeTimer = 0;
+      const expectedVideo = playbackFailOpenResumeVideo;
+      const expectedSource = playbackFailOpenResumeSource;
+      playbackFailOpenResumeVideo = null;
+      playbackFailOpenResumeSource = '';
+      if (!enabled || playbackFailOpenUntil <= Date.now() || expectedVideo !== video ||
+          !video.isConnected || videoMediaSource(video) !== expectedSource || primaryPlayerVideo() !== video ||
+          video.error || video.paused === true || Number(video.readyState || 0) < 2) return;
+      resumeStreamInterception();
+    }, PLAYBACK_FAIL_OPEN_SETTLE_MS);
+  }
+
+  function primaryPlaybackVideoUnstable(event) {
+    if (event && event.target === playbackFailOpenResumeVideo) clearPlaybackFailOpenResumeTimer();
+  }
+
   document.addEventListener('error', primaryPlaybackVideoFailed, true);
+  document.addEventListener('playing', primaryPlaybackVideoRecovered, true);
+  for (const eventName of ['waiting', 'stalled', 'pause', 'emptied']) {
+    document.addEventListener(eventName, primaryPlaybackVideoUnstable, true);
+  }
   if (playbackFailOpenUntil > Date.now()) {
     try { document.documentElement.setAttribute('data-wo-twitch-fail-open', 'recovery'); } catch (_) {}
     playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, playbackFailOpenUntil - Date.now());
@@ -463,7 +677,10 @@
     if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent) return;
     function twitchFetch(input, init) {
       const url = requestUrl(input);
-      if (!streamInterceptionEnabled() || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
+      // Token/header capture is passive and byte-preserving, so keep it alive
+      // during the short media recovery window. Otherwise the replacement worker
+      // resumes with stale identity state and every clean-token attempt can fail.
+      if (!enabled || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
       captureClientState(input, init);
       if (init && typeof init.body === 'string') {
         const patched = patchTokenBody(init.body);
@@ -578,7 +795,10 @@
     'use strict';
 
     const FLAG = '__woTwitchAdblock';
-    const AD_MARKER_RE = /stitched-ad|#EXT-X-CUE-OUT|twitch-stitched|CLASS="twitch-maf-ad"|CLASS="twitch-trigger"/i;
+    // Twitch's current manifests use both the longer twitch-stitched-ad class
+    // and shorter stitched identifiers. Match the signifier as a token so a
+    // marker-only spelling change cannot turn the entire ad pod into clean media.
+    const AD_MARKER_RE = /\bstitched\b|#EXT-X-CUE-OUT|CLASS="twitch-maf-ad"|CLASS="twitch-trigger"/i;
     const STRONG_AD_METADATA_RE = /X-TV-TWITCH-AD-(?:RADS-TOKEN|ROLL-TYPE|POD-|ADVERTISER|CREATIVE|LINE-ITEM|ORDER-ID)/i;
     const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
     const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
@@ -604,7 +824,6 @@
     // waiting for its asynchronous ready/config handshake leaves a race where its
     // first playlist request can repeat the transform that just failed.
     let active = initiallyEnabled !== false;
-    let adsSeen = false;
     let client = Object.assign({}, EMPTY_STATE, initialState || {});
     const realFetch = self.fetch.bind(self);
     const media = new Map();
@@ -903,7 +1122,20 @@
     function playlistEvidence(text) {
       const source = String(text || '');
       const lines = source.replace(/\r/g, '').split('\n');
-      const strongMetadata = STRONG_AD_METADATA_RE.test(source) || /stitched-ad/i.test(source);
+      // Twitch also emits the compact DATERANGE spelling CLASS="stitched" (and
+      // occasionally ID="stitched") with blank EXTINF titles and generic media
+      // paths. Treat the exact attribute value as strong evidence; the explicit
+      // `live` title check below still protects stale markers on live segments.
+      const exactStitchedRange = lines.some((line) => {
+        if (!/^#EXT-X-DATERANGE:/i.test(line)) return false;
+        try {
+          const attrs = parseAttributes(line);
+          return /^stitched$/i.test(String(attrs.CLASS || '')) || /^stitched$/i.test(String(attrs.ID || ''));
+        } catch (_) {
+          return false;
+        }
+      });
+      const strongMetadata = STRONG_AD_METADATA_RE.test(source) || /stitched-ad/i.test(source) || exactStitchedRange;
       const ranges = timedAdRanges(lines);
       const hasMarker = AD_MARKER_RE.test(source) || strongMetadata || ranges.length > 0;
       const hasLiveTitle = lines.some((line) => /^#EXTINF:.*?,\s*live\s*$/i.test(line));
@@ -1083,7 +1315,7 @@
       const first = lines.find((line) => String(line || '').trim());
       if (String(first || '').trim().replace(/^\uFEFF/, '') !== '#EXTM3U') return false;
       if (lines.some((line) => /^#EXT-X-STREAM-INF:/i.test(String(line || '').trim()))) return false;
-      return lines.some((line) => /^#EXTINF:|^#EXT-X-(?:PART|PRELOAD-HINT):/i.test(String(line || '').trim()));
+      return lines.some((line) => /^#EXTINF:|^#EXT-X-(?:PART|PRELOAD-HINT|TWITCH-PREFETCH):/i.test(String(line || '').trim()));
     }
 
     function mediaContainer(text) {
@@ -1317,8 +1549,20 @@
         backups.delete(key);
       }
       if (cached && !cached.failed && Date.now() - cached.ts < BACKUP_TTL) return Promise.resolve(cached);
-      if (pendingBackups.has(key)) return pendingBackups.get(key);
-      const pending = firstCleanBackup(info).then((value) => {
+      const fullKey = key + '|full';
+      const warmKey = key + '|warm';
+      if (pendingBackups.has(fullKey)) return pendingBackups.get(fullKey);
+      if (!full && pendingBackups.has(warmKey)) return pendingBackups.get(warmKey);
+      if (full && pendingBackups.has(warmKey)) {
+        // Reuse a successful warm attempt, but do not let a failing single-type
+        // prewarm suppress the full four-identity attempt once an ad is present.
+        return pendingBackups.get(warmKey).then((value) => value || getBackup(info, true));
+      }
+      const pendingKey = full ? fullKey : warmKey;
+      const attempt = full
+        ? firstCleanBackup(info)
+        : backupAttempt(info, 'popout').catch(() => null);
+      const pending = attempt.then((value) => {
         if (value) {
           info.warmRetryAt = 0;
           backups.set(key, value);
@@ -1331,8 +1575,8 @@
           info.warmRetryAt = Date.now() + 60 * 1000;
         }
         return value;
-      }, () => null).finally(() => pendingBackups.delete(key));
-      pendingBackups.set(key, pending);
+      }, () => null).finally(() => pendingBackups.delete(pendingKey));
+      pendingBackups.set(pendingKey, pending);
       return pending;
     }
 
@@ -1500,13 +1744,14 @@
           // probed in the background in case confirmed ad media follows next poll.
           try { getBackup(info, false); } catch (_) {}
         }
-        // Once this stream/account is known to serve ads, keep a clean backup
-        // warm during ad-free playback so the next break can swap instantly
-        // instead of leaking a beat of ad before the swap catches up.
-        if (adsSeen && info) { try { getBackup(info, false); } catch (_) {} }
+        // Once token identity is available, keep one lightweight popout backup
+        // warm during normal playback. Waiting for the first ad marker guarantees
+        // a visible beat of preroll/midroll while alternate tokens and Usher are
+        // still cold. The full four-type race remains reserved for ad time;
+        // getBackup de-duplicates by profile and backs off a failed warm attempt.
+        if (info && client.tokenTemplate) { try { getBackup(info, false); } catch (_) {} }
         return response;
       }
-      adsSeen = true;
       beginAdQuarantine(info, evidence);
       wlog('AD detected ' + url.slice(-40));
       if (!info) wlog('  no variant info (master not mapped for this media url)');
@@ -1591,16 +1836,40 @@
   function installWorkerHook() {
     if (typeof NativeWorker !== 'function' || NativeWorker.__woTwitchCurrent) return;
 
-    function TwitchWorker(scriptUrl, options) {
-      let protocol = '';
-      try { protocol = new URL(String(scriptUrl), location.href).protocol; } catch (_) {}
-      var woTwitchBlob = protocol === 'blob:' && !(options && options.type === 'module') && workerOriginIsTwitch(scriptUrl);
-      if (!enabled || !woTwitchBlob) {
-        if (woTwitchBlob) { try { console.log('[WO-Twitch] worker skipped (adblock disabled)'); } catch (_) {} }
+    let workerDelegate = NativeWorker;
+    let workerDelegateDepth = 0;
+
+    function constructWorker(scriptUrl, options) {
+      const Delegate = workerDelegate;
+      if (workerDelegateDepth || typeof Delegate !== 'function' ||
+          Delegate === TwitchWorker || Delegate === NativeWorker) {
         return new NativeWorker(scriptUrl, options);
       }
+      workerDelegateDepth++;
+      try {
+        return new Delegate(scriptUrl, options);
+      } finally {
+        workerDelegateDepth--;
+      }
+    }
+
+    function TwitchWorker(scriptUrl, options) {
+      // A compatible late wrapper may call a cached copy of this constructor (or
+      // window.Worker) as its delegate. Bypass our hook only for that nested call
+      // so wrappers compose without recursively re-wrapping the Twitch blob.
+      if (workerDelegateDepth) return new NativeWorker(scriptUrl, options);
+      let protocol = '';
+      try { protocol = new URL(String(scriptUrl), location.href).protocol; } catch (_) {}
+      // Twitch can create either classic or module blob workers. The bootstrap is
+      // valid in both worker modes and the original options are preserved, so
+      // skipping module workers silently bypasses every playlist interception.
+      var woTwitchBlob = protocol === 'blob:' && workerOriginIsTwitch(scriptUrl);
+      if (!enabled || !woTwitchBlob) {
+        if (woTwitchBlob) { try { console.log('[WO-Twitch] worker skipped (adblock disabled)'); } catch (_) {} }
+        return constructWorker(scriptUrl, options);
+      }
       const originalSource = readWorkerSource(scriptUrl);
-      if (!originalSource) { try { console.log('[WO-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} return new NativeWorker(scriptUrl, options); }
+      if (!originalSource) { try { console.log('[WO-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} return constructWorker(scriptUrl, options); }
 
       let wrapperUrl = '';
       try {
@@ -1608,7 +1877,7 @@
           'null,' + JSON.stringify(publicClientState()) + ',' + JSON.stringify(VERSION) + ',' +
           JSON.stringify(streamInterceptionEnabled()) + ');\n';
         wrapperUrl = URL.createObjectURL(new Blob([bootstrap, originalSource], { type: 'application/javascript' }));
-        const worker = new NativeWorker(wrapperUrl, options);
+        const worker = constructWorker(wrapperUrl, options);
         try { console.log('[WO-Twitch] worker HOOKED — ad interception active'); } catch (_) {}
         workers.add(worker);
         let revokeTimer = setTimeout(() => {
@@ -1632,7 +1901,9 @@
             proxyWorkerGql(worker, message);
           } else if (message.type === 'ad-state') {
             try {
-              document.documentElement.setAttribute('data-wo-twitch-adblock', String(message.state || 'active'));
+              const state = String(message.state || 'active');
+              if (/^blocked-/.test(state)) lastStreamInterventionAt = Date.now();
+              document.documentElement.setAttribute('data-wo-twitch-adblock', state);
             } catch (_) {}
           } else if (message.type === 'log') {
             try { console.log('[WO-Twitch]', message.m); } catch (_) {}
@@ -1644,7 +1915,7 @@
         if (wrapperUrl) {
           try { URL.revokeObjectURL(wrapperUrl); } catch (_) {}
         }
-        return new NativeWorker(scriptUrl, options);
+        return constructWorker(scriptUrl, options);
       }
     }
 
@@ -1655,7 +1926,23 @@
       Object.defineProperty(TwitchWorker, 'name', { value: 'Worker' });
       TwitchWorker.toString = Function.prototype.toString.bind(NativeWorker);
     } catch (_) {}
-    window.Worker = TwitchWorker;
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(window, 'Worker');
+      Object.defineProperty(window, 'Worker', {
+        configurable: true,
+        enumerable: descriptor ? !!descriptor.enumerable : true,
+        get() { return TwitchWorker; },
+        // Cached native/current assignments must not bypass the Twitch hook.
+        // Preserve compatible late wrappers as a mutable delegate, with the
+        // recursion guard above handling wrappers that call window.Worker again.
+        set(value) {
+          if (value === TwitchWorker || value === NativeWorker) return;
+          if (typeof value === 'function') workerDelegate = value;
+        }
+      });
+    } catch (_) {
+      window.Worker = TwitchWorker;
+    }
   }
 
   updateEnabled();
