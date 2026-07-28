@@ -82,6 +82,22 @@ https://video-weaver-fixture.ttvnw.net/commercial/${suffix || '501'}.ts
 const STITCHED_AD = markedAd(
   '#EXT-X-DATERANGE:ID="stitched-ad-1784764800",CLASS="twitch-stitched-ad",DURATION=30.0',
   'stitched');
+const SHORT_STITCHED_AD = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:501
+#EXT-X-DATERANGE:ID="range-1784764800",CLASS="stitched",DURATION=30.0
+#EXTINF:2.000,
+https://video-edge-fixture.ttvnw.net/live/generic-501.ts
+`;
+const SHORT_STITCHED_ID_AD = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:502
+#EXT-X-DATERANGE:ID="stitched",CLASS="midroll",DURATION=30.0
+#EXTINF:2.000,
+https://video-edge-fixture.ttvnw.net/live/generic-502.ts
+`;
 const FMP4_STITCHED_AD = `#EXTM3U
 #EXT-X-VERSION:7
 #EXT-X-TARGETDURATION:2
@@ -133,6 +149,13 @@ const PART_ONLY_AD = `#EXTM3U
 #EXT-X-DATERANGE:ID="stitched-ad-parts",CLASS="twitch-stitched-ad",DURATION=1.0
 #EXT-X-PART:DURATION=0.500,URI="https://video-weaver-fixture.ttvnw.net/stitched-ad/812.0.m4s"
 #EXT-X-PART:DURATION=0.500,URI="https://video-weaver-fixture.ttvnw.net/stitched-ad/812.1.m4s"
+`;
+const PREFETCH_ONLY_AD = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:813
+#EXT-X-DATERANGE:ID="stitched-813",CLASS="stitched",DURATION=2.0
+#EXT-X-TWITCH-PREFETCH:https://video-weaver-fixture.ttvnw.net/stitched-ad/813.ts
 `;
 const KNOWN_AD_URI_NO_MARKER = `#EXTM3U
 #EXT-X-VERSION:3
@@ -433,6 +456,8 @@ function test(name, fn) {
 test('exact ad markers are blocked while twitch-ad-quartile alone is ignored', async () => {
   const fixtures = new Map([
     ['https://video-edge-fixture.ttvnw.net/unmapped/stitched.m3u8', STITCHED_AD],
+    ['https://video-edge-fixture.ttvnw.net/unmapped/short-stitched.m3u8', SHORT_STITCHED_AD],
+    ['https://video-edge-fixture.ttvnw.net/unmapped/short-stitched-id.m3u8', SHORT_STITCHED_ID_AD],
     ['https://video-edge-fixture.ttvnw.net/unmapped/cue-out.m3u8', CUE_OUT_AD],
     ['https://video-edge-fixture.ttvnw.net/unmapped/maf.m3u8', MAF_AD],
     ['https://video-edge-fixture.ttvnw.net/unmapped/trigger.m3u8', TRIGGER_AD],
@@ -445,7 +470,7 @@ test('exact ad markers are blocked while twitch-ad-quartile alone is ignored', a
     },
   });
 
-  for (const name of ['stitched', 'cue-out', 'maf', 'trigger']) {
+  for (const name of ['stitched', 'short-stitched', 'short-stitched-id', 'cue-out', 'maf', 'trigger']) {
     const url = 'https://video-edge-fixture.ttvnw.net/unmapped/' + name + '.m3u8';
     const body = await (await runtime.fetch(url)).text();
     assertDecodeSafeGap(body, fixtures.get(url), name + ' marker');
@@ -830,6 +855,19 @@ test('part-only ad deltas fail open instead of returning an empty or synthetic p
   assert(!body.includes('data:video/mp4'), 'part-only delta received synthetic decoder bytes');
 });
 
+test('prefetch-only Twitch ad snapshots still activate a clean mapped backup', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: PREFETCH_ONLY_AD, backupMedia: CLEAN_MEDIA }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body === CLEAN_MEDIA,
+    'prefetch-only ad snapshot bypassed the clean-stream replacement path');
+});
+
 test('relative backup variant URIs are absolutized against the V2 Usher master', async () => {
   const relativeVariant = 'relative-media/h264-1080.m3u8';
   const expected = 'https://usher.ttvnw.net/api/v2/channel/hls/relative-media/h264-1080.m3u8';
@@ -928,6 +966,61 @@ test('50 clean media requests take a zero-backup fast path', async () => {
   assert(runtime.state.gqlRequests.length === 0, 'clean path requested a backup access token');
   assert(runtime.state.timers.length === 0, 'clean path scheduled backup or timeout work');
   assert(!runtime.state.calls.some((call) => /\/backup\//.test(call.url)), 'clean path fetched a backup variant');
+});
+
+test('captured token identity prewarms one bounded clean backup before the first ad', async () => {
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: 100000,
+    fetchRoute: standardFetchRoute({ originalMedia: CLEAN_MEDIA, backupMedia: CLEAN_MEDIA }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  const tokenBody = JSON.stringify({
+    operationName: 'PlaybackAccessToken',
+    variables: {
+      isLive: true,
+      login: CHANNEL,
+      isVod: false,
+      vodID: '',
+      playerType: 'site',
+      platform: 'web',
+    },
+    extensions: { persistedQuery: { version: 1, sha256Hash: 'prewarm-token-hash' } },
+  });
+  await runtime.fetch(GQL_URL, { method: 'POST', body: tokenBody });
+  await mapMaster(runtime);
+
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body === CLEAN_MEDIA, 'prewarm changed the native clean playlist');
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert(runtime.state.gqlRequests.length === 1 &&
+    runtime.state.gqlRequests[0].body.variables.playerType === 'popout',
+  'clean prewarm was not bounded to one likely popout identity');
+  const prewarmMasters = runtime.state.calls.filter((call) => {
+    const url = new URL(call.url);
+    return url.hostname === 'usher.ttvnw.net' && url.searchParams.has('sig');
+  });
+  assert(prewarmMasters.length === 1, 'clean prewarm made more than one alternate master request: ' +
+    JSON.stringify(prewarmMasters.map((call) => call.url)));
+  assert(runtime.state.calls.filter((call) => /\/backup\//.test(call.url)).length === 1,
+    'clean prewarm made more than one alternate media request');
+
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  assert(runtime.state.gqlRequests.length === 1,
+    'subsequent clean polling duplicated the in-flight/cached prewarm');
+
+  runtime.advance(2 * 60 * 1000 - 1);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  assert(runtime.state.gqlRequests.length === 1,
+    'clean prewarm refreshed before its two-minute cache TTL');
+  runtime.advance(1);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  assert(runtime.state.gqlRequests.length === 2 &&
+    runtime.state.gqlRequests[1].body.variables.playerType === 'popout',
+  'expired clean prewarm did not refresh with one likely identity');
 });
 
 test('concurrent ad playlists share one bounded backup flight', async () => {
