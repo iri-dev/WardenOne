@@ -27,7 +27,7 @@ const popupJs = read('popup.js');
 const content = read('src/content.js');
 const manifest = JSON.parse(read('manifest.json'));
 
-assert(manifest.version === '1.0.0', 'manifest version should be 1.0.0 for the stress-hardening release');
+assert(manifest.version === '1.0.0', 'manifest version should remain 1.0.0 for the first public release');
 
 assert(/kind === 'protection-health'/.test(background), 'background should expose protection-health endpoint');
 assert(/buildProtectionHealthSummary/.test(background), 'background should build protection health summary');

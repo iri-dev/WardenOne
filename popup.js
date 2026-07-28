@@ -35,7 +35,7 @@ const KEYS = [
 
 const DEFAULTS = {
   enabled: true,
-  blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: false, blockMetaRefresh: true,
+  blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
   blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, scriptletEngine: true, twitchAdBlock: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: true, loginAgeCheck: true, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, openPhishKey: '', phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true,
   mediaShield: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
@@ -55,7 +55,7 @@ const DEFAULTS = {
 };
 
 const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode']);
-const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['antiFingerprintNoise', 'antiFingerprint', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'paymentCardGuard', 'blockGeolocation']);
+const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'antiFingerprint', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'paymentCardGuard', 'blockGeolocation']);
 
 const REPUTATION_PROVIDERS = [
   { key: 'urlHaus', keyField: 'urlHausKey', statusId: 'urlhaus-key-status', label: 'URLhaus', use: 'malware URL and download intelligence', emptyText: 'Paste a URLhaus Auth-Key to enable malware URL/download checks.', activeText: 'URLhaus malware URL checks are on. Known malware delivery URLs will be blocked.' },

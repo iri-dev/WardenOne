@@ -7,7 +7,8 @@
  * deliberately smaller:
  * no React internals, no player/page reloads, no polling watchdog, and no
  * remote proxy. If Twitch offers no clean alternate playlist, confirmed ad
- * media is replaced with standard HLS gaps or a local silent hold segment.
+ * media is represented with standard HLS gaps so no synthetic bytes enter
+ * Twitch's decoder.
  */
 (function wardenOneTwitchAdblock() {
   'use strict';
@@ -36,6 +37,10 @@
   const independentAdVideos = new Map();
   let independentAdObserver = null;
   let independentAdPruneTimer = 0;
+  const PLAYBACK_FAIL_OPEN_MS = 30 * 1000;
+  const PLAYBACK_FAIL_OPEN_STORAGE_KEY = '__woTwitchFailOpenUntil';
+  let playbackFailOpenUntil = loadPlaybackFailOpenUntil();
+  let playbackFailOpenTimer = 0;
 
   const nativeFetch = window.fetch;
   const NativeWorker = window.Worker;
@@ -260,16 +265,88 @@
     document.addEventListener(eventName, (event) => guardIndependentAdVideo(event.target), true);
   }
 
+  function streamInterceptionEnabled() {
+    return enabled && Date.now() >= playbackFailOpenUntil;
+  }
+
+  function loadPlaybackFailOpenUntil() {
+    try {
+      const stored = Number(sessionStorage.getItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY) || 0);
+      if (Number.isFinite(stored) && stored > Date.now()) {
+        // Page storage is forgeable from Twitch's MAIN world. Clamp it so a stale
+        // or hostile value cannot silently disable interception for the session.
+        return Math.min(stored, Date.now() + PLAYBACK_FAIL_OPEN_MS);
+      }
+      sessionStorage.removeItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY);
+    } catch (_) {}
+    return 0;
+  }
+
+  function persistPlaybackFailOpenUntil() {
+    try {
+      if (playbackFailOpenUntil > Date.now()) {
+        sessionStorage.setItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY, String(playbackFailOpenUntil));
+      } else {
+        sessionStorage.removeItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY);
+      }
+    } catch (_) {}
+  }
+
+  function broadcastStreamConfig() {
+    const workerEnabled = streamInterceptionEnabled();
+    for (const worker of workers) {
+      try {
+        worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: workerEnabled });
+      } catch (_) {}
+    }
+  }
+
+  function finishPlaybackFailOpen() {
+    playbackFailOpenTimer = 0;
+    const remaining = playbackFailOpenUntil - Date.now();
+    if (remaining > 0) {
+      playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, remaining);
+      return;
+    }
+    playbackFailOpenUntil = 0;
+    persistPlaybackFailOpenUntil();
+    try { document.documentElement.removeAttribute('data-wo-twitch-fail-open'); } catch (_) {}
+    broadcastStreamConfig();
+  }
+
+  function primaryPlaybackVideoFailed(event) {
+    const video = event && event.target;
+    if (!enabled || !(video instanceof HTMLVideoElement) || !video.isConnected) return;
+    if (independentAdVideos.has(video) || video.getAttribute('data-wo-twitch-independent-ad') === 'true') return;
+    const errorCode = Number(video.error && video.error.code || 0);
+    if (errorCode !== 2 && errorCode !== 3) return;
+    if (!videoMediaSource(video).startsWith('blob:') || primaryPlayerVideo() !== video) return;
+
+    playbackFailOpenUntil = Date.now() + PLAYBACK_FAIL_OPEN_MS;
+    persistPlaybackFailOpenUntil();
+    if (playbackFailOpenTimer) clearTimeout(playbackFailOpenTimer);
+    playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, PLAYBACK_FAIL_OPEN_MS);
+    try {
+      document.documentElement.setAttribute('data-wo-twitch-fail-open', errorCode === 2 ? 'network' : 'decode');
+    } catch (_) {}
+    // Let Twitch's existing player recovery retry its untouched stream. This is
+    // deliberately worker-scoped and temporary: user configuration is never
+    // changed, no page reload is initiated, and the current setting is restored.
+    broadcastStreamConfig();
+  }
+
+  document.addEventListener('error', primaryPlaybackVideoFailed, true);
+  if (playbackFailOpenUntil > Date.now()) {
+    try { document.documentElement.setAttribute('data-wo-twitch-fail-open', 'recovery'); } catch (_) {}
+    playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, playbackFailOpenUntil - Date.now());
+  }
+
   function updateEnabled() {
     const config = window.__WO_CONFIG__;
     enabled = !config || (config.enabled !== false && config.twitchAdBlock !== false);
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
-    for (const worker of workers) {
-      try {
-        worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: enabled });
-      } catch (_) {}
-    }
+    broadcastStreamConfig();
   }
 
   document.addEventListener('wo-config-change', updateEnabled);
@@ -286,9 +363,7 @@
     enabled = config.enabled !== false && config.twitchAdBlock !== false;
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
-    for (const worker of workers) {
-      try { worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: enabled }); } catch (_) {}
-    }
+    broadcastStreamConfig();
   });
 
   function requestUrl(input) {
@@ -347,20 +422,9 @@
     try {
       const parsed = JSON.parse(body);
       captureTokenTemplate(parsed);
-      const list = Array.isArray(parsed) ? parsed : [parsed];
-      let changed = false;
-      for (const entry of list) {
-        if (!tokenOperation(entry) || !entry.variables) continue;
-        if (entry.variables.playerType !== 'popout') {
-          entry.variables.playerType = 'popout';
-          changed = true;
-        }
-        if (entry.variables.platform && entry.variables.platform !== 'web') {
-          entry.variables.platform = 'web';
-          changed = true;
-        }
-      }
-      return changed ? JSON.stringify(parsed) : body;
+      // Capture only. The native token's playerType/platform belong to Twitch's
+      // current player session; alternate identities are confined to backups.
+      return body;
     } catch (_) {
       return body;
     }
@@ -399,7 +463,7 @@
     if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent) return;
     function twitchFetch(input, init) {
       const url = requestUrl(input);
-      if (!enabled || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
+      if (!streamInterceptionEnabled() || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
       captureClientState(input, init);
       if (init && typeof init.body === 'string') {
         const patched = patchTokenBody(init.body);
@@ -510,40 +574,43 @@
     }
   }
 
-  function twitchWorkerRuntime(originalSource, initialState, runtimeVersion) {
+  function twitchWorkerRuntime(originalSource, initialState, runtimeVersion, initiallyEnabled) {
     'use strict';
 
     const FLAG = '__woTwitchAdblock';
     const AD_MARKER_RE = /stitched-ad|#EXT-X-CUE-OUT|twitch-stitched|CLASS="twitch-maf-ad"|CLASS="twitch-trigger"/i;
     const STRONG_AD_METADATA_RE = /X-TV-TWITCH-AD-(?:RADS-TOKEN|ROLL-TYPE|POD-|ADVERTISER|CREATIVE|LINE-ITEM|ORDER-ID)/i;
     const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
+    const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
     const GQL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
-    const MASTER_RE = /usher\.ttvnw\.net|\/api\/(?:v2\/)?channel\/hls\//i;
     const MEDIA_TTL = 5 * 60 * 1000;
     const BACKUP_TTL = 2 * 60 * 1000;
     const NEGATIVE_TTL = 30 * 1000;
     const MEDIA_MAX = 128;
     const BACKUP_MAX = 12;
     const BACKUP_WAIT_MS = 900;
+    const BACKUP_POLL_TIMEOUT_MS = 650;
     const CLEAN_NATIVE_TTL = 2500;
     const NATIVE_RELEASE_POLLS = 3;
     const AD_QUARANTINE_MAX_MS = 45 * 1000;
-    // Valid silent MP4 used by the MIT-licensed TTV-AB recovery design. It
-    // advances HLS media sequence without downloading or decoding ad media.
-    const EMPTY_SEGMENT_URL = 'data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA';
     const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
     const EMPTY_STATE = {
       tokenHash: TOKEN_HASH,
       tokenTemplate: null
     };
 
-    let active = true;
+    // A replacement player worker can be created while the page-level recovery
+    // circuit is active. Start that worker in pass-through mode immediately;
+    // waiting for its asynchronous ready/config handshake leaves a race where its
+    // first playlist request can repeat the transform that just failed.
+    let active = initiallyEnabled !== false;
     let adsSeen = false;
     let client = Object.assign({}, EMPTY_STATE, initialState || {});
     const realFetch = self.fetch.bind(self);
     const media = new Map();
     const backups = new Map();
     const pendingBackups = new Map();
+    const pendingBackupPolls = new Map();
     const pendingGql = new Map();
 
     function post(type, extra) {
@@ -571,6 +638,65 @@
       } catch (_) {
         return String(url || '').split('?')[0];
       }
+    }
+
+    function playlistUrl(url) {
+      try {
+        const value = new URL(String(url || ''));
+        return /\.m3u8$/i.test(value.pathname);
+      } catch (_) {
+        return /\.m3u8(?:[?#]|$)/i.test(String(url || ''));
+      }
+    }
+
+    function twitchMediaUrl(url) {
+      try {
+        const value = new URL(String(url || ''));
+        return /(^|\.)ttvnw\.net$/i.test(value.hostname) && /\.m3u8$/i.test(value.pathname);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function masterPlaylistUrl(url) {
+      try {
+        const value = new URL(String(url || ''));
+        return /(^|\.)ttvnw\.net$/i.test(value.hostname) &&
+          /\/api\/(?:v2\/)?channel\/hls\/[^/]+\.m3u8$/i.test(value.pathname);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function withoutLowLatencyQuery(url) {
+      try {
+        const value = new URL(String(url || ''));
+        let changed = false;
+        for (const key of Array.from(value.searchParams.keys())) {
+          if (!/^_hls_(?:msn|part|skip)$/i.test(key)) continue;
+          value.searchParams.delete(key);
+          changed = true;
+        }
+        return changed ? value.href : String(url || '');
+      } catch (_) {
+        return String(url || '');
+      }
+    }
+
+    function nativeMediaInput(input, url, info) {
+      if (!info || (!info.adActive && !info.backupActive)) return input;
+      const ordinaryUrl = withoutLowLatencyQuery(url);
+      if (!ordinaryUrl || ordinaryUrl === url) return input;
+      if (typeof input === 'string') return ordinaryUrl;
+      try {
+        if (typeof Request !== 'undefined' && input instanceof Request) {
+          // Playlist requests are GETs. Constructing from the original Request
+          // preserves its headers, credentials and linked abort signal while only
+          // removing blocking LL-HLS cursor parameters during an intervention.
+          return new Request(ordinaryUrl, input);
+        }
+      } catch (_) {}
+      return input;
     }
 
     function prune(map, max, ttl) {
@@ -602,7 +728,17 @@
         } catch (_) {}
         return replacement;
       } catch (_) {
-        return new Response(text, { status: 200, headers: { 'content-type': contentType || 'application/vnd.apple.mpegurl' } });
+        try {
+          return new Response(text, {
+            status: 200,
+            headers: { 'content-type': contentType || 'application/vnd.apple.mpegurl' }
+          });
+        } catch (_) {
+          // Response construction is part of the optional intervention. If a
+          // browser/polyfill rejects both construction paths, preserve the valid
+          // native response instead of turning playback into a rejected fetch.
+          return response;
+        }
       }
     }
 
@@ -617,12 +753,13 @@
       return output;
     }
 
-    function codecFamily(codecs) {
-      const value = String(codecs || '').toLowerCase();
-      if (value.includes('av01')) return 'av1';
-      if (value.includes('hvc1') || value.includes('hev1')) return 'hevc';
-      if (value.includes('avc1')) return 'h264';
-      return '';
+    function codecSignature(codecs) {
+      return String(codecs || '')
+        .split(',')
+        .map((codec) => codec.trim().toLowerCase())
+        .filter(Boolean)
+        .sort()
+        .join(',');
     }
 
     function resolutionArea(resolution) {
@@ -656,8 +793,13 @@
 
     function chooseVariant(variants, wanted) {
       if (!variants || !variants.length) return null;
-      const wantedFamily = codecFamily(wanted && wanted.codecs);
-      let pool = wantedFamily ? variants.filter((variant) => codecFamily(variant.codecs) === wantedFamily) : variants.slice();
+      const wantedCodecs = codecSignature(wanted && wanted.codecs);
+      // The replacement is returned through the already-open media playlist URL,
+      // so Twitch does not recreate its MediaSource/SourceBuffer. A merely similar
+      // codec family is not safe here: changing H.264 profile/level or the audio
+      // codec mid-buffer is a common Chromium MEDIA_ERR_DECODE / Twitch #3000 path.
+      if (!wantedCodecs) return null;
+      let pool = variants.filter((variant) => codecSignature(variant.codecs) === wantedCodecs);
       if (!pool.length) return null;
       const groupCompatible = pool.filter((variant) =>
         (!wanted.audio || !variant.audio || variant.audio === wanted.audio) &&
@@ -906,43 +1048,74 @@
       return playlistEvidence(text).confirmed > 0;
     }
 
-    function holdPlaylist(evidence, info) {
-      const headers = [];
-      let sourceSequence = 0;
-      for (const rawLine of evidence.lines) {
-        const line = String(rawLine || '').trim();
-        if (!line) continue;
-        if (/^#EXTINF:|^#EXT-X-(?:PART|PRELOAD-HINT|TWITCH-PREFETCH|PROGRAM-DATE-TIME|ENDLIST)/i.test(line)) break;
-        if (/^#EXT-X-(?:DATERANGE|CUE-|KEY|MAP)/i.test(line) || AD_MARKER_RE.test(line) || STRONG_AD_METADATA_RE.test(line)) continue;
-        const sequence = /^#EXT-X-MEDIA-SEQUENCE:(\d+)/i.exec(line);
-        if (sequence) sourceSequence = Number(sequence[1]) || 0;
-        headers.push(line);
+    // Twitch serves low-latency HLS: the player issues blocking playlist reloads
+    // (_HLS_msn/_HLS_part) and expects the parts advertised by EXT-X-PART-INF /
+    // EXT-X-SERVER-CONTROL to keep arriving. Any playlist we synthesize or swap in
+    // during an ad break cannot honour that contract -- ad parts are removed, and a
+    // backup comes from a different session with its own sequence numbering -- so a
+    // player left in low-latency mode blocks on a part that never comes and surfaces
+    // it as network "Error #2000". Dropping the low-latency tags for the duration of
+    // the intervention makes the player fall back to ordinary polling, which costs a
+    // couple of seconds of latency during the break instead of killing playback.
+    function stripLowLatency(text) {
+      const lines = String(text || '').replace(/\r/g, '').split('\n');
+      const out = [];
+      for (const line of lines) {
+        if (LOW_LATENCY_TAG_RE.test(line.trim())) continue;
+        out.push(line);
       }
-      if (!headers.includes('#EXTM3U')) headers.unshift('#EXTM3U');
-      if (!headers.some((line) => /^#EXT-X-VERSION:/i.test(line))) headers.splice(1, 0, '#EXT-X-VERSION:7');
-      if (!headers.some((line) => /^#EXT-X-TARGETDURATION:/i.test(line))) headers.push('#EXT-X-TARGETDURATION:1');
-      const previous = Math.max(0, Number(info && info.holdSequence) || 0);
-      const sequence = Math.max(sourceSequence + 1, previous + 1);
-      if (info) info.holdSequence = sequence;
-      const at = headers.findIndex((line) => /^#EXT-X-MEDIA-SEQUENCE:/i.test(line));
-      if (at >= 0) headers[at] = '#EXT-X-MEDIA-SEQUENCE:' + sequence;
-      else headers.push('#EXT-X-MEDIA-SEQUENCE:' + sequence);
-      return headers.concat([
-        '#EXT-X-DISCONTINUITY',
-        '#EXT-X-KEY:METHOD=NONE',
-        '#EXTINF:1.000,live',
-        EMPTY_SEGMENT_URL
-      ]).join('\n');
+      return out.join('\n');
     }
 
-    function stripAdPlaylist(text, info) {
+    function ordinaryMediaPlaylist(text) {
+      const stripped = stripLowLatency(text);
+      const lines = stripped.replace(/\r/g, '').split('\n');
+      const first = lines.find((line) => String(line || '').trim());
+      if (String(first || '').trim().replace(/^\uFEFF/, '') !== '#EXTM3U') return '';
+      if (!lines.some((line) => /^#EXT-X-TARGETDURATION:/i.test(String(line || '').trim()))) return '';
+      if (lines.some((line) => /^#EXT-X-STREAM-INF:/i.test(String(line || '').trim()))) return '';
+      if (playlistEvidence(stripped).fullPlayable < 1) return '';
+      return stripped;
+    }
+
+    function mediaPlaylistEnvelope(text) {
+      const lines = String(text || '').replace(/\r/g, '').split('\n');
+      const first = lines.find((line) => String(line || '').trim());
+      if (String(first || '').trim().replace(/^\uFEFF/, '') !== '#EXTM3U') return false;
+      if (lines.some((line) => /^#EXT-X-STREAM-INF:/i.test(String(line || '').trim()))) return false;
+      return lines.some((line) => /^#EXTINF:|^#EXT-X-(?:PART|PRELOAD-HINT):/i.test(String(line || '').trim()));
+    }
+
+    function mediaContainer(text) {
+      const source = String(text || '');
+      if (/^#EXT-X-MAP:/im.test(source)) return 'fmp4';
+      const lines = source.replace(/\r/g, '').split('\n');
+      const mediaUris = [];
+      for (let index = 0; index < lines.length; index++) {
+        if (!/^#EXTINF:/i.test(String(lines[index] || '').trim())) continue;
+        const next = nextMediaUri(lines, index + 1);
+        if (next && next.uri) mediaUris.push(next.uri);
+      }
+      if (mediaUris.some((uri) => /\.(?:m4s|mp4|cmfv|cmfa)(?:[?#]|$)/i.test(uri))) return 'fmp4';
+      if (mediaUris.some((uri) => /\.ts(?:[?#]|$)/i.test(uri))) return 'mpegts';
+      return '';
+    }
+
+    function stripAdPlaylist(text, forceAll) {
       const evidence = playlistEvidence(text);
-      if (!evidence.confirmed) return String(text || '');
-      if (evidence.playable > 0 && evidence.confirmed >= evidence.playable) return holdPlaylist(evidence, info);
+      if (!evidence.confirmed && !forceAll) return String(text || '');
+      // A part-only delta response cannot be converted into a valid ordinary HLS
+      // playlist without inventing media. Passing it through is safer than feeding
+      // an empty/synthetic playlist to Twitch's decoder; the next complete reload
+      // will be handled with normal EXT-X-GAP tags.
+      if (evidence.fullPlayable < 1) return String(text || '');
       const output = [];
       for (let index = 0; index < evidence.lines.length; index++) {
         let line = String(evidence.lines[index] || '');
         if (/^#EXT-X-CUE-(?:OUT|IN)/i.test(line)) continue;
+        // Removing only the ad parts would leave a hole in the part sequence an
+        // LL-HLS player is still blocking on, so drop low-latency signalling wholesale.
+        if (LOW_LATENCY_TAG_RE.test(line)) continue;
         if (evidence.inlineAds.has(index)) continue;
         if ((AD_MARKER_RE.test(line) || STRONG_AD_METADATA_RE.test(line) || /\bSCTE35-OUT=/i.test(line)) &&
             /^#EXT-X-(?:DATERANGE|TWITCH-)/i.test(line)) continue;
@@ -950,7 +1123,13 @@
           .replace(/(X-TV-TWITCH-AD-URL=")[^"]*(")/gi, '$1https://twitch.tv$2')
           .replace(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")[^"]*(")/gi, '$1https://twitch.tv$2');
         output.push(line);
-        if (evidence.fullAds.has(index)) output.push('#EXT-X-GAP');
+        if ((forceAll && /^#EXTINF:/i.test(line)) || evidence.fullAds.has(index)) {
+          // EXT-X-GAP advances the native HLS timeline without fetching or appending
+          // the ad segment. Keeping the original URI, sequence, container and codec
+          // metadata is intentional: a local MP4 placeholder can poison an existing
+          // MPEG-TS/CMAF SourceBuffer and surfaces as Twitch Error #3000.
+          if (!/^#EXT-X-GAP$/i.test(String(evidence.lines[index + 1] || '').trim())) output.push('#EXT-X-GAP');
+        }
       }
       return output.join('\n');
     }
@@ -988,19 +1167,9 @@
           const hash = template.extensions && template.extensions.persistedQuery && template.extensions.persistedQuery.sha256Hash;
           if (hash) client.tokenHash = hash;
         }
-        let changed = false;
-        for (const entry of list) {
-          if (!operationIsToken(entry) || !entry.variables) continue;
-          if (entry.variables.playerType !== 'popout') {
-            entry.variables.playerType = 'popout';
-            changed = true;
-          }
-          if (entry.variables.platform && entry.variables.platform !== 'web') {
-            entry.variables.platform = 'web';
-            changed = true;
-          }
-        }
-        return changed ? Object.assign({}, init, { body: JSON.stringify(parsed) }) : init;
+        // Preserve the native request byte-for-byte. A token minted for another
+        // shell can fail at the next native playlist refresh with Error #2000.
+        return init;
       } catch (_) {
         return init;
       }
@@ -1099,8 +1268,12 @@
       const selected = chooseVariant(parseMaster(master.text, masterUrl.href), info);
       if (!selected) throw new Error('no codec-compatible variant');
       const mediaResult = await fetchTextWithTimeout(selected.url, 1800);
-      const normalized = absolutizeMediaPlaylist(mediaResult.text, selected.url);
-      if (!/(?:#EXTINF:|#EXT-X-PART:)/i.test(normalized) || hasAds(normalized)) throw new Error('backup contains ads');
+      const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(mediaResult.text, selected.url));
+      if (!normalized || hasAds(normalized)) throw new Error('backup is not a clean complete media playlist');
+      const replacementContainer = mediaContainer(normalized);
+      if (info.mediaContainer && replacementContainer !== info.mediaContainer) {
+        throw new Error('backup changes media container');
+      }
       return { url: selected.url, text: normalized, playerType: playerType, ts: Date.now() };
     }
 
@@ -1130,7 +1303,8 @@
     }
 
     function backupKey(info) {
-      return [info.channel, info.resolution, info.fps, codecFamily(info.codecs), info.video, info.audio, info.subtitles].join('|');
+      return [info.channel, info.resolution, info.fps, codecSignature(info.codecs), info.video,
+        info.audio, info.subtitles, info.mediaContainer || ''].join('|');
     }
 
     function getBackup(info, full) {
@@ -1162,21 +1336,35 @@
       return pending;
     }
 
+    function pollCachedBackup(cached) {
+      const url = String(cached && cached.url || '');
+      if (!url) return Promise.resolve(null);
+      if (pendingBackupPolls.has(url)) return pendingBackupPolls.get(url);
+      const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), BACKUP_POLL_TIMEOUT_MS)
+        .then((current) => {
+          const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(current.text, url));
+          if (!normalized || hasAds(normalized)) return null;
+          return { text: normalized, container: mediaContainer(normalized) };
+        }, () => null)
+        .finally(() => pendingBackupPolls.delete(url));
+      pendingBackupPolls.set(url, pending);
+      return pending;
+    }
+
     async function cachedBackupResponse(info, originalResponse, activate) {
       const key = backupKey(info);
       const cached = backups.get(key);
       if (cached && !cached.failed && Date.now() - cached.ts < BACKUP_TTL) {
         try {
-          const current = await fetchTextWithTimeout(cached.url, 1200);
-          const normalized = absolutizeMediaPlaylist(current.text, cached.url);
-          if (/(?:#EXTINF:|#EXT-X-PART:)/i.test(normalized) && !hasAds(normalized)) {
+          const current = await pollCachedBackup(cached);
+          if (current && (!info.mediaContainer || current.container === info.mediaContainer)) {
             cached.ts = Date.now();
             if (activate !== false) {
               info.backupActive = true;
               info.cleanNativePolls = 0;
             }
             wlog('  clean stream via cached playerType=' + (cached.playerType || '?'));
-            return responseWithText(originalResponse, normalized, 'application/vnd.apple.mpegurl');
+            return responseWithText(originalResponse, current.text, 'application/vnd.apple.mpegurl');
           }
           backups.delete(key);
         } catch (_) {
@@ -1187,16 +1375,26 @@
     }
 
     async function cleanBackupResponse(info, originalResponse) {
+      const startedAt = Date.now();
       const cachedResponse = await cachedBackupResponse(info, originalResponse);
       if (cachedResponse) return cachedResponse;
       const candidatePromise = getBackup(info, true);
       if (info.lastCleanNative && Date.now() - info.lastCleanNativeAt <= CLEAN_NATIVE_TTL) {
+        const bridge = ordinaryMediaPlaylist(info.lastCleanNative);
+        const bridgeContainer = mediaContainer(bridge);
+        if (bridge && (!info.mediaContainer || bridgeContainer === info.mediaContainer)) {
+          candidatePromise.catch(() => {});
+          wlog('  bridging with fresh clean native snapshot');
+          return responseWithText(originalResponse, bridge, 'application/vnd.apple.mpegurl');
+        }
+      }
+      const remainingWait = Math.max(0, BACKUP_WAIT_MS - (Date.now() - startedAt));
+      if (!remainingWait) {
         candidatePromise.catch(() => {});
-        wlog('  bridging with fresh clean native snapshot');
-        return responseWithText(originalResponse, info.lastCleanNative, 'application/vnd.apple.mpegurl');
+        return null;
       }
       const candidate = await new Promise((resolve) => {
-        const timer = setTimeout(() => resolve(null), BACKUP_WAIT_MS);
+        const timer = setTimeout(() => resolve(null), remainingWait);
         candidatePromise.then((value) => {
           clearTimeout(timer);
           resolve(value);
@@ -1213,21 +1411,18 @@
     }
 
     async function handleMaster(input, init, url) {
-      let target = input;
-      if (typeof input === 'string') {
-        try {
-          const parsed = new URL(input);
-          parsed.searchParams.delete('parent_domains');
-          target = parsed.href;
-        } catch (_) {}
-      }
-      let response = await realFetch(target, init);
-      if (!response.ok && target !== input) response = await realFetch(input, init);
+      // The player's own master request is compatibility-critical. In particular,
+      // embed sessions use parent_domains as part of their authorization context.
+      // Alternate-token experiments happen only in backupAttempt; the native
+      // request must retain its exact URL, Request object, init and abort semantics.
+      const response = await realFetch(input, init);
+      if (!response.ok) return response;
       try {
         const text = await response.clone().text();
         const channel = channelFromMaster(url);
+        const responseUrl = response.url || url;
         if (channel) {
-          for (const variant of parseMaster(text, url)) {
+          for (const variant of parseMaster(text, responseUrl)) {
             rememberVariant(variant.url, {
               channel: channel,
               resolution: variant.resolution,
@@ -1247,20 +1442,32 @@
     }
 
     async function handleMedia(input, init, url) {
-      const response = await realFetch(input, init);
+      prune(media, MEDIA_MAX, MEDIA_TTL);
+      const info = media.get(url) || media.get(canonical(url));
+      // Once an intervention is active, do not issue blocking reloads for a native
+      // LL-HLS sequence/part that the returned ordinary/backup playlist cannot
+      // satisfy. The linked Request signal is preserved for Request inputs.
+      const response = await realFetch(nativeMediaInput(input, url, info), init);
       if (!response.ok) return response;
       let text = '';
       try { text = await response.clone().text(); } catch (_) { return response; }
-      prune(media, MEDIA_MAX, MEDIA_TTL);
-      const info = media.get(url) || media.get(canonical(url));
-      const evidence = playlistEvidence(text);
+      // A CDN challenge, gateway page or empty 200 is not a media playlist. Never
+      // remember or replay it as a clean bridge; that turns a transient network
+      // response into a deterministic Twitch #2000/#3000 failure on the next ad.
+      if (!mediaPlaylistEnvelope(text)) return response;
+      if (info) {
+        const observedContainer = mediaContainer(text);
+        if (observedContainer) info.mediaContainer = observedContainer;
+      }
+      let evidence;
+      try { evidence = playlistEvidence(text); } catch (_) { return response; }
       if (!evidence.confirmed) {
         const quarantine = nativeAdQuarantineState(info, evidence);
         if (quarantine.active) {
           // Twitch media playlists are sliding windows. An ad marker can vanish
           // one refresh before its generic/untitled media segments do, so never
           // learn or return that refresh as clean. Keep serving the clean backup
-          // when available; otherwise advance with a local silent hold segment.
+          // when available; otherwise gap its native media until the clean boundary.
           try {
             const held = await cachedBackupResponse(info, response, false);
             if (held) return held;
@@ -1268,12 +1475,15 @@
           try { getBackup(info, false); } catch (_) {}
           wlog('  ad marker slid out; holding native stream until clean boundary');
           post('ad-state', { state: 'blocked-hold', channel: info && info.channel || '' });
-          return responseWithText(response, holdPlaylist(evidence, info), 'application/vnd.apple.mpegurl');
+          return responseWithText(response, stripAdPlaylist(text, true), 'application/vnd.apple.mpegurl');
         }
         if (quarantine.release && info) info.backupActive = false;
         if (info && !evidence.hasMarker && !evidence.strongMetadata) {
-          info.lastCleanNative = absolutizeMediaPlaylist(text, url);
-          info.lastCleanNativeAt = Date.now();
+          const cleanNative = ordinaryMediaPlaylist(absolutizeMediaPlaylist(text, url));
+          if (cleanNative) {
+            info.lastCleanNative = cleanNative;
+            info.lastCleanNativeAt = Date.now();
+          }
           if (info.backupActive) {
             info.cleanNativePolls = (Number(info.cleanNativePolls) || 0) + 1;
             if (info.cleanNativePolls < NATIVE_RELEASE_POLLS) {
@@ -1316,7 +1526,7 @@
       }
       wlog('  -> no clean backup; replacing confirmed ad media');
       post('ad-state', { state: 'blocked-gap', channel: info && info.channel || '' });
-      return responseWithText(response, stripAdPlaylist(text, info), 'application/vnd.apple.mpegurl');
+      return responseWithText(response, stripAdPlaylist(text, false), 'application/vnd.apple.mpegurl');
     }
 
     self.addEventListener('message', (event) => {
@@ -1360,8 +1570,12 @@
         }
         return realFetch(input, patchGqlInit(input, init));
       }
-      if (MASTER_RE.test(url) && url.includes('.m3u8')) return handleMaster(input, init, url);
-      if (url.includes('.m3u8')) return handleMedia(input, init, url);
+      if (playlistUrl(url)) {
+        if (masterPlaylistUrl(url)) return handleMaster(input, init, url);
+        if (twitchMediaUrl(url) || media.has(url) || media.has(canonical(url))) {
+          return handleMedia(input, init, url);
+        }
+      }
       return realFetch(input, init);
     };
 
@@ -1391,7 +1605,8 @@
       let wrapperUrl = '';
       try {
         const bootstrap = '(' + twitchWorkerRuntime.toString() + ')(' +
-          'null,' + JSON.stringify(publicClientState()) + ',' + JSON.stringify(VERSION) + ');\n';
+          'null,' + JSON.stringify(publicClientState()) + ',' + JSON.stringify(VERSION) + ',' +
+          JSON.stringify(streamInterceptionEnabled()) + ');\n';
         wrapperUrl = URL.createObjectURL(new Blob([bootstrap, originalSource], { type: 'application/javascript' }));
         const worker = new NativeWorker(wrapperUrl, options);
         try { console.log('[WO-Twitch] worker HOOKED — ad interception active'); } catch (_) {}
@@ -1410,7 +1625,7 @@
             revokeTimer = 0;
             try { URL.revokeObjectURL(wrapperUrl); } catch (_) {}
             try {
-              worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: enabled });
+              worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: streamInterceptionEnabled() });
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'client-state', revision: revision, state: publicClientState() });
             } catch (_) {}
           } else if (message.type === 'gql-request') {
