@@ -292,6 +292,7 @@ function flushHistory() {
 // Reset the count when a tab starts loading a new top-level page.
 chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
   if (details.frameId === 0) {
+    handleSmartScriptTopNavigation(details.tabId, details.url);
     counts[details.tabId] = 0;
     setBadge(details.tabId);
     noteHttpNavigationAttempt(details);
@@ -309,7 +310,18 @@ chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
         at: Date.now(),
       });
     }
+  } else {
+    clearSmartScriptFrameTransient(details.tabId, details.frameId);
   }
+});
+
+// pushState/replaceState route changes do not trigger onBeforeNavigate. Restore
+// Smart's normal tab policy on a top-frame SPA transition; if the new route is
+// another player, the bridge can confirm it and recover once again.
+chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
+  if (details.frameId === 0) clearSmartScriptRecoveryForTab(details.tabId);
+  else clearSmartScriptFrameTransient(details.tabId, details.frameId);
+  notifySmartScriptRouteChange(details);
 });
 
 // ---- Redirect-chain + tab-under detection ----------------------------------------
@@ -508,6 +520,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete counts[tabId];
   clearTabMessageRates(tabId);
+  clearSmartScriptRecoveryForTab(tabId);
 });
 
 // On install, set a default config in storage so the options page has a base.
@@ -1423,13 +1436,15 @@ async function getCosmeticMem() {
 
 // Compute the cosmetic payload for a hostname, memoised per host. This mirrors
 // the original inline logic in the adshield-cosmetic handler exactly.
-function computeCosmeticForHost(rawHost, mem) {
+function computeCosmeticForHost(rawHost, mem, playerPage) {
   const host = normalizeAllowlistHost(rawHost);
   if (!host) return { ok: true, selectors: [], invalidHost: true };
-  const hit = __cosmeticHostCache.get(host);
+  const playerMode = playerPage === true;
+  const cacheKey = host + (playerMode ? '|player' : '|page');
+  const hit = __cosmeticHostCache.get(cacheKey);
   if (hit) { // refresh LRU recency
-    __cosmeticHostCache.delete(host);
-    __cosmeticHostCache.set(host, hit);
+    __cosmeticHostCache.delete(cacheKey);
+    __cosmeticHostCache.set(cacheKey, hit);
     return hit;
   }
 
@@ -1452,13 +1467,15 @@ function computeCosmeticForHost(rawHost, mem) {
   // hide its React login/dialog shell before the next list refresh.
   const genericHideExcluded = isXPlatformHost(host)
     || hostMatchesCosmeticDomainList(host, data.genericHideExclusions || []);
-  const sel = new Set(videoPlatform || genericHideExcluded ? [] : (data.generic || []));
+  const sel = new Set(videoPlatform || playerMode || genericHideExcluded ? [] : (data.generic || []));
   const specific = data.specific || {};
   const exceptions = data.exceptions || {};
   const hostParts = host.split('.');
   const candidates = [];
   for (let i = 0; i < hostParts.length - 1; i++) candidates.push(hostParts.slice(i).join('.'));
-  candidates.forEach((d) => { (specific[d] || []).forEach((s) => sel.add(s)); });
+  if (!playerMode) {
+    candidates.forEach((d) => { (specific[d] || []).forEach((s) => sel.add(s)); });
+  }
   // remove exceptions that apply to this host
   const ex = new Set();
   candidates.forEach((d) => { (exceptions[d] || []).forEach((s) => ex.add(s)); });
@@ -1473,7 +1490,7 @@ function computeCosmeticForHost(rawHost, mem) {
   // collect procedural rules for this host (domain-scoped, capped per page)
   const procedural = data.procedural || {};
   const procRules = [];
-  if (!videoPlatform) {
+  if (!videoPlatform && !playerMode) {
     candidates.forEach((d) => { (procedural[d] || []).forEach((s) => { if (procRules.length < 1200) procRules.push(s); }); });
   }
   // collect scriptlets for this host: generic non-storage defusers + domain-scoped.
@@ -1483,6 +1500,11 @@ function computeCosmeticForHost(rawHost, mem) {
   const seenScriptlet = new Set();
   const pushScriptlet = (sc) => {
     if (!sc || !sc.name) return;
+    // The all-frame anti-redirect guard already owns player popup protection.
+    // List scriptlets must fail open completely here: even no-window-open-if
+    // changes page control flow and can make an ad-gated player abort before it
+    // requests its media source.
+    if (playerMode) return;
     if (!scriptletMayRunOnHost(sc, host)) return;
     const key = sc.name + '|' + (sc.args || []).join('');
     if (seenScriptlet.has(key) || scriptlets.length >= 100) return;
@@ -1495,7 +1517,7 @@ function computeCosmeticForHost(rawHost, mem) {
   }
   const result = { ok: true, selectors: Array.from(sel).slice(0, 20000), procedural: procRules, scriptlets };
 
-  __cosmeticHostCache.set(host, result);
+  __cosmeticHostCache.set(cacheKey, result);
   if (__cosmeticHostCache.size > COSMETIC_HOST_CACHE_MAX) {
     __cosmeticHostCache.delete(__cosmeticHostCache.keys().next().value); // evict oldest
   }
@@ -1555,7 +1577,9 @@ const MEDIA_COMPAT_RULES_BUDGET = 100;
 const LOGIN_COMPAT_RULES_BUDGET = 300;
 const GRABBER_FEED_RULES_BUDGET = 1000;
 const NEVER_BLOCK_ALLOW_RULES_BUDGET = 200;
-const SCRIPT_SHIELD_RULES_BUDGET = 1000;
+// One blanket session block, one least-privilege replacement block per recovered
+// player tab, and at most four exact, second-stage script rules per tab.
+const SCRIPT_SHIELD_RULES_BUDGET = 161;
 const FINGERPRINT_SCRIPT_RULES_BUDGET = 80;
 const GOOGLE_SEARCH_ALLOW_RULES_BUDGET = 20;
 const SMALL_SESSION_RULES_BUDGET = 64; // headers, cookie stripping, HTTPS, IP lookup, etc.
@@ -1748,6 +1772,20 @@ const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
 const SCRIPT_SHIELD_RULE_BASE = 930000;
 const SCRIPT_SHIELD_RULE_MAX = 1000;
+const SMART_SCRIPT_RECOVERY_MAX_TABS = 32;
+const SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB = 4;
+const SMART_SCRIPT_REPLACEMENT_RULE_OFFSET = 1;
+const SMART_SCRIPT_STAGE_TWO_RULE_OFFSET = 100;
+const SMART_SCRIPT_STAGE_TWO_RULE_PRIORITY = 1900;
+const SMART_SCRIPT_PLAYER_CONTEXT_MAX = 256;
+const SMART_SCRIPT_PLAYER_INTENT_MAX = 256;
+const SMART_SCRIPT_PENDING_MAX = 128;
+const SMART_SCRIPT_RETRY_MAX = 128;
+const SMART_SCRIPT_PLAYER_CONTEXT_TTL_MS = 90000;
+const SMART_SCRIPT_PLAYER_INTENT_TTL_MS = 15000;
+const SMART_SCRIPT_PENDING_TTL_MS = 45000;
+const SMART_SCRIPT_RETRY_TTL_MS = 10 * 60 * 1000;
+const SMART_SCRIPT_TOP_RELOAD_TTL_MS = 8000;
 const FINGERPRINT_SCRIPT_RULE_BASE = 931500;
 const FINGERPRINT_SCRIPT_RULE_MAX = 80;
 const GOOGLE_CLEANUP_CSS_SCRIPT_ID = 'wo-google-cleanup-prepaint-css';
@@ -6789,6 +6827,39 @@ function normalizeScriptShieldMode(mode) {
   return mode === 'smart' || mode === 'lockdown' ? mode : 'normal';
 }
 
+const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video']);
+const SMART_SCRIPT_PLAYER_CONTEXTS = new Map();
+const SMART_SCRIPT_PLAYER_INTENTS = new Map();
+const SMART_SCRIPT_PENDING_ERRORS = new Map();
+const SMART_SCRIPT_RECOVERED_TABS = new Map();
+const SMART_SCRIPT_RETRY_KEYS = new Map();
+const SMART_SCRIPT_TOP_RELOADS = new Map();
+const SMART_SCRIPT_RECOVERY_CLEARED_TABS = new Map();
+const SMART_SCRIPT_PERSISTED_RECOVERY_TABS = new Set();
+const SMART_SCRIPT_NAVIGATION_EPOCHS = new Map();
+const SMART_SCRIPT_RECOVERY_INFLIGHT = new Map();
+let __scriptShieldRuleUpdate = Promise.resolve();
+let __smartScriptRecoveryHydration = null;
+
+function smartScriptNavigationEpoch(tabId) {
+  const state = SMART_SCRIPT_NAVIGATION_EPOCHS.get(Number(tabId));
+  return Number((state && state.epoch) || 0);
+}
+
+function bumpSmartScriptNavigationEpoch(tabId) {
+  const id = Number(tabId);
+  const epoch = smartScriptNavigationEpoch(id) + 1;
+  SMART_SCRIPT_NAVIGATION_EPOCHS.set(id, { epoch, at: Date.now() });
+  if (SMART_SCRIPT_NAVIGATION_EPOCHS.size > 512) {
+    Array.from(SMART_SCRIPT_NAVIGATION_EPOCHS.entries())
+      .filter(([key]) => !SMART_SCRIPT_RECOVERY_INFLIGHT.has(key) && !SMART_SCRIPT_RECOVERED_TABS.has(key))
+      .sort((a, b) => Number((a[1] && a[1].at) || 0) - Number((b[1] && b[1].at) || 0))
+      .slice(0, SMART_SCRIPT_NAVIGATION_EPOCHS.size - 512)
+      .forEach(([key]) => SMART_SCRIPT_NAVIGATION_EPOCHS.delete(key));
+  }
+  return epoch;
+}
+
 async function getScriptShieldMode() {
   const store = await localGet(SCRIPT_SHIELD_MODE_KEY);
   return normalizeScriptShieldMode(store && store[SCRIPT_SHIELD_MODE_KEY]);
@@ -6821,37 +6892,758 @@ async function removeTrustedScriptHost(host) {
   return { ok: true, host: h, items };
 }
 
-async function applyScriptShieldRules(mode, trustedHosts) {
+function cleanSmartScriptExactHost(value) {
   try {
-    mode = normalizeScriptShieldMode(mode || await getScriptShieldMode());
-    const cfgStore = await localGet('wardenone_config');
-    const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const oldIds = existing
-      .filter((r) => r.id >= SCRIPT_SHIELD_RULE_BASE && r.id < SCRIPT_SHIELD_RULE_BASE + SCRIPT_SHIELD_RULE_MAX)
-      .map((r) => r.id);
-    const addRules = [];
-    if (cfg.enabled !== false && mode === 'smart') {
-      const trusted = normalizeAllowlistHosts(trustedHosts || await getTrustedScriptHosts(), SCRIPT_SHIELD_RULE_MAX - 1).slice(0, SCRIPT_SHIELD_RULE_MAX - 1);
-      trusted.forEach((host, index) => {
-        addRules.push({
-          id: SCRIPT_SHIELD_RULE_BASE + 1 + index,
-          priority: 1002,
-          action: { type: 'allow' },
-          condition: { requestDomains: [host], resourceTypes: ['script'] },
-        });
-      });
-      addRules.push({
-        id: SCRIPT_SHIELD_RULE_BASE,
-        priority: 1000,
-        action: { type: 'block' },
-        condition: { domainType: 'thirdParty', resourceTypes: ['script'] },
-      });
-    }
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) {
-    console.warn('[WardenOne] Script Shield DNR rules failed', e);
+    const raw = String(value || '').trim();
+    const host = new URL(raw.includes('://') ? raw : 'https://' + raw).hostname
+      .replace(/^\.+|\.+$/g, '').toLowerCase();
+    if (!host || host.length > 253 || !host.includes('.') || !/^[a-z0-9.-]+$/i.test(host) || host.includes('..')) return '';
+    return host;
+  } catch (_) {
+    return '';
   }
+}
+
+function smartScriptRecoveryHosts(list) {
+  return Array.from(new Set((Array.isArray(list) ? list : [])
+    .map(cleanSmartScriptExactHost)
+    .filter(Boolean)))
+    .slice(0, SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB);
+}
+
+function normalizeSmartScriptRequestPath(raw, expectedHost) {
+  try {
+    const url = new URL(String(raw || ''));
+    const host = cleanSmartScriptExactHost(url.hostname);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !host
+      || (expectedHost && host !== cleanSmartScriptExactHost(expectedHost))) return '';
+    // Query values on bootstrap scripts are commonly cache-busters. Stage two
+    // therefore binds to the exact canonical origin + pathname and permits only
+    // query variation on that same path.
+    const path = url.origin + url.pathname;
+    return path.length <= 900 ? path : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function smartScriptExactPathRegex(requestPath) {
+  const exact = normalizeSmartScriptRequestPath(requestPath);
+  if (!exact) return '';
+  const escaped = exact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return '^' + escaped + '(?:\\?[^#]*)?$';
+}
+
+function smartScriptPathFromRegex(regexFilter) {
+  const raw = String(regexFilter || '');
+  const suffix = '(?:\\?[^#]*)?$';
+  if (!raw.startsWith('^') || !raw.endsWith(suffix)) return '';
+  const encoded = raw.slice(1, -suffix.length);
+  const decoded = encoded.replace(/\\([.*+?^${}()|[\]\\])/g, '$1');
+  const path = normalizeSmartScriptRequestPath(decoded);
+  return path && smartScriptExactPathRegex(path) === raw ? path : '';
+}
+
+function smartScriptDomainSetContains(set, host) {
+  if (!set || typeof set.has !== 'function') return false;
+  const exact = cleanSmartScriptExactHost(host);
+  if (!exact) return false;
+  const labels = exact.split('.');
+  for (let i = 0; i < labels.length - 1; i++) {
+    if (set.has(labels.slice(i).join('.'))) return true;
+  }
+  return false;
+}
+
+function smartScriptKnownSecurityHost(host) {
+  const blocked = typeof BLOCKED_DOMAINS !== 'undefined' ? BLOCKED_DOMAINS : null;
+  const grabbers = typeof GRABBER_FEED_DOMAINS !== 'undefined' ? GRABBER_FEED_DOMAINS : null;
+  const fingerprintDomains = typeof FINGERPRINT_SCRIPT_DOMAIN_FILTERS !== 'undefined'
+    ? new Set(FINGERPRINT_SCRIPT_DOMAIN_FILTERS) : null;
+  return smartScriptDomainSetContains(blocked, host)
+    || smartScriptDomainSetContains(grabbers, host)
+    || smartScriptDomainSetContains(fingerprintDomains, host);
+}
+
+function smartScriptKnownFingerprintPath(requestPath) {
+  const needles = typeof FINGERPRINT_SCRIPT_URL_FILTERS !== 'undefined' ? FINGERPRINT_SCRIPT_URL_FILTERS : [];
+  const value = String(requestPath || '').toLowerCase();
+  return !!value && Array.from(needles || []).some((needle) => value.includes(String(needle || '').toLowerCase()));
+}
+
+function smartScriptStageTwoEntries(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(list) ? list : []) {
+    const requestHost = cleanSmartScriptExactHost(raw && raw.requestHost);
+    const initiatorHost = cleanSmartScriptExactHost(raw && raw.initiatorHost);
+    const resourceType = String((raw && raw.resourceType) || '').toLowerCase();
+    const requestPath = normalizeSmartScriptRequestPath(raw && raw.requestPath, requestHost);
+    if (!requestHost || !initiatorHost || !requestPath || resourceType !== 'script'
+      || smartScriptKnownSecurityHost(requestHost) || smartScriptKnownFingerprintPath(requestPath)) continue;
+    const key = requestHost + '|' + initiatorHost + '|' + resourceType + '|' + requestPath;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ requestHost, initiatorHost, resourceType, requestPath });
+    if (out.length >= SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) break;
+  }
+  return out;
+}
+
+function smartScriptRecoveredTabEntries() {
+  return Array.from(SMART_SCRIPT_RECOVERED_TABS.entries())
+    .map(([tabId, value]) => ({
+      tabId: Number(tabId),
+      failedHosts: smartScriptRecoveryHosts(value && value.failedHosts),
+      stageTwo: smartScriptStageTwoEntries(value && value.stageTwo),
+    }))
+    .filter((entry) => Number.isInteger(entry.tabId) && entry.tabId >= 0 && entry.failedHosts.length)
+    .sort((a, b) => a.tabId - b.tabId)
+    .slice(0, SMART_SCRIPT_RECOVERY_MAX_TABS);
+}
+
+function buildScriptShieldRulePlan(mode, enabled, trustedHosts, recoveredTabs) {
+  const trusted = normalizeAllowlistHosts(trustedHosts, SCRIPT_SHIELD_RULE_MAX - 1)
+    .slice(0, SCRIPT_SHIELD_RULE_MAX - 1);
+  const tabs = (Array.isArray(recoveredTabs) ? recoveredTabs : [])
+    .map((entry) => ({
+      tabId: Number(entry && entry.tabId),
+      failedHosts: smartScriptRecoveryHosts(entry && entry.failedHosts),
+      stageTwo: smartScriptStageTwoEntries(entry && entry.stageTwo),
+    }))
+    .filter((entry) => Number.isInteger(entry.tabId) && entry.tabId >= 0 && entry.failedHosts.length)
+    .sort((a, b) => a.tabId - b.tabId)
+    .slice(0, SMART_SCRIPT_RECOVERY_MAX_TABS)
+    .filter((entry, index, list) => index === 0 || entry.tabId !== list[index - 1].tabId);
+  if (enabled === false || normalizeScriptShieldMode(mode) !== 'smart') return { dynamicRules: [], sessionRules: [] };
+  const condition = { domainType: 'thirdParty', resourceTypes: ['script'] };
+  // Trusting a site skips only Smart Script Shield's heuristic for requests
+  // initiated by that site. It does not create an allow rule, so downloaded
+  // ad/tracker, learned, grabber, site-control and security rules still win.
+  if (trusted.length) condition.excludedInitiatorDomains = trusted;
+  if (tabs.length) condition.excludedTabIds = tabs.map((entry) => entry.tabId);
+  const replacementRules = tabs.map((entry, index) => {
+    const tabCondition = {
+      domainType: 'thirdParty',
+      resourceTypes: ['script'],
+      tabIds: [entry.tabId],
+      excludedRequestDomains: entry.failedHosts,
+    };
+    if (trusted.length) tabCondition.excludedInitiatorDomains = trusted;
+    return {
+      id: SCRIPT_SHIELD_RULE_BASE + SMART_SCRIPT_REPLACEMENT_RULE_OFFSET + index,
+      priority: 1000,
+      action: { type: 'block' },
+      condition: tabCondition,
+    };
+  });
+  const stageTwoRules = [];
+  tabs.forEach((entry, tabIndex) => {
+    entry.stageTwo.forEach((allow, entryIndex) => {
+      stageTwoRules.push({
+        id: SCRIPT_SHIELD_RULE_BASE + SMART_SCRIPT_STAGE_TWO_RULE_OFFSET
+          + (tabIndex * SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) + entryIndex,
+        priority: SMART_SCRIPT_STAGE_TWO_RULE_PRIORITY,
+        action: { type: 'allow' },
+        condition: {
+          tabIds: [entry.tabId],
+          requestDomains: [allow.requestHost],
+          initiatorDomains: [allow.initiatorHost],
+          resourceTypes: [allow.resourceType],
+          regexFilter: smartScriptExactPathRegex(allow.requestPath),
+          isUrlFilterCaseSensitive: true,
+        },
+      });
+    });
+  });
+  return {
+    dynamicRules: [],
+    sessionRules: [{
+      id: SCRIPT_SHIELD_RULE_BASE,
+      priority: 1000,
+      action: { type: 'block' },
+      condition,
+    }].concat(replacementRules, stageTwoRules),
+  };
+}
+
+function resetSmartScriptRecoveryState() {
+  const invalidateTabs = new Set([
+    ...SMART_SCRIPT_RECOVERED_TABS.keys(),
+    ...SMART_SCRIPT_RECOVERY_INFLIGHT.keys(),
+    ...Array.from(SMART_SCRIPT_PLAYER_CONTEXTS.values(), (value) => value && value.tabId),
+    ...Array.from(SMART_SCRIPT_PLAYER_INTENTS.values(), (value) => value && value.tabId),
+    ...Array.from(SMART_SCRIPT_PENDING_ERRORS.values(), (value) => value && value.tabId),
+  ]);
+  invalidateTabs.forEach((tabId) => {
+    if (Number.isInteger(Number(tabId)) && Number(tabId) >= 0) bumpSmartScriptNavigationEpoch(tabId);
+  });
+  SMART_SCRIPT_PLAYER_CONTEXTS.clear();
+  SMART_SCRIPT_PLAYER_INTENTS.clear();
+  SMART_SCRIPT_PENDING_ERRORS.clear();
+  SMART_SCRIPT_RECOVERED_TABS.clear();
+  SMART_SCRIPT_RETRY_KEYS.clear();
+  SMART_SCRIPT_TOP_RELOADS.clear();
+  SMART_SCRIPT_RECOVERY_CLEARED_TABS.clear();
+  SMART_SCRIPT_PERSISTED_RECOVERY_TABS.clear();
+}
+
+function hydrateSmartScriptRecoveryTabs() {
+  if (__smartScriptRecoveryHydration) return __smartScriptRecoveryHydration;
+  __smartScriptRecoveryHydration = (async () => {
+    try {
+      const rules = await chrome.declarativeNetRequest.getSessionRules();
+      const current = rules.find((rule) => rule.id === SCRIPT_SHIELD_RULE_BASE
+        && rule.action && rule.action.type === 'block');
+      const blanketIds = Array.from((current && current.condition && current.condition.excludedTabIds) || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id >= 0)
+        .slice(0, SMART_SCRIPT_RECOVERY_MAX_TABS);
+      blanketIds.forEach((id) => SMART_SCRIPT_PERSISTED_RECOVERY_TABS.add(id));
+      const now = Date.now();
+      const recovered = new Map();
+      rules.filter((rule) => rule.id >= SCRIPT_SHIELD_RULE_BASE + SMART_SCRIPT_REPLACEMENT_RULE_OFFSET
+        && rule.id < SCRIPT_SHIELD_RULE_BASE + SMART_SCRIPT_REPLACEMENT_RULE_OFFSET + SMART_SCRIPT_RECOVERY_MAX_TABS
+        && rule.action && rule.action.type === 'block').forEach((rule) => {
+        const tabIds = Array.from((rule.condition && rule.condition.tabIds) || []);
+        const id = Number(tabIds[0]);
+        const failedHosts = smartScriptRecoveryHosts(rule.condition && rule.condition.excludedRequestDomains);
+        if (!Number.isInteger(id) || id < 0 || !failedHosts.length) return;
+        SMART_SCRIPT_PERSISTED_RECOVERY_TABS.add(id);
+        recovered.set(id, { at: now, rehydrated: true, failedHosts, stageTwo: [] });
+      });
+      rules.filter((rule) => rule.id >= SCRIPT_SHIELD_RULE_BASE + SMART_SCRIPT_STAGE_TWO_RULE_OFFSET
+        && rule.id < SCRIPT_SHIELD_RULE_BASE + SMART_SCRIPT_STAGE_TWO_RULE_OFFSET
+          + (SMART_SCRIPT_RECOVERY_MAX_TABS * SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB)
+        && rule.priority === SMART_SCRIPT_STAGE_TWO_RULE_PRIORITY
+        && rule.action && rule.action.type === 'allow').forEach((rule) => {
+        const condition = (rule && rule.condition) || {};
+        const tabId = Number(Array.from(condition.tabIds || [])[0]);
+        const entry = smartScriptStageTwoEntries([{
+          requestHost: Array.from(condition.requestDomains || [])[0],
+          initiatorHost: Array.from(condition.initiatorDomains || [])[0],
+          resourceType: Array.from(condition.resourceTypes || [])[0],
+          requestPath: smartScriptPathFromRegex(condition.regexFilter),
+        }])[0];
+        const state = recovered.get(tabId);
+        if (!state || !entry) return;
+        state.stageTwo = smartScriptStageTwoEntries(state.stageTwo.concat(entry));
+      });
+      for (const [id, state] of recovered) {
+        if (SMART_SCRIPT_RECOVERY_CLEARED_TABS.has(id) || SMART_SCRIPT_RECOVERED_TABS.has(id)) continue;
+        SMART_SCRIPT_RECOVERED_TABS.set(id, state);
+      }
+    } catch (_) {}
+    return true;
+  })();
+  return __smartScriptRecoveryHydration;
+}
+
+function applyScriptShieldRules(mode, trustedHosts) {
+  const requestedMode = mode == null ? null : normalizeScriptShieldMode(mode);
+  const requestedTrusted = Array.isArray(trustedHosts) ? trustedHosts.slice() : null;
+  const reconcile = async () => {
+    try {
+      await hydrateSmartScriptRecoveryTabs();
+      const resolvedMode = requestedMode == null ? await getScriptShieldMode() : requestedMode;
+      const cfgStore = await localGet('wardenone_config');
+      const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
+      const trusted = requestedTrusted == null ? await getTrustedScriptHosts() : requestedTrusted;
+      if (cfg.enabled === false || resolvedMode !== 'smart') resetSmartScriptRecoveryState();
+      const plan = buildScriptShieldRulePlan(resolvedMode, cfg.enabled !== false, trusted, smartScriptRecoveredTabEntries());
+      const [dynamicRules, sessionRules] = await Promise.all([
+        chrome.declarativeNetRequest.getDynamicRules(),
+        chrome.declarativeNetRequest.getSessionRules(),
+      ]);
+      const inScriptShieldBand = (rule) => rule.id >= SCRIPT_SHIELD_RULE_BASE
+        && rule.id < SCRIPT_SHIELD_RULE_BASE + SCRIPT_SHIELD_RULE_MAX;
+      const oldDynamicIds = dynamicRules.filter(inScriptShieldBand).map((rule) => rule.id);
+      const oldSessionIds = sessionRules.filter(inScriptShieldBand).map((rule) => rule.id);
+      // Always remove the old dynamic 930000 blanket and the former host allow
+      // rules. Smart's blanket is session-scoped so recovered tabs can be
+      // excluded without creating a broad network allow.
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: oldDynamicIds,
+        addRules: plan.dynamicRules,
+      });
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: oldSessionIds,
+        addRules: plan.sessionRules,
+      });
+      return true;
+    } catch (e) {
+      console.warn('[WardenOne] Script Shield DNR rules failed', e);
+      return false;
+    }
+  };
+  const result = __scriptShieldRuleUpdate.then(reconcile, reconcile);
+  __scriptShieldRuleUpdate = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+function normalizeSmartScriptUrl(raw) {
+  try {
+    const url = new URL(String(raw || ''));
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    url.hash = '';
+    return url.href.slice(0, 1400);
+  } catch (_) {
+    return '';
+  }
+}
+
+function smartScriptFrameKey(tabId, frameId) {
+  return String(Number(tabId)) + ':' + String(Number(frameId));
+}
+
+function trimSmartScriptMap(map, max, now, ttl) {
+  for (const [key, value] of map) {
+    if (!value || (ttl && now - Number(value.at || 0) > ttl)) map.delete(key);
+  }
+  if (map.size <= max) return;
+  Array.from(map.entries())
+    .sort((a, b) => Number((a[1] && a[1].at) || 0) - Number((b[1] && b[1].at) || 0))
+    .slice(0, map.size - max)
+    .forEach(([key]) => map.delete(key));
+}
+
+function pruneSmartScriptRecoveryState(now) {
+  const at = Number(now) || Date.now();
+  trimSmartScriptMap(SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PLAYER_CONTEXT_MAX, at, SMART_SCRIPT_PLAYER_CONTEXT_TTL_MS);
+  trimSmartScriptMap(SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_PLAYER_INTENT_MAX, at, SMART_SCRIPT_PLAYER_INTENT_TTL_MS);
+  trimSmartScriptMap(SMART_SCRIPT_PENDING_ERRORS, SMART_SCRIPT_PENDING_MAX, at, SMART_SCRIPT_PENDING_TTL_MS);
+  trimSmartScriptMap(SMART_SCRIPT_RETRY_KEYS, SMART_SCRIPT_RETRY_MAX, at, SMART_SCRIPT_RETRY_TTL_MS);
+  trimSmartScriptMap(SMART_SCRIPT_TOP_RELOADS, SMART_SCRIPT_RECOVERY_MAX_TABS, at, SMART_SCRIPT_TOP_RELOAD_TTL_MS);
+  trimSmartScriptMap(SMART_SCRIPT_RECOVERY_CLEARED_TABS, SMART_SCRIPT_RECOVERY_MAX_TABS * 2, at, SMART_SCRIPT_RETRY_TTL_MS);
+}
+
+function normalizeSmartScriptPlayerContext(sender, msg) {
+  const tabId = Number(sender && sender.tab && sender.tab.id);
+  const frameId = Number(sender && sender.frameId);
+  const evidence = String((msg && msg.evidence) || '');
+  if (!Number.isInteger(tabId) || tabId < 0 || !Number.isInteger(frameId) || frameId < 0) return null;
+  if (!SMART_SCRIPT_PLAYER_EVIDENCE.has(evidence)) return null;
+  const frameUrl = normalizeSmartScriptUrl((sender && sender.url) || (frameId === 0 && sender && sender.tab && sender.tab.url) || '');
+  const topUrl = normalizeSmartScriptUrl(sender && sender.tab && sender.tab.url);
+  if (!frameUrl || !topUrl) return null;
+  return { tabId, frameId, frameUrl, topUrl, evidence, epoch: smartScriptNavigationEpoch(tabId), at: Date.now() };
+}
+
+function normalizeSmartScriptPlayerIntent(sender) {
+  const tabId = Number(sender && sender.tab && sender.tab.id);
+  const frameId = Number(sender && sender.frameId);
+  if (!Number.isInteger(tabId) || tabId < 0 || !Number.isInteger(frameId) || frameId < 0) return null;
+  const frameUrl = normalizeSmartScriptUrl((sender && sender.url) || (frameId === 0 && sender && sender.tab && sender.tab.url) || '');
+  const topUrl = normalizeSmartScriptUrl(sender && sender.tab && sender.tab.url);
+  if (!frameUrl || !topUrl) return null;
+  return { tabId, frameId, frameUrl, topUrl, epoch: smartScriptNavigationEpoch(tabId), at: Date.now() };
+}
+
+function smartScriptContextHasRecentIntent(context) {
+  if (!context) return false;
+  const intent = SMART_SCRIPT_PLAYER_INTENTS.get(smartScriptFrameKey(context.tabId, context.frameId));
+  return !!(intent
+    && intent.epoch === context.epoch
+    && intent.frameUrl === context.frameUrl
+    && Date.now() - intent.at <= SMART_SCRIPT_PLAYER_INTENT_TTL_MS);
+}
+
+function smartScriptPartyDomain(rawUrl) {
+  try {
+    const host = new URL(String(rawUrl || '')).hostname;
+    return registrableDomainBg(host) || host.toLowerCase();
+  } catch (_) {
+    return '';
+  }
+}
+
+function normalizeSmartScriptFailure(details) {
+  if (!details || details.type !== 'script' || !/ERR_BLOCKED_BY_CLIENT/i.test(String(details.error || ''))) return null;
+  const tabId = Number(details.tabId);
+  const frameId = Number(details.frameId);
+  const parentFrameId = Number(details.parentFrameId);
+  const requestUrl = normalizeSmartScriptUrl(details.url);
+  const documentUrl = normalizeSmartScriptUrl(details.documentUrl || details.initiator);
+  const initiatorUrl = normalizeSmartScriptUrl(details.initiator || details.documentUrl);
+  if (!Number.isInteger(tabId) || tabId < 0 || !Number.isInteger(frameId) || frameId < 0) return null;
+  if (!requestUrl || !documentUrl || !initiatorUrl) return null;
+  const requestParty = smartScriptPartyDomain(requestUrl);
+  const initiatorParty = smartScriptPartyDomain(initiatorUrl);
+  const requestHost = cleanSmartScriptExactHost(requestUrl);
+  const initiatorHost = cleanSmartScriptExactHost(initiatorUrl);
+  const requestPath = normalizeSmartScriptRequestPath(details.url, requestHost);
+  // Smart's rule has domainType=thirdParty. A same-party failure was caused by
+  // another rule or extension and must never trigger this recovery path.
+  if (!requestParty || !initiatorParty || !requestHost || !initiatorHost || !requestPath
+    || requestParty === initiatorParty) return null;
+  return {
+    tabId,
+    frameId,
+    parentFrameId: Number.isInteger(parentFrameId) ? parentFrameId : -1,
+    epoch: smartScriptNavigationEpoch(tabId),
+    requestUrl,
+    requestHost,
+    requestPath,
+    initiatorHost,
+    resourceType: 'script',
+    documentUrl,
+    initiatorUrl,
+    at: Date.now(),
+  };
+}
+
+function smartScriptContextForFailure(failure) {
+  const now = Date.now();
+  pruneSmartScriptRecoveryState(now);
+  const exact = SMART_SCRIPT_PLAYER_CONTEXTS.get(smartScriptFrameKey(failure.tabId, failure.frameId));
+  if (exact && exact.epoch === failure.epoch && now - exact.at <= SMART_SCRIPT_PLAYER_CONTEXT_TTL_MS
+    && exact.frameUrl === failure.documentUrl) return exact;
+  if (failure.parentFrameId >= 0) {
+    const parent = SMART_SCRIPT_PLAYER_CONTEXTS.get(smartScriptFrameKey(failure.tabId, failure.parentFrameId));
+    if (parent && parent.epoch === failure.epoch && parent.evidence === 'media-embed'
+      && parent.frameUrl === parent.topUrl
+      && now - parent.at <= SMART_SCRIPT_PLAYER_CONTEXT_TTL_MS) return parent;
+  }
+  return null;
+}
+
+async function smartScriptModeActive() {
+  const [mode, cfgStore] = await Promise.all([getScriptShieldMode(), localGet('wardenone_config')]);
+  const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
+  return cfg.enabled !== false && mode === 'smart';
+}
+
+function smartScriptRetryKey(failure) {
+  return smartScriptFrameKey(failure.tabId, failure.frameId) + ':'
+    + failure.documentUrl.slice(0, 700) + ':' + String(failure.requestHost || '')
+    + ':' + String(failure.requestPath || '');
+}
+
+function smartScriptStageRetryKey(failure, stage) {
+  return smartScriptRetryKey(failure) + ':stage-' + String(stage);
+}
+
+function smartScriptStageOneRecord(failure) {
+  return {
+    requestHost: failure.requestHost,
+    initiatorHost: failure.initiatorHost,
+    resourceType: failure.resourceType,
+    requestPath: failure.requestPath,
+    frameId: failure.frameId,
+    documentUrl: failure.documentUrl,
+    epoch: failure.epoch,
+    at: Date.now(),
+  };
+}
+
+function smartScriptStageOneRecords(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(list) ? list : []) {
+    const requestHost = cleanSmartScriptExactHost(raw && raw.requestHost);
+    const initiatorHost = cleanSmartScriptExactHost(raw && raw.initiatorHost);
+    const resourceType = String((raw && raw.resourceType) || '').toLowerCase();
+    const requestPath = normalizeSmartScriptRequestPath(raw && raw.requestPath, requestHost);
+    const frameId = Number(raw && raw.frameId);
+    const documentUrl = normalizeSmartScriptUrl(raw && raw.documentUrl);
+    const epoch = Number(raw && raw.epoch);
+    if (!requestHost || !initiatorHost || !requestPath || resourceType !== 'script' || !Number.isInteger(frameId)
+      || frameId < 0 || !documentUrl || !Number.isInteger(epoch)) continue;
+    const key = requestHost + '|' + resourceType + '|' + requestPath;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ requestHost, initiatorHost, resourceType, requestPath, frameId, documentUrl, epoch, at: Number(raw.at) || Date.now() });
+    if (out.length >= SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) break;
+  }
+  return out;
+}
+
+function smartScriptStageOneMatches(value, failure) {
+  const records = smartScriptStageOneRecords(value && value.stageOne);
+  const prior = records.find((entry) => entry.requestHost === failure.requestHost
+    && entry.resourceType === failure.resourceType
+    && entry.requestPath === failure.requestPath);
+  if (prior) {
+    return prior.initiatorHost === failure.initiatorHost
+      && prior.frameId === failure.frameId
+      && prior.documentUrl === failure.documentUrl
+      && prior.epoch === failure.epoch;
+  }
+  // A replacement rule survives service-worker suspension, but it stores only
+  // the omitted host. Without the original path/frame evidence it must remain
+  // at stage one; navigation will clear it and allow a fully correlated retry.
+  return false;
+}
+
+function clearSmartScriptPendingForTab(tabId) {
+  const prefix = String(Number(tabId)) + ':';
+  for (const key of SMART_SCRIPT_PENDING_ERRORS.keys()) {
+    if (key.startsWith(prefix)) SMART_SCRIPT_PENDING_ERRORS.delete(key);
+  }
+}
+
+function sendSmartScriptFrameReload(failure, stage) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(
+        failure.tabId,
+        {
+          kind: 'smart-script-reload-frame',
+          expectedUrl: failure.documentUrl,
+          failedHost: failure.requestHost,
+          recoveryStage: stage === 2 ? 2 : 1,
+        },
+        { frameId: failure.frameId },
+        (response) => {
+          const failed = !!chrome.runtime.lastError;
+          resolve(!failed && !!response && response.ok === true);
+        },
+      );
+    } catch (_) {
+      resolve(false);
+    }
+  });
+}
+
+async function recoverSmartScriptPlayer(failure, context) {
+  if (!failure || !context) return false;
+  const recoveryEpoch = Number(failure.epoch);
+  const epochIsCurrent = () => smartScriptNavigationEpoch(failure.tabId) === recoveryEpoch;
+  if (!Number.isInteger(recoveryEpoch) || context.epoch !== recoveryEpoch || !epochIsCurrent()
+    || !smartScriptContextHasRecentIntent(context)) return false;
+  if (SMART_SCRIPT_RECOVERY_INFLIGHT.get(failure.tabId) === recoveryEpoch) return false;
+  SMART_SCRIPT_RECOVERY_INFLIGHT.set(failure.tabId, recoveryEpoch);
+  try {
+    if (!await smartScriptModeActive()) return false;
+    if (!epochIsCurrent() || !smartScriptContextHasRecentIntent(context)) return false;
+    pruneSmartScriptRecoveryState(Date.now());
+    const previous = SMART_SCRIPT_RECOVERED_TABS.get(failure.tabId);
+    const previousHosts = smartScriptRecoveryHosts(previous && previous.failedHosts);
+    const previousStageOne = smartScriptStageOneRecords(previous && previous.stageOne);
+    const previousStageTwo = smartScriptStageTwoEntries(previous && previous.stageTwo);
+    const hasStageOnePath = previousStageOne.some((entry) => entry.requestHost === failure.requestHost
+      && entry.resourceType === failure.resourceType
+      && entry.requestPath === failure.requestPath);
+    const stage = hasStageOnePath ? 2 : 1;
+    if (stage === 2) {
+      if (!smartScriptStageOneMatches(previous, failure) || smartScriptKnownSecurityHost(failure.requestHost)
+        || smartScriptKnownFingerprintPath(failure.requestPath)) return false;
+      if (previousStageTwo.some((entry) => entry.requestHost === failure.requestHost
+        && entry.initiatorHost === failure.initiatorHost
+        && entry.resourceType === failure.resourceType
+        && entry.requestPath === failure.requestPath)) return false;
+      if (previousStageTwo.length >= SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) return false;
+    } else {
+      if (previousStageOne.length >= SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) return false;
+      if (!previousHosts.includes(failure.requestHost)
+        && previousHosts.length >= SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) return false;
+    }
+    const retryKey = smartScriptStageRetryKey(failure, stage);
+    if (SMART_SCRIPT_RETRY_KEYS.has(retryKey)) return false;
+    const rollbackCurrentRecovery = async (retryKey) => {
+      if (!epochIsCurrent()) return false;
+      if (previous) SMART_SCRIPT_RECOVERED_TABS.set(failure.tabId, previous);
+      else SMART_SCRIPT_RECOVERED_TABS.delete(failure.tabId);
+      SMART_SCRIPT_RETRY_KEYS.delete(retryKey);
+      if (!previous) SMART_SCRIPT_PERSISTED_RECOVERY_TABS.delete(failure.tabId);
+      await applyScriptShieldRules();
+      if (!epochIsCurrent()) return false;
+      return false;
+    };
+    if (!epochIsCurrent() || !smartScriptContextHasRecentIntent(context)) return false;
+    SMART_SCRIPT_RETRY_KEYS.set(retryKey, { at: Date.now() });
+    const clearMarker = SMART_SCRIPT_RECOVERY_CLEARED_TABS.get(failure.tabId);
+    if (clearMarker && clearMarker.epoch === recoveryEpoch) SMART_SCRIPT_RECOVERY_CLEARED_TABS.delete(failure.tabId);
+    if (previous) SMART_SCRIPT_RECOVERED_TABS.delete(failure.tabId);
+    const next = {
+      at: Date.now(),
+      frameId: failure.frameId,
+      rehydrated: !!(previous && previous.rehydrated),
+      failedHosts: stage === 1 && !previousHosts.includes(failure.requestHost)
+        ? previousHosts.concat(failure.requestHost) : previousHosts,
+      stageOne: previousStageOne.concat(
+        stage === 1 ? [smartScriptStageOneRecord(failure)] : [],
+      ),
+      stageTwo: smartScriptStageTwoEntries(previousStageTwo.concat(stage === 2 ? [{
+        requestHost: failure.requestHost,
+        initiatorHost: failure.initiatorHost,
+        resourceType: failure.resourceType,
+        requestPath: failure.requestPath,
+      }] : [])),
+    };
+    SMART_SCRIPT_RECOVERED_TABS.set(failure.tabId, next);
+    while (SMART_SCRIPT_RECOVERED_TABS.size > SMART_SCRIPT_RECOVERY_MAX_TABS) {
+      SMART_SCRIPT_RECOVERED_TABS.delete(SMART_SCRIPT_RECOVERED_TABS.keys().next().value);
+    }
+    if (!epochIsCurrent()) return false;
+    const applied = await applyScriptShieldRules();
+    if (!epochIsCurrent()) return false;
+    if (!smartScriptContextHasRecentIntent(context)) return rollbackCurrentRecovery(retryKey);
+    if (!applied || !SMART_SCRIPT_RECOVERED_TABS.has(failure.tabId)) {
+      if (previous) SMART_SCRIPT_RECOVERED_TABS.set(failure.tabId, previous);
+      else SMART_SCRIPT_RECOVERED_TABS.delete(failure.tabId);
+      SMART_SCRIPT_RETRY_KEYS.delete(retryKey);
+      return false;
+    }
+    SMART_SCRIPT_PERSISTED_RECOVERY_TABS.add(failure.tabId);
+    clearSmartScriptPendingForTab(failure.tabId);
+    if (failure.frameId === 0) {
+      SMART_SCRIPT_TOP_RELOADS.set(failure.tabId, { at: Date.now(), url: failure.documentUrl });
+    }
+    if (!epochIsCurrent()) return false;
+    if (!smartScriptContextHasRecentIntent(context)) return rollbackCurrentRecovery(retryKey);
+    const sent = await sendSmartScriptFrameReload(failure, stage);
+    if (!epochIsCurrent()) return false;
+    if (!sent) {
+      SMART_SCRIPT_TOP_RELOADS.delete(failure.tabId);
+      if (previous) SMART_SCRIPT_RECOVERED_TABS.set(failure.tabId, previous);
+      else SMART_SCRIPT_RECOVERED_TABS.delete(failure.tabId);
+      SMART_SCRIPT_RETRY_KEYS.delete(retryKey);
+      if (!previous) SMART_SCRIPT_PERSISTED_RECOVERY_TABS.delete(failure.tabId);
+      await applyScriptShieldRules();
+      if (!epochIsCurrent()) return false;
+    }
+    if (sent) SMART_SCRIPT_PLAYER_INTENTS.delete(smartScriptFrameKey(context.tabId, context.frameId));
+    return sent;
+  } finally {
+    if (SMART_SCRIPT_RECOVERY_INFLIGHT.get(failure.tabId) === recoveryEpoch) {
+      SMART_SCRIPT_RECOVERY_INFLIGHT.delete(failure.tabId);
+    }
+  }
+}
+
+async function handleSmartScriptFailure(details) {
+  const failure = normalizeSmartScriptFailure(details);
+  if (!failure) return false;
+  const context = smartScriptContextForFailure(failure);
+  if (context && smartScriptContextHasRecentIntent(context)) return recoverSmartScriptPlayer(failure, context);
+  if (!await smartScriptModeActive()) return false;
+  if (failure.epoch !== smartScriptNavigationEpoch(failure.tabId)) return false;
+  const key = smartScriptFrameKey(failure.tabId, failure.frameId);
+  const prior = SMART_SCRIPT_PENDING_ERRORS.get(key);
+  if (!prior || prior.requestUrl !== failure.requestUrl || Date.now() - prior.at > 1000) {
+    SMART_SCRIPT_PENDING_ERRORS.set(key, failure);
+  }
+  pruneSmartScriptRecoveryState(Date.now());
+  return false;
+}
+
+async function handleSmartScriptPlayerContext(sender, msg) {
+  const context = normalizeSmartScriptPlayerContext(sender, msg);
+  if (!context) return { ok: false };
+  const key = smartScriptFrameKey(context.tabId, context.frameId);
+  SMART_SCRIPT_PLAYER_CONTEXTS.set(key, context);
+  pruneSmartScriptRecoveryState(context.at);
+  let pending = SMART_SCRIPT_PENDING_ERRORS.get(key) || null;
+  if (!pending && context.evidence === 'media-embed') {
+    for (const candidate of SMART_SCRIPT_PENDING_ERRORS.values()) {
+      if (candidate.tabId === context.tabId
+        && candidate.epoch === context.epoch
+        && candidate.parentFrameId === context.frameId) {
+        pending = candidate;
+        break;
+      }
+    }
+  }
+  if (pending && smartScriptContextHasRecentIntent(context) && await smartScriptModeActive()) {
+    if (pending.epoch !== smartScriptNavigationEpoch(pending.tabId)) return { ok: true };
+    const matched = smartScriptContextForFailure(pending);
+    if (matched) await recoverSmartScriptPlayer(pending, matched);
+  }
+  return { ok: true };
+}
+
+async function handleSmartScriptPlayerIntent(sender) {
+  const intent = normalizeSmartScriptPlayerIntent(sender);
+  if (!intent) return { ok: false };
+  const key = smartScriptFrameKey(intent.tabId, intent.frameId);
+  SMART_SCRIPT_PLAYER_INTENTS.set(key, intent);
+  pruneSmartScriptRecoveryState(intent.at);
+  let pending = SMART_SCRIPT_PENDING_ERRORS.get(key) || null;
+  if (!pending) {
+    for (const candidate of SMART_SCRIPT_PENDING_ERRORS.values()) {
+      if (candidate.tabId === intent.tabId
+        && candidate.epoch === intent.epoch
+        && candidate.parentFrameId === intent.frameId) {
+        pending = candidate;
+        break;
+      }
+    }
+  }
+  if (!pending || !await smartScriptModeActive()) return { ok: true, recovered: false };
+  if (intent.epoch !== smartScriptNavigationEpoch(intent.tabId)) return { ok: true, recovered: false };
+  const context = smartScriptContextForFailure(pending);
+  if (!context || context.frameId !== intent.frameId || !smartScriptContextHasRecentIntent(context)) {
+    return { ok: true, recovered: false };
+  }
+  return { ok: true, recovered: await recoverSmartScriptPlayer(pending, context) };
+}
+
+function clearSmartScriptFrameTransient(tabId, frameId) {
+  const key = smartScriptFrameKey(tabId, frameId);
+  SMART_SCRIPT_PLAYER_CONTEXTS.delete(key);
+  SMART_SCRIPT_PENDING_ERRORS.delete(key);
+}
+
+function clearSmartScriptRecoveryForTab(tabId) {
+  const id = Number(tabId);
+  const prefix = String(id) + ':';
+  const clearEpoch = bumpSmartScriptNavigationEpoch(id);
+  // Remove the in-memory recovery synchronously at navigation start. The queued
+  // DNR reconciliation deliberately reads the map only when its turn runs, so
+  // it cannot reinstall an exclusion from a stale snapshot.
+  const wasRecovered = SMART_SCRIPT_RECOVERED_TABS.delete(id);
+  SMART_SCRIPT_RECOVERY_CLEARED_TABS.set(id, { at: Date.now(), epoch: clearEpoch });
+  SMART_SCRIPT_TOP_RELOADS.delete(id);
+  for (const map of [SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_PENDING_ERRORS, SMART_SCRIPT_RETRY_KEYS]) {
+    for (const key of map.keys()) {
+      if (key.startsWith(prefix)) map.delete(key);
+    }
+  }
+  return (async () => {
+    await hydrateSmartScriptRecoveryTabs();
+    const wasPersisted = SMART_SCRIPT_PERSISTED_RECOVERY_TABS.delete(id);
+    const result = (wasRecovered || wasPersisted) ? await applyScriptShieldRules() : false;
+    const marker = SMART_SCRIPT_RECOVERY_CLEARED_TABS.get(id);
+    if (marker && marker.epoch === clearEpoch) SMART_SCRIPT_RECOVERY_CLEARED_TABS.delete(id);
+    return result;
+  })();
+}
+
+function notifySmartScriptRouteChange(details) {
+  if (!details || details.tabId == null || details.tabId < 0 || details.frameId == null || details.frameId < 0) return;
+  try {
+    chrome.tabs.sendMessage(
+      details.tabId,
+      { kind: 'smart-script-route-changed', routeUrl: normalizeSmartScriptUrl(details.url) },
+      { frameId: details.frameId },
+      () => { void chrome.runtime.lastError; },
+    );
+  } catch (_) {}
+}
+
+function handleSmartScriptTopNavigation(tabId, rawUrl) {
+  const id = Number(tabId);
+  const expected = SMART_SCRIPT_TOP_RELOADS.get(id);
+  const url = normalizeSmartScriptUrl(rawUrl);
+  if (expected && Date.now() - expected.at <= SMART_SCRIPT_TOP_RELOAD_TTL_MS
+    && url && url === normalizeSmartScriptUrl(expected.url)) {
+    SMART_SCRIPT_TOP_RELOADS.delete(id);
+    clearSmartScriptFrameTransient(id, 0);
+    clearSmartScriptPendingForTab(id);
+    return false;
+  }
+  clearSmartScriptRecoveryForTab(id);
+  return true;
+}
+
+try {
+  chrome.webRequest?.onErrorOccurred?.addListener(
+    (details) => { handleSmartScriptFailure(details); },
+    { urls: ['<all_urls>'], types: ['script'] },
+  );
+} catch (e) {
+  console.warn('[WardenOne] Smart Script Shield recovery observer failed', e);
 }
 
 const FINGERPRINT_SCRIPT_RESOURCE_TYPES = ['script', 'xmlhttprequest'];
@@ -8302,6 +9094,8 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'permission-chain',
   'oauth-grant',
   'script-drift-scan',
+  'smart-player-context',
+  'smart-player-intent',
   'open-site-settings',
   'reset-site-permissions',
   'adshield-cosmetic',
@@ -8316,6 +9110,8 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'permission-chain': { max: 30, windowMs: 60000 },
   'oauth-grant': { max: 8, windowMs: 60000 },
   'script-drift-scan': { max: 6, windowMs: 60000 },
+  'smart-player-context': { max: 8, windowMs: 60000 },
+  'smart-player-intent': { max: 12, windowMs: 60000 },
   'open-site-settings': { max: 2, windowMs: 60000 },
   'reset-site-permissions': { max: 2, windowMs: 60000 },
   'adshield-cosmetic': { max: 12, windowMs: 60000 },
@@ -9253,6 +10049,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'script-drift-scan' && messageSenderIsTab(sender)) {
     respond(handleScriptDriftScan(sender, msg), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'smart-player-context' && messageSenderIsTab(sender)) {
+    respond(handleSmartScriptPlayerContext(sender, msg), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'smart-player-intent' && messageSenderIsTab(sender)) {
+    respond(handleSmartScriptPlayerIntent(sender), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'open-site-settings' && messageSenderIsTab(sender)) {
@@ -10380,7 +11184,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // computeCosmeticForHost): avoids re-reading and re-deserialising the
         // multi-MB cosmetic blob, and re-walking it, on every page and frame.
         const mem = await getCosmeticMem();
-        sendResponse(computeCosmeticForHost(msg.hostname, mem));
+        sendResponse(computeCosmeticForHost(msg.hostname, mem, msg.playerPage === true));
       } catch (e) {
         sendResponse({ ok: false, error: String(e), selectors: [] });
       }

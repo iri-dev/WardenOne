@@ -107,6 +107,16 @@
     return popupEnabled() && cfg().strictPopupShield === true;
   }
 
+  function playerDocument() {
+    try {
+      const path = String(location.pathname || '').toLowerCase();
+      if (/(?:^|[\/_-])(?:watch|episodes?|streams?|videos?|embed|player)(?:[\/_.-]|$)/i.test(path)) return true;
+      return !!document.querySelector('video,audio,embed,object,[data-player],[data-video],.video-js,.jwplayer,.plyr,[data-plyr-provider],.shaka-video-container,.dplayer,.art-video-player,.clappr-container,#player,iframe[allow*="autoplay" i],iframe[allowfullscreen],iframe[src*="/embed/" i],iframe[src*="/player/" i]');
+    } catch (_) {
+      return false;
+    }
+  }
+
   function pageHostile() {
     return Date.now() < pageHostileUntil;
   }
@@ -330,6 +340,41 @@
   function blankPopupTarget(rawTarget) {
     const s = String(rawTarget == null ? '' : rawTarget).trim();
     return !s || /^about:(blank|srcdoc)(?:[?#]|$)/i.test(s);
+  }
+
+  // A non-reserved target can name an iframe/frame that already belongs to the
+  // current document. Navigating that browsing context is not a popup: video
+  // sites commonly use it to switch streaming providers. Keep the lookup
+  // bounded and attribute-based so unusual target names never become selectors.
+  function existingNamedFrameTarget(rawName) {
+    const name = String(rawName == null ? '' : rawName).trim();
+    if (!name || /^_(?:blank|self|parent|top)$/i.test(name)) return false;
+    for (const tag of ['iframe', 'frame']) {
+      let frames;
+      try { frames = document.getElementsByTagName(tag); } catch (_) { continue; }
+      const max = Math.min((frames && frames.length) || 0, 200);
+      for (let i = 0; i < max; i++) {
+        const frame = frames[i];
+        try {
+          if (frame && frame.isConnected !== false
+              && String((frame.getAttribute && frame.getAttribute('name')) || frame.name || '') === name) {
+            return true;
+          }
+        } catch (_) {}
+      }
+    }
+    return false;
+  }
+
+  function openerIsolationRequested(rawValue) {
+    const features = String(rawValue || '');
+    const token = /(?:^|[\s,])(noopener|noreferrer)(?:\s*=\s*([^\s,]*))?(?=$|[\s,])/ig;
+    let match;
+    while ((match = token.exec(features))) {
+      const value = match[2];
+      if (value == null || value === '' || !/^(?:0|false|no|off)$/i.test(value)) return true;
+    }
+    return false;
   }
 
   function suspiciousRedirectTarget(rawTarget) {
@@ -584,6 +629,10 @@
     if ((isTrustedHost(targetHost) || federationUrlShape(rawTarget)) && authIntentAllows()) return false;
     if (strictPopupEnabled()) {
       if (lastGestureTainted && !authIntentAllows()) return 'popup triggered by a player/media click';
+      // Ad-supported embeds often attach a popup to an otherwise legitimate
+      // server/play control.  The popup must be blocked without treating that
+      // control as permission to open an unrelated site.
+      if (playerDocument() && !authIntentAllows()) return 'cross-site popup triggered by a player page';
       if (pageHostile() && !authIntentAllows()) return 'popup retry after a blocked hijack';
     }
     if (!intentWasExplicit) {
@@ -637,7 +686,9 @@
     });
   }
 
-  function inertWindowFacade() {
+  function inertWindowFacade(temporarilyOpen) {
+    const openedAt = Date.now();
+    let explicitlyClosed = !temporarilyOpen;
     const documentFacade = {
       body: null,
       documentElement: null,
@@ -661,12 +712,11 @@
       });
     } catch (_) {}
     const facade = {
-      closed: true,
       opener: null,
       length: 0,
       location: locationFacade,
       document: documentFacade,
-      close() {},
+      close() { explicitlyClosed = true; },
       focus() {},
       blur() {},
       postMessage() {},
@@ -674,6 +724,26 @@
       removeEventListener() {},
       dispatchEvent() { return false; },
     };
+    try {
+      Object.defineProperty(facade, 'location', {
+        configurable: false,
+        enumerable: true,
+        get() { return locationFacade; },
+        set(_value) {},
+      });
+    } catch (_) {}
+    try {
+      Object.defineProperty(facade, 'closed', {
+        configurable: false,
+        enumerable: true,
+        // A short-lived open-looking handle prevents ad-gated players from
+        // aborting on `!popup || popup.closed`.  It never owns a real browsing
+        // context and every navigation/document method above remains inert.
+        get() { return explicitlyClosed || (temporarilyOpen && Date.now() - openedAt > 1500); },
+      });
+    } catch (_) {
+      facade.closed = !temporarilyOpen;
+    }
     facade.window = facade;
     facade.self = facade;
     facade.top = facade;
@@ -681,6 +751,41 @@
     facade.frames = facade;
     try { Object.defineProperty(facade, Symbol.toStringTag, { value: 'Window' }); } catch (_) {}
     return facade;
+  }
+
+  function popupAnchorOwnsPlayer(anchor) {
+    try {
+      return !!(anchor && anchor.querySelector && anchor.querySelector('video,audio,iframe,embed,object'));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function neutralizePopupOverlay(anchor, event) {
+    if (!anchor) return;
+    try {
+      if (anchor.style && anchor.style.setProperty) anchor.style.setProperty('pointer-events', 'none', 'important');
+      if (anchor.setAttribute) anchor.setAttribute('data-wardenone-blocked-popup-overlay', 'true');
+    } catch (_) {}
+
+    // When the ad link sat over a real control, preserve this same activation
+    // instead of making the user click twice.  Links/iframes are deliberately
+    // excluded: only an underlying button or native media element is invoked.
+    const pt = coordsOf(event);
+    if (!pt || typeof document.elementsFromPoint !== 'function') return;
+    let stack = [];
+    try { stack = document.elementsFromPoint(pt.x, pt.y).slice(0, 16); } catch (_) { return; }
+    for (const el of stack) {
+      if (!el || el === anchor) continue;
+      try { if (anchor.contains && anchor.contains(el)) continue; } catch (_) {}
+      let control = null;
+      try {
+        control = el.closest ? el.closest('button,[role="button"],video,audio,[tabindex]') : null;
+      } catch (_) {}
+      if (!control || control === anchor || typeof control.click !== 'function') continue;
+      try { control.click(); } catch (_) {}
+      break;
+    }
   }
 
   ['pointerdown', 'mousedown', 'click', 'auxclick', 'keydown', 'touchstart', 'touchend'].forEach((name) => {
@@ -697,10 +802,17 @@
     let raw = '';
     try { raw = String(a.href || a.getAttribute('href') || ''); } catch (_) {}
     let opensPopup = false;
+    let namedFrameNavigation = false;
     try {
-      const t = String((a.getAttribute && a.getAttribute('target')) || a.target || '').trim().toLowerCase();
+      const rawTargetName = String((a.getAttribute && a.getAttribute('target')) || a.target || '').trim();
+      const t = rawTargetName.toLowerCase();
+      const rel = String((a.getAttribute && a.getAttribute('rel')) || a.rel || '');
+      namedFrameNavigation = existingNamedFrameTarget(rawTargetName) && !openerIsolationRequested(rel);
       opensPopup = !!(t && t !== '_self' && t !== '_top' && t !== '_parent');
     } catch (_) {}
+    // Let a real, already-present player frame receive its provider switch.
+    // Missing custom targets and `_blank` continue through popup scrutiny.
+    if (namedFrameNavigation) return;
     const host = hostOf(raw);
     const cancel = (why, silent, popupClick) => {
       try { event.preventDefault(); } catch (_) {}
@@ -730,6 +842,8 @@
       }
       if (!host || sameParty(host, location.hostname)) return;
       if ((isTrustedHost(host) || federationUrlShape(raw)) && authIntentAllows()) return;
+      const pt = coordsOf(event);
+      const coversPlayer = !!(strictPopupEnabled() && pt && pointOnVideo(pt.x, pt.y) && !popupAnchorOwnsPlayer(a));
       const matcherHit = popupMatcherApi.match(raw, {
         nativeAnchor: true,
         topFrame: TOP_FRAME,
@@ -740,7 +854,13 @@
         intendedHost: host,
         authIntent: authIntentAllows(),
       });
-      if (matcherHit) return cancel('popup matcher: ' + matcherHit.reason, true, true);
+      if (matcherHit) {
+        if (coversPlayer) {
+          try { event.stopImmediatePropagation(); } catch (_) {}
+          neutralizePopupOverlay(a, event);
+        }
+        return cancel('popup matcher: ' + matcherHit.reason, true, true);
+      }
       if (!popupEnabled()) return;
       if (event.isTrusted === false) {
         let isDownload = false;
@@ -749,6 +869,11 @@
         return cancel('page-generated popup link', true, true);
       }
       if (!strictPopupEnabled()) return;
+      if (coversPlayer) {
+        try { event.stopImmediatePropagation(); } catch (_) {}
+        neutralizePopupOverlay(a, event);
+        return cancel('a cross-site popup link was layered over the video player', true, true);
+      }
       let rect = null;
       let opacity = 1;
       try { rect = a.getBoundingClientRect(); } catch (_) {}
@@ -832,10 +957,13 @@
     const realOpen = window.open;
     window.open = function (url, name, features) {
       const rawTarget = url || 'about:blank';
+      if (existingNamedFrameTarget(name) && !openerIsolationRequested(features)) {
+        return realOpen.apply(this, arguments);
+      }
       const match = popupBlockMatch(rawTarget);
       if (match) {
         noteBlockedPopup(rawTarget, match);
-        return inertWindowFacade();
+        return inertWindowFacade(playerDocument());
       }
       return realOpen.apply(this, arguments);
     };
@@ -871,13 +999,17 @@
   // navigates THIS tab and is legitimate -- silently cancelling it broke niche SSO/payment flows.
   // The actual threats here are popunder window.open and gestureless cross-site redirects, NOT a
   // top-frame form the user submitted. So we no longer block same-tab top-frame submits; only
-  // top-frame forms that open a NEW window (target=_blank / a named target) keep scrutiny.
+  // top-frame forms that open a NEW window (target=_blank / an unresolved named target) keep scrutiny.
   // Child-frame forms are deliberately left native by this lightweight popup-only layer.
   function formStaysInTab(form) {
     try {
       if (window.top !== window.self) return false;
-      const t = String((form && form.getAttribute && form.getAttribute('target')) || (form && form.target) || '').trim().toLowerCase();
-      if (t && t !== '_self' && t !== '_top' && t !== '_parent') return false;
+      const rawTargetName = String((form && form.getAttribute && form.getAttribute('target')) || (form && form.target) || '').trim();
+      const t = rawTargetName.toLowerCase();
+      if (t && t !== '_self' && t !== '_top' && t !== '_parent') {
+        const rel = String((form && form.getAttribute && form.getAttribute('rel')) || (form && form.rel) || '');
+        if (!existingNamedFrameTarget(rawTargetName) || openerIsolationRequested(rel)) return false;
+      }
       return true;
     } catch (_) { return false; }
   }

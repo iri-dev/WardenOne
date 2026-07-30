@@ -125,6 +125,14 @@
   // element's OWN text only, never the page-wide body (almost every site's header says "Sign
   // in"/"Account"). Erring toward NOT clicking is the safe direction for an automated click.
   const PROTECT_RE = /\b(sign[\s-]?in|signed[\s-]?in|sign[\s-]?out|signed[\s-]?out|log[\s-]?in|log[\s-]?on|log[\s-]?out|logged[\s-]?out|logout|sign[\s-]?up|register|create\s+account|account\s+settings|your\s+account|my\s+account|profile|subscription|wallet|bank\s+account|sort\s+code|routing\s+number|iban|transfer|withdraw|deposit|password|passcode|2fa|two[\s-]?factor|verification\s+code|one[\s-]?time\s+code|payment|billing|checkout|secure\s+checkout|purchase|place\s+order|buy\s+now|pay\s+now|donate|card\s+number|shipping|delivery\s+address|refund|delete\s+account|deactivate|close\s+account|unsubscribe|confirm\s+your)\b/i;
+  // A consent surface may contain an unrelated account link in its header. Treating that one
+  // label as the context of the entire dialog causes an otherwise unambiguous reject/accept
+  // choice to be missed. High-risk account, payment, and destructive language remains a hard
+  // veto. Authentication-only language is ignored only when the same bounded surface exposes
+  // an explicit reject/accept pair and strong consent language.
+  const HARD_PROTECT_RE = /\b(create\s+account|account\s+settings|(?:account|user)\s+profile|profile\s+settings|subscription\s+(?:settings|plan)|wallet|bank\s+account|sort\s+code|routing\s+number|iban|(?:bank|wire)\s+transfer|transfer\s+(?:funds|money)|withdraw\s+(?:funds|money|cash)|deposit\s+(?:funds|money|cash)|password|passcode|2fa|two[\s-]?factor|verification\s+code|one[\s-]?time\s+code|payment|billing|checkout|secure\s+checkout|purchase|place\s+order|buy\s+now|pay\s+now|donate|card\s+number|shipping|delivery\s+address|refund|delete\s+account|deactivate|close\s+account|unsubscribe|confirm\s+your\s+(?:order|purchase|payment|account|identity|password|email|address))\b/i;
+  const EXPLICIT_REJECT_RE = /^\s*(?:reject|decline|deny|refuse)(?:\s+(?:all|optional))?[.!]?\s*$/i;
+  const EXPLICIT_ACCEPT_RE = /^\s*(?:accept|allow)(?:\s+all)?[.!]?\s*$/i;
   const INFO_LINK_RE = /\b(cookie\s+choices?|cookie\s+notice|cookie\s+policy|privacy\s+(?:notice|policy|choices?)|legal|terms|learn\s+more)\b/i;
 
   function cleanHost(value) {
@@ -239,10 +247,45 @@
     return STRONG_CONSENT_TEXT_RE.test(String(text || ''));
   }
 
+  function explicitConsentDecisionPair(container, rejectControl) {
+    try {
+      if (!container || !hasStrongConsentLanguage(elementText(container))) return false;
+      let reject = rejectControl && isVisible(rejectControl) && EXPLICIT_REJECT_RE.test(controlLabel(rejectControl));
+      let accept = false;
+      const roots = [container].concat(collectRoots(container));
+      const seen = new Set();
+      let inspected = 0;
+      for (const root of roots) {
+        const list = root && root.querySelectorAll ? root.querySelectorAll(CONTROL_SELECTOR) : [];
+        for (let i = 0; i < list.length && inspected < 120; i++) {
+          const el = list[i];
+          if (seen.has(el)) continue;
+          seen.add(el);
+          inspected++;
+          if (!isVisible(el) || isUnsafeAutoClickLink(el)) continue;
+          const label = controlLabel(el);
+          if (EXPLICIT_REJECT_RE.test(label)) reject = true;
+          if (EXPLICIT_ACCEPT_RE.test(label)) accept = true;
+          if (reject && accept) return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function protectedContainerContext(container, rejectControl) {
+    const text = elementText(container);
+    if (!PROTECT_RE.test(text)) return false;
+    if (HARD_PROTECT_RE.test(text)) return true;
+    return !explicitConsentDecisionPair(container, rejectControl);
+  }
+
   function looksLikeConsentContainer(el) {
     if (!el || !isVisible(el)) return false;
     const text = elementText(el);
-    if (PROTECT_RE.test(text)) return false; // account/login/payment/settings modal -> never auto-act
+    if (protectedContainerContext(el, null)) return false;
     if (hasConsentLanguage(text)) return true;
     try {
       const box = el.getBoundingClientRect();
@@ -475,7 +518,7 @@
       for (let depth = 0; n && n !== document.body && n !== document.documentElement && depth < 9; depth++, n = n.parentElement) {
         if (!isVisible(n)) continue;
         const own = elementText(n);
-        if (!hasStrongConsentLanguage(own) || PROTECT_RE.test(own)) continue;
+        if (!hasStrongConsentLanguage(own) || protectedContainerContext(n, el)) continue;
         const rect = n.getBoundingClientRect();
         const area = rect.width * rect.height;
         const viewport = Math.max(1, innerWidth * innerHeight);

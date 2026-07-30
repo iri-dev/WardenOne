@@ -31,5 +31,11 @@ if (out.nested && out.nested.deep !== undefined) throw new Error('nested depth c
 if (JSON.stringify(out).length > 8000) throw new Error('sanitized payload remains too large');
 if (!source.includes("detail: boundedBridgeDetail(d.detail)")) throw new Error('rg-block relay does not use bounded detail');
 if (!source.includes("kind: 'redirect-warning', detail: boundedBridgeDetail(d.detail)")) throw new Error('redirect relay does not use bounded detail');
+if (!source.includes("return { kind: 'adshield-cosmetic', hostname, playerPage: msg.playerPage === true }")) {
+  throw new Error('adshield relay does not preserve playerPage with strict boolean semantics');
+}
+if (/playerPage:\s*msg\.playerPage(?!\s*===\s*true)/.test(source)) {
+  throw new Error('adshield relay accepts a truthy non-boolean playerPage value');
+}
 
 console.log('[ok] bridge event payload bounds passed');

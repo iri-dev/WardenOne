@@ -760,6 +760,89 @@
     WO_TOP=window===window.top,
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
+    SITE_BOUNDARY=(()=>{
+      const normalize=host=>String(host||"").trim().replace(/^www\./,
+      "").replace(/^\.+|\.+$/g,
+      "").toLowerCase(),
+      site=host=>{
+        const h=normalize(host),
+        parts=h.split(".").filter(Boolean);
+        if(parts.length<=2||h.includes(":"))return h;
+        const tail=parts.slice(-2).join(".");
+        return/^(co|com|org|net|gov|ac|edu|gob|gouv)\.[a-z]{2}$/i.test(tail)?parts.slice(-3).join("."):tail
+      };
+      return{
+        site:site,
+        same:(left,
+        right)=>{
+          const a=normalize(left),
+          b=normalize(right);
+          return!!a&&!!b&&(a===b||a.endsWith("."+b)||b.endsWith("."+a))
+        },
+        siblingCandidate:(left,
+        right)=>{
+          const a=normalize(left),
+          b=normalize(right);
+          return!!a&&!!b&&a!==b&&!a.endsWith("."+b)&&!b.endsWith("."+a)&&site(a)===site(b)
+        },
+        normalize:normalize
+      }
+    })(),
+    VERIFICATION_FLOW_POLICY=(()=>{
+      const semantic=/(^|[^a-z])(?:captcha|challenge|verification|verify|human)(?:[^a-z]|$)/i,
+      frameHosts=()=>{
+        const out=[];
+        try{
+          const frames=Array.from(document.querySelectorAll("iframe[src]")).slice(0,
+          24);
+          for(const frame of frames){
+            const meta=[frame.getAttribute("title"),
+            frame.getAttribute("name"),
+            frame.getAttribute("aria-label"),
+            frame.getAttribute("src")].filter(Boolean).join(" ");
+            if(!semantic.test(meta))continue;
+            const rect=frame.getBoundingClientRect();
+            if(!rect||rect.width<120||rect.height<40)continue;
+            const style="function"==typeof getComputedStyle?getComputedStyle(frame):null;
+            if(style&&("none"===style.display||"hidden"===style.visibility||"0"===style.opacity))continue;
+            const host=new URL(frame.src,
+            location.href).hostname;
+            host&&out.push(host)
+          }
+
+        }
+        catch(_){
+
+        }
+        return out
+      },
+      noticeTargetExpected=(targetHost,
+      visibleFrameHosts)=>{
+        const frames=Array.isArray(visibleFrameHosts)?visibleFrameHosts:[];
+        if(!frames.length)return!1;
+        return frames.some(host=>SITE_BOUNDARY.same(host,
+        targetHost)||SITE_BOUNDARY.siblingCandidate(host,
+        targetHost))
+      };
+      return{
+        frameHosts:frameHosts,
+        hasVisibleChallenge:()=>!!frameHosts().length,
+        fingerprintNoticePoints:hit=>frameHosts().length?0:Number(hit)>=3?40:10,
+        noticeTargetExpected:noticeTargetExpected,
+        expectsNoticeUrl:url=>{
+          try{
+            const target=new URL(url,
+            location.href);
+            return noticeTargetExpected(target.hostname,
+            frameHosts())
+          }
+          catch(_){
+            return!1
+          }
+
+        }
+      }
+    })(),
     isGoogleSearchResults=()=>/(^|\.)google\.[a-z.]+$/i.test(location.hostname)&&/^\/(search|webhp)?$/i.test(location.pathname||"/"),
     isBraveSearchResults=()=>/^search\.brave\.com$/i.test(location.hostname)&&/^\/search$/i.test(location.pathname||"/"),
     CRYPTO_ADDR_RE=/\b(0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{20,71}|[LM][a-km-zA-HJ-NP-Z1-9]{26,33}|r[0-9a-zA-Z]{24,34}|T[a-zA-Z0-9]{33}|4[0-9AB][0-9a-zA-Z]{93,104})\b/,
@@ -956,6 +1039,37 @@
       }
       catch(_){
 
+      }
+
+    };
+    const PLAYER_ROUTE_RE=/(?:^|[\/_-])(?:watch|episodes?|streams?|videos?|embed|player)(?:[\/_.-]|$)/i,
+    PLAYER_FRAMEWORK_SHELL_SELECTOR='.jwplayer,.video-js,.plyr,.plyr__video-wrapper,.plyr__controls,.shaka-video-container,.shaka-controls-container,.shaka-controls-button-panel,[data-shaka-player-container],.dplayer,.art-video-player,.clappr-container',
+    PLAYER_SHELL_SELECTOR='[data-player],[data-video],[id="player" i],[id^="player-" i],[id$="-player" i],[class~="player" i],[class~="video-player" i],'+PLAYER_FRAMEWORK_SHELL_SELECTOR,
+    PLAYER_PAGE_SELECTOR='video,audio,embed,object,'+PLAYER_SHELL_SELECTOR+',iframe[allow*="autoplay" i],iframe[allowfullscreen],iframe[src*="/embed/" i],iframe[src*="/player/" i]',
+    playerShellFor=el=>{
+      try{
+        return el&&el.closest?el.closest(PLAYER_SHELL_SELECTOR):null
+      }
+      catch(_){
+        return null
+      }
+
+    },
+    playerFrameworkShellFor=el=>{
+      try{
+        return el&&el.closest?el.closest(PLAYER_FRAMEWORK_SHELL_SELECTOR):null
+      }
+      catch(_){
+        return null
+      }
+
+    },
+    playerPageDetected=()=>{
+      try{
+        return PLAYER_ROUTE_RE.test(location.pathname||"")||!!document.querySelector(PLAYER_PAGE_SELECTOR)
+      }
+      catch(_){
+        return!1
       }
 
     };
@@ -2876,16 +2990,7 @@
       risky=/^xn--/i.test(full)||/^[a-f0-9]{12,}$/i.test(label)||/[bcdfghjklmnpqrstvwxz]{6,}/i.test(label)||digits>=4&&digits>=.3*label.length||/\.(cfd|sbs|top|xyz|click|link|live|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|skin|bar|fit)$/i.test(full)||((full.match(/-/g)||[]).length>=3||full.length>=40),
       riskyModeOn=()=>!!(WO.enabled&&WO.riskySiteMode&&risky),
       RISKY_PLAYER_KINDS=/^(script|frame|media|fetch|xhr|websocket)$/,
-      riskyPlayerPage=()=>{
-        try{
-          if(/(?:^|[\/_-])(?:watch|episodes?|streams?|videos?|embed|player)(?:[\/_.-]|$)/i.test(location.pathname||""))return!0;
-          return!!document.querySelector('video,audio,embed,object,[data-player],[data-video],[class*="player" i],[id*="player" i],iframe[allow*="autoplay" i],iframe[allowfullscreen],iframe[src*="/embed/" i],iframe[src*="/player/" i]')
-        }
-        catch(_){
-          return!1
-        }
-
-      },
+      riskyPlayerPage=()=>playerPageDetected(),
       TRUSTED_THIRD_PARTY=/(^|\.)(cloudflare\.com|cloudflare\.net|akamaihd\.net|fastly\.net|jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|bootstrapcdn\.com|gstatic\.com|googleapis\.com|githubusercontent\.com)$/i,
       riskyKind=el=>{
         const tag=el&&String(el.tagName||"").toUpperCase();
@@ -3723,9 +3828,32 @@
       })(),
       suppressExpectedTokenLog=/(^|\.)(spotify\.com|scdn\.co|spotifycdn\.com|youtube\.com|youtubei\.googleapis\.com|netflix\.com|nflxso\.net|twitch\.tv|x\.com|twitter\.com|discord\.com|discordapp\.com|slack\.com|figma\.com|notion\.so|dropbox\.com|drive\.google\.com|accounts\.google\.com|login\.microsoftonline\.com|outlook\.office\.com|icloud\.com)$/i.test(location.hostname),
       looksLikeJWT2=v=>/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(String(v||"")),
-      TOKEN_KEY=/(token|auth|authorization|session|sess|jwt|bearer|access[_-]?token|id[_-]?token|refresh[_-]?token|api[_-]?key|secret|credential)/i,
+      normalizeTokenKey=key=>String(key||"").trim().replace(/^["']|["']$/g,
+      "").replace(/([a-z0-9])([A-Z])/g,
+      "$1_$2").replace(/[^A-Za-z0-9]+/g,
+      "_").replace(/^_+|_+$/g,
+      "").toLowerCase(),
+      SENSITIVE_KEY_COMPONENT=/(^|_)(?:token|auth|authorization|session|sess|jwt|bearer|secret|credential|password|passwd)(?:_|$)|(^|_)(?:api|private|csrf|xsrf|access|refresh|identity|client)_(?:key|token|secret|id)(?:_|$)/,
+      SENSITIVE_HEADER_KEY=/^(?:authorization|proxy_authorization|cookie|x_api_key|x_auth_token|x_csrf_token)$/,
+      keyIsChallengeResponse=key=>{
+        const parts=normalizeTokenKey(key).split("_").filter(Boolean),
+        challenge=parts.some(part=>/^(?:captcha|challenge|verification|human)$/.test(part)||/^[a-z0-9]{1,3}captcha$/.test(part)),
+        forbidden=parts.some(part=>/^(?:auth|authorization|session|sess|jwt|bearer|secret|credential|password|passwd|api|private|csrf|xsrf|access|refresh|identity|client)$/.test(part));
+        return challenge&&!forbidden
+      },
       TOK=/^(ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Fa-f0-9]{32,}|[A-Za-z0-9_\-]{40,})$/,
       TOK_ANY=/\b(ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Fa-f0-9]{32,}|[A-Za-z0-9_\-]{40,})\b/,
+      JWT_ANY=/(?:^|[^A-Za-z0-9_-])ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:$|[^A-Za-z0-9_-])/,
+      keyIsSensitive=key=>{
+        const normalized=normalizeTokenKey(key);
+        return!!normalized&&!keyIsChallengeResponse(normalized)&&(SENSITIVE_HEADER_KEY.test(normalized)||SENSITIVE_KEY_COMPONENT.test(normalized))
+      },
+      valueLooksSecret=value=>{
+        const normalized=String(value||"").trim().replace(/^Bearer\s+/i,
+        "").replace(/^["']|["']$/g,
+        "");
+        return normalized.length>=16&&(TOK.test(normalized)||looksLikeJWT2(normalized)||TOK_ANY.test(normalized))
+      },
       tokenPrefixes=new Set,
       noteToken=v=>{
         (v=String(v||"")).length>=20&&(TOK.test(v)||looksLikeJWT2(v))&&tokenPrefixes.add(v.slice(0,
@@ -3828,17 +3956,48 @@
         try{
           const s=String(text||"");
           if(!s||s.length<16)return!1;
-          if(TOK.test(s.trim())||looksLikeJWT2(s.trim())||TOK_ANY.test(s))return!0;
+          if(JWT_ANY.test(s)||hasKnownTokenPrefix(s))return!0;
+          for(const line of s.split(/\r?\n/)){
+            const colon=line.indexOf(":");
+            if(colon>0&&SENSITIVE_HEADER_KEY.test(normalizeTokenKey(line.slice(0,
+            colon)))&&valueLooksSecret(line.slice(colon+1)))return!0
+          }
           try{
             const params=new URLSearchParams(s.replace(/^[?#]/,
             ""));
             for(const[k,
-            v]of params)if(TOKEN_KEY.test(k)&&String(v||"").length>=16&&(TOK.test(String(v))||looksLikeJWT2(v)||TOK_ANY.test(String(v))))return!0
+            v]of params)if(keyIsSensitive(k)&&valueLooksSecret(v))return!0
           }
           catch(_){
 
           }
-          for(const pre of tokenPrefixes)if(pre.length>=12&&-1!==s.indexOf(pre))return!0;
+          try{
+            const parsed=JSON.parse(s);
+            let visited=0;
+            const walk=(value,
+            key,
+            depth)=>{
+              if(++visited>96||depth>5)return!1;
+              if(null==value)return!1;
+              if("object"!=typeof value)return keyIsSensitive(key)&&valueLooksSecret(value);
+              if(Array.isArray(value))return value.some(item=>walk(item,
+              key,
+              depth+1));
+              return Object.keys(value).slice(0,
+              64).some(child=>walk(value[child],
+              child,
+              depth+1))
+            };
+            if(walk(parsed,
+            "",
+            0))return!0
+          }
+          catch(_){
+
+          }
+          const pairRe=/(?:^|[?&\n{,;])\s*["']?([A-Za-z0-9_-]{1,64})["']?\s*(?:=|:)\s*["']?(?:Bearer\s+)?([A-Za-z0-9_.-]{16,})/gi;
+          let match;
+          for(;null!==(match=pairRe.exec(s));)if(keyIsSensitive(match[1])&&valueLooksSecret(match[2]))return!0;
           return!1
         }
         catch{
@@ -3854,21 +4013,8 @@
       urlHasToken=url=>{
         try{
           const u=new URL(url,
-          location.href),
-          checkParams=params=>{
-            for(const[k,
-            v]of params){
-              const val=String(v||"");
-              if(TOKEN_KEY.test(k)&&val.length>=16&&stringHasToken(val))return!0;
-              if(hasKnownTokenPrefix(val))return!0
-            }
-            return!1
-          };
-          if(checkParams(u.searchParams))return!0;
-          const hash=String(u.hash||"").replace(/^#/,
-          "");
-          return!(!hash||!checkParams(new URLSearchParams(hash.replace(/^[!?]/,
-          ""))))||hasKnownTokenPrefix(hash)
+          location.href);
+          return stringHasToken(u.href)
         }
         catch{
           return!1
@@ -6697,17 +6843,9 @@
       let procRules=[];
       const SCRIPTLET_RAN=new Set,
       scriptletRuntimeOn=()=>!!(WO.enabled&&WO.adShield&&WO.scriptletEngine),
-      scriptletPlayerPage=()=>{
-        try{
-          if(/(?:^|[\/_-])(?:watch|episodes?|streams?|videos?|embed|player)(?:[\/_.-]|$)/i.test(location.pathname||""))return!0;
-          return!!document.querySelector('video,embed,object,[data-player],[data-video],[class*="player" i],[id*="player" i],iframe[allow*="autoplay" i],iframe[allowfullscreen],iframe[src*="/embed/" i],iframe[src*="/player/" i]')
-        }
-        catch(_){
-          return!1
-        }
-
-      },
-      networkScriptletRuntimeOn=()=>scriptletRuntimeOn()&&!scriptletPlayerPage(),
+      scriptletPlayerPage=()=>playerPageDetected(),
+      pageMutationScriptletRuntimeOn=()=>scriptletRuntimeOn()&&!scriptletPlayerPage(),
+      networkScriptletRuntimeOn=()=>pageMutationScriptletRuntimeOn(),
       scSearchToRe=s=>{
         if(""===(s=null==s?"":String(s))||"*"===s)return/.?/;
         if(s.length>1&&"/"===s[0]&&s.lastIndexOf("/")>0){
@@ -6792,25 +6930,25 @@
         !0);
         if(!parent)return;
         const leaf=parts[parts.length-1];
+        let real;
+        try{
+          real=parent[leaf]
+        }
+        catch(_){
+
+        }
         try{
           Object.defineProperty(parent,
           leaf,
           {
-            get:()=>val,
-            set:()=>{
-
+            get:()=>pageMutationScriptletRuntimeOn()?val:real,
+            set:v=>{
+              pageMutationScriptletRuntimeOn()||(real=v)
             },
             configurable:!1
           })
         }
         catch(_){
-          try{
-            parent[leaf]=val
-          }
-          catch(_){
-
-          }
-
         }
 
       },
@@ -6829,18 +6967,24 @@
 
         }
         const boom=()=>{
-          throw new ReferenceError("WardenOne:"+path)
+          if(pageMutationScriptletRuntimeOn())throw new ReferenceError("WardenOne:"+path)
         };
         try{
           Object.defineProperty(parent,
           leaf,
           write?{
             get:()=>real,
-            set:boom,
+            set:v=>{
+              if(pageMutationScriptletRuntimeOn())boom();
+              else real=v
+            },
             configurable:!1
           }
           :{
-            get:boom,
+            get:()=>{
+              if(pageMutationScriptletRuntimeOn())boom();
+              return real
+            },
             set:v=>{
               real=v
             },
@@ -6876,7 +7020,7 @@
               try{
                 const cs=document.currentScript,
                 txt=cs&&cs.textContent||"";
-                if(!re||re.test(txt))throw new ReferenceError("WardenOne:acs:"+path)
+                if(pageMutationScriptletRuntimeOn()&&(!re||re.test(txt)))throw new ReferenceError("WardenOne:acs:"+path)
               }
               catch(e){
                 if(e instanceof ReferenceError)throw e
@@ -6905,7 +7049,7 @@
         t){
           try{
             const s="function"==typeof fn?fn.toString():String(fn);
-            if(scriptletRuntimeOn()&&(null==wantDelay||Number(t)===wantDelay)&&re.test(s))return 0
+            if(pageMutationScriptletRuntimeOn()&&(null==wantDelay||Number(t)===wantDelay)&&re.test(s))return 0
           }
           catch(_){
 
@@ -7020,7 +7164,7 @@
         fn){
           try{
             const fs="function"==typeof fn?fn.toString():fn&&fn.handleEvent?fn.handleEvent.toString():String(fn);
-            if(scriptletRuntimeOn()&&typeRe.test(String(t))&&fnRe.test(fs))return
+            if(pageMutationScriptletRuntimeOn()&&typeRe.test(String(t))&&fnRe.test(fs))return
           }
           catch(_){
 
@@ -7043,7 +7187,9 @@
         try{
           registry.register("scriptlet:no-window-open-if:"+hash.toString(36),
           url=>{
-            if(!scriptletRuntimeOn())return!1;
+            /* The all-frame redirect guard owns player popup protection; a
+               list matcher here can make the page abort its own playback. */
+            if(!pageMutationScriptletRuntimeOn())return!1;
             try{
               re.lastIndex=0;
               const matched=re.test(String(url||""));
@@ -7065,6 +7211,7 @@
       let scSweepObs=null,
       scSweepPending=!1;
       const scRunSweepers=()=>{
+        if(!pageMutationScriptletRuntimeOn())return;
         for(const f of scSweepers)try{
           f()
         }
@@ -7124,7 +7271,7 @@
         req=String(required||"").split(/\s+/).filter(Boolean);
         if(!rem.length)return;
         const prune=obj=>{
-          if(!scriptletRuntimeOn())return obj;
+          if(!pageMutationScriptletRuntimeOn())return obj;
           try{
             if(req.length&&!req.every(p=>scWalkJson(obj,
             p.split("."),
@@ -7189,7 +7336,33 @@
         "webkitRTCPeerConnection",
         "mozRTCPeerConnection"].forEach(n=>{
           try{
-            window[n]&&(window[n]=stub)
+            const real=window[n];
+            if("function"!=typeof real||real.__wardenOneScriptletRtc)return;
+            const guarded=function(){
+              if(pageMutationScriptletRuntimeOn())return stub();
+              return Reflect.construct(real,
+              Array.from(arguments),
+              new.target||real)
+            };
+            guarded.prototype=real.prototype;
+            try{
+              Object.setPrototypeOf(guarded,
+              real)
+            }
+            catch(_){
+
+            }
+            try{
+              Object.defineProperty(guarded,
+              "__wardenOneScriptletRtc",
+              {
+                value:!0
+              })
+            }
+            catch(_){
+
+            }
+            window[n]=guarded
           }
           catch(_){
 
@@ -7225,6 +7398,7 @@
           if(!names.length)return;
           const sel=a[1]||names.map(n=>"["+n+"]").join(",");
           scAddSweeper(()=>{
+            if(!pageMutationScriptletRuntimeOn())return;
             try{
               document.querySelectorAll(sel).forEach(el=>names.forEach(n=>{
                 try{
@@ -7247,6 +7421,7 @@
           if(!cls.length)return;
           const sel=a[1]||cls.map(c=>"."+c).join(",");
           scAddSweeper(()=>{
+            if(!pageMutationScriptletRuntimeOn())return;
             try{
               document.querySelectorAll(sel).forEach(el=>cls.forEach(c=>{
                 try{
@@ -7286,6 +7461,7 @@
         let n=0;
         for(const sc of list){
           if(!sc||!sc.name||!SCRIPTLET_LIB[sc.name])continue;
+          if(scriptletPlayerPage())continue;
           const key=sc.name+"|"+(sc.args||[]).join("");
           if(!SCRIPTLET_RAN.has(key)){
             SCRIPTLET_RAN.add(key);
@@ -7518,7 +7694,7 @@
         return!1
       },
       runProcedural=()=>{
-        if(!procRules.length)return;
+        if(scriptletPlayerPage()||!procRules.length)return;
         let budget=PROC_BUDGET;
         for(const rule of procRules){
           if(budget<=0)break;
@@ -7620,7 +7796,8 @@
           }
           __woBackgroundRequest({
             kind:"adshield-cosmetic",
-            hostname:host
+            hostname:host,
+            playerPage:scriptletPlayerPage()
           },
           res=>{
             try{
@@ -7630,6 +7807,16 @@
               {
                 why:res.allowlisted?"allowlisted":"disabled"
               });
+              if(scriptletPlayerPage()){
+                adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):styleEl&&(styleEl.textContent=""),
+                procRules=[],
+                collapseLeftovers(document),
+                log("adshield_player_safe_mode",
+                {
+
+                });
+                return
+              }
               injectCss(adShieldVideoPlatform?SAFE_VIDEO_AD_SELECTORS.concat(res.selectors||[]):res.selectors||[]),
               collapseLeftovers(document);
               try{
@@ -7649,6 +7836,12 @@
                 let procPending=!1,
                 collapsePending=!1;
                 woObserve(()=>{
+                  if(scriptletPlayerPage()){
+                    adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):styleEl&&(styleEl.textContent=""),
+                    procRules=[],
+                    collapseLeftovers(document);
+                    return
+                  }
                   if(styleEl&&!styleEl.isConnected)try{
                     (document.head||document.documentElement).appendChild(styleEl)
                   }
@@ -10164,6 +10357,7 @@
         const loadedAt=Date.now(),
         isForeign=url=>{
           try{
+            if(VERIFICATION_FLOW_POLICY.expectsNoticeUrl(url))return!1;
             const h=regDomain(new URL(url,
             location.href).hostname);
             return h&&h!==here&&!h.endsWith("."+here)&&!here.endsWith("."+h)&&!KNOWN_GOOD_BEHAVE.test(h)
@@ -10279,10 +10473,13 @@
         let fpHits=0;
         const noteFingerprint=why=>{
           if(!WO.fingerprintProbeDetection)return;
-          fpHits++,
-          fpHits>=3?addSignal(40,
+          const next=fpHits+1,
+          points=VERIFICATION_FLOW_POLICY.fingerprintNoticePoints(next);
+          if(!points)return;
+          fpHits=next,
+          fpHits>=3?addSignal(points,
           "Heavy browser fingerprinting behavior",
-          "heavy-fingerprint"):addSignal(10,
+          "heavy-fingerprint"):addSignal(points,
           why,
           "fingerprint-"+why)
         };
@@ -12585,7 +12782,16 @@
           }
 
         },
-        playBlockReason=el=>isMediaElement(el)&&hiddenMedia(el)?"Hidden media player":"",
+        mediaInsidePlayerShell=el=>{
+          try{
+            return!!playerShellFor(el)
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        playBlockReason=el=>isMediaElement(el)&&!mediaInsidePlayerShell(el)&&hiddenMedia(el)?"Hidden media player":"",
         mediaDetail=(el,
         reason)=>({
           action:reason,
@@ -12809,7 +13015,7 @@
 
         };
         try{
-          const nodes=document.querySelectorAll('video,iframe,embed,object,[class*="player"],[id*="player"],[class*="video"],[id*="video"],[class*="stream"],[id*="stream"],[data-player],[data-video]');
+          const nodes=document.querySelectorAll('video,iframe,embed,object,'+PLAYER_SHELL_SELECTOR);
           for(let i=0;
           i<nodes.length&&i<160&&out.length<28;
           i++)add(nodes[i])
@@ -12861,7 +13067,8 @@
           const tag=String(el.tagName||"").toUpperCase();
           if(/^(VIDEO|AUDIO|IFRAME|EMBED|OBJECT|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(tag))return!0;
           if(el.querySelector&&el.querySelector("video,audio,iframe,embed,object"))return!0;
-          const shell=el.matches&&el.matches('[data-player],[data-video],[class*="player"],[id*="player"],[class*="video"],[id*="video"],[class*="stream"],[id*="stream"]')?el:el.closest&&el.closest('[data-player],[data-video],[class*="player"],[id*="player"],[class*="video"],[id*="video"],[class*="stream"],[id*="stream"]');
+          if(playerFrameworkShellFor(el))return!0;
+          const shell=playerShellFor(el);
           return!!(shell&&PLAYER_CONTROL.test(String(blob||"")))
         }
         catch(_){

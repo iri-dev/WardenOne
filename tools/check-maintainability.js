@@ -168,10 +168,12 @@ function checkContentBuild() {
   'tools/test-runtime-idempotence.js',
   'tools/test-runtime-config-lifecycle.js',
   'tools/test-network-compatibility.js',
+  'tools/test-smart-script-recovery.js',
   'tools/test-script-popup-shield.js',
   'tools/test-site-compatibility.js',
   'tools/test-streaming-compatibility.js',
   'tools/test-token-exfil-trust.js',
+  'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
   'tools/test-static-dnr-compatibility.js',
   'tools/test-x-compatibility.js',
@@ -199,9 +201,11 @@ checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibi
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
 checkCommand('runtime config lifecycle tests', ['tools/test-runtime-config-lifecycle.js']);
 checkCommand('network compatibility tests', ['tools/test-network-compatibility.js']);
+checkCommand('Smart Script Shield recovery tests', ['tools/test-smart-script-recovery.js']);
 checkCommand('site compatibility tests', ['tools/test-site-compatibility.js']);
 checkCommand('streaming compatibility tests', ['tools/test-streaming-compatibility.js']);
 checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js']);
+checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);

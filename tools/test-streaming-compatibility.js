@@ -31,6 +31,53 @@ function sourceBetween(source, start, end) {
   return source.slice(from, to);
 }
 
+function loadPlayerCompatibility(pathname, pageMarker) {
+  const sandbox = {
+    location: { pathname: pathname || '/' },
+    document: {
+      querySelector(selector) {
+        return pageMarker && String(selector).split(',').includes(pageMarker) ? {} : null;
+      },
+    },
+  };
+  const snippet = sourceBetween(CONTENT, 'const PLAYER_ROUTE_RE=', '\n    !function(){');
+  vm.createContext(sandbox);
+  vm.runInContext(
+    snippet
+      + '\nthis.__playerCompatibility = {'
+      + ' PLAYER_FRAMEWORK_SHELL_SELECTOR, PLAYER_SHELL_SELECTOR, PLAYER_PAGE_SELECTOR,'
+      + ' playerShellFor, playerFrameworkShellFor, playerPageDetected'
+      + ' };',
+    sandbox,
+  );
+  return sandbox.__playerCompatibility;
+}
+
+function loadHiddenMediaBlockReason() {
+  const media = sourceBetween(
+    CONTENT,
+    '!1!==WO.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement',
+    'if(!0===WO.blockSuspiciousWebRTC',
+  );
+  const declarations = sourceBetween(media, 'isMediaElement=el=>', 'mediaDetail=')
+    .trim()
+    .replace(/,\s*$/, '');
+  const player = loadPlayerCompatibility('/', '');
+  const sandbox = {
+    document: { readyState: 'complete' },
+    getComputedStyle() {
+      return { display: 'none', visibility: 'hidden', opacity: '0' };
+    },
+    playerShellFor: player.playerShellFor,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(
+    'const ' + declarations + '; this.__playBlockReason = playBlockReason;',
+    sandbox,
+  );
+  return sandbox.__playBlockReason;
+}
+
 function arrayConstant(source, name) {
   const match = source.match(new RegExp('const\\s+' + name + '\\s*=\\s*(\\[[\\s\\S]*?\\]);'));
   assert(match, 'missing array constant: ' + name);
@@ -60,6 +107,30 @@ function loadCosmeticComputer() {
     sandbox,
   );
   return sandbox.__compute;
+}
+
+function mutationHeavyCosmeticMemory(host) {
+  return {
+    cfg: { adShield: true, scriptletEngine: true },
+    allow: [],
+    data: {
+      generic: ['.generic-ad-slot'],
+      specific: { [host]: ['.site-ad-slot'] },
+      exceptions: {},
+      genericHideExclusions: [],
+      procedural: { [host]: ['#player-shell:remove()'] },
+      scriptlets: {
+        '*': [
+          { name: 'no-window-open-if', args: ['popads'] },
+          { name: 'no-fetch-if', args: ['ads'] },
+        ],
+        [host]: [
+          { name: 'json-prune', args: ['adPlacements'] },
+          { name: 'remove-class', args: ['jwplayer'] },
+        ],
+      },
+    },
+  };
 }
 
 function loadRemoteRulePriorityHelpers() {
@@ -150,6 +221,7 @@ async function observeTracker(detail) {
 }
 
 function loadOverlayClassifier() {
+  const player = loadPlayerCompatibility('/', '');
   const sandbox = {
     mediaRectState: null,
     mediaRects: null,
@@ -173,6 +245,9 @@ function loadOverlayClassifier() {
     Set,
     WeakSet,
     Array,
+    PLAYER_SHELL_SELECTOR: player.PLAYER_SHELL_SELECTOR,
+    playerShellFor: player.playerShellFor,
+    playerFrameworkShellFor: player.playerFrameworkShellFor,
     document: {
       body: {},
       documentElement: {},
@@ -235,6 +310,31 @@ function overlayNode(tag) {
     },
     closest() { return null; },
   };
+}
+
+function frameworkOverlayNode(frameworkSelector) {
+  const node = overlayNode('div');
+  node.className = String(frameworkSelector || '').replace(/^\./, '');
+  node.closest = (selector) => String(selector || '').split(',').includes(frameworkSelector) ? node : null;
+  return node;
+}
+
+function hiddenVideoNode(frameworkSelector) {
+  const node = {
+    tagName: 'VIDEO',
+    hidden: true,
+    controls: false,
+    hasAttribute() { return false; },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    },
+    closest(selector) {
+      return frameworkSelector && String(selector || '').split(',').includes(frameworkSelector)
+        ? { className: frameworkSelector.replace(/^\./, '') }
+        : null;
+    },
+  };
+  return node;
 }
 
 test('manifest keeps the full engine top-frame-only and anti-redirect all-frames', () => {
@@ -396,6 +496,71 @@ test('scriptlet collection honors scriptletEngine=false', () => {
     'background still served scriptlets while the feature was disabled');
 });
 
+test('player-page cosmetic responses omit every list-driven mutation and popup scriptlet', () => {
+  const compute = loadCosmeticComputer();
+  const host = 'embed.player.example';
+  const player = compute(host, mutationHeavyCosmeticMemory(host), true);
+
+  assert.deepStrictEqual(Array.from(player.selectors || []), [],
+    'player mode still returned generic or domain-specific cosmetic selectors');
+  assert.deepStrictEqual(Array.from(player.procedural || []), [],
+    'player mode still returned procedural DOM mutations');
+  assert.deepStrictEqual(Array.from(player.scriptlets || [], (entry) => entry.name), [],
+    'player mode still returned a list popup matcher that can alter player control flow');
+});
+
+test('ordinary pages retain generic, specific, procedural and scriptlet protection', () => {
+  const compute = loadCosmeticComputer();
+  const host = 'ordinary.example';
+  const ordinary = compute(host, mutationHeavyCosmeticMemory(host), false);
+
+  assert.deepStrictEqual(Array.from(ordinary.selectors || []), ['.generic-ad-slot', '.site-ad-slot'],
+    'ordinary-page cosmetic selectors were weakened by player compatibility');
+  assert.deepStrictEqual(Array.from(ordinary.procedural || []), ['#player-shell:remove()'],
+    'ordinary-page procedural protection was weakened by player compatibility');
+  assert.deepStrictEqual(
+    Array.from(ordinary.scriptlets || [], (entry) => entry.name),
+    ['no-window-open-if', 'no-fetch-if', 'json-prune', 'remove-class'],
+    'ordinary-page scriptlet protection was weakened by player compatibility',
+  );
+});
+
+test('cosmetic memoization distinguishes player and ordinary responses for one host', () => {
+  const compute = loadCosmeticComputer();
+  const host = 'dual-mode.example';
+  const mem = mutationHeavyCosmeticMemory(host);
+
+  const ordinary = compute(host, mem, false);
+  const player = compute(host, mem, true);
+  const ordinaryAgain = compute(host, mem, false);
+
+  assert(ordinary.selectors.length > 0 && ordinaryAgain.selectors.length > 0,
+    'ordinary response was replaced by a player-mode cache entry');
+  assert.deepStrictEqual(Array.from(player.selectors || []), [],
+    'ordinary cached selectors leaked into a player response');
+  assert.deepStrictEqual(Array.from(player.procedural || []), [],
+    'ordinary cached procedural rules leaked into a player response');
+  assert.deepStrictEqual(Array.from(player.scriptlets || [], (entry) => entry.name), [],
+    'ordinary cached scriptlets leaked into a player response');
+});
+
+test('content requests carry player mode through to background cosmetic computation', () => {
+  const requestAt = CONTENT.indexOf('kind:"adshield-cosmetic"');
+  assert(requestAt !== -1, 'content cosmetic request is missing');
+  const request = CONTENT.slice(Math.max(0, requestAt - 240), requestAt + 360);
+  assert(/playerPage\s*:\s*scriptletPlayerPage\(\)/.test(request),
+    'content cosmetic request does not identify a detected player page');
+
+  const handler = sourceBetween(
+    BACKGROUND,
+    "if (msg && msg.kind === 'adshield-cosmetic' && msg.hostname)",
+    '\n  // ---- AdShield: per-site allowlist',
+  );
+  assert(/msg\.playerPage/.test(handler)
+    && /computeCosmeticForHost\(\s*msg\.hostname\s*,\s*mem\s*,/.test(handler),
+  'background cosmetic handler does not pass player mode into computation');
+});
+
 test('page runtime checks scriptletEngine before executing served scriptlets', () => {
   const directGate = /runScriptlets=list=>\{\s*if\(!WO\.scriptletEngine\)return/.test(CONTENT);
   const callGate = /WO\.scriptletEngine\s*&&\s*runScriptlets\(res\.scriptlets\)/.test(CONTENT)
@@ -411,10 +576,28 @@ test('network-mutating scriptlets fail open on player pages', () => {
     'no-fetch-if still installs on a detected player page');
   assert(/scNoXhrIf=arg=>\{\s*if\(scriptletPlayerPage\(\)\)return/.test(scriptlets),
     'no-xhr-if still installs on a detected player page');
-  assert(/networkScriptletRuntimeOn=\(\)=>scriptletRuntimeOn\(\)&&!scriptletPlayerPage\(\)/.test(scriptlets),
+  assert(/networkScriptletRuntimeOn=\(\)=>pageMutationScriptletRuntimeOn\(\)/.test(scriptlets)
+    && /pageMutationScriptletRuntimeOn=\(\)=>scriptletRuntimeOn\(\)&&!scriptletPlayerPage\(\)/.test(scriptlets),
     'installed network scriptlets do not dynamically fail open when a player appears');
-  assert(/scNoWindowOpen=arg=>[\s\S]*?registry\.register/.test(scriptlets),
-    'popup scriptlet protection was disabled along with player network mutation');
+  assert(/scNoWindowOpen=arg=>[\s\S]*?registry\.register[\s\S]*?if\(!pageMutationScriptletRuntimeOn\(\)\)return!1;/.test(scriptlets),
+    'installed popup matchers do not dynamically fail open on player pages');
+});
+
+test('installed mutation scriptlets dynamically fail open after an SPA enters a player', () => {
+  const scriptlets = sourceBetween(CONTENT, 'const SCRIPTLET_RAN=', '\n      parseProcedural=raw=>');
+  assert(/pageMutationScriptletRuntimeOn=\(\)=>scriptletRuntimeOn\(\)&&!scriptletPlayerPage\(\)/.test(scriptlets),
+    'scriptlet mutations do not share a dynamic player-page gate');
+  for (const marker of [
+    'get:()=>pageMutationScriptletRuntimeOn()?val:real',
+    'if(pageMutationScriptletRuntimeOn())boom()',
+    'if(!pageMutationScriptletRuntimeOn())return obj',
+    'if(!pageMutationScriptletRuntimeOn())return;',
+    'if(scriptletPlayerPage())continue',
+  ]) {
+    assert(scriptlets.includes(marker), 'missing SPA player fail-open marker: ' + marker);
+  }
+  assert(/registry\.register[\s\S]*?if\(!pageMutationScriptletRuntimeOn\(\)\)return!1;/.test(scriptlets),
+    'popup matcher can remain active after an SPA enters a player route');
 });
 
 test('risky-site mode preserves functional player traffic', () => {
@@ -430,6 +613,34 @@ test('risky-site mode preserves functional player traffic', () => {
   assert(!allowed.includes('beacon'), 'player compatibility disabled the tracker-beacon guard');
   assert(/RISKY_PLAYER_KINDS\.test\(String\(kind\|\|""\)\)&&riskyPlayerPage\(\)/.test(risky),
     'blockRisk does not apply the player-only compatibility boundary');
+});
+
+test('bounded player detection covers common framework shells', () => {
+  const frameworks = [
+    '.jwplayer', '.video-js', '.plyr', '.shaka-video-container',
+    '.dplayer', '.art-video-player', '.clappr-container',
+  ];
+  const base = loadPlayerCompatibility('/library', '');
+  assert(!/\[class\*=/i.test(base.PLAYER_FRAMEWORK_SHELL_SELECTOR),
+    'framework compatibility uses an unsafe broad class substring');
+  assert(!/\[class\*=/i.test(base.PLAYER_SHELL_SELECTOR),
+    'generic player-shell compatibility uses an unsafe broad class substring');
+
+  for (const framework of frameworks) {
+    const page = loadPlayerCompatibility('/library', framework);
+    assert.strictEqual(page.playerPageDetected(), true,
+      framework + ' was not recognized as a player page');
+    const node = hiddenVideoNode(framework);
+    assert(page.playerShellFor(node), framework + ' was not recognized as a player shell');
+    assert(page.playerFrameworkShellFor(node), framework + ' lost its exact framework boundary');
+  }
+
+  for (const route of ['/watch/1', '/episode-4', '/streams/live', '/embed/source']) {
+    assert.strictEqual(loadPlayerCompatibility(route, '').playerPageDetected(), true,
+      route + ' was not recognized as a bounded playback route');
+  }
+  assert.strictEqual(loadPlayerCompatibility('/account/settings', '.display-player-card').playerPageDetected(), false,
+    'ordinary page content was mistaken for a supported player framework');
 });
 
 test('AdShield and scriptlet toggle changes force a clean page runtime', () => {
@@ -448,12 +659,49 @@ test('overlay classifier never removes media, iframe or control nodes', () => {
   }
 });
 
+test('overlay cleanup never removes supported framework infrastructure', () => {
+  const isOverlay = loadOverlayClassifier();
+  for (const framework of [
+    '.jwplayer', '.video-js', '.plyr', '.shaka-video-container',
+    '.dplayer', '.art-video-player', '.clappr-container',
+  ]) {
+    assert.strictEqual(isOverlay(frameworkOverlayNode(framework)), false,
+      framework + ' infrastructure was classified as a removable ad overlay');
+  }
+  assert.strictEqual(isOverlay(overlayNode('div')), true,
+    'ordinary high-confidence ad overlays stopped being removable');
+});
+
 test('overlay cleanup never takes ownership of body/html overflow', () => {
   const overlay = sourceBetween(CONTENT, 'if(WO.removeOverlays', '\n    try{\n      window.addEventListener("keydown"');
   assert(!/(?:document\.body|document\.documentElement)[\s\S]{0,160}(?:setProperty|removeProperty)\("overflow"/.test(overlay),
     'overlay cleanup mutates a global overflow lock it does not own');
   assert(!/(?:prevBodyOverflow|prevHtmlOverflow|restoreBodyOverflow|releaseModalLocks)/.test(overlay),
     'overlay cleanup retained stale global lock or undo plumbing');
+});
+
+test('hidden-autoplay protection leaves recognized player media alone', () => {
+  const media = sourceBetween(
+    CONTENT,
+    '!1!==WO.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement',
+    'if(!0===WO.blockSuspiciousWebRTC',
+  );
+  assert(/mediaInsidePlayerShell=el=>/.test(media)
+    && /return!!playerShellFor\(el\)/.test(media),
+  'hidden-media protection has no player-shell compatibility boundary');
+  assert(/playBlockReason=el=>isMediaElement\(el\)&&!mediaInsidePlayerShell\(el\)&&hiddenMedia\(el\)/.test(media),
+    'hidden-media protection can still pause an initializing player video');
+
+  const playBlockReason = loadHiddenMediaBlockReason();
+  for (const framework of [
+    '.jwplayer', '.video-js', '.plyr', '.shaka-video-container',
+    '.dplayer', '.art-video-player', '.clappr-container',
+  ]) {
+    assert.strictEqual(playBlockReason(hiddenVideoNode(framework)), '',
+      framework + ' hidden initialization media would still be paused');
+  }
+  assert.strictEqual(playBlockReason(hiddenVideoNode('')), 'Hidden media player',
+    'ordinary hidden media no longer receives autoplay protection');
 });
 
 void (async () => {

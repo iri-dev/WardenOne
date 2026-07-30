@@ -193,6 +193,160 @@
   let bridgeConfig = {};
   let bridgeConfigReady = false;
 
+  // Smart Script Shield recovery is deliberately driven by this isolated-world
+  // signal, not by a page-visible CustomEvent. The evidence is intentionally
+  // narrow: an actual video, a recognised player library root, or a media-route
+  // page containing a fullscreen/autoplay embed. Background still requires a
+  // matching third-party script ERR_BLOCKED_BY_CLIENT before changing any rule.
+  let smartPlayerEvidence = '';
+  let smartPlayerLastSignalAt = 0;
+  let smartPlayerScanCount = 0;
+  let smartPlayerScanTimer = null;
+  let smartPlayerObserver = null;
+  let smartPlayerObserverGeneration = 0;
+  let smartPlayerHeartbeat = null;
+  function smartPlayerRoute(rawUrl) {
+    try {
+      const url = rawUrl ? new URL(String(rawUrl), location.href) : new URL(location.href);
+      return /(?:^|\/)(?:watch|episode|episodes|stream|streaming|video|videos|play|player|embed)(?:\/|$|[-_?])/i.test(url.pathname + url.search);
+    } catch (_) { return false; }
+  }
+  function smartPlayerStrongEvidence() {
+    try {
+      const scopedPlayerContext = smartPlayerRoute() || window.top !== window;
+      if (scopedPlayerContext && document.querySelector('.video-js,.jwplayer,.plyr,.dplayer,.art-video-player,.clappr-container,.shaka-video-container,[data-shaka-player-container]')) {
+        return 'known-player-root';
+      }
+      if (window.top !== window && document.querySelector([
+        'script[src*="video.js"]', 'script[src*="video.min.js"]', 'script[src*="jwplayer"]',
+        'script[src*="hls.js"]', 'script[src*="shaka-player"]', 'script[src*="dash.all"]',
+        'script[src*="clappr"]', 'script[src*="plyr"]',
+      ].join(','))) return 'known-player-root';
+      if (smartPlayerRoute()) {
+        if (document.querySelector('video')) return 'route-video';
+        if (document.querySelector([
+          'iframe[allowfullscreen]', 'iframe[allow*="autoplay"]', 'iframe[allow*="fullscreen"]',
+          'iframe[allow*="picture-in-picture"]', 'iframe[allow*="encrypted-media"]',
+        ].join(','))) return 'media-embed';
+      }
+    } catch (_) {}
+    return '';
+  }
+  function sendSmartPlayerContext(force) {
+    const now = Date.now();
+    const evidence = smartPlayerStrongEvidence();
+    if (!evidence) return false;
+    smartPlayerEvidence = evidence;
+    if (!force && now - smartPlayerLastSignalAt < 45000) return true;
+    if (!bridgeRateOk('smart-player-context', 4, 120000)) return true;
+    smartPlayerLastSignalAt = now;
+    try { chrome.runtime.sendMessage({ kind: 'smart-player-context', evidence }); } catch (_) {}
+    if (smartPlayerObserver) {
+      try { smartPlayerObserver.disconnect(); } catch (_) {}
+      smartPlayerObserver = null;
+    }
+    if (!smartPlayerHeartbeat) {
+      smartPlayerHeartbeat = setInterval(() => {
+        if (smartPlayerEvidence) sendSmartPlayerContext(true);
+      }, 60000);
+    }
+    return true;
+  }
+  function scheduleSmartPlayerScan(delay) {
+    if (smartPlayerEvidence || smartPlayerScanCount >= 48 || smartPlayerScanTimer) return;
+    smartPlayerScanTimer = setTimeout(() => {
+      smartPlayerScanTimer = null;
+      smartPlayerScanCount += 1;
+      sendSmartPlayerContext(false);
+    }, Math.max(0, Number(delay) || 0));
+  }
+  function armSmartPlayerObservation() {
+    if (!bridgeRateOk('smart-player-rearm', 16, 60000)) return false;
+    smartPlayerEvidence = '';
+    smartPlayerLastSignalAt = 0;
+    smartPlayerScanCount = 0;
+    scheduleSmartPlayerScan(0);
+    if (smartPlayerObserver) {
+      try { smartPlayerObserver.disconnect(); } catch (_) {}
+      smartPlayerObserver = null;
+    }
+    const generation = ++smartPlayerObserverGeneration;
+    try {
+      smartPlayerObserver = new MutationObserver(() => scheduleSmartPlayerScan(120));
+      const observeRoot = document.documentElement || document;
+      smartPlayerObserver.observe(observeRoot, { childList: true, subtree: true });
+    } catch (_) {}
+    setTimeout(() => {
+      if (generation !== smartPlayerObserverGeneration || !smartPlayerObserver) return;
+      try { smartPlayerObserver.disconnect(); } catch (_) {}
+      smartPlayerObserver = null;
+    }, 20000);
+    return true;
+  }
+  let smartPlayerTrustedIntentAt = 0;
+  function smartPlayerIntentTarget(rawTarget) {
+    try {
+      const target = rawTarget && rawTarget.closest ? rawTarget : null;
+      if (!target) return false;
+      if (target.closest([
+        'video', '.video-js', '.jwplayer', '.plyr', '.dplayer', '.art-video-player',
+        '.clappr-container', '.shaka-video-container', '[data-shaka-player-container]',
+        'iframe[allowfullscreen]', 'iframe[allow*="autoplay"]', 'iframe[allow*="fullscreen"]',
+        'iframe[allow*="picture-in-picture"]', 'iframe[allow*="encrypted-media"]',
+      ].join(','))) return true;
+      if (!smartPlayerRoute()) return false;
+      const control = target.closest('button,[role="button"],[data-episode],[data-server],a[href]');
+      if (!control) return false;
+      const label = String(control.textContent || control.getAttribute('aria-label')
+        || control.getAttribute('title') || control.getAttribute('data-episode')
+        || control.getAttribute('data-server') || '').slice(0, 160);
+      return /(?:play|watch|server|episode|stream)/i.test(label);
+    } catch (_) {
+      return false;
+    }
+  }
+  function sendSmartPlayerIntent() {
+    if (!bridgeRateOk('smart-player-intent', 12, 60000)) return false;
+    try { chrome.runtime.sendMessage({ kind: 'smart-player-intent' }); } catch (_) { return false; }
+    return true;
+  }
+  function noteSmartPlayerIntent(event) {
+    if (!event || event.isTrusted !== true) return;
+    if (event.type === 'keydown' && !/^(?:Enter| |Spacebar|k|K|MediaPlayPause)$/.test(String(event.key || ''))) return;
+    const target = event.type === 'keydown' && document.activeElement ? document.activeElement : event.target;
+    if (!smartPlayerIntentTarget(target)) return;
+    const now = Date.now();
+    if (now - smartPlayerTrustedIntentAt < 400) return;
+    smartPlayerTrustedIntentAt = now;
+    sendSmartPlayerIntent();
+  }
+  try {
+    armSmartPlayerObservation();
+    document.addEventListener('DOMContentLoaded', () => scheduleSmartPlayerScan(0), { once: true });
+    window.addEventListener('load', () => scheduleSmartPlayerScan(0), { once: true });
+    window.addEventListener('popstate', () => armSmartPlayerObservation());
+    window.addEventListener('hashchange', () => armSmartPlayerObservation());
+    document.addEventListener('pointerdown', noteSmartPlayerIntent, true);
+    document.addEventListener('click', noteSmartPlayerIntent, true);
+    document.addEventListener('keydown', noteSmartPlayerIntent, true);
+    document.addEventListener('click', (event) => {
+      if (!event || event.isTrusted === false) return;
+      const target = event.target && event.target.closest
+        ? event.target.closest('a[href],button,[role="button"],[data-episode]')
+        : null;
+      if (!target) return;
+      const href = target.href || '';
+      const label = String(target.textContent || target.getAttribute('aria-label') || target.getAttribute('data-episode') || '').slice(0, 160);
+      if (!smartPlayerRoute(href) && !/(?:watch|episode|stream|play|server)/i.test(label)) return;
+      setTimeout(() => armSmartPlayerObservation(), 0);
+    }, true);
+    [30000, 90000, 180000].forEach((delay) => {
+      setTimeout(() => {
+        if (!smartPlayerEvidence && smartPlayerRoute()) armSmartPlayerObservation();
+      }, delay);
+    });
+  } catch (_) {}
+
   function setLearnedGrabberDomains(learned) {
     try {
       learnedGrabberDomains = Object.keys(learned || {})
@@ -504,8 +658,43 @@
 
   // Relay live config changes (from the options/popup page) into the page.
   try {
-    chrome.runtime.onMessage.addListener((msg) => {
+    const smartFrameReloadedUrls = new Set();
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg && msg.kind === 'config-update' && msg.overrides) sendConfig(msg.overrides);
+      if (msg && msg.kind === 'smart-script-route-changed') {
+        smartFrameReloadedUrls.clear();
+        armSmartPlayerObservation();
+        if (Date.now() - smartPlayerTrustedIntentAt <= 3000) sendSmartPlayerIntent();
+        try { sendResponse({ ok: true }); } catch (_) {}
+        return true;
+      }
+      if (msg && msg.kind === 'smart-script-reload-frame') {
+        let expected = '';
+        let current = '';
+        const failedHost = String(msg.failedHost || '').replace(/^\.+|\.+$/g, '').toLowerCase();
+        const recoveryStage = Number(msg.recoveryStage);
+        try {
+          const expectedUrl = new URL(String(msg.expectedUrl || ''));
+          const currentUrl = new URL(location.href);
+          expectedUrl.hash = '';
+          currentUrl.hash = '';
+          expected = expectedUrl.href;
+          current = currentUrl.href;
+        } catch (_) {}
+        const reloadKey = expected + '|' + failedHost + '|stage-' + String(recoveryStage);
+        if (!expected || expected !== current || !failedHost || !failedHost.includes('.')
+          || !/^[a-z0-9.-]+$/i.test(failedHost) || failedHost.includes('..')
+          || (recoveryStage !== 1 && recoveryStage !== 2)
+          || smartFrameReloadedUrls.has(reloadKey)) {
+          try { sendResponse({ ok: false }); } catch (_) {}
+          return true;
+        }
+        smartFrameReloadedUrls.add(reloadKey);
+        if (smartFrameReloadedUrls.size > 16) smartFrameReloadedUrls.delete(smartFrameReloadedUrls.values().next().value);
+        try { sendResponse({ ok: true }); } catch (_) {}
+        setTimeout(() => { try { location.reload(); } catch (_) {} }, 0);
+        return true;
+      }
     });
   } catch (_) {}
 
@@ -567,7 +756,7 @@
         const hostname = String(msg.hostname || '').replace(/^www\./, '').toLowerCase();
         if (!hostname || !/^[a-z0-9.-]+$/i.test(hostname)) return null;
         if (!relaySamePageHost(hostname)) return null;
-        return { kind: 'adshield-cosmetic', hostname };
+        return { kind: 'adshield-cosmetic', hostname, playerPage: msg.playerPage === true };
       }
       if (msg.kind === 'domain-age') {
         const domain = String(msg.domain || '').replace(/^www\./, '').toLowerCase();
