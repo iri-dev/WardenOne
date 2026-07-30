@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const vm = require('vm');
 
 const src = fs.readFileSync('src/content.js', 'utf8');
 const min = fs.readFileSync('content.min.js', 'utf8');
@@ -18,6 +19,133 @@ function check(name, cond, extra) {
   }
   fail++;
   console.log('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
+}
+
+function runConsentDialog(dialogText, labels) {
+  const clicks = [];
+  const rect = (width, height) => ({ width, height, top: 40, left: 50, right: 50 + width, bottom: 40 + height });
+  let dialog;
+  const controls = labels.map((label) => ({
+    nodeType: 1,
+    tagName: 'BUTTON',
+    type: 'button',
+    innerText: label,
+    textContent: label,
+    className: '',
+    name: '',
+    id: '',
+    isConnected: true,
+    parentElement: null,
+    getAttribute() { return null; },
+    hasAttribute() { return false; },
+    getBoundingClientRect() { return rect(180, 48); },
+    querySelectorAll() { return []; },
+    closest() { return null; },
+    focus() {},
+    click() { clicks.push(label); },
+  }));
+
+  dialog = {
+    nodeType: 1,
+    tagName: 'DIV',
+    innerText: dialogText,
+    textContent: dialogText,
+    className: 'surface',
+    name: '',
+    id: '',
+    isConnected: true,
+    parentElement: null,
+    getAttribute(name) { return name === 'role' ? 'dialog' : null; },
+    hasAttribute() { return false; },
+    getBoundingClientRect() { return rect(820, 650); },
+    querySelectorAll(selector) { return String(selector).startsWith('button') ? controls : []; },
+  };
+  controls.forEach((control) => { control.parentElement = dialog; });
+
+  const body = {
+    nodeType: 1,
+    tagName: 'BODY',
+    innerText: dialogText,
+    textContent: dialogText,
+    isConnected: true,
+    parentElement: null,
+    querySelectorAll() { return []; },
+    getBoundingClientRect() { return rect(1000, 800); },
+    getAttribute() { return null; },
+  };
+  const html = {
+    nodeType: 1,
+    tagName: 'HTML',
+    innerText: dialogText,
+    textContent: dialogText,
+    isConnected: true,
+    parentElement: null,
+    querySelectorAll() { return []; },
+    getBoundingClientRect() { return rect(1000, 800); },
+    getAttribute() { return null; },
+  };
+  dialog.parentElement = body;
+  body.parentElement = html;
+
+  const document = {
+    nodeType: 9,
+    documentElement: html,
+    body,
+    querySelectorAll(selector) {
+      const value = String(selector);
+      if (value.includes('[role="dialog"]')) return [dialog];
+      if (value.startsWith('button')) return controls;
+      return [];
+    },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+    addEventListener() {},
+  };
+  const window = {};
+  window.top = window;
+
+  const context = {
+    window,
+    document,
+    location: {
+      hostname: 'consent-fixture.invalid',
+      pathname: '/prompt',
+      href: 'https://consent-fixture.invalid/prompt',
+      origin: 'https://consent-fixture.invalid',
+    },
+    innerWidth: 1000,
+    innerHeight: 800,
+    URL,
+    CSS: { escape(value) { return String(value); } },
+    getComputedStyle(el) {
+      return {
+        display: 'block',
+        visibility: 'visible',
+        opacity: '1',
+        position: el === dialog ? 'fixed' : 'static',
+      };
+    },
+    MutationObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+    chrome: {
+      storage: {
+        local: { get(_key, done) { done({ wardenone_config: { enabled: true, autoRejectConsent: true } }); } },
+        onChanged: { addListener() {} },
+      },
+      runtime: { sendMessage() {} },
+    },
+    requestAnimationFrame(fn) { fn(); },
+    setTimeout(fn, delay) { if (delay === 0) fn(); return 1; },
+    setInterval() { return 1; },
+    clearInterval() {},
+    console,
+    Date,
+    Set,
+    WeakSet,
+  };
+  vm.runInNewContext(consent, context, { filename: 'consent-reject.js' });
+  return clicks;
 }
 
 check('legacy main-world auto-reject block is disabled in source',
@@ -81,7 +209,31 @@ check('consent reject has an attribute-agnostic banner fallback for obfuscated b
     && /if \(tryGenericReject\(\)\) return;/.test(consent));
 check('generic reject fallback still requires a safe reject control inside a real consent banner',
   /tryGenericReject[\s\S]*safeRejectCandidate\(el\)[\s\S]*consentBannerAncestor\(el\)/.test(consent)
-    && /consentBannerAncestor[\s\S]*hasStrongConsentLanguage\(own\)[\s\S]*PROTECT_RE\.test\(own\)/.test(consent));
+    && /consentBannerAncestor[\s\S]*hasStrongConsentLanguage\(own\)[\s\S]*protectedContainerContext\(n, el\)/.test(consent));
+
+const auxiliaryAuthDialogClicks = runConsentDialog(
+  'Before you continue. Sign in. We use cookies and data to maintain services, measure engagement, build an advertising profile, transfer data, and let you withdraw consent.',
+  ['Reject all', 'Accept all', 'More options']
+);
+check('an explicit consent decision pair is not suppressed by an unrelated authentication control',
+  auxiliaryAuthDialogClicks.length === 1 && auxiliaryAuthDialogClicks[0] === 'Reject all',
+  JSON.stringify(auxiliaryAuthDialogClicks));
+
+const ambiguousAuthDialogClicks = runConsentDialog(
+  'Sign in to manage privacy preferences and cookie settings.',
+  ['Reject all', 'Continue']
+);
+check('authentication context without a complete consent decision pair remains protected',
+  ambiguousAuthDialogClicks.length === 0,
+  JSON.stringify(ambiguousAuthDialogClicks));
+
+const sensitiveDialogClicks = runConsentDialog(
+  'Payment and billing profile. We use cookies and data for personalised ads.',
+  ['Reject all', 'Accept all']
+);
+check('sensitive account context remains protected even when reject and accept labels coexist',
+  sensitiveDialogClicks.length === 0,
+  JSON.stringify(sensitiveDialogClicks));
 
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');

@@ -59,6 +59,9 @@ function build(opts) {
   const state = { opened: [], popupNavigations: [], handles: [], assigned: [], replaced: [], hrefSets: [], submitted: [], emits: [] };
   const listeners = {};
   const sandbox = {};
+  let clockNow = Number.isFinite(opts.now) ? Number(opts.now) : Date.now();
+  class HarnessDate extends Date {}
+  HarnessDate.now = () => clockNow;
   sandbox.window = sandbox;
   sandbox.top = opts.framed ? {} : sandbox;
   sandbox.self = sandbox;
@@ -93,7 +96,7 @@ function build(opts) {
   };
   sandbox.open = nativeOpen;
   sandbox.URL = URL;
-  sandbox.Date = Date;
+  sandbox.Date = opts.fakeClock ? HarnessDate : Date;
   sandbox.Number = Number;
   sandbox.Object = Object;
   sandbox.String = String;
@@ -113,7 +116,7 @@ function build(opts) {
   const iframes = (opts.iframeRects || []).map((r) => makeEl({ tag: 'iframe', rect: r }));
   const playerSurfaces = (opts.playerRects || []).map((r) => makeEl({ tag: 'div', className: 'video-player', rect: r }));
   const loc = {};
-  let hrefVal = opts.href || 'https://videosite.com/watch';
+  let hrefVal = opts.href || 'https://videosite.com/page';
   const nativeHrefGet = function () { return hrefVal; };
   const nativeHrefSet = function (v) { state.hrefSets.push(String(v)); };
   Object.defineProperty(loc, 'href', {
@@ -122,7 +125,7 @@ function build(opts) {
     set: nativeHrefSet,
   });
   loc.hostname = opts.hostname || 'videosite.com';
-  loc.pathname = opts.pathname || '/watch';
+  loc.pathname = opts.pathname || '/page';
   sandbox.location = loc;
   sandbox.document = {
     activeElement: null,
@@ -133,6 +136,13 @@ function build(opts) {
       if (tag === 'video') return videos;
       if (tag === 'iframe') return iframes;
       return [];
+    },
+    querySelector(selector) {
+      const selectors = String(selector || '').split(',').map((part) => part.trim());
+      if (opts.playerSelector && selectors.indexOf(opts.playerSelector) >= 0) return makeEl({ tag: 'div' });
+      if (selectors.indexOf('video') >= 0 && videos.length) return videos[0];
+      if (selectors.some((part) => /^iframe/.test(part)) && iframes.length) return iframes[0];
+      return null;
     },
     querySelectorAll(sel) {
       return String(sel || '').indexOf('player') >= 0 || String(sel || '').indexOf('video') >= 0 ? playerSurfaces : [];
@@ -174,7 +184,8 @@ function build(opts) {
       api.fire('pointerdown', { target: el, clientX: x, clientY: y });
       return api.fire('click', { target: el, clientX: x, clientY: y });
     },
-    open(u) { return sandbox.open(u); },
+    open(u, name, features) { return sandbox.open(u, name, features); },
+    advanceTime(ms) { clockNow += Number(ms) || 0; },
     assign(u) { sandbox.Location.prototype.assign.call(loc, u); },
     setHref(u) { loc.href = u; },
     submit(form) { sandbox.HTMLFormElement.prototype.submit.call(form); },
@@ -637,6 +648,124 @@ function check(name, cond, extra) {
   t.userClick(btn, 50, 50);
   t.assign('https://portal.someschool.example/start/session');
   check('T35 plain icon button does not open a same-tab cross-site redirect', t.state.assigned.length === 0, t.state);
+}
+
+// T36: an existing named frame is a navigation destination, not a popup.
+// Unresolved names and reserved _blank must still pass through popup blocking.
+{
+  const t = build({ href: 'https://videosite.com/watch/episode', pathname: '/watch/episode' });
+  t.iframes.push(makeEl({ tag: 'iframe', attrs: { name: 'MediaFrame' } }));
+  // Even a hostile-looking destination is legitimate when it is loaded into
+  // a frame already owned by the current page.
+  const named = t.open('https://embed.example/player/episode', 'MediaFrame');
+  const missing = t.open('https://popads.example/embed/episode', 'MissingPlayer');
+  const blank = t.open('https://popads.example/embed/episode', '_blank');
+  check('T36 existing named frame stays native', !!named && named.__nativeWindow === true && t.state.opened.length === 1, t.state);
+  check('T36b unresolved named target stays blocked', !!missing && !missing.__nativeWindow && t.state.opened.length === 1, t.state);
+  check('T36c _blank stays blocked', !!blank && !blank.__nativeWindow && t.state.opened.length === 1, t.state);
+}
+
+// T37: native anchor navigation follows the same exact-name rule. Rel-based
+// opener isolation deliberately opts out of reusing a named frame.
+{
+  const t = build({ href: 'https://videosite.com/watch/episode', pathname: '/watch/episode' });
+  t.iframes.push(makeEl({ tag: 'iframe', attrs: { name: 'MediaFrame' } }));
+  const link = (target, rel) => makeEl({
+    tag: 'a',
+    href: 'https://popads.example/embed/episode',
+    target,
+    attrs: { href: 'https://popads.example/embed/episode', target, ...(rel ? { rel } : {}) },
+  });
+  const named = t.userClick(link('MediaFrame'), 50, 50);
+  const wrongCase = t.userClick(link('mediaframe'), 50, 50);
+  const isolated = t.userClick(link('MediaFrame', 'noopener'), 50, 50);
+  check('T37 existing named-frame anchor stays native', named.defaultPrevented === false, named);
+  check('T37b named-frame matching remains case-sensitive', wrongCase.defaultPrevented === true, wrongCase);
+  check('T37c noopener named target stays under popup scrutiny', isolated.defaultPrevented === true, isolated);
+}
+
+// T38: disabled WindowFeatures values do not isolate an existing named frame.
+// Bare/true values still force the request through popup scrutiny.
+{
+  const t = build({ href: 'https://videosite.com/watch/episode', pathname: '/watch/episode' });
+  t.iframes.push(makeEl({ tag: 'iframe', attrs: { name: 'MediaFrame' } }));
+  const numericFalse = t.open('https://embed.example/player/episode', 'MediaFrame', 'width=800,noopener=0,noreferrer=false');
+  const wordFalse = t.open('https://embed.example/player/episode', 'MediaFrame', 'noopener=no noreferrer=off');
+  const isolated = t.open('https://embed.example/player/episode', 'MediaFrame', 'width=800,noopener=yes');
+  check('T38 false-valued opener features reuse the named frame', !!numericFalse && numericFalse.__nativeWindow === true && !!wordFalse && wordFalse.__nativeWindow === true && t.state.opened.length === 2, t.state);
+  check('T38b true-valued opener feature does not reuse the named frame', !!isolated && !isolated.__nativeWindow && t.state.opened.length === 2, t.state);
+}
+
+// T39: form targets use the same exact named-frame and opener-isolation rules.
+{
+  const t = build({ href: 'https://videosite.com/watch/episode', pathname: '/watch/episode' });
+  t.iframes.push(makeEl({ tag: 'iframe', attrs: { name: 'MediaFrame' } }));
+  const form = (rel) => makeEl({
+    tag: 'form',
+    action: 'https://popads.example/embed/episode',
+    target: 'MediaFrame',
+    attrs: { action: 'https://embed.example/player/episode', target: 'MediaFrame', ...(rel ? { rel } : {}) },
+  });
+  const nativeForm = form('');
+  const falseIsolation = form('noopener=0 noreferrer=false');
+  const isolated = form('noopener');
+  t.submit(nativeForm);
+  t.submit(falseIsolation);
+  t.submit(isolated);
+  const nativeEvent = t.fire('submit', { target: nativeForm });
+  const isolatedEvent = t.fire('submit', { target: isolated });
+  check('T39 named-frame forms without isolation remain native', t.state.submitted.length === 2 && nativeEvent.defaultPrevented === false, { state: t.state, event: nativeEvent });
+  check('T39b rel-isolated named-frame form stays under navigation scrutiny', isolatedEvent.defaultPrevented === true, isolatedEvent);
+}
+
+// T40: common player signatures receive compatibility facades, while broad
+// class-name fragments do not turn an ordinary document into a player page.
+{
+  const signatures = [
+    '.video-js',
+    '.jwplayer',
+    '.plyr',
+    '[data-plyr-provider]',
+    '.shaka-video-container',
+    '.dplayer',
+    '.art-video-player',
+    '.clappr-container',
+    '#player',
+    'iframe[src*="/embed/" i]',
+    'iframe[src*="/player/" i]',
+  ];
+  let allRecognized = true;
+  for (const playerSelector of signatures) {
+    const t = build({ playerSelector, href: 'https://videosite.com/home', pathname: '/home' });
+    const blocked = t.open('https://popads.net/landing');
+    allRecognized = allRecognized && !!blocked && blocked.closed === false && t.state.opened.length === 0;
+  }
+  const broadFragments = ['.video-player-ad', '.dplayer-ad', '.art-video-player-shell', '.clappr-container-ad'];
+  let broadRejected = true;
+  for (const playerSelector of broadFragments) {
+    const broad = build({ playerSelector, href: 'https://videosite.com/home', pathname: '/home' });
+    const broadPopup = broad.open('https://popads.net/landing');
+    broadRejected = broadRejected && !!broadPopup && broadPopup.closed === true;
+  }
+  check('T40 bounded common player signatures are recognized', allRecognized, signatures);
+  check('T40b broad player-like class fragments are not recognized', broadRejected, broadFragments);
+}
+
+// T41: a blocked player popup looks open only for the bounded compatibility
+// window, and page code cannot swap in a navigable location object.
+{
+  const t = build({ href: 'https://videosite.com/player/episode', pathname: '/player/episode', fakeClock: true, now: 1000 });
+  const blocked = t.open('https://popads.net/landing');
+  const inertLocation = blocked && blocked.location;
+  const descriptor = blocked && Object.getOwnPropertyDescriptor(blocked, 'location');
+  let redefineBlocked = false;
+  try { Object.defineProperty(blocked, 'location', { value: { href: 'https://popads.net/retry' } }); } catch (_) { redefineBlocked = true; }
+  blocked.location = { href: 'https://popads.net/second-hop' };
+  blocked.location.href = 'https://popads.net/third-hop';
+  check('T41 inert facade location is non-replaceable', descriptor && descriptor.configurable === false && typeof descriptor.get === 'function' && typeof descriptor.set === 'function' && redefineBlocked && blocked.location === inertLocation && blocked.location.href === 'about:blank', descriptor);
+  check('T41b player facade starts open-looking', blocked.closed === false, blocked);
+  t.advanceTime(1501);
+  check('T41c player facade automatically closes after its grace period', blocked.closed === true, blocked);
 }
 
 console.log('');

@@ -126,12 +126,15 @@ const SELECTORS = {
   'button,input': (el) => el.tagName === 'BUTTON' || el.tagName === 'INPUT',
   'form[action]': (el) => el.tagName === 'FORM' && el.attrs.action != null,
   'a,button,input,[role="button"],[tabindex]': (el) => ['A', 'BUTTON', 'INPUT'].includes(el.tagName) || el.attrs.role === 'button' || el.attrs.tabindex != null,
+  'button,[role="button"],video,audio,[tabindex]': (el) => ['BUTTON', 'VIDEO', 'AUDIO'].includes(el.tagName) || el.attrs.role === 'button' || el.attrs.tabindex != null,
   'video,audio': (el) => el.tagName === 'VIDEO' || el.tagName === 'AUDIO',
   form: (el) => el.tagName === 'FORM',
 };
 
 function element(props) {
   props = props || {};
+  const style = Object.assign({}, props.style || {});
+  style.setProperty = function (name, value) { this[name] = String(value); };
   const el = {
     nodeType: 1,
     tagName: String(props.tag || 'div').toUpperCase(),
@@ -144,12 +147,26 @@ function element(props) {
     href: props.href,
     target: props.target || '',
     action: props.action,
-    style: props.style || {},
+    style,
+    clickCount: 0,
     rect: props.rect || { left: 0, top: 0, width: 20, height: 20, right: 20, bottom: 20 },
     getAttribute(name) { return this.attrs[name] != null ? this.attrs[name] : null; },
+    setAttribute(name, value) { this.attrs[name] = String(value); },
     hasAttribute(name) { return this.attrs[name] != null; },
     getBoundingClientRect() { return this.rect; },
     querySelector() { return null; },
+    contains(other) {
+      let current = other;
+      while (current) {
+        if (current === this) return true;
+        current = current.parent || null;
+      }
+      return false;
+    },
+    click() {
+      this.clickCount++;
+      if (typeof props.onClick === 'function') props.onClick(this);
+    },
     closest(selector) {
       const predicate = SELECTORS[selector];
       let current = this;
@@ -177,8 +194,11 @@ function readyConfig(overrides) {
 function buildHarness(options) {
   options = options || {};
   const listeners = Object.create(null);
-  const state = { opened: [], assigned: [], replaced: [], hrefSets: [], emitted: [] };
+  const state = { opened: [], assigned: [], replaced: [], hrefSets: [], emitted: [], submitted: [] };
   const sandbox = {};
+  let clockNow = Number.isFinite(options.now) ? Number(options.now) : Date.now();
+  class HarnessDate extends Date {}
+  HarnessDate.now = () => clockNow;
   sandbox.window = sandbox;
   sandbox.self = sandbox;
   sandbox.top = options.framed ? {} : sandbox;
@@ -209,7 +229,7 @@ function buildHarness(options) {
   }
 
   const locationObject = {};
-  let currentHref = options.href || 'https://yomi.to/watch/187538/5';
+  let currentHref = options.href || 'https://ordinary.example/page';
   const nativeHrefGet = () => currentHref;
   const nativeHrefSet = (value) => { state.hrefSets.push(String(value)); currentHref = String(value); };
   Object.defineProperty(locationObject, 'href', {
@@ -218,17 +238,17 @@ function buildHarness(options) {
     get: nativeHrefGet,
     set: nativeHrefSet,
   });
-  locationObject.hostname = options.hostname || 'yomi.to';
-  locationObject.pathname = options.pathname || '/watch/187538/5';
+  locationObject.hostname = options.hostname || 'ordinary.example';
+  locationObject.pathname = options.pathname || '/page';
   sandbox.location = locationObject;
 
   sandbox.Location = function Location() {};
   sandbox.Location.prototype.assign = function (url) { state.assigned.push(String(url)); };
   sandbox.Location.prototype.replace = function (url) { state.replaced.push(String(url)); };
   sandbox.HTMLFormElement = function HTMLFormElement() {};
-  sandbox.HTMLFormElement.prototype.submit = function () {};
+  sandbox.HTMLFormElement.prototype.submit = function () { state.submitted.push(1); };
   sandbox.URL = URL;
-  sandbox.Date = Date;
+  sandbox.Date = options.fakeClock ? HarnessDate : Date;
   sandbox.Number = Number;
   sandbox.Object = Object;
   sandbox.String = String;
@@ -249,6 +269,16 @@ function buildHarness(options) {
       if (tag === 'video') return videos;
       if (tag === 'iframe') return iframes;
       return [];
+    },
+    querySelector(selector) {
+      const selectors = String(selector || '').split(',').map((part) => part.trim());
+      if (options.playerSelector && selectors.includes(options.playerSelector)) return element({ tag: 'div' });
+      if (selectors.includes('video') && videos.length) return videos[0];
+      return null;
+    },
+    elementsFromPoint(x, y) {
+      if (typeof options.elementsFromPoint === 'function') return options.elementsFromPoint(x, y);
+      return Array.from(options.hitStack || []);
     },
     querySelectorAll() { return []; },
   };
@@ -276,8 +306,10 @@ function buildHarness(options) {
       api.fire('pointerdown', { target, clientX: x, clientY: y });
       return api.fire('click', { target, clientX: x, clientY: y });
     },
-    open(url) { return sandbox.open(url); },
+    open(url, name, features) { return sandbox.open(url, name, features); },
     assign(url) { return sandbox.Location.prototype.assign.call(locationObject, url); },
+    submit(form) { return sandbox.HTMLFormElement.prototype.submit.call(form); },
+    advanceTime(ms) { clockNow += Number(ms) || 0; },
   };
   api.fire('message', {
     source: innerWindow,
@@ -333,18 +365,46 @@ test('ready strict shield suppresses player-triggered window.open ads', () => {
   const click = h.click(video, 400, 250);
   const popup = h.open('https://popads.net/landing');
   assert(click.defaultPrevented === false, 'video click itself was swallowed');
-  assert(popup && popup.closed === true && h.state.opened.length === 0, 'ad popup escaped strict shield');
+  assert(popup && popup.closed === false && h.state.opened.length === 0,
+    'player popup did not receive the short-lived inert compatibility handle');
   assert(popup.document && typeof popup.document.write === 'function', 'blocked popup did not return a safe inert document facade');
   popup.document.write('<script>ignored<\/script>');
   popup.location.href = 'https://popads.net/retry';
   assert(String(popup.location.href) === 'about:blank', 'inert popup facade accepted a navigation');
+  popup.close();
+  assert(popup.closed === true, 'inert popup facade did not honor close()');
+});
+
+test('blocked player ad popup cannot abort a legitimate server switch', () => {
+  const serverButton = element({ tag: 'button', text: '3' });
+  const h = buildHarness({
+    href: 'https://watch.example/watch/series/3',
+    hostname: 'watch.example',
+    pathname: '/watch/series/3',
+  });
+  h.click(serverButton, 250, 650);
+  const popup = h.open('https://popads.example/landing?source=player');
+  let switched = false;
+  if (popup && !popup.closed) switched = true;
+
+  assert(switched, 'blocked popup handle triggered the player\'s !popup || popup.closed abort path');
+  assert(h.state.opened.length === 0, 'the blocked player popup opened a real tab');
+  popup.document.open();
+  popup.document.write('<title>ignored</title>');
+  popup.location.assign('https://popads.example/retry');
+  assert(popup.location.href === 'about:blank', 'the compatibility handle was navigable');
 });
 
 test('player clicks and same-site same-tab actions remain native', () => {
   const video = element({ tag: 'video', rect: { left: 80, top: 60, width: 800, height: 450, right: 880, bottom: 510 } });
-  const h = buildHarness({ videos: [video] });
+  const h = buildHarness({
+    videos: [video],
+    href: 'https://watch.example/watch/series/5',
+    hostname: 'watch.example',
+    pathname: '/watch/series/5',
+  });
   const click = h.click(video, 400, 250);
-  h.assign('https://yomi.to/watch/187538/6');
+  h.assign('https://watch.example/watch/series/6');
   assert(click.defaultPrevented === false, 'normal media click was cancelled');
   assert(h.state.assigned.length === 1, 'same-site next-episode navigation was blocked');
 });
@@ -369,6 +429,7 @@ test('turning forced popup protection off is honored at runtime', () => {
 
 test('target=_blank overlay ads are cancelled but ordinary explicit links are not', () => {
   const frame = element({ tag: 'iframe', rect: { left: 100, top: 80, width: 900, height: 500, right: 1000, bottom: 580 } });
+  const underlying = element({ tag: 'button', text: 'Play' });
   const overlay = element({
     tag: 'a',
     href: 'https://popads.net/landing',
@@ -376,8 +437,10 @@ test('target=_blank overlay ads are cancelled but ordinary explicit links are no
     attrs: { href: 'https://popads.net/landing', target: '_blank' },
     rect: { left: 100, top: 80, width: 900, height: 500, right: 1000, bottom: 580 },
   });
-  const h = buildHarness({ iframes: [frame] });
+  const h = buildHarness({ iframes: [frame], hitStack: [overlay, underlying, frame] });
   assert(h.click(overlay, 500, 300).defaultPrevented === true, 'blank-target player overlay was not cancelled');
+  assert(overlay.style['pointer-events'] === 'none', 'blocked popup overlay remained pointer-interactive');
+  assert(underlying.clickCount === 1, 'the blocked overlay did not preserve the underlying player activation');
 
   const link = element({
     tag: 'a',
@@ -424,6 +487,97 @@ test('subframes guard popups but leave their own navigation primitives native', 
   assert(h.state.assigned.length === 1, 'subframe location.assign was patched');
 });
 
+test('child /stream players receive an inert blocked-popup handle without stalled navigation', () => {
+  const h = buildHarness({
+    framed: true,
+    href: 'https://embed.example/stream/series/5/sub',
+    hostname: 'embed.example',
+    pathname: '/stream/series/5/sub',
+  });
+  const blocked = h.open('https://popads.net/landing');
+
+  assert(blocked && blocked.closed === false && h.state.opened.length === 0,
+    'child player popup was not blocked with a usable return object');
+  assert(blocked.document && typeof blocked.document.write === 'function',
+    'blocked child-player popup returned a crash-prone null/incomplete handle');
+  let followUpError = null;
+  try {
+    blocked.document.open();
+    blocked.document.write('<title>ignored</title>');
+    blocked.document.close();
+    blocked.location.assign('https://popads.net/second-hop');
+    blocked.location.href = 'https://popads.net/third-hop';
+  } catch (error) {
+    followUpError = error;
+  }
+  assert(!followUpError, 'blocked popup follow-up code can crash or stall the player');
+  assert(blocked.location.href === 'about:blank',
+    'inert popup handle allowed a delayed popup navigation');
+  blocked.close();
+  assert(blocked.closed === true, 'child-player popup facade did not transition closed');
+
+  h.assign('https://embed.example/stream/series/6/sub');
+  assert(h.state.assigned.length === 1,
+    'popup blocking patched the child player navigation primitive');
+});
+
+test('player popup facade expires and its inert location cannot be replaced', () => {
+  const h = buildHarness({
+    href: 'https://player.example/player/episode',
+    hostname: 'player.example',
+    pathname: '/player/episode',
+    fakeClock: true,
+    now: 1000,
+  });
+  const blocked = h.open('https://popads.net/landing');
+  const locationBefore = blocked.location;
+  const descriptor = Object.getOwnPropertyDescriptor(blocked, 'location');
+  let redefineFailed = false;
+  try {
+    Object.defineProperty(blocked, 'location', { value: { href: 'https://popads.net/retry' } });
+  } catch (_) {
+    redefineFailed = true;
+  }
+  blocked.location = { href: 'https://popads.net/second-hop' };
+  blocked.location.href = 'https://popads.net/third-hop';
+
+  assert(descriptor && descriptor.configurable === false && typeof descriptor.get === 'function' && typeof descriptor.set === 'function',
+    'facade location is not protected by a non-configurable inert accessor');
+  assert(redefineFailed && blocked.location === locationBefore && blocked.location.href === 'about:blank',
+    'page code replaced or navigated the facade location');
+  assert(blocked.closed === false, 'player facade did not begin in its compatibility grace period');
+  h.advanceTime(1501);
+  assert(blocked.closed === true, 'player facade remained open-looking after its grace period');
+});
+
+test('player detection uses bounded common signatures without broad class fragments', () => {
+  const signatures = [
+    '.video-js',
+    '.jwplayer',
+    '.plyr',
+    '[data-plyr-provider]',
+    '.shaka-video-container',
+    '.dplayer',
+    '.art-video-player',
+    '.clappr-container',
+    '#player',
+    'iframe[src*="/embed/" i]',
+    'iframe[src*="/player/" i]',
+  ];
+  for (const playerSelector of signatures) {
+    const h = buildHarness({ playerSelector, href: 'https://ordinary.example/home', pathname: '/home' });
+    const blocked = h.open('https://popads.net/landing');
+    assert(blocked && blocked.closed === false && h.state.opened.length === 0,
+      'missed bounded player signature: ' + playerSelector);
+  }
+  for (const playerSelector of ['.video-player-ad', '.dplayer-ad', '.art-video-player-shell', '.clappr-container-ad']) {
+    const broad = buildHarness({ playerSelector, href: 'https://ordinary.example/home', pathname: '/home' });
+    const blocked = broad.open('https://popads.net/landing');
+    assert(blocked && blocked.closed === true,
+      'broad player-like class fragment incorrectly activated player compatibility mode: ' + playerSelector);
+  }
+});
+
 test('typing is not a popup-authorizing gesture and trusted names require exact hosts', () => {
   const typing = buildHarness();
   typing.fire('keydown', { key: 'x', target: element({ tag: 'input' }) });
@@ -449,6 +603,83 @@ test('central popup matcher also covers native target=_blank links', () => {
     text: 'Open offer',
   });
   assert(h.click(link, 20, 20).defaultPrevented === true, 'registered matcher missed a native blank-target link');
+});
+
+test('existing named frames remain usable without opening unresolved or _blank targets', () => {
+  const frame = element({ tag: 'iframe', attrs: { name: 'MediaFrame' } });
+  const h = buildHarness({
+    iframes: [frame],
+    href: 'https://watch.example/watch/series/3',
+    hostname: 'watch.example',
+    pathname: '/watch/series/3',
+  });
+  const named = h.open('https://embed.example/player/episode', 'MediaFrame');
+  const missing = h.open('https://embed.example/player/episode', 'MissingPlayer');
+  const blank = h.open('https://embed.example/player/episode', '_blank');
+
+  assert(named && named.native === true && h.state.opened.length === 1,
+    'existing named-frame navigation was treated as a popup');
+  assert(missing && missing.native !== true && h.state.opened.length === 1,
+    'unresolved custom target escaped popup blocking');
+  assert(blank && blank.native !== true && h.state.opened.length === 1,
+    '_blank escaped popup blocking');
+});
+
+test('named-frame WindowFeatures honor explicit boolean values', () => {
+  const frame = element({ tag: 'iframe', attrs: { name: 'MediaFrame' } });
+  const h = buildHarness({ iframes: [frame], pathname: '/watch/episode' });
+  const numericFalse = h.open('https://embed.example/player/episode', 'MediaFrame', 'width=800,noopener=0,noreferrer=false');
+  const wordFalse = h.open('https://embed.example/player/episode', 'MediaFrame', 'noopener=no noreferrer=off');
+  const isolated = h.open('https://embed.example/player/episode', 'MediaFrame', 'noopener=true');
+
+  assert(numericFalse && numericFalse.native === true && wordFalse && wordFalse.native === true && h.state.opened.length === 2,
+    'false-valued opener features incorrectly isolated the named frame');
+  assert(isolated && isolated.native !== true && h.state.opened.length === 2,
+    'true-valued noopener incorrectly reused the named frame');
+});
+
+test('named-frame anchors require an exact frame name and no opener isolation', () => {
+  const frame = element({ tag: 'iframe', attrs: { name: 'MediaFrame' } });
+  const h = buildHarness({ iframes: [frame] });
+  const link = (target, rel) => element({
+    tag: 'a',
+    href: 'https://popads.example/player/episode',
+    target,
+    attrs: Object.assign({ href: 'https://popads.example/player/episode', target }, rel ? { rel } : {}),
+  });
+
+  assert(h.click(link('MediaFrame'), 20, 20).defaultPrevented === false,
+    'anchor navigation into an existing named frame was cancelled');
+  assert(h.click(link('mediaframe'), 20, 20).defaultPrevented === true,
+    'case-mismatched custom target escaped popup blocking');
+  assert(h.click(link('MediaFrame', 'noopener'), 20, 20).defaultPrevented === true,
+    'noopener custom target incorrectly reused the named-frame exception');
+  assert(h.click(link('MediaFrame', 'noopener=0 noreferrer=false'), 20, 20).defaultPrevented === false,
+    'false-valued opener isolation incorrectly blocked the named-frame anchor');
+});
+
+test('named-frame forms honor rel opener isolation', () => {
+  const frame = element({ tag: 'iframe', attrs: { name: 'MediaFrame' } });
+  const h = buildHarness({ iframes: [frame], pathname: '/watch/episode' });
+  const form = (rel) => element({
+    tag: 'form',
+    action: 'https://embed.example/player/episode',
+    target: 'MediaFrame',
+    attrs: Object.assign({ action: 'https://embed.example/player/episode', target: 'MediaFrame' }, rel ? { rel } : {}),
+  });
+  const nativeForm = form('');
+  const falseIsolation = form('noopener=0 noreferrer=false');
+  const isolated = form('noreferrer');
+  h.submit(nativeForm);
+  h.submit(falseIsolation);
+  h.submit(isolated);
+  const nativeEvent = h.fire('submit', { target: nativeForm });
+  const isolatedEvent = h.fire('submit', { target: isolated });
+
+  assert(h.state.submitted.length === 2 && nativeEvent.defaultPrevented === false,
+    'ordinary or false-isolation named-frame form lost native submission');
+  assert(isolatedEvent.defaultPrevented === true,
+    'rel-isolated named-frame form bypassed navigation scrutiny');
 });
 
 test('page code cannot replace or unregister the protected core popup policy', () => {

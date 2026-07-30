@@ -33,3 +33,6 @@ tmp/
 
 # Local backups of the ad-block engines before the rewrite (not published)
 backup/
+
+# Local publish worktree (nested clone, not source)
+.publish/

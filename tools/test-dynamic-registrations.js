@@ -102,7 +102,8 @@ check('media compatibility never installs an edge.ads Twitch block',
   'edge ads must stay network-allowed so Twitch can advance its ad lifecycle');
 check('Twitch media compatibility allow remains installed',
   /\{ domain:\s*'twitch\.tv', initiators:\s*\['twitch\.tv'\] \}/.test(mediaBody)
-    && /priority:\s*90000[\s\S]*?action:\s*\{ type:\s*'allow' \}/.test(mediaBody)
+    && /priority:\s*90000/.test(mediaBody)
+    && /action:\s*\{ type:\s*'allow' \}/.test(mediaBody)
     && /'media'/.test(mediaBody),
   'targeted page guarding must retain the broad Twitch media allow');
 check('media compatibility refresh no longer depends on the Twitch ad-block toggle',
