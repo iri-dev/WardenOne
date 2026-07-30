@@ -1064,15 +1064,24 @@
       }
 
     },
-    playerPageDetected=()=>{
-      try{
-        return PLAYER_ROUTE_RE.test(location.pathname||"")||!!document.querySelector(PLAYER_PAGE_SELECTOR)
-      }
-      catch(_){
-        return!1
-      }
+    playerPageDetected=(()=>{
+      let scannedAt=0,
+      scanCached=!1;
+      return()=>{
+        try{
+          if(PLAYER_ROUTE_RE.test(location.pathname||""))return!0;
+          const now=Date.now();
+          if(scannedAt&&now-scannedAt<300)return scanCached;
+          scannedAt=now,
+          scanCached=!!document.querySelector(PLAYER_PAGE_SELECTOR);
+          return scanCached
+        }
+        catch(_){
+          return!1
+        }
 
-    };
+      }
+    })();
     !function(){
       try{
         const host=location.hostname;
@@ -7249,11 +7258,15 @@
         }
 
       },
+      scWalkBudget={
+        n:0
+      },
       scWalkJson=(obj,
       parts,
       i,
       del)=>{
         if(null==obj||"object"!=typeof obj)return!1;
+        if(--scWalkBudget.n<0)return!1;
         const key=parts[i],
         last=i===parts.length-1,
         keys="*"===key||"[]"===key?Object.keys(obj):[key];
@@ -7270,9 +7283,11 @@
         const rem=String(remove||"").split(/\s+/).filter(Boolean),
         req=String(required||"").split(/\s+/).filter(Boolean);
         if(!rem.length)return;
+        if(adShieldVideoPlatform)return;
         const prune=obj=>{
           if(!pageMutationScriptletRuntimeOn())return obj;
           try{
+            scWalkBudget.n=2e4;
             if(req.length&&!req.every(p=>scWalkJson(obj,
             p.split("."),
             0,
