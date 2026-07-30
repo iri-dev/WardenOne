@@ -6817,8 +6817,8 @@
             styleEl.id="rg-adshield-style",
             styleEl.setAttribute("type",
             "text/css")),
-            styleEl.textContent=text,
-            (document.head||document.documentElement).appendChild(styleEl)
+            styleEl.textContent!==text&&(styleEl.textContent=text),
+            styleEl.isConnected||(document.head||document.documentElement).appendChild(styleEl)
           }
           catch(_){
 
