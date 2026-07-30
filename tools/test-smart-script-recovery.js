@@ -10,6 +10,14 @@ const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 
+// Track the shipped cap instead of restating it, so raising the production bound
+// re-exercises these tests at the new value rather than silently disagreeing.
+const RECOVERY_MAX_HOSTS_PER_TAB = Number(
+  (BACKGROUND.match(/SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB = (\d+)/) || [])[1],
+);
+assert(Number.isInteger(RECOVERY_MAX_HOSTS_PER_TAB) && RECOVERY_MAX_HOSTS_PER_TAB > 0,
+  'could not read SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB from background.js');
+
 function sourceBetween(start, end) {
   const from = BACKGROUND.indexOf(start);
   const to = BACKGROUND.indexOf(end, from + start.length);
@@ -104,7 +112,7 @@ function createHarness(options = {}) {
     SCRIPT_SHIELD_MODE_KEY: 'wardenone_script_shield_mode',
     SCRIPT_TRUSTED_KEY: 'wardenone_script_trusted_hosts',
     SMART_SCRIPT_RECOVERY_MAX_TABS: 32,
-    SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB: 4,
+    SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB: RECOVERY_MAX_HOSTS_PER_TAB,
     SMART_SCRIPT_PLAYER_CONTEXT_MAX: 256,
     SMART_SCRIPT_PLAYER_INTENT_MAX: 256,
     SMART_SCRIPT_PENDING_MAX: 128,
@@ -151,7 +159,8 @@ function createHarness(options = {}) {
       + 'applyScriptShieldRules, buildScriptShieldRulePlan, handleSmartScriptFailure, '
       + 'handleSmartScriptPlayerContext, handleSmartScriptPlayerIntent, clearSmartScriptRecoveryForTab, handleSmartScriptTopNavigation, '
       + 'normalizeSmartScriptFailure, SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PENDING_ERRORS, '
-      + 'SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_RECOVERED_TABS, SMART_SCRIPT_RETRY_KEYS, SMART_SCRIPT_NAVIGATION_EPOCHS};',
+      + 'SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_RECOVERED_TABS, SMART_SCRIPT_RETRY_KEYS, SMART_SCRIPT_NAVIGATION_EPOCHS, '
+      + 'SCRIPT_SHIELD_PLAYER_INFRA_HOSTS};',
     sandbox,
   );
   return { api: sandbox.__api, state };
@@ -221,8 +230,15 @@ async function testRecoveryAndRetryBound() {
     rule.condition && Array.from(rule.condition.tabIds || []).includes(4));
   assert(tabRule && tabRule.action.type === 'block', 'recovered tab has no replacement Smart block');
   assert.strictEqual(tabRule.condition.domainType, 'thirdParty');
-  assert.deepStrictEqual(Array.from(tabRule.condition.excludedRequestDomains || []), ['cdn.media.example'],
+  assert.deepStrictEqual(
+    Array.from(tabRule.condition.excludedRequestDomains || [])
+      .filter((host) => !api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)),
+    ['cdn.media.example'],
     'replacement rule did not exempt only the failed request-domain family');
+  api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.forEach((host) => {
+    assert(Array.from(tabRule.condition.excludedRequestDomains || []).includes(host),
+      'replacement rule dropped the always-allowed player infrastructure host ' + host);
+  });
   assert(!state.sessionRules.some((rule) => rule.action && rule.action.type === 'allow'),
     'recovery installed an allow action');
   assert.strictEqual(state.reloadCalls.length, 1, 'failing frame was not reloaded exactly once');
@@ -304,7 +320,8 @@ async function testRecoveryAndRetryBound() {
   const updatedTabRule = state.sessionRules.find((rule) =>
     rule.condition && Array.from(rule.condition.tabIds || []).includes(4));
   assert.deepStrictEqual(
-    Array.from(updatedTabRule.condition.excludedRequestDomains || []),
+    Array.from(updatedTabRule.condition.excludedRequestDomains || [])
+      .filter((host) => !api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)),
     ['cdn.media.example', 'modules.media.example'],
     'bounded per-tab rule did not retain both failed request-domain families',
   );
@@ -458,29 +475,59 @@ async function testTrustedIntentGateAndStaleness() {
     documentUrl: sender.url,
     initiator: 'https://stream.example',
   };
-  await api.handleSmartScriptPlayerContext(sender, { evidence: 'known-player-root' });
+  // A blocked script with no player context at all must never recover: evidence is
+  // what scopes this to real players, and without it there is nothing to act on.
   assert.strictEqual(await api.handleSmartScriptFailure(failure), false,
-    'framework DOM and a blocked script recovered without trusted user intent');
+    'a blocked script recovered with no player evidence for the frame');
   assert.strictEqual(state.reloadCalls.length, 0);
-  const intentResult = await api.handleSmartScriptPlayerIntent(sender);
-  assert.strictEqual(intentResult.recovered, true, 'trusted player intent did not release the pending failed script');
-  assert.strictEqual(state.reloadCalls.length, 1);
 
+  // Verified player evidence alone drives stage one. This is deliberate: when the
+  // player UI is built by the blocked script, no clickable player element ever
+  // exists, so a gesture requirement here can never be satisfied. Stage one only
+  // drops Smart's heuristic for this host in this tab and emits no allow rule.
+  await api.handleSmartScriptPlayerContext(sender, { evidence: 'known-player-root' });
+  assert.strictEqual(state.reloadCalls.length, 1,
+    'verified player evidence did not release the pending failed script');
+  assert.strictEqual(state.reloadCalls[0].message.recoveryStage, 1);
+  assert(!state.sessionRules.some((rule) => rule.action && rule.action.type === 'allow'),
+    'evidence-only stage one installed an allow rule');
+
+  // Stage two emits a real allow rule, so it still requires a fresh trusted gesture
+  // and evidence alone must never reach it.
+  assert.strictEqual(await api.handleSmartScriptFailure(failure), false,
+    'evidence alone escaped into the stronger second stage');
+  assert.strictEqual(state.reloadCalls.length, 1, 'stage two ran without a player interaction');
+  assert(!state.sessionRules.some((rule) => rule.action && rule.action.type === 'allow'),
+    'stage two installed an allow before a trusted interaction');
+  const intentResult = await api.handleSmartScriptPlayerIntent(sender);
+  assert.strictEqual(intentResult.recovered, true, 'trusted player intent did not activate the second stage');
+  assert.strictEqual(state.reloadCalls.length, 2);
+  assert.strictEqual(state.reloadCalls[1].message.recoveryStage, 2);
+
+  // A stale gesture must not authorize stage two either.
   const stale = createHarness();
   await stale.api.applyScriptShieldRules('smart');
   const staleSender = {
     tab: { id: 22, url: 'https://stream.example/watch/stale' }, frameId: 0,
     url: 'https://stream.example/watch/stale',
   };
-  await stale.api.handleSmartScriptPlayerContext(staleSender, { evidence: 'route-video' });
-  await stale.api.handleSmartScriptPlayerIntent(staleSender);
-  stale.api.SMART_SCRIPT_PLAYER_INTENTS.get('22:0').at = Date.now() - 15001;
-  assert.strictEqual(await stale.api.handleSmartScriptFailure(Object.assign({}, failure, {
+  const staleFailure = Object.assign({}, failure, {
     tabId: 22,
     documentUrl: staleSender.url,
     initiator: 'https://stream.example',
-  })), false, 'stale player intent authorized a generic host recovery');
-  assert.strictEqual(stale.state.reloadCalls.length, 0);
+  });
+  await stale.api.handleSmartScriptPlayerContext(staleSender, { evidence: 'route-video' });
+  await stale.api.handleSmartScriptPlayerIntent(staleSender);
+  assert.strictEqual(await stale.api.handleSmartScriptFailure(staleFailure), true);
+  assert.strictEqual(stale.state.reloadCalls.length, 1);
+  // Stage one consumed that gesture. Register another, then age it past its TTL.
+  await stale.api.handleSmartScriptPlayerIntent(staleSender);
+  stale.api.SMART_SCRIPT_PLAYER_INTENTS.get('22:0').at = Date.now() - 15001;
+  assert.strictEqual(await stale.api.handleSmartScriptFailure(staleFailure), false,
+    'stale player intent authorized the stronger second stage');
+  assert.strictEqual(stale.state.reloadCalls.length, 1);
+  assert(!stale.state.sessionRules.some((rule) => rule.action && rule.action.type === 'allow'),
+    'stale player intent produced a compatibility allow rule');
 }
 
 async function testNavigationEpochCancelsInFlightRecovery() {
@@ -523,7 +570,10 @@ async function testNavigationEpochCancelsInFlightRecovery() {
   const tabRule = state.sessionRules.find((rule) =>
     rule.condition && Array.from(rule.condition.tabIds || []).includes(31));
   assert(tabRule, 'new epoch replacement rule was lost when the old recovery finished');
-  assert.deepStrictEqual(Array.from(tabRule.condition.excludedRequestDomains || []), ['new-route.cdn.example'],
+  assert.deepStrictEqual(
+    Array.from(tabRule.condition.excludedRequestDomains || [])
+      .filter((host) => !api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)),
+    ['new-route.cdn.example'],
     'old recovery host leaked into the new navigation epoch');
 }
 
@@ -634,25 +684,29 @@ async function testRestartRehydrationAndCaps() {
     url: 'https://shared.cdn.example/bootstrap-' + index + '.js',
     documentUrl: capSender.url, initiator: 'https://watch.example',
   });
-  for (let index = 1; index <= 4; index++) {
+  for (let index = 1; index <= RECOVERY_MAX_HOSTS_PER_TAB; index++) {
     await pathCapped.api.handleSmartScriptPlayerIntent(capSender);
     assert.strictEqual(await pathCapped.api.handleSmartScriptFailure(pathFailure(index)), true,
       'bounded same-host stage-one path ' + index + ' was rejected early');
   }
   await pathCapped.api.handleSmartScriptPlayerIntent(capSender);
-  assert.strictEqual(await pathCapped.api.handleSmartScriptFailure(pathFailure(5)), false,
-    'fifth exact path exceeded the four-entry per-tab recovery cap');
-  assert.strictEqual(pathCapped.api.SMART_SCRIPT_RECOVERED_TABS.get(90).stageOne.length, 4,
+  assert.strictEqual(await pathCapped.api.handleSmartScriptFailure(pathFailure(RECOVERY_MAX_HOSTS_PER_TAB + 1)), false,
+    'exact path past the per-tab recovery cap was still recovered');
+  assert.strictEqual(pathCapped.api.SMART_SCRIPT_RECOVERED_TABS.get(90).stageOne.length, RECOVERY_MAX_HOSTS_PER_TAB,
     'exact-path stage-one state exceeded the per-tab cap');
   assert.deepStrictEqual(Array.from(pathCapped.api.SMART_SCRIPT_RECOVERED_TABS.get(90).failedHosts || []),
     ['shared.cdn.example'], 'same-host path cap duplicated the request-domain family');
-  assert.strictEqual(pathCapped.state.reloadCalls.length, 4, 'fifth same-host path received a recovery reload');
+  assert.strictEqual(pathCapped.state.reloadCalls.length, RECOVERY_MAX_HOSTS_PER_TAB,
+    'same-host path past the cap received a recovery reload');
 
   const capped = createHarness();
   for (let id = 1; id <= 60; id++) {
     capped.api.SMART_SCRIPT_RECOVERED_TABS.set(id, {
       at: Date.now(),
-      failedHosts: ['cdn-' + id + '.cdn.example', 'two-' + id + '.cdn.example', 'three-' + id + '.cdn.example', 'four-' + id + '.cdn.example', 'overflow-' + id + '.cdn.example'],
+      failedHosts: Array.from(
+        { length: RECOVERY_MAX_HOSTS_PER_TAB + 1 },
+        (_unused, index) => 'host-' + index + '-' + id + '.cdn.example',
+      ),
     });
   }
   await capped.api.applyScriptShieldRules('smart');
@@ -661,7 +715,10 @@ async function testRestartRehydrationAndCaps() {
   assert.strictEqual(capped.state.sessionRules.filter((rule) => rule.condition && rule.condition.tabIds).length, 32,
     'per-tab Smart replacement rule count exceeded the fixed cap');
   for (const rule of capped.state.sessionRules.filter((candidate) => candidate.condition && candidate.condition.tabIds)) {
-    assert.strictEqual(Array.from(rule.condition.excludedRequestDomains || []).length, 4,
+    assert.strictEqual(
+      Array.from(rule.condition.excludedRequestDomains || [])
+        .filter((host) => !capped.api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)).length,
+      RECOVERY_MAX_HOSTS_PER_TAB,
       'request-domain family exclusions exceeded the per-tab cap');
   }
 }
