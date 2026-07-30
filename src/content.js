@@ -3696,6 +3696,10 @@
         "checkout.com",
         "cloudflare.com",
         "cloudflare.net",
+        "hcaptcha.com",
+        "recaptcha.net",
+        "arkoselabs.com",
+        "funcaptcha.com",
         "gravatar.com"],
         families=[{
           pages:["spotify.com",
