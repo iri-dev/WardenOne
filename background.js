@@ -1770,6 +1770,9 @@ const NEVER_BLOCK_ALLOW_RULE_BASE = 745000;
 const NEVER_BLOCK_ALLOW_MAX = 200;
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
+// Blocklist-refresh chatter is opt-in; it fired on every update in the service
+// worker console. Warnings and errors are unaffected.
+const WO_LIST_DEBUG = false;
 const SCRIPT_SHIELD_RULE_BASE = 930000;
 const SCRIPT_SHIELD_RULE_MAX = 1000;
 const SMART_SCRIPT_RECOVERY_MAX_TABS = 32;
@@ -8476,7 +8479,7 @@ async function fetchListSource(url, reason, integrity) {
         }),
       };
     }
-    console.log('[WardenOne] fetched', domains.length, 'domains,', optionRules.length, 'option-rules from', url);
+    if (WO_LIST_DEBUG) console.log('[WardenOne] fetched', domains.length, 'domains,', optionRules.length, 'option-rules from', url);
     return { ok: true, url, domains, optionRules, integrityRecord: verdict.record };
   } catch (e) {
     const err = String(e);
@@ -9130,7 +9133,7 @@ async function updateRemoteListsCore(reason) {
     await applyLearnedRules();
     await applyTrackerLearnerRules();
     await writeStorageTelemetry('remote-list-update', { storedDomainCount: storedDomains.storedCount || 0 });
-    console.log('[WardenOne] updated dynamic blocklist:', domains.length, 'domain rules,', optionRules.length, 'option rules,', remoteCount, 'remote domains (' + reason + ')');
+    if (WO_LIST_DEBUG) console.log('[WardenOne] updated dynamic blocklist:', domains.length, 'domain rules,', optionRules.length, 'option rules,', remoteCount, 'remote domains (' + reason + ')');
     return { ok: true, meta };
   } catch (e) {
     console.warn('[WardenOne] failed applying dynamic rules:', e);
