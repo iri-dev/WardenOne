@@ -205,6 +205,12 @@
   let smartPlayerObserver = null;
   let smartPlayerObserverGeneration = 0;
   let smartPlayerHeartbeat = null;
+  const SMART_PLAYER_HEARTBEAT_MAX = 15;
+  function stopSmartPlayerHeartbeat() {
+    if (!smartPlayerHeartbeat) return;
+    try { clearInterval(smartPlayerHeartbeat); } catch (_) {}
+    smartPlayerHeartbeat = null;
+  }
   function smartPlayerRoute(rawUrl) {
     try {
       const url = rawUrl ? new URL(String(rawUrl), location.href) : new URL(location.href);
@@ -249,8 +255,18 @@
       smartPlayerObserver = null;
     }
     if (!smartPlayerHeartbeat) {
+      // Bounded on purpose. bridge.js runs in EVERY frame, so an unbounded beat
+      // meant one permanent wakeup per frame that ever saw a player, for the life
+      // of the frame. That is the same cost the Browser Abuse Guard was removed to
+      // avoid. Stop once the evidence is gone, once the context is established
+      // long enough to be acted on, or as soon as the frame goes away.
+      let beats = 0;
       smartPlayerHeartbeat = setInterval(() => {
-        if (smartPlayerEvidence) sendSmartPlayerContext(true);
+        if (!smartPlayerEvidence || ++beats > SMART_PLAYER_HEARTBEAT_MAX) {
+          stopSmartPlayerHeartbeat();
+          return;
+        }
+        sendSmartPlayerContext(true);
       }, 60000);
     }
     return true;
@@ -334,6 +350,7 @@
     sendSmartPlayerIntent();
   }
   try {
+    window.addEventListener('pagehide', stopSmartPlayerHeartbeat, { once: true });
     armSmartPlayerObservation();
     document.addEventListener('DOMContentLoaded', () => scheduleSmartPlayerScan(0), { once: true });
     window.addEventListener('load', () => scheduleSmartPlayerScan(0), { once: true });
