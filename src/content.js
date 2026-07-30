@@ -3831,7 +3831,43 @@
           "me.com",
           "apple-cloudkit.com",
           "cdn-apple.com"]
-        }];
+        }],
+        /* Apps built on a managed backend send their own session token to their own
+        database host, which sits on a different registrable domain. Blocking that
+        breaks the app outright. Trusting these platforms globally is not acceptable
+        either: anyone can register a project on them in minutes, so a blanket rule
+        would let any page ship tokens to a backend an attacker controls. Trust the
+        destination only when the page itself declares that exact host, which is how
+        a real app configures its own backend. */
+        managedBackends=["supabase.co",
+        "supabase.in",
+        "firebaseio.com",
+        "firebaseapp.com",
+        "cloudfunctions.net",
+        "appwrite.io"],
+        declaredHostCache=new Map(),
+        pageDeclaresHost=host=>{
+          const want=normalizeHost(host);
+          if(!want)return!1;
+          if(declaredHostCache.has(want))return declaredHostCache.get(want);
+          let found=!1;
+          try{
+            const nodes=document.querySelectorAll("script[src],link[href]");
+            for(let i=0;i<nodes.length&&!found;i++){
+              const raw=nodes[i].getAttribute("src")||nodes[i].getAttribute("href")||"";
+              if(!raw)continue;
+              try{
+                if(normalizeHost(new URL(raw,
+                location.href).hostname)===want)found=!0
+              }
+              catch(_){}
+            }
+          }
+          catch(_){}
+          declaredHostCache.set(want,
+          found);
+          return found
+        };
         return(pageHost,
         targetHost)=>{
           const page=normalizeHost(pageHost),
@@ -3839,6 +3875,8 @@
           if(!page||!target)return!1;
           if(hostMatchesAny(target,
           globalDestinations))return!0;
+          if(hostMatchesAny(target,
+          managedBackends)&&pageDeclaresHost(targetHost))return!0;
           const family=families.find(candidate=>hostMatchesAny(page,
           candidate.pages));
           return!!family&&hostMatchesAny(target,
