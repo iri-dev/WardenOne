@@ -14,6 +14,10 @@
   'use strict';
 
   const VERSION = '1.0.0';
+  // Hook-status chatter is opt-in: it printed into every twitch.tv page console
+  // on every load. Ad-time logging stays on, since that is what makes a missed
+  // ad diagnosable after the fact.
+  const WO_TWITCH_DEBUG = false;
   const TWITCH_HOST_RE = /(^|\.)twitch\.tv$/i;
   const GQL_URL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
   const MASTER_URL_RE = /\/api\/channel\/hls\/[^/?#]+\.m3u8/i;
@@ -1996,11 +2000,11 @@
       // skipping module workers silently bypasses every playlist interception.
       var woTwitchBlob = protocol === 'blob:' && workerOriginIsTwitch(scriptUrl);
       if (!enabled || !woTwitchBlob) {
-        if (woTwitchBlob) { try { console.log('[WO-Twitch] worker skipped (adblock disabled)'); } catch (_) {} }
+        if (WO_TWITCH_DEBUG && woTwitchBlob) { try { console.log('[WO-Twitch] worker skipped (adblock disabled)'); } catch (_) {} }
         return constructWorker(scriptUrl, options);
       }
       const originalSource = readWorkerSource(scriptUrl);
-      if (!originalSource) { try { console.log('[WO-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} return constructWorker(scriptUrl, options); }
+      if (WO_TWITCH_DEBUG && !originalSource) { try { console.log('[WO-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} return constructWorker(scriptUrl, options); }
 
       let wrapperUrl = '';
       try {
@@ -2009,7 +2013,7 @@
           JSON.stringify(streamInterceptionEnabled()) + ');\n';
         wrapperUrl = URL.createObjectURL(new Blob([bootstrap, originalSource], { type: 'application/javascript' }));
         const worker = constructWorker(wrapperUrl, options);
-        try { console.log('[WO-Twitch] worker HOOKED — ad interception active'); } catch (_) {}
+        if (WO_TWITCH_DEBUG) { try { console.log('[WO-Twitch] worker HOOKED — ad interception active'); } catch (_) {} }
         workers.add(worker);
         let revokeTimer = setTimeout(() => {
           try { URL.revokeObjectURL(wrapperUrl); } catch (_) {}
