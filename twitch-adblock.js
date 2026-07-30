@@ -16,6 +16,7 @@
   const VERSION = '1.0.0';
   const TWITCH_HOST_RE = /(^|\.)twitch\.tv$/i;
   const GQL_URL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
+  const MASTER_URL_RE = /\/api\/channel\/hls\/[^/?#]+\.m3u8/i;
   const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
   const DEFAULT_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
   const MESSAGE_FLAG = '__woTwitchAdblock';
@@ -673,10 +674,55 @@
     }
   }
 
+  function pageChannelName() {
+    try {
+      const match = /^\/([^/?#]+)/.exec(location.pathname || '');
+      return match ? decodeURIComponent(match[1]).toLowerCase() : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  let lastMaster = null;
+
+  function broadcastMaster(url, text) {
+    if (!text) return;
+    const channel = pageChannelName();
+    // On a fresh load the master is fetched before the player creates its worker,
+    // so a live broadcast alone would reach nobody. Keep the last one and replay
+    // it on handshake -- that is precisely the pre-roll case.
+    lastMaster = { url: url, text: text, channel: channel, at: Date.now() };
+    for (const worker of workers) {
+      try {
+        worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'master', url: url, text: text, channel: channel });
+      } catch (_) {}
+    }
+  }
+
   function installFetchHook() {
     if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent) return;
     function twitchFetch(input, init) {
       const url = requestUrl(input);
+      // The player fetches the master on the page, then hands media URLs to a
+      // worker created afterwards. That worker never sees the master, so its
+      // media map stays empty, every lookup misses, and the whole clean-backup
+      // path is skipped -- which is why ads used to fall through to the gapper
+      // and stay visible. Mirror the master into the workers, passively.
+      if (enabled && MASTER_URL_RE.test(url)) {
+        const pending = nativeFetch.apply(this, arguments);
+        try {
+          Promise.resolve(pending).then((response) => {
+            try {
+              if (!response || !response.ok) return;
+              response.clone().text().then(
+                (text) => broadcastMaster(response.url || url, text),
+                () => {},
+              );
+            } catch (_) {}
+          }, () => {});
+        } catch (_) {}
+        return pending;
+      }
       // Token/header capture is passive and byte-preserving, so keep it alive
       // during the short media recovery window. Otherwise the replacement worker
       // resumes with stale identity state and every clean-token attempt can fail.
@@ -703,6 +749,37 @@
       twitchFetch.toString = Function.prototype.toString.bind(nativeFetch);
     } catch (_) {}
     window.fetch = twitchFetch;
+  }
+
+  // Swapping the video does not change what Twitch's own player believes: it still
+  // reads the ad markers in the native playlist, so it keeps showing the "Ad" badge
+  // and opens its picture-by-picture "watch while the ad plays" window over a
+  // stream that is already ad-free. Hide that chrome only while a swap is actually
+  // active, keyed off the state attribute.
+  //
+  // Injected exactly once and never from a MutationObserver: a callback that writes
+  // to the DOM it observes re-triggers itself and pins a renderer core.
+  let adChromeCssInstalled = false;
+  function installAdChromeCss() {
+    if (adChromeCssInstalled) return;
+    try {
+      const root = document.documentElement;
+      if (!root) return;
+      adChromeCssInstalled = true;
+      const style = document.createElement('style');
+      style.id = 'wo-twitch-ad-chrome';
+      const gate = 'html[data-wo-twitch-adblock^="blocked-"] ';
+      style.textContent = [
+        '[data-a-target="video-ad-label"]',
+        '[data-a-target="video-ad-countdown"]',
+        '[data-a-target="video-ad-countdown-container"]',
+        '[data-test-selector="sad-overlay"]',
+        '.video-player__ad-info-container',
+        '[data-a-target="pbyp-player-instance"]',
+        '.picture-by-picture-player',
+      ].map((sel) => gate + sel).join(',') + '{display:none!important;}';
+      root.appendChild(style);
+    } catch (_) {}
   }
 
   async function proxyWorkerGql(worker, message) {
@@ -839,6 +916,18 @@
     }
 
     function wlog(m) { post('log', { m: m }); }
+
+    // Ad state was only ever reported while blocking, never cleared, so the page
+    // attribute stayed pinned to the last blocked value for the rest of the
+    // session. Anything keyed off it (such as hiding Twitch's own ad chrome) would
+    // therefore stay applied long after the break ended. Report transitions only,
+    // including the return to clean playback.
+    let lastAdStateSent = '';
+    function setAdState(state, channel) {
+      if (state === lastAdStateSent) return;
+      lastAdStateSent = state;
+      post('ad-state', { state: state, channel: channel || '' });
+    }
 
     function urlOf(input) {
       try {
@@ -1374,6 +1463,32 @@
       prune(media, MEDIA_MAX, MEDIA_TTL);
     }
 
+    // The master is what maps a media URL to the channel/codec profile a backup
+    // stream has to match. Shared by the worker's own master fetch and by masters
+    // the page forwards, because a freshly created worker never sees the master
+    // the page already fetched and would otherwise have an empty map.
+    function mapMasterVariants(text, masterUrl, responseUrl, channel) {
+      const name = String(channel || '').trim().toLowerCase();
+      if (!name || !text) return 0;
+      let count = 0;
+      for (const variant of parseMaster(text, responseUrl || masterUrl)) {
+        rememberVariant(variant.url, {
+          channel: name,
+          resolution: variant.resolution,
+          fps: variant.fps,
+          codecs: variant.codecs,
+          video: variant.video,
+          audio: variant.audio,
+          subtitles: variant.subtitles,
+          bandwidth: variant.bandwidth,
+          master: masterUrl,
+          ts: Date.now()
+        });
+        count++;
+      }
+      return count;
+    }
+
     function channelFromMaster(url) {
       const match = /\/hls\/([^./?]+)\.m3u8/i.exec(String(url || ''));
       if (!match) return '';
@@ -1523,7 +1638,10 @@
           remaining--;
           if (remaining <= 0) resolve(null);
         };
-        for (const type of types) backupAttempt(info, type).then(done, () => done(null));
+        for (const type of types) backupAttempt(info, type).then(done, (e) => {
+          wlog('  backup[' + type + '] failed: ' + ((e && e.message) || e));
+          done(null);
+        });
       });
     }
 
@@ -1663,24 +1781,7 @@
       if (!response.ok) return response;
       try {
         const text = await response.clone().text();
-        const channel = channelFromMaster(url);
-        const responseUrl = response.url || url;
-        if (channel) {
-          for (const variant of parseMaster(text, responseUrl)) {
-            rememberVariant(variant.url, {
-              channel: channel,
-              resolution: variant.resolution,
-              fps: variant.fps,
-              codecs: variant.codecs,
-              video: variant.video,
-              audio: variant.audio,
-              subtitles: variant.subtitles,
-              bandwidth: variant.bandwidth,
-              master: url,
-              ts: Date.now()
-            });
-          }
-        }
+        mapMasterVariants(text, url, response.url || url, channelFromMaster(url));
       } catch (_) {}
       return response;
     }
@@ -1718,7 +1819,7 @@
           } catch (_) {}
           try { getBackup(info, false); } catch (_) {}
           wlog('  ad marker slid out; holding native stream until clean boundary');
-          post('ad-state', { state: 'blocked-hold', channel: info && info.channel || '' });
+          setAdState('blocked-hold', info && info.channel || '');
           return responseWithText(response, stripAdPlaylist(text, true), 'application/vnd.apple.mpegurl');
         }
         if (quarantine.release && info) info.backupActive = false;
@@ -1750,6 +1851,7 @@
         // still cold. The full four-type race remains reserved for ad time;
         // getBackup de-duplicates by profile and backs off a failed warm attempt.
         if (info && client.tokenTemplate) { try { getBackup(info, false); } catch (_) {} }
+        setAdState('clear', (info && info.channel) || '');
         return response;
       }
       beginAdQuarantine(info, evidence);
@@ -1760,7 +1862,7 @@
           const replacement = await cleanBackupResponse(info, response);
           if (replacement) {
             wlog('  -> swapped to CLEAN backup');
-            post('ad-state', { state: 'blocked-clean', channel: info.channel });
+            setAdState('blocked-clean', info.channel);
             return replacement;
           }
         } catch (e) { wlog('  backup swap error: ' + (e && e.message || e)); }
@@ -1770,7 +1872,7 @@
         info.cleanNativePolls = 0;
       }
       wlog('  -> no clean backup; replacing confirmed ad media');
-      post('ad-state', { state: 'blocked-gap', channel: info && info.channel || '' });
+      setAdState('blocked-gap', info && info.channel || '');
       return responseWithText(response, stripAdPlaylist(text, false), 'application/vnd.apple.mpegurl');
     }
 
@@ -1782,6 +1884,12 @@
         active = message.enabled !== false;
       } else if (message.type === 'client-state' && message.state) {
         client = Object.assign({}, client, message.state);
+      } else if (message.type === 'master') {
+        try {
+          const url = String(message.url || '');
+          mapMasterVariants(String(message.text || ''), url, url,
+            channelFromMaster(url) || message.channel);
+        } catch (_) {}
       } else if (message.type === 'gql-response') {
         const pending = pendingGql.get(String(message.id || ''));
         if (!pending) return;
@@ -1896,14 +2004,23 @@
             try {
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: streamInterceptionEnabled() });
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'client-state', revision: revision, state: publicClientState() });
+              if (lastMaster && Date.now() - lastMaster.at < 120000) {
+                worker.postMessage({
+                  [MESSAGE_FLAG]: VERSION, type: 'master',
+                  url: lastMaster.url, text: lastMaster.text, channel: lastMaster.channel,
+                });
+              }
             } catch (_) {}
           } else if (message.type === 'gql-request') {
             proxyWorkerGql(worker, message);
           } else if (message.type === 'ad-state') {
             try {
               const state = String(message.state || 'active');
-              if (/^blocked-/.test(state)) lastStreamInterventionAt = Date.now();
-              document.documentElement.setAttribute('data-wo-twitch-adblock', state);
+              const blocking = /^blocked-/.test(state);
+              if (blocking) lastStreamInterventionAt = Date.now();
+              installAdChromeCss();
+              if (blocking) document.documentElement.setAttribute('data-wo-twitch-adblock', state);
+              else document.documentElement.removeAttribute('data-wo-twitch-adblock');
             } catch (_) {}
           } else if (message.type === 'log') {
             try { console.log('[WO-Twitch]', message.m); } catch (_) {}
