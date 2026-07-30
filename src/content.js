@@ -10297,7 +10297,8 @@
         let score=0;
         const reasons=[],
         seenSignals=new Set;
-        let lastWarnBand=0;
+        let lastWarnBand=0,
+        establishedDomain=!1;
         const riskLevel=()=>score>=100?"Dangerous":score>=60?"Suspicious":score>=30?"Caution":"Safe",
         riskBand=()=>score>=100?3:score>=60?2:score>=30?1:0,
         updatePageRisk=key=>{
@@ -10599,7 +10600,8 @@
           },
           res=>{
             try{
-              res&&res.ok&&"number"==typeof res.ageDays&&(res.ageDays<30?addSignal(30,
+              res&&res.ok&&"number"==typeof res.ageDays&&(res.ageDays>=180&&(establishedDomain=!0),
+              res.ageDays<30?addSignal(30,
               "Domain registered very recently ("+res.ageDays+" days ago)",
               "new-domain"):res.ageDays<90&&addSignal(15,
               "Domain is fairly new",
@@ -10616,6 +10618,7 @@
         }
         function maybeWarn(){
           const band=riskBand();
+          if(establishedDomain&&band<2)return;
           !band||band<=lastWarnBand||(lastWarnBand=band,
           log("behavioral_risk",
           {
