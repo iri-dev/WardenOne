@@ -1786,9 +1786,32 @@
       return response;
     }
 
+    // During an ad break Twitch serves a media playlist URL that is not one of the
+    // master's variant URLs, so an exact-URL lookup misses even though the channel
+    // and codec profile are already known. That is precisely when the backup is
+    // needed, and a miss skipped the whole clean-backup path. backupAttempt only
+    // needs the profile, not the ad URL, so fall back to the freshest known variant
+    // and bind it to this URL so later polls stay on one consistent state object.
+    function fallbackVariant() {
+      let best = null;
+      for (const candidate of media.values()) {
+        if (!best || (candidate.ts || 0) > (best.ts || 0)) best = candidate;
+      }
+      if (!best || Date.now() - (best.ts || 0) > MEDIA_TTL) return null;
+      return best;
+    }
+
     async function handleMedia(input, init, url) {
       prune(media, MEDIA_MAX, MEDIA_TTL);
-      const info = media.get(url) || media.get(canonical(url));
+      let info = media.get(url) || media.get(canonical(url));
+      if (!info) {
+        const profile = fallbackVariant();
+        if (profile) {
+          info = Object.assign({}, profile, { backupActive: false, cleanNativePolls: 0 });
+          rememberVariant(url, info);
+          wlog('  bound ad media url to known profile ch=' + (info.channel || '?'));
+        }
+      }
       // Once an intervention is active, do not issue blocking reloads for a native
       // LL-HLS sequence/part that the returned ordinary/backup playlist cannot
       // satisfy. The linked Request signal is preserved for Request inputs.
