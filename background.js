@@ -1773,7 +1773,11 @@ const LOGIN_COMPAT_RULE_BASE = 807000;
 const SCRIPT_SHIELD_RULE_BASE = 930000;
 const SCRIPT_SHIELD_RULE_MAX = 1000;
 const SMART_SCRIPT_RECOVERY_MAX_TABS = 32;
-const SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB = 4;
+// A single tab can hold several player frames (page -> embed -> player), and each
+// frame commonly blocks its analytics hosts alongside the one script the player
+// actually needs. At 4 the budget was exhausted by incidental hosts before the
+// required one was reached, leaving the player black.
+const SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB = 8;
 const SMART_SCRIPT_REPLACEMENT_RULE_OFFSET = 1;
 const SMART_SCRIPT_STAGE_TWO_RULE_OFFSET = 100;
 const SMART_SCRIPT_STAGE_TWO_RULE_PRIORITY = 1900;
@@ -6827,6 +6831,23 @@ function normalizeScriptShieldMode(mode) {
   return mode === 'smart' || mode === 'lockdown' ? mode : 'normal';
 }
 
+// Script hosts Smart mode never blanket-blocks. Without these, Smart mode breaks
+// most embedded video players -- the player library itself is nearly always
+// third-party to the frame that loads it. This exempts the host from Smart's
+// HEURISTIC only: it adds no allow rule, so the downloaded ad/tracker/EasyPrivacy,
+// learned, grabber and security rules still block any of these hosts normally.
+// The general-purpose CDNs (jsDelivr, unpkg, cdnjs) serve arbitrary third-party
+// packages and are the weakest entries here; they are included deliberately
+// because player libraries overwhelmingly ship through them, and the residual
+// exposure equals what Script Shield's default 'normal' level already allows.
+const SCRIPT_SHIELD_PLAYER_INFRA_HOSTS = [
+  'ajax.googleapis.com', 'code.jquery.com', 'ajax.aspnetcdn.com',
+  'cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'unpkg.com', 'esm.sh', 'cdn.tailwindcss.com',
+  'vjs.zencdn.net', 'cdn.plyr.io', 'cdn.vidstack.io', 'cdn.dashjs.org',
+  'content.jwplatform.com', 'ssl.p.jwpcdn.com', 'cdn.jwplayer.com',
+  'player.vimeo.com', 'f.vimeocdn.com', 'www.youtube.com', 's.ytimg.com',
+];
+
 const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video']);
 const SMART_SCRIPT_PLAYER_CONTEXTS = new Map();
 const SMART_SCRIPT_PLAYER_INTENTS = new Map();
@@ -7016,7 +7037,8 @@ function buildScriptShieldRulePlan(mode, enabled, trustedHosts, recoveredTabs) {
     .slice(0, SMART_SCRIPT_RECOVERY_MAX_TABS)
     .filter((entry, index, list) => index === 0 || entry.tabId !== list[index - 1].tabId);
   if (enabled === false || normalizeScriptShieldMode(mode) !== 'smart') return { dynamicRules: [], sessionRules: [] };
-  const condition = { domainType: 'thirdParty', resourceTypes: ['script'] };
+  const infra = SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.slice();
+  const condition = { domainType: 'thirdParty', resourceTypes: ['script'], excludedRequestDomains: infra };
   // Trusting a site skips only Smart Script Shield's heuristic for requests
   // initiated by that site. It does not create an allow rule, so downloaded
   // ad/tracker, learned, grabber, site-control and security rules still win.
@@ -7027,7 +7049,7 @@ function buildScriptShieldRulePlan(mode, enabled, trustedHosts, recoveredTabs) {
       domainType: 'thirdParty',
       resourceTypes: ['script'],
       tabIds: [entry.tabId],
-      excludedRequestDomains: entry.failedHosts,
+      excludedRequestDomains: entry.failedHosts.concat(infra),
     };
     if (trusted.length) tabCondition.excludedInitiatorDomains = trusted;
     return {
@@ -7212,6 +7234,7 @@ function pruneSmartScriptRecoveryState(now) {
   trimSmartScriptMap(SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PLAYER_CONTEXT_MAX, at, SMART_SCRIPT_PLAYER_CONTEXT_TTL_MS);
   trimSmartScriptMap(SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_PLAYER_INTENT_MAX, at, SMART_SCRIPT_PLAYER_INTENT_TTL_MS);
   trimSmartScriptMap(SMART_SCRIPT_PENDING_ERRORS, SMART_SCRIPT_PENDING_MAX, at, SMART_SCRIPT_PENDING_TTL_MS);
+  trimSmartScriptMap(SMART_SCRIPT_FRAME_HOSTS, SMART_SCRIPT_PENDING_MAX, at, SMART_SCRIPT_PENDING_TTL_MS);
   trimSmartScriptMap(SMART_SCRIPT_RETRY_KEYS, SMART_SCRIPT_RETRY_MAX, at, SMART_SCRIPT_RETRY_TTL_MS);
   trimSmartScriptMap(SMART_SCRIPT_TOP_RELOADS, SMART_SCRIPT_RECOVERY_MAX_TABS, at, SMART_SCRIPT_TOP_RELOAD_TTL_MS);
   trimSmartScriptMap(SMART_SCRIPT_RECOVERY_CLEARED_TABS, SMART_SCRIPT_RECOVERY_MAX_TABS * 2, at, SMART_SCRIPT_RETRY_TTL_MS);
@@ -7246,6 +7269,25 @@ function smartScriptContextHasRecentIntent(context) {
     && intent.epoch === context.epoch
     && intent.frameUrl === context.frameUrl
     && Date.now() - intent.at <= SMART_SCRIPT_PLAYER_INTENT_TTL_MS);
+}
+
+// Requiring a trusted gesture for EVERY stage deadlocks the common case: when the
+// player UI is itself built by the blocked script, no player element ever renders,
+// so no click can qualify and the page sits on a dead spinner forever.
+//
+// Stage 1 therefore auto-recovers on verified player evidence alone. What it can
+// do is deliberately bounded: it drops Smart's heuristic for ONE request host, in
+// ONE tab, and adds no allow rule -- so the downloaded ad/tracker/EasyPrivacy,
+// learned, grabber and security rules still block that host. The worst case for a
+// page that fakes the evidence DOM is therefore the behaviour of Script Shield's
+// default 'normal' level, which ships with no third-party script blocking at all.
+//
+// Stage 2 emits a real allow rule that can outrank other rules, so it still
+// requires a fresh, non-stale, trusted user gesture.
+function smartScriptContextRecoveryAllowed(context, stage) {
+  if (!context) return false;
+  if (smartScriptContextHasRecentIntent(context)) return true;
+  return stage === 1 && SMART_SCRIPT_PLAYER_EVIDENCE.has(String(context.evidence || ''));
 }
 
 function smartScriptPartyDomain(rawUrl) {
@@ -7292,6 +7334,34 @@ function normalizeSmartScriptFailure(details) {
   };
 }
 
+// Every third-party script a frame had blocked, keyed by frame and navigation
+// epoch. Recovering one host per reload was racy: the single attempt landed on
+// whichever script the network happened to report first -- usually an analytics
+// beacon rather than the one the player needs -- and each extra reload was another
+// chance for the frame to move on and have its reload rejected. Stage one now
+// clears the whole frame in one pass, so host ordering stops mattering.
+const SMART_SCRIPT_FRAME_HOSTS = new Map();
+
+function noteSmartScriptFrameHost(failure) {
+  const key = smartScriptFrameKey(failure.tabId, failure.frameId);
+  const entry = SMART_SCRIPT_FRAME_HOSTS.get(key);
+  if (!entry || entry.epoch !== failure.epoch) {
+    SMART_SCRIPT_FRAME_HOSTS.set(key, { epoch: failure.epoch, at: failure.at, hosts: [failure.requestHost] });
+    return;
+  }
+  entry.at = failure.at;
+  if (!entry.hosts.includes(failure.requestHost)
+    && entry.hosts.length < SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) {
+    entry.hosts.push(failure.requestHost);
+  }
+}
+
+function smartScriptFrameHosts(failure) {
+  const entry = SMART_SCRIPT_FRAME_HOSTS.get(smartScriptFrameKey(failure.tabId, failure.frameId));
+  if (!entry || entry.epoch !== failure.epoch) return [];
+  return smartScriptRecoveryHosts(entry.hosts);
+}
+
 function smartScriptContextForFailure(failure) {
   const now = Date.now();
   pruneSmartScriptRecoveryState(now);
@@ -7300,8 +7370,12 @@ function smartScriptContextForFailure(failure) {
     && exact.frameUrl === failure.documentUrl) return exact;
   if (failure.parentFrameId >= 0) {
     const parent = SMART_SCRIPT_PLAYER_CONTEXTS.get(smartScriptFrameKey(failure.tabId, failure.parentFrameId));
+    // The vouching frame does NOT have to be the top document. Streaming sites
+    // routinely nest a second embed (page -> embed host -> player host), so
+    // requiring parent.frameUrl === parent.topUrl silently stranded every player
+    // more than one frame deep. Any ancestor that reported a real media embed can
+    // vouch for its own child; stage-one bounds still apply.
     if (parent && parent.epoch === failure.epoch && parent.evidence === 'media-embed'
-      && parent.frameUrl === parent.topUrl
       && now - parent.at <= SMART_SCRIPT_PLAYER_CONTEXT_TTL_MS) return parent;
   }
   return null;
@@ -7410,12 +7484,12 @@ async function recoverSmartScriptPlayer(failure, context) {
   const recoveryEpoch = Number(failure.epoch);
   const epochIsCurrent = () => smartScriptNavigationEpoch(failure.tabId) === recoveryEpoch;
   if (!Number.isInteger(recoveryEpoch) || context.epoch !== recoveryEpoch || !epochIsCurrent()
-    || !smartScriptContextHasRecentIntent(context)) return false;
+    || !smartScriptContextRecoveryAllowed(context, 1)) return false;
   if (SMART_SCRIPT_RECOVERY_INFLIGHT.get(failure.tabId) === recoveryEpoch) return false;
   SMART_SCRIPT_RECOVERY_INFLIGHT.set(failure.tabId, recoveryEpoch);
   try {
     if (!await smartScriptModeActive()) return false;
-    if (!epochIsCurrent() || !smartScriptContextHasRecentIntent(context)) return false;
+    if (!epochIsCurrent() || !smartScriptContextRecoveryAllowed(context, 1)) return false;
     pruneSmartScriptRecoveryState(Date.now());
     const previous = SMART_SCRIPT_RECOVERED_TABS.get(failure.tabId);
     const previousHosts = smartScriptRecoveryHosts(previous && previous.failedHosts);
@@ -7425,6 +7499,7 @@ async function recoverSmartScriptPlayer(failure, context) {
       && entry.resourceType === failure.resourceType
       && entry.requestPath === failure.requestPath);
     const stage = hasStageOnePath ? 2 : 1;
+    if (!smartScriptContextRecoveryAllowed(context, stage)) return false;
     if (stage === 2) {
       if (!smartScriptStageOneMatches(previous, failure) || smartScriptKnownSecurityHost(failure.requestHost)
         || smartScriptKnownFingerprintPath(failure.requestPath)) return false;
@@ -7438,6 +7513,11 @@ async function recoverSmartScriptPlayer(failure, context) {
       if (!previousHosts.includes(failure.requestHost)
         && previousHosts.length >= SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB) return false;
     }
+    // Clear every host this frame had blocked, not just the one that happened to
+    // report first, so a single reload is enough to bring the player back.
+    const stageOneHosts = stage === 1
+      ? smartScriptRecoveryHosts(previousHosts.concat([failure.requestHost], smartScriptFrameHosts(failure)))
+      : previousHosts;
     const retryKey = smartScriptStageRetryKey(failure, stage);
     if (SMART_SCRIPT_RETRY_KEYS.has(retryKey)) return false;
     const rollbackCurrentRecovery = async (retryKey) => {
@@ -7450,7 +7530,7 @@ async function recoverSmartScriptPlayer(failure, context) {
       if (!epochIsCurrent()) return false;
       return false;
     };
-    if (!epochIsCurrent() || !smartScriptContextHasRecentIntent(context)) return false;
+    if (!epochIsCurrent() || !smartScriptContextRecoveryAllowed(context, stage)) return false;
     SMART_SCRIPT_RETRY_KEYS.set(retryKey, { at: Date.now() });
     const clearMarker = SMART_SCRIPT_RECOVERY_CLEARED_TABS.get(failure.tabId);
     if (clearMarker && clearMarker.epoch === recoveryEpoch) SMART_SCRIPT_RECOVERY_CLEARED_TABS.delete(failure.tabId);
@@ -7459,8 +7539,7 @@ async function recoverSmartScriptPlayer(failure, context) {
       at: Date.now(),
       frameId: failure.frameId,
       rehydrated: !!(previous && previous.rehydrated),
-      failedHosts: stage === 1 && !previousHosts.includes(failure.requestHost)
-        ? previousHosts.concat(failure.requestHost) : previousHosts,
+      failedHosts: stageOneHosts,
       stageOne: previousStageOne.concat(
         stage === 1 ? [smartScriptStageOneRecord(failure)] : [],
       ),
@@ -7478,7 +7557,7 @@ async function recoverSmartScriptPlayer(failure, context) {
     if (!epochIsCurrent()) return false;
     const applied = await applyScriptShieldRules();
     if (!epochIsCurrent()) return false;
-    if (!smartScriptContextHasRecentIntent(context)) return rollbackCurrentRecovery(retryKey);
+    if (!smartScriptContextRecoveryAllowed(context, stage)) return rollbackCurrentRecovery(retryKey);
     if (!applied || !SMART_SCRIPT_RECOVERED_TABS.has(failure.tabId)) {
       if (previous) SMART_SCRIPT_RECOVERED_TABS.set(failure.tabId, previous);
       else SMART_SCRIPT_RECOVERED_TABS.delete(failure.tabId);
@@ -7491,7 +7570,7 @@ async function recoverSmartScriptPlayer(failure, context) {
       SMART_SCRIPT_TOP_RELOADS.set(failure.tabId, { at: Date.now(), url: failure.documentUrl });
     }
     if (!epochIsCurrent()) return false;
-    if (!smartScriptContextHasRecentIntent(context)) return rollbackCurrentRecovery(retryKey);
+    if (!smartScriptContextRecoveryAllowed(context, stage)) return rollbackCurrentRecovery(retryKey);
     const sent = await sendSmartScriptFrameReload(failure, stage);
     if (!epochIsCurrent()) return false;
     if (!sent) {
@@ -7515,8 +7594,13 @@ async function recoverSmartScriptPlayer(failure, context) {
 async function handleSmartScriptFailure(details) {
   const failure = normalizeSmartScriptFailure(details);
   if (!failure) return false;
+  noteSmartScriptFrameHost(failure);
   const context = smartScriptContextForFailure(failure);
-  if (context && smartScriptContextHasRecentIntent(context)) return recoverSmartScriptPlayer(failure, context);
+  // A declined recovery (stage two without a fresh gesture, or a spent bound) must
+  // still leave the failure pending, so a later trusted interaction can drive the
+  // next stage instead of the evidence being silently dropped.
+  if (context && smartScriptContextRecoveryAllowed(context, 1)
+    && await recoverSmartScriptPlayer(failure, context)) return true;
   if (!await smartScriptModeActive()) return false;
   if (failure.epoch !== smartScriptNavigationEpoch(failure.tabId)) return false;
   const key = smartScriptFrameKey(failure.tabId, failure.frameId);
@@ -7545,7 +7629,7 @@ async function handleSmartScriptPlayerContext(sender, msg) {
       }
     }
   }
-  if (pending && smartScriptContextHasRecentIntent(context) && await smartScriptModeActive()) {
+  if (pending && smartScriptContextRecoveryAllowed(context, 1) && await smartScriptModeActive()) {
     if (pending.epoch !== smartScriptNavigationEpoch(pending.tabId)) return { ok: true };
     const matched = smartScriptContextForFailure(pending);
     if (matched) await recoverSmartScriptPlayer(pending, matched);
@@ -7583,6 +7667,7 @@ function clearSmartScriptFrameTransient(tabId, frameId) {
   const key = smartScriptFrameKey(tabId, frameId);
   SMART_SCRIPT_PLAYER_CONTEXTS.delete(key);
   SMART_SCRIPT_PENDING_ERRORS.delete(key);
+  SMART_SCRIPT_FRAME_HOSTS.delete(key);
 }
 
 function clearSmartScriptRecoveryForTab(tabId) {
@@ -7595,7 +7680,7 @@ function clearSmartScriptRecoveryForTab(tabId) {
   const wasRecovered = SMART_SCRIPT_RECOVERED_TABS.delete(id);
   SMART_SCRIPT_RECOVERY_CLEARED_TABS.set(id, { at: Date.now(), epoch: clearEpoch });
   SMART_SCRIPT_TOP_RELOADS.delete(id);
-  for (const map of [SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_PENDING_ERRORS, SMART_SCRIPT_RETRY_KEYS]) {
+  for (const map of [SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_PENDING_ERRORS, SMART_SCRIPT_RETRY_KEYS, SMART_SCRIPT_FRAME_HOSTS]) {
     for (const key of map.keys()) {
       if (key.startsWith(prefix)) map.delete(key);
     }

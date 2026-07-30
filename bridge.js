@@ -222,7 +222,10 @@
         'script[src*="hls.js"]', 'script[src*="shaka-player"]', 'script[src*="dash.all"]',
         'script[src*="clappr"]', 'script[src*="plyr"]',
       ].join(','))) return 'known-player-root';
-      if (smartPlayerRoute()) {
+      // A nested embed frame is a player context in its own right, even when its
+      // URL does not look like a watch/embed route -- intermediate embed hosts
+      // often use opaque paths. Being a subframe is already the scoping signal.
+      if (scopedPlayerContext) {
         if (document.querySelector('video')) return 'route-video';
         if (document.querySelector([
           'iframe[allowfullscreen]', 'iframe[allow*="autoplay"]', 'iframe[allow*="fullscreen"]',
@@ -294,6 +297,16 @@
         'iframe[allowfullscreen]', 'iframe[allow*="autoplay"]', 'iframe[allow*="fullscreen"]',
         'iframe[allow*="picture-in-picture"]', 'iframe[allow*="encrypted-media"]',
       ].join(','))) return true;
+      // When the player UI is itself built by the third-party script Smart Script
+      // Shield blocked, none of the checks above can ever match: no <video>, no
+      // player root, and no labelled control is ever created. The recovery gesture
+      // then becomes unreachable and the page sits on a dead spinner forever --
+      // clicking the player is also invisible here, because a click inside a
+      // cross-origin embed never reaches this document. Once this frame has
+      // produced strong player evidence, treat any trusted click in it as player
+      // intent. A page can fake the evidence DOM, but it cannot fake a trusted
+      // user gesture, and that gesture is the property the recovery gate relies on.
+      if (smartPlayerEvidence && (window.top !== window || smartPlayerRoute())) return true;
       if (!smartPlayerRoute()) return false;
       const control = target.closest('button,[role="button"],[data-episode],[data-server],a[href]');
       if (!control) return false;
@@ -671,6 +684,12 @@
       if (msg && msg.kind === 'smart-script-reload-frame') {
         let expected = '';
         let current = '';
+        // Player embeds routinely rewrite their own URL (query/token churn) between
+        // the blocked request and this message arriving. Requiring an exact match
+        // rejected the reload and stranded the recovery, so match on same-origin
+        // plus same path instead -- still never reloads a frame that has navigated
+        // somewhere else, which is what this guard exists to prevent.
+        let sameFrame = false;
         const failedHost = String(msg.failedHost || '').replace(/^\.+|\.+$/g, '').toLowerCase();
         const recoveryStage = Number(msg.recoveryStage);
         try {
@@ -680,9 +699,11 @@
           currentUrl.hash = '';
           expected = expectedUrl.href;
           current = currentUrl.href;
+          sameFrame = expected === current
+            || (expectedUrl.origin === currentUrl.origin && expectedUrl.pathname === currentUrl.pathname);
         } catch (_) {}
         const reloadKey = expected + '|' + failedHost + '|stage-' + String(recoveryStage);
-        if (!expected || expected !== current || !failedHost || !failedHost.includes('.')
+        if (!expected || !sameFrame || !failedHost || !failedHost.includes('.')
           || !/^[a-z0-9.-]+$/i.test(failedHost) || failedHost.includes('..')
           || (recoveryStage !== 1 && recoveryStage !== 2)
           || smartFrameReloadedUrls.has(reloadKey)) {
