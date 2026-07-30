@@ -3764,7 +3764,13 @@
           "githubassets.com",
           "github.io",
           "githubapp.com",
+          "githubcopilot.com",
           "github.dev"]
+        },
+        {
+          pages:["gptzero.me"],
+          destinations:["gptzero.me",
+          "supabase.co"]
         },
         {
           pages:["slack.com"],
