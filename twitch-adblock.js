@@ -1268,36 +1268,6 @@
     // marker-only spelling change cannot turn the entire ad pod into clean media.
     const AD_MARKER_RE = /\bstitched\b|#EXT-X-CUE-OUT|CLASS="twitch-maf-ad"|CLASS="twitch-trigger"/i;
     const STRONG_AD_METADATA_RE = /X-TV-TWITCH-AD-(?:RADS-TOKEN|ROLL-TYPE|POD-|ADVERTISER|CREATIVE|LINE-ITEM|ORDER-ID)/i;
-    // Ad segments are opaque: measured 2026-07-31, none matched AD_URI_RE and they
-    // are indistinguishable in shape from stream segments, so nothing can be
-    // blocked by pattern. They ARE identifiable by POSITION while parsing the
-    // playlist, so remember the exact URIs already proven to be ads and refuse
-    // those specific requests. This closes the delivery path playlist rewriting
-    // cannot reach -- the player fetching a segment it learned about elsewhere,
-    // such as from a prefetch hint -- and Twitch making the URLs opaque does not
-    // defeat it, because this is recognition rather than guessing.
-    const AD_SEGMENT_MAX = 240;
-    const adSegments = new Set();
-
-    function rememberAdSegments(uris, base) {
-      for (const raw of (uris || [])) {
-        let absolute = '';
-        try { absolute = new URL(String(raw || ''), base).href; } catch (_) { continue; }
-        if (absolute) adSegments.add(absolute);
-      }
-      while (adSegments.size > AD_SEGMENT_MAX) {
-        adSegments.delete(adSegments.values().next().value);
-      }
-    }
-
-    function refusedAdSegment() {
-      // Empty rather than an error status: a failed segment invites the player to
-      // retry and can surface as Twitch #3000/#2000, which is worse than the ad.
-      return new Response(new Uint8Array(0), {
-        status: 200,
-        headers: { 'content-type': 'video/mp2t', 'content-length': '0' },
-      });
-    }
     const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
     const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
     const GQL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
@@ -1681,7 +1651,6 @@
       const mediaSequence = Number(String(sequenceLine || '').replace(/^#EXT-X-MEDIA-SEQUENCE:/i, ''));
       const targetDuration = Number(String(targetLine || '').replace(/^#EXT-X-TARGETDURATION:/i, '')) || 2;
       const fullAds = new Set();
-      const adUris = [];
       const inlineAds = new Set();
       let playable = 0;
       let fullPlayable = 0;
@@ -1723,7 +1692,6 @@
             (explicitlyNonLive || hasLiveTitle || (strongMetadata && !hasLiveTitle));
           if (AD_URI_RE.test(uri) || cueActive || markerScoped || overlapsTimedAd(ranges, programTime, duration)) {
             fullAds.add(index);
-            adUris.push(uri);
             confirmed++;
           }
           if (cueActive && cueRemaining > 0) {
@@ -1753,7 +1721,6 @@
           if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle)) {
             playable++;
             confirmed++;
-            adUris.push(uri);
             inlineAds.add(index);
           }
           continue;
@@ -1763,14 +1730,12 @@
           if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle)) {
             playable++;
             confirmed++;
-            adUris.push(uri);
             inlineAds.add(index);
           }
         }
       }
       return {
         lines: lines,
-        adUris: adUris,
         hasMarker: hasMarker,
         strongMetadata: strongMetadata,
         playable: playable,
@@ -2297,7 +2262,6 @@
       }
       let evidence;
       try { evidence = playlistEvidence(text); } catch (_) { return response; }
-      if (evidence.confirmed > 0) { try { rememberAdSegments(evidence.adUris, url); } catch (_) {} }
       if (!evidence.confirmed) {
         const quarantine = nativeAdQuarantineState(info, evidence);
         if (quarantine.active) {
@@ -2455,7 +2419,6 @@
           return handleMedia(input, init, url);
         }
       }
-      if (adSegments.has(url)) return refusedAdSegment();
       return realFetch(input, init);
     };
 
