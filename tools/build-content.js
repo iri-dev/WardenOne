@@ -32,6 +32,85 @@ function regexKeywordBefore(input, index) {
   return !!(match && /^(return|throw|case|delete|void|typeof|new|in|of|yield|await)$/.test(match[0]));
 }
 
+// The build strips every newline, so a single // line comment in the source
+// swallows the entire rest of the file on the one output line. Nothing else
+// catches it: src/content.js still parses on its own, and the built runtime
+// parses too whenever the braces happen to balance, so the failure is silent
+// and total. Reject the construct at the source instead of relying on memory.
+//
+// Deliberately reuses the same tokenizer states as formatRuntime below rather
+// than grepping for '//', which would fire on every https:// inside a string
+// and on regexes like /\//. Only a // reached in code state is a comment.
+function findLineComments(source) {
+  const input = String(source || '');
+  const hits = [];
+  let state = 'code';
+  let quote = '';
+  let escaped = false;
+  let regexClass = false;
+  let prevSig = '';
+  let line = 1;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    const next = input[i + 1] || '';
+    if (ch === '\n') line++;
+
+    if (state === 'string') {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) state = 'code';
+      continue;
+    }
+    if (state === 'template') {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '`') state = 'code';
+      continue;
+    }
+    if (state === 'regex') {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '[') regexClass = true;
+      else if (ch === ']') regexClass = false;
+      else if (ch === '/' && !regexClass) state = 'code';
+      continue;
+    }
+    if (state === 'block-comment') {
+      if (ch === '*' && next === '/') { i++; state = 'code'; }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") { state = 'string'; quote = ch; escaped = false; prevSig = ch; continue; }
+    if (ch === '`') { state = 'template'; escaped = false; prevSig = ch; continue; }
+    if (ch === '/' && next === '/') {
+      hits.push(line);
+      while (i + 1 < input.length && input[i + 1] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && next === '*') { state = 'block-comment'; i++; continue; }
+    if (ch === '/' && (isRegexStart(prevSig) || regexKeywordBefore(input, i))) {
+      state = 'regex';
+      regexClass = false;
+      escaped = false;
+      prevSig = ch;
+      continue;
+    }
+    if (!/\s/.test(ch)) prevSig = ch;
+  }
+
+  return hits;
+}
+
+function assertNoLineComments(source) {
+  const hits = findLineComments(source);
+  if (!hits.length) return;
+  const shown = hits.slice(0, 20).join(', ') + (hits.length > 20 ? ', ...' : '');
+  console.error('[fail] src/content.js contains ' + hits.length + ' // line comment(s), at line(s): ' + shown);
+  console.error('[info] the build strips newlines, so a // comment deletes the rest of the runtime silently. Use /* */ instead.');
+  process.exit(1);
+}
+
 function formatRuntime(source) {
   const input = String(source || '').replace(/\r?\n/g, '');
   const out = [];
@@ -166,7 +245,9 @@ function formatRuntime(source) {
 }
 
 function check() {
-  const built = buildFromSource(read(SRC));
+  const source = read(SRC);
+  assertNoLineComments(source);
+  const built = buildFromSource(source);
   const runtime = read(OUT);
   if (built !== runtime) {
     console.error('[fail] src/content.js does not rebuild to content.min.js');
@@ -183,7 +264,9 @@ if (arg === '--format-from-runtime') {
 } else if (arg === '--check') {
   check();
 } else if (arg === '--build') {
-  write(OUT, buildFromSource(read(SRC)));
+  const source = read(SRC);
+  assertNoLineComments(source);
+  write(OUT, buildFromSource(source));
   console.log('[ok] rebuilt content.min.js from src/content.js');
 } else {
   console.error('usage: node tools/build-content.js [--build|--check|--format-from-runtime]');
