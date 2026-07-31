@@ -1770,6 +1770,7 @@ const NEVER_BLOCK_ALLOW_RULE_BASE = 745000;
 const NEVER_BLOCK_ALLOW_MAX = 200;
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
+const TWITCH_AD_RULE_BASE = 808000;
 // Blocklist-refresh chatter is opt-in; it fired on every update in the service
 // worker console. Warnings and errors are unaffected.
 const WO_LIST_DEBUG = false;
@@ -5505,6 +5506,71 @@ function refreshLoginCompatibilityRules() {
   } catch (_) {}
 }
 
+// Twitch runs two independent ad paths and its own player code names them:
+// `stitchedAdMetadata` for the SSAI break spliced into the HLS manifest, and
+// `clientSideAdMetadata` for a creative the player requests itself and renders
+// over the video. twitch-adblock.js only ever sees the manifest, which is why it
+// can classify and gap an entire break and still leave a pre-roll untouched --
+// the pre-roll never travels through the playlist at all. The client-side path
+// is a VAST request from Twitch's bundled ad SDK, so the network layer is the
+// only place it can be stopped.
+//
+// That SDK talks to two hosts and they do different jobs, which is the whole
+// reason this rule is one host and not both. Its AdRequestBuilder points at
+// vaes.amazon-adsystem.com to fetch the creative, while edge.ads.twitch.tv is
+// the lifecycle service the player uses to walk into and back out of a break.
+// Blocking the lifecycle host strands the player mid-break -- that was tried,
+// reverted, and is pinned by 'edge ads must stay network-allowed so Twitch can
+// advance its ad lifecycle' in tools/test-dynamic-registrations.js. So refuse
+// the creative and leave the lifecycle alone: the break still runs its course,
+// it just has nothing to show.
+const TWITCH_CLIENT_AD_HOSTS = ['vaes.amazon-adsystem.com'];
+const TWITCH_AD_RESOURCE_TYPES = [
+  'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object',
+  'xmlhttprequest', 'ping', 'media', 'websocket', 'other',
+];
+let __twitchAdRulesEnabled = null;
+async function applyTwitchAdRules(enabled) {
+  try {
+    enabled = !!enabled;
+    if (__twitchAdRulesEnabled === enabled) return;
+    const removeRuleIds = [TWITCH_AD_RULE_BASE];
+    if (!enabled) {
+      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules: [] });
+      __twitchAdRulesEnabled = enabled;
+      return;
+    }
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds,
+      addRules: [{
+        id: TWITCH_AD_RULE_BASE,
+        // No allow covers this host today -- the media-compatibility rules only
+        // re-permit Twitch's own domains, and the never-block list carries
+        // amazon.com, which does not match amazon-adsystem.com. Sitting above
+        // that compatibility band anyway is deliberate: those rules exist to
+        // rescue playback and get broadened whenever a player breaks, and a
+        // broadening that reached this host would silently retire the rule
+        // rather than fail loudly. Still under an explicit user allowlist at
+        // 100000, where allowlisting Twitch means the site untouched, ads and all.
+        priority: 96000,
+        action: { type: 'block' },
+        condition: {
+          requestDomains: TWITCH_CLIENT_AD_HOSTS,
+          // Scoped to Twitch so a feature named "Twitch ad block" cannot quietly
+          // change how an unrelated site behaves. A player.twitch.tv embed on a
+          // third-party page still matches, because the initiator of the request
+          // is the player frame's own origin.
+          initiatorDomains: ['twitch.tv'],
+          resourceTypes: TWITCH_AD_RESOURCE_TYPES,
+        },
+      }],
+    });
+    __twitchAdRulesEnabled = enabled;
+  } catch (e) {
+    console.warn('[WardenOne] Twitch ad rules failed', e);
+  }
+}
+
 let __blocklistRulesetStateKey = '';
 async function refreshBlocklistRuleset(cfgOverride) {
   try {
@@ -5792,6 +5858,7 @@ function refreshExtensionState() {
         cfg.blockSponsoredSearchResults === true ? 1 : 0,
         cfg.blockGeolocation === true ? 1 : 0,
         cfg.blockWebRTCLeak !== false ? 1 : 0,
+        cfg.twitchAdBlock !== false ? 1 : 0,
       ].join('|');
       if (stateKey === __refreshExtensionStateLastKey) return;
       __refreshExtensionStateLastKey = stateKey;
@@ -5811,6 +5878,7 @@ function refreshExtensionState() {
       applyGlobalLocationBlock(on && cfg.blockGeolocation === true);
       applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true);
       applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false);
+      applyTwitchAdRules(on && cfg.twitchAdBlock !== false);
     }).catch(() => {
       refreshPrivacyHeaders();
       refreshAllowlistRules();
