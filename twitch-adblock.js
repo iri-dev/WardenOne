@@ -31,7 +31,6 @@
   // formats.
   const AD_SERVICE_URL_RE =
     /^https:\/\/(?:edge\.ads\.twitch\.tv\/ads(?:[/?#]|$)|vaes\.amazon-adsystem\.com(?:[/?#]|$))/i;
-  const EMPTY_VAST = '<?xml version="1.0" encoding="UTF-8"?><VAST version="3.0"></VAST>';
   const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
   const DEFAULT_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
   const MESSAGE_FLAG = '__woTwitchAdblock';
@@ -748,18 +747,19 @@
   // its ad state until that request settles, so a blocked one leaves the picture
   // frozen behind an ad that never arrives -- which is what the media
   // compatibility rules mean by needing to "advance the ad lifecycle", and why
-  // this is answered on the page instead of blocked at the network layer. An
-  // empty VAST is the ad industry's own way of saying "nothing to show", so the
-  // break runs to completion with no creative. Answering here also means the
-  // request is never issued at all, so there is no CORS surface and no
-  // extension resource for a page to probe.
-  function emptyAdResponse(url) {
-    const wantsJson = /[?&](?:rt|returntype|return_type)=json(?:&|$)/i.test(String(url || ''));
-    return new Response(wantsJson ? '{"ads":[]}' : EMPTY_VAST, {
-      status: 200,
-      statusText: 'OK',
-      headers: { 'Content-Type': wantsJson ? 'application/json' : 'application/xml' },
-    });
+  // this is answered on the page rather than blocked at the network layer.
+  //
+  // 204 specifically, because that is Twitch's OWN no-fill path rather than a
+  // convention we hope it honours. Its ad SDK branches on the status first:
+  // 204 resolves the request immediately with an empty result and reports
+  // available_impressions: 0, while any 200 is content-type sniffed, parsed and
+  // run through a bid validator that throws on anything it does not recognise.
+  // So a 204 is the one answer that cannot become an exception, and it carries
+  // no body to get the shape wrong with. Answering here also means the request
+  // is never issued, so there is no CORS surface and no extension resource for
+  // a page to probe.
+  function emptyAdResponse() {
+    return new Response(null, { status: 204, statusText: 'No Content' });
   }
 
   function installFetchHook() {
@@ -767,7 +767,7 @@
     function twitchFetch(input, init) {
       const url = requestUrl(input);
       if (enabled && AD_SERVICE_URL_RE.test(url)) {
-        try { return Promise.resolve(emptyAdResponse(url)); } catch (_) {}
+        try { return Promise.resolve(emptyAdResponse()); } catch (_) {}
       }
       // The player fetches the master on the page, then hands media URLs to a
       // worker created afterwards. That worker never sees the master, so its
