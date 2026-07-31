@@ -1277,6 +1277,13 @@
     const MEDIA_MAX = 128;
     const BACKUP_MAX = 12;
     const BACKUP_WAIT_MS = 900;
+    // A pre-roll is the one break where nothing is playing yet, so holding the
+    // first media playlist costs start-up latency instead of freezing video the
+    // viewer is already watching. A cold pre-roll loses the 900ms race by only a
+    // few hundred ms -- every leg is cold because there is no preceding clean
+    // poll to have warmed anything -- so give just that case a longer budget. A
+    // mid-roll keeps the short one on purpose.
+    const PREROLL_BACKUP_WAIT_MS = 2500;
     const BACKUP_POLL_TIMEOUT_MS = 650;
     const CLEAN_NATIVE_TTL = 2500;
     const NATIVE_RELEASE_POLLS = 3;
@@ -2172,7 +2179,8 @@
           return responseWithText(originalResponse, bridge, 'application/vnd.apple.mpegurl');
         }
       }
-      const remainingWait = Math.max(0, BACKUP_WAIT_MS - (Date.now() - startedAt));
+      const waitBudget = (info && info.servedClean) ? BACKUP_WAIT_MS : PREROLL_BACKUP_WAIT_MS;
+      const remainingWait = Math.max(0, waitBudget - (Date.now() - startedAt));
       if (!remainingWait) {
         candidatePromise.catch(() => {});
         return null;
@@ -2187,6 +2195,8 @@
           resolve(null);
         });
       });
+      wlog('  wait=' + waitBudget + 'ms preroll=' + ((info && !info.servedClean) ? 'YES' : 'no')
+        + ' result=' + (candidate ? 'HIT' : 'MISS'));
       if (!candidate) return null;
       info.backupActive = true;
       info.cleanNativePolls = 0;
@@ -2306,10 +2316,33 @@
         // getBackup de-duplicates by profile and backs off a failed warm attempt.
         if (info && client.tokenTemplate) { try { getBackup(info, false); } catch (_) {} }
         setAdState('clear', (info && info.channel) || '');
+        if (info) info.servedClean = true;
+        // The visible ad beat is not swap latency. This still-clean playlist can
+        // carry TWITCH-PREFETCH / PRELOAD-HINT / PART lines that already point at
+        // the FIRST ad segments, and the player fetches and appends those before
+        // any later playlist swap can act. Media in the SourceBuffer cannot be
+        // retracted, so no amount of swap speed removes what those lines deliver.
+        // Withhold only the low-latency hints, and only while a break is
+        // announced but not yet confirmed. The listed segments are untouched, so
+        // the cost is a little live-edge latency for the length of the break
+        // rather than a beat of advert. Any failure returns the native response.
+        if (info && (evidence.hasMarker || evidence.strongMetadata)) {
+          try {
+            const withheld = stripLowLatency(text);
+            if (withheld && withheld !== text && mediaPlaylistEnvelope(withheld)) {
+              return responseWithText(response, withheld, 'application/vnd.apple.mpegurl');
+            }
+          } catch (_) {}
+        }
         return response;
       }
       beginAdQuarantine(info, evidence);
       wlog('AD detected ' + url.slice(-40));
+      wlog('  preroll=' + ((info && !info.servedClean) ? 'YES' : 'no')
+        + ' prefetch=' + ((/#EXT-X-TWITCH-PREFETCH/i.test(text) ? 'Y' : 'n')
+        + (/#EXT-X-PRELOAD-HINT/i.test(text) ? 'P' : 'n')
+        + (/#EXT-X-PART[:\s]/i.test(text) ? 'T' : 'n'))
+        + ' confirmed=' + evidence.confirmed + ' full=' + evidence.fullPlayable);
       if (!info) wlog('  no variant info (master not mapped for this media url)');
       if (info) {
         try {
