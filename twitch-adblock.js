@@ -21,6 +21,17 @@
   const TWITCH_HOST_RE = /(^|\.)twitch\.tv$/i;
   const GQL_URL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
   const MASTER_URL_RE = /\/api\/channel\/hls\/[^/?#]+\.m3u8/i;
+  // Pre-rolls are not in the stream. Twitch's player carries two ad paths and
+  // names them itself -- stitchedAdMetadata for the SSAI break spliced into the
+  // manifest, and clientSideAdMetadata for a creative it requests and renders
+  // over the video -- so gapping an entire playlist never touches a pre-roll.
+  // The creative comes from its ad SDK: AdRequestBuilder starts on the Amazon
+  // bid host but withAdFormat() repoints it at edge.ads.twitch.tv, taking
+  // /ads/format for a standard video ad and /ads for the outstream and pause
+  // formats.
+  const AD_SERVICE_URL_RE =
+    /^https:\/\/(?:edge\.ads\.twitch\.tv\/ads(?:[/?#]|$)|vaes\.amazon-adsystem\.com(?:[/?#]|$))/i;
+  const EMPTY_VAST = '<?xml version="1.0" encoding="UTF-8"?><VAST version="3.0"></VAST>';
   const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
   const DEFAULT_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
   const MESSAGE_FLAG = '__woTwitchAdblock';
@@ -733,10 +744,31 @@
     }
   }
 
+  // Refusing the ad request is what strands a break. The player will not leave
+  // its ad state until that request settles, so a blocked one leaves the picture
+  // frozen behind an ad that never arrives -- which is what the media
+  // compatibility rules mean by needing to "advance the ad lifecycle", and why
+  // this is answered on the page instead of blocked at the network layer. An
+  // empty VAST is the ad industry's own way of saying "nothing to show", so the
+  // break runs to completion with no creative. Answering here also means the
+  // request is never issued at all, so there is no CORS surface and no
+  // extension resource for a page to probe.
+  function emptyAdResponse(url) {
+    const wantsJson = /[?&](?:rt|returntype|return_type)=json(?:&|$)/i.test(String(url || ''));
+    return new Response(wantsJson ? '{"ads":[]}' : EMPTY_VAST, {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'Content-Type': wantsJson ? 'application/json' : 'application/xml' },
+    });
+  }
+
   function installFetchHook() {
     if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent) return;
     function twitchFetch(input, init) {
       const url = requestUrl(input);
+      if (enabled && AD_SERVICE_URL_RE.test(url)) {
+        try { return Promise.resolve(emptyAdResponse(url)); } catch (_) {}
+      }
       // The player fetches the master on the page, then hands media URLs to a
       // worker created afterwards. That worker never sees the master, so its
       // media map stays empty, every lookup misses, and the whole clean-backup
