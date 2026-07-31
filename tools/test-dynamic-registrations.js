@@ -112,33 +112,13 @@ check('media compatibility refresh no longer depends on the Twitch ad-block togg
     && !/applyMediaCompatibilityRules\([^\n]*twitchAdBlock/.test(background),
   'media allows and the Twitch page guard must be independently toggleable');
 
-// Pre-rolls are the client-side ad path, so no amount of playlist work reaches
-// them and the block has to live here. A pre-roll sets an ad format, which makes
-// AdRequestBuilder repoint from the vaes bid host to edge.ads.twitch.tv/ads/format
-// -- so both are refused, but the Twitch host only ever by path.
-const twitchAdBody = bodyOf('applyTwitchAdRules');
-const twitchAdHosts = (background.match(/const TWITCH_CLIENT_AD_HOSTS = \[[^\]]*\]/) || [''])[0];
-const twitchAdPath = (background.match(/const TWITCH_AD_PATH_FILTER = '[^']*'/) || [''])[0];
-check('client-side Twitch ad rule refuses the pre-roll creative endpoints',
-  /'vaes\.amazon-adsystem\.com'/.test(twitchAdHosts)
-    && /\|\|edge\.ads\.twitch\.tv\/ads/.test(twitchAdPath)
-    && /requestDomains: TWITCH_CLIENT_AD_HOSTS/.test(twitchAdBody)
-    && /urlFilter: TWITCH_AD_PATH_FILTER/.test(twitchAdBody),
-  'the client-side VAST creative endpoints must be blocked at the network layer');
-check('client-side Twitch ad rule blocks edge ads by path, never by host',
-  !/edge\.ads\.twitch\.tv/.test(twitchAdHosts)
-    && !/requestDomains: \[[^\]]*edge\.ads\.twitch\.tv/.test(twitchAdBody),
-  'a whole-host block strands the player mid-break; only the /ads paths may be refused');
-check('client-side Twitch ad rule outranks the media compatibility band',
-  /priority: 96000/.test(twitchAdBody),
-  'a broadened compatibility allow would otherwise silently retire this rule');
-check('client-side Twitch ad rule stays scoped to Twitch initiators',
-  /initiatorDomains: \['twitch\.tv'\]/.test(twitchAdBody),
-  'a Twitch feature must not change how unrelated sites load ads');
-check('client-side Twitch ad rule follows the Twitch ad-block toggle',
-  /applyTwitchAdRules\(on && cfg\.twitchAdBlock !== false\)/.test(background)
-    && /cfg\.twitchAdBlock !== false \? 1 : 0/.test(background),
-  'the toggle must gate the rule and take part in the state key that re-applies it');
+// The client-side pre-roll is answered on the page in twitch-adblock.js, not
+// refused here -- a blocked ad request never settles, and the player will not
+// leave its ad state until it does. See tools/test-twitch-adblock.js.
+check('no DNR rule refuses the Twitch ad service',
+  !/applyTwitchAdRules/.test(background)
+    && !/edge\.ads\.twitch\.tv/.test(background),
+  'blocking the ad service at the network layer strands the break with a frozen picture');
 
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');
