@@ -667,6 +667,10 @@
       const interesting = Array.from(names).filter((n) =>
         /^Ads?_|^AdRequest|^AdContext|^ConnectAdIdentity/.test(n));
       if (!interesting.length) return;
+      // A pre-roll on a channel switch fires this while the player is still
+      // rebuilding its worker, so a live broadcast alone reaches nobody. Record it
+      // and replay on handshake, exactly as the master is replayed.
+      lastAdImminentAt = Date.now();
       for (const worker of workers) {
         try { worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'ad-imminent' }); } catch (_) {}
       }
@@ -713,6 +717,7 @@
   }
 
   let lastMaster = null;
+  let lastAdImminentAt = 0;
 
   function broadcastMaster(url, text) {
     if (!text) return;
@@ -788,6 +793,65 @@
   //
   // Injected exactly once and never from a MutationObserver: a callback that writes
   // to the DOM it observes re-triggers itself and pins a renderer core.
+  // A break gaps every segment it contains, which can leave the player with
+  // nothing to decode and no reason to retry: the stream spins until the tab is
+  // hidden and shown again, because that is what makes it re-evaluate. Do that
+  // for the viewer. Armed only while a swap is active and briefly after, and it
+  // acts only when the element still believes it is playing while the playhead
+  // has stopped advancing, so ordinary buffering and a deliberate pause are never
+  // touched. setTimeout rather than setInterval: a raw-source check forbids
+  // intervals in this file, and a self-scheduling timeout also stops cleanly.
+  const STALL_ARM_MS = 180000;
+  const STALL_STRIKES = 3;
+  const STALL_NUDGE_GAP_MS = 5000;
+  let stallTimer = 0;
+  let stallArmedUntil = 0;
+  let stallLastTime = -1;
+  let stallStrikes = 0;
+  let stallLastNudgeAt = 0;
+
+  function nudgeStalledPlayback() {
+    try {
+      const video = document.querySelector('video');
+      if (!video || video.paused || video.ended || video.seeking) {
+        stallStrikes = 0;
+        return;
+      }
+      const at = Number(video.currentTime);
+      if (Number.isFinite(at) && at !== stallLastTime) {
+        stallLastTime = at;
+        stallStrikes = 0;
+        return;
+      }
+      stallStrikes++;
+      if (stallStrikes < STALL_STRIKES) return;
+      if (Date.now() - stallLastNudgeAt < STALL_NUDGE_GAP_MS) return;
+      stallStrikes = 0;
+      stallLastNudgeAt = Date.now();
+      video.pause();
+      const resumed = video.play();
+      if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
+    } catch (_) {}
+  }
+
+  function scheduleStallCheck() {
+    if (stallTimer) return;
+    try {
+      stallTimer = setTimeout(() => {
+        stallTimer = 0;
+        nudgeStalledPlayback();
+        if (Date.now() <= stallArmedUntil) scheduleStallCheck();
+      }, 1000);
+    } catch (_) {}
+  }
+
+  function armStallWatch() {
+    stallArmedUntil = Date.now() + STALL_ARM_MS;
+    stallLastTime = -1;
+    stallStrikes = 0;
+    scheduleStallCheck();
+  }
+
   let adChromeCssInstalled = false;
   function installAdChromeCss() {
     if (adChromeCssInstalled) return;
@@ -1298,7 +1362,7 @@
     // earlier than the playlist admits anything, and the front-of-break leak is
     // exactly the segments fetched before the playlist confesses. Treat the ad
     // service call as the warning it is.
-    const AD_IMMINENT_MS = 20000;
+    const AD_IMMINENT_MS = 12000;
     let adImminentUntil = 0;
     const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
     const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
@@ -1828,6 +1892,30 @@
     // it as network "Error #2000". Dropping the low-latency tags for the duration of
     // the intervention makes the player fall back to ordinary polling, which costs a
     // couple of seconds of latency during the break instead of killing playback.
+    // Only the FORWARD-LOOKING hints hand the player a URL for a segment it has
+    // not reached yet, and those are the sole delivery path for the front-of-break
+    // advert. SERVER-CONTROL, PART-INF, PART, RENDITION-REPORT and SKIP are the
+    // low-latency machinery itself: stripping those drops the player out of LL-HLS
+    // and costs real latency for the whole window. Take the hints, keep the mode.
+    const AD_HINT_TAG_RE = /^#EXT-X-(?:TWITCH-PREFETCH|PRELOAD-HINT)\b/i;
+    // Colon-anchored so it cannot also swallow EXT-X-PART-INF, which is config
+    // rather than a segment reference. Parts are only withheld while the ad
+    // service has actually signalled a break, because a part can carry the first
+    // advert beat, and outside that window dropping them costs real latency.
+    const AD_PART_TAG_RE = /^#EXT-X-PART:/i;
+
+    function stripAdHints(text, alsoParts) {
+      const lines = String(text || '').replace(/\r/g, '').split('\n');
+      const out = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (AD_HINT_TAG_RE.test(trimmed)) continue;
+        if (alsoParts && AD_PART_TAG_RE.test(trimmed)) continue;
+        out.push(line);
+      }
+      return out.join('\n');
+    }
+
     function stripLowLatency(text) {
       const lines = String(text || '').replace(/\r/g, '').split('\n');
       const out = [];
@@ -2360,7 +2448,7 @@
         // rather than a beat of advert. Any failure returns the native response.
         if (info && (evidence.hasMarker || evidence.strongMetadata || Date.now() < adImminentUntil)) {
           try {
-            const withheld = stripLowLatency(text);
+            const withheld = stripAdHints(text, Date.now() < adImminentUntil);
             if (withheld && withheld !== text && mediaPlaylistEnvelope(withheld)) {
               return responseWithText(response, withheld, 'application/vnd.apple.mpegurl');
             }
@@ -2528,6 +2616,9 @@
             try {
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: streamInterceptionEnabled() });
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'client-state', revision: revision, state: publicClientState() });
+              if (lastAdImminentAt && Date.now() - lastAdImminentAt < 15000) {
+                worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'ad-imminent' });
+              }
               if (lastMaster && Date.now() - lastMaster.at < 120000) {
                 worker.postMessage({
                   [MESSAGE_FLAG]: VERSION, type: 'master',
@@ -2543,6 +2634,7 @@
               const blocking = /^blocked-/.test(state);
               if (blocking) lastStreamInterventionAt = Date.now();
               installAdChromeCss();
+              if (blocking) armStallWatch();
               if (blocking) document.documentElement.setAttribute('data-wo-twitch-adblock', state);
               else document.documentElement.removeAttribute('data-wo-twitch-adblock');
               // Last, so the fire-time "another worker is still blocking" check
