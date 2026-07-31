@@ -649,7 +649,32 @@
     }
   }
 
+  // Twitch's own player must know a break is coming to render its ad countdown,
+  // and it asks the ad service over GQL -- traffic the page hook already sees.
+  // That lands earlier than the playlist admits anything, and the residual leak is
+  // precisely the segments fetched before the playlist confesses.
+  function noteAdServiceCall(init) {
+    try {
+      const body = init && typeof init.body === 'string' ? init.body : '';
+      if (!body) return;
+      const names = new Set();
+      const re = /"operationName"\s*:\s*"([A-Za-z0-9_]+)"/g;
+      let m;
+      while ((m = re.exec(body))) names.add(m[1]);
+      // Anchored, not substring: 'Broadcaster', 'GlobalBadges' and 'IsAdult' all
+      // contain "ad" and fire constantly. These four are the player actually
+      // transacting with the ad service.
+      const interesting = Array.from(names).filter((n) =>
+        /^Ads?_|^AdRequest|^AdContext|^ConnectAdIdentity/.test(n));
+      if (!interesting.length) return;
+      for (const worker of workers) {
+        try { worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'ad-imminent' }); } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   function captureClientState(input, init) {
+    try { noteAdServiceCall(init); } catch (_) {}
     let changed = false;
     const headers = copyHeaders(input, init);
     changed = setState('clientId', headers.get('Client-ID') || '') || changed;
@@ -1268,6 +1293,13 @@
     // marker-only spelling change cannot turn the entire ad pod into clean media.
     const AD_MARKER_RE = /\bstitched\b|#EXT-X-CUE-OUT|CLASS="twitch-maf-ad"|CLASS="twitch-trigger"/i;
     const STRONG_AD_METADATA_RE = /X-TV-TWITCH-AD-(?:RADS-TOKEN|ROLL-TYPE|POD-|ADVERTISER|CREATIVE|LINE-ITEM|ORDER-ID)/i;
+    // Twitch's own player has to know a break is coming in order to render its
+    // countdown, and it asks over GQL -- which the page already sees. That is
+    // earlier than the playlist admits anything, and the front-of-break leak is
+    // exactly the segments fetched before the playlist confesses. Treat the ad
+    // service call as the warning it is.
+    const AD_IMMINENT_MS = 20000;
+    let adImminentUntil = 0;
     const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
     const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
     const GQL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
@@ -2326,7 +2358,7 @@
         // announced but not yet confirmed. The listed segments are untouched, so
         // the cost is a little live-edge latency for the length of the break
         // rather than a beat of advert. Any failure returns the native response.
-        if (info && (evidence.hasMarker || evidence.strongMetadata)) {
+        if (info && (evidence.hasMarker || evidence.strongMetadata || Date.now() < adImminentUntil)) {
           try {
             const withheld = stripLowLatency(text);
             if (withheld && withheld !== text && mediaPlaylistEnvelope(withheld)) {
@@ -2374,6 +2406,8 @@
         active = message.enabled !== false;
       } else if (message.type === 'client-state' && message.state) {
         client = Object.assign({}, client, message.state);
+      } else if (message.type === 'ad-imminent') {
+        adImminentUntil = Date.now() + AD_IMMINENT_MS;
       } else if (message.type === 'master') {
         try {
           const url = String(message.url || '');
