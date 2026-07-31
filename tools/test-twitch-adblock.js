@@ -766,7 +766,7 @@ test('page config-off path forwards GQL and workers untouched', async () => {
 // A pre-roll is the client-side ad path, so the playlist engine never sees it.
 // It must be ANSWERED rather than refused: the player does not leave its ad
 // state until the request settles, so a blocked one freezes the break.
-test('the client-side ad request is answered locally with an empty VAST', async () => {
+test('the client-side ad request is answered locally with Twitch own no-fill status', async () => {
   const harness = createPageHarness();
   for (const url of [
     'https://edge.ads.twitch.tv/ads/format?afmt=STANDARD_VIDEO&bp=preroll',
@@ -774,21 +774,14 @@ test('the client-side ad request is answered locally with an empty VAST', async 
     'https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?sid=1',
   ]) {
     const response = await harness.window.fetch(url);
-    assert(response.status === 200, 'ad request must settle with a real response: ' + url);
+    // 204 is the branch the ad SDK resolves on immediately. A 200 would be
+    // content-type sniffed and run through a bid validator that throws.
+    assert(response.status === 204, 'ad request must settle as no-fill: ' + url);
     const text = await response.text();
-    assert(/<VAST[^>]*>/i.test(text), 'expected an empty VAST payload for ' + url);
-    assert(!/<Ad\b/i.test(text), 'the stand-in response carried a creative for ' + url);
+    assert(text === '', 'a no-fill answer must carry no body: ' + url);
   }
   assert(harness.state.fetchCalls.length === 0,
     'the ad request was put on the network instead of being answered');
-});
-
-test('an ad request asking for JSON is answered in the shape it asked for', async () => {
-  const harness = createPageHarness();
-  const response = await harness.window.fetch('https://edge.ads.twitch.tv/ads/format?rt=json');
-  const text = await response.text();
-  equal(JSON.parse(text), { ads: [] }, 'JSON ad request did not receive an empty JSON fill');
-  assert(harness.state.fetchCalls.length === 0, 'JSON ad request reached the network');
 });
 
 test('the ad responder never intercepts ordinary Twitch traffic', async () => {
