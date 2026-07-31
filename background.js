@@ -5515,16 +5515,26 @@ function refreshLoginCompatibilityRules() {
 // is a VAST request from Twitch's bundled ad SDK, so the network layer is the
 // only place it can be stopped.
 //
-// That SDK talks to two hosts and they do different jobs, which is the whole
-// reason this rule is one host and not both. Its AdRequestBuilder points at
-// vaes.amazon-adsystem.com to fetch the creative, while edge.ads.twitch.tv is
-// the lifecycle service the player uses to walk into and back out of a break.
-// Blocking the lifecycle host strands the player mid-break -- that was tried,
-// reverted, and is pinned by 'edge ads must stay network-allowed so Twitch can
-// advance its ad lifecycle' in tools/test-dynamic-registrations.js. So refuse
-// the creative and leave the lifecycle alone: the break still runs its course,
-// it just has nothing to show.
+// Which host serves it is not readable off the constants, and guessing it wrong
+// costs a whole debugging round. AdRequestBuilder is *constructed* pointing at
+// vaes.amazon-adsystem.com with the raw bid path, but `withAdFormat()` then
+// reassigns baseDomain to edge.ads.twitch.tv -- and a pre-roll carries
+// adFormat STANDARD_VIDEO, so it actually lands on /ads/format there. The
+// outstream and pause-ad formats take /ads on the same host. Refuse all of it,
+// and keep the vaes entry for the request shape that never sets a format.
+//
+// edge.ads.twitch.tv is the host pinned by 'edge ads must stay network-allowed
+// so Twitch can advance its ad lifecycle' in tools/test-dynamic-registrations.js.
+// That warning is about blocking the whole host: the ad request has to finish
+// for the player to leave the ad state, and there is no separate lifecycle path
+// to spare -- /ads and /ads/format are the only endpoints the SDK defines. So
+// the block is scoped to those two paths rather than the host, leaving anything
+// else it does there resolvable. This is the deliberately risky half of the
+// feature: if a break ever strands or a stream refuses to start, the
+// twitchAdBlock toggle is the off switch, and the standing alternative is to
+// answer these paths with an empty VAST rather than refuse them.
 const TWITCH_CLIENT_AD_HOSTS = ['vaes.amazon-adsystem.com'];
+const TWITCH_AD_PATH_FILTER = '||edge.ads.twitch.tv/ads';
 const TWITCH_AD_RESOURCE_TYPES = [
   'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object',
   'xmlhttprequest', 'ping', 'media', 'websocket', 'other',
@@ -5534,32 +5544,40 @@ async function applyTwitchAdRules(enabled) {
   try {
     enabled = !!enabled;
     if (__twitchAdRulesEnabled === enabled) return;
-    const removeRuleIds = [TWITCH_AD_RULE_BASE];
+    const removeRuleIds = [TWITCH_AD_RULE_BASE, TWITCH_AD_RULE_BASE + 1];
     if (!enabled) {
       await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules: [] });
       __twitchAdRulesEnabled = enabled;
       return;
     }
+    // Both rules sit above the media-compatibility band at 90000. For the Twitch
+    // host that is mandatory -- those allows re-permit every twitch.tv subdomain
+    // so playback cannot break, which covers edge.ads.twitch.tv too, and anything
+    // at or below them would never fire. Kept under an explicit user allowlist at
+    // 100000, where allowlisting Twitch means the site untouched, ads and all.
+    // Scoped to Twitch initiators so a feature named "Twitch ad block" cannot
+    // quietly change how an unrelated site behaves; a player.twitch.tv embed on a
+    // third-party page still matches, because the initiator of the request is the
+    // player frame's own origin.
     await chrome.declarativeNetRequest.updateSessionRules({
       removeRuleIds,
       addRules: [{
         id: TWITCH_AD_RULE_BASE,
-        // No allow covers this host today -- the media-compatibility rules only
-        // re-permit Twitch's own domains, and the never-block list carries
-        // amazon.com, which does not match amazon-adsystem.com. Sitting above
-        // that compatibility band anyway is deliberate: those rules exist to
-        // rescue playback and get broadened whenever a player breaks, and a
-        // broadening that reached this host would silently retire the rule
-        // rather than fail loudly. Still under an explicit user allowlist at
-        // 100000, where allowlisting Twitch means the site untouched, ads and all.
         priority: 96000,
         action: { type: 'block' },
         condition: {
           requestDomains: TWITCH_CLIENT_AD_HOSTS,
-          // Scoped to Twitch so a feature named "Twitch ad block" cannot quietly
-          // change how an unrelated site behaves. A player.twitch.tv embed on a
-          // third-party page still matches, because the initiator of the request
-          // is the player frame's own origin.
+          initiatorDomains: ['twitch.tv'],
+          resourceTypes: TWITCH_AD_RESOURCE_TYPES,
+        },
+      }, {
+        id: TWITCH_AD_RULE_BASE + 1,
+        priority: 96000,
+        action: { type: 'block' },
+        condition: {
+          // Path-scoped on purpose, never requestDomains: the host itself must
+          // stay reachable. This prefix covers both /ads and /ads/format.
+          urlFilter: TWITCH_AD_PATH_FILTER,
           initiatorDomains: ['twitch.tv'],
           resourceTypes: TWITCH_AD_RESOURCE_TYPES,
         },
