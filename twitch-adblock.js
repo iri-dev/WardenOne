@@ -802,8 +802,14 @@
   // touched. setTimeout rather than setInterval: a raw-source check forbids
   // intervals in this file, and a self-scheduling timeout also stops cleanly.
   const STALL_ARM_MS = 180000;
-  const STALL_STRIKES = 3;
-  const STALL_NUDGE_GAP_MS = 5000;
+  // Tuned for how this actually fails. A gapped break freezes the playhead almost
+  // immediately, so waiting three whole seconds to confirm it only adds three
+  // seconds to every recovery. Two checks half a second apart still cannot be
+  // tripped by ordinary frame pacing -- a playing video advances currentTime every
+  // frame -- but it reacts in about a second instead of three.
+  const STALL_POLL_MS = 500;
+  const STALL_STRIKES = 2;
+  const STALL_NUDGE_GAP_MS = 2500;
   let stallTimer = 0;
   let stallArmedUntil = 0;
   let stallLastTime = -1;
@@ -841,14 +847,22 @@
         stallTimer = 0;
         nudgeStalledPlayback();
         if (Date.now() <= stallArmedUntil) scheduleStallCheck();
-      }, 1000);
+      }, STALL_POLL_MS);
     } catch (_) {}
   }
 
   function armStallWatch() {
     stallArmedUntil = Date.now() + STALL_ARM_MS;
-    stallLastTime = -1;
     stallStrikes = 0;
+    // Seed the baseline from the current position immediately, so the very first
+    // check half a second later is already a real comparison rather than a
+    // throwaway that costs an extra poll before anything can be detected.
+    try {
+      const video = document.querySelector('video');
+      stallLastTime = video ? Number(video.currentTime) : -1;
+    } catch (_) {
+      stallLastTime = -1;
+    }
     scheduleStallCheck();
   }
 
