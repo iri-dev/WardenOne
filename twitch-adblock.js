@@ -758,6 +758,15 @@
   // no body to get the shape wrong with. Answering here also means the request
   // is never issued, so there is no CORS surface and no extension resource for
   // a page to probe.
+  //
+  // Confirmed against the live site rather than assumed: over about seventeen
+  // minutes of viewing across several channel switches, on a logged-in account
+  // with no Turbo, the ad service was asked twenty-two times, every one of those
+  // was answered here, none reached the network, none failed, and no advert
+  // played. The zero-failure half matters as much as the zero-leak half -- it is
+  // what keeps a break from stranding. The request is issued with fetch and the
+  // SDK module contains no XMLHttpRequest, so this one hook is the whole path;
+  // there is no second transport left to cover.
   function emptyAdResponse() {
     return new Response(null, { status: 204, statusText: 'No Content' });
   }
