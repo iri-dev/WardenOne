@@ -113,18 +113,22 @@ check('media compatibility refresh no longer depends on the Twitch ad-block togg
   'media allows and the Twitch page guard must be independently toggleable');
 
 // Pre-rolls are the client-side ad path, so no amount of playlist work reaches
-// them and the block has to live here. The split between the two SDK hosts is
-// the entire safety property: refuse the creative, never the lifecycle.
+// them and the block has to live here. A pre-roll sets an ad format, which makes
+// AdRequestBuilder repoint from the vaes bid host to edge.ads.twitch.tv/ads/format
+// -- so both are refused, but the Twitch host only ever by path.
 const twitchAdBody = bodyOf('applyTwitchAdRules');
 const twitchAdHosts = (background.match(/const TWITCH_CLIENT_AD_HOSTS = \[[^\]]*\]/) || [''])[0];
-check('client-side Twitch ad rule refuses the pre-roll creative host',
+const twitchAdPath = (background.match(/const TWITCH_AD_PATH_FILTER = '[^']*'/) || [''])[0];
+check('client-side Twitch ad rule refuses the pre-roll creative endpoints',
   /'vaes\.amazon-adsystem\.com'/.test(twitchAdHosts)
+    && /\|\|edge\.ads\.twitch\.tv\/ads/.test(twitchAdPath)
     && /requestDomains: TWITCH_CLIENT_AD_HOSTS/.test(twitchAdBody)
-    && /action: \{ type: 'block' \}/.test(twitchAdBody),
-  'the client-side VAST creative endpoint must be blocked at the network layer');
-check('client-side Twitch ad rule spares the ad lifecycle host',
-  !/edge\.ads\.twitch\.tv/.test(twitchAdHosts) && !/edge\.ads\.twitch\.tv/.test(twitchAdBody),
-  'blocking edge ads strands the player mid-break; only the creative may be refused');
+    && /urlFilter: TWITCH_AD_PATH_FILTER/.test(twitchAdBody),
+  'the client-side VAST creative endpoints must be blocked at the network layer');
+check('client-side Twitch ad rule blocks edge ads by path, never by host',
+  !/edge\.ads\.twitch\.tv/.test(twitchAdHosts)
+    && !/requestDomains: \[[^\]]*edge\.ads\.twitch\.tv/.test(twitchAdBody),
+  'a whole-host block strands the player mid-break; only the /ads paths may be refused');
 check('client-side Twitch ad rule outranks the media compatibility band',
   /priority: 96000/.test(twitchAdBody),
   'a broadened compatibility allow would otherwise silently retire this rule');
