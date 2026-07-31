@@ -763,6 +763,54 @@ test('page config-off path forwards GQL and workers untouched', async () => {
     'config-off path installed the independent-video observer');
 });
 
+// A pre-roll is the client-side ad path, so the playlist engine never sees it.
+// It must be ANSWERED rather than refused: the player does not leave its ad
+// state until the request settles, so a blocked one freezes the break.
+test('the client-side ad request is answered locally with an empty VAST', async () => {
+  const harness = createPageHarness();
+  for (const url of [
+    'https://edge.ads.twitch.tv/ads/format?afmt=STANDARD_VIDEO&bp=preroll',
+    'https://edge.ads.twitch.tv/ads?afmt=PAUSE_ADS',
+    'https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?sid=1',
+  ]) {
+    const response = await harness.window.fetch(url);
+    assert(response.status === 200, 'ad request must settle with a real response: ' + url);
+    const text = await response.text();
+    assert(/<VAST[^>]*>/i.test(text), 'expected an empty VAST payload for ' + url);
+    assert(!/<Ad\b/i.test(text), 'the stand-in response carried a creative for ' + url);
+  }
+  assert(harness.state.fetchCalls.length === 0,
+    'the ad request was put on the network instead of being answered');
+});
+
+test('an ad request asking for JSON is answered in the shape it asked for', async () => {
+  const harness = createPageHarness();
+  const response = await harness.window.fetch('https://edge.ads.twitch.tv/ads/format?rt=json');
+  const text = await response.text();
+  equal(JSON.parse(text), { ads: [] }, 'JSON ad request did not receive an empty JSON fill');
+  assert(harness.state.fetchCalls.length === 0, 'JSON ad request reached the network');
+});
+
+test('the ad responder never intercepts ordinary Twitch traffic', async () => {
+  const harness = createPageHarness();
+  for (const url of [
+    'https://www.twitch.tv/adsomething',
+    'https://edge.ads.twitch.tv/health',
+    'https://usher.ttvnw.net/api/channel/hls/fixture.m3u8',
+  ]) {
+    await harness.window.fetch(url);
+  }
+  assert(harness.state.fetchCalls.length === 3,
+    'the ad responder swallowed a request that was not an ad request');
+});
+
+test('with the Twitch ad block off, the ad request is left alone', async () => {
+  const harness = createPageHarness({ twitchAdBlock: false });
+  await harness.window.fetch('https://edge.ads.twitch.tv/ads/format?afmt=STANDARD_VIDEO');
+  assert(harness.state.fetchCalls.length === 1,
+    'config-off path still answered the ad request locally');
+});
+
 test('only intervention-linked network/decode errors enter a short recovery window', async () => {
   const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
   const worker = new harness.window.Worker('blob:https://www.twitch.tv/fail-open-worker');
