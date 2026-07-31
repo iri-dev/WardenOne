@@ -39,6 +39,13 @@ class EventTargetHarness {
     this.listeners.set(type, list);
   }
 
+  removeEventListener(type, callback) {
+    const list = this.listeners.get(type);
+    if (!list) return;
+    const index = list.indexOf(callback);
+    if (index >= 0) list.splice(index, 1);
+  }
+
   dispatchEvent(event) {
     const list = this.listeners.get(event && event.type) || [];
     for (const callback of list.slice()) callback.call(this, event);
@@ -74,6 +81,15 @@ class StyleHarness {
     const entry = this.values.get(String(property));
     return entry ? entry.priority : '';
   }
+}
+
+function harnessTimeRanges(ranges) {
+  const list = Array.isArray(ranges) ? ranges : [];
+  return {
+    length: list.length,
+    start(index) { return list[index][0]; },
+    end(index) { return list[index][1]; },
+  };
 }
 
 class ElementHarness extends EventTargetHarness {
@@ -224,6 +240,16 @@ function createPageHarness(config, harnessOptions) {
       this.muted = !!options.muted;
       this.volume = options.volume == null ? 1 : Number(options.volume);
       this.pauseCalls = 0;
+      // Live-timeline surface. Seeks written by the module are recorded
+      // separately from playback the fixture models, so a test can tell the two
+      // apart; playTo() moves the playhead the way normal playback would.
+      this.seeks = [];
+      this._currentTime = options.currentTime == null ? 0 : Number(options.currentTime);
+      this.duration = options.duration == null ? Infinity : Number(options.duration);
+      this.playbackRate = options.playbackRate == null ? 1 : Number(options.playbackRate);
+      this.seeking = options.seeking === true;
+      this.ended = options.ended === true;
+      this.ranges = Array.isArray(options.ranges) ? options.ranges.map((range) => range.slice()) : [];
       if (options.src != null) this.setAttribute('src', options.src);
       if (options.label != null) this.setAttribute('aria-label', options.label);
       for (const [property, entry] of Object.entries(options.style || {})) {
@@ -274,6 +300,28 @@ function createPageHarness(config, harnessOptions) {
     pause() {
       this.pauseCalls++;
       this.operations.push({ type: 'pause' });
+    }
+
+    get currentTime() {
+      return this._currentTime;
+    }
+
+    set currentTime(value) {
+      this._currentTime = Number(value);
+      if (this.seeks) this.seeks.push(Number(value));
+    }
+
+    get buffered() {
+      return harnessTimeRanges(this.ranges);
+    }
+
+    get seekable() {
+      return harnessTimeRanges(this.ranges);
+    }
+
+    playTo(current, bufferedEnd) {
+      this._currentTime = Number(current);
+      this.ranges = [[0, Number(bufferedEnd)]];
     }
   }
 
@@ -1033,6 +1081,204 @@ test('display-ad CSS hides creative leaves but never player/root modifiers', () 
   assert(layoutRule.includes('[class*="video-player--stream-display-ad" i]') &&
       layoutRule.includes('[class*="video-player"][class*="vertical-video-ad" i]'),
     'display/vertical live player modifiers are not restored to full size');
+});
+
+// Selector lists carry :where()/:is() groups, so a naive comma split would tear
+// them apart and make the guard assertions below pass on rules that do not have
+// the guard at all.
+function splitSelectorList(text) {
+  const selectors = [];
+  let depth = 0;
+  let current = '';
+  for (const character of String(text)) {
+    if (character === '(') depth++;
+    else if (character === ')') depth--;
+    if (character === ',' && depth === 0) {
+      if (current.trim()) selectors.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  if (current.trim()) selectors.push(current.trim());
+  return selectors;
+}
+
+function gatedAdChromeSheet() {
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/ad-chrome-worker');
+  const ready = harness.window.__wardenOneTwitchAdblockReady;
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: ready, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: ready, type: 'ad-state', state: 'blocked-clean' },
+    stopImmediatePropagation() {},
+  });
+  const style = harness.document.documentElement.children.find((node) => node.id === 'wo-twitch-ad-chrome');
+  assert(style && typeof style.textContent === 'string' && style.textContent,
+    'gated Twitch ad-chrome sheet did not mount on the first blocked state');
+  return style.textContent;
+}
+
+test('gated ad-chrome CSS stays gated and can never hide an ancestor of the live player', () => {
+  const sheet = gatedAdChromeSheet();
+  const gate = 'html[data-wo-twitch-adblock^="blocked-"] ';
+  const selectors = [];
+  for (const rule of sheet.split('}')) {
+    const head = rule.split('{')[0].trim();
+    if (head) selectors.push(...splitSelectorList(head));
+  }
+  assert(selectors.length > 0, 'gated Twitch ad-chrome sheet declared no selectors');
+  for (const selector of selectors) {
+    assert(selector.startsWith(gate), 'ad-chrome selector is not gated on an active swap: ' + selector);
+  }
+  // display:none on any ancestor blanks the picture regardless of what the rule
+  // meant to hide, so every selector that could name a wrapper must refuse to
+  // match an element that contains a video.
+  for (const selector of selectors) {
+    for (const token of [
+      '[data-a-target*="video-ad" i]',
+      '[aria-label*="advertisement" i]',
+      '.video-player__ad-info-container',
+      '.picture-by-picture-player',
+      '[data-a-target="pbyp-player-instance"]',
+      '.picture-by-picture-overlay',
+    ]) {
+      if (!selector.includes(token)) continue;
+      assert(selector.includes(':not(:has('),
+        'ancestor-capable ad-chrome selector ships without a structural guard: ' + selector);
+    }
+  }
+  for (const selector of selectors) {
+    if (!selector.includes('.picture-by-picture-player') && !selector.includes('pbyp-player-instance')) continue;
+    for (const identity of [
+      'video[aria-label="Twitch video player" i]',
+      '[data-a-target="video-ref"]',
+      '[data-test-selector="video-player__video-container"]',
+    ]) {
+      assert(selector.includes(':not(:has(' + identity + '))'),
+        'picture-by-picture rule does not spare live player identity ' + identity + ': ' + selector);
+    }
+  }
+  assert(!selectors.includes(gate + '.picture-by-picture-overlay'),
+    'the pbyp overlay is hidden unconditionally again, stripping the chrome off the box rule 3 spares');
+  assert(selectors.some((selector) => selector.includes('.picture-by-picture-overlay') &&
+      selector.includes('.picture-by-picture-player')),
+    'the pbyp overlay rule is no longer scoped to a non-live pbyp box');
+  // The badge rule is deliberately kept out of the :has() family so an engine
+  // without :has() still applies it.
+  assert(!sheet.split('}')[0].includes(':has('),
+    'the leaf ad-marker rule now depends on :has() and dies with it');
+  assert(sheet.includes('/how-to-allow-ads-browser'),
+    'the Turbo/allow-ads overlay probe was dropped');
+});
+
+// One ad break driven through the page module: baseline on the first blocked-*
+// message, playback modelled at 1x across the break, then the worker's 'clear'
+// carrying the offset it measured from the two playlists.
+function runCatchUpBreak(options) {
+  options = options || {};
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/catch-up-worker');
+  const ready = harness.window.__wardenOneTwitchAdblockReady;
+  const send = (data) => worker.dispatchEvent({
+    type: 'message',
+    data: Object.assign({ __woTwitchAdblock: ready }, data),
+    stopImmediatePropagation() {},
+  });
+  send({ type: 'ready' });
+  const video = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/catch-up-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 100,
+    ranges: [[0, 105]],
+  });
+  send({ type: 'ad-state', state: 'blocked-clean' });
+  harness.advance(30000);
+  video.playTo(130, 155);
+  if (typeof options.duringBreak === 'function') options.duringBreak(video, harness);
+  send({ type: 'ad-state', state: 'clear', offsetMs: options.offsetMs });
+  video.playTo(132, 157);
+  if (typeof options.beforeEvaluation === 'function') options.beforeEvaluation(video, harness);
+  harness.advance(2000);
+  return { harness, video, worker };
+}
+
+test('post-swap catch-up refuses to seek without a worker-measured swap offset', () => {
+  equal(runCatchUpBreak({ offsetMs: 0 }).video.seeks, [],
+    'catch-up seeked on a break the worker reported no offset for');
+  equal(runCatchUpBreak({}).video.seeks, [],
+    'catch-up seeked on a break that carried no offset field at all');
+  equal(runCatchUpBreak({ offsetMs: 'not-a-number' }).video.seeks, [],
+    'catch-up seeked on an unreadable offset');
+});
+
+test('a measured swap offset and continuous playback produce one bounded catch-up seek', () => {
+  const { video } = runCatchUpBreak({ offsetMs: 20000 });
+  // 20s measured offset, 20s of surplus buffer, 5s of pre-break buffer held back:
+  // 132 -> 152, which is still 5s short of the 157s buffered edge.
+  equal(video.seeks, [152], 'catch-up did not close the measured offset exactly once');
+});
+
+test('the measured offset is a ceiling, never a target', () => {
+  const { video } = runCatchUpBreak({ offsetMs: 6000 });
+  equal(video.seeks, [138], 'catch-up seeked past the offset the worker actually measured');
+});
+
+test('a pause during the ad break stands the catch-up down even after the viewer resumes', () => {
+  const { video } = runCatchUpBreak({
+    offsetMs: 20000,
+    duringBreak(video) {
+      video.dispatchEvent({ type: 'pause' });
+      video.dispatchEvent({ type: 'play' });
+    },
+  });
+  assert(video.paused === false, 'fixture did not model a viewer who resumed before the evaluation');
+  equal(video.seeks, [], 'catch-up skipped over content the viewer paused to keep');
+});
+
+test('a rebuffer during the ad break is never reclaimed as swap latency', () => {
+  equal(runCatchUpBreak({
+    offsetMs: 20000,
+    duringBreak(video) { video.dispatchEvent({ type: 'waiting' }); },
+  }).video.seeks, [], 'catch-up skipped the seconds a rebuffer had just recovered');
+  equal(runCatchUpBreak({
+    offsetMs: 20000,
+    duringBreak(video) { video.dispatchEvent({ type: 'stalled' }); },
+  }).video.seeks, [], 'catch-up treated a stall as swap-induced latency');
+});
+
+test('a deliberate DVR rewind blocks the catch-up seek', () => {
+  const { video } = runCatchUpBreak({
+    offsetMs: 20000,
+    beforeEvaluation(video, harness) {
+      harness.document.documentElement.setAttribute('data-wo-twitch-dvr', 'replay');
+    },
+  });
+  equal(video.seeks, [], 'catch-up yanked a deliberate local rewind back toward live');
+});
+
+test('any deliberate playback-rate change hands the element back to its own controller', () => {
+  const { video } = runCatchUpBreak({
+    offsetMs: 20000,
+    // Inside the old +-0.1 dead band: this is the size of nudge an LL-HLS
+    // latency controller uses while it is correcting.
+    beforeEvaluation(video) { video.playbackRate = 1.05; },
+  });
+  equal(video.seeks, [], 'catch-up raced the player latency controller instead of yielding');
+});
+
+test('a closed catch-up episode leaves no listeners on the media element', () => {
+  const { video } = runCatchUpBreak({ offsetMs: 20000 });
+  for (const eventName of ['pause', 'waiting', 'stalled', 'seeking', 'ratechange', 'emptied', 'error']) {
+    assert((video.listeners.get(eventName) || []).length === 0,
+      'catch-up episode leaked its ' + eventName + ' listener');
+  }
 });
 
 test('media-amazon direct and child sources are guarded without pausing attached media', () => {

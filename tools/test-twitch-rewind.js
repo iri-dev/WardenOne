@@ -130,6 +130,20 @@ assert(/canvas width="1920" height="1080"/.test(harness) && /1000 \/ 60/.test(ha
 assert(/createMediaStreamDestination/.test(harness) && /data-current-time/.test(harness), 'browser harness should offer audio stress and expose playback progress');
 assert(/nativePlaybackButton\.addEventListener\('click'/.test(harness) && /data-paused/.test(harness), 'browser harness should exercise native pause and expose paused state');
 
+// ---- Cross-world DVR contract with the ad blocker ---------------------------
+// twitch-adblock.js (MAIN world) stands its post-ad catch-up seek down while the
+// viewer is deliberately behind. A rename on either side must fail here, not on
+// a live rewind that silently loses seconds from the recording.
+const adblock = read('twitch-adblock.js');
+assert(/data-wo-twitch-dvr/.test(rewind) && /data-wo-twitch-dvr/.test(adblock),
+  'the DVR replay signal must stay readable by the MAIN-world ad blocker');
+assert(/replayActive = true;[\s\S]{0,300}?markDeliberateRewind\(true\);/.test(rewind),
+  'the replay signal must be published on the same synchronous edge as replayActive');
+assert((rewind.match(/markDeliberateRewind\(false\)/g) || []).length === 2,
+  'both goLive and removeReplayLayer must clear the replay signal');
+assert(/wardenone-twitch-replay-layer/.test(rewind) && /wardenone-twitch-replay-layer/.test(adblock),
+  'the replay-layer fallback probe must keep matching the layer id');
+
 // ---- Privacy / non-interference guarantees ---------------------------------
 assert(!/SourceBuffer\.prototype/.test(rewind), 'runtime must not interfere with Twitch MediaSource eviction');
 assert(!/sourceVideo\.currentTime\s*=/.test(rewind), 'runtime must not seek Twitch into discarded media');
