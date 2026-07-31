@@ -773,17 +773,404 @@
       const style = document.createElement('style');
       style.id = 'wo-twitch-ad-chrome';
       const gate = 'html[data-wo-twitch-adblock^="blocked-"] ';
-      style.textContent = [
-        '[data-a-target="video-ad-label"]',
-        '[data-a-target="video-ad-countdown"]',
-        '[data-a-target="video-ad-countdown-container"]',
-        '[data-test-selector="sad-overlay"]',
-        '.video-player__ad-info-container',
-        '[data-a-target="pbyp-player-instance"]',
-        '.picture-by-picture-player',
-      ].map((sel) => gate + sel).join(',') + '{display:none!important;}';
+      // Honest status of this list: the exact-match badge selectors that used to
+      // live here were byte-identical to ungated rules in adCss above, and the
+      // badge was still visible during a live swap, so they demonstrably no
+      // longer match anything. What follows is a better-evidenced replacement,
+      // NOT a verified fix. Neither reported symptom is confirmed closed: the
+      // "Ad" badge is still guesswork, and the "Commercial break in progress"
+      // placeholder is identified by its text, which CSS cannot match at all --
+      // only the Turbo/allow-ads link inside the same overlay is addressable.
+      //
+      // Structural rule for everything below: a selector that can match an
+      // ANCESTOR of the live <video> carries a :not(:has(video)) guard, because
+      // display:none on an ancestor blanks the whole picture for the break --
+      // far worse than the chrome it was meant to hide.
+      //
+      // Leaf-shaped ad markers only. Kept free of :has() so an engine without it
+      // still applies them.
+      const leafSelectors = [
+        '[data-a-target*="ad-countdown" i]',
+        '[class*="circle-countdown" i]'
+      ];
+      // Substring supersets of markers Twitch has used, plus the aria-labelled
+      // chrome. Each of these can name a wrapper as easily as a badge, so none of
+      // them is allowed to match an element that contains a video. The :where()
+      // list additionally spares the player's own identities by name.
+      const wrapperSelectors = [
+        '[data-a-target*="video-ad" i]',
+        '[aria-label*="advertisement" i]',
+        '.video-player__ad-info-container'
+      ];
+      const notPlayer = ':not(:has(video))' +
+        ':not(:where(video,.video-player,.video-player__container,[data-a-target="video-player"],[data-a-target="video-ref"]))';
+      // The picture-by-picture "watch while the ad plays" box. Twitch sometimes
+      // wraps the GENUINE live stream in it, and hiding it then blanks the player
+      // -- src/content.js:9068 refuses the same box for the same reason, using
+      // the video container identity that is included here as the third test.
+      const pbypBoxes = ['.picture-by-picture-player', '[data-a-target="pbyp-player-instance"]'];
+      const notLiveBox = ':not(:has(video[aria-label="Twitch video player" i]))' +
+        ':not(:has([data-a-target="video-ref"]))' +
+        ':not(:has([data-test-selector="video-player__video-container"]))';
+      style.textContent = leafSelectors.map((sel) => gate + sel).join(',') + '{display:none!important;}\n' +
+        wrapperSelectors.map((sel) => gate + sel + notPlayer).join(',') + '{display:none!important;}\n' +
+        pbypBoxes.map((sel) => gate + sel + notLiveBox).join(',') + '{display:none!important;}\n' +
+        // Scoped under an ad box on purpose. The reference implementation hides
+        // this overlay only once a non-live pbyp box was actually found
+        // (src/content.js:9087); hiding it unconditionally would strip the chrome
+        // off the very box the rule above deliberately spares.
+        pbypBoxes.map((sel) => gate + sel + notLiveBox + ' .picture-by-picture-overlay').join(',') +
+        '{display:none!important;}\n' +
+        // The purple full-player "allow ads / get Turbo" gate. Matched by content
+        // rather than by class, because the wrapper classes also back the pause,
+        // loading and mature-content screens.
+        gate + '.video-player__overlay .player-overlay-background:has(> div[class^="Layout-"] > div[class^="Layout-"]' +
+        ' > div[class^="Layout-"] > a:is([href*="/how-to-allow-ads-browser"],[href="https://www.twitch.tv/turbo"]))' +
+        '{display:none!important;}';
       root.appendChild(style);
     } catch (_) {}
+  }
+
+  // Post-swap latency. The clean backup is a separate stream session with its own
+  // live edge, so when a swap ends the viewer is left behind by that session's
+  // offset for the rest of the sitting.
+  //
+  // That offset is NOT observable from this side of the page. currentTime,
+  // buffered and seekable describe the media timeline; none of them carries the
+  // wall-clock age of the content on it, and a swap does not stop the element --
+  // the playhead keeps advancing at 1x across it. Anything inferred here from
+  // "the playhead lost time" measures a pause or a rebuffer instead, and
+  // reclaiming those seconds would skip exactly the content the viewer was
+  // waiting for. So the budget is measured where both playlists are actually
+  // parsed -- in the worker, from #EXT-X-PROGRAM-DATE-TIME -- and arrives with
+  // the 'clear' transition. With no measurement there is no seek.
+  //
+  // Everything else is a refusal: the DVR (twitch-rewind.js, ISOLATED world) and
+  // Twitch's own latency controller also drive this element, and losing that race
+  // is worse than staying late.
+  const CATCHUP_SETTLE_MS = 2000;
+  const CATCHUP_BASELINE_RETRY_MS = 250;
+  const CATCHUP_BASELINE_TRIES = 8;
+  const CATCHUP_EPISODE_MAX_MS = 120 * 1000;
+  const CATCHUP_COOLDOWN_MS = 15 * 1000;
+  const CATCHUP_MIN_SECONDS = 1.5;
+  const CATCHUP_MAX_SECONDS = 25;
+  // The playhead must have advanced with the wall clock for the whole episode.
+  // Anything larger is a pause or a stall, which is the viewer's time, not ours;
+  // anything smaller than this is timer jitter.
+  const CATCHUP_CONTINUITY_TOLERANCE = 1;
+  const CATCHUP_EDGE_MARGIN_SECONDS = 1.5;
+  const CATCHUP_KEEP_BEHIND_MIN_SECONDS = 2;
+  const CATCHUP_KEEP_BEHIND_MAX_SECONDS = 8;
+  const CATCHUP_RANGE_TOLERANCE = 0.25;
+  // Any of these means another actor (the viewer, the network, the player's own
+  // controller) moved the element during the break. None of them is evidence of
+  // swap latency, and all of them look identical to it in a wall-clock reading.
+  const CATCHUP_DISQUALIFYING_EVENTS = ['pause', 'waiting', 'stalled', 'seeking', 'ratechange', 'emptied', 'error'];
+  let catchUpEpisode = null;
+  let catchUpTimer = 0;
+  let catchUpBaselineTimer = 0;
+  let lastCatchUpAt = 0;
+
+  function catchUpLog(message) {
+    // Ad-time logging stays on: a seek that lands wrong is otherwise invisible
+    // after the fact, and this is the one path with no offline reproduction.
+    try { console.log('[WO-Twitch] catch-up ' + message); } catch (_) {}
+  }
+
+  function deliberateRewindActive() {
+    // Fails CLOSED, unlike the rest of this file: skipping a catch-up only costs
+    // latency, while seeking during a local rewind cuts a hole in the recording
+    // the viewer is watching. Worlds cannot share state, so the DVR publishes its
+    // own attribute; the layer probe covers an older rewind build in the tab.
+    try {
+      const root = document.documentElement;
+      if (root && typeof root.getAttribute === 'function' && root.getAttribute('data-wo-twitch-dvr')) return true;
+      if (typeof document.getElementById === 'function') {
+        const layer = document.getElementById('wardenone-twitch-replay-layer');
+        if (layer && String(layer.style && layer.style.display || '') !== 'none') return true;
+      }
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function catchUpSeekTarget() {
+    const video = primaryPlayerVideo();
+    if (!(video instanceof HTMLVideoElement) || !video.isConnected) return null;
+    // primaryPlayerVideo()'s fallback tiers accept any connected blob video, and
+    // both the DVR's replay surfaces and guarded ad creatives are blob videos in
+    // the same subtree. Seeking one of those rewrites the wrong picture.
+    try {
+      if (video.getAttribute('data-wardenone-replay') || video.getAttribute('data-wo-twitch-independent-ad')) return null;
+    } catch (_) {
+      return null;
+    }
+    if (!videoMediaSource(video).startsWith('blob:')) return null;
+    return video;
+  }
+
+  function catchUpContainingEnds(ranges, position) {
+    const ends = [];
+    let count = 0;
+    try {
+      count = ranges && typeof ranges.length === 'number' ? Number(ranges.length) || 0 : 0;
+    } catch (_) {
+      return ends;
+    }
+    for (let index = 0; index < count; index++) {
+      try {
+        const start = Number(ranges.start(index));
+        const end = Number(ranges.end(index));
+        if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+        if (position >= start - CATCHUP_RANGE_TOLERANCE && position <= end + CATCHUP_RANGE_TOLERANCE) ends.push(end);
+      } catch (_) {}
+    }
+    return ends;
+  }
+
+  function measureCatchUp(video) {
+    try {
+      const current = Number(video.currentTime);
+      if (!Number.isFinite(current) || current < 0) return null;
+      // A VOD has a finite duration and a complete seekable range, so "catching
+      // up" there would throw the viewer to the end of a broadcast they opened at
+      // a deliberate timestamp (twitch-vod-rewind.js does exactly that).
+      if (Number(video.duration) !== Infinity) return null;
+      // seekable can be advertised beyond what is decodable, so buffered decides
+      // where it is safe to land and seekable only grants permission. Requiring a
+      // single containing buffered range keeps the seek inside real media.
+      const buffered = catchUpContainingEnds(video.buffered, current);
+      if (buffered.length !== 1) return null;
+      const seekable = catchUpContainingEnds(video.seekable, current);
+      if (!seekable.length) return null;
+      const edge = Math.min(buffered[0], Math.max.apply(null, seekable));
+      const ahead = edge - current;
+      if (!Number.isFinite(edge) || !Number.isFinite(ahead) || ahead < 0) return null;
+      return { current: current, edge: edge, ahead: ahead };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function catchUpUnsafeState(video) {
+    try {
+      if (video.error) return 'media-error';
+      if (video.paused === true) return 'paused';
+      if (video.ended === true) return 'ended';
+      if (video.seeking === true) return 'seeking';
+      // HAVE_FUTURE_DATA: the landing point has to play through immediately, or
+      // the seek reads as a stall and Twitch surfaces it as a network error.
+      if (Number(video.readyState || 0) < 3) return 'not-ready';
+      // Twitch's own controller is already chasing the edge. Two controllers on
+      // one element oscillate; let it finish. The tolerance is a float-comparison
+      // epsilon, not a behavioural window: LL-HLS latency controllers correct with
+      // small nudges (1.02-1.05), and any deliberate rate change at all says
+      // somebody else owns this element.
+      if (Math.abs(Number(video.playbackRate == null ? 1 : video.playbackRate) - 1) > 0.01) return 'rate';
+      // A hidden tab throttles timers, which inflates the wall-clock measurement
+      // with delay we did not cause.
+      if (document.hidden === true) return 'hidden';
+    } catch (_) {
+      return 'unreadable';
+    }
+    return '';
+  }
+
+  // Sampling video.paused once, at fire time, is not a pause guard: a viewer who
+  // pauses mid-break and resumes before the evaluation passes it, and the pause
+  // has already been recorded as lost wall-clock time. Watch the element for the
+  // whole episode instead. These listeners are element- and episode-scoped, so
+  // they add no document listeners, no observer and no interval.
+  function disqualifyCatchUpEpisode(event) {
+    const episode = catchUpEpisode;
+    if (!episode || episode.disqualifiedBy) return;
+    episode.disqualifiedBy = String(event && event.type || 'unknown');
+  }
+
+  function unwatchCatchUpVideo(episode) {
+    const video = episode && episode.watched;
+    if (!video) return;
+    episode.watched = null;
+    try {
+      for (const name of CATCHUP_DISQUALIFYING_EVENTS) video.removeEventListener(name, disqualifyCatchUpEpisode);
+    } catch (_) {}
+  }
+
+  function watchCatchUpVideo(episode, video) {
+    if (!episode || !video || episode.watched === video) return;
+    unwatchCatchUpVideo(episode);
+    try {
+      for (const name of CATCHUP_DISQUALIFYING_EVENTS) video.addEventListener(name, disqualifyCatchUpEpisode);
+      episode.watched = video;
+    } catch (_) {
+      // An element that will not accept listeners cannot be watched, so it cannot
+      // be seeked either.
+      episode.disqualifiedBy = 'unwatchable';
+    }
+  }
+
+  function closeCatchUpEpisode() {
+    if (catchUpBaselineTimer) clearTimeout(catchUpBaselineTimer);
+    if (catchUpTimer) clearTimeout(catchUpTimer);
+    catchUpBaselineTimer = 0;
+    catchUpTimer = 0;
+    unwatchCatchUpVideo(catchUpEpisode);
+    catchUpEpisode = null;
+  }
+
+  function sampleCatchUpBaseline() {
+    catchUpBaselineTimer = 0;
+    const episode = catchUpEpisode;
+    if (!episode || episode.baseline) return;
+    const video = catchUpSeekTarget();
+    const measured = video ? measureCatchUp(video) : null;
+    if (measured) {
+      watchCatchUpVideo(episode, video);
+      episode.baseline = {
+        at: Date.now(),
+        video: video,
+        source: videoMediaSource(video),
+        path: location.pathname || '',
+        current: measured.current,
+        ahead: measured.ahead
+      };
+      return;
+    }
+    // A pre-roll can block before the element exists, and setAdState dedupes, so
+    // there is no second rising edge to sample on. Retry briefly, never poll.
+    if (episode.baselineTries++ >= CATCHUP_BASELINE_TRIES) return;
+    catchUpBaselineTimer = setTimeout(sampleCatchUpBaseline, CATCHUP_BASELINE_RETRY_MS);
+  }
+
+  // Returns true only to ask for one more settle window; every other outcome
+  // ends the episode, so a missed guard can never turn into a repeated seek.
+  function evaluateCatchUp(episode, baseline) {
+    const now = Date.now();
+    if (now - baseline.at > CATCHUP_EPISODE_MAX_MS) return false;
+    if (lastCatchUpAt && now - lastCatchUpAt < CATCHUP_COOLDOWN_MS) return false;
+    // The viewer paused, the stream rebuffered, or somebody changed the rate at
+    // some point during the break. Twitch resumes where it stalled and stays
+    // behind where the viewer paused; so do we.
+    if (episode.disqualifiedBy) {
+      catchUpLog('skipped: playback was interrupted (' + episode.disqualifiedBy + ')');
+      return false;
+    }
+    // A best-effort "is a swap still running" probe, not a sound one: the
+    // attribute is a single flag, not a refcount, so with more than one wrapped
+    // worker in the tab the first 'clear' erases it while another worker is still
+    // serving a backup. It catches the common single-worker case; the measured
+    // budget and the continuity checks below are what actually bound the seek.
+    if (document.documentElement && document.documentElement.hasAttribute('data-wo-twitch-adblock')) return false;
+    // A seek emits waiting/stalled, which cancels the early-resume check and
+    // stretches an open pass-through window out to its full length.
+    if (playbackFailOpenUntil > now) return false;
+    if (deliberateRewindActive()) return false;
+    const video = catchUpSeekTarget();
+    // A different element or a new blob URL means the player rebuilt its
+    // MediaSource, so the baseline describes a timeline that no longer exists.
+    if (!video || video !== baseline.video || videoMediaSource(video) !== baseline.source ||
+        (location.pathname || '') !== baseline.path) return false;
+    // Only an element that was watched for the whole episode can be trusted: on
+    // any other one a pause or a stall would have gone unrecorded.
+    if (episode.watched !== video) return false;
+    if (catchUpUnsafeState(video)) return false;
+    const measured = measureCatchUp(video);
+    if (!measured) return false;
+
+    // The measured budget: how much older the backup session's newest segment was
+    // than the native stream's, read off #EXT-X-PROGRAM-DATE-TIME in the worker
+    // while it held both playlists. This is the only evidence that the swap cost
+    // the viewer anything; without it nothing is reclaimed.
+    const budget = Number(episode.offsetSeconds) || 0;
+    if (!(budget >= CATCHUP_MIN_SECONDS)) {
+      catchUpLog('skipped: no measured swap offset');
+      return false;
+    }
+    const wallElapsed = (now - baseline.at) / 1000;
+    const played = measured.current - baseline.current;
+    // The playhead must have tracked the wall clock across the whole episode. If
+    // it fell behind, the viewer paused or the stream stalled and those seconds
+    // are theirs; if it ran ahead, another controller already corrected. A pause
+    // and a swap are indistinguishable in this reading, which is exactly why it
+    // is used to REFUSE rather than to size the seek.
+    if (played < -CATCHUP_RANGE_TOLERANCE || Math.abs(wallElapsed - played) > CATCHUP_CONTINUITY_TOLERANCE) {
+      catchUpLog('skipped: playback was not continuous (' + (wallElapsed - played).toFixed(2) + 's)');
+      return false;
+    }
+    // Reproduce the buffer-ahead the player itself chose before the break rather
+    // than inventing a target latency.
+    const keepBehind = Math.min(Math.max(baseline.ahead, CATCHUP_KEEP_BEHIND_MIN_SECONDS), CATCHUP_KEEP_BEHIND_MAX_SECONDS);
+    // What the break actually left sitting ahead of the playhead. Latency the
+    // viewer already had before the break is excluded by construction, and a
+    // player that never buffered a surplus has nothing to skip over.
+    const surplus = measured.ahead - baseline.ahead;
+    const allowed = Math.min(budget, surplus, measured.edge - keepBehind - measured.current, CATCHUP_MAX_SECONDS);
+    const target = Math.min(measured.current + allowed, measured.edge - CATCHUP_EDGE_MARGIN_SECONDS);
+    const delta = target - measured.current;
+    if (!Number.isFinite(delta) || delta < CATCHUP_MIN_SECONDS) {
+      // The worker reports clean when it returns a native playlist, which is
+      // before the player has appended those segments, so the first measurement
+      // still describes the backup timeline.
+      if (episode.evaluations++ < 1) return true;
+      catchUpLog('skipped: delta ' + delta.toFixed(2) + 's of a measured ' + budget.toFixed(2) + 's offset');
+      return false;
+    }
+    lastCatchUpAt = now;
+    // Advisory and never retried. If it does not stick, Twitch's own controller
+    // is driving and the cost is one break of latency, not a broken stream.
+    video.currentTime = target;
+    catchUpLog('seek +' + delta.toFixed(2) + 's of a measured ' + budget.toFixed(2) +
+      's offset (holding ' + keepBehind.toFixed(2) + 's behind edge)');
+    return false;
+  }
+
+  function runCatchUp() {
+    catchUpTimer = 0;
+    const episode = catchUpEpisode;
+    const baseline = episode && episode.baseline;
+    let retry = false;
+    try {
+      if (baseline) retry = evaluateCatchUp(episode, baseline) === true;
+    } catch (_) {}
+    if (retry) {
+      catchUpTimer = setTimeout(runCatchUp, CATCHUP_SETTLE_MS);
+      return;
+    }
+    closeCatchUpEpisode();
+  }
+
+  function catchUpOnAdState(blocking, offsetMs) {
+    if (blocking) {
+      if (catchUpTimer) clearTimeout(catchUpTimer);
+      catchUpTimer = 0;
+      // blocked-clean/gap/hold arrive as separate messages inside one pod. Only
+      // the first opens an episode: a baseline resampled mid-swap already carries
+      // the backup's latency and would authorise skipping watched content.
+      if (catchUpEpisode && Date.now() - catchUpEpisode.at <= CATCHUP_EPISODE_MAX_MS) return;
+      closeCatchUpEpisode();
+      catchUpEpisode = { at: Date.now(), baseline: null, baselineTries: 0, evaluations: 0,
+        watched: null, disqualifiedBy: '', offsetSeconds: 0 };
+      sampleCatchUpBaseline();
+      return;
+    }
+    const episode = catchUpEpisode;
+    // The first clean poll of a session emits clear with no preceding block.
+    if (!episode) return;
+    if (catchUpBaselineTimer) clearTimeout(catchUpBaselineTimer);
+    catchUpBaselineTimer = 0;
+    // The worker's measurement of how far behind the backup session ran. Bounded
+    // there; anything unreadable arrives as 0, which is a refusal.
+    const measuredOffset = Number(offsetMs);
+    episode.offsetSeconds = Number.isFinite(measuredOffset) && measuredOffset > 0 ? measuredOffset / 1000 : 0;
+    // Without a baseline there is nothing to compare the release against.
+    if (!episode.baseline) {
+      closeCatchUpEpisode();
+      return;
+    }
+    if (catchUpTimer) clearTimeout(catchUpTimer);
+    catchUpTimer = setTimeout(runCatchUp, CATCHUP_SETTLE_MS);
   }
 
   async function proxyWorkerGql(worker, message) {
@@ -927,10 +1314,30 @@
     // therefore stay applied long after the break ended. Report transitions only,
     // including the return to clean playback.
     let lastAdStateSent = '';
+    // Post-swap latency budget for the page. The page cannot measure this: a swap
+    // does not stop the media element, so nothing on the timeline records that the
+    // segments now arriving are older than the ones the native stream is serving.
+    // Here both playlists are in hand at the same instant, and both carry
+    // #EXT-X-PROGRAM-DATE-TIME, so the age difference between their live edges is
+    // a direct reading rather than an inference. Reported once, with 'clear'.
+    let swapOffsetMs = 0;
+    function noteSwapOffset(nativeEdgeWall, backupEdgeWall) {
+      const native = Number(nativeEdgeWall);
+      const backup = Number(backupEdgeWall);
+      if (!Number.isFinite(native) || !Number.isFinite(backup)) return;
+      const offset = native - backup;
+      // A backup at or ahead of the native edge costs no latency, and one further
+      // behind than a whole quarantine window is a clock or manifest anomaly, not
+      // this break. Report nothing rather than a guess.
+      if (!(offset > 0) || offset > AD_QUARANTINE_MAX_MS) return;
+      if (offset > swapOffsetMs) swapOffsetMs = offset;
+    }
     function setAdState(state, channel) {
       if (state === lastAdStateSent) return;
       lastAdStateSent = state;
-      post('ad-state', { state: state, channel: channel || '' });
+      const offsetMs = state === 'clear' ? swapOffsetMs : 0;
+      if (state === 'clear') swapOffsetMs = 0;
+      post('ad-state', { state: state, channel: channel || '', offsetMs: offsetMs });
     }
 
     function urlOf(input) {
@@ -1330,6 +1737,10 @@
         confirmed: confirmed,
         mediaSequence: Number.isFinite(mediaSequence) ? mediaSequence : NaN,
         targetDuration: targetDuration,
+        // Wall clock of the end of the playlist, walked forward from the last
+        // PROGRAM-DATE-TIME. NaN when the manifest carries no date at all, which
+        // is a refusal upstream rather than a zero.
+        edgeWall: Number.isFinite(programTime) ? programTime : NaN,
         advertisedDuration: advertisedAdDuration(lines, ranges),
         fullAds: fullAds,
         inlineAds: inlineAds
@@ -1367,10 +1778,6 @@
         info.cleanNativePolls = 0;
       }
       return { active: !release, release: release };
-    }
-
-    function hasAds(text) {
-      return playlistEvidence(text).confirmed > 0;
     }
 
     // Twitch serves low-latency HLS: the player issues blocking playlist reloads
@@ -1620,12 +2027,16 @@
       if (!selected) throw new Error('no codec-compatible variant');
       const mediaResult = await fetchTextWithTimeout(selected.url, 1800);
       const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(mediaResult.text, selected.url));
-      if (!normalized || hasAds(normalized)) throw new Error('backup is not a clean complete media playlist');
+      const backupEvidence = normalized ? playlistEvidence(normalized) : null;
+      if (!normalized || !backupEvidence || backupEvidence.confirmed > 0) {
+        throw new Error('backup is not a clean complete media playlist');
+      }
       const replacementContainer = mediaContainer(normalized);
       if (info.mediaContainer && replacementContainer !== info.mediaContainer) {
         throw new Error('backup changes media container');
       }
-      return { url: selected.url, text: normalized, playerType: playerType, ts: Date.now() };
+      return { url: selected.url, text: normalized, playerType: playerType, ts: Date.now(),
+        edgeWall: backupEvidence.edgeWall };
     }
 
     function raceBackupTypes(info, types) {
@@ -1709,8 +2120,10 @@
       const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), BACKUP_POLL_TIMEOUT_MS)
         .then((current) => {
           const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(current.text, url));
-          if (!normalized || hasAds(normalized)) return null;
-          return { text: normalized, container: mediaContainer(normalized) };
+          if (!normalized) return null;
+          const evidence = playlistEvidence(normalized);
+          if (evidence.confirmed > 0) return null;
+          return { text: normalized, container: mediaContainer(normalized), edgeWall: evidence.edgeWall };
         }, () => null)
         .finally(() => pendingBackupPolls.delete(url));
       pendingBackupPolls.set(url, pending);
@@ -1725,6 +2138,7 @@
           const current = await pollCachedBackup(cached);
           if (current && (!info.mediaContainer || current.container === info.mediaContainer)) {
             cached.ts = Date.now();
+            info.servedBackupEdge = current.edgeWall;
             if (activate !== false) {
               info.backupActive = true;
               info.cleanNativePolls = 0;
@@ -1750,6 +2164,10 @@
         const bridgeContainer = mediaContainer(bridge);
         if (bridge && (!info.mediaContainer || bridgeContainer === info.mediaContainer)) {
           candidatePromise.catch(() => {});
+          // A native snapshot at most CLEAN_NATIVE_TTL old. Its own age is real
+          // latency but it is not a separate session's offset, so nothing is
+          // recorded: under-reporting the budget only costs a catch-up.
+          info.servedBackupEdge = NaN;
           wlog('  bridging with fresh clean native snapshot');
           return responseWithText(originalResponse, bridge, 'application/vnd.apple.mpegurl');
         }
@@ -1772,6 +2190,7 @@
       if (!candidate) return null;
       info.backupActive = true;
       info.cleanNativePolls = 0;
+      info.servedBackupEdge = candidate.edgeWall;
       wlog('  clean stream via playerType=' + (candidate.playerType || '?'));
       return responseWithText(originalResponse, candidate.text, 'application/vnd.apple.mpegurl');
     }
@@ -1842,7 +2261,10 @@
           // when available; otherwise gap its native media until the clean boundary.
           try {
             const held = await cachedBackupResponse(info, response, false);
-            if (held) return held;
+            if (held) {
+              noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
+              return held;
+            }
           } catch (_) {}
           try { getBackup(info, false); } catch (_) {}
           wlog('  ad marker slid out; holding native stream until clean boundary');
@@ -1861,7 +2283,12 @@
             if (info.cleanNativePolls < NATIVE_RELEASE_POLLS) {
               try {
                 const held = await cachedBackupResponse(info, response, false);
-                if (held) return held;
+                if (held) {
+                  // The native playlist for this poll is already clean, so its
+                  // edge is the true live edge to measure the backup against.
+                  noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
+                  return held;
+                }
               } catch (_) {}
             }
             info.backupActive = false;
@@ -1888,6 +2315,9 @@
         try {
           const replacement = await cleanBackupResponse(info, response);
           if (replacement) {
+            // Both playlists were in hand for this one poll, so the difference of
+            // their PROGRAM-DATE-TIME edges is the latency this swap costs.
+            noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
             wlog('  -> swapped to CLEAN backup');
             setAdState('blocked-clean', info.channel);
             return replacement;
@@ -2048,6 +2478,9 @@
               installAdChromeCss();
               if (blocking) document.documentElement.setAttribute('data-wo-twitch-adblock', state);
               else document.documentElement.removeAttribute('data-wo-twitch-adblock');
+              // Last, so the fire-time "another worker is still blocking" check
+              // reads the attribute this transition just wrote.
+              catchUpOnAdState(blocking, message.offsetMs);
             } catch (_) {}
           } else if (message.type === 'log') {
             try { console.log('[WO-Twitch]', message.m); } catch (_) {}

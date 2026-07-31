@@ -1052,6 +1052,19 @@
     return info.baseWall + Math.max(0, Number(frontVideo.currentTime) || 0) * 1000;
   }
 
+  // twitch-adblock.js runs in the MAIN world and can see none of this file's
+  // state. Publish "the viewer is deliberately behind live" on the document so
+  // its post-ad catch-up seek stands down; otherwise that seek jumps the live
+  // element we are recording and cuts the seconds out of the replay buffer.
+  function markDeliberateRewind(active) {
+    try {
+      const root = document.documentElement;
+      if (!root || typeof root.setAttribute !== 'function') return;
+      if (active) root.setAttribute('data-wo-twitch-dvr', 'replay');
+      else root.removeAttribute('data-wo-twitch-dvr');
+    } catch (_) {}
+  }
+
   function startReplayAt(targetWall) {
     if (!sourceVideo || !recordings.length) return;
     const range = availableRange();
@@ -1070,6 +1083,9 @@
     }
     const sessionToken = ++replayToken;
     replayActive = true;
+    // Marked here, before any async load, so the signal cannot lag the user's
+    // intent the way data-wardenone-active does (it only lands after a reveal).
+    markDeliberateRewind(true);
     refreshing = false;
     recovering = false;
     stopReplayMonitor();
@@ -1100,6 +1116,7 @@
   function goLive() {
     replayToken += 1;
     replayActive = false;
+    markDeliberateRewind(false);
     refreshing = false;
     recovering = false;
     replayPausedByUser = false;
@@ -1127,6 +1144,7 @@
   function removeReplayLayer() {
     replayToken += 1;
     replayActive = false;
+    markDeliberateRewind(false);
     refreshing = false;
     recovering = false;
     replayPausedByUser = false;

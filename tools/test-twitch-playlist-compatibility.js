@@ -1160,6 +1160,104 @@ test('active intervention removes blocking LL-HLS cursors but preserves signed q
     'cursor-sanitized intervention still returned low-latency signalling');
 });
 
+// The page cannot observe how far behind live a backup session runs: a swap does
+// not stop the media element, so currentTime keeps advancing at 1x and only the
+// wall-clock age of the content changes. Here both playlists are in hand at the
+// same instant and both carry PROGRAM-DATE-TIME, so the difference between their
+// live edges is a direct reading. It is the entire budget the page-side catch-up
+// is allowed to spend, so a regression here silently disables that feature -- or,
+// worse, hands it a number it did not measure.
+const SWAP_OFFSET_MS = 20000;
+const SWAP_NATIVE_EDGE = Date.parse('2026-07-23T00:01:00.000Z');
+const CLEAN_MEDIA_UNDATED = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:99100
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/undated-99100.ts
+`;
+
+function datedPlaylist(options) {
+  return ['#EXTM3U',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-TARGETDURATION:2',
+    '#EXT-X-MEDIA-SEQUENCE:' + options.sequence,
+    options.marker || null,
+    '#EXT-X-PROGRAM-DATE-TIME:' + new Date(options.startMs).toISOString(),
+    '#EXTINF:2.000,' + (options.title || ''),
+    'https://video-edge-fixture.ttvnw.net/dated/' + options.sequence + '.ts',
+    ''].filter((line) => line !== null).join('\n');
+}
+
+test('the swap offset is measured from both playlists and reported once with clear', async () => {
+  let nativePolls = 0;
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia() {
+        const index = nativePolls++;
+        // Poll 0 is the confirmed ad; the three after it are ordinary live media
+        // and release the intervention on the third.
+        return datedPlaylist({
+          sequence: 701 + index,
+          startMs: SWAP_NATIVE_EDGE + index * 2000,
+          marker: index === 0
+            ? '#EXT-X-DATERANGE:ID="stitched-ad-offset",CLASS="twitch-stitched-ad",DURATION=30.0'
+            : null,
+          title: index === 0 ? 'advertisement' : 'live',
+        });
+      },
+      // The backup session advances in lockstep with the native one, a fixed
+      // distance behind it, exactly as a second live session would.
+      backupMedia() {
+        const index = Math.max(0, nativePolls - 1);
+        return datedPlaylist({
+          sequence: 99100 + index,
+          startMs: SWAP_NATIVE_EDGE - SWAP_OFFSET_MS + index * 2000,
+          title: 'live',
+        });
+      },
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+
+  for (let poll = 0; poll < 4; poll++) await runtime.fetch(ORIGINAL_MEDIA_URL);
+  const states = runtime.state.messages.filter((message) => message && message.type === 'ad-state');
+  equal(states.map((message) => message.state), ['blocked-clean', 'clear'],
+    'measured-offset fixture did not run one clean swap and release');
+  assert(states[0].offsetMs === 0, 'a blocking transition carried a latency budget it cannot bound');
+  assert(states[1].offsetMs === SWAP_OFFSET_MS,
+    'clear reported ' + states[1].offsetMs + 'ms instead of the measured ' + SWAP_OFFSET_MS + 'ms swap offset');
+});
+
+test('an undated or impossible playlist pair reports no swap offset at all', async () => {
+  let nativePolls = 0;
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia() {
+        const index = nativePolls++;
+        // No PROGRAM-DATE-TIME anywhere: nothing to difference, so nothing to
+        // report. The page treats a missing budget as a refusal.
+        if (index === 0) return STITCHED_AD;
+        return CLEAN_MEDIA_UNDATED;
+      },
+      backupMedia: CLEAN_MEDIA_UNDATED,
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+
+  for (let poll = 0; poll < 4; poll++) await runtime.fetch(ORIGINAL_MEDIA_URL);
+  const states = runtime.state.messages.filter((message) => message && message.type === 'ad-state');
+  const clear = states.find((message) => message.state === 'clear');
+  assert(clear, 'undated fixture never released the intervention');
+  assert(clear.offsetMs === 0, 'an undated playlist pair produced a fabricated latency budget');
+});
+
 (async () => {
   let passed = 0;
   let failed = 0;
