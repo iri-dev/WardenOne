@@ -115,6 +115,22 @@ const STALE_STITCHED_MARKER = markedAd(
   '#EXT-X-DATERANGE:ID="stitched-ad-stale",CLASS="twitch-stitched-ad",DURATION=30.0',
   'stale-marker',
   'live');
+const AUTHORITATIVE_PREROLL_LIVE_TITLE = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:609
+#EXT-X-DATERANGE:ID="stitched-ad-authoritative-preroll",CLASS="twitch-stitched-ad",DURATION=4.0,X-TV-TWITCH-AD-ROLL-TYPE="PREROLL"
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/authoritative-preroll-609.ts
+`;
+const EXPLICIT_PREROLL_AD = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:610
+#EXT-X-DATERANGE:ID="stitched-ad-explicit-preroll",CLASS="twitch-stitched-ad",DURATION=4.0,X-TV-TWITCH-AD-ROLL-TYPE="PREROLL"
+#EXTINF:2.000,advertisement
+https://video-weaver-fixture.ttvnw.net/commercial/explicit-preroll-610.ts
+`;
 const STRONG_METADATA_ALL_AD = `#EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-TARGETDURATION:2
@@ -250,6 +266,21 @@ function nestedToken(playerType) {
         authorization: { isForbidden: false, forbiddenReasonCode: null },
       },
     },
+  };
+}
+
+function playbackTokenTemplate(channel) {
+  return {
+    operationName: 'PlaybackAccessToken',
+    variables: {
+      isLive: true,
+      login: channel,
+      isVod: false,
+      vodID: '',
+      playerType: 'site',
+      platform: 'web',
+    },
+    extensions: { persistedQuery: { version: 1, sha256Hash: 'fixture-token-hash' } },
   };
 }
 
@@ -391,7 +422,10 @@ function createRuntime(options) {
     console,
     setTimeout(callback, ms) {
       state.timers.push(Number(ms));
-      return nativeSetTimeout(callback, ms);
+      const delay = options.maxTimerDelayMs == null
+        ? Number(ms)
+        : Math.min(Number(ms), Number(options.maxTimerDelayMs));
+      return nativeSetTimeout(callback, delay);
     },
     clearTimeout(timer) {
       state.clearedTimers++;
@@ -411,6 +445,19 @@ function createRuntime(options) {
     },
     updateClientState(next) {
       dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'client-state', state: next });
+    },
+    announceAdImminent(channel) {
+      dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'ad-imminent', channel: channel });
+    },
+    sendMaster(url, text, channel, current) {
+      dispatchMessage({
+        [FLAG]: RUNTIME_VERSION,
+        type: 'master',
+        url: url,
+        text: text,
+        channel: channel,
+        current: current === true,
+      });
     },
     advance(ms) {
       state.now += Number(ms) || 0;
@@ -497,6 +544,21 @@ test('stale stitched metadata attached to explicitly live media passes through u
   assert(runtime.state.gqlRequests.length === 0, 'unmapped stale marker started backup traffic');
 });
 
+test('authoritative X-TV preroll metadata overrides an explicitly live EXTINF title', async () => {
+  const url = 'https://video-edge-fixture.ttvnw.net/unmapped/authoritative-preroll.m3u8';
+  const runtime = createRuntime({
+    fetchRoute(requestUrl) {
+      if (requestUrl !== url) throw new Error('unexpected authoritative-preroll request: ' + requestUrl);
+      return hlsResponse(AUTHORITATIVE_PREROLL_LIVE_TITLE);
+    },
+  });
+  const body = await (await runtime.fetch(url)).text();
+  assertDecodeSafeGap(body, AUTHORITATIVE_PREROLL_LIVE_TITLE,
+    'authoritative X-TV preroll metadata with a live EXTINF title');
+  assert(runtime.state.gqlRequests.length === 0,
+    'unmapped authoritative preroll unexpectedly requested alternate tokens');
+});
+
 test('known ad URI is blocked even when no Twitch marker is present', async () => {
   const url = 'https://video-edge-fixture.ttvnw.net/unmapped/known-uri.m3u8';
   const runtime = createRuntime({
@@ -581,6 +643,63 @@ test('slid-out markers cannot leak generic tails and release needs three explici
     'third explicit live poll was not learned as the safe native bridge snapshot');
   assert(!learnedBridge.includes('after-learning'),
     'post-learning ad media leaked when the cached backup failed');
+});
+
+test('cached clean-backup polling tolerates an 800ms media leg without refreshing its token', async () => {
+  let slowCachedPoll = false;
+  let rejectNewTokens = false;
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute: standardFetchRoute({
+      originalMedia: STITCHED_AD,
+      backupMedia(url, init) {
+        if (!slowCachedPoll) return CLEAN_MEDIA;
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve(CLEAN_MEDIA);
+          }, 800);
+          const signal = init && init.signal;
+          const abort = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            const error = new Error('fixture cached backup poll timed out');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (signal) {
+            if (signal.aborted) abort();
+            else signal.addEventListener('abort', abort, { once: true });
+          }
+        });
+      },
+    }),
+    gqlRoute(message) {
+      if (rejectNewTokens) return jsonResponse({ errors: [{ message: 'fixture token refresh disabled' }] }, 403);
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const primed = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(primed === CLEAN_MEDIA, 'fixture did not prime a reusable clean backup');
+  for (let turn = 0; turn < 4; turn++) await new Promise((resolve) => setImmediate(resolve));
+
+  slowCachedPoll = true;
+  rejectNewTokens = true;
+  const gqlBeforeCachedPoll = runtime.state.gqlRequests.length;
+  const started = performance.now();
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+
+  assert(body === CLEAN_MEDIA,
+    '800ms cached clean-media leg exceeded the backup poll timeout and fell back to ad replacement');
+  assert(elapsed >= 700,
+    'slow cached-media fixture returned before exercising its 800ms response leg: ' + elapsed.toFixed(1) + 'ms');
+  assert(runtime.state.gqlRequests.length === gqlBeforeCachedPoll,
+    'slow cached-media poll discarded its valid token and attempted a forbidden refresh');
 });
 
 test('SCTE35-OUT DATERANGE gaps only media overlapping its timed range', async () => {
@@ -718,7 +837,12 @@ test('worker captures persisted GQL identity, preserves a batch, and keeps Usher
     assert(url.searchParams.get('allow_audio_only') === 'true', 'Usher request lost allow_audio_only');
     assert(url.searchParams.get('p') === 'fixture', 'Usher request lost unrelated query state');
     if (url.searchParams.has('sig')) {
-      assert(!url.searchParams.has('parent_domains'), 'backup Usher request leaked parent_domains');
+      if (url.searchParams.get('sig') === 'sig-embed') {
+        assert(url.searchParams.get('parent_domains') === 'twitchplayer',
+          'embed backup omitted its required parent_domains context');
+      } else {
+        assert(!url.searchParams.has('parent_domains'), 'non-embed backup leaked parent_domains');
+      }
     } else {
       assert(url.searchParams.get('parent_domains') === 'twitch.tv',
         'native Usher request did not preserve its authorization context');
@@ -855,6 +979,215 @@ test('part-only ad deltas fail open instead of returning an empty or synthetic p
   assert(!body.includes('data:video/mp4'), 'part-only delta received synthetic decoder bytes');
 });
 
+test('part-only ad deltas retry one cursor-free manifest before clean-backup or gap handling', async () => {
+  const scenarios = [
+    { label: 'mapped clean backup', url: ORIGINAL_MEDIA_URL, mapped: true },
+    {
+      label: 'unmapped decode-safe gap',
+      url: 'https://video-edge-fixture.ttvnw.net/unmapped/part-retry.m3u8?token=fixture',
+      mapped: false,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const blockingUrl = scenario.url + '&_HLS_msn=812&_HLS_part=1&_HLS_skip=YES';
+    const mediaPath = new URL(scenario.url).pathname;
+    const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA });
+    const runtime = createRuntime({
+      fetchRoute(url, init, state) {
+        const parsed = new URL(url);
+        if (parsed.pathname === mediaPath) {
+          return hlsResponse(parsed.searchParams.has('_HLS_msn') ? PART_ONLY_AD : STITCHED_AD);
+        }
+        return standardRoute(url, init, state);
+      },
+      gqlRoute(message) {
+        return jsonResponse(nestedToken(message.body.variables.playerType));
+      },
+    });
+    if (scenario.mapped) await mapMaster(runtime);
+
+    const body = await (await runtime.fetch(blockingUrl)).text();
+    if (scenario.mapped) {
+      assert(body === CLEAN_MEDIA,
+        scenario.label + ' did not continue into the existing clean-backup path');
+    } else {
+      assertDecodeSafeGap(body, STITCHED_AD,
+        scenario.label + ' did not continue into the existing complete-manifest gap path');
+    }
+
+    const nativeCalls = runtime.state.calls.filter((call) => new URL(call.url).pathname === mediaPath);
+    assert(nativeCalls.length === 2,
+      scenario.label + ' did not issue exactly one bounded ordinary-manifest retry: ' + nativeCalls.length);
+    const retry = new URL(nativeCalls[1].url);
+    assert(retry.searchParams.get('token') === new URL(scenario.url).searchParams.get('token'),
+      scenario.label + ' dropped signed native query state during the retry');
+    assert(!retry.searchParams.has('_HLS_msn') && !retry.searchParams.has('_HLS_part') &&
+      !retry.searchParams.has('_HLS_skip'),
+    scenario.label + ' retained a blocking LL-HLS cursor on the ordinary retry');
+  }
+});
+
+test('failed and still-part-only ordinary retries use one bounded clean backup without recursion', async () => {
+  const cases = [
+    {
+      label: 'network failure',
+      retry() { throw new Error('fixture ordinary retry failed'); },
+    },
+    {
+      label: 'AbortError rejection',
+      retry() {
+        const error = new Error('fixture ordinary retry aborted');
+        error.name = 'AbortError';
+        throw error;
+      },
+    },
+    {
+      label: 'second part-only response',
+      retry() { return hlsResponse(PART_ONLY_AD); },
+    },
+  ];
+  for (const fixture of cases) {
+    const blockingUrl = ORIGINAL_MEDIA_URL + '&_HLS_msn=812&_HLS_part=1&_HLS_skip=YES';
+    const mediaPath = new URL(ORIGINAL_MEDIA_URL).pathname;
+    const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA });
+    const runtime = createRuntime({
+      fetchRoute(url, init, state) {
+        const parsed = new URL(url);
+        if (parsed.pathname === mediaPath) {
+          if (parsed.searchParams.has('_HLS_msn')) return hlsResponse(PART_ONLY_AD);
+          return fixture.retry(url, init, state);
+        }
+        return standardRoute(url, init, state);
+      },
+      gqlRoute(message) {
+        return jsonResponse(nestedToken(message.body.variables.playerType));
+      },
+    });
+    await mapMaster(runtime);
+    const body = await (await runtime.fetch(blockingUrl)).text();
+    assert(body === CLEAN_MEDIA, fixture.label + ' returned confirmed ad parts instead of the clean backup');
+    const nativeCalls = runtime.state.calls.filter((call) => new URL(call.url).pathname === mediaPath);
+    assert(nativeCalls.length === 2,
+      fixture.label + ' retried the part-only response more than once: ' + nativeCalls.length);
+    assert(runtime.state.gqlRequests.length > 0 && runtime.state.gqlRequests.length <= 4,
+      fixture.label + ' did not keep clean-backup work within four identities');
+    assert(runtime.state.messages.some((message) => message && message.type === 'ad-state' &&
+      message.state === 'blocked-clean'),
+    fixture.label + ' did not report its clean replacement');
+  }
+});
+
+test('failed part-only retry uses the fresh clean native bridge instead of returning ad parts', async () => {
+  const blockingUrl = ORIGINAL_MEDIA_URL + '&_HLS_msn=812&_HLS_part=1&_HLS_skip=YES';
+  const mediaPath = new URL(ORIGINAL_MEDIA_URL).pathname;
+  let primed = false;
+  const standardRoute = standardFetchRoute({ originalMedia: CLEAN_MEDIA, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    fetchRoute(url, init, state) {
+      const parsed = new URL(url);
+      if (parsed.pathname !== mediaPath) return standardRoute(url, init, state);
+      if (!primed) {
+        primed = true;
+        return hlsResponse(CLEAN_MEDIA);
+      }
+      if (parsed.searchParams.has('_HLS_msn')) return hlsResponse(PART_ONLY_AD);
+      throw new Error('fixture ordinary retry failed after a clean native poll');
+    },
+  });
+  await mapMaster(runtime);
+  const cleanBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(cleanBody === CLEAN_MEDIA, 'fixture did not prime a clean native bridge');
+
+  const body = await (await runtime.fetch(blockingUrl)).text();
+  assert(body !== PART_ONLY_AD, 'confirmed ad parts escaped even though a clean bridge was available');
+  assert(body.includes('/live/99100.ts') && !body.includes('/stitched-ad/'),
+    'failed part-only retry did not return the fresh clean native bridge');
+});
+
+test('part-only ordinary retry times out once at 650ms then uses a clean backup', async () => {
+  const blockingUrl = ORIGINAL_MEDIA_URL + '&_HLS_msn=812&_HLS_part=1&_HLS_skip=YES';
+  const mediaPath = new URL(ORIGINAL_MEDIA_URL).pathname;
+  let retrySignalSeen = false;
+  const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    maxTimerDelayMs: 10,
+    fetchRoute(url, init, state) {
+      const parsed = new URL(url);
+      if (parsed.pathname === mediaPath) {
+        if (parsed.searchParams.has('_HLS_msn')) return hlsResponse(PART_ONLY_AD);
+        const signal = init && init.signal;
+        retrySignalSeen = !!signal;
+        return new Promise((resolve, reject) => {
+          if (!signal) return reject(new Error('ordinary retry omitted its timeout signal'));
+          const rejectAbort = () => {
+            const error = new Error('fixture retry timeout');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (signal.aborted) rejectAbort();
+          else signal.addEventListener('abort', rejectAbort, { once: true });
+        });
+      }
+      return standardRoute(url, init, state);
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(blockingUrl)).text();
+  assert(body === CLEAN_MEDIA, 'timed-out ordinary retry returned confirmed ad parts');
+  assert(retrySignalSeen, 'ordinary retry did not carry a bounded abort signal');
+  assert(runtime.state.timers.filter((delay) => delay === 650).length === 1,
+    'ordinary retry did not use exactly one 650ms timeout');
+  const nativeCalls = runtime.state.calls.filter((call) => new URL(call.url).pathname === mediaPath);
+  assert(nativeCalls.length === 2, 'timed-out part-only response retried recursively: ' + nativeCalls.length);
+});
+
+test('caller abort ends the one part-only retry promptly and still returns the original response', async () => {
+  const blockingUrl = ORIGINAL_MEDIA_URL + '&_HLS_msn=812&_HLS_part=1&_HLS_skip=YES';
+  const mediaPath = new URL(ORIGINAL_MEDIA_URL).pathname;
+  const caller = new AbortController();
+  let retryStarted;
+  const started = new Promise((resolve) => { retryStarted = resolve; });
+  const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    fetchRoute(url, init, state) {
+      const parsed = new URL(url);
+      if (parsed.pathname === mediaPath) {
+        if (parsed.searchParams.has('_HLS_msn')) return hlsResponse(PART_ONLY_AD);
+        const signal = init && init.signal;
+        retryStarted();
+        return new Promise((resolve, reject) => {
+          if (!signal) return reject(new Error('ordinary retry omitted its linked abort signal'));
+          const rejectAbort = () => {
+            const error = new Error('fixture caller abort');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (signal.aborted) rejectAbort();
+          else signal.addEventListener('abort', rejectAbort, { once: true });
+        });
+      }
+      return standardRoute(url, init, state);
+    },
+  });
+  await mapMaster(runtime);
+  const pending = runtime.fetch(blockingUrl, { signal: caller.signal });
+  await Promise.race([
+    started,
+    new Promise((resolve, reject) => setTimeout(() => reject(new Error('ordinary retry never started')), 100)),
+  ]);
+  const abortedAt = performance.now();
+  caller.abort();
+  const response = await Promise.race([
+    pending,
+    new Promise((resolve, reject) => setTimeout(() => reject(new Error('caller abort did not settle promptly')), 150)),
+  ]);
+  const body = await response.text();
+  assert(performance.now() - abortedAt < 150, 'caller abort waited for the 650ms retry timeout');
+  assert(body === PART_ONLY_AD, 'caller-aborted retry did not return the original response');
+  const nativeCalls = runtime.state.calls.filter((call) => new URL(call.url).pathname === mediaPath);
+  assert(nativeCalls.length === 2, 'caller-aborted part-only response retried recursively: ' + nativeCalls.length);
+});
+
 test('prefetch-only Twitch ad snapshots still activate a clean mapped backup', async () => {
   const runtime = createRuntime({
     fetchRoute: standardFetchRoute({ originalMedia: PREFETCH_ONLY_AD, backupMedia: CLEAN_MEDIA }),
@@ -968,7 +1301,7 @@ test('50 clean media requests take a zero-backup fast path', async () => {
   assert(!runtime.state.calls.some((call) => /\/backup\//.test(call.url)), 'clean path fetched a backup variant');
 });
 
-test('captured token identity prewarms one bounded clean backup before the first ad', async () => {
+test('captured token identity prewarms a diversified popout/mobile_web race before the first ad', async () => {
   const runtime = createRuntime({
     fakeClock: true,
     now: 100000,
@@ -994,33 +1327,373 @@ test('captured token identity prewarms one bounded clean backup before the first
 
   const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
   assert(body === CLEAN_MEDIA, 'prewarm changed the native clean playlist');
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert(runtime.state.gqlRequests.length === 1 &&
-    runtime.state.gqlRequests[0].body.variables.playerType === 'popout',
-  'clean prewarm was not bounded to one likely popout identity');
+  for (let turn = 0; turn < 6; turn++) await new Promise((resolve) => setImmediate(resolve));
+  equal(runtime.state.gqlRequests.map((request) => request.body.variables.playerType).sort(),
+    ['mobile_web', 'popout'],
+    'clean prewarm did not diversify across the two currently clean identities');
   const prewarmMasters = runtime.state.calls.filter((call) => {
     const url = new URL(call.url);
     return url.hostname === 'usher.ttvnw.net' && url.searchParams.has('sig');
   });
-  assert(prewarmMasters.length === 1, 'clean prewarm made more than one alternate master request: ' +
+  assert(prewarmMasters.length === 2, 'clean prewarm did not make exactly two alternate master requests: ' +
     JSON.stringify(prewarmMasters.map((call) => call.url)));
-  assert(runtime.state.calls.filter((call) => /\/backup\//.test(call.url)).length === 1,
-    'clean prewarm made more than one alternate media request');
+  assert(prewarmMasters.every((call) => !new URL(call.url).searchParams.has('parent_domains')),
+    'popout/mobile_web prewarm leaked embed-only parent_domains context');
+  assert(runtime.state.calls.filter((call) => /\/backup\//.test(call.url)).length === 2,
+    'clean prewarm did not probe both alternate media playlists');
 
   await runtime.fetch(ORIGINAL_MEDIA_URL);
-  assert(runtime.state.gqlRequests.length === 1,
+  assert(runtime.state.gqlRequests.length === 2,
     'subsequent clean polling duplicated the in-flight/cached prewarm');
 
   runtime.advance(2 * 60 * 1000 - 1);
   await runtime.fetch(ORIGINAL_MEDIA_URL);
-  assert(runtime.state.gqlRequests.length === 1,
+  assert(runtime.state.gqlRequests.length === 2,
     'clean prewarm refreshed before its two-minute cache TTL');
   runtime.advance(1);
   await runtime.fetch(ORIGINAL_MEDIA_URL);
-  assert(runtime.state.gqlRequests.length === 2 &&
-    runtime.state.gqlRequests[1].body.variables.playerType === 'popout',
-  'expired clean prewarm did not refresh with one likely identity');
+  for (let turn = 0; turn < 6; turn++) await new Promise((resolve) => setImmediate(resolve));
+  assert(runtime.state.gqlRequests.length === 4,
+    'expired clean prewarm did not refresh exactly the two diversified identities');
+  equal(runtime.state.gqlRequests.slice(2).map((request) => request.body.variables.playerType).sort(),
+    ['mobile_web', 'popout'],
+    'expired clean prewarm refreshed a different identity set');
+});
+
+test('explicit preroll keeps the long clean-backup wait after an earlier clean native poll', async () => {
+  let nativePolls = 0;
+  const delayedBackupMs = 1100;
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: 100000,
+    fetchRoute: standardFetchRoute({
+      originalMedia() {
+        return nativePolls++ === 0 ? CLEAN_MEDIA : EXPLICIT_PREROLL_AD;
+      },
+      backupMedia: CLEAN_MEDIA,
+    }),
+    gqlRoute(message) {
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(jsonResponse(nestedToken(message.body.variables.playerType))), delayedBackupMs);
+      });
+    },
+  });
+  await mapMaster(runtime);
+  const clean = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(clean === CLEAN_MEDIA, 'fixture did not establish the earlier clean native poll');
+  assert(runtime.state.gqlRequests.length === 0,
+    'clean poll prewarmed before a token identity was available');
+  runtime.advance(2501);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+
+  const started = performance.now();
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+  assert(body === CLEAN_MEDIA,
+    'explicit preroll used the short post-clean wait and fell back before a clean alternate arrived');
+  assert(elapsed >= 950,
+    'explicit preroll did not wait for the deliberately delayed clean alternate: ' + elapsed.toFixed(1) + 'ms');
+});
+
+test('ad-imminent pre-roll starts the full clean backup before the native media poll resolves', async () => {
+  let releaseNative;
+  let nativeReleased = false;
+  const nativeGate = new Promise((resolve) => {
+    releaseNative = () => {
+      nativeReleased = true;
+      resolve();
+    };
+  });
+  const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      if (new URL(url).pathname === new URL(ORIGINAL_MEDIA_URL).pathname) {
+        return nativeGate.then(() => hlsResponse(STITCHED_AD));
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  runtime.announceAdImminent();
+  const pending = runtime.fetch(ORIGINAL_MEDIA_URL);
+  for (let turn = 0; turn < 12 && runtime.state.gqlRequests.length < 4; turn++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const earlyTypes = runtime.state.gqlRequests.map((request) => request.body.variables.playerType).sort();
+  const backupStartedEarly = !nativeReleased && earlyTypes.length === 4;
+  releaseNative();
+  const body = await (await pending).text();
+
+  assert(backupStartedEarly,
+    'cold pre-roll waited for native ad media before starting the full alternate-token race');
+  equal(earlyTypes, ['embed', 'mobile_web', 'popout', 'site'],
+    'ad-imminent pre-roll did not start exactly the four bounded clean identities');
+  assert(body === CLEAN_MEDIA, 'early pre-roll backup did not replace the deferred native ad playlist');
+});
+
+test('master arriving during the first media request maps and cleans that in-flight pre-roll', async () => {
+  let releaseNative;
+  const nativeGate = new Promise((resolve) => { releaseNative = resolve; });
+  const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      if (new URL(url).pathname === new URL(ORIGINAL_MEDIA_URL).pathname) {
+        return nativeGate.then(() => hlsResponse(STITCHED_AD));
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+
+  const pending = runtime.fetch(ORIGINAL_MEDIA_URL);
+  await new Promise((resolve) => setImmediate(resolve));
+  runtime.sendMaster(MASTER_URL, ORIGINAL_MASTER, CHANNEL);
+  releaseNative();
+  const body = await (await pending).text();
+
+  assert(body === CLEAN_MEDIA,
+    'first media request stayed unmapped after its master arrived while native fetch was pending');
+  assert(runtime.state.gqlRequests.length > 0 && runtime.state.gqlRequests.every((request) =>
+    request.body.variables.login === CHANNEL),
+  'in-flight pre-roll did not use the newly mapped channel for its clean backup');
+});
+
+test('master arriving during a failed part-only retry re-resolves the in-flight pre-roll profile', async () => {
+  const targetChannel = 'guang233';
+  const targetMasterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/' + targetChannel + '.m3u8?p=target';
+  const targetMediaUrl = 'https://video-edge-fixture.ttvnw.net/' + targetChannel +
+    '/chunked/index.m3u8?token=target';
+  const detachedUrl = 'https://video-edge-fixture.ttvnw.net/' + targetChannel +
+    '/detached-preroll.m3u8?token=ad&_HLS_msn=812&_HLS_part=1&_HLS_skip=YES';
+  const targetMaster = `#EXTM3U
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1080p60 (source)",AUTOSELECT=YES,DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${targetMediaUrl}
+`;
+  let rejectRetry;
+  let markRetryStarted;
+  const retryStarted = new Promise((resolve) => { markRetryStarted = resolve; });
+  const detachedPath = new URL(detachedUrl).pathname;
+  const standardRoute = standardFetchRoute({ originalMedia: CLEAN_MEDIA, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(targetChannel) },
+    fetchRoute(url, init, state) {
+      const parsed = new URL(url);
+      if (parsed.pathname === detachedPath) {
+        if (parsed.searchParams.has('_HLS_msn')) return hlsResponse(PART_ONLY_AD);
+        return new Promise((resolve, reject) => {
+          rejectRetry = reject;
+          markRetryStarted();
+        });
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+
+  const pending = runtime.fetch(detachedUrl);
+  await retryStarted;
+  assert(runtime.state.gqlRequests.length === 0,
+    'unmapped part-only pre-roll started backup work before its master arrived');
+  runtime.sendMaster(targetMasterUrl, targetMaster, targetChannel, true);
+  rejectRetry(new Error('fixture cursor-free retry failed after target master arrived'));
+  const body = await (await pending).text();
+
+  assert(body === CLEAN_MEDIA,
+    'late master mapping was not re-resolved after the cursor-free retry failed');
+  assert(body !== PART_ONLY_AD,
+    'confirmed part-only pre-roll escaped after its target master arrived in flight');
+  assert(runtime.state.gqlRequests.length > 0 && runtime.state.gqlRequests.every((request) =>
+    request.body.variables.login === targetChannel),
+  'late-mapped part-only pre-roll requested a clean token for the wrong channel');
+  assert(runtime.state.messages.some((message) => message && message.type === 'ad-state' &&
+    message.state === 'blocked-clean' && message.channel === targetChannel),
+  'late-mapped part-only pre-roll did not report its clean replacement');
+  assert(runtime.state.calls.filter((call) => new URL(call.url).pathname === detachedPath).length === 2,
+    'late-master fixture did not perform exactly the initial poll and one cursor-free retry');
+});
+
+test('an actively polled media profile remains mapped beyond five minutes', async () => {
+  const startedAt = 100000;
+  let showAd = false;
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: startedAt,
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute: standardFetchRoute({
+      originalMedia() { return showAd ? STITCHED_AD : CLEAN_MEDIA; },
+      backupMedia: CLEAN_MEDIA,
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  runtime.advance(4 * 60 * 1000 + 30 * 1000);
+  const activeBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(activeBody === CLEAN_MEDIA, 'active media poll changed before the mapping TTL boundary');
+  for (let turn = 0; turn < 6; turn++) await new Promise((resolve) => setImmediate(resolve));
+  runtime.advance(40 * 1000);
+  showAd = true;
+
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body === CLEAN_MEDIA,
+    'actively used profile expired five minutes after its master instead of five minutes after last use');
+});
+
+test('detached ad fallback stays on the active channel even when another channel maps later', async () => {
+  const otherChannel = 'otherfixture';
+  const otherMasterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/' + otherChannel + '.m3u8?p=other';
+  const otherMediaUrl = 'https://video-edge-fixture.ttvnw.net/other/live/index.m3u8?token=other';
+  const detachedAdUrl = 'https://video-edge-fixture.ttvnw.net/other/ad/index.m3u8?token=detached';
+  const otherMaster = `#EXTM3U
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1080p60 (source)",AUTOSELECT=YES,DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${otherMediaUrl}
+`;
+  const standardRoute = standardFetchRoute({ originalMedia: CLEAN_MEDIA, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: 100000,
+    fetchRoute(url, init, state) {
+      const parsed = new URL(url);
+      if (parsed.pathname === new URL(otherMediaUrl).pathname) return hlsResponse(CLEAN_MEDIA);
+      if (parsed.pathname === new URL(detachedAdUrl).pathname) return hlsResponse(STITCHED_AD);
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  runtime.sendMaster(otherMasterUrl, otherMaster, otherChannel);
+  runtime.advance(4 * 60 * 1000 + 30 * 1000);
+  await runtime.fetch(otherMediaUrl);
+  runtime.advance(40 * 1000);
+  runtime.sendMaster(MASTER_URL, ORIGINAL_MASTER, CHANNEL);
+  const before = runtime.state.gqlRequests.length;
+
+  await runtime.fetch(detachedAdUrl);
+  const fallbackRequests = runtime.state.gqlRequests.slice(before);
+  assert(fallbackRequests.length > 0, 'detached ad fixture did not exercise clean-backup fallback');
+  assert(fallbackRequests.every((request) => request.body.variables.login === otherChannel),
+    'detached ad fallback crossed from the active channel to a later unrelated master');
+});
+
+test('a queued warning from the previous channel cannot roll back rapid-switch pre-roll recovery', async () => {
+  const firstChannel = 'firstswitch';
+  const secondChannel = 'secondswitch';
+  const firstMasterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/' + firstChannel + '.m3u8?p=first';
+  const secondMasterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/' + secondChannel + '.m3u8?p=second';
+  const firstMediaUrl = 'https://video-edge-fixture.ttvnw.net/switch-a/chunked/index.m3u8?token=first';
+  const secondMediaUrl = 'https://video-edge-fixture.ttvnw.net/switch-b/chunked/index.m3u8?token=second';
+  const detachedSecondAdUrl = 'https://video-edge-fixture.ttvnw.net/switch-b/detached.m3u8' +
+    '?token=ad&_HLS_msn=812&_HLS_part=1';
+  const switchMaster = (mediaUrl) => `#EXTM3U
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1080p60 (source)",AUTOSELECT=YES,DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${mediaUrl}
+`;
+  const standardRoute = standardFetchRoute({ originalMedia: CLEAN_MEDIA, backupMedia: CLEAN_MEDIA });
+  const detachedPath = new URL(detachedSecondAdUrl).pathname;
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(secondChannel) },
+    fetchRoute(url, init, state) {
+      const parsed = new URL(url);
+      if (parsed.pathname === detachedPath) {
+        if (parsed.searchParams.has('_HLS_msn')) return hlsResponse(PART_ONLY_AD);
+        throw new Error('fixture cursor-free retry failed');
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+
+  runtime.sendMaster(firstMasterUrl, switchMaster(firstMediaUrl), firstChannel, true);
+  runtime.sendMaster(secondMasterUrl, switchMaster(secondMediaUrl), secondChannel, true);
+  runtime.announceAdImminent(firstChannel);
+
+  const body = await (await runtime.fetch(detachedSecondAdUrl)).text();
+  assert(body === CLEAN_MEDIA,
+    'late warning for the previous channel returned confirmed pre-roll parts after switching');
+  assert(runtime.state.gqlRequests.length > 0,
+    'rapid-switch fixture never attempted the current channel clean fallback');
+  assert(runtime.state.gqlRequests.every((request) => request.body.variables.login === secondChannel),
+    'late warning rolled clean-backup token requests back to the previous channel');
+  assert(runtime.state.messages.some((message) => message && message.type === 'ad-state' &&
+    message.state === 'blocked-clean' && message.channel === secondChannel),
+  'rapid-switch pre-roll did not report a clean replacement for the current channel');
+});
+
+test('detached pre-roll fallback never selects a last-listed audio-only rendition', async () => {
+  const audioUrl = 'https://video-edge-fixture.ttvnw.net/original/audio-only.m3u8?token=audio';
+  const detachedUrl = 'https://video-edge-fixture.ttvnw.net/original/detached-preroll.m3u8?token=ad';
+  const sourceFirstAudioLast = `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${ORIGINAL_MEDIA_URL}
+#EXT-X-STREAM-INF:BANDWIDTH=192000,CODECS="mp4a.40.2",VIDEO="audio_only"
+${audioUrl}
+`;
+  const standardRoute = standardFetchRoute({
+    originalMaster: sourceFirstAudioLast,
+    originalMedia: CLEAN_MEDIA,
+    backupMedia: CLEAN_MEDIA,
+  });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      if (new URL(url).pathname === new URL(detachedUrl).pathname) return hlsResponse(STITCHED_AD);
+      return standardRoute(url, init, state);
+    },
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(detachedUrl)).text();
+  assert(body === CLEAN_MEDIA,
+    'detached pre-roll inherited the audio-only profile instead of the video/source profile');
+});
+
+test('ad-imminent fallback leaves LL-HLS coherently for ordinary polling when every clean route misses', async () => {
+  const imminentLl = `#EXTM3U
+#EXT-X-VERSION:9
+#EXT-X-TARGETDURATION:2
+#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=1.500
+#EXT-X-PART-INF:PART-TARGET=0.500
+#EXT-X-MEDIA-SEQUENCE:900
+#EXTINF:2.000,live
+https://video-weaver-fixture.ttvnw.net/live/imminent-900.ts
+#EXT-X-PART:DURATION=0.500,URI="https://video-weaver-fixture.ttvnw.net/future/imminent-901.0.m4s"
+#EXT-X-PRELOAD-HINT:TYPE=PART,URI="https://video-weaver-fixture.ttvnw.net/future/imminent-901.1.m4s"
+`;
+  const blockingUrl = ORIGINAL_MEDIA_URL + '&_HLS_msn=901&_HLS_part=1&_HLS_skip=YES';
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute: standardFetchRoute({ originalMedia: imminentLl, backupMedia: STRONG_METADATA_ALL_AD }),
+  });
+  await mapMaster(runtime);
+  runtime.announceAdImminent();
+  const first = await (await runtime.fetch(blockingUrl)).text();
+  assert(first.includes('imminent-900.ts'), 'ordinary fallback removed the complete native live segment');
+  assert(!/^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/im.test(first),
+    'ad-imminent fallback returned an internally mixed LL-HLS manifest');
+
+  await runtime.fetch(blockingUrl);
+  const nativeCalls = runtime.state.calls.filter((call) =>
+    new URL(call.url).pathname === new URL(ORIGINAL_MEDIA_URL).pathname);
+  assert(nativeCalls.length === 2, 'imminent fallback issued unexpected native media requests');
+  const secondUrl = new URL(nativeCalls[1].url);
+  assert(!secondUrl.searchParams.has('_HLS_msn') && !secondUrl.searchParams.has('_HLS_part') &&
+    !secondUrl.searchParams.has('_HLS_skip'),
+  'ordinary fallback kept issuing blocking part cursors after leaving LL-HLS');
 });
 
 test('concurrent ad playlists share one bounded backup flight', async () => {
@@ -1105,6 +1778,26 @@ test('worker config-off is a byte-for-byte pass-through with no backup work', as
   const masterCall = runtime.state.calls.find((call) => call.url.includes('/api/v2/channel/hls/'));
   assert(masterCall && new URL(masterCall.url).searchParams.has('parent_domains'),
     'config-off worker still rewrote the Usher URL');
+});
+
+test('worker re-announces the same blocking state after a config off/on cycle', async () => {
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: CLEAN_MEDIA }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  const blockedStates = () => runtime.state.messages.filter((message) =>
+    message && message.type === 'ad-state' && /^blocked-/.test(String(message.state || '')));
+  assert(blockedStates().length === 1, 'first intervention did not report one blocking state');
+
+  runtime.configure(false);
+  runtime.configure(true);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  assert(blockedStates().length === 2,
+    're-enabled worker suppressed the unchanged blocking state needed to resync the page');
 });
 
 // A player left in low-latency mode keeps issuing blocking _HLS_msn/_HLS_part
