@@ -175,6 +175,7 @@ function checkContentBuild() {
   'tools/test-token-exfil-trust.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
+  'tools/test-history-privacy.js',
   'tools/test-static-dnr-compatibility.js',
   'tools/test-dnr-budget.js',
   'tools/test-x-compatibility.js',
@@ -201,6 +202,7 @@ checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--che
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
 checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
+checkCommand('history privacy tests', ['tools/test-history-privacy.js']);
 checkCommand('runtime config lifecycle tests', ['tools/test-runtime-config-lifecycle.js']);
 checkCommand('network compatibility tests', ['tools/test-network-compatibility.js']);
 checkCommand('Smart Script Shield recovery tests', ['tools/test-smart-script-recovery.js']);
