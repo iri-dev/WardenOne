@@ -631,7 +631,29 @@ function setSavedTick(text, isError) {
   if (text) setTimeout(() => { tick.textContent = ''; tick.style.color = ''; }, 2200);
 }
 
+// A provider's API key has no purpose once that provider is switched off, and
+// leaving it behind means a secret sits in storage for a feature the user has
+// already decided against. Dropping it on save keeps stored secrets to the ones
+// actually in use, and re-enabling simply asks for the key again.
+const PROVIDER_KEY_FIELDS = {
+  downloadSafeBrowsing: 'downloadSafeBrowsingKey',
+  downloadVirusTotal: 'downloadVirusTotalKey',
+  urlHaus: 'urlHausKey',
+  abuseIpDb: 'abuseIpDbKey',
+  openPhish: 'openPhishKey',
+  phishTank: 'phishTankKey',
+  whoisXml: 'whoisXmlKey',
+};
+function dropKeysForDisabledProviders(cfg) {
+  if (!cfg || typeof cfg !== 'object') return;
+  for (const provider of Object.keys(PROVIDER_KEY_FIELDS)) {
+    const field = PROVIDER_KEY_FIELDS[provider];
+    if (cfg[provider] !== true && cfg[field]) cfg[field] = '';
+  }
+}
+
 function saveConfig(label, afterSave) {
+  dropKeysForDisabledProviders(config);
   chrome.storage.local.set({ wardenone_config: config }, () => {
     const err = chrome.runtime.lastError;
     if (err) {
