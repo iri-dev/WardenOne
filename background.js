@@ -4894,6 +4894,49 @@ function reputationWarningText(verdict) {
   return provider + ' reported a suspicious URL';
 }
 
+// A reputation block is the one screen with no way forward, and reputation feeds do
+// get things wrong. Blocking a university login, a bank, or a download someone needs
+// with no escape is its own kind of harm, so there is a deliberate way through.
+//
+// It is NOT the site allowlist. That stays unable to quiet malware and phishing
+// verdicts, as noted below. This is a separate, explicit, per-host decision the user
+// makes on the block screen while looking at the evidence, and it lives in session
+// storage so it dies with the browser. A permanent malware exemption is not something
+// to grant from a single click.
+const SAFE_BROWSING_BYPASS_KEY = '__wardenone_sb_bypass';
+async function safeBrowsingBypassAllows(host) {
+  try {
+    const clean = trustHostFromUrl('https://' + String(host || '')) || String(host || '');
+    if (!clean) return false;
+    const store = await chrome.storage.session.get(SAFE_BROWSING_BYPASS_KEY);
+    const list = (store && store[SAFE_BROWSING_BYPASS_KEY]) || {};
+    const until = Number(list[clean] || 0);
+    return Number.isFinite(until) && until > Date.now();
+  } catch (_) {
+    return false;
+  }
+}
+async function addSafeBrowsingBypass(host) {
+  const clean = trustHostFromUrl('https://' + String(host || '')) || '';
+  if (!clean) return { ok: false, error: 'Unrecognised site.' };
+  try {
+    const store = await chrome.storage.session.get(SAFE_BROWSING_BYPASS_KEY);
+    const list = (store && store[SAFE_BROWSING_BYPASS_KEY]) || {};
+    const now = Date.now();
+    for (const key of Object.keys(list)) {
+      if (!(Number(list[key]) > now)) delete list[key];
+    }
+    // Long enough to finish what you were doing, short enough that a mistaken
+    // bypass does not quietly persist all day.
+    list[clean] = now + 30 * 60 * 1000;
+    await chrome.storage.session.set({ [SAFE_BROWSING_BYPASS_KEY]: list });
+    queueHistory({ type: 'warned_reputation_bypassed', detail: { host: clean, minutes: 30 }, url: clean, at: now });
+    return { ok: true, host: clean };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
 async function handleSafeBrowsingNavigation(details) {
   try {
     if (!details || details.frameId !== 0 || details.tabId == null || details.tabId < 0) return;
@@ -4907,6 +4950,8 @@ async function handleSafeBrowsingNavigation(details) {
     // allowlist can quiet normal protections, but it should not bypass malware or
     // phishing reputation checks.
     if (!host || isLocalTrustHost(host)) return;
+    // The user already saw this verdict and chose to continue anyway.
+    if (await safeBrowsingBypassAllows(host)) return;
 
     const verdict = await urlReputationLookupUrl(url, Object.assign({ context: 'page' }, state));
     if (verdict && verdict.ok && verdict.warning && !verdict.hit) {
@@ -10526,6 +10571,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => { try { const report = await runStartupCheck('manual', { force: true }); sendResponse({ ok: true, report }); } catch (e) { sendResponse({ ok: false, error: String(e) }); } })();
     return true;
   }
+  // Only reachable from the block screen, which is an extension page. It is not in
+  // TAB_CONTEXT_ALLOWED_MESSAGES, so a web page cannot grant itself a bypass.
+  if (msg && msg.kind === 'safe-browsing-allow-once') {
+    respond(addSafeBrowsingBypass(msg.host), sendResponse);
+    return true;
+  }
+
   if (msg && msg.kind === 'clear-startup-report') {
     (async () => { try { await localSet({ [STARTUP_REPORT_KEY]: null }); try { chrome.action.setBadgeText({ text: '' }); } catch (_) {} sendResponse({ ok: true }); } catch (e) { sendResponse({ ok: false, error: String(e) }); } })();
     return true;
