@@ -909,9 +909,18 @@
     }
   } catch (_) {}
   // MAIN-world (content.js Media Shield) can tell us media went active/inactive.
+  // Token-gated like every other page-message path here. Without it any page could
+  // post {source:'wardenone-media', active:false} and clear this flag, and the flag
+  // is answered back to Memory Shield in the memory-form-check reply -- so a page
+  // holding a live camera or microphone could present itself as idle and become
+  // eligible to be slept or discarded. As elsewhere in this file the token is not
+  // treated as a true secret, since a page script can observe it; it keeps a page
+  // from forging this state casually and matches how config, permission-chain and
+  // the other relays already validate.
   try {
     window.addEventListener('message', (e) => {
-      if (e.source === window && e.data && e.data.source === 'wardenone-media') {
+      if (e.source === window && e.data && e.data.source === 'wardenone-media'
+        && e.data.token === TOKEN) {
         mediaActive = !!e.data.active;
       }
     });
