@@ -188,6 +188,11 @@ history. Login tokens and passwords are never stored or transmitted.
 
 My local copy is usually a good way ahead of what's pushed here.
 
+That doesn't mean the released version is behind — it's the opposite. What's published
+is the part I'm confident enough to put in front of people, and what's ahead of it is
+betas, experiments, and things I'm still trying to break. This gets worked on
+constantly, and it isn't going anywhere.
+
 I build in VS Code with the extension loaded, and I'll happily sit with one thing for
 hours — edit, reload, hard-refresh, watch what the page actually does, go again. Almost
 none of that is worth a commit on its own, so I push once something is finished and I'm
