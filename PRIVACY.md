@@ -16,13 +16,17 @@ unclear, contact us (see **Contact** below).
 
 - **WardenOne has no servers of its own and no analytics.** It does not track you, does
   not send us your browsing history, and does not have user accounts.
-- **By default, all protection runs on your own device.** Nothing about the pages you
-  visit is transmitted anywhere.
+- **By default, no protection sends any outside party information about the pages you
+  visit.** Every default-on feature either runs entirely on your device or talks only to
+  hosts the page you are viewing has already contacted itself.
 - **We never sell, rent, or share your data**, and we do not use it for advertising.
 - The only times data leaves your device are: (1) downloading public block-lists to keep
-  protection current, (2) an **opt-in** password-breach check that uses privacy-preserving
-  k-anonymity, and (3) **opt-in** reputation look-ups that you must switch on and supply
-  your own API key for. Each is described in detail below.
+  protection current, (2) re-requesting third-party scripts a page has already loaded, so
+  they can be checked for tampering — on by default, and it reaches no host the page has
+  not already used, (3) an **opt-in** password-breach check that uses privacy-preserving
+  k-anonymity, (4) an **opt-in** login-page age check that sends a site's domain to a
+  public registration-data service, and (5) **opt-in** reputation look-ups that you must
+  switch on and supply your own API key for. Each is described in detail below.
 
 ---
 
@@ -65,7 +69,21 @@ lists, Phishing.Army, the urlhaus/malware-filter list, and the OpenPhish public 
 **your browsing history is not sent**; the list host only sees the normal network request
 (including your IP address, as with any website you load). No personal data is attached.
 
-### 2. Password breach check — "SessionShield" (opt-in, off by default)
+### 2. Script tamper check — "Script Drift Guard" (on by default)
+
+Pages routinely load scripts from other companies, and one of the commonest ways a
+trusted site starts attacking its visitors is that one of those scripts is quietly
+swapped. To notice that, WardenOne re-requests **third-party scripts the page has
+already loaded**, hashes them, and compares the hash with what it saw before.
+
+The important detail for your privacy: every one of those requests goes to a host **the
+page itself just used**, so no company learns anything it did not already know from you
+loading the page. Scripts served by the site you are visiting are skipped entirely,
+nothing about the request is sent anywhere else, the hashing and comparison happen on
+your device, and only the hash is kept. Re-checks are rate-limited and capped per page,
+and allowlisted sites are skipped. Turn it off with **Script drift guard** in the popup.
+
+### 3. Password breach check — "SessionShield" (opt-in, off by default)
 
 If you turn this on and check a password, WardenOne hashes the password **locally** with
 SHA-1 and sends only the **first 5 characters of that hash** to Have I Been Pwned's
@@ -74,15 +92,30 @@ the service returns a list of matching hash suffixes and the comparison finishes
 device. **Your password and its full hash never leave your device.** This feature is
 disabled unless you enable it.
 
-### 3. Reputation providers (opt-in, off by default, your own API key required)
+### 4. Login page age check (opt-in, off by default, no API key needed)
+
+A login form on a domain registered days ago is one of the strongest phishing signals
+there is. If you switch this on, then **when a page shows a password field** WardenOne
+sends that site's registrable domain — `example.com`, never the full URL, never the page
+contents, never what you type — to the public RDAP service at **`rdap.org`**, and uses
+the registration date it returns to warn you before you sign in.
+
+This is the one feature that tells an outside party something about where you browse,
+which is why it is **off by default** even though it needs no API key and costs nothing.
+rdap.org sees the domain and your IP address, as any site you load would. Answers are
+cached on your device (most recent 100 domains) so the same site is not looked up twice;
+requests for IP addresses and private or local hostnames are never sent at all. Turn it
+on or off with **Login page age check** in the popup.
+
+### 5. Reputation providers (opt-in, off by default, your own API key required)
 
 WardenOne can optionally check a URL, domain, or file hash against third-party threat
 services **only if you enable that provider and supply your own API key**. All of these
 are **off by default**: Google Safe Browsing, VirusTotal, urlhaus (abuse.ch), AbuseIPDB,
-OpenPhish, PhishTank, WhoisXML, and RDAP (domain age). When you enable one, the specific
-URL/domain/hash being evaluated is sent to that provider so it can return a verdict.
-Those providers are independent data controllers with their own privacy policies; review
-theirs before enabling. WardenOne sends nothing to them until you do.
+OpenPhish, PhishTank, and WhoisXML. When you enable one, the specific URL/domain/hash
+being evaluated is sent to that provider so it can return a verdict. Those providers are
+independent data controllers with their own privacy policies; review theirs before
+enabling. WardenOne sends nothing to them until you do.
 
 **That is the complete list.** WardenOne contacts no other external endpoints, and there
 is no background telemetry, crash reporting, or usage analytics.
@@ -135,7 +168,12 @@ published with the store listing. Continued use after an update constitutes acce
 
 ## Contact
 
-Questions or privacy requests: **[insert your public contact email or support URL]**
+Questions or privacy requests: open an issue on the project's issue tracker —
+**<https://github.com/iri-dev/WardenOne/issues/new/choose>**
+
+The issue tracker is the support channel for WardenOne. It is public, so please do not
+post anything you would not want visible; if a privacy request needs private details,
+say so in the issue and we will arrange another route.
 
 ---
 
