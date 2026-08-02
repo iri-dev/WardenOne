@@ -12753,6 +12753,7 @@
             try{
               window.postMessage({
                 source:"wardenone-media",
+                token:__woToken,
                 active:!0
               },
               "*");
@@ -12762,6 +12763,7 @@
                 try{
                   tracks.some(x=>"live"===x.readyState)||window.postMessage({
                     source:"wardenone-media",
+                    token:__woToken,
                     active:!1
                   },
                   "*")
