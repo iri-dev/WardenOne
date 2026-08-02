@@ -184,24 +184,20 @@ switch on yourself (download domain age, VirusTotal, breach checks) send only th
 minimum: a source domain, a link you paste, or a hashed query — never your full
 history. Login tokens and passwords are never stored or transmitted.
 
-## How this repo gets built
+## How I work
 
-A note on the commit history, because it looks lumpy and it's worth explaining.
+My local copy is usually a good way ahead of what's pushed here.
 
-I build in VS Code with the extension loaded unpacked, and I stay there for a long
-time. A change to a blocker isn't something you can reason about on paper — you edit,
-reload the extension, hard-refresh the site, watch what the player or the page actually
-does, and repeat. A single fix like a Twitch pre-roll can be an afternoon of that,
-almost none of which is worth committing on its own.
+I build in VS Code with the extension loaded, and I'll happily sit with one thing for
+hours — edit, reload, hard-refresh, watch what the page actually does, go again. Almost
+none of that is worth a commit on its own, so I push once something is finished and I'm
+actually sure about it. The history goes quiet and then several commits land at once,
+which is usually just one long session finally ending. Probably more of those at 2am
+than is strictly sensible.
 
-So I commit in batches, once a piece of work is finished and the checks pass. That's
-why the history goes quiet for a while and then several commits land close together:
-the commits are when I stopped, not when I started. Everything gets run through
-`node tools/check-maintainability.js` before it goes in — syntax, the DNR rule budget,
-the byte-exact `content.min.js` rebuild, and the full test suite.
-
-It also means the odd commit is a revert. Some things only fail on a real site, and
-I'd rather put the honest correction in the history than quietly rewrite it away.
+Everything goes through `node tools/check-maintainability.js` first. And when something
+turns out to be wrong on a real site, I'd rather leave the revert sitting in the history
+than tidy it away.
 
 ## Feedback &amp; bug reports
 
