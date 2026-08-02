@@ -9244,6 +9244,13 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'eyeshield-fetch-css',
 ]);
 const TAB_CONTEXT_RATE_LIMITS = {
+  // Every tab-allowed kind needs an entry. rg-block is the highest-volume one --
+  // content scripts report every block through it -- and a hostile page can forge
+  // the MAIN-world event that feeds it, so without a ceiling it can flood history,
+  // the badge counter and storage. The page-side limiter in bridge.js does not
+  // count: the page can bypass its own limiter. Set high enough that a genuinely
+  // ad-heavy page reporting real blocks is never cut off.
+  'rg-block': { max: 300, windowMs: 60000 },
   'redirect-warning': { max: 8, windowMs: 60000 },
   'safe-browsing-check': { max: 45, windowMs: 60000 },
   'domain-age': { max: 12, windowMs: 60000 },
