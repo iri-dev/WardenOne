@@ -602,13 +602,14 @@
     bridgeConfigReady = true;
     bridgeSyncGoogleCleanupCss();
     const clean = Object.assign({}, raw);
-    delete clean.downloadSafeBrowsingKey;
-    delete clean.downloadVirusTotalKey;
-    delete clean.urlHausKey;
-    delete clean.abuseIpDbKey;
-    delete clean.openPhishKey;
-    delete clean.phishTankKey;
-    delete clean.whoisXmlKey;
+    // Provider API keys must never reach the MAIN world, where any page script can
+    // read them. Strip by pattern rather than by name: a hand-written delete list
+    // silently leaks the day someone adds an eighth provider. Anything ending in
+    // "Key" is treated as a secret, and tools/test-secret-hygiene.js fails if a
+    // secret-shaped field in DEFAULT_CONFIG is not covered here.
+    for (const field of Object.keys(clean)) {
+      if (/Key$/.test(field)) delete clean[field];
+    }
     delete clean.forgetMeAllConfirmedAt;
     clean.allowlist = sanitizeBridgeHostList(clean.allowlist, 1000);
     clean.forgetMeList = sanitizeBridgeHostList(clean.forgetMeList, 1000);
