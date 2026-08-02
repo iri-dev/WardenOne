@@ -76,7 +76,10 @@ check('every tab-reachable message kind has a rate limit',
 /* Rule: privileged kinds must NOT be reachable from a tab at all. */
 const PRIVILEGED = ['clean-browser', 'clear-site-data', 'clear-learned', 'set-config',
   'apply-onboarding-recommended', 'apply-onboarding-max-privacy', 'force-list-update',
-  'download-trust-add', 'download-trust-remove', 'breach-check'];
+  'download-trust-add', 'download-trust-remove', 'breach-check',
+  // Grants a temporary exemption from a malware/phishing verdict. Only the block
+  // screen may ask for it; a page being able to self-exempt would defeat the block.
+  'safe-browsing-allow-once'];
 for (const kind of PRIVILEGED) {
   if (!kinds.includes(kind)) continue;
   check('privileged kind is not tab-reachable: ' + kind, !allowed.has(kind));
