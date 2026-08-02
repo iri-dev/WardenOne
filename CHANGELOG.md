@@ -6,6 +6,31 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Closed intermittent Twitch pre-roll and mid-roll leaks by starting a clean
+  alternate stream from Twitch's current ad warning before the native media
+  poll, bootstrapping replacement workers with the active V2 master, and
+  recovering part-only ad deltas through a bounded complete or clean playlist.
+- Neutralized Twitch's current GraphQL video/display creative response and the
+  dated VAST fetch/XHR endpoints before a full-player pre-roll can render.
+- Answered Twitch's current video-ad preflight with its recognized decline
+  result so non-forced client ads leave through the player's normal reset path.
+- Replaced the unreliable embed-only warm-up with a bounded popout/mobile-web
+  race, and treated authoritative Twitch pre-roll metadata as an ad even when
+  its media segment is misleadingly titled `live`.
+- Kept Twitch master snapshots and ad warnings channel-scoped across rapid SPA
+  switches, re-resolved late player mappings after low-latency retries, and
+  neutralized worker-originated creative responses before they can render.
+- Removed current Stream Display, squeezeback, companion, and independent video
+  creatives while restoring the genuine live player to its full layout.
+- Kept ad-time low-latency HLS transitions internally consistent and cleared
+  intervention state during fail-open recovery to prevent black screens,
+  repeated stalls, and error 2000/3000 loops.
+- Kept Twitch playback continuous across background-tab ad transitions without
+  weakening native hidden-tab safety checks, and excluded trusted media sites
+  from the generic background-video throttle.
+- Made Twitch worker replacement fail open when the original worker cannot be
+  read, cleaned up terminated workers, reference-counted concurrent player
+  interventions, and aimed stall recovery at the identified live video.
 - Added bounded Twitch playback recovery for network/decode failures so ad
   interception fails open instead of leaving error 2000/3000, a black player,
   or a reload loop.
