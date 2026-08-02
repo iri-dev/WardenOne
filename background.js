@@ -221,8 +221,54 @@ function persistHistBuffer() {
   if (__histPersistTimer) return;
   __histPersistTimer = setTimeout(persistHistBufferNow, 150);
 }
+// A logged URL must never keep its query string or fragment. That is where
+// access tokens, OAuth codes, password-reset tokens, magic-link secrets and
+// email addresses live, and callers were passing whole tab URLs straight in.
+// The history is local, but it is long-lived and the user can export it, so
+// retaining those is a real risk in a tool people install *for* privacy.
+// Scheme, host and path say what happened without keeping the secret.
+const LOG_URL_MAX = 300;
+function safeUrlForLog(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    return (url.protocol + '//' + url.host + url.pathname).slice(0, LOG_URL_MAX);
+  } catch (_) {}
+  // Some callers log a bare domain, or a scheme-less host/path. Re-parse with an
+  // assumed scheme rather than returning '': dropping them would blank entries
+  // that were never sensitive, and a bare "host/path?token=" must still be cut.
+  try {
+    const url = new URL('https://' + raw.replace(/^\/+/, ''));
+    return (url.host + url.pathname).slice(0, LOG_URL_MAX);
+  } catch (_) {}
+  return '';
+}
+
+// Details carry URLs too -- redirect targets, script sources, OAuth endpoints --
+// so sanitising only the top-level url would leave the same secrets one field
+// over. Only strings that are already absolute URLs are rewritten; everything
+// else is left exactly as the caller built it.
+function sanitizeHistoryDetail(value, depth) {
+  if (typeof value === 'string') {
+    return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? safeUrlForLog(value) : value;
+  }
+  if (!value || typeof value !== 'object' || depth >= 3) return value;
+  if (Array.isArray(value)) return value.map((item) => sanitizeHistoryDetail(item, depth + 1));
+  const out = {};
+  for (const key of Object.keys(value)) out[key] = sanitizeHistoryDetail(value[key], depth + 1);
+  return out;
+}
+
 function queueHistory(entry) {
-  __histBuffer.push(entry);
+  // Sanitised here, at the one choke point every history write already passes
+  // through, so no future caller can reintroduce this by forgetting to strip.
+  const safe = Object.assign({}, entry);
+  safe.url = safeUrlForLog(safe.url);
+  if (safe.detail !== undefined && safe.detail !== null) {
+    safe.detail = sanitizeHistoryDetail(safe.detail, 0);
+  }
+  __histBuffer.push(safe);
   persistHistBuffer();
   scheduleHistoryFlush();
 }
