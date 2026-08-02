@@ -1126,7 +1126,7 @@
       <label class="tg"><input type="checkbox" data-key="detectPhishing"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Login page age check</div><div class="desc">When a site asks for a password, checks how recently its domain was registered (free, no key — uses RDAP). A brand-new domain with a login form is a strong phishing signal, so it warns before you sign in. On by default.</div></div>
+      <div><div class="name">Login page age check</div><div class="desc">When a site asks for a password, checks how recently its domain was registered. A brand-new domain with a login form is a strong phishing signal, so it warns before you sign in. Free, no API key. <b>Off by default because it is the one feature that leaves your device:</b> it sends that site's domain (nothing else — no URL, no page content) to the public RDAP service at rdap.org, which would not otherwise see your browsing. Answers are cached on your device.</div></div>
       <label class="tg"><input type="checkbox" data-key="loginAgeCheck"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">

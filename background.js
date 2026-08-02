@@ -586,7 +586,14 @@ const DEFAULT_CONFIG = {
   // captive portals, and local OAuth callbacks.
   forceHttps: false,
   certificateGuard: true,
-  loginAgeCheck: true,
+  // Opt-in: this is the one protection that would tell an outside party something
+  // about where you browse. On a visible password field it sends that site's
+  // registrable domain to rdap.org to check how recently it was registered, which
+  // is a strong phishing signal but also a party you would never otherwise
+  // contact. Everything else here either runs entirely on the device or talks
+  // only to hosts the page already contacted, and the privacy policy says so
+  // plainly -- so this stays off until the user asks for it.
+  loginAgeCheck: false,
   loginAgeMaxDays: 14,
   downloadReputation: true,
   downloadHardBlockCritical: true,
