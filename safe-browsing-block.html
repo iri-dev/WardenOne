@@ -41,6 +41,12 @@
     font-weight:800;font-size:13px;cursor:pointer;background:#e2d2f2;color:var(--ink-soft);
   }
   button.primary{background:linear-gradient(135deg,#b06fd6,#e07aae);color:#fff;box-shadow:0 4px 14px rgba(139,63,176,.32)}
+  /* The way out is deliberately the quietest control on the screen: outlined, not
+     filled, and it only becomes usable once the countdown has run. */
+  button.danger{background:transparent;color:#a8305f;border:1.5px solid #e2a8c2}
+  button.danger:disabled{opacity:.55;cursor:not-allowed}
+  button.danger:not(:disabled):hover{background:#fdeef4}
+  .escape{margin-top:20px;padding-top:4px;border-top:1px solid #efe2f7}
   .note{font-size:12px;color:var(--ink-faint);margin-top:18px}
   @media (max-width:560px){
     .panel{padding:22px}
@@ -73,8 +79,35 @@
     <div class="actions">
       <button class="primary" id="back">Go back</button>
       <button id="activity">Open activity</button>
+      <button id="wrong">This looks wrong</button>
     </div>
-    <div class="note">This is a confirmed external reputation hit. WardenOne does not offer a bypass from this screen.</div>
+
+    <div class="escape" id="escape" hidden>
+      <div class="item">
+        <div class="label">Before you continue</div>
+        <div class="value">
+          Reputation feeds do get things wrong, and if this is your bank, your university
+          login, or a site you know, that is worth reporting so it can be fixed for
+          everyone. But if you arrived here from a link, a search result, an email, or an
+          advert, please go back instead.
+        </div>
+      </div>
+      <div class="actions">
+        <button id="report">Report a false positive</button>
+        <button id="proceed" class="danger" disabled>Continue anyway (5)</button>
+      </div>
+      <div class="note">
+        Continuing unblocks <span id="escape-host"></span> for 30 minutes in this browsing
+        session only. It is not added to your allowlist, and it re-blocks when you restart
+        your browser.
+      </div>
+    </div>
+
+    <div class="note" id="foot">
+      This is a confirmed external reputation hit, so WardenOne blocked it before the page
+      loaded. You are not trapped here &mdash; if you believe it is wrong, use
+      &ldquo;This looks wrong&rdquo;.
+    </div>
   </main>
   <script src="safe-browsing-block.js"></script>
 </body>
