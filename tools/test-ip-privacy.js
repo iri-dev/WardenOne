@@ -116,6 +116,7 @@ function makeSandbox() {
 
   const sandbox = {
     WO: { blockWebRTCLeak: true },
+    trustedMediaHost: false,
     log(type, detail) { logs.push({ type, detail }); },
     location: { hostname: 'example.test', href: 'https://example.test/' },
     navigator: {

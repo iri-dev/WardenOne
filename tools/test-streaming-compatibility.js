@@ -651,6 +651,32 @@ test('AdShield and scriptlet toggle changes force a clean page runtime', () => {
   assert(reloadToggles.includes('scriptletEngine'), 'scriptlets can remain installed after their toggle is disabled');
 });
 
+test('background-tab throttling leaves trusted media hosts untouched', () => {
+  const declarationStart = CONTENT.indexOf('const trustedMediaHost=');
+  const declarationEnd = CONTENT.indexOf(';', declarationStart);
+  const throttleStart = CONTENT.indexOf('if(WO.throttleBackgroundTabs');
+  assert(declarationStart !== -1 && declarationEnd !== -1,
+    'trusted-media host policy is missing');
+  assert(throttleStart > declarationEnd,
+    'trusted-media host policy is declared after background throttling');
+  assert(CONTENT.includes('if(WO.throttleBackgroundTabs&&!trustedMediaHost)try{'),
+    'background throttling can still pause or RAF-throttle a trusted media host');
+
+  const declaration = CONTENT.slice(declarationStart, declarationEnd + 1);
+  const trusted = (hostname) => {
+    const sandbox = { location: { hostname } };
+    vm.createContext(sandbox);
+    vm.runInContext(declaration + 'this.__trustedMediaHost=trustedMediaHost;', sandbox);
+    return sandbox.__trustedMediaHost;
+  };
+  for (const hostname of ['twitch.tv', 'www.twitch.tv', 'video-edge.ttvnw.net', 'youtube.com']) {
+    assert.strictEqual(trusted(hostname), true,
+      hostname + ' was not recognized as a trusted media host');
+  }
+  assert.strictEqual(trusted('example.com'), false,
+    'ordinary sites were accidentally exempted from background throttling');
+});
+
 test('overlay classifier never removes media, iframe or control nodes', () => {
   const isOverlay = loadOverlayClassifier();
   for (const tag of ['video', 'audio', 'iframe', 'embed', 'object', 'button', 'input', 'select', 'textarea']) {

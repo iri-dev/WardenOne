@@ -9512,7 +9512,8 @@
         error:String(e)
       })
     }
-    if(WO.blockAutoplay&&!/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname))try{
+    const trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname);
+    if(WO.blockAutoplay&&!trustedMediaHost)try{
       let userGestured=!1;
       ["click",
       "keydown",
@@ -9893,7 +9894,7 @@
     catch(_){
 
     }
-    if(WO.throttleBackgroundTabs)try{
+    if(WO.throttleBackgroundTabs&&!trustedMediaHost)try{
       let pauseStyle=null;
       const setHiddenStyle=on=>{
         try{
@@ -12012,7 +12013,6 @@
         error:String(e)
       })
     }
-    const trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname);
     if(WO.blockWebRTCLeak&&!trustedMediaHost&&WO.blockSuspiciousWebRTC)try{
       const RTC=window.RTCPeerConnection||window.webkitRTCPeerConnection||window.mozRTCPeerConnection;
       if(RTC){

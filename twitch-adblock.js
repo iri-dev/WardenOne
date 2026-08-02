@@ -20,7 +20,7 @@
   const WO_TWITCH_DEBUG = false;
   const TWITCH_HOST_RE = /(^|\.)twitch\.tv$/i;
   const GQL_URL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
-  const MASTER_URL_RE = /\/api\/channel\/hls\/[^/?#]+\.m3u8/i;
+  const MASTER_URL_RE = /\/api\/(?:v2\/)?channel\/hls\/[^/?#]+\.m3u8/i;
   // Pre-rolls are not in the stream. Twitch's player carries two ad paths and
   // names them itself -- stitchedAdMetadata for the SSAI break spliced into the
   // manifest, and clientSideAdMetadata for a creative it requests and renders
@@ -30,13 +30,19 @@
   // /ads/format for a standard video ad and /ads for the outstream and pause
   // formats.
   const AD_SERVICE_URL_RE =
-    /^https:\/\/(?:edge\.ads\.twitch\.tv\/ads(?:[/?#]|$)|vaes\.amazon-adsystem\.com(?:[/?#]|$))/i;
+    /^https:\/\/(?:edge\.ads\.twitch\.tv\/(?:ads|2018-01-01\/(?:3p\/)?ads)(?:[/?#]|$)|vaes\.amazon-adsystem\.com(?:[/?#]|$))/i;
+  const VIDEO_AD_SERVICE_URL_RE =
+    /^https:\/\/(?:edge\.ads\.twitch\.tv\/(?:ads\/format|2018-01-01\/(?:3p\/)?ads)(?:[/?#]|$)|vaes\.amazon-adsystem\.com(?:[/?#]|$))/i;
   const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
   const DEFAULT_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
   const MESSAGE_FLAG = '__woTwitchAdblock';
-  const STREAM_DISPLAY_AD_IDENTITY_RE = /(?:stream-display-ad|vertical-video-ad|sda-wrapper|ad-banner-(?:default|top)|video-ad-(?:label|countdown)|ad-countdown-timer|tw-ad-(?:label|countdown)|player-twitch-ad-header)/i;
+  const STREAM_DISPLAY_AD_IDENTITY_RE = /(?:stream-display-ad|vertical-video-ad|sda-(?:wrapper|container|transform|frame|iframe)|outstream-ad|companion-ad|ad-banner-(?:default|top)|video-ad-(?:label|countdown)|ad-countdown-timer|tw-ad-(?:label|countdown)|player-twitch-ad-header)/i;
   const STREAM_DISPLAY_AD_SIGNAL_SELECTOR = [
     '[data-test-selector="sda-wrapper"]:not([class*="wrapper-hidden" i]):not([aria-hidden="true"])',
+    '[data-test-selector="sda-container"]',
+    '[data-test-selector="sda-transform"]',
+    '[data-test-selector="sda-frame"]',
+    '[data-test-selector^="sda-iframe"]',
     '[data-test-selector="ad-banner-default-container"]',
     '[data-test-selector="ad-banner-top"]',
     '[data-test-selector="unmuted-ads-text"]',
@@ -67,6 +73,8 @@
   let bridgeToken = '';
   let revision = 0;
   const workers = new Set();
+  const blockingWorkers = new Set();
+  let blockingSwapOffsetMs = 0;
   const independentAdVideos = new Map();
   let primaryLiveVideo = null;
   let independentAdObserver = null;
@@ -89,6 +97,72 @@
 
   const nativeFetch = window.fetch;
   const NativeWorker = window.Worker;
+  const NativeXMLHttpRequest = typeof XMLHttpRequest === 'function' ? XMLHttpRequest : null;
+  const nativeXhrOpen = NativeXMLHttpRequest && NativeXMLHttpRequest.prototype &&
+    NativeXMLHttpRequest.prototype.open;
+
+  function pageActuallyHidden() {
+    try {
+      return document.hidden === true || document.webkitHidden === true ||
+        document.visibilityState === 'hidden';
+    } catch (_) {}
+    return false;
+  }
+
+  let visibilityGuardEnabled = false;
+  let visibilityWasPlaying = false;
+  let visibilityPath = '';
+  let visibilitySource = '';
+
+  function setTwitchVisibilityGuardEnabled(nextEnabled) {
+    visibilityGuardEnabled = nextEnabled === true;
+    if (!visibilityGuardEnabled) {
+      visibilityWasPlaying = false;
+      visibilityPath = '';
+      visibilitySource = '';
+    }
+  }
+
+  function twitchVisibilityChanged() {
+    if (!enabled || !visibilityGuardEnabled) return;
+    try {
+      const hidden = pageActuallyHidden();
+      const video = primaryPlayerVideo();
+      if (hidden) {
+        const nextPath = location.pathname || '';
+        const nextSource = video ? videoMediaSource(video) : '';
+        const playing = !!(video && !video.paused && !video.ended);
+        if (!visibilityPath || visibilityPath !== nextPath ||
+            (visibilitySource && nextSource && visibilitySource !== nextSource)) {
+          visibilityWasPlaying = playing;
+          visibilityPath = nextPath;
+          visibilitySource = nextSource;
+        } else {
+          visibilityWasPlaying = visibilityWasPlaying || playing;
+          if (!visibilitySource && nextSource) visibilitySource = nextSource;
+        }
+      } else {
+        const currentSource = video ? videoMediaSource(video) : '';
+        const shouldResume = visibilityWasPlaying && visibilityPath === (location.pathname || '') &&
+          visibilitySource && currentSource === visibilitySource && video && video.isConnected && video.paused === true &&
+          !video.ended && !video.error;
+        visibilityWasPlaying = false;
+        visibilityPath = '';
+        visibilitySource = '';
+        if (shouldResume) {
+          const resumed = video.play();
+          if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
+        }
+        try {
+          if (stallInterventionActive()) armStallWatch();
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  for (const eventName of ['visibilitychange', 'webkitvisibilitychange']) {
+    document.addEventListener(eventName, twitchVisibilityChanged);
+  }
 
   function createEphemeralDeviceId() {
     const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -124,6 +198,10 @@
     '[aria-label="Advertisement"]',
     '#player-ads',
     '[data-test-selector="sda-wrapper"]',
+    '[data-test-selector="sda-container"]',
+    '[data-test-selector="sda-transform"]',
+    '[data-test-selector="sda-frame"]',
+    '[data-test-selector^="sda-iframe"]',
     '[data-test-selector="ad-banner-default-container"]',
     '[data-test-selector="ad-banner-top"]',
     '[data-test-selector="unmuted-ads-text"]',
@@ -148,7 +226,9 @@
     '.tw-ad-label',
     '.tw-ad-countdown',
     '.audio-ax-overlay-base',
-    'button[aria-label="Learn more about this ad"]'
+    'button[aria-label="Learn more about this ad"]',
+    '.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"])',
+    '.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"])'
   ].join(',') + '{display:none!important;visibility:hidden!important;pointer-events:none!important;}\n' +
     '[class*="video-player--stream-display-ad" i],' +
     '[class*="video-player"][class*="display-ad" i],' +
@@ -278,10 +358,6 @@
     const primary = primaryPlayerVideo();
     if (!mediaSource || !primary || primary === video) return false;
     if (label === 'video advertisement' || label.startsWith('this advertisement')) return true;
-    // Stream Display/vertical ads can use a separate first-party or MediaSource
-    // video without the old media-amazon host or aria label. Only classify the
-    // extra video while Twitch's own ad shell is present; the first blob-backed
-    // live player remains untouched and is restored to full size by the CSS.
     return streamDisplayAdSignalPresent();
   }
 
@@ -373,6 +449,7 @@
     if (independentAdObserver || typeof MutationObserver !== 'function') return;
     try {
       independentAdObserver = new MutationObserver((records) => {
+        mountCss();
         let streamDisplayShellChanged = false;
         for (const record of records) {
           if (record.type === 'attributes') {
@@ -527,6 +604,11 @@
     try {
       document.documentElement.setAttribute('data-wo-twitch-fail-open', errorCode === 2 ? 'network' : 'decode');
     } catch (_) {}
+    blockingWorkers.clear();
+    blockingSwapOffsetMs = 0;
+    clearStallWatch();
+    try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
+    try { closeCatchUpEpisode(); } catch (_) {}
     // Let Twitch's existing player recovery retry its untouched stream. This is
     // deliberately worker-scoped and temporary: user configuration is never
     // changed, no page reload is initiated, and the current setting is restored.
@@ -575,6 +657,14 @@
     enabled = !config || (config.enabled !== false && config.twitchAdBlock !== false);
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
+    setTwitchVisibilityGuardEnabled(enabled);
+    if (!enabled) {
+      blockingWorkers.clear();
+      blockingSwapOffsetMs = 0;
+      clearStallWatch();
+      try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
+      try { closeCatchUpEpisode(); } catch (_) {}
+    }
     broadcastStreamConfig();
   }
 
@@ -592,6 +682,14 @@
     enabled = config.enabled !== false && config.twitchAdBlock !== false;
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
+    setTwitchVisibilityGuardEnabled(enabled);
+    if (!enabled) {
+      blockingWorkers.clear();
+      blockingSwapOffsetMs = 0;
+      clearStallWatch();
+      try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
+      try { closeCatchUpEpisode(); } catch (_) {}
+    }
     broadcastStreamConfig();
   });
 
@@ -634,6 +732,16 @@
     const list = Array.isArray(parsed) ? parsed : [parsed];
     const token = list.find(tokenOperation);
     if (!token) return false;
+    // Twitch's player asks for the templated operation, PlaybackAccessToken_Template.
+    // Capturing that and replaying it for a backup stream sends that name alongside a
+    // persisted-query hash, and Twitch refuses the pair outright:
+    //   no operation with name "PlaybackAccessToken_Template"
+    // It answers HTTP 200 while doing so, so the failure surfaces only as a null token
+    // and kills every clean-backup route at exactly the moment a pre-roll needs one --
+    // the one break with no warm stream to fall back on. Adopt a template only when it
+    // names the operation the hash actually resolves to; otherwise leave both unset so
+    // the built-in PlaybackAccessToken request is used, which mints tokens reliably.
+    if (!/^PlaybackAccessToken$/i.test(String(token.operationName || 'PlaybackAccessToken'))) return false;
     try {
       const next = JSON.parse(JSON.stringify(token));
       const hash = next && next.extensions && next.extensions.persistedQuery && next.extensions.persistedQuery.sha256Hash;
@@ -659,15 +767,163 @@
     }
   }
 
+  function fetchAdsRequestInfo(body) {
+    if (typeof body !== 'string' || !body || body.length > 1024 * 1024) return null;
+    try {
+      const parsed = JSON.parse(body);
+      const list = Array.isArray(parsed) ? parsed : [parsed];
+      if (!list.length) return null;
+      const mask = list.map((entry) => !!entry && typeof entry === 'object' &&
+        entry.operationName === 'FetchAdsService_FetchAds');
+      if (!mask.some(Boolean)) return null;
+      return { batch: Array.isArray(parsed), mask: mask, all: mask.every(Boolean) };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function videoAdDeclineRequestInfo(body) {
+    if (typeof body !== 'string' || !body || body.length > 1024 * 1024) return null;
+    try {
+      const parsed = JSON.parse(body);
+      const list = Array.isArray(parsed) ? parsed : [parsed];
+      if (!list.length) return null;
+      const mask = list.map((entry) => !!entry && typeof entry === 'object' &&
+        entry.operationName === 'VideoAdRequestDecline');
+      if (!mask.some(Boolean)) return null;
+      return { batch: Array.isArray(parsed), mask: mask, all: mask.every(Boolean) };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function fetchAdsNoFillEntry() {
+    return { data: { fetchAds: { ads: null, error: null } } };
+  }
+
+  function fetchAdsNoFillResponse(info) {
+    const payload = info.batch ? info.mask.map(() => fetchAdsNoFillEntry()) : fetchAdsNoFillEntry();
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  function videoAdDeclineEntry() {
+    return {
+      data: {
+        adContext: {
+          id: '0',
+          radToken: null,
+          declineState: { reason: 'reason_ratelimit', shouldDecline: true }
+        }
+      }
+    };
+  }
+
+  function videoAdDeclineResponse(info) {
+    const payload = info.batch ? info.mask.map(() => videoAdDeclineEntry()) : videoAdDeclineEntry();
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  async function redactFetchAdsResponse(response, info) {
+    if (!response || !response.ok || !info || info.all) return response;
+    try {
+      const payload = JSON.parse(await response.clone().text());
+      if (!info.batch || !Array.isArray(payload) || payload.length !== info.mask.length) return response;
+      for (let index = 0; index < info.mask.length; index++) {
+        if (info.mask[index]) payload[index] = fetchAdsNoFillEntry();
+      }
+      const headers = new Headers(response.headers);
+      headers.set('Content-Type', 'application/json');
+      return new Response(JSON.stringify(payload), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headers
+      });
+    } catch (_) {
+      return response;
+    }
+  }
+
+  async function redactVideoAdDeclineResponse(response, info) {
+    if (!response || !response.ok || !info || info.all) return response;
+    try {
+      const payload = JSON.parse(await response.clone().text());
+      if (!info.batch || !Array.isArray(payload) || payload.length !== info.mask.length) return response;
+      for (let index = 0; index < info.mask.length; index++) {
+        if (info.mask[index]) payload[index] = videoAdDeclineEntry();
+      }
+      const headers = new Headers(response.headers);
+      headers.set('Content-Type', 'application/json');
+      return new Response(JSON.stringify(payload), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headers
+      });
+    } catch (_) {
+      return response;
+    }
+  }
+
+  function settleGqlFetch(pending, adInfo) {
+    if (!adInfo) return pending;
+    if (adInfo.all) {
+      try { return Promise.resolve(fetchAdsNoFillResponse(adInfo)); } catch (_) { return pending; }
+    }
+    return Promise.resolve(pending).then((response) => redactFetchAdsResponse(response, adInfo));
+  }
+
+  function settleVideoAdDecline(pending, declineInfo) {
+    if (!declineInfo) return pending;
+    if (declineInfo.all) {
+      try { return Promise.resolve(videoAdDeclineResponse(declineInfo)); } catch (_) { return pending; }
+    }
+    return Promise.resolve(pending).then((response) => redactVideoAdDeclineResponse(response, declineInfo));
+  }
+
   // Twitch's own player must know a break is coming to render its ad countdown,
   // and it asks the ad service over GQL -- traffic the page hook already sees.
   // That lands earlier than the playlist admits anything, and the residual leak is
   // precisely the segments fetched before the playlist confesses.
-  function noteAdServiceCall(init) {
+  function validChannelName(value) {
+    const channel = String(value || '').trim().toLowerCase();
+    return /^[a-z0-9_]{1,25}$/i.test(channel) ? channel : '';
+  }
+
+  function announceAdImminent(channelHint) {
+    lastAdImminentAt = Date.now();
+    const channel = validChannelName(channelHint) || pageChannelName();
+    lastAdImminentChannel = channel;
+    for (const worker of workers) {
+      try { worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'ad-imminent', channel: channel }); } catch (_) {}
+    }
+  }
+
+  function noteAdServiceBody(body) {
     try {
-      const body = init && typeof init.body === 'string' ? init.body : '';
-      if (!body) return;
+      if (typeof body !== 'string' || !body) return;
       const names = new Set();
+      let channel = '';
+      try {
+        const parsed = JSON.parse(body);
+        const entries = Array.isArray(parsed) ? parsed : [parsed];
+        for (const entry of entries) {
+          if (!entry || typeof entry !== 'object') continue;
+          const name = String(entry.operationName || '');
+          if (name) names.add(name);
+          if (name !== 'FetchAdsService_FetchAds' && !/^Ads?_|^AdRequest|^AdContext/.test(name)) continue;
+          const variables = entry.variables || {};
+          const input = variables.input && typeof variables.input === 'object' ? variables.input : {};
+          const inputChannel = input.channel && typeof input.channel === 'object' ? input.channel : {};
+          channel = channel || validChannelName(variables.channelLogin || variables.login ||
+            variables.channel || variables.channelName || input.channelLogin || input.login ||
+            inputChannel.login || input.channelName);
+        }
+      } catch (_) {}
       const re = /"operationName"\s*:\s*"([A-Za-z0-9_]+)"/g;
       let m;
       while ((m = re.exec(body))) names.add(m[1]);
@@ -675,16 +931,18 @@
       // contain "ad" and fire constantly. These four are the player actually
       // transacting with the ad service.
       const interesting = Array.from(names).filter((n) =>
-        /^Ads?_|^AdRequest|^AdContext|^ConnectAdIdentity/.test(n));
+        n === 'FetchAdsService_FetchAds' || n === 'VideoAdRequestDecline' ||
+        /^Ads?_|^AdRequest|^AdContext/.test(n));
       if (!interesting.length) return;
       // A pre-roll on a channel switch fires this while the player is still
       // rebuilding its worker, so a live broadcast alone reaches nobody. Record it
       // and replay on handshake, exactly as the master is replayed.
-      lastAdImminentAt = Date.now();
-      for (const worker of workers) {
-        try { worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'ad-imminent' }); } catch (_) {}
-      }
+      announceAdImminent(channel);
     } catch (_) {}
+  }
+
+  function noteAdServiceCall(init) {
+    try { noteAdServiceBody(init && typeof init.body === 'string' ? init.body : ''); } catch (_) {}
   }
 
   function captureClientState(input, init) {
@@ -720,27 +978,71 @@
   function pageChannelName() {
     try {
       const match = /^\/([^/?#]+)/.exec(location.pathname || '');
-      return match ? decodeURIComponent(match[1]).toLowerCase() : '';
+      if (match) return decodeURIComponent(match[1]).toLowerCase();
+      const queryChannel = new URL(location.href).searchParams.get('channel') || '';
+      return /^[a-z0-9_]{1,25}$/i.test(queryChannel) ? queryChannel.toLowerCase() : '';
     } catch (_) {
       return '';
     }
   }
 
+  function channelFromMasterUrl(url) {
+    const match = /\/api\/(?:v2\/)?channel\/hls\/([^/?#]+)\.m3u8/i.exec(String(url || ''));
+    if (!match) return '';
+    try { return decodeURIComponent(match[1]).toLowerCase(); } catch (_) { return match[1].toLowerCase(); }
+  }
+
   let lastMaster = null;
+  const masterSnapshots = new Map();
   let lastAdImminentAt = 0;
+  let lastAdImminentChannel = '';
 
   function broadcastMaster(url, text) {
     if (!text) return;
-    const channel = pageChannelName();
+    const fetchedChannel = channelFromMasterUrl(url);
+    const currentChannel = pageChannelName();
+    const channel = fetchedChannel || currentChannel;
+    if (!channel) return;
+    const snapshot = { url: url, text: text, channel: channel, at: Date.now() };
+    masterSnapshots.delete(channel);
+    masterSnapshots.set(channel, snapshot);
+    for (const [name, cached] of masterSnapshots) {
+      if (!cached || Date.now() - cached.at >= 120000) masterSnapshots.delete(name);
+    }
+    while (masterSnapshots.size > 6) masterSnapshots.delete(masterSnapshots.keys().next().value);
+    const current = !currentChannel || currentChannel === channel;
     // On a fresh load the master is fetched before the player creates its worker,
     // so a live broadcast alone would reach nobody. Keep the last one and replay
-    // it on handshake -- that is precisely the pre-roll case.
-    lastMaster = { url: url, text: text, channel: channel, at: Date.now() };
+    // it on handshake -- that is precisely the pre-roll case. A SPA can fetch the
+    // next channel before location.pathname changes, so cache/map that master too
+    // without activating it over the stream that is still current.
+    if (current) lastMaster = snapshot;
     for (const worker of workers) {
       try {
-        worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'master', url: url, text: text, channel: channel });
+        worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'master', url: url, text: text,
+          channel: channel, current: current });
       } catch (_) {}
     }
+  }
+
+  function currentMasterSnapshot() {
+    const currentChannel = pageChannelName();
+    if (currentChannel) {
+      const cached = masterSnapshots.get(currentChannel);
+      if (cached && Date.now() - cached.at < 120000) return cached;
+      if (lastMaster && currentChannel === lastMaster.channel) return lastMaster;
+      return null;
+    }
+    if (!lastMaster) return null;
+    if (!currentChannel && Date.now() - lastMaster.at < 120000) return lastMaster;
+    return null;
+  }
+
+  function currentAdWarningSnapshot() {
+    if (!lastAdImminentAt || Date.now() - lastAdImminentAt >= 12000) return null;
+    const currentChannel = pageChannelName();
+    if (lastAdImminentChannel && currentChannel && lastAdImminentChannel !== currentChannel) return null;
+    return { at: lastAdImminentAt, channel: lastAdImminentChannel || currentChannel || '' };
   }
 
   // Refusing the ad request is what strands a break. The player will not leave
@@ -759,14 +1061,8 @@
   // is never issued, so there is no CORS surface and no extension resource for
   // a page to probe.
   //
-  // Confirmed against the live site rather than assumed: over about seventeen
-  // minutes of viewing across several channel switches, on a logged-in account
-  // with no Turbo, the ad service was asked twenty-two times, every one of those
-  // was answered here, none reached the network, none failed, and no advert
-  // played. The zero-failure half matters as much as the zero-leak half -- it is
-  // what keeps a break from stranding. The request is issued with fetch and the
-  // SDK module contains no XMLHttpRequest, so this one hook is the whole path;
-  // there is no second transport left to cover.
+  // Twitch currently reaches the service through both fetch and a VAST SDK XHR,
+  // so the same narrow URL test is installed on both transports below.
   function emptyAdResponse() {
     return new Response(null, { status: 204, statusText: 'No Content' });
   }
@@ -776,6 +1072,7 @@
     function twitchFetch(input, init) {
       const url = requestUrl(input);
       if (enabled && AD_SERVICE_URL_RE.test(url)) {
+        if (VIDEO_AD_SERVICE_URL_RE.test(url)) announceAdImminent();
         try { return Promise.resolve(emptyAdResponse()); } catch (_) {}
       }
       // The player fetches the master on the page, then hands media URLs to a
@@ -786,15 +1083,15 @@
       if (enabled && MASTER_URL_RE.test(url)) {
         const pending = nativeFetch.apply(this, arguments);
         try {
-          Promise.resolve(pending).then((response) => {
+          return Promise.resolve(pending).then(async (response) => {
             try {
-              if (!response || !response.ok) return;
-              response.clone().text().then(
-                (text) => broadcastMaster(response.url || url, text),
-                () => {},
-              );
+              if (response && response.ok) {
+                const text = await response.clone().text();
+                broadcastMaster(response.url || url, text);
+              }
             } catch (_) {}
-          }, () => {});
+            return response;
+          });
         } catch (_) {}
         return pending;
       }
@@ -804,16 +1101,30 @@
       if (!enabled || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
       captureClientState(input, init);
       if (init && typeof init.body === 'string') {
+        const adInfo = fetchAdsRequestInfo(init.body);
+        const declineInfo = videoAdDeclineRequestInfo(init.body);
         const patched = patchTokenBody(init.body);
         if (patched !== init.body) init = Object.assign({}, init, { body: patched });
-      } else if (!init && typeof Request !== 'undefined' && input instanceof Request &&
-                 String(input.method || '').toUpperCase() === 'POST') {
+        if (adInfo && adInfo.all) return settleGqlFetch(null, adInfo);
+        if (declineInfo && declineInfo.all) return settleVideoAdDecline(null, declineInfo);
+        const pending = nativeFetch.call(this, input, init);
+        return settleVideoAdDecline(settleGqlFetch(pending, adInfo), declineInfo);
+      } else if (typeof Request !== 'undefined' && input instanceof Request &&
+                 String(init && init.method || input.method || '').toUpperCase() === 'POST') {
         const context = this;
+        const originalInit = init;
         return input.clone().text().then((body) => {
+          noteAdServiceBody(body);
+          const adInfo = fetchAdsRequestInfo(body);
+          const declineInfo = videoAdDeclineRequestInfo(body);
           const patched = patchTokenBody(body);
-          if (patched === body) return nativeFetch.call(context, input);
-          return nativeFetch.call(context, new Request(input, { body: patched }));
-        }, () => nativeFetch.call(context, input));
+          if (adInfo && adInfo.all) return settleGqlFetch(null, adInfo);
+          if (declineInfo && declineInfo.all) return settleVideoAdDecline(null, declineInfo);
+          const pending = patched === body
+            ? nativeFetch.call(context, input, originalInit)
+            : nativeFetch.call(context, new Request(input, Object.assign({}, originalInit || {}, { body: patched })));
+          return settleVideoAdDecline(settleGqlFetch(pending, adInfo), declineInfo);
+        }, () => nativeFetch.call(context, input, originalInit));
       }
       return nativeFetch.call(this, input, init);
     }
@@ -824,6 +1135,25 @@
       twitchFetch.toString = Function.prototype.toString.bind(nativeFetch);
     } catch (_) {}
     window.fetch = twitchFetch;
+  }
+
+  function installXhrHook() {
+    if (typeof nativeXhrOpen !== 'function' || nativeXhrOpen.__woTwitchCurrent) return;
+    function twitchXhrOpen(method, url) {
+      const target = String(url || '');
+      if (enabled && AD_SERVICE_URL_RE.test(target)) {
+        if (VIDEO_AD_SERVICE_URL_RE.test(target)) announceAdImminent();
+        const error = new Error('Network request failed');
+        error.name = 'NetworkError';
+        throw error;
+      }
+      return nativeXhrOpen.apply(this, arguments);
+    }
+    try {
+      Object.defineProperty(twitchXhrOpen, '__woTwitchCurrent', { value: VERSION });
+      twitchXhrOpen.toString = Function.prototype.toString.bind(nativeXhrOpen);
+      NativeXMLHttpRequest.prototype.open = twitchXhrOpen;
+    } catch (_) {}
   }
 
   // Swapping the video does not change what Twitch's own player believes: it still
@@ -842,7 +1172,7 @@
   // has stopped advancing, so ordinary buffering and a deliberate pause are never
   // touched. setTimeout rather than setInterval: a raw-source check forbids
   // intervals in this file, and a self-scheduling timeout also stops cleanly.
-  const STALL_ARM_MS = 180000;
+  const STALL_ARM_MS = 45 * 1000;
   // Tuned for how this actually fails. A gapped break freezes the playhead almost
   // immediately, so waiting three whole seconds to confirm it only adds three
   // seconds to every recovery. Two checks half a second apart still cannot be
@@ -857,10 +1187,29 @@
   let stallStrikes = 0;
   let stallLastNudgeAt = 0;
 
+  function clearStallWatch() {
+    stallArmedUntil = 0;
+    stallStrikes = 0;
+    stallLastTime = -1;
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = 0;
+  }
+
+  function stallInterventionActive() {
+    try {
+      const state = String(document.documentElement &&
+        document.documentElement.getAttribute('data-wo-twitch-adblock') || '');
+      return state === 'blocked-gap' || state === 'blocked-hold';
+    } catch (_) {
+      return false;
+    }
+  }
+
   function nudgeStalledPlayback() {
     try {
-      const video = document.querySelector('video');
-      if (!video || video.paused || video.ended || video.seeking) {
+      const video = primaryPlayerVideo();
+      if (!stallInterventionActive() || pageActuallyHidden() || !video || video.paused ||
+          video.ended || video.seeking || Number(video.readyState || 0) < 3) {
         stallStrikes = 0;
         return;
       }
@@ -899,7 +1248,7 @@
     // check half a second later is already a real comparison rather than a
     // throwaway that costs an extra poll before anything can be detected.
     try {
-      const video = document.querySelector('video');
+      const video = primaryPlayerVideo();
       stallLastTime = video ? Number(video.currentTime) : -1;
     } catch (_) {
       stallLastTime = -1;
@@ -1115,7 +1464,7 @@
       if (Math.abs(Number(video.playbackRate == null ? 1 : video.playbackRate) - 1) > 0.01) return 'rate';
       // A hidden tab throttles timers, which inflates the wall-clock measurement
       // with delay we did not cause.
-      if (document.hidden === true) return 'hidden';
+      if (pageActuallyHidden()) return 'hidden';
     } catch (_) {
       return 'unreadable';
     }
@@ -1403,7 +1752,53 @@
     }
   }
 
-  function twitchWorkerRuntime(originalSource, initialState, runtimeVersion, initiallyEnabled) {
+  function applyWorkerAdState(worker, state, offsetMs) {
+    const blocking = /^blocked-/.test(state);
+    const wasBlocking = blockingWorkers.size > 0;
+    if (blocking) {
+      blockingWorkers.add(worker);
+      lastStreamInterventionAt = Date.now();
+      installAdChromeCss();
+      if (state === 'blocked-gap' || state === 'blocked-hold') armStallWatch();
+    } else {
+      blockingWorkers.delete(worker);
+      const measuredOffset = Number(offsetMs);
+      if (Number.isFinite(measuredOffset) && measuredOffset > blockingSwapOffsetMs) {
+        blockingSwapOffsetMs = measuredOffset;
+      }
+    }
+    const stillBlocking = blockingWorkers.size > 0;
+    try {
+      if (stillBlocking) {
+        if (blocking) document.documentElement.setAttribute('data-wo-twitch-adblock', state);
+      } else {
+        document.documentElement.removeAttribute('data-wo-twitch-adblock');
+      }
+    } catch (_) {}
+    if (!wasBlocking && stillBlocking) {
+      catchUpOnAdState(true, 0);
+    } else if (wasBlocking && !stillBlocking) {
+      clearStallWatch();
+      const finalOffset = blockingSwapOffsetMs;
+      blockingSwapOffsetMs = 0;
+      catchUpOnAdState(false, finalOffset);
+    }
+  }
+
+  function releaseWorkerAdState(worker) {
+    if (!blockingWorkers.has(worker)) return;
+    blockingWorkers.delete(worker);
+    if (blockingWorkers.size === 0) {
+      clearStallWatch();
+      try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
+      const finalOffset = blockingSwapOffsetMs;
+      blockingSwapOffsetMs = 0;
+      catchUpOnAdState(false, finalOffset);
+    }
+  }
+
+  function twitchWorkerRuntime(originalSource, initialState, runtimeVersion, initiallyEnabled,
+      initialMaster, initialAdWarning) {
     'use strict';
 
     const FLAG = '__woTwitchAdblock';
@@ -1411,14 +1806,15 @@
     // and shorter stitched identifiers. Match the signifier as a token so a
     // marker-only spelling change cannot turn the entire ad pod into clean media.
     const AD_MARKER_RE = /\bstitched\b|#EXT-X-CUE-OUT|CLASS="twitch-maf-ad"|CLASS="twitch-trigger"/i;
-    const STRONG_AD_METADATA_RE = /X-TV-TWITCH-AD-(?:RADS-TOKEN|ROLL-TYPE|POD-|ADVERTISER|CREATIVE|LINE-ITEM|ORDER-ID)/i;
+    const STRONG_AD_METADATA_RE = /(?:X-TV-TWITCH-AD-(?:RADS-TOKEN|ROLL-TYPE|POD-|ADVERTISER|CREATIVE|LINE-ITEM|ORDER-ID)|X-TTV-MAF-AD-[A-Z0-9-]+)/i;
     // Twitch's own player has to know a break is coming in order to render its
     // countdown, and it asks over GQL -- which the page already sees. That is
     // earlier than the playlist admits anything, and the front-of-break leak is
     // exactly the segments fetched before the playlist confesses. Treat the ad
     // service call as the warning it is.
     const AD_IMMINENT_MS = 12000;
-    let adImminentUntil = 0;
+    let genericAdImminentUntil = 0;
+    const adImminentByChannel = new Map();
     const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
     const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
     const GQL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
@@ -1435,7 +1831,12 @@
     // poll to have warmed anything -- so give just that case a longer budget. A
     // mid-roll keeps the short one on purpose.
     const PREROLL_BACKUP_WAIT_MS = 2500;
-    const BACKUP_POLL_TIMEOUT_MS = 650;
+    // Clean alternate media legs on distant Twitch regions can take 700-900ms
+    // while cold. A 650ms abort discarded a valid popout/mobile stream before
+    // the 2.5s pre-roll budget could use it. This remains below that outer budget
+    // and does not delay mid-roll fallback, whose own wait stays bounded at 900ms.
+    const BACKUP_POLL_TIMEOUT_MS = 1500;
+    const COMPLETE_MEDIA_RETRY_MS = 650;
     const CLEAN_NATIVE_TTL = 2500;
     const NATIVE_RELEASE_POLLS = 3;
     const AD_QUARANTINE_MAX_MS = 45 * 1000;
@@ -1457,6 +1858,10 @@
     const pendingBackups = new Map();
     const pendingBackupPolls = new Map();
     const pendingGql = new Map();
+    let backupEpoch = 0;
+    let activeChannel = '';
+    let activeMediaProfile = null;
+    let activeMasterGeneration = 0;
 
     function post(type, extra) {
       try {
@@ -1465,6 +1870,33 @@
     }
 
     function wlog(m) { post('log', { m: m }); }
+
+    function workerChannelName(value) {
+      const channel = String(value || '').trim().toLowerCase();
+      return /^[a-z0-9_]{1,25}$/i.test(channel) ? channel : '';
+    }
+
+    function adWarningActive(channel) {
+      const now = Date.now();
+      if (genericAdImminentUntil > now) return true;
+      const wanted = workerChannelName(channel);
+      return !!wanted && Number(adImminentByChannel.get(wanted) || 0) > now;
+    }
+
+    function armAdWarning(channel, notifyPage) {
+      const wanted = workerChannelName(channel);
+      const until = Date.now() + AD_IMMINENT_MS;
+      if (wanted) adImminentByChannel.set(wanted, until);
+      else genericAdImminentUntil = until;
+      if (notifyPage) post('ad-imminent', { channel: wanted });
+      try {
+        const profile = fallbackVariant(activeChannel);
+        if (profile && adWarningActive(profile.channel)) {
+          const pending = getBackup(profile, true);
+          if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+        }
+      } catch (_) {}
+    }
 
     // Ad state was only ever reported while blocking, never cleared, so the page
     // attribute stayed pinned to the last blocked value for the rest of the
@@ -1561,7 +1993,7 @@
     }
 
     function nativeMediaInput(input, url, info) {
-      if (!info || (!info.adActive && !info.backupActive)) return input;
+      if (!info || (!info.adActive && !info.backupActive && !info.imminentActive)) return input;
       const ordinaryUrl = withoutLowLatencyQuery(url);
       if (!ordinaryUrl || ordinaryUrl === url) return input;
       if (typeof input === 'string') return ordinaryUrl;
@@ -1574,6 +2006,64 @@
         }
       } catch (_) {}
       return input;
+    }
+
+    async function retryCompleteMediaPlaylist(input, init, url) {
+      const ordinaryUrl = withoutLowLatencyQuery(url);
+      if (!ordinaryUrl || ordinaryUrl === url || typeof AbortController !== 'function') return null;
+      const controller = new AbortController();
+      const linkedSignals = [];
+      const relayAbort = () => {
+        try { controller.abort(); } catch (_) {}
+      };
+      try {
+        if (init && init.signal) linkedSignals.push(init.signal);
+        if (typeof Request !== 'undefined' && input instanceof Request && input.signal &&
+            !linkedSignals.includes(input.signal)) linkedSignals.push(input.signal);
+      } catch (_) {}
+      for (const signal of linkedSignals) {
+        try {
+          if (signal.aborted) relayAbort();
+          else signal.addEventListener('abort', relayAbort, { once: true });
+        } catch (_) {}
+      }
+      let timer = 0;
+      try {
+        timer = setTimeout(relayAbort, COMPLETE_MEDIA_RETRY_MS);
+        let retryInput = ordinaryUrl;
+        try {
+          if (typeof Request !== 'undefined' && input instanceof Request) {
+            retryInput = new Request(ordinaryUrl, input);
+          }
+        } catch (_) {
+          retryInput = ordinaryUrl;
+        }
+        const retryInit = Object.assign({}, init || {}, { signal: controller.signal });
+        const response = await realFetch(retryInput, retryInit);
+        if (!response || !response.ok) return null;
+        const text = await response.clone().text();
+        if (!mediaPlaylistEnvelope(text)) return null;
+        const evidence = playlistEvidence(text);
+        if (evidence.fullPlayable < 1) return null;
+        return { response: response, text: text, evidence: evidence };
+      } catch (_) {
+        return null;
+      } finally {
+        if (timer) clearTimeout(timer);
+        for (const signal of linkedSignals) {
+          try { signal.removeEventListener('abort', relayAbort); } catch (_) {}
+        }
+      }
+    }
+
+    function mediaRequestAborted(input, init) {
+      try {
+        if (init && init.signal && init.signal.aborted) return true;
+        return typeof Request !== 'undefined' && input instanceof Request &&
+          input.signal && input.signal.aborted;
+      } catch (_) {
+        return false;
+      }
     }
 
     function prune(map, max, ttl) {
@@ -1793,14 +2283,17 @@
           return false;
         }
       });
-      const strongMetadata = STRONG_AD_METADATA_RE.test(source) || /stitched-ad/i.test(source) || exactStitchedRange;
+      const authoritativeAdMetadata = STRONG_AD_METADATA_RE.test(source);
+      const strongMetadata = authoritativeAdMetadata || /stitched-ad/i.test(source) || exactStitchedRange;
       const ranges = timedAdRanges(lines);
       const hasMarker = AD_MARKER_RE.test(source) || strongMetadata || ranges.length > 0;
+      const explicitPreroll = /X-(?:TV-TWITCH|TTV-MAF)-AD-ROLL-TYPE\s*=\s*"?PREROLL"?/i.test(source);
       const hasLiveTitle = lines.some((line) => /^#EXTINF:.*?,\s*live\s*$/i.test(line));
       const sequenceLine = lines.find((line) => /^#EXT-X-MEDIA-SEQUENCE:/i.test(line));
       const targetLine = lines.find((line) => /^#EXT-X-TARGETDURATION:/i.test(line));
       const mediaSequence = Number(String(sequenceLine || '').replace(/^#EXT-X-MEDIA-SEQUENCE:/i, ''));
       const targetDuration = Number(String(targetLine || '').replace(/^#EXT-X-TARGETDURATION:/i, '')) || 2;
+      const advertisedDuration = advertisedAdDuration(lines, ranges);
       const fullAds = new Set();
       const inlineAds = new Set();
       let playable = 0;
@@ -1809,6 +2302,9 @@
       let confirmed = 0;
       let cueActive = false;
       let cueRemaining = 0;
+      let authoritativeRemaining = authoritativeAdMetadata
+        ? Math.max(advertisedDuration, targetDuration)
+        : 0;
       let programTime = NaN;
 
       for (let index = 0; index < lines.length; index++) {
@@ -1839,9 +2335,12 @@
           const isLiveTitle = title === 'live';
           if (isLiveTitle) explicitLive++;
           const explicitlyNonLive = !!title && !isLiveTitle;
+          const authoritativeScoped = authoritativeRemaining > 0 &&
+            (!Number.isFinite(programTime) || !ranges.length);
           const markerScoped = hasMarker && !isLiveTitle &&
             (explicitlyNonLive || hasLiveTitle || (strongMetadata && !hasLiveTitle));
-          if (AD_URI_RE.test(uri) || cueActive || markerScoped || overlapsTimedAd(ranges, programTime, duration)) {
+          if (AD_URI_RE.test(uri) || cueActive || markerScoped || authoritativeScoped ||
+              overlapsTimedAd(ranges, programTime, duration)) {
             fullAds.add(index);
             confirmed++;
           }
@@ -1852,6 +2351,9 @@
               cueRemaining = 0;
             }
           }
+          if (authoritativeRemaining > 0 && duration > 0) {
+            authoritativeRemaining = Math.max(0, authoritativeRemaining - duration);
+          }
           if (Number.isFinite(programTime) && duration > 0) programTime += duration * 1000;
           continue;
         }
@@ -1859,17 +2361,25 @@
           playable++;
           const uri = taggedUri(line);
           const partDuration = Number(parseAttributes(line).DURATION || 0);
+          const authoritativeScoped = authoritativeRemaining > 0 &&
+            (!Number.isFinite(programTime) || !ranges.length);
           if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
-              overlapsTimedAd(ranges, programTime, partDuration)) {
+              authoritativeScoped || overlapsTimedAd(ranges, programTime, partDuration)) {
             inlineAds.add(index);
             confirmed++;
+          }
+          if (authoritativeRemaining > 0 && partDuration > 0) {
+            authoritativeRemaining = Math.max(0, authoritativeRemaining - partDuration);
           }
           if (Number.isFinite(programTime) && partDuration > 0) programTime += partDuration * 1000;
           continue;
         }
         if (/^#EXT-X-PRELOAD-HINT:/i.test(line)) {
           const uri = taggedUri(line);
-          if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle)) {
+          const authoritativeScoped = authoritativeRemaining > 0 &&
+            (!Number.isFinite(programTime) || !ranges.length);
+          if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
+              authoritativeScoped) {
             playable++;
             confirmed++;
             inlineAds.add(index);
@@ -1878,10 +2388,14 @@
         }
         if (/^#EXT-X-TWITCH-PREFETCH:/i.test(line)) {
           const uri = line.replace(/^#EXT-X-TWITCH-PREFETCH:/i, '').trim();
-          if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle)) {
+          const authoritativeScoped = authoritativeRemaining > 0 &&
+            (!Number.isFinite(programTime) || !ranges.length);
+          if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
+              authoritativeScoped) {
             playable++;
             confirmed++;
             inlineAds.add(index);
+            authoritativeRemaining = Math.max(0, authoritativeRemaining - targetDuration);
           }
         }
       }
@@ -1889,6 +2403,7 @@
         lines: lines,
         hasMarker: hasMarker,
         strongMetadata: strongMetadata,
+        explicitPreroll: explicitPreroll,
         playable: playable,
         fullPlayable: fullPlayable,
         explicitLive: explicitLive,
@@ -1899,7 +2414,7 @@
         // PROGRAM-DATE-TIME. NaN when the manifest carries no date at all, which
         // is a refusal upstream rather than a zero.
         edgeWall: Number.isFinite(programTime) ? programTime : NaN,
-        advertisedDuration: advertisedAdDuration(lines, ranges),
+        advertisedDuration: advertisedDuration,
         fullAds: fullAds,
         inlineAds: inlineAds
       };
@@ -1911,6 +2426,7 @@
       const target = Math.max(1, Number(evidence.targetDuration) || 2);
       const advertised = Math.max(target * 3, Number(evidence.advertisedDuration) || 0);
       const boundedDuration = Math.min(AD_QUARANTINE_MAX_MS / 1000, advertised);
+      info.imminentActive = false;
       info.adActive = true;
       info.lastConfirmedAdAt = now;
       info.cleanNativePolls = 0;
@@ -1947,25 +2463,21 @@
     // it as network "Error #2000". Dropping the low-latency tags for the duration of
     // the intervention makes the player fall back to ordinary polling, which costs a
     // couple of seconds of latency during the break instead of killing playback.
-    // Only the FORWARD-LOOKING hints hand the player a URL for a segment it has
-    // not reached yet, and those are the sole delivery path for the front-of-break
-    // advert. SERVER-CONTROL, PART-INF, PART, RENDITION-REPORT and SKIP are the
-    // low-latency machinery itself: stripping those drops the player out of LL-HLS
-    // and costs real latency for the whole window. Take the hints, keep the mode.
+    // A marker-only poll can safely lose its forward-looking hints while retaining
+    // LL-HLS. Once the earlier ad-service warning is present, a complete playlist
+    // instead leaves LL-HLS coherently: every low-latency tag is removed together
+    // and the next native request drops its blocking cursors.
     const AD_HINT_TAG_RE = /^#EXT-X-(?:TWITCH-PREFETCH|PRELOAD-HINT)\b/i;
-    // Colon-anchored so it cannot also swallow EXT-X-PART-INF, which is config
-    // rather than a segment reference. Parts are only withheld while the ad
-    // service has actually signalled a break, because a part can carry the first
-    // advert beat, and outside that window dropping them costs real latency.
+    // Colon-anchored so part-only ad deltas can be recognized without also
+    // matching EXT-X-PART-INF, which is configuration rather than media.
     const AD_PART_TAG_RE = /^#EXT-X-PART:/i;
 
-    function stripAdHints(text, alsoParts) {
+    function stripAdHints(text) {
       const lines = String(text || '').replace(/\r/g, '').split('\n');
       const out = [];
       for (const line of lines) {
         const trimmed = line.trim();
         if (AD_HINT_TAG_RE.test(trimmed)) continue;
-        if (alsoParts && AD_PART_TAG_RE.test(trimmed)) continue;
         out.push(line);
       }
       return out.join('\n');
@@ -2056,13 +2568,35 @@
       prune(media, MEDIA_MAX, MEDIA_TTL);
     }
 
+    function touchMediaProfile(info) {
+      if (!info) return null;
+      info.ts = Date.now();
+      if (info.channel && String(info.channel).toLowerCase() === activeChannel &&
+          Number(info.masterGeneration || 0) === activeMasterGeneration) {
+        activeMediaProfile = info;
+      }
+      return info;
+    }
+
+    function activateMasterChannel(name) {
+      const channel = String(name || '').trim().toLowerCase();
+      if (!channel) return 0;
+      activeMasterGeneration++;
+      activeChannel = channel;
+      activeMediaProfile = null;
+      return activeMasterGeneration;
+    }
+
     // The master is what maps a media URL to the channel/codec profile a backup
     // stream has to match. Shared by the worker's own master fetch and by masters
     // the page forwards, because a freshly created worker never sees the master
     // the page already fetched and would otherwise have an empty map.
-    function mapMasterVariants(text, masterUrl, responseUrl, channel) {
+    function mapMasterVariants(text, masterUrl, responseUrl, channel, makeActive) {
       const name = String(channel || '').trim().toLowerCase();
       if (!name || !text) return 0;
+      let generation = 0;
+      if (makeActive === true || !activeChannel) generation = activateMasterChannel(name);
+      else if (activeChannel === name) generation = activeMasterGeneration;
       let count = 0;
       for (const variant of parseMaster(text, responseUrl || masterUrl)) {
         rememberVariant(variant.url, {
@@ -2073,9 +2607,10 @@
           video: variant.video,
           audio: variant.audio,
           subtitles: variant.subtitles,
-          bandwidth: variant.bandwidth,
-          master: masterUrl,
-          ts: Date.now()
+           bandwidth: variant.bandwidth,
+           master: masterUrl,
+           masterGeneration: generation,
+           ts: Date.now()
         });
         count++;
       }
@@ -2102,7 +2637,10 @@
         const parsed = JSON.parse(init.body);
         const list = Array.isArray(parsed) ? parsed : [parsed];
         const template = list.find(operationIsToken);
-        if (template) {
+        // Same rule as the page-side capture: PlaybackAccessToken_Template cannot be
+        // replayed with a persisted-query hash, so never adopt it as the template or
+        // let its hash overwrite the working one.
+        if (template && /^PlaybackAccessToken$/i.test(String(template.operationName || 'PlaybackAccessToken'))) {
           client.tokenTemplate = JSON.parse(JSON.stringify(template));
           const hash = template.extensions && template.extensions.persistedQuery && template.extensions.persistedQuery.sha256Hash;
           if (hash) client.tokenHash = hash;
@@ -2113,6 +2651,138 @@
       } catch (_) {
         return init;
       }
+    }
+
+    function workerFetchAdsRequestInfo(body) {
+      if (typeof body !== 'string' || !body || body.length > 1024 * 1024) return null;
+      try {
+        const parsed = JSON.parse(body);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        if (!list.length) return null;
+        const mask = list.map((entry) => !!entry && typeof entry === 'object' &&
+          entry.operationName === 'FetchAdsService_FetchAds');
+        if (!mask.some(Boolean)) return null;
+        let channel = '';
+        for (let index = 0; index < list.length; index++) {
+          if (!mask[index]) continue;
+          const variables = list[index].variables || {};
+          const input = variables.input && typeof variables.input === 'object' ? variables.input : {};
+          const inputChannel = input.channel && typeof input.channel === 'object' ? input.channel : {};
+          channel = channel || workerChannelName(variables.channelLogin || variables.login ||
+            variables.channel || variables.channelName || input.channelLogin || input.login ||
+            inputChannel.login || input.channelName);
+        }
+        return { batch: Array.isArray(parsed), mask: mask, all: mask.every(Boolean), channel: channel };
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function workerVideoAdDeclineRequestInfo(body) {
+      if (typeof body !== 'string' || !body || body.length > 1024 * 1024) return null;
+      try {
+        const parsed = JSON.parse(body);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        if (!list.length) return null;
+        const mask = list.map((entry) => !!entry && typeof entry === 'object' &&
+          entry.operationName === 'VideoAdRequestDecline');
+        if (!mask.some(Boolean)) return null;
+        return { batch: Array.isArray(parsed), mask: mask, all: mask.every(Boolean) };
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function workerFetchAdsNoFillEntry() {
+      return { data: { fetchAds: { ads: null, error: null } } };
+    }
+
+    function workerFetchAdsNoFillResponse(info) {
+      const payload = info.batch
+        ? info.mask.map(() => workerFetchAdsNoFillEntry())
+        : workerFetchAdsNoFillEntry();
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    function workerVideoAdDeclineEntry() {
+      return {
+        data: {
+          adContext: {
+            id: '0',
+            radToken: null,
+            declineState: { reason: 'reason_ratelimit', shouldDecline: true }
+          }
+        }
+      };
+    }
+
+    function workerVideoAdDeclineResponse(info) {
+      const payload = info.batch
+        ? info.mask.map(() => workerVideoAdDeclineEntry())
+        : workerVideoAdDeclineEntry();
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    async function redactWorkerFetchAdsResponse(response, info) {
+      if (!response || !response.ok || !info || info.all) return response;
+      try {
+        const payload = JSON.parse(await response.clone().text());
+        if (!info.batch || !Array.isArray(payload) || payload.length !== info.mask.length) return response;
+        for (let index = 0; index < info.mask.length; index++) {
+          if (info.mask[index]) payload[index] = workerFetchAdsNoFillEntry();
+        }
+        return responseWithText(response, JSON.stringify(payload), 'application/json');
+      } catch (_) {
+        return response;
+      }
+    }
+
+    async function redactWorkerVideoAdDeclineResponse(response, info) {
+      if (!response || !response.ok || !info || info.all) return response;
+      try {
+        const payload = JSON.parse(await response.clone().text());
+        if (!info.batch || !Array.isArray(payload) || payload.length !== info.mask.length) return response;
+        for (let index = 0; index < info.mask.length; index++) {
+          if (info.mask[index]) payload[index] = workerVideoAdDeclineEntry();
+        }
+        return responseWithText(response, JSON.stringify(payload), 'application/json');
+      } catch (_) {
+        return response;
+      }
+    }
+
+    async function handleWorkerGql(input, init) {
+      let body = init && typeof init.body === 'string' ? init.body : '';
+      let requestBody = false;
+      if (!body && typeof Request !== 'undefined' && input instanceof Request &&
+          String(input.method || '').toUpperCase() === 'POST') {
+        try {
+          body = await input.clone().text();
+          requestBody = true;
+        } catch (_) {}
+      }
+      const adInfo = workerFetchAdsRequestInfo(body);
+      const declineInfo = workerVideoAdDeclineRequestInfo(body);
+      if (adInfo || declineInfo) {
+        armAdWarning(adInfo && adInfo.channel, true);
+        if (adInfo && adInfo.all) return workerFetchAdsNoFillResponse(adInfo);
+        if (declineInfo && declineInfo.all) return workerVideoAdDeclineResponse(declineInfo);
+      }
+      let response;
+      if (requestBody) {
+        patchGqlInit(input, { body: body });
+        response = await realFetch(input, init);
+      } else {
+        response = await realFetch(input, patchGqlInit(input, init));
+      }
+      response = await redactWorkerFetchAdsResponse(response, adInfo);
+      return redactWorkerVideoAdDeclineResponse(response, declineInfo);
     }
 
     function tokenBody(channel, playerType) {
@@ -2180,7 +2850,18 @@
       if (!response.ok) throw new Error('token http ' + response.status);
       const parsed = await response.json();
       const token = findToken(parsed, 0);
-      if (!token || !token.value || !token.signature) throw new Error('missing access token');
+      if (!token || !token.value || !token.signature) {
+        // Twitch refuses a token with HTTP 200 and an error in the body, so the
+        // status tells you nothing and the reason is the only way to tell a bad
+        // login from a refused identity. Carry it into the message the backup
+        // failure already logs rather than discarding it.
+        let why = '';
+        try {
+          const first = parsed && parsed.errors && parsed.errors[0];
+          why = String((first && first.message) || '').slice(0, 60);
+        } catch (_) {}
+        throw new Error('missing access token' + (why ? ' (' + why + ')' : ''));
+      }
       if (token.authorization && token.authorization.isForbidden) throw new Error('forbidden access token');
       return token;
     }
@@ -2199,11 +2880,20 @@
     }
 
     async function backupAttempt(info, playerType) {
-      const token = await accessToken(info.channel, playerType);
+      // A pre-roll is decided before the master has necessarily been mapped, so
+      // info.channel can still be empty or malformed on the very first poll. The
+      // token request then goes out with an unusable login and Twitch answers
+      // HTTP 200 carrying a null token, which surfaces as "missing access token"
+      // and loses every clean-backup route for the one break that needs it most.
+      // The master URL the worker already holds carries the channel, so recover
+      // it from there rather than asking for a token we know cannot be minted.
+      const channel = workerChannelName(info.channel) || channelFromMaster(info.master);
+      const token = await accessToken(channel, playerType);
       const masterUrl = new URL(info.master);
       masterUrl.searchParams.set('sig', token.signature);
       masterUrl.searchParams.set('token', token.value);
-      masterUrl.searchParams.delete('parent_domains');
+      if (playerType === 'embed') masterUrl.searchParams.set('parent_domains', 'twitchplayer');
+      else masterUrl.searchParams.delete('parent_domains');
       const master = await fetchTextWithTimeout(masterUrl.href, 1800);
       const selected = chooseVariant(parseMaster(master.text, masterUrl.href), info);
       if (!selected) throw new Error('no codec-compatible variant');
@@ -2236,7 +2926,8 @@
           if (remaining <= 0) resolve(null);
         };
         for (const type of types) backupAttempt(info, type).then(done, (e) => {
-          wlog('  backup[' + type + '] failed: ' + ((e && e.message) || e));
+          wlog('  backup[' + type + '] ch=' + (workerChannelName(info.channel) || channelFromMaster(info.master) || '(none)')
+            + ' failed: ' + ((e && e.message) || e));
           done(null);
         });
       });
@@ -2245,16 +2936,35 @@
     // Source-capable web player types are raced once per playback context. The
     // Android/autoplay type is not committed because current players can stick at
     // 360p or fail to transition back to the native stream after an ad break.
-    function firstCleanBackup(info) {
-      return raceBackupTypes(info, ['site', 'popout', 'mobile_web', 'embed']);
+    function firstCleanBackup(info, pendingWarm) {
+      if (!pendingWarm) return raceBackupTypes(info, ['site', 'popout', 'mobile_web', 'embed']);
+      const remainingTypes = raceBackupTypes(info, ['site', 'embed']);
+      return new Promise((resolve) => {
+        let remaining = 2;
+        let settled = false;
+        const done = (value) => {
+          if (settled) return;
+          if (value) {
+            settled = true;
+            resolve(value);
+            return;
+          }
+          remaining--;
+          if (remaining <= 0) resolve(null);
+        };
+        pendingWarm.then(done, () => done(null));
+        remainingTypes.then(done, () => done(null));
+      });
     }
 
     function backupKey(info) {
       return [info.channel, info.resolution, info.fps, codecSignature(info.codecs), info.video,
-        info.audio, info.subtitles, info.mediaContainer || ''].join('|');
+        info.audio, info.subtitles].join('|');
     }
 
     function getBackup(info, full) {
+      if (!active) return Promise.resolve(null);
+      const epoch = backupEpoch;
       const key = backupKey(info);
       prune(backups, BACKUP_MAX, BACKUP_TTL);
       if (!full && Number(info.warmRetryAt || 0) > Date.now()) return Promise.resolve(null);
@@ -2268,16 +2978,13 @@
       const warmKey = key + '|warm';
       if (pendingBackups.has(fullKey)) return pendingBackups.get(fullKey);
       if (!full && pendingBackups.has(warmKey)) return pendingBackups.get(warmKey);
-      if (full && pendingBackups.has(warmKey)) {
-        // Reuse a successful warm attempt, but do not let a failing single-type
-        // prewarm suppress the full four-identity attempt once an ad is present.
-        return pendingBackups.get(warmKey).then((value) => value || getBackup(info, true));
-      }
+      const pendingWarm = full ? pendingBackups.get(warmKey) : null;
       const pendingKey = full ? fullKey : warmKey;
       const attempt = full
-        ? firstCleanBackup(info)
-        : backupAttempt(info, 'popout').catch(() => null);
+        ? firstCleanBackup(info, pendingWarm)
+        : raceBackupTypes(info, ['popout', 'mobile_web']);
       const pending = attempt.then((value) => {
+        if (!active || epoch !== backupEpoch) return null;
         if (value) {
           info.warmRetryAt = 0;
           backups.set(key, value);
@@ -2313,11 +3020,14 @@
     }
 
     async function cachedBackupResponse(info, originalResponse, activate) {
+      if (!active) return null;
+      const epoch = backupEpoch;
       const key = backupKey(info);
       const cached = backups.get(key);
       if (cached && !cached.failed && Date.now() - cached.ts < BACKUP_TTL) {
         try {
           const current = await pollCachedBackup(cached);
+          if (!active || epoch !== backupEpoch) return null;
           if (current && (!info.mediaContainer || current.container === info.mediaContainer)) {
             cached.ts = Date.now();
             info.servedBackupEdge = current.edgeWall;
@@ -2336,9 +3046,12 @@
       return null;
     }
 
-    async function cleanBackupResponse(info, originalResponse) {
+    async function cleanBackupResponse(info, originalResponse, explicitPreroll) {
+      if (!active) return null;
+      const epoch = backupEpoch;
       const startedAt = Date.now();
       const cachedResponse = await cachedBackupResponse(info, originalResponse);
+      if (!active || epoch !== backupEpoch) return null;
       if (cachedResponse) return cachedResponse;
       const candidatePromise = getBackup(info, true);
       if (info.lastCleanNative && Date.now() - info.lastCleanNativeAt <= CLEAN_NATIVE_TTL) {
@@ -2354,7 +3067,8 @@
           return responseWithText(originalResponse, bridge, 'application/vnd.apple.mpegurl');
         }
       }
-      const waitBudget = (info && info.servedClean) ? BACKUP_WAIT_MS : PREROLL_BACKUP_WAIT_MS;
+      const preroll = explicitPreroll === true || !(info && info.servedClean);
+      const waitBudget = preroll ? PREROLL_BACKUP_WAIT_MS : BACKUP_WAIT_MS;
       const remainingWait = Math.max(0, waitBudget - (Date.now() - startedAt));
       if (!remainingWait) {
         candidatePromise.catch(() => {});
@@ -2370,7 +3084,8 @@
           resolve(null);
         });
       });
-      wlog('  wait=' + waitBudget + 'ms preroll=' + ((info && !info.servedClean) ? 'YES' : 'no')
+      if (!active || epoch !== backupEpoch) return null;
+      wlog('  wait=' + waitBudget + 'ms preroll=' + (preroll ? 'YES' : 'no')
         + ' result=' + (candidate ? 'HIT' : 'MISS'));
       if (!candidate) return null;
       info.backupActive = true;
@@ -2389,7 +3104,7 @@
       if (!response.ok) return response;
       try {
         const text = await response.clone().text();
-        mapMasterVariants(text, url, response.url || url, channelFromMaster(url));
+        mapMasterVariants(text, url, response.url || url, channelFromMaster(url), true);
       } catch (_) {}
       return response;
     }
@@ -2398,35 +3113,83 @@
     // master's variant URLs, so an exact-URL lookup misses even though the channel
     // and codec profile are already known. That is precisely when the backup is
     // needed, and a miss skipped the whole clean-backup path. backupAttempt only
-    // needs the profile, not the ad URL, so fall back to the freshest known variant
-    // and bind it to this URL so later polls stay on one consistent state object.
-    function fallbackVariant() {
+    // needs the profile, not the ad URL, so fall back to the active profile or the
+    // best video/source variant and bind it to this URL. Never let a last-listed
+    // audio-only rendition become the detached video's replacement profile.
+    function fallbackProfileScore(candidate) {
+      const codecs = String(candidate && candidate.codecs || '');
+      const hasVideoCodec = /(?:avc1|av01|hev1|hvc1|vp0?9)/i.test(codecs) ? 1 : 0;
+      const sourceGroup = /(?:chunked|source)/i.test(String(candidate && candidate.video || '')) ? 1 : 0;
+      return hasVideoCodec * 1e15 + sourceGroup * 1e14 +
+        resolutionArea(candidate && candidate.resolution) * 1000 +
+        Number(candidate && candidate.bandwidth || 0) + Number(candidate && candidate.fps || 0);
+    }
+
+    function fallbackVariant(channel) {
+      const wantedChannel = String(channel || activeChannel || '').toLowerCase();
+      if (!wantedChannel) return null;
+      if (activeMediaProfile && activeMediaProfile.channel === wantedChannel &&
+          Number(activeMediaProfile.masterGeneration || 0) === activeMasterGeneration &&
+          Date.now() - (activeMediaProfile.ts || 0) <= MEDIA_TTL) return activeMediaProfile;
       let best = null;
+      let bestScore = -1;
+      const seen = new Set();
       for (const candidate of media.values()) {
-        if (!best || (candidate.ts || 0) > (best.ts || 0)) best = candidate;
+        if (!candidate || seen.has(candidate) || candidate.channel !== wantedChannel ||
+            Number(candidate.masterGeneration || 0) !== activeMasterGeneration) continue;
+        seen.add(candidate);
+        const score = fallbackProfileScore(candidate);
+        if (!best || score > bestScore ||
+            (score === bestScore && (candidate.ts || 0) > (best.ts || 0))) {
+          best = candidate;
+          bestScore = score;
+        }
       }
       if (!best || Date.now() - (best.ts || 0) > MEDIA_TTL) return null;
       return best;
     }
 
-    async function handleMedia(input, init, url) {
-      prune(media, MEDIA_MAX, MEDIA_TTL);
+    function mediaProfileForUrl(url) {
       let info = media.get(url) || media.get(canonical(url));
-      if (!info) {
-        const profile = fallbackVariant();
-        if (profile) {
-          info = Object.assign({}, profile, { backupActive: false, cleanNativePolls: 0 });
-          rememberVariant(url, info);
-          wlog('  bound ad media url to known profile ch=' + (info.channel || '?'));
-        }
-      }
+      if (info) return touchMediaProfile(info);
+      prune(media, MEDIA_MAX, MEDIA_TTL);
+      const profile = fallbackVariant(activeChannel);
+      if (!profile) return null;
+      info = Object.assign({}, profile, { backupActive: false, cleanNativePolls: 0 });
+      rememberVariant(url, info);
+      touchMediaProfile(info);
+      wlog('  bound ad media url to known profile ch=' + (info.channel || '?'));
+      return info;
+    }
+
+    function startEarlyCleanBackup(info) {
+      if (!info) return;
+      const imminent = adWarningActive(info.channel);
+      const firstPollWarm = !info.servedClean && !!client.tokenTemplate;
+      if (!imminent && !firstPollWarm) return;
+      try {
+        const pending = getBackup(info, imminent);
+        if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+      } catch (_) {}
+    }
+
+    async function handleMedia(input, init, url) {
+      let info = mediaProfileForUrl(url);
+      startEarlyCleanBackup(info);
       // Once an intervention is active, do not issue blocking reloads for a native
       // LL-HLS sequence/part that the returned ordinary/backup playlist cannot
       // satisfy. The linked Request signal is preserved for Request inputs.
-      const response = await realFetch(nativeMediaInput(input, url, info), init);
+      let response = await realFetch(nativeMediaInput(input, url, info), init);
       if (!response.ok) return response;
+      if (!info) {
+        info = mediaProfileForUrl(url);
+        startEarlyCleanBackup(info);
+      } else {
+        touchMediaProfile(info);
+      }
       let text = '';
       try { text = await response.clone().text(); } catch (_) { return response; }
+      if (!active) return response;
       // A CDN challenge, gateway page or empty 200 is not a media playlist. Never
       // remember or replay it as a clean bridge; that turns a transient network
       // response into a deterministic Twitch #2000/#3000 failure on the next ad.
@@ -2437,7 +3200,54 @@
       }
       let evidence;
       try { evidence = playlistEvidence(text); } catch (_) { return response; }
+      const confirmedPartOnlyDelta = evidence.confirmed > 0 && evidence.fullPlayable < 1 &&
+        evidence.lines.some((line) => AD_PART_TAG_RE.test(String(line || '').trim()));
+      if (confirmedPartOnlyDelta) {
+        const deltaResponse = response;
+        beginAdQuarantine(info, evidence);
+        const complete = await retryCompleteMediaPlaylist(input, init, url);
+        if (!active) return deltaResponse;
+        if (!info) {
+          info = mediaProfileForUrl(url);
+          startEarlyCleanBackup(info);
+        }
+        if (!complete) {
+          wlog('  part-only ad delta; ordinary retry unavailable');
+          if (mediaRequestAborted(input, init)) {
+            setAdState('clear', info && info.channel || '');
+            return deltaResponse;
+          }
+          if (info) {
+            try {
+              const replacement = await cleanBackupResponse(info, deltaResponse, evidence.explicitPreroll);
+              if (replacement) {
+                setAdState('blocked-clean', info.channel);
+                return replacement;
+              }
+            } catch (_) {}
+          }
+          setAdState('clear', info && info.channel || '');
+          return deltaResponse;
+        }
+        response = complete.response;
+        text = complete.text;
+        evidence = complete.evidence;
+        if (info) {
+          const observedContainer = mediaContainer(text);
+          if (observedContainer) info.mediaContainer = observedContainer;
+        }
+      }
       if (!evidence.confirmed) {
+        if (info && adWarningActive(info.channel)) {
+          try {
+            const early = await cleanBackupResponse(info, response);
+            if (early) {
+              noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
+              setAdState('blocked-clean', info.channel);
+              return early;
+            }
+          } catch (_) {}
+        }
         const quarantine = nativeAdQuarantineState(info, evidence);
         if (quarantine.active) {
           // Twitch media playlists are sliding windows. An ad marker can vanish
@@ -2484,31 +3294,34 @@
           // probed in the background in case confirmed ad media follows next poll.
           try { getBackup(info, false); } catch (_) {}
         }
-        // Once token identity is available, keep one lightweight popout backup
-        // warm during normal playback. Waiting for the first ad marker guarantees
-        // a visible beat of preroll/midroll while alternate tokens and Usher are
-        // still cold. The full four-type race remains reserved for ad time;
-        // getBackup de-duplicates by profile and backs off a failed warm attempt.
+        // Once token identity is available, keep a bounded popout/mobile race warm
+        // during normal playback. Embed is frequently the identity Twitch gives
+        // the pre-roll to first. Waiting for the first marker guarantees a visible
+        // beat while alternate tokens and Usher are still cold. The site/embed
+        // remainder joins only at ad time; getBackup de-duplicates by profile.
         if (info && client.tokenTemplate) { try { getBackup(info, false); } catch (_) {} }
-        setAdState('clear', (info && info.channel) || '');
         if (info) info.servedClean = true;
-        // The visible ad beat is not swap latency. This still-clean playlist can
-        // carry TWITCH-PREFETCH / PRELOAD-HINT / PART lines that already point at
-        // the FIRST ad segments, and the player fetches and appends those before
-        // any later playlist swap can act. Media in the SourceBuffer cannot be
-        // retracted, so no amount of swap speed removes what those lines deliver.
-        // Withhold only the low-latency hints, and only while a break is
-        // announced but not yet confirmed. The listed segments are untouched, so
-        // the cost is a little live-edge latency for the length of the break
-        // rather than a beat of advert. Any failure returns the native response.
-        if (info && (evidence.hasMarker || evidence.strongMetadata || Date.now() < adImminentUntil)) {
+        // A warning can precede the first marker by one LL-HLS poll. Prefer the
+        // already-started clean backup above. If every clean route misses, switch a
+        // complete native window to ordinary HLS as one coherent transition: all
+        // LL tags go together and the next request drops its blocking cursors. This
+        // prevents the first ad PART from being appended without handing the player
+        // an internally inconsistent part playlist. Part-only windows still fail
+        // open because inventing a complete manifest would risk #2000/#3000.
+        const warningActive = adWarningActive(info && info.channel);
+        if (info && (evidence.hasMarker || evidence.strongMetadata || warningActive)) {
           try {
-            const withheld = stripAdHints(text, Date.now() < adImminentUntil);
+            const ordinary = warningActive ? ordinaryMediaPlaylist(text) : '';
+            const withheld = ordinary || stripAdHints(text);
             if (withheld && withheld !== text && mediaPlaylistEnvelope(withheld)) {
+              if (ordinary) info.imminentActive = true;
+              setAdState('blocked-imminent', (info && info.channel) || '');
               return responseWithText(response, withheld, 'application/vnd.apple.mpegurl');
             }
           } catch (_) {}
         }
+        if (info && !warningActive) info.imminentActive = false;
+        setAdState('clear', (info && info.channel) || '');
         return response;
       }
       beginAdQuarantine(info, evidence);
@@ -2521,7 +3334,7 @@
       if (!info) wlog('  no variant info (master not mapped for this media url)');
       if (info) {
         try {
-          const replacement = await cleanBackupResponse(info, response);
+          const replacement = await cleanBackupResponse(info, response, evidence.explicitPreroll);
           if (replacement) {
             // Both playlists were in hand for this one poll, so the difference of
             // their PROGRAM-DATE-TIME edges is the latency this swap costs.
@@ -2541,21 +3354,63 @@
       return responseWithText(response, stripAdPlaylist(text, false), 'application/vnd.apple.mpegurl');
     }
 
+    try {
+      if (initialMaster && initialMaster.url && initialMaster.text) {
+        mapMasterVariants(String(initialMaster.text), String(initialMaster.url), String(initialMaster.url),
+          channelFromMaster(initialMaster.url) || initialMaster.channel, true);
+      }
+    } catch (_) {}
+    try {
+      const warningAt = Number(initialAdWarning && initialAdWarning.at || 0);
+      const warningChannel = workerChannelName(initialAdWarning && initialAdWarning.channel);
+      if (warningAt > 0 && Date.now() - warningAt < AD_IMMINENT_MS) {
+        if (warningChannel) adImminentByChannel.set(warningChannel, warningAt + AD_IMMINENT_MS);
+        else genericAdImminentUntil = warningAt + AD_IMMINENT_MS;
+      }
+    } catch (_) {}
+
     self.addEventListener('message', (event) => {
       const message = event && event.data;
       if (!message || message[FLAG] !== runtimeVersion) return;
       try { if (event.stopImmediatePropagation) event.stopImmediatePropagation(); } catch (_) {}
       if (message.type === 'config') {
-        active = message.enabled !== false;
+        const nextActive = message.enabled !== false;
+        if (nextActive !== active) lastAdStateSent = '';
+        active = nextActive;
+        if (!nextActive) {
+          genericAdImminentUntil = 0;
+          adImminentByChannel.clear();
+          backupEpoch++;
+          backups.clear();
+          pendingBackups.clear();
+          pendingBackupPolls.clear();
+          const seen = new Set();
+          for (const info of media.values()) {
+            if (!info || seen.has(info)) continue;
+            seen.add(info);
+            info.adActive = false;
+            info.backupActive = false;
+            info.imminentActive = false;
+            info.adUntilSequence = 0;
+            info.cleanNativePolls = 0;
+          }
+        }
       } else if (message.type === 'client-state' && message.state) {
         client = Object.assign({}, client, message.state);
       } else if (message.type === 'ad-imminent') {
-        adImminentUntil = Date.now() + AD_IMMINENT_MS;
+        armAdWarning(message.channel, false);
       } else if (message.type === 'master') {
         try {
           const url = String(message.url || '');
-          mapMasterVariants(String(message.text || ''), url, url,
-            channelFromMaster(url) || message.channel);
+          const mapped = mapMasterVariants(String(message.text || ''), url, url,
+            channelFromMaster(url) || message.channel, message.current === true);
+          if (mapped && adWarningActive(message.channel || activeChannel)) {
+            const profile = fallbackVariant(activeChannel);
+            if (profile) {
+              const pending = getBackup(profile, true);
+              if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+            }
+          }
         } catch (_) {}
       } else if (message.type === 'gql-response') {
         const pending = pendingGql.get(String(message.id || ''));
@@ -2579,16 +3434,7 @@
       if (!active) return realFetch(input, init);
       const url = urlOf(input);
       if (GQL_RE.test(url)) {
-        if (!init && typeof Request !== 'undefined' && input instanceof Request &&
-            String(input.method || '').toUpperCase() === 'POST') {
-          try {
-            const body = await input.clone().text();
-            const patched = patchGqlInit(input, { body: body });
-            if (patched && patched.body !== body) return realFetch(input, { body: patched.body });
-          } catch (_) {}
-          return realFetch(input);
-        }
-        return realFetch(input, patchGqlInit(input, init));
+        return handleWorkerGql(input, init);
       }
       if (playlistUrl(url)) {
         if (masterPlaylistUrl(url)) return handleMaster(input, init, url);
@@ -2644,17 +3490,39 @@
         return constructWorker(scriptUrl, options);
       }
       const originalSource = readWorkerSource(scriptUrl);
-      if (WO_TWITCH_DEBUG && !originalSource) { try { console.log('[WO-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} return constructWorker(scriptUrl, options); }
+      if (!originalSource) {
+        if (WO_TWITCH_DEBUG) { try { console.log('[WO-Twitch] worker NOT hooked: blob source unreadable'); } catch (_) {} }
+        return constructWorker(scriptUrl, options);
+      }
 
       let wrapperUrl = '';
       try {
+        const initialMaster = currentMasterSnapshot();
+        const initialAdWarning = currentAdWarningSnapshot();
         const bootstrap = '(' + twitchWorkerRuntime.toString() + ')(' +
           'null,' + JSON.stringify(publicClientState()) + ',' + JSON.stringify(VERSION) + ',' +
-          JSON.stringify(streamInterceptionEnabled()) + ');\n';
+          JSON.stringify(streamInterceptionEnabled()) + ',' + JSON.stringify(initialMaster) + ',' +
+          JSON.stringify(initialAdWarning) + ');\n';
         wrapperUrl = URL.createObjectURL(new Blob([bootstrap, originalSource], { type: 'application/javascript' }));
         const worker = constructWorker(wrapperUrl, options);
         if (WO_TWITCH_DEBUG) { try { console.log('[WO-Twitch] worker HOOKED — ad interception active'); } catch (_) {} }
         workers.add(worker);
+        let workerCleaned = false;
+        const cleanupWorker = () => {
+          if (workerCleaned) return;
+          workerCleaned = true;
+          workers.delete(worker);
+          releaseWorkerAdState(worker);
+        };
+        try {
+          const nativeTerminate = worker.terminate;
+          if (typeof nativeTerminate === 'function') {
+            worker.terminate = function terminate() {
+              cleanupWorker();
+              return nativeTerminate.apply(this, arguments);
+            };
+          }
+        } catch (_) {}
         let revokeTimer = setTimeout(() => {
           try { URL.revokeObjectURL(wrapperUrl); } catch (_) {}
           revokeTimer = 0;
@@ -2671,36 +3539,32 @@
             try {
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: streamInterceptionEnabled() });
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'client-state', revision: revision, state: publicClientState() });
-              if (lastAdImminentAt && Date.now() - lastAdImminentAt < 15000) {
-                worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'ad-imminent' });
+              const warning = currentAdWarningSnapshot();
+              if (warning) {
+                worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'ad-imminent', channel: warning.channel });
               }
-              if (lastMaster && Date.now() - lastMaster.at < 120000) {
+              const master = currentMasterSnapshot();
+              if (master) {
                 worker.postMessage({
                   [MESSAGE_FLAG]: VERSION, type: 'master',
-                  url: lastMaster.url, text: lastMaster.text, channel: lastMaster.channel,
+                  url: master.url, text: master.text, channel: master.channel, current: true,
                 });
               }
             } catch (_) {}
+          } else if (message.type === 'ad-imminent') {
+            announceAdImminent(message.channel);
           } else if (message.type === 'gql-request') {
             proxyWorkerGql(worker, message);
           } else if (message.type === 'ad-state') {
             try {
               const state = String(message.state || 'active');
-              const blocking = /^blocked-/.test(state);
-              if (blocking) lastStreamInterventionAt = Date.now();
-              installAdChromeCss();
-              if (blocking) armStallWatch();
-              if (blocking) document.documentElement.setAttribute('data-wo-twitch-adblock', state);
-              else document.documentElement.removeAttribute('data-wo-twitch-adblock');
-              // Last, so the fire-time "another worker is still blocking" check
-              // reads the attribute this transition just wrote.
-              catchUpOnAdState(blocking, message.offsetMs);
+              applyWorkerAdState(worker, state, message.offsetMs);
             } catch (_) {}
           } else if (message.type === 'log') {
             try { console.log('[WO-Twitch]', message.m); } catch (_) {}
           }
         });
-        worker.addEventListener('error', () => workers.delete(worker), { once: true });
+        worker.addEventListener('error', cleanupWorker, { once: true });
         return worker;
       } catch (_) {
         if (wrapperUrl) {
@@ -2739,4 +3603,5 @@
   updateEnabled();
   installWorkerHook();
   installFetchHook();
+  installXhrHook();
 })();
