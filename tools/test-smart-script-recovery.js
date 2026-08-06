@@ -160,10 +160,17 @@ function createHarness(options = {}) {
       + 'handleSmartScriptPlayerContext, handleSmartScriptPlayerIntent, clearSmartScriptRecoveryForTab, handleSmartScriptTopNavigation, '
       + 'normalizeSmartScriptFailure, SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PENDING_ERRORS, '
       + 'SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_RECOVERED_TABS, SMART_SCRIPT_RETRY_KEYS, SMART_SCRIPT_NAVIGATION_EPOCHS, '
-      + 'SCRIPT_SHIELD_PLAYER_INFRA_HOSTS};',
+      + 'SCRIPT_SHIELD_PLAYER_INFRA_HOSTS, SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS};',
     sandbox,
   );
   return { api: sandbox.__api, state };
+}
+
+// Hosts Smart mode never blanket-blocks: player/CDN infrastructure plus the asset
+// domains sites use to serve their own app code. Both are exempt by construction,
+// so recovery assertions care only about what is exempted BEYOND them.
+function alwaysExempt(api) {
+  return api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.concat(api.SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS);
 }
 
 function smartRule(state) {
@@ -232,12 +239,12 @@ async function testRecoveryAndRetryBound() {
   assert.strictEqual(tabRule.condition.domainType, 'thirdParty');
   assert.deepStrictEqual(
     Array.from(tabRule.condition.excludedRequestDomains || [])
-      .filter((host) => !api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)),
+      .filter((host) => !alwaysExempt(api).includes(host)),
     ['cdn.media.example'],
     'replacement rule did not exempt only the failed request-domain family');
-  api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.forEach((host) => {
+  alwaysExempt(api).forEach((host) => {
     assert(Array.from(tabRule.condition.excludedRequestDomains || []).includes(host),
-      'replacement rule dropped the always-allowed player infrastructure host ' + host);
+      'replacement rule dropped the always-allowed host ' + host);
   });
   assert(!state.sessionRules.some((rule) => rule.action && rule.action.type === 'allow'),
     'recovery installed an allow action');
@@ -321,7 +328,7 @@ async function testRecoveryAndRetryBound() {
     rule.condition && Array.from(rule.condition.tabIds || []).includes(4));
   assert.deepStrictEqual(
     Array.from(updatedTabRule.condition.excludedRequestDomains || [])
-      .filter((host) => !api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)),
+      .filter((host) => !alwaysExempt(api).includes(host)),
     ['cdn.media.example', 'modules.media.example'],
     'bounded per-tab rule did not retain both failed request-domain families',
   );
@@ -572,7 +579,7 @@ async function testNavigationEpochCancelsInFlightRecovery() {
   assert(tabRule, 'new epoch replacement rule was lost when the old recovery finished');
   assert.deepStrictEqual(
     Array.from(tabRule.condition.excludedRequestDomains || [])
-      .filter((host) => !api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)),
+      .filter((host) => !alwaysExempt(api).includes(host)),
     ['new-route.cdn.example'],
     'old recovery host leaked into the new navigation epoch');
 }
@@ -717,7 +724,7 @@ async function testRestartRehydrationAndCaps() {
   for (const rule of capped.state.sessionRules.filter((candidate) => candidate.condition && candidate.condition.tabIds)) {
     assert.strictEqual(
       Array.from(rule.condition.excludedRequestDomains || [])
-        .filter((host) => !capped.api.SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.includes(host)).length,
+        .filter((host) => !alwaysExempt(capped.api).includes(host)).length,
       RECOVERY_MAX_HOSTS_PER_TAB,
       'request-domain family exclusions exceeded the per-tab cap');
   }
@@ -776,9 +783,46 @@ function testRegistrationAndBridgeBounds() {
     'isolated relay does not forward playerPage with strict boolean semantics');
 }
 
+// Regression: Smart mode blocks third-party scripts, but plenty of large sites serve
+// their OWN application code from a separate registrable domain. Pinterest ships every
+// .mjs bundle from pinimg.com while the page is pinterest.com, so the blanket rule
+// blocked the entire app and the page rendered blank with React never hydrating.
+// Recovery could not save it either -- that only engages on video-player pages.
+async function testFirstPartyAppCdnsStayLoadable() {
+  const { api, state } = createHarness();
+  await api.applyScriptShieldRules('smart');
+  const blanket = smartRule(state);
+  assert(blanket && blanket.action.type === 'block', 'Smart mode installed no blanket rule');
+  const exempt = Array.from(blanket.condition.excludedRequestDomains || []);
+
+  // The reported breakage, stated as the site that broke.
+  assert(exempt.includes('pinimg.com'),
+    'Pinterest app bundles (pinimg.com) are still caught by the blanket third-party script block');
+
+  // Its peers fail identically: same shape, different domain.
+  ['twimg.com', 'fbcdn.net', 'licdn.com', 'redditstatic.com', 'gstatic.com'].forEach((host) => {
+    assert(exempt.includes(host), 'first-party app CDN is still blanket-blocked: ' + host);
+  });
+
+  // The exemption must stay narrow. Multi-tenant CDNs host arbitrary third parties,
+  // so exempting them would hand any attacker a free pass through Smart mode.
+  ['cloudfront.net', 'azureedge.net', 'akamaized.net', 'herokuapp.com'].forEach((host) => {
+    assert(!exempt.includes(host), 'multi-tenant CDN must not be exempt from Smart mode: ' + host);
+  });
+
+  // Exemption is from the heuristic only -- it must never become an allow rule,
+  // or ad/tracker/learned/security rules would stop applying to these hosts.
+  assert(!state.sessionRules.concat(state.dynamicRules).some((rule) =>
+    rule.action && rule.action.type === 'allow'
+    && Array.from((rule.condition && rule.condition.requestDomains) || []).includes('pinimg.com')),
+  'first-party CDN exemption leaked into an allow rule');
+}
+
 void (async () => {
   await testModesAndTrustScope();
   console.log('ok - Smart modes migrate stale rules and trust only the initiating site');
+  await testFirstPartyAppCdnsStayLoadable();
+  console.log('ok - sites serving their own app code from a separate CDN still load');
   await testRecoveryAndRetryBound();
   console.log('ok - confirmed player recovery excludes one tab and retries one frame once');
   await testSyntheticAndNonPlayerRejection();
@@ -795,7 +839,7 @@ void (async () => {
   console.log('ok - restart lifecycle cleanup and exclusion caps hold');
   testRegistrationAndBridgeBounds();
   console.log('ok - observer, isolated bridge, rate, and permission bounds hold');
-  console.log('\n9 Smart Script Shield recovery test groups passed.');
+  console.log('\n10 Smart Script Shield recovery test groups passed.');
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;

@@ -6949,6 +6949,37 @@ const SCRIPT_SHIELD_PLAYER_INFRA_HOSTS = [
   'player.vimeo.com', 'f.vimeocdn.com', 'www.youtube.com', 's.ytimg.com',
 ];
 
+// Asset domains that big sites use to serve their OWN application code. These are
+// third-party by registrable domain but first-party in every way that matters, so
+// Smart mode's blanket third-party script block takes the whole site down with it:
+// Pinterest ships every one of its .mjs bundles from pinimg.com, so uk.pinterest.com
+// rendered as a blank page with the React root never hydrating. The blanket rule
+// cannot see that these belong to the page, and Smart's self-healing recovery only
+// engages on video-player pages, so a site broken this way stays broken on reload.
+// Same exemption scope as the list above: this skips Smart's HEURISTIC only, and
+// the ad/tracker/EasyPrivacy, learned, grabber and security rules still apply.
+// Deliberately excludes multi-tenant CDNs (cloudfront, azureedge, akamaized) --
+// those serve arbitrary third parties, so exempting them would gut the feature.
+const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
+  'pinimg.com',                                   // Pinterest
+  'twimg.com',                                    // X
+  'fbcdn.net', 'cdninstagram.com',                // Facebook, Instagram
+  'licdn.com',                                    // LinkedIn
+  'redditstatic.com', 'redditmedia.com',          // Reddit
+  'gstatic.com', 'googleusercontent.com', 'ggpht.com', 'ytimg.com',
+  'githubassets.com',                             // GitHub
+  'sstatic.net',                                  // Stack Overflow
+  'paypalobjects.com',                            // PayPal
+  'ebaystatic.com',                               // eBay
+  'ssl-images-amazon.com', 'media-amazon.com',    // Amazon
+  'shopifycdn.com',                               // Shopify
+  'wp.com',                                       // WordPress.com
+  'tiktokcdn.com',                                // TikTok
+  'ttvnw.net', 'jtvnw.net', 'twitchcdn.net',      // Twitch
+  'discordapp.net',                               // Discord
+  'steamstatic.com',                              // Steam
+];
+
 const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video']);
 const SMART_SCRIPT_PLAYER_CONTEXTS = new Map();
 const SMART_SCRIPT_PLAYER_INTENTS = new Map();
@@ -7138,7 +7169,7 @@ function buildScriptShieldRulePlan(mode, enabled, trustedHosts, recoveredTabs) {
     .slice(0, SMART_SCRIPT_RECOVERY_MAX_TABS)
     .filter((entry, index, list) => index === 0 || entry.tabId !== list[index - 1].tabId);
   if (enabled === false || normalizeScriptShieldMode(mode) !== 'smart') return { dynamicRules: [], sessionRules: [] };
-  const infra = SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.slice();
+  const infra = SCRIPT_SHIELD_PLAYER_INFRA_HOSTS.concat(SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS);
   const condition = { domainType: 'thirdParty', resourceTypes: ['script'], excludedRequestDomains: infra };
   // Trusting a site skips only Smart Script Shield's heuristic for requests
   // initiated by that site. It does not create an allow rule, so downloaded
