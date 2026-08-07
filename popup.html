@@ -952,6 +952,10 @@
       <label class="tg"><input type="checkbox" data-key="blockSearchAiAnswers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name" style="font-size:12px;">Google: plain web results only</div><div class="desc">Switches Google into its own "Web" mode — ten blue links, no AI overview, no enriched panels. It removes the clutter at the source instead of hiding it after paint, so nothing can flash in first and no selector can go stale. Your Images, Videos and News tabs still work normally.</div></div>
+      <label class="tg"><input type="checkbox" data-key="googleWebResultsOnly"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
 <div><div class="name" style="font-size:12px;">Hide sponsored search results</div><div class="desc">Removes sponsored Google/Brave search blocks and blocks their ad-click wrappers and advertiser destinations from that results page.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockSponsoredSearchResults"><span class="track"></span><span class="knob"></span></label>
     </div>
@@ -1105,6 +1109,10 @@
     <div class="row">
       <div><div class="name">Catch unlisted adult sites</div><div class="desc">Heuristic for sites not on the list (some false hits)</div></div>
       <label class="tg"><input type="checkbox" data-key="adultHeuristics"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row" style="border-bottom:none;">
+      <div><div class="name">Force SafeSearch</div><div class="desc">Locks the Google, Bing, DuckDuckGo, Brave Search and Yahoo search engines into SafeSearch, and YouTube into Restricted Mode. The adult-site guard only fires when you <em>arrive</em> somewhere — explicit images and video render inside the results page itself, where there's no arrival to catch. This closes that gap. Off by default: it changes what search will show you.</div></div>
+      <label class="tg"><input type="checkbox" data-key="safeSearch"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
 <h3>Advanced detection (catches rotating/custom domains)</h3>

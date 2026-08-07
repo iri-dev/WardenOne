@@ -585,6 +585,10 @@ const DEFAULT_CONFIG = {
   blockWebRTCLeak: true,
   gateAdultSites: true,
   adultHeuristics: true,
+  // Changes what search engines will show you, so it is the user's call, not ours.
+  safeSearch: false,
+  // Google's own "Web" filter: ten blue links, no AI overview, no enriched panels.
+  googleWebResultsOnly: false,
   warnRedirectParams: true,
   warnShorteners: true,
   monitorLoggerApi: true,
@@ -1636,6 +1640,7 @@ const MEDIA_COMPAT_RULES_BUDGET = 100;
 const LOGIN_COMPAT_RULES_BUDGET = 300;
 const GRABBER_FEED_RULES_BUDGET = 1000;
 const MINER_FEED_RULES_BUDGET = 1000;
+const SAFE_SEARCH_RULES_BUDGET = 40;
 const NEVER_BLOCK_ALLOW_RULES_BUDGET = 200;
 // One blanket session block, one least-privilege replacement block per recovered
 // player tab, and at most four exact, second-stage script rules per tab.
@@ -1645,7 +1650,8 @@ const GOOGLE_SEARCH_ALLOW_RULES_BUDGET = 20;
 const SMALL_SESSION_RULES_BUDGET = 64; // headers, cookie stripping, HTTPS, IP lookup, etc.
 const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET
   + ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
-  + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
+  + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + SAFE_SEARCH_RULES_BUDGET
+  + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET;
 // Guards: assert at module load that the budget fits, catching silent drift.
 if (TOTAL_DYNAMIC_BUDGET > 30000) {
@@ -5989,6 +5995,7 @@ function refreshExtensionState() {
       reconcileGoogleCleanupCssInjection(cfg);
       applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false);
       applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg));
+      applySearchParamRules(Object.assign({}, cfg, { enabled: on }));
       applyAllCookieBlock(on && cfg.blockAllCookies === true);
       applyGlobalLocationBlock(on && cfg.blockGeolocation === true);
       applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true);
@@ -6006,6 +6013,7 @@ function refreshExtensionState() {
       reconcileGoogleCleanupCssInjection({ enabled: false });
       applyFingerprintScriptRules(false);
       applyGoogleSearchSponsoredAllowRules(false);
+      applySearchParamRules({ enabled: false });
       refreshAllCookieBlock();
       refreshGlobalLocationBlock();
       applyLocationPrivacyHeaderRule(false);
@@ -6746,6 +6754,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
       }
       if (o.enabled !== n.enabled || o.blockCryptominers !== n.blockCryptominers) {
         applyMinerFeedRules();
+      }
+      if (o.enabled !== n.enabled || o.safeSearch !== n.safeSearch
+        || o.googleWebResultsOnly !== n.googleWebResultsOnly) {
+        applySearchParamRules(n);
       }
       if (o.enabled !== n.enabled) {
         applyScriptShieldRules();
@@ -8100,6 +8112,166 @@ const GOOGLE_SEARCH_SPONSORED_PATH_FILTERS = [
   '/aclk',
   '/pagead/aclk',
 ];
+
+// ===== SafeSearch enforcement (toggle: safeSearch, OFF by default) =====
+// The adult-site gate fires when you ARRIVE somewhere. Explicit images and video
+// render inside the search results page itself, which the gate never sees --
+// you never leave google.com, so there is no arrival to gate. This closes that
+// path by making the search engine filter its own results.
+//
+// Each engine gets a PAIR of rules:
+//   redirect (priority 12000) -- add the engine's SafeSearch parameter
+//   allow    (priority 12100) -- match the URL once the parameter is present
+//
+// The allow rule is what makes the redirect provably loop-free: after the
+// redirect the request carries the parameter, the higher-priority allow matches,
+// and no further redirect happens. It is scoped to main_frame on that one search
+// host, so it only ever exempts the search navigation itself -- ads, trackers and
+// scripts on the results page are subresources and stay blocked.
+//
+// Honest scope: this asks the engine to filter. It is not a content filter of our
+// own, and a user can still turn SafeSearch off inside their search account -- the
+// parameter wins per-request, but nothing here inspects what comes back.
+const SAFE_SEARCH_RULE_BASE = 743000;
+const SAFE_SEARCH_RULE_MAX = 40;
+// `allow` is written out per engine rather than derived from `match`, because the
+// two are not the same shape. DuckDuckGo's match has to consume the "?" to avoid
+// firing on /settings and /about -- which means an "allow" built as match + "[?&]"
+// can never match a URL where the parameter landed FIRST (…/?kp=1&q=…), and every
+// search on that engine becomes a redirect loop. tools/test-safe-search.js runs
+// both patterns against real URLs with the parameter in either position.
+const SAFE_SEARCH_ENGINES = [
+  {
+    label: 'google',
+    match: '^https://(www\\.)?google\\.[a-z.]{2,7}/search',
+    allow: '^https://(www\\.)?google\\.[a-z.]{2,7}/search.*[?&]safe=active(&|$)',
+    param: 'safe', value: 'active',
+  },
+  {
+    label: 'bing',
+    match: '^https://(www\\.)?bing\\.com/(search|images|videos)',
+    allow: '^https://(www\\.)?bing\\.com/(search|images|videos).*[?&]adlt=strict(&|$)',
+    param: 'adlt', value: 'strict',
+  },
+  {
+    label: 'duckduckgo',
+    match: '^https://(www\\.|html\\.|lite\\.)?duckduckgo\\.com/\\?',
+    allow: '^https://(www\\.|html\\.|lite\\.)?duckduckgo\\.com/\\?(.*&)?kp=1(&|$)',
+    param: 'kp', value: '1',
+  },
+  {
+    label: 'brave',
+    match: '^https://search\\.brave\\.com/search',
+    allow: '^https://search\\.brave\\.com/search.*[?&]safesearch=strict(&|$)',
+    param: 'safesearch', value: 'strict',
+  },
+  {
+    label: 'yahoo',
+    match: '^https://[a-z0-9-]+\\.search\\.yahoo\\.com/search',
+    allow: '^https://[a-z0-9-]+\\.search\\.yahoo\\.com/search.*[?&]vm=r(&|$)',
+    param: 'vm', value: 'r',
+  },
+];
+// YouTube has no query parameter for this; it reads a request header, which is
+// the same mechanism schools and workplaces use.
+const SAFE_SEARCH_YT_DOMAINS = ['youtube.com', 'youtube-nocookie.com'];
+
+// ---- Google "Web results only" (toggle: googleWebResultsOnly) ----
+// udm=14 is Google's own Web filter: ten blue links, no AI overview, no enriched
+// panels. Using Google's own mode beats any selector we could write, because it
+// removes the junk at the source instead of hiding it after paint.
+//
+// The catch that shapes everything below: Google's Images, Videos and News tabs
+// are ALSO udm values (udm=2, udm=7, udm=12...). A rule that blindly replaces udm
+// would bounce the user back to Web every time they clicked Images -- they could
+// never leave. So udm is only ever ADDED when the URL has none, never replaced.
+//
+// DNR cannot express "parameter is absent" in a condition, so absence is handled
+// with priority instead:
+//
+//   safeSearch only        allow: safe=active present     redirect: add safe
+//   web-only only          allow: ANY udm present         redirect: add udm=14
+//   both                   allow: udm present AND safe=active present
+//                          redirect (higher): URL HAS udm -> add safe only
+//                          redirect (lower):  anything    -> add safe + udm=14
+//
+// In the both-on case the higher-priority rule claims every URL that already has
+// a udm, so the lower rule only ever sees URLs without one. That is what keeps the
+// Images tab working while still forcing Web mode on an ordinary search.
+const GOOGLE_SEARCH_MATCH = '^https://(www\\.)?google\\.[a-z.]{2,7}/search';
+const GOOGLE_UDM_PRESENT = GOOGLE_SEARCH_MATCH + '.*[?&]udm=';
+const GOOGLE_SAFE_PRESENT = GOOGLE_SEARCH_MATCH + '.*[?&]safe=active';
+// Either order, because the parameter Chrome appends can land on either side.
+const GOOGLE_UDM_AND_SAFE_PRESENT = GOOGLE_SEARCH_MATCH
+  + '(.*[?&]udm=.*[?&]safe=active|.*[?&]safe=active.*[?&]udm=)';
+
+async function applySearchParamRules(cfg) {
+  try {
+    const config = cfg || {};
+    const on = config.enabled !== false;
+    const safeOn = on && config.safeSearch === true;
+    const webOnly = on && config.googleWebResultsOnly === true;
+    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const oldIds = existing
+      .filter((r) => r.id >= SAFE_SEARCH_RULE_BASE && r.id < SAFE_SEARCH_RULE_BASE + SAFE_SEARCH_RULE_MAX)
+      .map((r) => r.id);
+    const addRules = [];
+    const push = (priority, action, regexFilter) => {
+      if (addRules.length >= SAFE_SEARCH_RULE_MAX) return;
+      addRules.push({
+        id: SAFE_SEARCH_RULE_BASE + addRules.length,
+        priority,
+        action,
+        condition: { regexFilter, resourceTypes: ['main_frame'] },
+      });
+    };
+    const allow = () => ({ type: 'allow' });
+    const addParams = (params) => ({
+      type: 'redirect',
+      redirect: { transform: { queryTransform: { addOrReplaceParams: params } } },
+    });
+    const SAFE = { key: 'safe', value: 'active' };
+    const UDM = { key: 'udm', value: '14' };
+
+    // Google: the two features share one coordinated set of rules.
+    if (safeOn && webOnly) {
+      push(12100, allow(), GOOGLE_UDM_AND_SAFE_PRESENT);
+      push(12050, addParams([SAFE]), GOOGLE_UDM_PRESENT);
+      push(12000, addParams([SAFE, UDM]), GOOGLE_SEARCH_MATCH);
+    } else if (safeOn) {
+      push(12100, allow(), GOOGLE_SAFE_PRESENT + '(&|$)');
+      push(12000, addParams([SAFE]), GOOGLE_SEARCH_MATCH);
+    } else if (webOnly) {
+      // Any udm at all satisfies this, which is what keeps Images and Videos usable.
+      push(12100, allow(), GOOGLE_UDM_PRESENT);
+      push(12000, addParams([UDM]), GOOGLE_SEARCH_MATCH);
+    }
+
+    // The other engines only ever carry the SafeSearch parameter.
+    if (safeOn) {
+      SAFE_SEARCH_ENGINES.forEach((engine) => {
+        if (engine.label === 'google') return;
+        push(12100, allow(), engine.allow);
+        push(12000, addParams([{ key: engine.param, value: engine.value }]), engine.match);
+      });
+      if (addRules.length < SAFE_SEARCH_RULE_MAX) {
+        addRules.push({
+          id: SAFE_SEARCH_RULE_BASE + addRules.length,
+          priority: 12000,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [{ header: 'YouTube-Restrict', operation: 'set', value: 'Strict' }],
+          },
+          condition: {
+            requestDomains: SAFE_SEARCH_YT_DOMAINS,
+            resourceTypes: ['main_frame', 'sub_frame', 'xmlhttprequest'],
+          },
+        });
+      }
+    }
+    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
+  } catch (e) { console.warn('[WardenOne] search parameter rules failed', e); }
+}
 
 async function applyGoogleSearchSponsoredAllowRules(enabled) {
   try {
