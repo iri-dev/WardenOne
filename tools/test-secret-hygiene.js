@@ -66,11 +66,30 @@ for (const key of keys) {
   check('clear-on-disable covers ' + key, map.includes(key), 'missing from PROVIDER_KEY_FIELDS');
 }
 
-/* 5. No settings export may carry them (there is no export today; fail if one appears
-      without being covered here). */
-const exportish = /kind === '(export|export-settings|backup)'/.test(background);
-check('no settings export exists that could carry secrets', !exportish,
-  'an export was added -- it must strip provider keys and this test must be updated');
+/* 5. The settings export must not carry them.
+      This slot used to assert that no export existed at all. One exists now, so the
+      guard is stronger rather than gone: the export has to strip secrets by PATTERN
+      (a hand-written list silently leaks the day an eighth provider is added), and
+      the import has to refuse them too, so a hand-edited file cannot inject a key
+      into someone's config. */
+const exportFn = popupJs.slice(popupJs.indexOf('function exportableSettings'), popupJs.indexOf('function exportSettings'));
+check('export exists and strips secrets by pattern, not a hand-written list',
+  /SECRET_FIELD_RE\.test\(key\)/.test(exportFn) && /return;/.test(exportFn),
+  'export must drop every /Key$/ field');
+check('the export pattern is the same /Key$/ rule bridge.js uses',
+  /const SECRET_FIELD_RE = \/Key\$\//.test(popupJs));
+for (const key of keys) {
+  check('export pattern covers ' + key, /Key$/.test(key), key + ' would survive the export filter');
+}
+const importFn = popupJs.slice(popupJs.indexOf('function sanitizeImportedSettings'), popupJs.indexOf('function importSettingsFromFile'));
+check('import refuses to set any secret field',
+  /SECRET_FIELD_RE\.test\(key\)/.test(importFn),
+  'a hand-edited file could otherwise inject a provider key');
+check('import only accepts keys that exist in the shipped defaults',
+  /hasOwnProperty\.call\(DEFAULTS, key\)/.test(importFn));
+check('no exported settings payload is built in the background worker',
+  !/kind === '(export|export-settings|backup)'/.test(background),
+  'export lives in the popup, which already holds the config; a background message would be a new surface');
 
 if (failed) { console.error('\n' + failed + ' failed'); process.exit(1); }
 console.log('\nsecret hygiene checks passed (' + keys.length + ' provider keys audited)');

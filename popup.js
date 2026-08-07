@@ -654,6 +654,128 @@ function dropKeysForDisabledProviders(cfg) {
   }
 }
 
+// ===== Settings backup =====
+// Nothing syncs to a server and there is no account, so without this a reinstall
+// means rebuilding 140-odd settings by hand.
+//
+// The config holds user-supplied third-party API keys, which are the only real
+// secrets here. They are stripped by PATTERN rather than by a hand-written list,
+// for the same reason bridge.js strips them that way: a list silently starts
+// leaking the day an eighth provider is added. The same rule blocks them on the
+// way IN, so a hand-edited file cannot inject a key either.
+const SECRET_FIELD_RE = /Key$/;
+const SETTINGS_FILE_MARKER = 'wardenone-settings';
+const SETTINGS_FILE_MAX_BYTES = 2 * 1024 * 1024;
+
+function settingsIoStatus(text, isError) {
+  const el = $('settings-io-result');
+  if (!el) return;
+  el.textContent = text;
+  el.style.display = 'block';
+  el.style.color = isError ? '#c0392b' : 'var(--ink-faint)';
+}
+
+function exportableSettings(cfg) {
+  const out = {};
+  Object.keys(cfg || {}).forEach((key) => {
+    if (SECRET_FIELD_RE.test(key)) return;
+    out[key] = cfg[key];
+  });
+  return out;
+}
+
+function exportSettings() {
+  readFromUI();
+  const settings = exportableSettings(config);
+  const payload = { format: SETTINGS_FILE_MARKER, version: 1, settings };
+  let url = '';
+  try {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'wardenone-settings.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (_) {
+    settingsIoStatus('Could not create the file.', true);
+    return;
+  }
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 15000);
+  settingsIoStatus('Exported ' + Object.keys(settings).length + ' settings. API keys were not included.', false);
+}
+
+// An imported file is untrusted input. Every value is matched against the shape
+// of the shipped default for that key -- unknown keys, wrong types, and oversized
+// lists are dropped rather than trusted.
+function sanitizeImportedSettings(raw) {
+  const settings = {};
+  let ignored = 0;
+  Object.keys(raw || {}).forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULTS, key)) { ignored++; return; }
+    if (SECRET_FIELD_RE.test(key)) { ignored++; return; }
+    const def = DEFAULTS[key];
+    const val = raw[key];
+    if (typeof def === 'boolean') {
+      if (typeof val === 'boolean') settings[key] = val; else ignored++;
+    } else if (typeof def === 'number') {
+      if (typeof val === 'number' && Number.isFinite(val)) settings[key] = val; else ignored++;
+    } else if (typeof def === 'string') {
+      if (typeof val === 'string' && val.length <= 200) settings[key] = val; else ignored++;
+    } else if (Array.isArray(def)) {
+      if (!Array.isArray(val)) { ignored++; return; }
+      settings[key] = val.filter((h) => typeof h === 'string' && h.length <= 260).slice(0, 1000);
+    } else if (def && typeof def === 'object') {
+      if (!val || typeof val !== 'object' || Array.isArray(val)) { ignored++; return; }
+      const map = {};
+      Object.keys(val).slice(0, 500).forEach((host) => {
+        const v = val[host];
+        if (host.length <= 260 && (typeof v === 'number' || typeof v === 'string')) map[host] = v;
+      });
+      settings[key] = map;
+    } else {
+      ignored++;
+    }
+  });
+  return { settings, ignored };
+}
+
+function importSettingsFromFile(file) {
+  if (!file) return;
+  if (file.size > SETTINGS_FILE_MAX_BYTES) {
+    settingsIoStatus('That file is too large to be a settings export.', true);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => settingsIoStatus('Could not read that file.', true);
+  reader.onload = () => {
+    let parsed = null;
+    try { parsed = JSON.parse(String(reader.result || '')); } catch (_) {
+      settingsIoStatus('That file is not valid JSON.', true);
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object' || parsed.format !== SETTINGS_FILE_MARKER
+      || !parsed.settings || typeof parsed.settings !== 'object' || Array.isArray(parsed.settings)) {
+      settingsIoStatus('That does not look like a WardenOne settings file.', true);
+      return;
+    }
+    const result = sanitizeImportedSettings(parsed.settings);
+    const applied = Object.keys(result.settings);
+    if (!applied.length) {
+      settingsIoStatus('Nothing in that file could be applied.', true);
+      return;
+    }
+    applied.forEach((key) => { config[key] = result.settings[key]; });
+    applyToUI();
+    saveConfig('Settings imported', reloadActiveHttpTab);
+    settingsIoStatus('Applied ' + applied.length + ' settings'
+      + (result.ignored ? ', ignored ' + result.ignored + ' unrecognised' : '')
+      + '. Your API keys were left as they are.', false);
+  };
+  reader.readAsText(file);
+}
+
 function saveConfig(label, afterSave) {
   dropKeysForDisabledProviders(config);
   chrome.storage.local.set({ wardenone_config: config }, () => {
@@ -1480,6 +1602,13 @@ $('enabled').addEventListener('change', () => {
   });
 });
 $('all-on')?.addEventListener('click', turnEverythingOn);
+$('settings-export')?.addEventListener('click', exportSettings);
+$('settings-import')?.addEventListener('click', () => $('settings-import-file')?.click());
+$('settings-import-file')?.addEventListener('change', (e) => {
+  const file = e.target && e.target.files && e.target.files[0];
+  importSettingsFromFile(file);
+  try { e.target.value = ''; } catch (_) {}
+});
 $('js-global')?.addEventListener('change', (e) => {
   if (!$('enabled').checked) { e.target.checked = false; return; }
   setScriptShieldMode(e.target.checked ? 'lockdown' : ($('js-smart') && $('js-smart').checked ? 'smart' : 'normal'));

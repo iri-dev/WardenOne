@@ -113,6 +113,7 @@ one switch, with fine-grained control over every piece.
 - **Forget Me &amp; Logins** — one toggle for "never let sites remember me": wipe a site's cookies and storage when you leave, so nothing keeps you logged in or recognises you next visit (allowlisted sites are kept), plus a one-click "forget this site now".
 - **Emergency Logout**, a **Privacy Cleaner** (selective wipe), a **live per-site Session Security grade** (A–F: connection, JWT exposure, token storage, cookie security), and an **extension watchdog** that flags installed extensions gaining risky permissions in an update.
 - **Startup security check** — on browser launch, scans restored tabs and recently-installed extensions for risky signs.
+- **Settings backup** — export every toggle to a file and import it back on a reinstall or a new machine. Nothing syncs to a server and there's no account, so this is the only way you don't rebuild 140-odd settings by hand. API keys are never written to the file, and an imported file can't inject one.
 - **On-demand site tools** — check a domain's age (RDAP), look it up against Have I Been Pwned, scan where a site stores login tokens, or review every installed extension's permissions.
 
 ### Cryptojacking

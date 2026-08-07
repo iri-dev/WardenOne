@@ -1335,6 +1335,19 @@
         <div id="ss-panic-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>
     </div>
+<h3>Settings backup</h3>
+    <div class="card-group">
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:6px;">Export settings</div>
+        <div class="desc" style="margin-bottom:9px;">Saves every toggle to a file you keep. There's no account and nothing syncs to a server, so this is the only way a reinstall or a new machine doesn't mean setting all of it up again. <strong>API keys are never included</strong> — you'll re-enter those yourself.</div>
+        <button class="btn" id="settings-export" style="width:100%;">Export settings to a file</button>
+        <div class="name" style="margin:14px 0 6px;">Import settings</div>
+        <div class="desc" style="margin-bottom:9px;">Applies the settings in a file you've exported before. Anything unrecognised is ignored, and your saved API keys are left exactly as they are.</div>
+        <input type="file" id="settings-import-file" accept="application/json,.json" style="display:none;">
+        <button class="btn" id="settings-import" style="width:100%;">Choose a settings file…</button>
+        <div id="settings-io-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+    </div>
 <h3>Privacy cleaner</h3>
     <div class="card-group">
       <div class="row" style="display:block;">
