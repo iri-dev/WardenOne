@@ -181,6 +181,7 @@ function checkContentBuild() {
   'tools/test-static-dnr-compatibility.js',
   'tools/test-dnr-budget.js',
   'tools/test-x-compatibility.js',
+  'tools/test-behavioral-false-positives.js',
 ].forEach(checkSyntax);
 
 [
@@ -218,6 +219,7 @@ checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
+checkCommand('behavioural false-positive tests', ['tools/test-behavioral-false-positives.js']);
 checkCommand('google cleanup tests', ['tools/test-google-cleanup.js']);
 checkCommand('payment card guard tests', ['tools/test-payment-card-guard.js']);
 checkCommand('clean copy tests', ['tools/test-clean-copy.js']);
