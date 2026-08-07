@@ -589,6 +589,8 @@ const DEFAULT_CONFIG = {
   safeSearch: false,
   // Google's own "Web" filter: ten blue links, no AI overview, no enriched panels.
   googleWebResultsOnly: false,
+  // Dims and labels scraper results. Opinionated about sources, so it is opt-in.
+  flagSearchJunk: false,
   warnRedirectParams: true,
   warnShorteners: true,
   monitorLoggerApi: true,
@@ -1133,11 +1135,13 @@ const SUPPLEMENTAL_LIST_CAPS = {
   adultDomainsExtra: 3000,
   grabberDomainsExtra: 1500,
   trustedPaymentHostsExtra: 300,
+  searchJunkDomainsExtra: 5000,
 };
 const SUPPLEMENTAL_LIST_DRIFT = {
   adultDomainsExtra: { minBaseline: 25, dropRatio: 0.25, spikeRatio: 5, spikeFloor: 1500 },
   grabberDomainsExtra: { minBaseline: 25, dropRatio: 0.25, spikeRatio: 4, spikeFloor: 1000 },
   trustedPaymentHostsExtra: { minBaseline: 25, dropRatio: 0.35, spikeRatio: 2, spikeFloor: 100 },
+  searchJunkDomainsExtra: { minBaseline: 10, dropRatio: 0.25, spikeRatio: 5, spikeFloor: 2000 },
 };
 const SUPPLEMENTAL_LIST_SOURCES = [
   {
@@ -1149,6 +1153,16 @@ const SUPPLEMENTAL_LIST_SOURCES = [
     url: 'https://raw.githubusercontent.com/TMAFE/anti-grabify/master/url_list.txt',
     bucket: 'grabberDomainsExtra',
     label: 'ip-logger-domains',
+  },
+  // Copycat sites that republish Stack Exchange and GitHub content to outrank the
+  // original. Purpose-built for exactly this, refreshed daily upstream, and this
+  // variant is bare domains -- the project's other outputs are uBlock filter
+  // syntax whose cosmetic half encodes Google's DOM, which the marker
+  // deliberately does not depend on.
+  {
+    url: 'https://raw.githubusercontent.com/quenhus/uBlock-Origin-dev-filter/main/dist/other_format/domains/all.txt',
+    bucket: 'searchJunkDomainsExtra',
+    label: 'search-copycat-domains',
   },
 ];
 
@@ -5992,6 +6006,7 @@ function refreshExtensionState() {
       reconcileEyeShieldInjection(cfg);
       reconcileConsentRejectInjection(cfg);
       reconcileMinerDetectInjection(cfg);
+      reconcileSearchJunkInjection(cfg);
       reconcileGoogleCleanupCssInjection(cfg);
       applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false);
       applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg));
@@ -6010,6 +6025,7 @@ function refreshExtensionState() {
       reconcileEyeShieldInjection();
       reconcileConsentRejectInjection();
       reconcileMinerDetectInjection();
+      reconcileSearchJunkInjection();
       reconcileGoogleCleanupCssInjection({ enabled: false });
       applyFingerprintScriptRules(false);
       applyGoogleSearchSponsoredAllowRules(false);
@@ -6029,6 +6045,7 @@ function refreshExtensionState() {
     reconcileEyeShieldInjection();
     reconcileConsentRejectInjection();
     reconcileMinerDetectInjection();
+    reconcileSearchJunkInjection();
     reconcileGoogleCleanupCssInjection({ enabled: false });
     applyFingerprintScriptRules(false);
     applyGoogleSearchSponsoredAllowRules(false);
@@ -6189,6 +6206,47 @@ function injectEyeShieldIntoOpenTabs() {
 // the always-on runtime. Registering it lazily means a user who leaves the
 // toggle off never parses or runs a line of it.
 const MINER_DETECT_SCRIPT_ID = 'wardenone-cryptominer-detect';
+// ===== Search-junk marker: registered only while switched on =====
+// Scoped to the search engines it understands, so it never loads anywhere else.
+const SEARCH_JUNK_SCRIPT_ID = 'wardenone-search-junk';
+const SEARCH_JUNK_MATCHES = [
+  '*://*.google.com/search*', '*://*.google.co.uk/search*', '*://*.google.ca/search*',
+  '*://*.google.com.au/search*', '*://*.google.de/search*', '*://*.google.fr/search*',
+  '*://*.google.es/search*', '*://*.google.it/search*', '*://*.google.nl/search*',
+  '*://*.google.co.in/search*', '*://*.google.com.br/search*', '*://*.google.ie/search*',
+  '*://*.bing.com/search*', '*://duckduckgo.com/*', '*://*.duckduckgo.com/*',
+  '*://search.brave.com/*', '*://*.search.yahoo.com/search*',
+];
+async function reconcileSearchJunkInjection(cfgArg) {
+  if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
+  let cfg = cfgArg;
+  if (!cfg) {
+    try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
+  }
+  const merged = Object.assign({}, DEFAULT_CONFIG, cfg || {});
+  const want = merged.enabled !== false && merged.flagSearchJunk === true;
+  let have = false;
+  try {
+    const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [SEARCH_JUNK_SCRIPT_ID] });
+    have = Array.isArray(reg) && reg.length > 0;
+  } catch (_) { have = false; }
+  try {
+    if (want && !have) {
+      await chrome.scripting.registerContentScripts([{
+        id: SEARCH_JUNK_SCRIPT_ID,
+        matches: SEARCH_JUNK_MATCHES,
+        js: ['search-junk.js'],
+        runAt: 'document_start',
+        allFrames: false,
+        persistAcrossSessions: true,
+        // ISOLATED (default): it only needs the DOM plus chrome.storage.
+      }]);
+    } else if (!want && have) {
+      await chrome.scripting.unregisterContentScripts({ ids: [SEARCH_JUNK_SCRIPT_ID] });
+    }
+  } catch (_) {}
+}
+
 async function reconcileMinerDetectInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   let cfg = cfgArg;
@@ -8932,6 +8990,7 @@ function emptySupplementalLists() {
     adultDomainsExtra: [],
     grabberDomainsExtra: [],
     trustedPaymentHostsExtra: [],
+    searchJunkDomainsExtra: [],
   };
 }
 
@@ -8983,6 +9042,7 @@ function supplementalListCounts(lists) {
     adultDomainsExtra: clean.adultDomainsExtra.length,
     grabberDomainsExtra: clean.grabberDomainsExtra.length,
     trustedPaymentHostsExtra: clean.trustedPaymentHostsExtra.length,
+    searchJunkDomainsExtra: clean.searchJunkDomainsExtra.length,
   };
 }
 
@@ -8997,6 +9057,7 @@ function supplementalManifestBucketForKey(key) {
   if (/^(adultdomains|adultdomainsextra|nsfwdomains|porndomains|adultsites|pornsites)$/.test(k)) return 'adultDomainsExtra';
   if (/^(iploggerdomains|iploggers|grabberdomains|grabberdomainsextra|loggerdomains|trackinglinkdomains)$/.test(k)) return 'grabberDomainsExtra';
   if (/^(paymentprocessordomains|paymentprocessors|paymenthosts|trustedpaymenthosts|trustedpaymenthostsextra|cardprocessors)$/.test(k)) return 'trustedPaymentHostsExtra';
+  if (/^(searchjunkdomains|searchjunkdomainsextra|scraperdomains|contentfarmdomains|searchspamdomains)$/.test(k)) return 'searchJunkDomainsExtra';
   return '';
 }
 
@@ -9810,7 +9871,8 @@ function healthListCounts(meta, auxMeta) {
   const auxCounts = (auxMeta && auxMeta.counts) || {};
   const auxTotal = Number(auxCounts.adultDomainsExtra || 0)
     + Number(auxCounts.grabberDomainsExtra || 0)
-    + Number(auxCounts.trustedPaymentHostsExtra || 0);
+    + Number(auxCounts.trustedPaymentHostsExtra || 0)
+    + Number(auxCounts.searchJunkDomainsExtra || 0);
   return {
     updated: Number((meta && meta.updated) || (auxMeta && auxMeta.updated) || 0),
     active,
