@@ -279,7 +279,30 @@
       else if (role === 'bg') l = l0 > 0.70 ? Math.max(l0, 0.94) : 0.965 - l0 * 0.10;
       else l = l0 > 0.60 ? Math.max(l0, 0.84) : 0.82 + l0 * 0.12; // subtle light borders
     } else { // dark or ultra: text always bright, surfaces always dark
-      if (role === 'fg') l = (mode === 'ultra' ? 0.68 : 0.72) + l0 * 0.22;
+      if (role === 'fg') {
+        // Prominence is DISTANCE FROM MID-TONE, not raw lightness.
+        //
+        // The old map was one upward line (0.68 + l0*0.22). It only ordered text
+        // correctly on a page that started dark. On a light page it ran backwards:
+        // Google's body text #202124 (l0 .13, the most important text there is)
+        // came out at .71 while its throwaway snippet grey #70757a (l0 .46) came
+        // out at .78 -- the least important text rendered BRIGHTER than the most
+        // important. It also topped out at .90, so pure white text could never be
+        // white; it painted #e5e5e5, which is the "white but not white" that makes
+        // a page tiring to read on OLED black.
+        //
+        // A page's prominent text sits far from its mid-tone: near-black on a
+        // light page, near-white on a dark one. Both should land near-white here,
+        // and mid-greys -- secondary text either way -- should stay secondary. So
+        // the curve is a V: brightest at both ends, dimmest in the middle. That
+        // orders text correctly whichever kind of page it came from, and roughly
+        // doubles the spread between a page's brightest and dimmest text, which is
+        // the hierarchy that was collapsing into one flat wash of grey.
+        const top = mode === 'ultra' ? 0.98 : 0.95; // ultra can go brighter: its background is true black
+        const mid = mode === 'ultra' ? 0.78 : 0.76;
+        const slope = (top - mid) * 2;
+        l = l0 <= 0.5 ? top - l0 * slope : mid + (l0 - 0.5) * slope;
+      }
       else if (role === 'bg') {
         // Tent curve, NOT a straight crush. The old `l0*0.05` flattened EVERY surface
         // to near-black, so on already-dark pages cards, buttons, chips and Google's
@@ -1351,7 +1374,11 @@
       danger: '#f87171',
       dangerText: '#1b0505',
       border: '#2a2f3a',
-      text: '#f3f5f8',
+      // True white on true black. #f3f5f8 was a cool off-white: bright enough on
+      // paper (19:1) but it reads as "white, but not quite", which is more tiring
+      // than either a clean white or an honestly dimmer grey. Ultra is the OLED
+      // mode -- if any mode should commit to #fff, it is this one.
+      text: '#ffffff',
       muted: '#a9b0bc',
       link: '#8ab4ff',
       focus: '#6ea8ff',
@@ -2398,6 +2425,17 @@
       // bg (not transparent) keeps them flat AND still overrides a light-served Google. Late rule
       // => same specificity as the surface/row rules above but wins by source order.
       + '#search .Ww4FFb,#search .wHYlTd,#search .tF2Cxc,#search .ULSxyf,#search .Wt5Tfe,#search .related-question-pair,#search .dnXCYb,#search .EyBRub,#search .LGOjhe,#search .X5LH0c,#search .g,#rso .Ww4FFb,#rso .ULSxyf,#rso .tF2Cxc{background:' + bg + ' !important;background-color:' + bg + ' !important;border-color:transparent !important;box-shadow:none !important;}'
+      // Put the result title and the site-name line back the right way round.
+      // Google's markup is <a href><h3>Title</h3></a>, with a SEPARATE anchor for
+      // the site name above it. Two rules above collide at equal specificity
+      // (`#search a *` and `#search h3`, both 101), so source order decided it and
+      // the h3 rule -- being later -- painted titles with `text` while the generic
+      // anchor rule painted the site-name line with `link`. The result was the
+      // exact inverse of Google's own dark mode: white titles and blue site names,
+      // i.e. the least important line on every result was the loudest thing on it.
+      // These two win on specificity (102 and 110), not on ordering luck.
+      + '#search a h3,#rso a h3,#rhs a h3,#search h3 a,#rso h3 a,#search a .LC20lb,#rso a .LC20lb{color:' + link + ' !important;-webkit-text-fill-color:currentColor !important;}'
+      + '#search cite,#rso cite,#search .VuuXrf,#rso .VuuXrf,#search .UdQCqe,#rso .UdQCqe,#search .byrV5b,#rso .byrV5b,#search .tjvcx,#rso .tjvcx{color:' + muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + googleSearchBoxCSS(remap);
   }
 
