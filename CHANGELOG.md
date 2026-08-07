@@ -6,6 +6,17 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Stopped "Suspicious site behavior" firing on everyday sites. Loading a
+  cross-site asset before your first click and measuring the canvas is what
+  every large site does, so those signals no longer raise a warning on their
+  own; a site's own asset host (x.com to twimg.com, or any `assets.<same-site>`)
+  counts as first-party; and the reputable-site list is now matched on the
+  registrable domain, which both adds the sites people actually use and stops a
+  lookalike like `google.com.<attacker>.cfd` being trusted for containing a
+  brand name.
+- Held the behavioural verdict until the domain-age answer arrives, so an
+  established domain is no longer warned about because the lookup came back
+  after the warning had already fired.
 - Closed intermittent Twitch pre-roll and mid-roll leaks by starting a clean
   alternate stream from Twitch's current ad warning before the native media
   poll, bootstrapping replacement workers with the active V2 master, and
