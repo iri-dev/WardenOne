@@ -87,9 +87,16 @@ First public-release hardening pass.
   just can't mine through one behind your back.
 - Optional deep cryptominer detection, off by default, for the case blocking
   cannot see: a miner a site hosts on its own origin. It reads the source of the
-  workers a page starts and warns when it finds mining routines. It is only
-  registered while switched on, so leaving it off costs nothing, and it warns
-  rather than stopping anything.
+  workers a page starts and stops the ones running mining routines, including the
+  replacements a miner spawns when its workers are killed. Only the matching
+  worker is stopped, so a site that also runs a legitimate worker keeps it, and a
+  miner that overwrites `terminate()` cannot save itself. It is only registered
+  while switched on, so leaving it off costs nothing.
+
+  Nothing is stopped until the extension has told the page whether the site is
+  allowlisted. A worker's source resolves from memory faster than that answer
+  arrives, so acting on arrival would have killed workers on allowlisted sites.
+  On an allowlisted site the miner is reported and left running.
 
   It deliberately does not judge by CPU load. Measured against a spinning worker
   on every core of a 12-core machine, a main-thread benchmark moved 1.03-1.21x,

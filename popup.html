@@ -1232,7 +1232,7 @@
       <label class="tg"><input type="checkbox" data-key="blockCryptominers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Deep cryptominer detection</div><div class="desc">Catches miners a site hosts itself, which blocking can't see, by reading the code of the background workers a page starts and looking for mining routines. Off by default: it reads page code on every site you visit, and it only warns — it never blocks or stops anything. It won't spot a miner with its code obfuscated away.</div></div>
+      <div><div class="name">Deep cryptominer detection</div><div class="desc">Catches miners a site hosts itself, which blocking can't see: reads the code of the background workers a page starts, and <strong>stops the ones running mining routines</strong> — including the replacements a miner starts when you kill it. Only the mining worker is stopped; the rest of the site keeps working. Off by default because it reads page code on every site you visit. Allowlist a site to leave it alone.</div></div>
       <label class="tg"><input type="checkbox" data-key="cryptominerCpuWatch"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">

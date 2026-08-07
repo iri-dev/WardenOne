@@ -4,11 +4,19 @@
  * The network guard (blockCryptominers) stops miners that fetch a payload from a
  * mining service or phone a pool. It cannot see a miner a site hosts on its own
  * origin and proxies through its own backend. This is the layer for that case.
- * It WARNS. It never terminates a worker or blocks anything.
  *
  * How it decides: it reads the source of the workers a page starts and looks for
  * mining code. A miner has to run its hashing loop somewhere, and on the web that
  * means a Worker whose script contains recognisable mining vocabulary.
+ *
+ * What it does about it: terminates that worker, and keeps terminating the ones
+ * the miner starts to replace it. Detection alone would just be a notification
+ * that your battery is being spent. Because this DOES act, it acts only on the
+ * evidence it can actually stand behind -- a worker whose own code contains
+ * mining routines -- and it never acts on an allowlisted site.
+ *
+ * The surgical part matters: only workers whose source matched are terminated.
+ * A mining page that also runs a legitimate worker keeps the legitimate one.
  *
  * ---------------------------------------------------------------------------
  * Why there is no CPU measurement here, having tried it.
@@ -48,11 +56,35 @@
   if (window.top !== window) return;
 
   var TOKEN = null;
+  var siteAllowlisted = false;
+  var masterOff = false;
+  var configReady = false;
+  var pending = [];
+  var HOST = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+
   try {
     window.addEventListener('message', function (e) {
-      if (!TOKEN && e.source === window && e.data
-        && e.data.source === 'wardenone-handshake' && e.data.token) {
+      if (e.source !== window || !e.data) return;
+      if (!TOKEN && e.data.source === 'wardenone-handshake' && e.data.token) {
         TOKEN = e.data.token;
+        return;
+      }
+      /* The bridge hands the main world the same sanitized config content.js
+         gets. We only need two things from it: whether the user switched
+         WardenOne off, and whether they allowlisted this site. An allowlisted
+         site is never acted on -- that is the escape hatch for a false positive
+         and for anyone who genuinely wants a page to mine. */
+      if (e.data.source === 'wardenone' && e.data.kind === 'config'
+        && e.data.token === TOKEN && e.data.overrides) {
+        var o = e.data.overrides;
+        masterOff = o.enabled === false;
+        var list = Array.isArray(o.allowlist) ? o.allowlist : [];
+        siteAllowlisted = list.some(function (h) {
+          h = String(h || '').replace(/^www\./, '').toLowerCase();
+          return h && (HOST === h || HOST.endsWith('.' + h));
+        });
+        configReady = true;
+        flushPending();
       }
     });
   } catch (_) {}
@@ -65,40 +97,120 @@
      those are legitimate elsewhere and would make this a false-positive machine. */
   var MINER_TELLS = /cryptonight|randomx|hashesPerSecond|hashrate|totalhashes|stratum\+tcp|coinhive|authedmine|cryptoloot|crypto-loot|webminepool|jsecoin|deepminer|coinimp|minero\.cc|throttleMiner|CryptonightWASMWrapper/i;
 
-  var MAX_SCANS = 8;          /* never scan a page to death */
+  var SCAN_BUDGET = 8;        /* never scan an ordinary page to death */
+  var SCAN_BUDGET_CONFIRMED = 250;
   var MAX_SOURCE_BYTES = 800000;
 
   var scanned = 0;
+  var scanBudget = SCAN_BUDGET;
   var reported = false;
+  var confirmed = false;
   var liveWorkers = 0;
   var peakWorkers = 0;
   var wasmSeen = false;
+  var stoppedCount = 0;
+  var firstTell = '';
+  var minerSources = Object.create(null);  /* url -> true, for respawn */
+  var liveByUrl = Object.create(null);     /* url -> [worker] */
 
-  function report(tell) {
-    if (reported) return;
-    reported = true;
+  function trackWorker(url, w) {
+    var list = liveByUrl[url] || (liveByUrl[url] = []);
+    list.push(w);
+  }
+  function untrackWorker(url, w) {
+    var list = liveByUrl[url];
+    if (!list) return;
+    var i = list.indexOf(w);
+    if (i >= 0) list.splice(i, 1);
+    if (!list.length) delete liveByUrl[url];
+  }
+
+  function killWorker(w) {
+    try {
+      /* the native terminate, captured before the page could replace it */
+      if (w && typeof w.__woNativeTerminate === 'function') w.__woNativeTerminate();
+      else if (w && typeof w.terminate === 'function') w.terminate();
+      stoppedCount++;
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function announce(type, tell) {
     try {
       document.dispatchEvent(new CustomEvent('wo-event', {
         detail: {
           token: TOKEN,
-          type: 'detected_cryptominer',
+          type: type,
           detail: {
             host: location.hostname,
             workers: peakWorkers,
+            stopped: stoppedCount,
             cores: Number(navigator.hardwareConcurrency) || 0,
             tell: String(tell || 'mining code').slice(0, 40),
             wasm: wasmSeen,
-            why: 'a background worker on this page is running mining code',
+            why: type === 'blocked_cryptominer'
+              ? 'a background worker was running mining code and was stopped'
+              : 'a background worker is running mining code (site is allowlisted, left alone)',
           },
         },
       }));
     } catch (_) {}
   }
 
-  function scanWorkerSource(url) {
-    if (reported || scanned >= MAX_SCANS) return;
+  /* Nothing may be terminated before the bridge has told us whether the user
+     allowlisted this site. A blob: worker's source resolves from memory, which
+     is routinely faster than the config message (the bridge has to read storage
+     first), so acting on arrival would kill workers on allowlisted sites. Hold
+     findings until the answer is in; a miner running a few hundred ms longer is
+     a far better failure than breaking a site the user asked us to leave alone. */
+  function flushPending() {
+    if (!configReady) return;
+    var queue = pending;
+    pending = [];
+    for (var i = 0; i < queue.length; i++) onMinerFound(queue[i].url, queue[i].tell);
+  }
+
+  /* Called when a worker's source is confirmed to contain mining code. */
+  function onMinerFound(url, tell) {
+    if (!firstTell) firstTell = tell;
+
+    if (!configReady) {
+      pending.push({ url: url, tell: tell });
+      /* The handshake may have been posted before this script was injected;
+         ask the bridge to send both again. */
+      try { if (typeof window.__wardenOneBridgeReplay === 'function') window.__wardenOneBridgeReplay(); } catch (_) {}
+      return;
+    }
+
+    if (masterOff || siteAllowlisted) {
+      /* Never act on a site the user allowlisted. Say so once and stop there. */
+      if (!reported) { reported = true; announce('detected_cryptominer', tell); }
+      return;
+    }
+
+    minerSources[url] = true;
+    if (!confirmed) {
+      confirmed = true;
+      /* The page is now known hostile, so keep scanning its replacements. A
+         miner that respawns behind a fresh blob: URL each time would otherwise
+         walk straight past the ordinary-page scan budget. */
+      scanBudget = SCAN_BUDGET_CONFIRMED;
+    }
+
+    var list = (liveByUrl[url] || []).slice();
+    for (var i = 0; i < list.length; i++) killWorker(list[i]);
+
+    if (!reported) { reported = true; announce('blocked_cryptominer', tell); }
+  }
+
+  function scanWorkerSource(url, w) {
     var href = String(url || '');
     if (!href) return;
+    /* A source already known to be a miner needs no second look -- kill on sight.
+       This is the respawn path and it is synchronous, so the replacement worker
+       gets no run time at all. */
+    if (minerSources[href]) { killWorker(w); return; }
+    if (scanned >= scanBudget) return;
     if (!/^blob:/i.test(href)) {
       /* Only same-origin scripts are readable. Anything else is the network
          layer's job, and fetching it would be a request the page never made. */
@@ -113,9 +225,9 @@
       /* same-origin or blob: only, so this is served from cache or memory and
          does not put a new request on the wire for a third party. */
       fetch(href).then(function (r) { return r.text(); }).then(function (src) {
-        if (reported || typeof src !== 'string') return;
+        if (typeof src !== 'string') return;
         var m = src.slice(0, MAX_SOURCE_BYTES).match(MINER_TELLS);
-        if (m) report(m[0]);
+        if (m) onMinerFound(href, m[0]);
       }).catch(function () {});
     } catch (_) {}
   }
@@ -125,20 +237,31 @@
     if (typeof NativeWorker === 'function') {
       var Wrapped = function (url, opts) {
         var w = new NativeWorker(url, opts);
+        var href = String(url || '');
         liveWorkers++;
         if (liveWorkers > peakWorkers) peakWorkers = liveWorkers;
-        scanWorkerSource(url);
         var done = false;
         var drop = function () {
           if (done) return;
           done = true;
           liveWorkers = Math.max(0, liveWorkers - 1);
+          untrackWorker(href, w);
         };
         try {
           var nativeTerminate = w.terminate;
+          /* Keep our own handle on the real terminate. A miner that overwrites
+             terminate() with a no-op must not be able to keep itself alive. */
+          try {
+            Object.defineProperty(w, '__woNativeTerminate', {
+              value: function () { drop(); return nativeTerminate.call(w); },
+              enumerable: false, configurable: false, writable: false,
+            });
+          } catch (_) {}
           w.terminate = function () { drop(); return nativeTerminate.apply(this, arguments); };
         } catch (_) {}
         try { w.addEventListener('error', drop); } catch (_) {}
+        trackWorker(href, w);
+        scanWorkerSource(href, w);
         return w;
       };
       Wrapped.prototype = NativeWorker.prototype;
