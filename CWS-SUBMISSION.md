@@ -1,11 +1,14 @@
 # WardenOne — Chrome Web Store submission notes
 
 Copy the text below into the matching fields of the Web Store developer dashboard
-(**Privacy practices** tab). Everything here is grounded in the actual v1.0.0 code.
+(**Privacy practices** tab). It was written against v1.0.0 and `main` has moved on
+since, so re-read the permission list in `manifest.json` before pasting any of it.
 
-> **Do not ship this file (or PRIVACY.md) inside the packaged .zip** — they are for the
-> listing/hosting, not the runtime. Also exclude the Chrome-generated `_metadata/` folder
-> from the package.
+> **A Web Store package is not the GitHub release zip.** The release zip is built with
+> `git archive` and deliberately keeps `PRIVACY.md`, `LICENSE`, and `CREDITS.md` for
+> people loading it unpacked. A store submission wants neither this file nor
+> `PRIVACY.md` inside the package — the policy is hosted at a URL instead — and must
+> also exclude the Chrome-generated `_metadata/` folder.
 
 ---
 
@@ -122,8 +125,10 @@ paste the public URL into the dashboard's Privacy policy field.
 
 ## Also do before submitting
 
-- Exclude `_metadata/` (Chrome-generated) and this file + `PRIVACY.md`/dev docs/`tools/`
-  from the packaged `.zip`.
-- Consider softening "Elite defense…" in the manifest description — the Web Store
-  discourages unverifiable superlatives; a factual phrasing (e.g., "Strong, on-device
-  defense against…") reviews more cleanly.
+- Exclude `_metadata/` (Chrome-generated), this file, `PRIVACY.md`, and the dev
+  docs/`tools/` from the packaged `.zip`. The `export-ignore` rules in
+  `.gitattributes` already drop the dev docs and tooling; `_metadata/` and
+  `PRIVACY.md` are the two you still have to remove by hand for a store package.
+- Re-read the `description` field in `manifest.json` before submitting. The Web Store
+  discourages unverifiable superlatives, so it reviews more cleanly when every claim
+  is something the extension demonstrably does.
