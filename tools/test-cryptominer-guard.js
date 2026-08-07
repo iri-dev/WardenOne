@@ -162,8 +162,27 @@ function run() {
   check('detector runs in the MAIN world (needs the page realm to hook Worker)',
     /world:\s*'MAIN'/.test(reconcileBody));
 
-  check('detector warns and never terminates a page worker',
-    !/\bw\.terminate\(\)/.test(DETECT) && /detected_cryptominer/.test(DETECT));
+  // It terminates workers now, so the guards that keep that safe are the whole
+  // ballgame. Each of these, if lost, turns the feature into something that
+  // breaks sites.
+  check('nothing is terminated before the config (and so the allowlist) arrives',
+    /if \(!configReady\)/.test(DETECT) && /pending\.push/.test(DETECT) && /flushPending/.test(DETECT));
+  check('an allowlisted site is reported but never acted on',
+    /if \(masterOff \|\| siteAllowlisted\)/.test(DETECT)
+      && /detected_cryptominer/.test(DETECT) && /blocked_cryptominer/.test(DETECT));
+  check('the allowlist is matched the same way the content script matches it',
+    /HOST === h \|\| HOST\.endsWith\('\.' \+ h\)/.test(DETECT));
+  check('only workers whose own source matched are terminated',
+    /liveByUrl\[url\]/.test(DETECT) && !/for \(var k in liveByUrl\)/.test(DETECT));
+  check('respawned miners are killed on sight without a re-scan',
+    /minerSources\[href\]/.test(DETECT) && /killWorker\(w\)/.test(DETECT));
+  check('the scan budget is raised once a page is confirmed, so respawns are caught',
+    /SCAN_BUDGET_CONFIRMED/.test(DETECT));
+  check('a miner cannot save itself by replacing terminate()',
+    /__woNativeTerminate/.test(DETECT) && /writable: false/.test(DETECT));
+  check('detector depends on the bridge replay that bridge.js actually provides',
+    /__wardenOneBridgeReplay/.test(DETECT)
+      && /__wardenOneBridgeReplay/.test(fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8')));
   check('detector does not resurrect a CPU-load verdict',
     !/detected_cpu_abuse/.test(DETECT) && !/slowdown/.test(DETECT));
   check('detector decides on worker source, not on load',
@@ -173,15 +192,23 @@ function run() {
       && !/scrypt|argon2/.test(String(DETECT.match(/var MINER_TELLS = [^;]+;/) || '')));
   check('cross-origin worker scripts are never fetched',
     /u\.origin !== location\.origin/.test(DETECT));
-  check('scanning is bounded per page', /MAX_SCANS/.test(DETECT) && /scanned >= MAX_SCANS/.test(DETECT));
-  check('detector reports at most once per page', /if \(reported\) return;/.test(DETECT));
+  check('scanning is bounded per page',
+    /SCAN_BUDGET\s*=\s*\d+/.test(DETECT) && /scanned >= scanBudget/.test(DETECT));
+  // Reported once, but killing continues -- a miner that respawns must keep
+  // being stopped without spamming the activity log for every replacement.
+  check('detector reports at most once per page',
+    (DETECT.match(/if \(!reported\) \{ reported = true; announce\(/g) || []).length === 2);
   check('detector cloaks its Worker wrapper from the page',
     /Wrapped\.toString\s*=/.test(DETECT));
-  check('history has a label for the event', /detected_cryptominer:/.test(
-    fs.readFileSync(path.join(ROOT, 'history.js'), 'utf8')));
+  const HISTORY = fs.readFileSync(path.join(ROOT, 'history.js'), 'utf8');
+  check('history labels both outcomes',
+    /blocked_cryptominer:/.test(HISTORY) && /detected_cryptominer:/.test(HISTORY));
   check('popup exposes the deep toggle', /data-key="cryptominerCpuWatch"/.test(POPUP_HTML));
   check('popup copy does not claim a CPU benchmark it no longer runs',
     !/benchmark/i.test(POPUP_HTML) && !/Expensive to run/i.test(POPUP_HTML));
+  check('popup copy says it stops miners rather than only warning',
+    /stops the ones running mining routines/i.test(POPUP_HTML)
+      && !/it only warns/i.test(POPUP_HTML));
 
   console.log('\n' + passed + ' passed, 0 failed');
 }
