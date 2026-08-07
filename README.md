@@ -56,6 +56,7 @@ one switch, with fine-grained control over every piece.
 - **YouTube** — removes pre-roll and mid-roll video ads by pruning the ad schedule out of the player data; no black screen, no skip button.
 - **Twitch** — removes stitched-in pre-roll and mid-roll stream ads, with a silent-segment fallback so playback never breaks.
 - **Sponsored results &amp; AI answers** — strips sponsored Google / Brave results and their ad-click wrappers, and can hide Google / Brave AI answer panels.
+- **Google: plain web results only** (optional) — switches Google into its own "Web" mode: ten blue links, no AI overview, no enriched panels. It removes the clutter at the source rather than hiding it after paint, so nothing flashes in first and no selector can go stale when Google reshuffles its markup. Your Images, Videos and News tabs still work.
 
 ### Anti-tracking &amp; privacy
 - Hard-block trackers and analytics (Google Analytics, DoubleClick, Facebook Pixel…).
@@ -88,6 +89,7 @@ one switch, with fine-grained control over every piece.
 - **Adult-site guard** — an optional "18+ — are you sure?" screen on unwanted adult-site arrivals, so a mistyped address or a sneaky redirect never drops you (or a kid on the family computer) straight onto explicit content.
 - **Catches the unlisted ones** — a heuristic flags adult sites that aren't on any blocklist yet, not just the known names.
 - **Adult redirect blocking** — stops gestureless hops that fling you to an 18+ page with no click, backed by an adult-warning list that **auto-updates daily**.
+- **Force SafeSearch** (optional, off by default) — locks the Google, Bing, DuckDuckGo, Brave Search and Yahoo search engines into SafeSearch, and YouTube into Restricted Mode. The adult gate only fires when you *arrive* somewhere, and explicit images and video render inside the results page itself, where there's no arrival to catch — this closes that gap. Off by default because it changes what search will show you.
 
 ### Credential, payment &amp; clipboard protection
 - **Form-skimmer / Magecart detection** — blocks scripts reading password / card fields and exfiltrating them off-site.
