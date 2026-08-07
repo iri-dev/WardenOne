@@ -698,6 +698,7 @@ const DEFAULT_CONFIG = {
   eyeShieldGrayscaleByHost: {},
   autoUpdateLists: true,
   blockMalwareSites: true,
+  blockCryptominers: true,
   showToasts: true,
   showBadge: true,
   showDownloadBar: true,
@@ -762,6 +763,7 @@ const ONBOARDING_RECOMMENDED = {
   startupCheck: true,
   autoSkipDownloadAds: true,
   blockMalwareSites: true,
+  blockCryptominers: true,
   autoUpdateLists: true,
   autoRejectConsent: true,
 };
@@ -1585,11 +1587,13 @@ const DYNAMIC_RULE_BASE = 10000;
 //   - OPTION_RULES_MAX uBlock option rules (dynamic)
 //   - LEARNED_MAX adaptive learned rules (dynamic)
 //   - TRACKER_RULES_BUDGET local tracker learner rules (dynamic)
+//   - MINER_FEED_RULES_BUDGET cryptominer host/pool rules (dynamic)
 //   - Allowlist rules (session, up to 1000)
 //   - Privacy header rule (session, 1)
 //   - HTTPS upgrade rule (session, 1)
-// Total: 18000 + 4000 + 2000 + 1000 + 1000 + 1 + 1 = 26,002 (within 30k ceiling)
-// These caps leave ~4,000 headroom for future feature rules.
+// TOTAL_DYNAMIC_BUDGET below is the authority -- it sums every band and asserts at
+// module load. Do not hand-maintain a total in this comment; it goes stale the
+// first time a band is added and then quietly reads as headroom that isn't there.
 const MAX_DYNAMIC = 18000;
 const ACTIVE_DOMAIN_RULE_BUDGETS = {
   security: 9000,
@@ -1629,6 +1633,7 @@ const ALLOWLIST_RULES_BUDGET = 1000;
 const MEDIA_COMPAT_RULES_BUDGET = 100;
 const LOGIN_COMPAT_RULES_BUDGET = 300;
 const GRABBER_FEED_RULES_BUDGET = 1000;
+const MINER_FEED_RULES_BUDGET = 1000;
 const NEVER_BLOCK_ALLOW_RULES_BUDGET = 200;
 // One blanket session block, one least-privilege replacement block per recovered
 // player tab, and at most four exact, second-stage script rules per tab.
@@ -1638,7 +1643,7 @@ const GOOGLE_SEARCH_ALLOW_RULES_BUDGET = 20;
 const SMALL_SESSION_RULES_BUDGET = 64; // headers, cookie stripping, HTTPS, IP lookup, etc.
 const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET
   + ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
-  + GRABBER_FEED_RULES_BUDGET + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
+  + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET;
 // Guards: assert at module load that the budget fits, catching silent drift.
 if (TOTAL_DYNAMIC_BUDGET > 30000) {
@@ -2299,6 +2304,82 @@ async function loadGrabberFeed() {
   await applyGrabberFeedRules();
 }
 loadGrabberFeed();
+
+// ---- Cryptojacking guard (toggle: blockCryptominers) ----
+// Drive-by mining is a network problem before it is a CPU problem: the miner has to
+// fetch its payload and then reach a pool, and both hops are blockable. Two buckets,
+// because they carry different false-positive risk.
+//
+//   MINER_HOSTS  -- mining-as-a-service. The whole product is a script that spends a
+//                   visitor's CPU, so there is nothing legitimate to preserve. Blocked
+//                   on every resource type, first- or third-party.
+//   POOL_HOSTS   -- real mining pools with real websites, dashboards, and customers.
+//                   Blocking these outright would break a user who actually mines, so
+//                   they are blocked only as THIRD-PARTY subresources. Visiting the
+//                   pool works; some other page opening a stratum WebSocket to it does
+//                   not. main_frame is deliberately absent from this bucket.
+//
+// This layer does not see a self-hosted miner that never leaves the origin. That needs
+// a runtime CPU/WASM heuristic, which is a separate and much more false-positive-prone
+// problem -- it is not pretended here.
+const MINER_FEED_RULE_BASE = 742000;
+const MINER_FEED_MAX = 1000;
+const MINER_POOL_RULE_OFFSET = 700; // pool rules occupy the tail of the band
+const MINER_HOSTS = new Set();
+const MINER_POOL_HOSTS = new Set();
+const MINER_RESOURCE_TYPES = ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'websocket', 'ping', 'image', 'media', 'object', 'other'];
+const MINER_POOL_RESOURCE_TYPES = ['sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'];
+function addMinerDomains(arr, target) {
+  for (const d of (Array.isArray(arr) ? arr : [])) {
+    const v = String(d || '').trim().toLowerCase().replace(/^\*?\.?/, '').replace(/\/.*$/, '');
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) || v.includes('..')) continue;
+    const rd = registrableDomainBg(v) || v;
+    if (rd && !isNeverBlockDomain(rd)) target.add(v);
+  }
+}
+async function applyMinerFeedRules() {
+  try {
+    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const oldIds = existing.filter((x) => x.id >= MINER_FEED_RULE_BASE && x.id < MINER_FEED_RULE_BASE + MINER_FEED_MAX).map((x) => x.id);
+    let cfg = {};
+    try { const s = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); } catch (_) {}
+    const off = cfg.enabled === false || cfg.blockCryptominers === false;
+    const miners = off ? [] : Array.from(MINER_HOSTS).slice(0, MINER_POOL_RULE_OFFSET);
+    const pools = off ? [] : Array.from(MINER_POOL_HOSTS).slice(0, MINER_FEED_MAX - MINER_POOL_RULE_OFFSET);
+    const addRules = miners.map((d, i) => ({
+      id: MINER_FEED_RULE_BASE + i,
+      priority: 2000,
+      action: { type: 'block' },
+      condition: { requestDomains: [d], resourceTypes: MINER_RESOURCE_TYPES },
+    })).concat(pools.map((d, i) => ({
+      id: MINER_FEED_RULE_BASE + MINER_POOL_RULE_OFFSET + i,
+      priority: 2000,
+      action: { type: 'block' },
+      condition: { requestDomains: [d], domainType: 'thirdParty', resourceTypes: MINER_POOL_RESOURCE_TYPES },
+    })));
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+  } catch (e) { console.warn('[WardenOne] cryptominer feed rules failed', e); }
+}
+async function loadMinerFeed() {
+  MINER_HOSTS.clear();
+  MINER_POOL_HOSTS.clear();
+  try {
+    const res = await fetch(chrome.runtime.getURL('cryptominer-domains.json'), { cache: 'no-store' });
+    if (res && res.ok) {
+      const data = await res.json();
+      addMinerDomains(data && data.minerHosts, MINER_HOSTS);
+      addMinerDomains(data && data.poolHosts, MINER_POOL_HOSTS);
+    }
+  } catch (_) {}
+  try {
+    const x = await localGet(['wardenone_cryptominer_domains']);
+    const stored = x && x.wardenone_cryptominer_domains;
+    addMinerDomains(stored && stored.minerHosts, MINER_HOSTS);
+    addMinerDomains(stored && stored.poolHosts, MINER_POOL_HOSTS);
+  } catch (_) {}
+  await applyMinerFeedRules();
+}
+loadMinerFeed();
 
 function learnDomain(domain, reason) {
   try {
@@ -6591,6 +6672,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.wardenone_grabber_domains || changes[SUPPLEMENTAL_LIST_STORAGE_KEY])) {
     loadGrabberFeed();
   }
+  // Same for the cryptominer host/pool list.
+  if (area === 'local' && changes.wardenone_cryptominer_domains) {
+    loadMinerFeed();
+  }
   // Any change to the inputs the cosmetic cache is built from must drop it, so
   // the next page request rebuilds from fresh data (config toggle, per-site
   // allowlist edit, or a refreshed filter blob). updateAdShieldCosmetics also
@@ -6618,6 +6703,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
       }
       if (o.enabled !== n.enabled || o.trackerLearner !== n.trackerLearner) {
         applyTrackerLearnerRules();
+      }
+      if (o.enabled !== n.enabled || o.blockCryptominers !== n.blockCryptominers) {
+        applyMinerFeedRules();
       }
       if (o.enabled !== n.enabled) {
         applyScriptShieldRules();
@@ -9490,7 +9578,7 @@ const HEALTH_SHIELD_KEYS = [
   'intranetProtection', 'mediaShield', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation',
   'blockAutoplayMedia', 'gateAdultSites', 'adultHeuristics', 'warnRedirectParams', 'warnShorteners',
   'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'removeOverlays',
-  'autoSkipDownloadAds', 'blockMalwareSites', 'autoUpdateLists', 'trackerLearner', 'unshimLinks',
+  'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'autoUpdateLists', 'trackerLearner', 'unshimLinks',
   'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies', 'watchExtensionPermissions', 'startupCheck',
 ];
 

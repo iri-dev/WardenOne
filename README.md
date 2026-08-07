@@ -113,6 +113,11 @@ one switch, with fine-grained control over every piece.
 - **Startup security check** — on browser launch, scans restored tabs and recently-installed extensions for risky signs.
 - **On-demand site tools** — check a domain's age (RDAP), look it up against Have I Been Pwned, scan where a site stores login tokens, or review every installed extension's permissions.
 
+### Cryptojacking
+- **Block drive-by mining** — mining-as-a-service scripts (the ones that quietly spend your CPU and battery on someone else's coins) are blocked outright, and pages are stopped from opening a stratum WebSocket to a mining pool.
+- Mining pools themselves stay reachable if *you* go there — they're only blocked as a third-party connection, so a site can't mine through one behind your back while your own pool dashboard keeps working.
+- Honest scope: this covers miners that fetch a payload or phone a pool. A miner a site hosts entirely on its own origin isn't caught by blocking alone.
+
 ### Threat blocklist
 - Hard-block known malicious sites from vetted threat feeds, **auto-updated daily** (tens of thousands of domains, millions across the feeds).
 
