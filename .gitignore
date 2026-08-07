@@ -5,6 +5,12 @@ _metadata/
 *.pem
 key.pem
 
+# Release zips. These are built with `git archive` and uploaded to the GitHub
+# release, so a tracked copy is already published elsewhere. Worse, `git archive`
+# packages every tracked file, so a checked-in zip ends up inside the next
+# release — doubling the download for no reason.
+WardenOne-v*.zip
+
 # Machine-local tool settings.
 .*/settings.local.json
 

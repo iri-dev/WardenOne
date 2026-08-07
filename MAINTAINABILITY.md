@@ -38,6 +38,20 @@ The check verifies:
 The same gate runs on every push and pull request via `.github/workflows/gate.yml`,
 so a red gate is visible on GitHub and not only to whoever remembered to run it.
 
+## Release Packaging
+
+The published zip is built from the tracked tree with `git archive`, which applies
+the `export-ignore` rules in `.gitattributes` — those keep `docs/`, `tools/`, `src/`,
+`.github/`, and the repo-meta docs out of the download, while deliberately keeping
+`LICENSE`, `CREDITS.md`, and `PRIVACY.md` in it.
+
+```powershell
+git archive --format=zip -o WardenOne-vX.Y.Z.zip HEAD
+```
+
+Upload that to the GitHub release; do not commit it. `git archive` packages every
+tracked file, so a zip checked into the repo gets bundled inside the next one.
+
 ## Content Script Source Risk
 
 Do not pretend the generated `src/content.js` is the original authoring source. It is a lossless formatted artifact: useful for review, scanning, targeted edits, and exact rebuilds, but it cannot recover symbol names, module boundaries, comments, tests, or original build intent.
