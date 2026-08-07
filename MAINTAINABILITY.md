@@ -31,6 +31,12 @@ The check verifies:
 - `src/content.js` rebuilds `content.min.js` byte-for-byte.
 - Memory Shield safety/performance behavior passes its focused test harness.
 - Download Guard scoring and critical hard-block behavior pass focused tests.
+- security posture holds: the extension-page CSP, the permission set, the
+  message-handler sender gates, and the absence of HTML/eval sinks.
+- every `tools/test-*.js` suite passes, including the OAuth consent-grant guard.
+
+The same gate runs on every push and pull request via `.github/workflows/gate.yml`,
+so a red gate is visible on GitHub and not only to whoever remembered to run it.
 
 ## Content Script Source Risk
 
