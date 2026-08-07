@@ -105,6 +105,28 @@ First public-release hardening pass.
   not fire or fired on anything busy, and none could tell mining apart from a
   video export. So heavy CPU use is not reported as mining.
 
+- Optional SafeSearch enforcement, off by default. Locks Google, Bing,
+  DuckDuckGo, Brave Search and Yahoo into SafeSearch and YouTube into Restricted
+  Mode.
+  The adult-site gate only fires on arrival at a site, so explicit images and
+  video inside a results page were never something it could catch -- you never
+  leave the search engine. Off by default because it changes what search shows
+  you.
+
+- Optional "plain web results only" for Google, off by default. Switches Google
+  into its own Web mode (udm=14) -- ten blue links, no AI overview, no enriched
+  panels. Removing the clutter at the source beats hiding it after paint: nothing
+  can flash in first, and there is no selector to go stale when Google reshuffles
+  its markup.
+
+  Google's Images, Videos and News tabs are udm values too, so the parameter is
+  only ever added when the URL has none, never replaced -- otherwise clicking
+  Images would bounce you straight back to Web and you could never leave. A DNR
+  condition cannot express "this parameter is absent", so that is handled with
+  rule priority: when SafeSearch is also on, a higher-priority rule claims every
+  URL that already carries a udm and adds only the SafeSearch parameter, leaving
+  the lower rule to see nothing but URLs without one.
+
 ### Quality
 
 - Added popup, streaming, Twitch fail-open, network-policy, and compatibility
