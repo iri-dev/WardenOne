@@ -78,6 +78,16 @@ First public-release hardening pass.
 - Quieted behavioral and fingerprint notices only while a structurally visible
   browser-verification challenge is present; request protections remain active.
 
+### Added
+
+- Cryptojacking guard (on by default). Drive-by mining services are blocked on
+  every resource type, and pages are blocked from reaching mining pools over
+  WebSocket, XHR, or script. Mining pools are only blocked as a third-party
+  connection, so visiting a pool or using its dashboard still works -- a site
+  just can't mine through one behind your back. It does not claim to catch a
+  miner a site hosts entirely on its own origin; that needs a runtime CPU
+  heuristic, which this is not.
+
 ### Quality
 
 - Added popup, streaming, Twitch fail-open, network-policy, and compatibility

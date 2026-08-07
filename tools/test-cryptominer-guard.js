@@ -1,0 +1,138 @@
+'use strict';
+
+// Cryptojacking guard (toggle: blockCryptominers).
+//
+// The guard splits its seed list into two buckets that are deliberately NOT
+// treated the same, and the split is the whole reason it can be on by default:
+//
+//   minerHosts -- mining-as-a-service. Blocked on every resource type.
+//   poolHosts  -- real mining pools with real websites. Blocked only as
+//                 third-party subresources, never main_frame, so a user who
+//                 actually mines can still reach the pool they use.
+//
+// If a later edit lets main_frame into the pool bucket, or drops the
+// third-party condition, the guard silently starts blocking legitimate sites
+// outright. That is a compatibility bug under the house rules, so it is asserted
+// here rather than left to a bug report.
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const SEED = JSON.parse(fs.readFileSync(path.join(ROOT, 'cryptominer-domains.json'), 'utf8'));
+const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
+const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+
+// Domains that must never appear in a blocklist. A miner list is a plausible
+// place for a typo'd or over-broad entry to land, and the blast radius of
+// blocking one of these on main_frame is a broken browser.
+const MUST_NEVER_BLOCK = [
+  'google.com', 'gstatic.com', 'googleapis.com', 'cloudflare.com', 'cloudfront.net',
+  'microsoft.com', 'live.com', 'office.com', 'apple.com', 'icloud.com',
+  'amazonaws.com', 'akamai.net', 'akamaihd.net', 'jsdelivr.net', 'unpkg.com',
+  'github.com', 'githubusercontent.com', 'mozilla.org', 'wikipedia.org',
+  'youtube.com', 'facebook.com', 'twitch.tv', 'paypal.com', 'stripe.com',
+];
+
+function num(name) {
+  const m = BG.match(new RegExp('const\\s+' + name + '\\s*=\\s*(\\d+)\\s*;'));
+  assert(m, 'missing constant ' + name + ' in background.js');
+  return Number(m[1]);
+}
+
+function arrayLiteral(name) {
+  const m = BG.match(new RegExp('const\\s+' + name + '\\s*=\\s*\\[([^\\]]*)\\]'));
+  assert(m, 'missing constant ' + name + ' in background.js');
+  return m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+}
+
+let passed = 0;
+function check(label, cond) {
+  assert(cond, label);
+  console.log('  ok  - ' + label);
+  passed++;
+}
+
+function run() {
+  // ---- seed list shape -------------------------------------------------
+  assert(Array.isArray(SEED.minerHosts), 'minerHosts must be an array');
+  assert(Array.isArray(SEED.poolHosts), 'poolHosts must be an array');
+  check('seed list has both buckets populated', SEED.minerHosts.length > 0 && SEED.poolHosts.length > 0);
+
+  const bad = [];
+  for (const d of SEED.minerHosts.concat(SEED.poolHosts)) {
+    // Same validator the runtime applies; anything failing it is dead weight
+    // that silently never becomes a rule.
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d) || d.includes('..')) bad.push(d);
+  }
+  check('every seed entry survives the runtime domain validator', bad.length === 0
+    ? true : assert.fail('entries the runtime would silently drop: ' + bad.join(', ')));
+
+  const dupes = [];
+  const seen = new Set();
+  for (const d of SEED.minerHosts.concat(SEED.poolHosts)) {
+    if (seen.has(d)) dupes.push(d);
+    seen.add(d);
+  }
+  check('no duplicate entries across buckets', dupes.length === 0
+    ? true : assert.fail('duplicates: ' + dupes.join(', ')));
+
+  const overlap = MUST_NEVER_BLOCK.filter((safe) =>
+    seen.has(safe) || Array.from(seen).some((d) => d === safe || d.endsWith('.' + safe)));
+  check('no major legitimate domain is in the miner list', overlap.length === 0
+    ? true : assert.fail('would block legitimate infrastructure: ' + overlap.join(', ')));
+
+  // ---- the false-positive-critical invariants --------------------------
+  const poolTypes = arrayLiteral('MINER_POOL_RESOURCE_TYPES');
+  check('pool rules never block main_frame (visiting a pool must still work)',
+    !poolTypes.includes('main_frame'));
+  check('pool rules still cover websocket (stratum runs over WSS)',
+    poolTypes.includes('websocket'));
+
+  const applyFn = BG.slice(BG.indexOf('async function applyMinerFeedRules'));
+  const applyBody = applyFn.slice(0, applyFn.indexOf('\n}\n'));
+  check('pool rules are third-party only', /domainType:\s*'thirdParty'/.test(applyBody));
+  check('miner-host rules are NOT limited to third-party',
+    (applyBody.match(/domainType:\s*'thirdParty'/g) || []).length === 1);
+
+  const minerTypes = arrayLiteral('MINER_RESOURCE_TYPES');
+  check('miner-host rules cover main_frame and websocket',
+    minerTypes.includes('main_frame') && minerTypes.includes('websocket'));
+
+  // ---- rule id band ----------------------------------------------------
+  const base = num('MINER_FEED_RULE_BASE');
+  const max = num('MINER_FEED_MAX');
+  const offset = num('MINER_POOL_RULE_OFFSET');
+  const budget = num('MINER_FEED_RULES_BUDGET');
+
+  check('rule band sits in the free 742000-744999 range', base === 742000 && base + max <= 745000);
+  check('declared budget matches the band size', budget === max);
+  check('pool offset leaves room for both buckets', offset > 0 && offset < max);
+  check('seed miner hosts fit below the pool offset', SEED.minerHosts.length <= offset);
+  check('seed pool hosts fit in the tail of the band', SEED.poolHosts.length <= max - offset);
+
+  // The band must not overlap the neighbouring feeds.
+  const grabberBase = num('GRABBER_FEED_RULE_BASE');
+  const grabberMax = num('GRABBER_FEED_MAX');
+  const neverBlockBase = num('NEVER_BLOCK_ALLOW_RULE_BASE');
+  check('band starts after the grabber feed ends', base >= grabberBase + grabberMax);
+  check('band ends before the never-block allow rules begin', base + max <= neverBlockBase);
+
+  // ---- wiring ----------------------------------------------------------
+  check('blockCryptominers is in DEFAULT_CONFIG and defaults on',
+    /blockCryptominers:\s*true/.test(BG));
+  check('the toggle reapplies rules when it changes',
+    /o\.blockCryptominers\s*!==\s*n\.blockCryptominers/.test(BG));
+  check('the feed loads at startup', /^loadMinerFeed\(\);$/m.test(BG));
+  check('the guard counts toward the protection health score',
+    /'blockCryptominers'/.test(BG.slice(BG.indexOf('HEALTH_SHIELD_KEYS'))));
+  check('popup exposes the toggle', /data-key="blockCryptominers"/.test(POPUP_HTML));
+  check('popup knows the key and its default',
+    /'blockCryptominers'/.test(POPUP_JS) && /blockCryptominers:\s*true/.test(POPUP_JS));
+
+  console.log('\n' + passed + ' passed, 0 failed');
+}
+
+run();
