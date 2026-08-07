@@ -173,6 +173,7 @@ function checkContentBuild() {
   'tools/test-site-compatibility.js',
   'tools/test-streaming-compatibility.js',
   'tools/test-token-exfil-trust.js',
+  'tools/test-oauth-guard.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
   'tools/test-message-hardening.js',
@@ -200,6 +201,7 @@ checkRuleCount('STATIC_RULE_COUNT', 'rules.json');
 checkRuleCount('ADSHIELD_STATIC_RULE_COUNT', 'rules-adshield.json');
 checkContentMinProvenance();
 checkContentBuild();
+checkCommand('security posture checks', ['tools/check-security-posture.js']);
 checkCommand('memory shield tests', ['tools/test-memory-shield.js']);
 checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--check']);
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
@@ -214,6 +216,7 @@ checkCommand('Smart Script Shield recovery tests', ['tools/test-smart-script-rec
 checkCommand('site compatibility tests', ['tools/test-site-compatibility.js']);
 checkCommand('streaming compatibility tests', ['tools/test-streaming-compatibility.js']);
 checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js']);
+checkCommand('OAuth guard tests', ['tools/test-oauth-guard.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);

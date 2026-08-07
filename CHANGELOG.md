@@ -82,4 +82,8 @@ First public-release hardening pass.
 
 - Added popup, streaming, Twitch fail-open, network-policy, and compatibility
   regressions to the maintainability suite.
+- Ran the security posture check and the OAuth guard tests as part of the
+  maintainability gate. Both existed but neither was executed, so a regression
+  in the extension-page CSP, the permission set, the HTML-sink rules, or the
+  consent-grant scoring could have landed without turning the gate red.
 - Corrected and expanded third-party licensing and attribution notes.
