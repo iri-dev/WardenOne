@@ -174,6 +174,7 @@ function checkContentBuild() {
   'tools/test-streaming-compatibility.js',
   'tools/test-token-exfil-trust.js',
   'tools/test-oauth-guard.js',
+  'tools/test-cryptominer-guard.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
   'tools/test-message-hardening.js',
@@ -193,6 +194,7 @@ function checkContentBuild() {
   'rules-adshield.json',
   'malware-hashes.json',
   'grabber-extra.json',
+  'cryptominer-domains.json',
   'supplemental-manifest.json',
 ].forEach(checkJson);
 
@@ -217,6 +219,7 @@ checkCommand('site compatibility tests', ['tools/test-site-compatibility.js']);
 checkCommand('streaming compatibility tests', ['tools/test-streaming-compatibility.js']);
 checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js']);
 checkCommand('OAuth guard tests', ['tools/test-oauth-guard.js']);
+checkCommand('cryptominer guard tests', ['tools/test-cryptominer-guard.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);
