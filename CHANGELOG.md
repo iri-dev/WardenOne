@@ -127,6 +127,14 @@ First public-release hardening pass.
   URL that already carries a udm and adds only the SafeSearch parameter, leaving
   the lower rule to see nothing but URLs without one.
 
+- Settings export and import. There is no account and nothing syncs, so a
+  reinstall previously meant rebuilding every setting by hand. Provider API keys
+  are stripped from the export by pattern rather than by a list, so a provider
+  added later is covered automatically, and the same rule blocks them on import
+  so a hand-edited file cannot inject a key. Imported values are matched against
+  the shape of the shipped default for each setting; unknown keys, wrong types
+  and oversized lists are dropped rather than trusted.
+
 ### Quality
 
 - Added popup, streaming, Twitch fail-open, network-policy, and compatibility
