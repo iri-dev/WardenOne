@@ -10337,13 +10337,225 @@
     if(WO.behavioralScan||WO.fingerprintProbeDetection)try{
       const here=regDomain(location.hostname),
       fullHost=location.hostname.toLowerCase(),
-      KNOWN_GOOD_BEHAVE=/(google|gstatic|googleapis|youtube|googlevideo|ytimg|twitch|ttvnw|jtvnw|twitchcdn|facebook|fbcdn|instagram|apple|icloud|microsoft|live|office|windows|amazon|cloudflare|akamai|fastly|github|wikipedia|mozilla|stripe|paypal|cloudfront|jsdelivr|unpkg)\./i;
-      if(here&&"localhost"!==here&&!/^\d+\.\d+\.\d+\.\d+$/.test(fullHost)&&!KNOWN_GOOD_BEHAVE.test(here)){
+      /* Mainstream sites and the asset/CDN domains they load from. Two uses: the
+      behavioural scanner never runs ON these pages, and a request TO one of them
+      is never counted as "phoning home". Matched on the registrable domain via
+      SITE_BOUNDARY.site(), NOT as a substring -- the old brand-substring regex
+      both missed the sites people actually use (x.com, reddit, linkedin ... all
+      scored as unknown) and let a lookalike like fake-google.com.evil pass as
+      trusted. */
+      BEHAVE_REPUTABLE_SITES=new Set(["google.com",
+      "google.co.uk",
+      "googleapis.com",
+      "gstatic.com",
+      "googleusercontent.com",
+      "googlevideo.com",
+      "googletagmanager.com",
+      "google-analytics.com",
+      "gvt1.com",
+      "gvt2.com",
+      "ggpht.com",
+      "withgoogle.com",
+      "android.com",
+      "youtube.com",
+      "youtu.be",
+      "youtube-nocookie.com",
+      "ytimg.com",
+      "x.com",
+      "twitter.com",
+      "twimg.com",
+      "facebook.com",
+      "fbcdn.net",
+      "fb.com",
+      "messenger.com",
+      "meta.com",
+      "instagram.com",
+      "cdninstagram.com",
+      "whatsapp.com",
+      "whatsapp.net",
+      "threads.net",
+      "threads.com",
+      "reddit.com",
+      "redd.it",
+      "redditstatic.com",
+      "redditmedia.com",
+      "linkedin.com",
+      "licdn.com",
+      "tiktok.com",
+      "tiktokcdn.com",
+      "tiktokv.com",
+      "ttwstatic.com",
+      "pinterest.com",
+      "pinimg.com",
+      "snapchat.com",
+      "sc-static.net",
+      "tumblr.com",
+      "discord.com",
+      "discordapp.com",
+      "discordapp.net",
+      "discord.gg",
+      "discordcdn.com",
+      "twitch.tv",
+      "ttvnw.net",
+      "jtvnw.net",
+      "twitchcdn.net",
+      "twitchsvc.net",
+      "telegram.org",
+      "t.me",
+      "microsoft.com",
+      "microsoftonline.com",
+      "microsoft365.com",
+      "msn.com",
+      "bing.com",
+      "live.com",
+      "office.com",
+      "office365.com",
+      "sharepoint.com",
+      "onmicrosoft.com",
+      "msftauth.net",
+      "msauth.net",
+      "windows.net",
+      "azureedge.net",
+      "azure.com",
+      "skype.com",
+      "xbox.com",
+      "apple.com",
+      "icloud.com",
+      "mzstatic.com",
+      "cdn-apple.com",
+      "amazon.com",
+      "amazon.co.uk",
+      "amazonaws.com",
+      "media-amazon.com",
+      "ssl-images-amazon.com",
+      "images-amazon.com",
+      "amazontrust.com",
+      "amazonpay.com",
+      "amzn.com",
+      "primevideo.com",
+      "ebay.com",
+      "ebay.co.uk",
+      "ebayimg.com",
+      "ebaystatic.com",
+      "etsy.com",
+      "etsystatic.com",
+      "netflix.com",
+      "nflxvideo.net",
+      "nflximg.net",
+      "nflxext.com",
+      "nflxso.net",
+      "spotify.com",
+      "spotifycdn.com",
+      "scdn.co",
+      "soundcloud.com",
+      "sndcdn.com",
+      "paypal.com",
+      "paypalobjects.com",
+      "stripe.com",
+      "stripe.network",
+      "github.com",
+      "githubusercontent.com",
+      "githubassets.com",
+      "github.io",
+      "gitlab.com",
+      "stackoverflow.com",
+      "stackexchange.com",
+      "sstatic.net",
+      "wikipedia.org",
+      "wikimedia.org",
+      "wikidata.org",
+      "mozilla.org",
+      "mozilla.net",
+      "cloudflare.com",
+      "cloudflare.net",
+      "cloudflareinsights.com",
+      "akamai.net",
+      "akamaihd.net",
+      "akamaized.net",
+      "akamaiedge.net",
+      "edgekey.net",
+      "edgesuite.net",
+      "fastly.net",
+      "fastlylb.net",
+      "cloudfront.net",
+      "jsdelivr.net",
+      "unpkg.com",
+      "bootstrapcdn.com",
+      "jquery.com",
+      "typekit.net",
+      "fontawesome.com",
+      "gravatar.com",
+      "wp.com",
+      "wordpress.com",
+      "wordpress.org",
+      "zoom.us",
+      "slack.com",
+      "slack-edge.com",
+      "dropbox.com",
+      "dropboxusercontent.com",
+      "dropboxstatic.com",
+      "notion.so",
+      "figma.com",
+      "canva.com",
+      "atlassian.com",
+      "atlassian.net",
+      "trello.com",
+      "yahoo.com",
+      "yimg.com",
+      "duckduckgo.com",
+      "ecosia.org",
+      "brave.com",
+      "proton.me",
+      "protonmail.com",
+      "bbc.co.uk",
+      "bbc.com",
+      "bbci.co.uk",
+      "steampowered.com",
+      "steamstatic.com",
+      "steamcommunity.com",
+      "epicgames.com",
+      "roblox.com",
+      "rbxcdn.com",
+      "nintendo.com",
+      "playstation.com",
+      "battle.net",
+      "blizzard.com",
+      "ea.com",
+      "ubisoft.com"]),
+      isReputableBehaveHost=host=>{
+        try{
+          const s=SITE_BOUNDARY.site(host);
+          return!!s&&BEHAVE_REPUTABLE_SITES.has(s)
+        }
+        catch(_){
+          return!1
+        }
+
+      };
+      if(here&&"localhost"!==here&&!/^\d+\.\d+\.\d+\.\d+$/.test(fullHost)&&!isReputableBehaveHost(fullHost)){
         let score=0;
         const reasons=[],
-        seenSignals=new Set;
+        seenSignals=new Set,
+        behaveStartedAt=Date.now(),
+        /* Signals that say something about WHO this site is, rather than what any
+        page does. A warning needs at least one of them: "loaded a cross-site asset
+        before you clicked" plus "measured the canvas" describes every large modern
+        site, and on its own it was firing "Suspicious site behavior" on ordinary
+        browsing -- and at score 60+ the background LEARNS the domain and starts
+        DNR-blocking it. Known-logger hits stand alone; nothing else does. */
+        BEHAVE_HARD_KEYS=["known-logger",
+        "known-logger-event"],
+        BEHAVE_IDENTITY_KEYS=["known-logger",
+        "known-logger-event",
+        "new-domain",
+        "young-domain",
+        "random-host",
+        "abuse-tld",
+        "shortener-domain"],
+        hasSignalIn=keys=>keys.some(k=>seenSignals.has(k));
         let lastWarnBand=0,
-        establishedDomain=!1;
+        establishedDomain=!1,
+        ageChecked=!1;
         const riskLevel=()=>score>=100?"Dangerous":score>=60?"Suspicious":score>=30?"Caution":"Safe",
         riskBand=()=>score>=100?3:score>=60?2:score>=30?1:0,
         updatePageRisk=key=>{
@@ -10420,12 +10632,21 @@
           once:!0
         }));
         const loadedAt=Date.now(),
+        /* A site's own asset domain is first-party even when it is a different
+        host: x.com serves from twimg.com, reddit from redd.it, and any site can
+        put static content on assets.<same-site>. SITE_BOUNDARY.siblingCandidate
+        covers the same-registrable-domain case; the explicit families are covered
+        by BEHAVE_REPUTABLE_SITES. */
         isForeign=url=>{
           try{
             if(VERIFICATION_FLOW_POLICY.expectsNoticeUrl(url))return!1;
-            const h=regDomain(new URL(url,
-            location.href).hostname);
-            return h&&h!==here&&!h.endsWith("."+here)&&!here.endsWith("."+h)&&!KNOWN_GOOD_BEHAVE.test(h)
+            const host=new URL(url,
+            location.href).hostname;
+            if(!host)return!1;
+            if(SITE_BOUNDARY.same(host,
+            here)||SITE_BOUNDARY.siblingCandidate(host,
+            here))return!1;
+            return!isReputableBehaveHost(host)
           }
           catch{
             return!1
@@ -10655,16 +10876,26 @@
             catch(_){
 
             }
-
+            ageChecked=!0,
+            maybeWarn()
           })
         }
         catch(_){
-
+          ageChecked=!0
         }
+        /* addSignal calls this the moment a signal lands, so without the grace
+        window the verdict was decided before the RDAP domain-age answer came back
+        and the "established domain" suppression below could never apply. The 4.5s
+        timer below is the backstop when the lookup is rate-limited or offline. */
         function maybeWarn(){
           const band=riskBand();
-          if(establishedDomain&&band<2)return;
-          !band||band<=lastWarnBand||(lastWarnBand=band,
+          if(!band)return;
+          if(!hasSignalIn(BEHAVE_HARD_KEYS)){
+            if(!ageChecked&&Date.now()-behaveStartedAt<4e3)return;
+            if(!hasSignalIn(BEHAVE_IDENTITY_KEYS))return;
+            if(establishedDomain&&band<2)return
+          }
+          band<=lastWarnBand||(lastWarnBand=band,
           log("behavioral_risk",
           {
             host:here,
