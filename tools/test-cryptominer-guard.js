@@ -132,6 +132,57 @@ function run() {
   check('popup knows the key and its default',
     /'blockCryptominers'/.test(POPUP_JS) && /blockCryptominers:\s*true/.test(POPUP_JS));
 
+  // ---- deep detection (cryptominerCpuWatch) ----------------------------
+  // Reads the source of workers a page starts and warns when it finds mining
+  // code. It deliberately does NOT measure CPU load: measured on a 12-core
+  // machine against a spinning worker per core, a main-thread benchmark moved
+  // 1.03-1.21x, a probe worker 1.63x but only against a baseline taken before
+  // the miner starts, and a baseline-free worker/main ratio 1.21x. All of those
+  // either cannot fire or fire on any busy page, and none of them can tell
+  // mining apart from a video export. Load is not evidence of mining, so the
+  // guard must not start treating it as evidence.
+  const DETECT = fs.readFileSync(path.join(ROOT, 'cryptominer-detect.js'), 'utf8');
+
+  check('deep detection defaults OFF in background', /cryptominerCpuWatch:\s*false/.test(BG));
+  check('deep detection defaults OFF in popup', /cryptominerCpuWatch:\s*false/.test(POPUP_JS));
+  check('deep detection is not switched on by "Turn everything on"',
+    /MANUAL_ONLY_TOGGLES\s*=\s*new Set\(\[[^\]]*'cryptominerCpuWatch'/.test(POPUP_JS));
+  check('deep detection is not in any onboarding bundle',
+    !/cryptominerCpuWatch/.test(BG.slice(BG.indexOf('ONBOARDING_RECOMMENDED'), BG.indexOf('const EXT_HIGH_RISK_PERMS'))));
+
+  // Off by default is only meaningful if the script is not loaded at all.
+  const reconcile = BG.slice(BG.indexOf('async function reconcileMinerDetectInjection'));
+  const reconcileBody = reconcile.slice(0, reconcile.indexOf('\n}\n'));
+  check('detector is only registered when the toggle is explicitly on',
+    /cryptominerCpuWatch\s*===\s*true/.test(reconcileBody));
+  check('detector is unregistered when the toggle goes off',
+    /unregisterContentScripts/.test(reconcileBody));
+  check('detector is not a static content script (would defeat lazy loading)',
+    !/cryptominer-detect\.js/.test(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')));
+  check('detector runs in the MAIN world (needs the page realm to hook Worker)',
+    /world:\s*'MAIN'/.test(reconcileBody));
+
+  check('detector warns and never terminates a page worker',
+    !/\bw\.terminate\(\)/.test(DETECT) && /detected_cryptominer/.test(DETECT));
+  check('detector does not resurrect a CPU-load verdict',
+    !/detected_cpu_abuse/.test(DETECT) && !/slowdown/.test(DETECT));
+  check('detector decides on worker source, not on load',
+    /MINER_TELLS/.test(DETECT) && /scanWorkerSource/.test(DETECT));
+  check('tells exclude words that are legitimate elsewhere',
+    !/\bnonce\b/.test(String(DETECT.match(/var MINER_TELLS = [^;]+;/) || ''))
+      && !/scrypt|argon2/.test(String(DETECT.match(/var MINER_TELLS = [^;]+;/) || '')));
+  check('cross-origin worker scripts are never fetched',
+    /u\.origin !== location\.origin/.test(DETECT));
+  check('scanning is bounded per page', /MAX_SCANS/.test(DETECT) && /scanned >= MAX_SCANS/.test(DETECT));
+  check('detector reports at most once per page', /if \(reported\) return;/.test(DETECT));
+  check('detector cloaks its Worker wrapper from the page',
+    /Wrapped\.toString\s*=/.test(DETECT));
+  check('history has a label for the event', /detected_cryptominer:/.test(
+    fs.readFileSync(path.join(ROOT, 'history.js'), 'utf8')));
+  check('popup exposes the deep toggle', /data-key="cryptominerCpuWatch"/.test(POPUP_HTML));
+  check('popup copy does not claim a CPU benchmark it no longer runs',
+    !/benchmark/i.test(POPUP_HTML) && !/Expensive to run/i.test(POPUP_HTML));
+
   console.log('\n' + passed + ' passed, 0 failed');
 }
 

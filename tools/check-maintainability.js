@@ -146,6 +146,7 @@ function checkContentBuild() {
   'twitch-adblock.js',
   'twitch-rewind.js',
   'twitch-vod-rewind.js',
+  'cryptominer-detect.js',
   'content.min.js',
   'src/content.js',
   'tools/build-content.js',

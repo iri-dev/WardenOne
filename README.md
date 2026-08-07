@@ -116,7 +116,8 @@ one switch, with fine-grained control over every piece.
 ### Cryptojacking
 - **Block drive-by mining** — mining-as-a-service scripts (the ones that quietly spend your CPU and battery on someone else's coins) are blocked outright, and pages are stopped from opening a stratum WebSocket to a mining pool.
 - Mining pools themselves stay reachable if *you* go there — they're only blocked as a third-party connection, so a site can't mine through one behind your back while your own pool dashboard keeps working.
-- Honest scope: this covers miners that fetch a payload or phone a pool. A miner a site hosts entirely on its own origin isn't caught by blocking alone.
+- **Deep detection** (optional, off by default) — for the case blocking can't see: a miner a site hosts on its own origin. Reads the code of the background workers a page starts and warns if it finds mining routines. It only warns, and it won't spot a miner with its code obfuscated away.
+- Honest scope: heavy CPU use on its own is *not* treated as mining. A video export, a WASM build, and a miner all peg your cores identically, so WardenOne only says "cryptominer" when it can actually see mining code.
 
 ### Threat blocklist
 - Hard-block known malicious sites from vetted threat feeds, **auto-updated daily** (tens of thousands of domains, millions across the feeds).

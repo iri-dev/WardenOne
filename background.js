@@ -699,6 +699,8 @@ const DEFAULT_CONFIG = {
   autoUpdateLists: true,
   blockMalwareSites: true,
   blockCryptominers: true,
+  // Heuristic, and its confirmation step is a CPU micro-benchmark. Off unless asked for.
+  cryptominerCpuWatch: false,
   showToasts: true,
   showBadge: true,
   showDownloadBar: true,
@@ -5983,6 +5985,7 @@ function refreshExtensionState() {
       refreshBlocklistRuleset(cfg);
       reconcileEyeShieldInjection(cfg);
       reconcileConsentRejectInjection(cfg);
+      reconcileMinerDetectInjection(cfg);
       reconcileGoogleCleanupCssInjection(cfg);
       applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false);
       applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg));
@@ -5999,6 +6002,7 @@ function refreshExtensionState() {
       refreshBlocklistRuleset();
       reconcileEyeShieldInjection();
       reconcileConsentRejectInjection();
+      reconcileMinerDetectInjection();
       reconcileGoogleCleanupCssInjection({ enabled: false });
       applyFingerprintScriptRules(false);
       applyGoogleSearchSponsoredAllowRules(false);
@@ -6016,6 +6020,7 @@ function refreshExtensionState() {
     refreshBlocklistRuleset();
     reconcileEyeShieldInjection();
     reconcileConsentRejectInjection();
+    reconcileMinerDetectInjection();
     reconcileGoogleCleanupCssInjection({ enabled: false });
     applyFingerprintScriptRules(false);
     applyGoogleSearchSponsoredAllowRules(false);
@@ -6171,6 +6176,41 @@ function injectEyeShieldIntoOpenTabs() {
     });
   } catch (_) {}
 }
+// ===== Deep cryptominer detection: registered only while switched on =====
+// The detector's confirmation step benchmarks the CPU, so it is not shipped in
+// the always-on runtime. Registering it lazily means a user who leaves the
+// toggle off never parses or runs a line of it.
+const MINER_DETECT_SCRIPT_ID = 'wardenone-cryptominer-detect';
+async function reconcileMinerDetectInjection(cfgArg) {
+  if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
+  let cfg = cfgArg;
+  if (!cfg) {
+    try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
+  }
+  const merged = Object.assign({}, DEFAULT_CONFIG, cfg || {});
+  const want = merged.enabled !== false && merged.cryptominerCpuWatch === true;
+  let have = false;
+  try {
+    const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [MINER_DETECT_SCRIPT_ID] });
+    have = Array.isArray(reg) && reg.length > 0;
+  } catch (_) { have = false; }
+  try {
+    if (want && !have) {
+      await chrome.scripting.registerContentScripts([{
+        id: MINER_DETECT_SCRIPT_ID,
+        matches: ['<all_urls>'],
+        js: ['cryptominer-detect.js'],
+        runAt: 'document_start',
+        allFrames: false,
+        persistAcrossSessions: true,
+        world: 'MAIN',
+      }]);
+    } else if (!want && have) {
+      await chrome.scripting.unregisterContentScripts({ ids: [MINER_DETECT_SCRIPT_ID] });
+    }
+  } catch (_) {}
+}
+
 async function reconcileEyeShieldInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   let cfg = cfgArg;
