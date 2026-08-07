@@ -9,6 +9,7 @@ const LABELS = {
   blocked_meta_refresh: 'Auto-redirect blocked',
   blocked_form_submit: 'Forced form-submit blocked',
   blocked_redirect_chain: 'Redirect chain stopped',
+  detected_cryptominer: 'Cryptominer suspected (heavy CPU use)',
   detected_grabber_domain: 'IP-logger page',
   detected_thirdparty_tracker: 'Third-party tracker observed',
   learned_tracker_domain: 'Tracker learned locally',

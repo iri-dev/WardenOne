@@ -84,9 +84,19 @@ First public-release hardening pass.
   every resource type, and pages are blocked from reaching mining pools over
   WebSocket, XHR, or script. Mining pools are only blocked as a third-party
   connection, so visiting a pool or using its dashboard still works -- a site
-  just can't mine through one behind your back. It does not claim to catch a
-  miner a site hosts entirely on its own origin; that needs a runtime CPU
-  heuristic, which this is not.
+  just can't mine through one behind your back.
+- Optional deep cryptominer detection, off by default, for the case blocking
+  cannot see: a miner a site hosts on its own origin. It reads the source of the
+  workers a page starts and warns when it finds mining routines. It is only
+  registered while switched on, so leaving it off costs nothing, and it warns
+  rather than stopping anything.
+
+  It deliberately does not judge by CPU load. Measured against a spinning worker
+  on every core of a 12-core machine, a main-thread benchmark moved 1.03-1.21x,
+  a probe worker 1.63x but only against a baseline taken before the miner starts,
+  and a baseline-free worker-versus-main ratio 1.21x. Every variant either could
+  not fire or fired on anything busy, and none could tell mining apart from a
+  video export. So heavy CPU use is not reported as mining.
 
 ### Quality
 
