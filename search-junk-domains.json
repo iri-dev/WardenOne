@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "_comment": "Seed list for the search-junk marker (toggle: flagSearchJunk). These are sites that rank by republishing other people's work -- overwhelmingly Stack Exchange and GitHub scrapers -- which is the least arguable case there is: the answer you want exists upstream, and the scraper is between you and it. Nothing here is hidden; results are dimmed and labelled with a 'show anyway' control, because a search filter that silently removes the one result you needed fails invisibly. Extend it at runtime via the wardenone_search_junk_domains storage key, or with a subscribed list, without shipping a new version. Deliberately NOT included: sites that are merely low quality, opinionated, or commercial. That is a judgement call this list has no business making.",
+  "scraperHosts": [
+    "9to5answer.com",
+    "askcodes.net",
+    "code-examples.net",
+    "codegrepper.com",
+    "codehunter.cc",
+    "coderedirect.com",
+    "copyprogramming.com",
+    "devcodef1.com",
+    "errorsandanswers.com",
+    "exceptionshub.com",
+    "fixes.pub",
+    "itecnote.com",
+    "newbedev.com",
+    "programcreek.com",
+    "pythonfixing.com",
+    "pythonshowcase.com",
+    "qa-stack.pl",
+    "qastack.com.br",
+    "qastack.in",
+    "qastack.net",
+    "solveforum.com",
+    "stackoom.com",
+    "tutorialguruji.com"
+  ]
+}

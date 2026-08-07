@@ -113,6 +113,26 @@ First public-release hardening pass.
   leave the search engine. Off by default because it changes what search shows
   you.
 
+- Optional search-junk marker, off by default. Dims and labels results from sites
+  that rank by republishing other people's answers -- Stack Exchange and GitHub
+  scrapers -- on the Google, Bing, DuckDuckGo, Brave Search and Yahoo results
+  pages.
+
+  It marks and never removes, and that is the whole design. Ad blocking fails
+  visibly: block a real image and you see a gap. Search filtering fails invisibly:
+  hide the one result that answered the question and the user never learns it
+  existed, they just think the web got worse. So every match keeps a one-click
+  "Show anyway", and an allowlisted search engine is skipped entirely.
+
+  It anchors on result links rather than result-block class names, because Google
+  randomises those and reshuffles its DOM constantly; a link has to carry its
+  destination host or the result would not work. Where the walk up to a result
+  block fails, the result is left alone. A bundled seed works offline and on day
+  one, and the existing daily list refresh extends it from quenhus's
+  uBlock-Origin-dev-filter, under the same caps and drift protection as the other
+  supplemental lists. That project's bare-domains output is used rather than its
+  uBlock-syntax one, whose cosmetic half encodes Google's DOM.
+
 - Optional "plain web results only" for Google, off by default. Switches Google
   into its own Web mode (udm=14) -- ten blue links, no AI overview, no enriched
   panels. Removing the clutter at the source beats hiding it after paint: nothing

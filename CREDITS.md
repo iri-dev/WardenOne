@@ -45,6 +45,23 @@ gratefully credit the upstream projects below.
   Attribution-ShareAlike 3.0 or later (CC BY-SA 3.0+)**. WardenOne attributes
   the EasyList authors as the source of the compiled list material.
 
+## Search-result copycats
+
+- **uBlock-Origin-dev-filter** (quenhus) —
+  <https://github.com/quenhus/uBlock-Origin-dev-filter> ·
+  <https://github.com/quenhus/uBlock-Origin-dev-filter/blob/main/LICENSE>
+
+  The domain list behind "Mark answer-scraper results" is fetched at runtime from
+  this project's bare-domains output. It catalogues sites that republish Stack
+  Exchange and GitHub content to outrank the original.
+
+  WardenOne uses the domain list only. The project's uBlock-syntax outputs also
+  carry cosmetic rules written against Google's DOM; those are not used, because
+  the marker matches on result links rather than on Google's markup.
+
+  Nothing from this list is blocked. Matching results are dimmed and labelled in
+  place, and always keep a one-click way to view them.
+
 ## Notes
 
 - These lists are compiled into Chrome's Declarative Net Request (DNR) rule

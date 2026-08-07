@@ -147,6 +147,7 @@ function checkContentBuild() {
   'twitch-rewind.js',
   'twitch-vod-rewind.js',
   'cryptominer-detect.js',
+  'search-junk.js',
   'content.min.js',
   'src/content.js',
   'tools/build-content.js',
@@ -177,6 +178,7 @@ function checkContentBuild() {
   'tools/test-oauth-guard.js',
   'tools/test-cryptominer-guard.js',
   'tools/test-safe-search.js',
+  'tools/test-search-junk.js',
   'tools/test-settings-io.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
@@ -198,6 +200,7 @@ function checkContentBuild() {
   'malware-hashes.json',
   'grabber-extra.json',
   'cryptominer-domains.json',
+  'search-junk-domains.json',
   'supplemental-manifest.json',
 ].forEach(checkJson);
 
@@ -224,6 +227,7 @@ checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js'
 checkCommand('OAuth guard tests', ['tools/test-oauth-guard.js']);
 checkCommand('cryptominer guard tests', ['tools/test-cryptominer-guard.js']);
 checkCommand('SafeSearch enforcement tests', ['tools/test-safe-search.js']);
+checkCommand('search-junk marker tests', ['tools/test-search-junk.js']);
 checkCommand('settings export/import tests', ['tools/test-settings-io.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
