@@ -25,7 +25,7 @@ const KEYS = [
   'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'antiFingerprint', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
   'mediaShield', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
   'gateAdultSites', 'adultHeuristics',
-  'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'autoUpdateLists',
+  'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
   'showToasts', 'showBadge', 'silentMode',
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
   'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia',
@@ -43,7 +43,7 @@ const DEFAULTS = {
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
   eyeShieldWarmth: 0, eyeShieldWarmthByHost: {}, eyeShieldGrayscale: 0, eyeShieldGrayscaleByHost: {},
   warnRedirectParams: true, warnShorteners: true, monitorLoggerApi: true,
-  detectPhishing: true, blockHighConfidencePhishing: false, behavioralScan: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, autoUpdateLists: true,
+  detectPhishing: true, blockHighConfidencePhishing: false, behavioralScan: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, cryptominerCpuWatch: false, autoUpdateLists: true,
   showToasts: true, showBadge: true, showDownloadBar: true, silentMode: false,
   memoryShield: true, memoryMode: 'balanced', memoryMinutesOverride: 0,
   memoryNeverPinned: true, memoryNeverAudio: true, memoryNeverForms: true, memoryNeverPayment: true,
@@ -54,7 +54,9 @@ const DEFAULTS = {
   oneOpenPerGesture: true, stripTrackingParams: true, gestureWindowMs: 2400, allowlist: [],
 };
 
-const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode']);
+// cryptominerCpuWatch is here because "Turn everything on" should not quietly
+// start benchmarking the CPU on every page you visit. It is opt-in on purpose.
+const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode', 'cryptominerCpuWatch']);
 const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'antiFingerprint', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'paymentCardGuard', 'blockGeolocation']);
 
 const REPUTATION_PROVIDERS = [
