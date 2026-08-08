@@ -1675,10 +1675,15 @@ const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDG
   + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + SAFE_SEARCH_RULES_BUDGET
   + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET;
-// Guards: assert at module load that the budget fits, catching silent drift.
-if (TOTAL_DYNAMIC_BUDGET > 30000) {
-  console.error('[WardenOne] Dynamic rule budget exceeds Chrome 30k ceiling!');
-}
+// The ceiling is checked at BUILD time by tools/test-dnr-budget.js, which reads the
+// band names straight out of the expression above so a new band is covered without
+// anyone remembering to add it. A runtime console.error here could only ever repeat
+// what that assertion already proved -- in a service worker console nobody has open.
+//
+// 30,000 is why manifest.json pins minimum_chrome_version to 121: before that the
+// limit was 5,000 for dynamic and session rules combined, which this budget exceeds
+// nearly six times over. The test asserts the two together so the floor cannot be
+// lowered without the budget coming down with it.
 const RESOURCE_TYPES = ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'];
 const LIST_FETCH_TIMEOUT_MS = 12000;
 const LIST_FETCH_CONCURRENCY = 4;

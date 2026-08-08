@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "WardenOne",
   "version": "1.0.0",
+  "minimum_chrome_version": "121",
   "description": "One extension. Every defence. Blocks ads, trackers, phishing, scams, malware downloads & IP grabbers. No account, no telemetry.",
   "permissions": [
     "declarativeNetRequest",

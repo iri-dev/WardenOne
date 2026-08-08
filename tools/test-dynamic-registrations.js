@@ -68,8 +68,23 @@ const budgetExpr = budgetMatch ? budgetMatch[1] : '';
 ].forEach((name) => {
   check('dynamic rule budget counts ' + name, budgetExpr.includes(name));
 });
-check('dynamic rule budget guard checks the real total',
-  /if \(TOTAL_DYNAMIC_BUDGET > 30000\)/.test(background));
+// The ceiling check used to be a runtime `if (TOTAL_DYNAMIC_BUDGET > 30000)
+// console.error(...)` in background.js, which could only ever print into a
+// service-worker console nobody has open. It now lives in tools/test-dnr-budget.js,
+// where a breach fails the build, and where the band names are read out of the
+// TOTAL_DYNAMIC_BUDGET expression itself so a new band is covered without anyone
+// remembering to add it. The guarantee asserted here is unchanged: the REAL summed
+// total is checked against the ceiling, not a hand-copied number.
+const dnrBudgetTest = fs.readFileSync('tools/test-dnr-budget.js', 'utf8');
+check('dynamic rule budget total is asserted at build time',
+  /MAX_DYNAMIC_RULES = 30000/.test(dnrBudgetTest)
+  && /total <= MAX_DYNAMIC_RULES/.test(dnrBudgetTest));
+check('dynamic rule budget bands are read from the expression, not hand-listed',
+  /const expr = bg\.match\(/.test(dnrBudgetTest)
+  && /TOTAL_DYNAMIC_BUDGET/.test(dnrBudgetTest));
+check('dynamic rule budget is tied to minimum_chrome_version',
+  /minimum_chrome_version/.test(dnrBudgetTest)
+  && /DYNAMIC_LIMIT_SINCE_CHROME = 121/.test(dnrBudgetTest));
 
 const repairStart = background.indexOf("if (msg && msg.kind === 'verify-repair')");
 const repairBody = repairStart >= 0 ? background.slice(repairStart, background.indexOf('sendResponse(report);', repairStart)) : '';

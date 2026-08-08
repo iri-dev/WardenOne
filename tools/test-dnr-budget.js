@@ -89,4 +89,72 @@ function run() {
   console.log('[ok] DNR static rule budget within Chrome limits');
 }
 
+// The DYNAMIC budget had no build-time check at all. background.js compares its own
+// total against 30,000 and calls console.error on the way past -- in a service worker,
+// which nobody has open. Exceeding it is not silent like the static case: the
+// updateDynamicRules call rejects and the whole remote blocklist fails to apply. So
+// it is worth catching here instead.
+//
+// 30,000 is also the reason minimum_chrome_version exists. Before Chrome 121 the limit
+// was MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES = 5,000 combined, which this budget
+// exceeds nearly six times over. Lowering the floor without lowering the budget would
+// ship an extension whose main blocklist never loads, so the two are asserted together.
+const MAX_DYNAMIC_RULES = 30000;
+const DYNAMIC_LIMIT_SINCE_CHROME = 121;
+
+function numberConstant(source, name) {
+  const m = source.match(new RegExp('^const\\s+' + name + '\\s*=\\s*(\\d+)\\s*;', 'm'));
+  assert(m, 'background.js no longer declares a numeric ' + name);
+  return Number(m[1]);
+}
+
+function runDynamic() {
+  const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+
+  // Read the band names out of the TOTAL_DYNAMIC_BUDGET expression itself rather than
+  // listing them here, so a band added to that sum is covered automatically. A
+  // hand-maintained list is exactly what goes stale and then reads as headroom that
+  // is not there.
+  const expr = bg.match(/^const\s+TOTAL_DYNAMIC_BUDGET\s*=\s*([\s\S]*?);/m);
+  assert(expr, 'background.js no longer declares TOTAL_DYNAMIC_BUDGET');
+  const bands = expr[1].match(/[A-Z][A-Z0-9_]*/g) || [];
+  assert(bands.length >= 10,
+    'TOTAL_DYNAMIC_BUDGET now sums only ' + bands.length + ' bands; the parser may be reading it wrong');
+
+  let total = 0;
+  for (const band of bands) {
+    const value = numberConstant(bg, band);
+    total += value;
+    console.log('  ' + band + ': ' + value);
+  }
+
+  const headroom = MAX_DYNAMIC_RULES - total;
+  console.log('  dynamic + session budget: ' + total + ' / ' + MAX_DYNAMIC_RULES
+    + '  (headroom ' + headroom + ', across ' + bands.length + ' bands)');
+
+  assert(total <= MAX_DYNAMIC_RULES,
+    'dynamic rule budget ' + total + ' exceeds Chrome\'s ceiling of ' + MAX_DYNAMIC_RULES
+    + '. updateDynamicRules would reject and the whole remote blocklist would fail to '
+    + 'apply. Trim a band.');
+
+  if (headroom < 1000) {
+    console.log('  [warn] under 1000 rules of dynamic headroom');
+  }
+
+  // The floor that makes the 30,000 ceiling true in the first place.
+  const declared = MANIFEST.minimum_chrome_version;
+  assert(declared, 'manifest.json declares no minimum_chrome_version, but the dynamic rule '
+    + 'budget (' + total + ') relies on the 30,000 ceiling added in Chrome '
+    + DYNAMIC_LIMIT_SINCE_CHROME + '. Below that the limit is 5,000 and the blocklist '
+    + 'silently never applies.');
+  const major = Number(String(declared).split('.')[0]);
+  assert(Number.isFinite(major) && major >= DYNAMIC_LIMIT_SINCE_CHROME,
+    'minimum_chrome_version is ' + declared + ' but the dynamic rule budget (' + total
+    + ') needs the 30,000 ceiling from Chrome ' + DYNAMIC_LIMIT_SINCE_CHROME + '.');
+  console.log('  minimum_chrome_version: ' + declared + ' (>= ' + DYNAMIC_LIMIT_SINCE_CHROME + ')');
+
+  console.log('[ok] DNR dynamic rule budget within Chrome limits');
+}
+
 run();
+runDynamic();
