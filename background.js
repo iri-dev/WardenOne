@@ -125,7 +125,14 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!sender || !sender.tab || sender.tab.id == null) return;
   const tabId = sender.tab.id;
   if (msg && msg.kind === 'rg-block') {
-    if (!allowTabMessageRate(tabId, 'rg-block', 240, 60000)) return;
+    // The ceiling comes from TAB_CONTEXT_RATE_LIMITS so there is one number for this
+    // kind rather than two that can drift apart -- this call site used to hardcode a
+    // different, lower one. The bucket is deliberately NOT the same as the router's
+    // generic gate: rg-block is the only kind checked in two places, and while both
+    // charged one shared bucket every message cost two slots, so the real ceiling was
+    // half the documented one and the badge silently stopped counting mid-page.
+    const rgLimit = TAB_CONTEXT_RATE_LIMITS['rg-block'] || { max: 300, windowMs: 60000 };
+    if (!allowTabMessageRate(tabId, 'rg-block', rgLimit.max, rgLimit.windowMs)) return;
     const normalized = normalizeTabBlockMessage(msg, sender);
     // warnings (warned_*) are informational -- log them but don't inflate the
     // red "blocked" badge, which should reflect actual blocks/gates only. The
@@ -10625,7 +10632,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind && messageSenderIsTab(sender)) {
     const limit = TAB_CONTEXT_RATE_LIMITS[msg.kind];
-    if (limit && !allowTabMessageRate(sender.tab.id, msg.kind, limit.max, limit.windowMs)) {
+    // 'gate:' namespaces this coarse pre-dispatch ceiling away from any limiter a
+    // handler keeps for itself. rg-block has one (see the listener above); sharing a
+    // bucket with it meant each message was charged twice and the effective ceiling
+    // was half the table value.
+    if (limit && !allowTabMessageRate(sender.tab.id, 'gate:' + msg.kind, limit.max, limit.windowMs)) {
       try { sendResponse({ ok: false, error: 'Rate limited.' }); } catch (_) {}
       return true;
     }

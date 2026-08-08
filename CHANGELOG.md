@@ -6,6 +6,12 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Fixed the block counter giving up halfway through a busy page. Two separate
+  parts of the extension were each charging the same allowance for every block
+  reported, so the real limit was half the intended one: past about 120 blocks in
+  a minute the badge quietly stopped counting and those entries never reached
+  Activity. A tracker-heavy news front page passes that during a single load, so
+  the pages doing the most work were the ones being undercounted.
 - Refused to install on Chrome versions the blocklist cannot work on. The dynamic
   blocklist needs the 30,000-rule ceiling Chrome added in 121; below that the
   limit is 5,000 and the rules silently never apply, so the extension looked
