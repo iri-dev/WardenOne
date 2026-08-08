@@ -3494,7 +3494,22 @@
       value)=>{
         const v=String(value||"");
         if(v.length<16)return;
-        if(!(TOKEN_KEY.test(key)||TOKEN_VAL.test(v)||looksLikeJWT(v)))return;
+        /* Rate the EVIDENCE, not just the length. A JWT is unmistakable. A key
+           called access_token is a statement of intent. A long opaque string is
+           neither: it is the shape of every tracking id, cache key and page-state
+           blob on the web, so on its own it is a hint at best. */
+        const namedLikeToken=TOKEN_KEY.test(key),
+        isJwt=looksLikeJWT(v),
+        base64ish=/^ey[A-Za-z0-9_-]{8,}$/.test(v),
+        opaque=TOKEN_VAL.test(v),
+        inUrl=/^URL/.test(where);
+        let confidence=isJwt?"high":namedLikeToken?(opaque||base64ish?"high":"medium"):base64ish?"medium":opaque?"low":"";
+        if(!confidence)return;
+        /* In a URL, shape alone is not evidence. Google's own ved= and gs_lp= are
+           40+ opaque characters and neither is a credential -- counting them is
+           what made the most visited page on the internet score a D. A URL
+           finding has to carry a token-shaped key or be an actual JWT. */
+        if(inUrl&&"low"===confidence)return;
         const previewKey=where+"|"+key+"|"+v.slice(0,
         8);
         if(seenPreviews.has(previewKey))return;
@@ -3503,7 +3518,8 @@
           where:where,
           key:String(key).slice(0,
           60),
-          preview:mask(v)
+          preview:mask(v),
+          confidence:confidence
         };
         if(looksLikeJWT(v))try{
           const payload=JSON.parse(atob(v.split(".")[1].replace(/-/g,
