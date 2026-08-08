@@ -11,16 +11,16 @@
     --card: #f4ebfb;
     --card-2: #ede1f8;
     --ink: #3d2a52;
-    --ink-soft: #7a5f93;
-    --ink-faint: #a98fc0;
+    --ink-soft: #534064;
+    --ink-faint: #665674;
     --line: #e4d4f3;
     --line-2: #dac7ee;
     --grad-a: #a855d6;
     --grad-b: #d96aa2;
-    --plum: #8b3fb0;
-    --rose-deep: #c84f8b;
-    --warn: #d98b4a;
-    --rose: #d65f9a;
+    --plum: #833ca6;
+    --rose-deep: #973c69;
+    --warn: #81522c;
+    --rose: #914169;
     --shadow: 0 6px 24px rgba(120, 55, 160, 0.18);
     --shadow-sm: 0 2px 12px rgba(120, 55, 160, 0.13);
     --display: "Quicksand", "Nunito", "Segoe UI Rounded", "SF Pro Rounded", system-ui, sans-serif;
@@ -67,7 +67,7 @@
     font-weight: 600;
   }
   .credit strong {
-    color: #8b3fb0;
+    color: #833ca6;
     font-size: 11.5px;
     font-weight: 800;
   }
@@ -181,7 +181,7 @@
   .health-panel.is-warning .health-chip {
     background: rgba(217, 139, 74, 0.12);
     border-color: rgba(217, 139, 74, 0.26);
-    color: #a7672d;
+    color: #905927;
   }
   .health-panel.is-danger .health-chip {
     background: rgba(200, 79, 139, 0.12);
@@ -359,7 +359,7 @@
   .tool-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px; }
   .tool-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:9px 0; }
   .tool-actions .btn { padding:9px 10px; border-radius:11px; }
-  .btn.soft-danger { color:#b94882; background:#f1d5e8; border:1px solid #ecc2dc; }
+  .btn.soft-danger { color:#953a69; background:#f1d5e8; border:1px solid #ecc2dc; }
   .btn.soft-danger:hover { background:#edc8df; }
   .shortcut-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:9px; }
   .shortcut-grid .btn { padding:8px 9px; border-radius:999px; font-size:11px; }
@@ -395,10 +395,10 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M6 9l6 6 6-6' stroke='%237a5f93' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
   }
   .perm-pick:focus { outline: 2px solid rgba(176,111,214,.35); outline-offset: 1px; }
-  .perm-pick-allow { color: #c0392b; background-color: rgba(192,57,43,.08); border-color: rgba(192,57,43,.18); }
-  .perm-pick-block { color: #2e9e5b; background-color: rgba(46,158,91,.08); border-color: rgba(46,158,91,.18); }
+  .perm-pick-allow { color: #a93226; background-color: rgba(192,57,43,.08); border-color: rgba(192,57,43,.18); }
+  .perm-pick-block { color: #1f693d; background-color: rgba(46,158,91,.08); border-color: rgba(46,158,91,.18); }
   .perm-pick-ask { color: var(--plum); background-color: rgba(139,63,176,.08); border-color: var(--line); }
-  .perm-pick-session_only { color: #bd7a2a; background-color: rgba(207,155,74,.1); border-color: rgba(207,155,74,.22); }
+  .perm-pick-session_only { color: #80531d; background-color: rgba(207,155,74,.1); border-color: rgba(207,155,74,.22); }
   .api-config { display:grid; gap:7px; margin-top:8px; }
   .api-field {
     width:100%; border:1px solid var(--line); border-radius:8px;
@@ -454,7 +454,7 @@
 .wo-search::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
 .wo-search-ico{
   position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;
-  color:#9b76b5;pointer-events:none;transition:color .15s ease,transform .15s ease;
+  color:#8c6ba4;pointer-events:none;transition:color .15s ease,transform .15s ease;
 }
 .wo-search:focus~.wo-search-ico{color:var(--plum);transform:translateY(-50%) scale(1.04);}
 .wo-search-clear{
@@ -863,7 +863,7 @@
       <div class="desc">Trusted sources are graded more gently, but critical filename tricks and known-bad sources still trigger review.</div>
       <div class="perm-list" id="download-trust-list"></div>
       <button class="btn" id="download-trust-add-current" style="width:100%;margin-top:7px;font-size:11px;">Trust current site for downloads</button>
-      <div id="download-trust-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <div id="download-trust-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
     </div>
     </div>
 <h3>Privacy</h3>
@@ -1037,16 +1037,16 @@
       <label class="tg"><input type="checkbox" id="tl-warn"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="display:block;">
-      <div id="mem-score" style="font-size:12px;color:var(--ink-soft,#7a5f93);line-height:1.6;margin-bottom:9px;">Checking memory usage…</div>
+      <div id="mem-score" style="font-size:12px;color:var(--ink-soft,#534064);line-height:1.6;margin-bottom:9px;">Checking memory usage…</div>
       <button class="btn" id="mem-free" style="width:100%;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Free RAM now</button>
-      <div id="mem-free-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <div id="mem-free-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
       <button class="btn" id="mem-dupes" style="width:100%;margin-top:7px;">Check for duplicate tabs</button>
-      <div id="mem-dupes-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <div id="mem-dupes-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
       <div id="mem-heavy" style="margin-top:10px;font-size:11px;line-height:1.5;"></div>
       <button class="btn" id="mem-tab-usage" style="width:100%;margin-top:7px;">Show all tabs</button>
-      <div id="mem-tab-usage-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <div id="mem-tab-usage-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
       <button class="btn" id="mem-zombies" style="width:100%;margin-top:7px;">Find zombie tabs (idle 6h+)</button>
-      <div id="mem-zombies-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <div id="mem-zombies-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
     </div>
     <div class="row" style="display:block;padding-bottom:4px;">
       <div class="name" style="margin-bottom:2px;">Resource Saver</div>
@@ -1082,7 +1082,7 @@
     <div class="row" style="display:block;">
       <div class="desc" style="margin-bottom:7px;max-width:none;">One-time: log out of the current site and wipe its cookies &amp; storage right now.</div>
       <button class="btn" id="forget-now" style="width:100%;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Forget this site now</button>
-      <div id="forget-now-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#a98fc0);display:none;"></div>
+      <div id="forget-now-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
     </div>
     </div>
 <h3>Media Shield</h3>
@@ -1338,7 +1338,7 @@
       <div class="row" style="display:block;">
         <div class="name" style="margin-bottom:3px;">Emergency logout</div>
         <div class="desc" style="margin-bottom:7px;">Think you've been compromised? Clear cookies &amp; session data and sign out everywhere in one click.</div>
-        <button class="btn" id="ss-clear" style="width:100%;margin-bottom:7px;border:1px solid #f0c8da;color:#c84f8b;">Clear data for this site only</button>
+        <button class="btn" id="ss-clear" style="width:100%;margin-bottom:7px;border:1px solid #f0c8da;color:#973c69;">Clear data for this site only</button>
         <button class="btn" id="ss-panic" style="width:100%;background:linear-gradient(135deg,#d65a7a,#c0392b);color:#fff;border:none;">Log out of EVERYTHING</button>
         <div id="ss-panic-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>

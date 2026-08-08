@@ -6,6 +6,13 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Made the popup's status text readable. Error, warning and secondary text was
+  too light against the panels it sits on -- the "could not reach the breach
+  database" line, the extension-review list and the session grade all fell below
+  the contrast level text needs to be legible, and the worst of them was less
+  than half of it. Every colour that carries text is now dark enough on every
+  surface it can land on, and the faint/soft/solid text steps still read as three
+  distinct levels rather than collapsing into one.
 - Stopped settings quietly reverting when something else changed them while the
   popup was open. The popup kept its own copy of every setting for as long as it
   was open and wrote that whole copy back on each change, so anything altered in
