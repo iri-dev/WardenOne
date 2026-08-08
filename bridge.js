@@ -193,6 +193,72 @@
   let bridgeConfig = {};
   let bridgeConfigReady = false;
 
+  // ---- Shared DOM watcher ----
+  // Smart Script Shield, Script Drift and the Login Page Age check each ran their
+  // own whole-document subtree MutationObserver, two of them for a full 60 seconds
+  // on every top-level page. That fired three separate extension callbacks for every
+  // mutation batch during the busiest minute of a page's life -- all to answer the
+  // same question: did the DOM change?
+  //
+  // They share one observer now. Subscribers are deliberately independent: one
+  // unsubscribing must never stop the others, so the observer is disconnected only
+  // when the LAST subscriber leaves, and reconnected if one arrives afterwards
+  // (Smart Script Shield re-arms on popstate/hashchange, long after the others are
+  // finished). Records are passed through because Script Drift reads addedNodes.
+  const domWatchers = new Set();
+  let domObserver = null;
+  let domWatchPending = false;
+
+  function domWatchStart() {
+    if (domObserver || !domWatchers.size) return;
+    const root = document.documentElement;
+    if (!root) {
+      // A document whose element is not up yet at document_start. Try once more.
+      if (domWatchPending) return;
+      domWatchPending = true;
+      try {
+        document.addEventListener('DOMContentLoaded', () => {
+          domWatchPending = false;
+          domWatchStart();
+        }, { once: true });
+      } catch (_) { domWatchPending = false; }
+      return;
+    }
+    try {
+      domObserver = new MutationObserver((records) => {
+        // Snapshot the set: a subscriber may unsubscribe from inside its own
+        // callback (the login-age watcher does), and one throwing must not stop the
+        // rest from being told.
+        for (const fn of Array.from(domWatchers)) {
+          try { fn(records); } catch (_) {}
+        }
+      });
+      domObserver.observe(root, { childList: true, subtree: true });
+    } catch (_) {
+      domObserver = null;
+    }
+  }
+
+  function domWatchStop() {
+    if (!domObserver) return;
+    try { domObserver.disconnect(); } catch (_) {}
+    domObserver = null;
+  }
+
+  // Returns an unsubscribe function. Safe to call more than once.
+  function domWatch(fn) {
+    if (typeof fn !== 'function') return function () {};
+    domWatchers.add(fn);
+    domWatchStart();
+    let released = false;
+    return function () {
+      if (released) return;
+      released = true;
+      domWatchers.delete(fn);
+      if (!domWatchers.size) domWatchStop();
+    };
+  }
+
   // Smart Script Shield recovery is deliberately driven by this isolated-world
   // signal, not by a page-visible CustomEvent. The evidence is intentionally
   // narrow: an actual video, a recognised player library root, or a media-route
@@ -202,7 +268,7 @@
   let smartPlayerLastSignalAt = 0;
   let smartPlayerScanCount = 0;
   let smartPlayerScanTimer = null;
-  let smartPlayerObserver = null;
+  let smartPlayerUnwatch = null;
   let smartPlayerObserverGeneration = 0;
   let smartPlayerHeartbeat = null;
   const SMART_PLAYER_HEARTBEAT_MAX = 15;
@@ -250,9 +316,9 @@
     if (!bridgeRateOk('smart-player-context', 4, 120000)) return true;
     smartPlayerLastSignalAt = now;
     try { chrome.runtime.sendMessage({ kind: 'smart-player-context', evidence }); } catch (_) {}
-    if (smartPlayerObserver) {
-      try { smartPlayerObserver.disconnect(); } catch (_) {}
-      smartPlayerObserver = null;
+    if (smartPlayerUnwatch) {
+      smartPlayerUnwatch();
+      smartPlayerUnwatch = null;
     }
     if (!smartPlayerHeartbeat) {
       // Bounded on purpose. bridge.js runs in EVERY frame, so an unbounded beat
@@ -285,20 +351,18 @@
     smartPlayerLastSignalAt = 0;
     smartPlayerScanCount = 0;
     scheduleSmartPlayerScan(0);
-    if (smartPlayerObserver) {
-      try { smartPlayerObserver.disconnect(); } catch (_) {}
-      smartPlayerObserver = null;
+    if (smartPlayerUnwatch) {
+      smartPlayerUnwatch();
+      smartPlayerUnwatch = null;
     }
     const generation = ++smartPlayerObserverGeneration;
-    try {
-      smartPlayerObserver = new MutationObserver(() => scheduleSmartPlayerScan(120));
-      const observeRoot = document.documentElement || document;
-      smartPlayerObserver.observe(observeRoot, { childList: true, subtree: true });
-    } catch (_) {}
+    smartPlayerUnwatch = domWatch(() => scheduleSmartPlayerScan(120));
     setTimeout(() => {
-      if (generation !== smartPlayerObserverGeneration || !smartPlayerObserver) return;
-      try { smartPlayerObserver.disconnect(); } catch (_) {}
-      smartPlayerObserver = null;
+      // The generation check keeps a stale timer from tearing down the subscription
+      // a later re-arm just created.
+      if (generation !== smartPlayerObserverGeneration || !smartPlayerUnwatch) return;
+      smartPlayerUnwatch();
+      smartPlayerUnwatch = null;
     }, 20000);
     return true;
   }
@@ -1077,7 +1141,7 @@
       else scheduleScriptDriftScan(1000);
       document.addEventListener('wo-bridge-config-ready', () => scheduleScriptDriftScan(300), { once: true });
       try {
-        const mo = new MutationObserver((muts) => {
+        const driftUnwatch = domWatch((muts) => {
           if (!scriptDriftGuardOn()) return;
           for (const mut of muts || []) {
             const added = (mut && mut.addedNodes) || [];
@@ -1090,12 +1154,7 @@
             }
           }
         });
-        const start = () => {
-          try { if (document.documentElement) mo.observe(document.documentElement, { childList: true, subtree: true }); } catch (_) {}
-        };
-        if (document.documentElement) start();
-        else document.addEventListener('DOMContentLoaded', start, { once: true });
-        setTimeout(() => { try { mo.disconnect(); } catch (_) {} }, 60000);
+        setTimeout(driftUnwatch, 60000);
       } catch (_) {}
     }
   } catch (_) {}
@@ -1311,17 +1370,17 @@
       document.addEventListener('wo-bridge-config-ready', laCheck, { once: true });
       try {
         let laP = false;
-        const laMo = new MutationObserver(() => {
-          // PERF (weak machines): a login form appears within the first seconds of
-          // load; once we've checked (or shown a warning) stop watching the whole
-          // document subtree forever. Mirrors the Script-Drift guard's self-disconnect.
-          if (laChecked || laShown) { try { laMo.disconnect(); } catch (_) {} return; }
+        // PERF (weak machines): a login form appears within the first seconds of
+        // load, so once we've checked (or shown a warning) stop watching. Releasing
+        // this subscription no longer stops the other guards -- the shared observer
+        // stays connected while anyone else is still listening.
+        const laUnwatch = domWatch(() => {
+          if (laChecked || laShown) { laUnwatch(); return; }
           if (laP) return;
           laP = true;
           setTimeout(() => { laP = false; laCheck(); }, 600);
         });
-        laMo.observe(document.documentElement, { childList: true, subtree: true });
-        setTimeout(() => { try { laMo.disconnect(); } catch (_) {} }, 60000);
+        setTimeout(laUnwatch, 60000);
       } catch (_) {}
     }
   } catch (_) {}
