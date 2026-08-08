@@ -118,8 +118,27 @@ disclose rather than under-report. Based on the code:
   user-initiated, third-party transmissions, describe them exactly as the privacy policy
   does. Leaning toward disclosure here is the safer path.
 
-**Privacy policy URL:** host `PRIVACY.md` (e.g., GitHub Pages, a gist, or your site) and
-paste the public URL into the dashboard's Privacy policy field.
+**Privacy policy URL — paste this into the dashboard's Privacy policy field:**
+
+> <https://iri-dev.github.io/WardenOne/PRIVACY>
+
+GitHub Pages serves it from `main`, so the hosted page IS `PRIVACY.md` — there is no
+second copy to drift out of date. Edit the file, push, and the URL updates itself.
+
+---
+
+## Screenshots
+
+`docs/store/` holds all seven at exactly **1280×800**, which is one of the two sizes the
+Web Store accepts (the other is 640×400). The originals in `docs/` are various shapes and
+none of them are a valid size, so upload from `docs/store/`, not `docs/`.
+
+Each was scaled to fit and centred, never upscaled, and the padding is filled with that
+screenshot's own corner colour so it blends instead of showing a border. The listing takes
+up to five; `popup.png`, `site-blocked.png`, `onboarding.png`, `redirect.png` and
+`permissions.png` cover the most ground.
+
+`docs/` is `export-ignore`d, so none of this reaches the packaged `.zip`.
 
 ---
 
