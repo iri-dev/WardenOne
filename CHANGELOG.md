@@ -6,6 +6,14 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Stopped settings quietly reverting when something else changed them while the
+  popup was open. The popup kept its own copy of every setting for as long as it
+  was open and wrote that whole copy back on each change, so anything altered in
+  the meantime was undone — running Repair and then flipping one switch put the
+  settings Repair had just cleaned up straight back. It now re-reads your saved
+  settings at the moment it writes and only changes the ones you actually
+  touched, and it picks up changes made elsewhere instead of showing you a value
+  that is no longer true.
 - Stopped "Suspicious site behavior" firing on everyday sites. Loading a
   cross-site asset before your first click and measuring the canvas is what
   every large site does, so those signals no longer raise a warning on their
