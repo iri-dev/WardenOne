@@ -1900,34 +1900,136 @@ function runSessionScan(isAuto) {
 }
 
 // Compute an overall Session Security grade + risk from real signals.
+//
+// The previous version got two things wrong, and both made it dishonest:
+//
+//  1. Every finding counted the same. A JWT sitting in localStorage and a
+//     40-character analytics blob in a URL cost identical points, even though
+//     one is a credential and the other is how half the web passes page state.
+//     Google Search scored D on the strength of ved= and gs_lp=.
+//  2. It could only ever subtract. A site doing everything right -- HttpOnly,
+//     Secure and SameSite on every session cookie -- landed on exactly the same
+//     100 as a site with no session at all. There was no way to be good, only
+//     ways to be unpunished, and the cookie counts we already collect went
+//     completely unused.
+//
+// So findings now carry a confidence from the scanner, penalties scale with that
+// confidence AND with where the token lives, pages that actually take credentials
+// weigh heavier, and real cookie hygiene earns points back.
 function computeScore(data, cookies) {
-  // start at 100, subtract for each weakness; map to a letter + risk.
-  let score = 100;
   const reasons = [];
-  if (!data || !data.onHttps) { score -= 40; reasons.push('Connection is not HTTPS'); }
-  // tokens exposed in the URL are the worst (leak via history/referrer/sharing)
-  const urlTokens = data && data.findings ? data.findings.filter((f) => /URL/.test(f.where)).length : 0;
-  if (urlTokens > 0) { score -= 25; reasons.push(urlTokens + ' token(s) exposed in the URL'); }
-  // tokens readable in storage/JS at all
-  const jsTokens = data ? (data.tokenCount || 0) - urlTokens : 0;
-  if (jsTokens > 0) { score -= Math.min(15, jsTokens * 5); reasons.push(jsTokens + ' token(s) readable by scripts'); }
-  // long-lived JWTs
-  const longJwt = data && data.findings ? data.findings.filter((f) => f.jwt && f.jwt.longLived).length : 0;
-  if (longJwt > 0) { score -= 8; reasons.push('Long-lived token (>7 days)'); }
-  // real cookie flags
-  if (cookies && cookies.sessionLike > 0) {
-    if (cookies.weak && cookies.weak.length) { score -= Math.min(20, cookies.weak.length * 7); reasons.push(cookies.weak.length + ' session cookie(s) missing HttpOnly/Secure'); }
+  const credits = [];
+  const findings = (data && Array.isArray(data.findings)) ? data.findings : [];
+  // Findings from before this scanner shipped have no confidence; a JWT is still
+  // unmistakable, everything else is treated as the weak signal it is.
+  const confOf = (f) => f.confidence || (f.jwt && !f.jwt.malformed ? 'high' : 'low');
+  const isUrl = (f) => /^URL/.test(f.where || '');
+
+  const ck = cookies || null;
+  const sessionCookies = ck ? (ck.sessionLike || 0) : 0;
+  const weakCookies = (ck && Array.isArray(ck.weak)) ? ck.weak.length : 0;
+  const solidFindings = findings.filter((f) => confOf(f) !== 'low');
+
+  // Grading "session security" on a page with no session is how a logged-out
+  // news site ends up wearing a scary letter. Say so instead.
+  const hasSession = sessionCookies > 0 || solidFindings.length > 0;
+  const sensitive = !!(data && data.isSensitivePage);
+
+  let score = 100;
+
+  if (!data || !data.onHttps) { score -= 45; reasons.push('Connection is not HTTPS'); }
+
+  // A token in the URL is the worst case: it lands in browser history, in the
+  // Referer header, and in every link the user ever pastes to someone. In storage
+  // it is at least confined to script on that origin.
+  const WEIGHT = {
+    high: { url: 30, store: 12 },
+    medium: { url: 16, store: 6 },
+    low: { url: 0, store: 2 },
+  };
+  let urlPenalty = 0, storePenalty = 0, urlHits = 0, storeHits = 0;
+  findings.forEach((f) => {
+    const w = WEIGHT[confOf(f)] || WEIGHT.low;
+    if (isUrl(f)) { if (w.url) { urlPenalty += w.url; urlHits++; } }
+    else if (w.store) { storePenalty += w.store; storeHits++; }
+  });
+  urlPenalty = Math.min(40, urlPenalty);
+  storePenalty = Math.min(24, storePenalty);
+  // Mishandling a credential on the page that asks for one is worse than doing it
+  // on a blog, so the same evidence costs more there.
+  if (sensitive) {
+    urlPenalty = Math.round(urlPenalty * 1.4);
+    storePenalty = Math.round(storePenalty * 1.3);
   }
-  // login page with third-party scripts
-  if (data && data.isSensitivePage && data.thirdPartyScripts && data.thirdPartyScripts.length > 2) { score -= 6; reasons.push(data.thirdPartyScripts.length + ' third-party scripts on a login page'); }
+  if (urlHits) {
+    score -= urlPenalty;
+    reasons.push(urlHits + ' credential-shaped value(s) in the URL' + (sensitive ? ' on a sign-in page' : ''));
+  }
+  if (storeHits) {
+    score -= storePenalty;
+    reasons.push(storeHits + ' token(s) readable by scripts');
+  }
+
+  const jwts = findings.filter((f) => f.jwt && !f.jwt.malformed);
+  if (jwts.some((f) => f.jwt.longLived)) { score -= 8; reasons.push('Token stays valid for more than 7 days'); }
+  if (jwts.some((f) => f.jwt.exp == null)) { score -= 6; reasons.push('Token has no expiry'); }
+  if (jwts.some((f) => f.jwt.expired)) { score -= 3; reasons.push('An expired token is still stored'); }
+
+  // Cookie hygiene is the one place a site can EARN points, because these flags
+  // are unambiguous: either the browser is told to protect the cookie or it is not.
+  if (ck && ck.total > 0 && sessionCookies > 0) {
+    if (weakCookies) {
+      // Judge WHICH flag is missing rather than counting cookies. Missing
+      // HttpOnly means any injected script can read the session outright;
+      // missing Secure means it can travel in clear text. They are different
+      // failures and a flat per-cookie number priced both too cheaply -- two
+      // cookies with neither flag used to still earn a B.
+      let cookiePenalty = 0;
+      const missing = { httpOnly: 0, secure: 0 };
+      ck.weak.forEach((c) => {
+        if (!c.httpOnly) { cookiePenalty += 9; missing.httpOnly++; }
+        if (!c.secure) { cookiePenalty += 7; missing.secure++; }
+      });
+      score -= Math.min(34, cookiePenalty);
+      if (missing.httpOnly) reasons.push(missing.httpOnly + ' session cookie(s) readable by scripts (no HttpOnly)');
+      if (missing.secure) reasons.push(missing.secure + ' session cookie(s) can be sent unencrypted (no Secure)');
+    } else {
+      score += 6;
+      credits.push('Session cookies are HttpOnly and Secure');
+    }
+    const sameSiteRatio = (ck.sameSite || 0) / ck.total;
+    if (sameSiteRatio < 0.5) { score -= 6; reasons.push('Most cookies carry no SameSite restriction'); }
+    else if (sameSiteRatio >= 0.9) { score += 3; credits.push('Cookies set SameSite'); }
+  }
+
+  const tps = (data && Array.isArray(data.thirdPartyScripts)) ? data.thirdPartyScripts.length : 0;
+  if (sensitive && tps > 2) {
+    score -= Math.min(12, (tps - 2) * 3);
+    reasons.push(tps + ' third-party scripts on a sign-in page');
+  }
+
   score = Math.max(0, Math.min(100, score));
+
+  // A letter on its own reads as an accusation. Every grade leaves here with at
+  // least one line explaining itself, so the view never has to invent one.
+  if (!reasons.length && !credits.length) {
+    credits.push(hasSession ? 'Nothing exposed that we can see' : 'No sign-in detected on this page');
+  }
+
+  // Whatever else it does right, a page carrying a live session over plain HTTP
+  // is readable by anyone on the network, so it cannot be called low risk.
+  let capped = false;
+  if (hasSession && data && !data.onHttps && score > 45) { score = 45; capped = true; }
+
   let grade, risk, riskColor;
   if (score >= 90) { grade = 'A'; risk = 'Low Risk'; riskColor = '#2e9e5b'; }
   else if (score >= 78) { grade = 'B'; risk = 'Low Risk'; riskColor = '#2e9e5b'; }
   else if (score >= 65) { grade = 'C'; risk = 'Medium Risk'; riskColor = '#bd7a2a'; }
   else if (score >= 50) { grade = 'D'; risk = 'Medium Risk'; riskColor = '#bd7a2a'; }
   else { grade = 'F'; risk = 'High Risk'; riskColor = '#c0392b'; }
-  return { score, grade, risk, riskColor, reasons };
+  if (!hasSession && score >= 78) { risk = 'No sign-in detected'; riskColor = '#7a6b8a'; }
+
+  return { score, grade, risk, riskColor, reasons, credits, hasSession, capped };
 }
 
 function gradeColor(g) {
@@ -2043,6 +2145,22 @@ function renderUpdateGuardian() {
 // URL tokens require a navigation) -- those route to sign-out / Emergency logout.
 function clearFinding(f, rowEl, btnEl) {
   if (btnEl) { btnEl.disabled = true; }
+  const markCleared = (ok) => finishClear(ok, rowEl, btnEl, f);
+
+  // A readable cookie is not reachable from page script the way storage is --
+  // deleting it has to go through the cookies API in the background.
+  if (/^cookie/i.test(f.where)) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs && tabs[0] && tabs[0].url;
+      if (!url) { markCleared(false); return; }
+      chrome.runtime.sendMessage({ kind: 'clear-exposed-tokens', url, items: [{ where: f.where, key: f.key }] }, (r) => {
+        void chrome.runtime.lastError;
+        markCleared(!!(r && r.ok && r.cleared));
+      });
+    });
+    return;
+  }
+
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
     if (!tab || !tab.id) return;
@@ -2054,25 +2172,83 @@ function clearFinding(f, rowEl, btnEl) {
           if (where === 'localStorage') localStorage.removeItem(key);
           else if (where === 'sessionStorage') sessionStorage.removeItem(key);
           else if (where === 'window.name') { try { window.name = ''; } catch (_) {} }
+          else if (/^URL/.test(where)) {
+            // The value is already in history and in any referrer already sent --
+            // that cannot be recalled. What this does is stop it being handed to
+            // every future request and every link the user copies from here.
+            const u = new URL(location.href);
+            if (/hash/i.test(where)) {
+              const h = new URLSearchParams(u.hash.replace(/^#/, ''));
+              h.delete(key);
+              u.hash = h.toString() ? '#' + h.toString() : '';
+            } else {
+              u.searchParams.delete(key);
+            }
+            history.replaceState(null, '', u.toString());
+          }
           return true;
         } catch (_) { return false; }
       },
       args: [f.where, f.key],
     }, (res) => {
-      const ok = res && res[0] && res[0].result;
-      if (ok && rowEl) {
-        // collapse the row to show it's gone
-        rowEl.style.transition = 'opacity .2s';
-        rowEl.style.opacity = '0.45';
-        const done = document.createElement('div');
-        done.style.cssText = 'font-size:9.5px;color:#2e9e5b;font-weight:700;margin-top:4px;';
-        done.textContent = 'Removed';
-        rowEl.appendChild(done);
-        if (btnEl) btnEl.style.display = 'none';
-      } else if (btnEl) {
-        btnEl.disabled = false;
-        btnEl.title = 'Could not remove (page may block it)';
+      markCleared(!!(res && res[0] && res[0].result));
+    });
+  });
+}
+
+function finishClear(ok, rowEl, btnEl, f) {
+  if (ok && rowEl) {
+    // collapse the row to show it's gone
+    rowEl.style.transition = 'opacity .2s';
+    rowEl.style.opacity = '0.45';
+    const done = document.createElement('div');
+    done.style.cssText = 'font-size:9.5px;color:#2e9e5b;font-weight:700;margin-top:4px;';
+    // A URL value is not deleted, it is stopped from travelling any further --
+    // history and any referrer already sent are gone for good.
+    done.textContent = (f && /^URL/.test(f.where)) ? 'Removed from the address bar' : 'Removed';
+    rowEl.appendChild(done);
+    if (btnEl) btnEl.style.display = 'none';
+  } else if (btnEl) {
+    btnEl.disabled = false;
+    btnEl.title = 'Could not remove (page may block it)';
+  }
+}
+
+// The only real way to hide a credential from page script. HttpOnly is enforced
+// by the browser: document.cookie stops returning the value, but the cookie is
+// still attached to requests, so the site keeps working and injected script has
+// nothing to steal.
+//
+// It cannot be done for localStorage, and no amount of cleverness changes that:
+// the site's own auth code and an injected script run in the same origin with
+// the same APIs, so anything that hides the token from one hides it from both.
+// For storage the honest defence is the one already shipped -- watch where the
+// token is being SENT, not who read it.
+function hardenSiteCookies(btnEl, statusEl) {
+  if (!confirm('Hide this site\'s session cookies from page scripts?\n\n'
+    + 'They keep working — the browser still sends them — but scripts on the page can no longer read them.\n\n'
+    + 'CSRF tokens are skipped, because sites are meant to read those.\n'
+    + 'The site can undo this the next time it sets the cookie.')) return;
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Hiding…'; }
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const url = tabs && tabs[0] && tabs[0].url;
+    chrome.runtime.sendMessage({ kind: 'harden-site-cookies', url }, (r) => {
+      void chrome.runtime.lastError;
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Hide session cookies from scripts'; }
+      if (!statusEl) return;
+      statusEl.style.display = 'block';
+      if (!r || !r.ok) {
+        statusEl.style.color = '#c0392b';
+        statusEl.textContent = (r && r.error) || 'Could not change the cookies.';
+        return;
       }
+      const bits = [];
+      if (r.hardened) bits.push(r.hardened + ' cookie' + (r.hardened > 1 ? 's' : '') + ' now hidden from scripts');
+      if (r.skippedCsrf) bits.push(r.skippedCsrf + ' CSRF cookie' + (r.skippedCsrf > 1 ? 's' : '') + ' left alone on purpose');
+      if (!r.hardened && !r.skippedCsrf) bits.push('Nothing to change — no readable session cookies here.');
+      statusEl.style.color = r.hardened ? '#2e9e5b' : 'var(--ink-faint,#a98fc0)';
+      statusEl.textContent = bits.join(' · ');
+      if (r.hardened) setTimeout(() => runSessionScan(true), 500);
     });
   });
 }
@@ -2198,6 +2374,14 @@ function renderSession(out, data, cookies) {
   t2.style.cssText = 'font-weight:700;font-size:11.5px;margin-top:2px;color:' + sc.riskColor + ';';
   t2.textContent = sc.risk;
   info.appendChild(t2);
+  // Say what the site did WELL, not only what it got wrong. A grade with no
+  // explanation reads as an accusation; this is the difference between "D" and
+  // "D, because your session token is in the address bar".
+  const why = (sc.reasons && sc.reasons.length) ? sc.reasons[0] : (sc.credits[0] || '');
+  const t3 = document.createElement('div');
+  t3.style.cssText = 'font-size:10.5px;margin-top:3px;color:var(--ink-faint,#a98fc0);line-height:1.4;';
+  t3.textContent = sc.capped ? 'Signed in over plain HTTP — anyone on this network can read it' : why;
+  info.appendChild(t3);
   card.appendChild(info);
   out.appendChild(card);
 
@@ -2298,7 +2482,12 @@ function renderSession(out, data, cookies) {
       let accent = '#b89ad8';
       if (inUrl) accent = '#d65a7a';
       else if (j && (j.expired || j.longLived)) accent = '#cf9b4a';
-      const canClear = /storage/i.test(f.where) || /window\.name/.test(f.where);
+      // Everything the scan can find, it can now act on. Cookies go through the
+      // cookies API, URL values are stripped from the address bar. Previously
+      // only storage had a button, which meant the two most exposed places -- a
+      // readable cookie and the URL itself -- were the two you could not clear.
+      const canClear = /storage/i.test(f.where) || /window\.name/.test(f.where)
+        || /^cookie/i.test(f.where) || /^URL/.test(f.where);
 
       const row = document.createElement('div');
       row.style.cssText = 'position:relative;margin:7px 0 0;padding:10px 12px 10px 15px;background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(140,70,175,.07);';
@@ -2389,8 +2578,28 @@ function renderSession(out, data, cookies) {
       body.appendChild(clrAll);
       const note = document.createElement('div');
       note.style.cssText = 'font-size:9.5px;color:var(--ink-faint,#a98fc0);margin-top:5px;line-height:1.5;';
-      note.textContent = 'Removes tokens stored in local/session storage. Cookie & URL tokens are cleared by signing out or via Emergency logout below.';
+      note.textContent = 'Removes tokens stored in local/session storage, which may sign you out. Cookies and URL values have their own button on each row.';
       body.appendChild(note);
+    }
+
+    // Hiding beats clearing: clearing a session signs you out, hiding it leaves
+    // you signed in. Only offered when there is actually a readable cookie to
+    // hide, because it is the one place where hiding is possible at all.
+    const readableCookies = data.findings.filter((f) => /^cookie/i.test(f.where));
+    if (readableCookies.length && data.onHttps) {
+      const harden = document.createElement('button');
+      harden.className = 'btn';
+      harden.style.cssText = 'width:100%;margin-top:9px;font-size:11.5px;border:1px solid #cbb6e6;color:#7a4fb0;';
+      harden.textContent = 'Hide session cookies from scripts';
+      const hstatus = document.createElement('div');
+      hstatus.style.cssText = 'display:none;font-size:10px;margin-top:5px;line-height:1.5;';
+      harden.addEventListener('click', () => hardenSiteCookies(harden, hstatus));
+      body.appendChild(harden);
+      body.appendChild(hstatus);
+      const hnote = document.createElement('div');
+      hnote.style.cssText = 'font-size:9.5px;color:var(--ink-faint,#a98fc0);margin-top:5px;line-height:1.5;';
+      hnote.textContent = 'Marks them HttpOnly, so the browser still sends them but page scripts can no longer read them — you stay signed in. CSRF cookies are skipped. The site can undo it next time it sets the cookie.';
+      body.appendChild(hnote);
     }
   }
 
