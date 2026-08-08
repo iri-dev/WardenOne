@@ -6173,6 +6173,147 @@
         error:String(e)
       })
     }
+    /* Insecure sign-in guard.
+       Paste protection already warned about PASTING a secret into an http page,
+       but typing a password got nothing at all -- which is how almost everyone
+       enters one. The browser's own "Not secure" chip is easy to miss and says
+       nothing about what is at stake, so this says it plainly, at the moment the
+       field is focused and before a single character is typed.
+       Two situations, and the second is the nastier one because the padlock is
+       showing: the page itself is http, or the page is https but the form posts
+       to an http URL, so the credential is downgraded on submit. */
+    if(WO.insecureLoginGuard!==!1)try{
+      const host=String(location.hostname||"").toLowerCase(),
+      /* A router, NAS or printer on the LAN is reached over http because there
+         IS no https alternative, so warning there is pure noise. The paste guard
+         only excludes loopback, which would have made every 192.168.x.x admin
+         page nag. Anything without a dot is an intranet name for the same reason. */
+      isLocalNetworkHost=/^(localhost|[^.]+|.*\.local|.*\.internal|.*\.home\.arpa|127(?:\.\d{1,3}){0,3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|\[?::1\]?)$/i.test(host),
+      pageIsInsecure="http:"===location.protocol&&!isLocalNetworkHost,
+      formDowngrades=el=>{
+        try{
+          const form=el&&el.closest?el.closest("form"):null;
+          if(!form)return!1;
+          const action=form.getAttribute("action")||"";
+          if(!action)return!1;
+          return"http:"===new URL(action,location.href).protocol&&!isLocalNetworkHost
+        }
+        catch(_){
+          return!1
+        }
+
+      };
+      let insecureWarned=!1;
+      const dismissInsecure=()=>{
+        try{
+          const old=document.getElementById("wo-insecure-login");
+          old&&old.remove()
+        }
+        catch(_){
+
+        }
+
+      },
+      showInsecureSignIn=downgraded=>{
+        try{
+          if(dismissInsecure(),!document.body&&!document.documentElement)return;
+          const wrap=document.createElement("div");
+          wrap.id="wo-insecure-login",
+          wrap.setAttribute("style",
+          "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:460px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
+          const tag=document.createElement("div");
+          tag.setAttribute("style",
+          "display:inline-block!important;background:rgba(192,57,43,.14)!important;color:#c0392b!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:11px!important;letter-spacing:.04em!important;text-transform:uppercase!important;padding:3px 9px!important;border-radius:8px!important;margin:0 0 8px 0!important;"),
+          tag.textContent="Stop  -  this sign-in is not secure",
+          wrap.appendChild(tag);
+          const title=document.createElement("div");
+          title.setAttribute("style",
+          "font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:15px!important;color:#3d2a52!important;margin:0 0 6px 0!important;line-height:1.35!important;"),
+          title.textContent=downgraded?"This form sends your password unencrypted":"You are about to sign in over an unencrypted connection",
+          wrap.appendChild(title);
+          const body=document.createElement("div");
+          body.setAttribute("style",
+          "font-size:12.5px!important;color:#4a3a5c!important;line-height:1.55!important;margin:0 0 12px 0!important;"),
+          body.textContent=downgraded?"The padlock on this page is real, but the form posts to a plain http:// address. Your password would leave this page in the clear, and anyone between you and the site could read it.":"Anything you type here travels in plain text. Anyone on this network  -  the cafe wifi, the hotel, your ISP  -  can read your password as you send it.",
+          wrap.appendChild(body);
+          const row=document.createElement("div");
+          row.setAttribute("style",
+          "display:flex!important;gap:8px!important;flex-wrap:wrap!important;");
+          const mkBtn=(text,primary)=>{
+            const b=document.createElement("button");
+            return b.setAttribute("type",
+            "button"),
+            b.setAttribute("style",
+            "all:initial!important;cursor:pointer!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;padding:8px 14px!important;border-radius:10px!important;"+(primary?"background:#c0392b!important;color:#fff!important;":"background:rgba(122,95,147,.12)!important;color:#4a3a5c!important;")),
+            b.textContent=text,
+            b
+          };
+          if(!downgraded){
+            const go=mkBtn("Try the secure version",
+            !0);
+            go.addEventListener("click",
+            ()=>{
+              try{
+                const u=new URL(location.href);
+                u.protocol="https:",
+                location.replace(u.toString())
+              }
+              catch(_){
+
+              }
+
+            }),
+            row.appendChild(go)
+          }
+          /* There is always a way through. A warning that traps someone is one
+             they will learn to route around, and we can be wrong -- an internal
+             site on a plain hostname, a captive portal, a device we did not
+             recognise as local. Say plainly that it is a bad idea and then let
+             them decide; do not make the choice for them. */
+          const stay=mkBtn("Continue anyway  -  not recommended",
+          !1);
+          stay.addEventListener("click",
+          dismissInsecure),
+          row.appendChild(stay),
+          wrap.appendChild(row);
+          const foot=document.createElement("div");
+          foot.setAttribute("style",
+          "font-size:11px!important;color:#7a5f93!important;line-height:1.5!important;margin:10px 0 0 0!important;"),
+          foot.textContent=downgraded?"If this is your own site, the form's action should start with https://.":"If you continue, avoid reusing this password anywhere else.",
+          wrap.appendChild(foot),
+          (document.body||document.documentElement).appendChild(wrap)
+        }
+        catch(_){
+
+        }
+
+      };
+      document.addEventListener("focusin",
+      e=>{
+        try{
+          const el=e&&e.target;
+          if(!el||"INPUT"!==el.tagName||"password"!==String(el.type||"").toLowerCase())return;
+          if(insecureWarned)return;
+          const downgraded=!pageIsInsecure&&formDowngrades(el);
+          if(!pageIsInsecure&&!downgraded)return;
+          insecureWarned=!0,
+          showInsecureSignIn(downgraded),
+          log("warned_insecure_login",
+          {
+            host:location.hostname,
+            why:downgraded?"form posts to http":"page served over http"
+          })
+        }
+        catch(_){
+
+        }
+
+      },
+      !0)
+    }
+    catch(e){
+
+    }
     if(WO.pasteProtection)try{
       const regHost=h=>String(h||"").replace(/^www\./,
       "").toLowerCase(),

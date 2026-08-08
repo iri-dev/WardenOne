@@ -637,6 +637,9 @@ const DEFAULT_CONFIG = {
   // Opt-in: unconditional HTTPS rewriting can break HTTP-only campus services,
   // captive portals, and local OAuth callbacks.
   forceHttps: false,
+  // Warns before you type a password into an http:// page. On by default: local
+  // network addresses are excluded, so it has nothing to be noisy about.
+  insecureLoginGuard: true,
   certificateGuard: true,
   // Opt-in: this is the one protection that would tell an outside party something
   // about where you browse. On a visible password field it sends that site's
@@ -9843,7 +9846,7 @@ const HEALTH_SHIELD_KEYS = [
   'adShield', 'scriptletEngine', 'twitchAdBlock', 'sendPrivacySignals', 'fingerprintProbeDetection',
   'blockFingerprintScripts', 'antiFingerprint', 'blockThirdPartyCookies', 'blockFirstPartyTrackers',
   'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard',
-  'forceHttps', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing',
+  'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing',
   'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank',
   'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect',
   'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector',
@@ -12034,7 +12037,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (CSRF_NAME.test(name)) { skippedCsrf++; continue; }
           try {
             const set = {
-              url: 'https://' + c.domain.replace(/^\./, '') + (c.path || '/'),
+              url: (c.secure ? 'https://' : 'https://') + c.domain.replace(/^\./, '') + (c.path || '/'),
               name: c.name,
               value: c.value,
               path: c.path || '/',

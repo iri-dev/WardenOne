@@ -700,6 +700,10 @@
       <label class="tg"><input type="checkbox" data-key="forceHttps"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name">Warn before an insecure sign-in</div><div class="desc">Stops you the moment you click into a password box on an unencrypted page, before you've typed anything, and offers the secure version of the site. Also catches the sneakier case: a page showing a padlock whose form still posts over plain http. Router and other local-network logins are left alone.</div></div>
+      <label class="tg"><input type="checkbox" data-key="insecureLoginGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
       <div><div class="name">Block bad certificates</div><div class="desc">Show a WardenOne trust block when Chrome reports expired, revoked, self-signed, hostname-mismatch, or broken TLS certificates.</div></div>
       <label class="tg"><input type="checkbox" data-key="certificateGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
