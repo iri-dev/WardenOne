@@ -427,7 +427,7 @@ function syncJsShieldUI(res) {
 function loadJsShieldState() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const url = (tabs[0] && tabs[0].url) || '';
-    chrome.runtime.sendMessage({ kind: 'get-javascript-state', url }, (res) => {
+    chrome.runtime.sendMessage({ kind: 'get-javascript-state', url }, (res) => { void chrome.runtime.lastError;
       syncJsShieldUI(res);
       if (res && res.ok && Array.isArray(res.trustedHosts)) renderScriptTrustList(res.trustedHosts);
       else renderScriptTrustList();
@@ -1492,7 +1492,7 @@ function renderScriptTrustList(items) {
       remove.textContent = 'Remove';
       remove.addEventListener('click', () => {
         remove.disabled = true;
-        chrome.runtime.sendMessage({ kind: 'script-trust-remove', host }, (r) => {
+        chrome.runtime.sendMessage({ kind: 'script-trust-remove', host }, (r) => { void chrome.runtime.lastError;
           if (!r || !r.ok) setScriptTrustResult((r && r.error) || 'Could not remove trusted script host.', '#a93226');
           else setScriptTrustResult('Removed ' + host + '.', 'var(--ink-faint,#665674)');
           renderScriptTrustList(r && r.items);
@@ -1513,7 +1513,7 @@ function renderScriptTrustList(items) {
   label.textContent = 'Loading trusted script hosts...';
   loading.appendChild(label);
   box.appendChild(loading);
-  chrome.runtime.sendMessage({ kind: 'script-trust-list' }, (res) => {
+  chrome.runtime.sendMessage({ kind: 'script-trust-list' }, (res) => { void chrome.runtime.lastError;
     paint((res && res.ok && Array.isArray(res.items)) ? res.items : []);
   });
 }
@@ -1521,7 +1521,7 @@ function renderScriptTrustList(items) {
 function trustCurrentScriptSite() {
   activeTabHost((host) => {
     if (!host) { setScriptTrustResult('Open a normal web page first.', 'var(--ink-faint,#665674)'); return; }
-    chrome.runtime.sendMessage({ kind: 'script-trust-add', host }, (res) => {
+    chrome.runtime.sendMessage({ kind: 'script-trust-add', host }, (res) => { void chrome.runtime.lastError;
       if (!res || !res.ok) {
         setScriptTrustResult((res && res.error) || 'Could not trust this script host.', '#a93226');
         return;
@@ -1570,7 +1570,7 @@ function renderDownloadTrustList() {
       remove.textContent = 'Remove';
       remove.addEventListener('click', () => {
         remove.disabled = true;
-        chrome.runtime.sendMessage({ kind: 'download-trust-remove', host }, (r) => {
+        chrome.runtime.sendMessage({ kind: 'download-trust-remove', host }, (r) => { void chrome.runtime.lastError;
           if (!r || !r.ok) setDownloadTrustResult((r && r.error) || 'Could not remove trusted site.', '#a93226');
           else setDownloadTrustResult('Removed ' + host + '.', 'var(--ink-faint,#665674)');
           renderDownloadTrustList();
@@ -1684,7 +1684,7 @@ function renderTrackerLearner() {
 function trustCurrentDownloadSite() {
   activeTabHost((host) => {
     if (!host) { setDownloadTrustResult('Open a normal web page first.', 'var(--ink-faint,#665674)'); return; }
-    chrome.runtime.sendMessage({ kind: 'download-trust-add', host }, (res) => {
+    chrome.runtime.sendMessage({ kind: 'download-trust-add', host }, (res) => { void chrome.runtime.lastError;
       if (!res || !res.ok) {
         setDownloadTrustResult((res && res.error) || 'Could not trust this site.', '#a93226');
         return;
@@ -2002,7 +2002,7 @@ function runSessionScan(isAuto) {
         const data = res && res[0] && res[0].result;
         // also pull the REAL cookie flags from the background (cookies API), then
         // render the report card + grade once we have both.
-        chrome.runtime.sendMessage({ kind: 'cookie-audit', url: tab.url }, (cookieAudit) => {
+        chrome.runtime.sendMessage({ kind: 'cookie-audit', url: tab.url }, (cookieAudit) => { void chrome.runtime.lastError;
           renderSession(out, data, (cookieAudit && cookieAudit.ok) ? cookieAudit : null);
         });
       }
@@ -2736,7 +2736,7 @@ $('ss-clear').addEventListener('click', () => {
   if (!confirm('Clear ALL cookies, localStorage, and site data for ' + ssCurrentOrigin + '?\n\nThis logs you out of this site and forgets all its stored data on this device. It cannot be undone.')) return;
   const btn = $('ss-clear');
   btn.disabled = true; btn.textContent = 'Clearing…';
-  chrome.runtime.sendMessage({ kind: 'clear-site-data', origin: ssCurrentOrigin }, (res) => {
+  chrome.runtime.sendMessage({ kind: 'clear-site-data', origin: ssCurrentOrigin }, (res) => { void chrome.runtime.lastError;
     btn.disabled = false;
     if (res && res.ok) {
       btn.textContent = 'Cleared — reload the page';
@@ -2765,7 +2765,7 @@ $('ss-sitebreach').addEventListener('click', () => {
     let domain = '';
     try { domain = new URL(tab.url).hostname; } catch {}
     if (!domain) { btn.disabled = false; btn.textContent = 'Check breach history'; out.textContent = 'Open a normal web page first.'; return; }
-    chrome.runtime.sendMessage({ kind: 'site-breach', domain }, (res) => {
+    chrome.runtime.sendMessage({ kind: 'site-breach', domain }, (res) => { void chrome.runtime.lastError;
       btn.disabled = false; btn.textContent = 'Check breach history';
       out.textContent = '';
       if (!res || !res.ok) {
@@ -2824,7 +2824,7 @@ $('ss-panic').addEventListener('click', () => {
   const out = $('ss-panic-result');
   btn.disabled = true; btn.textContent = 'Logging out everywhere…';
   out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)'; out.textContent = '';
-  chrome.runtime.sendMessage({ kind: 'panic-logout' }, (res) => {
+  chrome.runtime.sendMessage({ kind: 'panic-logout' }, (res) => { void chrome.runtime.lastError;
     btn.disabled = false;
     if (res && res.ok) {
       btn.textContent = 'Done — signed out everywhere';
@@ -2856,7 +2856,7 @@ $('cl-run').addEventListener('click', () => {
   const btn = $('cl-run');
   btn.disabled = true; btn.textContent = 'Cleaning…';
   out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)'; out.textContent = '';
-  chrome.runtime.sendMessage({ kind: 'clean-browser', types }, (res) => {
+  chrome.runtime.sendMessage({ kind: 'clean-browser', types }, (res) => { void chrome.runtime.lastError;
     btn.disabled = false; btn.textContent = 'Clean selected';
     if (res && res.ok) {
       out.style.color = '#1f693d';
@@ -2928,7 +2928,7 @@ function loadExtensionAlerts() {
   });
 }
 $('ext-alerts-clear')?.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ kind: 'clear-extension-alerts' }, () => { loadExtensionAlerts(); });
+  chrome.runtime.sendMessage({ kind: 'clear-extension-alerts' }, () => { void chrome.runtime.lastError; loadExtensionAlerts(); });
 });
 
 function renderStartupReport(report) {
@@ -2997,7 +2997,7 @@ $('startup-run')?.addEventListener('click', () => {
   });
 });
 $('startup-clear')?.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ kind: 'clear-startup-report' }, () => { loadStartupReport(); });
+  chrome.runtime.sendMessage({ kind: 'clear-startup-report' }, () => { void chrome.runtime.lastError; loadStartupReport(); });
 });
 
 $('ext-review').addEventListener('click', () => {
@@ -3011,7 +3011,7 @@ $('ext-review').addEventListener('click', () => {
   }
   btn.disabled = true; btn.textContent = 'Reviewing…';
   out.style.display = 'block'; out.textContent = '';
-  chrome.runtime.sendMessage({ kind: 'list-extensions' }, (res) => {
+  chrome.runtime.sendMessage({ kind: 'list-extensions' }, (res) => { void chrome.runtime.lastError;
     btn.disabled = false; btn.textContent = 'Review my extensions';
     out.textContent = '';
     if (!res || !res.ok) { out.style.color = 'var(--rose-deep,#973c69)'; out.textContent = 'Could not list extensions.'; out.dataset.open = '1'; return; }
@@ -3238,7 +3238,7 @@ function renderPermResults(out, hostname, res) {
     currentHost((host, url) => {
       if (!host) { if (nowRes) { nowRes.style.display = 'block'; nowRes.textContent = 'No site open to forget.'; } return; }
       nowBtn.disabled = true; nowBtn.textContent = 'Forgetting…';
-      chrome.runtime.sendMessage({ kind: 'forget-site-now', host, url }, (r) => {
+      chrome.runtime.sendMessage({ kind: 'forget-site-now', host, url }, (r) => { void chrome.runtime.lastError;
         nowBtn.disabled = false; nowBtn.textContent = 'Forget this site now';
         if (nowRes) {
           nowRes.style.display = 'block';
@@ -3354,7 +3354,7 @@ function renderPermResults(out, hostname, res) {
           sleep.addEventListener('click', () => {
             sleep.disabled = true;
             sleep.textContent = 'Sleeping...';
-            chrome.runtime.sendMessage({ kind: 'memory-sleep-tab-now', tabId: t.id }, (rr) => {
+            chrome.runtime.sendMessage({ kind: 'memory-sleep-tab-now', tabId: t.id }, (rr) => { void chrome.runtime.lastError;
               if (rr && rr.ok) {
                 row.style.opacity = '0.45';
                 sleep.textContent = 'Slept';
@@ -3406,11 +3406,11 @@ function renderPermResults(out, hostname, res) {
           const sleep = document.createElement('button');
           sleep.className = 'btn'; sleep.style.cssText = 'padding:4px 8px;font-size:10px;';
           sleep.textContent = 'Sleep';
-          sleep.addEventListener('click', () => { sleep.disabled = true; chrome.runtime.sendMessage({ kind: 'memory-sleep-tab', tabId: z.id }, () => { row.style.opacity = '0.4'; sleep.textContent = 'Slept'; }); });
+          sleep.addEventListener('click', () => { sleep.disabled = true; chrome.runtime.sendMessage({ kind: 'memory-sleep-tab', tabId: z.id }, () => { void chrome.runtime.lastError; row.style.opacity = '0.4'; sleep.textContent = 'Slept'; }); });
           const close = document.createElement('button');
           close.className = 'btn'; close.style.cssText = 'padding:4px 8px;font-size:10px;border:1px solid #f0c8da;color:#973c69;';
           close.textContent = 'Close';
-          close.addEventListener('click', () => { close.disabled = true; chrome.runtime.sendMessage({ kind: 'memory-close-tab', tabId: z.id }, () => { row.style.opacity = '0.4'; close.textContent = 'Closed'; }); });
+          close.addEventListener('click', () => { close.disabled = true; chrome.runtime.sendMessage({ kind: 'memory-close-tab', tabId: z.id }, () => { void chrome.runtime.lastError; row.style.opacity = '0.4'; close.textContent = 'Closed'; }); });
           btns.appendChild(sleep); btns.appendChild(close);
           row.appendChild(btns);
         }
@@ -3423,7 +3423,7 @@ function renderPermResults(out, hostname, res) {
   if (freeBtn) freeBtn.addEventListener('click', () => {
     freeBtn.disabled = true; freeBtn.textContent = 'Freeing…';
     const out = $('mem-free-result');
-    chrome.runtime.sendMessage({ kind: 'memory-free-ram' }, (r) => {
+    chrome.runtime.sendMessage({ kind: 'memory-free-ram' }, (r) => { void chrome.runtime.lastError;
       freeBtn.disabled = false; freeBtn.textContent = 'Free RAM now';
       if (out) {
         out.style.display = 'block';
@@ -3457,7 +3457,7 @@ function renderPermResults(out, hostname, res) {
       close.addEventListener('click', () => {
         if (!confirm('Close ' + r.extraCount + ' duplicate tab(s)? One copy of each page is kept.')) return;
         close.disabled = true; close.textContent = 'Closing…';
-        chrome.runtime.sendMessage({ kind: 'memory-close-duplicates' }, (rr) => {
+        chrome.runtime.sendMessage({ kind: 'memory-close-duplicates' }, (rr) => { void chrome.runtime.lastError;
           out.textContent = (rr && rr.ok) ? ('Closed ' + rr.closed + ' duplicate tab(s).') : 'Could not close duplicates.';
           setTimeout(loadScore, 400);
         });
@@ -3598,7 +3598,7 @@ $('ss-domage').addEventListener('click', () => {
     let domain = '';
     try { domain = new URL(tab.url).hostname; } catch {}
     if (!domain) { btn.disabled = false; btn.textContent = 'Check domain age'; out.textContent = 'Open a normal web page first.'; return; }
-    chrome.runtime.sendMessage({ kind: 'domain-age', domain }, (res) => {
+    chrome.runtime.sendMessage({ kind: 'domain-age', domain }, (res) => { void chrome.runtime.lastError;
       btn.disabled = false; btn.textContent = 'Check domain age';
       out.textContent = '';
       if (!res || !res.ok) {
@@ -3641,7 +3641,7 @@ $('verify-repair').addEventListener('click', () => {
   out.style.display = 'block';
   out.style.color = 'var(--ink-faint)';
   out.textContent = 'Verifying core files, settings, blocklist, and active tabs…';
-  chrome.runtime.sendMessage({ kind: 'verify-repair' }, (report) => {
+  chrome.runtime.sendMessage({ kind: 'verify-repair' }, (report) => { void chrome.runtime.lastError;
     btn.disabled = false;
     btn.textContent = 'Verify & repair';
     if (!report) { out.style.color = 'var(--rose)'; out.textContent = 'Could not run the check — try reloading the extension.'; return; }

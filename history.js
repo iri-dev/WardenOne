@@ -507,7 +507,7 @@ function loadLearned() {
       btn.textContent = 'Remove';
       btn.addEventListener('click', () => {
         btn.disabled = true; btn.textContent = 'Removing...';
-        chrome.runtime.sendMessage({ kind: 'remove-learned', domain: it.domain }, () => loadLearned());
+        chrome.runtime.sendMessage({ kind: 'remove-learned', domain: it.domain }, () => { void chrome.runtime.lastError; loadLearned(); });
       });
       row.appendChild(left); row.appendChild(btn);
       box.appendChild(row);
@@ -516,7 +516,7 @@ function loadLearned() {
 }
 document.getElementById('clear-learned').addEventListener('click', () => {
   if (confirm('Forget ALL learned bad sites? They will no longer be blocked on future visits unless re-detected.')) {
-    chrome.runtime.sendMessage({ kind: 'clear-learned' }, () => loadLearned());
+    chrome.runtime.sendMessage({ kind: 'clear-learned' }, () => { void chrome.runtime.lastError; loadLearned(); });
   }
 });
 
@@ -689,7 +689,7 @@ function renderTrackerLearner() {
           btn.textContent = text;
           btn.addEventListener('click', () => {
             if (on) return;
-            chrome.runtime.sendMessage({ kind: 'tracker-learner-set-site', url, domain: item.domain, mode: value }, () => renderTrackerLearner());
+            chrome.runtime.sendMessage({ kind: 'tracker-learner-set-site', url, domain: item.domain, mode: value }, () => { void chrome.runtime.lastError; renderTrackerLearner(); });
           });
           actions.appendChild(btn);
         });

@@ -6,6 +6,15 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Stopped WardenOne logging its own errors into other sites' consoles. Every
+  message it sent to itself without reading the result left an error behind when
+  the background worker happened to be asleep, and the ones sent from the page
+  guard landed in whatever site you were on. Anyone with the console open on
+  their own site saw WardenOne throwing.
+- Kept the first few blocks after a wake-up in Activity. The log recovers
+  anything unsaved when the background worker restarts, but it was overwriting
+  whatever had arrived in the meantime -- which is exactly the block that woke it
+  up in the first place.
 - Made the popup's status text readable. Error, warning and secondary text was
   too light against the panels it sits on -- the "could not reach the breach
   database" line, the extension-review list and the session grade all fell below

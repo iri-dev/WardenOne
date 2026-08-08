@@ -273,12 +273,17 @@ function queueHistory(entry) {
   scheduleHistoryFlush();
 }
 // On startup, recover any buffered entries that were never flushed from a prior
-// SW lifecycle. This runs synchronously (inline promise) before event listeners
-// are registered, so the buffer is populated before any new messages arrive.
+// SW lifecycle.
+//
+// The recovered entries are PREPENDED rather than assigned. storage.session.get is
+// asynchronous and the rg-block listener is registered above this, so a block can
+// already have been queued by the time this callback runs -- and the worker cold
+// starts precisely BECAUSE of that first event. Assigning here dropped it.
 try {
   chrome.storage.session.get('__wardenone_hist_buffer', (x) => {
-    if (x && Array.isArray(x.__wardenone_hist_buffer) && x.__wardenone_hist_buffer.length) {
-      __histBuffer = x.__wardenone_hist_buffer;
+    const recovered = (x && Array.isArray(x.__wardenone_hist_buffer)) ? x.__wardenone_hist_buffer : [];
+    if (recovered.length) {
+      __histBuffer = recovered.concat(__histBuffer);
       // schedule a flush immediately to persist survivors to local storage
       scheduleHistoryFlush();
     }
