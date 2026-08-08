@@ -733,7 +733,10 @@ async function testRestartRehydrationAndCaps() {
 function testRegistrationAndBridgeBounds() {
   assert(/chrome\.webRequest\?\.onErrorOccurred\?\.addListener\([\s\S]*types:\s*\['script'\]/.test(BACKGROUND),
     'script errors are not observed with a script-only webRequest filter');
-  assert(BRIDGE.includes("chrome.runtime.sendMessage({ kind: 'smart-player-context', evidence })"),
+  // Matched on intent -- a direct chrome.runtime.sendMessage from the bridge carrying
+  // the signal -- rather than on the exact argument list, so adding a callback that
+  // reads runtime.lastError does not read as the signal being relayed via the page.
+  assert(/chrome\.runtime\.sendMessage\(\{\s*kind:\s*'smart-player-context',\s*evidence\s*\}/.test(BRIDGE),
     'player signal is not sent directly from the isolated bridge');
   assert(BRIDGE.includes('const smartFrameReloadedUrls = new Set()'), 'bridge retry is not URL/host-bounded');
   assert(BRIDGE.includes("const reloadKey = expected + '|' + failedHost + '|stage-'"),
@@ -759,7 +762,7 @@ function testRegistrationAndBridgeBounds() {
     'SPA/delayed player rescans are not rate bounded');
   assert(BRIDGE.includes('if (!event || event.isTrusted !== true) return;'),
     'player intent does not require an explicitly trusted browser event');
-  assert(BRIDGE.includes("chrome.runtime.sendMessage({ kind: 'smart-player-intent' })"),
+  assert(/chrome\.runtime\.sendMessage\(\{\s*kind:\s*'smart-player-intent'\s*\}/.test(BRIDGE),
     'trusted player intent is not sent directly from the isolated bridge');
   assert(BACKGROUND.includes('SMART_SCRIPT_PLAYER_INTENT_TTL_MS = 15000'),
     'generic host recovery intent is not short-lived');

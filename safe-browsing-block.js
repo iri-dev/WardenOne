@@ -84,7 +84,7 @@
     if (proceed.hasAttribute('disabled')) return;
     proceed.setAttribute('disabled', 'disabled');
     proceed.textContent = 'Continuing…';
-    chrome.runtime.sendMessage({ kind: 'safe-browsing-allow-once', host: host }, (res) => {
+    chrome.runtime.sendMessage({ kind: 'safe-browsing-allow-once', host: host }, (res) => { void chrome.runtime.lastError;
       if (res && res.ok) { location.href = url; return; }
       proceed.textContent = 'Could not continue';
     });

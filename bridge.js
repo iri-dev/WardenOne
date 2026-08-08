@@ -315,7 +315,7 @@
     if (!force && now - smartPlayerLastSignalAt < 45000) return true;
     if (!bridgeRateOk('smart-player-context', 4, 120000)) return true;
     smartPlayerLastSignalAt = now;
-    try { chrome.runtime.sendMessage({ kind: 'smart-player-context', evidence }); } catch (_) {}
+    try { chrome.runtime.sendMessage({ kind: 'smart-player-context', evidence }, () => { void chrome.runtime.lastError; }); } catch (_) {}
     if (smartPlayerUnwatch) {
       smartPlayerUnwatch();
       smartPlayerUnwatch = null;
@@ -400,7 +400,7 @@
   }
   function sendSmartPlayerIntent() {
     if (!bridgeRateOk('smart-player-intent', 12, 60000)) return false;
-    try { chrome.runtime.sendMessage({ kind: 'smart-player-intent' }); } catch (_) { return false; }
+    try { chrome.runtime.sendMessage({ kind: 'smart-player-intent' }, () => { void chrome.runtime.lastError; }); } catch (_) { return false; }
     return true;
   }
   function noteSmartPlayerIntent(event) {
@@ -707,7 +707,7 @@
     if (/^blocked_|^detected_|^gated_|^warned_/.test(type)) {
       if (!bridgeRateOk('wo-event', 240, 60000)) return;
       try {
-        chrome.runtime.sendMessage({ kind: 'rg-block', type, detail: boundedBridgeDetail(d.detail) });
+        chrome.runtime.sendMessage({ kind: 'rg-block', type, detail: boundedBridgeDetail(d.detail) }, () => { void chrome.runtime.lastError; });
       } catch (_) {
         // background may be asleep; it's fine, the badge is best-effort
       }
@@ -715,7 +715,7 @@
       // redirect / popunder / overlay click) — no interstitial, just the badge.
       if (type === 'blocked_gestureless_nav' && d.detail && d.detail.url && d.detail.why !== 'no recent user gesture' && d.detail.silent !== true) {
         try {
-          chrome.runtime.sendMessage({ kind: 'redirect-warning', detail: boundedBridgeDetail(d.detail) });
+          chrome.runtime.sendMessage({ kind: 'redirect-warning', detail: boundedBridgeDetail(d.detail) }, () => { void chrome.runtime.lastError; });
         } catch (_) {}
       }
     }
@@ -832,7 +832,7 @@
         });
         return;
       }
-      chrome.runtime.sendMessage({ kind: 'safe-browsing-check', url, context }, (res) => {
+      chrome.runtime.sendMessage({ kind: 'safe-browsing-check', url, context }, (res) => { void chrome.runtime.lastError;
         postToPage({
           source: 'wardenone-safe-browsing',
           token: TOKEN,
@@ -884,7 +884,7 @@
         });
         return;
       }
-      chrome.runtime.sendMessage(message, (res) => {
+      chrome.runtime.sendMessage(message, (res) => { void chrome.runtime.lastError;
         postToPage({
           source: 'wardenone-bg-response',
           token: TOKEN,
@@ -1335,8 +1335,6 @@
           wrap.setAttribute('style', WO_MODAL.overlay('center') + 'flex-direction:column!important;gap:12px!important;');
           const txt = document.createElement('div');
           txt.setAttribute('style', WO_MODAL.panel('620px', '12px') + 'text-align:center!important;font:700 15px/1.5 Nunito,system-ui,sans-serif!important;');
-          const age = ageDays <= 1 ? 'today' : ('just ' + ageDays + ' days ago');
-          txt.textContent = 'Caution: this site (' + domain + ') was registered ' + age + ', yet it is asking for a password. Brand-new domains with login forms are very often phishing — make sure this is really who you think it is before signing in.';
           const riskSummary = reasons.length ? ' Signals: ' + reasons.slice(0, 4).join('; ') + '.' : '';
           const ageText = typeof ageDays === 'number' ? (ageDays <= 1 ? ' registered today' : ' registered ' + ageDays + ' day(s) ago') : '';
           txt.textContent = 'Do not enter your password here. WardenOne found phishing-risk signals for ' + domain + (ageText ? ' (' + ageText.trim() + ')' : '') + '.' + riskSummary;
