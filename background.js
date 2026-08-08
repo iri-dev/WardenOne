@@ -11950,6 +11950,116 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async
   }
 
+  // Clear exactly the values the scan flagged, rather than everything the site
+  // stores. This SIGNS THE USER OUT of the site -- that is unavoidable, because a
+  // session token is the thing keeping them signed in -- so the popup says so
+  // before calling this. Only ever acts on the tab the user is looking at.
+  if (msg && msg.kind === 'clear-exposed-tokens' && msg.url) {
+    (async () => {
+      try {
+        const u = new URL(msg.url);
+        if (!/^https?:$/.test(u.protocol)) { sendResponse({ ok: false, error: 'Open a normal web page first.' }); return; }
+        const origin = await activeTabMatchesOrigin(u.origin);
+        if (!origin) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
+        const items = Array.isArray(msg.items) ? msg.items.slice(0, 60) : [];
+        const wanted = { local: [], session: [], cookie: [] };
+        for (const it of items) {
+          const key = String((it && it.key) || '').slice(0, 200);
+          const where = String((it && it.where) || '');
+          if (!key) continue;
+          if (/localStorage/i.test(where)) wanted.local.push(key);
+          else if (/sessionStorage/i.test(where)) wanted.session.push(key);
+          else if (/^cookie/i.test(where)) wanted.cookie.push(key);
+        }
+        let cleared = 0;
+        const tabs = await tabsQuery({ active: true, lastFocusedWindow: true });
+        const tabId = tabs && tabs[0] && tabs[0].id;
+        if (tabId != null && (wanted.local.length || wanted.session.length)) {
+          try {
+            const res = await chrome.scripting.executeScript({
+              target: { tabId },
+              world: 'MAIN',
+              func: (localKeys, sessionKeys) => {
+                let n = 0;
+                for (const k of localKeys) { try { if (localStorage.getItem(k) !== null) { localStorage.removeItem(k); n++; } } catch (_) {} }
+                for (const k of sessionKeys) { try { if (sessionStorage.getItem(k) !== null) { sessionStorage.removeItem(k); n++; } } catch (_) {} }
+                return n;
+              },
+              args: [wanted.local, wanted.session],
+            });
+            cleared += Number((res && res[0] && res[0].result) || 0);
+          } catch (_) {}
+        }
+        for (const name of wanted.cookie) {
+          try {
+            const removed = await chrome.cookies.remove({ url: u.origin + '/', name });
+            if (removed) cleared++;
+          } catch (_) {}
+        }
+        queueHistory({ type: 'gated_tokens_cleared', detail: { host: u.hostname, cleared }, url: u.origin, at: Date.now() });
+        sendResponse({ ok: true, cleared });
+      } catch (e) {
+        sendResponse({ ok: false, error: String((e && e.message) || e) });
+      }
+    })();
+    return true; // async
+  }
+
+  // Re-set a site's readable session cookies with HttpOnly, which is the ONLY
+  // real way to hide a credential from page scripts: the browser stops exposing
+  // it to document.cookie but still sends it on requests, so the site keeps
+  // working while injected script can no longer read it.
+  //
+  // Two things this deliberately will not do:
+  //   - touch CSRF cookies. The double-submit pattern REQUIRES the page to read
+  //     them (Angular's XSRF-TOKEN, Django's csrftoken). Hardening those breaks
+  //     the site outright.
+  //   - claim to be permanent. The server can re-issue the cookie without
+  //     HttpOnly on its very next response and undo this.
+  if (msg && msg.kind === 'harden-site-cookies' && msg.url) {
+    (async () => {
+      try {
+        const u = new URL(msg.url);
+        if (u.protocol !== 'https:') { sendResponse({ ok: false, error: 'Only available on HTTPS sites.' }); return; }
+        const origin = await activeTabMatchesOrigin(u.origin);
+        if (!origin) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
+        const CSRF_NAME = /(csrf|xsrf)/i;
+        const AUTHISH = /(sess|token|auth|sid|login|jwt)/i;
+        const cookies = await chrome.cookies.getAll({ domain: u.hostname });
+        let hardened = 0, skippedCsrf = 0, failed = 0;
+        for (const c of cookies) {
+          if (c.httpOnly) continue;
+          const name = String(c.name || '');
+          if (!AUTHISH.test(name)) continue;
+          if (CSRF_NAME.test(name)) { skippedCsrf++; continue; }
+          try {
+            const set = {
+              url: 'https://' + c.domain.replace(/^\./, '') + (c.path || '/'),
+              name: c.name,
+              value: c.value,
+              path: c.path || '/',
+              secure: true,
+              httpOnly: true,
+              sameSite: c.sameSite && c.sameSite !== 'unspecified' ? c.sameSite : 'lax',
+              storeId: c.storeId,
+            };
+            // A host-only cookie must stay host-only; sending a domain would
+            // widen it to every subdomain, which is the opposite of hardening.
+            if (!c.hostOnly) set.domain = c.domain;
+            if (c.expirationDate) set.expirationDate = c.expirationDate;
+            const out = await chrome.cookies.set(set);
+            if (out) hardened++; else failed++;
+          } catch (_) { failed++; }
+        }
+        queueHistory({ type: 'gated_cookies_hardened', detail: { host: u.hostname, hardened, skippedCsrf }, url: u.origin, at: Date.now() });
+        sendResponse({ ok: true, hardened, skippedCsrf, failed });
+      } catch (e) {
+        sendResponse({ ok: false, error: String((e && e.message) || e) });
+      }
+    })();
+    return true; // async
+  }
+
   if (msg && msg.kind === 'cookie-audit' && msg.url) {
     (async () => {
       try {
