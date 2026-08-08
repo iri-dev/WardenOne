@@ -6,6 +6,11 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Refused to install on Chrome versions the blocklist cannot work on. The dynamic
+  blocklist needs the 30,000-rule ceiling Chrome added in 121; below that the
+  limit is 5,000 and the rules silently never apply, so the extension looked
+  healthy while blocking nothing. Chrome now declines the install instead of
+  letting it fail quietly.
 - Stopped WardenOne logging its own errors into other sites' consoles. Every
   message it sent to itself without reading the result left an error behind when
   the background worker happened to be asleep, and the ones sent from the page
