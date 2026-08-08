@@ -70,8 +70,39 @@ const REPUTATION_PROVIDERS = [
 ];
 
 let config = Object.assign({}, DEFAULTS);
+// What storage held the last time this popup and storage agreed. The popup keeps
+// `config` for as long as it is open, so writing it back wholesale reverts anything
+// another surface changed meanwhile -- the onboarding page applying a bundle, the
+// options page toggling a setting, or Repair writing a cleaned config back. Diffing
+// against this snapshot says which keys the popup actually means to change; every
+// other key is taken from the freshest stored value at write time.
+let savedConfigSnapshot = configClone(DEFAULTS);
 let eyeShieldHost = '';
 let eyeShieldSaveTimer = 0;
+
+function configClone(value) {
+  try {
+    return JSON.parse(JSON.stringify(value === undefined ? null : value));
+  } catch (_) {
+    return (value && typeof value === 'object' && !Array.isArray(value)) ? Object.assign({}, value) : value;
+  }
+}
+
+function configValuesDiffer(a, b) {
+  if (a === b) return false;
+  try { return JSON.stringify(a) !== JSON.stringify(b); } catch (_) { return true; }
+}
+
+// Keys this popup has changed since it last agreed with storage. Deliberately biased
+// toward reporting a key as changed: writing our own value back for a key we own is
+// harmless, while missing one loses the user's edit.
+function popupChangedKeys() {
+  const keys = new Set(Object.keys(config));
+  Object.keys(savedConfigSnapshot).forEach((k) => keys.add(k));
+  const changed = [];
+  keys.forEach((k) => { if (configValuesDiffer(config[k], savedConfigSnapshot[k])) changed.push(k); });
+  return changed;
+}
 
 const POPUP_SCROLL_KEY = 'wardenone_popup_scroll_memory';
 const ADVANCED_PROVIDERS_OPEN_KEY = 'wardenone_advanced_providers_open';
@@ -601,6 +632,10 @@ function load() {
   chrome.storage.local.get('wardenone_config', (res) => {
     const saved = (res && res.wardenone_config) || null;
     if (saved) config = Object.assign({}, DEFAULTS, saved);
+    // Snapshot what storage actually holds BEFORE the migration below, so the
+    // migration reads as a change this popup intends to write rather than as state
+    // it already agreed with.
+    savedConfigSnapshot = configClone(config);
     if (saved && saved.googleSearchResultCleanup === true) {
       if (typeof saved.blockSearchAiAnswers === 'undefined') config.blockSearchAiAnswers = true;
       if (typeof saved.blockSponsoredSearchResults === 'undefined') config.blockSponsoredSearchResults = true;
@@ -776,14 +811,89 @@ function importSettingsFromFile(file) {
   reader.readAsText(file);
 }
 
+// Read-modify-write. Re-reads storage at the write boundary and lays only the keys
+// this popup changed on top, so a concurrent writer's changes survive instead of
+// being reverted by our snapshot. On success `config` becomes exactly what was
+// stored, so the next diff starts from the truth rather than from a stale copy.
+//
+// onSaved receives the keys that arrived from the other writer, so the caller can
+// repaint just those controls.
+function persistConfig(onSaved, onError) {
+  const changedKeys = popupChangedKeys();
+  chrome.storage.local.get('wardenone_config', (store) => {
+    void chrome.runtime.lastError;
+    const raw = store && store.wardenone_config;
+    const stored = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const next = Object.assign({}, DEFAULTS, stored);
+    changedKeys.forEach((k) => { next[k] = config[k]; });
+    // Applied to the merged result, not just to `config`: this decides what is
+    // actually written, and a provider switched off in either copy must not leave
+    // its key behind in storage.
+    dropKeysForDisabledProviders(next);
+    const adopted = Object.keys(next).filter((k) => changedKeys.indexOf(k) < 0
+      && configValuesDiffer(next[k], savedConfigSnapshot[k]));
+    chrome.storage.local.set({ wardenone_config: next }, () => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        if (typeof onError === 'function') onError(err);
+        return;
+      }
+      config = next;
+      savedConfigSnapshot = configClone(next);
+      if (typeof onSaved === 'function') onSaved(adopted);
+    });
+  });
+}
+
+// An external change landed while the popup was open. Repaint only the controls for
+// the keys we took from it, and never a text field -- an API key the user is halfway
+// through typing must not be overwritten under the cursor. KEYS gates the selector so
+// a tampered storage key can never reach querySelectorAll.
+function repaintExternalConfigKeys(keys) {
+  let masterChanged = false;
+  (keys || []).forEach((key) => {
+    if (key === 'enabled') { masterChanged = true; return; }
+    if (KEYS.indexOf(key) < 0) return;
+    document.querySelectorAll(`input[data-key="${key}"]`).forEach((el) => {
+      el.checked = config[key] !== false;
+    });
+  });
+  if (masterChanged) {
+    const enabledEl = $('enabled');
+    if (enabledEl) enabledEl.checked = config.enabled !== false;
+    updateMasterState();
+    reflectMasterDisable();
+  }
+  reflectSilentMode();
+  syncBreachVisibility();
+}
+
+// Keep `config` in step with a change another surface just made, so the popup stops
+// showing a value that is no longer true and the next diff is measured against the
+// real stored state. Keys the user has already edited here win, and text fields are
+// left alone entirely because an in-progress edit is not yet reflected in `config`.
+function adoptExternalConfigChange(newValue) {
+  const incoming = (newValue && typeof newValue === 'object' && !Array.isArray(newValue)) ? newValue : null;
+  if (!incoming) return;
+  const mine = popupChangedKeys();
+  const textFieldKeys = new Set();
+  document.querySelectorAll('[data-config-text]').forEach((el) => {
+    textFieldKeys.add(el.getAttribute('data-config-text'));
+  });
+  const adopted = [];
+  Object.keys(incoming).forEach((key) => {
+    if (mine.indexOf(key) >= 0 || textFieldKeys.has(key)) return;
+    if (!configValuesDiffer(incoming[key], config[key])) return;
+    config[key] = configClone(incoming[key]);
+    savedConfigSnapshot[key] = configClone(incoming[key]);
+    adopted.push(key);
+  });
+  if (adopted.length) repaintExternalConfigKeys(adopted);
+}
+
 function saveConfig(label, afterSave) {
   dropKeysForDisabledProviders(config);
-  chrome.storage.local.set({ wardenone_config: config }, () => {
-    const err = chrome.runtime.lastError;
-    if (err) {
-      setSavedTick('Save failed', true);
-      return;
-    }
+  persistConfig((adopted) => {
     // notify any open tabs so the change relays into their page (next load applies fully)
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach((t) => {
@@ -793,11 +903,12 @@ function saveConfig(label, afterSave) {
         try { chrome.tabs.sendMessage(t.id, { kind: 'config-update', overrides: publicConfig(config) }, () => { void chrome.runtime.lastError; }); } catch (_) {}
       });
     });
+    if (adopted.length) repaintExternalConfigKeys(adopted);
     setSavedTick(label || 'Saved', false);
     syncProviderStatus();
     renderProtectionHealth();
     if (typeof afterSave === 'function') afterSave();
-  });
+  }, () => setSavedTick('Save failed', true));
 }
 
 function reloadActiveHttpTab() {
@@ -969,35 +1080,31 @@ function allowlistCurrent() {
     if (idx >= 0) {
       // already allowlisted -> remove (re-enable protection here)
       config.allowlist.splice(idx, 1);
-      chrome.storage.local.set({ wardenone_config: config }, () => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          setNote(note, [{ t: 'Could not save allowlist change: ' + (err.message || String(err)) }]);
-          config.allowlist.push(host);
-          updateAllowlistBtn();
-          return;
-        }
+      persistConfig((adopted) => {
+        if (adopted.length) repaintExternalConfigKeys(adopted);
         setNote(note, [
           { t: 'Protection ' },
           { t: 're-enabled', cls: 'saved' },
           { t: ' on ' + host + ' (reload to apply).' },
         ]);
         updateAllowlistBtn();
+      }, (err) => {
+        setNote(note, [{ t: 'Could not save allowlist change: ' + (err.message || String(err)) }]);
+        config.allowlist.push(host);
+        updateAllowlistBtn();
       });
     } else {
       config.allowlist.push(host);
-      chrome.storage.local.set({ wardenone_config: config }, () => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          setNote(note, [{ t: 'Could not save allowlist change: ' + (err.message || String(err)) }]);
-          config.allowlist = config.allowlist.filter((h) => h !== host);
-          updateAllowlistBtn();
-          return;
-        }
+      persistConfig((adopted) => {
+        if (adopted.length) repaintExternalConfigKeys(adopted);
         setNote(note, [
           { t: host, cls: 'saved' },
           { t: ' allowlisted — WardenOne stays passive there after reload.' },
         ]);
+        updateAllowlistBtn();
+      }, (err) => {
+        setNote(note, [{ t: 'Could not save allowlist change: ' + (err.message || String(err)) }]);
+        config.allowlist = config.allowlist.filter((h) => h !== host);
         updateAllowlistBtn();
       });
     }
@@ -1844,6 +1951,10 @@ $('update-now').addEventListener('click', () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  // Take on anything another surface changed while we were open, so the controls stop
+  // showing a value that is no longer true. Fires for our own writes too, but those
+  // already match `config` by then, so nothing is adopted and there is no loop.
+  if (area === 'local' && changes.wardenone_config) adoptExternalConfigChange(changes.wardenone_config.newValue);
   if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta)) renderListMeta();
   if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
   if (area === 'local' && changes.wardenone_tracker_learner) renderTrackerLearner();
