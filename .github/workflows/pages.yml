@@ -1,0 +1,87 @@
+# Publishes the handful of documents that are meant to be a public web page.
+#
+# Pages used to be set to "deploy from a branch" with the source path at /, which
+# had two consequences nobody asked for. Every push to main rebuilt the site, so
+# the Deployments list grew by one entry per commit whether or not the commit
+# touched anything the site serves. And because the source was the branch root,
+# the WHOLE repository was a website: background.js, manifest.json, the rule
+# lists and CWS-SUBMISSION.md were all live URLs.
+#
+# So the site is now built from a staged directory containing only the pages that
+# belong on it. That is a whitelist by construction -- a file that is not copied
+# in the step below cannot be published by accident, however the repo grows.
+#
+# Jekyll stays in the loop deliberately. PRIVACY.md is the single source for the
+# privacy policy the Web Store listing points at, and it is Jekyll that renders
+# it to HTML at /PRIVACY. Uploading raw markdown instead would 404 that URL.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    # Only the published documents trigger a deploy. Code changes do not.
+    paths:
+      - 'PRIVACY.md'
+      - 'SUPPORT.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a Pages deploy in flight: the privacy policy URL has to stay up.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build-and-deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage the published pages
+        run: |
+          mkdir -p site
+          cp PRIVACY.md site/
+          cp SUPPORT.md site/
+          # Without an index the site root would 404, which reads as broken to
+          # anyone who trims the privacy URL back to the domain.
+          cat > site/index.md <<'PAGE'
+          ---
+          title: WardenOne
+          ---
+          # WardenOne
+
+          One extension. Every defence. Blocks ads, trackers, phishing, scams,
+          malware downloads and IP grabbers. No account, no telemetry.
+
+          - [Privacy policy](PRIVACY)
+          - [Support](SUPPORT)
+          - [Source code, releases and issues](https://github.com/iri-dev/WardenOne)
+          PAGE
+          cat > site/_config.yml <<'CONFIG'
+          title: WardenOne
+          description: One extension. Every defence.
+          CONFIG
+          echo "staged:" && ls -1 site
+
+      - uses: actions/configure-pages@v5
+
+      # Relative links in index.md keep working without a baseurl, so the site is
+      # not tied to the repository name.
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./site
+          destination: ./_site
+
+      - uses: actions/upload-pages-artifact@v3
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
