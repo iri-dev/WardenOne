@@ -664,7 +664,7 @@ function setSavedTick(text, isError) {
   if (!tick) return;
   tick.textContent = text || '';
   tick.className = isError ? '' : 'saved';
-  tick.style.color = isError ? 'var(--rose,#c0392b)' : '';
+  tick.style.color = isError ? 'var(--rose,#a93226)' : '';
   if (text) setTimeout(() => { tick.textContent = ''; tick.style.color = ''; }, 2200);
 }
 
@@ -707,7 +707,7 @@ function settingsIoStatus(text, isError) {
   if (!el) return;
   el.textContent = text;
   el.style.display = 'block';
-  el.style.color = isError ? '#c0392b' : 'var(--ink-faint)';
+  el.style.color = isError ? '#a93226' : 'var(--ink-faint)';
 }
 
 function exportableSettings(cfg) {
@@ -965,7 +965,7 @@ function testVirusTotalKey() {
   readFromUI();
   const key = String(config.downloadVirusTotalKey || '').trim();
   if (!key) {
-    syncVirusTotalStatus('Paste your VirusTotal API key first.', '#c0392b');
+    syncVirusTotalStatus('Paste your VirusTotal API key first.', '#a93226');
     applyToUI();
     return;
   }
@@ -976,10 +976,10 @@ function testVirusTotalKey() {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
     if (err || !res || !res.ok) {
       const msg = (res && res.error) || err || 'VirusTotal key test failed.';
-      syncVirusTotalStatus(msg, '#c0392b');
+      syncVirusTotalStatus(msg, '#a93226');
       return;
     }
-    syncVirusTotalStatus(res.message || 'VirusTotal key works. URL reputation is enabled.', '#2e9e5b');
+    syncVirusTotalStatus(res.message || 'VirusTotal key works. URL reputation is enabled.', '#1f693d');
   });
 }
 
@@ -987,7 +987,7 @@ function testSafeBrowsingKey() {
   readFromUI();
   const key = String(config.downloadSafeBrowsingKey || '').trim();
   if (!key) {
-    syncSafeBrowsingStatus('Paste your Google Safe Browsing API key first.', '#c0392b');
+    syncSafeBrowsingStatus('Paste your Google Safe Browsing API key first.', '#a93226');
     applyToUI();
     return;
   }
@@ -997,12 +997,12 @@ function testSafeBrowsingKey() {
     if (err || !res || !res.ok) {
       config.downloadSafeBrowsing = false;
       applyToUI();
-      saveConfig('Saved', () => syncSafeBrowsingStatus((res && res.error) || err || 'Safe Browsing key test failed.', '#c0392b'));
+      saveConfig('Saved', () => syncSafeBrowsingStatus((res && res.error) || err || 'Safe Browsing key test failed.', '#a93226'));
       return;
     }
     config.downloadSafeBrowsing = true;
     applyToUI();
-    saveConfig('Saved', () => syncSafeBrowsingStatus(res.message || 'Google Safe Browsing key works. URL reputation is enabled.', '#2e9e5b'));
+    saveConfig('Saved', () => syncSafeBrowsingStatus(res.message || 'Google Safe Browsing key works. URL reputation is enabled.', '#1f693d'));
   });
 }
 
@@ -1012,7 +1012,7 @@ function setupReputationProvider(providerKey) {
   readFromUI();
   const key = String(config[provider.keyField] || '').trim();
   if (!key && !provider.optionalKey) {
-    syncReputationProviderStatus(provider, 'Paste your ' + provider.label + ' API key first.', '#c0392b');
+    syncReputationProviderStatus(provider, 'Paste your ' + provider.label + ' API key first.', '#a93226');
     applyToUI();
     return;
   }
@@ -1024,13 +1024,13 @@ function setupReputationProvider(providerKey) {
     if (err || !res || !res.ok) {
       config[provider.key] = false;
       applyToUI();
-      saveConfig('Saved', () => syncReputationProviderStatus(provider, (res && res.error) || err || (provider.label + ' key test failed.'), '#c0392b'));
+      saveConfig('Saved', () => syncReputationProviderStatus(provider, (res && res.error) || err || (provider.label + ' key test failed.'), '#a93226'));
       return;
     }
     config[provider.key] = true;
     if (provider.key === 'whoisXml') config.downloadDomainAge = true;
     applyToUI();
-    saveConfig('Saved', () => syncReputationProviderStatus(provider, res.message || (provider.label + ' responded. Reputation checks are enabled.'), '#2e9e5b'));
+    saveConfig('Saved', () => syncReputationProviderStatus(provider, res.message || (provider.label + ' responded. Reputation checks are enabled.'), '#1f693d'));
   });
 }
 
@@ -1039,19 +1039,19 @@ function scanUrlWithVirusTotal() {
   const out = $('vt-scan-result');
   if (!input || !out) return;
   const url = String(input.value || '').trim();
-  if (!url) { out.textContent = 'Enter a URL to scan.'; out.style.color = '#c0392b'; return; }
+  if (!url) { out.textContent = 'Enter a URL to scan.'; out.style.color = '#a93226'; return; }
   out.textContent = 'Scanning with VirusTotal...';
   out.style.color = 'var(--ink-faint)';
   chrome.runtime.sendMessage({ kind: 'scan-url-virustotal', url }, (res) => {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
     if (err || !res || !res.ok) {
       out.textContent = (res && res.error) || err || 'Scan failed.';
-      out.style.color = '#c0392b';
+      out.style.color = '#a93226';
       return;
     }
     if (res.notFound) {
       out.textContent = 'VirusTotal has no report for this URL yet (not necessarily safe - just unseen).';
-      out.style.color = 'var(--ink-soft, #7a5f93)';
+      out.style.color = 'var(--ink-soft, #534064)';
       return;
     }
     const s = res.stats || {};
@@ -1059,10 +1059,10 @@ function scanUrlWithVirusTotal() {
     const sus = Number(s.suspicious || 0);
     if (mal > 0 || sus > 0) {
       out.textContent = 'Flagged: ' + mal + ' malicious, ' + sus + ' suspicious (of ' + (mal + sus + Number(s.harmless || 0) + Number(s.undetected || 0)) + ' engines). Avoid this link.';
-      out.style.color = '#c0392b';
+      out.style.color = '#a93226';
     } else {
       out.textContent = 'Clean: 0 malicious, 0 suspicious across ' + (Number(s.harmless || 0) + Number(s.undetected || 0)) + ' engines.';
-      out.style.color = '#2e9e5b';
+      out.style.color = '#1f693d';
     }
   });
 }
@@ -1461,7 +1461,7 @@ function setScriptTrustResult(text, color) {
   const out = $('script-trust-result');
   if (!out) return;
   out.style.display = text ? 'block' : 'none';
-  out.style.color = color || 'var(--ink-faint,#a98fc0)';
+  out.style.color = color || 'var(--ink-faint,#665674)';
   out.textContent = text || '';
 }
 
@@ -1488,13 +1488,13 @@ function renderScriptTrustList(items) {
       label.textContent = host;
       const remove = document.createElement('button');
       remove.className = 'btn';
-      remove.style.cssText = 'flex:none;padding:5px 9px;font-size:10px;border:1px solid #f0c8da;color:#c84f8b;';
+      remove.style.cssText = 'flex:none;padding:5px 9px;font-size:10px;border:1px solid #f0c8da;color:#973c69;';
       remove.textContent = 'Remove';
       remove.addEventListener('click', () => {
         remove.disabled = true;
         chrome.runtime.sendMessage({ kind: 'script-trust-remove', host }, (r) => {
-          if (!r || !r.ok) setScriptTrustResult((r && r.error) || 'Could not remove trusted script host.', '#c0392b');
-          else setScriptTrustResult('Removed ' + host + '.', 'var(--ink-faint,#a98fc0)');
+          if (!r || !r.ok) setScriptTrustResult((r && r.error) || 'Could not remove trusted script host.', '#a93226');
+          else setScriptTrustResult('Removed ' + host + '.', 'var(--ink-faint,#665674)');
           renderScriptTrustList(r && r.items);
           loadJsShieldState();
         });
@@ -1520,13 +1520,13 @@ function renderScriptTrustList(items) {
 
 function trustCurrentScriptSite() {
   activeTabHost((host) => {
-    if (!host) { setScriptTrustResult('Open a normal web page first.', 'var(--ink-faint,#a98fc0)'); return; }
+    if (!host) { setScriptTrustResult('Open a normal web page first.', 'var(--ink-faint,#665674)'); return; }
     chrome.runtime.sendMessage({ kind: 'script-trust-add', host }, (res) => {
       if (!res || !res.ok) {
-        setScriptTrustResult((res && res.error) || 'Could not trust this script host.', '#c0392b');
+        setScriptTrustResult((res && res.error) || 'Could not trust this script host.', '#a93226');
         return;
       }
-      setScriptTrustResult('Trusted ' + res.host + ' for Smart script loading.', '#2e9e5b');
+      setScriptTrustResult('Trusted ' + res.host + ' for Smart script loading.', '#1f693d');
       renderScriptTrustList(res.items);
       loadJsShieldState();
     });
@@ -1537,7 +1537,7 @@ function setDownloadTrustResult(text, color) {
   const out = $('download-trust-result');
   if (!out) return;
   out.style.display = text ? 'block' : 'none';
-  out.style.color = color || 'var(--ink-faint,#a98fc0)';
+  out.style.color = color || 'var(--ink-faint,#665674)';
   out.textContent = text || '';
 }
 
@@ -1566,13 +1566,13 @@ function renderDownloadTrustList() {
       label.textContent = host;
       const remove = document.createElement('button');
       remove.className = 'btn';
-      remove.style.cssText = 'flex:none;padding:5px 9px;font-size:10px;border:1px solid #f0c8da;color:#c84f8b;';
+      remove.style.cssText = 'flex:none;padding:5px 9px;font-size:10px;border:1px solid #f0c8da;color:#973c69;';
       remove.textContent = 'Remove';
       remove.addEventListener('click', () => {
         remove.disabled = true;
         chrome.runtime.sendMessage({ kind: 'download-trust-remove', host }, (r) => {
-          if (!r || !r.ok) setDownloadTrustResult((r && r.error) || 'Could not remove trusted site.', '#c0392b');
-          else setDownloadTrustResult('Removed ' + host + '.', 'var(--ink-faint,#a98fc0)');
+          if (!r || !r.ok) setDownloadTrustResult((r && r.error) || 'Could not remove trusted site.', '#a93226');
+          else setDownloadTrustResult('Removed ' + host + '.', 'var(--ink-faint,#665674)');
           renderDownloadTrustList();
         });
       });
@@ -1683,13 +1683,13 @@ function renderTrackerLearner() {
 
 function trustCurrentDownloadSite() {
   activeTabHost((host) => {
-    if (!host) { setDownloadTrustResult('Open a normal web page first.', 'var(--ink-faint,#a98fc0)'); return; }
+    if (!host) { setDownloadTrustResult('Open a normal web page first.', 'var(--ink-faint,#665674)'); return; }
     chrome.runtime.sendMessage({ kind: 'download-trust-add', host }, (res) => {
       if (!res || !res.ok) {
-        setDownloadTrustResult((res && res.error) || 'Could not trust this site.', '#c0392b');
+        setDownloadTrustResult((res && res.error) || 'Could not trust this site.', '#a93226');
         return;
       }
-      setDownloadTrustResult('Trusted ' + res.host + ' for future downloads.', '#2e9e5b');
+      setDownloadTrustResult('Trusted ' + res.host + ' for future downloads.', '#1f693d');
       renderDownloadTrustList();
     });
   });
@@ -1874,10 +1874,10 @@ function renderListMeta() {
       const age = meta.updated ? Date.now() - Number(meta.updated) : 0;
       if (age > 7 * 24 * 60 * 60 * 1000) {
         line += ' - stale';
-        updEl.style.color = '#c0392b';
+        updEl.style.color = '#a93226';
       } else if (age > 72 * 60 * 60 * 1000) {
         line += ' - getting stale';
-        updEl.style.color = '#bd7a2a';
+        updEl.style.color = '#80531d';
       } else {
         updEl.style.color = '';
       }
@@ -2133,18 +2133,18 @@ function computeScore(data, cookies) {
   if (hasSession && data && !data.onHttps && score > 45) { score = 45; capped = true; }
 
   let grade, risk, riskColor;
-  if (score >= 90) { grade = 'A'; risk = 'Low Risk'; riskColor = '#2e9e5b'; }
-  else if (score >= 78) { grade = 'B'; risk = 'Low Risk'; riskColor = '#2e9e5b'; }
-  else if (score >= 65) { grade = 'C'; risk = 'Medium Risk'; riskColor = '#bd7a2a'; }
-  else if (score >= 50) { grade = 'D'; risk = 'Medium Risk'; riskColor = '#bd7a2a'; }
-  else { grade = 'F'; risk = 'High Risk'; riskColor = '#c0392b'; }
-  if (!hasSession && score >= 78) { risk = 'No sign-in detected'; riskColor = '#7a6b8a'; }
+  if (score >= 90) { grade = 'A'; risk = 'Low Risk'; riskColor = '#1f693d'; }
+  else if (score >= 78) { grade = 'B'; risk = 'Low Risk'; riskColor = '#1f693d'; }
+  else if (score >= 65) { grade = 'C'; risk = 'Medium Risk'; riskColor = '#80531d'; }
+  else if (score >= 50) { grade = 'D'; risk = 'Medium Risk'; riskColor = '#80531d'; }
+  else { grade = 'F'; risk = 'High Risk'; riskColor = '#a93226'; }
+  if (!hasSession && score >= 78) { risk = 'No sign-in detected'; riskColor = '#645871'; }
 
   return { score, grade, risk, riskColor, reasons, credits, hasSession, capped };
 }
 
 function gradeColor(g) {
-  return { A: '#2e9e5b', B: '#5aa84a', C: '#bd7a2a', D: '#d06a2a', F: '#c0392b' }[g] || '#8b3fb0';
+  return { A: '#1f693d', B: '#37672e', C: '#80531d', D: '#90491d', F: '#a93226' }[g] || '#833ca6';
 }
 
 // ----- Update Guardian: detect browser + estimate if it looks outdated -----
@@ -2223,14 +2223,14 @@ function renderUpdateGuardian() {
   }
   if (outdated) {
     noteEl.textContent = 'Your browser version looks older than expected for today. Keeping it updated protects you from known security bugs.';
-    noteEl.style.color = '#c0392b';
-    nameEl.style.color = '#c0392b';
+    noteEl.style.color = '#a93226';
+    nameEl.style.color = '#a93226';
   } else if (b.major > 0) {
     noteEl.textContent = 'Looks current. It\'s still worth checking now and then — updates patch security bugs.';
-    noteEl.style.color = 'var(--ink-faint,#a98fc0)';
+    noteEl.style.color = 'var(--ink-faint,#665674)';
   } else {
     noteEl.textContent = 'Keeping your browser updated protects you from known security bugs.';
-    noteEl.style.color = 'var(--ink-faint,#a98fc0)';
+    noteEl.style.color = 'var(--ink-faint,#665674)';
   }
   // wire the button to the right update page
   const page = updatePageFor(b.name);
@@ -2245,7 +2245,7 @@ function renderUpdateGuardian() {
       noteEl.textContent = b.name === 'Firefox'
         ? 'Open the menu → Help → About Firefox to check for updates.'
         : 'Update ' + b.name + ' from your system settings or app store.';
-      noteEl.style.color = 'var(--ink-soft,#7a5f93)';
+      noteEl.style.color = 'var(--ink-soft,#534064)';
     };
   }
 }
@@ -2313,7 +2313,7 @@ function finishClear(ok, rowEl, btnEl, f) {
     rowEl.style.transition = 'opacity .2s';
     rowEl.style.opacity = '0.45';
     const done = document.createElement('div');
-    done.style.cssText = 'font-size:9.5px;color:#2e9e5b;font-weight:700;margin-top:4px;';
+    done.style.cssText = 'font-size:9.5px;color:#1f693d;font-weight:700;margin-top:4px;';
     // A URL value is not deleted, it is stopped from travelling any further --
     // history and any referrer already sent are gone for good.
     done.textContent = (f && /^URL/.test(f.where)) ? 'Removed from the address bar' : 'Removed';
@@ -2349,7 +2349,7 @@ function hardenSiteCookies(btnEl, statusEl) {
       if (!statusEl) return;
       statusEl.style.display = 'block';
       if (!r || !r.ok) {
-        statusEl.style.color = '#c0392b';
+        statusEl.style.color = '#a93226';
         statusEl.textContent = (r && r.error) || 'Could not change the cookies.';
         return;
       }
@@ -2357,7 +2357,7 @@ function hardenSiteCookies(btnEl, statusEl) {
       if (r.hardened) bits.push(r.hardened + ' cookie' + (r.hardened > 1 ? 's' : '') + ' now hidden from scripts');
       if (r.skippedCsrf) bits.push(r.skippedCsrf + ' CSRF cookie' + (r.skippedCsrf > 1 ? 's' : '') + ' left alone on purpose');
       if (!r.hardened && !r.skippedCsrf) bits.push('Nothing to change — no readable session cookies here.');
-      statusEl.style.color = r.hardened ? '#2e9e5b' : 'var(--ink-faint,#a98fc0)';
+      statusEl.style.color = r.hardened ? '#1f693d' : 'var(--ink-faint,#665674)';
       statusEl.textContent = bits.join(' · ');
       if (r.hardened) setTimeout(() => runSessionScan(true), 500);
     });
@@ -2391,7 +2391,7 @@ function clearAllStorageTokens(btnEl) {
       if (btnEl) {
         btnEl.disabled = false;
         btnEl.textContent = n > 0 ? ('Removed ' + n + ' token' + (n > 1 ? 's' : '') + ' — reload page') : 'Nothing to remove';
-        btnEl.style.color = '#2e9e5b';
+        btnEl.style.color = '#1f693d';
         btnEl.style.borderColor = 'rgba(46,158,91,.4)';
       }
       // re-run the scan to refresh the list
@@ -2424,8 +2424,8 @@ function makeChevronIcon(size) {
 function makeCheckCircleIcon(size) {
   const svg = svgIcon(size || 18);
   svg.setAttribute('style', 'flex:none;');
-  svg.appendChild(svgEl('circle', { cx: '12', cy: '12', r: '9', stroke: '#2e9e5b', 'stroke-width': '2' }));
-  svg.appendChild(svgEl('path', { d: 'M8.5 12.2l2.4 2.4 4.6-5', stroke: '#2e9e5b', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+  svg.appendChild(svgEl('circle', { cx: '12', cy: '12', r: '9', stroke: '#1f693d', 'stroke-width': '2' }));
+  svg.appendChild(svgEl('path', { d: 'M8.5 12.2l2.4 2.4 4.6-5', stroke: '#1f693d', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
   return svg;
 }
 function makeTrashIcon(size) {
@@ -2436,8 +2436,8 @@ function makeTrashIcon(size) {
 function makeWarnIcon(size) {
   const svg = svgIcon(size || 11);
   svg.setAttribute('style', 'flex:none;');
-  svg.appendChild(svgEl('path', { d: 'M12 4l9 16H3l9-16z', stroke: '#c0392b', 'stroke-width': '2', 'stroke-linejoin': 'round' }));
-  svg.appendChild(svgEl('path', { d: 'M12 10v4M12 17v.4', stroke: '#c0392b', 'stroke-width': '2', 'stroke-linecap': 'round' }));
+  svg.appendChild(svgEl('path', { d: 'M12 4l9 16H3l9-16z', stroke: '#a93226', 'stroke-width': '2', 'stroke-linejoin': 'round' }));
+  svg.appendChild(svgEl('path', { d: 'M12 10v4M12 17v.4', stroke: '#a93226', 'stroke-width': '2', 'stroke-linecap': 'round' }));
   return svg;
 }
 function makeFindingIcon(where) {
@@ -2463,7 +2463,7 @@ function makeFindingIcon(where) {
 function renderSession(out, data, cookies) {
   out.textContent = '';
   if (!data) {
-    out.appendChild(makeLine('SessionShield is off, or this page hasn\'t finished loading. Turn it on above and reload the page.', 'var(--ink-faint,#a98fc0)'));
+    out.appendChild(makeLine('SessionShield is off, or this page hasn\'t finished loading. Turn it on above and reload the page.', 'var(--ink-faint,#665674)'));
     return;
   }
 
@@ -2490,7 +2490,7 @@ function renderSession(out, data, cookies) {
   // "D, because your session token is in the address bar".
   const why = (sc.reasons && sc.reasons.length) ? sc.reasons[0] : (sc.credits[0] || '');
   const t3 = document.createElement('div');
-  t3.style.cssText = 'font-size:10.5px;margin-top:3px;color:var(--ink-faint,#a98fc0);line-height:1.4;';
+  t3.style.cssText = 'font-size:10.5px;margin-top:3px;color:var(--ink-faint,#665674);line-height:1.4;';
   t3.textContent = sc.capped ? 'Signed in over plain HTTP — anyone on this network can read it' : why;
   info.appendChild(t3);
   card.appendChild(info);
@@ -2507,27 +2507,27 @@ function renderSession(out, data, cookies) {
   const addFact = (label, value, color) => {
     const r = document.createElement('div');
     r.style.cssText = 'display:flex;justify-content:space-between;gap:12px;';
-    const l = document.createElement('span'); l.style.cssText = 'color:var(--ink-faint,#a98fc0);'; l.textContent = label;
+    const l = document.createElement('span'); l.style.cssText = 'color:var(--ink-faint,#665674);'; l.textContent = label;
     const v = document.createElement('span'); v.style.cssText = 'font-weight:700;color:' + (color || 'var(--ink,#3d2a52)') + ';text-align:right;'; v.textContent = value;
     r.appendChild(l); r.appendChild(v); facts.appendChild(r);
   };
-  addFact('Connection', data.onHttps ? 'HTTPS' : 'HTTP (insecure)', data.onHttps ? '#2e9e5b' : '#c0392b');
+  addFact('Connection', data.onHttps ? 'HTTPS' : 'HTTP (insecure)', data.onHttps ? '#1f693d' : '#a93226');
   addFact('JWT found', jwtFound ? 'Yes' : 'No');
   addFact('Tokens stored in', storedIn);
-  addFact('Cookie security', cookieVerdict, (cookies && cookies.weak && cookies.weak.length) ? '#c0392b' : (cookies && cookies.sessionLike ? '#2e9e5b' : null));
+  addFact('Cookie security', cookieVerdict, (cookies && cookies.weak && cookies.weak.length) ? '#a93226' : (cookies && cookies.sessionLike ? '#1f693d' : null));
   if (data.isSensitivePage) addFact('3rd-party scripts', String((data.thirdPartyScripts || []).length));
   addFact('Risk', sc.risk, sc.riskColor);
   out.appendChild(facts);
 
   // ---- detail section below the card ----
-  out.appendChild(makeLine(data.readableCookieCount + ' cookie(s) readable by scripts. (HttpOnly cookies are correctly invisible to scripts — that\'s the safe state.)', 'var(--ink-soft,#7a5f93)'));
+  out.appendChild(makeLine(data.readableCookieCount + ' cookie(s) readable by scripts. (HttpOnly cookies are correctly invisible to scripts — that\'s the safe state.)', 'var(--ink-soft,#534064)'));
   if (cookies && cookies.weak && cookies.weak.length) {
-    out.appendChild(makeLine('Session cookies missing protection:', '#c0392b', true));
+    out.appendChild(makeLine('Session cookies missing protection:', '#a93226', true));
     cookies.weak.forEach((w) => {
       const miss = [];
       if (!w.httpOnly) miss.push('not HttpOnly');
       if (!w.secure) miss.push('not Secure');
-      out.appendChild(makeLine('• ' + w.name + ' — ' + miss.join(', '), 'var(--ink-soft,#7a5f93)'));
+      out.appendChild(makeLine('• ' + w.name + ' — ' + miss.join(', '), 'var(--ink-soft,#534064)'));
     });
   }
 
@@ -2537,7 +2537,7 @@ function renderSession(out, data, cookies) {
     ok.style.cssText = 'display:flex;align-items:center;gap:9px;margin-top:4px;padding:11px 12px;border-radius:11px;background:rgba(46,158,91,.08);border:1px solid rgba(46,158,91,.2);';
     ok.appendChild(makeCheckCircleIcon(18));
     const okt = document.createElement('span');
-    okt.style.cssText = 'font-weight:700;font-size:12px;color:#2e9e5b;';
+    okt.style.cssText = 'font-weight:700;font-size:12px;color:#1f693d;';
     okt.textContent = 'No exposed login tokens found';
     ok.appendChild(okt);
     out.appendChild(ok);
@@ -2552,7 +2552,7 @@ function renderSession(out, data, cookies) {
     head.setAttribute('aria-expanded', 'false');
     head.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;';
     const arrow = document.createElement('span');
-    arrow.style.cssText = 'flex:none;color:var(--ink-soft,#7a5f93);display:flex;transition:transform .2s ease;';
+    arrow.style.cssText = 'flex:none;color:var(--ink-soft,#534064);display:flex;transition:transform .2s ease;';
     arrow.appendChild(makeChevronIcon(14));
     head.appendChild(arrow);
     const htxt = document.createElement('span');
@@ -2560,7 +2560,7 @@ function renderSession(out, data, cookies) {
     htxt.textContent = 'Tokens exposed to scripts';
     head.appendChild(htxt);
     const chip = document.createElement('span');
-    chip.style.cssText = 'flex:none;font-size:10.5px;font-weight:700;color:#fff;background:#c84f8b;border-radius:10px;padding:1px 8px;';
+    chip.style.cssText = 'flex:none;font-size:10.5px;font-weight:700;color:#fff;background:#973c69;border-radius:10px;padding:1px 8px;';
     chip.textContent = String(data.tokenCount);
     head.appendChild(chip);
 
@@ -2581,9 +2581,9 @@ function renderSession(out, data, cookies) {
 
     // location -> short label
     const LOC = {
-      localStorage:   { label: 'Local Storage',   color: '#8b6fb0' },
-      sessionStorage: { label: 'Session Storage', color: '#8b6fb0' },
-      'window.name':  { label: 'window.name',     color: '#bd7a2a' },
+      localStorage:   { label: 'Local Storage',   color: '#695384' },
+      sessionStorage: { label: 'Session Storage', color: '#695384' },
+      'window.name':  { label: 'window.name',     color: '#80531d' },
     };
 
     data.findings.forEach((f, idx) => {
@@ -2621,7 +2621,7 @@ function renderSession(out, data, cookies) {
       top.appendChild(loc);
       if (f.key && f.key !== 'window.name') {
         const key = document.createElement('span');
-        key.style.cssText = 'font-size:10px;color:var(--ink-faint,#a98fc0);font-family:ui-monospace,monospace;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        key.style.cssText = 'font-size:10px;color:var(--ink-faint,#665674);font-family:ui-monospace,monospace;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
         key.textContent = f.key;
         top.appendChild(key);
       } else {
@@ -2631,7 +2631,7 @@ function renderSession(out, data, cookies) {
       if (canClear) {
         const clr = document.createElement('button');
         clr.title = 'Remove this token from the site';
-        clr.style.cssText = 'flex:none;border:none;background:rgba(214,90,122,.1);color:#c84f8b;width:22px;height:22px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;';
+        clr.style.cssText = 'flex:none;border:none;background:rgba(214,90,122,.1);color:#973c69;width:22px;height:22px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;';
         clr.appendChild(makeTrashIcon(12));
         clr.addEventListener('click', () => clearFinding(f, row, clr));
         top.appendChild(clr);
@@ -2640,7 +2640,7 @@ function renderSession(out, data, cookies) {
 
       // masked token (smaller, lighter)
       const prev = document.createElement('div');
-      prev.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-faint,#a98fc0);margin-top:4px;';
+      prev.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-faint,#665674);margin-top:4px;';
       prev.textContent = f.preview;
       row.appendChild(prev);
 
@@ -2654,13 +2654,13 @@ function renderSession(out, data, cookies) {
           t.textContent = text;
           return t;
         };
-        tagWrap.appendChild(mkTag('JWT', 'rgba(139,63,176,.12)', '#8b3fb0'));
-        if (j.malformed) tagWrap.appendChild(mkTag('unreadable', 'rgba(169,143,192,.18)', '#7a5f93'));
+        tagWrap.appendChild(mkTag('JWT', 'rgba(139,63,176,.12)', '#833ca6'));
+        if (j.malformed) tagWrap.appendChild(mkTag('unreadable', 'rgba(169,143,192,.18)', '#534064'));
         else {
-          if (j.expired === true) tagWrap.appendChild(mkTag('EXPIRED', 'rgba(214,90,122,.14)', '#c0392b'));
-          else if (j.exp) tagWrap.appendChild(mkTag('expires ' + new Date(j.exp * 1000).toLocaleDateString(), 'rgba(122,95,147,.1)', '#7a5f93'));
-          if (j.longLived) tagWrap.appendChild(mkTag('LONG-LIVED', 'rgba(207,155,74,.16)', '#bd7a2a'));
-          if (j.iss) tagWrap.appendChild(mkTag(j.iss, 'rgba(122,95,147,.08)', '#7a5f93'));
+          if (j.expired === true) tagWrap.appendChild(mkTag('EXPIRED', 'rgba(214,90,122,.14)', '#a93226'));
+          else if (j.exp) tagWrap.appendChild(mkTag('expires ' + new Date(j.exp * 1000).toLocaleDateString(), 'rgba(122,95,147,.1)', '#534064'));
+          if (j.longLived) tagWrap.appendChild(mkTag('LONG-LIVED', 'rgba(207,155,74,.16)', '#80531d'));
+          if (j.iss) tagWrap.appendChild(mkTag(j.iss, 'rgba(122,95,147,.08)', '#534064'));
         }
         row.appendChild(tagWrap);
       }
@@ -2668,7 +2668,7 @@ function renderSession(out, data, cookies) {
       // URL exposure warning
       if (inUrl) {
         const warn = document.createElement('div');
-        warn.style.cssText = 'display:flex;align-items:center;gap:5px;color:#c0392b;font-size:9.5px;font-weight:600;margin-top:6px;';
+        warn.style.cssText = 'display:flex;align-items:center;gap:5px;color:#a93226;font-size:9.5px;font-weight:600;margin-top:6px;';
         warn.appendChild(makeWarnIcon(11));
         const wt = document.createElement('span');
         wt.textContent = 'Exposed in the URL — can leak via history or sharing';
@@ -2683,12 +2683,12 @@ function renderSession(out, data, cookies) {
     if (removable.length) {
       const clrAll = document.createElement('button');
       clrAll.className = 'btn';
-      clrAll.style.cssText = 'width:100%;margin-top:9px;font-size:11.5px;border:1px solid #f0c8da;color:#c84f8b;';
+      clrAll.style.cssText = 'width:100%;margin-top:9px;font-size:11.5px;border:1px solid #f0c8da;color:#973c69;';
       clrAll.textContent = 'Clear ' + removable.length + ' removable token' + (removable.length > 1 ? 's' : '') + ' from storage';
       clrAll.addEventListener('click', () => clearAllStorageTokens(clrAll));
       body.appendChild(clrAll);
       const note = document.createElement('div');
-      note.style.cssText = 'font-size:9.5px;color:var(--ink-faint,#a98fc0);margin-top:5px;line-height:1.5;';
+      note.style.cssText = 'font-size:9.5px;color:var(--ink-faint,#665674);margin-top:5px;line-height:1.5;';
       note.textContent = 'Removes tokens stored in local/session storage, which may sign you out. Cookies and URL values have their own button on each row.';
       body.appendChild(note);
     }
@@ -2700,7 +2700,7 @@ function renderSession(out, data, cookies) {
     if (readableCookies.length && data.onHttps) {
       const harden = document.createElement('button');
       harden.className = 'btn';
-      harden.style.cssText = 'width:100%;margin-top:9px;font-size:11.5px;border:1px solid #cbb6e6;color:#7a4fb0;';
+      harden.style.cssText = 'width:100%;margin-top:9px;font-size:11.5px;border:1px solid #cbb6e6;color:#7149a2;';
       harden.textContent = 'Hide session cookies from scripts';
       const hstatus = document.createElement('div');
       hstatus.style.cssText = 'display:none;font-size:10px;margin-top:5px;line-height:1.5;';
@@ -2708,7 +2708,7 @@ function renderSession(out, data, cookies) {
       body.appendChild(harden);
       body.appendChild(hstatus);
       const hnote = document.createElement('div');
-      hnote.style.cssText = 'font-size:9.5px;color:var(--ink-faint,#a98fc0);margin-top:5px;line-height:1.5;';
+      hnote.style.cssText = 'font-size:9.5px;color:var(--ink-faint,#665674);margin-top:5px;line-height:1.5;';
       hnote.textContent = 'Marks them HttpOnly, so the browser still sends them but page scripts can no longer read them — you stay signed in. CSRF cookies are skipped. The site can undo it next time it sets the cookie.';
       body.appendChild(hnote);
     }
@@ -2716,9 +2716,9 @@ function renderSession(out, data, cookies) {
 
   // login-page third-party scripts
   if (data.isSensitivePage && data.thirdPartyScripts && data.thirdPartyScripts.length) {
-    out.appendChild(makeLine('This looks like a login/checkout page loading ' + data.thirdPartyScripts.length + ' third-party script source(s). Make sure you recognize them:', '#bd7a2a', true));
+    out.appendChild(makeLine('This looks like a login/checkout page loading ' + data.thirdPartyScripts.length + ' third-party script source(s). Make sure you recognize them:', '#80531d', true));
     const list = document.createElement('div');
-    list.style.cssText = 'font-size:10.5px;color:var(--ink-soft,#7a5f93);margin-top:2px;';
+    list.style.cssText = 'font-size:10.5px;color:var(--ink-soft,#534064);margin-top:2px;';
     list.textContent = data.thirdPartyScripts.join(', ');
     out.appendChild(list);
   }
@@ -2740,11 +2740,11 @@ $('ss-clear').addEventListener('click', () => {
     btn.disabled = false;
     if (res && res.ok) {
       btn.textContent = 'Cleared — reload the page';
-      btn.style.color = 'var(--plum,#8b3fb0)';
+      btn.style.color = 'var(--plum,#833ca6)';
       const out = $('ss-panic-result');
       if (out) {
         out.style.display = 'block';
-        out.style.color = '#2e9e5b';
+        out.style.color = '#1f693d';
         out.textContent = 'Cleared this site\'s cookies, storage, cache, and service workers.' + permissionResetSummary(res.permissionsReset);
       }
     } else {
@@ -2757,7 +2757,7 @@ $('ss-clear').addEventListener('click', () => {
 $('ss-sitebreach').addEventListener('click', () => {
   const out = $('ss-sitebreach-result');
   const btn = $('ss-sitebreach');
-  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#a98fc0)';
+  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)';
   out.textContent = 'Checking breach records…';
   btn.disabled = true; btn.textContent = 'Checking…';
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -2769,7 +2769,7 @@ $('ss-sitebreach').addEventListener('click', () => {
       btn.disabled = false; btn.textContent = 'Check breach history';
       out.textContent = '';
       if (!res || !res.ok) {
-        out.style.color = 'var(--ink-faint,#a98fc0)';
+        out.style.color = 'var(--ink-faint,#665674)';
         out.textContent = res && res.status === 429
           ? 'The breach database is busy right now. Wait a minute and try again.'
           : 'Could not reach the breach database right now. Try again shortly.';
@@ -2780,16 +2780,16 @@ $('ss-sitebreach').addEventListener('click', () => {
       const checked = (res.domain || domain).replace(/^www\./, '');
       const stripped = domain.replace(/^www\./, '');
       const noteDiff = (checked && checked !== stripped)
-        ? makeLine('Checked the site’s main domain: ' + checked + '.', 'var(--ink-faint,#a98fc0)')
+        ? makeLine('Checked the site’s main domain: ' + checked + '.', 'var(--ink-faint,#665674)')
         : null;
       if (!res.breaches || !res.breaches.length) {
-        out.style.color = '#2e9e5b';
-        out.appendChild(makeLine('Good news — ' + checked + ' has no known data breaches.', '#2e9e5b', true));
+        out.style.color = '#1f693d';
+        out.appendChild(makeLine('Good news — ' + checked + ' has no known data breaches.', '#1f693d', true));
         if (noteDiff) out.appendChild(noteDiff);
-        out.appendChild(makeLine('It has never appeared in the HaveIBeenPwned breach database. This checks the site itself, not your personal account.', 'var(--ink-soft,#7a5f93)'));
+        out.appendChild(makeLine('It has never appeared in the HaveIBeenPwned breach database. This checks the site itself, not your personal account.', 'var(--ink-soft,#534064)'));
         return;
       }
-      out.appendChild(makeLine(res.breaches.length + ' known breach(es) for ' + checked + ':', '#c0392b', true));
+      out.appendChild(makeLine(res.breaches.length + ' known breach(es) for ' + checked + ':', '#a93226', true));
       if (noteDiff) out.appendChild(noteDiff);
       res.breaches.forEach((b) => {
         const row = document.createElement('div');
@@ -2800,19 +2800,19 @@ $('ss-sitebreach').addEventListener('click', () => {
         row.appendChild(t);
         if (b.count) {
           const c = document.createElement('div');
-          c.style.cssText = 'color:var(--ink-soft,#7a5f93);font-size:10.5px;';
+          c.style.cssText = 'color:var(--ink-soft,#534064);font-size:10.5px;';
           c.textContent = b.count.toLocaleString() + ' accounts affected';
           row.appendChild(c);
         }
         if (b.data && b.data.length) {
           const d = document.createElement('div');
-          d.style.cssText = 'color:var(--ink-faint,#a98fc0);font-size:10px;margin-top:1px;';
+          d.style.cssText = 'color:var(--ink-faint,#665674);font-size:10px;margin-top:1px;';
           d.textContent = 'Exposed: ' + b.data.join(', ');
           row.appendChild(d);
         }
         out.appendChild(row);
       });
-      out.appendChild(makeLine('If you have an account here, make sure your password is unique and consider changing it.', 'var(--ink-soft,#7a5f93)'));
+      out.appendChild(makeLine('If you have an account here, make sure your password is unique and consider changing it.', 'var(--ink-soft,#534064)'));
     });
   });
 });
@@ -2823,13 +2823,13 @@ $('ss-panic').addEventListener('click', () => {
   const btn = $('ss-panic');
   const out = $('ss-panic-result');
   btn.disabled = true; btn.textContent = 'Logging out everywhere…';
-  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#a98fc0)'; out.textContent = '';
+  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)'; out.textContent = '';
   chrome.runtime.sendMessage({ kind: 'panic-logout' }, (res) => {
     btn.disabled = false;
     if (res && res.ok) {
       btn.textContent = 'Done — signed out everywhere';
-      btn.style.background = 'linear-gradient(135deg,#2e9e5b,#249150)';
-      out.style.color = '#2e9e5b';
+      btn.style.background = 'linear-gradient(135deg,#1f693d,#249150)';
+      out.style.color = '#1f693d';
       out.textContent = 'Cleared. Reload your tabs — you\'ll need to sign back in.' + permissionResetSummary(res.permissionsReset);
     } else {
       btn.textContent = 'Failed — try again';
@@ -2850,19 +2850,19 @@ $('cl-run').addEventListener('click', () => {
   };
   const out = $('cl-result');
   const anyChecked = Object.values(types).some(Boolean);
-  if (!anyChecked) { out.style.display = 'block'; out.style.color = 'var(--ink-faint,#a98fc0)'; out.textContent = 'Pick at least one thing to clean.'; return; }
+  if (!anyChecked) { out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)'; out.textContent = 'Pick at least one thing to clean.'; return; }
   const willSignOut = types.cookies ? '\n\nClearing cookies will sign you out of websites.' : '';
   if (!confirm('Clean the selected browser data for all sites?' + willSignOut + '\n\nThis cannot be undone.')) return;
   const btn = $('cl-run');
   btn.disabled = true; btn.textContent = 'Cleaning…';
-  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#a98fc0)'; out.textContent = '';
+  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)'; out.textContent = '';
   chrome.runtime.sendMessage({ kind: 'clean-browser', types }, (res) => {
     btn.disabled = false; btn.textContent = 'Clean selected';
     if (res && res.ok) {
-      out.style.color = '#2e9e5b';
+      out.style.color = '#1f693d';
       out.textContent = 'Cleaned: ' + res.cleared.map(prettyDataType).filter((v, i, a) => a.indexOf(v) === i).join(', ') + '.';
     } else {
-      out.style.color = 'var(--rose-deep,#c84f8b)';
+      out.style.color = 'var(--rose-deep,#973c69)';
       out.textContent = 'Cleaning failed. Try again.';
     }
   });
@@ -2919,7 +2919,7 @@ function loadExtensionAlerts() {
       card.appendChild(name);
       (a.gained || []).forEach((g) => {
         const li = document.createElement('div');
-        li.style.cssText = 'font-size:11px;color:#c0392b;margin-top:2px;';
+        li.style.cssText = 'font-size:11px;color:#a93226;margin-top:2px;';
         li.textContent = '- ' + g;
         card.appendChild(li);
       });
@@ -3014,10 +3014,10 @@ $('ext-review').addEventListener('click', () => {
   chrome.runtime.sendMessage({ kind: 'list-extensions' }, (res) => {
     btn.disabled = false; btn.textContent = 'Review my extensions';
     out.textContent = '';
-    if (!res || !res.ok) { out.style.color = 'var(--rose-deep,#c84f8b)'; out.textContent = 'Could not list extensions.'; out.dataset.open = '1'; return; }
-    if (!res.extensions.length) { out.style.color = 'var(--ink-faint,#a98fc0)'; out.textContent = 'No other extensions installed.'; out.dataset.open = '1'; return; }
+    if (!res || !res.ok) { out.style.color = 'var(--rose-deep,#973c69)'; out.textContent = 'Could not list extensions.'; out.dataset.open = '1'; return; }
+    if (!res.extensions.length) { out.style.color = 'var(--ink-faint,#665674)'; out.textContent = 'No other extensions installed.'; out.dataset.open = '1'; return; }
     const risky = res.extensions.filter((e) => e.riskScore > 0);
-    out.appendChild(makeLine(res.extensions.length + ' other extension(s); ' + risky.length + ' with high-risk permissions:', risky.length ? '#bd7a2a' : '#2e9e5b', true));
+    out.appendChild(makeLine(res.extensions.length + ' other extension(s); ' + risky.length + ' with high-risk permissions:', risky.length ? '#80531d' : '#1f693d', true));
     res.extensions.forEach((e) => {
       const row = document.createElement('div');
       row.style.cssText = 'margin:6px 0 0;padding:8px 10px;background:rgba(255,255,255,.55);border-radius:8px;';
@@ -3028,23 +3028,23 @@ $('ext-review').addEventListener('click', () => {
       nm.textContent = e.name + (e.enabled ? '' : ' (disabled)');
       top.appendChild(nm);
       const badge = document.createElement('span');
-      const sev = e.riskScore >= 2 ? '#c0392b' : (e.riskScore === 1 ? '#bd7a2a' : '#2e9e5b');
+      const sev = e.riskScore >= 2 ? '#a93226' : (e.riskScore === 1 ? '#80531d' : '#1f693d');
       badge.style.cssText = 'flex:none;font-size:9.5px;font-weight:700;color:#fff;background:' + sev + ';padding:2px 7px;border-radius:6px;';
       badge.textContent = e.riskScore >= 2 ? 'HIGH' : (e.riskScore === 1 ? 'MEDIUM' : 'LOW');
       top.appendChild(badge);
       row.appendChild(top);
       if (!e.fromStore) {
-        row.appendChild(makeLine('Not installed from the Web Store (' + e.installType + ')', '#c0392b'));
+        row.appendChild(makeLine('Not installed from the Web Store (' + e.installType + ')', '#a93226'));
       }
       e.riskFlags.forEach((flagText) => {
         const fl = document.createElement('div');
-        fl.style.cssText = 'color:var(--ink-soft,#7a5f93);font-size:10.5px;margin-top:2px;';
+        fl.style.cssText = 'color:var(--ink-soft,#534064);font-size:10.5px;margin-top:2px;';
         fl.textContent = '• ' + flagText;
         row.appendChild(fl);
       });
       out.appendChild(row);
     });
-    out.appendChild(makeLine('High-risk permissions aren\'t proof an extension is bad — popular tools need them too. But review anything you don\'t recognize, and remove unused extensions at chrome://extensions.', 'var(--ink-faint,#a98fc0)'));
+    out.appendChild(makeLine('High-risk permissions aren\'t proof an extension is bad — popular tools need them too. But review anything you don\'t recognize, and remove unused extensions at chrome://extensions.', 'var(--ink-faint,#665674)'));
     out.dataset.open = '1';
   });
 });
@@ -3120,7 +3120,7 @@ function renderPermResults(out, hostname, res) {
   head.setAttribute('aria-expanded', 'false');
   head.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;';
   const arrow = document.createElement('span');
-  arrow.style.cssText = 'flex:none;color:var(--ink-soft,#7a5f93);display:flex;transition:transform .2s ease;';
+  arrow.style.cssText = 'flex:none;color:var(--ink-soft,#534064);display:flex;transition:transform .2s ease;';
   arrow.appendChild(makeChevronIcon(14));
   head.appendChild(arrow);
   const htxt = document.createElement('span');
@@ -3147,7 +3147,7 @@ function renderPermResults(out, hostname, res) {
   res.results.forEach((r) => list.appendChild(buildPermRow(r)));
   body.appendChild(list);
   if (res.unsupported && res.unsupported.length) {
-    body.appendChild(makeLine('Not available: ' + res.unsupported.join(', ') + '.', 'var(--ink-faint,#a98fc0)'));
+    body.appendChild(makeLine('Not available: ' + res.unsupported.join(', ') + '.', 'var(--ink-faint,#665674)'));
   }
 
   head.setAttribute('aria-expanded', 'true');
@@ -3276,7 +3276,7 @@ function renderPermResults(out, hostname, res) {
       el.textContent = '';
       el.append('Browser memory: ');
       const level = document.createElement('strong');
-      level.style.color = r.level === 'High' ? '#c0392b' : r.level === 'Medium' ? '#bd7a2a' : '#2e9e5b';
+      level.style.color = r.level === 'High' ? '#a93226' : r.level === 'Medium' ? '#80531d' : '#1f693d';
       level.textContent = r.level;
       el.appendChild(level);
       el.appendChild(document.createElement('br'));
@@ -3300,12 +3300,12 @@ function renderPermResults(out, hostname, res) {
       box.appendChild(head);
       r.heavy.slice(0, 8).forEach((t) => {
         const row = document.createElement('div');
-        row.style.cssText = 'color:var(--ink-soft,#7a5f93);padding:2px 0;';
+        row.style.cssText = 'color:var(--ink-soft,#534064);padding:2px 0;';
         row.textContent = '• ' + t.host + (t.audible ? ' (audio)' : t.active ? ' (active)' : '');
         box.appendChild(row);
       });
       const note = document.createElement('div');
-      note.style.cssText = 'color:var(--ink-faint,#a98fc0);margin-top:3px;font-size:10.5px;';
+      note.style.cssText = 'color:var(--ink-faint,#665674);margin-top:3px;font-size:10.5px;';
       note.textContent = 'These use more RAM/CPU. They sleep when inactive (unless active/audio).';
       box.appendChild(note);
     });
@@ -3337,10 +3337,10 @@ function renderPermResults(out, hostname, res) {
         const info = document.createElement('div');
         info.style.cssText = 'min-width:0;flex:1;';
         const title = document.createElement('div');
-        title.style.cssText = 'color:var(--ink-soft,#7a5f93);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        title.style.cssText = 'color:var(--ink-soft,#534064);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         title.textContent = (t.impact || 'Low') + ' - ' + (t.host || t.title || 'tab');
         const meta = document.createElement('div');
-        meta.style.cssText = 'color:var(--ink-faint,#a98fc0);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        meta.style.cssText = 'color:var(--ink-faint,#665674);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         const why = Array.isArray(t.reasons) && t.reasons.length ? t.reasons.join(', ') : (t.keepReason || 'normal page');
         meta.textContent = (t.discarded ? 'sleeping' : 'idle ' + (t.idle || '0m')) + ' | ' + why;
         info.appendChild(title);
@@ -3369,7 +3369,7 @@ function renderPermResults(out, hostname, res) {
           row.appendChild(sleep);
         } else {
           const tag = document.createElement('span');
-          tag.style.cssText = 'flex:none;font-size:10px;color:var(--ink-faint,#a98fc0);';
+          tag.style.cssText = 'flex:none;font-size:10px;color:var(--ink-faint,#665674);';
           tag.textContent = t.discarded ? 'Asleep' : 'Protected';
           row.appendChild(tag);
         }
@@ -3397,7 +3397,7 @@ function renderPermResults(out, hostname, res) {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid rgba(224,206,242,.5);';
         const lbl = document.createElement('span');
-        lbl.style.cssText = 'font-size:11px;color:var(--ink-soft,#7a5f93);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        lbl.style.cssText = 'font-size:11px;color:var(--ink-soft,#534064);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         lbl.textContent = z.host + ' · ' + z.idleHours + 'h' + (z.protected ? ' (' + z.keepReason + ')' : '');
         row.appendChild(lbl);
         if (!z.protected) {
@@ -3408,7 +3408,7 @@ function renderPermResults(out, hostname, res) {
           sleep.textContent = 'Sleep';
           sleep.addEventListener('click', () => { sleep.disabled = true; chrome.runtime.sendMessage({ kind: 'memory-sleep-tab', tabId: z.id }, () => { row.style.opacity = '0.4'; sleep.textContent = 'Slept'; }); });
           const close = document.createElement('button');
-          close.className = 'btn'; close.style.cssText = 'padding:4px 8px;font-size:10px;border:1px solid #f0c8da;color:#c84f8b;';
+          close.className = 'btn'; close.style.cssText = 'padding:4px 8px;font-size:10px;border:1px solid #f0c8da;color:#973c69;';
           close.textContent = 'Close';
           close.addEventListener('click', () => { close.disabled = true; chrome.runtime.sendMessage({ kind: 'memory-close-tab', tabId: z.id }, () => { row.style.opacity = '0.4'; close.textContent = 'Closed'; }); });
           btns.appendChild(sleep); btns.appendChild(close);
@@ -3452,7 +3452,7 @@ function renderPermResults(out, hostname, res) {
       out.appendChild(line);
       const close = document.createElement('button');
       close.className = 'btn';
-      close.style.cssText = 'width:100%;font-size:11px;border:1px solid #f0c8da;color:#c84f8b;';
+      close.style.cssText = 'width:100%;font-size:11px;border:1px solid #f0c8da;color:#973c69;';
       close.textContent = 'Close ' + r.extraCount + ' duplicate' + (r.extraCount === 1 ? '' : 's') + ' (keep one of each)';
       close.addEventListener('click', () => {
         if (!confirm('Close ' + r.extraCount + ' duplicate tab(s)? One copy of each page is kept.')) return;
@@ -3479,7 +3479,7 @@ function runPermScan(isAuto) {
     if (!tab || !/^https?:/.test(tab.url || '')) {
       btn.disabled = false; btn.textContent = 'Scan';
       out.style.display = 'block'; out.textContent = '';
-      out.appendChild(makeLine('Open a normal web page (http/https) to scan its permissions.', 'var(--ink-faint,#a98fc0)'));
+      out.appendChild(makeLine('Open a normal web page (http/https) to scan its permissions.', 'var(--ink-faint,#665674)'));
       return;
     }
     let hostname = '';
@@ -3494,11 +3494,11 @@ function runPermScan(isAuto) {
       btn.disabled = false; btn.textContent = 'Re-scan';
       out.style.display = 'block'; out.textContent = '';
       if (err) {
-        out.appendChild(makeLine('Permission scan could not finish: ' + err, 'var(--ink-faint,#a98fc0)'));
+        out.appendChild(makeLine('Permission scan could not finish: ' + err, 'var(--ink-faint,#665674)'));
         return;
       }
       if (!res || !res.ok || !res.results || !res.results.length) {
-        out.appendChild(makeLine((res && res.error) ? res.error : 'Could not read this site\'s permissions.', 'var(--ink-faint,#a98fc0)'));
+        out.appendChild(makeLine((res && res.error) ? res.error : 'Could not read this site\'s permissions.', 'var(--ink-faint,#665674)'));
         return;
       }
       renderPermResults(out, hostname, res);
@@ -3524,14 +3524,14 @@ function resetSitePermissions() {
   btn.textContent = 'Resetting…';
   out.style.display = 'block';
   out.textContent = '';
-  out.appendChild(makeLine('Resetting all supported site permissions for this site...', 'var(--ink-faint,#a98fc0)'));
+  out.appendChild(makeLine('Resetting all supported site permissions for this site...', 'var(--ink-faint,#665674)'));
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
     if (!tab || !/^https?:/.test(tab.url || '')) {
       btn.disabled = false;
       btn.textContent = 'Reset all';
       out.textContent = '';
-      out.appendChild(makeLine('Open a normal web page (http/https) first.', 'var(--ink-faint,#a98fc0)'));
+      out.appendChild(makeLine('Open a normal web page (http/https) first.', 'var(--ink-faint,#665674)'));
       return;
     }
     permScanUrl = tab.url;
@@ -3544,20 +3544,20 @@ function resetSitePermissions() {
       btn.textContent = 'Reset all';
       out.textContent = '';
       if (err) {
-        out.appendChild(makeLine('Permission reset could not finish: ' + err, 'var(--ink-faint,#a98fc0)'));
+        out.appendChild(makeLine('Permission reset could not finish: ' + err, 'var(--ink-faint,#665674)'));
         return;
       }
       if (!res || !res.ok) {
-        out.appendChild(makeLine((res && res.error) ? res.error : 'Could not reset this site\'s permissions.', 'var(--ink-faint,#a98fc0)'));
+        out.appendChild(makeLine((res && res.error) ? res.error : 'Could not reset this site\'s permissions.', 'var(--ink-faint,#665674)'));
         return;
       }
       const reset = res.reset && res.reset.length ? res.reset.join(', ') : 'supported permissions';
-      out.appendChild(makeLine('Reset to browser defaults: ' + reset + '.', '#2e9e5b', true));
+      out.appendChild(makeLine('Reset to browser defaults: ' + reset + '.', '#1f693d', true));
       if (res.unsupported && res.unsupported.length) {
-        out.appendChild(makeLine('Chrome did not expose: ' + res.unsupported.join(', ') + '.', 'var(--ink-faint,#a98fc0)'));
+        out.appendChild(makeLine('Chrome did not expose: ' + res.unsupported.join(', ') + '.', 'var(--ink-faint,#665674)'));
       }
       if (res.failed && res.failed.length) {
-        out.appendChild(makeLine('Some permission categories could not be reset by Chrome.', 'var(--ink-faint,#a98fc0)'));
+        out.appendChild(makeLine('Some permission categories could not be reset by Chrome.', 'var(--ink-faint,#665674)'));
       }
       setTimeout(() => runPermScan(true), 300);
     };
@@ -3590,7 +3590,7 @@ document.querySelectorAll('.perm-link').forEach((b) => {
 $('ss-domage').addEventListener('click', () => {
   const out = $('ss-domage-result');
   const btn = $('ss-domage');
-  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#a98fc0)';
+  out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)';
   out.textContent = 'Looking up registration date…';
   btn.disabled = true; btn.textContent = 'Checking…';
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -3602,7 +3602,7 @@ $('ss-domage').addEventListener('click', () => {
       btn.disabled = false; btn.textContent = 'Check domain age';
       out.textContent = '';
       if (!res || !res.ok) {
-        out.style.color = 'var(--ink-faint,#a98fc0)';
+        out.style.color = 'var(--ink-faint,#665674)';
         out.textContent = (res && res.noDate) ? 'The registry didn\'t publish a registration date for this domain.'
           : (res && res.status === 404) ? 'No registration record found (it may be a subdomain or an unusual TLD).'
           : 'Could not reach the domain-age service right now. Try again shortly.';
@@ -3622,12 +3622,12 @@ $('ss-domage').addEventListener('click', () => {
       head.appendChild(badge);
       out.appendChild(head);
       const reg = document.createElement('div');
-      reg.style.cssText = 'font-size:10.5px;color:var(--ink-soft,#7a5f93);';
+      reg.style.cssText = 'font-size:10.5px;color:var(--ink-soft,#534064);';
       try { reg.textContent = 'Registered ' + new Date(res.created).toLocaleDateString() + ' · ' + res.domain; }
       catch { reg.textContent = res.domain; }
       out.appendChild(reg);
       if (res.ageDays < 30) {
-        out.appendChild(makeLine('This domain is very new. Brand-new domains are common in scams and phishing — be cautious about entering personal or payment details.', '#c0392b'));
+        out.appendChild(makeLine('This domain is very new. Brand-new domains are common in scams and phishing — be cautious about entering personal or payment details.', '#a93226'));
       }
     });
   });
