@@ -3142,6 +3142,19 @@ async function lookupDomainAge(domain, cfg) {
   }
 }
 
+// Every reputation provider answers with a small JSON document, so read the body
+// ONCE under a byte cap and parse it here.
+//
+// The previous version called res.clone() before res.json(). The clone was only
+// ever consumed on the parse-failure path, so on the success path -- nearly every
+// call -- the tee'd stream was never drained and the body sat buffered twice until
+// GC. res.json() also had no size limit, leaving a malformed or hostile provider
+// response bounded by nothing but the abort timeout.
+//
+// 1 MB is roughly ten times the largest legitimate response (a VirusTotal report
+// carrying ~90 engine verdicts); anything past it is not a reputation answer.
+const REPUTATION_MAX_BYTES = 1024 * 1024;
+
 async function fetchJsonWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs || EXTERNAL_REPUTATION_TIMEOUT_MS);
@@ -3151,11 +3164,23 @@ async function fetchJsonWithTimeout(url, options, timeoutMs) {
     let bodySnippet = '';
     let contentType = '';
     try { contentType = res.headers && res.headers.get ? String(res.headers.get('content-type') || '') : ''; } catch (_) {}
-    const textCopy = res.clone();
+    let text = null;
     try {
-      data = await res.json();
+      text = await readResponseTextWithByteLimit(res, REPUTATION_MAX_BYTES);
     } catch (_) {
-      try { bodySnippet = (await textCopy.text()).slice(0, 500); } catch (_) {}
+      // Over the cap, or the stream failed. Either way there is no usable answer,
+      // which is the same outcome callers already handle for unparseable bodies.
+      text = null;
+    }
+    if (text !== null) {
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        // Populated ONLY when parsing failed. phishTankChallengeText() sniffs this
+        // for Cloudflare interstitials, so filling it on success would make any
+        // JSON that merely mentions a cloudflare-hosted URL read as a challenge.
+        bodySnippet = text.slice(0, 500);
+      }
     }
     return { ok: res.ok, status: res.status, data, bodySnippet, contentType };
   } finally {
