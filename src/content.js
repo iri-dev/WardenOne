@@ -1242,66 +1242,28 @@
         catch(_){
 
         }
-        const mountNotice=()=>{
-          if(document.getElementById("rg-reload-loop"))return;
-          const wrap=document.createElement("div");
-          wrap.id="rg-reload-loop",
-          wrap.setAttribute("style",
-          "all:initial!important;position:fixed!important;left:50%!important;bottom:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:440px!important;width:calc(100% - 32px)!important;background:rgba(250,243,253,.97)!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;border:1px solid rgba(176,106,212,.3)!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 16px 48px rgba(80,30,110,.35)!important;font-family:Nunito,system-ui,sans-serif!important;");
-          const title=document.createElement("div");
-          title.setAttribute("style",
-          "font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:14px!important;color:#2d1b40!important;margin:0 0 5px 0!important;"),
-          title.textContent="Stopped a reload loop",
-          wrap.appendChild(title);
-          const body=document.createElement("div");
-          body.setAttribute("style",
-          "font-size:12.5px!important;color:#6a5685!important;line-height:1.5!important;margin:0 0 12px 0!important;"),
-          body.textContent="This site keeps reloading because WardenOne is blocking its cookies and it can't start a session. Cookies are still blocked. You can allow cookies just for this site to use it normally.",
-          wrap.appendChild(body);
-          const row=document.createElement("div");
-          row.setAttribute("style",
-          "display:flex!important;gap:8px!important;flex-wrap:wrap!important;");
-          const allow=document.createElement("button");
-          allow.setAttribute("style",
-          "flex:none!important;border:none!important;cursor:pointer!important;background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;border-radius:10px!important;padding:9px 15px!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
-          allow.setAttribute("data-wo-cookie-allow",
-          "1"),
-          allow.textContent="Allow cookies here",
-          allow.addEventListener("click",
-          e=>{
-            if(!e||!1!==e.isTrusted)try{
-              allow.disabled=!0,
-              allow.textContent="Allowing..."
-            }
-            catch(_){
-
-            }
-
-          }),
-          row.appendChild(allow);
-          const dismiss=document.createElement("button");
-          dismiss.setAttribute("style",
-          "flex:none!important;border:1px solid rgba(176,106,212,.3)!important;cursor:pointer!important;background:rgba(176,106,212,.1)!important;color:#7a5f93!important;border-radius:10px!important;padding:9px 15px!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
-          dismiss.textContent="Keep blocked",
-          dismiss.addEventListener("click",
-          ()=>{
+        /* The notice itself is built by the isolated bridge, not here. A node created in
+           world MAIN belongs to the page as much as to us, so a page could plant a copy of
+           the allow button, label it anything, and have a genuine click on it turn into a
+           cookie permission change. The bridge owns the real one in a closed shadow root. */
+        const askBridgeForNotice=()=>{
             try{
-              wrap.remove()
+              window.postMessage({
+                source:"wardenone-reload-loop",
+                token:__woToken
+              },
+              "*")
             }
             catch(_){
 
             }
 
-          }),
-          row.appendChild(dismiss),
-          wrap.appendChild(row),
-          (document.body||document.documentElement).appendChild(wrap)
-        };
-        document.body?mountNotice():woOn(document,"DOMContentLoaded",
-        mountNotice,
-        {
-          once:!0
-        })
+          };
+        document.body?askBridgeForNotice():woOn(document,"DOMContentLoaded",
+        askBridgeForNotice,
+          {
+            once:!0
+          })
       }
       catch(_){
 
