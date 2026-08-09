@@ -6,6 +6,13 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Stopped a tab that stays open across an extension update from running two copies
+  of the protection at once. Chrome does not re-inject into tabs that are already
+  open when the extension updates, so the old copy carried on -- its observers
+  watching every change the page made, its timers still waking, its listeners still
+  firing -- while the new copy installed alongside it. Both were charged for the same
+  work, on exactly the tabs left open longest. The new copy now releases the old
+  one's observers, timers and listeners before it installs.
 - Stopped Verify & Repair claiming it fixed tabs it had not. It counted a tab as
   re-armed whenever it managed to send the protection code, but a tab still
   running an older copy from before the extension reloaded quietly refuses it --

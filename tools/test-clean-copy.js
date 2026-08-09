@@ -7,6 +7,11 @@
 const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
+/* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
+ * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
+ * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
+ * reaches for anything else it should not see still fails. */
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const MIN = fs.readFileSync('content.min.js', 'utf8');
 const START = MIN.indexOf('const TRACKING_PARAMS=');
@@ -28,6 +33,7 @@ const sandbox = {
   location: { href: 'https://current.example/page' },
 };
 vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
 vm.runInContext(code, sandbox, { filename: 'clean-copy-slice.js' });
 
 const { cleanCopyUrl, cleanCopyText } = sandbox.__cleanCopyTest;
@@ -67,6 +73,7 @@ function installCopyHook(opts = {}) {
     __logs: logs,
   };
   vm.createContext(runtime);
+  installEngineAmbient(runtime);
   vm.runInContext(
     MIN.slice(START, END) + ';' + MIN.slice(HOOK_START, HOOK_END),
     runtime,

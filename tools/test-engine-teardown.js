@@ -59,6 +59,30 @@ check('the factories are actually used',
   SRC.includes('__woObserver(') && SRC.includes('__woInterval('),
   'observer uses=' + (SRC.split('__woObserver(').length - 1) + ' interval uses=' + (SRC.split('__woInterval(').length - 1));
 
+// Listeners on document/window go through woOn so one abort() releases all of them. A
+// direct addEventListener on either target is a listener dispose cannot reach; the only
+// legitimate one is inside woOn itself.
+{
+  const preambleEnd = SRC.indexOf('  const GRABBER_DOMAINS=');
+  const engineBody = SRC.slice(preambleEnd);
+  const strays = {
+    'document.addEventListener(': engineBody.split('document.addEventListener(').length - 1,
+    'window.addEventListener(': engineBody.split('window.addEventListener(').length - 1,
+  };
+  for (const [call, n] of Object.entries(strays)) {
+    check('no direct ' + call + ' outside woOn', n === 0, n + ' remaining');
+  }
+  const routed = (engineBody.split('woOn(document,').length - 1)
+    + (engineBody.split('woOn(window,').length - 1);
+  check('woOn carries the engine listeners', routed > 50, routed + ' routed');
+  check('woOn attaches the abort signal', /base\.signal=__woAbort\.signal/.test(SRC));
+  check('dispose aborts the listener signal', /__woAbort\.abort\(\)/.test(SRC));
+  // Options must be merged, not replaced: a capture or once listener has to keep behaving
+  // that way, or the signal would silently change how the engine listens.
+  check('woOn preserves caller options', /Object\.assign\(\{\s*\},\s*o\)/.test(SRC));
+  check('woOn preserves the capture shorthand', /o===!0\?\{/.test(SRC));
+}
+
 // ---------------------------------------------------------------------------
 // 2. Dispose drains the registry and handles both kinds of held resource.
 // ---------------------------------------------------------------------------
@@ -109,8 +133,12 @@ check('the shipped runtime has no raw observer constructor',
 
   const win = {};
   const cleared = [];
+  // Node's real AbortController and EventTarget, deliberately: signal-based listener removal
+  // is the spec behaviour the engine relies on, so proving it against the real
+  // implementation is worth more than proving it against a mock that agrees with me.
   const ctx = vm.createContext({
     window: win, console, Object, Array, Number, String, Boolean,
+    AbortController, EventTarget, Event,
     MutationObserver: class { disconnect() { this.gone = true; } },
     IntersectionObserver: class { disconnect() { this.gone = true; } },
     setInterval: () => 42,
@@ -123,10 +151,46 @@ check('the shipped runtime has no raw observer constructor',
   check('a factory-created observer is registered', vm.runInContext('__woKeep.length', ctx) === 2,
     'registry holds ' + vm.runInContext('__woKeep.length', ctx));
 
+  // A listener registered through woOn on a real EventTarget, fired before and after dispose.
+  vm.runInContext('this.__t=new EventTarget();this.__hits=0;'
+    + 'woOn(__t,"ping",function(){__hits++});'
+    + '__t.dispatchEvent(new Event("ping"));', ctx);
+  const beforeDispose = vm.runInContext('__hits', ctx);
+  check('a woOn listener fires while the engine is live', beforeDispose >= 1, 'hits=' + beforeDispose);
+
+  // 40 of the 66 call sites pass options -- 26 capture, 13 once, 1 both -- so merging rather
+  // than replacing is load-bearing. A replacing __woOpts would silently drop every one of
+  // them, which no source-text check would notice. Assert on what addEventListener receives.
+  vm.runInContext('this.__seen=[];this.__spy={addEventListener:function(t,f,o){__seen.push(o)}};'
+    + 'woOn(__spy,"a",function(){});'          // no options
+    + 'woOn(__spy,"b",function(){},!0);'       // capture shorthand
+    + 'woOn(__spy,"c",function(){},{once:!0});'
+    + 'woOn(__spy,"d",function(){},{capture:!0,once:!0});', ctx);
+  const seen = vm.runInContext('JSON.stringify(__seen.map(function(o){'
+    + 'return {capture:!!o.capture,once:!!o.once,signal:!!o.signal}}))', ctx);
+  check('woOn merges every option shape and always adds the signal',
+    seen === JSON.stringify([
+      { capture: false, once: false, signal: true },
+      { capture: true, once: false, signal: true },
+      { capture: false, once: true, signal: true },
+      { capture: true, once: true, signal: true },
+    ]), seen);
+  // once must still mean once: a merged signal must not turn it into a permanent listener.
+  vm.runInContext('this.__onceHits=0;this.__t2=new EventTarget();'
+    + 'woOn(__t2,"ping",function(){__onceHits++},{once:!0});'
+    + '__t2.dispatchEvent(new Event("ping"));__t2.dispatchEvent(new Event("ping"));', ctx);
+  check('a woOn once listener still fires exactly once',
+    vm.runInContext('__onceHits', ctx) === 1, 'hits=' + vm.runInContext('__onceHits', ctx));
+
   win.__wardenOneDispose();
   check('dispose disconnected the observer', obs.gone === true);
   check('dispose cleared the interval', cleared.length === 1 && cleared[0] === 42, JSON.stringify(cleared));
   check('dispose empties the registry', vm.runInContext('__woKeep.length', ctx) === 0);
+
+  vm.runInContext('__t.dispatchEvent(new Event("ping"))', ctx);
+  check('dispose detached the woOn listener', vm.runInContext('__hits', ctx) === beforeDispose,
+    'hits went ' + beforeDispose + ' -> ' + vm.runInContext('__hits', ctx));
+
   win.__wardenOneDispose();
   check('dispose is safe to call twice', cleared.length === 1, 'cleared ' + cleared.length + ' times');
 }

@@ -1,0 +1,93 @@
+'use strict';
+
+// Most engine tests do not load the engine. They find a region of src/content.js by string
+// marker, slice it out, and eval the slice in a hand-built sandbox. That keeps them fast and
+// focused, but a lifted fragment can only reference what its sandbox provides -- so the
+// moment the engine gains a shared helper and calls it from scattered places, every suite
+// whose slice contains a call dies with "<helper> is not defined". It is not the engine that
+// is wrong in that situation; the fragment simply cannot see it.
+//
+// This module is the one place that answers for those helpers. A suite that lifts engine
+// source calls installEngineAmbient(sandbox) before running the slice, and the helpers
+// resolve to shims that behave like the native they wrap, minus the bookkeeping the engine
+// does for its own teardown. tools/test-engine-ambient.js asserts this list still covers
+// every helper the engine declares, so adding one produces a clear failure here rather than
+// a confusing one somewhere unrelated.
+
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const ROOT = path.resolve(__dirname, '..', '..');
+
+// The engine's ambient helpers live between the version guard and the first data table.
+const PREAMBLE_START = 'if(window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;';
+const PREAMBLE_END = '  const GRABBER_DOMAINS=';
+
+function enginePreamble(src) {
+  const source = src || fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
+  const from = source.indexOf(PREAMBLE_START);
+  const to = source.indexOf(PREAMBLE_END, from);
+  if (from < 0 || to < 0) return '';
+  return source.slice(from + PREAMBLE_START.length, to);
+}
+
+// Names the preamble declares. Parsed rather than listed so it cannot drift from the engine.
+function declaredAmbientNames(src) {
+  const pre = enginePreamble(src);
+  const names = new Set();
+  for (const m of pre.matchAll(/\b(?:const|let|var)\s+(__?wo[A-Za-z0-9_]*)\s*=/g)) names.add(m[1]);
+  for (const m of pre.matchAll(/\b(?:const|let|var)\s+(woOn|woObserve)\b/g)) names.add(m[1]);
+  return [...names];
+}
+
+// Shims. Each behaves like the thing the engine's helper wraps; none carry engine state, so a
+// lifted fragment cannot accidentally depend on teardown bookkeeping that is not under test.
+// Guarded with typeof so a sandbox that never provides MutationObserver only fails if a
+// fragment actually constructs one.
+const SHIMS = {
+  __woKeep: 'var __woKeep=[];',
+  __woHold: 'var __woHold=function(item){return item;};',
+  __woObserver: 'var __woObserver=function(){'
+    + 'if(typeof MutationObserver==="undefined")throw new Error("sandbox has no MutationObserver");'
+    + 'return new MutationObserver.apply(null,arguments);};',
+  __woIntersection: 'var __woIntersection=function(){'
+    + 'if(typeof IntersectionObserver==="undefined")throw new Error("sandbox has no IntersectionObserver");'
+    + 'return new IntersectionObserver(arguments[0],arguments[1]);};',
+  __woInterval: 'var __woInterval=function(){'
+    + 'if(typeof setInterval==="undefined")return 0;'
+    + 'return setInterval.apply(null,arguments);};',
+  __woAbort: 'var __woAbort={signal:undefined,abort:function(){}};',
+  __woOpts: 'var __woOpts=function(o){return o;};',
+  woOn: 'var woOn=function(target,type,fn,o){'
+    + 'if(target&&typeof target.addEventListener==="function")target.addEventListener(type,fn,o);};',
+};
+
+// `new MutationObserver.apply` is not valid, so build that one properly.
+SHIMS.__woObserver = 'var __woObserver=function(cb,extra){'
+  + 'if(typeof MutationObserver==="undefined")throw new Error("sandbox has no MutationObserver");'
+  + 'return new MutationObserver(cb,extra);};';
+
+function ambientSource(names) {
+  const wanted = names && names.length ? names : Object.keys(SHIMS);
+  return wanted.filter((n) => SHIMS[n]).map((n) => SHIMS[n]).join('\n');
+}
+
+// Install into an already-contextified sandbox object, matching how the lifting suites work:
+//   vm.createContext(sandbox); installEngineAmbient(sandbox); vm.runInContext(snippet, sandbox);
+// Safe to call before or after createContext, and safe to call twice.
+function installEngineAmbient(sandbox) {
+  if (!sandbox) return sandbox;
+  if (!vm.isContext(sandbox)) vm.createContext(sandbox);
+  vm.runInContext(ambientSource(), sandbox, { filename: 'engine-ambient-shims.js' });
+  return sandbox;
+}
+
+module.exports = {
+  SHIMS,
+  ambientSource,
+  installEngineAmbient,
+  declaredAmbientNames,
+  enginePreamble,
+  shimmedNames: () => Object.keys(SHIMS),
+};
