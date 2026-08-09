@@ -13,6 +13,14 @@ First public-release hardening pass.
   firing -- while the new copy installed alongside it. Both were charged for the same
   work, on exactly the tabs left open longest. The new copy now releases the old
   one's observers, timers and listeners before it installs.
+- When storage gets tight, WardenOne now throws away the things it can simply fetch
+  again before it touches anything of yours. It used to trim only your blocklist, your
+  history and one feed, leaving every rebuildable cache untouched -- including the
+  filter data that is the largest thing it stores. So it could finish tidying up and
+  still be full, while the write that failed stayed failed. It now clears the lookup
+  caches and filter data first, checks whether that was enough after each step, and
+  stops as soon as it is. Your history and blocklist are only trimmed if freeing
+  everything disposable was not enough.
 - The block count on the icon no longer falls back to 1 while you are reading a page.
   Chrome puts the extension to sleep after about thirty seconds of quiet and the
   running total went with it, so the next thing blocked on a busy page reset the number

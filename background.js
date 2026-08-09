@@ -2973,6 +2973,50 @@ async function writeStorageTelemetry(reason, extra) {
   return meta;
 }
 
+// Storage pressure relief, in order of what it costs the user to lose.
+//
+// This used to touch three keys and stop, leaving every rebuildable cache alone -- including the
+// cosmetic store, whose declared cap (ADSHIELD_COSMETIC_MAX) is the largest of anything we keep.
+// So relief could finish without freeing enough while megabytes of refetchable data sat untouched,
+// and the cosmetic or cache write that hit the ceiling stayed failed. chrome.storage.local is 10 MB
+// and we deliberately do not ask for unlimitedStorage.
+//
+// The rungs are ordered cheapest-to-lose first and MEASURED BETWEEN, so pressure caused by one
+// oversized cache does not also cost the user their history. Nothing here is fetched again
+// immediately: refetching what we just dropped would put the bytes straight back. Freshness markers
+// are cleared instead, so the next scheduled check sees the data as absent and rebuilds it once the
+// pressure is gone.
+function storagePruneLadder() {
+  return [
+    {
+      // Pure lookup caches. Every entry is a question we can ask the network again.
+      name: 'reputation-caches',
+      drop: [
+        SAFE_BROWSING_CACHE_KEY, PHISHTANK_CACHE_KEY, ABUSEIPDB_CACHE_KEY, URLHAUS_CACHE_KEY,
+        WHOISXML_CACHE_KEY, WHOISXML_REPUTATION_CACHE_KEY, WHOISXML_THREAT_CACHE_KEY,
+        DOMAIN_AGE_CACHE_KEY,
+      ],
+    },
+    {
+      // Script-drift baselines rebuild themselves the next time each script is seen.
+      name: 'drift-baselines',
+      drop: [SCRIPT_DRIFT_BASELINE_KEY],
+    },
+    {
+      // The cosmetic store, plus the markers that would otherwise make the next check believe it
+      // is still current and skip the refetch. Costs one fetch; ad-blocking cosmetics degrade
+      // until then, which is the trade this rung exists to make.
+      name: 'cosmetic-store',
+      drop: [
+        'wardenone_adshield_cosmetic',
+        'wardenone_adshield_cosmetic_at',
+        'wardenone_adshield_cosmetic_hash',
+        'wardenone_adshield_cosmetic_checked_at',
+      ],
+    },
+  ];
+}
+
 async function pruneStorageIfNeeded(reason) {
   const before = await storageGetBytesInUse(null);
   if (!before || before < STORAGE_SOFT_LIMIT_BYTES) {
@@ -2980,36 +3024,68 @@ async function pruneStorageIfNeeded(reason) {
   }
 
   const actions = [];
+  // Re-measured after each rung. A prune that has already freed enough must not keep going.
+  const stillOver = async () => {
+    try {
+      const now = await storageGetBytesInUse(null);
+      return !now || now >= STORAGE_SOFT_LIMIT_BYTES;
+    } catch (_) {
+      return true;
+    }
+  };
+
   try {
-    const store = await localGet([
-      'wardenone_blocked_domains',
-      'wardenone_history',
-      OPENPHISH_CACHE_KEY,
-    ]);
-
-    const blocked = store && store.wardenone_blocked_domains;
-    if (Array.isArray(blocked) && blocked.length > BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) {
-      await localSet({ wardenone_blocked_domains: blocked.slice(0, BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) });
-      actions.push('blocked_domains:' + blocked.length + '->' + BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX);
-    }
-
-    const hist = store && store.wardenone_history;
-    if (Array.isArray(hist) && hist.length > HISTORY_STORAGE_PRESSURE_MAX) {
-      await localSet({ wardenone_history: hist.slice(0, HISTORY_STORAGE_PRESSURE_MAX) });
-      actions.push('history:' + hist.length + '->' + HISTORY_STORAGE_PRESSURE_MAX);
-    }
-
-    const openPhish = store && store[OPENPHISH_CACHE_KEY];
-    if (openPhish && Array.isArray(openPhish.urls) && openPhish.urls.length > OPENPHISH_STORAGE_PRESSURE_MAX) {
-      await localSet({
-        [OPENPHISH_CACHE_KEY]: Object.assign({}, openPhish, {
-          urls: openPhish.urls.slice(0, OPENPHISH_STORAGE_PRESSURE_MAX),
-        }),
-      });
-      actions.push('openphish:' + openPhish.urls.length + '->' + OPENPHISH_STORAGE_PRESSURE_MAX);
+    for (const rung of storagePruneLadder()) {
+      if (!(await stillOver())) break;
+      const keys = rung.drop.filter(Boolean);
+      if (!keys.length) continue;
+      try {
+        const held = await localGet(keys);
+        const present = keys.filter((k) => held && held[k] !== undefined);
+        if (!present.length) continue;
+        await localRemove(present);
+        actions.push(rung.name + ':dropped:' + present.length);
+      } catch (e) {
+        actions.push(rung.name + '-error:' + String(e).slice(0, 60));
+      }
     }
   } catch (e) {
-    actions.push('prune-error:' + String(e).slice(0, 80));
+    actions.push('rebuildable-prune-error:' + String(e).slice(0, 60));
+  }
+
+  // Only now the data the user would notice losing.
+  if (await stillOver()) {
+    try {
+      const store = await localGet([
+        'wardenone_blocked_domains',
+        'wardenone_history',
+        OPENPHISH_CACHE_KEY,
+      ]);
+
+      const blocked = store && store.wardenone_blocked_domains;
+      if (Array.isArray(blocked) && blocked.length > BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) {
+        await localSet({ wardenone_blocked_domains: blocked.slice(0, BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) });
+        actions.push('blocked_domains:' + blocked.length + '->' + BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX);
+      }
+
+      const hist = store && store.wardenone_history;
+      if (Array.isArray(hist) && hist.length > HISTORY_STORAGE_PRESSURE_MAX) {
+        await localSet({ wardenone_history: hist.slice(0, HISTORY_STORAGE_PRESSURE_MAX) });
+        actions.push('history:' + hist.length + '->' + HISTORY_STORAGE_PRESSURE_MAX);
+      }
+
+      const openPhish = store && store[OPENPHISH_CACHE_KEY];
+      if (openPhish && Array.isArray(openPhish.urls) && openPhish.urls.length > OPENPHISH_STORAGE_PRESSURE_MAX) {
+        await localSet({
+          [OPENPHISH_CACHE_KEY]: Object.assign({}, openPhish, {
+            urls: openPhish.urls.slice(0, OPENPHISH_STORAGE_PRESSURE_MAX),
+          }),
+        });
+        actions.push('openphish:' + openPhish.urls.length + '->' + OPENPHISH_STORAGE_PRESSURE_MAX);
+      }
+    } catch (e) {
+      actions.push('prune-error:' + String(e).slice(0, 80));
+    }
   }
 
   const after = await storageGetBytesInUse(null);
