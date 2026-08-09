@@ -218,6 +218,23 @@ than tidy it away.
 
 Found a site WardenOne breaks, or have an idea? **[Open an issue](https://github.com/iri-dev/WardenOne/issues/new/choose)** — there are quick templates for bug reports and feature requests. For bugs, the **site URL** and **which toggle is involved** are the most useful details.
 
+## Official source
+
+WardenOne is published **only** from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne).
+Releases come from that repository's [Releases](https://github.com/iri-dev/WardenOne/releases) page and nowhere
+else.
+
+If you were sent here from another site, or offered a WardenOne download hosted somewhere
+other than the link above, that build was not produced by this project. WardenOne holds
+broad permissions by design — every one of them explained in `permissions.html` — and a
+copy from an unverified source has all of them and none of the accountability. Check where
+your download came from before installing it.
+
+Copyright (C) 2026 iri. Licensed under the GNU GPL v3 or later; see
+[LICENSE](LICENSE), [NOTICE](NOTICE) and [CREDITS.md](CREDITS.md). Redistributing a
+modified copy is welcome — GPLv3 section 5(a) asks that you mark it as changed and keep the
+notices intact.
+
 ## License
 
 **GNU General Public License v3** — see [LICENSE](LICENSE).
