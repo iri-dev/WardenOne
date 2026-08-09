@@ -1235,47 +1235,105 @@
   // and answer a background query about whether this page has unsaved form data.
   // We ALSO track whether the page is actively using the camera/microphone, so a
   // video-call / recording tab is never slept out from under the user.
-  let formDirty = false;
-  let mediaActive = false;
-  const markDirty = (e) => {
-    try {
-      const t = e && e.target;
-      if (!t) return;
-      const tag = (t.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) {
-        const type = (t.type || '').toLowerCase();
-        if (type === 'submit' || type === 'button' || type === 'hidden') return;
-        if ((t.value && String(t.value).length > 0) || t.isContentEditable) formDirty = true;
+  // Computed at query time, never latched. The old version set a boolean the first time anything
+  // was typed into any field -- a site search box counted -- and nothing ever set it false again:
+  // not submit, not navigation, not clearing the field. On a single-page app the document lives
+  // for the whole session, so one keystroke exempted the tab from Memory Shield permanently and
+  // the feature quietly stopped working the more the browser was used.
+  //
+  // Scanning when asked is affordable because Memory Shield only asks when it is considering this
+  // tab, not on every keystroke. Every uncertain answer here resolves to "dirty": this guard is
+  // what stops the extension throwing away a tab holding unsaved work, so being wrong in the
+  // permissive direction costs the user their typing, while being wrong the other way costs some
+  // memory that was not reclaimed.
+  const FORM_SCAN_CAP = 4000;
+
+  // A field counts as edited only if it differs from what the markup shipped with -- otherwise
+  // every page with a pre-filled form would look dirty before the user touched anything.
+  const fieldIsEdited = (el) => {
+    const tag = (el.tagName || '').toUpperCase();
+    if (el.isContentEditable) return String(el.textContent || '').trim().length > 0;
+    if (tag === 'SELECT') {
+      const opts = el.options || [];
+      for (let i = 0; i < opts.length; i++) {
+        if (opts[i].selected !== opts[i].defaultSelected) return true;
       }
-    } catch (_) {}
+      return false;
+    }
+    if (tag === 'INPUT') {
+      const type = (el.type || '').toLowerCase();
+      if (type === 'submit' || type === 'button' || type === 'reset'
+        || type === 'image' || type === 'hidden') return false;
+      // Checkboxes and radios always carry a value, so compare state rather than value. The old
+      // code read el.value here, which is "on" for an untouched checkbox -- so merely having one
+      // on the page could mark the tab dirty.
+      if (type === 'checkbox' || type === 'radio') return el.checked !== el.defaultChecked;
+      if (type === 'file') return !!(el.files && el.files.length);
+    }
+    const value = String(el.value == null ? '' : el.value);
+    if (!value.length) return false;
+    if (typeof el.defaultValue === 'string' && value === el.defaultValue) return false;
+    return true;
   };
-  try {
-    woOn(document, 'input', markDirty, true);
-    woOn(document, 'change', markDirty, true);
-  } catch (_) {}
+
+  const pageHasUnsavedInput = () => {
+    try {
+      const fields = document.querySelectorAll(
+        'input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+      const limit = Math.min(fields.length, FORM_SCAN_CAP);
+      for (let i = 0; i < limit; i++) {
+        try {
+          if (fieldIsEdited(fields[i])) return true;
+        } catch (_) {
+          return true;
+        }
+      }
+      // More fields than we were willing to scan: unknown, so protect the tab.
+      if (fields.length > limit) return true;
+      return false;
+    } catch (_) {
+      return true;
+    }
+  };
   // Detect active camera/mic by wrapping getUserMedia in THIS (isolated) world.
   // Note: page scripts call getUserMedia in the MAIN world; to catch that too we
   // also listen for a signal Media Shield can post. As a robust fallback, we check
   // navigator.mediaDevices for active tracks periodically isn't possible, so we
   // rely on the wrap + the MAIN-world relay below.
+  // Streams captured in THIS world, asked about their own state rather than tracked by a flag.
+  // MediaStreamTrack.stop() does not dispatch 'ended' -- per spec -- so the old listener-only
+  // clear never ran for the ordinary case of a page stopping its own capture, and the flag stayed
+  // true for the life of the page.
+  const liveStreams = new Set();
+
+  const pageHasLiveCapture = () => {
+    let live = false;
+    for (const stream of Array.from(liveStreams)) {
+      let any = false;
+      try {
+        any = stream.getTracks().some((t) => t.readyState === 'live');
+      } catch (_) {
+        any = false;
+      }
+      if (any) live = true;
+      // Prune as we go, so a long call that starts and stops capture repeatedly cannot grow
+      // this set without bound.
+      else liveStreams.delete(stream);
+    }
+    return live;
+  };
+
+  // Honest scope: page scripts call getUserMedia in the MAIN world and never reach this wrapper,
+  // so in practice the set above stays empty and the MAIN-world relay below is what reports a
+  // page's camera or microphone. The wrapper is kept because it costs nothing and does catch
+  // capture started from this world, but it is not the mechanism that matters.
   try {
     const md = navigator.mediaDevices;
     if (md && md.getUserMedia) {
       const orig = md.getUserMedia.bind(md);
       md.getUserMedia = function (...args) {
         return orig(...args).then((stream) => {
-          mediaActive = true;
-          try {
-            stream.getTracks().forEach((tr) => woOn(tr, 'ended', () => {
-              // if no live tracks remain, clear the flag
-              woTimeout(() => {
-                try {
-                  // best-effort: we can't enumerate all streams, so just clear after a track ends
-                  mediaActive = stream.getTracks().some((x) => x.readyState === 'live');
-                } catch (_) { mediaActive = false; }
-              }, 0);
-            }));
-          } catch (_) {}
+          try { liveStreams.add(stream); } catch (_) {}
           return stream;
         });
       };
@@ -1290,17 +1348,26 @@
   // treated as a true secret, since a page script can observe it; it keeps a page
   // from forging this state casually and matches how config, permission-chain and
   // the other relays already validate.
+  let relayMediaActive = false;
   try {
     woOn(window, 'message', (e) => {
       if (e.source === window && e.data && e.data.source === 'wardenone-media'
         && e.data.token === TOKEN) {
-        mediaActive = !!e.data.active;
+        relayMediaActive = !!e.data.active;
       }
     });
   } catch (_) {}
   try {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-      if (msg && msg.kind === 'memory-form-check') { sendResponse({ formDirty, mediaActive }); return true; }
+      // Both answers are computed here rather than read from a flag set earlier. The reply shape
+      // is unchanged, so background needs no change.
+      if (msg && msg.kind === 'memory-form-check') {
+        sendResponse({
+          formDirty: pageHasUnsavedInput(),
+          mediaActive: pageHasLiveCapture() || relayMediaActive,
+        });
+        return true;
+      }
       if (msg && msg.kind === 'memory-throttle') {
         const host = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
         if (host === 'twitch.tv' || host.endsWith('.twitch.tv')

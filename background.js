@@ -78,6 +78,49 @@ function setBadge(tabId) {
   } catch (_) {}
 }
 
+// Tabs whose count we are recovering, and how many blocks arrived while we waited.
+const badgeRecovering = Object.create(null);
+
+// `counts` lives only in the worker, and MV3 suspends the worker after about 30 seconds idle.
+// Chrome keeps the per-tab badge TEXT across that, but our counter comes back absent -- so the
+// next block on a page showing 47 used to set the badge to 1. The number that communicates what
+// the extension is doing was wrong in the direction that undersells it.
+//
+// Chrome's own badge text is the authoritative surviving value, so when we have no count for a
+// tab we ask for it and continue from there. No new storage, and it inherits Chrome's per-tab
+// lifetime semantics for free. Navigation resets assign 0 rather than deleting, so a fresh page
+// is distinguishable from a resumed worker and does not recover a stale number.
+function bumpBadge(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  if (counts[tabId] !== undefined) {
+    counts[tabId] += 1;
+    setBadge(tabId);
+    return;
+  }
+  // Blocks landing during the round trip accumulate here instead of each starting their own.
+  if (badgeRecovering[tabId] !== undefined) {
+    badgeRecovering[tabId] += 1;
+    return;
+  }
+  badgeRecovering[tabId] = 1;
+  // Read BEFORE writing anything: setting the badge first would make us read our own value back.
+  try {
+    chrome.action.getBadgeText({ tabId }, (text) => {
+      void chrome.runtime.lastError;
+      const pending = badgeRecovering[tabId] || 1;
+      delete badgeRecovering[tabId];
+      const prior = parseInt(String(text || ''), 10);
+      counts[tabId] = (Number.isFinite(prior) && prior > 0 ? prior : 0) + pending;
+      setBadge(tabId);
+    });
+  } catch (_) {
+    const pending = badgeRecovering[tabId] || 1;
+    delete badgeRecovering[tabId];
+    counts[tabId] = pending;
+    setBadge(tabId);
+  }
+}
+
 const TOKEN_EXFIL_HISTORY_COOLDOWN_MS = 90000;
 const tokenExfilHistorySeen = Object.create(null);
 
@@ -149,8 +192,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     ]);
     const isWarning = /^warned_/.test(normalized.type || '') || normalized.type === 'detected_download_gate' || NO_BADGE_TYPES.has(normalized.type || '');
     if (!isWarning) {
-      counts[tabId] = (counts[tabId] || 0) + 1;
-      setBadge(tabId);
+      bumpBadge(tabId);
     }
     // Queue the log entry in memory and flush on a debounce. This avoids the
     // race where rapid blocks each do get->modify->set concurrently and clobber
@@ -577,6 +619,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // Clean up when a tab closes.
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete counts[tabId];
+  // A recovery still in flight for a tab that has gone would otherwise sit here forever.
+  delete badgeRecovering[tabId];
   clearTabMessageRates(tabId);
   clearSmartScriptRecoveryForTab(tabId);
 });
@@ -5136,8 +5180,7 @@ async function handleSafeBrowsingNavigation(details) {
       if (current && normalizeSafeBrowsingUrl(current) !== url) return;
     } catch (_) {}
 
-    counts[details.tabId] = (counts[details.tabId] || 0) + 1;
-    setBadge(details.tabId);
+    bumpBadge(details.tabId);
     queueHistory({
       type: 'blocked_safe_browsing_page',
       detail: {
@@ -6776,8 +6819,7 @@ async function handleTrustError(details) {
     if (Date.now() - last < TRUST_ERROR_COOLDOWN_MS) return;
     recentTrustErrors[cooldownKey] = Date.now();
 
-    counts[details.tabId] = (counts[details.tabId] || 0) + 1;
-    setBadge(details.tabId);
+    bumpBadge(details.tabId);
     queueHistory({
       type: info.kind,
       detail: {
