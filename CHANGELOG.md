@@ -13,6 +13,14 @@ First public-release hardening pass.
   firing -- while the new copy installed alongside it. Both were charged for the same
   work, on exactly the tabs left open longest. The new copy now releases the old
   one's observers, timers and listeners before it installs.
+- Closed a way a website could switch its own cookies back on. When WardenOne stops a
+  site from reloading itself forever, it offers you a button to allow that site's
+  cookies. WardenOne used to find its own button by looking for its shape, and a site
+  can build the same shape -- so a site could put up a lookalike, label it "Play
+  video", and one ordinary click of yours would have allowed its cookies. The button
+  now lives somewhere the page cannot see or copy, and WardenOne acts only on a click
+  on the button it built itself. What a site could reach was always limited to its own
+  cookies; it could never touch another site or any other permission.
 - Verify & Repair can now actually re-arm a tab, instead of only being honest that it
   could not. Every part of the protection refuses to install twice, which is correct --
   but the check was a plain yes/no, so a tab still holding an abandoned copy from

@@ -276,6 +276,110 @@
     };
   }
 
+  // WardenOne's warnings, and its one privileged control, used to be ordinary elements in the
+  // page's DOM that we found again by id or CSS selector. Both halves of that were page-owned
+  // data:
+  //
+  //   * Any page can build an element matching a selector. The cookie escape hatch identified
+  //     its own button with closest('#rg-reload-loop [data-wo-cookie-allow="1"]'), so a page
+  //     could plant that exact structure, label it "Play video", and turn one genuine user click
+  //     into contentSettings.cookies -> allow for itself. The trusted-click check passed, because
+  //     the click really was the user's -- what was forged was the element, not the gesture.
+  //   * Any page can delete an element by id. The login-age warning exists to say "this site is
+  //     probably phishing", and the site it accuses could remove it with one call.
+  //
+  // Both are answered by owning the nodes instead of describing them. A CLOSED shadow root's
+  // handle exists only here, in the isolated world: `host.shadowRoot` is null from the page, so
+  // the page cannot read the contents, inject into them, or hand us a lookalike. And because we
+  // keep direct references to what we built, "is this ours?" is an object comparison instead of a
+  // selector match, and listeners bind to the exact node rather than to the document.
+  //
+  // The host still carries an id and data-wo-ui="1". Those are labels, not credentials -- the
+  // engine's overlay cleaner and EyeShield both skip WardenOne's own UI by them, and that has to
+  // keep working. Nothing trusts them any more.
+  const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
+    + 'z-index:2147483647!important;';
+
+  function woOwnedOverlay(id) {
+    let host = null;
+    let shadow = null;
+    let unwatch = null;
+    let gone = false;
+
+    const container = () => document.body || document.documentElement || null;
+
+    function build() {
+      host = document.createElement('div');
+      try {
+        host.id = id;
+        host.setAttribute('data-wo-ui', '1');
+        host.setAttribute('style', WO_OWNED_HOST_STYLE);
+      } catch (_) {}
+      // If attachShadow is unavailable or the page has broken it, fall back to rendering into
+      // the host directly. That is the old, weaker arrangement rather than no warning at all --
+      // for the interstitials, being removable beats being invisible.
+      try {
+        shadow = host.attachShadow({ mode: 'closed' });
+      } catch (_) {
+        shadow = host;
+      }
+      return shadow;
+    }
+
+    function place() {
+      const parent = container();
+      if (!parent || !host) return false;
+      try {
+        if (host.parentNode !== parent) parent.appendChild(host);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return {
+      // The shadow root to render into. Built on first use.
+      root() { return shadow || build(); },
+      // The node identity check: only nodes we created live in our shadow root.
+      owns(node) {
+        if (!node || !shadow) return false;
+        try {
+          // getRootNode() on a node inside a closed shadow root returns that root, and a page
+          // cannot obtain it -- so a decoy in the page's DOM can never satisfy this.
+          return node.getRootNode() === shadow;
+        } catch (_) {
+          return false;
+        }
+      },
+      mount() {
+        if (gone) return false;
+        if (!shadow) build();
+        const placed = place();
+        // Self-healing. A page that removes the host gets it put straight back; the warning it
+        // is trying to delete is about that page. Re-placing is cheap because the node and its
+        // shadow tree are kept, so nothing is rebuilt.
+        if (placed && !unwatch) {
+          unwatch = domWatch(() => {
+            if (gone || !host) return;
+            try {
+              if (!host.isConnected) place();
+            } catch (_) {}
+          });
+        }
+        return placed;
+      },
+      destroy() {
+        gone = true;
+        if (unwatch) { try { unwatch(); } catch (_) {} unwatch = null; }
+        try { if (host) host.remove(); } catch (_) {}
+        host = null;
+        shadow = null;
+      },
+      // Only for our own bookkeeping; conveys no trust.
+      hostNode() { return host; },
+    };
+  }
+
   // Smart Script Shield recovery is deliberately driven by this isolated-world
   // signal, not by a page-visible CustomEvent. The evidence is intentionally
   // narrow: an actual video, a recognised player library root, or a media-route
@@ -955,30 +1059,114 @@
     }, true);
   } catch (_) {}
 
-  // Cookie reload-loop escape. This is intentionally not exposed through the
-  // generic MAIN-world relay: a page script can observe bridge tokens, but it
-  // cannot synthesize a trusted user click. The isolated bridge performs the
-  // privileged permission change only after the user clicks WardenOne's button.
+  // Cookie reload-loop escape. The bridge now BUILDS this notice rather than watching the page
+  // for one, because the previous arrangement could not tell WardenOne's button from a copy of
+  // it. The engine detects the loop -- it is the side that sees the navigations -- but it runs in
+  // world MAIN, which is the page's own JS context, so anything it creates is indistinguishable
+  // from something the page created. Only the isolated world can own a node the page cannot
+  // reach, and only the owner of the node can safely act on a click on it.
+  //
+  // Honest about what this does and does not close: a page can still observe the token and ask
+  // for the notice to be shown, because the token is not a secret. What it can no longer do is
+  // control the words next to the button, or collect the click. The user sees WardenOne's own
+  // text, saying cookies are blocked and that allowing them applies to this site -- and the
+  // permission changes only on a trusted click on a node inside our closed shadow root.
   try {
-    let cookieAllowInFlight = false;
     const cookieStopKey = () => '__wo_rlstop_' + String(location.hostname || '');
-    document.addEventListener('click', (e) => {
-      if (cookieAllowInFlight || !e || e.isTrusted === false) return;
-      const target = e.target;
-      const btn = target && target.closest ? target.closest('#rg-reload-loop [data-wo-cookie-allow="1"]') : null;
-      if (!btn) return;
-      cookieAllowInFlight = true;
-      try { btn.disabled = true; btn.textContent = 'Allowing...'; } catch (_) {}
-      chrome.runtime.sendMessage({ kind: 'set-site-permission', url: location.href, key: 'cookies', setting: 'allow' }, (res) => {
-        if (chrome.runtime.lastError || !res || res.ok === false) {
-          cookieAllowInFlight = false;
-          try { btn.disabled = false; btn.textContent = 'Allow cookies here'; } catch (_) {}
-          return;
-        }
-        try { sessionStorage.removeItem(cookieStopKey()); } catch (_) {}
-        try { location.reload(); } catch (_) {}
+    let cookieOverlay = null;
+    let cookieAllowInFlight = false;
+
+    const showReloadLoopNotice = () => {
+      if (cookieOverlay) { cookieOverlay.mount(); return; }
+      cookieOverlay = woOwnedOverlay('rg-reload-loop');
+      const root = cookieOverlay.root();
+      if (!root) { cookieOverlay = null; return; }
+
+      const panel = document.createElement('div');
+      panel.setAttribute('style', 'all:initial!important;position:fixed!important;left:50%!important;'
+        + 'bottom:24px!important;transform:translateX(-50%)!important;max-width:440px!important;'
+        + 'width:calc(100vw - 32px)!important;box-sizing:border-box!important;'
+        + 'background:rgba(250,243,253,.97)!important;backdrop-filter:blur(16px)!important;'
+        + '-webkit-backdrop-filter:blur(16px)!important;border:1px solid rgba(176,106,212,.3)!important;'
+        + 'border-radius:16px!important;padding:16px 18px!important;'
+        + 'box-shadow:0 16px 48px rgba(80,30,110,.35)!important;'
+        + 'font-family:Nunito,system-ui,sans-serif!important;');
+
+      const title = document.createElement('div');
+      title.setAttribute('style', 'all:initial!important;display:block!important;'
+        + 'font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;'
+        + 'font-size:14px!important;color:#2d1b40!important;margin:0 0 5px 0!important;');
+      title.textContent = 'Stopped a reload loop';
+      panel.appendChild(title);
+
+      const body = document.createElement('div');
+      body.setAttribute('style', 'all:initial!important;display:block!important;'
+        + 'font-size:12.5px!important;color:#6a5685!important;line-height:1.5!important;'
+        + 'margin:0 0 12px 0!important;font-family:Nunito,system-ui,sans-serif!important;');
+      body.textContent = "This site keeps reloading because WardenOne is blocking its cookies and it can't"
+        + ' start a session. Cookies are still blocked. You can allow cookies just for this site to'
+        + ' use it normally.';
+      panel.appendChild(body);
+
+      const row = document.createElement('div');
+      row.setAttribute('style', 'all:initial!important;display:flex!important;gap:8px!important;'
+        + 'flex-wrap:wrap!important;');
+
+      const allow = document.createElement('button');
+      allow.setAttribute('style', 'all:initial!important;flex:none!important;cursor:pointer!important;'
+        + 'background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;'
+        + 'border-radius:10px!important;padding:9px 15px!important;'
+        + 'font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;'
+        + 'font-size:12.5px!important;');
+      allow.textContent = 'Allow cookies here';
+      // Bound to this exact node, not to the document. There is no selector to match and no
+      // element to forge: a page cannot obtain a reference to a node in a closed shadow root, so
+      // it cannot dispatch on it either. owns() is belt and braces for the fallback path where
+      // attachShadow was unavailable.
+      allow.addEventListener('click', (e) => {
+        if (cookieAllowInFlight || !e || e.isTrusted === false) return;
+        if (!cookieOverlay || !cookieOverlay.owns(allow)) return;
+        cookieAllowInFlight = true;
+        try { allow.disabled = true; allow.textContent = 'Allowing...'; } catch (_) {}
+        chrome.runtime.sendMessage({ kind: 'set-site-permission', url: location.href, key: 'cookies', setting: 'allow' }, (res) => {
+          void chrome.runtime.lastError;
+          if (chrome.runtime.lastError || !res || res.ok === false) {
+            cookieAllowInFlight = false;
+            try { allow.disabled = false; allow.textContent = 'Allow cookies here'; } catch (_) {}
+            return;
+          }
+          try { sessionStorage.removeItem(cookieStopKey()); } catch (_) {}
+          try { location.reload(); } catch (_) {}
+        });
       });
-    }, true);
+      row.appendChild(allow);
+
+      const dismiss = document.createElement('button');
+      dismiss.setAttribute('style', 'all:initial!important;flex:none!important;cursor:pointer!important;'
+        + 'border:1px solid rgba(176,106,212,.3)!important;background:rgba(176,106,212,.1)!important;'
+        + 'color:#7a5f93!important;border-radius:10px!important;padding:9px 15px!important;'
+        + 'font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;'
+        + 'font-size:12.5px!important;');
+      dismiss.textContent = 'Keep blocked';
+      // Dismiss stops the self-healing too, or the notice would reappear immediately.
+      dismiss.addEventListener('click', (e) => {
+        if (!e || e.isTrusted === false) return;
+        const overlay = cookieOverlay;
+        cookieOverlay = null;
+        try { if (overlay) overlay.destroy(); } catch (_) {}
+      });
+      row.appendChild(dismiss);
+
+      panel.appendChild(row);
+      root.appendChild(panel);
+      cookieOverlay.mount();
+    };
+
+    window.addEventListener('message', (e) => {
+      if (e.source !== window || !e.data) return;
+      if (e.data.source !== 'wardenone-reload-loop' || e.data.token !== TOKEN) return;
+      showReloadLoopNotice();
+    });
   } catch (_) {}
 
   // ---- Memory Shield: form-dirty + active-media tracking ----
