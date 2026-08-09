@@ -142,6 +142,23 @@ up to five; `popup.png`, `site-blocked.png`, `onboarding.png`, `redirect.png` an
 
 ---
 
+## Small promotional tile
+
+`docs/store/promo-440x280.png`, at exactly **440×280** — the size the Web Store asks for. It uses
+the product's own gradient (`#b06fd6` → `#e07aae`, the same 135° sweep as the popup's primary
+button) and the shipped `icons/icon128.png`, so the tile reads as the same thing a user sees after
+installing rather than as separate marketing art.
+
+Regenerate it with the script in the scratchpad if the branding changes; the title size is fitted by
+measuring the text, not hard-coded, because a hard-coded 52px clipped "WardenOne" to "WardenO".
+
+The white-on-gradient wordmark is the same WCAG AA shortfall recorded as **L16** and accepted for
+the UI. It is defensible here for a different reason: the tile is decorative store furniture, and
+the name appears as real text in the listing beside it, so nothing depends on reading it off the
+image.
+
+---
+
 ## Also do before submitting
 
 - Exclude `_metadata/` (Chrome-generated), this file, `PRIVACY.md`, and the dev

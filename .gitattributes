@@ -27,5 +27,8 @@ src/ export-ignore
 README.md export-ignore
 CWS-SUBMISSION.md export-ignore
 MAINTAINABILITY.md export-ignore
+# The store wants a privacy-policy URL, and the live page is the one that matters.
+# Shipping a copy inside the package only gives it somewhere to drift out of date.
+PRIVACY.md export-ignore
 .gitignore export-ignore
 .gitattributes export-ignore
