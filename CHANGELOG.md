@@ -6,6 +6,14 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Finished making the popup usable without a mouse or a screen. Every remaining
+  control now announces what it is: the seven API-key boxes, the search field, the
+  link scanner, the file picker, and the three number fields that previously had
+  no name at all, not even placeholder text. The settings list also has a real
+  heading structure to navigate by, decorative icons are no longer read out, and
+  the motion and high-contrast settings your system already has are now respected
+  -- keyboard focus stays visible in Windows High Contrast, where it used to
+  disappear.
 - Made the settings switches usable with a screen reader. All 115 of them were
   announced as "checkbox, not checked" with nothing to say what they controlled:
   the name you can see sits next to each switch rather than inside its label, so

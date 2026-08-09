@@ -1981,15 +1981,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 function labelToggleControls() {
   let named = 0;
   const unnamed = [];
-  document.querySelectorAll('label.tg').forEach((label, index) => {
-    const input = label.querySelector('input[type="checkbox"]');
-    if (!input || input.getAttribute('aria-labelledby') || input.getAttribute('aria-label')) return;
 
-    // Search only siblings BEFORE the label, so a name can never be pulled out of a
-    // neighbouring toggle's row.
+  // The visible name for a row's control sits in a .name (or .lbl) that is a preceding
+  // SIBLING of the control, or nested inside one. Searching only backwards means a name
+  // can never be pulled out of the next row down.
+  const findNameFor = (anchor) => {
     let nameEl = null;
     let descEl = null;
-    for (let sib = label.previousElementSibling; sib && !nameEl; sib = sib.previousElementSibling) {
+    for (let sib = anchor.previousElementSibling; sib && !nameEl; sib = sib.previousElementSibling) {
       if (sib.classList && (sib.classList.contains('name') || sib.classList.contains('lbl'))) {
         nameEl = sib;
         break;
@@ -1998,21 +1997,45 @@ function labelToggleControls() {
       nameEl = sib.querySelector('.name, .lbl');
       if (nameEl) descEl = sib.querySelector('.desc');
     }
-    if (!nameEl) {
-      unnamed.push(input.getAttribute('data-key') || input.id || ('#' + index));
-      return;
-    }
+    return { nameEl, descEl };
+  };
 
+  const apply = (control, anchor, fallbackKey) => {
+    if (!control || control.getAttribute('aria-labelledby') || control.getAttribute('aria-label')) return false;
+    const found = findNameFor(anchor);
+    if (!found.nameEl || !found.nameEl.textContent.trim()) {
+      unnamed.push(control.getAttribute('data-key') || control.id || fallbackKey);
+      return false;
+    }
     // Prefixed so a generated id can never collide with one already in the markup.
-    const base = input.id || input.getAttribute('data-key') || ('tg-' + index);
-    if (!nameEl.id) nameEl.id = 'wo-lbl-' + base;
-    input.setAttribute('aria-labelledby', nameEl.id);
-    if (descEl && descEl.textContent.trim()) {
-      if (!descEl.id) descEl.id = 'wo-desc-' + base;
-      input.setAttribute('aria-describedby', descEl.id);
+    const base = control.id || control.getAttribute('data-key') || fallbackKey;
+    if (!found.nameEl.id) found.nameEl.id = 'wo-lbl-' + base;
+    control.setAttribute('aria-labelledby', found.nameEl.id);
+    if (found.descEl && found.descEl.textContent.trim()) {
+      if (!found.descEl.id) found.descEl.id = 'wo-desc-' + base;
+      control.setAttribute('aria-describedby', found.descEl.id);
     }
     named++;
+    return true;
+  };
+
+  // The 115 toggles: the checkbox is inside a text-free <label class="tg">, so the label
+  // is the anchor and the name lives outside it.
+  document.querySelectorAll('label.tg').forEach((label, index) => {
+    apply(label.querySelector('input[type="checkbox"]'), label, 'tg-' + index);
   });
+
+  // Everything else in a row that carries no name of its own -- the number fields for
+  // buffer length, tab cap and idle minutes had neither a label nor even a placeholder,
+  // so they announced as a bare spin button. They sit in the same row shape, so the same
+  // backwards walk finds their name. Controls labelled directly in the markup are skipped
+  // by the aria-label check in apply().
+  document.querySelectorAll('.row input, .row select').forEach((control, index) => {
+    if (control.type === 'checkbox' || control.type === 'radio' || control.type === 'hidden') return;
+    if (control.closest('label')) return;
+    apply(control, control, 'row-' + index);
+  });
+
   return { named, unnamed };
 }
 
@@ -3883,11 +3906,11 @@ $('verify-repair').addEventListener('click', () => {
     // "Allowlist this site" button
     var alBtn=$('allowlist');
     if(alBtn)rows.push(buildKeywords(alBtn));
-    // Add the H3 headings too so sections are findable by their heading text
-    document.querySelectorAll('.group>h3, .eyeshield-panel+h3, #js-shield+h3').forEach(function(h3){
+    // Add the section headings too so sections are findable by their heading text
+    document.querySelectorAll('.group>h2, .eyeshield-panel+h2, #js-shield+h2').forEach(function(h3){
       rows.push(buildKeywords(h3));
     });
-    // EyeShield panel's H3
+    // EyeShield panel heading
     var eyeTitle=$('eyeshield-title');
     if(eyeTitle)rows.push(buildKeywords(eyeTitle));
     // Activity log / Network buttons
@@ -3968,7 +3991,7 @@ $('verify-repair').addEventListener('click', () => {
         var hide=!!q&&!g.querySelector('.row:not(.wo-hidden)');
         g.classList.toggle('wo-hidden',hide);
         var hh=g.previousElementSibling;
-        if(hh&&hh.tagName==='H3')hh.classList.toggle('wo-hidden',hide);
+        if(hh&&/^H[1-6]$/.test(hh.tagName))hh.classList.toggle('wo-hidden',hide);
       });
       // Hide/show EyeShield panel based on whether any of its indexed children are visible
       var eyePanel=$('eyeshield-panel');
@@ -3983,7 +4006,7 @@ $('verify-repair').addEventListener('click', () => {
         }
         eyePanel.classList.toggle('wo-hidden',!eyeVisible);
         var eyeH3=eyePanel.previousElementSibling;
-        if(eyeH3&&eyeH3.tagName==='H3')eyeH3.classList.toggle('wo-hidden',!eyeVisible);
+        if(eyeH3&&/^H[1-6]$/.test(eyeH3.tagName))eyeH3.classList.toggle('wo-hidden',!eyeVisible);
       }
       // Hide/show master switch + Turn everything on when searching
       var masterArea=document.querySelector('.master');
@@ -4002,7 +4025,7 @@ $('verify-repair').addEventListener('click', () => {
         var jsVisible=!q||!jsShield.querySelector('.wo-hidden');
         jsShield.classList.toggle('wo-hidden',!jsVisible);
         var jsH3=jsShield.previousElementSibling;
-        if(jsH3&&jsH3.tagName==='H3')jsH3.classList.toggle('wo-hidden',!jsVisible);
+        if(jsH3&&/^H[1-6]$/.test(jsH3.tagName))jsH3.classList.toggle('wo-hidden',!jsVisible);
       }
       // Hide/show the search panel itself when there's a query that matches nothing?
       // (Leave it visible always so user can clear the search)
