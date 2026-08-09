@@ -1,0 +1,49 @@
+WardenOne
+=========
+
+Copyright (C) 2026 iri
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See LICENSE for the full text.
+
+
+The official source
+-------------------
+
+    https://github.com/iri-dev/WardenOne
+
+Releases are published only from that repository. If you obtained WardenOne from
+anywhere else, or were directed to download it from another site, the build you
+have was not produced here and its contents are unknown to this project. For a
+security and privacy extension that distinction matters: verify before you
+install it.
+
+WardenOne asks for broad permissions in order to do its job, and every one of
+them is documented in permissions.html. A build from an unverified source has
+those same permissions and none of the accountability.
+
+
+Redistribution
+--------------
+
+GPLv3 permits redistribution, including commercially. It also requires that you:
+
+  * keep all copyright, licence and attribution notices intact (section 4);
+  * state prominently that you changed the work, and give the date, if you
+    distribute a modified version (section 5(a));
+  * pass on the same licence, with the source, to whoever receives it (section 5).
+
+Rights under this licence terminate automatically if you violate it (section 8).
+
+Nothing in the licence grants rights to the name "WardenOne", or to present a
+modified copy as the official project or its official download location.
+
+
+Upstream work
+-------------
+
+WardenOne builds on filter lists and filtering techniques from the wider
+ad-blocking and privacy community. Those projects and their licences are credited
+in CREDITS.md; their copyright and attribution rights are retained.
