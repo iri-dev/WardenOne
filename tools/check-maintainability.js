@@ -188,6 +188,7 @@ function checkContentBuild() {
   'tools/test-popup-contrast.js',
   'tools/test-popup-labels.js',
   'tools/test-message-rate-limits.js',
+  'tools/test-repair-honesty.js',
   'tools/test-bridge-host-lists.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
@@ -250,6 +251,7 @@ checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);
+checkCommand('repair honesty tests', ['tools/test-repair-honesty.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
 checkCommand('behavioural false-positive tests', ['tools/test-behavioral-false-positives.js']);

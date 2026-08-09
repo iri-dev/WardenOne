@@ -6,6 +6,13 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Stopped Verify & Repair claiming it fixed tabs it had not. It counted a tab as
+  re-armed whenever it managed to send the protection code, but a tab still
+  running an older copy from before the extension reloaded quietly refuses it --
+  which looked identical from the outside. It now asks each tab what it is
+  actually running and whether that copy can still reach the extension, and says
+  so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
+  check no longer passes while any tab still needs one.
 - Finished making the popup usable without a mouse or a screen. Every remaining
   control now announces what it is: the seven API-key boxes, the search field, the
   link scanner, the file picker, and the three number fields that previously had
