@@ -319,6 +319,59 @@ function loadCookieEscape() {
     dom.document.getElementById('rg-reload-loop') === null);
 }
 
+// ---------------------------------------------------------------------------
+// 4. The three interstitials (M8). Each is a warning about the page it is sitting in, so the page
+//    must not be able to find it, reach into it, or delete it.
+// ---------------------------------------------------------------------------
+{
+  const liveBridge = BRIDGE.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  for (const id of ['wo-script-drift', 'wo-permission-chain', 'wo-login-age']) {
+    check(id + ': rendered into an owned overlay',
+      liveBridge.includes("woOwnedOverlay('" + id + "')"));
+    check(id + ': no longer found again by getElementById',
+      !liveBridge.includes("document.getElementById('" + id + "')"));
+  }
+  check('no interstitial is appended straight to the page body',
+    !liveBridge.includes('(document.body || document.documentElement).appendChild(wrap)'));
+  check('replacing a warning destroys our own overlay, not a page element',
+    /scriptDriftOverlay\.destroy\(\)/.test(liveBridge) && /permChainOverlay\.destroy\(\)/.test(liveBridge));
+  check('all three overlays are mounted after their contents exist',
+    (liveBridge.match(/\.mount\(\);/g) || []).length >= 4);
+}
+
+// ---------------------------------------------------------------------------
+// 5. WardenOne's own overlay cleaner must not remove WardenOne's own warnings. The exemption
+//    covered the engine's rg- widgets but not the bridge's wo- interstitials, so the cleaner
+//    could have deleted the phishing warning itself.
+// ---------------------------------------------------------------------------
+{
+  const exemption = /if\("rg-undo-chip"===el\.id\|\|el\.id&&\(el\.id\.startsWith\("rg-"\)\|\|el\.id\.startsWith\("wo-"\)\)\|\|el\.getAttribute&&"1"===el\.getAttribute\("data-wo-ui"\)\)return!1;/;
+  check('the engine cleaner exempts wo- ids and the data-wo-ui marker', exemption.test(ENGINE));
+  check('...and it survived the build', exemption.test(MIN));
+
+  // Prove it behaviourally by running the real guard statement, not by trusting the regex above.
+  const guardMatch = ENGINE.match(/if\("rg-undo-chip"===el\.id[^\n]*?return!1;/);
+  check('the guard statement is liftable', !!guardMatch);
+  const idGuard = guardMatch ? guardMatch[0] : 'return!1;';
+  const sandbox = { results: {} };
+  vm.createContext(sandbox);
+  vm.runInContext('this.skips = function (el) {' + idGuard.replace('return!1;', 'return true;')
+    + ' return false; };', sandbox, { filename: 'content.js:cleaner-exemption' });
+  const cases = [
+    ['wo-login-age', {}, true],
+    ['wo-script-drift', {}, true],
+    ['rg-reload-loop', {}, true],
+    ['', { 'data-wo-ui': '1' }, true],
+    ['some-page-banner', {}, false],
+  ];
+  for (const [id, attrs, expected] of cases) {
+    const el = { id, getAttribute: (k) => (attrs[k] == null ? null : attrs[k]) };
+    const skipped = vm.runInContext('skips', sandbox)(el);
+    check('cleaner ' + (expected ? 'skips' : 'still inspects') + ' ' + (id || 'data-wo-ui element'),
+      skipped === expected, 'got ' + skipped);
+  }
+}
+
 if (failures) {
   console.error('[fail] owned-UI tests: ' + failures + ' failure(s)');
   process.exit(1);

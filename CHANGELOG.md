@@ -13,6 +13,13 @@ First public-release hardening pass.
   firing -- while the new copy installed alongside it. Both were charged for the same
   work, on exactly the tabs left open longest. The new copy now releases the old
   one's observers, timers and listeners before it installs.
+- A site can no longer delete WardenOne's warning about itself. The three warnings --
+  a script changing under you, a chain of permission requests, and a login page on a
+  domain that is only days old -- were ordinary elements in the page, so the site being
+  accused could remove the accusation. They now live somewhere the page cannot see or
+  touch, and put themselves back if they are removed. WardenOne's own overlay cleaner
+  was also able to remove them, which is fixed too: it now leaves anything belonging to
+  WardenOne alone, however it was added.
 - Closed a way a website could switch its own cookies back on. When WardenOne stops a
   site from reloading itself forever, it offers you a button to allow that site's
   cookies. WardenOne used to find its own button by looking for its shape, and a site

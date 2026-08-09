@@ -380,6 +380,12 @@
     };
   }
 
+  // Handles for the three interstitials, so replacing one destroys the overlay we built rather
+  // than whatever the page currently has under that id.
+  let scriptDriftOverlay = null;
+  let permChainOverlay = null;
+  let loginAgeOverlay = null;
+
   // Smart Script Shield recovery is deliberately driven by this isolated-world
   // signal, not by a page-visible CustomEvent. The evidence is intentionally
   // narrow: an actual video, a recognised player library root, or a media-route
@@ -1313,9 +1319,13 @@
         if (key && key === scriptDriftWarnedKey) return;
         scriptDriftWarnedKey = key;
         try {
-          const old = document.getElementById('wo-script-drift');
-          if (old) old.remove();
-          const root = document.body || document.documentElement;
+          /* Owned, not described: rendered into a closed shadow root, so the page this warns
+             about cannot read it, reach into it, or delete it. Replacing an existing warning
+             destroys the overlay WE built rather than searching the page for an element by id --
+             the page could have planted that. */
+          if (scriptDriftOverlay) { try { scriptDriftOverlay.destroy(); } catch (_) {} }
+          scriptDriftOverlay = woOwnedOverlay('wo-script-drift');
+          const root = scriptDriftOverlay.root();
           if (!root) return;
           const wrap = document.createElement('div');
           wrap.id = 'wo-script-drift';
@@ -1362,6 +1372,8 @@
           box.appendChild(actions);
           wrap.appendChild(box);
           root.appendChild(wrap);
+          /* Mounted only once the contents exist, so a half-built warning is never on screen. */
+          if (scriptDriftOverlay) scriptDriftOverlay.mount();
         } catch (_) {}
       };
       const runScriptDriftScan = () => {
@@ -1450,9 +1462,13 @@
         permChainShownKey = key;
         permChainShownAt = now;
         try {
-          const old = document.getElementById('wo-permission-chain');
-          if (old) old.remove();
-          const root = document.body || document.documentElement;
+          /* Owned, not described: rendered into a closed shadow root, so the page this warns
+             about cannot read it, reach into it, or delete it. Replacing an existing warning
+             destroys the overlay WE built rather than searching the page for an element by id --
+             the page could have planted that. */
+          if (permChainOverlay) { try { permChainOverlay.destroy(); } catch (_) {} }
+          permChainOverlay = woOwnedOverlay('wo-permission-chain');
+          const root = permChainOverlay.root();
           if (!root) return;
           const wrap = document.createElement('div');
           wrap.id = 'wo-permission-chain';
@@ -1523,6 +1539,8 @@
           box.appendChild(actions);
           wrap.appendChild(box);
           root.appendChild(wrap);
+          /* Mounted only once the contents exist, so a half-built warning is never on screen. */
+          if (permChainOverlay) permChainOverlay.mount();
         } catch (_) {}
       };
 
@@ -1573,7 +1591,7 @@
         if (laShown || !loginAgeGuardOn() || bridgeSilentModeOn()) return;
         laShown = true;
         try {
-          if (document.getElementById('wo-login-age')) return;
+          if (loginAgeOverlay) return;
           if (!document.body && !document.documentElement) return;
           const reasons = Array.isArray(verdict && verdict.reasons) ? verdict.reasons : [];
           const domain = String((verdict && verdict.domain) || location.hostname || '');
@@ -1598,7 +1616,15 @@
             try { if (history.length > 1) history.back(); else location.href = 'about:blank'; } catch (_) { try { location.href = 'about:blank'; } catch (_) {} }
           });
           wrap.appendChild(txt); wrap.appendChild(leave); wrap.appendChild(x);
-          (document.body || document.documentElement).appendChild(wrap);
+          /* The highest-stakes warning WardenOne produces -- it says this site is probably
+             phishing -- and the site it accuses could delete it with a single call. A closed
+             shadow root puts it out of reach, and the mount re-places the host if the page
+             removes it anyway. */
+          loginAgeOverlay = woOwnedOverlay('wo-login-age');
+          const laRoot = loginAgeOverlay.root();
+          if (!laRoot) return;
+          laRoot.appendChild(wrap);
+          loginAgeOverlay.mount();
         } catch (_) {}
       };
       const laCheck = () => {
