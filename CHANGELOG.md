@@ -13,6 +13,13 @@ First public-release hardening pass.
   firing -- while the new copy installed alongside it. Both were charged for the same
   work, on exactly the tabs left open longest. The new copy now releases the old
   one's observers, timers and listeners before it installs.
+- Made pages with several filter rules of one kind stop paying for each of them. Some
+  filter lists carry more than one rule that strips junk out of the data a site loads,
+  and WardenOne was hooking that data path once per rule -- so a site matched by four
+  rules had its data checked four times over, on a path nearly every modern site uses
+  constantly. It hooks once now and applies all the rules in a single pass, with one
+  budget for the whole pass instead of one per rule. YouTube and Twitch were already
+  excluded from this and still are.
 - A site can no longer delete WardenOne's warning about itself. The three warnings --
   a script changing under you, a chain of permission requests, and a login page on a
   domain that is only days old -- were ordinary elements in the page, so the site being
