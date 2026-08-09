@@ -13661,7 +13661,11 @@
       isOverlay=el=>{
         try{
           if(!el||1!==el.nodeType||seen.has(el))return!1;
-          if("rg-undo-chip"===el.id||el.id&&el.id.startsWith("rg-"))return!1;
+          /* WardenOne must never clean its own UI. The rg- prefix covered the engine's own
+             widgets but not the bridge's security interstitials, which are wo- prefixed -- so the
+             cleaner could have removed the phishing warning itself. data-wo-ui="1" is the marker
+             EyeShield already uses, and it covers anything added later regardless of its id. */
+          if("rg-undo-chip"===el.id||el.id&&(el.id.startsWith("rg-")||el.id.startsWith("wo-"))||el.getAttribute&&"1"===el.getAttribute("data-wo-ui"))return!1;
           const cs=getComputedStyle(el),
           pos=cs.position;
           if("none"===cs.display||"hidden"===cs.visibility||0===parseFloat(cs.opacity))return!1;
