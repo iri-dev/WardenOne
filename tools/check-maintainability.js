@@ -186,6 +186,7 @@ function checkContentBuild() {
   'tools/test-reputation-fetch.js',
   'tools/test-shared-dom-watcher.js',
   'tools/test-popup-contrast.js',
+  'tools/test-popup-labels.js',
   'tools/test-message-rate-limits.js',
   'tools/test-bridge-host-lists.js',
   'tools/test-verification-compatibility.js',
@@ -245,6 +246,7 @@ checkCommand('popup config merge tests', ['tools/test-popup-config-merge.js']);
 checkCommand('reputation fetch tests', ['tools/test-reputation-fetch.js']);
 checkCommand('shared DOM watcher tests', ['tools/test-shared-dom-watcher.js']);
 checkCommand('popup contrast tests', ['tools/test-popup-contrast.js']);
+checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);

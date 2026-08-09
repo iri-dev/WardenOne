@@ -1,5 +1,23 @@
 /* WardenOne popup logic */
 
+// Every toggle is an <input type="checkbox"> inside a <label class="tg"> holding only the
+// track and knob spans -- no text. A label takes its accessible name from its own text
+// content, so all 115 of them had none: a screen reader announced "checkbox, not checked"
+// with nothing to say what it controlled, across the whole settings surface. The visible
+// name sits in a sibling .name (or .lbl for the master switch) which is never inside the
+// label, so there is nothing for the label to pick up.
+//
+// Done structurally rather than as 115 hand edits. The rows are regular but not
+// identical -- some nest the name two levels up, the master switch uses .lbl, and two
+// toggles carry a description long enough that the name sits far from the input -- so
+// walking the real DOM covers every variant, cannot introduce a duplicate id, and labels
+// any toggle added later automatically instead of silently missing it.
+//
+// It runs FIRST, before anything else in this file. The script tag sits at the end of
+// <body> so the DOM is already parsed, and putting the call here means a throw anywhere
+// later in start-up cannot cost the whole settings surface its labels.
+try { labelToggleControls(); } catch (_) {}
+
 // Cached element lookup. Replaces ~135 raw getElementById calls: shorter,
 // one obvious place to typo-check an id, and it caches the node so repeated lookups of
 // the same id don't re-walk the DOM. The isConnected guard re-queries if a cached node
@@ -1959,6 +1977,44 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
   if (area === 'local' && changes.wardenone_tracker_learner) renderTrackerLearner();
 });
+
+function labelToggleControls() {
+  let named = 0;
+  const unnamed = [];
+  document.querySelectorAll('label.tg').forEach((label, index) => {
+    const input = label.querySelector('input[type="checkbox"]');
+    if (!input || input.getAttribute('aria-labelledby') || input.getAttribute('aria-label')) return;
+
+    // Search only siblings BEFORE the label, so a name can never be pulled out of a
+    // neighbouring toggle's row.
+    let nameEl = null;
+    let descEl = null;
+    for (let sib = label.previousElementSibling; sib && !nameEl; sib = sib.previousElementSibling) {
+      if (sib.classList && (sib.classList.contains('name') || sib.classList.contains('lbl'))) {
+        nameEl = sib;
+        break;
+      }
+      if (!sib.querySelector) continue;
+      nameEl = sib.querySelector('.name, .lbl');
+      if (nameEl) descEl = sib.querySelector('.desc');
+    }
+    if (!nameEl) {
+      unnamed.push(input.getAttribute('data-key') || input.id || ('#' + index));
+      return;
+    }
+
+    // Prefixed so a generated id can never collide with one already in the markup.
+    const base = input.id || input.getAttribute('data-key') || ('tg-' + index);
+    if (!nameEl.id) nameEl.id = 'wo-lbl-' + base;
+    input.setAttribute('aria-labelledby', nameEl.id);
+    if (descEl && descEl.textContent.trim()) {
+      if (!descEl.id) descEl.id = 'wo-desc-' + base;
+      input.setAttribute('aria-describedby', descEl.id);
+    }
+    named++;
+  });
+  return { named, unnamed };
+}
 
 initPopupScrollMemory();
 initAdvancedProvidersMemory();
