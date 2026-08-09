@@ -11,6 +11,11 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
+ * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
+ * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
+ * reaches for anything else it should not see still fails. */
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.join(__dirname, '..');
 const ANTI_REDIRECT = fs.readFileSync(path.join(ROOT, 'anti-redirect.js'), 'utf8');
@@ -284,6 +289,7 @@ function buildHarness(options) {
   };
 
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(ANTI_REDIRECT, sandbox, { filename: 'anti-redirect.js' });
   const innerWindow = vm.runInContext('window', sandbox);
 

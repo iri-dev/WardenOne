@@ -16,6 +16,11 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
+ * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
+ * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
+ * reaches for anything else it should not see still fails. */
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const CONTENT = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
@@ -62,6 +67,7 @@ function loadCosmeticPolicy() {
     String,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     backgroundBetween('function parseCosmeticFilters', '// Fetch + parse the cosmetic lists')
       + '\n'
@@ -88,6 +94,7 @@ function loadLearnedDomainPolicy() {
     isNeverBlockDomain() { return false; },
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     backgroundBetween('function normalizeLearnedDomain', 'function loadLearned')
       + '\nthis.__normalize=normalizeLearnedDomain;',
@@ -246,9 +253,12 @@ function runOverlayProbe(pageUrl, surface) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
+  /* End marker is an address, not an assertion -- it moved when the engine routed its listeners
+     through woOn so teardown could release them. */
   const overlayRuntime = sourceBetween(
     'if(WO.removeOverlays',
-    'try{window.addEventListener("keydown"',
+    'try{woOn(window,"keydown"',
   );
   vm.runInContext(overlayRuntime, sandbox, { filename: 'content.min.js:x-overlay-compatibility' });
   return { logs, injectedStyles, surface };
@@ -306,6 +316,7 @@ function installSessionShield(pageUrl) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   const guardRuntime = sourceBetween(
     'if(WO.blockTokenExfil||WO.continuousTokenScan||WO.detectSkimmers||WO.paymentCardGuard)try{',
     'if(WO.continuousTokenScan){',

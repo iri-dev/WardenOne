@@ -13,6 +13,10 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+// Lifted engine fragments can reference the engine's shared helpers (woOn and the
+// observer/timer factories). A fragment only sees what its sandbox provides, so those are
+// installed as shims before the slice runs -- see tools/lib/engine-ambient.js.
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
@@ -42,6 +46,7 @@ function loadPlayerCompatibility(pathname, pageMarker) {
   };
   const snippet = sourceBetween(CONTENT, 'const PLAYER_ROUTE_RE=', '\n    !function(){');
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     snippet
       + '\nthis.__playerCompatibility = {'
@@ -71,6 +76,7 @@ function loadHiddenMediaBlockReason() {
     playerShellFor: player.playerShellFor,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     'const ' + declarations + '; this.__playBlockReason = playBlockReason;',
     sandbox,
@@ -101,6 +107,7 @@ function loadCosmeticComputer() {
     Object,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween(BACKGROUND, 'function computeCosmeticForHost', '\n// Dynamic rule IDs')
       + '\nthis.__compute = computeCosmeticForHost;',
@@ -138,6 +145,7 @@ function loadRemoteRulePriorityHelpers() {
     RESOURCE_TYPES: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'],
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween(BACKGROUND, 'function domainToRule', '\nfunction isWardenOneDynamicRuleId')
       + '\nthis.__priorityApi = {'
@@ -152,6 +160,7 @@ function loadRemoteRulePriorityHelpers() {
 function loadRemoteSourceKindHelper() {
   const sandbox = { Object };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween(BACKGROUND, 'const REMOTE_SOURCE_KIND_RANK', '\nfunction prioritizedDomainRuleDomains')
       + '\nthis.__strongestSourceKind = strongestRemoteListSourceKind;',
@@ -169,6 +178,7 @@ function loadRepairFileSelector() {
     isMainWorldRepairExcludedUrl: () => false,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween(BACKGROUND, 'function repairMainWorldFilesForUrl', '\nfunction getRepairFramesForTab')
       + '\nthis.__selectRepairFiles = repairMainWorldFilesForUrl;',
@@ -211,6 +221,7 @@ async function observeTracker(detail) {
     Math,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween(BACKGROUND, 'async function noteTrackerObservation', '\nasync function trackerLearnerStatus')
       + '\nthis.__observe = noteTrackerObservation;',
@@ -268,6 +279,7 @@ function loadOverlayClassifier() {
   };
   const snippet = sourceBetween(CONTENT, 'mediaRectState={', 'CONTINUE_TEXT=');
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(snippet + 'null; this.__classify = isOverlay;', sandbox);
   assert.strictEqual(typeof sandbox.__classify, 'function', 'overlay classifier was not exposed');
   return sandbox.__classify;
@@ -666,6 +678,7 @@ test('background-tab throttling leaves trusted media hosts untouched', () => {
   const trusted = (hostname) => {
     const sandbox = { location: { hostname } };
     vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
     vm.runInContext(declaration + 'this.__trustedMediaHost=trustedMediaHost;', sandbox);
     return sandbox.__trustedMediaHost;
   };
@@ -699,7 +712,9 @@ test('overlay cleanup never removes supported framework infrastructure', () => {
 });
 
 test('overlay cleanup never takes ownership of body/html overflow', () => {
-  const overlay = sourceBetween(CONTENT, 'if(WO.removeOverlays', '\n    try{\n      window.addEventListener("keydown"');
+  /* End marker is an address, not an assertion -- it moved when the engine routed its listeners
+     through woOn for teardown. */
+  const overlay = sourceBetween(CONTENT, 'if(WO.removeOverlays', '\n    try{\n      woOn(window,"keydown"');
   assert(!/(?:document\.body|document\.documentElement)[\s\S]{0,160}(?:setProperty|removeProperty)\("overflow"/.test(overlay),
     'overlay cleanup mutates a global overflow lock it does not own');
   assert(!/(?:prevBodyOverflow|prevHtmlOverflow|restoreBodyOverflow|releaseModalLocks)/.test(overlay),

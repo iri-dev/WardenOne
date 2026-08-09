@@ -12,6 +12,10 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+// Lifted engine fragments can reference the engine's shared helpers (woOn and the
+// observer/timer factories). A fragment only sees what its sandbox provides, so those are
+// installed as shims before the slice runs -- see tools/lib/engine-ambient.js.
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const CONTENT = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
@@ -187,6 +191,7 @@ function makeBrowserSandbox(rawPageUrl) {
     requestSubmit: NativeForm.prototype.requestSubmit,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   const innerWindow = vm.runInContext('window', sandbox);
 
   function fire(type, supplied) {
@@ -384,6 +389,7 @@ function runReloadLoopProbe(sharedStorage, isTopFrame, counters) {
   sandbox.WO_TOP = isTopFrame;
   sandbox.stop = () => { counters.stops++; };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(CONTENT.slice(start, end + 4), sandbox, {
     filename: 'content.min.js:reload-loop-compatibility',
   });
@@ -572,6 +578,7 @@ test('offscreen authentication iframe keeps its src', () => {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(CONTENT.slice(start, end), sandbox, {
     filename: 'content.min.js:auth-iframe-compatibility',
   });
@@ -602,6 +609,7 @@ test('generic SAML meta refresh remains available to the browser', () => {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   installActualSameSiteHelper(sandbox);
   vm.runInContext(CONTENT.slice(start, end), sandbox, {
     filename: 'content.min.js:saml-meta-refresh-compatibility',
@@ -640,6 +648,7 @@ test('same-party subdomain iframe is not classified as a third-party cookie fram
   sandbox.self = sandbox;
   sandbox.top = inaccessibleTop;
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(CONTENT.slice(start, end), sandbox, {
     filename: 'content.min.js:cookie-party-compatibility',
   });
@@ -678,6 +687,7 @@ test('background does not close a university portal staged blank popup', async (
     },
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     BACKGROUND.slice(start, end) + ';globalThis.__closeBlank=maybeCloseBlankPopupTarget;',
     sandbox,

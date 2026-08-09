@@ -11,6 +11,11 @@
 
 const fs = require('fs');
 const vm = require('vm');
+/* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
+ * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
+ * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
+ * reaches for anything else it should not see still fails. */
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = process.cwd();
 const MODULE_SOURCE = fs.readFileSync('twitch-adblock.js', 'utf8');
@@ -484,6 +489,7 @@ function createPageHarness(config, harnessOptions) {
   };
 
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(MODULE_SOURCE, sandbox, { filename: 'twitch-adblock.js' });
   return {
     sandbox,
@@ -572,6 +578,7 @@ function executeWorkerWrapper(source, queuedMessages, nativeFetch) {
     clearTimeout,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(String(source || ''), sandbox, { filename: 'wrapped-twitch-worker.js' });
   for (const message of queuedMessages || []) {
     const event = { data: message };

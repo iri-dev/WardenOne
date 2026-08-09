@@ -30,8 +30,39 @@
   const __woObserver=(...a)=>__woHold(new MutationObserver(...a));
   const __woIntersection=(...a)=>__woHold(new IntersectionObserver(...a));
   const __woInterval=(...a)=>__woHold(setInterval(...a));
+  /* One signal for every listener the engine puts on document or window, so dispose
+     detaches all of them with a single abort() instead of 66 matching removeEventListener
+     calls -- each of which would have to reproduce the original capture flag to work at
+     all. Options are merged rather than replaced, so a listener registered with capture,
+     or with once, keeps that behaviour. */
+  const __woAbort=new AbortController();
+  const __woOpts=(o)=>{
+    const base=(o&&typeof o==="object")?Object.assign({},o):(o===!0?{
+      capture:!0
+    }
+    :{
+
+    });
+    base.signal=__woAbort.signal;
+    return base
+  };
+  const woOn=(target,type,fn,o)=>{
+    try{
+      target.addEventListener(type,fn,__woOpts(o))
+    }
+    catch(_){
+
+    }
+
+  };
   try{
     window.__wardenOneDispose=()=>{
+      try{
+        __woAbort.abort()
+      }
+      catch(_){
+
+      }
       const held=__woKeep.splice(0,__woKeep.length);
       for(const item of held)try{
         if(typeof item==="number")clearInterval(item);
@@ -642,7 +673,7 @@
       timeoutMs:timeoutMs
     })
   }
-  window.addEventListener("message",
+  woOn(window,"message",
   e=>{
     if(e.source!==window)return;
     const m=e.data;
@@ -664,7 +695,7 @@
     }
 
   });
-  window.addEventListener("message",
+  woOn(window,"message",
   e=>{
     if(e.source!==window)return;
     const m=e.data;
@@ -940,7 +971,7 @@
     },
     safeBrowsingPending=new Map;
     try{
-      window.addEventListener("message",
+      woOn(window,"message",
       e=>{
         const m=e&&e.data;
         if(e.source!==window||!m||"wardenone-safe-browsing"!==m.source)return;
@@ -1266,7 +1297,7 @@
           wrap.appendChild(row),
           (document.body||document.documentElement).appendChild(wrap)
         };
-        document.body?mountNotice():document.addEventListener("DOMContentLoaded",
+        document.body?mountNotice():woOn(document,"DOMContentLoaded",
         mountNotice,
         {
           once:!0
@@ -1792,7 +1823,7 @@
           return 0
         };
         score+=checkTitle(),
-        score>=4?heuristicHit=!0:score>=1&&document.addEventListener("DOMContentLoaded",
+        score>=4?heuristicHit=!0:score>=1&&woOn(document,"DOMContentLoaded",
         ()=>{
           if(WO.__adultGateShown)return;
           const extra=checkTitle();
@@ -1807,12 +1838,12 @@
         adultReaskForceHeuristic=!!forceHeuristic,
         adultReaskReasons=reasonsIn||heuristicReasons,
         WO.__adultGateReaskBound||(WO.__adultGateReaskBound=!0,
-        window.addEventListener("pagehide",
+        woOn(window,"pagehide",
         ()=>{
           WO.__adultGateAllowedThisPage=!1,
           WO.__adultGateShown=!1
         }),
-        window.addEventListener("pageshow",
+        woOn(window,"pageshow",
         e=>{
           e.persisted&&(WO.__adultGateAllowedThisPage=!1,
           WO.__adultGateShown=!1,
@@ -1989,7 +2020,7 @@
         for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&scrubDomLink(n),
         n&&n.querySelectorAll&&sweepDomLinks(n)
       }),
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       ()=>sweepDomLinks(document))
     }
     catch(_){
@@ -2003,7 +2034,7 @@
 
         })
       };
-      window.addEventListener("copy",
+      woOn(window,"copy",
       e=>{
         try{
           if(!0!==WO.cleanCopyLinks)return;
@@ -2103,7 +2134,7 @@
     "auxclick",
     "keydown",
     "touchstart",
-    "touchend"].forEach(ev=>window.addEventListener(ev,
+    "touchend"].forEach(ev=>woOn(window,ev,
     markGesture,
     !0));
     if(WO.blockMetaRefresh){
@@ -2505,7 +2536,7 @@
         }
 
       };
-      if(window.addEventListener("click",
+      if(woOn(window,"click",
       e=>{
         const a=e.target&&e.target.closest&&e.target.closest("a[href]");
         if(!a)return;
@@ -2994,7 +3025,7 @@
       catch(_){
 
       }
-      document.addEventListener("submit",
+      woOn(document,"submit",
       e=>{
         blockForm(e.target)&&(e.preventDefault(),
         e.stopImmediatePropagation())
@@ -3286,7 +3317,7 @@
         }
 
       };
-      document.addEventListener("click",
+      woOn(document,"click",
       e=>{
         const target=clickTarget(e.target);
         if(!target||warnedClick.has(target))return;
@@ -3405,7 +3436,7 @@
     };
     applyCookieBlocker();
     try{
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       applyCookieBlocker)
     }
     catch(_){
@@ -3519,7 +3550,7 @@
     };
     installSupercookieGuard();
     try{
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       installSupercookieGuard)
     }
     catch(_){
@@ -4347,7 +4378,7 @@
           };
           let skimWarned=!1;
           const capturedSensitive=new Set;
-          document.addEventListener("input",
+          woOn(document,"input",
           e=>{
             try{
               const el=e.target;
@@ -4525,12 +4556,12 @@
           armSkimmerGuard())
         };
         maybeArmSkimmer(!1),
-        skimmerArmed||(document.addEventListener("DOMContentLoaded",
+        skimmerArmed||(woOn(document,"DOMContentLoaded",
         ()=>maybeArmSkimmer(!1),
         {
           once:!0
         }),
-        document.addEventListener("input",
+        woOn(document,"input",
         e=>{
           try{
             isSensitiveField(e.target)&&maybeArmSkimmer(!0)
@@ -4997,7 +5028,7 @@
 
           }
         };
-        document.addEventListener("input",
+        woOn(document,"input",
         e=>{
           try{
             WO.paymentCardGuard&&fieldLooksCard(e.target)&&setTimeout(cardValues,
@@ -5010,7 +5041,7 @@
         },
         !0);
         const allowedForms=new WeakSet;
-        document.addEventListener("submit",
+        woOn(document,"submit",
         e=>{
           try{
             const form=e.target;
@@ -5270,12 +5301,12 @@
       "pointerdown",
       "touchstart",
       "copy",
-      "cut"].forEach(ev=>window.addEventListener(ev,
+      "cut"].forEach(ev=>woOn(window,ev,
       markGesture,
       !0));
       const hasRecentGesture=()=>Date.now()-lastGesture<1500;
       let lastCopiedAddr=null;
-      document.addEventListener("copy",
+      woOn(document,"copy",
       ()=>{
         try{
           const sel=String(document.getSelection?document.getSelection():""),
@@ -5347,7 +5378,7 @@
         return realExec(cmd,
         ...rest)
       }),
-      document.addEventListener("copy",
+      woOn(document,"copy",
       e=>{
         try{
           if(!e.isTrusted)return;
@@ -5392,7 +5423,7 @@
       SWAP_WINDOW_MS=12e4;
       let swapCopied=null,
       swapWarned=0;
-      document.addEventListener("copy",
+      woOn(document,"copy",
       ()=>{
         try{
           const a=swapExtract(String(document.getSelection?document.getSelection():""));
@@ -5474,7 +5505,7 @@
         }
 
       };
-      document.addEventListener("paste",
+      woOn(document,"paste",
       e=>{
         try{
           if(swapWarned>5||!swapCopied)return;
@@ -5751,7 +5782,7 @@
             }
             return v
           },
-          window.addEventListener("pagehide",
+          woOn(window,"pagehide",
           ()=>{
             try{
               ss.getItem(decoyKey)===bait&&ss.removeItem(decoyKey)
@@ -5943,7 +5974,7 @@
         }
 
       };
-      document.body?scamScan():document.addEventListener("DOMContentLoaded",
+      document.body?scamScan():woOn(document,"DOMContentLoaded",
       scamScan,
       {
         once:!0
@@ -6086,7 +6117,7 @@
         }
 
       }
-      document.addEventListener("copy",
+      woOn(document,"copy",
       e=>{
         try{
           const sel=String(document.getSelection?document.getSelection():"");
@@ -6114,7 +6145,7 @@
 
       };
       if(WO_TOP){
-        document.body?scanPageForClickFix():document.addEventListener("DOMContentLoaded",
+        document.body?scanPageForClickFix():woOn(document,"DOMContentLoaded",
         scanPageForClickFix,
         {
           once:!0
@@ -6190,7 +6221,7 @@
         }
 
       };
-      document.body?fakeUpdateScan():document.addEventListener("DOMContentLoaded",
+      document.body?fakeUpdateScan():woOn(document,"DOMContentLoaded",
       fakeUpdateScan,
       {
         once:!0
@@ -6332,7 +6363,7 @@
         }
 
       };
-      document.addEventListener("focusin",
+      woOn(document,"focusin",
       e=>{
         try{
           const el=e&&e.target;
@@ -6529,7 +6560,7 @@
         }
         return Array.from(new Set(targets))
       };
-      document.addEventListener("paste",
+      woOn(document,"paste",
       e=>{
         try{
           if(!e.isTrusted)return;
@@ -6702,7 +6733,7 @@
         event&&event.submitter)),
         !0)
       };
-      window.addEventListener("submit",
+      woOn(window,"submit",
       e=>{
         try{
           checkFormBeforeSubmit(e.target,
@@ -6995,7 +7026,7 @@
 
       },
       initialPw=new Set(document.querySelectorAll('input[type="password"]'));
-      document.body?scanForms():document.addEventListener("DOMContentLoaded",
+      document.body?scanForms():woOn(document,"DOMContentLoaded",
       scanForms,
       {
         once:!0
@@ -8158,7 +8189,7 @@
       const maybeStartAdshieldCosmetics=()=>{
         if(adshieldCosmeticsStarted||!allowGoogleSearchCosmetics())return;
         adshieldCosmeticsStarted=!0,
-        document.documentElement?requestAndApply():document.addEventListener("DOMContentLoaded",
+        document.documentElement?requestAndApply():woOn(document,"DOMContentLoaded",
         requestAndApply,
         {
           once:!0
@@ -8551,10 +8582,10 @@
             }
 
           };
-          document.addEventListener("click",
+          woOn(document,"click",
           block,
           !0),
-          document.addEventListener("auxclick",
+          woOn(document,"auxclick",
           block,
           !0)
         }
@@ -8691,14 +8722,14 @@
       const maybeStartGoogleCleanup=()=>{
         if(googleCleanupStarted||!SEARCH_AI_ON&&!SEARCH_ADS_ON)return;
         googleCleanupStarted=!0,
-        document.documentElement?startGoogleCleanup():document.addEventListener("DOMContentLoaded",
+        document.documentElement?startGoogleCleanup():woOn(document,"DOMContentLoaded",
         startGoogleCleanup,
         {
           once:!0
         })
       };
       maybeStartGoogleCleanup(),
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       maybeStartGoogleCleanup)
     }
     catch(e){
@@ -9667,9 +9698,9 @@
         600)
       };
       try{
-        document.addEventListener("visibilitychange",
+        woOn(document,"visibilitychange",
         __woTwOnVis),
-        window.addEventListener("focus",
+        woOn(window,"focus",
         __woTwOnVis)
       }
       catch(_){
@@ -9679,18 +9710,18 @@
         ["pointerdown",
         "keydown",
         "click"].forEach(function(ev){
-          document.addEventListener(ev,
+          woOn(document,ev,
           function(e){
             e&&!1!==e.isTrusted&&(__woTwUserAct=Date.now())
           },
           !0)
         }),
-        document.addEventListener("pause",
+        woOn(document,"pause",
         function(e){
           e&&e.target&&"VIDEO"===e.target.tagName&&(__woTwUserPaused=Date.now()-__woTwUserAct<1500)
         },
         !0),
-        document.addEventListener("play",
+        woOn(document,"play",
         function(e){
           e&&e.target&&"VIDEO"===e.target.tagName&&(__woTwUserPaused=!1)
         },
@@ -9719,7 +9750,7 @@
       ["click",
       "keydown",
       "pointerdown",
-      "touchstart"].forEach(ev=>window.addEventListener(ev,
+      "touchstart"].forEach(ev=>woOn(window,ev,
       ()=>{
         userGestured=!0,
         setTimeout(()=>{
@@ -10048,7 +10079,7 @@
     };
     installSocialWidgetGuard();
     try{
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       installSocialWidgetGuard)
     }
     catch(_){
@@ -10174,7 +10205,7 @@
         setHiddenStyle(hidden),
         hidden?pauseBackgroundVideos():resumeBackgroundVideos()
       };
-      document.addEventListener("visibilitychange",
+      woOn(document,"visibilitychange",
       onVis,
       !0),
       onVis(),
@@ -10232,7 +10263,7 @@
         }
 
       };
-      document.querySelector('link[rel="canonical"]')?goCanonical():document.addEventListener("DOMContentLoaded",
+      document.querySelector('link[rel="canonical"]')?goCanonical():woOn(document,"DOMContentLoaded",
       goCanonical,
       {
         once:!0
@@ -10313,7 +10344,7 @@
 
       };
       setMeta(),
-      document.head||document.addEventListener("DOMContentLoaded",
+      document.head||woOn(document,"DOMContentLoaded",
       setMeta,
       {
         once:!0
@@ -10526,7 +10557,7 @@
         tryReject()||tries<8&&setTimeout(attempt,
         500)
       };
-      document.body?attempt():document.addEventListener("DOMContentLoaded",
+      document.body?attempt():woOn(document,"DOMContentLoaded",
       attempt,
       {
         once:!0
@@ -10824,7 +10855,7 @@
         "keydown",
         "pointerdown",
         "touchstart",
-        "scroll"].forEach(ev=>window.addEventListener(ev,
+        "scroll"].forEach(ev=>woOn(window,ev,
         ()=>{
           interacted=!0
         },
@@ -10940,7 +10971,7 @@
         catch(_){
 
         }
-        document.addEventListener("wo-event",
+        woOn(document,"wo-event",
         e=>{
           try{
             const t=e.detail&&e.detail.type;
@@ -11621,7 +11652,7 @@
           bar.appendChild(x),
           document.documentElement.appendChild(bar)
         };
-        document.documentElement?showPhishBar():document.addEventListener("DOMContentLoaded",
+        document.documentElement?showPhishBar():woOn(document,"DOMContentLoaded",
         showPhishBar)
       }
 
@@ -12911,7 +12942,7 @@
           }
 
         }),
-        document.addEventListener("wo-config-change",
+        woOn(document,"wo-config-change",
         ()=>{
           locationPrivacyOn()&&clearLiveGeoWatches()
         })
@@ -13348,7 +13379,7 @@
 
         };
         document.documentElement&&scanMedia(document.documentElement),
-        document.addEventListener("DOMContentLoaded",
+        woOn(document,"DOMContentLoaded",
         ()=>scanMedia(document.documentElement),
         {
           once:!0
@@ -14227,15 +14258,15 @@
 
         }
       };
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       ()=>{
         overlayCleanerOn()?start():restoreCleanerChanges()
       }),
-      "loading"===document.readyState?document.addEventListener("DOMContentLoaded",
+      "loading"===document.readyState?woOn(document,"DOMContentLoaded",
       start):start()
     }
     try{
-      window.addEventListener("keydown",
+      woOn(window,"keydown",
       e=>{
         if(!e.ctrlKey||!e.shiftKey||"W"!==e.key&&"w"!==e.key)return;
         e.preventDefault();
@@ -14579,7 +14610,7 @@
         wrap.children.length>4;
         )wrap.removeChild(wrap.firstChild)
       };
-      document.addEventListener("wo-event",
+      woOn(document,"wo-event",
       e=>{
         const d=e&&e.detail||{
 
@@ -14587,7 +14618,7 @@
         (/^blocked_|^detected_|^warned_/.test(d.type||"")||"behavioral_risk"===d.type)&&showToast(d.type,
         d.detail)
       }),
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       ()=>{
         if(!WO.enabled||!WO.showToasts)try{
           toastHostEl&&toastHostEl.remove(),
@@ -14774,7 +14805,7 @@
               "blocked_hidden_media",
               "blocked_autoplay_media",
               "blocked_token_exfil"]);
-              document.addEventListener("wo-event",
+              woOn(document,"wo-event",
               e=>{
                 const t=e.detail&&e.detail.type||"";
                 if("detected_download_gate"!==t&&!NO_BADGE_TYPES.has(t))return t&&/_failed$/.test(t)?(WO.__damaged=!0,
@@ -14801,9 +14832,9 @@
       syncBadgeVisibility=()=>{
         !1===WO.showBadge?removeBadge():mount()
       };
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       syncBadgeVisibility),
-      document.body?syncBadgeVisibility():document.addEventListener("DOMContentLoaded",
+      document.body?syncBadgeVisibility():woOn(document,"DOMContentLoaded",
       syncBadgeVisibility)
     };
       try{
@@ -14885,7 +14916,7 @@
           400)
         };
         if(document.readyState!=="loading")__woSweepAds();
-        document.addEventListener("DOMContentLoaded",
+        woOn(document,"DOMContentLoaded",
         __woSweepAds);
         try{
           __woObserver(__woSchedAds).observe(document.documentElement,
@@ -14900,7 +14931,7 @@
 
       };
       __woMaybeAdCollapse(),
-      document.addEventListener("wo-config-change",
+      woOn(document,"wo-config-change",
       __woMaybeAdCollapse)
     }
     catch(e){
@@ -14917,7 +14948,7 @@
     window.__WO_CONFIG__&&window.__WO_CONFIG__.__configReady&&__woStartRuntime()
   };
   try{
-    document.addEventListener("wo-config-change",
+    woOn(document,"wo-config-change",
     __woStartWhenConfigured)
   }
   catch(_){

@@ -10,6 +10,11 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
+ * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
+ * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
+ * reaches for anything else it should not see still fails. */
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -40,6 +45,7 @@ function loadNetworkParsers() {
     isNeverBlockDomain: () => false,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('const UBO_TYPE_MAP', '\nfunction getListMeta')
       + '\nthis.__api = { parseList, parseNetworkRules };',
@@ -53,6 +59,7 @@ function loadRedirectPolicy() {
     isLoginCompatibilityUrl: (url) => String(url).includes('auth.example'),
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('function redirectChainContainsKnownAuth', '\nasync function evaluateRedirectChain')
       + '\nthis.__api = { redirectChainContainsKnownAuth, redirectChainShouldInterrupt };',
@@ -89,6 +96,7 @@ function loadMediaCompatibilityRules() {
     console,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('let __mediaCompatibilityRulesEnabled', '\nlet __loginCompatibilityRulesEnabled')
       + '\nthis.__applyMediaCompatibilityRules = applyMediaCompatibilityRules;',
@@ -116,6 +124,7 @@ function loadRemoteListCommitGuard(options = {}) {
     },
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('async function commitRemoteListRules', '\nlet __remoteListUpdateInFlight')
       + '\nthis.__commitRemoteListRules = commitRemoteListRules;',
@@ -127,6 +136,7 @@ function loadRemoteListCommitGuard(options = {}) {
 function runStoredConfigUpdateMigration(config) {
   const sandbox = { cfg: Object.assign({}, config || {}) };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     'let changed = false;\n'
       + sourceBetween("if (cfg.__locationPrivacyV344Enabled !== true)", '\n      if (changed) localSet')
@@ -142,6 +152,7 @@ function loadExactDomainRuleHelpers() {
     LOGIN_COMPAT_RESOURCE_TYPES: Array.from(arrayConstant('LOGIN_COMPAT_RESOURCE_TYPES')),
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('function domainToRule', '\nfunction isWardenOneDynamicRuleId')
       + '\n'
@@ -345,6 +356,7 @@ test('background no longer closes blank login popups or blocks client-cert promp
     recentlyForcedFromHttp: () => null,
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('function classifyTrustError', '\nfunction trustErrorPageUrl')
       + '\nthis.__classifyTrustError = classifyTrustError;',

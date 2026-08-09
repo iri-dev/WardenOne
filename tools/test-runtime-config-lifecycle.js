@@ -34,8 +34,12 @@ check('download auto-skip also respects config readiness',
   /tryAutoSkip=\(\)=>\{\s*if\(!overlayCleanerOn\(\)\|\|!WO\.autoSkipDownloadAds/.test(source));
 check('disabled cleanup restores hidden or removed nodes',
   /const restoreCleanerChanges=\(\)=>\{[\s\S]*undoStack\.pop\(\)\(\)[\s\S]*rg-hard-overlay-css[\s\S]*rg-undo-chip[\s\S]*rg-dl-bar/.test(source));
+/* Matched on the handler, not on how it is registered. Pinning document.addEventListener here
+ * broke the moment the engine started routing its listeners through a helper so teardown could
+ * release them -- a change that altered nothing about this behaviour. The event name and what it
+ * does are the assertion; the registration mechanism is not. */
 check('live config changes start or restore the cleaner',
-  /document\.addEventListener\("wo-config-change",\s*\(\)=>\{\s*overlayCleanerOn\(\)\?start\(\):restoreCleanerChanges\(\)/.test(source));
+  /"wo-config-change",\s*\(\)=>\{\s*overlayCleanerOn\(\)\?start\(\):restoreCleanerChanges\(\)/.test(source));
 check('normal WebRTC transport is not rewritten by the IP lookup guard',
   /if\(WO\.blockWebRTCLeak&&!trustedMediaHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(source));
 check('runtime reports compatibility-preserving WebRTC behavior',

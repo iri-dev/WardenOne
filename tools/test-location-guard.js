@@ -14,6 +14,11 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
+ * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
+ * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
+ * reaches for anything else it should not see still fails. */
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const MIN = fs.readFileSync(path.join(__dirname, '..', 'content.min.js'), 'utf8');
 const START = MIN.indexOf('try{let locationEventCount=0;const locationPrivacyOn=');
@@ -99,6 +104,7 @@ function makeSandbox(blocked) {
     incError() { errorCalls++; },
   };
   vm.createContext(sandbox);
+  installEngineAmbient(sandbox);
   vm.runInContext(SLICE, sandbox);
   return sandbox;
 }
