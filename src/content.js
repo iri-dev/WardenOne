@@ -13201,20 +13201,34 @@
               },
               "*");
               const tracks=stream.getTracks?stream.getTracks():[];
-              tracks.forEach(tr=>tr.addEventListener&&tr.addEventListener("ended",
-              ()=>{
+              /* Asked, not awaited. stop() does not dispatch "ended", so a page ending its
+                 own capture never fired the listener this used to rely on, and Memory Shield
+                 went on treating the tab as busy for the rest of its life. The poll checks the
+                 tracks and clears itself the moment it reports inactive, so a page that is not
+                 capturing has nothing running. "ended" is still honoured as the fast path. */
+              const woMediaIdle=()=>{
                 try{
-                  tracks.some(x=>"live"===x.readyState)||window.postMessage({
+                  if(tracks.some(x=>"live"===x.readyState))return!1;
+                  window.postMessage({
                     source:"wardenone-media",
                     token:__woToken,
                     active:!1
                   },
-                  "*")
+                  "*");
+                  return!0
                 }
                 catch(_){
-
+                  return!0
                 }
 
+              },
+              woMediaPoll=__woInterval(()=>{
+                woMediaIdle()&&clearInterval(woMediaPoll)
+              },
+              2e3);
+              tracks.forEach(tr=>tr.addEventListener&&tr.addEventListener("ended",
+              ()=>{
+                woMediaIdle()&&clearInterval(woMediaPoll)
               }))
             }
             catch(_){

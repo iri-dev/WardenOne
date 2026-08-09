@@ -13,6 +13,19 @@ First public-release hardening pass.
   firing -- while the new copy installed alongside it. Both were charged for the same
   work, on exactly the tabs left open longest. The new copy now releases the old
   one's observers, timers and listeners before it installs.
+- The block count on the icon no longer falls back to 1 while you are reading a page.
+  Chrome puts the extension to sleep after about thirty seconds of quiet and the
+  running total went with it, so the next thing blocked on a busy page reset the number
+  to 1. It now reads the number already on the icon and carries on from there.
+- Memory Shield works again on sites you have used for a while. It refuses to sleep a
+  tab holding text you have not saved, which is right -- but it decided that from the
+  first key you pressed in any box, including a search box, and never changed its mind.
+  On sites that never fully reload, one keystroke exempted the tab for the rest of the
+  session, so the feature quietly did less the more you used the browser. It now looks
+  at what is actually in the page when asked. The same applied to the camera and
+  microphone check: stopping a call did not clear it, and now it does. A tab with
+  genuinely unsaved typing is still protected, and anything uncertain still counts as
+  unsaved.
 - Made pages with several filter rules of one kind stop paying for each of them. Some
   filter lists carry more than one rule that strips junk out of the data a site loads,
   and WardenOne was hooking that data path once per rule -- so a site matched by four
