@@ -7520,40 +7520,58 @@
         del)&&(found=!0));
         return found
       },
+      scJsonPruneRules=[],
+      scJsonPruneApply=obj=>{
+        if(!pageMutationScriptletRuntimeOn())return obj;
+        try{
+          /* One budget for the whole parse, not one per rule. Previously each nested wrapper
+             reset it, so four filters were allowed four times the walking on a single object.
+             Rules share the budget now, which bounds the work a page can be charged. */
+          scWalkBudget.n=2e4;
+          for(const rule of scJsonPruneRules){
+            if(rule.req.length&&!rule.req.every(p=>scWalkJson(obj,
+            p.split("."),
+            0,
+            !1)))continue;
+            rule.rem.forEach(p=>scWalkJson(obj,
+            p.split("."),
+            0,
+            !0))
+          }
+        }
+        catch(_){
+
+        }
+        return obj
+      },
       scJsonPrune=(remove,
       required)=>{
         const rem=String(remove||"").split(/\s+/).filter(Boolean),
         req=String(required||"").split(/\s+/).filter(Boolean);
         if(!rem.length)return;
         if(adShieldVideoPlatform)return;
-        const prune=obj=>{
-          if(!pageMutationScriptletRuntimeOn())return obj;
-          try{
-            scWalkBudget.n=2e4;
-            if(req.length&&!req.every(p=>scWalkJson(obj,
-            p.split("."),
-            0,
-            !1)))return obj;
-            rem.forEach(p=>scWalkJson(obj,
-            p.split("."),
-            0,
-            !0))
-          }
-          catch(_){
-
-          }
-          return obj
-        },
-        realParse=JSON.parse;
+        scJsonPruneRules.push({
+          rem:rem,
+          req:req
+        });
+        /* The hook goes on once. Every additional filter for this host adds a rule to the
+           list the single wrapper walks -- it used to wrap JSON.parse again, around the
+           previous wrapper, so the cost of parsing multiplied by the number of matching
+           filter rules. Multiple json-prune rules per host are ordinary in real lists.
+           The rule list is its own flag: reaching here with more than one rule means the
+           first call already installed the hook. A separate boolean would have had to live
+           in this const chain, where it could not be reassigned. */
+        if(scJsonPruneRules.length>1)return;
+        const realParse=JSON.parse;
         JSON.parse=function(){
-          return prune(realParse.apply(this,
+          return scJsonPruneApply(realParse.apply(this,
           arguments))
         };
         try{
           const realJson=Response.prototype.json;
           Response.prototype.json=function(){
             return realJson.apply(this,
-            arguments).then(prune)
+            arguments).then(scJsonPruneApply)
           }
 
         }
