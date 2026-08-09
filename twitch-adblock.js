@@ -66,8 +66,59 @@
     if (!embedFrame) return;
   }
   if (/^clips\.twitch\.tv$/i.test(location.hostname) || /^\/[^/]+\/clip\//i.test(location.pathname || '')) return;
-  if (window.__wardenOneTwitchAdblockReady) return;
+  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
+     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
+     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
+     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
+     older one, and it must release the old one's listeners, observers and timers first or both
+     copies stay live and are charged for the same work. */
+  if (window.__wardenOneTwitchAdblockReady === VERSION) return;
+  if (window.__wardenOneTwitchAdblockReady) {
+    try {
+      if (typeof window.__wardenOneTwitchAdblockDispose === 'function') window.__wardenOneTwitchAdblockDispose();
+    } catch (_) {}
+  }
   window.__wardenOneTwitchAdblockReady = VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOneTwitchAdblockDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
 
   let enabled = true;
   let bridgeToken = '';
@@ -161,7 +212,7 @@
   }
 
   for (const eventName of ['visibilitychange', 'webkitvisibilitychange']) {
-    document.addEventListener(eventName, twitchVisibilityChanged);
+    woOn(document, eventName, twitchVisibilityChanged);
   }
 
   function createEphemeralDeviceId() {
@@ -242,7 +293,7 @@
   }
 
   mountCss();
-  if (!adCss.isConnected) document.addEventListener('readystatechange', mountCss, { once: true });
+  if (!adCss.isConnected) woOn(document, 'readystatechange', mountCss, { once: true });
 
   function restoreInlineStyle(video, property, state) {
     if (state.value) video.style.setProperty(property, state.value, state.priority);
@@ -386,7 +437,7 @@
       try { video.pause(); } catch (_) {}
       restoreIndependentAdVideo(video);
     }
-    if (nextDelay) independentAdPruneTimer = setTimeout(pruneIndependentAdVideos, nextDelay);
+    if (nextDelay) independentAdPruneTimer = woTimeout(pruneIndependentAdVideos, nextDelay);
   }
 
   function guardIndependentAdVideo(video) {
@@ -448,7 +499,7 @@
   function installIndependentAdObserver() {
     if (independentAdObserver || typeof MutationObserver !== 'function') return;
     try {
-      independentAdObserver = new MutationObserver((records) => {
+      independentAdObserver = woObserver((records) => {
         mountCss();
         let streamDisplayShellChanged = false;
         for (const record of records) {
@@ -512,7 +563,7 @@
   }
 
   for (const eventName of ['loadstart', 'loadedmetadata', 'play', 'playing', 'volumechange']) {
-    document.addEventListener(eventName, (event) => guardIndependentAdVideo(event.target), true);
+    woOn(document, eventName, (event) => guardIndependentAdVideo(event.target), true);
   }
 
   function streamInterceptionEnabled() {
@@ -572,7 +623,7 @@
     playbackFailOpenTimer = 0;
     const remaining = playbackFailOpenUntil - Date.now();
     if (remaining > 0) {
-      playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, remaining);
+      playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, remaining);
       return;
     }
     resumeStreamInterception();
@@ -600,7 +651,7 @@
     persistPlaybackFailOpenUntil();
     if (playbackFailOpenTimer) clearTimeout(playbackFailOpenTimer);
     clearPlaybackFailOpenResumeTimer();
-    playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, PLAYBACK_FAIL_OPEN_MS);
+    playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, PLAYBACK_FAIL_OPEN_MS);
     try {
       document.documentElement.setAttribute('data-wo-twitch-fail-open', errorCode === 2 ? 'network' : 'decode');
     } catch (_) {}
@@ -625,7 +676,7 @@
     // resume blocking instead of leaving the rest of an ad pod unfiltered.
     playbackFailOpenResumeVideo = video;
     playbackFailOpenResumeSource = videoMediaSource(video);
-    playbackFailOpenResumeTimer = setTimeout(() => {
+    playbackFailOpenResumeTimer = woTimeout(() => {
       playbackFailOpenResumeTimer = 0;
       const expectedVideo = playbackFailOpenResumeVideo;
       const expectedSource = playbackFailOpenResumeSource;
@@ -642,14 +693,14 @@
     if (event && event.target === playbackFailOpenResumeVideo) clearPlaybackFailOpenResumeTimer();
   }
 
-  document.addEventListener('error', primaryPlaybackVideoFailed, true);
-  document.addEventListener('playing', primaryPlaybackVideoRecovered, true);
+  woOn(document, 'error', primaryPlaybackVideoFailed, true);
+  woOn(document, 'playing', primaryPlaybackVideoRecovered, true);
   for (const eventName of ['waiting', 'stalled', 'pause', 'emptied']) {
-    document.addEventListener(eventName, primaryPlaybackVideoUnstable, true);
+    woOn(document, eventName, primaryPlaybackVideoUnstable, true);
   }
   if (playbackFailOpenUntil > Date.now()) {
     try { document.documentElement.setAttribute('data-wo-twitch-fail-open', 'recovery'); } catch (_) {}
-    playbackFailOpenTimer = setTimeout(finishPlaybackFailOpen, playbackFailOpenUntil - Date.now());
+    playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, playbackFailOpenUntil - Date.now());
   }
 
   function updateEnabled() {
@@ -668,8 +719,8 @@
     broadcastStreamConfig();
   }
 
-  document.addEventListener('wo-config-change', updateEnabled);
-  window.addEventListener('message', (event) => {
+  woOn(document, 'wo-config-change', updateEnabled);
+  woOn(window, 'message', (event) => {
     if (event.source !== window) return;
     const message = event.data;
     if (!message || typeof message !== 'object') return;
@@ -1233,7 +1284,7 @@
   function scheduleStallCheck() {
     if (stallTimer) return;
     try {
-      stallTimer = setTimeout(() => {
+      stallTimer = woTimeout(() => {
         stallTimer = 0;
         nudgeStalledPlayback();
         if (Date.now() <= stallArmedUntil) scheduleStallCheck();
@@ -1495,7 +1546,7 @@
     if (!episode || !video || episode.watched === video) return;
     unwatchCatchUpVideo(episode);
     try {
-      for (const name of CATCHUP_DISQUALIFYING_EVENTS) video.addEventListener(name, disqualifyCatchUpEpisode);
+      for (const name of CATCHUP_DISQUALIFYING_EVENTS) woOn(video, name, disqualifyCatchUpEpisode);
       episode.watched = video;
     } catch (_) {
       // An element that will not accept listeners cannot be watched, so it cannot
@@ -1534,7 +1585,7 @@
     // A pre-roll can block before the element exists, and setAdState dedupes, so
     // there is no second rising edge to sample on. Retry briefly, never poll.
     if (episode.baselineTries++ >= CATCHUP_BASELINE_TRIES) return;
-    catchUpBaselineTimer = setTimeout(sampleCatchUpBaseline, CATCHUP_BASELINE_RETRY_MS);
+    catchUpBaselineTimer = woTimeout(sampleCatchUpBaseline, CATCHUP_BASELINE_RETRY_MS);
   }
 
   // Returns true only to ask for one more settle window; every other outcome
@@ -1628,7 +1679,7 @@
       if (baseline) retry = evaluateCatchUp(episode, baseline) === true;
     } catch (_) {}
     if (retry) {
-      catchUpTimer = setTimeout(runCatchUp, CATCHUP_SETTLE_MS);
+      catchUpTimer = woTimeout(runCatchUp, CATCHUP_SETTLE_MS);
       return;
     }
     closeCatchUpEpisode();
@@ -1663,7 +1714,7 @@
       return;
     }
     if (catchUpTimer) clearTimeout(catchUpTimer);
-    catchUpTimer = setTimeout(runCatchUp, CATCHUP_SETTLE_MS);
+    catchUpTimer = woTimeout(runCatchUp, CATCHUP_SETTLE_MS);
   }
 
   async function proxyWorkerGql(worker, message) {
@@ -1686,7 +1737,7 @@
     let controller = null;
     try {
       controller = typeof AbortController === 'function' ? new AbortController() : null;
-      if (controller) timer = setTimeout(() => controller.abort(), 3500);
+      if (controller) timer = woTimeout(() => controller.abort(), 3500);
       const headers = {
         'Client-ID': clientState.clientId || DEFAULT_CLIENT_ID,
         'Content-Type': 'application/json'
@@ -3523,12 +3574,12 @@
             };
           }
         } catch (_) {}
-        let revokeTimer = setTimeout(() => {
+        let revokeTimer = woTimeout(() => {
           try { URL.revokeObjectURL(wrapperUrl); } catch (_) {}
           revokeTimer = 0;
         }, 10000);
 
-        worker.addEventListener('message', (event) => {
+        woOn(worker, 'message', (event) => {
           const message = event && event.data;
           if (!message || message[MESSAGE_FLAG] !== VERSION) return;
           try { if (event.stopImmediatePropagation) event.stopImmediatePropagation(); } catch (_) {}
@@ -3564,7 +3615,7 @@
             try { console.log('[WO-Twitch]', message.m); } catch (_) {}
           }
         });
-        worker.addEventListener('error', cleanupWorker, { once: true });
+        woOn(worker, 'error', cleanupWorker, { once: true });
         return worker;
       } catch (_) {
         if (wrapperUrl) {

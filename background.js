@@ -12336,6 +12336,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // current extension context -- an orphaned bridge's listener died with the
         // context that registered it. Engine present AND bridge answering is the only
         // combination that means this tab's protection is actually connected to us.
+        // The install flags every WardenOne content script sets, per world. Marking one stale is
+        // how Repair tells that script "you are the old copy" -- the script then releases what it
+        // holds and installs fresh. The value only has to differ from the real version; the guards
+        // compare for equality, so anything else routes them down the replace path.
+        const MAIN_WORLD_INSTALL_FLAGS = [
+          '__wardenOneReadyVersion',
+          '__wardenOneAntiRedirectHardener',
+          '__wardenOnePermissionChainInstalled',
+          '__wardenOneTwitchAdblockReady',
+        ];
+        const ISOLATED_WORLD_INSTALL_FLAGS = [
+          '__wardenOneBridgeVersion',
+          '__wardenOneEyeShieldInstalled',
+          '__wardenOneTwitchRewindReady',
+          '__wardenOneVodRewind',
+          '__wardenOneOAuthGuardInstalled',
+          '__wardenOneMinerWatch',
+          '__wardenOneSearchJunk',
+        ];
+        const markWardenOneCopiesStale = async (target, world) => {
+          const flags = world === 'MAIN' ? MAIN_WORLD_INSTALL_FLAGS : ISOLATED_WORLD_INSTALL_FLAGS;
+          try {
+            await chrome.scripting.executeScript({
+              target,
+              world,
+              injectImmediately: true,
+              args: [flags],
+              // Only rewrite a flag that is actually set. Creating one on a page that never had
+              // WardenOne in it would be a pointless global, and on a healthy tab this still
+              // forces a clean reinstall, which is what pressing Repair asks for.
+              func: (names) => {
+                for (const name of names) {
+                  try {
+                    if (window[name]) window[name] = 'wo-stale';
+                  } catch (_) { /* cross-origin or frozen window */ }
+                }
+              },
+            });
+          } catch (_) { /* frame gone or not scriptable */ }
+        };
+
         const engineVersionInTab = async (target) => {
           try {
             const res = await chrome.scripting.executeScript({
@@ -12371,6 +12412,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const frameId = Number(frame.frameId) || 0;
             const frameUrl = String(frame.url || (frameId === 0 ? t.url || '' : ''));
             const target = { tabId: t.id, frameIds: [frameId] };
+            // Every content script guards against installing twice. After a same-version reload
+            // the orphaned copies still hold their flags at the current version, so a fresh
+            // injection would match, return on line one, and change nothing -- which is exactly
+            // why Repair could report success without re-arming anything. Marking the flags stale
+            // first makes each script take its own upgrade path: release what the old copy held,
+            // then install. That is the same path the guards use for a version bump, rather than a
+            // second eviction mechanism living out here.
+            await markWardenOneCopiesStale(target, 'MAIN');
+            await markWardenOneCopiesStale(target, 'ISOLATED');
             // Mirror the manifest contract: only frame zero receives the full
             // engine; child frames receive lightweight/specialized guards only.
             const mainFiles = repairMainWorldFilesForUrl(frameUrl, frameId);

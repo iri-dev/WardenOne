@@ -117,8 +117,60 @@
   // ---- Browser runtime --------------------------------------------------
 
   if (typeof window === 'undefined' || window.top !== window) return;
-  if (window.__wardenOneVodRewind) return;
-  window.__wardenOneVodRewind = true;
+  const WO_GUARD_VERSION = '1.0.0';
+  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
+     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
+     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
+     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
+     older one, and it must release the old one's listeners, observers and timers first or both
+     copies stay live and are charged for the same work. */
+  if (window.__wardenOneVodRewind === WO_GUARD_VERSION) return;
+  if (window.__wardenOneVodRewind) {
+    try {
+      if (typeof window.__wardenOneVodRewindDispose === 'function') window.__wardenOneVodRewindDispose();
+    } catch (_) {}
+  }
+  window.__wardenOneVodRewind = WO_GUARD_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOneVodRewindDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
 
   // Public Twitch web client id — the same one the site sends for anonymous
   // reads. We only read public video metadata; we never request a playback
@@ -227,7 +279,7 @@
         sub.textContent = o.sub;
         b.appendChild(sub);
       }
-      b.addEventListener('click', function (e) {
+      woOn(b, 'click', function (e) {
         e.preventDefault();
         e.stopPropagation();
         openVod(o.kind);
@@ -257,7 +309,7 @@
     btn.appendChild(lbl);
     popover = buildPopover();
     btn.appendChild(popover);
-    btn.addEventListener('click', function (e) {
+    woOn(btn, 'click', function (e) {
       e.preventDefault();
       e.stopPropagation();
       popover.classList.toggle('open');
@@ -327,7 +379,7 @@
     var generation = ++requestGeneration;
     requestController = typeof AbortController === 'function' ? new AbortController() : null;
     var signal = requestController ? requestController.signal : undefined;
-    requestTimer = setTimeout(function () {
+    requestTimer = woTimeout(function () {
       if (generation !== requestGeneration) return;
       if (requestController) {
         try { requestController.abort(); } catch (_) {}
@@ -382,8 +434,8 @@
     if (started) return;
     started = true;
     scan();
-    scanTimer = setInterval(scan, 1500);
-    document.addEventListener('click', onDocClick, true);
+    scanTimer = woInterval(scan, 1500);
+    woOn(document, 'click', onDocClick, true);
   }
 
   function shutdown() {
@@ -411,5 +463,5 @@
       if (area === 'local' && changes.wardenone_config) applyConfig(changes.wardenone_config.newValue || {});
     });
   } catch (_) {}
-  window.addEventListener('pagehide', shutdown, { once: true });
+  woOn(window, 'pagehide', shutdown, { once: true });
 })();

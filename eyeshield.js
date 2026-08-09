@@ -20,13 +20,65 @@
 (function () {
   'use strict';
 
-  if (window.__wardenOneEyeShieldInstalled) {
+  const WO_GUARD_VERSION = '1.0.0';
+  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
+     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
+     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
+     tab, only report honestly that it could not. A same-version re-injection still refreshes,
+     which is what this guard has always done and what the popup relies on; an older copy is now
+     released first instead of being left running alongside its replacement. */
+  if (window.__wardenOneEyeShieldInstalled === WO_GUARD_VERSION) {
     try {
       if (typeof window.__wardenOneEyeShieldRefresh === 'function') window.__wardenOneEyeShieldRefresh();
     } catch (e) {}
     return;
   }
-  window.__wardenOneEyeShieldInstalled = true;
+  if (window.__wardenOneEyeShieldInstalled) {
+    try {
+      if (typeof window.__wardenOneEyeShieldDispose === 'function') window.__wardenOneEyeShieldDispose();
+    } catch (_) {}
+  }
+  window.__wardenOneEyeShieldInstalled = WO_GUARD_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOneEyeShieldDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
   window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust';
 
   // Twitch EXTENSION overlay iframes (*.ext-twitch.tv) sit transparently ON TOP of the
@@ -808,7 +860,7 @@
   function scheduleContrastGuard(mode) {
     if (!mode || mode === 'off') return;
     if (__ewContrastTimer) clearTimeout(__ewContrastTimer);
-    __ewContrastTimer = setTimeout(() => { __ewContrastTimer = null; try { contrastGuard(mode); } catch (_) {} }, 600);
+    __ewContrastTimer = woTimeout(() => { __ewContrastTimer = null; try { contrastGuard(mode); } catch (_) {} }, 600);
   }
   function ewClearContrastFixNode(el) {
     if (!el || el.nodeType !== 1) return;
@@ -1143,7 +1195,7 @@
   function connectObserver() {
     if (observer) return;
     observedRoots = new WeakSet();
-    observer = new MutationObserver((muts) => {
+    observer = woObserver((muts) => {
       let trigger = false;
       for (let i = 0; i < muts.length; i++) {
         if (muts[i].type === 'characterData') {
@@ -1180,7 +1232,7 @@
   function disconnectObserver() { if (observer) { observer.disconnect(); observer = null; } observedRoots = new WeakSet(); pendingSheet = false; pendingNodes = []; }
   function scheduleRebuild() {
     if (rebuildTimer) return;
-    rebuildTimer = setTimeout(() => {
+    rebuildTimer = woTimeout(() => {
       rebuildTimer = 0;
       if (!activeRemap) return;
       if (pendingSheet) {
@@ -3016,7 +3068,7 @@
   }
   function discordSchedule() {
     if (discordRescanT) return;
-    discordRescanT = setTimeout(function () { discordRescanT = 0; discordRescan(); }, 50);
+    discordRescanT = woTimeout(function () { discordRescanT = 0; discordRescan(); }, 50);
   }
   function applyDiscordTheme(mode) {
     discordWant = discordDesired(mode);
@@ -3027,7 +3079,7 @@
     discordRescan(); // swap all currently themed elements now
     if (discordObserver) { try { discordObserver.disconnect(); } catch (e) {} }
     try {
-      discordObserver = new MutationObserver(function (muts) {
+      discordObserver = woObserver(function (muts) {
         for (var k = 0; k < muts.length; k++) {
           var m = muts[k];
           if (m.type === 'attributes') {
@@ -3098,8 +3150,8 @@
       if (!__woSpotReapplyScheduled) {
         __woSpotReapplyScheduled = true;
         var reinj = function () { try { if (cfg.enabled !== false && normalizeMode(cfg.eyeShieldMode) !== 'off' && isSpotifyHost()) injectSpotifyTheme(normalizeMode(cfg.eyeShieldMode)); } catch (e) {} };
-        [500, 1500, 3500, 6000].forEach(function (ms) { try { setTimeout(reinj, ms); } catch (e) {} });
-        try { window.addEventListener('load', function () { setTimeout(reinj, 300); }, { once: true }); } catch (e) {}
+        [500, 1500, 3500, 6000].forEach(function (ms) { try { woTimeout(reinj, ms); } catch (e) {} });
+        try { woOn(window, 'load', function () { woTimeout(reinj, 300); }, { once: true }); } catch (e) {}
       }
       removePreload();
       return;
@@ -3149,7 +3201,7 @@
     cfg = Object.assign({}, DEFAULTS, raw || {});
     if (document.readyState === 'loading') {
       apply();
-      document.addEventListener('DOMContentLoaded', apply, { once: true });
+      woOn(document, 'DOMContentLoaded', apply, { once: true });
     } else {
       apply();
     }
@@ -3169,7 +3221,7 @@
   };
 
   // late-loading stylesheets (web fonts, async CSS) — re-theme after full load
-  window.addEventListener('load', () => {
+  woOn(window, 'load', () => {
     if (!activeRemap || isTwitchHost()) return;
     pendingSheet = true;
     scheduleRebuild();

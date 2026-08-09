@@ -13,6 +13,14 @@ First public-release hardening pass.
   firing -- while the new copy installed alongside it. Both were charged for the same
   work, on exactly the tabs left open longest. The new copy now releases the old
   one's observers, timers and listeners before it installs.
+- Verify & Repair can now actually re-arm a tab, instead of only being honest that it
+  could not. Every part of the protection refuses to install twice, which is correct --
+  but the check was a plain yes/no, so a tab still holding an abandoned copy from
+  before the extension reloaded refused the fresh one and nothing changed. Each part
+  now records which version it is, Repair tells the abandoned copies they have been
+  replaced, and they hand back the listeners, watchers and timers they were still
+  running before the new copy takes over. Tabs open across an update get the same
+  treatment automatically.
 - Stopped Verify & Repair claiming it fixed tabs it had not. It counted a tab as
   re-armed whenever it managed to send the protection code, but a tab still
   running an older copy from before the extension reloaded quietly refuses it --

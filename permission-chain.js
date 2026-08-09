@@ -6,8 +6,60 @@
 (function () {
   'use strict';
 
-  if (window.__wardenOnePermissionChainInstalled) return;
-  window.__wardenOnePermissionChainInstalled = true;
+  const WO_GUARD_VERSION = '1.0.0';
+  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
+     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
+     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
+     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
+     older one, and it must release the old one's listeners, observers and timers first or both
+     copies stay live and are charged for the same work. */
+  if (window.__wardenOnePermissionChainInstalled === WO_GUARD_VERSION) return;
+  if (window.__wardenOnePermissionChainInstalled) {
+    try {
+      if (typeof window.__wardenOnePermissionChainDispose === 'function') window.__wardenOnePermissionChainDispose();
+    } catch (_) {}
+  }
+  window.__wardenOnePermissionChainInstalled = WO_GUARD_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOnePermissionChainDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
 
   let woToken = null;
   let chainEnabled = false;
@@ -27,9 +79,9 @@
   }
 
   try {
-    window.addEventListener('pointerdown', noteGesture, true);
-    window.addEventListener('keydown', noteGesture, true);
-    window.addEventListener('touchstart', noteGesture, true);
+    woOn(window, 'pointerdown', noteGesture, true);
+    woOn(window, 'keydown', noteGesture, true);
+    woOn(window, 'touchstart', noteGesture, true);
   } catch (_) {}
 
   function hasRecentGesture() {
@@ -105,7 +157,7 @@
   }
 
   try {
-    window.addEventListener('message', (e) => {
+    woOn(window, 'message', (e) => {
       if (e.source !== window) return;
       const m = e.data;
       if (!m || typeof m !== 'object') return;
@@ -313,7 +365,7 @@
 
   function watchFileInputs() {
     try {
-      document.addEventListener('change', (e) => {
+      woOn(document, 'change', (e) => {
         const el = e && e.target;
         if (!el || !el.matches || !el.matches('input[type="file" i]')) return;
         const count = el.files && typeof el.files.length === 'number' ? Math.min(el.files.length, 99) : 0;
@@ -332,6 +384,6 @@
 
   patchAll();
   watchFileInputs();
-  try { setTimeout(patchAll, 500); } catch (_) {}
-  try { setTimeout(patchAll, 2000); } catch (_) {}
+  try { woTimeout(patchAll, 500); } catch (_) {}
+  try { woTimeout(patchAll, 2000); } catch (_) {}
 })();

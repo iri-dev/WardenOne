@@ -3,6 +3,9 @@
 
 const fs = require('fs');
 const vm = require('vm');
+/* This suite lifts the module's source into a hand-built sandbox. It now uses AbortController to
+ * release its listeners on teardown, which a bare vm context does not provide. */
+const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 function read(file) {
   return fs.readFileSync(file, 'utf8');
@@ -79,7 +82,9 @@ assert(/video\.currentTime = Math\.max\(0, Number\(offsetSeconds\)/.test(loadBlo
 assert(!/1e10/.test(rewind), 'replay must not scan to end-of-file to seek (a continuous recording seeks accurately, and the scan added a visible hitch)');
 assert(/replayVideos = \[createReplayVideo\(\), createReplayVideo\(\)\]/.test(rewind), 'replay should keep two surfaces for a seamless follow-live swap');
 assert(/function revealWhenAdvancing/.test(rewind) && /function cancelPendingReveal/.test(rewind), 'a swapped-in surface must reveal only once it is presenting fresh frames, never a frozen seek');
-assert(/REPLAY_REVEAL_CAP_MS/.test(rewind) && /addEventListener\('timeupdate'/.test(rewind), 'the reveal gate should watch playback progress with a hard fallback cap');
+// Matched on the event, not on how it is registered: the listener now goes through a helper so
+// teardown can release it, which changed nothing about what the reveal gate watches.
+assert(/REPLAY_REVEAL_CAP_MS/.test(rewind) && /'timeupdate'/.test(rewind), 'the reveal gate should watch playback progress with a hard fallback cap');
 assert(/function refreshFollow/.test(rewind) && /function recordingToContinue/.test(rewind), 'delayed playback should follow live by refreshing the same continuous timeline');
 assert(/showAsFront\(video, nextInfo, sessionToken, front\)/.test(rewind), 'a follow-live refresh should align the incoming surface to the outgoing position');
 assert(/function recoverReplay/.test(rewind) && /REPLAY_STALL_TIMEOUT_MS/.test(rewind), 'a stalled or errored replay should recover instead of freezing');
@@ -118,7 +123,8 @@ assert(/if \(editablePlaybackTarget\(event\.target\)\) return;/.test(rewind), 's
 assert(/player-controls__left-control-group/.test(rewind), 'controls should mount in Twitch\'s native left control group');
 assert(/player-mute-unmute-button/.test(rewind) && /insertAdjacentElement\('afterend'/.test(rewind), 'controls should mount immediately after Twitch volume');
 assert(/aria-label="Rewind 1 minute"/.test(rewind) && /aria-label="Rewind 5 minutes"/.test(rewind), 'native control row should include one- and five-minute jumps');
-assert(/class="rowLive"/.test(rewind) && /rowLiveButton\.addEventListener\('click', goLive\)/.test(rewind), 'delayed playback should expose a persistent LIVE control');
+// Same again: the button and what its click does are the assertion, not the registration call.
+assert(/class="rowLive"/.test(rewind) && /rowLiveButton, 'click', goLive\)/.test(rewind), 'delayed playback should expose a persistent LIVE control');
 assert(/input type="range"/.test(rewind), 'DVR popover should expose an arbitrary-position timeline');
 assert(/handleNativePlaybackClick/.test(rewind) && /handleNativePlaybackKey/.test(rewind), 'Twitch click and keyboard playback controls should operate delayed replay');
 assert(/data-wardenone-replay-paused/.test(rewind) && /syncNativePlaybackButton/.test(rewind), 'Twitch play control should visibly reflect delayed pause state');
@@ -220,6 +226,7 @@ function createRecoveryHarness() {
     console: { info: function () {} }
   };
   context.globalThis = context;
+  installPlatformGlobals(context);
   vm.createContext(context);
   vm.runInContext(instrumented, context, { filename: 'twitch-rewind.js:recovery' });
 

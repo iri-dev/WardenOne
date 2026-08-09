@@ -27,8 +27,60 @@
 (function () {
   'use strict';
 
-  if (window.__wardenOneAntiRedirectHardener) return;
-  window.__wardenOneAntiRedirectHardener = true;
+  const WO_GUARD_VERSION = '1.0.0';
+  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
+     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
+     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
+     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
+     older one, and it must release the old one's listeners, observers and timers first or both
+     copies stay live and are charged for the same work. */
+  if (window.__wardenOneAntiRedirectHardener === WO_GUARD_VERSION) return;
+  if (window.__wardenOneAntiRedirectHardener) {
+    try {
+      if (typeof window.__wardenOneAntiRedirectDispose === 'function') window.__wardenOneAntiRedirectDispose();
+    } catch (_) {}
+  }
+  window.__wardenOneAntiRedirectHardener = WO_GUARD_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOneAntiRedirectDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
 
   let token = null;
   let queuedEvents = [];
@@ -789,7 +841,7 @@
   }
 
   ['pointerdown', 'mousedown', 'click', 'auxclick', 'keydown', 'touchstart', 'touchend'].forEach((name) => {
-    try { window.addEventListener(name, markIntent, true); } catch (_) {}
+    try { woOn(window, name, markIntent, true); } catch (_) {}
   });
 
   // Click-layer guard: cancels hijack clicks whose default action navigates
@@ -950,8 +1002,8 @@
       }
     }
   }
-  try { window.addEventListener('click', guardClick, true); } catch (_) {}
-  try { window.addEventListener('auxclick', guardClick, true); } catch (_) {}
+  try { woOn(window, 'click', guardClick, true); } catch (_) {}
+  try { woOn(window, 'auxclick', guardClick, true); } catch (_) {}
 
   try {
     const realOpen = window.open;
@@ -1029,7 +1081,7 @@
       if (!formStaysInTab(this) && !isFederationForm(this) && blockNavigation(action, 'form-submit')) return undefined;
       return realSubmit.apply(this, arguments);
     };
-    window.addEventListener('submit', (event) => {
+    woOn(window, 'submit', (event) => {
       const form = event && event.target;
       if (formStaysInTab(form) || isFederationForm(form)) return; // native same-tab and federation POSTs
       const action = form && form.action ? form.action : location.href;
@@ -1041,7 +1093,7 @@
     }, true);
   } catch (_) {}
 
-  window.addEventListener('message', (event) => {
+  woOn(window, 'message', (event) => {
     if (event.source !== window) return;
     const msg = event.data || {};
     if (msg.source === 'wardenone-handshake' && typeof msg.token === 'string' && !token) {
