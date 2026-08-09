@@ -1,0 +1,321 @@
+/*
+ * The nine auxiliary content scripts used a bare boolean install guard. Chrome does not
+ * re-inject into tabs that are already open when an extension updates, so a tab that outlives an
+ * update keeps the old copy -- and with a boolean flag that was permanent: the new copy saw a
+ * truthy flag and returned on line one. chrome.scripting.executeScript still resolved, which is
+ * why Repair used to report success it had not earned (H1).
+ *
+ * They are now version-coupled: same version returns (or, for EyeShield, refreshes), an older
+ * version is released and replaced. This file pins both halves of that -- the comparison, and the
+ * release -- because a version-coupled guard WITHOUT a working dispose is worse than the boolean
+ * was: it would layer a second complete copy into the page instead of declining to install.
+ *
+ * Run with:
+ *   node tools/test-guard-lifecycle.js
+ */
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const ROOT = path.resolve(__dirname, '..');
+const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+
+const GUARDS = [
+  { file: 'anti-redirect.js', flag: '__wardenOneAntiRedirectHardener', dispose: '__wardenOneAntiRedirectDispose' },
+  { file: 'permission-chain.js', flag: '__wardenOnePermissionChainInstalled', dispose: '__wardenOnePermissionChainDispose' },
+  { file: 'eyeshield.js', flag: '__wardenOneEyeShieldInstalled', dispose: '__wardenOneEyeShieldDispose', refreshes: true },
+  { file: 'oauth-guard.js', flag: '__wardenOneOAuthGuardInstalled', dispose: '__wardenOneOAuthGuardDispose' },
+  { file: 'twitch-adblock.js', flag: '__wardenOneTwitchAdblockReady', dispose: '__wardenOneTwitchAdblockDispose', versionExpr: 'VERSION', worker: 'function twitchWorkerRuntime' },
+  { file: 'twitch-rewind.js', flag: '__wardenOneTwitchRewindReady', dispose: '__wardenOneTwitchRewindDispose', topFrameOnly: true },
+  { file: 'twitch-vod-rewind.js', flag: '__wardenOneVodRewind', dispose: '__wardenOneVodRewindDispose' },
+  { file: 'cryptominer-detect.js', flag: '__wardenOneMinerWatch', dispose: '__wardenOneMinerWatchDispose' },
+  { file: 'search-junk.js', flag: '__wardenOneSearchJunk', dispose: '__wardenOneSearchJunkDispose' },
+];
+
+let failures = 0;
+function check(name, cond, detail) {
+  if (cond) { console.log('  [ok] ' + name); return; }
+  failures++;
+  console.error('  [FAIL] ' + name + (detail ? '  -> ' + detail : ''));
+}
+
+const sources = new Map();
+for (const g of GUARDS) sources.set(g.file, fs.readFileSync(path.join(ROOT, g.file), 'utf8'));
+
+// The region of twitch-adblock.js that is stringified into a Worker via toString(). Nothing in
+// there may reference the helpers -- they do not exist inside a worker, and injecting a
+// reference would break Twitch ad blocking outright rather than noisily.
+function workerRange(src, marker) {
+  const at = src.indexOf(marker);
+  if (at < 0) return null;
+  let depth = 0;
+  for (let i = src.indexOf('{', at); i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) return [at, i]; }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// 1. Every guard compares a version instead of testing truthiness, and the version it
+//    compares is the extension's. A constant that drifts from the manifest makes the whole
+//    mechanism inert -- every tab would look same-version forever.
+// ---------------------------------------------------------------------------
+for (const g of GUARDS) {
+  const src = sources.get(g.file);
+  const v = g.versionExpr || 'WO_GUARD_VERSION';
+  check(g.file + ': guard compares a version',
+    src.includes('if (window.' + g.flag + ' === ' + v + ')'));
+  check(g.file + ': older copy is disposed before installing',
+    new RegExp('if \\(window\\.' + g.flag + '\\) \\{[\\s\\S]{0,160}window\\.' + g.dispose + '\\(\\)').test(src));
+  check(g.file + ': flag is set to the version, not true',
+    src.includes('window.' + g.flag + ' = ' + v + ';'));
+  check(g.file + ': no bare-truthiness early return survives',
+    !new RegExp('if \\(window\\.' + g.flag + '\\) return;').test(src));
+
+  const decl = src.match(new RegExp('const ' + v + " = '([^']+)';"));
+  check(g.file + ': version constant matches manifest (' + MANIFEST.version + ')',
+    !!decl && decl[1] === MANIFEST.version, decl ? decl[1] : 'no constant found');
+}
+
+// ---------------------------------------------------------------------------
+// 2. Each guard publishes a dispose, and it releases all four kinds of resource.
+// ---------------------------------------------------------------------------
+for (const g of GUARDS) {
+  const src = sources.get(g.file);
+  check(g.file + ': publishes dispose on window', src.includes('window.' + g.dispose + ' = () => {'));
+  check(g.file + ': dispose aborts the listener signal', src.includes('woAbort.abort()'));
+  check(g.file + ': dispose clears pending timeouts',
+    /woPending\.forEach\(\(id\) => \{ try \{ clearTimeout\(id\); \} catch \(_\) \{\} \}\);/.test(src));
+  check(g.file + ': dispose drains the registry', /woKeep\.splice\(0, woKeep\.length\)/.test(src));
+}
+
+// ---------------------------------------------------------------------------
+// 3. Nothing bypasses the helpers. A raw call is a resource dispose can never reach.
+//    The one legitimate raw call of each kind lives inside the helper itself.
+// ---------------------------------------------------------------------------
+for (const g of GUARDS) {
+  let src = sources.get(g.file);
+  const wr = g.worker ? workerRange(src, g.worker) : null;
+  if (g.worker) {
+    check(g.file + ': the stringified worker region is still findable', !!wr);
+    const body = src.slice(wr[0], wr[1]);
+    check(g.file + ': no helper reference leaked into the worker',
+      !/woOn\(|woTimeout\(|woInterval\(|woObserver\(/.test(body),
+      'a worker cannot see them -- this would break Twitch ad blocking silently');
+    // Exclude it from the raw-call counts below; its raw calls are correct.
+    src = src.slice(0, wr[0]) + src.slice(wr[1]);
+  }
+  const raw = {
+    '.addEventListener(': (src.match(/\.addEventListener\(/g) || []).length,
+    'setInterval(': (src.match(/\bsetInterval\(/g) || []).length,
+    'setTimeout(': (src.match(/\bsetTimeout\(/g) || []).length,
+    'new MutationObserver(': (src.match(/new MutationObserver\(/g) || []).length,
+  };
+  for (const [call, n] of Object.entries(raw)) {
+    check(g.file + ': one raw ' + call + ' (the helper)', n === 1, n + ' found');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4. The nine registries are the same code. Nine hand-maintained copies would drift; this
+//    asserts they have not, so a fix to one is a fix to all.
+// ---------------------------------------------------------------------------
+const registries = GUARDS.map((g) => {
+  const src = sources.get(g.file);
+  const from = src.indexOf('  /* Everything this copy holds');
+  const to = src.indexOf('  };\n', src.indexOf('window.' + g.dispose + ' = () => {'));
+  assert(from >= 0 && to > from, 'could not find the registry block in ' + g.file);
+  return src.slice(from, to).split(g.dispose).join('__DISPOSE__');
+});
+check('all nine registry blocks are byte-identical',
+  registries.every((r) => r === registries[0]),
+  registries.map((r, i) => GUARDS[i].file + '=' + r.length).join(' '));
+
+// ---------------------------------------------------------------------------
+// 5. EyeShield is the one guard whose same-version path does something. The popup relies on a
+//    re-injection refreshing the theme, so version-coupling must not have turned that into a
+//    silent return.
+// ---------------------------------------------------------------------------
+{
+  const src = sources.get('eyeshield.js');
+  const same = src.indexOf('if (window.__wardenOneEyeShieldInstalled === WO_GUARD_VERSION)');
+  const refresh = src.indexOf('__wardenOneEyeShieldRefresh()');
+  const older = src.indexOf('if (window.__wardenOneEyeShieldInstalled) {');
+  check('eyeshield: a same-version re-injection still refreshes',
+    same >= 0 && refresh > same && older > refresh,
+    'same=' + same + ' refresh=' + refresh + ' older=' + older);
+}
+
+// ---------------------------------------------------------------------------
+// 6. Behaviour. Lift each guard's real preamble and prove the release, against Node's own
+//    AbortController and EventTarget rather than a mock that would agree with the code.
+// ---------------------------------------------------------------------------
+for (const g of GUARDS) {
+  const src = sources.get(g.file);
+  const from = src.indexOf('  const woAbort = new AbortController();');
+  const to = src.indexOf('  };\n', src.indexOf('window.' + g.dispose + ' = () => {')) + 5;
+  assert(from >= 0 && to > from, 'could not lift the registry from ' + g.file);
+  const lifted = src.slice(from, to);
+
+  const win = {};
+  const cleared = [];
+  const sandbox = {
+    window: win, AbortController, EventTarget, Event, Set, Object, Array,
+    MutationObserver: class { disconnect() { this.gone = true; } },
+    setInterval: () => 7,
+    clearInterval: (id) => cleared.push(id),
+    setTimeout: (fn, ms) => { void fn; void ms; return 99; },
+    clearTimeout: (id) => cleared.push(id),
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(lifted, sandbox, { filename: g.file + ':lifted-registry' });
+
+  // A listener, an observer, an interval and a timeout, then release everything.
+  vm.runInContext('this.__t = new EventTarget(); this.__hits = 0;'
+    + 'woOn(__t, "ping", function () { __hits++; });'
+    + '__t.dispatchEvent(new Event("ping"));'
+    + 'this.__obs = woObserver(function () {});'
+    + 'woInterval(function () {}, 100);'
+    + 'woTimeout(function () {}, 100);', sandbox);
+
+  const liveHits = vm.runInContext('__hits', sandbox);
+  const held = vm.runInContext('woKeep.length', sandbox);
+  const pending = vm.runInContext('woPending.size', sandbox);
+
+  assert(typeof win[g.dispose] === 'function', g.file + ' did not publish ' + g.dispose);
+  win[g.dispose]();
+  vm.runInContext('__t.dispatchEvent(new Event("ping"))', sandbox);
+
+  const ok = liveHits === 1
+    && held === 2 && pending === 1
+    && vm.runInContext('__hits', sandbox) === 1
+    && vm.runInContext('__obs.gone', sandbox) === true
+    && vm.runInContext('woKeep.length', sandbox) === 0
+    && vm.runInContext('woPending.size', sandbox) === 0
+    && cleared.includes(7) && cleared.includes(99);
+  check(g.file + ': dispose releases listener, observer, interval and timeout',
+    ok, 'liveHits=' + liveHits + ' held=' + held + ' pending=' + pending
+      + ' hitsAfter=' + vm.runInContext('__hits', sandbox)
+      + ' cleared=' + JSON.stringify(cleared));
+
+  // Calling it twice must not throw or double-clear.
+  const before = cleared.length;
+  win[g.dispose]();
+  check(g.file + ': dispose is safe to call twice', cleared.length === before);
+}
+
+// ---------------------------------------------------------------------------
+// 7. woTimeout must not leak. A self-rescheduling loop -- five of the nine have one -- would
+//    otherwise grow the pending set forever, turning a teardown fix into a memory leak.
+// ---------------------------------------------------------------------------
+{
+  const src = sources.get('twitch-rewind.js');
+  const from = src.indexOf('  const woAbort = new AbortController();');
+  const to = src.indexOf('  };\n', src.indexOf('window.__wardenOneTwitchRewindDispose = () => {')) + 5;
+  const win = {};
+  let seq = 0;
+  const queue = [];
+  const sandbox = {
+    window: win, AbortController, Set, Object, Array,
+    MutationObserver: class { disconnect() {} },
+    setInterval: () => 0, clearInterval() {}, clearTimeout() {},
+    setTimeout: (fn) => { seq++; queue.push(fn); return seq; },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(src.slice(from, to), sandbox, { filename: 'twitch-rewind.js:leak-check' });
+
+  // Simulate a poll that reschedules itself 50 times.
+  vm.runInContext('this.__tick = function () { woTimeout(__tick, 10); }; __tick();', sandbox);
+  for (let i = 0; i < 50 && queue.length; i++) queue.shift()();
+  const size = vm.runInContext('woPending.size', sandbox);
+  check('a self-rescheduling woTimeout loop does not grow the pending set',
+    size <= 2, 'pending set holds ' + size + ' after 50 reschedules');
+
+  // And `this` is forwarded, which three call sites depend on.
+  vm.runInContext('this.__seenThis = "unset";'
+    + 'this.__probe = { run: function () { __seenThis = (this === undefined) ? "undefined" : "kept"; } };'
+    + 'woTimeout(__probe.run, 0);', sandbox);
+  queue[queue.length - 1].call(sandbox.window);
+  check('woTimeout forwards `this` as the host would',
+    vm.runInContext('__seenThis', sandbox) === 'kept', vm.runInContext('__seenThis', sandbox));
+}
+
+// ---------------------------------------------------------------------------
+// 8. Version-coupling alone only fixes the update path. Repair's own case is a SAME-version
+//    reload, where the orphan's flag still matches and every script would return on line one.
+//    Repair therefore marks the flags stale first, so each script takes its own replace path.
+//    This section ties that table to the guards: a new content script whose flag is missing
+//    from it would be silently un-repairable, which is the bug H1 was about.
+// ---------------------------------------------------------------------------
+{
+  const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  check('repair marks install flags stale', bg.includes('const markWardenOneCopiesStale = async (target, world)'));
+  check('...in the MAIN world', bg.includes("await markWardenOneCopiesStale(target, 'MAIN')"));
+  check('...and in the ISOLATED world', bg.includes("await markWardenOneCopiesStale(target, 'ISOLATED')"));
+
+  // Order is the whole point: marking after injecting would achieve nothing.
+  const markAt = bg.indexOf("await markWardenOneCopiesStale(target, 'MAIN')");
+  const injectAt = bg.indexOf("world: 'MAIN', files: mainFiles", markAt - 4000 > 0 ? markAt - 4000 : 0);
+  check('flags are marked stale BEFORE the re-injection',
+    markAt > 0 && injectAt > markAt, 'mark at ' + markAt + ', inject at ' + injectAt);
+
+  const listed = new Set();
+  for (const name of ['MAIN_WORLD_INSTALL_FLAGS', 'ISOLATED_WORLD_INSTALL_FLAGS']) {
+    const m = bg.match(new RegExp('const ' + name + ' = \\[([\\s\\S]*?)\\];'));
+    assert(m, 'missing ' + name + ' in background.js');
+    for (const f of m[1].matchAll(/'([^']+)'/g)) listed.add(f[1]);
+  }
+  const missing = GUARDS.map((g) => g.flag).filter((f) => !listed.has(f));
+  check('every guard flag is in the stale-marking table',
+    missing.length === 0, 'not listed: ' + missing.join(', '));
+  // The engine and the bridge are not in GUARDS but must be there too.
+  check('the engine and bridge flags are in the table too',
+    listed.has('__wardenOneReadyVersion') && listed.has('__wardenOneBridgeVersion'));
+
+  // A stale value must not equal any real version, or the guard would treat it as current.
+  check("the stale sentinel differs from the extension version",
+    bg.includes("window[name] = 'wo-stale'") && MANIFEST.version !== 'wo-stale');
+}
+
+// ---------------------------------------------------------------------------
+// 9. End to end on the real guard text: a stale flag must make the guard reinstall and
+//    dispose the old copy, while a matching flag must still make it return.
+// ---------------------------------------------------------------------------
+for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
+  const src = sources.get(g.file);
+  const from = src.indexOf("  const WO_GUARD_VERSION = '");
+  const to = src.indexOf('  window.' + g.flag + ' = WO_GUARD_VERSION;') + ('  window.' + g.flag + ' = WO_GUARD_VERSION;').length;
+  assert(from >= 0 && to > from, 'could not lift the guard decision from ' + g.file);
+  // Wrap in a function so `return` is legal outside a script body.
+  const decision = 'this.__ran = false; (function () {\n' + src.slice(from, to)
+    + '\n  __ran = true;\n})();';
+
+  for (const [label, flagValue, expectRan, expectDisposed] of [
+    ['a matching flag still returns early', MANIFEST.version, false, false],
+    ['a stale flag reinstalls and disposes the old copy', 'wo-stale', true, true],
+    ['an unset flag installs cleanly', undefined, true, false],
+  ]) {
+    const win = {};
+    let disposed = false;
+    if (flagValue !== undefined) win[g.flag] = flagValue;
+    win[g.dispose] = () => { disposed = true; };
+    const sandbox = { window: win, top: win };
+    sandbox.window.top = g.topFrameOnly ? win : win;
+    vm.createContext(sandbox);
+    vm.runInContext(decision, sandbox, { filename: g.file + ':guard-decision' });
+    const ran = vm.runInContext('__ran', sandbox);
+    check(g.file + ': ' + label,
+      ran === expectRan && disposed === expectDisposed,
+      'ran=' + ran + ' (want ' + expectRan + ') disposed=' + disposed + ' (want ' + expectDisposed + ')');
+  }
+}
+
+if (failures) {
+  console.error('[fail] guard lifecycle tests: ' + failures + ' failure(s)');
+  process.exit(1);
+}
+console.log('[ok] guard lifecycle tests passed');

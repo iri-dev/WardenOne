@@ -73,11 +73,30 @@ function ambientSource(names) {
   return wanted.filter((n) => SHIMS[n]).map((n) => SHIMS[n]).join('\n');
 }
 
+// Platform globals that lifted code needs and a hand-built sandbox does not have. A vm context
+// only contains what the suite listed, so code using AbortController -- which every content
+// script now does, to release its listeners on teardown -- dies with "not defined" even though it
+// is perfectly ordinary browser code. These are Node's real implementations, not stand-ins: the
+// signal/abort contract is exactly what the release path depends on, so testing against a mock
+// would prove less than nothing. Only filled in when the sandbox has not supplied its own.
+const PLATFORM_GLOBALS = ['AbortController', 'AbortSignal', 'EventTarget', 'Event'];
+
+function installPlatformGlobals(sandbox) {
+  if (!sandbox) return sandbox;
+  for (const name of PLATFORM_GLOBALS) {
+    if (sandbox[name] === undefined && typeof globalThis[name] !== 'undefined') {
+      sandbox[name] = globalThis[name];
+    }
+  }
+  return sandbox;
+}
+
 // Install into an already-contextified sandbox object, matching how the lifting suites work:
 //   vm.createContext(sandbox); installEngineAmbient(sandbox); vm.runInContext(snippet, sandbox);
 // Safe to call before or after createContext, and safe to call twice.
 function installEngineAmbient(sandbox) {
   if (!sandbox) return sandbox;
+  installPlatformGlobals(sandbox);
   if (!vm.isContext(sandbox)) vm.createContext(sandbox);
   vm.runInContext(ambientSource(), sandbox, { filename: 'engine-ambient-shims.js' });
   return sandbox;
@@ -85,6 +104,8 @@ function installEngineAmbient(sandbox) {
 
 module.exports = {
   SHIMS,
+  PLATFORM_GLOBALS,
+  installPlatformGlobals,
   ambientSource,
   installEngineAmbient,
   declaredAmbientNames,

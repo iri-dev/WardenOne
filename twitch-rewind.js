@@ -19,8 +19,61 @@
 (function () {
   'use strict';
 
-  if (window.top !== window || window.__wardenOneTwitchRewindReady) return;
-  window.__wardenOneTwitchRewindReady = true;
+  const WO_GUARD_VERSION = '1.0.0';
+  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
+     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
+     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
+     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
+     older one, and it must release the old one's listeners, observers and timers first or both
+     copies stay live and are charged for the same work. */
+  if (window.top !== window) return;
+  if (window.__wardenOneTwitchRewindReady === WO_GUARD_VERSION) return;
+  if (window.__wardenOneTwitchRewindReady) {
+    try {
+      if (typeof window.__wardenOneTwitchRewindDispose === 'function') window.__wardenOneTwitchRewindDispose();
+    } catch (_) {}
+  }
+  window.__wardenOneTwitchRewindReady = WO_GUARD_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOneTwitchRewindDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
 
   const isHarness = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
   const DEFAULT_BUFFER_SECONDS = 300;
@@ -276,7 +329,7 @@
       intentionalStop: false,
       stopWatchdog: 0,
     };
-    recorder.addEventListener('dataavailable', (event) => {
+    woOn(recorder, 'dataavailable', (event) => {
       if (!event.data || !event.data.size) return;
       const now = performance.now();
       if (!recording.startedAt) recording.startedAt = now;
@@ -290,12 +343,12 @@
         if (durationMs >= REC_ROTATE_MS || recording.bytes >= REC_ROTATE_BYTES) rotateRecording(recording);
       }
     });
-    recorder.addEventListener('error', () => {
+    woOn(recorder, 'error', () => {
       if (recording.generation === recorderGeneration && !recording.intentionalStop) {
         statusError = 'The local DVR recorder stopped unexpectedly';
       }
     });
-    recorder.addEventListener('stop', () => {
+    woOn(recorder, 'stop', () => {
       clearTimeout(recording.stopWatchdog);
       recording.stopWatchdog = 0;
       if (activeRecording === recording) activeRecording = null;
@@ -326,7 +379,7 @@
     // seeking the successor to the same wall-clock position (it overlaps).
     const stream = ensureCaptureStream();
     if (stream) startRecordingSession(stream, recorderGeneration);
-    setTimeout(() => stopRecorder(previous), ROTATE_OVERLAP_MS);
+    woTimeout(() => stopRecorder(previous), ROTATE_OVERLAP_MS);
   }
 
   function stopRecorder(recording) {
@@ -337,7 +390,7 @@
         if (activeRecording === recording) activeRecording = null;
         return;
       }
-      recording.stopWatchdog = setTimeout(() => {
+      recording.stopWatchdog = woTimeout(() => {
         if (activeRecording === recording) activeRecording = null;
       }, RECORDER_STOP_TIMEOUT_MS);
     } else if (activeRecording === recording) {
@@ -422,20 +475,20 @@
     speedButtons = Array.from(controlsShadow.querySelectorAll('.spd'));
 
     speedButtons.forEach((button) => {
-      button.addEventListener('click', () => setReplayRate(Number(button.dataset.rate) || 1));
+      woOn(button, 'click', () => setReplayRate(Number(button.dataset.rate) || 1));
     });
     updateSpeedButtons();
-    back10Button.addEventListener('click', () => rewindBy(10));
-    back30Button.addEventListener('click', () => rewindBy(30));
-    back60Button.addEventListener('click', () => rewindBy(60));
-    back300Button.addEventListener('click', () => rewindBy(300));
-    positionButton.addEventListener('click', () => setPopoverOpen(!popoverOpen));
-    liveButton.addEventListener('click', goLive);
-    rowLiveButton.addEventListener('click', goLive);
-    slider.addEventListener('pointerdown', () => { scrubbing = true; });
-    slider.addEventListener('pointerup', () => { scrubbing = false; seekFromSlider(); });
-    slider.addEventListener('input', previewSlider);
-    slider.addEventListener('change', seekFromSlider);
+    woOn(back10Button, 'click', () => rewindBy(10));
+    woOn(back30Button, 'click', () => rewindBy(30));
+    woOn(back60Button, 'click', () => rewindBy(60));
+    woOn(back300Button, 'click', () => rewindBy(300));
+    woOn(positionButton, 'click', () => setPopoverOpen(!popoverOpen));
+    woOn(liveButton, 'click', goLive);
+    woOn(rowLiveButton, 'click', goLive);
+    woOn(slider, 'pointerdown', () => { scrubbing = true; });
+    woOn(slider, 'pointerup', () => { scrubbing = false; seekFromSlider(); });
+    woOn(slider, 'input', previewSlider);
+    woOn(slider, 'change', seekFromSlider);
   }
 
   function setPopoverOpen(open) {
@@ -633,21 +686,21 @@
     video.disablePictureInPicture = true;
     video.muted = true;
     video.style.cssText = 'position:absolute;z-index:1;inset:0;display:block;width:100%;height:100%;object-fit:contain;background:transparent;opacity:0;visibility:visible;';
-    video.addEventListener('ended', () => {
+    woOn(video, 'ended', () => {
       const endedToken = replayToken;
-      setTimeout(() => {
+      woTimeout(() => {
         if (endedToken !== replayToken || !replayActive || video !== frontVideo || replayPausedByUser) return;
         // Ran out of buffered material at the edge of what we have; try to pick
         // up freshly recorded chunks or the next recording.
         if (!refreshing) refreshFollow(replayToken);
       }, 0);
     });
-    video.addEventListener('waiting', () => {
+    woOn(video, 'waiting', () => {
       // Ran out of buffered material at the live edge of the snapshot; pull in
       // freshly recorded chunks instead of waiting for the stall monitor.
       if (replayActive && video === frontVideo && !replayPausedByUser && !refreshing) refreshFollow(replayToken);
     });
-    video.addEventListener('error', () => {
+    woOn(video, 'error', () => {
       if (replayActive && video === frontVideo) {
         statusError = 'A replay clip stopped decoding; playback recovered';
         recoverReplay();
@@ -731,7 +784,7 @@
     try {
       url = URL.createObjectURL(new Blob(recording.chunks.map((chunk) => chunk.blob), { type: recording.mimeType }));
     } catch (_) {
-      setTimeout(() => { if (valid() && typeof onError === 'function') onError('blob'); }, 0);
+      woTimeout(() => { if (valid() && typeof onError === 'function') onError('blob'); }, 0);
       return loadId;
     }
     replayUrls.set(video, url);
@@ -745,11 +798,11 @@
       && video.dataset.wardenoneLoadId === String(loadId)
       && replayActive;
     const listen = (type, handler, options) => {
-      video.addEventListener(type, handler, options);
+      woOn(video, type, handler, options);
       listeners.push([type, handler, options]);
     };
     const later = (handler, delay) => {
-      const timer = setTimeout(handler, delay);
+      const timer = woTimeout(handler, delay);
       timers.push(timer);
       return timer;
     };
@@ -793,7 +846,7 @@
   }
 
   function scheduleBackReset(previous, sessionToken) {
-    setTimeout(() => {
+    woTimeout(() => {
       if (sessionToken !== replayToken) return;
       if (previous && previous !== frontVideo) {
         resetReplayVideo(previous);
@@ -842,12 +895,12 @@
     const onProgress = () => {
       if ((Number(video.currentTime) || 0) > startTime + 0.02) finish();
     };
-    video.addEventListener('timeupdate', onProgress);
-    video.addEventListener('playing', onProgress);
+    woOn(video, 'timeupdate', onProgress);
+    woOn(video, 'playing', onProgress);
     if (typeof video.requestVideoFrameCallback === 'function') {
       try { frameHandle = video.requestVideoFrameCallback(() => finish()); } catch (_) {}
     }
-    const cap = setTimeout(finish, REPLAY_REVEAL_CAP_MS);
+    const cap = woTimeout(finish, REPLAY_REVEAL_CAP_MS);
     pendingReveal = { video, sessionToken, cancel: () => { if (!done) { done = true; teardown(); } } };
   }
 
@@ -995,9 +1048,9 @@
           if (front !== frontVideo) return;
         }
       }
-      replayMonitorTimer = setTimeout(watch, REPLAY_MONITOR_MS);
+      replayMonitorTimer = woTimeout(watch, REPLAY_MONITOR_MS);
     };
-    replayMonitorTimer = setTimeout(watch, REPLAY_MONITOR_MS);
+    replayMonitorTimer = woTimeout(watch, REPLAY_MONITOR_MS);
   }
 
   function setReplayPaused(paused) {
@@ -1360,7 +1413,7 @@
     if (!video || video === sourceVideo) return;
     releaseSource();
     sourceVideo = video;
-    sourceVideo.addEventListener('pause', keepSourcePlayingDuringReplay);
+    woOn(sourceVideo, 'pause', keepSourcePlayingDuringReplay);
     recorderGeneration += 1;
     if (!mimeType) mimeType = selectMimeType();
     ensureReplayLayer();
@@ -1400,8 +1453,8 @@
     createControls();
     ensurePlaybackControlStyle();
     scan();
-    scanTimer = setInterval(scan, 1000);
-    syncTimer = setInterval(syncUi, 500);
+    scanTimer = woInterval(scan, 1000);
+    syncTimer = woInterval(syncUi, 500);
   }
 
   function shutdown() {
@@ -1438,12 +1491,12 @@
     else shutdown();
   }
 
-  document.addEventListener('fullscreenchange', () => setTimeout(() => scan(true), 0));
-  document.addEventListener('click', handleNativePlaybackClick, true);
-  document.addEventListener('keydown', handleNativePlaybackKey, true);
-  document.addEventListener('keyup', handleNativePlaybackKey, true);
-  document.addEventListener('keydown', handleReplayShortcutKey, true);
-  document.addEventListener('click', (event) => {
+  woOn(document, 'fullscreenchange', () => woTimeout(() => scan(true), 0));
+  woOn(document, 'click', handleNativePlaybackClick, true);
+  woOn(document, 'keydown', handleNativePlaybackKey, true);
+  woOn(document, 'keyup', handleNativePlaybackKey, true);
+  woOn(document, 'keydown', handleReplayShortcutKey, true);
+  woOn(document, 'click', (event) => {
     if (!popoverOpen || !controlsRoot) return;
     const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
     if (!path.includes(controlsRoot)) setPopoverOpen(false);
@@ -1454,5 +1507,5 @@
       if (area === 'local' && changes.wardenone_config) applyConfig(changes.wardenone_config.newValue || {});
     });
   } catch (_) {}
-  window.addEventListener('pagehide', shutdown, { once: true });
+  woOn(window, 'pagehide', shutdown, { once: true });
 })();

@@ -22,8 +22,60 @@
  */
 (function () {
   'use strict';
-  if (window.__wardenOneSearchJunk) return;
-  window.__wardenOneSearchJunk = true;
+  const WO_GUARD_VERSION = '1.0.0';
+  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
+     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
+     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
+     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
+     older one, and it must release the old one's listeners, observers and timers first or both
+     copies stay live and are charged for the same work. */
+  if (window.__wardenOneSearchJunk === WO_GUARD_VERSION) return;
+  if (window.__wardenOneSearchJunk) {
+    try {
+      if (typeof window.__wardenOneSearchJunkDispose === 'function') window.__wardenOneSearchJunkDispose();
+    } catch (_) {}
+  }
+  window.__wardenOneSearchJunk = WO_GUARD_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOneSearchJunkDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
   if (window.top !== window) return;
 
   var MARK_ATTR = 'data-wo-junk';
@@ -109,7 +161,7 @@
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = 'Show anyway';
-    btn.addEventListener('click', function (e) {
+    woOn(btn, 'click', function (e) {
       e.preventDefault();
       e.stopPropagation();
       block.setAttribute(MARK_ATTR, '0');
@@ -143,17 +195,17 @@
 
   function scheduleScan() {
     if (rescanTimer) return;
-    rescanTimer = setTimeout(function () { rescanTimer = 0; scan(); }, RESCAN_DEBOUNCE_MS);
+    rescanTimer = woTimeout(function () { rescanTimer = 0; scan(); }, RESCAN_DEBOUNCE_MS);
   }
 
   function start() {
     scan();
     /* Results arrive late and change on "more results"/instant updates. */
     try {
-      var obs = new MutationObserver(scheduleScan);
+      var obs = woObserver(scheduleScan);
       obs.observe(document.documentElement, { childList: true, subtree: true });
     } catch (_) {}
-    try { window.addEventListener('popstate', scheduleScan); } catch (_) {}
+    try { woOn(window, 'popstate', scheduleScan); } catch (_) {}
   }
 
   chrome.storage.local.get(['wardenone_config', 'wardenone_search_junk_domains', 'wardenone_aux_lists'], function (store) {
@@ -179,7 +231,7 @@
       .then(function () {
         if (!Object.keys(hosts).length) return;
         if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', start, { once: true });
+          woOn(document, 'DOMContentLoaded', start, { once: true });
         } else {
           start();
         }

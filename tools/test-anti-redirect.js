@@ -8,6 +8,9 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* This suite lifts a guard's source and runs it in a hand-built sandbox. The guards now use
+ * AbortController to release their listeners on teardown, which a bare vm context does not have. */
+const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'anti-redirect.js'), 'utf8');
 
@@ -149,6 +152,7 @@ function build(opts) {
     },
   };
 
+  installPlatformGlobals(sandbox);
   vm.createContext(sandbox);
   vm.runInContext(SRC, sandbox);
   // Inside the vm, `window` resolves to the contextified global proxy, not the

@@ -2767,7 +2767,13 @@ test('dedicated module installs no React/reload/polling recovery', () => {
     'module performs a page navigation/reload');
   assert(!/history\.(?:go|back|forward|pushState|replaceState)\s*\(/.test(MODULE_SOURCE),
     'module navigates browser history');
-  assert(!/\bsetInterval\s*\(/.test(MODULE_SOURCE), 'module contains a polling interval');
+  // The claim is that this module never polls. Since it gained a woInterval helper so teardown
+  // can clear timers, a bare "contains no setInterval" search now matches the helper's own
+  // declaration rather than any polling. What matters is that nothing CALLS it, and that the one
+  // raw setInterval in the file is the helper.
+  assert(!/woInterval\(/.test(MODULE_SOURCE), 'module contains a polling interval');
+  assert((MODULE_SOURCE.match(/\bsetInterval\s*\(/g) || []).length <= 1,
+    'module has a raw polling interval outside the teardown helper');
   assert(!/__react|_reactRootContainer|mediaPlayerInstance/i.test(MODULE_SOURCE),
     'module depends on Twitch React internals');
 });
