@@ -750,8 +750,10 @@ function testRegistrationAndBridgeBounds() {
   assert(BRIDGE.includes('const scopedPlayerContext = smartPlayerRoute() || window.top !== window'),
     'known player roots are not route/frame corroborated');
   assert(BRIDGE.includes("return 'media-embed'"), 'bridge lacks strong media-embed evidence');
-  assert(BRIDGE.includes("window.addEventListener('popstate'"), 'bridge does not rescan after SPA history navigation');
-  assert(BRIDGE.includes("window.addEventListener('hashchange'"), 'bridge does not rescan after hash-route navigation');
+  /* Matched on the events, not on the registration call: the bridge's listeners go through its
+     teardown registry now, which changed nothing about when it rescans. */
+  assert(/'popstate'/.test(BRIDGE), 'bridge does not rescan after SPA history navigation');
+  assert(/'hashchange'/.test(BRIDGE), 'bridge does not rescan after hash-route navigation');
   assert(BACKGROUND.includes('chrome.webNavigation?.onHistoryStateUpdated?.addListener'),
     'recovered tabs are not cleaned up on SPA history navigation');
   assert(BACKGROUND.includes("kind: 'smart-script-route-changed'"),

@@ -35,7 +35,18 @@ function lift(name) {
   assert.fail('could not find the end of ' + name);
 }
 
+// The watcher constructs its observer through the bridge's teardown registry now, so the real
+// registry is lifted in alongside it. Shimming woObserver would work, but a shim can agree with a
+// broken implementation -- and the registry is small and self-contained enough to just include.
+const REGISTRY_SRC = (function () {
+  const from = BRIDGE.indexOf('  /* Everything this copy holds');
+  const to = BRIDGE.indexOf('  // A per-page-load routing token.');
+  if (from < 0 || to <= from) throw new Error('could not lift the bridge teardown registry');
+  return BRIDGE.slice(from, to);
+}());
+
 const WATCHER_SRC = [
+  REGISTRY_SRC,
   'const domWatchers = new Set();',
   'let domObserver = null;',
   'let domWatchPending = false;',
@@ -62,6 +73,11 @@ function makeSandbox() {
   const listeners = {};
   const sandbox = {
     console, Set, Array, Object, String, Number, Boolean, Error, JSON, setTimeout, clearTimeout,
+    // Needed by the lifted teardown registry.
+    AbortController,
+    setInterval: () => 0,
+    clearInterval() {},
+    window: {},
     MutationObserver: FakeMutationObserver,
     document: {
       documentElement: { tag: 'HTML' },

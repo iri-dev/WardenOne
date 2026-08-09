@@ -193,6 +193,12 @@ function loadCookieEscape() {
     Array,
     String,
     Set,
+    AbortController,
+    MutationObserver: class { disconnect() {} },
+    setTimeout: (fn, ms) => { void fn; void ms; return 1; },
+    clearTimeout() {},
+    setInterval: () => 2,
+    clearInterval() {},
   };
   sandbox.window = sandbox;
   // The bridge listens on window for the engine's request. Without this the registration throws
@@ -208,13 +214,22 @@ function loadCookieEscape() {
   vm.runInContext('this.window = this;', sandbox);
   const winRef = vm.runInContext('this', sandbox);
 
+  // The bridge routes its listeners and timers through its teardown registry, so the lifted code
+  // needs the real thing. Lifting it beats shimming it: the registry is small, self-contained, and
+  // is what actually runs in the browser -- a shim could agree with a broken implementation.
+  const registry = sourceBetween(BRIDGE,
+    '  /* Everything this copy holds',
+    '  // A per-page-load routing token.');
+
   const helper = sourceBetween(BRIDGE,
     "  const WO_OWNED_HOST_STYLE = 'all:initial!important;",
     '  // Smart Script Shield recovery is deliberately driven');
   const escape = sourceBetween(BRIDGE,
     '  // Cookie reload-loop escape.',
     '  // ---- Memory Shield: form-dirty + active-media tracking ----');
-  vm.runInContext(helper + '\n' + escape, sandbox, { filename: 'bridge.js:cookie-escape' });
+  // One script, so the registry's const bindings are in scope for the rest.
+  vm.runInContext(registry + '\n' + helper + '\n' + escape, sandbox,
+    { filename: 'bridge.js:cookie-escape' });
 
   return { dom, sent, healers, sandbox, winRef };
 }

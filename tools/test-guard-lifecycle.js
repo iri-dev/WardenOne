@@ -314,6 +314,81 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 10. bridge.js. It was already version-coupled, but it had no dispose -- so re-installing over
+//     an orphan left its 36 listeners attached -- and its guard had a worse problem: the `return`
+//     for the same-version case sat INSIDE the `typeof replay === 'function'` check. A bridge
+//     whose replay had not been assigned yet (it is set 840 lines after the flag) or whose replay
+//     a page had overwritten with a non-function fell through and installed a SECOND complete
+//     bridge. A page could force that with window.__wardenOneBridgeReplay = 1.
+// ---------------------------------------------------------------------------
+{
+  const bridge = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
+  const decl = bridge.match(/const BRIDGE_VERSION = '([^']+)';/);
+  check('bridge: version constant matches manifest',
+    !!decl && decl[1] === MANIFEST.version, decl ? decl[1] : 'not found');
+  check('bridge: publishes a dispose', bridge.includes('window.__wardenOneBridgeDispose = () => {'));
+  check('bridge: disposes an older copy before installing',
+    /if \(window\.__wardenOneBridgeVersion\) \{[\s\S]{0,400}window\.__wardenOneBridgeDispose\(\)/.test(bridge));
+
+  const strays = {
+    '.addEventListener(': (bridge.match(/\.addEventListener\(/g) || []).length,
+    'setInterval(': (bridge.match(/\bsetInterval\(/g) || []).length,
+    'setTimeout(': (bridge.match(/\bsetTimeout\(/g) || []).length,
+    'new MutationObserver(': (bridge.match(/new MutationObserver\(/g) || []).length,
+  };
+  for (const [call, n] of Object.entries(strays)) {
+    check('bridge: one raw ' + call + ' (the helper)', n === 1, n + ' found');
+  }
+
+  // Its registry must be the same code as the other nine, making ten.
+  const from = bridge.indexOf('  /* Everything this copy holds');
+  const to = bridge.indexOf('  };\n', bridge.indexOf('window.__wardenOneBridgeDispose = () => {'));
+  assert(from >= 0 && to > from, 'could not find the bridge registry');
+  check('bridge: registry is identical to the other nine',
+    bridge.slice(from, to).split('__wardenOneBridgeDispose').join('__DISPOSE__') === registries[0]);
+
+  // Behaviour of the guard decision, which is where the defect was.
+  const gFrom = bridge.indexOf("  const BRIDGE_VERSION = '");
+  const gTo = bridge.indexOf('  window.__wardenOneBridgeVersion = BRIDGE_VERSION;')
+    + '  window.__wardenOneBridgeVersion = BRIDGE_VERSION;'.length;
+  assert(gFrom >= 0 && gTo > gFrom, 'could not lift the bridge guard');
+  const decision = 'this.__ran = false; (function () {\n' + bridge.slice(gFrom, gTo)
+    + '\n  __ran = true;\n})();';
+
+  const cases = [
+    ['same version, replay present: replays and stops',
+      { v: MANIFEST.version, replay: 'fn' }, { ran: false, replayed: true, disposed: false }],
+    // The regression that mattered: this used to fall through and install a second bridge.
+    ['same version, replay missing: still stops',
+      { v: MANIFEST.version, replay: null }, { ran: false, replayed: false, disposed: false }],
+    ['same version, replay clobbered by the page: still stops',
+      { v: MANIFEST.version, replay: 'number' }, { ran: false, replayed: false, disposed: false }],
+    ['stale flag: disposes the old bridge and installs',
+      { v: 'wo-stale', replay: 'fn' }, { ran: true, replayed: false, disposed: true }],
+    ['no flag: installs cleanly',
+      { v: undefined, replay: null }, { ran: true, replayed: false, disposed: false }],
+  ];
+  for (const [label, input, want] of cases) {
+    const win = {};
+    let replayed = false;
+    let disposed = false;
+    if (input.v !== undefined) win.__wardenOneBridgeVersion = input.v;
+    if (input.replay === 'fn') win.__wardenOneBridgeReplay = () => { replayed = true; };
+    else if (input.replay === 'number') win.__wardenOneBridgeReplay = 1;
+    win.__wardenOneBridgeDispose = () => { disposed = true; };
+
+    const sandbox = { window: win };
+    vm.createContext(sandbox);
+    vm.runInContext(decision, sandbox, { filename: 'bridge.js:guard-decision' });
+    const ran = vm.runInContext('__ran', sandbox);
+    check('bridge: ' + label,
+      ran === want.ran && replayed === want.replayed && disposed === want.disposed,
+      'ran=' + ran + '/' + want.ran + ' replayed=' + replayed + '/' + want.replayed
+        + ' disposed=' + disposed + '/' + want.disposed);
+  }
+}
+
 if (failures) {
   console.error('[fail] guard lifecycle tests: ' + failures + ' failure(s)');
   process.exit(1);

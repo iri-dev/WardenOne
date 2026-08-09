@@ -13,14 +13,68 @@
 
   const BRIDGE_VERSION = '1.0.0';
   if (window.__wardenOneBridgeVersion === BRIDGE_VERSION) {
+    /* Same version: this document already has a current bridge. Let it re-run its replay,
+       then stop -- unconditionally. The return used to sit INSIDE the typeof check, so a
+       bridge whose replay had not been assigned yet (it is set 840 lines below this point, so
+       anything throwing in between left the flag set and the replay missing), or whose replay
+       a page had overwritten with a non-function, fell through and installed a SECOND complete
+       bridge over the first: another 36 listeners, another observer, another runtime listener.
+       A page could force that on demand with window.__wardenOneBridgeReplay = 1. */
     try {
-      if (typeof window.__wardenOneBridgeReplay === 'function') {
-        window.__wardenOneBridgeReplay();
-        return;
-      }
+      if (typeof window.__wardenOneBridgeReplay === 'function') window.__wardenOneBridgeReplay();
+    } catch (_) {}
+    return;
+  }
+  if (window.__wardenOneBridgeVersion) {
+    /* A different version means this document holds an older bridge -- after an extension
+       update, or after Repair marked it stale so it could re-arm the tab. Release what that
+       copy holds before installing over it, or both stay live and both are charged for every
+       event the page produces. */
+    try {
+      if (typeof window.__wardenOneBridgeDispose === 'function') window.__wardenOneBridgeDispose();
     } catch (_) {}
   }
   window.__wardenOneBridgeVersion = BRIDGE_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  window.__wardenOneBridgeDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+  };
 
   // A per-page-load routing token. It keeps accidental/cross-extension messages
   // out, but the MAIN-world page can observe window messages, so background-side
@@ -234,7 +288,7 @@
       if (domWatchPending) return;
       domWatchPending = true;
       try {
-        document.addEventListener('DOMContentLoaded', () => {
+        woOn(document, 'DOMContentLoaded', () => {
           domWatchPending = false;
           domWatchStart();
         }, { once: true });
@@ -242,7 +296,7 @@
       return;
     }
     try {
-      domObserver = new MutationObserver((records) => {
+      domObserver = woObserver((records) => {
         // Snapshot the set: a subscriber may unsubscribe from inside its own
         // callback (the login-age watcher does), and one throwing must not stop the
         // rest from being told.
@@ -454,7 +508,7 @@
       // avoid. Stop once the evidence is gone, once the context is established
       // long enough to be acted on, or as soon as the frame goes away.
       let beats = 0;
-      smartPlayerHeartbeat = setInterval(() => {
+      smartPlayerHeartbeat = woInterval(() => {
         if (!smartPlayerEvidence || ++beats > SMART_PLAYER_HEARTBEAT_MAX) {
           stopSmartPlayerHeartbeat();
           return;
@@ -466,7 +520,7 @@
   }
   function scheduleSmartPlayerScan(delay) {
     if (smartPlayerEvidence || smartPlayerScanCount >= 48 || smartPlayerScanTimer) return;
-    smartPlayerScanTimer = setTimeout(() => {
+    smartPlayerScanTimer = woTimeout(() => {
       smartPlayerScanTimer = null;
       smartPlayerScanCount += 1;
       sendSmartPlayerContext(false);
@@ -484,7 +538,7 @@
     }
     const generation = ++smartPlayerObserverGeneration;
     smartPlayerUnwatch = domWatch(() => scheduleSmartPlayerScan(120));
-    setTimeout(() => {
+    woTimeout(() => {
       // The generation check keeps a stale timer from tearing down the subscription
       // a later re-arm just created.
       if (generation !== smartPlayerObserverGeneration || !smartPlayerUnwatch) return;
@@ -541,16 +595,16 @@
     sendSmartPlayerIntent();
   }
   try {
-    window.addEventListener('pagehide', stopSmartPlayerHeartbeat, { once: true });
+    woOn(window, 'pagehide', stopSmartPlayerHeartbeat, { once: true });
     armSmartPlayerObservation();
-    document.addEventListener('DOMContentLoaded', () => scheduleSmartPlayerScan(0), { once: true });
-    window.addEventListener('load', () => scheduleSmartPlayerScan(0), { once: true });
-    window.addEventListener('popstate', () => armSmartPlayerObservation());
-    window.addEventListener('hashchange', () => armSmartPlayerObservation());
-    document.addEventListener('pointerdown', noteSmartPlayerIntent, true);
-    document.addEventListener('click', noteSmartPlayerIntent, true);
-    document.addEventListener('keydown', noteSmartPlayerIntent, true);
-    document.addEventListener('click', (event) => {
+    woOn(document, 'DOMContentLoaded', () => scheduleSmartPlayerScan(0), { once: true });
+    woOn(window, 'load', () => scheduleSmartPlayerScan(0), { once: true });
+    woOn(window, 'popstate', () => armSmartPlayerObservation());
+    woOn(window, 'hashchange', () => armSmartPlayerObservation());
+    woOn(document, 'pointerdown', noteSmartPlayerIntent, true);
+    woOn(document, 'click', noteSmartPlayerIntent, true);
+    woOn(document, 'keydown', noteSmartPlayerIntent, true);
+    woOn(document, 'click', (event) => {
       if (!event || event.isTrusted === false) return;
       const target = event.target && event.target.closest
         ? event.target.closest('a[href],button,[role="button"],[data-episode]')
@@ -559,10 +613,10 @@
       const href = target.href || '';
       const label = String(target.textContent || target.getAttribute('aria-label') || target.getAttribute('data-episode') || '').slice(0, 160);
       if (!smartPlayerRoute(href) && !/(?:watch|episode|stream|play|server)/i.test(label)) return;
-      setTimeout(() => armSmartPlayerObservation(), 0);
+      woTimeout(() => armSmartPlayerObservation(), 0);
     }, true);
     [30000, 90000, 180000].forEach((delay) => {
-      setTimeout(() => {
+      woTimeout(() => {
         if (!smartPlayerEvidence && smartPlayerRoute()) armSmartPlayerObservation();
       }, delay);
     });
@@ -782,7 +836,7 @@
     return context === 'form' && now - safeBrowsingTrustedAt <= 2500;
   }
   try {
-    document.addEventListener('click', (e) => {
+    woOn(document, 'click', (e) => {
       if (!markTrustedSafeBrowsingEvent(e)) return;
       const target = e.target;
       const link = target && target.closest ? target.closest('a[href],area[href]') : null;
@@ -793,19 +847,19 @@
       const form = target && target.closest ? target.closest('form') : null;
       if (form) rememberSafeBrowsingIntent(safeBrowsingFormAction(form));
     }, true);
-    document.addEventListener('submit', (e) => {
+    woOn(document, 'submit', (e) => {
       if (!markTrustedSafeBrowsingEvent(e)) return;
       rememberSafeBrowsingIntent(location.href);
       rememberSafeBrowsingIntent(safeBrowsingFormAction(e.target));
     }, true);
-    document.addEventListener('paste', (e) => {
+    woOn(document, 'paste', (e) => {
       if (!markTrustedSafeBrowsingEvent(e)) return;
       rememberSafeBrowsingIntent(location.href);
       const target = e.target;
       const form = target && target.closest ? target.closest('form') : null;
       if (form) rememberSafeBrowsingIntent(safeBrowsingFormAction(form));
     }, true);
-    document.addEventListener('input', (e) => {
+    woOn(document, 'input', (e) => {
       const target = e && e.target;
       if (!markTrustedSafeBrowsingEvent(e) || !target) return;
       const hay = String((target.name || '') + ' ' + (target.id || '') + ' ' + (target.autocomplete || '') + ' ' + (target.placeholder || '')).toLowerCase();
@@ -868,7 +922,7 @@
 
   // 1. Listen for the custom events the main-world trap dispatches on document,
   //    and forward block/detection counts to the background for the toolbar badge.
-  document.addEventListener('wo-event', (e) => {
+  woOn(document, 'wo-event', (e) => {
     const d = (e && e.detail) || {};
     // Route only token-bearing events. The token is not treated as a true secret;
     // background learning and privileged actions are separately constrained.
@@ -965,7 +1019,7 @@
         smartFrameReloadedUrls.add(reloadKey);
         if (smartFrameReloadedUrls.size > 16) smartFrameReloadedUrls.delete(smartFrameReloadedUrls.values().next().value);
         try { sendResponse({ ok: true }); } catch (_) {}
-        setTimeout(() => { try { location.reload(); } catch (_) {} }, 0);
+        woTimeout(() => { try { location.reload(); } catch (_) {} }, 0);
         return true;
       }
     });
@@ -976,7 +1030,7 @@
   // back with the same per-load token used by config messages.
   try {
     const SAFE_BROWSING_CONTEXTS = new Set(['link', 'paste', 'form']);
-    document.addEventListener('wo-safe-browsing-check', (e) => {
+    woOn(document, 'wo-safe-browsing-check', (e) => {
       const d = (e && e.detail) || {};
       const id = String(d.id || '');
       const url = String(d.url || '');
@@ -1039,7 +1093,7 @@
       }
       return null;
     };
-    document.addEventListener('wo-background-message', (e) => {
+    woOn(document, 'wo-background-message', (e) => {
       const d = (e && e.detail) || {};
       const id = String(d.id || '');
       if (d.token !== TOKEN || !id) return;
@@ -1129,7 +1183,7 @@
       // element to forge: a page cannot obtain a reference to a node in a closed shadow root, so
       // it cannot dispatch on it either. owns() is belt and braces for the fallback path where
       // attachShadow was unavailable.
-      allow.addEventListener('click', (e) => {
+      woOn(allow, 'click', (e) => {
         if (cookieAllowInFlight || !e || e.isTrusted === false) return;
         if (!cookieOverlay || !cookieOverlay.owns(allow)) return;
         cookieAllowInFlight = true;
@@ -1155,7 +1209,7 @@
         + 'font-size:12.5px!important;');
       dismiss.textContent = 'Keep blocked';
       // Dismiss stops the self-healing too, or the notice would reappear immediately.
-      dismiss.addEventListener('click', (e) => {
+      woOn(dismiss, 'click', (e) => {
         if (!e || e.isTrusted === false) return;
         const overlay = cookieOverlay;
         cookieOverlay = null;
@@ -1168,7 +1222,7 @@
       cookieOverlay.mount();
     };
 
-    window.addEventListener('message', (e) => {
+    woOn(window, 'message', (e) => {
       if (e.source !== window || !e.data) return;
       if (e.data.source !== 'wardenone-reload-loop' || e.data.token !== TOKEN) return;
       showReloadLoopNotice();
@@ -1196,8 +1250,8 @@
     } catch (_) {}
   };
   try {
-    document.addEventListener('input', markDirty, true);
-    document.addEventListener('change', markDirty, true);
+    woOn(document, 'input', markDirty, true);
+    woOn(document, 'change', markDirty, true);
   } catch (_) {}
   // Detect active camera/mic by wrapping getUserMedia in THIS (isolated) world.
   // Note: page scripts call getUserMedia in the MAIN world; to catch that too we
@@ -1212,9 +1266,9 @@
         return orig(...args).then((stream) => {
           mediaActive = true;
           try {
-            stream.getTracks().forEach((tr) => tr.addEventListener('ended', () => {
+            stream.getTracks().forEach((tr) => woOn(tr, 'ended', () => {
               // if no live tracks remain, clear the flag
-              setTimeout(() => {
+              woTimeout(() => {
                 try {
                   // best-effort: we can't enumerate all streams, so just clear after a track ends
                   mediaActive = stream.getTracks().some((x) => x.readyState === 'live');
@@ -1237,7 +1291,7 @@
   // from forging this state casually and matches how config, permission-chain and
   // the other relays already validate.
   try {
-    window.addEventListener('message', (e) => {
+    woOn(window, 'message', (e) => {
       if (e.source === window && e.data && e.data.source === 'wardenone-media'
         && e.data.token === TOKEN) {
         mediaActive = !!e.data.active;
@@ -1357,12 +1411,12 @@
             return btn;
           };
           const leave = mkBtn('Leave site', true);
-          leave.addEventListener('click', (e) => {
+          woOn(leave, 'click', (e) => {
             if (e && e.isTrusted === false) return;
             try { if (history.length > 1) history.back(); else location.href = 'about:blank'; } catch (_) { try { location.href = 'about:blank'; } catch (_) {} }
           });
           const dismiss = mkBtn('Dismiss', false);
-          dismiss.addEventListener('click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
+          woOn(dismiss, 'click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
           actions.appendChild(leave);
           actions.appendChild(dismiss);
           box.appendChild(tag);
@@ -1392,14 +1446,14 @@
       };
       const scheduleScriptDriftScan = (delay) => {
         if (scriptDriftTimer) clearTimeout(scriptDriftTimer);
-        scriptDriftTimer = setTimeout(() => {
+        scriptDriftTimer = woTimeout(() => {
           scriptDriftTimer = 0;
           runScriptDriftScan();
         }, Number(delay) || 1200);
       };
-      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => scheduleScriptDriftScan(1500), { once: true });
+      if (document.readyState === 'loading') woOn(document, 'DOMContentLoaded', () => scheduleScriptDriftScan(1500), { once: true });
       else scheduleScriptDriftScan(1000);
-      document.addEventListener('wo-bridge-config-ready', () => scheduleScriptDriftScan(300), { once: true });
+      woOn(document, 'wo-bridge-config-ready', () => scheduleScriptDriftScan(300), { once: true });
       try {
         const driftUnwatch = domWatch((muts) => {
           if (!scriptDriftGuardOn()) return;
@@ -1414,7 +1468,7 @@
             }
           }
         });
-        setTimeout(driftUnwatch, 60000);
+        woTimeout(driftUnwatch, 60000);
       } catch (_) {}
     }
   } catch (_) {}
@@ -1499,7 +1553,7 @@
             return btn;
           };
           const reset = mkBtn('Reset site permissions', true);
-          reset.addEventListener('click', (e) => {
+          woOn(reset, 'click', (e) => {
             if (e && e.isTrusted === false) return;
             reset.disabled = true;
             status.textContent = 'Resetting permissions for this site...';
@@ -1519,7 +1573,7 @@
             }
           });
           const settings = mkBtn('Open Chrome settings', false);
-          settings.addEventListener('click', (e) => {
+          woOn(settings, 'click', (e) => {
             if (e && e.isTrusted === false) return;
             try {
               chrome.runtime.sendMessage({ kind: 'open-site-settings', url: location.href }, () => { void chrome.runtime.lastError; });
@@ -1527,7 +1581,7 @@
             } catch (_) {}
           });
           const dismiss = mkBtn('Dismiss', false);
-          dismiss.addEventListener('click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
+          woOn(dismiss, 'click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
           actions.appendChild(reset);
           actions.appendChild(settings);
           actions.appendChild(dismiss);
@@ -1544,7 +1598,7 @@
         } catch (_) {}
       };
 
-      document.addEventListener('wo-permission-signal', (e) => {
+      woOn(document, 'wo-permission-signal', (e) => {
         const d = (e && e.detail) || {};
         if (d.token !== TOKEN || !permissionChainGuardOn()) return;
         const signal = cleanPermSignal(d);
@@ -1607,11 +1661,11 @@
           const x = document.createElement('button');
           x.setAttribute('style', WO_MODAL.button(false, '12px'));
           x.textContent = 'Dismiss warning';
-          x.addEventListener('click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
+          woOn(x, 'click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
           const leave = document.createElement('button');
           leave.setAttribute('style', WO_MODAL.button(true, '12px'));
           leave.textContent = 'Leave site';
-          leave.addEventListener('click', (e) => {
+          woOn(leave, 'click', (e) => {
             if (e && e.isTrusted === false) return;
             try { if (history.length > 1) history.back(); else location.href = 'about:blank'; } catch (_) { try { location.href = 'about:blank'; } catch (_) {} }
           });
@@ -1637,9 +1691,9 @@
           });
         } catch (_) {}
       };
-      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', laCheck, { once: true });
+      if (document.readyState === 'loading') woOn(document, 'DOMContentLoaded', laCheck, { once: true });
       else laCheck();
-      document.addEventListener('wo-bridge-config-ready', laCheck, { once: true });
+      woOn(document, 'wo-bridge-config-ready', laCheck, { once: true });
       try {
         let laP = false;
         // PERF (weak machines): a login form appears within the first seconds of
@@ -1650,9 +1704,9 @@
           if (laChecked || laShown) { laUnwatch(); return; }
           if (laP) return;
           laP = true;
-          setTimeout(() => { laP = false; laCheck(); }, 600);
+          woTimeout(() => { laP = false; laCheck(); }, 600);
         });
-        setTimeout(laUnwatch, 60000);
+        woTimeout(laUnwatch, 60000);
       } catch (_) {}
     }
   } catch (_) {}
