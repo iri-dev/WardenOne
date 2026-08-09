@@ -6,6 +6,11 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Made the settings switches usable with a screen reader. All 115 of them were
+  announced as "checkbox, not checked" with nothing to say what they controlled:
+  the name you can see sits next to each switch rather than inside its label, so
+  there was nothing for a screen reader to read out. Every switch now announces
+  its name, and 110 of them also read out the explanation underneath.
 - Stopped page loads getting slower the longer WardenOne had been used. Every
   frame of every page rebuilt the site lists from scratch at load, re-checking
   hosts that had already been checked when they were saved. On a fresh install
