@@ -267,7 +267,7 @@
     padding: 4px 14px;
     margin: 12px 0;
   }
-  .group h3 {
+  .group h2 {
     font-family: var(--display);
     font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--plum); margin: 16px 2px 4px; font-weight: 700;
@@ -551,19 +551,32 @@
 .wo-footer-copy{display:block;min-width:0;text-align:left;}
 .wo-footer-copy strong{display:block;color:var(--plum);font-family:var(--display);font-size:12.5px;font-weight:800;line-height:1.15;}
 .wo-footer-copy small{display:block;color:var(--ink-faint);font-size:10.5px;font-weight:700;margin-top:2px;}
-</style>
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; }
+    }
+    @media (forced-colors: active) {
+      /* box-shadow and border-color are dropped in forced colours, so the replacement
+         focus rings vanish. Put a real outline back on everything focusable. */
+      a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+      summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid Highlight !important; outline-offset: 2px !important; }
+      .tg .track, .tg .knob, .health-note-dot { forced-color-adjust: none; }
+    }
+    .wo-sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+  </style>
 </head>
 <body>
   <div class="head">
     <div class="credit"><span>by</span><strong>iri.dev</strong></div>
     <div class="shield">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
         <path d="M12 2.5c2.6 1.4 5 1.8 7 1.9.3 4.9-.6 11.3-7 15.1C5.6 15.7 4.7 9.3 5 4.4c2 0 4.4-.5 7-1.9z" fill="#ffffff" fill-opacity="0.22"/>
         <path d="M8.3 12.2l2.6 2.6 5-5.6" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
     <div>
-      <div class="title">WardenOne</div>
+      <h1 class="wo-sr-only">WardenOne settings</h1><div class="title">WardenOne</div>
       <div class="sub">Keeping you safe online</div>
     </div>
   </div>
@@ -582,7 +595,7 @@
 
   <details class="health-panel" id="protection-health-panel" aria-live="polite">
     <summary class="health-summary">
-      <span class="health-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2l6.5 2.6v4.8c0 4.1-2.8 7.2-6.5 8.4-3.7-1.2-6.5-4.3-6.5-8.4V5.8L12 3.2z" fill="#fff" opacity=".95"/><path d="M9 12l2 2 4-4.4" stroke="#b06fd6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="health-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M12 3.2l6.5 2.6v4.8c0 4.1-2.8 7.2-6.5 8.4-3.7-1.2-6.5-4.3-6.5-8.4V5.8L12 3.2z" fill="#fff" opacity=".95"/><path d="M9 12l2 2 4-4.4" stroke="#b06fd6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       <div class="health-title-wrap">
         <div class="health-title" id="health-status-title">Checking protection</div>
         <div class="health-detail" id="health-status-detail">Reading local shield status...</div>
@@ -605,7 +618,7 @@
       <span class="wo-search-count" id="wo-search-count" aria-live="polite"></span>
     </div>
     <div class="wo-searchbar">
-      <input id="wo-settings-search" class="wo-search" type="search" placeholder="Try phishing, trackers, cookies..." autocomplete="off" spellcheck="false">
+      <input id="wo-settings-search" class="wo-search" type="search" placeholder="Try phishing, trackers, cookies..." autocomplete="off" spellcheck="false" aria-label="Search protections">
       <svg class="wo-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.6" y2="15.6"></line></svg>
       <button type="button" id="wo-search-clear" class="wo-search-clear" aria-label="Clear search" title="Clear search">&times;</button>
     </div>
@@ -618,7 +631,7 @@
   </div>
   <div class="wo-noresult" id="wo-noresult"><strong>No matches yet</strong><span>Try download, tracker, cookie, login, or phishing.</span></div>
 
-  <h3 style="margin:14px 18px 4px;font-family:var(--display);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--plum);font-weight:700;">Script Shield</h3>
+  <h2 style="margin:14px 18px 4px;font-family:var(--display);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--plum);font-weight:700;">Script Shield</h2>
   <div class="card-group" id="js-shield" style="margin:0 16px 4px;padding:4px 14px;">
     <div class="row" style="display:block;padding:8px 0 6px;border-bottom:none;">
       <div class="desc" id="js-shield-desc">Blocks JavaScript, WebAssembly startup, inline scripts, and script-driven active content. Smart uses trusted script hosts below; Lockdown only allows sites you trust. Reload after changing.</div>
@@ -650,7 +663,7 @@
 
   <div class="group" id="groups">
 
-    <h3>Redirects & popups</h3>
+    <h2>Redirects & popups</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Block forced popups</div><div class="desc">Stops popunders and new tabs a page opens without a real user action. Catches timer-based window.open tricks, hidden ad tabs, and background popups that appear after the page loads. On by default.</div></div>
@@ -681,7 +694,7 @@
       <label class="tg"><input type="checkbox" data-key="blockMetaRefresh"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>IP protection</h3>
+<h2>IP protection</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Block IP-grabber beacons</div><div class="desc">Stop embedded logger pixels/fetches before they send</div></div>
@@ -708,7 +721,7 @@
       <label class="tg"><input type="checkbox" data-key="certificateGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>Download Shield</h3>
+<h2>Download Shield</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Download Shield</div><div class="desc">No-account scanner. Grades downloads A-F from the URL, source, filename, file type, Chrome signals, trust list, and local blocklists. Known-bad sources are blocked outright; risky ones show a review you can cancel.</div></div>
@@ -729,7 +742,7 @@
           <label class="tg"><input type="checkbox" data-key="downloadSafeBrowsing"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="Safe Browsing API key" data-config-text="downloadSafeBrowsingKey">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="Safe Browsing API key" aria-label="Safe Browsing API key" data-config-text="downloadSafeBrowsingKey">
           <button class="btn" id="sb-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test Safe Browsing key</button>
           <div class="api-status" id="sb-key-status"></div>
         </div>
@@ -743,7 +756,7 @@
           <label class="tg"><input type="checkbox" data-key="downloadVirusTotal"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="VirusTotal API key (URL/hash)" data-config-text="downloadVirusTotalKey">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="VirusTotal API key (URL/hash)" aria-label="VirusTotal API key (URL/hash)" data-config-text="downloadVirusTotalKey">
           <button class="btn" id="vt-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test VirusTotal key</button>
           <div class="api-status" id="vt-key-status"></div>
         </div>
@@ -761,7 +774,7 @@
           <label class="tg"><input type="checkbox" data-key="urlHaus"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="URLhaus Auth-Key" data-config-text="urlHausKey">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="URLhaus Auth-Key" aria-label="URLhaus Auth-Key" data-config-text="urlHausKey">
           <button class="btn" id="urlhaus-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test URLhaus key</button>
           <div class="api-status" id="urlhaus-key-status"></div>
         </div>
@@ -775,7 +788,7 @@
           <label class="tg"><input type="checkbox" data-key="abuseIpDb"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="AbuseIPDB API key" data-config-text="abuseIpDbKey">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="AbuseIPDB API key" aria-label="AbuseIPDB API key" data-config-text="abuseIpDbKey">
           <button class="btn" id="abuseipdb-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test AbuseIPDB key</button>
           <div class="api-status" id="abuseipdb-key-status"></div>
         </div>
@@ -789,7 +802,7 @@
           <label class="tg"><input type="checkbox" data-key="openPhish"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="Optional OpenPhish token" data-config-text="openPhishKey">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="Optional OpenPhish token" aria-label="Optional OpenPhish token" data-config-text="openPhishKey">
           <button class="btn" id="openphish-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test OpenPhish feed</button>
           <div class="api-status" id="openphish-key-status"></div>
         </div>
@@ -803,7 +816,7 @@
           <label class="tg"><input type="checkbox" data-key="phishTank"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="PhishTank API key" data-config-text="phishTankKey">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="PhishTank API key" aria-label="PhishTank API key" data-config-text="phishTankKey">
           <button class="btn" id="phishtank-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test PhishTank key</button>
           <div class="api-status" id="phishtank-key-status"></div>
         </div>
@@ -817,7 +830,7 @@
           <label class="tg"><input type="checkbox" data-key="whoisXml"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="WhoisXML API key" data-config-text="whoisXmlKey">
+          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="WhoisXML API key" aria-label="WhoisXML API key" data-config-text="whoisXmlKey">
           <button class="btn" id="whoisxml-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test WhoisXML key</button>
           <div class="api-status" id="whoisxml-key-status"></div>
         </div>
@@ -853,7 +866,7 @@
       <div class="name" style="font-size:12px;">VirusTotal URL scanner</div>
       <div class="desc">Paste any link to check it against VirusTotal before you visit. Uses the VirusTotal API key you set above.</div>
       <div class="api-config" style="margin-top:7px;">
-        <input class="api-field" type="text" autocomplete="off" spellcheck="false" placeholder="https://example.com/suspicious-link" id="vt-scan-url">
+        <input class="api-field" type="text" autocomplete="off" spellcheck="false" placeholder="https://example.com/suspicious-link" id="vt-scan-url" aria-label="Link to scan with VirusTotal">
         <button class="btn" id="vt-scan-go" style="width:100%;padding:8px 10px;font-size:11px;">Scan URL with VirusTotal</button>
         <div class="api-status" id="vt-scan-result"></div>
       </div>
@@ -866,7 +879,7 @@
       <div id="download-trust-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
     </div>
     </div>
-<h3>Privacy</h3>
+<h2>Privacy</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Block trackers &amp; ad analytics</div><div class="desc">Hard-block third-party tracking networks (Google Analytics, DoubleClick, Facebook Pixel, etc.)</div></div>
@@ -937,7 +950,7 @@
       <label class="tg"><input type="checkbox" data-key="blockSupercookies"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>AdShield</h3>
+<h2>AdShield</h2>
     <div class="card-group">
     <div class="row">
 <div><div class="name">AdShield: General sites</div><div class="desc">Blocks ad-server requests and hides ad elements across the web (EasyList/uBlock-style filters: network + cosmetic + anti-adblock scriptlets).</div></div>
@@ -985,7 +998,7 @@
     </div>
     </div>
     </details>
-<h3>Memory Shield</h3>
+<h2>Memory Shield</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Sleep inactive tabs</div><div class="desc">Saves RAM by putting unused tabs to sleep (keeps them in the tab bar; they reload on click). Nothing is closed.</div></div>
@@ -1069,7 +1082,7 @@
       <label class="tg"><input type="checkbox" data-key="lazyLoadMedia"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>Forget Me &amp; Logins</h3>
+<h2>Forget Me &amp; Logins</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Never let sites remember me</div><div class="desc">When you close a site, WardenOne wipes its cookies and stored data &mdash; so it can't keep you logged in or recognise you next time. Sites on your allowlist stay logged in as normal.</div></div>
@@ -1085,7 +1098,7 @@
       <div id="forget-now-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
     </div>
     </div>
-<h3>Media Shield</h3>
+<h2>Media Shield</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Media Shield</div><div class="desc">Watch camera, microphone, screen-share, hidden media, and autoplay abuse</div></div>
@@ -1108,7 +1121,7 @@
       <label class="tg"><input type="checkbox" data-key="blockAutoplayMedia"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>Adult-site safety</h3>
+<h2>Adult-site safety</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Warn on adult-site redirects</div><div class="desc">"Are you sure?" screen on unwanted 18+ arrivals</div></div>
@@ -1123,7 +1136,7 @@
       <label class="tg"><input type="checkbox" data-key="safeSearch"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>Advanced detection (catches rotating/custom domains)</h3>
+<h2>Advanced detection (catches rotating/custom domains)</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Warn on redirecting links</div><div class="desc">Flag links that route through ?url=/?redirect= to another site</div></div>
@@ -1170,7 +1183,7 @@
       <label class="tg"><input type="checkbox" data-key="intranetProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>SessionShield — login &amp; session protection</h3>
+<h2>SessionShield — login &amp; session protection</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">SessionShield</div><div class="desc">Watch for login/session tokens exposed in risky places (localStorage, URLs, etc.) and check cookie safety. Never stores or shows full tokens.</div></div>
@@ -1237,7 +1250,7 @@
       <label class="tg"><input type="checkbox" data-key="breachCheck"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<h3>Blocklist (auto-updating)</h3>
+<h2>Blocklist (auto-updating)</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Block known malicious sites</div><div class="desc">Hard-block malware, phishing &amp; scam domains from vetted threat feeds</div></div>
@@ -1260,7 +1273,7 @@
       <button class="btn" id="update-now" style="flex:none;padding:8px 14px;">Update now</button>
     </div>
     </div>
-<h3 id="eyeshield-title">EyeShield</h3>
+<h2 id="eyeshield-title">EyeShield</h2>
     <section class="eyeshield-panel" id="eyeshield-panel" aria-labelledby="eyeshield-title">
       <div class="eyeshield-modes" id="eyeshield-modes" role="group" aria-label="EyeShield mode">
         <button type="button" class="eyeshield-mode" data-eyeshield-mode="off" aria-pressed="true">Normal</button>
@@ -1298,7 +1311,7 @@
         <button type="button" class="eyeshield-reset" id="eyeshield-reset">Reset to default</button>
       </details>
     </section>
-<h3>Interface</h3>
+<h2>Interface</h2>
     <div class="card-group">
     <div class="row">
       <div><div class="name">Show block notifications</div><div class="desc">Pop-up toast when something is blocked, with the reason</div></div>
@@ -1343,7 +1356,7 @@
         <div id="ss-panic-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>
     </div>
-<h3>Settings backup</h3>
+<h2>Settings backup</h2>
     <div class="card-group">
       <div class="row" style="display:block;">
         <div class="name" style="margin-bottom:6px;">Export settings</div>
@@ -1351,12 +1364,12 @@
         <button class="btn" id="settings-export" style="width:100%;">Export settings to a file</button>
         <div class="name" style="margin:14px 0 6px;">Import settings</div>
         <div class="desc" style="margin-bottom:9px;">Applies the settings in a file you've exported before. Anything unrecognised is ignored, and your saved API keys are left exactly as they are.</div>
-        <input type="file" id="settings-import-file" accept="application/json,.json" style="display:none;">
+        <input type="file" id="settings-import-file" accept="application/json,.json" style="display:none;" aria-label="Choose a settings file to import">
         <button class="btn" id="settings-import" style="width:100%;">Choose a settings file…</button>
         <div id="settings-io-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>
     </div>
-<h3>Privacy cleaner</h3>
+<h2>Privacy cleaner</h2>
     <div class="card-group">
       <div class="row" style="display:block;">
         <div class="name" style="margin-bottom:6px;">Clean browser data</div>
@@ -1446,11 +1459,11 @@
   </div>
   <div class="foot" style="padding-top:6px;padding-bottom:8px;">
     <button class="btn nav-btn" id="open-activity">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       Activity log
     </button>
     <button class="btn nav-btn" id="open-network">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" stroke="currentColor" stroke-width="2"/></svg>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" stroke="currentColor" stroke-width="2"/></svg>
       Network (DNS)
     </button>
   </div>
@@ -1469,7 +1482,7 @@
   <div class="wo-footer-link">
     <a id="wo-perms-link" href="permissions.html" target="_blank" rel="noopener">
       <span class="wo-footer-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none"><path d="M12 3.5c2.1 1.2 4.1 1.6 5.8 1.7.2 4.2-.7 9.3-5.8 12.4C6.9 14.5 6 9.4 6.2 5.2c1.7-.1 3.7-.5 5.8-1.7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.4 12.2l1.7 1.7 3.7-4.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true" focusable="false"><path d="M12 3.5c2.1 1.2 4.1 1.6 5.8 1.7.2 4.2-.7 9.3-5.8 12.4C6.9 14.5 6 9.4 6.2 5.2c1.7-.1 3.7-.5 5.8-1.7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.4 12.2l1.7 1.7 3.7-4.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
       <span class="wo-footer-copy"><strong>Why these permissions?</strong><small>Plain-English trust guide</small></span>
     </a>

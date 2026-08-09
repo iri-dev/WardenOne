@@ -129,8 +129,14 @@ check('it points aria-labelledby at the name element', /setAttribute\('aria-labe
 check('it exposes the description too', /setAttribute\('aria-describedby'/.test(js));
 check('it searches only previous siblings, so a name cannot come from a neighbouring row',
   /previousElementSibling/.test(js) && !/nextElementSibling[\s\S]{0,200}aria-labelledby/.test(js));
+// Deliberately not pinned to a variable name. The first version of this assertion
+// matched `input.getAttribute('aria-label')` literally and broke the moment the pass was
+// generalised and the parameter became `control` -- a passing rename reading as a
+// regression. Match the intent: check both attributes before writing either.
 check('it never overwrites an existing label',
-  /getAttribute\('aria-labelledby'\)\s*\|\|\s*input\.getAttribute\('aria-label'\)/.test(js));
+  /getAttribute\('aria-labelledby'\)\s*\|\|\s*[A-Za-z_$][\w$]*\.getAttribute\('aria-label'\)/.test(js));
+check('it labels the other row controls too, not just the toggles',
+  /\.row input, \.row select/.test(js));
 const callAt = js.indexOf('labelToggleControls();');
 const firstChrome = js.indexOf('chrome.');
 check('the pass runs before the first chrome.* use, so a start-up throw cannot cost the labels',
