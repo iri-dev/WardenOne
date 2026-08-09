@@ -147,7 +147,24 @@
     return /^(local|localhost|lan|home|internal|intranet|corp|test|invalid|example)$/i.test(tld);
   }
 
+  // normalizeBridgeHost is pure, and its cost is dominated by the new URL() it builds.
+  // sendConfig runs it over the same host lists more than once per call and again on
+  // every config change, so the answers are memoised. Bounded because a hostile page
+  // cannot reach this, but a very large user-supplied list could otherwise grow it
+  // without limit.
+  const NORMALIZED_HOST_CACHE = new Map();
+  const NORMALIZED_HOST_CACHE_MAX = 12000;
   function normalizeBridgeHost(value) {
+    const key = typeof value === 'string' ? value : String(value || '');
+    const cached = NORMALIZED_HOST_CACHE.get(key);
+    if (cached !== undefined) return cached;
+    const computed = normalizeBridgeHostUncached(value);
+    if (NORMALIZED_HOST_CACHE.size >= NORMALIZED_HOST_CACHE_MAX) NORMALIZED_HOST_CACHE.clear();
+    NORMALIZED_HOST_CACHE.set(key, computed);
+    return computed;
+  }
+
+  function normalizeBridgeHostUncached(value) {
     let raw = String(value || '').trim();
     if (!raw || raw.length > 512) return '';
     try {
@@ -443,10 +460,22 @@
 
   function setLearnedGrabberDomains(learned) {
     try {
-      learnedGrabberDomains = Object.keys(learned || {})
-        .map((d) => String(d || '').replace(/^www\./, '').toLowerCase())
-        .filter((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(d))
-        .slice(0, 1000);
+      // Both stages happen here now, at the storage boundary, so the merge in
+      // sendConfig can trust the result instead of redoing the second one on every
+      // page load in every frame.
+      //
+      // The order is load-bearing and matches what the two places used to do between
+      // them. The bare-hostname regex runs FIRST and is the stricter of the two: it
+      // rejects anything carrying a scheme, port or edge dots, which the shared gate
+      // would otherwise happily parse a blockable hostname out of. Sanitising first
+      // would turn a malformed learned key like "https://sub.example.co.uk/p" into a
+      // live auto-block rather than discarding it -- blocking more than before, which
+      // is the direction that breaks working sites.
+      learnedGrabberDomains = sanitizeBridgeHostList(
+        Object.keys(learned || {})
+          .map((d) => String(d || '').replace(/^www\./, '').toLowerCase())
+          .filter((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(d)),
+        1000);
     } catch (_) {
       learnedGrabberDomains = [];
     }
@@ -472,6 +501,26 @@
         if (!h || seen.has(h)) continue;
         seen.add(h);
         out.push(h);
+      }
+    }
+    return out;
+  }
+
+  // Dedupe and cap, without re-normalising. Only safe for lists that already came out
+  // of sanitizeBridgeHostList: normalizeBridgeHost is idempotent and that function's
+  // output is a fixed point, so a second pass over it cannot change an entry -- it can
+  // only cost time. Anything user- or remote-supplied must still go through
+  // mergeBridgeHostLists.
+  function mergeNormalizedHostLists(limit, ...lists) {
+    const out = [];
+    const seen = new Set();
+    const max = Math.max(1, Math.min(Number(limit) || 1000, 5000));
+    for (const list of lists) {
+      for (const item of (Array.isArray(list) ? list : [])) {
+        if (out.length >= max) return out;
+        if (!item || seen.has(item)) continue;
+        seen.add(item);
+        out.push(item);
       }
     }
     return out;
@@ -677,13 +726,24 @@
     delete clean.forgetMeAllConfirmedAt;
     clean.allowlist = sanitizeBridgeHostList(clean.allowlist, 1000);
     clean.forgetMeList = sanitizeBridgeHostList(clean.forgetMeList, 1000);
-    const grabberExtras = mergeBridgeHostLists(1500, raw.grabberDomainsExtra, learnedGrabberDomains, supplementalLists.grabberDomainsExtra);
+    // The stored `raw.*Extra` lists are user/remote supplied and still need the full
+    // gate. learnedGrabberDomains and supplementalLists.* already came out of it at the
+    // storage boundary, so they are merged by identity -- re-normalising them was the
+    // bulk of the per-frame cost, paid again on every page load in every frame.
+    const grabberExtras = mergeNormalizedHostLists(1500,
+      sanitizeBridgeHostList(raw.grabberDomainsExtra, 1500),
+      learnedGrabberDomains,
+      supplementalLists.grabberDomainsExtra);
     if (grabberExtras.length) clean.grabberDomainsExtra = grabberExtras;
     else delete clean.grabberDomainsExtra;
-    const adultExtras = mergeBridgeHostLists(3000, raw.adultDomainsExtra, supplementalLists.adultDomainsExtra);
+    const adultExtras = mergeNormalizedHostLists(3000,
+      sanitizeBridgeHostList(raw.adultDomainsExtra, 3000),
+      supplementalLists.adultDomainsExtra);
     if (adultExtras.length) clean.adultDomainsExtra = adultExtras;
     else delete clean.adultDomainsExtra;
-    const paymentExtras = mergeBridgeHostLists(300, raw.trustedPaymentHostsExtra, supplementalLists.trustedPaymentHostsExtra);
+    const paymentExtras = mergeNormalizedHostLists(300,
+      sanitizeBridgeHostList(raw.trustedPaymentHostsExtra, 300),
+      supplementalLists.trustedPaymentHostsExtra);
     if (paymentExtras.length) clean.trustedPaymentHostsExtra = paymentExtras;
     else delete clean.trustedPaymentHostsExtra;
     postToPage({ source: 'wardenone', kind: 'config', token: TOKEN, overrides: clean });

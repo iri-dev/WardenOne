@@ -6,6 +6,13 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Stopped page loads getting slower the longer WardenOne had been used. Every
+  frame of every page rebuilt the site lists from scratch at load, re-checking
+  hosts that had already been checked when they were saved. On a fresh install
+  that cost almost nothing, but the learned-domain list grows on its own as
+  blocking does its job, so the work grew with it and there was no setting to
+  point at. The lists are now prepared once when they are saved: 80 to 90 per cent
+  less work per frame, and the same lists come out the other end.
 - Fixed the block counter giving up halfway through a busy page. Two separate
   parts of the extension were each charging the same allowance for every block
   reported, so the real limit was half the intended one: past about 120 blocks in

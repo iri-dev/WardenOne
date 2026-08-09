@@ -187,6 +187,7 @@ function checkContentBuild() {
   'tools/test-shared-dom-watcher.js',
   'tools/test-popup-contrast.js',
   'tools/test-message-rate-limits.js',
+  'tools/test-bridge-host-lists.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
   'tools/test-message-hardening.js',
@@ -222,6 +223,7 @@ checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--che
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
 checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
+checkCommand('bridge host list tests', ['tools/test-bridge-host-lists.js']);
 checkCommand('hostile message hardening tests', ['tools/test-message-hardening.js']);
 checkCommand('message rate limit tests', ['tools/test-message-rate-limits.js']);
 checkCommand('secret hygiene tests', ['tools/test-secret-hygiene.js']);
