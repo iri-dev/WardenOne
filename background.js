@@ -12323,7 +12323,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         isolatedAlwaysFiles.push('bridge.js');
         const consentOn = consentRejectActive(repairCfg);
         const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+
+        // executeScript resolving proves only that injection was ATTEMPTED. Every content
+        // script early-returns when its re-injection guard matches, and that early return
+        // is indistinguishable from a fresh install at this end -- which is how a tab
+        // still holding an orphaned copy from before an extension reload came to be
+        // counted under "Re-armed full protection on N open tab(s)".
+        //
+        // So ask the tab rather than assume. Two independent facts settle it: the
+        // MAIN-world engine publishes its version when it installs, and the ISOLATED
+        // bridge answers a cheap side-effect-free message ONLY while it belongs to the
+        // current extension context -- an orphaned bridge's listener died with the
+        // context that registered it. Engine present AND bridge answering is the only
+        // combination that means this tab's protection is actually connected to us.
+        const engineVersionInTab = async (target) => {
+          try {
+            const res = await chrome.scripting.executeScript({
+              target,
+              world: 'MAIN',
+              func: () => (typeof window.__wardenOneReadyVersion === 'string' ? window.__wardenOneReadyVersion : ''),
+            });
+            return (res && res[0] && typeof res[0].result === 'string') ? res[0].result : '';
+          } catch (_) {
+            return null;   // frame gone or not scriptable; not a failure to report
+          }
+        };
+        const bridgeAnswers = (tabId) => new Promise((resolve) => {
+          try {
+            chrome.tabs.sendMessage(tabId, { kind: 'memory-form-check' }, { frameId: 0 }, (res) => {
+              void chrome.runtime.lastError;
+              resolve(!!res);
+            });
+          } catch (_) {
+            resolve(false);
+          }
+        });
+
         let reinjected = 0;
+        let staleTabs = 0;
         let failedTabs = 0;
         let skippedCompatFrames = 0;
         for (const t of tabs) {
@@ -12356,14 +12393,41 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               } catch (_) {}
             }
           }
-          if (engineOk) reinjected++;
-          else if (attemptedEngine) failedTabs++;
+          // engineOk only records that the injection call resolved. Verify what the tab
+          // actually ended up with before counting it as re-armed.
+          if (attemptedEngine) {
+            const engineVersion = await engineVersionInTab({ tabId: t.id, frameIds: [0] });
+            if (engineVersion === null) {
+              // Not scriptable any more (navigated away, closed, restricted). Not a failure.
+            } else if (!engineVersion) {
+              failedTabs++;
+            } else if (await bridgeAnswers(t.id)) {
+              reinjected++;
+            } else {
+              // The engine is running but nothing in this tab can still reach the
+              // extension, so it is an orphan from a previous extension lifetime. Its
+              // guard is what stopped the fresh copy installing over it, and only a
+              // reload clears that.
+              staleTabs++;
+            }
+          } else if (engineOk) {
+            reinjected++;
+          }
         }
         if (reinjected > 0) report.repaired.push('Re-armed full protection on ' + reinjected + ' open tab(s)');
+        if (staleTabs > 0) {
+          report.repaired.push(staleTabs + ' open tab(s) still run an older copy of WardenOne and need a reload to re-arm');
+        }
         if (skippedCompatFrames > 0) report.repaired.push('Left ' + skippedCompatFrames + ' sensitive frame(s) in compatibility mode');
-        // only mark this check OK if we didn't fail on tabs we should have reached.
-        // (tabs like chrome:// legitimately reject injection; those aren't failures.)
-        report.checks.push({ name: 'Open tabs re-armed (' + reinjected + ' of ' + tabs.length + ')', ok: true });
+        // Reported honestly: a tab holding an orphaned copy is not re-armed, so this
+        // check does not pass while any remain. Tabs like chrome:// legitimately reject
+        // injection and are not counted either way.
+        report.checks.push({
+          name: staleTabs > 0
+            ? ('Open tabs re-armed (' + reinjected + ' of ' + tabs.length + '; ' + staleTabs + ' need a reload)')
+            : ('Open tabs re-armed (' + reinjected + ' of ' + tabs.length + ')'),
+          ok: staleTabs === 0,
+        });
       } catch (e) {
         report.checks.push({ name: 'Open tabs re-armed', ok: false });
         report.ok = false;
