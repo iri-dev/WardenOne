@@ -2,6 +2,50 @@
   "use strict";
   const __WO_RUNTIME_VERSION="1.0.0";
   if(window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
+  /* Release what a previous engine in this page still holds before installing over it.
+     Chrome does not re-inject content scripts into open tabs on update, so a tab that
+     outlives an extension update keeps its old engine; the guard above only stops a
+     SAME-version re-run. Without this, a version bump left both engines live in the same
+     MAIN world, each with its own observers and timers, and every DOM mutation paid for
+     both. Nothing here restores the patched prototypes: unwinding those in the wrong
+     order can hand the page a half-restored API, which is worse than a spare wrapper.
+     What it does release is the expensive, stateful part -- observers that fire on every
+     mutation and intervals that wake forever. */
+  try{
+    if(typeof window.__wardenOneDispose==="function")window.__wardenOneDispose()
+  }
+  catch(_){
+
+  }
+  const __woKeep=[];
+  const __woHold=(item)=>{
+    try{
+      if(item)__woKeep.push(item)
+    }
+    catch(_){
+
+    }
+    return item
+  };
+  const __woObserver=(...a)=>__woHold(new MutationObserver(...a));
+  const __woIntersection=(...a)=>__woHold(new IntersectionObserver(...a));
+  const __woInterval=(...a)=>__woHold(setInterval(...a));
+  try{
+    window.__wardenOneDispose=()=>{
+      const held=__woKeep.splice(0,__woKeep.length);
+      for(const item of held)try{
+        if(typeof item==="number")clearInterval(item);
+        else if(item&&typeof item.disconnect==="function")item.disconnect()
+      }
+      catch(_){
+
+      }
+
+    }
+  }
+  catch(_){
+
+  }
   const GRABBER_DOMAINS=["02ip.ru",
   "2no.co",
   "2no.it",
@@ -702,7 +746,7 @@
       !__woMoStarted&&document.documentElement){
         __woMoStarted=!0;
         try{
-          new MutationObserver(muts=>{
+          __woObserver(muts=>{
             for(let i=0;
             i<__woMoConsumers.length;
             i++)try{
@@ -1676,7 +1720,7 @@
 
       };
       try{
-        obs=new MutationObserver(()=>{
+        obs=__woObserver(()=>{
           scheduled||(scheduled=!0,
           requestAnimationFrame(check))
         }),
@@ -7437,7 +7481,7 @@
       scAddSweeper=fn=>{
         if(scSweepers.push(fn),
         !scSweepObs)try{
-          scSweepObs=new MutationObserver(()=>{
+          scSweepObs=__woObserver(()=>{
             scSweepPending||(scSweepPending=!0,
             setTimeout(()=>{
               scSweepPending=!1,
@@ -9158,7 +9202,7 @@
               }
               try{
                 var n=0,
-                iv=setInterval(function(){
+                iv=__woInterval(function(){
                   ra();
                   if(++n>60){
                     try{
@@ -9304,7 +9348,7 @@
         }))
       };
       try{
-        new MutationObserver(__woTwSchedule).observe(document.documentElement,
+        __woObserver(__woTwSchedule).observe(document.documentElement,
         {
           childList:!0,
           subtree:!0
@@ -9604,7 +9648,7 @@
         }
 
       };
-      setInterval(__woTwWatch,
+      __woInterval(__woTwWatch,
       1e3);
       var __woTwOnVis=function(){
         if("visible"!==document.visibilityState)return;
@@ -9655,7 +9699,7 @@
       catch(_){
 
       }
-      setInterval(__woTwSweep,
+      __woInterval(__woTwSweep,
       1e3),
       __woTwSweep(),
       log("scriptlet_twitch_displayad",
@@ -9751,7 +9795,7 @@
     if(WO.lazyLoadMedia)try{
       let io=null;
       try{
-        io=new IntersectionObserver(entries=>{
+        io=__woIntersection(entries=>{
           entries.forEach(en=>{
             if(en.isIntersecting){
               const el=en.target;
@@ -14136,7 +14180,7 @@
 
           })
         },
-        mo=new MutationObserver(()=>{
+        mo=__woObserver(()=>{
           scheduled||(scheduled=!0,
           run())
         });
@@ -14844,7 +14888,7 @@
         document.addEventListener("DOMContentLoaded",
         __woSweepAds);
         try{
-          new MutationObserver(__woSchedAds).observe(document.documentElement,
+          __woObserver(__woSchedAds).observe(document.documentElement,
           {
             childList:!0,
             subtree:!0
