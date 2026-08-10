@@ -225,11 +225,12 @@ history. Login tokens and passwords are never stored or transmitted.
 
 ## How I work
 
-My local copy is usually a good way ahead of what's pushed here.
+What's here is the version I'm confident enough to put in front of people — finished,
+checked, and running on real sites.
 
-That doesn't mean the released version is behind — it's the opposite. What's published
-is the part I'm confident enough to put in front of people, and what's ahead of it is
-betas, experiments, and things I'm still trying to break. This gets worked on
+My local copy is where the mess lives: new ideas, half-built features, betas, and
+things I'm still trying to break. It's often further along in raw code, but that doesn't
+make it the better version. It's a workshop, not a release. This gets worked on
 constantly, and it isn't going anywhere.
 
 I build in VS Code with the extension loaded, and I'll happily sit with one thing for
