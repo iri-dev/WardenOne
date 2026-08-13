@@ -9,7 +9,84 @@
 
   const CONSENT_REJECT_VERSION = '1.0.0';
   if (window.__wardenOneConsentRejectReadyVersion === CONSENT_REJECT_VERSION) return;
+  /* A different version means this frame holds an older copy -- after an update, or because
+     Repair reinstalled over it. Release what that copy held first, or both stay live and both
+     answer. */
+  if (window.__wardenOneConsentRejectReadyVersion) {
+    try {
+      if (typeof window.__wardenOneConsentRejectDispose === 'function') window.__wardenOneConsentRejectDispose();
+    } catch (_) {}
+  }
   window.__wardenOneConsentRejectVersion = CONSENT_REJECT_VERSION;
+
+  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
+     signal; observers and intervals are collected; timeouts remove their own id when they fire,
+     so a self-rescheduling loop cannot grow this set without bound. */
+  const woAbort = new AbortController();
+  const woKeep = [];
+  const woPending = new Set();
+  const woHold = (item) => { woKeep.push(item); return item; };
+  const woOn = (target, type, fn, opts) => {
+    const base = (opts && typeof opts === 'object')
+      ? Object.assign({}, opts)
+      : (opts === true ? { capture: true } : {});
+    base.signal = woAbort.signal;
+    try { target.addEventListener(type, fn, base); } catch (_) {}
+  };
+  const woObserver = (...a) => woHold(new MutationObserver(...a));
+  const woInterval = (...a) => woHold(setInterval(...a));
+  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
+     forwarding `this` keeps them behaving exactly as the host would call them. */
+  const woTimeout = (fn, ms, ...rest) => {
+    let id;
+    id = setTimeout(function (...a) {
+      woPending.delete(id);
+      return typeof fn === 'function' ? fn.apply(this, a) : undefined;
+    }, ms, ...rest);
+    woPending.add(id);
+    return id;
+  };
+  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
+  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls this script in
+  // every frame, so a listener registered here and never removed accumulates one more copy per
+  // Repair -- and every copy answers, so old and new bridges race on form and media health.
+  //
+  // The exact callback reference has to be kept, because removeListener matches by identity.
+  const woChromeListeners = [];
+  const woOnMessage = (fn) => {
+    try {
+      chrome.runtime.onMessage.addListener(fn);
+      woChromeListeners.push([chrome.runtime.onMessage, fn]);
+    } catch (_) {}
+    return fn;
+  };
+
+  window.__wardenOneConsentRejectDispose = () => {
+    try { woAbort.abort(); } catch (_) {}
+    woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
+    woPending.clear();
+    const held = woKeep.splice(0, woKeep.length);
+    for (const item of held) {
+      try {
+        if (item && typeof item.disconnect === 'function') item.disconnect();
+        else clearInterval(item);
+      } catch (_) {}
+    }
+    const chromeHeld = woChromeListeners.splice(0, woChromeListeners.length);
+    for (const [event, fn] of chromeHeld) {
+      try { event.removeListener(fn); } catch (_) {}
+    }
+  };
+
+  /* chrome.storage.onChanged is not one of the events woOnMessage covers, but it lands in the
+     same registry, so the dispose above releases it with everything else. */
+  const woOnStorage = (fn) => {
+    try {
+      chrome.storage.onChanged.addListener(fn);
+      woChromeListeners.push([chrome.storage.onChanged, fn]);
+    } catch (_) {}
+    return fn;
+  };
 
   const DEFAULTS = {
     enabled: true,
@@ -494,11 +571,11 @@
       const reject = buttons.find((el) => /^reject(?:\s+all)?$/i.test(controlLabel(el)) && !isUnsafeAutoClickLink(el));
       if (reject && clickControl(reject)) {
         releasePageLock();
-        setTimeout(releasePageLock, 250);
-        setTimeout(releasePageLock, 900);
+        woTimeout(releasePageLock, 250);
+        woTimeout(releasePageLock, 900);
         logAction('reject', 'Twitch cookie banner: Reject');
-        setTimeout(queueScan, 250);
-        setTimeout(queueScan, 900);
+        woTimeout(queueScan, 250);
+        woTimeout(queueScan, 900);
         return true;
       }
     } catch (_) {}
@@ -550,11 +627,11 @@
         if (!consentBannerAncestor(el)) continue;
         if (clickControl(el)) {
           releasePageLock();
-          setTimeout(releasePageLock, 250);
-          setTimeout(releasePageLock, 900);
+          woTimeout(releasePageLock, 250);
+          woTimeout(releasePageLock, 900);
           logAction('reject', elementText(el));
-          setTimeout(queueScan, 250);
-          setTimeout(queueScan, 900);
+          woTimeout(queueScan, 250);
+          woTimeout(queueScan, 900);
           return true;
         }
       }
@@ -651,11 +728,11 @@
       const reject = controls.find(safeRejectCandidate);
       if (reject && clickControl(reject)) {
         releasePageLock();
-        setTimeout(releasePageLock, 250);
-        setTimeout(releasePageLock, 900);
+        woTimeout(releasePageLock, 250);
+        woTimeout(releasePageLock, 900);
         logAction('reject', elementText(reject));
-        setTimeout(queueScan, 250);
-        setTimeout(queueScan, 900);
+        woTimeout(queueScan, 250);
+        woTimeout(queueScan, 900);
         return;
       }
     }
@@ -668,15 +745,15 @@
       const save = getControls(container).find((el) => saveChoicesCandidate(el, container, changed));
       if (save && clickControl(save)) {
         releasePageLock();
-        setTimeout(releasePageLock, 250);
-        setTimeout(releasePageLock, 900);
+        woTimeout(releasePageLock, 250);
+        woTimeout(releasePageLock, 900);
         logAction('reject', 'disabled optional consent choices');
-        setTimeout(queueScan, 250);
-        setTimeout(queueScan, 900);
+        woTimeout(queueScan, 250);
+        woTimeout(queueScan, 900);
         return;
       }
-      setTimeout(queueScan, 220);
-      setTimeout(queueScan, 800);
+      woTimeout(queueScan, 220);
+      woTimeout(queueScan, 800);
       return;
     }
 
@@ -688,9 +765,9 @@
         opened.add(container);
         openSettingsUntil = Date.now() + 900;
         logAction('settings', elementText(settings));
-        setTimeout(queueScan, 180);
-        setTimeout(queueScan, 700);
-        setTimeout(queueScan, 1600);
+        woTimeout(queueScan, 180);
+        woTimeout(queueScan, 700);
+        woTimeout(queueScan, 1600);
         return;
       }
     }
@@ -699,16 +776,16 @@
   function queueScan() {
     if (scanQueued || !active) return;
     scanQueued = true;
-    try { requestAnimationFrame(scan); } catch (_) { setTimeout(scan, 40); }
+    try { requestAnimationFrame(scan); } catch (_) { woTimeout(scan, 40); }
   }
 
   function startObserver() {
     if (observer || !document.documentElement) return;
-    observer = new MutationObserver(queueScan);
+    observer = woObserver(queueScan);
     try {
       observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'aria-hidden', 'inert', 'open'] });
     } catch (_) {}
-    setTimeout(() => {
+    woTimeout(() => {
       try { observer.disconnect(); } catch (_) {}
       observer = null;
     }, 120000);
@@ -726,18 +803,18 @@
       // would not act until the next sparse tick (the ~1s "banner shows for a second" lag on
       // Twitch/X). A short high-frequency burst for the first ~2.4s closes that gap; a few
       // sparse late passes still catch slow or deferred banners.
-      [0, 50, 140, 260].forEach((ms) => setTimeout(queueScan, ms));
+      [0, 50, 140, 260].forEach((ms) => woTimeout(queueScan, ms));
       let fastPolls = 0;
-      const fastTimer = setInterval(() => {
+      const fastTimer = woInterval(() => {
         if (!active || fastPolls++ >= 24) { clearInterval(fastTimer); return; }
         queueScan();
       }, 95);
-      [3000, 4500, 7000, 11000].forEach((ms) => setTimeout(queueScan, ms));
+      [3000, 4500, 7000, 11000].forEach((ms) => woTimeout(queueScan, ms));
     });
   }
 
   try {
-    chrome.storage.onChanged.addListener((changes, area) => {
+    woOnStorage((changes, area) => {
       if (area !== 'local' || !changes.wardenone_config) return;
       config = Object.assign({}, DEFAULTS, changes.wardenone_config.newValue || {});
       const wasActive = active;
@@ -753,6 +830,6 @@
   } catch (_) {}
 
   if (document.documentElement) start();
-  else document.addEventListener('DOMContentLoaded', start, { once: true });
+  else woOn(document, 'DOMContentLoaded', start, { once: true });
   window.__wardenOneConsentRejectReadyVersion = CONSENT_REJECT_VERSION;
 })();
