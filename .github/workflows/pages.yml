@@ -23,6 +23,7 @@ on:
     paths:
       - 'PRIVACY.md'
       - 'SUPPORT.md'
+      - 'site/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -48,29 +49,33 @@ jobs:
 
       - name: Stage the published pages
         run: |
-          mkdir -p site
-          cp PRIVACY.md site/
-          cp SUPPORT.md site/
-          # Without an index the site root would 404, which reads as broken to
-          # anyone who trims the privacy URL back to the domain.
-          cat > site/index.md <<'PAGE'
-          ---
-          title: WardenOne
-          ---
-          # WardenOne
+          # site/ is tracked in the repo now, so the landing page, robots.txt and
+          # sitemap.xml are real reviewable files rather than a heredoc buried in
+          # this workflow. Staging into a separate directory keeps the whitelist
+          # property: only what is copied here can be published.
+          mkdir -p _pages
+          cp site/index.html _pages/
+          cp site/robots.txt _pages/
+          cp site/sitemap.xml _pages/
+          cp PRIVACY.md _pages/
+          cp SUPPORT.md _pages/
 
-          One extension. Every defence. Blocks ads, trackers, phishing, scams,
-          malware downloads and IP grabbers. No account, no telemetry.
+          # The images the landing page references. Copied individually and renamed
+          # so the page never depends on the repo's directory layout, and so no other
+          # screenshot can reach the site by being dropped into docs/.
+          mkdir -p _pages/icons
+          cp icons/icon128.png _pages/icons/
+          cp docs/store/promo-440x280.png _pages/promo.png
+          cp docs/store/popup.png _pages/screenshot-popup.png
 
-          - [Privacy policy](PRIVACY)
-          - [Support](SUPPORT)
-          - [Source code, releases and issues](https://github.com/iri-dev/WardenOne)
-          PAGE
-          cat > site/_config.yml <<'CONFIG'
+          cat > _pages/_config.yml <<'CONFIG'
           title: WardenOne
-          description: One extension. Every defence.
+          description: Privacy and security extension for Chromium browsers.
+          # index.html carries its own <head>, so Jekyll must not wrap it in a theme.
+          # PRIVACY.md and SUPPORT.md still get rendered to HTML as before.
           CONFIG
-          echo "staged:" && ls -1 site
+
+          echo "staged:" && ls -1R _pages
 
       - uses: actions/configure-pages@v5
 
@@ -78,7 +83,7 @@ jobs:
       # not tied to the repository name.
       - uses: actions/jekyll-build-pages@v1
         with:
-          source: ./site
+          source: ./_pages
           destination: ./_site
 
       - uses: actions/upload-pages-artifact@v3
