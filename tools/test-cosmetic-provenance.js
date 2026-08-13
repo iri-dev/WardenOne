@@ -66,6 +66,25 @@ if (doc) {
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Staleness, delegated rather than duplicated.
+//
+// The age thresholds live in build-cosmetics.js so there is one definition of what counts as
+// stale. Shelling out to it means the gate enforces exactly what a release enforces, instead of
+// a second copy of the numbers here that could drift from the first.
+// ---------------------------------------------------------------------------
+{
+  const { spawnSync } = require('child_process');
+  const run = spawnSync(process.execPath, [path.join(__dirname, 'build-cosmetics.js'), '--check'],
+    { encoding: 'utf8' });
+  check('the packaged rules pass their own freshness check',
+    run.status === 0, String(run.stderr || run.stdout || '').trim().split('\n')[0]);
+  if (/\[warn\]/.test(String(run.stdout || ''))) {
+    // Surfaced, not failed: the gate runs on every push and this is a release concern.
+    console.log('  ' + String(run.stdout).split('\n').find((l) => l.includes('[warn]')).trim());
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 2. The refresh path stores passive data only.
 // ---------------------------------------------------------------------------
 {

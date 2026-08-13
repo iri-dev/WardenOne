@@ -125,8 +125,45 @@ if (process.argv.includes('--check')) {
     console.error('[fail] cosmetic-rules.json has no provenance (builtAt / sources).');
     process.exit(1);
   }
+  // Staleness. These rules used to refresh themselves daily from the network; they do not any
+  // more, which is the point, but it means they now go stale silently and the only symptom is ad
+  // blocking quietly getting worse on sites whose defences moved on.
+  //
+  // The thresholds are deliberately different. The gate runs on every push, so failing it at 30
+  // days would block unrelated work for a reason that has nothing to do with the change in hand --
+  // people would learn to ignore it. So ordinary checks warn, and only genuinely abandoned rules
+  // fail. A release is the moment it actually matters, and --release is strict.
+  const WARN_DAYS = 30;
+  const STALE_DAYS = 90;
+  const built = Date.parse(doc.builtAt + 'T00:00:00Z');
+  const ageDays = Number.isFinite(built)
+    ? Math.floor((Date.now() - built) / 86400000)
+    : null;
+
+  if (ageDays === null) {
+    console.error('[fail] cosmetic-rules.json has an unreadable builtAt: ' + doc.builtAt);
+    process.exit(1);
+  }
+
+  const releaseMode = process.argv.includes('--release');
+  const limit = releaseMode ? WARN_DAYS : STALE_DAYS;
+
+  if (ageDays > limit) {
+    console.error('[fail] the packaged cosmetic rules are ' + ageDays + ' days old (limit '
+      + limit + (releaseMode ? ' for a release' : '') + ').');
+    console.error('       Upstream filter lists change daily. Rebuild before shipping:');
+    console.error('         node tools/build-cosmetics.js --refresh');
+    process.exit(1);
+  }
+
   console.log('[ok] cosmetic-rules.json: ' + scriptletDomains + ' scriptlet domains, '
-    + proceduralDomains + ' procedural domains, built ' + doc.builtAt);
+    + proceduralDomains + ' procedural domains, built ' + doc.builtAt
+    + ' (' + ageDays + ' days ago)');
+
+  if (ageDays > WARN_DAYS) {
+    console.log('[warn] older than ' + WARN_DAYS + ' days. Not a failure here, but a release will'
+      + ' refuse it -- rebuild with: node tools/build-cosmetics.js --refresh');
+  }
   process.exit(0);
 }
 
