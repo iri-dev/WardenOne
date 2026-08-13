@@ -21,6 +21,8 @@
 # screenshots, issue templates, and repo-meta / store docs. LICENSE, CREDITS.md
 # and PRIVACY.md are intentionally kept in the zip.
 docs/ export-ignore
+# The public website. Belongs on GitHub Pages, not inside the extension package.
+site/ export-ignore
 tools/ export-ignore
 src/ export-ignore
 .github/ export-ignore
