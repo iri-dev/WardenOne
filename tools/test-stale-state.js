@@ -183,6 +183,60 @@ function loadBadge(options) {
     b.written.length === 0, JSON.stringify(b.written));
 }
 
+{
+  // The whole start-up ordering, not just the helper.
+  //
+  // Every check above lifts bumpBadge on its own, and that is why they all passed while the badge
+  // was still wrong in a real worker: at module evaluation the worker walked every tab and called
+  // setBadge while counts was empty, writing '' and destroying the number bumpBadge was about to
+  // recover from. The helper produced 48; the real ordering produced ["", "1"] and finished at 1.
+  //
+  // So this runs both pieces in the order the worker does.
+  const written = [];
+  const queue = [];
+  const sandbox = {
+    Number, Object, String, parseInt, console,
+    counts: Object.create(null),
+    chrome: {
+      runtime: { lastError: null },
+      tabs: { query: (_q, cb) => cb([{ id: 7 }]) },
+      action: {
+        setBadgeText: ({ tabId, text }) => { written.push({ tabId, text }); },
+        setBadgeBackgroundColor() {},
+        // Chrome's retained value for a tab that was showing 47 before the worker slept.
+        getBadgeText: ({ tabId }, cb) => queue.push(() => cb(tabId === 7 ? '47' : '')),
+      },
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(
+    sourceBetween(BG, 'function setBadge(tabId) {', '// Tabs whose count we are recovering')
+    + sourceBetween(BG, '// Tabs whose count we are recovering', '\n\nfunction messageHostFromText')
+      .replace(/^[\s\S]*?const badgeRecovering/, 'const badgeRecovering')
+    // The seed block sits after messageHostFromText, so it needs its own end marker.
+    + '\n' + sourceBetween(BG, '// Seed the counters from what Chrome', '\n\nchrome.runtime.onMessage.addListener'),
+    sandbox, { filename: 'background.js:startup' });
+
+  // Start-up runs, then its badge reads come back.
+  const startup = queue.splice(0, queue.length);
+  startup.forEach((f) => f());
+
+  check('start-up writes nothing to the badge',
+    written.length === 0, JSON.stringify(written));
+  check('start-up seeds the counter from what Chrome was showing',
+    vm.runInContext('counts[7]', sandbox) === 47, 'counts[7]=' + vm.runInContext('counts[7]', sandbox));
+
+  // Now a block arrives on that tab.
+  vm.runInContext('bumpBadge(7)', sandbox);
+  queue.splice(0, queue.length).forEach((f) => f());
+
+  check('the next block continues from 47 rather than restarting',
+    vm.runInContext('counts[7]', sandbox) === 48,
+    'counts[7]=' + vm.runInContext('counts[7]', sandbox));
+  check('...and the badge never showed a blank or a 1',
+    written.length === 1 && written[0].text === '48', JSON.stringify(written));
+}
+
 check('all three increment sites go through the helper',
   (BG.match(/bumpBadge\(/g) || []).length >= 4
   && !/counts\[\w+(\.\w+)?\] = \(counts\[/.test(BG),

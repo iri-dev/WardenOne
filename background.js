@@ -172,9 +172,32 @@ function normalizeTabBlockMessage(msg, sender) {
   return out;
 }
 
+// Seed the counters from what Chrome is already showing, rather than writing over it.
+//
+// This block used to call setBadge for every tab at module evaluation. counts is empty at that
+// point, so setBadge wrote '' to each tab and destroyed the very value bumpBadge later tries to
+// recover from -- the badge went 47 -> '' -> 1 rather than 47 -> 48. Top-level evaluation means
+// the worker restarted, not that the browser did, so clearing was never the right behaviour here:
+// the tabs are the same tabs and their counts are still meaningful.
+//
+// Reading instead of writing also means the recovery path in bumpBadge is a fallback for tabs
+// this misses, rather than the only thing standing between a suspension and a wrong number.
 try {
   chrome.tabs?.query?.({}, (tabs) => {
-    (tabs || []).forEach((t) => { if (t && t.id != null) setBadge(t.id); });
+    void chrome.runtime.lastError;
+    (tabs || []).forEach((t) => {
+      if (!t || t.id == null) return;
+      try {
+        chrome.action.getBadgeText({ tabId: t.id }, (text) => {
+          void chrome.runtime.lastError;
+          // Never overwrite a live counter: blocks can land while this query is in flight, and
+          // the value they produced is newer than the text Chrome had before it.
+          if (counts[t.id] !== undefined) return;
+          const prior = parseInt(String(text || ''), 10);
+          if (Number.isFinite(prior) && prior > 0) counts[t.id] = prior;
+        });
+      } catch (_) {}
+    });
   });
 } catch (_) {}
 
