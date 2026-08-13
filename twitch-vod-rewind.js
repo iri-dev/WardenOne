@@ -165,6 +165,21 @@
     woPending.add(id);
     return id;
   };
+  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
+  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls this script in
+  // every frame, so a listener registered here and never removed accumulates one more copy per
+  // Repair -- and every copy answers, so old and new bridges race on form and media health.
+  //
+  // The exact callback reference has to be kept, because removeListener matches by identity.
+  const woChromeListeners = [];
+  const woOnMessage = (fn) => {
+    try {
+      woOnMessage(fn);
+      woChromeListeners.push([chrome.runtime.onMessage, fn]);
+    } catch (_) {}
+    return fn;
+  };
+
   window.__wardenOneVodRewindDispose = () => {
     try { woAbort.abort(); } catch (_) {}
     woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
@@ -175,6 +190,10 @@
         if (item && typeof item.disconnect === 'function') item.disconnect();
         else clearInterval(item);
       } catch (_) {}
+    }
+    const chromeHeld = woChromeListeners.splice(0, woChromeListeners.length);
+    for (const [event, fn] of chromeHeld) {
+      try { event.removeListener(fn); } catch (_) {}
     }
   };
 
