@@ -325,6 +325,16 @@ async function notifyTabLimitClosed(host, idleMin) {
   } catch (_) {}
 }
 
+// A window can close inside the debounce. Nothing cleared its timer, so the handle and the window
+// id stayed reachable until it fired and enforced a limit on a window that no longer exists.
+try {
+  chrome.windows.onRemoved.addListener((windowId) => {
+    const timer = TAB_LIMIT_ENFORCE_TIMERS[windowId];
+    if (timer) clearTimeout(timer);
+    delete TAB_LIMIT_ENFORCE_TIMERS[windowId];
+  });
+} catch (_) {}
+
 function scheduleTabLimitCheck(windowId) {
   if (windowId == null || windowId < 0) return;
   if (TAB_LIMIT_ENFORCE_TIMERS[windowId]) clearTimeout(TAB_LIMIT_ENFORCE_TIMERS[windowId]);
