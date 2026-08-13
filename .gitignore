@@ -42,3 +42,7 @@ backup/
 
 # Local publish worktree (nested clone, not source)
 .publish/
+
+# Local review notes. Kept out of the repo.
+AUDIT-*.html
+THEFT-*.md
