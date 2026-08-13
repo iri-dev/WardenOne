@@ -11,6 +11,7 @@
 <meta name="description" content="WardenOne is a free, open-source privacy and security extension for Chrome, Edge, Brave and Opera. Blocks ads, trackers, fingerprinting, phishing and scams. No account, no telemetry. Official site, maintained by iri-dev.">
 <link rel="canonical" href="https://iri-dev.github.io/WardenOne/">
 <meta name="author" content="iri-dev">
+<meta name="theme-color" content="#a153ce">
 <link rel="icon" href="icons/icon128.png" type="image/png">
 
 <meta property="og:type" content="website">
@@ -24,9 +25,9 @@
 <meta name="twitter:description" content="Free, open-source privacy and security extension for Chromium browsers.">
 <meta name="twitter:image" content="https://iri-dev.github.io/WardenOne/promo.png">
 
-<!-- Structured data. This is the part that lets a search engine understand that WardenOne is a
-     browser extension, that iri-dev is its author, and that the GitHub repository is the same
-     thing rather than a separate page competing with this one. -->
+<!-- Structured data. This is what lets a search engine understand that WardenOne is a browser
+     extension, that iri-dev is its author, and that the GitHub repository is the same project
+     rather than a separate page competing with this one. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -39,6 +40,7 @@
   "downloadUrl": "https://github.com/iri-dev/WardenOne/releases",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
   "isAccessibleForFree": true,
+  "softwareVersion": "1.0.0",
   "description": "Privacy and security extension for Chromium browsers. Blocks ads, trackers, fingerprinting, phishing and scams, with no account and no telemetry.",
   "author": {
     "@type": "Person",
@@ -51,165 +53,487 @@
 </script>
 
 <style>
+/* ---------------------------------------------------------------------------
+   No webfonts and no CDN, deliberately. This is the site for a privacy
+   extension; loading fonts from a third party to say so would be absurd.
+   Everything below is self-contained, including the icons.
+   --------------------------------------------------------------------------- */
+:root {
+  --plum: #b06fd6;
+  --rose: #e07aae;
+  /* Darker stops for anything carrying white text, so it clears WCAG AA. */
+  --plum-aa: #a153ce;
+  --rose-aa: #d13a87;
+
+  /* The hero glow gets its own pair, and not the gradient stops above, because a
+     70px-blurred radial at low opacity does not read as the colour it started from.
+     #b06fd6 is hue 278 -- a violet -- and blurred over a dark canvas it lost the pink
+     entirely and came out cold. Sampling the actual product (popup, onboarding and the
+     icon) puts WardenOne's real colour at hue 297-319, so the glow is built from that
+     range instead: 302 into 330. Same family, warm rather than violet. */
+  --glow-a: #c05fbd;
+  --glow-b: #dd6ba4;
+
+  --ink: #2b1a3d;
+  --ink-2: #58466c;
+  --ink-3: #7d6e8f;
+
+  --bg: #fbf7fd;
+  --surface: #ffffff;
+  --surface-2: #f6eefb;
+  --line: rgba(140, 90, 175, .16);
+  --line-2: rgba(140, 90, 175, .28);
+
+  --shadow-s: 0 1px 2px rgba(60, 20, 90, .05), 0 2px 8px rgba(60, 20, 90, .05);
+  --shadow-m: 0 4px 12px rgba(60, 20, 90, .07), 0 16px 40px rgba(60, 20, 90, .09);
+
+  --r-s: 10px;
+  --r-m: 16px;
+  --r-l: 22px;
+
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, "Noto Sans", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
   :root {
-    --plum: #b06fd6;
-    --rose: #e07aae;
-    --ink: #2d1b40;
-    --ink-soft: #534064;
-    --ground: #faf3fd;
-    --card: #fff;
-    --rule: rgba(176, 106, 212, .22);
+    --ink: #f2ebf7;
+    --ink-2: #c3b3d1;
+    --ink-3: #9b8aad;
+    --bg: #1a0f20;
+    --surface: #251731;
+    --surface-2: #2e1d3b;
+    --line: rgba(190, 140, 225, .16);
+    --line-2: rgba(190, 140, 225, .26);
+    --shadow-s: 0 1px 2px rgba(0, 0, 0, .3);
+    --shadow-m: 0 6px 18px rgba(0, 0, 0, .38), 0 20px 48px rgba(0, 0, 0, .3);
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--ground);
-    color: var(--ink);
-    font: 16px/1.6 Nunito, system-ui, -apple-system, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
-  a { color: #8f4fb8; }
+}
 
-  header { text-align: center; padding: 56px 0 8px; }
-  header img.mark { width: 92px; height: 92px; }
-  h1 {
-    font-family: Quicksand, system-ui, sans-serif;
-    font-size: clamp(2.1rem, 6vw, 3rem);
-    margin: 14px 0 4px;
-    letter-spacing: -.5px;
-  }
-  .tagline { font-size: 1.12rem; color: var(--ink-soft); margin: 0 0 6px; }
-  .official {
-    display: inline-block; margin-top: 10px; font-size: .82rem; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--ink-soft);
-    border: 1px solid var(--rule); border-radius: 999px; padding: 5px 14px; background: var(--card);
-  }
+* { box-sizing: border-box; }
 
-  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 26px 0 8px; }
-  .btn {
-    display: inline-block; text-decoration: none; font-family: Quicksand, system-ui, sans-serif;
-    font-weight: 700; border-radius: 11px; padding: 12px 22px;
-  }
-  /* Darker than the in-product gradient so white text clears WCAG AA here. */
-  .btn.primary { background: linear-gradient(135deg, #a153ce, #d13a87); color: #fff; }
-  .btn.ghost { background: var(--card); color: #8f4fb8; border: 1px solid var(--rule); }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation: none !important; transition: none !important; }
+}
 
-  .notice {
-    background: #fff6f8; border: 1px solid rgba(200, 60, 90, .25);
-    border-left: 4px solid #c8385a; border-radius: 10px;
-    padding: 16px 18px; margin: 34px 0; font-size: .95rem;
-  }
-  .notice h2 { font-size: 1.02rem; margin: 0 0 8px; font-family: Quicksand, system-ui, sans-serif; }
-  .notice p { margin: 0 0 8px; }
-  .notice p:last-child { margin-bottom: 0; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
 
-  h2.section {
-    font-family: Quicksand, system-ui, sans-serif; font-size: 1.5rem;
-    margin: 46px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--rule);
-  }
-  ul.what { padding-left: 0; list-style: none; }
-  ul.what li { padding: 7px 0 7px 26px; position: relative; }
-  ul.what li::before {
-    content: ""; position: absolute; left: 4px; top: 15px; width: 8px; height: 8px;
-    border-radius: 2px; background: linear-gradient(135deg, var(--plum), var(--rose));
-  }
-  figure { margin: 22px 0; text-align: center; }
-  figure img {
-    max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--rule);
-    box-shadow: 0 8px 28px rgba(80, 30, 110, .10);
-  }
-  figcaption { font-size: .86rem; color: var(--ink-soft); margin-top: 8px; }
+.wrap { width: 100%; max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+.narrow { max-width: 760px; }
 
-  footer {
-    margin-top: 56px; padding: 26px 0 46px; border-top: 1px solid var(--rule);
-    font-size: .88rem; color: var(--ink-soft); text-align: center;
-  }
-  footer a { margin: 0 7px; }
+a { color: #8f43bd; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+@media (prefers-color-scheme: dark) { a { color: #d9a6f2; } }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--plum-aa);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+h1, h2, h3 { line-height: 1.2; letter-spacing: -.02em; margin: 0; }
+
+/* ---------------------------------------------------------- top bar ------ */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.topbar .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.02em; }
+.brand img { width: 28px; height: 28px; display: block; }
+.brand span { font-size: 1.05rem; }
+.topbar nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.topbar nav a {
+  color: var(--ink-2); text-decoration: none; font-size: .93rem; font-weight: 600;
+  padding: 7px 11px; border-radius: 8px;
+}
+.topbar nav a:hover { color: var(--ink); background: var(--surface-2); }
+@media (max-width: 620px) { .topbar nav a.hide-s { display: none; } }
+
+/* ---------------------------------------------------------- hero -------- */
+.hero { position: relative; overflow: hidden; padding: 76px 0 8px; text-align: center; }
+/* Two soft light sources rather than a flat gradient wash, so the top of the
+   page has depth without a hard band across it. */
+.hero::before, .hero::after {
+  content: ""; position: absolute; border-radius: 50%; filter: blur(70px);
+  opacity: .5; pointer-events: none; z-index: 0;
+}
+.hero::before {
+  width: 620px; height: 620px; top: -300px; left: 50%; margin-left: -480px;
+  background: radial-gradient(circle, var(--glow-a), transparent 68%);
+}
+.hero::after {
+  width: 560px; height: 560px; top: -260px; left: 50%; margin-left: -60px;
+  background: radial-gradient(circle, var(--glow-b), transparent 68%);
+}
+.hero > * { position: relative; z-index: 1; }
+
+.hero-mark {
+  width: 104px; height: 104px; margin: 0 auto 22px; display: block;
+  filter: drop-shadow(0 12px 26px rgba(120, 50, 170, .28));
+}
+h1 { font-size: clamp(2.5rem, 7.5vw, 4.2rem); font-weight: 800; }
+.hero .lede {
+  font-size: clamp(1.08rem, 2.4vw, 1.3rem); color: var(--ink-2);
+  max-width: 620px; margin: 18px auto 0;
+}
+.hero .lede strong { color: var(--ink); font-weight: 700; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 7px; margin-bottom: 22px;
+  font-size: .76rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink-2); background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 999px; padding: 6px 15px; box-shadow: var(--shadow-s);
+}
+.badge .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--plum-aa), var(--rose-aa));
+}
+
+.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 30px 0 0; }
+.btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  text-decoration: none; font-weight: 700; font-size: 1rem;
+  border-radius: var(--r-s); padding: 13px 24px; border: 1px solid transparent;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn-primary {
+  background: linear-gradient(135deg, var(--plum-aa), var(--rose-aa));
+  color: #fff; box-shadow: 0 6px 18px rgba(150, 60, 180, .34);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(150, 60, 180, .42); }
+.btn-ghost {
+  background: var(--surface); color: var(--ink); border-color: var(--line-2);
+  box-shadow: var(--shadow-s);
+}
+.btn-ghost:hover { transform: translateY(-2px); background: var(--surface-2); }
+
+.trust {
+  display: flex; flex-wrap: wrap; gap: 8px 26px; justify-content: center;
+  margin: 34px auto 0; padding: 0; list-style: none;
+  font-size: .88rem; color: var(--ink-3); font-weight: 600;
+}
+.trust li { display: flex; align-items: center; gap: 7px; }
+.trust svg { width: 15px; height: 15px; color: #2e9e6b; flex: none; }
+
+/* ---------------------------------------------------------- notice ------ */
+.notice {
+  margin: 54px 0 0; padding: 20px 22px;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-left: 4px solid #d4456b; border-radius: var(--r-m);
+  box-shadow: var(--shadow-s); font-size: .96rem;
+}
+.notice h2 {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 1.05rem; font-weight: 750; margin-bottom: 10px;
+}
+.notice h2 svg { width: 19px; height: 19px; color: #d4456b; flex: none; }
+.notice p { margin: 0 0 10px; color: var(--ink-2); }
+.notice p:last-child { margin-bottom: 0; }
+.notice strong { color: var(--ink); }
+
+/* ---------------------------------------------------------- sections ---- */
+section { padding: 70px 0 0; }
+.sec-head { text-align: center; max-width: 600px; margin: 0 auto 40px; }
+.sec-head .kicker {
+  font-size: .76rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  background: linear-gradient(135deg, var(--plum-aa), var(--rose-aa));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.sec-head h2 { font-size: clamp(1.7rem, 4vw, 2.3rem); font-weight: 800; margin: 10px 0 0; }
+.sec-head p { color: var(--ink-2); margin: 12px 0 0; }
+
+.grid {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+}
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m);
+  padding: 22px; box-shadow: var(--shadow-s);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.card:hover { transform: translateY(-3px); box-shadow: var(--shadow-m); border-color: var(--line-2); }
+.card .ico {
+  width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--plum-aa), var(--rose-aa));
+  margin-bottom: 15px; box-shadow: 0 4px 12px rgba(150, 60, 180, .26);
+}
+.card .ico svg { width: 21px; height: 21px; color: #fff; }
+.card h3 { font-size: 1.06rem; font-weight: 750; margin-bottom: 7px; }
+.card p { margin: 0; color: var(--ink-2); font-size: .94rem; line-height: 1.6; }
+
+/* ------------------------------------------------------- screenshot ---- */
+.shot { margin-top: 44px; text-align: center; }
+/* A window chrome around the screenshot so it reads as software rather than
+   as a floating image. */
+.frame {
+  display: inline-block; max-width: 100%; background: var(--surface);
+  border: 1px solid var(--line-2); border-radius: var(--r-l);
+  box-shadow: var(--shadow-m); overflow: hidden; text-align: left;
+}
+.frame .bar {
+  display: flex; align-items: center; gap: 7px; padding: 11px 15px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+.frame .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-2); }
+/* Intrinsic width/height sit on the img so the box is reserved before it loads.
+   This caps the displayed size without distorting the aspect ratio. */
+.frame { max-width: 332px; }
+.frame img { display: block; width: 100%; height: auto; }
+figcaption { color: var(--ink-3); font-size: .89rem; margin-top: 14px; }
+
+/* ---------------------------------------------------------- steps ------ */
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.steps li {
+  counter-increment: s; position: relative; padding: 18px 20px 18px 62px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-m); box-shadow: var(--shadow-s); color: var(--ink-2);
+}
+.steps li::before {
+  content: counter(s); position: absolute; left: 18px; top: 17px;
+  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  font-weight: 800; font-size: .92rem; color: #fff;
+  background: linear-gradient(135deg, var(--plum-aa), var(--rose-aa));
+}
+.steps strong { color: var(--ink); }
+code {
+  font-family: var(--mono); font-size: .87em; padding: 2px 6px; border-radius: 5px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------- footer ----- */
+footer {
+  margin-top: 84px; padding: 40px 0 52px;
+  border-top: 1px solid var(--line); color: var(--ink-3); font-size: .9rem;
+}
+footer .cols { display: flex; flex-wrap: wrap; gap: 26px; justify-content: space-between; }
+footer .links { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+footer a { color: var(--ink-2); text-decoration: none; font-weight: 600; }
+footer a:hover { color: var(--ink); text-decoration: underline; }
+footer .legal { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+footer .legal p { margin: 0 0 5px; }
 </style>
 </head>
 <body>
 
-<div class="wrap">
+<div class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./" style="text-decoration:none;color:inherit">
+      <img src="icons/icon128.png" alt="" width="28" height="28">
+      <span>WardenOne</span>
+    </a>
+    <nav>
+      <a class="hide-s" href="#protections">Protections</a>
+      <a class="hide-s" href="#install">Install</a>
+      <a href="PRIVACY">Privacy</a>
+      <a href="https://github.com/iri-dev/WardenOne">GitHub</a>
+    </nav>
+  </div>
+</div>
 
-<header>
-  <img class="mark" src="icons/icon128.png" alt="WardenOne icon" width="92" height="92">
-  <h1>WardenOne</h1>
-  <p class="tagline">One extension. Every defence.</p>
-  <p class="official">Official site &middot; maintained by iri-dev</p>
+<header class="hero">
+  <div class="wrap">
+    <p class="badge"><span class="dot"></span> Official site &middot; maintained by iri-dev</p>
+    <img class="hero-mark" src="icons/icon128.png" alt="WardenOne icon" width="104" height="104">
+    <h1>WardenOne</h1>
+    <p class="lede">
+      <strong>One extension. Every defence.</strong>
+      Ads, trackers, fingerprinting, phishing and scams — blocked on your own device.
+      No account, no sign-up, no telemetry.
+    </p>
 
-  <div class="cta">
-    <a class="btn primary" href="https://github.com/iri-dev/WardenOne/releases">Download from GitHub Releases</a>
-    <a class="btn ghost" href="https://github.com/iri-dev/WardenOne">Official repository</a>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/iri-dev/WardenOne/releases">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
+        Download latest release
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/iri-dev/WardenOne">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.4c.6.1.82-.26.82-.58v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.75.09-.73.09-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.34-5.47-5.96 0-1.32.47-2.4 1.24-3.24-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.25 2.88.12 3.18a4.65 4.65 0 0 1 1.24 3.24c0 4.63-2.81 5.65-5.49 5.95.43.37.81 1.1.81 2.22v3.29c0 .32.21.69.83.57A12 12 0 0 0 12 .5Z"/></svg>
+        Official repository
+      </a>
+    </div>
+
+    <ul class="trust">
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg> Free &amp; open source, GPLv3</li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg> Zero telemetry</li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg> 80+ protections</li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg> Manifest V3</li>
+    </ul>
   </div>
 </header>
 
-<p><strong>WardenOne</strong> is a free, open-source privacy and security browser extension for
-Chrome, Edge, Brave and Opera. It folds ad blocking, tracker blocking, anti-fingerprinting,
-phishing and scam protection, download scanning and IP-leak protection into a single extension —
-with no account, no sign-up and no telemetry. Everything runs on your own device.</p>
-
-<div class="notice">
-  <h2>About downloads from anywhere else</h2>
-  <p>WardenOne is published <strong>only</strong> from
-  <a href="https://github.com/iri-dev/WardenOne">github.com/iri-dev/WardenOne</a>, and it is a
-  browser extension. It has never been distributed as an <code>.exe</code>, an installer or a setup
-  program, and it never will be.</p>
-  <p>In August 2026 a copy of this project was republished elsewhere with its download links
-  redirected to a file that was not WardenOne — a Windows executable that antivirus vendors
-  classify as a trojan loader and browser credential stealer. That account has since been removed.
-  If you ran a WardenOne "installer" obtained anywhere other than the link above, treat your
-  browser data as exposed: change your passwords starting with email, turn on two-factor
-  authentication, sign out of all sessions so stolen cookies stop working, and run a full antivirus
-  scan.</p>
+<div class="wrap narrow">
+  <div class="notice">
+    <h2>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 9v5"/><path d="M12 17.5h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+      About downloads from anywhere else
+    </h2>
+    <p>WardenOne is published <strong>only</strong> from
+    <a href="https://github.com/iri-dev/WardenOne">github.com/iri-dev/WardenOne</a>, and it is a
+    browser extension. It has never been distributed as an <code>.exe</code>, an installer or a
+    setup program, and it never will be.</p>
+    <p>In August 2026 a copy of this project was republished elsewhere with its download links
+    redirected to a file that was not WardenOne — a Windows executable that antivirus vendors
+    classify as a trojan loader and browser credential stealer. That account has since been
+    removed. <strong>If you ran a WardenOne "installer" obtained anywhere other than the link
+    above, treat your browser data as exposed:</strong> change your passwords starting with email,
+    turn on two-factor authentication, sign out of all sessions so stolen cookies stop working, and
+    run a full antivirus scan.</p>
+  </div>
 </div>
 
-<h2 class="section">What it does</h2>
-<ul class="what">
-  <li><strong>Ad and content blocking</strong> — EasyList-style filtering, plus YouTube and Twitch video ads.</li>
-  <li><strong>Tracker and analytics blocking</strong> — third-party cookies, first-party tracker catching, referrer trimming, De-AMP.</li>
-  <li><strong>Anti-fingerprinting</strong> — canvas, WebGL, audio and hardware-hint noise, and detection of probing scripts.</li>
-  <li><strong>Phishing and scam protection</strong> — look-alike domain blocking, login-page age checks, command-paste and tech-support-scam guards.</li>
-  <li><strong>Download and file safety</strong> — download scanning and ad-gate skipping.</li>
-  <li><strong>Privacy controls</strong> — WebRTC IP-leak protection, camera and microphone permission control, Global Privacy Control.</li>
-  <li><strong>Script control</strong> — NoScript-style per-site blocking with a trusted allowlist.</li>
-  <li><strong>Memory management</strong> — sleeps idle tabs without throwing away unsaved work.</li>
-</ul>
+<section id="protections">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">What it does</p>
+      <h2>Eight layers, one switch</h2>
+      <p>Everything runs locally. Every feature can be turned off individually.</p>
+    </div>
 
-<figure>
-  <img src="screenshot-popup.png" alt="The WardenOne control panel, showing protection toggles and a per-site security scan" loading="lazy">
-  <figcaption>The control panel — every protection in one place, with a live per-site security scan.</figcaption>
-</figure>
+    <div class="grid">
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="M6 6l12 12"/><circle cx="12" cy="12" r="10"/></svg></div>
+        <h3>Ad &amp; content blocking</h3>
+        <p>EasyList-style network and cosmetic filtering, plus dedicated engines for YouTube and
+        Twitch video ads and sponsored search results.</p>
+      </article>
 
-<h2 class="section">Install</h2>
-<p>Download the latest release from
-<a href="https://github.com/iri-dev/WardenOne/releases">the Releases page</a>, unzip it, then open
-your browser's extensions page (<code>chrome://extensions</code>, <code>edge://extensions</code>,
-<code>brave://extensions</code> or <code>opera://extensions</code>), turn on Developer mode and
-choose <em>Load unpacked</em>.</p>
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></div>
+        <h3>Anti-tracking</h3>
+        <p>Blocks trackers and analytics, third-party cookies, first-party tracker proxies and
+        referrer leaks. Strips tracking parameters and unwraps redirect links.</p>
+      </article>
 
-<h2 class="section">Privacy</h2>
-<p>WardenOne has no servers of its own and no analytics. It does not track you and it does not send
-your browsing history anywhere. Read the full <a href="PRIVACY">privacy policy</a>.</p>
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.4 9.2 8 10 4.6-.8 8-5 8-10V6l-8-4Z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <h3>Anti-fingerprinting</h3>
+        <p>Per-session noise on canvas, WebGL, audio and hardware hints, with detection of scripts
+        that probe for a device signature.</p>
+      </article>
 
-<h2 class="section">Open source</h2>
-<p>WardenOne is licensed under the <strong>GNU General Public License v3</strong>. The source,
-release history and issue tracker are all at
-<a href="https://github.com/iri-dev/WardenOne">github.com/iri-dev/WardenOne</a>. Filter lists and
-blocking techniques from the wider open-source community are credited in
-<a href="https://github.com/iri-dev/WardenOne/blob/main/CREDITS.md">CREDITS.md</a>.</p>
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4l3 8 4-16 3 8h6"/></svg></div>
+        <h3>Phishing &amp; scam defence</h3>
+        <p>Blocks look-alike and homograph domains, warns on password forms hosted on brand-new
+        domains, and neutralises browser lockers and command-paste tricks.</p>
+      </article>
+
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m8 11 4 4 4-4"/><path d="M4 20h16"/><path d="M9 7 12 4l3 3"/></svg></div>
+        <h3>Download safety</h3>
+        <p>Scans downloads, skips ad gates that sit in front of a file, and blocks the
+        popup-plus-installer routine used to smuggle unwanted software.</p>
+      </article>
+
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V8a5 5 0 0 1 10 0v3"/></svg></div>
+        <h3>Privacy controls</h3>
+        <p>WebRTC IP-leak protection, camera and microphone permission control, Do Not Track and
+        Global Privacy Control signals.</p>
+      </article>
+
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18-6-6 6-6"/><path d="m15 6 6 6-6 6"/></svg></div>
+        <h3>Script control</h3>
+        <p>NoScript-style blocking everywhere or per site, with a trusted allowlist and a filter
+        aimed specifically at fingerprinting scripts.</p>
+      </article>
+
+      <article class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <h3>Memory management</h3>
+        <p>Sleeps idle tabs to free RAM, while refusing to touch a tab that holds text you have
+        not saved or a live camera or microphone.</p>
+      </article>
+    </div>
+
+    <figure class="shot">
+      <div class="frame">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <img src="screenshot-popup.png" width="840" height="1800"
+             alt="The WardenOne control panel, showing protection toggles and a live per-site security scan"
+             loading="lazy">
+      </div>
+      <figcaption>The control panel — every protection in one place, with a live per-site security scan.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap narrow">
+    <div class="sec-head">
+      <p class="kicker">Install</p>
+      <h2>Three steps</h2>
+      <p>Works in Chrome, Edge, Brave and Opera. Chrome 121 or newer.</p>
+    </div>
+
+    <ol class="steps">
+      <li><strong>Download</strong> the latest <code>.zip</code> from the
+        <a href="https://github.com/iri-dev/WardenOne/releases">Releases page</a> and unzip it
+        somewhere you will keep it.</li>
+      <li><strong>Open your extensions page</strong> — <code>chrome://extensions</code>,
+        <code>edge://extensions</code>, <code>brave://extensions</code> or
+        <code>opera://extensions</code> — and turn on <em>Developer mode</em>.</li>
+      <li><strong>Choose <em>Load unpacked</em></strong> and select the unzipped folder. The
+        onboarding screen will walk you through the settings.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="open-source">
+  <div class="wrap narrow">
+    <div class="sec-head">
+      <p class="kicker">Open source</p>
+      <h2>Nothing hidden</h2>
+    </div>
+    <p style="color:var(--ink-2)">WardenOne has no servers of its own and no analytics. It does not
+    track you, and it does not send your browsing history anywhere — read the full
+    <a href="PRIVACY">privacy policy</a>. The source, release history and issue tracker are all on
+    <a href="https://github.com/iri-dev/WardenOne">GitHub</a>, under the
+    <strong>GNU General Public License v3</strong>.</p>
+    <p style="color:var(--ink-2)">It builds on filter lists and blocking techniques from the wider
+    open-source community, credited with their licences in
+    <a href="https://github.com/iri-dev/WardenOne/blob/main/CREDITS.md">CREDITS.md</a>.</p>
+  </div>
+</section>
 
 <footer>
-  <p>
-    <a href="https://github.com/iri-dev/WardenOne">Repository</a>&middot;
-    <a href="https://github.com/iri-dev/WardenOne/releases">Releases</a>&middot;
-    <a href="PRIVACY">Privacy</a>&middot;
-    <a href="SUPPORT">Support</a>&middot;
-    <a href="https://github.com/iri-dev/WardenOne/issues/new/choose">Report a bug</a>
-  </p>
-  <p>WardenOne — Copyright &copy; 2026 iri. Licensed under the GNU GPL v3 or later.</p>
+  <div class="wrap">
+    <div class="cols">
+      <div class="brand" style="color:var(--ink)">
+        <img src="icons/icon128.png" alt="" width="24" height="24">
+        <span>WardenOne</span>
+      </div>
+      <div class="links">
+        <a href="https://github.com/iri-dev/WardenOne">Repository</a>
+        <a href="https://github.com/iri-dev/WardenOne/releases">Releases</a>
+        <a href="PRIVACY">Privacy</a>
+        <a href="SUPPORT">Support</a>
+        <a href="https://github.com/iri-dev/WardenOne/issues/new/choose">Report a bug</a>
+      </div>
+    </div>
+    <div class="legal">
+      <p>WardenOne — Copyright &copy; 2026 iri. Licensed under the GNU GPL v3 or later.</p>
+      <p>Official site. WardenOne is published only from
+        <a href="https://github.com/iri-dev/WardenOne">github.com/iri-dev/WardenOne</a>.</p>
+    </div>
+  </div>
 </footer>
 
-</div>
 </body>
 </html>
