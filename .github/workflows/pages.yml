@@ -55,6 +55,7 @@ jobs:
           # property: only what is copied here can be published.
           mkdir -p _pages
           cp site/index.html _pages/
+          cp site/404.html _pages/
           cp site/robots.txt _pages/
           cp site/sitemap.xml _pages/
           cp PRIVACY.md _pages/

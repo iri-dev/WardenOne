@@ -250,6 +250,9 @@ Found a site WardenOne breaks, or have an idea? **[Open an issue](https://github
 
 ## Official source
 
+**Website:** [iri-dev.github.io/WardenOne](https://iri-dev.github.io/WardenOne/) — the official site
+for the project.
+
 WardenOne is published **only** from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne).
 Releases come from that repository and nowhere else. **It is a browser extension &mdash; it is never
 an `.exe`, an installer or a setup program.** See the notice at the top of this page: a copy of this
