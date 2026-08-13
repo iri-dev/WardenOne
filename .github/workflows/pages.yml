@@ -70,7 +70,10 @@ jobs:
           mkdir -p _pages/icons
           cp icons/icon128.png _pages/icons/
           cp docs/store/promo-440x280.png _pages/promo.png
-          cp docs/store/popup.png _pages/screenshot-popup.png
+          # The unpadded original, not docs/store/popup.png -- that one is letterboxed to
+          # 1280x800 for the Web Store listing, so on a web page it would render the
+          # popup as a small panel adrift in empty space.
+          cp docs/popup.png _pages/screenshot-popup.png
 
           cat > _pages/_config.yml <<'CONFIG'
           title: WardenOne
