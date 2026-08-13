@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const vm = require('vm');
+const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 const src = fs.readFileSync('src/content.js', 'utf8');
 const min = fs.readFileSync('content.min.js', 'utf8');
@@ -150,6 +151,9 @@ function runConsentDialog(dialogText, labels) {
     Set,
     WeakSet,
   };
+  /* The teardown registry at the top of the file needs AbortController and friends, which a bare
+     vm sandbox does not have. One place answers for those. */
+  installPlatformGlobals(context);
   vm.runInNewContext(consent, context, { filename: 'consent-reject.js' });
   return clicks;
 }
