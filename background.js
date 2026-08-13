@@ -1526,16 +1526,28 @@ async function updateAdShieldCosmetics() {
       await writeStorageTelemetry('adshield-cosmetic-unchanged', { cosmeticHash: hash });
       return;
     }
+    // Only the passive halves are kept from a network refresh. Scriptlet and procedural records
+    // name an operation and its arguments, and Chrome's MV3 rules treat fetching those as
+    // building an interpreter for remote commands, even when they arrive as data. They are
+    // compiled at release time instead and shipped in the package -- see tools/build-cosmetics.js
+    // and cosmetic-rules.json. Dropping them here rather than at the point of use means a stale
+    // or tampered cache cannot reintroduce them either.
+    const passive = {
+      generic: parsed.generic,
+      specific: parsed.specific,
+      exceptions: parsed.exceptions,
+      genericHideExclusions: parsed.genericHideExclusions,
+    };
     try {
       await localSet({
-        wardenone_adshield_cosmetic: parsed,
+        wardenone_adshield_cosmetic: passive,
         wardenone_adshield_cosmetic_at: Date.now(),
         wardenone_adshield_cosmetic_hash: hash,
       });
     } catch (e) {
       await pruneStorageIfNeeded('adshield-cosmetic-quota');
       await localSet({
-        wardenone_adshield_cosmetic: parsed,
+        wardenone_adshield_cosmetic: passive,
         wardenone_adshield_cosmetic_at: Date.now(),
         wardenone_adshield_cosmetic_hash: hash,
       });
@@ -1569,13 +1581,42 @@ function invalidateCosmeticCache() {
 
 // Lazily load (and hold) the blob, config and allowlist together. One read for
 // all three; all three are invalidated as a unit when any of them changes.
+// The command-bearing rules ship inside the package, compiled at release time by
+// tools/build-cosmetics.js. Read once and kept for the worker's life: it is a static file, so
+// re-reading it per host would be pure cost.
+let __packagedCosmetics = null;
+async function getPackagedCosmetics() {
+  if (__packagedCosmetics) return __packagedCosmetics;
+  try {
+    const res = await fetch(chrome.runtime.getURL('cosmetic-rules.json'));
+    const doc = await res.json();
+    __packagedCosmetics = {
+      scriptlets: doc && doc.scriptlets ? doc.scriptlets : {},
+      procedural: doc && doc.procedural ? doc.procedural : {},
+    };
+  } catch (_) {
+    // Missing or unreadable: run without them rather than falling back to anything fetched.
+    __packagedCosmetics = { scriptlets: {}, procedural: {} };
+  }
+  return __packagedCosmetics;
+}
+
 async function getCosmeticMem() {
   if (__cosmeticMem) return __cosmeticMem;
-  const store = await chrome.storage.local.get([
-    'wardenone_adshield_cosmetic', 'wardenone_config', 'wardenone_adshield_allowlist',
+  const [store, packaged] = await Promise.all([
+    chrome.storage.local.get([
+      'wardenone_adshield_cosmetic', 'wardenone_config', 'wardenone_adshield_allowlist',
+    ]),
+    getPackagedCosmetics(),
   ]);
+  const stored = store.wardenone_adshield_cosmetic || null;
   __cosmeticMem = {
-    data: store.wardenone_adshield_cosmetic || null,
+    // Selectors come from the daily refresh; commands come only from the package. The packaged
+    // copy is assigned last on purpose, so a cache written by an older build -- which did store
+    // scriptlets and procedural rules -- cannot supply them after an upgrade.
+    data: stored
+      ? Object.assign({}, stored, { scriptlets: packaged.scriptlets, procedural: packaged.procedural })
+      : { generic: [], specific: {}, exceptions: {}, genericHideExclusions: [], scriptlets: packaged.scriptlets, procedural: packaged.procedural },
     cfg: store.wardenone_config || {},
     allow: normalizeAllowlistHosts(store.wardenone_adshield_allowlist || []),
   };
