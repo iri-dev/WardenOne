@@ -69,6 +69,21 @@
     woPending.add(id);
     return id;
   };
+  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
+  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls bridge.js in
+  // every frame, so a listener registered here and never removed accumulates one more copy per
+  // Repair -- and every copy answers, so old and new bridges race on form and media health.
+  //
+  // The exact callback reference has to be kept, because removeListener matches by identity.
+  const woChromeListeners = [];
+  const woOnMessage = (fn) => {
+    try {
+      chrome.runtime.onMessage.addListener(fn);
+      woChromeListeners.push([chrome.runtime.onMessage, fn]);
+    } catch (_) {}
+    return fn;
+  };
+
   window.__wardenOneBridgeDispose = () => {
     try { woAbort.abort(); } catch (_) {}
     woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
@@ -79,6 +94,10 @@
         if (item && typeof item.disconnect === 'function') item.disconnect();
         else clearInterval(item);
       } catch (_) {}
+    }
+    const chromeHeld = woChromeListeners.splice(0, woChromeListeners.length);
+    for (const [event, fn] of chromeHeld) {
+      try { event.removeListener(fn); } catch (_) {}
     }
   };
 
@@ -984,7 +1003,7 @@
   // Relay live config changes (from the options/popup page) into the page.
   try {
     const smartFrameReloadedUrls = new Set();
-    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    woOnMessage((msg, _sender, sendResponse) => {
       if (msg && msg.kind === 'config-update' && msg.overrides) sendConfig(msg.overrides);
       if (msg && msg.kind === 'smart-script-route-changed') {
         smartFrameReloadedUrls.clear();
@@ -1364,7 +1383,7 @@
     });
   } catch (_) {}
   try {
-    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    woOnMessage((msg, sender, sendResponse) => {
       // Both answers are computed here rather than read from a flag set earlier. The reply shape
       // is unchanged, so background needs no change.
       if (msg && msg.kind === 'memory-form-check') {

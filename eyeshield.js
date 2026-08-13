@@ -73,6 +73,21 @@
     woPending.add(id);
     return id;
   };
+  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
+  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls this script in
+  // every frame, so a listener registered here and never removed accumulates one more copy per
+  // Repair -- and every copy answers, so old and new bridges race on form and media health.
+  //
+  // The exact callback reference has to be kept, because removeListener matches by identity.
+  const woChromeListeners = [];
+  const woOnMessage = (fn) => {
+    try {
+      chrome.runtime.onMessage.addListener(fn);
+      woChromeListeners.push([chrome.runtime.onMessage, fn]);
+    } catch (_) {}
+    return fn;
+  };
+
   window.__wardenOneEyeShieldDispose = () => {
     try { woAbort.abort(); } catch (_) {}
     woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
@@ -83,6 +98,10 @@
         if (item && typeof item.disconnect === 'function') item.disconnect();
         else clearInterval(item);
       } catch (_) {}
+    }
+    const chromeHeld = woChromeListeners.splice(0, woChromeListeners.length);
+    for (const [event, fn] of chromeHeld) {
+      try { event.removeListener(fn); } catch (_) {}
     }
   };
   window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust';
@@ -3244,7 +3263,7 @@
   } catch (e) {}
 
   try {
-    chrome.runtime.onMessage.addListener((msg) => {
+    woOnMessage((msg) => {
       if (!msg || msg.kind !== 'config-update') return;
       setConfig(msg.overrides || {});
     });

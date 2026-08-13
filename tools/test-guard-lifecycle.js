@@ -130,13 +130,30 @@ for (const g of GUARDS) {
 // 4. The nine registries are the same code. Nine hand-maintained copies would drift; this
 //    asserts they have not, so a fix to one is a fix to all.
 // ---------------------------------------------------------------------------
-const registries = GUARDS.map((g) => {
-  const src = sources.get(g.file);
+// The shared core, with the Chrome-event extension removed.
+//
+// Two of these files -- bridge.js and eyeshield.js -- also register chrome.runtime.onMessage
+// listeners, which are not DOM events, are not covered by the abort signal, and need
+// removeListener by identity. They therefore carry MORE than the shared registry, legitimately.
+// Comparing whole blocks would either fail or push us into adding an unused helper to the eight
+// files that do not need one. So the core is what must be identical; the extension is checked on
+// its own terms by the cross-file sweep below.
+function sharedRegistryCore(src, dispose) {
   const from = src.indexOf('  /* Everything this copy holds');
-  const to = src.indexOf('  };\n', src.indexOf('window.' + g.dispose + ' = () => {'));
-  assert(from >= 0 && to > from, 'could not find the registry block in ' + g.file);
-  return src.slice(from, to).split(g.dispose).join('__DISPOSE__');
-});
+  const disposeAt = src.indexOf('window.' + dispose + ' = () => {');
+  const to = src.indexOf('  };\n', disposeAt);
+  assert(from >= 0 && to > from, 'could not find the registry block');
+  let core = src.slice(from, to);
+  const chromeAt = core.indexOf("  // Chrome's extension events are not DOM events");
+  if (chromeAt >= 0) {
+    const resumeAt = core.indexOf('  window.' + dispose + ' = () => {', chromeAt);
+    core = core.slice(0, chromeAt) + core.slice(resumeAt);
+  }
+  core = core.replace(/    const chromeHeld = woChromeListeners[\s\S]*?\n    \}\n/, '');
+  return core.split(dispose).join('__DISPOSE__');
+}
+
+const registries = GUARDS.map((g) => sharedRegistryCore(sources.get(g.file), g.dispose));
 check('all nine registry blocks are byte-identical',
   registries.every((r) => r === registries[0]),
   registries.map((r, i) => GUARDS[i].file + '=' + r.length).join(' '));
@@ -337,22 +354,36 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
   check('bridge: disposes an older copy before installing',
     /if \(window\.__wardenOneBridgeVersion\) \{[\s\S]{0,400}window\.__wardenOneBridgeDispose\(\)/.test(bridge));
 
+  // Chrome's extension events are counted too. They were the blind spot: this block only looked
+  // at DOM .addEventListener, so it reported a complete registry while every Repair left two
+  // chrome.runtime.onMessage listeners attached and added two more. They are not covered by the
+  // abort signal and need removeListener by identity, so a raw addListener outside the helper is
+  // a listener dispose can never reach.
   const strays = {
     '.addEventListener(': (bridge.match(/\.addEventListener\(/g) || []).length,
     'setInterval(': (bridge.match(/\bsetInterval\(/g) || []).length,
     'setTimeout(': (bridge.match(/\bsetTimeout\(/g) || []).length,
     'new MutationObserver(': (bridge.match(/new MutationObserver\(/g) || []).length,
+    'chrome.runtime.onMessage.addListener(':
+      (bridge.match(/chrome\.runtime\.onMessage\.addListener\(/g) || []).length,
   };
   for (const [call, n] of Object.entries(strays)) {
     check('bridge: one raw ' + call + ' (the helper)', n === 1, n + ' found');
   }
+  check('bridge: Chrome listeners are registered for removal',
+    /woChromeListeners\.push\(\[chrome\.runtime\.onMessage, fn\]\)/.test(bridge));
+  check('bridge: dispose removes them by identity',
+    /event\.removeListener\(fn\)/.test(bridge));
 
-  // Its registry must be the same code as the other nine, making ten.
+  // Its registry must be the same code as the other nine, making ten -- but bridge and eyeshield
+  // legitimately carry MORE than the shared core, because they are the two that register Chrome
+  // extension events. So the shared core is what has to match; the Chrome extension is compared
+  // separately, by the checks above and the cross-file sweep below.
   const from = bridge.indexOf('  /* Everything this copy holds');
-  const to = bridge.indexOf('  };\n', bridge.indexOf('window.__wardenOneBridgeDispose = () => {'));
+  const to = bridge.indexOf('  // Chrome\'s extension events are not DOM events');
   assert(from >= 0 && to > from, 'could not find the bridge registry');
-  check('bridge: registry is identical to the other nine',
-    bridge.slice(from, to).split('__wardenOneBridgeDispose').join('__DISPOSE__') === registries[0]);
+  check('bridge: registry core is identical to the other nine',
+    sharedRegistryCore(bridge, '__wardenOneBridgeDispose') === registries[0]);
 
   // Behaviour of the guard decision, which is where the defect was.
   const gFrom = bridge.indexOf("  const BRIDGE_VERSION = '");
@@ -393,6 +424,36 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
       'ran=' + ran + '/' + want.ran + ' replayed=' + replayed + '/' + want.replayed
         + ' disposed=' + disposed + '/' + want.disposed);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 11. Cross-file sweep: anything that registers a Chrome extension event must also release it.
+//
+// This is the check that would have found the leak on its own. The blind spot was not that the
+// bridge was missed, it was that nothing looked at chrome.*.addListener at all -- so eyeshield.js
+// carried the identical bug, unnoticed, while the suite reported a complete registry. Repair
+// reinstalls both files in every frame, so each run left listeners attached and added more.
+// ---------------------------------------------------------------------------
+{
+  // Scoped to scripts that publish a dispose, which is what makes them reinstallable content
+  // scripts. Extension pages -- popup.js, history.js, download-review.js -- also add Chrome
+  // listeners, but their listeners die with the page, so requiring removal there would be noise.
+  const injected = fs.readdirSync(ROOT)
+    .filter((f) => f.endsWith('.js'))
+    .filter((f) => fs.statSync(path.join(ROOT, f)).isFile())
+    .filter((f) => /__wardenOne\w*Dispose = /.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+
+  const offenders = [];
+  for (const file of injected) {
+    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    const adds = (src.match(/chrome\.[a-zA-Z.]*\.addListener\(/g) || []).length;
+    if (!adds) continue;
+    if (!/removeListener\(/.test(src)) {
+      offenders.push(file + ' (' + adds + ' addListener, no removeListener)');
+    }
+  }
+  check('every injected script that adds a Chrome listener also removes one',
+    offenders.length === 0, offenders.join('; '));
 }
 
 if (failures) {
