@@ -165,6 +165,24 @@ function loadBadge(options) {
   }
 }
 
+{
+  // A tab can close while getBadgeText is still in flight. onRemoved clears both maps, and the
+  // callback used to fall back to `|| 1` and put the entry straight back -- leaking a counter for
+  // a tab that no longer exists, for the rest of the worker's life.
+  const b = loadBadge({ badges: { 7: '20' } });
+  b.bump(7);
+  check('a recovery is in flight', (b.sandbox.__queue || []).length === 1);
+
+  // What chrome.tabs.onRemoved does.
+  vm.runInContext('delete counts[7]; delete badgeRecovering[7];', b.sandbox);
+  b.drain();
+
+  check('a tab closing mid-recovery does not resurrect its counter',
+    b.count(7) === undefined, 'counts[7]=' + JSON.stringify(b.count(7)));
+  check('...and no badge is written for the closed tab',
+    b.written.length === 0, JSON.stringify(b.written));
+}
+
 check('all three increment sites go through the helper',
   (BG.match(/bumpBadge\(/g) || []).length >= 4
   && !/counts\[\w+(\.\w+)?\] = \(counts\[/.test(BG),

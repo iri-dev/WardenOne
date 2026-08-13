@@ -30,7 +30,11 @@ function pruneTabMessageRates(now) {
   if (now - TAB_MESSAGE_RATE_LAST_PRUNE < 10000) return;
   TAB_MESSAGE_RATE_LAST_PRUNE = now;
   const keys = Object.keys(TAB_MESSAGE_RATE);
-  if (keys.length <= TAB_MESSAGE_RATE_MAX_KEYS) return;
+  // Expired buckets are dropped on every sweep, not only once the dictionary passes
+  // TAB_MESSAGE_RATE_MAX_KEYS. A bucket that is never touched again cannot prune itself, so with
+  // the old early return an ordinary session that never reached 512 keys kept every timestamp for
+  // the worker's whole life. The key ceiling below is now purely a cap on how many LIVE buckets
+  // are kept, which is what it was meant to be.
   const cutoff = now - TAB_MESSAGE_RATE_MAX_WINDOW_MS;
   const active = [];
   for (const key of keys) {
@@ -113,7 +117,11 @@ function bumpBadge(tabId) {
   try {
     chrome.action.getBadgeText({ tabId }, (text) => {
       void chrome.runtime.lastError;
-      const pending = badgeRecovering[tabId] || 1;
+      const pending = badgeRecovering[tabId];
+      // The tab can close while this read is in flight. onRemoved has already cleared both
+      // maps by then, so writing here would put back a counter for a tab that no longer
+      // exists and leave it there until the worker dies. An absent entry means cancelled.
+      if (pending === undefined) return;
       delete badgeRecovering[tabId];
       const prior = parseInt(String(text || ''), 10);
       counts[tabId] = (Number.isFinite(prior) && prior > 0 ? prior : 0) + pending;
