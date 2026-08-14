@@ -838,34 +838,46 @@ async function testDeadlockReportGrantsNothingAlone() {
   //    impatience report. A page whose player works has had a dozen scans to render it.
   {
     // sourceBetween() reads background.js; this half lives in the bridge, so slice it here.
-    const from = BRIDGE.indexOf('  const SMART_PLAYER_DEADLOCK_SCANS');
+    const from = BRIDGE.indexOf('  const SMART_PLAYER_DEADLOCK_MS');
     const to = BRIDGE.indexOf('  function sendSmartPlayerContext');
     assert(from >= 0 && to > from, 'the bridge no longer defines the deadlock reporter');
     const src = BRIDGE.slice(from, to);
-    const mk = (scans, href, isTop) => {
-      const sandbox = {
-        smartPlayerScanCount: scans,
-        location: { href },
-        window: {},
-        URL,
-      };
+
+    // THE regression, and the reason this group exists in this shape. The first version of this fix
+    // gated on smartPlayerScanCount, which only climbs when domWatch fires -- and domWatch fires on
+    // DOM mutations, produced by the scripts that were blocked. It could never fire on the pages it
+    // was written for: H13's own circular dependency, one level up. Tested live, still black.
+    // Anything the reporter waits for must not be something the page has to do.
+    assert(!/smartPlayerScanCount/.test(src),
+      'the deadlock reporter depends on the scan count again, which the blocking itself prevents from climbing');
+    assert(/woTimeout\(/.test(BRIDGE.slice(BRIDGE.indexOf('function armSmartPlayerObservation'), from + 4000))
+      || /woTimeout\(/.test(BRIDGE.slice(BRIDGE.indexOf('smartPlayerDeadlockDue = false'))),
+      'nothing drives the deadlock check, so on a page with no mutations it is never evaluated');
+    // It must also send for itself: on a deadlocked page nothing else calls sendSmartPlayerContext.
+    const armStart = BRIDGE.indexOf('function armSmartPlayerObservation');
+    const armEnd = BRIDGE.indexOf('\n  }\n', BRIDGE.indexOf('SMART_PLAYER_DEADLOCK_MS', armStart));
+    assert(/sendSmartPlayerContext\(/.test(BRIDGE.slice(armStart, armEnd)),
+      'the deadlock timer never reports, so reaching the deadline changes nothing');
+
+    const mk = (due, href, isTop) => {
+      const sandbox = { location: { href }, window: {}, URL };
       sandbox.window.top = isTop ? sandbox.window : {};
       vm.createContext(sandbox);
       vm.runInContext(
         'const smartPlayerRoute = (raw) => /(?:^|\\/)(?:watch|episode|stream|video|play|player|embed)(?:\\/|$|[-_?])/i'
           + '.test(new URL(raw || location.href).pathname);\n'
-          + src + '\nthis.out = smartPlayerDeadlock();',
+          + src + '\nsmartPlayerDeadlockDue = ' + String(due) + ';\nthis.out = smartPlayerDeadlock();',
         sandbox,
       );
       return sandbox.out;
     };
-    assert.strictEqual(mk(11, 'https://anime.example/watch/9', true), '',
-      'the deadlock was reported before the page had a fair chance to render');
-    assert.strictEqual(mk(12, 'https://anime.example/watch/9', true), 'route-blocked',
-      'a watch route that rendered nothing after the full scan budget reported nothing');
-    assert.strictEqual(mk(40, 'https://plain.example/about', true), '',
+    assert.strictEqual(mk(false, 'https://anime.example/watch/9', true), '',
+      'the deadlock was reported before the deadline elapsed');
+    assert.strictEqual(mk(true, 'https://anime.example/watch/9', true), 'route-blocked',
+      'a watch route still rendering nothing at the deadline reported nothing');
+    assert.strictEqual(mk(true, 'https://plain.example/about', true), '',
       'an ordinary top-level page reported a player deadlock');
-    assert.strictEqual(mk(40, 'https://opaque.test/x7f2', false), 'route-blocked',
+    assert.strictEqual(mk(true, 'https://opaque.test/x7f2', false), 'route-blocked',
       'a subframe is a player context in its own right and should still report');
   }
 
