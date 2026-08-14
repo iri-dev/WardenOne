@@ -526,11 +526,16 @@
   // recovery still refuses hosts known for tracking or fingerprinting, so tripping this on purpose
   // cannot un-block anything a page would want un-blocked.
   //
-  // The scan threshold is what makes it a deadlock report rather than an impatience report: a page
-  // whose player works has had a dozen scans, driven by both a timer and DOM mutations, to show it.
-  const SMART_PLAYER_DEADLOCK_SCANS = 12;
+  // What makes it a deadlock report rather than an impatience report is elapsed time, and it must
+  // be time rather than a scan count. smartPlayerScanCount only climbs when domWatch fires, and
+  // domWatch fires on DOM mutations -- which are produced by the very scripts that were blocked. A
+  // scan-count threshold would therefore never be reached on precisely the pages this exists for:
+  // the same circular dependency H13 describes, one level up. A timer does not ask the page's
+  // permission to advance.
+  const SMART_PLAYER_DEADLOCK_MS = 4000;
+  let smartPlayerDeadlockDue = false;
   function smartPlayerDeadlock() {
-    if (smartPlayerScanCount < SMART_PLAYER_DEADLOCK_SCANS) return '';
+    if (!smartPlayerDeadlockDue) return '';
     // Same scoping as the evidence test: a watch-shaped route, or a subframe, which is a player
     // context in its own right. An ordinary top-level page gains nothing here.
     if (!smartPlayerRoute() && window.top === window) return '';
@@ -586,6 +591,16 @@
     }
     const generation = ++smartPlayerObserverGeneration;
     smartPlayerUnwatch = domWatch(() => scheduleSmartPlayerScan(120));
+    // The deadlock check has to drive itself. On the pages it exists for nothing else will call
+    // sendSmartPlayerContext again -- there are no mutations to schedule a scan, because the
+    // scripts that would cause them were blocked.
+    smartPlayerDeadlockDue = false;
+    woTimeout(() => {
+      if (generation !== smartPlayerObserverGeneration) return;
+      if (smartPlayerEvidence) return;
+      smartPlayerDeadlockDue = true;
+      sendSmartPlayerContext(true);
+    }, SMART_PLAYER_DEADLOCK_MS);
     woTimeout(() => {
       // The generation check keeps a stale timer from tearing down the subscription
       // a later re-arm just created.
