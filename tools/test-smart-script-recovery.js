@@ -886,6 +886,27 @@ async function testDeadlockReportGrantsNothingAlone() {
     'the bridge reports route-blocked but background does not accept it');
 }
 
+// Office on the web. word.cloud.microsoft serves every one of its scripts from res.cdn.office.net,
+// which shares no registrable domain with the page, so Smart Script Shield read first-party
+// application code as third-party and refused it. Word stopped on its splash icon and named nothing.
+// These hosts must be excluded by the BASE rule, not merely reachable through recovery -- recovery
+// needs an observed block first, which means the app has already failed to start once.
+async function testFirstPartyAppHostsAreExcludedUpFront() {
+  const { api, state } = createHarness();
+  await api.applyScriptShieldRules('smart');
+  const excluded = Array.from(smartRule(state).condition.excludedRequestDomains || []);
+  for (const host of ['office.net', 'officeapps.live.com']) {
+    assert(excluded.includes(host),
+      host + ' is not excluded by the base smart rule, so Office web code is blocked before any recovery can run');
+  }
+  // The exclusion must be a listed first-party app host, not a side effect of some broader wildcard
+  // that would also spare unrelated third parties.
+  assert(!excluded.includes('microsoft.com'),
+    'the exclusion list has grown a whole brand domain, which is wider than first-party app hosts');
+  assert(!excluded.some((h) => h === 'akamaized.net' || h === 'azureedge.net'),
+    'a shared CDN was added to the first-party list, which would spare every tenant on it');
+}
+
 function testRegistrationAndBridgeBounds() {
   assert(/chrome\.webRequest\?\.onErrorOccurred\?\.addListener\([\s\S]*types:\s*\['script'\]/.test(BACKGROUND),
     'script errors are not observed with a script-only webRequest filter');
@@ -1000,9 +1021,11 @@ void (async () => {
   console.log('ok - restart lifecycle cleanup and exclusion caps hold');
   await testDeadlockReportGrantsNothingAlone();
   console.log('ok - a deadlock report grants nothing without an observed block');
+  await testFirstPartyAppHostsAreExcludedUpFront();
+  console.log('ok - first-party app hosts are excluded before any block is needed');
   testRegistrationAndBridgeBounds();
   console.log('ok - observer, isolated bridge, rate, and permission bounds hold');
-  console.log('\n11 Smart Script Shield recovery test groups passed.');
+  console.log('\n12 Smart Script Shield recovery test groups passed.');
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;
