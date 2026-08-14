@@ -151,14 +151,17 @@
   // The host still carries an id and data-wo-ui="1". Those are labels, not credentials -- the
   // engine's overlay cleaner and EyeShield both skip WardenOne's own UI by them, and that has to
   // keep working. Nothing trusts them any more.
-  const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
-    + 'z-index:2147483647!important;';
+  const WO_FOCUS_STYLE = ':where(button,[href],[tabindex]):focus-visible{'
+    + 'outline:3px solid currentColor!important;outline-offset:2px!important;'
+    + 'box-shadow:0 0 0 5px rgba(255,255,255,.35)!important;}';
 
   function woOwnedOverlay(id) {
     let host = null;
     let shadow = null;
     let unwatch = null;
     let gone = false;
+    let restoreFocusTo = null;
+    let trapHandler = null;
 
     const container = () => document.body || document.documentElement || null;
 
@@ -222,10 +225,90 @@
         }
         return placed;
       },
+      // Make this overlay behave as the modal it already looks like (M20).
+      //
+      // Called after the contents exist, because the accessible name has to point at a heading that
+      // is already there. The W3C pattern is explicit that aria-modal must not be set on something
+      // that does not actually behave modally, so the semantics and the keyboard containment are
+      // applied together here rather than separately.
+      dialog(opts) {
+        const o = opts || {};
+        if (!shadow || !host) return false;
+        try {
+          const box = document.createElement('div');
+          box.setAttribute('role', 'alertdialog');
+          box.setAttribute('aria-modal', 'true');
+          if (o.label) box.setAttribute('aria-label', String(o.label));
+          if (o.description) box.setAttribute('aria-description', String(o.description));
+          box.setAttribute('style', 'all:initial!important;display:block!important;');
+          // Re-parent what the caller already rendered, so callers keep building their own markup
+          // and gain the semantics without knowing about them.
+          while (shadow.firstChild) box.appendChild(shadow.firstChild);
+          const style = document.createElement('style');
+          style.textContent = WO_FOCUS_STYLE;
+          shadow.appendChild(style);
+          shadow.appendChild(box);
+
+          const focusables = () => {
+            try {
+              return Array.prototype.slice.call(box.querySelectorAll(
+                'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])',
+              )).filter((n) => n.offsetParent !== null || n === box);
+            } catch (_) { return []; }
+          };
+
+          // Remember where focus was so it can be handed back. A warning that steals focus and
+          // never returns it leaves a keyboard user stranded on a page they were reading.
+          try { restoreFocusTo = document.activeElement; } catch (_) { restoreFocusTo = null; }
+
+          // Focus the safest action if the caller named one, otherwise the container. Never the
+          // destructive action -- a warning that opens with "continue anyway" focused is a warning
+          // that can be dismissed by a reflexive Enter.
+          try {
+            host.setAttribute('tabindex', '-1');
+            const first = (o.focus && box.querySelector(o.focus)) || focusables()[0] || box;
+            if (first && first.focus) first.focus();
+          } catch (_) {}
+
+          // Contain Tab inside the dialog. Bound on the host, not the document, and removed in
+          // destroy() below -- a trap that outlives its dialog breaks the page it was warning about.
+          trapHandler = (e) => {
+            if (gone || !e || e.key !== 'Tab') return;
+            const list = focusables();
+            if (!list.length) { e.preventDefault(); return; }
+            const firstEl = list[0];
+            const lastEl = list[list.length - 1];
+            let active = null;
+            try { active = shadow.activeElement || null; } catch (_) {}
+            if (e.shiftKey && (active === firstEl || !active)) {
+              e.preventDefault();
+              try { lastEl.focus(); } catch (_) {}
+            } else if (!e.shiftKey && active === lastEl) {
+              e.preventDefault();
+              try { firstEl.focus(); } catch (_) {}
+            }
+          };
+          host.addEventListener('keydown', trapHandler, true);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      },
       destroy() {
         gone = true;
         if (unwatch) { try { unwatch(); } catch (_) {} unwatch = null; }
+        // Before the host goes: release the keyboard and hand focus back. Both must happen on
+        // every close path, which is why they live here rather than in each caller's dismiss
+        // handler -- there are more close paths than dismiss buttons.
+        if (trapHandler && host) {
+          try { host.removeEventListener('keydown', trapHandler, true); } catch (_) {}
+        }
+        trapHandler = null;
         try { if (host) host.remove(); } catch (_) {}
+        if (restoreFocusTo && restoreFocusTo.focus && restoreFocusTo.isConnected) {
+          try { restoreFocusTo.focus(); } catch (_) {}
+        }
+        restoreFocusTo = null;
         host = null;
         shadow = null;
       },
@@ -233,6 +316,7 @@
       hostNode() { return host; },
     };
   }
+
   /* The handle for the OAuth warning, so replacing or disposing it destroys the overlay this
      copy built rather than whatever the page currently has under that id. */
   let oauthOverlay = null;
@@ -646,6 +730,9 @@
       box.appendChild(actions);
       wrap.appendChild(box);
       shadow.appendChild(wrap);
+      oauthOverlay.dialog({
+        label: 'WardenOne security warning: this app is requesting powerful account access',
+        description: 'Review the requested permissions before approving.' });
       oauthOverlay.mount();
     } catch (_) {}
   }

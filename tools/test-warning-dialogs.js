@@ -190,14 +190,15 @@ function build() {
   check('bridge.js opts all four of its owned warnings into dialog semantics',
     (BRIDGE.match(/\.dialog\(\{/g) || []).length === 4);
 
-  // oauth-guard is deliberately NOT wired yet. Adding the call there made its own suite fail --
-  // the modal stopped being detected, because that harness identifies it by watching what gets
-  // appended to body and the re-parenting changed what it saw. Rather than ship the highest-stakes
-  // consent warning in an unverified state, the wiring was backed out until that harness is
-  // updated. Pinned here so the omission is a recorded decision rather than something overlooked.
-  check('oauth-guard is knowingly still unwired, not silently missed',
-    (OAUTH.match(/\.dialog\(\{/g) || []).length === 0,
-    'oauth-guard now calls dialog() -- re-run tools/test-oauth-guard.js before trusting it');
+  // oauth-guard keeps its own lifted copy of the helper, so the first attempt to wire it called a
+  // dialog() that did not exist there -- the surrounding try/catch swallowed the TypeError and took
+  // mount() down with it, which read as a harness problem and was actually divergence between two
+  // copies of the same code. Re-lifting fixed it, so the copies must not drift again.
+  check('oauth-guard opts its consent warning in too',
+    (OAUTH.match(/\.dialog\(\{/g) || []).length === 1);
+  check('both lifted copies of the helper still carry dialog()',
+    OAUTH.includes('dialog(opts)') && BRIDGE.includes('dialog(opts)'),
+    'the copies have diverged again');
   check('a focus indicator is restored after all:initial strips it',
     /:focus-visible\{/.test(BRIDGE) && /outline:3px solid currentColor/.test(BRIDGE));
   check('the indicator uses an outline, which forced-colors mode honours',
