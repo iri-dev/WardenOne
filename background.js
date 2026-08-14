@@ -1123,8 +1123,16 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details && details.reason === 'install') {
     try { chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') }); } catch (_) {}
   }
-  // stamp a session boundary so Download Guard reviews are scoped to this session
-  markBrowserSessionStart();
+  // Stamp a session boundary so Download Guard reviews are scoped to this session -- on a first
+  // install only (M25).
+  //
+  // This used to run for every onInstalled reason, and 'update' is one of them. Chrome updates
+  // extensions in the background while the browser stays open, so a download the user started
+  // minutes earlier was suddenly classified as belonging to a previous session: the scan removed
+  // its pending record, marked it handled, and closed the review panel -- leaving the file paused
+  // in Chrome with nothing left to explain why or offer to resume it. The user's own browser
+  // never restarted. A real browser start is what onStartup is for, and it already calls this.
+  if (details && details.reason === 'install') markBrowserSessionStart();
   // kick off a list update on install + schedule daily refreshes
   scheduleUpdates();
   pruneStorageIfNeeded('install').catch(() => {});
