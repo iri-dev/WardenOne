@@ -26,15 +26,24 @@ const start = source.indexOf('const LOG_URL_MAX = 300;');
 const end = source.indexOf('function queueHistory(entry)', start);
 if (start < 0 || end <= start) throw new Error('history sanitizer source markers not found');
 
-const context = { URL, String, Object, Array, Number };
+// sanitizeHistoryDetail depends on the prototype-key guard, which is declared further up so that
+// normalizeTabBlockMessage can share it. Lift that region too rather than stubbing it: a stub would
+// let the guard be deleted from background.js while these tests kept passing.
+const guardStart = source.indexOf('const UNSAFE_DETAIL_KEYS = new Set(');
+const guardEnd = source.indexOf('function normalizeTabBlockMessage(msg, sender)', guardStart);
+if (guardStart < 0 || guardEnd <= guardStart) throw new Error('prototype-key guard source markers not found');
+
+const context = { URL, String, Object, Array, Number, Set };
 vm.createContext(context);
 vm.runInContext(
-  source.slice(start, end)
+  source.slice(guardStart, guardEnd)
+    + '\n' + source.slice(start, end)
     + '\nthis.safeUrlForLog = safeUrlForLog;'
-    + '\nthis.sanitizeHistoryDetail = sanitizeHistoryDetail;',
+    + '\nthis.sanitizeHistoryDetail = sanitizeHistoryDetail;'
+    + '\nthis.safeDetailAssign = safeDetailAssign;',
   context,
 );
-const { safeUrlForLog, sanitizeHistoryDetail } = context;
+const { safeUrlForLog, sanitizeHistoryDetail, safeDetailAssign } = context;
 
 let failed = 0;
 function check(name, condition, extra) {
@@ -101,6 +110,82 @@ check('queueHistory sanitizes detail before buffering',
   /safe\.detail = sanitizeHistoryDetail\(safe\.detail, 0\)/.test(queueBody));
 check('queueHistory buffers the sanitized copy, not the caller entry',
   /__histBuffer\.push\(safe\)/.test(queueBody) && !/__histBuffer\.push\(entry\)/.test(queueBody));
+
+// ---------------------------------------------------------------------------
+// H11. A detail object reaches here from a content script, across a JSON boundary. JSON.parse
+// creates "__proto__" as an own ENUMERABLE property, so Object.keys lists it and both a plain
+// assignment and Object.assign go through [[Set]] -- which invokes the prototype setter on our
+// output instead of storing a value. The damage is per-object, not global, so a global-pollution
+// test can pass while this is live. That is why these assert on the RESULT object.
+// ---------------------------------------------------------------------------
+{
+  const hostilePayload = () => JSON.parse('{"__proto__":{"pwned":true},"matched":"real"}');
+
+  // Prototype identity is per-realm. sanitizeHistoryDetail builds its output with `{}` INSIDE the
+  // vm, so that object's prototype is the vm's intrinsic Object.prototype, not this file's -- a
+  // direct comparison against the host's would fail on correct code. Compare against a control the
+  // same function built from a harmless input instead, which is realm-correct either way.
+  const cleanControl = sanitizeHistoryDetail({ matched: 'real' }, 0);
+  const expectedProto = Object.getPrototypeOf(cleanControl);
+
+  for (const [label, build] of [
+    ['sanitizeHistoryDetail', (src) => sanitizeHistoryDetail(src, 0)],
+    ['safeDetailAssign', (src) => safeDetailAssign({}, src)],
+  ]) {
+    const out = build(hostilePayload());
+    check(label + ' does not let __proto__ replace the result prototype',
+      Object.getPrototypeOf(out) === Object.getPrototypeOf(build({ matched: 'real' })),
+      'prototype was replaced');
+    check(label + ' does not expose an inherited property from __proto__',
+      out.pwned === undefined, 'out.pwned = ' + out.pwned);
+    check(label + ' keeps the legitimate sibling key',
+      out.matched === 'real', 'matched = ' + out.matched);
+    check(label + ' drops __proto__ rather than storing it as data',
+      !Object.prototype.hasOwnProperty.call(out, '__proto__'));
+  }
+
+  // constructor and prototype do not hijack the prototype chain, but a detail object carrying them
+  // still has no business reaching a log, and code that reads detail.constructor would be misled.
+  for (const key of ['constructor', 'prototype']) {
+    const src = JSON.parse('{"' + key + '":{"pwned":true},"matched":"real"}');
+    const out = sanitizeHistoryDetail(src, 0);
+    check('sanitizeHistoryDetail drops ' + key,
+      !Object.prototype.hasOwnProperty.call(out, key), key + ' survived');
+    check('sanitizeHistoryDetail keeps siblings alongside a dropped ' + key,
+      out.matched === 'real');
+    check('sanitizeHistoryDetail leaves ' + key + ' meaning intact',
+      out.constructor === cleanControl.constructor);
+  }
+
+  // Nested, because the sanitizer recurses and each level builds a fresh object.
+  {
+    const nested = JSON.parse('{"outer":{"__proto__":{"pwned":true},"keep":"yes"}}');
+    const out = sanitizeHistoryDetail(nested, 0);
+    check('sanitizeHistoryDetail guards nested levels too',
+      Object.getPrototypeOf(out.outer) === expectedProto && out.outer.pwned === undefined,
+      'nested prototype was replaced');
+    check('sanitizeHistoryDetail keeps nested legitimate data',
+      out.outer.keep === 'yes');
+  }
+
+  // And the separate global property, so a regression here cannot be mistaken for the other bug.
+  check('no global Object.prototype pollution from any of the above',
+    ({}).pwned === undefined && Object.prototype.pwned === undefined);
+
+  // Both live call sites must actually use the guard -- fixing the helper is worthless if a caller
+  // still hands a hostile object to a bare Object.assign.
+  const normalizeBody = source.slice(
+    source.indexOf('function normalizeTabBlockMessage(msg, sender)'),
+    source.indexOf('const UNSAFE_DETAIL_KEYS') > 0
+      ? source.indexOf('// Seed the counters from what Chrome is already showing')
+      : undefined,
+  );
+  check('normalizeTabBlockMessage copies detail through the guard',
+    /safeDetailAssign\(\{\}, msg\.detail\)/.test(normalizeBody)
+      && !/Object\.assign\(\{\}, msg\.detail\)/.test(normalizeBody));
+  check('the token-exfil detail merge also goes through the guard',
+    /Object\.assign\(safeDetailAssign\(\{\}, detailObj\)/.test(normalizeBody));
+}
 
 if (failed) { console.error('\n' + failed + ' failed'); process.exit(1); }
 console.log('\nhistory privacy checks passed');
