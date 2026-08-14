@@ -23,6 +23,8 @@ on:
     paths:
       - 'PRIVACY.md'
       - 'SUPPORT.md'
+      - 'CHANGELOG.md'
+      - 'CREDITS.md'
       - 'site/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -63,6 +65,13 @@ jobs:
           cp site/sitemap.xml _pages/
           cp PRIVACY.md _pages/
           cp SUPPORT.md _pages/
+          # The release history and the upstream credits are documents a person may
+          # reasonably want to read before installing anything, so they belong on the
+          # site rather than only inside the repository. Both are already written for
+          # a reader rather than for a build, and Jekyll renders them at /CHANGELOG
+          # and /CREDITS the same way it renders the privacy policy.
+          cp CHANGELOG.md _pages/
+          cp CREDITS.md _pages/
 
           # The images the landing page references. Copied individually and renamed
           # so the page never depends on the repo's directory layout, and so no other
