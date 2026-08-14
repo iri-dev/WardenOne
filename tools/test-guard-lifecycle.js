@@ -121,7 +121,20 @@ for (const g of GUARDS) {
     'setTimeout(': (src.match(/\bsetTimeout\(/g) || []).length,
     'new MutationObserver(': (src.match(/new MutationObserver\(/g) || []).length,
   };
+  // A raw call is normally a resource dispose can never reach, which is why exactly one is allowed
+  // per kind: the one inside the helper. The focus trap on an owned overlay is the exception that
+  // proves the rule -- it must be removable when THAT overlay closes, not when the whole bridge
+  // tears down, so routing it through woOn would be the bug rather than the fix.
+  //
+  // So the invariant is pairing, not counting: an extra raw addEventListener is allowed only when a
+  // matching removeEventListener exists to undo it. Anything unpaired is still a leak.
   for (const [call, n] of Object.entries(raw)) {
+    if (call === '.addEventListener(' && n > 1) {
+      const removals = (src.match(/\.removeEventListener\(/g) || []).length;
+      check(g.file + ': every extra raw addEventListener has a matching removeEventListener',
+        removals >= n - 1, n + ' added, ' + removals + ' removed');
+      continue;
+    }
     check(g.file + ': one raw ' + call + ' (the helper)', n === 1, n + ' found');
   }
 }
@@ -406,7 +419,16 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
     'chrome.runtime.onMessage.addListener(':
       (bridge.match(/chrome\.runtime\.onMessage\.addListener\(/g) || []).length,
   };
+  // Same pairing rule as the guards loop above. The owned-overlay focus trap is a second raw
+  // addEventListener on purpose: it has to come off when THAT overlay closes rather than when the
+  // whole bridge tears down, so woOn would be the wrong home for it. Unpaired is still a leak.
   for (const [call, n] of Object.entries(strays)) {
+    if (call === '.addEventListener(' && n > 1) {
+      const removals = (bridge.match(/\.removeEventListener\(/g) || []).length;
+      check('bridge: every extra raw addEventListener has a matching removeEventListener',
+        removals >= n - 1, n + ' added, ' + removals + ' removed');
+      continue;
+    }
     check('bridge: one raw ' + call + ' (the helper)', n === 1, n + ' found');
   }
   check('bridge: Chrome listeners are registered for removal',
