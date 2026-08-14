@@ -140,6 +140,11 @@ if (doc) {
     },
     fetch: () => Promise.resolve({ json: () => Promise.resolve(PACKAGED) }),
     __cosmeticMem: null,
+    // The load is shared and generation-guarded now (M18); the state that carries lives outside
+    // the lifted function. tools/test-state-serialization.js is what exercises that behaviour --
+    // here it only has to exist so the provenance rules can be read.
+    __cosmeticLoad: null,
+    __cosmeticGeneration: 0,
   };
   vm.createContext(sandbox);
   vm.runInContext(lifted + '\nthis.__get = getCosmeticMem;', sandbox, { filename: 'background.js:cosmetic-mem' });
