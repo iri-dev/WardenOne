@@ -895,9 +895,9 @@ async function testFirstPartyAppHostsAreExcludedUpFront() {
   const { api, state } = createHarness();
   await api.applyScriptShieldRules('smart');
   const excluded = Array.from(smartRule(state).condition.excludedRequestDomains || []);
-  for (const host of ['office.net', 'officeapps.live.com']) {
+  for (const host of ['office.net', 'officeapps.live.com', 'tiktokcdn-eu.com', 'ttwstatic.com']) {
     assert(excluded.includes(host),
-      host + ' is not excluded by the base smart rule, so Office web code is blocked before any recovery can run');
+      host + ' is not excluded by the base smart rule, so that site loads nothing before any recovery can run');
   }
   // The exclusion must be a listed first-party app host, not a side effect of some broader wildcard
   // that would also spare unrelated third parties.
