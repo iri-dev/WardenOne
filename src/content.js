@@ -2078,14 +2078,24 @@
           }
           return 0
         };
-        score+=checkTitle(),
-        score>=4?heuristicHit=!0:score>=1&&woOn(document,"DOMContentLoaded",
+        /* A search results page is never the site being searched for. Its title is whatever was
+           typed into the box, so searching for an explicit word gated the results page itself --
+           on the search engine, before going anywhere. And "take me back" from a results page
+           lands on the engine's home page, which is what that looked like from the outside. */
+        const onSearchResults=/^(?:www\.)?(?:google\.[a-z.]+|search\.brave\.com|duckduckgo\.com|(?:www\.)?bing\.com|search\.yahoo\.[a-z.]+|ecosia\.org|startpage\.com|mojeek\.com|qwant\.com|yandex\.[a-z.]+|baidu\.com|search\.marginalia\.nu)$/i.test(location.hostname);
+        /* The title corroborates the domain; it never decides on its own. It was worth the whole
+           threshold by itself, so ANY page whose title carried one of these words was gated -- a
+           results page, a news article about the industry, a forum thread discussing it. The
+           domain is the signal. A suggestive domain plus an explicit title still reaches the bar
+           together, which is the case this was for. */
+        score>0&&(score+=checkTitle()),
+        onSearchResults||(score>=4?heuristicHit=!0:score>=1&&woOn(document,"DOMContentLoaded",
         ()=>{
           if(WO.__adultGateShown)return;
           const extra=checkTitle();
           score+extra>=4&&maybeGateAdult(!0,
           heuristicReasons.concat("explicit title"))
-        })
+        }))
       }
       let adultReaskForceHeuristic=!1,
       adultReaskReasons=heuristicReasons;

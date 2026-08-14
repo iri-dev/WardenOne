@@ -71,6 +71,15 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- The adult-site warning no longer appears on a search results page, or on any page that
+  merely mentions the subject. It scored a page partly on its address and partly on its
+  title, but the title alone was enough to reach the threshold — so searching for an
+  explicit word put the warning over the results, before you had gone anywhere, and a
+  news article or forum thread about the topic could trigger it too. Pressing "take me
+  back" from a results page then returned you to the search engine's home page, which is
+  what that looked like from the outside. The title now only strengthens what the address
+  already suggests, and a search results page is never treated as the site being searched
+  for.
 - Choosing to continue past a full-page warning gives you the page back. The warnings
   that cover the whole window — the adult-site gate, the redirect-chain and IP-logger
   notices, the phishing block — work by hiding everything on the page and drawing
