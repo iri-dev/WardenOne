@@ -106,11 +106,16 @@ function downloadLooksRisky(item) {
 }
 const DOWNLOAD_SAFE_LOGGED = new Set();
 
-// Browser-session boundary. Set on browser launch (onStartup) and install. Chrome
+// Browser-session boundary. Set on browser launch (onStartup) and on FIRST INSTALL only. Chrome
 // restores paused/interrupted downloads when it reopens, which used to re-pop a
 // Download Guard review for every leftover risky download ("it comes back after
 // the browser reopens and shows all of them"). We stamp the session start so a
 // scan can tell a download began in THIS session vs a previous one.
+//
+// Deliberately NOT on extension update (M25). Chrome updates extensions in the background while
+// the browser stays open, so stamping there declared a new session the user never started: a
+// download from minutes earlier became "previous session", lost its pending record, was marked
+// handled, and had its review panel closed -- left paused with nothing to explain it.
 let SESSION_STARTED_AT = 0;
 localGet('wardenone_session_started_at').then((x) => {
   SESSION_STARTED_AT = (x && x.wardenone_session_started_at) || 0;
@@ -879,17 +884,35 @@ async function enrichDownloadWithVirusTotalHash(rep, url, filename, cfg) {
   }
 }
 
+// Every mutation of the pending and handled stores runs one at a time (M25).
+//
+// Both are whole-object read/modify/writes: read the store, add or drop one entry, write the whole
+// thing back. Two legitimate scans running at once both read the same starting state, each writes
+// its own version, and the second one wins -- so one of the two records is simply gone from
+// storage while both are still in the heap. The heap goes at the next suspension, and what is left
+// is a paused download whose review panel the recovery scan then closes, or a handled record with
+// no pending record to recreate it from. Nothing is corrupted; what is lost is ownership of a file
+// WardenOne paused, which is the thing that has to be recoverable.
+//
+// The queue is the one M18 put under the state appliers -- same defect shape, same fix. The typeof
+// guard keeps this file drivable on its own, where background.js is not loaded.
+function withDownloadStore(name, task) {
+  return typeof serializeSubsystem === 'function' ? serializeSubsystem(name, task) : task();
+}
+
 async function rememberPendingDownload(review) {
   PENDING_DOWNLOADS[review.id] = review;
-  const x = await localGet(DOWNLOAD_PENDING_KEY);
-  const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
-  store[review.id] = review;
-  const entries = Object.entries(store).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
-  while (entries.length > 25) {
-    const old = entries.pop();
-    if (old) delete store[old[0]];
-  }
-  await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+  return withDownloadStore(DOWNLOAD_PENDING_KEY, async () => {
+    const x = await localGet(DOWNLOAD_PENDING_KEY);
+    const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
+    store[review.id] = review;
+    const entries = Object.entries(store).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    while (entries.length > 25) {
+      const old = entries.pop();
+      if (old) delete store[old[0]];
+    }
+    await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+  });
 }
 
 async function getPendingDownload(id) {
@@ -904,13 +927,17 @@ async function getPendingDownload(id) {
 async function removePendingDownload(id) {
   const key = String(id || '');
   delete PENDING_DOWNLOADS[key];
-  const x = await localGet(DOWNLOAD_PENDING_KEY);
-  const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
-  delete store[key];
-  await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+  return withDownloadStore(DOWNLOAD_PENDING_KEY, async () => {
+    const x = await localGet(DOWNLOAD_PENDING_KEY);
+    const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
+    delete store[key];
+    await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+  });
 }
 
-async function getHandledDownloads() {
+// The read half, unqueued on purpose: callers that already hold the lane use this one, because a
+// task that waited on its own lane would wait forever.
+async function readHandledDownloads() {
   const x = await localGet(DOWNLOAD_HANDLED_KEY);
   const store = (x && x[DOWNLOAD_HANDLED_KEY] && typeof x[DOWNLOAD_HANDLED_KEY] === 'object') ? x[DOWNLOAD_HANDLED_KEY] : {};
   const now = Date.now();
@@ -921,8 +948,15 @@ async function getHandledDownloads() {
       changed = true;
     }
   });
-  if (changed) await localSet({ [DOWNLOAD_HANDLED_KEY]: store });
-  return store;
+  return { store, changed };
+}
+
+async function getHandledDownloads() {
+  return withDownloadStore(DOWNLOAD_HANDLED_KEY, async () => {
+    const { store, changed } = await readHandledDownloads();
+    if (changed) await localSet({ [DOWNLOAD_HANDLED_KEY]: store });
+    return store;
+  });
 }
 
 async function isDownloadHandled(id) {
@@ -935,14 +969,16 @@ async function isDownloadHandled(id) {
 async function rememberHandledDownload(id, decision) {
   const key = String(id || '');
   if (!key) return;
-  const store = await getHandledDownloads();
-  store[key] = { at: Date.now(), decision: String(decision || 'handled').slice(0, 40) };
-  const entries = Object.entries(store).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
-  while (entries.length > 250) {
-    const old = entries.pop();
-    if (old) delete store[old[0]];
-  }
-  await localSet({ [DOWNLOAD_HANDLED_KEY]: store });
+  return withDownloadStore(DOWNLOAD_HANDLED_KEY, async () => {
+    const { store } = await readHandledDownloads();
+    store[key] = { at: Date.now(), decision: String(decision || 'handled').slice(0, 40) };
+    const entries = Object.entries(store).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
+    while (entries.length > 250) {
+      const old = entries.pop();
+      if (old) delete store[old[0]];
+    }
+    await localSet({ [DOWNLOAD_HANDLED_KEY]: store });
+  });
 }
 
 function reviewUrlForId(id) {
@@ -976,31 +1012,38 @@ async function closeDownloadReviewTabs(id) {
 
 async function cleanupDownloadReviews(closeTabs) {
   try {
-    const x = await localGet(DOWNLOAD_PENDING_KEY);
-    const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
-    const now = Date.now();
-    const activeIds = new Set();
-    let changed = false;
+    // The scan reads the store, decides what is stale, and writes the survivors back -- with
+    // awaits on downloads.search in between, which is a long time for a concurrent add to be lost
+    // in. Queued with the adds and removes so it cannot drop a review created while it was looking.
+    const { store, activeIds } = await withDownloadStore(DOWNLOAD_PENDING_KEY, async () => {
+      const x = await localGet(DOWNLOAD_PENDING_KEY);
+      const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
+      const now = Date.now();
+      const activeIds = new Set();
+      let changed = false;
 
-    for (const id of Object.keys(store)) {
-      const review = store[id] || {};
-      let stale = !review.createdAt || (now - review.createdAt) > DOWNLOAD_REVIEW_TTL_MS;
-      if (!stale && review.downloadId != null) {
-        const items = await downloadSearch({ id: Number(review.downloadId) });
-        const item = items && items[0];
-        if (!item || item.state === 'complete' || item.state === 'interrupted') stale = true;
+      for (const id of Object.keys(store)) {
+        const review = store[id] || {};
+        let stale = !review.createdAt || (now - review.createdAt) > DOWNLOAD_REVIEW_TTL_MS;
+        if (!stale && review.downloadId != null) {
+          const items = await downloadSearch({ id: Number(review.downloadId) });
+          const item = items && items[0];
+          if (!item || item.state === 'complete' || item.state === 'interrupted') stale = true;
+        }
+        if (stale) {
+          delete store[id];
+          delete PENDING_DOWNLOADS[id];
+          changed = true;
+        } else {
+          PENDING_DOWNLOADS[id] = review;
+          activeIds.add(String(id));
+        }
       }
-      if (stale) {
-        delete store[id];
-        delete PENDING_DOWNLOADS[id];
-        changed = true;
-      } else {
-        PENDING_DOWNLOADS[id] = review;
-        activeIds.add(String(id));
-      }
-    }
 
-    if (changed) await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+      if (changed) await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+      return { store, activeIds };
+    });
+    void store;
     await getHandledDownloads();
 
     if (closeTabs) {
@@ -2060,8 +2103,45 @@ try {
   });
 } catch (_) {}
 
+// Anything WardenOne paused must be accounted for on every worker boot (M25).
+//
+// The early pause happens in onCreated, before the review record is written, and both the pause
+// timer and EARLY_PAUSED are heap-only -- so a worker death in that gap left a file paused in
+// Chrome with no pending record, no review panel and nothing that would ever look at it again.
+// The whole-object write race could strand one the same way.
+//
+// This asks Chrome directly rather than trusting our own records: every paused download in this
+// session that we have no pending record for, and have not already handled, gets its review
+// rebuilt. Duplicate review beats silent continuation, and nothing here resumes a file -- a
+// genuinely risky download stays paused until the user decides.
+async function recoverStrandedPausedDownloads() {
+  try {
+    const cfgStore = await localGet('wardenone_config');
+    const cfg = (cfgStore && cfgStore.wardenone_config) || {};
+    if (cfg.enabled === false || cfg.downloadReputation === false) return 0;
+    const items = await downloadSearch({ state: 'in_progress', paused: true });
+    if (!Array.isArray(items) || !items.length) return 0;
+    let recovered = 0;
+    for (const item of items) {
+      if (!item || item.id == null) continue;
+      // Not ours to speak for: the user paused it, or it predates this browser session and the
+      // new-session quiesce has already had its say.
+      if (downloadStartedBeforeSession(item)) continue;
+      const key = String(item.id);
+      if (await isDownloadHandled(key)) continue;
+      if (await getPendingDownload(key)) continue;
+      scheduleDownloadGuardScan(item.id, item, 'recover', 0);
+      recovered++;
+    }
+    return recovered;
+  } catch (_) {
+    return 0;
+  }
+}
+
 try {
   setTimeout(() => cleanupDownloadReviews(true), 1000);
+  setTimeout(() => { recoverStrandedPausedDownloads().catch(() => {}); }, 1500);
   chrome.runtime.onStartup?.addListener(() => {
     // new browser session: stamp the boundary FIRST, then purge leftover reviews so
     // restored downloads can't re-pop. markBrowserSessionStart runs synchronously

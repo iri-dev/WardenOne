@@ -71,6 +71,19 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- A download WardenOne paused can no longer be left paused with nothing to explain it.
+  When it holds a file for you to look at, it saves a record of the review -- but two
+  downloads arriving at once could each save their own copy of that record over the
+  other, so one of them was left paused in Chrome with its review panel closed and
+  nothing offering to resume or cancel it. Those records are now written one at a time.
+  On top of that, WardenOne now checks on startup for anything it paused that has no
+  review attached, and puts the review back. It never resumes a file on your behalf.
+- Updating the extension no longer closes a download review you were in the middle of.
+  Chrome updates extensions quietly in the background, and WardenOne treated that as
+  though you had restarted your browser -- so a file you started downloading minutes
+  earlier was written off as belonging to a previous session, and its review was cleared
+  away while the file stayed paused. Only a real browser start counts as a new session
+  now.
 - Protections that read a saved list now wait for it to load before deciding anything.
   Chrome shuts the extension down whenever it is idle and wakes it the moment something
   happens -- it does not wait for WardenOne to finish reading its files first. So the
