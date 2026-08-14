@@ -39,17 +39,50 @@ const MEMORY_DEFAULTS = {
   tabLimitMinIdleMinutes: 30,    // a tab must be idle at least this long to be eligible
   tabLimitWarn: true,            // notify when a tab is closed
 };
-// last-active timestamp per tabId (in-memory; rebuilt on SW restart from "now")
+// last-active timestamp per tabId (in-memory; wiped on every SW restart)
 const tabActivity = Object.create(null);
 const markTabActive = (tabId) => { if (tabId != null) tabActivity[tabId] = Date.now(); };
+
+// The single definition of "when was this tab last used", for every path that measures idle time.
+//
+// tabActivity is heap-only, and MV3 tears the worker down constantly -- the five-minute sweep alarm
+// is itself what wakes a fresh one. Reading only that map meant a cold sweep saw no timestamps at
+// all, fell back to "now", and concluded every tab had just been used. A 30-minute threshold was
+// never reached, so automatic sleeping did essentially nothing while reporting success. Chrome's
+// tab.lastAccessed survives restarts and is available from Chrome 121, which is the manifest
+// minimum, so it is the durable half of the answer.
+//
+// The NEWER of the two, not "lastAccessed if it is set": the map also records navigations and audio
+// in background tabs, which Chrome does not count as an access. Preferring lastAccessed outright
+// would report such a tab as staler than it is, and that error runs in the direction that sleeps a
+// tab someone is still using.
+function tabLastUsedOrNull(tab) {
+  let best = null;
+  const persisted = Number(tab && tab.lastAccessed);
+  if (Number.isFinite(persisted) && persisted > 0) best = persisted;
+  const id = tab && tab.id;
+  const seen = id == null ? NaN : Number(tabActivity[id]);
+  if (Number.isFinite(seen) && seen > 0 && (best == null || seen > best)) best = seen;
+  return best;
+}
+
+// Unknown age counts as "just used", so a tab we know nothing about is never slept on that basis.
+function tabLastUsed(tab, now) {
+  const known = tabLastUsedOrNull(tab);
+  return known == null ? (Number(now) || Date.now()) : known;
+}
 
 // keep activity fresh on the signals that mean "the user is using this tab"
 try {
   chrome.tabs.onActivated.addListener((info) => markTabActive(info.tabId));
   chrome.tabs.onUpdated.addListener((tabId, change) => {
-    // a navigation or load is activity; also seed unknown tabs
+    // A navigation, load or audio start is activity. Nothing else is.
+    //
+    // This used to also seed any tab it had never seen with "now", which mattered when the map was
+    // the only source of recency. With tab.lastAccessed in the picture it became harmful: the seed
+    // is the NEWER value, so a background tab that merely changed its title -- and plenty do, on a
+    // timer -- had its real idle age erased, once per service-worker restart.
     if (change.status === 'loading' || change.url || change.audible) markTabActive(tabId);
-    if (tabActivity[tabId] == null) markTabActive(tabId);
   });
   chrome.tabs.onCreated.addListener((tab) => markTabActive(tab.id));
   chrome.tabs.onRemoved.addListener((tabId) => { delete tabActivity[tabId]; });
@@ -97,8 +130,18 @@ function tabKeepReason(tab, cfg) {
 }
 
 // Ask a tab's bridge whether it has unsaved form input or active camera/mic.
-// Resolves {formDirty,mediaActive} = false on any error/timeout (so a
-// non-responsive tab never blocks sleeping forever).
+//
+// `ok` answers a different question from the other two: did we actually get an answer at all. It
+// used not to exist, and every way of failing -- the 400ms timeout, runtime.lastError, a thrown
+// send, a missing or malformed reply -- resolved to {formDirty:false, mediaActive:false}, which
+// every caller then read as "checked it, the tab is clean". So a tab whose bridge was merely
+// unreachable, because the extension had just reloaded or injection had not landed yet, was
+// discarded as verified-safe. Discarding reloads the tab, so whatever was typed into it is gone,
+// and the popup promises without qualification that unsaved-form tabs are never touched.
+//
+// Unknown is now unknown. Destructive callers must keep the tab; a caller that only throttles may
+// still fail open, because the cost of being wrong there is a paused video.
+const MEMORY_LIVE_CHECK_TIMEOUT_MS = 1000;
 function tabLiveState(tabId) {
   return new Promise((resolve) => {
     let done = false;
@@ -112,13 +155,18 @@ function tabLiveState(tabId) {
       }
       resolve(v);
     };
-    timer = setTimeout(() => finish({ formDirty: false, mediaActive: false }), 400);
+    const unknown = (why) => finish({ ok: false, why, formDirty: false, mediaActive: false });
+    // Longer than it was. 400ms was a fair budget while a timeout meant "sleep it anyway" -- being
+    // impatient cost nothing. Now a timeout keeps the tab, so the same impatience would quietly
+    // switch the feature off on exactly the busy tabs it exists for.
+    timer = setTimeout(() => unknown('timeout'), MEMORY_LIVE_CHECK_TIMEOUT_MS);
     try {
       chrome.tabs.sendMessage(tabId, { kind: 'memory-form-check' }, (res) => {
-        if (chrome.runtime.lastError) return finish({ formDirty: false, mediaActive: false });
-        finish({ formDirty: !!(res && res.formDirty), mediaActive: !!(res && res.mediaActive) });
+        if (chrome.runtime.lastError) return unknown('unreachable');
+        if (!res || typeof res !== 'object') return unknown('malformed');
+        finish({ ok: true, why: '', formDirty: !!res.formDirty, mediaActive: !!res.mediaActive });
       });
-    } catch (_) { finish({ formDirty: false, mediaActive: false }); }
+    } catch (_) { unknown('send-failed'); }
   });
 }
 
@@ -156,7 +204,7 @@ async function memorySweep(reason, cfgArg) {
     for (const tab of tabs) {
       const keep = tabKeepReason(tab, cfg);
       if (keep) continue;
-      const last = tabActivity[tab.id] || now; // unknown -> treat as just-active (don't nuke on first sweep)
+      const last = tabLastUsed(tab, now);
       const idleMs = now - last;
       if (idleMs < thresholdMs) continue;
       candidates.push({ tab, idleMs });
@@ -166,6 +214,7 @@ async function memorySweep(reason, cfgArg) {
       // media tab must never be slept); the form-dirty check only applies when the
       // user has form protection enabled.
       const live = await tabLiveState(tab.id);
+      if (!live.ok) return null; // could not ask -- an unanswered tab is not a verified-clean one
       if (live.mediaActive) return null; // active camera/mic -- never sleep
       if (cfg.memoryNeverForms && live.formDirty) return null; // unsaved form input
       try {
@@ -203,6 +252,7 @@ async function freeRamNow() {
     }
     const results = await mapLimited(candidates, MEMORY_LIVE_CHECK_CONCURRENCY, async (tab) => {
       const live = await tabLiveState(tab.id);
+      if (!live.ok) return { kept: "couldn't check for unsaved work" };
       if (cfg.memoryNeverForms && live.formDirty) return { kept: 'unsaved form' };
       if (live.mediaActive) return { kept: 'camera/mic in use' };
       try { await chrome.tabs.discard(tab.id); return { slept: true }; } catch (_) { return null; }
@@ -271,7 +321,7 @@ async function memoryScore() {
       if (tab.discarded) { sleeping++; continue; }
       if (HEAVY_HOSTS.test(tab.url || '')) heavy++;
       const keep = tabKeepReason(tab, cfg);
-      const last = tabActivity[tab.id] || now;
+      const last = tabLastUsed(tab, now);
       if (!keep && (now - last) >= thresholdMs) sleepable++;
     }
     const awake = total - sleeping;
@@ -287,10 +337,27 @@ async function memoryScore() {
   } catch (e) { return { ok: false, error: String(e) }; }
 }
 
-function scheduleMemorySweep() {
-  try { chrome.alarms.create('wardenone-memory-sweep', { periodInMinutes: 5 }); } catch (_) {}
+// The five-minute wake-up exists for Memory Shield, so it should exist only when Memory Shield
+// does. It used to be created at load whatever the setting said, so someone who had turned the
+// feature off still paid for a service-worker wake every five minutes, forever, to look at the
+// config and go back to sleep. Reconciled here and again whenever the setting changes.
+//
+// An unreadable config keeps the alarm rather than dropping it: failing to read storage should not
+// quietly uninstall a feature the user turned on.
+const MEMORY_SWEEP_ALARM = 'wardenone-memory-sweep';
+async function reconcileMemorySweepAlarm(cfgArg) {
+  let wanted = true;
+  try {
+    const cfg = cfgArg || await getMemoryConfig();
+    wanted = !!(cfg && cfg.memoryShield);
+  } catch (_) {}
+  try {
+    if (wanted) chrome.alarms.create(MEMORY_SWEEP_ALARM, { periodInMinutes: 5 });
+    else await chrome.alarms.clear(MEMORY_SWEEP_ALARM);
+  } catch (_) {}
+  return wanted;
 }
-scheduleMemorySweep();
+reconcileMemorySweepAlarm();
 
 // ---- Tab Limit --------------------------------------------------------------
 // When a newly-opened tab pushes a window past the user's limit, act on the
@@ -378,7 +445,7 @@ async function enforceTabLimit(windowId) {
     const disposable = close && isDisposableTab(tab) && !tab.active && !tab.pinned;
     if (tabKeepReason(tab, cfg) && !disposable) continue;  // protected unless a disposable new-tab
     if (!close && tab.discarded) continue;                 // already asleep -> its RAM is freed
-    const last = Number(tab.lastAccessed) || tabActivity[tab.id] || now;
+    const last = tabLastUsed(tab, now);
     safe.push({ tab, idleMs: now - last, disposable });
   }
   if (!safe.length) return;
@@ -401,6 +468,7 @@ async function enforceTabLimit(windowId) {
   for (const { tab, idleMs } of candidates) {
     // final live-state check right before acting (camera/mic, unsaved form)
     const live = await tabLiveState(tab.id);
+    if (!live.ok) continue; // no answer is not the same as a clean answer, and this path can close
     if (live.mediaActive) continue;
     if (cfg.memoryNeverForms && live.formDirty) continue;
     const host = (() => { try { return new URL(tab.url).hostname.replace(/^www\./, ''); } catch { return tab.url || ''; } })();
@@ -454,7 +522,7 @@ function tabMemoryPressure(tab, cfg, now) {
   const url = tab.url || tab.pendingUrl || '';
   let host = '';
   try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) {}
-  const last = Number(tab.lastAccessed) || tabActivity[tab.id] || now;
+  const last = tabLastUsed(tab, now);
   const idleMin = Math.max(0, Math.round((now - last) / 60000));
   const keep = tabKeepReason(tab, cfg);
   let score = 0;
@@ -543,7 +611,7 @@ async function listZombieTabs(hours) {
     for (const tab of tabs) {
       if (tab.discarded || tab.active) continue;
       if (!/^https?:/i.test(tab.url || '')) continue;
-      const last = Number(tab.lastAccessed) || tabActivity[tab.id];
+      const last = tabLastUsedOrNull(tab);
       if (last == null) continue; // unknown age -> don't accuse
       if (last > cutoff) continue;
       const keep = tabKeepReason(tab, cfg);
@@ -563,9 +631,10 @@ async function memoryActOnTab(tabId, action, opts) {
   const keep = tabKeepReason(tab, cfg);
   if (keep) return { ok: false, error: 'Protected tab: ' + keep };
   const requireIdleHours = opts && Number(opts.requireIdleHours) >= 0 ? Number(opts.requireIdleHours) : 6;
-  const last = Number(tab.lastAccessed) || tabActivity[id] || 0;
+  const last = tabLastUsedOrNull(tab) || 0;
   if (requireIdleHours > 0 && (!last || (Date.now() - last) < requireIdleHours * 3600000)) return { ok: false, error: 'Tab is no longer idle enough.' };
   const live = await tabLiveState(id);
+  if (!live.ok) return { ok: false, error: "Couldn't check this tab for unsaved work. Try again, or reload the tab first." };
   if (cfg.memoryNeverForms && live.formDirty) return { ok: false, error: 'Protected tab: unsaved form' };
   if (live.mediaActive) return { ok: false, error: 'Protected tab: camera/mic in use' };
   try {
@@ -604,7 +673,7 @@ async function sleepIdleGroups(cfgArg) {
       // a group is "idle" only if EVERY tab in it is idle past threshold and none active
       const allIdle = gtabs.every((t) => {
         if (t.active) return false;
-        const last = tabActivity[t.id] || now;
+        const last = tabLastUsed(t, now);
         return (now - last) >= thresholdMs;
       });
       if (!allIdle) continue;
@@ -616,6 +685,7 @@ async function sleepIdleGroups(cfgArg) {
       }
       const results = await mapLimited(candidates, MEMORY_LIVE_CHECK_CONCURRENCY, async (t) => {
         const live = await tabLiveState(t.id);
+        if (!live.ok) return false;
         if ((cfg.memoryNeverForms && live.formDirty) || live.mediaActive) return false;
         try { await chrome.tabs.discard(t.id); return true; } catch (_) { return false; }
       });
@@ -650,7 +720,9 @@ async function throttleInactiveTabs(cfgArg) {
       } catch (_) {}
       const keep = tabKeepReason(tab, cfg);
       if (keep) continue;
-      const last = tabActivity[tab.id] || now;
+      // Throttling stays fail-open on purpose -- the worst outcome here is a paused video, not a
+      // lost draft, so this path never consults live state and never needs to.
+      const last = tabLastUsed(tab, now);
       if ((now - last) < halfMs) continue;
       try { chrome.tabs.sendMessage(tab.id, { kind: 'memory-throttle' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
     }
@@ -666,6 +738,13 @@ try {
       tabMemoryPressure,
       mapLimited,
       fmtIdleMinutes,
+      tabActivity,
+      tabLastUsed,
+      tabLastUsedOrNull,
+      tabLiveState,
+      reconcileMemorySweepAlarm,
+      MEMORY_SWEEP_ALARM,
+      MEMORY_LIVE_CHECK_TIMEOUT_MS,
     });
   }
 } catch (_) {}

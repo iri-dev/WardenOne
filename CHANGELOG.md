@@ -71,6 +71,27 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- Memory Shield now actually puts idle tabs to sleep. It measured how long a tab had
+  been unused from a note it kept in memory -- and Chrome shuts the extension down
+  every few minutes, taking that note with it. The five-minute check that was meant
+  to do the sleeping was itself what woke it up again, so on almost every run every
+  tab looked like it had just been used, the thirty-minute threshold was never
+  reached, and the sweep reported success having done nothing. It now asks Chrome
+  when each tab was last looked at, which survives that, and uses whichever answer is
+  more recent so a tab you are still using is never counted as idle.
+- Memory Shield no longer discards a tab it could not check. Before putting a tab to
+  sleep it asks that tab whether you have unsaved typing or a live camera or
+  microphone -- but if the tab did not answer, because the extension had just
+  reloaded or the page was busy, that silence was read as "checked, and it is empty".
+  Sleeping reloads a tab, so that is how a half-written message disappears. Silence
+  now counts as unknown, and unknown means the tab is left alone: Free RAM Now tells
+  you it kept it because it could not check, and the promise that unsaved work is
+  never touched is now one the code actually keeps. The check also waits a little
+  longer before giving up, since giving up used to be free and now costs you the
+  feature on exactly the busiest tabs.
+- Turning Memory Shield off now stops its background work. The five-minute wake-up was
+  scheduled whether or not you used the feature, so it kept waking, reading your
+  settings, and going back to sleep, forever.
 - WardenOne now says when it is the reason a page will not load. Smart Script Shield
   blocks third-party scripts, which is right almost every time and invisible when it
   is -- but when a site genuinely needed one, the page simply failed. A black video

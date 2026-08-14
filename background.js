@@ -7190,6 +7190,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
       if (n.tabLimitGuard && (o.tabLimitGuard !== n.tabLimitGuard || o.tabLimitMax !== n.tabLimitMax || o.tabLimitClose !== n.tabLimitClose || o.tabLimitMinIdleMinutes !== n.tabLimitMinIdleMinutes)) {
         enforceTabLimitAllWindows();
       }
+      // The sweep alarm follows the setting, so turning Memory Shield off actually stops the
+      // five-minute wake-ups rather than leaving them running to do nothing.
+      if (o.memoryShield !== n.memoryShield || o.enabled !== n.enabled) {
+        reconcileMemorySweepAlarm();
+      }
     } catch (_) {}
   }
   if (area === 'local' && (changes[SCRIPT_SHIELD_MODE_KEY] || changes[SCRIPT_TRUSTED_KEY])) {
