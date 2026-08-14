@@ -7419,7 +7419,13 @@ const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
   'steamstatic.com',                              // Steam
 ];
 
-const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video']);
+// 'route-blocked' is not like the other three. Those say "a player is here"; it says "a player
+// route rendered nothing, and it may be our own blocking that stopped it" (H13). It grants nothing
+// on its own -- handleSmartScriptPlayerContext acts only where webRequest independently recorded a
+// blocked script in that exact frame, and stage-two entries still exclude hosts known for tracking
+// or fingerprinting. Unlike 'media-embed' it never matches a parent frame's pending error either,
+// so its reach is the narrowest of the four.
+const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video', 'route-blocked']);
 const SMART_SCRIPT_PLAYER_CONTEXTS = new Map();
 const SMART_SCRIPT_PLAYER_INTENTS = new Map();
 const SMART_SCRIPT_PENDING_ERRORS = new Map();

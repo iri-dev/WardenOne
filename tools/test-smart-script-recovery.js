@@ -736,6 +736,144 @@ async function testRestartRehydrationAndCaps() {
   }
 }
 
+// H13. The evidence test asked for artefacts the blocking removes, so a player built entirely in
+// script could never satisfy it -- a deadlock, not a missing selector. 'route-blocked' reports the
+// absence instead. The whole safety of that rests on it granting nothing by itself, so that is the
+// first thing asserted here.
+async function testDeadlockReportGrantsNothingAlone() {
+  // 1. The security boundary. A page on a watch route that renders nothing can say so, and it must
+  //    change absolutely nothing unless webRequest independently saw a script blocked in that frame.
+  {
+    const { api, state } = createHarness();
+    await api.applyScriptShieldRules('smart');
+    const before = JSON.stringify(smartRule(state));
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(await api.handleSmartScriptPlayerContext(
+        { tab: { id: 21, url: 'https://forge.example/watch/1' }, frameId: 0, url: 'https://forge.example/watch/1' },
+        { evidence: 'route-blocked' },
+      ))),
+      { ok: true },
+      'the deadlock report was rejected outright, so a genuine deadlock cannot be reported either',
+    );
+    assert.strictEqual(state.reloadCalls.length, 0,
+      'a deadlock report with no observed block triggered recovery -- any page could lift script blocking on itself');
+    assert.strictEqual(JSON.stringify(smartRule(state)), before,
+      'a deadlock report with no observed block changed the blocking rule');
+    assert(!Array.from(smartRule(state).condition.excludedTabIds || []).includes(21));
+  }
+
+  // 2. The deadlock itself. Same report, but this time the extension really did block a script in
+  //    that frame -- which is the case H13 describes, and the one that used to hang forever.
+  {
+    const { api, state } = createHarness();
+    await api.applyScriptShieldRules('smart');
+    await api.handleSmartScriptPlayerContext(
+      { tab: { id: 22, url: 'https://anime.example/watch/9' }, frameId: 0, url: 'https://anime.example/watch/9' },
+      { evidence: 'route-blocked' },
+    );
+    assert.strictEqual(await api.handleSmartScriptFailure({
+      type: 'script', error: 'net::ERR_BLOCKED_BY_CLIENT', tabId: 22, frameId: 0, parentFrameId: -1,
+      url: 'https://cdn.player.test/hls.js', documentUrl: 'https://anime.example/watch/9', initiator: 'https://anime.example',
+    }), true, 'a script-built player on a blocked route still could not recover');
+    assert.strictEqual(state.reloadCalls.length, 1, 'recovery did not reload the deadlocked frame');
+  }
+
+  // 3. Reporting the deadlock must not become a way to un-block a tracker. This is the case a page
+  //    would actually want: reference something known-bad, claim the player is broken, get it back.
+  {
+    const { api, state } = createHarness();
+    await api.applyScriptShieldRules('smart');
+    await api.handleSmartScriptPlayerContext(
+      { tab: { id: 23, url: 'https://anime.example/watch/9' }, frameId: 0, url: 'https://anime.example/watch/9' },
+      { evidence: 'route-blocked' },
+    );
+    for (const host of ['security.example', 'grabber.example', 'fingerprint.example']) {
+      await api.handleSmartScriptFailure({
+        type: 'script', error: 'net::ERR_BLOCKED_BY_CLIENT', tabId: 23, frameId: 0, parentFrameId: -1,
+        url: 'https://' + host + '/track.js', documentUrl: 'https://anime.example/watch/9', initiator: 'https://anime.example',
+      });
+    }
+    const stageTwo = state.dynamicRules.concat(state.sessionRules)
+      .filter((rule) => rule.action && rule.action.type === 'allow');
+    for (const host of ['security.example', 'grabber.example', 'fingerprint.example']) {
+      assert(!JSON.stringify(stageTwo).includes(host),
+        host + ' was allowed through a deadlock report');
+    }
+  }
+
+  // 4. 'media-embed' may match a pending error in a *parent* frame, because an embed chain reports
+  //    from the outer frame. A deadlock report gets no such reach: its own frame or nothing.
+  {
+    const { api, state } = createHarness();
+    await api.applyScriptShieldRules('smart');
+    await api.handleSmartScriptPlayerContext(
+      { tab: { id: 24, url: 'https://anime.example/watch/9' }, frameId: 0, url: 'https://anime.example/watch/9' },
+      { evidence: 'route-blocked' },
+    );
+    assert.strictEqual(await api.handleSmartScriptFailure({
+      type: 'script', error: 'net::ERR_BLOCKED_BY_CLIENT', tabId: 24, frameId: 5, parentFrameId: 0,
+      url: 'https://cdn.player.test/hls.js', documentUrl: 'https://embed.player.test/e/9', initiator: 'https://embed.player.test',
+    }), false, 'a deadlock report in the top frame recovered a child frame, which only media-embed may do');
+    assert.strictEqual(state.reloadCalls.length, 0);
+
+    // And the other arrival order, which is where the parent-frame fallback actually lives: the
+    // child's block is already pending when the parent reports. Only 'media-embed' may reach across
+    // frames like that. Asserting one order alone leaves this path untested -- it was, until a
+    // mutation that widened the fallback to 'route-blocked' went unnoticed.
+    const reverse = createHarness();
+    await reverse.api.applyScriptShieldRules('smart');
+    assert.strictEqual(await reverse.api.handleSmartScriptFailure({
+      type: 'script', error: 'net::ERR_BLOCKED_BY_CLIENT', tabId: 25, frameId: 5, parentFrameId: 0,
+      url: 'https://cdn.player.test/hls.js', documentUrl: 'https://embed.player.test/e/9', initiator: 'https://embed.player.test',
+    }), false, 'a child-frame block recovered with no player context at all');
+    await reverse.api.handleSmartScriptPlayerContext(
+      { tab: { id: 25, url: 'https://anime.example/watch/9' }, frameId: 0, url: 'https://anime.example/watch/9' },
+      { evidence: 'route-blocked' },
+    );
+    assert.strictEqual(reverse.state.reloadCalls.length, 0,
+      'a deadlock report adopted a child frame\'s pending block, which only media-embed may do');
+  }
+
+  // 5. The bridge half: reporting is scoped and bounded, so this is a deadlock report and not an
+  //    impatience report. A page whose player works has had a dozen scans to render it.
+  {
+    // sourceBetween() reads background.js; this half lives in the bridge, so slice it here.
+    const from = BRIDGE.indexOf('  const SMART_PLAYER_DEADLOCK_SCANS');
+    const to = BRIDGE.indexOf('  function sendSmartPlayerContext');
+    assert(from >= 0 && to > from, 'the bridge no longer defines the deadlock reporter');
+    const src = BRIDGE.slice(from, to);
+    const mk = (scans, href, isTop) => {
+      const sandbox = {
+        smartPlayerScanCount: scans,
+        location: { href },
+        window: {},
+        URL,
+      };
+      sandbox.window.top = isTop ? sandbox.window : {};
+      vm.createContext(sandbox);
+      vm.runInContext(
+        'const smartPlayerRoute = (raw) => /(?:^|\\/)(?:watch|episode|stream|video|play|player|embed)(?:\\/|$|[-_?])/i'
+          + '.test(new URL(raw || location.href).pathname);\n'
+          + src + '\nthis.out = smartPlayerDeadlock();',
+        sandbox,
+      );
+      return sandbox.out;
+    };
+    assert.strictEqual(mk(11, 'https://anime.example/watch/9', true), '',
+      'the deadlock was reported before the page had a fair chance to render');
+    assert.strictEqual(mk(12, 'https://anime.example/watch/9', true), 'route-blocked',
+      'a watch route that rendered nothing after the full scan budget reported nothing');
+    assert.strictEqual(mk(40, 'https://plain.example/about', true), '',
+      'an ordinary top-level page reported a player deadlock');
+    assert.strictEqual(mk(40, 'https://opaque.test/x7f2', false), 'route-blocked',
+      'a subframe is a player context in its own right and should still report');
+  }
+
+  // 6. And the string has to be one the background actually accepts, or none of the above runs.
+  assert(/SMART_SCRIPT_PLAYER_EVIDENCE = new Set\(\[[^\]]*'route-blocked'/.test(BACKGROUND),
+    'the bridge reports route-blocked but background does not accept it');
+}
+
 function testRegistrationAndBridgeBounds() {
   assert(/chrome\.webRequest\?\.onErrorOccurred\?\.addListener\([\s\S]*types:\s*\['script'\]/.test(BACKGROUND),
     'script errors are not observed with a script-only webRequest filter');
@@ -848,9 +986,11 @@ void (async () => {
   console.log('ok - navigation epoch cancels an in-flight old-frame recovery');
   await testRestartRehydrationAndCaps();
   console.log('ok - restart lifecycle cleanup and exclusion caps hold');
+  await testDeadlockReportGrantsNothingAlone();
+  console.log('ok - a deadlock report grants nothing without an observed block');
   testRegistrationAndBridgeBounds();
   console.log('ok - observer, isolated bridge, rate, and permission bounds hold');
-  console.log('\n10 Smart Script Shield recovery test groups passed.');
+  console.log('\n11 Smart Script Shield recovery test groups passed.');
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;
