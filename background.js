@@ -7473,7 +7473,17 @@ const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
   'ssl-images-amazon.com', 'media-amazon.com',    // Amazon
   'shopifycdn.com',                               // Shopify
   'wp.com',                                       // WordPress.com
-  'tiktokcdn.com',                                // TikTok
+  // TikTok. tiktokcdn.com alone was not enough: www.tiktok.com loads its scripts from
+  // sf16-website-login.neutral.tiktokcdn-eu.com and sf16-website-login.neutral.ttwstatic.com,
+  // neither of which shares a registrable domain with the page. Both measured in a clean browser
+  // with no extension present -- with them blocked the site has nothing to boot from, which is the
+  // blank white page reported. The bundle name is "website-login", so the same hosts serve the
+  // verification flow, which is why the CAPTCHA report has the same cause.
+  'tiktokcdn.com', 'tiktokcdn-eu.com', 'ttwstatic.com',
+  // Regional sibling of the two above, same naming family. Not measured here -- the clean-browser
+  // capture was from a UK exit, so the -us bundle never loaded. Included so the fix is not
+  // geography-dependent, and marked so nobody mistakes it for something that was observed.
+  'tiktokcdn-us.com',
   'ttvnw.net', 'jtvnw.net', 'twitchcdn.net',      // Twitch
   'discordapp.net',                               // Discord
   'steamstatic.com',                              // Steam
