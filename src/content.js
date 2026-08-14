@@ -14706,6 +14706,13 @@
       mount=()=>{
         if(!1!==WO.showBadge){
           if(!badgeHost||!document.documentElement.contains(badgeHost))try{
+            /* Repair reinstalls the engine in a frame that may already be showing a badge. This
+               copy's badgeHost is null while the previous copy's host is still in the DOM, so
+               building unconditionally leaves the old host and its click listener behind and
+               mounts a second one on top. Adopt by removing whatever is already there: it is not
+               this copy's node, so nothing here can reuse it. */
+            const stale=document.getElementById("rg-badge-host");
+            stale&&stale!==badgeHost&&stale.remove();
             const host=badgeHost=document.createElement("div");
             host.id="rg-badge-host",
             host.attachShadow({
