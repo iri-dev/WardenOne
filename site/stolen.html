@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Someone stole WardenOne and used it to hand people malware | WardenOne</title>
+<meta name="description" content="In August 2026 my privacy extension was republished under someone else's name, with the download link pointed at a trojan. What happened, how I proved the work was mine, and what to do if you ran the file.">
+<link rel="canonical" href="https://iri-dev.github.io/WardenOne/stolen">
+<meta name="author" content="Iri">
+
+<meta property="og:type" content="article">
+<meta property="og:title" content="Someone stole WardenOne and used it to hand people malware">
+<meta property="og:description" content="My privacy extension was republished under someone else's name, with the download pointed at a credential stealer. What happened, and what to do if you ran it.">
+<meta property="og:url" content="https://iri-dev.github.io/WardenOne/stolen">
+<link rel="icon" href="icons/icon128.png" type="image/png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Someone stole WardenOne and used it to hand people malware",
+  "datePublished": "2026-08-14",
+  "url": "https://iri-dev.github.io/WardenOne/stolen",
+  "mainEntityOfPage": "https://iri-dev.github.io/WardenOne/stolen",
+  "inLanguage": "en",
+  "about": { "@type": "SoftwareApplication", "name": "WardenOne", "url": "https://iri-dev.github.io/WardenOne/" },
+  "author": {
+    "@type": "Person",
+    "name": "Iri",
+    "alternateName": ["iri", "iri-dev"],
+    "url": "https://iri-dev.github.io/",
+    "sameAs": ["https://github.com/iri-dev", "https://iri-dev.github.io/"]
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "Iri",
+    "url": "https://iri-dev.github.io/"
+  }
+}
+</script>
+
+<style>
+  /* The tokens are copied from the landing page rather than shared, because the site has no
+     stylesheet to share -- each page carries its own. If the palette changes there, it changes
+     here too. */
+  :root {
+    --plum: #b06fd6;
+    --rose: #e07aae;
+    --plum-aa: #a153ce;
+    --rose-aa: #d13a87;
+
+    --ink: #2b1a3d;
+    --ink-2: #58466c;
+    --ink-3: #7d6e8f;
+
+    --bg: #fbf7fd;
+    --surface: #ffffff;
+    --surface-2: #f6eefb;
+    --line: rgba(140, 90, 175, .16);
+    --line-2: rgba(140, 90, 175, .28);
+
+    --warn-bg: #fff4f4;
+    --warn-line: #e8a5a5;
+    --warn-ink: #7d2020;
+
+    --shadow-s: 0 1px 2px rgba(60, 20, 90, .05), 0 2px 8px rgba(60, 20, 90, .05);
+    --shadow-m: 0 4px 12px rgba(60, 20, 90, .07), 0 16px 40px rgba(60, 20, 90, .09);
+
+    --r-s: 10px;
+    --r-m: 16px;
+    --r-l: 22px;
+
+    --link: #8f43bd;
+
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, "Noto Sans", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  /* Dark is defined twice on purpose: once for the system setting, once for an explicit
+     data-theme, so a chosen theme wins in both directions. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #f2ebf7;
+      --ink-2: #c3b3d1;
+      --ink-3: #9b8aad;
+      --bg: #1a0f20;
+      --surface: #251731;
+      --surface-2: #2e1d3b;
+      --line: rgba(190, 140, 225, .16);
+      --line-2: rgba(190, 140, 225, .26);
+      --warn-bg: #33161a;
+      --warn-line: #8d4646;
+      --warn-ink: #ffc9c9;
+      --link: #d9a6f2;
+      --shadow-s: 0 1px 2px rgba(0, 0, 0, .3);
+      --shadow-m: 0 6px 18px rgba(0, 0, 0, .38), 0 20px 48px rgba(0, 0, 0, .3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #f2ebf7;
+    --ink-2: #c3b3d1;
+    --ink-3: #9b8aad;
+    --bg: #1a0f20;
+    --surface: #251731;
+    --surface-2: #2e1d3b;
+    --line: rgba(190, 140, 225, .16);
+    --line-2: rgba(190, 140, 225, .26);
+    --warn-bg: #33161a;
+    --warn-line: #8d4646;
+    --warn-ink: #ffc9c9;
+    --link: #d9a6f2;
+    --shadow-s: 0 1px 2px rgba(0, 0, 0, .3);
+    --shadow-m: 0 6px 18px rgba(0, 0, 0, .38), 0 20px 48px rgba(0, 0, 0, .3);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 17px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .wrap { width: 100%; max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+  header.bar { border-bottom: 1px solid var(--line); background: var(--surface); }
+  header.bar .wrap { display: flex; align-items: center; gap: 12px; height: 60px; }
+  header.bar img { width: 26px; height: 26px; }
+  header.bar a { color: var(--ink); text-decoration: none; font-weight: 750; }
+
+  article { padding: 40px 0 0; }
+
+  h1 {
+    font-size: clamp(1.9rem, 5vw, 2.7rem);
+    font-weight: 800;
+    line-height: 1.2;
+    margin: 0 0 14px;
+    letter-spacing: -.01em;
+  }
+  .standfirst { color: var(--ink-2); font-size: 1.1rem; margin: 0 0 8px; }
+  .meta { color: var(--ink-3); font-size: .9rem; margin: 0 0 32px; }
+
+  h2 {
+    font-size: 1.4rem;
+    font-weight: 780;
+    margin: 44px 0 12px;
+    letter-spacing: -.005em;
+  }
+  h3 { font-size: 1.08rem; font-weight: 750; margin: 28px 0 8px; }
+
+  p { margin: 0 0 18px; }
+  a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+  ul, ol { margin: 0 0 18px; padding-left: 22px; }
+  li { margin-bottom: 9px; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .88em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 1px 5px;
+  }
+
+  .warn {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-line);
+    border-left-width: 4px;
+    border-radius: var(--r-m);
+    padding: 22px 24px 6px;
+    margin: 0 0 32px;
+  }
+  .warn h2 { margin: 0 0 10px; font-size: 1.2rem; color: var(--warn-ink); }
+  .warn strong { color: var(--warn-ink); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-m);
+    padding: 20px 24px 4px;
+    margin: 0 0 22px;
+    box-shadow: var(--shadow-s);
+  }
+
+  blockquote {
+    margin: 0 0 20px;
+    padding: 2px 0 2px 18px;
+    border-left: 3px solid var(--line-2);
+    color: var(--ink-2);
+    font-style: italic;
+  }
+
+  .scroll { overflow-x: auto; margin: 0 0 20px; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { font-weight: 700; color: var(--ink-2); white-space: nowrap; }
+  td code { background: none; border: none; padding: 0; }
+
+  footer {
+    margin-top: 72px;
+    padding: 32px 0 56px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: .9rem;
+  }
+  footer p { margin: 0 0 8px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap">
+    <img src="icons/icon128.png" alt="" width="26" height="26">
+    <a href="./">WardenOne</a>
+  </div>
+</header>
+
+<div class="wrap">
+<article>
+
+  <h1>Someone stole WardenOne and used it to hand people malware</h1>
+  <p class="standfirst">In August 2026 my privacy extension was republished under someone
+    else's name, with every download link pointed at a trojan. Here is exactly what happened.</p>
+  <p class="meta">Written 14 August 2026 by Iri 💜</p>
+
+  <div class="warn">
+    <h2>If you downloaded WardenOne from anywhere except my GitHub, read this first</h2>
+    <p>The file that site gave you was <strong>not WardenOne</strong>. It was not a browser
+      extension at all. It was a Windows program that steals what your browser has saved —
+      passwords, cookies, sessions.</p>
+    <p><strong>If you ran it, please assume your browser data was taken.</strong> I am sorry.
+      Here is what to do, in this order:</p>
+    <ul>
+      <li><strong>Change your email password first.</strong> Email is what resets everything
+        else, so it comes before your bank, before anything.</li>
+      <li><strong>Then change passwords for anything you were signed into.</strong> From a
+        different device if you have one.</li>
+      <li><strong>Sign out of all sessions</strong> on your important accounts. Most services
+        have this in security settings. Stolen cookies keep working until you do — a new
+        password alone does not always kick them out.</li>
+      <li><strong>Turn on two-factor authentication</strong> wherever it is offered.</li>
+      <li><strong>Run a full antivirus scan.</strong> Windows Defender is fine for this.</li>
+    </ul>
+    <p>WardenOne is a browser extension. It has never been an <code>.exe</code>, an installer or
+      a setup program. If something calling itself WardenOne asks you to run one, it is not mine.</p>
+  </div>
+
+  <h2>💜 What happened</h2>
+
+  <p>On 9 August 2026 I found my project on someone else's GitHub account. Not forked — forking is
+    fine, that is what open source is for, and it would have said so right at the top. This was
+    uploaded as though they had written it.</p>
+
+  <p>They had not touched much. They did not need to. They changed the links.</p>
+
+  <p>Every download button, every support link, and the line telling you where the official
+    project lives — all of it now pointed at a website they controlled. My release file was
+    deleted and replaced with one called <code>Warden-One-1.1.zip</code>. There has never been a
+    version 1.1 of WardenOne. I was on 1.0.0.</p>
+
+  <p>They also deleted my issue templates. That detail is the one that still bothers me. Those
+    templates are how someone using a security tool tells the person who wrote it that something
+    is wrong. Removing them meant that if the thing they were handing out hurt someone, that
+    person had no way back to me.</p>
+
+  <h2>💜 What the download actually was</h2>
+
+  <p>It was not my extension with something added. It was not my extension at all.</p>
+
+  <p>Inside the zip: a <code>.bat</code> file that launched a Windows executable called
+    <code>exbin.exe</code>, alongside an obfuscated script hidden in a file named
+    <code>certs.txt</code> — named to look like something boring and technical so nobody would
+    open it.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Kaspersky</th><td><code>HEUR:Backdoor.Win32.StealC.gen</code></td></tr>
+    <tr><th>ESET</th><td><code>Lua/SmartLoader.C</code></td></tr>
+    <tr><th>Family</th><td><code>matanbuchus</code></td></tr>
+  </table>
+  </div>
+
+  <p>A loader and a browser credential stealer. You can read
+    <a href="https://www.virustotal.com/gui/file/9baa26a4acec14ecdbfd7e3af73106110012312d0710bc0ecf8093b92e216857">the
+    VirusTotal report</a> yourself — I would rather you checked than took my word for it.</p>
+
+  <p>I want to be plain about why this one stings. WardenOne asks for broad browser permissions.
+    It has to, to do its job — it reads requests to block trackers, it watches pages to stop
+    phishing. I documented every single one of those permissions on its own page, because asking
+    for that much access means owing people an explanation.</p>
+
+  <p>Someone took the trust that came with that and used it to hand people a password stealer.
+    They used a tool built to protect people as the bait.</p>
+
+  <h2>💜 How I proved it was mine</h2>
+
+  <p>This part is oddly reassuring, and it is the reason I want other developers to read this.</p>
+
+  <p>They kept my commit history. All of it. Sixty-two commits, and fifty-nine of them still had
+    my name on them. Only three were theirs — the three where they deleted my release, added
+    their file, and rewrote the README.</p>
+
+  <p>Better than that: the very first commit in their copy was <code>d51cbec</code>, dated
+    26 July 2026, authored by me. Byte for byte the same hash as the first commit in mine.</p>
+
+  <p>A git commit hash is a fingerprint of the file contents, the history behind it, the author,
+    and the timestamp. Two people cannot independently arrive at the same one. It is not "this
+    looks similar to my work" — it is arithmetic. That single line of hex was the whole case.</p>
+
+  <blockquote>If you ever have to prove something is yours, your git history is the strongest
+    evidence you have, and it is already sitting there.</blockquote>
+
+  <h2>💜 The part where I was in the wrong too</h2>
+
+  <p>I could leave this bit out. I would rather not.</p>
+
+  <p>When I checked, I found my repository had <strong>no copyright notice anywhere in it</strong>.
+    The licence file was the stock GPL template with the placeholders never filled in —
+    <code>&lt;year&gt;</code>, <code>&lt;name of author&gt;</code>, exactly as it ships. Not one
+    source file named me as the author.</p>
+
+  <p>So when people asked whether my name had been stripped out, the honest answer was no. There
+    was nothing there to strip. I had published ninety-six files of work and never once written
+    down that it was mine.</p>
+
+  <p>Two other things I have to be fair about, because a complaint that overstates is easier to
+    dismiss than one that concedes:</p>
+
+  <ul>
+    <li><strong>They did not remove the licence.</strong> The GPL text was sitting there,
+      complete and unaltered. I checked before I claimed otherwise.</li>
+    <li><strong>Redistributing my work is allowed.</strong> That is what GPLv3 is <em>for</em>.
+      Anyone may take WardenOne, change it, even sell it. That was never my complaint.</li>
+  </ul>
+
+  <p>My complaint was narrower and, I think, harder to argue with: GPLv3 section 5(a) says a
+    modified version must carry a prominent notice saying it was changed, and when. Theirs
+    carried none, while calling their own website "the official repository" for my project. And
+    the licence gives nobody the right to use the <em>name</em> of the work to misrepresent where
+    it came from.</p>
+
+  <p>I fixed my side the same day. Ninety-six files now carry a copyright header naming me, the
+    licence, and the address this project actually lives at, plus a <code>NOTICE</code> file.
+    Any copy made from here either keeps those or visibly tears them out.</p>
+
+  <h2>💜 What I did</h2>
+
+  <ul>
+    <li>Wrote down every fact I could verify, and separately every claim I <em>could not</em> —
+      so nothing I said could be knocked down later.</li>
+    <li>Took a full mirror clone of their repository before anything could be deleted, and
+      archived the site.</li>
+    <li>Reported it to GitHub, both as copyright infringement and as impersonation. Those are two
+      different processes and I nearly assumed one covered both.</li>
+    <li>Reported the download to Google Safe Browsing and VirusTotal, which matters more than the
+      copyright side — that is what stops the next person getting infected.</li>
+    <li>Put a warning at the top of my README while it was still live.</li>
+  </ul>
+
+  <p>The account is gone now.</p>
+
+  <h2>💜 If this happens to you</h2>
+
+  <p>I was not ready for this. I had never considered it. So, the short list I wish I had had:</p>
+
+  <ul>
+    <li><strong>Put your name in your files today.</strong> Not the licence — the licence is a
+      template until you fill it in. Your actual name, in the actual source. It takes an hour and
+      you will never think about it again.</li>
+    <li><strong>Save the evidence before you report anything.</strong> Mirror clone, archive the
+      page, write down the hashes. The moment someone realises they are caught, it disappears.</li>
+    <li><strong>Check the download, not just the code.</strong> I nearly reported this as a
+      licensing problem and stopped there. The code was barely touched — the danger was entirely
+      in the file the site was serving, and I would have missed it.</li>
+    <li><strong>Say the things that weaken your case out loud.</strong> It costs you nothing and
+      it is the reason people believe the rest.</li>
+    <li><strong>Report the malware first, the copyright second.</strong> One of those protects
+      people. The other protects you. Mine was not the urgent one.</li>
+  </ul>
+
+  <h2>💜 Where WardenOne actually lives</h2>
+
+  <div class="card">
+    <p>WardenOne is only ever published from
+      <a href="https://github.com/iri-dev/WardenOne">github.com/iri-dev/WardenOne</a>, and this
+      site, <a href="./">iri-dev.github.io/WardenOne</a>, is its only official page.</p>
+    <p>It is a browser extension. It is free, it is GPLv3, and every line of it can be read
+      before you install it. There is no account, no telemetry, and there has never been an
+      installer.</p>
+  </div>
+
+  <p>I am one person. I am not a company and I do not have a team, and honestly this whole thing
+    knocked me sideways for a few days. But everything I make is open source precisely so that
+    you never have to take my word for anything — including this page. All of it is checkable,
+    and I would rather you checked.</p>
+
+  <p>Thank you for reading. Take care of yourself 💜</p>
+
+  <p><em>— Iri</em></p>
+
+</article>
+
+<footer>
+  <p>Made by <a href="https://iri-dev.github.io/">Iri</a>, a software engineer building privacy,
+    security and wellbeing tools — <a href="https://github.com/iri-dev">github.com/iri-dev</a>.</p>
+  <p>WardenOne — Copyright &copy; 2026 iri. Licensed under the GNU GPL v3 or later.</p>
+  <p><a href="./">Back to WardenOne</a></p>
+</footer>
+</div>
+
+</body>
+</html>
