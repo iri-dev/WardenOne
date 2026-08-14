@@ -513,9 +513,32 @@
     } catch (_) {}
     return '';
   }
+  // The deadlock (H13). Every signal smartPlayerStrongEvidence() looks for -- a player root, a
+  // <video>, a library script tag -- is built by the page's own JavaScript, which is precisely what
+  // Smart Script Shield just blocked. On a site that constructs its player entirely in script none
+  // of them ever appears, so the evidence test never passes, the recovery never runs, and the player
+  // area stays empty with nothing naming the cause.
+  //
+  // Reporting the *absence* breaks the circle. This is deliberately not evidence of a player, and
+  // background does not treat it as any: it acts only where it has independently observed a blocked
+  // script in this frame, which comes from webRequest and no page can manufacture. A page may put
+  // itself on a watch route and render nothing -- that earns it a look, not an allowance. And
+  // recovery still refuses hosts known for tracking or fingerprinting, so tripping this on purpose
+  // cannot un-block anything a page would want un-blocked.
+  //
+  // The scan threshold is what makes it a deadlock report rather than an impatience report: a page
+  // whose player works has had a dozen scans, driven by both a timer and DOM mutations, to show it.
+  const SMART_PLAYER_DEADLOCK_SCANS = 12;
+  function smartPlayerDeadlock() {
+    if (smartPlayerScanCount < SMART_PLAYER_DEADLOCK_SCANS) return '';
+    // Same scoping as the evidence test: a watch-shaped route, or a subframe, which is a player
+    // context in its own right. An ordinary top-level page gains nothing here.
+    if (!smartPlayerRoute() && window.top === window) return '';
+    return 'route-blocked';
+  }
   function sendSmartPlayerContext(force) {
     const now = Date.now();
-    const evidence = smartPlayerStrongEvidence();
+    const evidence = smartPlayerStrongEvidence() || smartPlayerDeadlock();
     if (!evidence) return false;
     smartPlayerEvidence = evidence;
     if (!force && now - smartPlayerLastSignalAt < 45000) return true;
