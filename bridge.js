@@ -105,6 +105,18 @@
   // out, but the MAIN-world page can observe window messages, so background-side
   // handlers still treat token-bearing page events as forgeable and constrain the
   // dangerous paths with sender checks, rate limits, and sanitized inputs.
+  // A ROUTING NONCE, not a secret (M27).
+  //
+  // This value is broadcast into the page with postMessage so the MAIN-world scripts can tag their
+  // traffic back. The page shares that world, so any script listening early enough holds it as
+  // well. It exists to tell WardenOne's messages apart from every other postMessage on a busy
+  // page, and to stop stale traffic from a previous bridge being answered -- nothing more.
+  //
+  // Checking `d.token === TOKEN` therefore proves the message is addressed to this bridge. It does
+  // NOT prove who sent it. Anything arriving over a page-visible channel must be treated as a
+  // claim, and must not be sufficient on its own to change trusted state: the permission-chain
+  // path now requires corroboration the worker gathered itself before it will warn or write
+  // history. Add a new inbound signal here and the same rule applies to it.
   const TOKEN = (function () {
     try {
       const a = new Uint32Array(4); crypto.getRandomValues(a);

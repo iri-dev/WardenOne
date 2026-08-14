@@ -10553,7 +10553,23 @@ async function recordPermissionChainSignal(sender, msg, granted) {
     action: 'Review this site in WardenOne Site permission scanner or reset unused permissions to Ask/Blocked.',
   };
 
+  // The events above are claims from the MAIN world, and the MAIN world is shared with the page.
+  // The handshake token that tags them is broadcast into that world by postMessage, so any page
+  // script listening early enough holds it too -- it routes traffic, it does not authenticate it
+  // (M27). A page could therefore invent a chain it never performed and make WardenOne warn about
+  // that page, and write history saying so.
+  //
+  // `granted` is different: the worker read it from contentSettings itself, and no page can forge
+  // it. So a warning and its history entry now require at least one sensitive permission this
+  // origin ACTUALLY holds. Inventing the events is still possible and still cheap; making the
+  // extension assert something untrue to the user, and record it, is not.
+  //
+  // This does not weaken the real feature. A genuine chain is a site collecting sensitive
+  // capabilities, which means it holds at least one of them by the time the risk is worth raising;
+  // a site that holds none has nothing chained yet.
+  const corroborated = (granted || []).map((g) => cleanPermissionChainKey(g)).filter(Boolean).length > 0;
   const shouldWarn = verdict.risk !== 'Low'
+    && corroborated
     && (now - (session.warnedAt || 0) > PERMISSION_CHAIN_WARN_COOLDOWN_MS || session.warnedRisk !== verdict.risk);
   if (shouldWarn) {
     session.warnedAt = now;
