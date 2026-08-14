@@ -404,7 +404,13 @@
   // Setting the property inline puts it in the same declaration block as the reset, where the later
   // declaration wins. An outline in `currentColor` is what forced-colors mode honours; a coloured
   // box-shadow is discarded there.
-  function woFocusRing(host) {
+  //
+  // `scope` must be the node the focus events reach WITHOUT being retargeted -- the shadow root for
+  // an owned overlay, the host itself only in the light-DOM fallback. Bound on the host instead,
+  // every focusin from inside a closed shadow root arrives reporting the host as its target, so the
+  // ring would follow nothing and land on nothing. Measured: Tab moved between buttons and no ring
+  // was drawn at all.
+  function woFocusRing(scope) {
     let painted = null;
     const drop = () => {
       if (!painted) return;
@@ -434,16 +440,16 @@
     };
     const onOut = () => drop();
     try {
-      host.addEventListener('focusin', onIn, true);
-      host.addEventListener('focusout', onOut, true);
+      scope.addEventListener('focusin', onIn, true);
+      scope.addEventListener('focusout', onOut, true);
     } catch (_) {}
     return {
       paint,
       release() {
         drop();
         try {
-          host.removeEventListener('focusin', onIn, true);
-          host.removeEventListener('focusout', onOut, true);
+          scope.removeEventListener('focusin', onIn, true);
+          scope.removeEventListener('focusout', onOut, true);
         } catch (_) {}
       },
     };
@@ -540,7 +546,9 @@
           // and gain the semantics without knowing about them.
           while (shadow.firstChild) box.appendChild(shadow.firstChild);
           shadow.appendChild(box);
-          focusRing = woFocusRing(host);
+          // The shadow root, not the host: focus events are retargeted as they leave a closed
+          // shadow tree, so a listener on the host only ever sees the host.
+          focusRing = woFocusRing(shadow);
 
           const focusables = () => {
             try {
@@ -838,6 +846,170 @@
         if (!smartPlayerEvidence && smartPlayerRoute()) armSmartPlayerObservation();
       }, delay);
     });
+  } catch (_) {}
+
+  // M36. When Smart Script Shield is the reason a page is broken, say so.
+  //
+  // Refusing third-party scripts is what the shield is for, and on nearly every page it is right
+  // and invisible. When it is wrong the page simply fails -- a black player, a splash screen that
+  // never advances -- and the only route out is to already suspect the extension, find the Script
+  // Shield panel and trust the site by hand. Three separate findings had that shape and each was
+  // diagnosed only because someone happened to test with the extension off.
+  //
+  // Two conditions, evaluated where each is knowable: the page decides whether it looks broken,
+  // background decides whether we refused anything on this navigation. Neither alone is worth
+  // showing -- a refusal happens on almost every page, and a slow page is not our doing.
+  let smartScriptNoticeOverlay = null;
+  let smartScriptNoticeShown = false;
+  let smartScriptNoticeAsked = false;
+
+  function smartScriptNoticeAllowed() {
+    return bridgeConfigReady
+      && bridgeConfig.enabled !== false
+      && !bridgeSilentModeOn()
+      && !bridgeHostAllowedByUser()
+      && window.top === window;
+  }
+
+  // Why the page looks broken, or '' if it does not.
+  //
+  // These three are the shapes the known reports actually had, and they are deliberately narrow.
+  // A detector broad enough to catch "one widget on an otherwise working page did not render"
+  // would fire on working pages, and a notice that cries wolf is worse than the silence it
+  // replaces -- people learn to dismiss it and then it is there for nothing.
+  function smartScriptPageStalled() {
+    try {
+      if (document.prerendering) return '';
+      if (document.readyState !== 'complete') return 'the page never finished loading';
+      // A watch or embed route that painted no player: loaded, but the one thing it exists to
+      // show is missing.
+      if (smartPlayerRoute() && !document.querySelector('video')) return 'the player never appeared';
+      if (document.querySelector('video,canvas')) return '';
+      const text = String((document.body && document.body.innerText) || '').replace(/\s+/g, ' ').trim();
+      if (text.length > 200) return '';
+      return 'nothing rendered';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function showSmartScriptNotice(info, reason) {
+    if (smartScriptNoticeShown) return;
+    smartScriptNoticeShown = true;
+    let ring = null;
+    try {
+      /* Owned, not described. A page that has just had its scripts refused is not a trustworthy
+         host for the explanation, and the button below changes a setting -- so it lives in a
+         closed shadow root the page cannot read, reach into or dispatch on. */
+      if (smartScriptNoticeOverlay) { try { smartScriptNoticeOverlay.destroy(); } catch (_) {} }
+      smartScriptNoticeOverlay = woOwnedOverlay('wo-script-shield-notice');
+      const root = smartScriptNoticeOverlay.root();
+      if (!root) return;
+      const panel = document.createElement('div');
+      /* A status region, not a dialog. It does not cover the page and does not demand an answer,
+         so it announces politely and never takes focus (M20). */
+      panel.setAttribute('role', 'status');
+      panel.setAttribute('style', 'all:initial!important;position:fixed!important;left:16px!important;'
+        + 'bottom:16px!important;box-sizing:border-box!important;display:flex!important;'
+        + 'flex-direction:column!important;gap:9px!important;max-width:380px!important;'
+        + 'width:calc(100vw - 32px)!important;border:1px solid rgba(176,106,212,.34)!important;'
+        + 'border-left:4px solid #9d54c9!important;border-radius:14px!important;'
+        + 'background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;color:#3d2a52!important;'
+        + 'padding:16px!important;box-shadow:0 18px 60px rgba(120,55,160,.3)!important;'
+        + 'font-family:Nunito,system-ui,sans-serif!important;');
+      const title = document.createElement('div');
+      title.setAttribute('style', WO_MODAL.title);
+      title.textContent = 'This page may be broken by WardenOne';
+      const body = document.createElement('div');
+      body.setAttribute('style', WO_MODAL.body);
+      const count = Number(info && info.refused) || 0;
+      body.textContent = 'Smart Script Shield blocked ' + count + ' third-party '
+        + (count === 1 ? 'script' : 'scripts') + ' here, and ' + reason
+        + '. That is usually right. If this site needs them, you can allow them and reload.';
+      const meta = document.createElement('div');
+      meta.setAttribute('style', WO_MODAL.meta);
+      const hosts = Array.isArray(info && info.hosts) ? info.hosts.slice(0, 3) : [];
+      meta.textContent = 'Blocked: ' + (hosts.length ? hosts.join(', ') : 'third-party scripts')
+        + (count > hosts.length ? ' and ' + (count - hosts.length) + ' more' : '');
+      const actions = document.createElement('div');
+      actions.setAttribute('style', WO_MODAL.actions('flex-start'));
+      const mkBtn = (label, primary) => {
+        const btn = document.createElement('button');
+        btn.setAttribute('style', WO_MODAL.button(primary, '12px'));
+        btn.textContent = label;
+        return btn;
+      };
+      const trust = mkBtn('Allow scripts here', true);
+      let trustInFlight = false;
+      /* Bound to this exact node. There is no selector to match and no element to forge: a page
+         cannot obtain a reference to a node in a closed shadow root, so it cannot dispatch on it
+         either. Background refuses the change unless it genuinely refused a script on this tab's
+         current navigation, and reads the host from the sender rather than the message. */
+      woOn(trust, 'click', (e) => {
+        if (trustInFlight || !e || e.isTrusted === false) return;
+        if (!smartScriptNoticeOverlay || !smartScriptNoticeOverlay.owns(trust)) return;
+        trustInFlight = true;
+        try { trust.disabled = true; trust.textContent = 'Allowing...'; } catch (_) {}
+        try {
+          chrome.runtime.sendMessage({ kind: 'smart-script-trust-site' }, (res) => {
+            void chrome.runtime.lastError;
+            if (chrome.runtime.lastError || !res || res.ok === false) {
+              trustInFlight = false;
+              try { trust.disabled = false; trust.textContent = 'Allow scripts here'; } catch (_) {}
+              return;
+            }
+            try { location.reload(); } catch (_) {}
+          });
+        } catch (_) {
+          trustInFlight = false;
+        }
+      });
+      const dismiss = mkBtn('Dismiss', false);
+      woOn(dismiss, 'click', (e) => {
+        if (e && e.isTrusted === false) return;
+        if (ring) { try { ring.release(); } catch (_) {} ring = null; }
+        try { smartScriptNoticeOverlay.destroy(); } catch (_) {}
+        smartScriptNoticeOverlay = null;
+      });
+      actions.appendChild(trust);
+      actions.appendChild(dismiss);
+      panel.appendChild(title);
+      panel.appendChild(body);
+      panel.appendChild(meta);
+      panel.appendChild(actions);
+      root.appendChild(panel);
+      smartScriptNoticeOverlay.mount();
+      /* No dialog() and no focus trap -- but the buttons still need a visible ring, and
+         all:initial strips the one the browser would have drawn. Bound on the shadow root, where
+         the focus events still name the button they came from. */
+      ring = woFocusRing(root);
+    } catch (_) {}
+  }
+
+  function checkSmartScriptNotice() {
+    if (smartScriptNoticeAsked || smartScriptNoticeShown) return;
+    if (!smartScriptNoticeAllowed()) return;
+    const reason = smartScriptPageStalled();
+    if (!reason) return;
+    // Asked at most once per navigation, and only from here -- the page having already failed its
+    // own check is what earns the question.
+    smartScriptNoticeAsked = true;
+    if (!bridgeRateOk('smart-script-status', 2, 60000)) return;
+    try {
+      chrome.runtime.sendMessage({ kind: 'smart-script-status' }, (res) => {
+        void chrome.runtime.lastError;
+        if (chrome.runtime.lastError || !res || !res.ok || !Number(res.refused)) return;
+        showSmartScriptNotice(res, reason);
+      });
+    } catch (_) {}
+  }
+
+  try {
+    // Two chances, both bounded. Five seconds after load is late enough that a merely slow page
+    // has settled; the twenty-second timer is for the pages where load never fires at all, which
+    // is one of the failure shapes this exists to catch.
+    woOn(window, 'load', () => woTimeout(checkSmartScriptNotice, 5000), { once: true });
+    woTimeout(checkSmartScriptNotice, 20000);
   } catch (_) {}
 
   function setLearnedGrabberDomains(learned) {

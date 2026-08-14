@@ -167,7 +167,13 @@
   // Setting the property inline puts it in the same declaration block as the reset, where the later
   // declaration wins. An outline in `currentColor` is what forced-colors mode honours; a coloured
   // box-shadow is discarded there.
-  function woFocusRing(host) {
+  //
+  // `scope` must be the node the focus events reach WITHOUT being retargeted -- the shadow root for
+  // an owned overlay, the host itself only in the light-DOM fallback. Bound on the host instead,
+  // every focusin from inside a closed shadow root arrives reporting the host as its target, so the
+  // ring would follow nothing and land on nothing. Measured: Tab moved between buttons and no ring
+  // was drawn at all.
+  function woFocusRing(scope) {
     let painted = null;
     const drop = () => {
       if (!painted) return;
@@ -197,16 +203,16 @@
     };
     const onOut = () => drop();
     try {
-      host.addEventListener('focusin', onIn, true);
-      host.addEventListener('focusout', onOut, true);
+      scope.addEventListener('focusin', onIn, true);
+      scope.addEventListener('focusout', onOut, true);
     } catch (_) {}
     return {
       paint,
       release() {
         drop();
         try {
-          host.removeEventListener('focusin', onIn, true);
-          host.removeEventListener('focusout', onOut, true);
+          scope.removeEventListener('focusin', onIn, true);
+          scope.removeEventListener('focusout', onOut, true);
         } catch (_) {}
       },
     };
@@ -303,7 +309,9 @@
           // and gain the semantics without knowing about them.
           while (shadow.firstChild) box.appendChild(shadow.firstChild);
           shadow.appendChild(box);
-          focusRing = woFocusRing(host);
+          // The shadow root, not the host: focus events are retargeted as they leave a closed
+          // shadow tree, so a listener on the host only ever sees the host.
+          focusRing = woFocusRing(shadow);
 
           const focusables = () => {
             try {

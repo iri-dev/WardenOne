@@ -164,6 +164,8 @@ function createHarness(options = {}) {
       + '\nthis.__api = {'
       + 'applyScriptShieldRules, buildScriptShieldRulePlan, handleSmartScriptFailure, '
       + 'handleSmartScriptPlayerContext, handleSmartScriptPlayerIntent, clearSmartScriptRecoveryForTab, handleSmartScriptTopNavigation, '
+      + 'handleSmartScriptPageStatus, handleSmartScriptTrustSite, smartScriptRefusedHostsForTab, '
+      + 'SMART_SCRIPT_FRAME_HOSTS, '
       + 'normalizeSmartScriptFailure, SMART_SCRIPT_PLAYER_CONTEXTS, SMART_SCRIPT_PENDING_ERRORS, '
       + 'SMART_SCRIPT_PLAYER_INTENTS, SMART_SCRIPT_RECOVERED_TABS, SMART_SCRIPT_RETRY_KEYS, SMART_SCRIPT_NAVIGATION_EPOCHS, '
       + 'SCRIPT_SHIELD_PLAYER_INFRA_HOSTS, SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS};',
@@ -1000,6 +1002,179 @@ async function testFirstPartyAppCdnsStayLoadable() {
   'first-party CDN exemption leaked into an allow rule');
 }
 
+// M36. The shield used to break sites silently, so every instance cost a support round-trip: the
+// page failed, nothing named the feature, and the only route out was to already suspect the
+// extension. Two halves have to agree before anything is said -- the page decides it looks broken,
+// background decides we actually refused something -- and the trust action must not become a way
+// for a page to switch the shield off for itself.
+function blockedScriptOn(tabId, frameId, pageUrl, requestUrl) {
+  return {
+    type: 'script',
+    error: 'net::ERR_BLOCKED_BY_CLIENT',
+    tabId,
+    frameId,
+    parentFrameId: frameId === 0 ? -1 : 0,
+    url: requestUrl,
+    documentUrl: pageUrl,
+    initiator: new URL(pageUrl).origin,
+  };
+}
+
+async function testSilentBreakageIsExplained() {
+  const { api, state } = createHarness();
+  await api.applyScriptShieldRules('smart');
+  const sender = { tab: { id: 9, url: 'https://app.example/doc/1' }, frameId: 0 };
+
+  // Nothing refused yet: there is nothing to explain, and the notice must not appear.
+  assert.strictEqual((await api.handleSmartScriptPageStatus(sender)).refused, 0,
+    'offered an explanation for a page where nothing was blocked');
+  assert.strictEqual((await api.handleSmartScriptTrustSite(sender)).ok, false,
+    'trusted a site with no recorded refusal');
+
+  await api.handleSmartScriptFailure(blockedScriptOn(9, 0, 'https://app.example/doc/1', 'https://cdn.other.example/app.js'));
+  await api.handleSmartScriptFailure(blockedScriptOn(9, 0, 'https://app.example/doc/1', 'https://metrics.other.example/t.js'));
+  const status = await api.handleSmartScriptPageStatus(sender);
+  assert.strictEqual(status.refused, 2, 'refused-script count is not reported to the page');
+  assert.strictEqual(status.host, 'app.example', 'status named a host other than the page it is about');
+  assert.deepStrictEqual(Array.from(status.hosts || []), ['cdn.other.example', 'metrics.other.example'],
+    'the blocked hosts were not offered as evidence');
+
+  // A refusal from the previous page must never be offered as the explanation for this one.
+  const epochs = api.SMART_SCRIPT_NAVIGATION_EPOCHS;
+  const before = api.smartScriptRefusedHostsForTab(9).length;
+  await api.clearSmartScriptRecoveryForTab(9);
+  assert(before > 0 && api.smartScriptRefusedHostsForTab(9).length === 0,
+    'a refusal survived the navigation that ended it');
+  assert(epochs.get(9), 'navigation epoch was not recorded');
+
+  // Stated directly, because navigation normally empties this map and so nothing else would notice
+  // if the epoch check went away -- and then any future path that left an entry behind would hand
+  // the user a wrong explanation for the page in front of them.
+  const currentEpoch = Number((epochs.get(9) || {}).epoch || 0);
+  api.SMART_SCRIPT_FRAME_HOSTS.set('9:0', { epoch: currentEpoch - 1, at: Date.now(), hosts: ['stale.example'] });
+  assert.deepStrictEqual(Array.from(api.smartScriptRefusedHostsForTab(9)), [],
+    'a refusal recorded against an earlier navigation was offered as this page\'s explanation');
+  api.SMART_SCRIPT_FRAME_HOSTS.set('9:0', { epoch: currentEpoch, at: Date.now(), hosts: ['fresh.example'] });
+  assert.deepStrictEqual(Array.from(api.smartScriptRefusedHostsForTab(9)), ['fresh.example'],
+    'a refusal from the current navigation was not offered');
+  api.SMART_SCRIPT_FRAME_HOSTS.delete('9:0');
+
+  // Off means off: nothing is offered when Smart mode is not the active mode.
+  const off = createHarness({ mode: 'normal' });
+  await off.api.handleSmartScriptFailure(blockedScriptOn(9, 0, 'https://app.example/doc/1', 'https://cdn.other.example/app.js'));
+  assert.strictEqual((await off.api.handleSmartScriptPageStatus(sender)).refused, 0,
+    'explained a block while Smart mode was off');
+  assert.strictEqual((await off.api.handleSmartScriptTrustSite(sender)).ok, false,
+    'trusted a site while Smart mode was off');
+
+  // Already trusted, exactly or by parent domain: there is nothing left to offer. Subdomains count
+  // because that is how the shield's own excludedInitiatorDomains matches.
+  for (const scenario of [
+    { trusted: ['app.example'], url: 'https://app.example/doc/1' },
+    { trusted: ['example.com'], url: 'https://app.example.com/doc/1' },
+  ]) {
+    const done = createHarness({ trusted: scenario.trusted });
+    await done.api.handleSmartScriptFailure(blockedScriptOn(9, 0, scenario.url, 'https://cdn.other.example/app.js'));
+    const quiet = { tab: { id: 9, url: scenario.url }, frameId: 0 };
+    assert.strictEqual((await done.api.handleSmartScriptPageStatus(quiet)).refused, 0,
+      'nagged about a site already trusted via ' + scenario.trusted[0]);
+    assert.strictEqual((await done.api.handleSmartScriptTrustSite(quiet)).ok, false,
+      'offered to trust a site that is already trusted via ' + scenario.trusted[0]);
+  }
+
+  // The trust action. The host comes from the sender's own tab and never from the message, so a
+  // forged field cannot aim it at somewhere else -- the worst a stray message can do is trust the
+  // site it was sent from.
+  const { api: trustApi, state: trustState } = createHarness();
+  await trustApi.applyScriptShieldRules('smart');
+  await trustApi.handleSmartScriptFailure(blockedScriptOn(9, 0, 'https://app.example/doc/1', 'https://cdn.other.example/app.js'));
+  const result = await trustApi.handleSmartScriptTrustSite(sender, { host: 'bank.example' });
+  assert.strictEqual(result.ok, true, 'the offered trust action did not work');
+  assert.strictEqual(result.host, 'app.example', 'trust was aimed somewhere other than the sending tab');
+  assert(!trustState.trusted.includes('bank.example'), 'a forged host field reached the trust list');
+  assert(Array.from(smartRule(trustState).condition.excludedInitiatorDomains || []).includes('app.example'),
+    'trusting from the notice did not reach the shield rule');
+  // Trusting the site must not turn into a global allow for whatever it happened to load.
+  assert(!Object.prototype.hasOwnProperty.call(smartRule(trustState).condition, 'requestDomains'),
+    'trusting a site from the notice allowed its request hosts everywhere');
+
+  // A tab-less or non-web sender gets nothing.
+  for (const bad of [{}, { tab: { id: 9, url: 'chrome://extensions' } }, { tab: { url: 'https://app.example/' } }]) {
+    assert.strictEqual((await trustApi.handleSmartScriptPageStatus(bad)).refused, 0,
+      'answered a sender with no usable tab identity');
+    assert.strictEqual((await trustApi.handleSmartScriptTrustSite(bad)).ok, false,
+      'trusted from a sender with no usable tab identity');
+  }
+}
+
+// The page's half of the condition, run against real documents rather than asserted from source.
+// It is deliberately narrow: it catches the shapes the three reports actually had, and a detector
+// broad enough to catch "one widget did not render" would fire on working pages.
+function testStalledPageDetection() {
+  const from = BRIDGE.indexOf('  function smartScriptPageStalled() {');
+  const to = BRIDGE.indexOf('  function showSmartScriptNotice(');
+  assert(from >= 0 && to > from, 'smartScriptPageStalled source markers not found in bridge.js');
+
+  const run = (doc, playerRoute) => {
+    const sandbox = { document: doc, String, smartPlayerRoute: () => !!playerRoute };
+    vm.createContext(sandbox);
+    vm.runInContext(BRIDGE.slice(from, to) + '\nthis.__stalled = smartScriptPageStalled();', sandbox);
+    return sandbox.__stalled;
+  };
+  const doc = (options) => ({
+    prerendering: options.prerendering === true,
+    readyState: options.readyState || 'complete',
+    querySelector(sel) {
+      if (/video/.test(sel) && options.video) return {};
+      if (/canvas/.test(sel) && options.canvas) return {};
+      return null;
+    },
+    body: { innerText: options.text || '' },
+  });
+  const prose = 'x'.repeat(400);
+
+  assert.strictEqual(run(doc({ readyState: 'loading', text: prose })), 'the page never finished loading');
+  assert.strictEqual(run(doc({ readyState: 'interactive', text: prose })), 'the page never finished loading');
+  assert.strictEqual(run(doc({ text: prose }), true), 'the player never appeared',
+    'a watch route with no player was treated as working');
+  assert.strictEqual(run(doc({ text: prose, video: true }), true), '',
+    'a watch route that painted its player was reported broken');
+  assert.strictEqual(run(doc({ text: 'Loading...' })), 'nothing rendered',
+    'a splash screen that never advanced was treated as working');
+  assert.strictEqual(run(doc({ text: prose })), '', 'an ordinary page with content was reported broken');
+  assert.strictEqual(run(doc({ text: '', canvas: true })), '',
+    'a canvas app was reported broken for having no text');
+  assert.strictEqual(run(doc({ text: '', video: true })), '',
+    'a video page was reported broken for having no text');
+  assert.strictEqual(run(doc({ prerendering: true, readyState: 'loading' })), '',
+    'a prerendered document was judged before it was ever shown');
+
+  // The notice itself: owned, non-modal, top-frame only, and no forgeable target.
+  assert(BRIDGE.includes("woOwnedOverlay('wo-script-shield-notice')"),
+    'the notice is not extension-owned UI');
+  assert(/panel\.setAttribute\('role', 'status'\)/.test(BRIDGE),
+    'the notice does not announce itself');
+  assert(!/smartScriptNoticeOverlay\.dialog\(/.test(BRIDGE),
+    'an advisory notice must not steal focus or trap the keyboard');
+  // Non-modal still means keyboard-usable. The ring has to listen inside the shadow root: focus
+  // events are retargeted on the way out of a closed one, so a listener on the host would see the
+  // host every time and the ring would never reach the button.
+  assert(BRIDGE.includes('ring = woFocusRing(root);') && !/woFocusRing\(smartScriptNoticeOverlay\.hostNode\(\)\)/.test(BRIDGE),
+    'the notice binds its focus ring where the event has already been retargeted');
+  assert(/&& window\.top === window;/.test(BRIDGE.slice(BRIDGE.indexOf('function smartScriptNoticeAllowed'))),
+    'the notice is not restricted to the top frame');
+  assert(/!bridgeSilentModeOn\(\)/.test(BRIDGE.slice(BRIDGE.indexOf('function smartScriptNoticeAllowed'), BRIDGE.indexOf('function smartScriptPageStalled'))),
+    'the notice ignores silent mode');
+  assert(/!bridgeHostAllowedByUser\(\)/.test(BRIDGE.slice(BRIDGE.indexOf('function smartScriptNoticeAllowed'), BRIDGE.indexOf('function smartScriptPageStalled'))),
+    'the notice appears on sites the user allowlisted');
+  assert(BRIDGE.includes('!smartScriptNoticeOverlay.owns(trust)'),
+    'the trust button does not verify it is our own node');
+  assert(/chrome\.runtime\.sendMessage\(\{ kind: 'smart-script-trust-site' \}/.test(BRIDGE),
+    'the trust message carries a payload, which is a field to forge');
+  assert(BACKGROUND.includes("'smart-script-status'") && BACKGROUND.includes("'smart-script-trust-site'"),
+    'the new kinds are not declared to the message router');
+}
+
 void (async () => {
   await testModesAndTrustScope();
   console.log('ok - Smart modes migrate stale rules and trust only the initiating site');
@@ -1025,7 +1200,11 @@ void (async () => {
   console.log('ok - first-party app hosts are excluded before any block is needed');
   testRegistrationAndBridgeBounds();
   console.log('ok - observer, isolated bridge, rate, and permission bounds hold');
-  console.log('\n12 Smart Script Shield recovery test groups passed.');
+  await testSilentBreakageIsExplained();
+  console.log('ok - a page the shield broke is explained, and trust cannot be aimed elsewhere');
+  testStalledPageDetection();
+  console.log('ok - only the broken-page shapes ask, and the notice is owned and non-modal');
+  console.log('\n14 Smart Script Shield recovery test groups passed.');
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;

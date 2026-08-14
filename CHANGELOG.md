@@ -71,6 +71,16 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- WardenOne now says when it is the reason a page will not load. Smart Script Shield
+  blocks third-party scripts, which is right almost every time and invisible when it
+  is -- but when a site genuinely needed one, the page simply failed. A black video
+  player, an app stuck on its splash screen, a verification box that never appeared,
+  and nothing anywhere naming the feature that did it. The only way out was to already
+  suspect the extension, find the Script Shield panel and trust the site by hand. Now,
+  if the shield refused something on a page and that page is still blank or stalled a
+  few seconds later, a small notice appears in the corner: what was blocked, and a
+  button to allow scripts on that site and reload. Both halves have to be true, so an
+  ordinary page that had an ad script blocked and works fine stays quiet.
 - Made the nine warnings that appear on the page behave like the dialogs they look
   like. The phishing block, the adult-site gate, the redirect-chain and IP-logger
   notices, the tech-support scam lock, the script-drift, permission-chain, new-sign-in
