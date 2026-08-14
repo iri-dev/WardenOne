@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>Someone stole WardenOne and used it to hand people malware | WardenOne</title>
-<meta name="description" content="In August 2026 my privacy extension was republished under someone else's name, with the download link pointed at a trojan. What happened, how I proved the work was mine, and what to do if you ran the file.">
+<meta name="description" content="In August 2026 my privacy extension was republished by the GitHub account ajpc6338, with the download link on ajpc6338.github.io pointed at a trojan. What happened, how I proved the work was mine, and what to do if you ran the file.">
 <link rel="canonical" href="https://iri-dev.github.io/WardenOne/stolen">
 <meta name="author" content="Iri">
 
 <meta property="og:type" content="article">
 <meta property="og:title" content="Someone stole WardenOne and used it to hand people malware">
-<meta property="og:description" content="My privacy extension was republished under someone else's name, with the download pointed at a credential stealer. What happened, and what to do if you ran it.">
+<meta property="og:description" content="My privacy extension was republished by the GitHub account ajpc6338, with the download pointed at a credential stealer. What happened, and what to do if you ran it.">
 <meta property="og:url" content="https://iri-dev.github.io/WardenOne/stolen">
 <link rel="icon" href="icons/icon128.png" type="image/png">
 
@@ -236,7 +236,7 @@
   <p class="meta">Written 14 August 2026 by Iri 💜</p>
 
   <div class="warn">
-    <h2>If you downloaded WardenOne from anywhere except my GitHub, read this first</h2>
+    <h2>If you downloaded WardenOne from <code>ajpc6338.github.io</code>, read this first</h2>
     <p>The file that site gave you was <strong>not WardenOne</strong>. It was not a browser
       extension at all. It was a Windows program that steals what your browser has saved —
       passwords, cookies, sessions.</p>
@@ -259,14 +259,17 @@
 
   <h2>💜 What happened</h2>
 
-  <p>On 9 August 2026 I found my project on someone else's GitHub account. Not forked — forking is
-    fine, that is what open source is for, and it would have said so right at the top. This was
-    uploaded as though they had written it.</p>
+  <p>On 9 August 2026 I found my project on a GitHub account called <code>ajpc6338</code>, at
+    <code>github.com/ajpc6338/WardenOne</code>. Not forked — forking is fine, that is what open
+    source is for, and it would have said so right at the top. This was uploaded as though they
+    had written it.</p>
 
   <p>They had not touched much. They did not need to. They changed the links.</p>
 
   <p>Every download button, every support link, and the line telling you where the official
-    project lives — all of it now pointed at a website they controlled. My release file was
+    project lives — all of it now pointed at a website they controlled,
+    <code>ajpc6338.github.io</code>, which their README called "the official repository" for my
+    project. My release file was
     deleted and replaced with one called <code>Warden-One-1.1.zip</code>. There has never been a
     version 1.1 of WardenOne. I was on 1.0.0.</p>
 
@@ -369,7 +372,12 @@
     <li>Put a warning at the top of my README while it was still live.</li>
   </ul>
 
-  <p>The account is gone now.</p>
+  <p>GitHub has since removed the <code>ajpc6338</code> account, and
+    <code>ajpc6338.github.io</code> no longer resolves.</p>
+
+  <p>I am naming the account rather than the person, deliberately. I know what the account did —
+    it is all recorded above, and every bit of it can be checked. I do not know who was behind
+    it, and I am not going to guess.</p>
 
   <h2>💜 If this happens to you</h2>
 
