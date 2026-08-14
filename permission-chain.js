@@ -212,17 +212,34 @@
       const original = N.requestPermission;
       const wrapped = function (callback) {
         emit('notifications', 'request');
+        // ONE outcome per request, whatever the implementation does (L22).
+        //
+        // requestPermission has two shapes: it returns a Promise and it accepts a legacy callback,
+        // and a browser is allowed to honour both for the same call. Emitting from each path
+        // independently then reported a single prompt twice -- two log entries for one decision,
+        // and two charges against the rate limit that keeps this instrumentation cheap. Which of
+        // the two arrives first does not matter; only that the second one is ignored.
+        let settled = false;
+        const settle = (kind, detail) => {
+          if (settled) return;
+          settled = true;
+          emit('notifications', kind, detail);
+        };
+        const outcome = (result) => settle(
+          result === 'granted' ? 'granted' : 'denied',
+          { result: String(result || '') },
+        );
         const cb = typeof callback === 'function' ? function (result) {
-          emit('notifications', result === 'granted' ? 'granted' : 'denied', { result: String(result || '') });
+          outcome(result);
           return callback.apply(this, arguments);
         } : callback;
         const ret = original.call(this, cb);
         if (ret && typeof ret.then === 'function') {
           return ret.then((result) => {
-            emit('notifications', result === 'granted' ? 'granted' : 'denied', { result: String(result || '') });
+            outcome(result);
             return result;
           }, (err) => {
-            emit('notifications', 'error');
+            settle('error');
             throw err;
           });
         }

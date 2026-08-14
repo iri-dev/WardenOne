@@ -71,6 +71,10 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- A site asking for notification permission is now recorded once rather than twice. The
+  browser can answer that request through two different mechanisms at the same time,
+  and WardenOne was logging both — so one prompt appeared as two entries in your
+  activity log and used up twice its share of the limit that keeps this cheap.
 - The breach-history check now gives up instead of hanging. It had no time limit, so a
   server that accepted the connection and then said nothing left the button greyed out
   and the panel reading "Checking…" for as long as the connection stayed open. It now
