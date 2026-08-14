@@ -189,3 +189,111 @@ check('queueHistory buffers the sanitized copy, not the caller entry',
 
 if (failed) { console.error('\n' + failed + ' failed'); process.exit(1); }
 console.log('\nhistory privacy checks passed');
+
+// ---------------------------------------------------------------------------
+// M16. The writer wedge.
+//
+// flushHistory takes the whole batch, empties the live buffer, and sets __histWriting. The value it
+// then read back was accepted with `(x && x.wardenone_history) || []` -- no array check -- so a
+// truthy non-array made unshift throw. That throw happened inside an ASYNC callback, which the
+// surrounding try never covered, so the lock was never released: the batch was gone from memory and
+// from session storage, and every future write returned early for the rest of the worker's life.
+//
+// One corrupt stored value, history dead until the extension restarted.
+// ---------------------------------------------------------------------------
+{
+  const writerFrom = source.indexOf('function scheduleHistoryFlush()');
+  const writerTo = source.indexOf('// Reset the count when a tab starts loading');
+  if (writerFrom < 0 || writerTo <= writerFrom) throw new Error('history writer source markers not found');
+
+  function runWriter(storedValue, opts) {
+    const options = opts || {};
+    const timers = [];
+    const box = {
+      __histTimer: null,
+      __histWriting: false,
+      __histBuffer: [{ url: 'https://a.example/', t: 1 }, { url: 'https://b.example/', t: 2 }],
+      __histPersistTimer: null,
+      persistCalls: 0,
+      sessionRemoved: 0,
+      setCalls: [],
+      thrown: null,
+    };
+    const sandbox = {
+      Object, Array, Set, String, Number, Math, JSON,
+      setTimeout: (fn) => { timers.push(fn); return timers.length; },
+      clearTimeout: () => {},
+      persistHistBuffer() { box.persistCalls++; },
+      pruneStorageIfNeeded: () => ({ catch: () => ({ finally: (f) => { f(); } }) }),
+      chrome: {
+        runtime: { lastError: options.getError || null },
+        storage: {
+          session: { remove() { box.sessionRemoved++; return { catch: () => {} }; } },
+          local: {
+            get(_k, cb) { cb({ wardenone_history: storedValue }); },
+            set(obj, cb) {
+              box.setCalls.push(obj.wardenone_history);
+              sandbox.chrome.runtime.lastError = options.setError || null;
+              cb();
+            },
+          },
+        },
+      },
+    };
+    // The module-scope history state lives in the sandbox so the lifted code mutates the same
+    // bindings the assertions read.
+    Object.defineProperties(sandbox, {
+      __histTimer: { get: () => box.__histTimer, set: (v) => { box.__histTimer = v; }, configurable: true },
+      __histWriting: { get: () => box.__histWriting, set: (v) => { box.__histWriting = v; }, configurable: true },
+      __histBuffer: { get: () => box.__histBuffer, set: (v) => { box.__histBuffer = v; }, configurable: true },
+      __histPersistTimer: { get: () => box.__histPersistTimer, set: (v) => { box.__histPersistTimer = v; }, configurable: true },
+    });
+    vm.createContext(sandbox);
+    vm.runInContext(source.slice(writerFrom, writerTo) + '\nthis.__flush = flushHistory;', sandbox);
+    try { sandbox.__flush(); } catch (e) { box.thrown = e; }
+    return box;
+  }
+
+  for (const [label, value] of [
+    ['a corrupt object', { corrupt: true }],
+    ['a corrupt string', 'not-an-array'],
+    ['a number', 42],
+    ['a null value', null],
+  ]) {
+    const r = runWriter(value);
+    check('M16 ' + label + ' does not wedge the writer lock',
+      r.__histWriting === false, '__histWriting stayed true');
+    check('M16 ' + label + ' does not lose the batch',
+      r.setCalls.length === 1 ? r.setCalls[0].length === 2 : r.__histBuffer.length === 2,
+      'batch was neither written nor restored');
+    check('M16 ' + label + ' throws nothing out of flushHistory',
+      r.thrown === null, String(r.thrown));
+  }
+
+  // A healthy array still writes, newest first, and only then drops the write-ahead copy.
+  {
+    const r = runWriter([{ url: 'https://old.example/', t: 0 }]);
+    check('M16 a valid array still writes', r.setCalls.length === 1);
+    check('M16 the batch is written newest-first ahead of existing history',
+      r.setCalls[0].length === 3 && r.setCalls[0][2].url === 'https://old.example/');
+    check('M16 the write-ahead copy is dropped only after the write is confirmed',
+      r.sessionRemoved === 1 && r.__histWriting === false);
+  }
+
+  // A failed set must restore, unlock and re-persist -- never silently drop.
+  {
+    const r = runWriter([], { setError: { message: 'QUOTA_BYTES exceeded' } });
+    check('M16 a failed write restores the batch', r.__histBuffer.length === 2);
+    check('M16 a failed write unlocks', r.__histWriting === false);
+    check('M16 a failed write re-persists the write-ahead copy', r.persistCalls >= 1);
+    check('M16 a failed write does not drop the write-ahead copy', r.sessionRemoved === 0);
+  }
+
+  // The Activity Log must survive the same corrupt value.
+  {
+    const ui = fs.readFileSync('history.js', 'utf8');
+    check('M16 the Activity Log normalises a corrupt history value',
+      /Array\.isArray\(raw\)\s*\?\s*raw\s*:\s*\[\]/.test(ui)
+        && !/render\(\(x && x\.wardenone_history\) \|\| \[\]\)/.test(ui));
+  }
+}
