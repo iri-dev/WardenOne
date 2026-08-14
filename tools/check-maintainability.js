@@ -208,6 +208,32 @@ function checkContentBuild() {
   'tools/test-dnr-budget.js',
   'tools/test-x-compatibility.js',
   'tools/test-behavioral-false-positives.js',
+  // Suites that existed but were never referenced here. They cover engine test-shim isolation,
+  // guard lifecycle and re-injection, JSON-prune stacking, page ownership of closed-shadow UI,
+  // worker/state recovery, quota pruning, engine start-up and cosmetic-feed provenance -- all
+  // regression areas created by earlier fixes in this audit, and all previously unenforced.
+  'tools/test-cosmetic-provenance.js',
+  'tools/test-engine-ambient.js',
+  'tools/test-engine-startup.js',
+  'tools/test-guard-lifecycle.js',
+  'tools/test-json-prune-stacking.js',
+  'tools/test-owned-ui.js',
+  'tools/test-stale-state.js',
+  'tools/test-storage-prune-ladder.js',
+  // Shipped root scripts. Several of these were only ever parsed incidentally, by whichever
+  // behavioural test happened to read them -- and a test that regex-reads a file has not parsed it.
+  // A syntax error in any of them shipped without the gate noticing.
+  'anti-redirect.js',
+  'cert-error.js',
+  'consent-reject.js',
+  'domain-utils.js',
+  'history.js',
+  'network.js',
+  'oauth-guard.js',
+  'permission-chain.js',
+  'redirect-warning.js',
+  'safe-browsing-block.js',
+  'yt-adblock.js',
 ].forEach(checkSyntax);
 
 [
@@ -263,6 +289,16 @@ checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js
 checkCommand('repair honesty tests', ['tools/test-repair-honesty.js']);
 checkCommand('engine teardown tests', ['tools/test-engine-teardown.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
+// Previously orphaned suites. All eight passed when run by hand, which was precisely the danger:
+// the source was fine, so nothing drew attention to the fact that nothing was checking it.
+checkCommand('engine ambient tests', ['tools/test-engine-ambient.js']);
+checkCommand('engine start-up tests', ['tools/test-engine-startup.js']);
+checkCommand('guard lifecycle tests', ['tools/test-guard-lifecycle.js']);
+checkCommand('JSON-prune stacking tests', ['tools/test-json-prune-stacking.js']);
+checkCommand('owned-UI tests', ['tools/test-owned-ui.js']);
+checkCommand('stale-state tests', ['tools/test-stale-state.js']);
+checkCommand('storage prune ladder tests', ['tools/test-storage-prune-ladder.js']);
+checkCommand('cosmetic provenance tests', ['tools/test-cosmetic-provenance.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
 checkCommand('behavioural false-positive tests', ['tools/test-behavioral-false-positives.js']);
 checkCommand('google cleanup tests', ['tools/test-google-cleanup.js']);
@@ -286,6 +322,65 @@ checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js
 checkCommand('X compatibility tests', ['tools/test-x-compatibility.js']);
 checkCommand('YouTube adblock tests', ['tools/test-yt-adblock.js']);
 checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);
+
+// ---------------------------------------------------------------------------
+// Coverage meta-checks (M15).
+//
+// Eight suites and eleven shipped scripts had drifted outside this gate. Nothing was failing --
+// running the orphans by hand passed -- but a future regression in any of them would have left the
+// official gate green, which is the whole problem: a suite nobody runs is worse than no suite,
+// because it looks like coverage.
+//
+// Adding them to the lists above fixes today. These checks fix tomorrow: they read the filesystem
+// and fail when anything is neither covered nor deliberately excluded, so the next file added
+// cannot quietly escape. A hand-maintained list is what drifted; a second hand-maintained list
+// would drift the same way.
+// ---------------------------------------------------------------------------
+const gateSource = read('tools/check-maintainability.js') || '';
+
+// Suites that exist but are neither syntax-checked nor executed here.
+{
+  const onDisk = fs.readdirSync('tools')
+    .filter((f) => /^test-.*\.js$/.test(f))
+    .map((f) => 'tools/' + f);
+  const orphans = onDisk.filter((f) => !gateSource.includes("'" + f + "'"));
+  if (orphans.length) {
+    fail('test suites not wired into the gate: ' + orphans.join(', '));
+  } else {
+    console.log('[ok] every tools/test-*.js is wired into the gate (' + onDisk.length + ' suites)');
+  }
+}
+
+// Shipped root JavaScript that is never syntax-checked. content.min.js is generated and gets its
+// own provenance and build checks; everything else must be parsed here.
+{
+  const GENERATED = new Set(['content.min.js']);
+  const shipped = fs.readdirSync('.')
+    .filter((f) => /\.js$/.test(f) && !GENERATED.has(f));
+  const unchecked = shipped.filter((f) => !gateSource.includes("'" + f + "'"));
+  if (unchecked.length) {
+    fail('shipped scripts with no syntax check: ' + unchecked.join(', '));
+  } else {
+    console.log('[ok] every shipped root script is syntax-checked (' + shipped.length + ' files)');
+  }
+}
+
+// Every content script the manifest actually loads must be one of the files above. A script can be
+// shipped, listed in the manifest, and still never parsed here if it lives outside the repo root.
+{
+  let manifest = null;
+  try { manifest = JSON.parse(read('manifest.json') || '{}'); } catch (_) {}
+  const declared = new Set();
+  for (const entry of (manifest && manifest.content_scripts) || []) {
+    for (const file of entry.js || []) declared.add(file);
+  }
+  const missing = [...declared].filter((f) => f !== 'content.min.js' && !gateSource.includes("'" + f + "'"));
+  if (missing.length) {
+    fail('manifest content scripts with no syntax check: ' + missing.join(', '));
+  } else {
+    console.log('[ok] every manifest content script is syntax-checked (' + declared.size + ' declared)');
+  }
+}
 
 console.log('[info] background.js lines=' + lineCount('background.js'));
 console.log('[info] background-startup.js lines=' + lineCount('background-startup.js'));
