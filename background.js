@@ -7906,7 +7906,14 @@ const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
 // blocked script in that exact frame, and stage-two entries still exclude hosts known for tracking
 // or fingerprinting. Unlike 'media-embed' it never matches a parent frame's pending error either,
 // so its reach is the narrowest of the four.
-const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video', 'route-blocked']);
+// 'page-blocked' is 'route-blocked' for an ordinary top-level page: the document painted nothing.
+// It is the shape a site takes when its own application code lives on a separate registrable
+// domain and the blanket third-party rule refuses it, and until it existed such a page had no
+// recovery path at all -- it simply stayed blank. It grants no more than the others do:
+// handleSmartScriptPlayerContext still acts only where webRequest independently recorded a blocked
+// script in that exact frame, the exclusion is per-tab and reloads once, and stage-two entries
+// still refuse hosts known for tracking or fingerprinting.
+const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video', 'route-blocked', 'page-blocked']);
 const SMART_SCRIPT_PLAYER_CONTEXTS = new Map();
 const SMART_SCRIPT_PLAYER_INTENTS = new Map();
 const SMART_SCRIPT_PENDING_ERRORS = new Map();

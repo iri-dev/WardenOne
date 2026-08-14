@@ -699,10 +699,19 @@
   let smartPlayerDeadlockDue = false;
   function smartPlayerDeadlock() {
     if (!smartPlayerDeadlockDue) return '';
-    // Same scoping as the evidence test: a watch-shaped route, or a subframe, which is a player
-    // context in its own right. An ordinary top-level page gains nothing here.
-    if (!smartPlayerRoute() && window.top === window) return '';
-    return 'route-blocked';
+    // A watch-shaped route, or a subframe, which is a player context in its own right.
+    if (smartPlayerRoute() || window.top !== window) return 'route-blocked';
+    // An ordinary top-level page that painted nothing is the OTHER shape this happens in, and it
+    // used to get no recovery at all -- the scoping here said such a page "gains nothing", which
+    // was true when the only thing recovery could rescue was a player. A site whose own
+    // application code sits on a separate registrable domain has it refused as third-party and
+    // then never paints, which is H13, M35, and a black page reported from live use.
+    //
+    // It earns a look, not an allowance. Nothing here decides anything: background acts only where
+    // webRequest independently observed a blocked third-party script in this exact frame, which no
+    // page can manufacture, and recovery still refuses hosts known for tracking or fingerprinting.
+    // Blankness alone, on a page that blocked nothing, does nothing at all.
+    return smartPageIsBlank() ? 'page-blocked' : '';
   }
   function sendSmartPlayerContext(force) {
     const now = Date.now();
@@ -877,6 +886,22 @@
   // A detector broad enough to catch "one widget on an otherwise working page did not render"
   // would fire on working pages, and a notice that cries wolf is worse than the silence it
   // replaces -- people learn to dismiss it and then it is there for nothing.
+  // "This page painted nothing." One definition, two callers with different patience: the recovery
+  // signal above asks at four seconds and needs only this, while the notice below waits until the
+  // page has had every chance and also counts a page that never finished loading. Two separate
+  // notions of blank would drift into disagreeing about the same page.
+  function smartPageIsBlank() {
+    try {
+      if (document.prerendering) return false;
+      // A canvas or a video IS the content on plenty of pages, and neither carries text.
+      if (document.querySelector('video,canvas')) return false;
+      const text = String((document.body && document.body.innerText) || '').replace(/\s+/g, ' ').trim();
+      return text.length <= 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function smartScriptPageStalled() {
     try {
       if (document.prerendering) return '';
@@ -884,10 +909,7 @@
       // A watch or embed route that painted no player: loaded, but the one thing it exists to
       // show is missing.
       if (smartPlayerRoute() && !document.querySelector('video')) return 'the player never appeared';
-      if (document.querySelector('video,canvas')) return '';
-      const text = String((document.body && document.body.innerText) || '').replace(/\s+/g, ' ').trim();
-      if (text.length > 200) return '';
-      return 'nothing rendered';
+      return smartPageIsBlank() ? 'nothing rendered' : '';
     } catch (_) {
       return '';
     }

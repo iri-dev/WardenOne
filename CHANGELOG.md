@@ -71,6 +71,15 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- Smart Script Shield can now recover a page it has blanked. Plenty of sites serve their
+  own code from a second address, which the shield reads as third-party and refuses --
+  and then the page never paints at all. It could already spot and undo this on video
+  pages, because that is where it was first found, but an ordinary page that came up
+  blank had no way back: it just stayed blank. A blank page is now the same signal a
+  blank video player already was. Nothing is taken on trust — the extension still only
+  acts where it independently saw a script of its own refused on that exact page, it
+  relaxes the rule for that tab alone, and it still refuses to un-block anything known
+  for tracking or fingerprinting.
 - The adult-site warning no longer appears on a search results page, or on any page that
   merely mentions the subject. It scored a page partly on its address and partly on its
   title, but the title alone was enough to reach the threshold — so searching for an
