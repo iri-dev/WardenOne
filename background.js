@@ -12425,25 +12425,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async
   }
 
-  if (msg && msg.kind === 'breach-check' && msg.prefix) {
-    (async () => {
-      try {
-        const prefix = String(msg.prefix).toUpperCase().slice(0, 5);
-        if (!/^[0-9A-F]{5}$/.test(prefix)) { sendResponse({ ok: false, error: 'bad prefix' }); return; }
-        const res = await fetch('https://api.pwnedpasswords.com/range/' + prefix, {
-          headers: { 'Add-Padding': 'true' }, // padding hides the real count from network observers
-          credentials: 'omit',
-          redirect: 'error',
-        });
-        const text = await res.text();
-        // return the raw suffix:count list; the popup matches its own suffix locally
-        sendResponse({ ok: true, body: text });
-      } catch (e) {
-        sendResponse({ ok: false, error: String(e) });
-      }
-    })();
-    return true; // async
-  }
 
   if (msg && msg.kind === 'clear-site-data' && msg.origin) {
     (async () => {
