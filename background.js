@@ -7106,6 +7106,22 @@ async function handleTrustError(details) {
     if (Date.now() - last < TRUST_ERROR_COOLDOWN_MS) return;
     recentTrustErrors[cooldownKey] = Date.now();
 
+    // The tab can move while the config read above is pending: the user goes back, the site
+    // redirects, or the tab is reused for something else. Everything below replaces what is in
+    // that tab NOW, so without this the handler for a navigation that is no longer happening
+    // takes down a page the user did ask for -- and reports it in the activity log as blocked.
+    //
+    // The Safe Browsing navigation path already rechecks exactly this, in exactly this place,
+    // after claiming its cooldown; the certificate path never did. Same shape here on purpose,
+    // including failing open on a tab that cannot be read: a tab we cannot see is one we cannot
+    // prove has moved, and tabsUpdate on a tab that has gone away is harmless anyway.
+    const expected = normalizeSafeBrowsingUrl(url);
+    try {
+      const tab = await tabsGet(details.tabId);
+      const current = String((tab && (tab.pendingUrl || tab.url)) || '');
+      if (expected && current && normalizeSafeBrowsingUrl(current) !== expected) return;
+    } catch (_) {}
+
     bumpBadge(details.tabId);
     queueHistory({
       type: info.kind,

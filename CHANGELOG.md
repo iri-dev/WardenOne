@@ -71,6 +71,12 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- The certificate warning no longer replaces a page you actually asked for. When a site
+  fails its security check, WardenOne reads your settings before showing the warning
+  page -- and if you pressed back, or the site sent you somewhere else, or the tab was
+  reused in that moment, the warning still landed and took down whatever had arrived in
+  the meantime, then recorded it as blocked. It now confirms the tab is still on the
+  failed address before doing anything, and quietly stops if it is not.
 - Two switches now take effect when you flip them. Deep cryptominer detection and
   "flag junk search results" each load an extra piece of code only while they are on,
   and the check that decides whether anything needs loading did not look at either
