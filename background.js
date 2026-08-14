@@ -12638,6 +12638,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           '__wardenOneMinerWatch',
           '__wardenOneSearchJunk',
         ];
+        // The marker Repair writes over a live engine to force a clean reinstall. Declared here,
+        // ahead of both the writer and the health check, so one name serves both: if initialisation
+        // throws before the engine sets its real ready version, this value is what survives, and a
+        // check that treats any non-empty string as healthy certifies the tab on the strength of
+        // Repair's own scribble. That is what H8 observed.
+        const WO_STALE_SENTINEL = 'wo-stale';
         const markWardenOneCopiesStale = async (target, world) => {
           const flags = world === 'MAIN' ? MAIN_WORLD_INSTALL_FLAGS : ISOLATED_WORLD_INSTALL_FLAGS;
           try {
@@ -12645,14 +12651,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               target,
               world,
               injectImmediately: true,
-              args: [flags],
+              // The sentinel is passed in rather than written as a literal here: this function is
+              // serialised into the page, so it cannot see the constant the health check reads.
+              // Two copies of the same string in two scopes is exactly how the check and the write
+              // drift apart, and the check is the thing that decides whether Repair tells the truth.
+              args: [flags, WO_STALE_SENTINEL],
               // Only rewrite a flag that is actually set. Creating one on a page that never had
               // WardenOne in it would be a pointless global, and on a healthy tab this still
               // forces a clean reinstall, which is what pressing Repair asks for.
-              func: (names) => {
+              func: (names, sentinel) => {
                 for (const name of names) {
                   try {
-                    if (window[name]) window[name] = 'wo-stale';
+                    if (window[name]) window[name] = sentinel;
                   } catch (_) { /* cross-origin or frozen window */ }
                 }
               },
@@ -12732,8 +12742,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const engineVersion = await engineVersionInTab({ tabId: t.id, frameIds: [0] });
             if (engineVersion === null) {
               // Not scriptable any more (navigated away, closed, restricted). Not a failure.
-            } else if (!engineVersion) {
+            } else if (!engineVersion || engineVersion === WO_STALE_SENTINEL) {
+              // Empty means initialisation never reached its final assignment. The sentinel means
+              // it threw after Repair marked the old engine stale, so this is Repair's own value
+              // being read back. Both are failures, and the sentinel used to read as healthy.
               failedTabs++;
+            } else if (engineVersion !== WO_CLIENT_VERSION) {
+              // A real version string, but not this build's. An older engine from a previous
+              // extension lifetime, or anything else that wrote the marker. Never re-armed.
+              staleTabs++;
             } else if (await bridgeAnswers(t.id)) {
               reinjected++;
             } else {
@@ -12751,15 +12768,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (staleTabs > 0) {
           report.repaired.push(staleTabs + ' open tab(s) still run an older copy of WardenOne and need a reload to re-arm');
         }
+        if (failedTabs > 0) {
+          report.repaired.push(failedTabs + ' open tab(s) did not come back up after re-injection and need a reload');
+        }
         if (skippedCompatFrames > 0) report.repaired.push('Left ' + skippedCompatFrames + ' sensitive frame(s) in compatibility mode');
         // Reported honestly: a tab holding an orphaned copy is not re-armed, so this
         // check does not pass while any remain. Tabs like chrome:// legitimately reject
         // injection and are not counted either way.
+        // failedTabs was counted and then dropped: it appeared in neither the name nor ok, so a tab
+        // whose engine never came back was reported as a pass. Both kinds of not-re-armed count.
+        const notReArmed = staleTabs + failedTabs;
         report.checks.push({
-          name: staleTabs > 0
-            ? ('Open tabs re-armed (' + reinjected + ' of ' + tabs.length + '; ' + staleTabs + ' need a reload)')
+          name: notReArmed > 0
+            ? ('Open tabs re-armed (' + reinjected + ' of ' + tabs.length + '; ' + notReArmed + ' need a reload)')
             : ('Open tabs re-armed (' + reinjected + ' of ' + tabs.length + ')'),
-          ok: staleTabs === 0,
+          ok: notReArmed === 0,
         });
       } catch (e) {
         report.checks.push({ name: 'Open tabs re-armed', ok: false });
