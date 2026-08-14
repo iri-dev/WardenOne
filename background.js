@@ -418,38 +418,71 @@ function flushHistory() {
   // round-trip accumulate in a fresh buffer and get flushed on the next tick.
   const pending = __histBuffer;
   __histBuffer = [];
-  // Clear the session-storage buffer now that we're about to persist to local.
-  try { chrome.storage.session.remove('__wardenone_hist_buffer').catch(() => {}); } catch (_) {}
-  try {
-    chrome.storage.local.get('wardenone_history', (x) => {
-      const hist = (x && x.wardenone_history) || [];
-      // pending is oldest-first; unshift in reverse so newest ends up at index 0
-      for (let i = pending.length - 1; i >= 0; i--) hist.unshift(pending[i]);
-      if (hist.length > 200) hist.length = 200;
-      chrome.storage.local.set({ wardenone_history: hist }, () => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          __histBuffer = pending.concat(__histBuffer);
-          __histWriting = false;
-          // flushHistory cleared the session buffer before this write. The write failed
-          // and we just restored the entries in memory, so re-persist them -- otherwise a
-          // SW kill in this window loses exactly the entries this mechanism protects.
-          persistHistBuffer();
-          pruneStorageIfNeeded('history-write-failed')
-            .catch(() => {})
-            .finally(() => { if (__histBuffer.length) scheduleHistoryFlush(); });
-          return;
-        }
-        __histWriting = false;
-        if (__histBuffer.length) scheduleHistoryFlush(); // drain anything that arrived mid-write
-      });
-    });
-  } catch (_) {
-    // on failure, put the entries back so they aren't lost -- and re-persist, since the
-    // session buffer was already cleared above.
+  // The session write-ahead copy is deliberately NOT cleared here. Clearing it at this point left
+  // a window in which these entries existed nowhere durable at all: lifted out of the buffer,
+  // deleted from session storage, and the local write not yet acknowledged. It is dropped after the
+  // write is confirmed instead, and only when nothing new has arrived meanwhile.
+  //
+  // Every exit path from here must unlock. __histWriting is a lock with no timeout and no owner:
+  // if it is left true, scheduleHistoryFlush returns early forever and history stops writing for
+  // the rest of the worker's life, with this batch already gone from memory and from session.
+  const giveBack = () => {
     __histBuffer = pending.concat(__histBuffer);
     __histWriting = false;
     persistHistBuffer();
+  };
+  try {
+    chrome.storage.local.get('wardenone_history', (x) => {
+      // This body runs in an asynchronous callback, so it is NOT covered by the try below -- that
+      // one only guards the synchronous get() call. A throw in here used to escape entirely and
+      // wedge the writer permanently. One corrupt stored value was enough to do it.
+      try {
+        if (chrome.runtime.lastError) {
+          giveBack();
+          if (__histBuffer.length) scheduleHistoryFlush();
+          return;
+        }
+        // A stored value that is not an array is corrupt, not history: rebuild from empty rather
+        // than trying to interpret it. Copying matters as much as the check -- unshift must not be
+        // called on whatever object the store handed back.
+        const raw = x && x.wardenone_history;
+        const hist = Array.isArray(raw) ? raw.slice() : [];
+        // pending is oldest-first; unshift in reverse so newest ends up at index 0
+        for (let i = pending.length - 1; i >= 0; i--) hist.unshift(pending[i]);
+        if (hist.length > 200) hist.length = 200;
+        chrome.storage.local.set({ wardenone_history: hist }, () => {
+          try {
+            const err = chrome.runtime.lastError;
+            if (err) {
+              // Restored in memory, so re-persist -- otherwise a worker kill in this window loses
+              // exactly the entries this mechanism exists to protect.
+              giveBack();
+              pruneStorageIfNeeded('history-write-failed')
+                .catch(() => {})
+                .finally(() => { if (__histBuffer.length) scheduleHistoryFlush(); });
+              return;
+            }
+            __histWriting = false;
+            if (__histBuffer.length) {
+              // Entries arrived during the round-trip. They are the current contents of the session
+              // copy, so it must be rewritten rather than removed, or clearing would erase them.
+              persistHistBuffer();
+              scheduleHistoryFlush();
+            } else {
+              try { chrome.storage.session.remove('__wardenone_hist_buffer').catch(() => {}); } catch (_) {}
+            }
+          } catch (_) {
+            giveBack();
+            if (__histBuffer.length) scheduleHistoryFlush();
+          }
+        });
+      } catch (_) {
+        giveBack();
+        if (__histBuffer.length) scheduleHistoryFlush();
+      }
+    });
+  } catch (_) {
+    giveBack();
   }
 }
 

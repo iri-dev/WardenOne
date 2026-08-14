@@ -461,7 +461,11 @@ function render(hist) {
 
 function load() {
   chrome.storage.local.get('wardenone_history', (x) => {
-    render((x && x.wardenone_history) || []);
+    // A truthy non-array reached render() and threw on forEach, so one corrupt stored value took
+    // the Activity Log down as well as the writer. Treated as empty rather than repaired here: this
+    // page's job is to stay usable, and the writer rebuilds the array on its next flush.
+    const raw = x && x.wardenone_history;
+    render(Array.isArray(raw) ? raw : []);
   });
 }
 
