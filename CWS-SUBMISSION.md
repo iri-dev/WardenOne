@@ -112,13 +112,40 @@ disclose rather than under-report. Based on the code:
   - *Not selling/transferring data to third parties outside approved use cases* — yes.
   - *Not using/transferring data for purposes unrelated to the single purpose* — yes.
   - *Not using/transferring data for creditworthiness/lending* — yes.
-- **Judgment call — "Website content" / "Web history" categories:** WardenOne reads page
-  content and URLs **locally** for protection and does not send them to the developer. The
-  opt-in reputation features transmit a specific URL/hash to a **third-party service the
-  user chose and keyed**, and the opt-in breach check sends a 5-char password-hash prefix
-  (k-anonymity) to Have I Been Pwned. If the review requires disclosing these opt-in,
-  user-initiated, third-party transmissions, describe them exactly as the privacy policy
-  does. Leaning toward disclosure here is the safer path.
+- **"Website content" and "Web history" — tick both.** An earlier draft of this checklist
+  treated these as optional because most processing is local. That reasoning does not match
+  current guidance: the store defines *handling* as collection, transmission, **use** or
+  sharing, and its User Data FAQ is explicit that local-only handling still has to be
+  declared on the Privacy practices form. Declaring is not an admission that anything is
+  sent anywhere; the form asks what the extension handles, and the policy explains where it
+  stays. Under-declaring here is the one mistake that is hard to undo.
+
+### Field-by-field inventory
+
+Handled **on the device only** — never transmitted anywhere:
+
+| Data | Why it is handled | Where it goes |
+|---|---|---|
+| Page URLs | Phishing, redirect-chain and scam checks | Stays on device |
+| Page content / DOM | Overlay cleaning, cosmetic filtering, form-field guards | Stays on device |
+| Form field values | Token-exfiltration and credential-theft checks | Stays on device; never stored |
+| Request metadata | Tracker, ad and fingerprint-script blocking | Stays on device |
+| Activity history | The Activity Log the user can read and clear | `storage.local`, capped at 200 entries, query strings stripped |
+| Downloaded-file metadata | Download safety grading | Stays on device |
+
+Transmitted **only after an explicit opt-in**, and only to the provider chosen:
+
+| Data | Trigger | Recipient |
+|---|---|---|
+| A site's registrable domain | Clicking **Check breach history** | `haveibeenpwned.com` |
+| A URL, domain or file hash | Enabling that reputation provider | Only the enabled provider |
+| A domain | Enabling the login-page age check | `rdap.org` |
+
+Nothing in either table reaches the developer, because there is no server to reach.
+
+- **Limited Use affirmation:** required on the extension's privacy page, and now present —
+  see the *Chrome Web Store Limited Use* section of `PRIVACY.md`. It must stay there; the
+  dashboard checks the hosted page.
 
 **Privacy policy URL — paste this into the dashboard's Privacy policy field:**
 

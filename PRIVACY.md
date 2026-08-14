@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: July 21, 2026**
+**Last updated: August 14, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -174,6 +174,29 @@ WardenOne does not collect or transmit: your browsing history, page contents, fo
 keystrokes, credentials, cookies, location, or any personally identifiable information.
 There is no advertising, no data brokerage, and no third-party tracking introduced by
 WardenOne.
+
+---
+
+## Chrome Web Store Limited Use
+
+WardenOne's use and transfer of information received from Google APIs adheres to the
+[Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq),
+including the **Limited Use** requirements.
+
+Concretely, and in the same terms that policy uses:
+
+- User data is used **only** to provide or improve the single purpose stated in the listing —
+  protecting the person using the browser.
+- User data is **not** transferred to third parties except where a person has explicitly
+  enabled an optional reputation or breach provider, at which point the request goes to the
+  provider they chose. Those providers are independent data controllers.
+- User data is **never** transferred or used for advertising, ad targeting, personalisation,
+  credit assessment, or lending.
+- No human reads user data. There is no server to read it on; nothing is transmitted to the
+  developer at all.
+
+WardenOne uses no Google account sign-in and requests no OAuth scopes. Google Safe Browsing
+is an optional, off-by-default lookup that a person enables with their own API key.
 
 ---
 
