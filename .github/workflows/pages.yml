@@ -16,17 +16,17 @@
 # it to HTML at /PRIVACY. Uploading raw markdown instead would 404 that URL.
 name: Pages
 
+# Deployed on request, not on push.
+#
+# Narrowing the trigger to the published documents was not enough: CHANGELOG.md is one of them and
+# it changes with almost every user-visible fix, so the Deployments list still grew an entry per
+# commit. The site content it would have republished each time is a release-note edit nobody is
+# waiting on.
+#
+# So there is no push trigger. Run this workflow when something on the site actually needs to go
+# live -- in particular after editing PRIVACY.md, because the Web Store listing points at the
+# rendered copy of it and a stale one would be a policy claim that no longer matches the code.
 on:
-  push:
-    branches: [main]
-    # Only the published documents trigger a deploy. Code changes do not.
-    paths:
-      - 'PRIVACY.md'
-      - 'SUPPORT.md'
-      - 'CHANGELOG.md'
-      - 'CREDITS.md'
-      - 'site/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
