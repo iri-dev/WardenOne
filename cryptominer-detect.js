@@ -182,6 +182,8 @@
   var stoppedCount = 0;
   var firstTell = '';
   var minerSources = Object.create(null);  /* url -> true, for respawn */
+  var sourceReadsInFlight = Object.create(null);  /* url -> 1 while its source is being read */
+  var SOURCE_READ_TIMEOUT_MS = 5000;
   var liveByUrl = Object.create(null);     /* url -> [worker] */
 
   function trackWorker(url, w) {
@@ -275,6 +277,36 @@
     if (!reported) { reported = true; announce('blocked_cryptominer', tell); }
   }
 
+  /* Stop reading at the cap instead of buffering the whole body and slicing afterwards (L17).
+     MAX_SOURCE_BYTES always bounded what was MATCHED; it never bounded what was held in memory,
+     so a page could hand this an arbitrarily large "worker script" and have it all read in before
+     the limit was applied. Matching semantics are unchanged -- still the first 800 KB. */
+  function readCapped(res) {
+    if (!res || !res.body || typeof res.body.getReader !== 'function') {
+      return res.text().then(function (t) { return String(t || '').slice(0, MAX_SOURCE_BYTES); });
+    }
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var bytes = 0;
+    var text = '';
+    var pump = function () {
+      return reader.read().then(function (chunk) {
+        if (!chunk || chunk.done) { text += decoder.decode(); return text; }
+        var value = chunk.value;
+        if (value) {
+          bytes += Number(value.byteLength || value.length || 0);
+          text += decoder.decode(value, { stream: true });
+          if (bytes >= MAX_SOURCE_BYTES) {
+            try { reader.cancel(); } catch (_) {}
+            return text.slice(0, MAX_SOURCE_BYTES);
+          }
+        }
+        return pump();
+      });
+    };
+    return pump();
+  }
+
   function scanWorkerSource(url, w) {
     var href = String(url || '');
     if (!href) return;
@@ -292,16 +324,30 @@
         if (!/^https?:$/.test(u.protocol)) return;
       } catch (_) { return; }
     }
+    /* One read per URL in flight. A page that starts the same worker repeatedly would otherwise
+       get one fetch each, and the scan budget only counts starts, not concurrent reads (L17). */
+    if (sourceReadsInFlight[href]) return;
     scanned++;
+    sourceReadsInFlight[href] = 1;
+    var done = function () { delete sourceReadsInFlight[href]; };
     try {
       /* same-origin or blob: only, so this is served from cache or memory and
          does not put a new request on the wire for a third party. */
-      fetch(href).then(function (r) { return r.text(); }).then(function (src) {
+      var controller = new AbortController();
+      var timer = woTimeout(function () { try { controller.abort(); } catch (_) {} }, SOURCE_READ_TIMEOUT_MS);
+      fetch(href, { signal: controller.signal }).then(function (r) {
+        /* An error page is not worker source. Reading one and matching against it is how a
+           404 body full of site chrome could be scored as mining code. */
+        if (!r || (r.status && !r.ok)) throw new Error('bad status');
+        return readCapped(r);
+      }).then(function (src) {
+        clearTimeout(timer);
+        done();
         if (typeof src !== 'string') return;
-        var m = src.slice(0, MAX_SOURCE_BYTES).match(MINER_TELLS);
+        var m = src.match(MINER_TELLS);
         if (m) onMinerFound(href, m[0]);
-      }).catch(function () {});
-    } catch (_) {}
+      }).catch(function () { clearTimeout(timer); done(); });
+    } catch (_) { done(); }
   }
 
   try {

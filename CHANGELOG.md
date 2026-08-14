@@ -71,6 +71,17 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- The breach-history check now gives up instead of hanging. It had no time limit, so a
+  server that accepted the connection and then said nothing left the button greyed out
+  and the panel reading "Checking…" for as long as the connection stayed open. It now
+  stops after eight seconds and says the database took too long, which is a different
+  thing from not being able to reach it and now reads that way.
+- Deep cryptominer detection no longer reads a whole file to look at the first part of
+  it. It only ever examines the first 800 KB of a worker's code, but it was downloading
+  all of whatever it was given before trimming, so a page could hand it something
+  enormous. It now stops reading at the limit. It also ignores error pages rather than
+  searching them for mining terms, and no longer starts a second read of a file it is
+  already reading.
 - A download WardenOne paused can no longer be left paused with nothing to explain it.
   When it holds a file for you to look at, it saves a record of the review -- but two
   downloads arriving at once could each save their own copy of that record over the

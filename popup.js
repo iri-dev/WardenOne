@@ -2855,9 +2855,13 @@ $('ss-sitebreach').addEventListener('click', () => {
       out.textContent = '';
       if (!res || !res.ok) {
         out.style.color = 'var(--ink-faint,#665674)';
+        // A timeout is worth saying out loud rather than folding into "could not reach": it means
+        // the database answered too slowly, not that anything is wrong with your connection.
         out.textContent = res && res.status === 429
           ? 'The breach database is busy right now. Wait a minute and try again.'
-          : 'Could not reach the breach database right now. Try again shortly.';
+          : res && res.error === 'timeout'
+            ? 'The breach database took too long to answer. Try again shortly.'
+            : 'Could not reach the breach database right now. Try again shortly.';
         return;
       }
       // background checks the registrable domain; show it, and note when it differs

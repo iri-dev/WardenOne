@@ -192,6 +192,7 @@ function checkContentBuild() {
   'tools/test-state-serialization.js',
   'tools/test-cold-start-state.js',
   'tools/test-download-ownership.js',
+  'tools/test-bounded-fetch.js',
   'tools/test-safe-search.js',
   'tools/test-search-junk.js',
   'tools/test-insecure-login.js',
@@ -285,6 +286,7 @@ checkCommand('certificate guard navigation tests', ['tools/test-cert-guard-tocto
 checkCommand('state serialization tests', ['tools/test-state-serialization.js']);
 checkCommand('cold-start state tests', ['tools/test-cold-start-state.js']);
 checkCommand('download ownership tests', ['tools/test-download-ownership.js']);
+checkCommand('bounded fetch tests', ['tools/test-bounded-fetch.js']);
 checkCommand('SafeSearch enforcement tests', ['tools/test-safe-search.js']);
 checkCommand('search-junk marker tests', ['tools/test-search-junk.js']);
 checkCommand('session security scoring tests', ['tools/test-session-score.js']);

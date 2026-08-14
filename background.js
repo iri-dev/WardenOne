@@ -3175,6 +3175,10 @@ const WHOISXML_ENDPOINT = 'https://www.whoisxmlapi.com/whoisserver/WhoisService'
 const WHOISXML_REPUTATION_ENDPOINT = 'https://domain-reputation.whoisxmlapi.com/api/v2';
 const WHOISXML_THREAT_ENDPOINT = 'https://threat-intelligence.whoisxmlapi.com/api/v1';
 const EXTERNAL_REPUTATION_TIMEOUT_MS = 6500;
+// The site-breach lookup returns a short array for one domain. The cap is far above any real
+// answer and exists so a wrong or hostile response cannot be buffered without limit (L17).
+const SITE_BREACH_TIMEOUT_MS = 8000;
+const SITE_BREACH_MAX_BYTES = 512 * 1024;
 
 // Registrable-domain helpers. The algorithm lives in domain-utils.js (shared with the
 // popup via importScripts above) so the two contexts can't drift; these thin wrappers
@@ -12823,15 +12827,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        const res = await fetch('https://haveibeenpwned.com/api/v3/breaches?Domain=' + encodeURIComponent(d), {
-          headers: { 'User-Agent': 'WardenOne-Extension' },
-          credentials: 'omit',
-          redirect: 'error',
-        });
+        // Bounded like every other outbound request in this file (L17). Without the abort there
+        // was nothing to stop this hanging on a server that accepts the connection and never
+        // answers -- and the popup leaves its button disabled until this callback arrives, so the
+        // control stayed dead for as long as the socket did. res.json() also buffered whatever
+        // came back with no ceiling; the response for one domain is a short array.
+        const controller = new AbortController();
+        const timer = setTimeout(() => { try { controller.abort(); } catch (_) {} }, SITE_BREACH_TIMEOUT_MS);
+        let res;
+        try {
+          res = await fetch('https://haveibeenpwned.com/api/v3/breaches?Domain=' + encodeURIComponent(d), {
+            headers: { 'User-Agent': 'WardenOne-Extension' },
+            credentials: 'omit',
+            redirect: 'error',
+            signal: controller.signal,
+          });
+        } catch (e) {
+          clearTimeout(timer);
+          // Distinct from a network error so the popup can say something true about which it was.
+          sendResponse({ ok: false, error: (e && e.name === 'AbortError') ? 'timeout' : 'network' });
+          return;
+        }
+        clearTimeout(timer);
         if (res.status === 429) { sendResponse({ ok: false, status: 429 }); return; }
         if (!res.ok) { sendResponse({ ok: false, status: res.status }); return; }
         let arr;
-        try { arr = await res.json(); } catch (_) { sendResponse({ ok: false, error: 'bad response' }); return; }
+        try {
+          arr = JSON.parse(await readResponseTextWithByteLimit(res, SITE_BREACH_MAX_BYTES));
+        } catch (e) {
+          sendResponse({ ok: false, error: (e && e.code === 'too_large') ? 'too_large' : 'bad response' });
+          return;
+        }
         const breaches = (Array.isArray(arr) ? arr : []).map((b) => ({
           name: b.Title || b.Name || 'Unknown',
           date: b.BreachDate || '',
