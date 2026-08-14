@@ -106,5 +106,36 @@ for (const host of ['haveibeenpwned.com', 'rdap.org']) {
   check('CWS-SUBMISSION.md also names ' + host, SUBMISSION.includes(host));
 }
 
+// The M13 fix initially missed CWS-SUBMISSION.md's prose, which still described the password
+// prefix without naming the host -- and the hostname assertion above sailed straight past it.
+// Describing a feature that does not exist is the same defect whether or not a URL is spelled out.
+const submission = SUBMISSION.toLowerCase();
+check('the submission notes do not describe a password-hash prefix as shipping',
+  !/password-hash prefix|k-anonymity/.test(submission));
+
+// M14. Store readiness: the dashboard answers, the hosted policy and the code must agree.
+check('the store checklist no longer calls the data categories a judgment call',
+  !/judgment call/.test(submission));
+check('Website content and Web history are declared rather than debated',
+  /tick both/.test(submission) && /web history/.test(submission));
+check('the checklist carries a field-by-field inventory',
+  /field-by-field inventory/.test(submission));
+
+// The Limited Use affirmation has to live on the hosted privacy page, because that is the page
+// the dashboard points at. PRIVACY.md IS that page -- Pages serves it from main.
+// Pin the affirmation SENTENCE, not the words "limited use". Checking for the phrase alone
+// passes on a page that merely mentions it -- verified by mutation: deleting the section heading
+// left that weaker assertion green, because the body still said the words.
+check('the hosted policy carries the Limited Use affirmation',
+  /use and transfer of information received from google apis/.test(policy)
+    && /chrome web store user data policy/.test(policy)
+    && /limited use/.test(policy));
+check('the affirmation is a section a reviewer can find, not a buried clause',
+  /## chrome web store limited use/.test(policy));
+check('the affirmation states the no-advertising limb explicitly',
+  /never.{0,40}transferred or used for advertising/.test(policy));
+check('the policy date was refreshed alongside the content',
+  /last updated: august 14, 2026/.test(policy));
+
 if (failed) { console.error('\n' + failed + ' disclosure check(s) failed'); process.exit(1); }
 console.log('\nprivacy disclosure contract holds (' + hosts.length + ' runtime endpoints checked)');
