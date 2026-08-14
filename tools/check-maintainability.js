@@ -187,6 +187,7 @@ function checkContentBuild() {
   'tools/test-token-exfil-trust.js',
   'tools/test-oauth-guard.js',
   'tools/test-cryptominer-guard.js',
+  'tools/test-miner-realms.js',
   'tools/test-safe-search.js',
   'tools/test-search-junk.js',
   'tools/test-insecure-login.js',
@@ -275,6 +276,7 @@ checkCommand('streaming compatibility tests', ['tools/test-streaming-compatibili
 checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js']);
 checkCommand('OAuth guard tests', ['tools/test-oauth-guard.js']);
 checkCommand('cryptominer guard tests', ['tools/test-cryptominer-guard.js']);
+checkCommand('miner MAIN/ISOLATED realm tests', ['tools/test-miner-realms.js']);
 checkCommand('SafeSearch enforcement tests', ['tools/test-safe-search.js']);
 checkCommand('search-junk marker tests', ['tools/test-search-junk.js']);
 checkCommand('session security scoring tests', ['tools/test-session-score.js']);

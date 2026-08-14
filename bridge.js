@@ -1303,12 +1303,29 @@
     postToPage({ source: 'wardenone', kind: 'config', token: TOKEN, overrides: clean });
     try { document.dispatchEvent(new CustomEvent('wo-bridge-config-ready')); } catch (_) {}
   };
+  const bridgeReplay = () => {
+    postToPage({ source: 'wardenone-handshake', token: TOKEN });
+    if (bridgeConfigReady) sendConfig(bridgeConfig);
+  };
   try {
-    window.__wardenOneBridgeReplay = () => {
-      postToPage({ source: 'wardenone-handshake', token: TOKEN });
-      if (bridgeConfigReady) sendConfig(bridgeConfig);
-    };
+    window.__wardenOneBridgeReplay = bridgeReplay;
   } catch (_) {}
+
+  // The same replay, reachable from the MAIN world.
+  //
+  // `window` is not shared: this file runs in ISOLATED, so the global above is on a window the
+  // main world can never see. cryptominer-detect.js runs in MAIN and asked for a replay through
+  // it, which meant its `typeof ... === 'function'` test was false every single time and the
+  // request silently did nothing -- so a detector injected after the one-time handshake never got
+  // a token, rejected the config that followed, and sat on confirmed detections forever.
+  //
+  // `document` IS shared, and is already how the main world talks to this one. A page can dispatch
+  // this too, and gains nothing by it: a replay re-sends the same handshake and the same sanitized
+  // config the page has already been posted. It is rate-limited so it cannot be used to spam.
+  woOn(document, 'wo-bridge-replay', () => {
+    if (!bridgeRateOk('wo-bridge-replay', 8, 60000)) return;
+    try { bridgeReplay(); } catch (_) {}
+  });
 
   // 1. Listen for the custom events the main-world trap dispatches on document,
   //    and forward block/detection counts to the background for the toolbar badge.

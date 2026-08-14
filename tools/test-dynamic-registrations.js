@@ -141,6 +141,55 @@ check('no DNR rule refuses the Twitch ad service',
     && !/edge\.ads\.twitch\.tv/.test(background),
   'blocking the ad service at the network layer strands the break with a frozen picture');
 
+// ---------------------------------------------------------------------------
+// Every flag that decides a dynamic registration must be in the early-out key (M23).
+//
+// refreshExtensionState() builds a key from the settings it cares about and returns immediately
+// when it has not changed. Two reconcilers read a flag that was never in that key, so once any
+// other change had primed it, toggling only cryptominerCpuWatch or flagSearchJunk produced an
+// identical key, the function returned before reaching the reconciler, and the script was neither
+// registered nor unregistered -- the switch in the popup simply did nothing.
+//
+// Adding the two flags fixes today. This check fixes tomorrow: it reads the reconcilers and fails
+// when any of them decides on a flag the key does not carry, so the next feature added cannot
+// quietly repeat it. A hand-maintained key is what drifted; another hand-maintained list of the
+// things in it would drift the same way.
+{
+  // Scoped to refreshExtensionState. refreshBlocklistRuleset has an early-out key of its own,
+  // earlier in the file, and reading that one instead would make this check pass on the wrong text.
+  const fnStart = background.indexOf('function refreshExtensionState()');
+  const keyStart = background.indexOf('const stateKey = [', fnStart);
+  const keyEnd = background.indexOf("].join('|')", keyStart);
+  check('the extension-state key is still findable',
+    fnStart >= 0 && keyStart > fnStart && keyEnd > keyStart);
+  const keySource = background.slice(keyStart, keyEnd);
+
+  const reconcilers = (background.match(/async function (reconcile\w*Injection)\(/g) || [])
+    .map((m) => m.replace(/async function /, '').replace(/\($/, ''));
+  check('the reconcilers are still findable', reconcilers.length >= 4,
+    reconcilers.length + ' found');
+
+  // `enabled` is represented by the leading `on` term rather than by name.
+  const REPRESENTED_ELSEWHERE = new Set(['enabled']);
+  const gaps = [];
+  for (const name of reconcilers) {
+    const body = bodyOf(name);
+    const flags = new Set((body.match(/\bmerged\.([A-Za-z_$][\w$]*)/g) || [])
+      .map((m) => m.split('.')[1]));
+    for (const flag of flags) {
+      if (REPRESENTED_ELSEWHERE.has(flag)) continue;
+      if (!keySource.includes('cfg.' + flag)) gaps.push(name + ' -> ' + flag);
+    }
+  }
+  check('every flag a dynamic reconciler decides on is in the early-out key',
+    gaps.length === 0,
+    gaps.join(', ') + ' -- toggling one of these alone leaves the key unchanged, so the reconciler is never reached');
+
+  // Named explicitly as well, so the two that were actually broken cannot quietly come back out.
+  check('cryptominerCpuWatch is in the key', /cfg\.cryptominerCpuWatch/.test(keySource));
+  check('flagSearchJunk is in the key', /cfg\.flagSearchJunk/.test(keySource));
+}
+
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
