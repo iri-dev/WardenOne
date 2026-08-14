@@ -329,6 +329,53 @@ async function main() {
   assert(redirectPending.redirectChain && redirectPending.redirectChain.blocklisted);
   assert.strictEqual(sandbox.store.wardenone_download_handled['43'].decision, 'auto-blocked');
 
+
+  // L21. sha256Hex took whatever it was handed. A fetchBytesForHash result carries `bytes` as a
+  // Uint8Array when ok is true and as a byte COUNT when it is false -- one field, two meanings. The
+  // guard in ensureDownloadHash separates them, which is why the reported primitive-zero path is not
+  // actually reachable; the type confusion is real all the same and one return path from mattering.
+  {
+    const dlSrc = fs.readFileSync('background-downloads.js', 'utf8');
+    const from = dlSrc.indexOf('async function sha256Hex');
+    const to = dlSrc.indexOf('function normalizeDownloadHashSourceKind');
+    assert(from >= 0 && to > from, 'sha256Hex source markers not found');
+    const box = { crypto: require('crypto').webcrypto, ArrayBuffer, Uint8Array, Array, TypeError, String };
+    vm.createContext(box);
+    vm.runInContext(dlSrc.slice(from, to) + '\nthis.h = sha256Hex;', box);
+
+    // A zero-byte file has a real SHA-256. Refusing to compute it would be a different bug, so this
+    // pins that empty input is still hashed rather than rejected along with the invalid types.
+    const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+    assert.strictEqual(await box.h(new Uint8Array(0)), EMPTY_SHA256,
+      'a zero-byte file no longer hashes to the empty SHA-256');
+    assert(/^[a-f0-9]{64}$/.test(await box.h(new Uint8Array([1, 2, 3]))), 'real bytes stopped hashing');
+    assert(/^[a-f0-9]{64}$/.test(await box.h(new Uint8Array([1, 2, 3]).buffer)), 'a raw ArrayBuffer was refused');
+
+    // Anything that is not a BufferSource must be refused here, not inside WebCrypto -- there it
+    // surfaces to the user as "Hash computation failed", which reads as a fault in WardenOne's
+    // crypto rather than as a response that arrived with no body.
+    for (const bad of [0, null, undefined, 'str', {}, 42, []]) {
+      let threw = null;
+      try { await box.h(bad); } catch (e) { threw = e; }
+      assert(threw instanceof TypeError,
+        'sha256Hex accepted ' + JSON.stringify(bad) + ' instead of refusing it');
+      // Asserting the TYPE alone proves nothing: WebCrypto rejects these with a TypeError of its
+      // own, so that assertion passes with or without the guard. What the guard adds is a message
+      // that names the function and the type it got, which is the difference between a diagnosable
+      // report and an opaque one. Assert the message, or this test is decorative.
+      assert(/sha256Hex needs an ArrayBuffer/.test(String(threw && threw.message)),
+        'sha256Hex let WebCrypto produce the error for ' + JSON.stringify(bad)
+          + ' instead of refusing it with a diagnosable message: ' + String(threw && threw.message));
+    }
+
+    // And the caller must turn that into an ordinary metadata error with an actionable reason.
+    assert(/no file data was returned/.test(dlSrc),
+      'ensureDownloadHash no longer reports a missing body distinctly from a crypto failure');
+    assert(/ArrayBuffer\.isView\(fetched\.bytes\)/.test(dlSrc),
+      'ensureDownloadHash no longer validates the fetched body before hashing');
+    console.log('  [ok] sha256Hex refuses non-BufferSource input and still hashes empty files');
+  }
+
   console.log('[ok] download guard tests passed');
 }
 

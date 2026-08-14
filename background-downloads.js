@@ -570,7 +570,19 @@ async function fetchBytesForHash(url, maxBytes) {
   return { ok: false, skipped: true, reason: 'Hash check skipped after too many redirects', maxBytes };
 }
 
+// The `bytes` field on a fetchBytesForHash result is polymorphic by `ok`: a Uint8Array of the data
+// when ok is true, a byte COUNT when it is false. Callers are separated by a guard today, so a
+// number never actually arrives here -- but one field carrying two types is a defect waiting for the
+// next return path, and crypto.subtle.digest's failure mode is an opaque TypeError that the caller
+// reports as "Hash computation failed". That reads like a crypto fault rather than "there was
+// nothing to hash", which is the wrong thing to tell someone about a download.
+//
+// An empty buffer is deliberately NOT rejected: a zero-byte file has a real, well-defined SHA-256,
+// and refusing to compute it would be wrong. Only a non-BufferSource is refused.
 async function sha256Hex(bytes) {
+  const isBufferSource = bytes instanceof ArrayBuffer
+    || (typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(bytes));
+  if (!isBufferSource) throw new TypeError('sha256Hex needs an ArrayBuffer or a view, got ' + typeof bytes);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -656,6 +668,21 @@ async function ensureDownloadHash(rep, url) {
       skipped: !!(fetched && fetched.skipped),
       reason,
       bytes: (fetched && fetched.bytes) || 0,
+      source: downloadHashSourceMeta(fetched, DOWNLOAD_HASH_SOURCE.NOT_AVAILABLE, { reason }),
+      exactFile: false,
+    };
+  }
+  // ok was true, but that only promises the fetch succeeded -- not that a body came with it. Caught
+  // here so it lands on the ordinary download-metadata error path with a reason a person can act on,
+  // instead of reaching digest() and surfacing as "Hash computation failed", which reads like a
+  // crypto fault in WardenOne rather than a missing response body.
+  if (!(fetched.bytes instanceof ArrayBuffer)
+    && !(typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(fetched.bytes))) {
+    const reason = 'Hash check could not run: no file data was returned';
+    return {
+      ok: false,
+      reason,
+      bytes: 0,
       source: downloadHashSourceMeta(fetched, DOWNLOAD_HASH_SOURCE.NOT_AVAILABLE, { reason }),
       exactFile: false,
     };
