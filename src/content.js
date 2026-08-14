@@ -1724,6 +1724,221 @@
       parent.appendChild(b),
       b
     },
+    /* The focus ring, painted inline rather than declared in a stylesheet.
+
+       buildOverlay resets the host with `all:initial!important` and oBtn resets each button with
+       `all:unset!important`, both in the style attribute, to strip whatever CSS the page has. That
+       takes the focus ring with it, so a keyboard user cannot see which action is selected. The
+       obvious repair -- a `:focus-visible` rule in a stylesheet we inject -- does not work, and it
+       is not a specificity problem to out-specify: an important declaration in a style attribute
+       beats an important rule from any stylesheet. Measured in Chromium, every button still
+       computed to `outline-style:none`, so the ring never drew.
+
+       Setting the property inline puts it in the same declaration block as the reset, where the
+       later declaration wins. An outline in currentColor is what forced-colors mode honours; a
+       coloured box-shadow is discarded there. */
+    woFocusRing=host=>{
+      let painted=null;
+      const drop=()=>{
+        if(!painted)return;
+        try{
+          painted.style.removeProperty("outline"),
+          painted.style.removeProperty("outline-offset")
+        }
+        catch(_){
+
+        }
+        painted=null
+      },
+      paint=el=>{
+        if(drop(),
+        !el||!el.style)return;
+        try{
+          el.style.setProperty("outline",
+          "3px solid currentColor",
+          "important"),
+          el.style.setProperty("outline-offset",
+          "2px",
+          "important"),
+          painted=el
+        }
+        catch(_){
+
+        }
+
+      },
+      /* :focus-visible is the browser's own answer to "did a keyboard put focus here?", so ask
+         it rather than reimplementing the heuristic. A mouse click should not leave a ring. */
+      onIn=e=>{
+        const target=e&&e.target;
+        let visible=!0;
+        try{
+          visible=!target.matches||target.matches(":focus-visible")
+        }
+        catch(_){
+
+        }
+        visible?paint(target):drop()
+      },
+      onOut=()=>drop();
+      try{
+        host.addEventListener("focusin",
+        onIn,
+        !0),
+        host.addEventListener("focusout",
+        onOut,
+        !0)
+      }
+      catch(_){
+
+      }
+      return{
+        paint:paint,
+        release(){
+          drop();
+          try{
+            host.removeEventListener("focusin",
+            onIn,
+            !0),
+            host.removeEventListener("focusout",
+            onOut,
+            !0)
+          }
+          catch(_){
+
+          }
+
+        }
+
+      }
+
+    },
+    /* Warnings that behave as the modals they look like (M20).
+
+       The bridge's interstitials got this from woOwnedOverlay's dialog(). The five built here
+       cannot: they live in the page's own DOM rather than a closed shadow root, so that helper
+       does not reach them. This is the same contract expressed for light-DOM overlays -- one
+       place, not five hand-rolled copies.
+
+       Focus lands on the FIRST control, which every one of these builds as the safe action.
+       That is deliberate: a phishing blocker that opens with "continue anyway" focused is one a
+       reflexive Enter can dismiss.
+
+       Escape does not close them. For all five, dismissing IS the risky choice, so the key
+       people press to make a dialog go away is exactly the one that must not work here; the way
+       out is a button you had to read first.
+
+       The returned release() is the whole teardown -- Tab trap off, focus handed back. A trap
+       that outlives its dialog breaks the page it was warning about, so every close path
+       (button, navigation, self-heal) goes through it. */
+    woDialog=(host,
+    box,
+    opts)=>{
+      const o=opts||{
+
+      },
+      focusables=()=>{
+        try{
+          return Array.prototype.slice.call(box.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'))
+        }
+        catch(_){
+          return[]
+        }
+
+      };
+      let restoreTo=null,
+      trap=null,
+      ring=null;
+      try{
+        ring=woFocusRing(host),
+        box.setAttribute("role",
+        "alertdialog"),
+        box.setAttribute("aria-modal",
+        "true"),
+        o.label&&box.setAttribute("aria-label",
+        String(o.label)),
+        o.description&&box.setAttribute("aria-description",
+        String(o.description)),
+        host.setAttribute("tabindex",
+        "-1");
+        try{
+          restoreTo=document.activeElement
+        }
+        catch(_){
+          restoreTo=null
+        }
+        const list=focusables(),
+        first=list[0]||host;
+        /* The dialog took focus without being asked to, so show where it went. From here on the
+           ring follows :focus-visible, which is what keeps a mouse click from leaving one. */
+        first&&first.focus&&first.focus(),
+        list.length&&ring.paint(first),
+        trap=e=>{
+          if(!e||"Tab"!==e.key)return;
+          const inside=focusables();
+          if(!inside.length)return void e.preventDefault();
+          const firstEl=inside[0],
+          lastEl=inside[inside.length-1];
+          let active=null;
+          try{
+            active=document.activeElement
+          }
+          catch(_){
+
+          }
+          let move=null;
+          if(e.shiftKey&&(active===firstEl||!active))move=lastEl;
+          else if(!e.shiftKey&&active===lastEl)move=firstEl;
+          if(!move)return;
+          e.preventDefault();
+          try{
+            move.focus()
+          }
+          catch(_){
+
+          }
+
+        },
+        host.addEventListener("keydown",
+        trap,
+        !0)
+      }
+      catch(_){
+
+      }
+      return()=>{
+        if(trap){
+          try{
+            host.removeEventListener("keydown",
+            trap,
+            !0)
+          }
+          catch(_){
+
+          }
+          trap=null
+        }
+        if(ring){
+          try{
+            ring.release()
+          }
+          catch(_){
+
+          }
+          ring=null
+        }
+        const back=restoreTo;
+        restoreTo=null;
+        if(back&&back.focus&&back.isConnected)try{
+          back.focus()
+        }
+        catch(_){
+
+        }
+
+      }
+
+    },
     mountBlocker=(id,
     paint)=>{
       const styleId=id+"-style",
@@ -1889,7 +2104,8 @@
           BLEAVE="background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;border-radius:11px!important;padding:11px 18px!important;font-size:13.5px!important;font-weight:700!important;font-family:Quicksand,system-ui,sans-serif!important;box-shadow:0 6px 16px rgba(176,106,212,.35)!important;",
           BGO="background:rgba(176,106,212,.12)!important;color:#7a5f93!important;border:1px solid rgba(176,106,212,.25)!important;border-radius:11px!important;padding:11px 18px!important;font-size:13.5px!important;font-weight:700!important;font-family:Quicksand,system-ui,sans-serif!important;",
           FINE="color:#a98fc0!important;font-size:11px!important;margin-top:14px!important;line-height:1.4!important;font-family:Nunito,system-ui,sans-serif!important;";
-          let teardown=null;
+          let teardown=null,
+          release=null;
           const paint=()=>{
             const host=buildOverlay("rg-adult-gate",
             "rgba(38,20,54,.55)"),
@@ -1939,10 +2155,21 @@
             oDiv(card,
             FINE,
             "Shown because you arrived via a redirect or external link, not by browsing here directly."),
-            document.documentElement.appendChild(host)
+            document.documentElement.appendChild(host),
+            release=woDialog(host,
+            card,
+            {
+              label:"WardenOne adult-site warning",
+              description:"This adult site was paused before it loaded. Go back, or continue if you meant to come here."
+            })
           };
-          teardown=mountBlocker("rg-adult-gate",
-          paint),
+          const stopAdultGate=mountBlocker("rg-adult-gate",
+          paint);
+          teardown=()=>{
+            release&&release(),
+            release=null,
+            stopAdultGate()
+          },
           WO.__adultGateShown=!0,
           log("gated_adult_site",
           {
@@ -2270,7 +2497,8 @@
           payload:sig.payload
         });
         const next=sig.payload&&(sig.payload.next||sig.payload.url||sig.payload.dest||sig.payload.redirect);
-        let teardown=null;
+        let teardown=null,
+        release=null;
         const paint=()=>{
           const host=buildOverlay("rg-interstitial",
           "rgba(38,20,54,.55)"),
@@ -2321,10 +2549,21 @@
           oTextDiv(card,
           "color:#a98fc0!important;font-size:11px!important;margin-top:14px!important;font-family:Nunito,system-ui,sans-serif!important;",
           "Detected: "+sig.reasons.join(", ")),
-          document.documentElement.appendChild(host)
+          document.documentElement.appendChild(host),
+          release=woDialog(host,
+          card,
+          {
+            label:"WardenOne redirect-chain warning",
+            description:"This page was about to send you onward automatically. Go back, or dismiss to stay here."
+          })
         };
-        teardown=mountBlocker("rg-interstitial",
-        paint)
+        const stopChain=mountBlocker("rg-interstitial",
+        paint);
+        teardown=()=>{
+          release&&release(),
+          release=null,
+          stopChain()
+        }
       }
 
     }
@@ -5825,7 +6064,12 @@
       })
     }
     if(WO.scamLockGuard&&WO_TOP)try{
-      let scamShown=!1;
+      let scamShown=!1,
+      scamRelease=null;
+      const releaseScamPanel=()=>{
+        scamRelease&&scamRelease(),
+        scamRelease=null
+      };
       const FEAR=/(your\s+(computer|pc|system|device|access)\s+(to\s+this\s+pc\s+)?(has\s+been\s+|is\s+)?(locked|blocked|disabled|suspended|compromised|infected)|do\s+not\s+(close|restart|shut\s?down|turn\s+off)\s+(this\s+)?(window|computer|pc|browser)|your\s+(windows\s+)?(computer|pc)\s+is\s+infected|critical\s+(security\s+)?(alert|warning)\b|windows\s+(defender\s+)?security\s+(alert|center)|access\s+to\s+this\s+(pc|computer)\s+has\s+been\s+blocked|do\s+not\s+ignore\s+this\s+(warning|alert)|your\s+(data|files|identity)\s+(is|are|may be)\s+at\s+risk)/i,
       CALL=/(call\s+(us\s+)?(now|immediately|toll[-\s]?free|microsoft|apple|windows|support)\b|call\s+(this\s+|the\s+)?(number|helpline|toll[-\s]?free)\b|contact\s+(microsoft|apple|windows)\s+support|technical\s+support\s+(number|line|helpline)|(1[-.\s]?)?8(00|33|44|55|66|77|88)[-.\s]?\d{3}[-.\s]?\d{4}|(anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|remote\s+(access|assistance|desktop|support|control|connection))|enter\s+(this\s+|the\s+)?(code|key|pin)\b|(install|download|run)\s+(the\s+)?(support|remote|cleanup)\s+(tool|software|app))/i,
       breakLeaveTrap=()=>{
@@ -5917,7 +6161,8 @@
             leave.textContent="Leave this page",
             leave.addEventListener("click",
             e=>{
-              e&&!1===e.isTrusted||leaveSafely()
+              e&&!1===e.isTrusted||(releaseScamPanel(),
+              leaveSafely())
             });
             const stay=document.createElement("button");
             stay.setAttribute("style",
@@ -5925,10 +6170,14 @@
             stay.textContent="Dismiss",
             stay.addEventListener("click",
             e=>{
-              if(!e||!1!==e.isTrusted)try{
-                wrap.remove()
-              }
-              catch(_){
+              if(!e||!1!==e.isTrusted){
+                releaseScamPanel();
+                try{
+                  wrap.remove()
+                }
+                catch(_){
+
+                }
 
               }
 
@@ -5937,7 +6186,13 @@
             row.appendChild(stay),
             card.appendChild(row),
             wrap.appendChild(card),
-            root.appendChild(wrap)
+            root.appendChild(wrap),
+            scamRelease=woDialog(wrap,
+            card,
+            {
+              label:"WardenOne tech-support scam warning",
+              description:"This page is faking a virus warning. Leave it, or dismiss this notice to stay."
+            })
           }
           catch(_){
 
@@ -11595,8 +11850,9 @@
             "brand-in-name":"uses the name of",
             homograph:"uses look-alike characters to imitate"
           };
-          let teardown=null;
-          teardown=mountBlocker("rg-phish-block",
+          let teardown=null,
+          release=null;
+          const stopPhishBlock=mountBlocker("rg-phish-block",
           ()=>{
             const host=buildOverlay("rg-phish-block",
             "#450a0a"),
@@ -11654,8 +11910,19 @@
             ()=>{
               teardown&&teardown()
             }),
-            document.documentElement.appendChild(host)
-          })
+            document.documentElement.appendChild(host),
+            release=woDialog(host,
+            card,
+            {
+              label:"WardenOne phishing warning",
+              description:"This address imitates a well-known brand. Go to the real site, go back, or continue at your own risk."
+            })
+          });
+          teardown=()=>{
+            release&&release(),
+            release=null,
+            stopPhishBlock()
+          }
         })(phishHit,
         BRANDS);
         const KIND_TEXT={
@@ -11665,12 +11932,20 @@
           "brand-in-name":"uses the name of",
           homograph:"uses look-alike characters to imitate"
         },
+        /* The lower-confidence sibling of the blocker above, and deliberately not a dialog: it
+           does not cover the page, does not demand an answer, and stealing focus into a bar the
+           reader did not ask for would be worse than saying nothing. role="alert" is what makes
+           a screen reader announce it as it arrives; the rest is a named close button and a
+           focus ring, because all:unset had stripped one and never replaced it. */
         showPhishBar=()=>{
           if(!document.documentElement||document.getElementById("rg-phish-bar"))return;
           const bar=document.createElement("div");
           bar.id="rg-phish-bar",
+          bar.setAttribute("role",
+          "alert"),
           S(bar,
           "all:initial!important;position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;z-index:2147483646!important;background:#7f1d1d!important;color:#fff!important;font-family:system-ui,sans-serif!important;font-size:13px!important;padding:10px 14px!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;gap:12px!important;box-shadow:0 4px 16px rgba(0,0,0,.4)!important;");
+          const ring=woFocusRing(bar);
           const txt=document.createElement("div");
           S(txt,
           "flex:1!important;line-height:1.4!important;color:#fff!important;");
@@ -11691,8 +11966,14 @@
           S(x,
           "all:unset!important;cursor:pointer!important;color:#fca5a5!important;font-size:18px!important;padding:0 4px!important;flex:none!important;"),
           x.textContent="x",
+          x.setAttribute("aria-label",
+          "Dismiss phishing warning"),
+          x.title="Dismiss",
           x.addEventListener("click",
-          ()=>bar.remove()),
+          ()=>{
+            ring.release(),
+            bar.remove()
+          }),
           bar.appendChild(x),
           document.documentElement.appendChild(bar)
         };
@@ -11717,7 +11998,8 @@
           host:host,
           matched:hit
         });
-        let teardown=null;
+        let teardown=null,
+        release=null;
         const paint=()=>{
           const ov=buildOverlay("rg-grabber-warn",
           "#1a0b0b"),
@@ -11755,10 +12037,21 @@
           ()=>{
             teardown&&teardown()
           }),
-          document.documentElement.appendChild(ov)
+          document.documentElement.appendChild(ov),
+          release=woDialog(ov,
+          card,
+          {
+            label:"WardenOne IP-logger warning",
+            description:"This link is a known IP-logger service. Leave the page, or dismiss this notice to stay."
+          })
         };
-        teardown=mountBlocker("rg-grabber-warn",
-        paint)
+        const stopGrabber=mountBlocker("rg-grabber-warn",
+        paint);
+        teardown=()=>{
+          release&&release(),
+          release=null,
+          stopGrabber()
+        }
       }
 
     }

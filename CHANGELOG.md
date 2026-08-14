@@ -71,6 +71,18 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- Made the nine warnings that appear on the page behave like the dialogs they look
+  like. The phishing block, the adult-site gate, the redirect-chain and IP-logger
+  notices, the tech-support scam lock, the script-drift, permission-chain, new-sign-in
+  and OAuth consent warnings all cover the page and ask you to decide something -- and
+  none of them said so. A screen reader was never told a security decision had
+  appeared, and the keyboard stayed on the page underneath, so you could tab through a
+  site you had just been warned about without ever reaching the warning. Each one now
+  announces itself, puts the keyboard inside, keeps Tab and Shift+Tab within it, and
+  hands focus back where it came from when you close it. Focus starts on the safe
+  choice, never on "continue anyway", so a reflex press of Enter cannot wave a phishing
+  warning away. The focused button is visible again too -- including in Windows High
+  Contrast, where the ring used to disappear.
 - Finished making the popup usable without a mouse or a screen. Every remaining
   control now announces what it is: the seven API-key boxes, the search field, the
   link scanner, the file picker, and the three number fields that previously had
