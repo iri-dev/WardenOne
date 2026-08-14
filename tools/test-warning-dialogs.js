@@ -7,10 +7,16 @@
 /*
  * Warnings that behave as the modals they look like (M20).
  *
- * The bridge's interstitials cover the viewport and demand an answer, but announced nothing: no
- * alertdialog role, no accessible name, no initial focus, no contained tab sequence, no focus
- * restoration. A screen reader was never told a phishing decision had appeared, and keyboard focus
- * stayed on the obscured page underneath.
+ * The nine high-stakes interstitials cover the viewport and demand an answer, but announced
+ * nothing: no alertdialog role, no accessible name, no initial focus, no contained tab sequence,
+ * no focus restoration. A screen reader was never told a phishing decision had appeared, and
+ * keyboard focus stayed on the obscured page underneath.
+ *
+ * They are built in two places. The bridge and oauth-guard own theirs in a closed shadow root and
+ * get the semantics from woOwnedOverlay.dialog(); the engine builds five in the page's own DOM,
+ * where that helper cannot reach, and gets them from woDialog() in src/content.js. Two helpers,
+ * one contract -- so this suite asserts the same guarantees on both halves rather than trusting
+ * that the second copy grew the same behaviour.
  *
  * The riskiest part of fixing that is the focus trap: one that outlives its dialog breaks the page
  * it was warning about. So these assert the teardown as hard as the semantics.
@@ -26,6 +32,8 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
 const OAUTH = fs.readFileSync(path.join(ROOT, 'oauth-guard.js'), 'utf8');
+const ENGINE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
+const MIN = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 
 let failed = 0;
 function check(name, condition, extra) {
@@ -34,10 +42,20 @@ function check(name, condition, extra) {
   console.error('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
-// A DOM fake with the one rule that matters faithfully implemented: a closed shadow root reports
-// its own activeElement, and listeners are observable so teardown can be asserted.
+// A DOM fake with the rules that matter faithfully implemented: a closed shadow root reports its
+// own activeElement, listeners are observable so teardown can be asserted, and a style attribute
+// records the priority it was written with -- the focus ring is only correct if it lands inline
+// AND important, so a fake that forgot the priority would pass a broken implementation.
 function makeDom() {
   const listeners = [];
+  function styleDecl() {
+    const props = {};
+    return {
+      props,
+      setProperty(k, v, priority) { props[k] = { value: String(v), priority: priority || '' }; },
+      removeProperty(k) { delete props[k]; },
+    };
+  }
   function node(tag) {
     const n = {
       tagName: String(tag).toUpperCase(),
@@ -47,6 +65,11 @@ function makeDom() {
       offsetParent: {},
       focused: 0,
       firstChild: null,
+      style: styleDecl(),
+      // Chromium decides :focus-visible for us; the fake lets a test say "this one was a mouse
+      // click" so the no-ring-on-click path is exercised rather than assumed.
+      focusVisible: true,
+      matches(sel) { return /focus-visible/.test(String(sel)) ? this.focusVisible !== false : false; },
       setAttribute(k, v) { this.attrs[k] = String(v); },
       getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
       // Real appendChild DETACHES from the previous parent first. Omitting that made re-parenting
@@ -107,7 +130,7 @@ function makeDom() {
 }
 
 // Lift the real helper.
-const from = BRIDGE.indexOf('  const WO_FOCUS_STYLE =');
+const from = BRIDGE.indexOf('  function woFocusRing(host) {');
 const to = BRIDGE.indexOf('  // Handles for the three interstitials');
 if (from < 0 || to <= from) throw new Error('woOwnedOverlay source markers not found');
 
@@ -157,6 +180,34 @@ function build() {
   check('focus does not land on the destructive action', risky.focused === 0);
 
   // ---------------------------------------------------------------------------
+  // 2b. The focus ring actually lands.
+  //
+  // The first version of this shipped a `:focus-visible` rule in the overlay's stylesheet, which
+  // computed to `outline-style:none` on every button in a real browser: the buttons carry
+  // `all:initial!important` in their style attribute, and no stylesheet rule outranks that. So the
+  // assertion is not "a ring is declared somewhere" -- it is that the ring lands on the element,
+  // inline, with the priority that wins.
+  // ---------------------------------------------------------------------------
+  const ring = (el) => el.style.props.outline;
+  check('the focused action gets a focus ring', !!ring(safe) && ring(safe).value === '3px solid currentColor');
+  check('the ring is written inline with the priority that beats all:initial',
+    !!ring(safe) && ring(safe).priority === 'important',
+    'a stylesheet rule cannot outrank an important style attribute');
+  check('the ring is offset so it does not sit on the button edge', !!safe.style.props['outline-offset']);
+
+  const focusEvents = () => listeners.filter((l) => /^focus(in|out)$/.test(l.type));
+  check('the ring follows focus rather than being painted once', focusEvents().length === 2);
+  const fire = (type, target) => focusEvents().filter((l) => l.type === type).forEach((l) => l.fn({ target }));
+  fire('focusout', safe);
+  check('the ring is removed when focus leaves', !ring(safe));
+  risky.focusVisible = false;
+  fire('focusin', risky);
+  check('a mouse click does not leave a ring behind', !ring(risky), ':focus-visible was not consulted');
+  risky.focusVisible = true;
+  fire('focusin', risky);
+  check('a keyboard focus does paint one', !!ring(risky));
+
+  // ---------------------------------------------------------------------------
   // 3. The tab sequence is contained while it is open.
   // ---------------------------------------------------------------------------
   const trap = listeners.filter((l) => l.type === 'keydown');
@@ -179,6 +230,8 @@ function build() {
   check('the containment handler is removed on destroy',
     listeners.filter((l) => l.type === 'keydown').length === 0,
     'a focus trap outlived its dialog');
+  check('the ring listeners are removed on destroy', focusEvents().length === 0);
+  check('no inline ring is left behind', !ring(risky));
   check('focus is handed back to where it was', prior.focused > 1, 'focus was not restored');
   check('the host is detached', prior.isConnected === true);
 }
@@ -199,12 +252,159 @@ function build() {
   check('both lifted copies of the helper still carry dialog()',
     OAUTH.includes('dialog(opts)') && BRIDGE.includes('dialog(opts)'),
     'the copies have diverged again');
-  check('a focus indicator is restored after all:initial strips it',
-    /:focus-visible\{/.test(BRIDGE) && /outline:3px solid currentColor/.test(BRIDGE));
+  check('both lifted copies carry the focus ring too',
+    OAUTH.includes('function woFocusRing(host) {') && BRIDGE.includes('function woFocusRing(host) {'));
   check('the indicator uses an outline, which forced-colors mode honours',
-    /outline:3px solid currentColor!important/.test(BRIDGE));
+    /setProperty\('outline', '3px solid currentColor', 'important'\)/.test(BRIDGE)
+    && /setProperty\('outline', '3px solid currentColor', 'important'\)/.test(OAUTH));
+
+  // The dead-stylesheet version must not come back anywhere, in any of the three copies. It looked
+  // right in review and in a DOM fake, and drew nothing in a browser.
+  check('no copy still declares the ring in a stylesheet that cannot apply',
+    !/WO_FOCUS_STYLE/.test(BRIDGE) && !/WO_FOCUS_STYLE/.test(OAUTH) && !/focus-visible\{/.test(ENGINE),
+    'a :focus-visible rule loses to the elements\' own important style attribute');
   check('every wired dialog is given a name rather than relying on its contents',
     (BRIDGE.match(/label: 'WardenOne/g) || []).length === 4);
+}
+
+// ---------------------------------------------------------------------------
+// The engine half: the five core blockers built in src/content.js.
+//
+// These are light-DOM overlays, so the shadow-root helper cannot serve them. woDialog() is the
+// same contract written for the page's own DOM, and the assertions below are deliberately the
+// same ones the bridge half gets -- the point of a second helper is that it behaves identically,
+// and the only way to know that is to demand it twice.
+// ---------------------------------------------------------------------------
+function buildEngine() {
+  const from = ENGINE.indexOf('    woFocusRing=host=>{');
+  const to = ENGINE.indexOf('    mountBlocker=(id,');
+  if (from < 0 || to <= from) throw new Error('woDialog source markers not found in src/content.js');
+  const dom = makeDom();
+  const sandbox = { document: dom.document, Array, Object, String };
+  vm.createContext(sandbox);
+  vm.runInContext('const ' + ENGINE.slice(from, to).replace(/,\s*$/, '') + ';'
+    + '\nglobalThis.__dialog = woDialog;', sandbox, { filename: 'src/content.js' });
+  return { dom, sandbox, listeners: dom.listeners };
+}
+
+{
+  const { dom, sandbox, listeners } = buildEngine();
+  const prior = dom.node('input');
+  dom.document.body.appendChild(prior);
+  prior.focus();
+
+  const host = dom.document.createElement('div');
+  host.id = 'rg-phish-block';
+  const card = dom.document.createElement('div');
+  const safe = dom.document.createElement('button');
+  const risky = dom.document.createElement('button');
+  card.appendChild(safe);
+  card.appendChild(risky);
+  host.appendChild(card);
+  dom.document.body.appendChild(host);
+
+  const release = sandbox.__dialog(host, card, {
+    label: 'WardenOne phishing warning',
+    description: 'This address imitates a well-known brand.',
+  });
+
+  check('the engine blocker is exposed as an alertdialog', card.getAttribute('role') === 'alertdialog');
+  check('the engine blocker is announced as modal', card.getAttribute('aria-modal') === 'true');
+  check('the engine blocker carries an accessible name',
+    /phishing warning/.test(card.getAttribute('aria-label') || ''));
+  check('the engine blocker carries a description',
+    /imitates a well-known brand/.test(card.getAttribute('aria-description') || ''));
+
+  // Same ring, same reason it has to be inline: oBtn resets every button with `all:unset!important`
+  // in its style attribute, which no stylesheet rule of ours can outrank.
+  const ring = (el) => el.style.props.outline;
+  check('the engine dialog paints a focus ring on the action it focused',
+    !!ring(safe) && ring(safe).value === '3px solid currentColor');
+  check('the engine ring is written inline with the priority that beats all:unset',
+    !!ring(safe) && ring(safe).priority === 'important');
+  check('the engine leaves no stylesheet behind to do a job it cannot do',
+    host.children.filter((c) => c.tagName === 'STYLE').length === 0);
+
+  const focusEvents = () => listeners.filter((l) => /^focus(in|out)$/.test(l.type));
+  const fire = (type, target) => focusEvents().filter((l) => l.type === type).forEach((l) => l.fn({ target }));
+  check('the engine ring follows focus', focusEvents().length === 2);
+  fire('focusout', safe);
+  check('the engine ring is removed when focus leaves', !ring(safe));
+  risky.focusVisible = false;
+  fire('focusin', risky);
+  check('a mouse click leaves no ring in the engine dialog either', !ring(risky));
+
+  check('focus moves into the engine dialog on open', safe.focused > 0);
+  check('focus does not land on the engine dialog\'s destructive action', risky.focused === 0);
+
+  const trap = listeners.filter((l) => l.type === 'keydown');
+  check('a keyboard containment handler is installed on the engine dialog', trap.length === 1);
+
+  let prevented = 0;
+  const press = (shift, active) => {
+    dom.document.activeElement = active;
+    trap[0].fn({ key: 'Tab', shiftKey: shift, preventDefault: () => { prevented++; } });
+  };
+  press(false, risky);
+  check('Tab on the last engine control wraps to the first', prevented === 1 && safe.focused > 1);
+  press(true, safe);
+  check('Shift+Tab on the first engine control wraps to the last', prevented === 2 && risky.focused > 0);
+  press(false, safe);
+  check('Tab in the middle of the sequence is left alone', prevented === 2);
+
+  release();
+  check('the engine containment handler is removed on release',
+    listeners.filter((l) => l.type === 'keydown').length === 0,
+    'a focus trap outlived its dialog');
+  check('the engine ring listeners are removed on release', focusEvents().length === 0);
+  check('focus is handed back to where it was', prior.focused > 1, 'focus was not restored');
+  release();
+  check('releasing twice is harmless', prior.focused === 2, 'release is not idempotent');
+}
+
+// ---------------------------------------------------------------------------
+// All five engine warnings opt in, and every close path releases.
+//
+// The trap is bound to the overlay rather than the document, so a leaked one is not merely untidy:
+// it is a live keydown handler on a node the page can still reach. Each blocker composes its
+// release into the teardown the buttons already call, so there is one way out, not two.
+// ---------------------------------------------------------------------------
+{
+  check('all five engine blockers are wired to woDialog',
+    (ENGINE.match(/woDialog\(/g) || []).length === 5,
+    (ENGINE.match(/woDialog\(/g) || []).length + ' call sites');
+  check('each engine blocker is given a name rather than relying on its contents',
+    (ENGINE.match(/label:"WardenOne /g) || []).length === 5);
+  for (const id of ['rg-adult-gate', 'rg-interstitial', 'rg-phish-block', 'rg-grabber-warn', 'wo-scam-lock']) {
+    check(id + ' is one of them', ENGINE.includes('"' + id + '"'));
+  }
+
+  // The four self-healing blockers: teardown releases before it unmounts, so the button paths and
+  // the navigation paths cannot diverge.
+  check('every mountBlocker teardown releases its dialog first',
+    (ENGINE.match(/release&&release\(\),\s+release=null,\s+stop\w+\(\)/g) || []).length === 4,
+    (ENGINE.match(/release&&release\(\),\s+release=null,\s+stop\w+\(\)/g) || []).length + ' composed teardowns');
+
+  // The scam lock has no mountBlocker, so its two exits are hand-wired and both must release.
+  check('the scam lock releases when you leave the page',
+    /releaseScamPanel\(\),\s+leaveSafely\(\)/.test(ENGINE));
+  check('the scam lock releases when you dismiss it',
+    /releaseScamPanel\(\);\s+try\{\s+wrap\.remove\(\)/.test(ENGINE));
+
+  // The phishing bar is the deliberate non-dialog. It must announce, and it must NOT trap.
+  check('the lower-confidence phishing bar announces itself',
+    /bar\.setAttribute\("role",\s+"alert"\)/.test(ENGINE));
+  check('the phishing bar close button has a name',
+    /x\.setAttribute\("aria-label",\s+"Dismiss phishing warning"\)/.test(ENGINE));
+  check('the phishing bar gets a focus ring too', ENGINE.includes('woFocusRing(bar)'));
+  check('the phishing bar does not steal focus or trap the keyboard',
+    !/woDialog\(bar/.test(ENGINE), 'a non-modal notification must not become a modal');
+
+  // Source is not what ships. content.min.js is generated, and a stale one would leave every
+  // assertion above green while users got the old, silent warnings.
+  check('the shipped runtime carries the engine dialogs',
+    (MIN.match(/woDialog\(/g) || []).length === 5 && MIN.includes('woDialog=(host,box,opts)=>'),
+    'content.min.js is stale');
 }
 
 if (failed) { console.error('\n' + failed + ' warning-dialog check(s) failed'); process.exit(1); }

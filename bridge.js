@@ -391,13 +391,63 @@
   const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
     + 'z-index:2147483647!important;';
 
-  // Focus styling that survives `all:initial`. The warnings reset their buttons to strip page CSS,
-  // which also strips the focus ring, so a keyboard user could not see which action was selected.
-  // `currentColor` and a transparent outline are what keep this visible in forced-colors mode,
-  // where a coloured box-shadow is discarded but an outline is honoured.
-  const WO_FOCUS_STYLE = ':where(button,[href],[tabindex]):focus-visible{'
-    + 'outline:3px solid currentColor!important;outline-offset:2px!important;'
-    + 'box-shadow:0 0 0 5px rgba(255,255,255,.35)!important;}';
+  // The focus ring, painted inline rather than declared in a stylesheet.
+  //
+  // The warnings reset their buttons with `all:initial!important` in the style attribute to strip
+  // page CSS, and that takes the focus ring with it, so a keyboard user cannot see which action is
+  // selected. The obvious repair -- a `:focus-visible` rule in the overlay's own stylesheet -- does
+  // not work, and it is not a specificity problem to out-specify: an important declaration in a
+  // style attribute beats an important rule from any stylesheet, shadow root included. Measured in
+  // Chromium, every button still computed to `outline-style:none`, so the ring the code claimed to
+  // restore never drew.
+  //
+  // Setting the property inline puts it in the same declaration block as the reset, where the later
+  // declaration wins. An outline in `currentColor` is what forced-colors mode honours; a coloured
+  // box-shadow is discarded there.
+  function woFocusRing(host) {
+    let painted = null;
+    const drop = () => {
+      if (!painted) return;
+      try {
+        painted.style.removeProperty('outline');
+        painted.style.removeProperty('outline-offset');
+      } catch (_) {}
+      painted = null;
+    };
+    const paint = (el) => {
+      drop();
+      if (!el || !el.style) return;
+      try {
+        el.style.setProperty('outline', '3px solid currentColor', 'important');
+        el.style.setProperty('outline-offset', '2px', 'important');
+        painted = el;
+      } catch (_) {}
+    };
+    // :focus-visible is the browser's own answer to "did a keyboard put focus here?", so ask it
+    // rather than reimplementing the heuristic. A mouse click should not leave a ring behind.
+    const onIn = (e) => {
+      const target = e && e.target;
+      let visible = true;
+      try { visible = !target.matches || target.matches(':focus-visible'); } catch (_) {}
+      if (visible) paint(target);
+      else drop();
+    };
+    const onOut = () => drop();
+    try {
+      host.addEventListener('focusin', onIn, true);
+      host.addEventListener('focusout', onOut, true);
+    } catch (_) {}
+    return {
+      paint,
+      release() {
+        drop();
+        try {
+          host.removeEventListener('focusin', onIn, true);
+          host.removeEventListener('focusout', onOut, true);
+        } catch (_) {}
+      },
+    };
+  }
 
   function woOwnedOverlay(id) {
     let host = null;
@@ -406,6 +456,7 @@
     let gone = false;
     let restoreFocusTo = null;
     let trapHandler = null;
+    let focusRing = null;
 
     const container = () => document.body || document.documentElement || null;
 
@@ -488,10 +539,8 @@
           // Re-parent what the caller already rendered, so callers keep building their own markup
           // and gain the semantics without knowing about them.
           while (shadow.firstChild) box.appendChild(shadow.firstChild);
-          const style = document.createElement('style');
-          style.textContent = WO_FOCUS_STYLE;
-          shadow.appendChild(style);
           shadow.appendChild(box);
+          focusRing = woFocusRing(host);
 
           const focusables = () => {
             try {
@@ -512,6 +561,9 @@
             host.setAttribute('tabindex', '-1');
             const first = (o.focus && box.querySelector(o.focus)) || focusables()[0] || box;
             if (first && first.focus) first.focus();
+            // The dialog took focus without being asked to, so show where it went. From here on the
+            // ring follows :focus-visible, which is what keeps a mouse click from leaving one.
+            if (first && first !== box) focusRing.paint(first);
           } catch (_) {}
 
           // Contain Tab inside the dialog. Bound on the host, not the document, and removed in
@@ -548,6 +600,7 @@
           try { host.removeEventListener('keydown', trapHandler, true); } catch (_) {}
         }
         trapHandler = null;
+        if (focusRing) { try { focusRing.release(); } catch (_) {} focusRing = null; }
         try { if (host) host.remove(); } catch (_) {}
         if (restoreFocusTo && restoreFocusTo.focus && restoreFocusTo.isConnected) {
           try { restoreFocusTo.focus(); } catch (_) {}
