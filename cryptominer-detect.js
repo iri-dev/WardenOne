@@ -146,9 +146,22 @@
       }
     });
   } catch (_) {}
-  /* The bridge posts the handshake once at document_start; a dynamically
-     registered script can miss it, so ask for a replay. */
-  try { if (typeof window.__wardenOneBridgeReplay === 'function') window.__wardenOneBridgeReplay(); } catch (_) {}
+  /* The bridge posts the handshake once at document_start; a dynamically registered script can
+     miss it, so ask for a replay.
+
+     Through a DOM event, not a global. This script runs in MAIN and the bridge runs in ISOLATED,
+     so the window each sees is a different object: the `window.__wardenOneBridgeReplay` this used
+     to call is not merely absent, it is unreachable by construction. The test guarding it was
+     false every time, so the request was a no-op and this script simply never recovered from a
+     missed handshake -- no token, so every later config was rejected, so confirmed detections
+     stayed queued behind configReady and nothing was ever acted on or reported.
+
+     `document` is shared between the two worlds, and is already the channel this side uses to
+     reach the bridge. */
+  function requestBridgeReplay() {
+    try { document.dispatchEvent(new CustomEvent('wo-bridge-replay')); } catch (_) {}
+  }
+  requestBridgeReplay();
 
   /* Vocabulary that does not turn up in ordinary code by accident. Deliberately
      no bare "nonce" (CSP), "scrypt" or "argon2" (password hashing), or "worker" --
@@ -234,9 +247,10 @@
 
     if (!configReady) {
       pending.push({ url: url, tell: tell });
-      /* The handshake may have been posted before this script was injected;
-         ask the bridge to send both again. */
-      try { if (typeof window.__wardenOneBridgeReplay === 'function') window.__wardenOneBridgeReplay(); } catch (_) {}
+      /* The handshake may have been posted before this script was injected; ask the bridge to
+         send both again. This is the retry that matters -- the one at install time can lose the
+         race if the bridge has not run yet, and this one fires when there is something to lose. */
+      requestBridgeReplay();
       return;
     }
 

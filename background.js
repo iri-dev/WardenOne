@@ -6361,6 +6361,13 @@ function refreshExtensionState() {
         cfg.blockSponsoredSearchResults === true ? 1 : 0,
         cfg.blockGeolocation === true ? 1 : 0,
         cfg.blockWebRTCLeak !== false ? 1 : 0,
+        // Both of these drive a dynamic content-script registration reconciled below, and neither
+        // was represented here. The key is an early-out: once any other change had primed it,
+        // toggling only one of these produced an identical key, the whole block returned before
+        // reaching its reconciler, and the script was neither registered nor unregistered. The
+        // switch in the popup did nothing until something unrelated happened to change too.
+        cfg.cryptominerCpuWatch === true ? 1 : 0,
+        cfg.flagSearchJunk === true ? 1 : 0,
       ].join('|');
       if (stateKey === __refreshExtensionStateLastKey) return;
       __refreshExtensionStateLastKey = stateKey;

@@ -71,6 +71,21 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- Two switches now take effect when you flip them. Deep cryptominer detection and
+  "flag junk search results" each load an extra piece of code only while they are on,
+  and the check that decides whether anything needs loading did not look at either
+  switch. So once anything else had been changed, turning one of these on or off left
+  that check seeing no difference, and it stopped before reaching the part that would
+  have loaded or unloaded the code. The switch moved and nothing happened.
+- Deep cryptominer detection now acts on what it finds. It watches the page itself,
+  so before doing anything it waits to hear whether you have WardenOne switched on and
+  whether you have allowlisted this site -- and if it started after that message had
+  already been sent, it was supposed to ask for it again. It was asking in a place the
+  rest of the extension cannot hear: the page side and the extension side run in
+  separate worlds and do not share what they can see. The request went nowhere every
+  time, so a detector that started late never learned anything, and a page it caught
+  mining was left running and never reported. It now asks through the one channel both
+  sides genuinely share.
 - Memory Shield now actually puts idle tabs to sleep. It measured how long a tab had
   been unused from a note it kept in memory -- and Chrome shuts the extension down
   every few minutes, taking that note with it. The five-minute check that was meant

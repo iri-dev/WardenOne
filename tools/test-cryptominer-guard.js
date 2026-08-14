@@ -186,9 +186,15 @@ function run() {
     /SCAN_BUDGET_CONFIRMED/.test(DETECT));
   check('a miner cannot save itself by replacing terminate()',
     /__woNativeTerminate/.test(DETECT) && /writable: false/.test(DETECT));
-  check('detector depends on the bridge replay that bridge.js actually provides',
-    /__wardenOneBridgeReplay/.test(DETECT)
-      && /__wardenOneBridgeReplay/.test(fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8')));
+  // This used to assert that both files contained the string `__wardenOneBridgeReplay`. They did,
+  // and the call could still never land: the detector runs in MAIN and the bridge publishes that
+  // global on its own ISOLATED window. Two files mentioning the same name is not a connection
+  // between them. The replay now goes through the shared document, and tools/test-miner-realms.js
+  // drives both worlds to prove it arrives.
+  check('detector asks for a replay through the shared document, not a cross-world global',
+    /document\.dispatchEvent\(new CustomEvent\('wo-bridge-replay'\)\)/.test(DETECT)
+      && !/window\.__wardenOneBridgeReplay\s*(?:===|\()/.test(DETECT)
+      && /'wo-bridge-replay'/.test(fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8')));
   check('detector does not resurrect a CPU-load verdict',
     !/detected_cpu_abuse/.test(DETECT) && !/slowdown/.test(DETECT));
   check('detector decides on worker source, not on load',
