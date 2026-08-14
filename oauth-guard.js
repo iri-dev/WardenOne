@@ -67,6 +67,176 @@
     }
   };
 
+  // ---- Shared DOM watcher ----
+  // Smart Script Shield, Script Drift and the Login Page Age check each ran their
+  // own whole-document subtree MutationObserver, two of them for a full 60 seconds
+  // on every top-level page. That fired three separate extension callbacks for every
+  // mutation batch during the busiest minute of a page's life -- all to answer the
+  // same question: did the DOM change?
+  //
+  // They share one observer now. Subscribers are deliberately independent: one
+  // unsubscribing must never stop the others, so the observer is disconnected only
+  // when the LAST subscriber leaves, and reconnected if one arrives afterwards
+  // (Smart Script Shield re-arms on popstate/hashchange, long after the others are
+  // finished). Records are passed through because Script Drift reads addedNodes.
+  const domWatchers = new Set();
+  let domObserver = null;
+  let domWatchPending = false;
+
+  function domWatchStart() {
+    if (domObserver || !domWatchers.size) return;
+    const root = document.documentElement;
+    if (!root) {
+      // A document whose element is not up yet at document_start. Try once more.
+      if (domWatchPending) return;
+      domWatchPending = true;
+      try {
+        woOn(document, 'DOMContentLoaded', () => {
+          domWatchPending = false;
+          domWatchStart();
+        }, { once: true });
+      } catch (_) { domWatchPending = false; }
+      return;
+    }
+    try {
+      domObserver = woObserver((records) => {
+        // Snapshot the set: a subscriber may unsubscribe from inside its own
+        // callback (the login-age watcher does), and one throwing must not stop the
+        // rest from being told.
+        for (const fn of Array.from(domWatchers)) {
+          try { fn(records); } catch (_) {}
+        }
+      });
+      domObserver.observe(root, { childList: true, subtree: true });
+    } catch (_) {
+      domObserver = null;
+    }
+  }
+
+  function domWatchStop() {
+    if (!domObserver) return;
+    try { domObserver.disconnect(); } catch (_) {}
+    domObserver = null;
+  }
+
+  // Returns an unsubscribe function. Safe to call more than once.
+  function domWatch(fn) {
+    if (typeof fn !== 'function') return function () {};
+    domWatchers.add(fn);
+    domWatchStart();
+    let released = false;
+    return function () {
+      if (released) return;
+      released = true;
+      domWatchers.delete(fn);
+      if (!domWatchers.size) domWatchStop();
+    };
+  }
+  // data:
+  //
+  //   * Any page can build an element matching a selector. The cookie escape hatch identified
+  //     its own button with closest('#rg-reload-loop [data-wo-cookie-allow="1"]'), so a page
+  //     could plant that exact structure, label it "Play video", and turn one genuine user click
+  //     into contentSettings.cookies -> allow for itself. The trusted-click check passed, because
+  //     the click really was the user's -- what was forged was the element, not the gesture.
+  //   * Any page can delete an element by id. The login-age warning exists to say "this site is
+  //     probably phishing", and the site it accuses could remove it with one call.
+  //
+  // Both are answered by owning the nodes instead of describing them. A CLOSED shadow root's
+  // handle exists only here, in the isolated world: `host.shadowRoot` is null from the page, so
+  // the page cannot read the contents, inject into them, or hand us a lookalike. And because we
+  // keep direct references to what we built, "is this ours?" is an object comparison instead of a
+  // selector match, and listeners bind to the exact node rather than to the document.
+  //
+  // The host still carries an id and data-wo-ui="1". Those are labels, not credentials -- the
+  // engine's overlay cleaner and EyeShield both skip WardenOne's own UI by them, and that has to
+  // keep working. Nothing trusts them any more.
+  const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
+    + 'z-index:2147483647!important;';
+
+  function woOwnedOverlay(id) {
+    let host = null;
+    let shadow = null;
+    let unwatch = null;
+    let gone = false;
+
+    const container = () => document.body || document.documentElement || null;
+
+    function build() {
+      host = document.createElement('div');
+      try {
+        host.id = id;
+        host.setAttribute('data-wo-ui', '1');
+        host.setAttribute('style', WO_OWNED_HOST_STYLE);
+      } catch (_) {}
+      // If attachShadow is unavailable or the page has broken it, fall back to rendering into
+      // the host directly. That is the old, weaker arrangement rather than no warning at all --
+      // for the interstitials, being removable beats being invisible.
+      try {
+        shadow = host.attachShadow({ mode: 'closed' });
+      } catch (_) {
+        shadow = host;
+      }
+      return shadow;
+    }
+
+    function place() {
+      const parent = container();
+      if (!parent || !host) return false;
+      try {
+        if (host.parentNode !== parent) parent.appendChild(host);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return {
+      // The shadow root to render into. Built on first use.
+      root() { return shadow || build(); },
+      // The node identity check: only nodes we created live in our shadow root.
+      owns(node) {
+        if (!node || !shadow) return false;
+        try {
+          // getRootNode() on a node inside a closed shadow root returns that root, and a page
+          // cannot obtain it -- so a decoy in the page's DOM can never satisfy this.
+          return node.getRootNode() === shadow;
+        } catch (_) {
+          return false;
+        }
+      },
+      mount() {
+        if (gone) return false;
+        if (!shadow) build();
+        const placed = place();
+        // Self-healing. A page that removes the host gets it put straight back; the warning it
+        // is trying to delete is about that page. Re-placing is cheap because the node and its
+        // shadow tree are kept, so nothing is rebuilt.
+        if (placed && !unwatch) {
+          unwatch = domWatch(() => {
+            if (gone || !host) return;
+            try {
+              if (!host.isConnected) place();
+            } catch (_) {}
+          });
+        }
+        return placed;
+      },
+      destroy() {
+        gone = true;
+        if (unwatch) { try { unwatch(); } catch (_) {} unwatch = null; }
+        try { if (host) host.remove(); } catch (_) {}
+        host = null;
+        shadow = null;
+      },
+      // Only for our own bookkeeping; conveys no trust.
+      hostNode() { return host; },
+    };
+  }
+  /* The handle for the OAuth warning, so replacing or disposing it destroys the overlay this
+     copy built rather than whatever the page currently has under that id. */
+  let oauthOverlay = null;
+
   let config = { enabled: true, oauthGuard: true, silentMode: false };
   let configLoaded = false;
   let lastGrantKey = '';
@@ -403,12 +573,20 @@
     lastGrantKey = key;
     lastWarnAt = now;
     try {
-      const old = document.getElementById('wo-oauth-guard');
-      if (old) old.remove();
-      const root = document.body || document.documentElement;
-      if (!root) return;
+      /* Replacing destroys the overlay this copy built. Looking the old one up by id would find
+         whatever the page happens to have under that id, which the page chooses. */
+      if (oauthOverlay) { try { oauthOverlay.destroy(); } catch (_) {} oauthOverlay = null; }
+      oauthOverlay = woOwnedOverlay('wo-oauth-guard');
+      /* Handed to the shared registry as something with a disconnect(), because that is the one
+         thing its teardown loop knows how to call. This is why the dispose above stays byte-for-byte
+         identical to the other eight copies: the overlay hooks into it instead of editing it.
+         destroy() releases its own DOM-watch subscription, so the ordering inside woKeep is not
+         load-bearing. */
+      woHold({ disconnect() { try { if (oauthOverlay) oauthOverlay.destroy(); } catch (_) {} } });
+      const shadow = oauthOverlay.root();
+      if (!shadow) return;
+      /* The host carries the id and the fixed positioning; this is the backdrop inside it. */
       const wrap = document.createElement('div');
-      wrap.id = 'wo-oauth-guard';
       wrap.setAttribute('style', WO_MODAL.overlay);
       const box = document.createElement('div');
       box.setAttribute('style', WO_MODAL.panel);
@@ -436,17 +614,27 @@
         return btn;
       };
       const leave = mkBtn('Leave page', true);
+      /* isTrusted proves the click was the user's. owns() proves the thing they clicked is ours:
+         a page can build a button matching any description, so the gesture being genuine is not
+         enough on its own. Only nodes inside our closed shadow root satisfy this. */
       woOn(leave, 'click', (e) => {
         if (e && e.isTrusted === false) return;
+        if (!oauthOverlay || !oauthOverlay.owns(leave)) return;
         try { if (history.length > 1) history.back(); else location.href = grant.settings || 'about:blank'; } catch (_) { try { location.href = 'about:blank'; } catch (_) {} }
       });
       const settings = mkBtn('Manage existing apps', false);
       woOn(settings, 'click', (e) => {
         if (e && e.isTrusted === false) return;
+        if (!oauthOverlay || !oauthOverlay.owns(settings)) return;
         try { window.open(grant.settings, '_blank', 'noopener'); status.textContent = 'Opened the provider app-access page.'; } catch (_) { try { location.href = grant.settings; } catch (_) {} }
       });
       const dismiss = mkBtn('Review anyway', false);
-      woOn(dismiss, 'click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
+      woOn(dismiss, 'click', (e) => {
+        if (e && e.isTrusted === false) return;
+        if (!oauthOverlay || !oauthOverlay.owns(dismiss)) return;
+        try { oauthOverlay.destroy(); } catch (_) {}
+        oauthOverlay = null;
+      });
       actions.appendChild(leave);
       actions.appendChild(settings);
       actions.appendChild(dismiss);
@@ -457,7 +645,8 @@
       box.appendChild(status);
       box.appendChild(actions);
       wrap.appendChild(box);
-      root.appendChild(wrap);
+      shadow.appendChild(wrap);
+      oauthOverlay.mount();
     } catch (_) {}
   }
 

@@ -393,6 +393,74 @@ function loadCookieEscape() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 5. The OAuth grant warning (M8, remaining half). Same reasoning as the three above: the warning
+//    says "this app is asking for powerful access", and the page it is warning about shared the DOM
+//    with it. It was the last interstitial still built as a plain div on document.body.
+// ---------------------------------------------------------------------------
+{
+  const OAUTH = fs.readFileSync(path.join(ROOT, 'oauth-guard.js'), 'utf8');
+  const live = OAUTH.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  check('oauth warning: rendered into an owned overlay',
+    live.includes("woOwnedOverlay('wo-oauth-guard')"));
+  check('oauth warning: no longer found again by getElementById',
+    !live.includes("document.getElementById('wo-oauth-guard')"));
+  check('oauth warning: not appended straight to the page body',
+    !/root\.appendChild\(wrap\)/.test(live));
+  check('oauth warning: replacing destroys our own overlay',
+    /oauthOverlay\.destroy\(\)/.test(live));
+  // Every button takes a real action -- navigating away, opening a window, dismissing the warning.
+  // isTrusted proves the gesture; owns() proves the element was not planted by the page.
+  check('oauth warning: all three buttons check node ownership',
+    (live.match(/oauthOverlay\.owns\(/g) || []).length >= 3);
+  // The shared dispose is meant to be byte-identical across nine files, so the overlay has to hook
+  // into it rather than be edited into it. If this regresses, so does that assertion.
+  check('oauth warning: teardown registers with the shared registry, not by editing it',
+    /woHold\(\{ disconnect\(\)/.test(live));
+
+  // Runtime: the closed-shadow guarantee itself, against the same fake DOM the bridge tests use.
+  const dom = makeDom();
+  const healers = [];
+  const sandbox = {
+    document: dom.document,
+    domWatch: (fn) => { healers.push(fn); return () => { const i = healers.indexOf(fn); if (i >= 0) healers.splice(i, 1); }; },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(
+    sourceBetween(OAUTH, '  const WO_OWNED_HOST_STYLE', '\n  /* The handle for the OAuth warning')
+      + '\n; this.make = woOwnedOverlay;',
+    sandbox,
+    { filename: 'oauth-guard.js' }
+  );
+
+  const ov = sandbox.make('wo-oauth-guard');
+  const root = ov.root();
+  ov.mount();
+  const host = ov.hostNode();
+
+  check('oauth warning: the page cannot reach the shadow root through the host',
+    host.shadowRoot === null, 'shadowRoot was ' + host.shadowRoot);
+  const ours = dom.makeNode('div');
+  root.appendChild(ours);
+  check('oauth warning: a node we built is recognised as ours', ov.owns(ours) === true);
+  const decoy = dom.makeNode('button');
+  decoy.id = 'wo-oauth-guard';
+  dom.document.body.appendChild(decoy);
+  check('oauth warning: a page-planted lookalike is not ours', ov.owns(decoy) === false);
+
+  // Self-healing: the page it accuses is the party that would remove it.
+  host.remove();
+  check('oauth warning: the page can detach the host', host.isConnected === false);
+  healers.forEach((fn) => fn());
+  check('oauth warning: a removed host is put straight back', host.isConnected === true);
+  check('oauth warning: the same node returns, so contents and listeners survive',
+    ov.owns(ours) === true);
+
+  ov.destroy();
+  check('oauth warning: destroy() stops the self-healing', healers.length === 0);
+}
+
 if (failures) {
   console.error('[fail] owned-UI tests: ' + failures + ' failure(s)');
   process.exit(1);
