@@ -817,37 +817,70 @@
       }
 
     }
-    const WO=(()=>{
+    /* The engine's authoritative config. This used to BE window.__WO_CONFIG__ on every site except
+       Amazon and YouTube, which take derived copies and were insulated by accident -- so the page,
+       which shares this world, could switch the running engine off with
+       Object.assign(window.__WO_CONFIG__,{enabled:!1}). It is a private object now, refreshed FROM
+       the global rather than being it.
+
+       Refreshed IN PLACE and never reassigned. WO is a const captured by closures throughout this
+       file; replacing the binding would leave every one of them reading the object they already
+       captured. Copying into the same object preserves identity, and preserves the live-update
+       behaviour the runtime genuinely depends on: the start path has a 1500ms fallback that fires
+       whether or not the config has arrived, so a plain snapshot taken at bind time would freeze
+       the placeholder defaults on exactly the slow tabs least able to report it. That is why the
+       obvious fix -- Object.assign({},cfg) -- would have been worse than the bug. */
+    const WO={},
+    __woSyncConfig=()=>{
       const cfg=window.__WO_CONFIG__||{
 
       },
       host=String(location.hostname||"").replace(/^www\./,
       "").toLowerCase();
+      let next=cfg;
       if(/(^|\.)amazon\.[a-z.]+$/i.test(host)){
         const safe=Object.assign({
 
         },
         cfg);
         for(const k of Object.keys(safe))"boolean"==typeof safe[k]&&(safe[k]=!1);
-        return safe.enabled=!1,
+        safe.enabled=!1,
         safe.showBadge=!1,
         safe.showToasts=!1,
         safe.__amazonCompatibilityMode=!0,
-        safe
+        next=safe
       }
-      if(!/(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(location.hostname))return cfg;
-      const safe=Object.assign({
+      else if(/(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(location.hostname)){
+        const safe=Object.assign({
 
-      },
-      cfg);
-      for(const k of Object.keys(safe))"boolean"==typeof safe[k]&&(safe[k]=!1);
-      return safe.adShield=!1!==cfg.adShield,
-      safe.scriptletEngine=!1!==cfg.scriptletEngine,
-      safe.enabled=!1,
-      safe.showBadge=!1,
-      safe.showToasts=!1,
-      safe.__youtubeRecoveryMode=!1,
-      safe
+        },
+        cfg);
+        for(const k of Object.keys(safe))"boolean"==typeof safe[k]&&(safe[k]=!1);
+        safe.adShield=!1!==cfg.adShield,
+        safe.scriptletEngine=!1!==cfg.scriptletEngine,
+        safe.enabled=!1,
+        safe.showBadge=!1,
+        safe.showToasts=!1,
+        safe.__youtubeRecoveryMode=!1,
+        next=safe
+      }
+      /* Keys the new config no longer carries are dropped, or a setting turned off upstream would
+         survive here forever. The derived Amazon and YouTube copies are rebuilt on every sync for
+         the same reason -- deriving once would leave them stale the moment the config changed. */
+      for(const k of Object.keys(WO))k in next||delete WO[k];
+      Object.assign(WO,next)
+    },
+    __woConfigBound=(()=>{
+      __woSyncConfig();
+      /* The config arrives asynchronously and can land after the runtime has started. Re-derive on
+         the same event the start path already listens for, rather than trusting a single read. */
+      try{
+        woOn(document,"wo-config-change",__woSyncConfig)
+      }
+      catch(_){
+
+      }
+      return !0
     })(),
     WO_TOP=window===window.top,
     regDomain=h=>String(h||"").replace(/^www\./,
