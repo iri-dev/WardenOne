@@ -7444,6 +7444,17 @@ const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
   'ttvnw.net', 'jtvnw.net', 'twitchcdn.net',      // Twitch
   'discordapp.net',                               // Discord
   'steamstatic.com',                              // Steam
+  // Microsoft serves the Office web apps from hosts that share no registrable domain with the page
+  // they run on: word.cloud.microsoft loads every one of its scripts from res.cdn.office.net.
+  // Measured, not assumed -- the page's only script host is res.cdn.office.net, so Smart Script
+  // Shield saw first-party application code as third-party and refused it, and Word stopped on its
+  // splash icon with nothing naming the cause.
+  'office.net',                                   // Office web app code and shell
+  // The editor itself is served from officeapps.live.com once a document opens. Not exercised by
+  // the landing page above, so unlike office.net this one is not measured here -- it is included
+  // because the same wall would otherwise appear one click later, on a host that is just as
+  // unambiguously Microsoft's.
+  'officeapps.live.com',                          // Word/Excel/PowerPoint editors
 ];
 
 // 'route-blocked' is not like the other three. Those say "a player is here"; it says "a player
