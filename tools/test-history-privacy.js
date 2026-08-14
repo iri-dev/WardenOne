@@ -187,7 +187,60 @@ check('queueHistory buffers the sanitized copy, not the caller entry',
     /Object\.assign\(safeDetailAssign\(\{\}, detailObj\)/.test(normalizeBody));
 }
 
-if (failed) { console.error('\n' + failed + ' failed'); process.exit(1); }
+
+// ---------------------------------------------------------------------------
+// L18. Stripping the query was only half the job. Password-reset links, magic links, signed
+// downloads and session routes carry their secret in a PATH SEGMENT, which survived
+// query-stripping completely intact and then sat in exportable local history.
+//
+// Segments are redacted by default now and kept only when they read as route vocabulary. These
+// assert both directions, because a redactor that eats the whole path is safe and useless.
+// ---------------------------------------------------------------------------
+{
+  const leaks = [
+    ['https://site.example/reset-password/SECRET123?utm=x', 'SECRET123', 'password reset token'],
+    ['https://site.example/magic/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc', 'eyJhbGci', 'JWT-shaped segment'],
+    ['https://site.example/d/9f8e7d6c5b4a3928/report.pdf', '9f8e7d6c5b4a3928', 'signed download id'],
+    ['https://site.example/u/person%40example.com/settings', 'person@example.com', 'percent-encoded email'],
+    ['https://site.example/invite/AbC123XyZ789', 'AbC123XyZ789', 'mixed-case invite token'],
+    ['https://site.example/s/550e8400-e29b-41d4-a716-446655440000', '550e8400', 'UUID session id'],
+    ['https://site.example/dl/aGVsbG93b3JsZGZvbw==', 'aGVsbG93', 'base64 payload'],
+  ];
+  for (const [url, secret, label] of leaks) {
+    const out = safeUrlForLog(url);
+    check('L18 path secret does not survive: ' + label,
+      !out.includes(secret), 'got ' + out);
+  }
+
+  // The origin must still be there, or the entry stops being useful at all.
+  check('L18 the origin survives redaction',
+    safeUrlForLog('https://site.example/reset-password/SECRET123') === 'https://site.example/reset-password/*');
+
+  // Route vocabulary is what makes the log worth keeping.
+  const kept = [
+    ['https://site.example/login', 'https://site.example/login'],
+    ['https://site.example/account/settings/privacy', 'https://site.example/account/settings/privacy'],
+    ['https://site.example/orders/48291', 'https://site.example/orders/48291'],
+    ['https://site.example/help/two-factor-auth', 'https://site.example/help/two-factor-auth'],
+  ];
+  for (const [url, want] of kept) {
+    check('L18 route context is kept: ' + url.replace('https://site.example', ''),
+      safeUrlForLog(url) === want, 'got ' + safeUrlForLog(url));
+  }
+
+  // A secret one field over, inside detail, must be redacted by the same rule.
+  const nested = sanitizeHistoryDetail({ target: 'https://site.example/reset/SECRET123' }, 0);
+  check('L18 detail URLs are redacted too', !JSON.stringify(nested).includes('SECRET123'));
+
+  // Scheme-less callers take the second parse path, which must redact identically -- it did not
+  // in an earlier draft, because only the first branch had been changed.
+  check('L18 the scheme-less parse path redacts as well',
+    !safeUrlForLog('site.example/reset/SECRET123').includes('SECRET123'),
+    'got ' + safeUrlForLog('site.example/reset/SECRET123'));
+}
+
+
+
 console.log('\nhistory privacy checks passed');
 
 // ---------------------------------------------------------------------------
@@ -221,6 +274,12 @@ console.log('\nhistory privacy checks passed');
     };
     const sandbox = {
       Object, Array, Set, String, Number, Math, JSON,
+      // M26 added a cold-start gate that flushHistory reads. These cases exercise the WRITE path,
+      // not the cold start, so the gate stands open -- M26's own cases below drive it closed.
+      // Declared here because the lifted region starts at scheduleHistoryFlush and so does not
+      // carry the `let` itself; leaving it out made the lifted code throw ReferenceError, which is
+      // exactly how this harness's scope gap surfaces.
+      __histRecoveryDone: options.recoveryDone !== false,
       setTimeout: (fn) => { timers.push(fn); return timers.length; },
       clearTimeout: () => {},
       persistHistBuffer() { box.persistCalls++; },
@@ -296,4 +355,58 @@ console.log('\nhistory privacy checks passed');
       /Array\.isArray\(raw\)\s*\?\s*raw\s*:\s*\[\]/.test(ui)
         && !/render\(\(x && x\.wardenone_history\) \|\| \[\]\)/.test(ui));
   }
+// ---------------------------------------------------------------------------
+// M26. Session-buffer recovery is asynchronous, and the block listener is live before it finishes.
+// A cold start triggered by a block could queue an entry, schedule a flush, and complete the whole
+// write-and-clear cycle while the recovery read was still in flight -- and that cycle ends by
+// deleting the session key being read. The recovered entries then landed in memory after the write
+// meant to persist them, and went at the next suspension.
+// ---------------------------------------------------------------------------
+{
+  // Gate closed: nothing may drain.
+  const held = runWriter([], { recoveryDone: false });
+  check('M26 a flush before recovery does not write',
+    held.setCalls.length === 0, 'wrote ' + held.setCalls.length + ' time(s)');
+  check('M26 a flush before recovery does not drain the buffer',
+    held.__histBuffer.length === 2, 'buffer had ' + held.__histBuffer.length);
+  check('M26 a flush before recovery does not clear the write-ahead copy',
+    held.sessionRemoved === 0);
+  check('M26 the held flush leaves the writer unlocked for the retry',
+    held.__histWriting === false);
+  check('M26 the held flush re-arms rather than giving up',
+    held.__histTimer !== null, 'no retry timer was set');
+
+  // Gate open: the same call writes, so the gate is what held it and not something else.
+  const open = runWriter([], { recoveryDone: true });
+  check('M26 the same flush writes once recovery has settled',
+    open.setCalls.length === 1 && open.setCalls[0].length === 2);
+
+  // The gate must exist in the shipped worker, and must open on both the callback and a fallback:
+  // a storage.session that never calls back must not silence history for the worker's lifetime.
+  // Plain substring checks, not regexes. These assertions were first written as regex literals
+  // inside a template literal, which ate every backslash -- \s* reached the file as s*, and the
+  // resulting pattern was a syntax error rather than a weaker test. Substrings cannot lose an
+  // escape they never had.
+  check('M26 the worker gates the first drain on recovery',
+    source.includes('if (!__histRecoveryDone) {'));
+  check('M26 recovery opens the gate on the callback path',
+    source.includes('markHistRecoveryDone();'));
+  check('M26 the gate also opens if storage.session never answers',
+    source.includes('setTimeout(markHistRecoveryDone, 3000)'));
+  // Scoped to markHistRecoveryDone's own body. Checking the two substrings anywhere in the file
+  // passed even with the drain deleted, because that same line also appears in the flush
+  // completion path -- a substring test is only as good as the region it is asked about.
+  const gateBody = source.slice(
+    source.indexOf('function markHistRecoveryDone()'),
+    source.indexOf('\n}', source.indexOf('function markHistRecoveryDone()')),
+  );
+  check('M26 opening the gate drains anything queued while it was shut',
+    gateBody.includes('__histRecoveryDone = true;')
+      && gateBody.includes('if (__histBuffer.length) scheduleHistoryFlush();'),
+    'markHistRecoveryDone does not schedule the deferred drain');
+  check('M26 recovery still prepends rather than overwriting',
+    source.includes('__histBuffer = recovered.concat(__histBuffer)'));
 }
+}
+
+if (failed) { console.error('\n' + failed + ' failed'); process.exit(1); }

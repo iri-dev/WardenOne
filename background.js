@@ -336,21 +336,63 @@ function persistHistBuffer() {
 // email addresses live, and callers were passing whole tab URLs straight in.
 // The history is local, but it is long-lived and the user can export it, so
 // retaining those is a real risk in a tool people install *for* privacy.
-// Scheme, host and path say what happened without keeping the secret.
+// Scheme, host and a REDACTED path say what happened without keeping the secret.
+//
+// Keeping the whole path was the remaining leak. Password-reset links, magic links, signed
+// downloads and session-style routes carry their secret in a path segment, not the query --
+// https://site.example/reset-password/SECRET123 survives query-stripping completely intact, and
+// then sits in exportable local history for as long as the user keeps it.
+//
+// Segments are therefore redacted by DEFAULT and kept only when they look like route vocabulary.
+// That direction matters: a token-matching heuristic has to recognise every secret format ever
+// invented to be safe, while a word-matching one only has to recognise English-ish route names to
+// be useful, and anything it fails to recognise is merely redacted. Getting it wrong costs
+// diagnostic detail; getting it wrong the other way costs someone their account.
 const LOG_URL_MAX = 300;
+const LOG_SEGMENT_MAX = 24;
+function safeLogSegment(segment) {
+  if (!segment) return segment;
+  let decoded = segment;
+  // Percent-encoding would otherwise hide both the length and the shape of a secret.
+  try { decoded = decodeURIComponent(segment); } catch (_) {}
+  if (decoded.length > LOG_SEGMENT_MAX) return '*';
+  // An email address in a path is personal data even when it is short and wordlike.
+  if (decoded.includes('@')) return '*';
+  // Route vocabulary: letters, digits, and the separators routes actually use. A segment that is
+  // all digits is an ordinary record id and stays; one that mixes cases and digits is far more
+  // likely to be a token than a word, so it goes.
+  if (!/^[A-Za-z0-9._~-]+$/.test(decoded)) return '*';
+  if (/^\d+$/.test(decoded)) return decoded;
+  // Any uppercase at all is enough to redact. Route names are lowercase by overwhelming
+  // convention, while tokens are routinely upper or mixed case -- and requiring BOTH cases plus a
+  // digit let SECRET123, this finding's own repro, straight through on the first attempt. Losing
+  // the occasional camelCase route from a diagnostic line is a much cheaper mistake.
+  if (/[A-Z]/.test(decoded)) return '*';
+  // Long unbroken alphanumeric runs are what hex, base64 and JWT fragments look like; real route
+  // words are broken up by hyphens, dots or underscores well before this length.
+  if (/[A-Za-z0-9]{16,}/.test(decoded)) return '*';
+  return decoded;
+}
+function safeLogPath(pathname) {
+  const path = String(pathname || '');
+  if (!path || path === '/') return path;
+  // split('/') on a leading-slash path yields a leading '' that must survive, or the rebuilt
+  // path loses its root.
+  return path.split('/').map((seg, i) => (i === 0 ? seg : safeLogSegment(seg))).join('/');
+}
 function safeUrlForLog(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   try {
     const url = new URL(raw);
-    return (url.protocol + '//' + url.host + url.pathname).slice(0, LOG_URL_MAX);
+    return (url.protocol + '//' + url.host + safeLogPath(url.pathname)).slice(0, LOG_URL_MAX);
   } catch (_) {}
   // Some callers log a bare domain, or a scheme-less host/path. Re-parse with an
   // assumed scheme rather than returning '': dropping them would blank entries
   // that were never sensitive, and a bare "host/path?token=" must still be cut.
   try {
     const url = new URL('https://' + raw.replace(/^\/+/, ''));
-    return (url.host + url.pathname).slice(0, LOG_URL_MAX);
+    return (url.host + safeLogPath(url.pathname)).slice(0, LOG_URL_MAX);
   } catch (_) {}
   return '';
 }
@@ -392,16 +434,34 @@ function queueHistory(entry) {
 // asynchronous and the rg-block listener is registered above this, so a block can
 // already have been queued by the time this callback runs -- and the worker cold
 // starts precisely BECAUSE of that first event. Assigning here dropped it.
+//
+// Nothing may drain the buffer until this has run. The read is asynchronous and the block
+// listener is already live, so a cold start triggered by a block can queue an entry, schedule a
+// flush, and complete the whole write-and-clear cycle while this get() is still in flight -- and
+// that cycle ends by deleting the very session key being read. The recovered entries would then
+// be prepended into memory after the write that was supposed to persist them, and dropped at the
+// next suspension. Waiting is what makes the ordering deterministic rather than lucky.
+let __histRecoveryDone = false;
+function markHistRecoveryDone() {
+  if (__histRecoveryDone) return;
+  __histRecoveryDone = true;
+  if (__histBuffer.length) scheduleHistoryFlush();
+}
 try {
   chrome.storage.session.get('__wardenone_hist_buffer', (x) => {
-    const recovered = (x && Array.isArray(x.__wardenone_hist_buffer)) ? x.__wardenone_hist_buffer : [];
-    if (recovered.length) {
-      __histBuffer = recovered.concat(__histBuffer);
-      // schedule a flush immediately to persist survivors to local storage
-      scheduleHistoryFlush();
-    }
+    try {
+      const recovered = (x && Array.isArray(x.__wardenone_hist_buffer)) ? x.__wardenone_hist_buffer : [];
+      if (recovered.length) __histBuffer = recovered.concat(__histBuffer);
+    } catch (_) {}
+    markHistRecoveryDone();
   });
-} catch (_) {}
+} catch (_) {
+  markHistRecoveryDone();
+}
+// A storage.session API that never calls back must not wedge history for the life of the worker.
+// The gate opens regardless after a bounded wait; losing the recovered entries is bad, refusing to
+// record anything ever again is worse.
+try { setTimeout(markHistRecoveryDone, 3000); } catch (_) { markHistRecoveryDone(); }
 function scheduleHistoryFlush() {
   if (__histTimer || __histWriting) return;
   __histTimer = setTimeout(flushHistory, 500);
@@ -409,6 +469,12 @@ function scheduleHistoryFlush() {
 function flushHistory() {
   __histTimer = null;
   if (__histWriting || !__histBuffer.length) return;
+  // Hold the first drain until recovery has settled. Re-armed rather than dropped, so entries
+  // queued during a cold start are written as soon as the gate opens.
+  if (!__histRecoveryDone) {
+    __histTimer = setTimeout(flushHistory, 60);
+    return;
+  }
   if (__histPersistTimer) {
     clearTimeout(__histPersistTimer);
     __histPersistTimer = null;
