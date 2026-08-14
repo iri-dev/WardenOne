@@ -71,6 +71,13 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- WardenOne now credits every list it uses, not just the best-known four. It draws on
+  37 community blocklists from 21 projects, and only four were substantively credited --
+  not from any wish to hide the rest, but because a hand-written attribution page falls
+  behind the moment a list is added. The credits page now has a table generated from the
+  code itself, so it cannot drift, and the release check refuses to pass if a list is
+  added without one. Where a project's exact terms have not been confirmed yet, it says
+  so rather than leaving a blank.
 - A site asking for notification permission is now recorded once rather than twice. The
   browser can answer that request through two different mechanisms at the same time,
   and WardenOne was logging both — so one prompt appeared as two entries in your
