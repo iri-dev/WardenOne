@@ -1939,8 +1939,21 @@
       }
 
     },
+    /* The blocker's stylesheet may only exist while its overlay does.
+       That stylesheet hides every element on the page and paints the body near-black, so on its
+       own it is a black screen with nothing on it and no way back. It could be left that way two
+       ways. The self-heal runs on requestAnimationFrame, and disconnecting the observer does not
+       cancel a frame that is already queued -- so a callback landing just after teardown saw both
+       the overlay and the style missing and put the style back. And ensureOverlay swallows a throw
+       from paint, so a failed repaint left the style standing on its own.
+       Both are closed here: teardown marks the mount gone and cancels the pending frame, and any
+       repaint that does not end with the overlay present takes the style back down with it. */
     mountBlocker=(id,
     paint)=>{
+      let gone=!1,
+      obs=null,
+      remounts=0,
+      scheduled=0;
       const styleId=id+"-style",
       ensureStyle=()=>{
         if(document.getElementById(styleId))return;
@@ -1949,8 +1962,13 @@
         st.textContent="html > body > *:not(#"+id+"){display:none!important;visibility:hidden!important}body{overflow:hidden!important;background:#0a0a0f!important}#"+id+"{display:flex!important;visibility:visible!important}",
         (document.head||document.documentElement).appendChild(st)
       },
+      dropStyle=()=>{
+        const s=document.getElementById(styleId);
+        s&&s.remove()
+      },
       ensureOverlay=()=>{
-        if(!document.getElementById(id))try{
+        if(document.getElementById(id))return;
+        try{
           paint()
         }
         catch(_){
@@ -1960,12 +1978,14 @@
       };
       ensureStyle(),
       ensureOverlay();
-      let obs=null,
-      remounts=0,
-      scheduled=!1;
+      /* The same invariant at mount time, not only on self-heal: paint() can throw, and a
+         stylesheet installed over a page with nothing drawn on top of it is the same black
+         screen arrived at from the other direction. */
+      if(!document.getElementById(id))dropStyle();
       const check=()=>{
-        if(scheduled=!1,
-        !document.getElementById(id)||!document.getElementById(styleId)){
+        scheduled=0;
+        if(gone)return;
+        if(!document.getElementById(id)||!document.getElementById(styleId)){
           if(remounts++>60)try{
             obs&&obs.disconnect()
           }
@@ -1973,14 +1993,14 @@
 
           }
           ensureStyle(),
-          ensureOverlay()
+          ensureOverlay();
+          if(!document.getElementById(id))dropStyle()
         }
 
       };
       try{
         obs=__woObserver(()=>{
-          scheduled||(scheduled=!0,
-          requestAnimationFrame(check))
+          scheduled||(scheduled=requestAnimationFrame(check))
         }),
         obs.observe(document.documentElement,
         {
@@ -2002,6 +2022,16 @@
       },
       1e4);
       return()=>{
+        gone=!0;
+        if(scheduled){
+          try{
+            cancelAnimationFrame(scheduled)
+          }
+          catch(_){
+
+          }
+          scheduled=0
+        }
         try{
           obs&&obs.disconnect()
         }
@@ -2011,8 +2041,7 @@
         clearTimeout(obsTimeout);
         const o=document.getElementById(id);
         o&&o.remove();
-        const s=document.getElementById(styleId);
-        s&&s.remove(),
+        dropStyle(),
         WO.__frozen=!1
       }
 
