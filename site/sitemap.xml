@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Five pages, which is the whole site. Listing them tells a crawler which URLs are meant to
+<!-- Six pages, which is the whole site. Listing them tells a crawler which URLs are meant to
      exist, rather than leaving it to discover them from links alone. Anything added here must
      also be staged by .github/workflows/pages.yml, or this file promises a URL that 404s. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -27,5 +27,12 @@
     <loc>https://iri-dev.github.io/WardenOne/CREDITS</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
+  </url>
+  <!-- Someone who ran the substituted download needs to find this, so it is worth as much
+       crawl priority as the pages that sell the extension. -->
+  <url>
+    <loc>https://iri-dev.github.io/WardenOne/stolen</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>

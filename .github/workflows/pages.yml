@@ -58,6 +58,7 @@ jobs:
           mkdir -p _pages
           cp site/index.html _pages/
           cp site/404.html _pages/
+          cp site/stolen.html _pages/
           # Search Console verification. Google re-checks this periodically, so the file
           # has to stay served, not just exist long enough to pass once.
           cp site/google*.html _pages/
