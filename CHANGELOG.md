@@ -71,6 +71,21 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- A setting you just changed can no longer be undone by one you changed a moment
+  earlier. WardenOne keeps your settings and its filter data in memory so it does not
+  re-read them for every frame of every page, but a read that was already underway when
+  you changed something could finish afterwards and write the old values back over the
+  new ones -- and then keep serving them. Turning WardenOne off, or adding a site to
+  your allowlist, could quietly revert and stay reverted. Reads that started before a
+  change now answer whoever asked for them but are no longer allowed to replace what
+  came after, and a burst of pages asking at once shares a single read instead of
+  starting one each.
+- Rules and page protections now end up in the state you last asked for. Each protection
+  checked what it had last applied, made its change, then recorded it -- fine one at a
+  time, but two changes close together could both start, and whichever finished last
+  won even when it was the older one. So a switch could end up off in the settings and
+  on in the browser, or the reverse. Changes to the same protection are now applied
+  strictly in the order you made them.
 - The certificate warning no longer replaces a page you actually asked for. When a site
   fails its security check, WardenOne reads your settings before showing the warning
   page -- and if you pressed back, or the site sent you somewhere else, or the tab was

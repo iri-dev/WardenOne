@@ -1,4 +1,4 @@
-/* WardenOne — Copyright (C) 2026 iri
+﻿/* WardenOne â€” Copyright (C) 2026 iri
    Licensed under the GNU General Public License v3 or later. See LICENSE.
    Official source: https://github.com/iri-dev/WardenOne
    Upstream filter-list attribution: CREDITS.md
@@ -961,10 +961,10 @@ const DEFAULT_CONFIG = {
 // "Recommended" = the always-safe security + tracking defenses that don't break
 // normal browsing (what the onboarding button has always applied). "Maximum
 // privacy" is a SUPERSET that also enables the hardened privacy features which
-// CAN affect some sites — surfaced in onboarding as an explicit, clearly
+// CAN affect some sites â€” surfaced in onboarding as an explicit, clearly
 // labelled opt-in, never forced on. Sharing the recommended object keeps the two
 // from drifting. Deliberately NOT in Maximum privacy: blockAllCookies (breaks
-// every login) and honeytokenMode (advanced, can interfere with forms) — those
+// every login) and honeytokenMode (advanced, can interfere with forms) â€” those
 // stay expert-only toggles in the popup.
 const ONBOARDING_RECOMMENDED = {
   enabled: true,
@@ -1722,10 +1722,19 @@ async function updateAdShieldCosmetics() {
 let __cosmeticMem = null;             // { data, cfg, allow } once loaded; null = needs (re)load
 let __cosmeticHostCache = new Map();  // host -> serve result (insertion order = LRU recency)
 const COSMETIC_HOST_CACHE_MAX = 256;  // a single page rarely spans more distinct hosts than this
+// Same two additions as the config cache above, for the same two reasons (M18): one in-flight load
+// shared by concurrent callers, and a generation so a load that started before an invalidation
+// cannot undo it by publishing when it finally returns. Both mattered more here -- this blob is
+// multi-megabyte, the handler runs in every frame, and an undone invalidation means serving
+// cosmetic rules computed against an allowlist the user has already changed.
+let __cosmeticGeneration = 0;
+let __cosmeticLoad = null;
 
 function invalidateCosmeticCache() {
   __cosmeticMem = null;
   __cosmeticHostCache.clear();
+  __cosmeticGeneration++;
+  __cosmeticLoad = null;
 }
 
 // Lazily load (and hold) the blob, config and allowlist together. One read for
@@ -1752,24 +1761,36 @@ async function getPackagedCosmetics() {
 
 async function getCosmeticMem() {
   if (__cosmeticMem) return __cosmeticMem;
-  const [store, packaged] = await Promise.all([
-    chrome.storage.local.get([
-      'wardenone_adshield_cosmetic', 'wardenone_config', 'wardenone_adshield_allowlist',
-    ]),
-    getPackagedCosmetics(),
-  ]);
-  const stored = store.wardenone_adshield_cosmetic || null;
-  __cosmeticMem = {
-    // Selectors come from the daily refresh; commands come only from the package. The packaged
-    // copy is assigned last on purpose, so a cache written by an older build -- which did store
-    // scriptlets and procedural rules -- cannot supply them after an upgrade.
-    data: stored
-      ? Object.assign({}, stored, { scriptlets: packaged.scriptlets, procedural: packaged.procedural })
-      : { generic: [], specific: {}, exceptions: {}, genericHideExclusions: [], scriptlets: packaged.scriptlets, procedural: packaged.procedural },
-    cfg: store.wardenone_config || {},
-    allow: normalizeAllowlistHosts(store.wardenone_adshield_allowlist || []),
-  };
-  return __cosmeticMem;
+  if (!__cosmeticLoad) {
+    const generation = __cosmeticGeneration;
+    const load = (async () => {
+      const [store, packaged] = await Promise.all([
+        chrome.storage.local.get([
+          'wardenone_adshield_cosmetic', 'wardenone_config', 'wardenone_adshield_allowlist',
+        ]),
+        getPackagedCosmetics(),
+      ]);
+      const stored = store.wardenone_adshield_cosmetic || null;
+      const mem = {
+        // Selectors come from the daily refresh; commands come only from the package. The packaged
+        // copy is assigned last on purpose, so a cache written by an older build -- which did store
+        // scriptlets and procedural rules -- cannot supply them after an upgrade.
+        data: stored
+          ? Object.assign({}, stored, { scriptlets: packaged.scriptlets, procedural: packaged.procedural })
+          : { generic: [], specific: {}, exceptions: {}, genericHideExclusions: [], scriptlets: packaged.scriptlets, procedural: packaged.procedural },
+        cfg: store.wardenone_config || {},
+        allow: normalizeAllowlistHosts(store.wardenone_adshield_allowlist || []),
+        // Carried on the value itself so a caller can tell whether what it is holding is still the
+        // current data before memoising anything computed from it.
+        generation,
+      };
+      if (generation === __cosmeticGeneration) __cosmeticMem = mem;
+      if (__cosmeticLoad === load) __cosmeticLoad = null;
+      return mem;
+    })();
+    __cosmeticLoad = load;
+  }
+  return __cosmeticLoad;
 }
 
 // Compute the cosmetic payload for a hostname, memoised per host. This mirrors
@@ -1855,6 +1876,11 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
   }
   const result = { ok: true, selectors: Array.from(sel).slice(0, 20000), procedural: procRules, scriptlets };
 
+  // Answer the caller either way, but only memoise a result computed from data that is still
+  // current. Otherwise a load that started before an allowlist edit would repopulate the host
+  // cache the edit had just cleared, and the stale answer would then be served from memory for
+  // the rest of the worker's life -- the invalidation undone twice over.
+  if (mem && mem.generation !== undefined && mem.generation !== __cosmeticGeneration) return result;
   __cosmeticHostCache.set(cacheKey, result);
   if (__cosmeticHostCache.size > COSMETIC_HOST_CACHE_MAX) {
     __cosmeticHostCache.delete(__cosmeticHostCache.keys().next().value); // evict oldest
@@ -3092,21 +3118,48 @@ function sameStringList(a, b) {
 // special-case keeps to the single-key fast path.
 let __cfgCache = null;
 let __cfgCacheValid = false;
+// Two things a bare cache does not have, and needs (M18).
+//
+// A generation, bumped by every publication and every invalidation. A read that started before a
+// newer config landed must not be allowed to write itself over it when it finally comes back --
+// which it was, so a master-off or an allowlist edit could be reverted by an older read and stay
+// reverted for the rest of the worker's life. The stale read may still answer its own caller; it
+// simply may not publish.
+//
+// And one shared in-flight promise, so a burst of cold callers is one storage read rather than one
+// each. Twelve simultaneous cold calls measured twelve reads.
+let __cfgGeneration = 0;
+let __cfgLoad = null;
 function __cfgClone(o) {
   try { return JSON.parse(JSON.stringify(o || {})); } catch (_) { return {}; }
 }
 function __cfgCacheSet(value) {
   __cfgCache = value && typeof value === 'object' ? value : {};
   __cfgCacheValid = true;
+  __cfgGeneration++;
+  __cfgLoad = null;
 }
 function localGet(key) {
   if (key === 'wardenone_config') {
     if (__cfgCacheValid) return Promise.resolve({ wardenone_config: __cfgClone(__cfgCache) });
-    return new Promise((resolve) => chrome.storage.local.get('wardenone_config', (res) => {
-      if (chrome.runtime.lastError) { resolve(res || {}); return; } // don't cache a failed read
-      __cfgCacheSet((res && res.wardenone_config) || {});
-      resolve({ wardenone_config: __cfgClone(__cfgCache) });
-    }));
+    if (!__cfgLoad) {
+      const generation = __cfgGeneration;
+      const load = new Promise((resolve) => chrome.storage.local.get('wardenone_config', (res) => {
+        // A failed read is not data: it must neither be cached nor left behind as the answer for
+        // the next caller, so the shared promise is cleared and the next call reads again.
+        if (chrome.runtime.lastError) {
+          if (__cfgLoad === load) __cfgLoad = null;
+          resolve((res && res.wardenone_config) || {});
+          return;
+        }
+        const value = (res && res.wardenone_config) || {};
+        if (generation === __cfgGeneration) __cfgCacheSet(value);
+        else if (__cfgLoad === load) __cfgLoad = null;
+        resolve(value);
+      }));
+      __cfgLoad = load;
+    }
+    return __cfgLoad.then((value) => ({ wardenone_config: __cfgClone(value) }));
   }
   return new Promise((resolve) => chrome.storage.local.get(key, resolve));
 }
@@ -3625,7 +3678,7 @@ function externalSummary(results) {
       return 'WhoisXML age clear';
     }
     return r.provider;
-  }).join(' · ');
+  }).join(' Â· ');
 }
 
 async function checkSafeBrowsingUrl(url, apiKey) {
@@ -6338,6 +6391,7 @@ function refreshGlobalLocationBlock() {
 }
 
 let __refreshExtensionStateLastKey = '';
+let __refreshExtensionStateGeneration = 0;
 function refreshExtensionState() {
   try {
     localGet('wardenone_config').then((res) => {
@@ -6370,26 +6424,41 @@ function refreshExtensionState() {
         cfg.flagSearchJunk === true ? 1 : 0,
       ].join('|');
       if (stateKey === __refreshExtensionStateLastKey) return;
-      __refreshExtensionStateLastKey = stateKey;
-      applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false);
-      applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false);
-      applyAllowlistRules(on ? (cfg.allowlist || []) : []);
-      applyMediaCompatibilityRules(on);
-      applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false);
-      applyHttpsUpgradeRule(on && cfg.forceHttps === true);
-      refreshBlocklistRuleset(cfg);
-      reconcileEyeShieldInjection(cfg);
-      reconcileConsentRejectInjection(cfg);
-      reconcileMinerDetectInjection(cfg);
-      reconcileSearchJunkInjection(cfg);
-      reconcileGoogleCleanupCssInjection(cfg);
-      applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false);
-      applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg));
-      applySearchParamRules(Object.assign({}, cfg, { enabled: on }));
-      applyAllCookieBlock(on && cfg.blockAllCookies === true);
-      applyGlobalLocationBlock(on && cfg.blockGeolocation === true);
-      applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true);
-      applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false);
+      // The key is a claim that this desired state has been applied. Committing it here, before
+      // any of the work below had run, made the claim up front: a second refresh could then settle
+      // out of order and leave the opposite state applied while the key insisted otherwise, and a
+      // transient failure was never retried because the key already said the state was current.
+      //
+      // Claim a generation instead and commit the key only once the work settles, and only if this
+      // refresh is still the newest. A superseded refresh drops its claim; a failed one leaves the
+      // key alone so the next refresh does the work again.
+      const generation = ++__refreshExtensionStateGeneration;
+      const applied = [];
+      const run = (result) => { applied.push(Promise.resolve(result)); };
+      run(applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false));
+      run(applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false));
+      run(applyAllowlistRules(on ? (cfg.allowlist || []) : []));
+      run(applyMediaCompatibilityRules(on));
+      run(applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false));
+      run(applyHttpsUpgradeRule(on && cfg.forceHttps === true));
+      run(refreshBlocklistRuleset(cfg));
+      run(reconcileEyeShieldInjection(cfg));
+      run(reconcileConsentRejectInjection(cfg));
+      run(reconcileMinerDetectInjection(cfg));
+      run(reconcileSearchJunkInjection(cfg));
+      run(reconcileGoogleCleanupCssInjection(cfg));
+      run(applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false));
+      run(applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
+      run(applySearchParamRules(Object.assign({}, cfg, { enabled: on })));
+      run(applyAllCookieBlock(on && cfg.blockAllCookies === true));
+      run(applyGlobalLocationBlock(on && cfg.blockGeolocation === true));
+      run(applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true));
+      run(applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false));
+      Promise.allSettled(applied).then((results) => {
+        if (generation !== __refreshExtensionStateGeneration) return;   // a newer desired state took over
+        if (results.some((r) => r.status === 'rejected')) return;       // leave the key so this is retried
+        __refreshExtensionStateLastKey = stateKey;
+      });
     }).catch(() => {
       refreshPrivacyHeaders();
       refreshAllowlistRules();
@@ -8691,7 +8760,7 @@ const SAFE_SEARCH_RULE_MAX = 40;
 // `allow` is written out per engine rather than derived from `match`, because the
 // two are not the same shape. DuckDuckGo's match has to consume the "?" to avoid
 // firing on /settings and /about -- which means an "allow" built as match + "[?&]"
-// can never match a URL where the parameter landed FIRST (…/?kp=1&q=…), and every
+// can never match a URL where the parameter landed FIRST (â€¦/?kp=1&q=â€¦), and every
 // search on that engine becomes a redirect loop. tools/test-safe-search.js runs
 // both patterns against real URLs with the parameter in either position.
 const SAFE_SEARCH_ENGINES = [
@@ -8976,6 +9045,72 @@ function isMediaCompatFilter(pattern) {
   return /googlevideo\.com|ytimg\.com|youtubei\.googleapis\.com|ggpht\.com|ttvnw\.net|jtvnw\.net|twitchcdn\.net/.test(p);
 }
 
+// ---------------------------------------------------------------------------
+// Every side-effecting state applier, serialized per subsystem (M18).
+//
+// Each of these reads its own "last applied" marker, awaits Chrome, then commits that marker.
+// Correct alone; wrong concurrently. Two calls both pass the early-out before either has
+// committed, both do the work, and whichever updateSessionRules or registerContentScripts settles
+// last is the one that wins -- even when it carries the older desired state. A deferred-rule
+// harness produced a latest requested state of false and a final rule state of true.
+//
+// A queue per subsystem makes them apply in the order they were requested, so the newest setting
+// is the one that lands. It also makes the read-modify-write inside each one atomic with respect
+// to itself, which is what the "read existing rules, diff, write" shape needs and never had.
+//
+// Wrapped here in one list rather than inside twenty-four function bodies: the invariant is then
+// in one readable place, and tools/test-state-serialization.js fails if an applier is added and
+// not listed, so the next one cannot quietly opt out. Rebinding the global name is what makes the
+// existing unqualified call sites go through the queue without touching any of them.
+const __subsystemQueues = new Map();
+function serializeSubsystem(name, task) {
+  const previous = __subsystemQueues.get(name) || Promise.resolve();
+  const next = previous.then(task);
+  // What is STORED is the settled-either-way version, so a rejection cannot wedge the lane: one
+  // transient Chrome error would otherwise stop that subsystem updating for the worker's life.
+  // The caller still gets `next` and still sees the rejection.
+  __subsystemQueues.set(name, next.then(() => {}, () => {}));
+  return next;
+}
+// applyScriptShieldRules is deliberately absent: it already owns its own serialization chain
+// (__scriptShieldRuleUpdate), and it is the pattern this generalises rather than a gap in it.
+const SERIALIZED_STATE_APPLIERS = [
+  'applyLearnedRules',
+  'applyGrabberFeedRules',
+  'applyMinerFeedRules',
+  'applyTrackerLearnerRules',
+  'applyAllowlistRules',
+  'applyMediaCompatibilityRules',
+  'applyLoginCompatibilityRules',
+  'refreshBlocklistRuleset',
+  'applyAllCookieBlock',
+  'applyGlobalLocationBlock',
+  'reconcileGoogleCleanupCssInjection',
+  'reconcileSearchJunkInjection',
+  'reconcileMinerDetectInjection',
+  'reconcileEyeShieldInjection',
+  'reconcileConsentRejectInjection',
+  'applyPrivacyHeaderRule',
+  'applyLocationPrivacyHeaderRule',
+  'applyIpLookupBlockRules',
+  'applyThirdPartyCookieRule',
+  'applyHttpsUpgradeRule',
+  'applyFingerprintScriptRules',
+  'applySearchParamRules',
+  'applyGoogleSearchSponsoredAllowRules',
+  'applyNeverBlockAllowRules',
+];
+SERIALIZED_STATE_APPLIERS.forEach((name) => {
+  const original = globalThis[name];
+  if (typeof original !== 'function') {
+    console.warn('[WardenOne] cannot serialize unknown state applier', name);
+    return;
+  }
+  globalThis[name] = function (...args) {
+    return serializeSubsystem(name, () => original.apply(this, args));
+  };
+});
+
 function isVideoPlatformHost(host) {
   const h = String(host || '').replace(/^www\./, '').toLowerCase();
   return h === 'youtube.com'
@@ -9159,7 +9294,7 @@ function parseList(text) {
     if (!line || line === 'localhost') return;
 
     // Convert IDN/homograph domains to punycode so they CAN be blocked (DNR
-    // urlFilter needs ASCII). e.g. yȯutube.com -> xn--... . Browsers do this
+    // urlFilter needs ASCII). e.g. yÈ¯utube.com -> xn--... . Browsers do this
     // natively via the URL parser.
     if (!/^[\x00-\x7F]+$/.test(line)) {
       try {
