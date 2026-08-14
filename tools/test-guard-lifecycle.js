@@ -276,32 +276,71 @@ for (const g of GUARDS) {
 // ---------------------------------------------------------------------------
 {
   const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-  check('repair marks install flags stale', bg.includes('const markWardenOneCopiesStale = async (target, world)'));
-  check('...in the MAIN world', bg.includes("await markWardenOneCopiesStale(target, 'MAIN')"));
-  check('...and in the ISOLATED world', bg.includes("await markWardenOneCopiesStale(target, 'ISOLATED')"));
+  check('repair marks install flags stale',
+    bg.includes('const markWardenOneCopiesStale = async (target, world, files)'));
+
+  // Repair used to mark two hand-written flag arrays and separately execute a different set of
+  // files. Both halves are now derived from one table, so the assertions read that table rather
+  // than a second copy of the same knowledge kept here -- which is what let the two drift.
+  const compBlock = bg.match(/const REPAIR_COMPONENTS = \[([\s\S]*?)\n        \];/);
+  assert(compBlock, 'REPAIR_COMPONENTS not found in background.js');
+  const components = [...compBlock[1].matchAll(/file: '([^']+)', world: '([^']+)', flag: '([^']+)'/g)]
+    .map((m) => ({ file: m[1], world: m[2], flag: m[3] }));
+  check('the repair component table is populated', components.length >= 8,
+    'found ' + components.length);
+
+  // The pairing is the finding: a flag marked without its file executing corrupts a working guard
+  // and never reinstalls it, and a file executed without its flag marked is a guaranteed no-op.
+  check('marking is derived from the files the frame receives, not a world-wide array',
+    bg.includes('const flags = repairFlagsForFiles(world, files || [])')
+      && bg.includes("markWardenOneCopiesStale(target, 'MAIN', mainFiles || [])")
+      && bg.includes("markWardenOneCopiesStale(target, 'ISOLATED', isolatedFiles)"));
+
+  // Every component must actually be executable by Repair: MAIN files come from the URL planner,
+  // ISOLATED files from the always-list plus consent. A name in the table with no executor is the
+  // exact defect this replaced.
+  const planner = bg.slice(bg.indexOf('function repairMainWorldFilesForUrl'),
+    bg.indexOf('function isTwitchFrameUrl'));
+  const isoBuild = bg.slice(bg.indexOf('const isolatedAlwaysFiles = []'),
+    bg.indexOf('const isolatedAlwaysFiles = []') + 400)
+    + bg.slice(bg.indexOf('const isolatedFiles = isolatedAlwaysFiles.slice()'),
+      bg.indexOf('const isolatedFiles = isolatedAlwaysFiles.slice()') + 300);
+  for (const c of components) {
+    const where = c.world === 'MAIN' ? planner : isoBuild;
+    check('repair executes ' + c.file + ' (' + c.world + '), not just marks it',
+      where.includes("'" + c.file + "'"));
+  }
+
+  // The two the finding named as executed-but-unmarked.
+  for (const flag of ['__wardenOneYouTubeReadyVersion', '__wardenOneConsentRejectReadyVersion']) {
+    check(flag + ' is in the table, so its guard no longer no-ops',
+      components.some((c) => c.flag === flag));
+  }
+  // The five the finding named as marked-but-never-executed. Present here would mean the harm is
+  // back: a working guard's flag corrupted with nothing reinstalling it.
+  for (const flag of ['__wardenOneTwitchRewindReady', '__wardenOneVodRewind',
+    '__wardenOneOAuthGuardInstalled', '__wardenOneMinerWatch', '__wardenOneSearchJunk']) {
+    check(flag + ' is NOT marked, because Repair does not re-execute it',
+      !components.some((c) => c.flag === flag));
+  }
 
   // Order is the whole point: marking after injecting would achieve nothing.
-  const markAt = bg.indexOf("await markWardenOneCopiesStale(target, 'MAIN')");
-  const injectAt = bg.indexOf("world: 'MAIN', files: mainFiles", markAt - 4000 > 0 ? markAt - 4000 : 0);
+  const markAt = bg.indexOf("await markWardenOneCopiesStale(target, 'MAIN', mainFiles || [])");
+  const injectAt = bg.indexOf("world: 'MAIN', files: mainFiles", markAt > 0 ? markAt : 0);
   check('flags are marked stale BEFORE the re-injection',
     markAt > 0 && injectAt > markAt, 'mark at ' + markAt + ', inject at ' + injectAt);
 
-  const listed = new Set();
-  for (const name of ['MAIN_WORLD_INSTALL_FLAGS', 'ISOLATED_WORLD_INSTALL_FLAGS']) {
-    const m = bg.match(new RegExp('const ' + name + ' = \\[([\\s\\S]*?)\\];'));
-    assert(m, 'missing ' + name + ' in background.js');
-    for (const f of m[1].matchAll(/'([^']+)'/g)) listed.add(f[1]);
-  }
-  const missing = GUARDS.map((g) => g.flag).filter((f) => !listed.has(f));
-  check('every guard flag is in the stale-marking table',
-    missing.length === 0, 'not listed: ' + missing.join(', '));
-  // The engine and the bridge are not in GUARDS but must be there too.
+  const listed = new Set(components.map((c) => c.flag));
   check('the engine and bridge flags are in the table too',
     listed.has('__wardenOneReadyVersion') && listed.has('__wardenOneBridgeVersion'));
 
   // A stale value must not equal any real version, or the guard would treat it as current.
-  check("the stale sentinel differs from the extension version",
-    bg.includes("window[name] = 'wo-stale'") && MANIFEST.version !== 'wo-stale');
+  check('the stale sentinel differs from the extension version',
+    bg.includes("const WO_STALE_SENTINEL = 'wo-stale'") && MANIFEST.version !== 'wo-stale');
+  // The sentinel is passed into the injected function rather than written as a literal there: the
+  // writer is serialised into the page and cannot see the constant the health check reads.
+  check('the sentinel reaches the page as an argument, not a second literal',
+    bg.includes('args: [flags, WO_STALE_SENTINEL]') && bg.includes('window[name] = sentinel'));
 }
 
 // ---------------------------------------------------------------------------
