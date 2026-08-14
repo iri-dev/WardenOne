@@ -72,6 +72,22 @@
       catch(_){
 
       }
+      /* Disposing left __wardenOneReadyVersion standing, so the tab kept claiming this exact
+         engine version was healthy while nothing was running. Two things followed from that lie.
+         The install guard at the top returns early on a matching ready version, so a fresh
+         same-version injection could not reinstall over a disposed engine. And Repair read a
+         current marker and concluded there was nothing to repair.
+         This world is shared with the page, which can call this function whenever it likes --
+         clearing the markers does not prevent that and is not meant to. What it prevents is a
+         disposed tab reporting itself as protected, and it lets re-injection actually take, so
+         the bypass has to be repeated rather than done once and left. */
+      try{
+        window.__wardenOneReadyVersion=void 0,
+        window.__wardenOneInstalled=void 0
+      }
+      catch(_){
+
+      }
 
     }
   }
