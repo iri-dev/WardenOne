@@ -150,9 +150,33 @@ function messageHostFromText(value) {
   }
 }
 
+// Keys that change what an object IS rather than adding data to it.
+//
+// A detail object arrives from a content script and crosses a JSON boundary on the way here, and
+// JSON.parse creates "__proto__" as an own ENUMERABLE property -- so Object.keys lists it, and both
+// a plain out[key] = value and Object.assign go through [[Set]], which invokes the prototype setter
+// on our output object instead of storing a value there. The result is an object with inherited
+// properties that are not own properties: it JSON-stringifies without them while property access
+// still returns them, so what gets stored and what downstream code reads disagree.
+//
+// Global Object.prototype is never touched by this, which is why the earlier global-pollution test
+// can keep passing while per-object manipulation is still possible. They are different bugs.
+//
+// Nothing in a history detail needs a key by any of these names, so they are dropped rather than
+// escaped or renamed -- a log is not a place to preserve hostile structure.
+const UNSAFE_DETAIL_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function safeDetailAssign(target, source) {
+  if (!source || typeof source !== 'object') return target;
+  for (const key of Object.keys(source)) {
+    if (UNSAFE_DETAIL_KEYS.has(key)) continue;
+    target[key] = source[key];
+  }
+  return target;
+}
+
 function normalizeTabBlockMessage(msg, sender) {
   const type = String((msg && msg.type) || 'block');
-  const detail = (msg && msg.detail && typeof msg.detail === 'object') ? Object.assign({}, msg.detail) : (msg && msg.detail) || null;
+  const detail = (msg && msg.detail && typeof msg.detail === 'object') ? safeDetailAssign({}, msg.detail) : (msg && msg.detail) || null;
   const out = { type, detail, log: true };
   if (type !== 'blocked_token_exfil') return out;
 
@@ -164,7 +188,7 @@ function normalizeTabBlockMessage(msg, sender) {
   const last = tokenExfilHistorySeen[key] || 0;
   tokenExfilHistorySeen[key] = now;
   out.log = now - last > TOKEN_EXFIL_HISTORY_COOLDOWN_MS;
-  out.detail = Object.assign({}, detailObj, {
+  out.detail = Object.assign(safeDetailAssign({}, detailObj), {
     pageHost,
     targetHost,
     why: 'A token-shaped value tried to leave this page for another domain. WardenOne blocked the request; on large sites this can also be a noisy embedded-service call.',
@@ -342,7 +366,10 @@ function sanitizeHistoryDetail(value, depth) {
   if (!value || typeof value !== 'object' || depth >= 3) return value;
   if (Array.isArray(value)) return value.map((item) => sanitizeHistoryDetail(item, depth + 1));
   const out = {};
-  for (const key of Object.keys(value)) out[key] = sanitizeHistoryDetail(value[key], depth + 1);
+  for (const key of Object.keys(value)) {
+    if (UNSAFE_DETAIL_KEYS.has(key)) continue;
+    out[key] = sanitizeHistoryDetail(value[key], depth + 1);
+  }
   return out;
 }
 
