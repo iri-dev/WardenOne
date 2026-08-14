@@ -151,6 +151,13 @@
   // The host still carries an id and data-wo-ui="1". Those are labels, not credentials -- the
   // engine's overlay cleaner and EyeShield both skip WardenOne's own UI by them, and that has to
   // keep working. Nothing trusts them any more.
+  const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
+    + 'z-index:2147483647!important;';
+
+  // Focus styling that survives `all:initial`. The warnings reset their buttons to strip page CSS,
+  // which also strips the focus ring, so a keyboard user could not see which action was selected.
+  // `currentColor` and a transparent outline are what keep this visible in forced-colors mode,
+  // where a coloured box-shadow is discarded but an outline is honoured.
   const WO_FOCUS_STYLE = ':where(button,[href],[tabindex]):focus-visible{'
     + 'outline:3px solid currentColor!important;outline-offset:2px!important;'
     + 'box-shadow:0 0 0 5px rgba(255,255,255,.35)!important;}';
