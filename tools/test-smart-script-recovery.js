@@ -844,6 +844,11 @@ async function testDeadlockReportGrantsNothingAlone() {
     const to = BRIDGE.indexOf('  function sendSmartPlayerContext');
     assert(from >= 0 && to > from, 'the bridge no longer defines the deadlock reporter');
     const src = BRIDGE.slice(from, to);
+    // The reporter now asks the shared blank test, so it has to come along.
+    const blankFrom = BRIDGE.indexOf('  function smartPageIsBlank() {');
+    const blankTo = BRIDGE.indexOf('\n  }\n', blankFrom);
+    assert(blankFrom >= 0 && blankTo > blankFrom, 'the bridge no longer defines smartPageIsBlank');
+    const blankSrc = BRIDGE.slice(blankFrom, blankTo + 4);
 
     // THE regression, and the reason this group exists in this shape. The first version of this fix
     // gated on smartPlayerScanCount, which only climbs when domWatch fires -- and domWatch fires on
@@ -861,31 +866,48 @@ async function testDeadlockReportGrantsNothingAlone() {
     assert(/sendSmartPlayerContext\(/.test(BRIDGE.slice(armStart, armEnd)),
       'the deadlock timer never reports, so reaching the deadline changes nothing');
 
-    const mk = (due, href, isTop) => {
-      const sandbox = { location: { href }, window: {}, URL };
+    const mk = (due, href, isTop, blank) => {
+      const sandbox = { location: { href }, window: {}, URL, String };
       sandbox.window.top = isTop ? sandbox.window : {};
+      sandbox.document = {
+        prerendering: false,
+        querySelector: () => (blank ? null : {}),          // a canvas/video counts as content
+        body: { innerText: blank ? '' : 'x'.repeat(400) },
+      };
       vm.createContext(sandbox);
       vm.runInContext(
         'const smartPlayerRoute = (raw) => /(?:^|\\/)(?:watch|episode|stream|video|play|player|embed)(?:\\/|$|[-_?])/i'
           + '.test(new URL(raw || location.href).pathname);\n'
+          + blankSrc + '\n'
           + src + '\nsmartPlayerDeadlockDue = ' + String(due) + ';\nthis.out = smartPlayerDeadlock();',
         sandbox,
       );
       return sandbox.out;
     };
-    assert.strictEqual(mk(false, 'https://anime.example/watch/9', true), '',
+    assert.strictEqual(mk(false, 'https://anime.example/watch/9', true, true), '',
       'the deadlock was reported before the deadline elapsed');
-    assert.strictEqual(mk(true, 'https://anime.example/watch/9', true), 'route-blocked',
+    assert.strictEqual(mk(true, 'https://anime.example/watch/9', true, true), 'route-blocked',
       'a watch route still rendering nothing at the deadline reported nothing');
-    assert.strictEqual(mk(true, 'https://plain.example/about', true), '',
-      'an ordinary top-level page reported a player deadlock');
-    assert.strictEqual(mk(true, 'https://opaque.test/x7f2', false), 'route-blocked',
+    assert.strictEqual(mk(true, 'https://opaque.test/x7f2', false, false), 'route-blocked',
       'a subframe is a player context in its own right and should still report');
+    // An ordinary top-level page that painted nothing is the shape a site takes when its own
+    // application code is refused as third-party. It used to report nothing and stay blank.
+    assert.strictEqual(mk(true, 'https://plain.example/about', true, true), 'page-blocked',
+      'a blank top-level page at the deadline reported nothing, so it had no recovery path');
+    // ...but a page that rendered fine is not a deadlock just because the timer elapsed.
+    assert.strictEqual(mk(true, 'https://plain.example/about', true, false), '',
+      'an ordinary page that rendered content reported a deadlock');
   }
 
-  // 6. And the string has to be one the background actually accepts, or none of the above runs.
+  // 6. And the strings have to be ones the background actually accepts, or none of the above runs.
   assert(/SMART_SCRIPT_PLAYER_EVIDENCE = new Set\(\[[^\]]*'route-blocked'/.test(BACKGROUND),
     'the bridge reports route-blocked but background does not accept it');
+  assert(/SMART_SCRIPT_PLAYER_EVIDENCE = new Set\(\[[^\]]*'page-blocked'/.test(BACKGROUND),
+    'the bridge reports page-blocked but background does not accept it');
+  // One definition of blank, shared by the recovery signal and the user-facing notice.
+  assert(/function smartPageIsBlank\(\)/.test(BRIDGE)
+    && /return smartPageIsBlank\(\) \? 'nothing rendered' : '';/.test(BRIDGE),
+  'the notice and the recovery signal have separate ideas of what a blank page is');
 }
 
 // Office on the web. word.cloud.microsoft serves every one of its scripts from res.cdn.office.net,
@@ -1111,7 +1133,8 @@ async function testSilentBreakageIsExplained() {
 // It is deliberately narrow: it catches the shapes the three reports actually had, and a detector
 // broad enough to catch "one widget did not render" would fire on working pages.
 function testStalledPageDetection() {
-  const from = BRIDGE.indexOf('  function smartScriptPageStalled() {');
+  // From the shared blank test, which smartScriptPageStalled now defers to.
+  const from = BRIDGE.indexOf('  function smartPageIsBlank() {');
   const to = BRIDGE.indexOf('  function showSmartScriptNotice(');
   assert(from >= 0 && to > from, 'smartScriptPageStalled source markers not found in bridge.js');
 
