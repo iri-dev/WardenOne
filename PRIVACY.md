@@ -83,14 +83,27 @@ nothing about the request is sent anywhere else, the hashing and comparison happ
 your device, and only the hash is kept. Re-checks are rate-limited and capped per page,
 and allowlisted sites are skipped. Turn it off with **Script drift guard** in the popup.
 
-### 3. Password breach check — "SessionShield" (opt-in, off by default)
+### 3. Site breach history check (opt-in, off by default, no API key needed)
 
-If you turn this on and check a password, WardenOne hashes the password **locally** with
-SHA-1 and sends only the **first 5 characters of that hash** to Have I Been Pwned's
-`api.pwnedpasswords.com` range API. This is the industry-standard *k-anonymity* method:
-the service returns a list of matching hash suffixes and the comparison finishes on your
-device. **Your password and its full hash never leave your device.** This feature is
-disabled unless you enable it.
+This checks **a website's own public breach record** — not your account, and not any password
+of yours. It tells you whether the site you are on has been breached in the past, so you can
+decide how much to trust it with.
+
+Nothing is sent until you click. With **Breach & site-history checks** enabled, pressing
+**Check breach history** in the popup sends the site's **registrable domain only** — `example.com`,
+never the full address, never the page path or query, never anything from the page itself — to
+`haveibeenpwned.com`. Have I Been Pwned will also see your IP address, as it would for any
+request your browser makes.
+
+The reply is cached **on your device** for **12 hours**, so revisiting a site does not re-send
+anything. That cache holds at most **120 domains**; the oldest entries are dropped past that.
+Clearing WardenOne's data removes it.
+
+There is **no password checking in WardenOne.** Earlier versions of this policy described a
+password k-anonymity lookup against `api.pwnedpasswords.com`. That feature was never reachable
+in the shipped extension — no part of the interface offered it — and the unused code behind it
+has been removed. If a password checker is ever added, it will be documented here before it
+ships, not after.
 
 ### 4. Login page age check (opt-in, off by default, no API key needed)
 
@@ -107,12 +120,20 @@ cached on your device (most recent 100 domains) so the same site is not looked u
 requests for IP addresses and private or local hostnames are never sent at all. Turn it
 on or off with **Login page age check** in the popup.
 
-### 5. Reputation providers (opt-in, off by default, your own API key required)
+### 5. Reputation providers (opt-in, off by default, most need your own API key)
 
 WardenOne can optionally check a URL, domain, or file hash against third-party threat
-services **only if you enable that provider and supply your own API key**. All of these
-are **off by default**: Google Safe Browsing, VirusTotal, urlhaus (abuse.ch), AbuseIPDB,
-OpenPhish, PhishTank, and WhoisXML. When you enable one, the specific URL/domain/hash
+services **only if you enable that provider**. All of these are **off by default**: Google
+Safe Browsing (`safebrowsing.googleapis.com`), VirusTotal (`www.virustotal.com`), urlhaus
+(`urlhaus-api.abuse.ch`), AbuseIPDB (`api.abuseipdb.com`), PhishTank
+(`checkurl.phishtank.com`), and WhoisXML (`www.whoisxmlapi.com`,
+`domain-reputation.whoisxmlapi.com`, `threat-intelligence.whoisxmlapi.com`).
+
+Most of those require you to supply your own API key. **OpenPhish is the exception**: it is
+used through its free public community feed, which needs no key, and it is fetched as a
+whole list from `raw.githubusercontent.com` rather than by asking about your URL — so no
+address of yours is sent to it. An earlier version of this policy said every provider
+required a key, which was not true of OpenPhish. When you enable one, the specific URL/domain/hash
 being evaluated is sent to that provider so it can return a verdict. Those providers are
 independent data controllers with their own privacy policies; review theirs before
 enabling. WardenOne sends nothing to them until you do.

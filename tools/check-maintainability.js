@@ -163,6 +163,7 @@ function checkContentBuild() {
   'tools/test-download-guard.js',
   'tools/test-dynamic-registrations.js',
   'tools/test-consent-reject.js',
+  'tools/test-privacy-disclosure.js',
   'tools/test-phishing-false-positives.js',
   'tools/test-eyeshield-readability.js',
   'tools/test-protection-health.js',

@@ -90,11 +90,13 @@ only for local threat detection and blocking; page contents are not collected or
 transmitted.
 
 **Specific API hosts** (`safebrowsing.googleapis.com`, `virustotal.com`,
-`api.pwnedpasswords.com`, `haveibeenpwned.com`, `rdap.org`, `api.abuseipdb.com`,
+`haveibeenpwned.com`, `rdap.org`, `api.abuseipdb.com`,
 `checkurl.phishtank.com`, `urlhaus-api.abuse.ch`, the `*.whoisxmlapi.com` hosts, and the
 OpenPhish feed on `raw.githubusercontent.com`) — Allow the background worker to reach
 **optional, off-by-default** reputation/breach services and to download the OpenPhish
-public feed. These are only contacted when the user enables the relevant feature (and, for
+public feed. `haveibeenpwned.com` receives a site's registrable domain only, and only on an
+explicit click, to look up that site's public breach record. WardenOne has no password
+checker and contacts no password-hash service. These are only contacted when the user enables the relevant feature (and, for
 the reputation providers, supplies their own API key).
 
 ---
