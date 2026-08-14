@@ -12623,29 +12623,55 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // how Repair tells that script "you are the old copy" -- the script then releases what it
         // holds and installs fresh. The value only has to differ from the real version; the guards
         // compare for equality, so anything else routes them down the replace path.
-        const MAIN_WORLD_INSTALL_FLAGS = [
-          '__wardenOneReadyVersion',
-          '__wardenOneAntiRedirectHardener',
-          '__wardenOnePermissionChainInstalled',
-          '__wardenOneTwitchAdblockReady',
+        // One description of what Repair restores, replacing the two hand-written flag arrays that
+        // had drifted from what it actually executes (H8, problem 2).
+        //
+        // The drift did harm in both directions. Marking a flag stale without re-executing its file
+        // is WORSE than leaving both alone: it corrupts the guard of a component that was working,
+        // and then never reinstalls it. Five flags were in that state -- Twitch rewind, VOD rewind,
+        // OAuth, the miner watch and search-junk -- and the miner flag was additionally marked in
+        // ISOLATED while that detector runs in MAIN, so the mark landed nowhere at all. In the other
+        // direction YouTube and consent rejection WERE executed but had no flag marked, so their
+        // same-version guards returned on line one and the execution changed nothing.
+        //
+        // Pairing is structural now rather than remembered: the flags for a frame are derived from
+        // this table and filtered by the very list of files that frame is about to receive, so a
+        // flag cannot be marked where its file will not run. Adding a component without an executor,
+        // or an executor without an entry, shows up in one place instead of silently in two.
+        //
+        // Components Repair does not execute are deliberately absent rather than listed. Restoring
+        // them means re-injecting into player, OAuth and consent surfaces, which this finding rates
+        // medium-to-high risk and which wants lifecycle support first. Until that exists, leaving
+        // their flags untouched is the honest behaviour -- and strictly better than today's.
+        const REPAIR_COMPONENTS = [
+          { file: 'content.min.js', world: 'MAIN', flag: '__wardenOneReadyVersion' },
+          { file: 'permission-chain.js', world: 'MAIN', flag: '__wardenOnePermissionChainInstalled' },
+          { file: 'anti-redirect.js', world: 'MAIN', flag: '__wardenOneAntiRedirectHardener' },
+          { file: 'twitch-adblock.js', world: 'MAIN', flag: '__wardenOneTwitchAdblockReady' },
+          // Executed all along; its flag was never marked, so this guard returned every time.
+          { file: 'yt-adblock.js', world: 'MAIN', flag: '__wardenOneYouTubeReadyVersion' },
+          { file: 'bridge.js', world: 'ISOLATED', flag: '__wardenOneBridgeVersion' },
+          { file: 'eyeshield.js', world: 'ISOLATED', flag: '__wardenOneEyeShieldInstalled' },
+          // Same as YouTube: executed, never marked. It gained a dispose earlier in this audit, so
+          // re-injection now releases the previous copy rather than stacking a second one.
+          { file: 'consent-reject.js', world: 'ISOLATED', flag: '__wardenOneConsentRejectReadyVersion' },
         ];
-        const ISOLATED_WORLD_INSTALL_FLAGS = [
-          '__wardenOneBridgeVersion',
-          '__wardenOneEyeShieldInstalled',
-          '__wardenOneTwitchRewindReady',
-          '__wardenOneVodRewind',
-          '__wardenOneOAuthGuardInstalled',
-          '__wardenOneMinerWatch',
-          '__wardenOneSearchJunk',
-        ];
+        // The flags to mark in a frame are exactly those whose file that frame is receiving.
+        const repairFlagsForFiles = (world, files) => REPAIR_COMPONENTS
+          .filter((c) => c.world === world && files.indexOf(c.file) !== -1)
+          .map((c) => c.flag);
         // The marker Repair writes over a live engine to force a clean reinstall. Declared here,
         // ahead of both the writer and the health check, so one name serves both: if initialisation
         // throws before the engine sets its real ready version, this value is what survives, and a
         // check that treats any non-empty string as healthy certifies the tab on the strength of
         // Repair's own scribble. That is what H8 observed.
         const WO_STALE_SENTINEL = 'wo-stale';
-        const markWardenOneCopiesStale = async (target, world) => {
-          const flags = world === 'MAIN' ? MAIN_WORLD_INSTALL_FLAGS : ISOLATED_WORLD_INSTALL_FLAGS;
+        // `files` is the exact list this frame is about to be given, so the marking cannot outrun
+        // the execution. Called with an empty list, it marks nothing, which is the correct answer
+        // for a frame that is receiving nothing.
+        const markWardenOneCopiesStale = async (target, world, files) => {
+          const flags = repairFlagsForFiles(world, files || []);
+          if (!flags.length) return;
           try {
             await chrome.scripting.executeScript({
               target,
@@ -12712,11 +12738,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             // first makes each script take its own upgrade path: release what the old copy held,
             // then install. That is the same path the guards use for a version bump, rather than a
             // second eviction mechanism living out here.
-            await markWardenOneCopiesStale(target, 'MAIN');
-            await markWardenOneCopiesStale(target, 'ISOLATED');
+            //
+            // Which files this frame receives is decided BEFORE anything is marked, because the
+            // marking is derived from that list. Deciding afterwards is how the two drifted apart.
+            //
             // Mirror the manifest contract: only frame zero receives the full
             // engine; child frames receive lightweight/specialized guards only.
             const mainFiles = repairMainWorldFilesForUrl(frameUrl, frameId);
+            const isolatedFiles = isolatedAlwaysFiles.slice();
+            if (consentOn && !consentRejectExcludedUrl(frameUrl)) isolatedFiles.push('consent-reject.js');
+            await markWardenOneCopiesStale(target, 'MAIN', mainFiles || []);
+            await markWardenOneCopiesStale(target, 'ISOLATED', isolatedFiles);
             if (mainFiles && mainFiles.length) {
               const isFullEngineRepair = frameId === 0 && mainFiles.includes('content.min.js');
               if (isFullEngineRepair) attemptedEngine = true;
@@ -12727,14 +12759,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (isMainWorldRepairExcludedUrl(frameUrl)) {
               skippedCompatFrames++;
             }
+            // One call for the whole ISOLATED set, built above. Consent rejection used to be a
+            // second executeScript decided separately from the marking, which is precisely the
+            // split that let its flag go unmarked while its file ran.
             try {
-              await chrome.scripting.executeScript({ target, world: 'ISOLATED', files: isolatedAlwaysFiles });
+              await chrome.scripting.executeScript({ target, world: 'ISOLATED', files: isolatedFiles });
             } catch (_) {}
-            if (consentOn && !consentRejectExcludedUrl(frameUrl)) {
-              try {
-                await chrome.scripting.executeScript({ target, world: 'ISOLATED', files: ['consent-reject.js'] });
-              } catch (_) {}
-            }
           }
           // engineOk only records that the injection call resolved. Verify what the tab
           // actually ended up with before counting it as re-armed.
