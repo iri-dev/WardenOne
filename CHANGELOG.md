@@ -71,6 +71,29 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- Protections that read a saved list now wait for it to load before deciding anything.
+  Chrome shuts the extension down whenever it is idle and wakes it the moment something
+  happens -- it does not wait for WardenOne to finish reading its files first. So the
+  first thing to happen after each of those many restarts was judged against empty
+  lists: a download from a site on the blocklist scored as though it came from nowhere
+  in particular, and a redirect through a known-bad domain was not marked as one. Worse,
+  anything WardenOne learned in that gap was then wiped out when the file finally
+  loaded, and the file itself was overwritten with only that one entry. Everything that
+  depends on those lists now waits for them, and loading merges with what is already
+  there instead of replacing it.
+- Forget Me no longer misses a tab that closes just after a restart. It remembers which
+  site each tab was on so it knows what to clear when you close it -- Chrome does not
+  say, and once the tab is gone there is no way to find out. That memory was lost on
+  every restart, so a tab closed in the moment before it was rebuilt was simply never
+  cleared, and a tab you had navigated somewhere new could have the wrong site cleared
+  instead. It is now kept somewhere that survives, and a slow rebuild can no longer
+  overwrite a page you visited while it was happening.
+- Warnings that look at several things together stop losing their place. The permission
+  chain and the "this download arrived through a redirect" check both work over a
+  ten-minute window, and both kept that window only in memory -- which Chrome empties
+  far more often than every ten minutes. The same sequence of events could be a single
+  clear warning or two unrelated shrugs depending on nothing but whether the extension
+  happened to be asleep in between. Both windows now survive that.
 - A setting you just changed can no longer be undone by one you changed a moment
   earlier. WardenOne keeps your settings and its filter data in memory so it does not
   re-read them for every frame of every page, but a read that was already underway when

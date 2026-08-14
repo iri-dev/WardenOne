@@ -595,6 +595,52 @@ chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
 // that was missing. webRequest here is OBSERVE-ONLY (no blocking); we react after the chain
 // resolves: log every long chain, and show the existing interstitial only for high-confidence
 // ones, so normal multi-hop ad/SSO flows are not interrupted.
+// Correlation state that survives the worker (M17).
+//
+// The multi-signal checks advertise ten-minute windows: a permission chain, a recent redirect that
+// led to a download. Both lived only in the heap, and an MV3 worker is suspended far more often
+// than every ten minutes -- so the same sequence of user actions produced a correlated High verdict
+// or two unrelated low ones depending on nothing more than whether Chrome had torn the worker down
+// in between. That is not a threshold anyone can reason about.
+//
+// storage.session is the matching lifetime: it outlives suspension and dies with the browser, and
+// these windows are meaningless across a browser restart anyway. Restores merge and never replace,
+// for the same reason the caches in M18 do not: something that arrived while the read was in
+// flight is newer than anything the read can offer.
+function sessionArea() {
+  try { return (chrome.storage && chrome.storage.session) || null; } catch (_) { return null; }
+}
+function sessionMirror(key, snapshot, restore) {
+  let ready = null;
+  let timer = null;
+  return {
+    ready() {
+      if (ready) return ready;
+      ready = new Promise((resolve) => {
+        const area = sessionArea();
+        if (!area) { resolve(); return; }
+        try {
+          area.get(key, (res) => {
+            void chrome.runtime.lastError;
+            try { restore((res && res[key]) || null); } catch (_) {}
+            resolve();
+          });
+        } catch (_) { resolve(); }
+      });
+      return ready;
+    },
+    persist() {
+      const area = sessionArea();
+      if (!area || timer) return;
+      // Coalesced: a redirect chain or a permission burst would otherwise write once per event.
+      timer = setTimeout(() => {
+        timer = null;
+        try { area.set({ [key]: snapshot() }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+      }, 250);
+    },
+  };
+}
+
 const REDIRECT_CHAINS = Object.create(null);
 const RECENT_REDIRECT_CHAINS = [];
 const POPUP_OPENED_AT = Object.create(null);
@@ -645,14 +691,55 @@ function redirectChainSummary(chain, finalUrl, tabId, matchedOn) {
     at: Date.now(),
   };
 }
+// Re-check every hop against the blocklist before the chain is summarised (M17).
+//
+// Hops are recorded from a synchronous webRequest observer, which can run before BLOCKED_DOMAINS
+// has hydrated -- and it hydrates once per worker lifetime, so on the first chain after every
+// suspension a hop through a known-bad domain was simply not marked. The hop list is kept, so the
+// check can be made again here, by which point the store is loaded.
+function markBlocklistedHops(chain) {
+  try {
+    if (!chain || chain.blocklisted || !Array.isArray(chain.hops)) return;
+    for (const hop of chain.hops) {
+      const host = String((hop && hop.host) || '');
+      if (!host) continue;
+      const domain = registrableDomainBg(host) || host;
+      if (BLOCKED_DOMAINS.has(domain) || BLOCKED_DOMAINS.has(host)) {
+        chain.flagged = true;
+        chain.blocklisted = true;
+        return;
+      }
+    }
+  } catch (_) {}
+}
+const RECENT_REDIRECT_MIRROR = sessionMirror(
+  'wardenone_recent_redirect_chains',
+  () => RECENT_REDIRECT_CHAINS.slice(0, REDIRECT_CHAIN_RECENT_MAX),
+  (stored) => {
+    if (!Array.isArray(stored)) return;
+    const cutoff = Date.now() - REDIRECT_CHAIN_RECENT_TTL_MS;
+    const seen = new Set(RECENT_REDIRECT_CHAINS.map((e) => String(e && e.finalKey) + '|' + Number(e && e.at)));
+    stored.forEach((entry) => {
+      if (!entry || Number(entry.at) < cutoff) return;
+      const id = String(entry.finalKey) + '|' + Number(entry.at);
+      if (seen.has(id)) return;
+      seen.add(id);
+      RECENT_REDIRECT_CHAINS.push(entry);
+    });
+    RECENT_REDIRECT_CHAINS.sort((a, b) => Number(b.at) - Number(a.at));
+    pruneRecentRedirectChains(Date.now());
+  },
+);
 function rememberRecentRedirectChain(tabId, finalUrl, chain, matchedOn) {
   try {
     if (!chain || !Array.isArray(chain.hops) || !chain.hops.length) return;
+    markBlocklistedHops(chain);
     const summary = redirectChainSummary(chain, finalUrl, tabId, matchedOn || 'redirect-hop');
     if (!summary.finalKey && !summary.finalHost) return;
     pruneRecentRedirectChains(summary.at);
     RECENT_REDIRECT_CHAINS.unshift(summary);
     pruneRecentRedirectChains(summary.at);
+    RECENT_REDIRECT_MIRROR.persist();
   } catch (_) {}
 }
 function recentRedirectChainForDownload(finalUrl, referrer) {
@@ -2518,10 +2605,25 @@ function loadLearned() {
     try {
       chrome.storage.local.get('wardenone_learned', (r) => {
         const raw = (r && r.wardenone_learned) || {};
-        LEARNED = {};
+        // Merged into whatever is already here, not assigned over it (M17).
+        //
+        // Registering a listener is synchronous; hydrating from storage is not, and Chrome
+        // dispatches as soon as the worker is up rather than waiting for a storage read. So an
+        // event could arrive first, learn a domain into an empty LEARNED, and persist a heap
+        // containing only that one -- dropping everything already stored. This read then replaced
+        // the heap wholesale and the newly learned domain was gone too: lost from memory AND
+        // omitted from the write. Nothing may publish over a change that arrived while it was in
+        // flight; the same rule the caches got in M18.
         Object.keys(raw || {}).forEach((domain) => {
           const d = normalizeLearnedDomain(domain);
-          if (d) LEARNED[d] = raw[domain] || {};
+          if (!d) return;
+          const stored = raw[domain] || {};
+          const live = LEARNED[d];
+          if (!live) { LEARNED[d] = stored; return; }
+          LEARNED[d] = Object.assign({}, stored, live, {
+            firstSeen: Math.min(Number(stored.firstSeen) || Date.now(), Number(live.firstSeen) || Date.now()),
+            hits: (Number(stored.hits) || 0) + (Number(live.hits) || 0),
+          });
         });
         applyLearnedRules();
         resolve();
@@ -2697,10 +2799,15 @@ async function loadMinerFeed() {
 }
 loadMinerFeed();
 
-function learnDomain(domain, reason) {
+async function learnDomain(domain, reason) {
   try {
     const d = normalizeLearnedDomain(domain);
     if (!d) return;
+    // Both reads below and the write that follows are against the persistent stores, so this waits
+    // for them. Before it did, a learn during a cold start read an empty BLOCKED_DOMAINS -- so a
+    // domain already on a list could be "learned" again -- and wrote a LEARNED containing only
+    // this one entry over everything that had been saved.
+    await securityStoresReady();
     // don't learn a domain that's allowlisted or already on a static/dynamic list
     if (BLOCKED_DOMAINS.has(d)) return;
     if (LEARNED[d]) { LEARNED[d].hits = (LEARNED[d].hits || 1) + 1; }
@@ -3023,13 +3130,28 @@ try {
   if (!__initBlockedDomains) __initBlockedDomains = Promise.resolve();
 }
 
-// Wait for both async stores to load before event listeners fire. The top-level
-// script completes before Chrome dispatches extension events, so by the time
-// onCreated/onMessage/onUpdated listeners are invoked, our in-memory caches
-// (LEARNED, BLOCKED_DOMAINS) are populated.
-(async () => {
-  await Promise.all([loadLearned(), loadTrackerLearner(), __initBlockedDomains || Promise.resolve()]);
-})();
+// One readiness promise for the persistent security stores, awaited by everything that decides
+// anything from them (M17).
+//
+// What used to be here started the hydration and asserted that the top-level script completing
+// meant these caches were populated by the time listeners fire. That is not what it means. Chrome's
+// own guidance is that synchronous registration lets events arrive as soon as the worker starts --
+// it does not await arbitrary storage reads. On every one of the many suspensions an MV3 worker
+// goes through, the first event ran against empty stores: a download scored as if its host were on
+// no blocklist, a redirect hop through a known-bad domain not marked as such.
+//
+// Non-poisoning by construction: a failed or missing read still resolves, so awaiting this can
+// delay a decision but can never withhold one.
+let __securityStoresReady = null;
+function securityStoresReady() {
+  if (!__securityStoresReady) {
+    __securityStoresReady = Promise.all([
+      loadLearned(), loadTrackerLearner(), __initBlockedDomains || Promise.resolve(),
+    ]).then(() => {}, () => {});
+  }
+  return __securityStoresReady;
+}
+securityStoresReady();
 
 // ---- Shared reputation-provider constants --------------------------------
 // Download Guard is implemented in background-downloads.js; these constants stay here
@@ -7371,7 +7493,7 @@ importScripts("background-memory.js");
 // to a different site -- wipe the site's cookies + storage so re-visiting starts
 // fresh (logged out, no trackers). Brave only clears on tab-close; we also catch
 // in-tab navigation. Scope: off / a chosen list / all sites (minus your allowlist).
-const FORGET_TAB_HOSTS = Object.create(null);   // tabId -> last known hostname
+const FORGET_TAB_HOSTS = Object.create(null);   // tabId -> { host, at } (see forgetTabHostsReady)
 const FORGET_RECENT = Object.create(null);      // domain -> ts (debounce repeat wipes)
 const FORGET_PENDING_HOSTS = Object.create(null); // domain -> hosts to wipe when the last tab leaves
 const FORGET_PERSISTENCE_PROTECTED_DOMAINS = new Set([
@@ -7513,27 +7635,130 @@ async function maybeForgetHost(host, exceptTabId) {
   await wipeSiteData(domain, cfg, takeForgetPendingHosts(domain, host));
 }
 
+// Which host each tab last showed, kept somewhere that survives the worker (M17).
+//
+// This map is how Forget Me knows what to wipe when a tab closes, and tabs.onRemoved carries no
+// URL -- so a miss here is unrecoverable: the tab is gone and there is nothing left to ask. The map
+// lived only in the heap, and MV3 empties the heap constantly, so a tab closed in the window
+// between the worker waking and its asynchronous seed returning left nothing to wipe at all. The
+// seed also assigned unconditionally, so a navigation that happened while the query was out was
+// overwritten by the older answer and the wrong host was wiped instead.
+//
+// storage.session is the right lifetime: it outlives suspension and dies with the browser, which
+// is exactly how long a tab id means anything.
+const FORGET_TAB_HOSTS_KEY = 'wardenone_forget_tab_hosts';
+const FORGET_TAB_HOSTS_MAX = 400;
+const FORGET_TAB_HOSTS_TTL_MS = 24 * 60 * 60 * 1000;
+let __forgetTabHostsReady = null;
+let __forgetTabHostsWrite = null;
+
+function forgetSessionArea() {
+  try { return (chrome.storage && chrome.storage.session) || null; } catch (_) { return null; }
+}
+
+function noteForgetTabHost(tabId, host) {
+  if (tabId == null || !host) return;
+  FORGET_TAB_HOSTS[tabId] = { host, at: Date.now() };
+  persistForgetTabHosts();
+}
+
+function persistForgetTabHosts() {
+  const area = forgetSessionArea();
+  if (!area || __forgetTabHostsWrite) return;
+  // Coalesced: navigation bursts would otherwise write once per hop.
+  __forgetTabHostsWrite = setTimeout(() => {
+    __forgetTabHostsWrite = null;
+    try {
+      const cutoff = Date.now() - FORGET_TAB_HOSTS_TTL_MS;
+      const entries = Object.keys(FORGET_TAB_HOSTS)
+        .map((id) => [id, FORGET_TAB_HOSTS[id]])
+        .filter(([, v]) => v && v.host && Number(v.at) > cutoff)
+        .sort((a, b) => Number(b[1].at) - Number(a[1].at))
+        .slice(0, FORGET_TAB_HOSTS_MAX);
+      const out = {};
+      entries.forEach(([id, v]) => { out[id] = v; });
+      area.set({ [FORGET_TAB_HOSTS_KEY]: out }, () => { void chrome.runtime.lastError; });
+    } catch (_) {}
+  }, 250);
+}
+
+// Restore, then fill gaps from Chrome -- and let neither overwrite something newer.
+function forgetTabHostsReady() {
+  if (__forgetTabHostsReady) return __forgetTabHostsReady;
+  const startedAt = Date.now();
+  const adopt = (tabId, host, at) => {
+    if (tabId == null || !host) return;
+    const live = FORGET_TAB_HOSTS[tabId];
+    // A navigation seen since this restore began is newer than anything it can offer.
+    if (live && Number(live.at) >= startedAt) return;
+    if (live && Number(live.at) >= Number(at)) return;
+    FORGET_TAB_HOSTS[tabId] = { host, at: Number(at) || startedAt };
+  };
+  __forgetTabHostsReady = (async () => {
+    const area = forgetSessionArea();
+    if (area) {
+      await new Promise((resolve) => {
+        try {
+          area.get(FORGET_TAB_HOSTS_KEY, (res) => {
+            void chrome.runtime.lastError;
+            const stored = (res && res[FORGET_TAB_HOSTS_KEY]) || {};
+            const cutoff = Date.now() - FORGET_TAB_HOSTS_TTL_MS;
+            Object.keys(stored).forEach((id) => {
+              const v = stored[id];
+              if (v && v.host && Number(v.at) > cutoff) adopt(id, v.host, v.at);
+            });
+            resolve();
+          });
+        } catch (_) { resolve(); }
+      });
+    }
+    await new Promise((resolve) => {
+      try {
+        chrome.tabs.query({}, (tabs) => {
+          void chrome.runtime.lastError;
+          (tabs || []).forEach((t) => {
+            const h = forgetHostFromUrl(t.url || t.pendingUrl || '');
+            if (h) adopt(t.id, h, startedAt);
+          });
+          resolve();
+        });
+      } catch (_) { resolve(); }
+    });
+  })().catch(() => {});
+  return __forgetTabHostsReady;
+}
+
 try {
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     const newHost = forgetHostFromUrl((tab && tab.url) || change.url || '');
     if (!newHost) return;
-    const prevHost = FORGET_TAB_HOSTS[tabId];
-    FORGET_TAB_HOSTS[tabId] = newHost;
+    const prev = FORGET_TAB_HOSTS[tabId];
+    const prevHost = prev && prev.host;
+    noteForgetTabHost(tabId, newHost);
     // navigated to a different registrable domain -> the old one may now be "left"
     if (prevHost && registrableDomainBg(prevHost) !== registrableDomainBg(newHost)) {
       maybeForgetHost(prevHost, tabId).catch(() => {});
     }
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
-    const host = FORGET_TAB_HOSTS[tabId];
-    delete FORGET_TAB_HOSTS[tabId];
-    if (host) maybeForgetHost(host, tabId).catch(() => {});
+    // The heap answer first, because on a warm worker it is both correct and immediate. Only when
+    // there is none does this wait for the restore -- which is the cold-start case the map was
+    // empty for, and the one where the tab's URL is already unrecoverable.
+    const immediate = FORGET_TAB_HOSTS[tabId];
+    if (immediate && immediate.host) {
+      delete FORGET_TAB_HOSTS[tabId];
+      persistForgetTabHosts();
+      maybeForgetHost(immediate.host, tabId).catch(() => {});
+      return;
+    }
+    forgetTabHostsReady().then(() => {
+      const restored = FORGET_TAB_HOSTS[tabId];
+      delete FORGET_TAB_HOSTS[tabId];
+      persistForgetTabHosts();
+      if (restored && restored.host) maybeForgetHost(restored.host, tabId).catch(() => {});
+    }).catch(() => {});
   });
-  // seed the map now so closing a pre-existing tab still detects the host after a
-  // service-worker restart (when our in-memory map would otherwise be empty)
-  chrome.tabs.query({}, (tabs) => {
-    (tabs || []).forEach((t) => { const h = forgetHostFromUrl(t.url || t.pendingUrl || ''); if (h) FORGET_TAB_HOSTS[t.id] = h; });
-  });
+  forgetTabHostsReady();
 } catch (_) {}
 
 // ---- Memory Shield popup/helper tools --------------------------------------
@@ -10620,6 +10845,38 @@ const PERMISSION_CHAIN_WINDOW_MS = 10 * 60 * 1000;
 const PERMISSION_CHAIN_WARN_COOLDOWN_MS = 10 * 60 * 1000;
 const PERMISSION_CHAIN_MAX_SESSIONS = 300;
 const PERMISSION_CHAIN_STATE = Object.create(null);
+// The ten-minute permission window, mirrored to storage.session so a suspension in the middle of
+// a chain does not turn one correlated High verdict into two unrelated low ones (M17).
+const PERMISSION_CHAIN_MIRROR = sessionMirror(
+  'wardenone_permission_chain_state',
+  () => PERMISSION_CHAIN_STATE,
+  (stored) => {
+    if (!stored || typeof stored !== 'object') return;
+    const now = Date.now();
+    Object.keys(stored).forEach((key) => {
+      const restored = stored[key];
+      if (!restored || !Array.isArray(restored.events)) return;
+      const events = restored.events.filter((e) => e && now - Number(e.at) <= PERMISSION_CHAIN_WINDOW_MS);
+      if (!events.length && now - Number(restored.warnedAt || 0) > PERMISSION_CHAIN_WARN_COOLDOWN_MS) return;
+      const live = PERMISSION_CHAIN_STATE[key];
+      // Anything reported while this read was in flight is newer; merge behind it rather than
+      // over it, then re-sort so the window still reads oldest-to-newest.
+      if (!live) {
+        PERMISSION_CHAIN_STATE[key] = Object.assign({}, restored, { events });
+        return;
+      }
+      const seen = new Set(live.events.map((e) => String(e.permission) + '|' + String(e.action) + '|' + Number(e.at)));
+      events.forEach((e) => {
+        const id = String(e.permission) + '|' + String(e.action) + '|' + Number(e.at);
+        if (!seen.has(id)) { seen.add(id); live.events.push(e); }
+      });
+      live.events.sort((a, b) => Number(a.at) - Number(b.at));
+      live.events = live.events.slice(-30);
+      live.warnedAt = Math.max(Number(live.warnedAt) || 0, Number(restored.warnedAt) || 0);
+      live.lastAt = Math.max(Number(live.lastAt) || 0, Number(restored.lastAt) || 0);
+    });
+  },
+);
 const PERMISSION_CHAIN_DEFS = {
   notifications: { label: 'Notifications', weight: 2 },
   camera: { label: 'Camera', weight: 3 },
@@ -10756,6 +11013,10 @@ async function recordPermissionChainSignal(sender, msg, granted) {
   const permission = cleanPermissionChainKey(msg && msg.permission);
   if (!permission) return { ok: false, error: 'Unknown permission signal.' };
   const action = cleanPermissionChainAction(msg && msg.action);
+  // The window this verdict is computed over has to be the whole window, including whatever was
+  // reported before the last suspension. Restored before the first signal is recorded, so the
+  // chain a user actually performed is the chain that gets evaluated.
+  await PERMISSION_CHAIN_MIRROR.ready();
   const now = Date.now();
   prunePermissionChainState(now);
 
@@ -10774,6 +11035,7 @@ async function recordPermissionChainSignal(sender, msg, granted) {
   session.events = session.events.filter((e) => now - e.at <= PERMISSION_CHAIN_WINDOW_MS).slice(-30);
   session.lastAt = now;
   PERMISSION_CHAIN_STATE[sessionKey] = session;
+  PERMISSION_CHAIN_MIRROR.persist();
 
   const grantedLabels = permissionChainLabels((granted || []).map((g) => cleanPermissionChainKey(g)).filter(Boolean));
   const verdict = evaluatePermissionChain(session.events, (granted || []).map((g) => cleanPermissionChainKey(g)).filter(Boolean), host);
