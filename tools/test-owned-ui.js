@@ -461,6 +461,26 @@ function loadCookieEscape() {
   check('oauth warning: destroy() stops the self-healing', healers.length === 0);
 }
 
+// ---------------------------------------------------------------------------
+// 6. The badge host (M12, remaining half). Repair reinstalls the engine into a frame that may
+//    already be showing a badge. The new copy's badgeHost is null while the old copy's host is
+//    still in the DOM, so it used to mount a second one and leave the first, listener and all.
+// ---------------------------------------------------------------------------
+{
+  const ADOPT = 'const stale=document.getElementById("rg-badge-host");stale&&stale!==badgeHost&&stale.remove()';
+  // Whitespace is stripped from both sides, not normalised: the source splits these two statements
+  // across indented lines, while the build has them adjacent.
+  const bare = (t) => t.replace(/\s+/g, '');
+  check('engine adopts a stale badge host instead of mounting a second one',
+    bare(ENGINE).includes(bare(ADOPT)));
+  // The packaged engine is what actually ships, and it is generated -- a source-only fix that never
+  // reached the build would be invisible everywhere except here.
+  check('the packaged engine carries the same adoption',
+    MIN.includes(ADOPT));
+  check('the adoption runs before the new host is built',
+    ENGINE.indexOf(ADOPT.slice(0, 40)) < ENGINE.indexOf('const host=badgeHost=document.createElement("div")'));
+}
+
 if (failures) {
   console.error('[fail] owned-UI tests: ' + failures + ' failure(s)');
   process.exit(1);
