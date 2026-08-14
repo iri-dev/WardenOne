@@ -96,6 +96,16 @@ function makeDom() {
         if (this.rootRef) this.rootRef.activeElement = this;
         if (this.ownerDoc) this.ownerDoc.activeElement = this;
       },
+      // A real closed shadow root, distinct from its host. Without this the fake fell into
+      // woOwnedOverlay's light-DOM fallback, where host and root are the same object -- and a
+      // fake with no shadow boundary cannot show you a bug that only exists at one.
+      attachShadow(init) {
+        const sr = own(node('#shadow-root'));
+        sr.mode = (init && init.mode) || 'open';
+        sr.hostNode = this;
+        this.shadowRootRef = sr;
+        return sr;
+      },
       addEventListener(type, fn, cap) { listeners.push({ node: this, type, fn, cap }); },
       removeEventListener(type, fn, cap) {
         const i = listeners.findIndex((l) => l.node === this && l.type === type && l.fn === fn && l.cap === cap);
@@ -130,7 +140,7 @@ function makeDom() {
 }
 
 // Lift the real helper.
-const from = BRIDGE.indexOf('  function woFocusRing(host) {');
+const from = BRIDGE.indexOf('  function woFocusRing(scope) {');
 const to = BRIDGE.indexOf('  // Handles for the three interstitials');
 if (from < 0 || to <= from) throw new Error('woOwnedOverlay source markers not found');
 
@@ -197,7 +207,18 @@ function build() {
 
   const focusEvents = () => listeners.filter((l) => /^focus(in|out)$/.test(l.type));
   check('the ring follows focus rather than being painted once', focusEvents().length === 2);
-  const fire = (type, target) => focusEvents().filter((l) => l.type === type).forEach((l) => l.fn({ target }));
+  // Where it listens is the whole behaviour. Focus events are RETARGETED as they leave a closed
+  // shadow tree, so a listener on the HOST sees every focusin reporting the host as its target --
+  // it would paint the wrapper rather than the button, and the ring would never move with Tab.
+  // Measured in Chromium before this was corrected: no ring at all on a shadow-DOM warning.
+  //
+  // So delivery is modelled the way the browser does it, and the assertions below fail if the
+  // listener sits outside the root -- rather than passing because the fake had no boundary.
+  check('the ring listens inside the shadow root, where the event still names the button',
+    focusEvents().length > 0 && focusEvents().every((l) => l.node === root),
+    'bound on the host, a retargeted focusin names the host and the ring follows nothing');
+  const fire = (type, target) => focusEvents().filter((l) => l.type === type)
+    .forEach((l) => l.fn({ target: l.node === root ? target : ov.hostNode() }));
   fire('focusout', safe);
   check('the ring is removed when focus leaves', !ring(safe));
   risky.focusVisible = false;
@@ -253,7 +274,12 @@ function build() {
     OAUTH.includes('dialog(opts)') && BRIDGE.includes('dialog(opts)'),
     'the copies have diverged again');
   check('both lifted copies carry the focus ring too',
-    OAUTH.includes('function woFocusRing(host) {') && BRIDGE.includes('function woFocusRing(host) {'));
+    OAUTH.includes('function woFocusRing(scope) {') && BRIDGE.includes('function woFocusRing(scope) {'));
+  // Only bridge.js's copy is driven behaviourally above, so oauth-guard's binding site is asserted
+  // here instead -- otherwise the copy that is never executed is free to reintroduce the bug.
+  check('both copies bind the ring inside the shadow root rather than on the host',
+    /focusRing = woFocusRing\(shadow\);/.test(BRIDGE) && /focusRing = woFocusRing\(shadow\);/.test(OAUTH),
+    'a ring bound on the host only ever sees the host');
   check('the indicator uses an outline, which forced-colors mode honours',
     /setProperty\('outline', '3px solid currentColor', 'important'\)/.test(BRIDGE)
     && /setProperty\('outline', '3px solid currentColor', 'important'\)/.test(OAUTH));

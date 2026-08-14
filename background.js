@@ -8387,6 +8387,80 @@ async function handleSmartScriptPlayerIntent(sender) {
   return { ok: true, recovered: await recoverSmartScriptPlayer(pending, context) };
 }
 
+// M36 -- telling the user when the shield is the reason a page is broken.
+//
+// The shield refuses third-party scripts by design, and on nearly every page that is correct and
+// invisible. When it is wrong the page simply fails: a black player, a splash screen that never
+// advances, a CAPTCHA that never renders. Three separate findings had exactly that shape, and each
+// was diagnosed only because the owner happened to test with the extension off and said so. Fixing
+// hosts one report at a time does not converge -- the shield is deliberately broad, so the set of
+// affected sites is open-ended.
+//
+// Nothing is pushed to the page. A push would fire on almost every page, because almost every page
+// has a third-party script refused and works perfectly well. The page asks, once, and only after it
+// has already decided for itself that it looks broken; this side answers whether we refused
+// anything on that navigation, so the two halves of the condition are evaluated where each one is
+// actually knowable.
+function smartScriptRefusedHostsForTab(tabId) {
+  const id = Number(tabId);
+  if (!Number.isInteger(id) || id < 0) return [];
+  const prefix = String(id) + ':';
+  const epoch = smartScriptNavigationEpoch(id);
+  const hosts = [];
+  for (const [key, entry] of SMART_SCRIPT_FRAME_HOSTS) {
+    // Epoch-matched, so a refusal from the page before this one can never be offered as an
+    // explanation for this one.
+    if (!key.startsWith(prefix) || !entry || entry.epoch !== epoch) continue;
+    for (const host of entry.hosts || []) {
+      if (host && !hosts.includes(host)) hosts.push(host);
+    }
+  }
+  return hosts;
+}
+
+function smartScriptSenderHost(sender) {
+  try {
+    const url = String((sender && sender.tab && sender.tab.url) || '');
+    if (!/^https?:\/\//i.test(url)) return '';
+    return normalizeAllowlistHost(new URL(url).hostname) || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+// The one predicate both handlers below share, so the notice cannot appear under conditions the
+// trust action would refuse, or vice versa.
+async function smartScriptSiteExplainable(sender) {
+  const tabId = Number(sender && sender.tab && sender.tab.id);
+  const host = smartScriptSenderHost(sender);
+  if (!Number.isInteger(tabId) || tabId < 0 || !host) return null;
+  if (!await smartScriptModeActive()) return null;
+  // Already trusted: there is nothing left to offer and saying so would be noise. Subdomains
+  // count, because that is how the shield's own excludedInitiatorDomains matches.
+  const trusted = await getTrustedScriptHosts();
+  if (trusted.some((entry) => host === entry || host.endsWith('.' + entry))) return null;
+  const hosts = smartScriptRefusedHostsForTab(tabId);
+  return hosts.length ? { host, hosts } : null;
+}
+
+async function handleSmartScriptPageStatus(sender) {
+  const explain = await smartScriptSiteExplainable(sender);
+  if (!explain) return { ok: true, refused: 0 };
+  return { ok: true, refused: explain.hosts.length, hosts: explain.hosts.slice(0, 3), host: explain.host };
+}
+
+// The trust action the notice offers -- the same one the Script Shield panel already has.
+//
+// The host is read from the SENDER's own tab and never from the message, so there is no field to
+// forge: the worst a replayed or stray message can do is trust the site it came from. It is refused
+// outright unless we genuinely refused a script on that tab's current navigation, so a message
+// arriving without the condition that shows the notice does nothing at all.
+async function handleSmartScriptTrustSite(sender) {
+  const explain = await smartScriptSiteExplainable(sender);
+  if (!explain) return { ok: false, error: 'Nothing was blocked on this page.' };
+  return await addTrustedScriptHost(explain.host);
+}
+
 function clearSmartScriptFrameTransient(tabId, frameId) {
   const key = smartScriptFrameKey(tabId, frameId);
   SMART_SCRIPT_PLAYER_CONTEXTS.delete(key);
@@ -10068,6 +10142,8 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'script-drift-scan',
   'smart-player-context',
   'smart-player-intent',
+  'smart-script-status',
+  'smart-script-trust-site',
   'open-site-settings',
   'reset-site-permissions',
   'adshield-cosmetic',
@@ -10091,6 +10167,10 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'script-drift-scan': { max: 6, windowMs: 60000 },
   'smart-player-context': { max: 8, windowMs: 60000 },
   'smart-player-intent': { max: 12, windowMs: 60000 },
+  // Asked once per navigation by a page that already looks broken, and answered read-only.
+  // Trusting is the mutation, so it gets the same ceiling as the other site-scoped escapes.
+  'smart-script-status': { max: 4, windowMs: 60000 },
+  'smart-script-trust-site': { max: 2, windowMs: 60000 },
   'open-site-settings': { max: 2, windowMs: 60000 },
   'reset-site-permissions': { max: 2, windowMs: 60000 },
   'adshield-cosmetic': { max: 12, windowMs: 60000 },
@@ -11057,6 +11137,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'smart-player-intent' && messageSenderIsTab(sender)) {
     respond(handleSmartScriptPlayerIntent(sender), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'smart-script-status' && messageSenderIsTab(sender)) {
+    respond(handleSmartScriptPageStatus(sender), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'smart-script-trust-site' && messageSenderIsTab(sender)) {
+    respond(handleSmartScriptTrustSite(sender), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'open-site-settings' && messageSenderIsTab(sender)) {
