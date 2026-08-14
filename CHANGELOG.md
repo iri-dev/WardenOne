@@ -71,6 +71,15 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- Choosing to continue past a full-page warning gives you the page back. The warnings
+  that cover the whole window — the adult-site gate, the redirect-chain and IP-logger
+  notices, the phishing block — work by hiding everything on the page and drawing
+  themselves on top. Dismissing one removed both halves, but the check that puts the
+  warning back if a site tears it off could still run a fraction of a second later, see
+  both halves missing, and put the hiding half back on its own. The result was a black
+  page that never recovered, with whatever the site wanted to show you still there
+  underneath, invisible. The page-hiding half can now only exist while the warning
+  itself does, so there is no longer a state where one outlives the other.
 - WardenOne now credits every list it uses, not just the best-known four. It draws on
   37 community blocklists from 21 projects, and only four were substantively credited --
   not from any wish to hide the rest, but because a hand-written attribution page falls

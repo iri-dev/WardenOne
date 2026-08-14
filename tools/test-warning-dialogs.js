@@ -308,7 +308,14 @@ function buildEngine() {
   const dom = makeDom();
   const sandbox = { document: dom.document, Array, Object, String };
   vm.createContext(sandbox);
-  vm.runInContext('const ' + ENGINE.slice(from, to).replace(/,\s*$/, '') + ';'
+  // Trailing block comments are stripped before the comma: the region ends where the next chain
+  // member's explanatory comment begins, and `const ... , /* comment */ ;` does not parse.
+  // The comment body may not itself contain `*/`, which pins this to the LAST block comment --
+  // a lazy `[\s\S]*?` anchored at the end matches from the FIRST one and eats the region.
+  const region = ENGINE.slice(from, to)
+    .replace(/\/\*(?:[^*]|\*(?!\/))*\*\/\s*$/, '')
+    .replace(/,\s*$/, '');
+  vm.runInContext('const ' + region + ';'
     + '\nglobalThis.__dialog = woDialog;', sandbox, { filename: 'src/content.js' });
   return { dom, sandbox, listeners: dom.listeners };
 }

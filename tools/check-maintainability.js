@@ -195,6 +195,7 @@ function checkContentBuild() {
   'tools/test-bounded-fetch.js',
   'tools/test-instrumentation-hygiene.js',
   'tools/test-source-inventory.js',
+  'tools/test-blocker-teardown.js',
   'tools/build-source-inventory.js',
   'tools/test-safe-search.js',
   'tools/test-search-junk.js',
@@ -293,6 +294,7 @@ checkCommand('bounded fetch tests', ['tools/test-bounded-fetch.js']);
 checkCommand('instrumentation hygiene tests', ['tools/test-instrumentation-hygiene.js']);
 checkCommand('source inventory is current', ['tools/build-source-inventory.js', '--check']);
 checkCommand('source inventory tests', ['tools/test-source-inventory.js']);
+checkCommand('blocker teardown tests', ['tools/test-blocker-teardown.js']);
 checkCommand('SafeSearch enforcement tests', ['tools/test-safe-search.js']);
 checkCommand('search-junk marker tests', ['tools/test-search-junk.js']);
 checkCommand('session security scoring tests', ['tools/test-session-score.js']);
