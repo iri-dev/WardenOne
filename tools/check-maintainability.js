@@ -190,6 +190,7 @@ function checkContentBuild() {
   'tools/test-miner-realms.js',
   'tools/test-cert-guard-toctou.js',
   'tools/test-state-serialization.js',
+  'tools/test-cold-start-state.js',
   'tools/test-safe-search.js',
   'tools/test-search-junk.js',
   'tools/test-insecure-login.js',
@@ -281,6 +282,7 @@ checkCommand('cryptominer guard tests', ['tools/test-cryptominer-guard.js']);
 checkCommand('miner MAIN/ISOLATED realm tests', ['tools/test-miner-realms.js']);
 checkCommand('certificate guard navigation tests', ['tools/test-cert-guard-toctou.js']);
 checkCommand('state serialization tests', ['tools/test-state-serialization.js']);
+checkCommand('cold-start state tests', ['tools/test-cold-start-state.js']);
 checkCommand('SafeSearch enforcement tests', ['tools/test-safe-search.js']);
 checkCommand('search-junk marker tests', ['tools/test-search-junk.js']);
 checkCommand('session security scoring tests', ['tools/test-session-score.js']);

@@ -50,6 +50,10 @@ function runSignal(options) {
     Object, Array, String, Number, Math, JSON, Date, Boolean, RegExp,
     DEFAULT_CONFIG: { enabled: true, permissionChainGuard: true },
     PERMISSION_CHAIN_STATE: opts.state || {},
+    // The window is mirrored to storage.session now (M17), so the handler restores it before it
+    // records anything. This suite drives verdicts from an explicit in-memory state, so the mirror
+    // only has to be a no-op here; tools/test-cold-start-state.js is what exercises it.
+    PERMISSION_CHAIN_MIRROR: { ready: async () => {}, persist() {} },
     PERMISSION_CHAIN_WINDOW_MS: 120000,
     PERMISSION_CHAIN_WARN_COOLDOWN_MS: 60000,
     PERMISSION_CHAIN_DEFS: { camera: { label: 'Camera' }, microphone: { label: 'Microphone' }, geolocation: { label: 'Location' } },

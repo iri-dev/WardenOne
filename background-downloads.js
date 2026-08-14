@@ -1917,6 +1917,12 @@ async function runDownloadGuardScan(id, hint, reason) {
       return;
     }
     const trustedSites = Array.isArray(cfgStore && cfgStore[DOWNLOAD_TRUSTED_KEY]) ? cfgStore[DOWNLOAD_TRUSTED_KEY] : [];
+    // scoreDownload consults BLOCKED_DOMAINS and the recent-redirect window, both of which are
+    // hydrated asynchronously. The first download after a service-worker suspension used to be
+    // scored against an empty set and an empty window, so a file from a blocklisted host that
+    // arrived through a flagged redirect chain scored as if neither had happened (M17).
+    if (typeof securityStoresReady === 'function') await securityStoresReady();
+    if (typeof RECENT_REDIRECT_MIRROR !== 'undefined') await RECENT_REDIRECT_MIRROR.ready();
     const downloadUrl = item.finalUrl || item.url || '';
     const filename = item.filename || item.url || '';
     const redirectContext = downloadRedirectContext(downloadUrl, item.referrer, item);
