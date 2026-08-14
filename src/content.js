@@ -11175,6 +11175,7 @@
         "icloud.com",
         "me.com"],
         microsoft:["microsoft.com",
+        "cloud.microsoft",
         "microsoft365.com",
         "live.com",
         "outlook.com",
@@ -11439,7 +11440,20 @@
         }
         return!1
       },
-      isLegit=brand=>(BRANDS[brand]||[]).some(d=>fullHost===d||fullHost.endsWith("."+d)),
+      /* Some brands own their own top-level domain, and serve real products from it: Microsoft
+         runs the Office web apps on word.cloud.microsoft, Google publishes on blog.google. The
+         subdomain-spoof rule below asks parts.includes(brand), and on those hosts the brand name
+         IS the TLD -- so the most first-party address a brand can have looked like the strongest
+         possible spoof of itself. Owning the TLD is the ownership proof; nothing else can claim it,
+         because a registry will not sell "microsoft" as a TLD to anyone but Microsoft. Checked as
+         the last label only, so evil-microsoft.com and microsoft.evil.com are untouched. */
+      BRAND_TLDS={
+        microsoft:["microsoft"],
+        google:["google"],
+        apple:["apple"],
+        amazon:["amazon"]
+      },
+      isLegit=brand=>((BRAND_TLDS[brand]||[]).includes(parts[parts.length-1])||(BRANDS[brand]||[]).some(d=>fullHost===d||fullHost.endsWith("."+d))),
       COMMON_WORD_BRANDS=new Set(["apple",
       "target",
       "visa",

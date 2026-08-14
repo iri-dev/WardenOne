@@ -115,3 +115,78 @@ const risky = sandbox.__phishingTest.loginRiskVerdict('paypa1.com', 'https://pay
 assert.strictEqual(risky.risky, true, 'obvious PayPal typo should still be risky');
 
 console.log('[ok] phishing false-positive checks passed');
+
+// ---------------------------------------------------------------------------
+// M31. Behavioural verdicts, not just table contents.
+//
+// word.cloud.microsoft was shown the full-page "Likely phishing site blocked" interstitial. The
+// cause was not a missing table entry so much as the subdomain-spoof rule: it asks
+// parts.includes(brand), and Microsoft OWNS the .microsoft TLD -- so on its most first-party
+// address the brand name is the last label, and the rule read that as the strongest possible spoof
+// of itself. blog.google failed the same way.
+//
+// The table above is checked by regex, which cannot catch that. These run the detector.
+// ---------------------------------------------------------------------------
+{
+  const detectStart = source.indexOf('const BRANDS={');
+  const loopEnd = source.indexOf('if(phishHit)break', detectStart);
+  assert(detectStart >= 0 && loopEnd > detectStart, 'phishing detection region not found');
+  const detectSrc = source.slice(detectStart, source.indexOf('}', loopEnd) + 1);
+
+  function verdictFor(hostname) {
+    const sandbox = {
+      location: { hostname },
+      WO: {},
+      Object, Array, Set, Math, String, RegExp,
+    };
+    installEngineAmbient(sandbox);
+    vm.runInContext(detectSrc + '\nthis.__hit = phishHit;', sandbox, { filename: 'src/content.js' });
+    return sandbox.__hit;
+  }
+
+  let m31Failed = 0;
+  const expect = (host, shouldWarn, why) => {
+    const hit = verdictFor(host);
+    const warned = !!hit;
+    if (warned === shouldWarn) {
+      console.log('  ok  - ' + host + (shouldWarn ? ' warns' : ' is allowed') + (why ? ' (' + why + ')' : ''));
+      return;
+    }
+    m31Failed++;
+    console.error('  FAIL - ' + host + ' expected ' + (shouldWarn ? 'a warning' : 'no warning')
+      + ' but got ' + (hit ? hit.kind + '/' + hit.brand : 'none'));
+  };
+
+  // The reported false positive, and its siblings on the same brand-owned TLD.
+  expect('word.cloud.microsoft', false, 'the reported M31 URL');
+  expect('excel.cloud.microsoft', false);
+  expect('powerpoint.cloud.microsoft', false);
+  expect('cloud.microsoft', false);
+  // Google publishes on its own TLD too, and broke identically.
+  expect('blog.google', false);
+  expect('about.google', false);
+  // Ordinary first-party hosts that were already fine must stay fine.
+  expect('www.microsoft.com', false);
+  expect('outlook.office.com', false);
+  expect('login.microsoftonline.com', false);
+
+  // The security half. Owning a TLD is the ownership proof, so it must not be forgeable by putting
+  // the brand name anywhere else in the name. These are the cases the fix must NOT have loosened.
+  expect('microsoft.evil.com', true, 'brand as a subdomain of an unrelated site');
+  expect('login.microsoft.attacker.net', true, 'brand buried mid-name');
+  // A hyphenated look-alike only warns when the name also carries a phishing word. That is a
+  // deliberate pre-existing trade-off in the brand-in-name rule, not something this fix changed --
+  // without it, every legitimate "microsoft-partner-consulting.com" would be flagged. Recorded as
+  // the behaviour it is, so a future change to that rule shows up here rather than silently.
+  expect('cloud-microsoft.com', false, 'no phishing word: brand-in-name deliberately abstains');
+  expect('login-cloud-microsoft.com', true, 'hyphenated look-alike carrying a phishing word');
+  expect('rnicrosoft.com', true, 'rn/m visual substitution');
+  expect('microsofr.com', true, 'single-character typo');
+  expect('paypa1.com', true, 'digit-for-letter on another brand');
+
+  if (m31Failed) {
+    console.error('\n' + m31Failed + ' phishing verdict check(s) failed');
+    process.exit(1);
+  }
+  console.log('\nphishing verdict checks passed');
+}
