@@ -8,7 +8,23 @@
   'use strict';
 
   const params = new URLSearchParams(location.search || '');
-  const url = params.get('u') || '';
+  // Validate the scheme here rather than relying on a check in another file.
+  //
+  // Nothing reachable proved exploitable: an empty hostname fails addSafeBrowsingBypass, the
+  // manifest declares no web_accessible_resources so no page can navigate here, and the pages CSP
+  // blocks javascript: anyway. But this was the only one of the three interstitials that did not
+  // validate -- redirect-warning.js and cert-error.js both do -- so the guarantee rested on code
+  // somewhere else. It rests here now, the same way it does in its siblings.
+  function safeHttpUrl(raw) {
+    try {
+      const u = new URL(String(raw || ''));
+      return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+    } catch (_) {
+      return '';
+    }
+  }
+  const requestedUrl = params.get('u') || '';
+  const url = safeHttpUrl(requestedUrl);
   const provider = params.get('p') || 'URL reputation';
   const threats = String(params.get('t') || '')
     .split(',')
@@ -16,8 +32,10 @@
     .filter(Boolean)
     .map((t) => t.replace(/_/g, ' ').toLowerCase());
 
+  // Show what was actually blocked, even when it is not a scheme we would navigate back to.
+  // textContent, so an odd value is displayed rather than interpreted.
   const site = document.getElementById('site');
-  if (site) site.textContent = url;
+  if (site) site.textContent = requestedUrl;
 
   const providerEl = document.getElementById('provider');
   if (providerEl) providerEl.textContent = 'Blocked by WardenOne + ' + provider;
@@ -50,8 +68,15 @@
   // The escape route is revealed rather than shown, and the button that uses it stays
   // disabled for a few seconds. Someone who genuinely knows this site is a false
   // positive will wait; someone clicking through a malware warning on reflex will not.
+  // No safe destination means there is nothing to continue TO, so the escape hatch is not offered
+  // at all rather than being offered and then failing at the last step.
+  if (!url) {
+    const wrongBtn = document.getElementById('wrong');
+    if (wrongBtn) wrongBtn.hidden = true;
+  }
+
   document.getElementById('wrong')?.addEventListener('click', () => {
-    if (!escapePanel) return;
+    if (!escapePanel || !url) return;
     escapePanel.hidden = false;
     if (foot) foot.hidden = true;
     document.getElementById('wrong')?.setAttribute('disabled', 'disabled');
@@ -87,7 +112,7 @@
   });
 
   proceed?.addEventListener('click', () => {
-    if (proceed.hasAttribute('disabled')) return;
+    if (proceed.hasAttribute('disabled') || !url) return;
     proceed.setAttribute('disabled', 'disabled');
     proceed.textContent = 'Continuing…';
     chrome.runtime.sendMessage({ kind: 'safe-browsing-allow-once', host: host }, (res) => { void chrome.runtime.lastError;
