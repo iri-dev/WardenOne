@@ -410,6 +410,47 @@ const gateSource = read('tools/check-maintainability.js') || '';
   }
 }
 
+// ---------------------------------------------------------------------------
+// Source encoding hygiene (L24).
+//
+// background.js shipped for five commits with a UTF-8 BOM and six mojibake sequences: an em dash,
+// an ellipsis, a middle dot and a combining-dot letter, each decoded as Windows-1252 and
+// re-encoded. Five were in comments, but one was the middle dot in the separator that joins the
+// reputation-provider summaries, so the corruption reached the UI. Nothing caught it. The file
+// parsed, every suite passed, and the damage was invisible unless you looked at the bytes.
+//
+// Note for anyone extending this: do NOT paste an example of the corruption into this file. An
+// earlier draft quoted the broken separator here and the check dutifully failed on its own
+// documentation. Describe the sequences; never reproduce them.
+//
+// Detection is by construction rather than by a list of known-bad strings: a two-byte UTF-8
+// sequence misread as Windows-1252 always lands as [U+00C0-U+00DF] followed by whatever CP1252
+// maps 0x80-0xBF to. Building that second set from the codepage catches sequences nobody has seen
+// yet, which a hardcoded list of the handful already encountered would not.
+// ---------------------------------------------------------------------------
+{
+  // CP1252 high range 0x80-0xBF. 0x81/0x8D/0x8F/0x90/0x9D are unmapped and cannot appear.
+  const CP1252_HIGH = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ'
+    + '‘’“”•–—˜™š›œžŸ'
+    + ' ¡¢£¤¥¦§¨©ª«¬­®¯'
+    + '°±²³´µ¶·¸¹º»¼½¾¿';
+  const MOJIBAKE = new RegExp('[\\u00C0-\\u00DF][' + CP1252_HIGH.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&') + ']');
+
+  const files = fs.readdirSync('.').filter((f) => /\.(js|json|html|css|md)$/.test(f) && exists(f))
+    .concat(fs.readdirSync('tools').filter((f) => /\.js$/.test(f)).map((f) => 'tools/' + f))
+    .concat(exists('src/content.js') ? ['src/content.js'] : []);
+
+  const offenders = [];
+  for (const file of files) {
+    const buf = fs.readFileSync(file);
+    if (buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) { offenders.push(file + ' (UTF-8 BOM)'); continue; }
+    const hit = MOJIBAKE.exec(buf.toString('utf8'));
+    if (hit) offenders.push(file + ' (mojibake ' + JSON.stringify(hit[0]) + ')');
+  }
+  if (offenders.length) fail('source encoding: ' + offenders.join(', '));
+  else console.log('[ok] no shipped text file carries a BOM or mojibake (' + files.length + ' files)');
+}
+
 console.log('[info] background.js lines=' + lineCount('background.js'));
 console.log('[info] background-startup.js lines=' + lineCount('background-startup.js'));
 console.log('[info] background-memory.js lines=' + lineCount('background-memory.js'));

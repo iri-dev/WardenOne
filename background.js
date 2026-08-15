@@ -1,4 +1,4 @@
-﻿/* WardenOne â€” Copyright (C) 2026 iri
+/* WardenOne — Copyright (C) 2026 iri
    Licensed under the GNU General Public License v3 or later. See LICENSE.
    Official source: https://github.com/iri-dev/WardenOne
    Upstream filter-list attribution: CREDITS.md
@@ -1048,10 +1048,10 @@ const DEFAULT_CONFIG = {
 // "Recommended" = the always-safe security + tracking defenses that don't break
 // normal browsing (what the onboarding button has always applied). "Maximum
 // privacy" is a SUPERSET that also enables the hardened privacy features which
-// CAN affect some sites â€” surfaced in onboarding as an explicit, clearly
+// CAN affect some sites — surfaced in onboarding as an explicit, clearly
 // labelled opt-in, never forced on. Sharing the recommended object keeps the two
 // from drifting. Deliberately NOT in Maximum privacy: blockAllCookies (breaks
-// every login) and honeytokenMode (advanced, can interfere with forms) â€” those
+// every login) and honeytokenMode (advanced, can interfere with forms) — those
 // stay expert-only toggles in the popup.
 const ONBOARDING_RECOMMENDED = {
   enabled: true,
@@ -3819,7 +3819,7 @@ function externalSummary(results) {
       return 'WhoisXML age clear';
     }
     return r.provider;
-  }).join(' Â· ');
+  }).join(' · ');
 }
 
 async function checkSafeBrowsingUrl(url, apiKey) {
@@ -9011,7 +9011,7 @@ const SAFE_SEARCH_RULE_MAX = 40;
 // `allow` is written out per engine rather than derived from `match`, because the
 // two are not the same shape. DuckDuckGo's match has to consume the "?" to avoid
 // firing on /settings and /about -- which means an "allow" built as match + "[?&]"
-// can never match a URL where the parameter landed FIRST (â€¦/?kp=1&q=â€¦), and every
+// can never match a URL where the parameter landed FIRST (…/?kp=1&q=…), and every
 // search on that engine becomes a redirect loop. tools/test-safe-search.js runs
 // both patterns against real URLs with the parameter in either position.
 const SAFE_SEARCH_ENGINES = [
@@ -9545,7 +9545,7 @@ function parseList(text) {
     if (!line || line === 'localhost') return;
 
     // Convert IDN/homograph domains to punycode so they CAN be blocked (DNR
-    // urlFilter needs ASCII). e.g. yÈ¯utube.com -> xn--... . Browsers do this
+    // urlFilter needs ASCII). e.g. yȯutube.com -> xn--... . Browsers do this
     // natively via the URL parser.
     if (!/^[\x00-\x7F]+$/.test(line)) {
       try {
