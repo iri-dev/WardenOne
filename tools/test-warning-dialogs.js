@@ -144,17 +144,48 @@ const from = BRIDGE.indexOf('  function woFocusRing(scope) {');
 const to = BRIDGE.indexOf('  // Handles for the three interstitials');
 if (from < 0 || to <= from) throw new Error('woOwnedOverlay source markers not found');
 
+// woOwnedOverlay registers itself in the live-overlay set, which is declared with the other
+// teardown collections at the top of the file rather than inside this slice. Lift the real
+// declaration rather than stubbing one here: a hand-written `new Set()` in the sandbox would keep
+// passing after the real one was renamed or removed, which is the failure this set exists to stop.
+const OVERLAY_SET_DECL = '  const woOverlays = new Set();';
+if (BRIDGE.indexOf(OVERLAY_SET_DECL) < 0) throw new Error('live-overlay set declaration not found');
+
 function build() {
   const dom = makeDom();
   const healers = [];
   const sandbox = {
     document: dom.document,
-    Array, Object, String,
+    Array, Object, String, Set,
     domWatch: (fn) => { healers.push(fn); return () => { const i = healers.indexOf(fn); if (i >= 0) healers.splice(i, 1); }; },
   };
   vm.createContext(sandbox);
-  vm.runInContext(BRIDGE.slice(from, to) + '\nglobalThis.__make = woOwnedOverlay;', sandbox, { filename: 'bridge.js' });
-  return { dom, sandbox, listeners: dom.listeners };
+  vm.runInContext(OVERLAY_SET_DECL + '\n' + BRIDGE.slice(from, to)
+    + '\nglobalThis.__make = woOwnedOverlay;'
+    + '\nglobalThis.__overlays = woOverlays;', sandbox, { filename: 'bridge.js' });
+  return { dom, sandbox, healers, listeners: dom.listeners };
+}
+
+// The dispose region, lifted whole so the teardown below is the real one rather than a
+// re-implementation. Everything it touches is either a Node global or supplied here.
+const dFrom = BRIDGE.indexOf('  const woAbort = new AbortController();');
+const dTo = BRIDGE.indexOf('  // A per-page-load routing token.');
+if (dFrom < 0 || dTo <= dFrom) throw new Error('bridge dispose source markers not found');
+
+function buildDispose() {
+  const sandbox = {
+    AbortController, Array, Object, Set, String,
+    setTimeout, clearTimeout, setInterval, clearInterval,
+    MutationObserver: function () { return { disconnect() {} }; },
+    chrome: { runtime: { onMessage: { addListener() {}, removeListener() {} } } },
+    window: {},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(BRIDGE.slice(dFrom, dTo)
+    + '\nglobalThis.__overlays = woOverlays;'
+    + '\nglobalThis.__dispose = window.__wardenOneBridgeDispose;'
+    + '\nglobalThis.__aborted = () => woAbort.signal.aborted;', sandbox, { filename: 'bridge.js' });
+  return sandbox;
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +469,89 @@ function buildEngine() {
   check('the shipped runtime carries the engine dialogs',
     (MIN.match(/woDialog\(/g) || []).length === 5 && MIN.includes('woDialog=(host,box,opts)=>'),
     'content.min.js is stale');
+}
+
+// ---------------------------------------------------------------------------
+// Closing a warning has to reach destroy(), on every path there is.
+//
+// destroy() is the only thing that releases the keyboard trap, hands focus back, stops the
+// self-healing watcher and removes the host. Three of the five bridge interstitials used to close
+// by calling wrap.remove() on the inner element instead: the panel vanished, so it looked right,
+// while the dialog stayed registered with focus never returned and an empty aria-modal box left in
+// the accessibility tree.
+//
+// The second half is the same defect from the other end. A bridge that is replaced while a warning
+// is up aborts every button's listener -- they all ride the abort signal -- but the trap is a raw
+// listener on the host and is not covered by it. Without the registry that left an undismissable
+// modal on the page. Repair is what triggers it: it stamps this file's version flag stale and
+// re-injects, and people press Repair when something looks wrong, which is when a warning is most
+// likely to be on screen.
+// ---------------------------------------------------------------------------
+{
+  const { dom, sandbox } = build();
+  const prior = dom.node('input');
+  dom.document.body.appendChild(prior);
+  prior.focus();
+
+  const ov = sandbox.__make('wo-script-drift');
+  const root = ov.root();
+  const btn = dom.node('button');
+  root.appendChild(btn);
+  ov.mount();
+  ov.dialog({ label: 'WardenOne security warning' });
+
+  check('a live overlay is registered while it is on screen', sandbox.__overlays.size === 1);
+  check('opening a dialog moves focus off the page', prior.focused > 0 && dom.document.activeElement !== prior);
+
+  ov.destroy();
+  check('destroy deregisters the overlay', sandbox.__overlays.size === 0);
+  check('destroy hands focus back to where the user was', dom.document.activeElement === prior);
+  check('destroy removes the host from the page', !ov.hostNode());
+
+  // Dispose drains the set and a caller may have destroyed the same overlay first, so neither may
+  // depend on being the one that got there.
+  let threw = false;
+  try { ov.destroy(); } catch (_) { threw = true; }
+  check('destroy is idempotent', !threw && sandbox.__overlays.size === 0);
+}
+
+{
+  // Every close path in bridge.js goes through destroy() rather than detaching inner markup.
+  // Asserted on source because these are five separate call sites in five different features; the
+  // behaviour each one depends on is driven above.
+  // Four use the capture-then-null idiom; the smart-script notice predates it and also has a focus
+  // ring of its own to release first. Both shapes are accepted, neither absence is.
+  const captured = (BRIDGE.match(/try \{ if \(overlay\) overlay\.destroy\(\); \} catch \(_\) \{\}/g) || []).length;
+  check('the four capture-then-destroy interstitials all close through destroy()',
+    captured === 4, captured + ' found');
+  check('the smart-script notice closes through destroy() as well',
+    /smartScriptNoticeOverlay\.destroy\(\); \} catch \(_\) \{\}\s*\n\s*smartScriptNoticeOverlay = null;/.test(BRIDGE));
+  check('no warning closes by detaching its inner wrapper', !/wrap\.remove\(\)/.test(BRIDGE));
+}
+
+{
+  // The real dispose, driven.
+  const sb = buildDispose();
+  const destroyed = [];
+  const overlay = { destroy() { destroyed.push('overlay'); } };
+  const stubborn = { destroy() { throw new Error('page broke it'); } };
+  sb.__overlays.add(stubborn);
+  sb.__overlays.add(overlay);
+
+  // Guarded so a dispose that stops catching fails this assertion instead of crashing the suite
+  // and hiding the three below it.
+  let disposeThrew = false;
+  try { sb.__dispose(); } catch (_) { disposeThrew = true; }
+
+  check('replacing the bridge destroys a warning it left on screen', destroyed.length === 1);
+  check('the overlay set is emptied by dispose', sb.__overlays.size === 0);
+  check('one overlay that throws cannot strand the others',
+    !disposeThrew && destroyed.indexOf('overlay') >= 0);
+  check('dispose still aborts the listener signal afterwards', sb.__aborted() === true);
+
+  let reThrew = false;
+  try { sb.__dispose(); } catch (_) { reThrew = true; }
+  check('dispose is safe to run twice', !reThrew);
 }
 
 if (failed) { console.error('\n' + failed + ' warning-dialog check(s) failed'); process.exit(1); }

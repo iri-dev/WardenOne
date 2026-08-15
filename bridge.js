@@ -84,7 +84,26 @@
     return fn;
   };
 
+  /* Overlays this copy currently has on screen. Bridge-only, like the Chrome listeners above, so
+     it lives outside the registry core the other nine guards share.
+     destroy() is the only thing that releases the keyboard trap, hands focus back, stops the
+     self-healing watcher and removes the host -- and dispose has to be able to reach them. Every
+     button inside a warning is registered through woOn, so it rides the abort signal; the trap is
+     a raw listener on the host and does not. A bridge replaced while a warning is up therefore
+     used to abort every button and leave the dialog on the page with nothing able to close it.
+     That is not a rare path: Repair deliberately stamps this file's version flag stale and
+     re-injects (background.js REPAIR_COMPONENTS), and people press Repair precisely when something
+     looks wrong -- which is when a warning is most likely to be showing. */
+  const woOverlays = new Set();
+
   window.__wardenOneBridgeDispose = () => {
+    /* Before anything is torn down, while focus restoration can still land somewhere real.
+       Each destroy() deregisters itself, so the set is drained rather than iterated in place. */
+    const overlays = Array.from(woOverlays);
+    woOverlays.clear();
+    for (const overlay of overlays) {
+      try { overlay.destroy(); } catch (_) {}
+    }
     try { woAbort.abort(); } catch (_) {}
     woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
     woPending.clear();
@@ -495,7 +514,7 @@
       }
     }
 
-    return {
+    const api = {
       // The shadow root to render into. Built on first use.
       root() { return shadow || build(); },
       // The node identity check: only nodes we created live in our shadow root.
@@ -599,6 +618,9 @@
         }
       },
       destroy() {
+        // Idempotent, and always deregisters: dispose drains the set and a caller may destroy
+        // the same overlay first, so neither may depend on being the one that got there.
+        woOverlays.delete(api);
         gone = true;
         if (unwatch) { try { unwatch(); } catch (_) {} unwatch = null; }
         // Before the host goes: release the keyboard and hand focus back. Both must happen on
@@ -620,6 +642,8 @@
       // Only for our own bookkeeping; conveys no trust.
       hostNode() { return host; },
     };
+    woOverlays.add(api);
+    return api;
   }
 
   // Handles for the three interstitials, so replacing one destroys the overlay we built rather
@@ -1914,7 +1938,12 @@
             try { if (history.length > 1) history.back(); else location.href = 'about:blank'; } catch (_) { try { location.href = 'about:blank'; } catch (_) {} }
           });
           const dismiss = mkBtn('Dismiss', false);
-          woOn(dismiss, 'click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
+          woOn(dismiss, 'click', (e) => {
+            if (e && e.isTrusted === false) return;
+            const overlay = scriptDriftOverlay;
+            scriptDriftOverlay = null;
+            try { if (overlay) overlay.destroy(); } catch (_) {}
+          });
           actions.appendChild(leave);
           actions.appendChild(dismiss);
           box.appendChild(tag);
@@ -2082,7 +2111,12 @@
             } catch (_) {}
           });
           const dismiss = mkBtn('Dismiss', false);
-          woOn(dismiss, 'click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
+          woOn(dismiss, 'click', (e) => {
+            if (e && e.isTrusted === false) return;
+            const overlay = permChainOverlay;
+            permChainOverlay = null;
+            try { if (overlay) overlay.destroy(); } catch (_) {}
+          });
           actions.appendChild(reset);
           actions.appendChild(settings);
           actions.appendChild(dismiss);
@@ -2165,7 +2199,14 @@
           const x = document.createElement('button');
           x.setAttribute('style', WO_MODAL.button(false, '12px'));
           x.textContent = 'Dismiss warning';
-          woOn(x, 'click', (e) => { if (e && e.isTrusted === false) return; try { wrap.remove(); } catch (_) {} });
+          /* laShown above is what stops this warning returning, so clearing the handle here
+             costs nothing and keeps all three interstitials closing the same way. */
+          woOn(x, 'click', (e) => {
+            if (e && e.isTrusted === false) return;
+            const overlay = loginAgeOverlay;
+            loginAgeOverlay = null;
+            try { if (overlay) overlay.destroy(); } catch (_) {}
+          });
           const leave = document.createElement('button');
           leave.setAttribute('style', WO_MODAL.button(true, '12px'));
           leave.textContent = 'Leave site';
