@@ -822,6 +822,33 @@
     return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
   }
   function ewContrast(a, b) { const hi = Math.max(ewLum(a), ewLum(b)); const lo = Math.min(ewLum(a), ewLum(b)); return (hi + 0.05) / (lo + 0.05); }
+  const ewRgbCss = (c) => 'rgb(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' + Math.round(c.b) + ')';
+  // Keep the hue the site chose and move only its lightness until it clears the threshold.
+  //
+  // The flat fallback in contrastGuard is right for text that is merely hard to read, and wrong
+  // wherever the COLOUR IS the information. Twitch gives every chat participant their own hue, and
+  // on a dark theme a good number of those fail the contrast check -- so rewriting each failure to
+  // one near-white turned a room full of distinguishable names into a wall of identical text. The
+  // same applies to any tag, label or legend that encodes meaning as colour.
+  //
+  // Near-greys are deliberately left to the fallback: they carry no identity to preserve, and a
+  // grey nudged along its own lightness is just the flat colour arrived at less predictably.
+  function ewReadableVariant(fg, bg, threshold) {
+    let hsl;
+    try { hsl = rgbToHsl(fg.r, fg.g, fg.b); } catch (_) { return null; }
+    if (!hsl || hsl[1] < 0.15) return null;
+    const lighten = ewLum(bg) <= 0.45;
+    for (let i = 1; i <= 24; i++) {
+      const l = lighten ? Math.min(1, hsl[2] + i * 0.035) : Math.max(0, hsl[2] - i * 0.035);
+      let rgb;
+      try { rgb = hslToRgb(hsl[0], hsl[1], l); } catch (_) { return null; }
+      if (!rgb) return null;
+      const cand = { r: rgb[0], g: rgb[1], b: rgb[2] };
+      if (ewContrast(cand, bg) >= threshold) return cand;
+      if (l <= 0 || l >= 1) break;
+    }
+    return null;
+  }
   function ewTextPaint(cs) {
     let fill = '';
     try { fill = cs.getPropertyValue && cs.getPropertyValue('-webkit-text-fill-color'); } catch (_) {}
@@ -919,8 +946,12 @@
       const fg = ewTextPaint(cs);
       if (!fg || fg.a < 0.4) return;
       const bg = ewEffectiveBg(el) || fallbackBg;
-      if (ewContrast(fg, bg) >= ewContrastThreshold(cs)) return;
-      const safe = ewLum(bg) > 0.45 ? '#121318' : (mode === 'ultra' ? '#f5f6f8' : '#eef0f4');
+      const threshold = ewContrastThreshold(cs);
+      if (ewContrast(fg, bg) >= threshold) return;
+      // Try to keep the colour first, and only flatten it when its hue cannot be made readable.
+      const kept = ewReadableVariant(fg, bg, threshold);
+      const safe = kept ? ewRgbCss(kept)
+        : (ewLum(bg) > 0.45 ? '#121318' : (mode === 'ultra' ? '#f5f6f8' : '#eef0f4'));
       try {
         __ewContrastOriginals.set(el, {
           color: ewStyleSnapshot(el, 'color'),
