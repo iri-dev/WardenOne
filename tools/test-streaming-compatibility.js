@@ -670,8 +670,14 @@ test('AdShield and scriptlet toggle changes force a clean page runtime', () => {
 });
 
 test('background-tab throttling leaves trusted media hosts untouched', () => {
-  const declarationStart = CONTENT.indexOf('const trustedMediaHost=');
-  const declarationEnd = CONTENT.indexOf(';', declarationStart);
+  // The policy moved into the shared const list near the top of the runtime, because the scam-lock
+  // scanner needs it too and the old position left it in the temporal dead zone for that earlier
+  // caller. It is therefore a list member rather than its own `const` statement now, so match the
+  // assignment and wrap it to evaluate. Still lifted from real source, not restated here.
+  const TAIL = '.test(location.hostname)';
+  const declarationStart = CONTENT.indexOf('trustedMediaHost=/');
+  const tailAt = CONTENT.indexOf(TAIL, declarationStart);
+  const declarationEnd = tailAt === -1 ? -1 : tailAt + TAIL.length - 1;
   const throttleStart = CONTENT.indexOf('if(WO.throttleBackgroundTabs');
   assert(declarationStart !== -1 && declarationEnd !== -1,
     'trusted-media host policy is missing');
@@ -680,7 +686,7 @@ test('background-tab throttling leaves trusted media hosts untouched', () => {
   assert(CONTENT.includes('if(WO.throttleBackgroundTabs&&!trustedMediaHost)try{'),
     'background throttling can still pause or RAF-throttle a trusted media host');
 
-  const declaration = CONTENT.slice(declarationStart, declarationEnd + 1);
+  const declaration = 'const ' + CONTENT.slice(declarationStart, declarationEnd + 1) + ';';
   const trusted = (hostname) => {
     const sandbox = { location: { hostname } };
     vm.createContext(sandbox);
