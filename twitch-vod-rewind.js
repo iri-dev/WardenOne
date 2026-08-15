@@ -222,7 +222,11 @@
 
   // Plain-English diagnostics so it's never a mystery why the button is/ isn't
   // there. Open DevTools console (F12) and filter for "WardenOne Rewind".
-  function report(msg) { try { console.info('[WardenOne Rewind] ' + msg); } catch (_) {} }
+  // console.debug, not console.info: every caller below runs unconditionally, once per channel
+  // visit, so at info level a normal Twitch session printed WardenOne's diagnostics into the page
+  // console of a site we do not own. debug is hidden at Chrome's default log level and still there
+  // under Verbose, which is where someone diagnosing this feature would be looking anyway.
+  function report(msg) { try { console.debug('[WardenOne Rewind] ' + msg); } catch (_) {} }
 
   function ensureStyle() {
     if (styleEl || !document.documentElement) return;
