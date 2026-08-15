@@ -97,12 +97,16 @@ function loadBlocker(options = {}) {
   vm.runInContext('const ' + ENGINE.slice(from, to).replace(/;\s*$/, '') + ';'
     + '\nthis.__mount = mountBlocker;', sandbox, { filename: 'src/content.js' });
 
-  // The overlay a real paint() would build: an element carrying the blocker's id.
+  // The overlay a real paint() would build: an element carrying the blocker's id. It also records
+  // the node in __woLastOverlay, because that is what buildOverlay does and it is how mountBlocker
+  // learns which element is its own -- an id lookup would answer for a page-planted decoy too.
+  // A paint that throws records nothing, which is the case the black-screen checks below rely on.
   const paint = () => {
     state.painted++;
     if (options.paintThrows || bundle.paintFails) throw new Error('paint failed');
     const host = dom.document.createElement('div');
     host.id = options.id || 'rg-adult-gate';
+    sandbox.__woLastOverlay = host;
     dom.document.documentElement.appendChild(host);
   };
   bundle.dom = dom;
@@ -184,8 +188,14 @@ const overlayUp = (b) => !!b.dom.document.getElementById('rg-adult-gate');
   b.dom.document.getElementById('rg-adult-gate-style').remove();
   b.state.observers.forEach((o) => o.fn());
   b.dom.runFrames();
+  // The invariant is "never a stylesheet with nothing drawn over it", not "the stylesheet is
+  // gone". Those were the same assertion while a failed repaint meant no overlay. They are not
+  // any more: the blocker holds the node it built, so a page tearing it off is repaired by
+  // re-appending that node -- paint never runs, and paintFails never comes into it. Restoring the
+  // warning is the better outcome, so the check is written against the invariant it always meant.
   check('a self-heal whose repaint fails does not leave the stylesheet alone',
-    !b.dom.document.getElementById('rg-adult-gate-style'),
+    !b.dom.document.getElementById('rg-adult-gate-style')
+      || !!b.dom.document.getElementById('rg-adult-gate'),
     'the page would be held down by a stylesheet with nothing drawn over it');
 }
 

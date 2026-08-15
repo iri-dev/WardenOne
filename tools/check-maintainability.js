@@ -227,6 +227,7 @@ function checkContentBuild() {
   // regression areas created by earlier fixes in this audit, and all previously unenforced.
   'tools/test-cosmetic-provenance.js',
   'tools/test-compat-host-scope.js',
+  'tools/test-blocker-durability.js',
   // Compares what the extension loads against what `git archive` ships. The staged store ZIP was
   // missing cosmetic-rules.json while every other check was green, because nothing compared them.
   'tools/test-package-completeness.js',
@@ -327,6 +328,7 @@ checkCommand('stale-state tests', ['tools/test-stale-state.js']);
 checkCommand('storage prune ladder tests', ['tools/test-storage-prune-ladder.js']);
 checkCommand('cosmetic provenance tests', ['tools/test-cosmetic-provenance.js']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
+checkCommand('blocker durability tests', ['tools/test-blocker-durability.js']);
 checkCommand('engine config ownership tests', ['tools/test-engine-config-ownership.js']);
 checkCommand('engine config source tests', ['tools/test-engine-config-source.js']);
 checkCommand('package completeness tests', ['tools/test-package-completeness.js']);
