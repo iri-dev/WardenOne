@@ -165,6 +165,7 @@ function checkContentBuild() {
   'tools/test-consent-reject.js',
   'tools/test-privacy-disclosure.js',
   'tools/test-engine-config-ownership.js',
+  'tools/test-engine-config-source.js',
   'tools/test-permission-chain-trust.js',
   'tools/test-warning-dialogs.js',
   'tools/test-phishing-false-positives.js',
@@ -326,6 +327,8 @@ checkCommand('stale-state tests', ['tools/test-stale-state.js']);
 checkCommand('storage prune ladder tests', ['tools/test-storage-prune-ladder.js']);
 checkCommand('cosmetic provenance tests', ['tools/test-cosmetic-provenance.js']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
+checkCommand('engine config ownership tests', ['tools/test-engine-config-ownership.js']);
+checkCommand('engine config source tests', ['tools/test-engine-config-source.js']);
 checkCommand('package completeness tests', ['tools/test-package-completeness.js']);
 checkCommand('permission-chain trust tests', ['tools/test-permission-chain-trust.js']);
 checkCommand('warning dialog tests', ['tools/test-warning-dialogs.js']);

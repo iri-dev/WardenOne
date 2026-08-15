@@ -26,6 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
@@ -54,8 +55,9 @@ function boot(hostname) {
   box.location = { hostname };
   box.document = { addEventListener: (e, f) => { (listeners[e] = listeners[e] || []).push(f); } };
   vm.createContext(box);
+  installEngineAmbient(box);
   vm.runInContext(
-    'const woOn=(t,e,f)=>t.addEventListener(e,f);\n' + chain + '\nglobalThis.__WO=WO;',
+    chain + '\nglobalThis.__WO=WO;',
     box,
     { filename: 'src/content.js' },
   );
@@ -67,17 +69,28 @@ function boot(hostname) {
   };
 }
 
+// The token-checked handler writes the private store and then notifies. It always writes a full
+// config (buildConfig fills every key), so seeding clears first -- a merge would leave keys the
+// new config dropped, and the 'removed upstream' check below would pass for the wrong reason.
+function seed(t, config) {
+  const store = t.box.__woConfigStore;
+  for (const k of Object.keys(store)) delete store[k];
+  Object.assign(store, config);
+  t.configChanged();
+}
+
 // ---------------------------------------------------------------------------
 // 1. The bypass itself.
 // ---------------------------------------------------------------------------
 {
   const t = boot('example.test');
-  t.box.__WO_CONFIG__ = { enabled: true, removeOverlays: true, __configReady: true };
-  t.configChanged();
+  seed(t, { enabled: true, removeOverlays: true, __configReady: true });
   check('the engine picks up a real config', t.WO.enabled === true);
 
-  // Exactly what the finding describes a hostile page doing.
-  Object.assign(t.box.__WO_CONFIG__, { enabled: false, removeOverlays: false });
+  // Exactly what the finding describes a hostile page doing -- including dispatching
+  // wo-config-change itself, which is an ordinary DOM event and was the other half of H16.
+  t.box.__WO_CONFIG__ = { enabled: false, removeOverlays: false };
+  t.configChanged();
   check('a page mutating the global cannot disable the engine',
     t.WO.enabled === true, 'WO.enabled became ' + t.WO.enabled);
   check('a page mutating the global cannot turn off individual protections',
@@ -85,6 +98,7 @@ function boot(hostname) {
 
   // Replacing the global wholesale is the other obvious attempt.
   t.box.__WO_CONFIG__ = { enabled: false };
+  t.configChanged();
   check('a page replacing the global outright does not take effect either',
     t.WO.enabled === true);
 }
@@ -101,15 +115,13 @@ function boot(hostname) {
 
   // The 1500ms fallback can start the runtime before the config lands. A frozen snapshot would
   // never see this.
-  t.box.__WO_CONFIG__ = { enabled: true, removeOverlays: true, __configReady: true };
-  t.configChanged();
+  seed(t, { enabled: true, removeOverlays: true, __configReady: true });
   check('a config arriving AFTER bind is still picked up',
     t.WO.enabled === true && t.WO.removeOverlays === true,
     'a snapshot would have frozen the placeholder here');
 
   // And a setting genuinely turned off upstream must not survive in the private copy.
-  t.box.__WO_CONFIG__ = { enabled: true, __configReady: true };
-  t.configChanged();
+  seed(t, { enabled: true, __configReady: true });
   check('a key removed upstream is dropped rather than lingering',
     t.WO.removeOverlays === undefined);
 }
@@ -121,8 +133,7 @@ function boot(hostname) {
 {
   const t = boot('example.test');
   const held = t.WO;
-  t.box.__WO_CONFIG__ = { enabled: true, __configReady: true };
-  t.configChanged();
+  seed(t, { enabled: true, __configReady: true });
   check('the refresh mutates in place rather than rebinding', held === t.WO);
   check('a closure that captured the object early sees the update', held.enabled === true);
   check('the engine subscribes to config changes exactly once', t.listenerCount === 1);
@@ -136,20 +147,17 @@ function boot(hostname) {
   const full = { enabled: true, showBadge: true, showToasts: true, adShield: true, scriptletEngine: true, removeOverlays: true, __configReady: true };
 
   const az = boot('www.amazon.co.uk');
-  az.box.__WO_CONFIG__ = Object.assign({}, full);
-  az.configChanged();
+  seed(az, full);
   check('Amazon compatibility mode survives the rewrite',
     az.WO.enabled === false && az.WO.__amazonCompatibilityMode === true && az.WO.removeOverlays === false);
 
   const yt = boot('www.youtube.com');
-  yt.box.__WO_CONFIG__ = Object.assign({}, full);
-  yt.configChanged();
+  seed(yt, full);
   check('YouTube carve-outs survive the rewrite',
     yt.WO.enabled === false && yt.WO.adShield === true && yt.WO.scriptletEngine === true);
 
   // Re-deriving is the point: a config change on a carve-out site must re-apply the carve-out.
-  yt.box.__WO_CONFIG__ = Object.assign({}, full, { adShield: false });
-  yt.configChanged();
+  seed(yt, Object.assign({}, full, { adShield: false }));
   check('a carve-out site re-derives on every config change',
     yt.WO.adShield === false && yt.WO.enabled === false,
     'derived config went stale');
