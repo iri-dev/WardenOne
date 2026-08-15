@@ -2038,11 +2038,35 @@
       + 'video,.html5-video-player,.ytp-player-content,.ytp-chrome-bottom,.ytp-gradient-top,.ytp-gradient-bottom{filter:none !important;}';
   }
 
+  // Twitch chat names, and the exclusion every broad text rule has to carry.
+  //
+  // A name's colour is data: Twitch gives each participant a hue and sets it as an INLINE style.
+  // An important stylesheet declaration outranks a normal inline one, so any `!important` colour
+  // rule that reaches these elements repaints the whole room to a single value -- which is what
+  // made chat a wall of identical white text. Two rules could reach them: the chat text rule
+  // named them outright, and the site-wide text rule matches `[class*="Text"]`, which catches the
+  // styled-component classes Twitch generates around chat.
+  const TWITCH_CHAT_NAME = '.chat-line__username,.chat-author__display-name';
+  const TWITCH_NOT_CHAT_NAME = ':not(.chat-line__username):not(.chat-author__display-name)'
+    + ':not(.chat-line__username *):not(.chat-author__display-name *)';
+
   function twitchChatAndPlayerCSS(bg, surface, raised, border, text, muted, accent) {
     const chatShell = '[data-a-target="stream-chat"],[data-a-target="stream-chat-header"],[data-test-selector="chat-room-component-layout"],.stream-chat,.chat-room,.chat-shell,.chat-list,.chat-list--default';
     const chatList = '[data-a-target="chat-scroller"],[data-test-selector="chat-scrollable-area__message-container"],.chat-scrollable-area__message-container,.chat-list__lines,[role="log"]';
     const chatMessage = '[data-a-target="chat-line-message"],[data-test-selector="chat-line-message"],.chat-line__message,.chat-line__message-container,.chat-line__message-body,.chat-line__message--emote-button';
-    const chatText = chatMessage + ',' + chatMessage + ' span,' + chatMessage + ' a,' + chatMessage + ' button,[data-a-target="chat-message-text"],[data-a-target="chat-message-text"] *,.text-fragment,.chat-line__username,.chat-author__display-name';
+    // The chat name is the one piece of text in here whose COLOUR is information.
+    //
+    // Twitch gives every participant their own hue and sets it as an inline style. This rule paints
+    // chat text with `!important`, and an important stylesheet declaration outranks a normal inline
+    // one -- so naming the username elements here (directly, and via the `span` catch-all) repainted
+    // every person in the room to the single theme foreground. Chat became a wall of identical
+    // white text with no way to tell who was speaking, which is the opposite of readable.
+    //
+    // The names are excluded instead, so their own colours survive. Ones that are genuinely too
+    // dark against the themed background are still handled -- contrastGuard lifts them while
+    // keeping their hue, rather than flattening them all to one value.
+    const chatName = TWITCH_CHAT_NAME;
+    const chatText = chatMessage + ',' + chatMessage + ' span' + TWITCH_NOT_CHAT_NAME + ',' + chatMessage + ' a,' + chatMessage + ' button,[data-a-target="chat-message-text"],[data-a-target="chat-message-text"] *,.text-fragment';
     const chatMeta = '[data-a-target="chat-line-timestamp"],.chat-line__timestamp,.chat-author__intl-login,.chat-line__message .tw-c-text-alt,.chat-line__message .tw-c-text-alt-2';
     const chatInput = '[data-a-target="chat-input"] textarea,[data-a-target="chat-input"] [contenteditable="true"],textarea[data-a-target="chat-input"],.chat-wysiwyg-input__editor';
     const media = '.persistent-player,.persistent-player video,.persistent-player canvas,.video-player,.video-player__container,.video-player video,.video-player canvas,[data-a-target="video-player"],[data-a-target="video-player"] video,[data-a-target="video-player"] canvas,[data-a-target="video-ref"],[data-a-target="video-ref"] video,[data-a-target="video-ref"] canvas';
@@ -2059,6 +2083,9 @@
       + chatList + '{background:' + bg + ' !important;background-color:' + bg + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;}'
       + chatMessage + '{background:transparent !important;background-color:transparent !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;box-shadow:none !important;}'
       + chatText + '{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
+      // Names keep their own colour, so this only makes sure nothing else stops that colour
+      // painting: currentColor resolves to whatever the site set inline, and the shadow goes.
+      + chatName + '{-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + chatMeta + '{color:' + muted + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '[data-a-target="chat-badge"],[data-a-target="chat-badge"] img,.chat-badge,.chat-badge img,.chat-line__message img,.chat-line__message svg{background:transparent !important;filter:none !important;}'
       + chatInput + '{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + text + ' !important;}'
@@ -2111,7 +2138,7 @@
       + '[data-a-target="stream-info-card-component"],[data-a-target="channel-info-content"],[data-a-target="channel-info-header"],[data-test-selector="channel-panels-container"],[data-test-selector="chat-scrollable-area__message-container"],.metadata-layout__support,.channel-info-content,.channel-root__info,.tw-card,.tw-c-background-base,.tw-c-background-alt,.tw-c-background-alt-2{background:' + bg + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;}'
       + '#root input:not([type="range"]):not([data-a-target="chat-input"]),#root textarea:not([data-a-target="chat-input"]):not(.chat-input__textarea),#root [contenteditable="true"]:not(.chat-wysiwyg-input__editor),#root [role="textbox"]:not([data-a-target="chat-input"]):not(.chat-wysiwyg-input__editor),#root [data-a-target="tw-input"],#root [data-a-target="search-input"]{background:' + bg + ' !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + text + ' !important;border-color:' + border + ' !important;}'
       + '#root input::placeholder,#root textarea::placeholder{color:' + muted + ' !important;-webkit-text-fill-color:' + muted + ' !important;}'
-      + '#root :where(h1,h2,h3,h4,p,label,small,strong),#root .tw-c-text-base,#root .tw-c-text-alt,#root [class*="CoreText"],#root [class*="Text"],#root [data-a-target="stream-title"],#root [data-a-target="channel-info-title"]{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
+      + '#root :where(h1,h2,h3,h4,p,label,small,strong),#root .tw-c-text-base,#root .tw-c-text-alt,#root [class*="CoreText"]' + TWITCH_NOT_CHAT_NAME + ',#root [class*="Text"]' + TWITCH_NOT_CHAT_NAME + ',#root [data-a-target="stream-title"],#root [data-a-target="channel-info-title"]{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#root .tw-c-text-alt-2,#root [data-a-target="stream-game-link"],#root [data-a-target="preview-card-channel-link"]{color:' + muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '#root .tw-link,#root a[href^="/directory"],#root a[href^="/downloads"],#root a[href^="/legal"],#root a[href^="/p/"]{color:' + accent + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '#root button:not([data-a-target*="player" i]):not([data-a-target*="volume" i]),#root [role="button"]:not([data-a-target*="player" i]):not([data-a-target*="volume" i]),#root [data-a-target="chat-settings"],#root [data-a-target="emote-picker-button"]{border-color:' + border + ' !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;}'
@@ -2156,7 +2183,7 @@
       + '[data-a-target="stream-info-card-component"],[data-a-target="channel-info-content"],[data-a-target="channel-info-header"],[data-test-selector="channel-panels-container"],[data-test-selector="chat-scrollable-area__message-container"],.metadata-layout__support,.channel-info-content,.channel-root__info,.tw-card,.tw-c-background-base,.tw-c-background-alt,.tw-c-background-alt-2{background:' + bg + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;}'
       + '#root input:not([type="range"]):not([data-a-target="chat-input"]),#root textarea:not([data-a-target="chat-input"]):not(.chat-input__textarea),#root [contenteditable="true"]:not(.chat-wysiwyg-input__editor),#root [role="textbox"]:not([data-a-target="chat-input"]):not(.chat-wysiwyg-input__editor),#root [data-a-target="tw-input"]{background:' + raised + ' !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + text + ' !important;border-color:' + border + ' !important;}'
       + '#root input::placeholder,#root textarea::placeholder{color:' + muted + ' !important;-webkit-text-fill-color:' + muted + ' !important;}'
-      + '#root :where(h1,h2,h3,h4,p,label,small,strong),#root .tw-c-text-base,#root .tw-c-text-alt,#root [class*="CoreText"],#root [class*="Text"],#root [data-a-target="stream-title"],#root [data-a-target="channel-info-title"]{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
+      + '#root :where(h1,h2,h3,h4,p,label,small,strong),#root .tw-c-text-base,#root .tw-c-text-alt,#root [class*="CoreText"]' + TWITCH_NOT_CHAT_NAME + ',#root [class*="Text"]' + TWITCH_NOT_CHAT_NAME + ',#root [data-a-target="stream-title"],#root [data-a-target="channel-info-title"]{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#root .tw-link,#root a[href^="/directory"],#root a[href^="/downloads"],#root a[href^="/legal"],#root a[href^="/p/"]{color:' + accent + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '#root button:not([data-a-target*="player" i]):not([data-a-target*="volume" i]),#root [role="button"]:not([data-a-target*="player" i]):not([data-a-target*="volume" i]),#root [data-a-target="chat-settings"],#root [data-a-target="emote-picker-button"]{border-color:' + border + ' !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + 'video,.video-player,.persistent-player,.persistent-player video,.tw-image,.tw-avatar,.tw-avatar img{filter:none !important;}'
