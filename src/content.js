@@ -28,6 +28,22 @@
      twitch-adblock.js (a separate MAIN-world script) and anything debugging can still read it,
      but writing to that copy no longer reaches the engine. */
   const __woConfigStore={};
+  /* The high-stakes in-page warnings used to ask the page whether they were already showing,
+     with document.getElementById(<our id>). A page that shipped <div id="wo-cmd-warn" hidden>
+     in its own markup answered yes, so the warning silently never rendered -- and the ClickFix
+     pages this exists for are exactly the ones that would bother. Same defect as the full-page
+     blockers (mountBlocker), so the same answer: hold the node we built and ask it, not the
+     document. The page cannot reach this map, and a decoy carrying our id is simply not in it. */
+  const __woWarn={
+    seen:new Map(),
+    up(id){
+      const el=this.seen.get(id);
+      return !!(el&&el.isConnected)
+    },
+    mark(id,el){
+      this.seen.set(id,el)
+    }
+  };
   /* The node buildOverlay most recently created, so mountBlocker can hold the element it
      actually built instead of looking one up by id. Private to this closure: a page can plant
      an element with our id, but it cannot reach this. */
@@ -5787,7 +5803,7 @@
       const showSwapPanel=(copiedAddr,
       pastedAddr)=>{
         try{
-          if(document.getElementById("wo-clip-swap"))return;
+          if(__woWarn.up("wo-clip-swap"))return;
           if(!document.body&&!document.documentElement)return;
           const wrap=document.createElement("div");
           wrap.id="wo-clip-swap",
@@ -5843,7 +5859,8 @@
 
           }),
           wrap.appendChild(btn),
-          (document.body||document.documentElement).appendChild(wrap)
+          (document.body||document.documentElement).appendChild(wrap),
+          __woWarn.mark("wo-clip-swap",wrap)
         }
         catch(_){
 
@@ -6217,7 +6234,7 @@
             60)
           });
           try{
-            if(document.getElementById("wo-scam-lock"))return;
+            if(__woWarn.up("wo-scam-lock"))return;
             const root=document.documentElement||document.body;
             if(!root)return;
             const wrap=document.createElement("div");
@@ -6281,6 +6298,7 @@
             card.appendChild(row),
             wrap.appendChild(card),
             root.appendChild(wrap),
+            __woWarn.mark("wo-scam-lock",wrap),
             scamRelease=woDialog(wrap,
             card,
             {
@@ -6408,7 +6426,7 @@
       let cmdWarned=!1;
       const showCommandPanel=sample=>{
         try{
-          if(document.getElementById("wo-cmd-warn"))return;
+          if(__woWarn.up("wo-cmd-warn"))return;
           if(!document.body&&!document.documentElement)return;
           const wrap=document.createElement("div");
           wrap.id="wo-cmd-warn",
@@ -6452,7 +6470,8 @@
 
           }),
           wrap.appendChild(btn),
-          (document.body||document.documentElement).appendChild(wrap)
+          (document.body||document.documentElement).appendChild(wrap),
+          __woWarn.mark("wo-cmd-warn",wrap)
         }
         catch(_){
 
@@ -7317,7 +7336,7 @@
       },
       showTrapPanel=reasons=>{
         try{
-          if(document.getElementById("wo-formtrap-warn"))return;
+          if(__woWarn.up("wo-formtrap-warn"))return;
           if(!document.body&&!document.documentElement)return;
           const wrap=document.createElement("div");
           wrap.id="wo-formtrap-warn",
@@ -7365,7 +7384,8 @@
 
           }),
           wrap.appendChild(btn),
-          (document.body||document.documentElement).appendChild(wrap)
+          (document.body||document.documentElement).appendChild(wrap),
+          __woWarn.mark("wo-formtrap-warn",wrap)
         }
         catch(_){
 

@@ -6269,6 +6269,11 @@ function refreshLoginCompatibilityRules() {
 }
 
 let __blocklistRulesetStateKey = '';
+// Set when updateEnabledRulesets throws. The cached state key is deliberately NOT advanced on
+// failure so a later change retries, but nothing was retrying on its own and nothing told the
+// user -- the failure reached console.warn and stopped there, while the popup went on saying
+// the shields were active.
+let __blocklistRulesetError = '';
 async function refreshBlocklistRuleset(cfgOverride) {
   try {
     const cfg = (cfgOverride && typeof cfgOverride === 'object')
@@ -6288,6 +6293,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(EASYPRIVACY_STATIC_RULESET_ID);
     await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds, disableRulesetIds });
     __blocklistRulesetStateKey = stateKey;
+    __blocklistRulesetError = '';
     ADSHIELD_STATIC_ACTIVE = adshieldOn;
     // The master switch must also suspend the DYNAMIC rules, not just the static
     // ruleset -- otherwise "off" still blocks network requests. Re-fetching remote
@@ -6301,6 +6307,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
       try { applyTrackerLearnerRules(); } catch (_) {}
     }
   } catch (e) {
+    __blocklistRulesetError = String((e && e.message) || e).slice(0, 160);
     console.warn('[WardenOne] blocklist ruleset toggle failed', e);
   }
 }
@@ -10689,15 +10696,31 @@ async function activeTabMatchesOrigin(rawOrigin) {
   return '';
 }
 
+// Only what a stylesheet actually is. This used to return true for a MISSING Content-Type and
+// to accept text/plain, which between them covered most of what a small embedded HTTP server
+// answers with -- so the page-directed fetch below could reach a great deal more than CSS. A
+// real CDN always labels its stylesheets; an unlabelled response is not one we need to theme.
 function isStylesheetLikeContentType(value) {
   const ct = String(value || '').split(';')[0].trim().toLowerCase();
-  if (!ct) return true;
-  return ct === 'text/css' || ct === 'text/plain' || ct === 'application/x-css' || ct === 'text/x-css' || ct.endsWith('+css');
+  if (!ct) return false;
+  return ct === 'text/css' || ct === 'application/x-css' || ct === 'text/x-css' || ct.endsWith('+css');
+}
+
+// A CDN serves stylesheets on 80/443. A service on some other port is, in practice, something on
+// the user's own network -- and isLocalOrPrivateHost only inspects the hostname STRING, so a
+// public name that resolves to 192.168.x.x already walks past it. Refusing non-default ports
+// removes most of that reach without costing a single real CDN.
+function isDefaultPortHttpUrl(raw) {
+  try {
+    return new URL(String(raw || '')).port === '';
+  } catch (_) {
+    return false;
+  }
 }
 
 async function fetchPublicStylesheetText(rawUrl) {
   let url = normalizePublicHttpUrl(rawUrl);
-  if (!url) return { ok: false, error: 'bad url' };
+  if (!url || !isDefaultPortHttpUrl(url)) return { ok: false, error: 'bad url' };
   for (let redirects = 0; redirects <= 4; redirects++) {
     const controller = new AbortController();
     const timer = setTimeout(() => { try { controller.abort(); } catch (_) {} }, 8000);
@@ -10705,7 +10728,7 @@ async function fetchPublicStylesheetText(rawUrl) {
       const res = await fetch(url, { cache: 'force-cache', credentials: 'omit', redirect: 'manual', signal: controller.signal });
       if (res && res.status >= 300 && res.status < 400) {
         const next = normalizePublicHttpUrl(res.headers && res.headers.get('location'), url);
-        if (!next) return { ok: false, error: 'blocked redirect' };
+        if (!next || !isDefaultPortHttpUrl(next)) return { ok: false, error: 'blocked redirect' };
         url = next;
         continue;
       }
@@ -10816,16 +10839,35 @@ async function buildProtectionHealthSummary() {
     + (startupReport && Array.isArray(startupReport.extensions) ? startupReport.extensions.length : 0);
   if (startupFindings) addIssue('warn', startupFindings + ' startup security finding(s) are waiting in the popup.');
 
-  let enabledRulesets = [];
+  // Three outcomes, not two. `null` means the question could not be asked; an empty array means
+  // it was asked and the answer was 'none'. The old code collapsed both into `length === 0` and
+  // skipped every check, so the single worst state -- master switch on, not one ruleset enabled,
+  // no network blocking running at all -- produced the most reassuring line the popup can show:
+  // "You're safe. Core shields are active and watching quietly."
+  let enabledRulesets = null;
   try {
     if (chrome.declarativeNetRequest && chrome.declarativeNetRequest.getEnabledRulesets) {
-      enabledRulesets = await chrome.declarativeNetRequest.getEnabledRulesets();
+      const answer = await chrome.declarativeNetRequest.getEnabledRulesets();
+      if (Array.isArray(answer)) enabledRulesets = answer;
     }
   } catch (_) {}
-  if (enabledRulesets.length) {
-    if (cfg.blockMalwareSites !== false && !enabledRulesets.includes('grabbers')) addIssue('danger', 'Core malicious-domain ruleset is not enabled.');
-    if (cfg.adShield !== false && !enabledRulesets.includes('adshield_easylist')) addIssue('warn', 'AdShield network ruleset is not enabled.', true);
-    if (cfg.blockTrackers !== false && !enabledRulesets.includes('trackers')) addIssue('warn', 'Tracker ruleset is not enabled.', true);
+  if (__blocklistRulesetError) {
+    addIssue('danger', 'WardenOne could not apply its blocking rulesets, so network blocking may be off.');
+  }
+  if (!enabledRulesets) {
+    // Reachable on a cold start: the popup wakes the worker and asks immediately. Saying so is
+    // the honest answer -- claiming health on the strength of a check that did not run is not.
+    addIssue('warn', 'WardenOne could not check which blocking rulesets are active.', true);
+  } else if (cfg.enabled !== false) {
+    // With the master switch off, every ruleset being disabled is the correct state and is
+    // already reported above, so the empty case only means something while WardenOne is on.
+    if (!enabledRulesets.length) {
+      addIssue('danger', 'No blocking rulesets are enabled, so ads, trackers and known malicious domains are not being blocked.');
+    } else {
+      if (cfg.blockMalwareSites !== false && !enabledRulesets.includes('grabbers')) addIssue('danger', 'Core malicious-domain ruleset is not enabled.');
+      if (cfg.adShield !== false && !enabledRulesets.includes('adshield_easylist')) addIssue('warn', 'AdShield network ruleset is not enabled.', true);
+      if (cfg.blockTrackers !== false && !enabledRulesets.includes('trackers')) addIssue('warn', 'Tracker ruleset is not enabled.', true);
+    }
   }
 
   const activeShields = healthCountActiveShields(cfg);
