@@ -74,6 +74,11 @@ SHIMS.__woObserver = 'var __woObserver=function(cb,extra){'
   + 'if(typeof MutationObserver==="undefined")throw new Error("sandbox has no MutationObserver");'
   + 'return new MutationObserver(cb,extra);};';
 
+// __woLastOverlay is the hand-off slot buildOverlay writes and mountBlocker reads, so a lifted
+// fragment only needs the binding to exist. Null is the honest starting value: before anything
+// is painted there is no overlay, and a suite that paints supplies its own node.
+SHIMS.__woLastOverlay = 'var __woLastOverlay=null;';
+
 // __woConfigStore holds the engine's live config. A lifted fragment reading it is asking "what is
 // configured", so the honest shim is an empty object: the suite fills in whatever keys its own
 // scenario needs, exactly as it already does for the WO binding, and nothing here pretends to a

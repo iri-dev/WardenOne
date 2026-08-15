@@ -28,6 +28,10 @@
      twitch-adblock.js (a separate MAIN-world script) and anything debugging can still read it,
      but writing to that copy no longer reaches the engine. */
   const __woConfigStore={};
+  /* The node buildOverlay most recently created, so mountBlocker can hold the element it
+     actually built instead of looking one up by id. Private to this closure: a page can plant
+     an element with our id, but it cannot reach this. */
+  let __woLastOverlay=null;
   const __woAmazonHost=/(^|\.)amazon\.(com|com\.au|com\.be|com\.br|com\.co|com\.mx|com\.tr|co\.jp|co\.uk|co\.za|ae|ca|cl|cn|de|eg|es|fr|ie|in|it|nl|ng|pl|sa|se|sg)$/i;
   /* Release what a previous engine in this page still holds before installing over it.
      Chrome does not re-inject content scripts into open tabs on update, so a tab that
@@ -1615,7 +1619,8 @@
     buildOverlay=(id,
     bg)=>{
       const host=document.createElement("div");
-      return host.id=id,
+      return __woLastOverlay=host,
+      host.id=id,
       S(host,
       "all:initial!important;position:fixed!important;inset:0!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;margin:0!important;padding:24px!important;box-sizing:border-box!important;background:"+bg+"!important;display:flex!important;align-items:center!important;justify-content:center!important;font-family:system-ui,-apple-system,sans-serif!important;visibility:visible!important;opacity:1!important;transform:none!important;"),
       host
@@ -1980,49 +1985,70 @@
     paint)=>{
       let gone=!1,
       obs=null,
-      remounts=0,
-      scheduled=0;
+      scheduled=0,
+      hostEl=null,
+      styleEl=null;
       const styleId=id+"-style",
       ensureStyle=()=>{
-        if(document.getElementById(styleId))return;
+        if(styleEl&&styleEl.isConnected)return;
         const st=document.createElement("style");
         st.id=styleId,
         st.textContent="html > body > *:not(#"+id+"){display:none!important;visibility:hidden!important}body{overflow:hidden!important;background:#0a0a0f!important}#"+id+"{display:flex!important;visibility:visible!important}",
-        (document.head||document.documentElement).appendChild(st)
+        (document.head||document.documentElement).appendChild(st),
+        styleEl=st
       },
       dropStyle=()=>{
-        const s=document.getElementById(styleId);
-        s&&s.remove()
+        if(styleEl){
+          try{
+            styleEl.remove()
+          }
+          catch(_){
+
+          }
+          styleEl=null
+        }
+
       },
       ensureOverlay=()=>{
-        if(document.getElementById(id))return;
+        /* Identity, not id. The old check asked the page whether our overlay was there, so a page
+           shipping <div id="rg-phish-block"> in its own markup answered yes: paint never ran, the
+           page-hiding stylesheet went up anyway, and the only thing left visible was the
+           attacker's element -- WardenOne rendering the attacker's idea of a block screen. */
+        if(hostEl&&hostEl.isConnected)return;
+        if(hostEl){
+          /* Removed rather than never built: put the SAME node back. Nothing is rebuilt, so the
+             repair costs one appendChild and there is no reason to ration it. */
+          try{
+            return void(document.body||document.documentElement).appendChild(hostEl)
+          }
+          catch(_){
+
+          }
+
+        }
+        __woLastOverlay=null;
         try{
           paint()
         }
         catch(_){
 
         }
-
+        hostEl=__woLastOverlay,
+        __woLastOverlay=null
       };
       ensureStyle(),
       ensureOverlay();
       /* The same invariant at mount time, not only on self-heal: paint() can throw, and a
          stylesheet installed over a page with nothing drawn on top of it is the same black
          screen arrived at from the other direction. */
-      if(!document.getElementById(id))dropStyle();
+      if(!hostEl)dropStyle();
       const check=()=>{
         scheduled=0;
         if(gone)return;
-        if(!document.getElementById(id)||!document.getElementById(styleId)){
-          if(remounts++>60)try{
-            obs&&obs.disconnect()
-          }
-          catch(_){
-
-          }
+        if(!hostEl||!hostEl.isConnected||!styleEl||!styleEl.isConnected){
           ensureStyle(),
           ensureOverlay();
-          if(!document.getElementById(id))dropStyle()
+          if(!hostEl)dropStyle()
         }
 
       };
@@ -2039,16 +2065,11 @@
       catch(_){
 
       }
-      const obsTimeout=setTimeout(()=>{
-        try{
-          obs&&obs.disconnect()
-        }
-        catch(_){
-
-        }
-
-      },
-      1e4);
+      /* There used to be a setTimeout(...,1e4) here that disconnected the observer ten seconds
+         after mount, whatever had happened. A phishing page did not need to race anything: it
+         waited, then removed the overlay once. The guard cannot have a shorter life than the
+         thing it guards, so it now lives exactly as long as the blocker does -- which is what
+         bridge.js's woOwnedOverlay already does through domWatch, with no cap and no timer. */
       return()=>{
         gone=!0;
         if(scheduled){
@@ -2066,9 +2087,15 @@
         catch(_){
 
         }
-        clearTimeout(obsTimeout);
-        const o=document.getElementById(id);
-        o&&o.remove();
+        if(hostEl){
+          try{
+            hostEl.remove()
+          }
+          catch(_){
+
+          }
+          hostEl=null
+        }
         dropStyle(),
         WO.__frozen=!1
       }
