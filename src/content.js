@@ -883,6 +883,11 @@
       return !0
     })(),
     WO_TOP=window===window.top,
+    /* Hoisted from the autoplay block below so the scam-lock scanner can use it too. It was
+       declared several thousand lines further down, which put it in the temporal dead zone for
+       anything earlier -- and the scam scan can run synchronously when body already exists. One
+       definition, per the house rule, rather than a second copy of the same list. */
+    trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname),
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
     SITE_BOUNDARY=(()=>{
@@ -6269,11 +6274,35 @@
         }
 
       });
-      const scamScan=()=>{
-        if(!scamShown)try{
+      /* This heuristic is for pages whose OWN content is the scam. It has two problems on any
+         surface where the text belongs to other users.
+
+         The first is that it read the whole body as one 20,000-character blob and asked only
+         whether FEAR appeared somewhere and CALL appeared somewhere. On a live chat those two can
+         come from different people, minutes apart, about nothing in particular -- and CALL matches
+         bare product names (teamviewer, remote control) and everyday phrases like "enter this
+         code", which is what a giveaway or a game drop looks like in chat. The result was a
+         full-screen browser-lock warning triggered by two unrelated strangers. They now have to
+         appear within the same short window, so the match means one passage says both things.
+
+         The second is that on a video/chat host essentially ALL body text is user-generated, so
+         even a proximity match is somebody talking rather than the page attacking. Those hosts are
+         skipped, using the established trustedMediaHost list rather than a new one. */
+      const SCAM_NEAR=600,
+      scamScan=()=>{
+        if(scamShown||trustedMediaHost)return;
+        try{
           const t=(document.body&&document.body.textContent||"").slice(0,
           2e4);
-          t&&FEAR.test(t)&&CALL.test(t)&&showScamPanel("tech-support scam page text")
+          if(!t)return;
+          const fear=FEAR.exec(t);
+          if(!fear)return;
+          const from=Math.max(0,
+          fear.index-SCAM_NEAR),
+          to=Math.min(t.length,
+          fear.index+fear[0].length+SCAM_NEAR);
+          CALL.test(t.slice(from,
+          to))&&showScamPanel("tech-support scam page text")
         }
         catch(_){
 
@@ -10068,7 +10097,6 @@
         error:String(e)
       })
     }
-    const trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname);
     if(WO.blockAutoplay&&!trustedMediaHost)try{
       let userGestured=!1;
       ["click",

@@ -71,6 +71,23 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- A busy chat is no longer mistaken for a tech-support scam. WardenOne watches for the
+  shape those scams have -- a page that frightens you, and then tells you to call
+  someone or install something -- but it was looking for those two halves anywhere on
+  the page at once. On a live chat they can arrive from two different people, minutes
+  apart, talking about nothing in particular: somebody worrying about their data, and
+  somebody else posting a giveaway code. That was enough to put a full-screen warning
+  over a stream you were watching. The two halves now have to appear together in the
+  same passage, and on video and chat sites, where everything on the page was typed by
+  somebody else, the check does not run at all.
+- EyeShield no longer flattens everyone in a chat to the same colour. When text was too
+  faint to read against what is behind it, EyeShield repainted it one safe colour. That
+  is right for text that is merely hard to read, and wrong when the colour *is* the
+  information -- on Twitch every person in chat has their own, and all the darker ones
+  came out identical, so you could no longer tell who was speaking. It now keeps the
+  colour it was given and lifts its brightness until it is readable, so names stay as
+  distinct as the site meant them to be. Greys have nothing to preserve and are still
+  repainted.
 - Dismissing a WardenOne warning now puts the keyboard back where it was. Three of the
   warnings closed by hiding themselves rather than by shutting down properly, so the
   panel vanished and looked closed while the page was still being told a dialog was
