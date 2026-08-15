@@ -655,7 +655,13 @@ async function memoryActOnTab(tabId, action, opts) {
 // ---- Tab-group sleeping: discard all safe tabs in groups idle past threshold ----
 async function sleepIdleGroups(cfgArg) {
   try {
-    if (!chrome.tabGroups) return { ok: false, error: 'Tab groups not supported' };
+    // No chrome.tabGroups guard here, because nothing below calls chrome.tabGroups. The grouping
+    // is read from tab.groupId, which belongs to chrome.tabs and is present whether or not that
+    // namespace is -- so the old check tested one capability and used a different one, and would
+    // have answered wrong in both directions had they ever come apart.
+    // A browser with no grouped tabs now falls through the groupId filter and reports
+    // { ok: true, sleptGroups: 0, sleptTabs: 0 }, which is true, rather than claiming the whole
+    // feature is unsupported.
     const cfg = cfgArg || await getMemoryConfig();
     if (!cfg.memoryShield) return { ok: false, disabled: true };
     const tabs = await chrome.tabs.query({});
