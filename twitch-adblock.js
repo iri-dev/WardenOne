@@ -3618,7 +3618,10 @@
               applyWorkerAdState(worker, state, message.offsetMs);
             } catch (_) {}
           } else if (message.type === 'log') {
-            try { console.log('[WO-Twitch]', message.m); } catch (_) {}
+            // Gated on the receiving side too. The worker only sends these when debugging, so this
+            // was relying on the sender never getting it wrong -- which is not a guarantee, and the
+            // cost of it being wrong is log spam in the console of a site we do not own.
+            if (WO_TWITCH_DEBUG) { try { console.log('[WO-Twitch]', message.m); } catch (_) {} }
           }
         });
         woOn(worker, 'error', cleanupWorker, { once: true });
