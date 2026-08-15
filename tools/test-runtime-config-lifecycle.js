@@ -29,11 +29,11 @@ function check(name, condition) {
 }
 
 check('main runtime starts from authenticated saved config',
-  /const __woStartWhenConfigured=\(\)=>\{\s*window\.__WO_CONFIG__&&window\.__WO_CONFIG__\.__configReady&&__woStartRuntime\(\)/.test(source));
+  /const __woStartWhenConfigured=\(\)=>\{\s*__woConfigStore\.__configReady&&__woStartRuntime\(\)/.test(source));
 check('main runtime has a bounded bridge-failure fallback',
   /setTimeout\(__woStartRuntime,\s*1500\)/.test(source));
 check('overlay cleanup waits for authenticated config',
-  /overlayCleanerOn=\(\)=>!!\(window\.__WO_CONFIG__&&window\.__WO_CONFIG__\.__configReady&&WO\.enabled&&WO\.removeOverlays\)/.test(source));
+  /overlayCleanerOn=\(\)=>!!\(__woConfigStore\.__configReady&&WO\.enabled&&WO\.removeOverlays\)/.test(source));
 check('overlay sweep refuses to mutate while cleanup is inactive',
   /sweep=\(\)=>\{\s*if\(!overlayCleanerOn\(\)\)return;/.test(source));
 check('download auto-skip also respects config readiness',

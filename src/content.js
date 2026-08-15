@@ -16,6 +16,18 @@
      One binding rather than six copies, per the house rule: the same mistake was written out six
      times, and a seventh use should not be able to reintroduce it. Sharing one instance is safe
      because the regex carries no /g, so it holds no lastIndex between calls. */
+  /* The engine's authoritative config lives here, not on window. The page shares this world, so
+     anything reachable from it is page-writable: window.__WO_CONFIG__ can be replaced wholesale,
+     and wo-config-change is an ordinary DOM event the page can dispatch. Between them a page
+     could hand the engine a config of its choosing and have it adopted -- an all-false object
+     switched every protection off, and an empty one deleted every key, because the refresh
+     drops keys the incoming config no longer carries.
+     Moving the object off window was not enough on its own: the refresh still READ window, so
+     the page only had to write the global and fire the event. The store below is written by the
+     token-checked config handler and by nothing else; window.__WO_CONFIG__ is kept as a copy so
+     twitch-adblock.js (a separate MAIN-world script) and anything debugging can still read it,
+     but writing to that copy no longer reaches the engine. */
+  const __woConfigStore={};
   const __woAmazonHost=/(^|\.)amazon\.(com|com\.au|com\.be|com\.br|com\.co|com\.mx|com\.tr|co\.jp|co\.uk|co\.za|ae|ca|cl|cn|de|eg|es|fr|ie|in|it|nl|ng|pl|sa|se|sg)$/i;
   /* Release what a previous engine in this page still holds before installing over it.
      Chrome does not re-inject content scripts into open tabs on update, so a tab that
@@ -619,8 +631,9 @@
     }
     return out
   }
-  window.__WO_CONFIG__=buildConfig(null),
-  window.__WO_CONFIG__.__configReady=!1;
+  Object.assign(__woConfigStore,buildConfig(null)),
+  __woConfigStore.__configReady=!1,
+  window.__WO_CONFIG__=Object.assign({},__woConfigStore);
   let __woToken=null;
   const __woEventQueue=[],
   __woRequestQueue=[],
@@ -736,14 +749,12 @@
           type:"blocked_config_spoof"
         });
         (overrides=>{
-          const prev=window.__WO_CONFIG__||{
-
-          },
+          const prev=__woConfigStore,
           next=buildConfig(overrides);
           Object.assign(prev,
           next),
           prev.__configReady=!0,
-          window.__WO_CONFIG__=prev;
+          window.__WO_CONFIG__=Object.assign({},prev);
           try{
             document.dispatchEvent(new CustomEvent("wo-config-change",
             {
@@ -846,9 +857,7 @@
        obvious fix -- Object.assign({},cfg) -- would have been worse than the bug. */
     const WO={},
     __woSyncConfig=()=>{
-      const cfg=window.__WO_CONFIG__||{
-
-      },
+      const cfg=__woConfigStore,
       host=String(location.hostname||"").replace(/^www\./,
       "").toLowerCase();
       let next=cfg;
@@ -1406,7 +1415,7 @@
         if(!u||!/^https?:$/.test(u.protocol))return!1;
         const host=regDomain(u.hostname),
         text=u.href;
-        if(((window.__WO_CONFIG__&&window.__WO_CONFIG__.grabberDomains)||[]).some(d=>host===d||host.endsWith("."+d)))return!0;
+        if((__woConfigStore.grabberDomains||[]).some(d=>host===d||host.endsWith("."+d)))return!0;
         if(/(^|\.)(popads|popcash|propellerads|adsterra|hilltopads|exoclick|trafficjunky|clickadu|ad-maven|admaven|onclickads|popunder[a-z]*|bidvertiser|clickaine|adskeeper|galaksion)\./i.test(host))return!0;
         return/(adurl|popunder|onclickad|affiliate|utm_source=ad|doubleclick|adservice)/i.test(text)&&/\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|monster|lol)$/i.test(host)
       }
@@ -2391,7 +2400,7 @@
     let lastGestureAt=0,
     gestureSpent=!1,
     lastLoginIntentAt=0;
-    const gestureWindowMs=()=>Number((window.__WO_CONFIG__||WO).gestureWindowMs)||2400,
+    const gestureWindowMs=()=>Number(__woConfigStore.gestureWindowMs)||2400,
     loginIntentFresh=()=>Date.now()-lastLoginIntentAt<Math.max(gestureWindowMs()*4,
     8e3);
     function markGesture(e){
@@ -13895,7 +13904,7 @@
       PROTECT=/(password|sign[\s-]?in|log[\s-]?in|checkout|payment|card number|billing address|add to (cart|basket)|two[\s-]?factor|verification code|confirm (your )?(order|payment|transaction)|delete|are you sure|accept (all )?cookies)/i,
       seen=new WeakSet,
       undoStack=[],
-      overlayCleanerOn=()=>!!(window.__WO_CONFIG__&&window.__WO_CONFIG__.__configReady&&WO.enabled&&WO.removeOverlays),
+      overlayCleanerOn=()=>!!(__woConfigStore.__configReady&&WO.enabled&&WO.removeOverlays),
       installHardOverlayCss=()=>{
         try{
           if(!overlayCleanerOn())return;
@@ -15391,7 +15400,7 @@
     window.__wardenOneReadyVersion=__WO_RUNTIME_VERSION
   };
   const __woStartWhenConfigured=()=>{
-    window.__WO_CONFIG__&&window.__WO_CONFIG__.__configReady&&__woStartRuntime()
+    __woConfigStore.__configReady&&__woStartRuntime()
   };
   try{
     woOn(document,"wo-config-change",

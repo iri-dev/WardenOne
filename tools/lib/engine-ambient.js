@@ -74,6 +74,12 @@ SHIMS.__woObserver = 'var __woObserver=function(cb,extra){'
   + 'if(typeof MutationObserver==="undefined")throw new Error("sandbox has no MutationObserver");'
   + 'return new MutationObserver(cb,extra);};';
 
+// __woConfigStore holds the engine's live config. A lifted fragment reading it is asking "what is
+// configured", so the honest shim is an empty object: the suite fills in whatever keys its own
+// scenario needs, exactly as it already does for the WO binding, and nothing here pretends to a
+// default the engine did not hand out.
+SHIMS.__woConfigStore = 'var __woConfigStore={};';
+
 // __woAmazonHost is data, not behaviour, so its shim is the engine's own value rather than a
 // stand-in. Lifted from source for the reason this module exists: a hand-copied regex here would
 // drift from the engine's, and then a suite exercising Amazon URL handling would be asserting
