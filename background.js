@@ -1847,8 +1847,15 @@ async function getPackagedCosmetics() {
       scriptlets: doc && doc.scriptlets ? doc.scriptlets : {},
       procedural: doc && doc.procedural ? doc.procedural : {},
     };
-  } catch (_) {
+  } catch (e) {
     // Missing or unreadable: run without them rather than falling back to anything fetched.
+    //
+    // Failing open is right, failing SILENTLY was not. A package built without this file loses
+    // every scriptlet and procedural rule while the popup still reports protection as active, so
+    // there was nothing to notice -- which is how a staged store ZIP missing it got as far as it
+    // did. tools/test-package-completeness.js stops that at build time; this is what says so at
+    // runtime if one ever ships anyway.
+    console.warn('[WardenOne] packaged cosmetics unavailable -- scriptlet and procedural rules are off', e);
     __packagedCosmetics = { scriptlets: {}, procedural: {} };
   }
   return __packagedCosmetics;
