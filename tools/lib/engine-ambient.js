@@ -74,6 +74,18 @@ SHIMS.__woObserver = 'var __woObserver=function(cb,extra){'
   + 'if(typeof MutationObserver==="undefined")throw new Error("sandbox has no MutationObserver");'
   + 'return new MutationObserver(cb,extra);};';
 
+// __woAmazonHost is data, not behaviour, so its shim is the engine's own value rather than a
+// stand-in. Lifted from source for the reason this module exists: a hand-copied regex here would
+// drift from the engine's, and then a suite exercising Amazon URL handling would be asserting
+// against the copy. If the declaration is ever renamed or removed, this throws at require time
+// with the name in the message, which is the failure worth having.
+{
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
+  const decl = /const\s+__woAmazonHost=(\/(?:\\.|\[[^\]]*\]|[^/\\\n])+\/[a-z]*);/.exec(source);
+  if (!decl) throw new Error('engine-ambient: __woAmazonHost declaration not found in src/content.js');
+  SHIMS.__woAmazonHost = 'var __woAmazonHost=' + decl[1] + ';';
+}
+
 function ambientSource(names) {
   const wanted = names && names.length ? names : Object.keys(SHIMS);
   return wanted.filter((n) => SHIMS[n]).map((n) => SHIMS[n]).join('\n');

@@ -3,6 +3,20 @@
   "use strict";
   const __WO_RUNTIME_VERSION="1.0.0";
   if(window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
+  /* Amazon's real storefronts, enumerated. This used to be /(^|\.)amazon\.[a-z.]+$/i, which anchors the
+     label but not the suffix -- so it matched any host the attacker owned, as long as some label
+     was called "amazon" and everything after it was letters and dots. amazon.attacker.com
+     matched. So did amazon.com.evil.tld, which is the shape Amazon credential phishing uses.
+     That mattered far more than a compatibility shim should. The first use below returns out of
+     __woStartRuntime before anything installs, and the second turns every boolean in the config
+     off -- so between them a hostile page could switch the whole engine off by choosing its own
+     hostname, including the phishing blocker whose "subdomain-spoof" kind is precisely what
+     amazon.com.evil.tld is. Both exits also stamp the ready marker, so the tab kept reporting
+     itself protected while nothing was running.
+     One binding rather than six copies, per the house rule: the same mistake was written out six
+     times, and a seventh use should not be able to reintroduce it. Sharing one instance is safe
+     because the regex carries no /g, so it holds no lastIndex between calls. */
+  const __woAmazonHost=/(^|\.)amazon\.(com|com\.au|com\.be|com\.br|com\.co|com\.mx|com\.tr|co\.jp|co\.uk|co\.za|ae|ca|cl|cn|de|eg|es|fr|ie|in|it|nl|ng|pl|sa|se|sg)$/i;
   /* Release what a previous engine in this page still holds before installing over it.
      Chrome does not re-inject content scripts into open tabs on update, so a tab that
      outlives an extension update keeps its old engine; the guard above only stops a
@@ -781,7 +795,7 @@
     if(__woRuntimeStarted)return;
     __woRuntimeStarted=!0;
     if(window.__wardenOneInstalled===__WO_RUNTIME_VERSION&&window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
-    if(/(^|\.)amazon\.[a-z.]+$/i.test(location.hostname)||/(^|\.)shopify\.com$/i.test(location.hostname)){
+    if(__woAmazonHost.test(location.hostname)||/(^|\.)shopify\.com$/i.test(location.hostname)){
       window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
       window.__wardenOneReadyVersion=__WO_RUNTIME_VERSION;
       return
@@ -838,7 +852,7 @@
       host=String(location.hostname||"").replace(/^www\./,
       "").toLowerCase();
       let next=cfg;
-      if(/(^|\.)amazon\.[a-z.]+$/i.test(host)){
+      if(__woAmazonHost.test(host)){
         const safe=Object.assign({
 
         },
@@ -1217,7 +1231,7 @@
         const host=location.hostname;
         if(!host||"about:"===location.protocol||"chrome:"===location.protocol)return;
         if(window.top!==window.self)return;
-        if(/(^|\.)amazon\.[a-z.]+$/i.test(host)){
+        if(__woAmazonHost.test(host)){
           try{
             sessionStorage.removeItem("__wo_rl_"+host),
             sessionStorage.removeItem("__wo_rlstop_"+host)
@@ -1405,7 +1419,7 @@
     /^(si|feature|pp|embeds_referring_euri|source_ve_path|app|persist_app)$/i],
     [/(^|\.)open\.spotify\.com$/i,
     /^(si|context|nd|_branch_match_id|_branch_referrer)$/i],
-    [/(^|\.)amazon\.[a-z.]+$/i,
+    [__woAmazonHost,
     /^(ref|ref_\w*|tag|linkCode|linkId|ascsubtag|creative|creativeASIN|camp|adid|pd_rd_\w+|pf_rd_\w+|qid|sr|srs|crid|sprefix|dib|dib_tag|keywords|content-id|social_share|starsLeft|skipTwisterOG|_encoding|smid|psc)$/i],
     [/(^|\.)(x|twitter)\.com$/i,
     /^(s|t|ref_src|ref_url)$/i],
@@ -1509,12 +1523,12 @@
         let changed=!1;
         for(const key of[...u.searchParams.keys()])(TRACKING_PARAMS.some(re=>re.test(key))||COPY_CLEAN_GLOBAL.test(key)||siteRe&&siteRe.test(key))&&(u.searchParams.delete(key),
         changed=!0);
-        if(/(^|\.)amazon\.[a-z.]+$/i.test(host)&&/\/ref=[^/?#]*/i.test(u.pathname)){
+        if(__woAmazonHost.test(host)&&/\/ref=[^/?#]*/i.test(u.pathname)){
           u.pathname=u.pathname.replace(/\/ref=[^/?#]*/gi,
           ""),
           changed=!0
         }
-        if(/(^|\.)amazon\.[a-z.]+$/i.test(host)){
+        if(__woAmazonHost.test(host)){
           const m=u.pathname.match(/\/(?:[^/?#]+\/)?(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#]|$)/i);
           m&&(u.pathname="/dp/"+m[1],
           changed=!0)
