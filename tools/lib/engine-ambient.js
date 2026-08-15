@@ -74,6 +74,11 @@ SHIMS.__woObserver = 'var __woObserver=function(cb,extra){'
   + 'if(typeof MutationObserver==="undefined")throw new Error("sandbox has no MutationObserver");'
   + 'return new MutationObserver(cb,extra);};';
 
+// __woWarn is the registry the in-page warnings use to recognise their own node. A fresh, empty
+// one per sandbox is exactly right: each suite starts with nothing shown, which is the state a
+// page load begins in.
+SHIMS.__woWarn = 'var __woWarn={seen:new Map(),up(id){var el=this.seen.get(id);return !!(el&&el.isConnected)},mark(id,el){this.seen.set(id,el)}};';
+
 // __woLastOverlay is the hand-off slot buildOverlay writes and mountBlocker reads, so a lifted
 // fragment only needs the binding to exist. Null is the honest starting value: before anything
 // is painted there is no overlay, and a suite that paints supplies its own node.
