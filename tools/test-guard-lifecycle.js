@@ -163,6 +163,11 @@ function sharedRegistryCore(src, dispose) {
     core = core.slice(0, chromeAt) + core.slice(resumeAt);
   }
   core = core.replace(/    const chromeHeld = woChromeListeners[\s\S]*?\n    \}\n/, '');
+  // Same reasoning as the Chrome listeners above, for the same reason: the bridge is the only
+  // guard that puts UI on the page, so it is the only one whose dispose has warnings to tear down.
+  // The drain is bridge-specific by nature and is asserted on its own in test-warning-dialogs.js;
+  // what has to stay identical across all ten is the registry they share.
+  core = core.replace(/    \/\* Before anything is torn down[\s\S]*?\n    \}\n/, '');
   return core.split(dispose).join('__DISPOSE__');
 }
 

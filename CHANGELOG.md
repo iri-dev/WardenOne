@@ -71,6 +71,20 @@ First public-release hardening pass.
   actually running and whether that copy can still reach the extension, and says
   so: tabs it genuinely re-armed, and separately, tabs that need a reload. The
   check no longer passes while any tab still needs one.
+- Dismissing a WardenOne warning now puts the keyboard back where it was. Three of the
+  warnings closed by hiding themselves rather than by shutting down properly, so the
+  panel vanished and looked closed while the page was still being told a dialog was
+  open -- and whatever you had selected before it appeared never got the cursor back.
+  If you were reading with a screen reader or working without a mouse, you were left
+  with nothing focused and a page that still claimed to be behind a dialog. All five
+  warnings now close the same way.
+- A warning can no longer get stuck on screen when WardenOne restarts underneath it.
+  Pressing Verify & Repair reloads the protection in every open tab, and a warning that
+  happened to be on screen at that moment lost every one of its buttons: it stayed
+  covering the page, kept the keyboard inside itself, and nothing would close it short
+  of reloading the page. Since Repair is the thing you press when something already
+  looks wrong, it was most likely to happen exactly when a warning was showing.
+  Restarting now closes any warning it is replacing, and hands the keyboard back first.
 - Smart Script Shield can now recover a page it has blanked. Plenty of sites serve their
   own code from a second address, which the shield reads as third-party and refuses --
   and then the page never paints at all. It could already spot and undo this on video
