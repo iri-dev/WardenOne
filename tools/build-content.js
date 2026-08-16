@@ -50,6 +50,7 @@ function regexKeywordBefore(input, index) {
 function findLineComments(source) {
   const input = String(source || '');
   const hits = [];
+  const templateNewlines = [];
   let state = 'code';
   let quote = '';
   let escaped = false;
@@ -69,6 +70,12 @@ function findLineComments(source) {
       continue;
     }
     if (state === 'template') {
+      // The build strips every newline and its indentation, so a template literal spanning lines
+      // silently loses them from its VALUE. Nothing else catches it: src/content.js still parses,
+      // and the byte-exact rebuild check still passes, because both halves agree on the corrupted
+      // output. Same class of trap as the // comment this tokenizer already refuses, so it is
+      // refused in the same place rather than left to be remembered.
+      if (ch === '\n') templateNewlines.push(line - 1);
       if (escaped) escaped = false;
       else if (ch === '\\') escaped = true;
       else if (ch === '`') state = 'code';
@@ -105,11 +112,17 @@ function findLineComments(source) {
     if (!/\s/.test(ch)) prevSig = ch;
   }
 
-  return hits;
+  return { comments: hits, templateNewlines };
 }
 
 function assertNoLineComments(source) {
-  const hits = findLineComments(source);
+  const { comments: hits, templateNewlines } = findLineComments(source);
+  if (templateNewlines.length) {
+    const where = templateNewlines.slice(0, 20).join(', ') + (templateNewlines.length > 20 ? ', ...' : '');
+    console.error('[fail] src/content.js contains a template literal spanning ' + templateNewlines.length + ' newline(s), at line(s): ' + where);
+    console.error('[info] the build strips newlines, so those would vanish from the string VALUE -- silently, since the source still parses and the rebuild check still passes. Use \\n escapes or string concatenation instead.');
+    process.exit(1);
+  }
   if (!hits.length) return;
   const shown = hits.slice(0, 20).join(', ') + (hits.length > 20 ? ', ...' : '');
   console.error('[fail] src/content.js contains ' + hits.length + ' // line comment(s), at line(s): ' + shown);
