@@ -1190,7 +1190,7 @@
       <label class="tg"><input type="checkbox" data-key="sessionShield"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Protect session tokens</div><div class="desc">Block token-shaped values from leaving a site for another domain. Keeps protection on, but treats noisy trusted services more calmly in the activity log.</div></div>
+      <div><div class="name">Protect session tokens</div><div class="desc">Block token-shaped values from leaving a site for another domain. Keeps protection on, but treats noisy trusted services more calmly in the activity log. Watches the page itself &mdash; script running inside an embedded frame is out of reach.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockTokenExfil"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1198,11 +1198,11 @@
       <label class="tg"><input type="checkbox" data-key="continuousTokenScan"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Detect &amp; block form skimmers</div><div class="desc">Spots third-party scripts reading password/card fields on payment pages, and blocks card or password data being sent to an off-site address (Magecart-style theft).</div></div>
+      <div><div class="name">Detect &amp; block form skimmers</div><div class="desc">Spots third-party scripts reading password/card fields on payment pages, and blocks card or password data being sent to an off-site address (Magecart-style theft). Watches the page itself &mdash; a form inside an embedded frame is out of reach.</div></div>
       <label class="tg"><input type="checkbox" data-key="detectSkimmers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Payment card guard</div><div class="desc">Warns before card details leave scammy, very new, suspicious, or reputation-flagged checkout pages, and blocks cards on insecure, look-alike, raw-IP, or known-dangerous payment forms. Keeps normal processors quiet.</div></div>
+      <div><div class="name">Payment card guard</div><div class="desc">Warns before card details leave scammy, very new, suspicious, or reputation-flagged checkout pages, and blocks cards on insecure, look-alike, raw-IP, or known-dangerous payment forms. Keeps normal processors quiet. Watches the checkout page itself &mdash; card fields inside an embedded frame are out of reach.</div></div>
       <label class="tg"><input type="checkbox" data-key="paymentCardGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
