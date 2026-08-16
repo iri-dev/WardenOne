@@ -177,7 +177,7 @@ async function main() {
 
   const archive = guard.scoreDownload('https://files.example/downloads/keygen.zip', '', 'keygen.zip', 'application/zip', [], '');
   assert(['D', 'E', 'F'].includes(archive.grade), 'archive lure should be reviewed strongly');
-  assert(reasonIncludes(archive, 'Archive named like a crack/keygen'));
+  assert(reasonIncludes(archive, 'Archive named like a crack or keygen'));
   assert(reasonIncludes(archive, 'Archive (contents not visible until opened)'));
 
   // Spotify's Windows installer (SpotifySetup.exe) is served from Spotify's CDN
