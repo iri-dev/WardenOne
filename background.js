@@ -2574,6 +2574,10 @@ const TRACKER_LEARNER_KEY = 'wardenone_tracker_learner';
 const TRACKER_RULE_BASE = 720000;
 const TRACKER_RULE_MAX = TRACKER_RULES_BUDGET;
 const TRACKER_LEARN_MIN_SITES = 3;
+// Distinct browser sessions, not just distinct sites. Everything else in the corroboration set
+// is supplied by the party making the claim; this is the one axis that costs an attacker a
+// browser restart they do not control.
+const TRACKER_LEARN_MIN_SESSIONS = 2;
 const TRACKER_LEARN_MIN_HITS = 3;
 const TRACKER_LEARN_STORAGE_MAX = 600;
 // Ambiguous locally-learned tracker candidates are deliberately limited to
@@ -2915,14 +2919,58 @@ function loadTrackerLearner() {
   return __initTrackerLearner;
 }
 
+function trackerDistinctSessionCount(entry) {
+  const seen = entry && Array.isArray(entry.sessions) ? entry.sessions : [];
+  return new Set(seen.filter(Boolean)).size;
+}
+
+// Session-scoped, so it dies with the browser and a new one is minted on the next start.
+let __trackerSessionId = "";
+async function trackerLearnerSessionId() {
+  if (__trackerSessionId) return __trackerSessionId;
+  try {
+    const store = await chrome.storage.session.get("__wo_tracker_session");
+    let id = store && store.__wo_tracker_session;
+    if (!id) {
+      id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      await chrome.storage.session.set({ __wo_tracker_session: id });
+    }
+    __trackerSessionId = String(id);
+  } catch (_) {
+    __trackerSessionId = "";
+  }
+  return __trackerSessionId;
+}
+
 function trackerDistinctSiteCount(entry) {
   return Object.keys((entry && entry.sites) || {}).length;
+}
+
+// Every host this extension itself depends on, derived from the manifest rather than typed out,
+// so the list cannot drift as providers are added or removed. Learning a block rule against our
+// own reputation, breach or filter-list endpoints would let a page switch off the checks that
+// protect the user, which is the most valuable thing the learner could be talked into.
+let __ownProviderDomains = null;
+function ownProviderDomains() {
+  if (__ownProviderDomains) return __ownProviderDomains;
+  const out = new Set();
+  try {
+    const hosts = (chrome.runtime.getManifest() || {}).host_permissions || [];
+    for (const pattern of hosts) {
+      const m = /^https?:\/\/([^/*]+)/.exec(String(pattern || ""));
+      const d = m ? normalizeTrackerDomain(m[1]) : "";
+      if (d) out.add(d);
+    }
+  } catch (_) {}
+  __ownProviderDomains = out;
+  return out;
 }
 
 function isProtectedTrackerDomain(domain) {
   const d = normalizeTrackerDomain(domain);
   if (!d) return true;
   if (TRACKER_PROTECTED_DOMAINS.has(d)) return true;
+  if (ownProviderDomains().has(d)) return true;
   return /(^|\.)((gov|edu|mil)\.[a-z]{2}|gov|edu|mil)$/i.test(d);
 }
 
@@ -3038,16 +3086,35 @@ async function noteTrackerObservation(tabUrl, detail) {
     const site = entry.sites[first] || (entry.sites[first] = { hits: 0, lastSeen: now });
     site.hits = Math.min(1000000, Number(site.hits || 0) + 1);
     site.lastSeen = now;
+    // Which browser session saw it. The corroboration this learner asks for is 'three different
+    // sites', and a hostile page supplies all three for free: it needs three registrable domains,
+    // and free subdomains on shared hosts are three distinct keys at zero cost, reachable in one
+    // visit through two redirects. Sessions are the axis an attacker cannot compress -- the id
+    // lives in chrome.storage.session, so it dies with the browser.
+    const sessionId = await trackerLearnerSessionId();
+    if (sessionId) {
+      const seen = Array.isArray(entry.sessions) ? entry.sessions : [];
+      if (!seen.includes(sessionId)) seen.push(sessionId);
+      entry.sessions = seen.slice(-4);
+    }
     const wasLearned = entry.state === 'learned';
     // High-confidence tracker hosts learn on first contact; ambiguous candidates still need
     // the 3-sites / 3-hits corroboration before any block rule is created.
+    // looksLikeKnownTrackerHost used to drop the thresholds to 1 hit / 1 site. It matches on the
+    // NAME -- anything under analytics., metrics., beacon., adservice. and a brand list -- and the
+    // name arrives in a page-supplied message field. So a single forged event naming
+    // analytics.<any-host-the-attacker-dislikes> reached 'learned' immediately and became a
+    // browser-wide block rule with no corroboration at all. The pattern is still worth recording
+    // as a reason, but it can no longer buy a shortcut past the evidence.
     const strongHost = looksLikeKnownTrackerHost(third);
-    const minHits = strongHost ? 1 : TRACKER_LEARN_MIN_HITS;
-    const minSites = strongHost ? 1 : TRACKER_LEARN_MIN_SITES;
-    if (!wasLearned && entry.hits >= minHits && trackerDistinctSiteCount(entry) >= minSites) {
+    const distinctSessions = trackerDistinctSessionCount(entry);
+    if (!wasLearned
+      && entry.hits >= TRACKER_LEARN_MIN_HITS
+      && trackerDistinctSiteCount(entry) >= TRACKER_LEARN_MIN_SITES
+      && distinctSessions >= TRACKER_LEARN_MIN_SESSIONS) {
       entry.state = 'learned';
       entry.reason = strongHost
-        ? 'known tracker host pattern'
+        ? 'known tracker host pattern, seen across ' + distinctSessions + ' sessions'
         : 'seen as a tracker on ' + trackerDistinctSiteCount(entry) + ' different sites';
       queueHistory({
         type: 'learned_tracker_domain',
