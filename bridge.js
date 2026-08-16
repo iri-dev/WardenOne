@@ -854,7 +854,11 @@
     sendSmartPlayerIntent();
   }
   try {
-    woOn(window, 'pagehide', stopSmartPlayerHeartbeat, { once: true });
+    // Not { once: true }: a page restored from the back/forward cache fires pagehide AGAIN, and a
+    // one-shot listener has already been spent by then -- so a heartbeat started after the restore
+    // ran until the tab closed. stopSmartPlayerHeartbeat is idempotent, so firing it more than once
+    // costs nothing.
+    woOn(window, 'pagehide', stopSmartPlayerHeartbeat);
     armSmartPlayerObservation();
     woOn(document, 'DOMContentLoaded', () => scheduleSmartPlayerScan(0), { once: true });
     woOn(window, 'load', () => scheduleSmartPlayerScan(0), { once: true });

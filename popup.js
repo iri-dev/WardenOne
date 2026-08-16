@@ -3104,7 +3104,7 @@ $('ext-review').addEventListener('click', () => {
     btn.disabled = false; btn.textContent = 'Review my extensions';
     out.textContent = '';
     if (!res || !res.ok) { out.style.color = 'var(--rose-deep,#973c69)'; out.textContent = 'Could not list extensions.'; out.dataset.open = '1'; return; }
-    if (!res.extensions.length) { out.style.color = 'var(--ink-faint,#665674)'; out.textContent = 'No other extensions installed.'; out.dataset.open = '1'; return; }
+    if (!Array.isArray(res.extensions) || !res.extensions.length) { out.style.color = 'var(--ink-faint,#665674)'; out.textContent = 'No other extensions installed.'; out.dataset.open = '1'; return; }
     const risky = res.extensions.filter((e) => e.riskScore > 0);
     out.appendChild(makeLine(res.extensions.length + ' other extension(s); ' + risky.length + ' with high-risk permissions:', risky.length ? '#80531d' : '#1f693d', true));
     res.extensions.forEach((e) => {
@@ -3477,7 +3477,7 @@ function renderPermResults(out, hostname, res) {
       if (!out) return;
       out.style.display = 'block'; out.textContent = '';
       if (!r || !r.ok) { out.textContent = 'Could not scan.'; return; }
-      if (!r.zombies.length) { out.textContent = 'No zombie tabs — nothing idle for 6+ hours.'; return; }
+      if (!Array.isArray(r.zombies) || !r.zombies.length) { out.textContent = 'No zombie tabs — nothing idle for 6+ hours.'; return; }
       const head = document.createElement('div');
       head.textContent = r.zombies.length + ' tab(s) idle for 6+ hours:';
       head.style.marginBottom = '5px';
@@ -3536,7 +3536,7 @@ function renderPermResults(out, hostname, res) {
       if (!r.extraCount) { out.textContent = 'No duplicate tabs found.'; return; }
       out.textContent = '';
       const line = document.createElement('div');
-      line.textContent = 'You have ' + r.extraCount + ' duplicate tab' + (r.extraCount === 1 ? '' : 's') + ' across ' + r.groups.length + ' page(s).';
+      line.textContent = 'You have ' + r.extraCount + ' duplicate tab' + (r.extraCount === 1 ? '' : 's') + ' across ' + (Array.isArray(r.groups) ? r.groups.length : 0) + ' page(s).';
       line.style.marginBottom = '6px';
       out.appendChild(line);
       const close = document.createElement('button');
