@@ -4728,7 +4728,7 @@
                 catch{
                   continue
                 }
-                if(h&&h!==fp&&!h.endsWith("."+fp)&&!fp.endsWith("."+h)&&!/(google|gstatic|googleapis|cloudflare|jsdelivr|unpkg|jquery|bootstrapcdn|stripe|paypal|braintree|adyen|recaptcha|hcaptcha)\./i.test(h))return h
+                if(h&&h!==fp&&!h.endsWith("."+fp)&&!fp.endsWith("."+h)&&!/^(google\.com|gstatic\.com|googleapis\.com|cloudflare\.com|cloudflare\.net|cloudflareinsights\.com|jsdelivr\.net|unpkg\.com|jquery\.com|bootstrapcdn\.com|stripe\.com|stripe\.network|paypal\.com|paypalobjects\.com|braintreegateway\.com|braintree-api\.com|adyen\.com|recaptcha\.net|hcaptcha\.com)$/i.test(h))return h
               }
 
             }
@@ -4818,7 +4818,13 @@
 
               })();
               if(!dest)return!1;
-              if(/(stripe|paypal|braintree|adyen|checkout|google|apple|microsoft)\./i.test(dest))return!1;
+              /* dest is already a REGISTRABLE domain, so the old substring test needed the brand
+                 plus a dot to appear inside it. A subdomain never supplies that -- checkout.evil.com
+                 reduces to evil.com and was correctly still guarded -- but a REGISTRATION does:
+                 checkout.top, stripe.zip and paypal.cheap all satisfied it, and all are buyable. A
+                 skimmer could turn its own exfiltration destination into a trusted processor for
+                 the price of a domain. Matched whole now, against the processors actually meant. */
+              if(/^(stripe\.com|stripe\.network|paypal\.com|paypalobjects\.com|braintreegateway\.com|braintree-api\.com|adyen\.com|checkout\.com|google\.com|gstatic\.com|googleapis\.com|apple\.com|microsoft\.com|azure\.com)$/i.test(dest))return!1;
               const hay=((dataToString(data)||"")+" "+url).replace(/\s/g,
               ""),
               vals=sensitiveValues();
