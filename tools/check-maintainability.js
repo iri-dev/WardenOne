@@ -230,6 +230,7 @@ function checkContentBuild() {
   'tools/test-blocker-durability.js',
   'tools/test-warning-ownership.js',
   'tools/test-tracker-learner-trust.js',
+  'tools/test-frame-scope-disclosure.js',
   'tools/test-health-honesty.js',
   'tools/test-eyeshield-fetch-scope.js',
   // Compares what the extension loads against what `git archive` ships. The staged store ZIP was
@@ -335,6 +336,7 @@ checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-sco
 checkCommand('blocker durability tests', ['tools/test-blocker-durability.js']);
 checkCommand('warning ownership tests', ['tools/test-warning-ownership.js']);
 checkCommand('tracker learner trust tests', ['tools/test-tracker-learner-trust.js']);
+checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure.js']);
 checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
 checkCommand('EyeShield fetch scope tests', ['tools/test-eyeshield-fetch-scope.js']);
 checkCommand('engine config ownership tests', ['tools/test-engine-config-ownership.js']);
