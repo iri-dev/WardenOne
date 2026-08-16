@@ -113,15 +113,54 @@ else fail('background-memory.js import missing');
 if (bg.includes("importScripts('background-downloads.js')") || bg.includes('importScripts("background-downloads.js")')) ok('Download Guard module is imported');
 else fail('background-downloads.js import missing');
 
-const readableJs = [
+// Every script the extension actually loads, derived rather than typed. The old list was a
+// hand-written allowlist of filenames, which meant a NEWLY ADDED content script was outside the
+// dynamic-code scan by default -- and four already were: twitch-adblock.js (3,667 lines, MAIN
+// world, all frames), twitch-rewind.js (ISOLATED, so it holds chrome.*), and the two lazily
+// registered ones, search-junk.js and cryptominer-detect.js. None of them had a sink, so nothing
+// was broken; but the scan is the control that keeps remotely-influenced data away from anything
+// that executes, and a control with a silent blind spot is the thing worth fixing.
+//
+// content.min.js is deliberately excluded and covered a different way: build-content.js --check
+// proves it rebuilds byte-exactly from src/content.js, which IS scanned, so a sink cannot reach
+// the shipped artifact without first appearing in a file this list covers. Grepping minified text
+// would only produce noise.
+function declaredScripts() {
+  const out = new Set();
+
+  // Static content scripts, straight from the manifest.
+  try {
+    const manifest = JSON.parse(read('manifest.json'));
+    for (const entry of manifest.content_scripts || []) {
+      for (const file of entry.js || []) out.add(file);
+    }
+  } catch (e) {
+    fail('could not read manifest content scripts: ' + e.message);
+  }
+
+  // Scripts registered at runtime instead of declared. These never appear in the manifest, so a
+  // manifest-only derivation would reintroduce exactly the blind spot this replaces.
+  try {
+    const bgSrc = read('background.js');
+    for (const m of bgSrc.matchAll(/js:\s*\[([^\]]*)\]/g)) {
+      for (const q of m[1].matchAll(/['"]([^'"]+\.js)['"]/g)) out.add(q[1]);
+    }
+    for (const m of bgSrc.matchAll(/files:\s*\[([^\]]*)\]/g)) {
+      for (const q of m[1].matchAll(/['"]([^'"]+\.js)['"]/g)) out.add(q[1]);
+    }
+  } catch (e) {
+    fail('could not read background.js for registered scripts: ' + e.message);
+  }
+
+  return out;
+}
+
+// The extension pages and worker modules, which are not content scripts and so are not derivable.
+const PAGE_AND_WORKER_JS = [
   'background.js',
   'background-startup.js',
   'background-memory.js',
   'background-downloads.js',
-  'bridge.js',
-  'permission-chain.js',
-  'anti-redirect.js',
-  'oauth-guard.js',
   'download-review.js',
   'popup.js',
   'history.js',
@@ -130,12 +169,22 @@ const readableJs = [
   'cert-error.js',
   'safe-browsing-block.js',
   'redirect-warning.js',
-  'eyeshield.js',
-  'consent-reject.js',
-  'yt-adblock.js',
-  'twitch-vod-rewind.js',
   'src/content.js',
 ];
+
+const declared = declaredScripts();
+const readableJs = Array.from(new Set(
+  PAGE_AND_WORKER_JS.concat(Array.from(declared)),
+)).filter((f) => f !== 'content.min.js' && exists(f));
+
+// The point of deriving the list is that nothing can quietly fall out of it, so say plainly when
+// something does rather than scanning a shorter list without comment.
+{
+  const unscanned = Array.from(declared).filter((f) => f !== 'content.min.js' && !exists(f));
+  if (unscanned.length) fail('declared script missing from disk, so unscanned: ' + unscanned.join(', '));
+  else ok('dynamic-code scan covers every declared script (' + readableJs.length + ' files)');
+}
+;
 const dynamic = scanDynamicCode(readableJs);
 if (dynamic.severe.length) fail('dynamic code sinks found: ' + dynamic.severe.join('; '));
 else ok('no eval/new Function/document.write sinks in readable JS files');
