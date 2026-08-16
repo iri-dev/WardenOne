@@ -162,5 +162,61 @@ function runDynamic() {
   console.log('[ok] DNR dynamic rule budget within Chrome limits');
 }
 
+
+// ---------------------------------------------------------------------------
+// Rule-ID bands must not overlap (L8-L9).
+//
+// The budget check above proves the rule COUNT fits Chrome ceiling. It says nothing about where
+// those rules are numbered. Each family is laid out from a base with a cap, and the ids are
+// derived as base + index -- so a family whose cap grows past the distance to the next base
+// starts writing ids that belong to another family. updateDynamicRules would accept them and one
+// family would silently overwrite the other: no error, no failed check, just protections quietly
+// replacing each other. Nothing asserted the gaps, so the arithmetic was only ever correct by
+// inspection.
+function runBands() {
+  const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  const num = (name) => numberConstant(bg, name);
+
+  // [base constant, cap constant, label]
+  const FAMILIES = [
+    ["LEARNED_RULE_BASE", "LEARNED_RULES_BUDGET", "learned malicious domains"],
+    ["TRACKER_RULE_BASE", "TRACKER_RULES_BUDGET", "tracker learner"],
+  ];
+  // Single ids reserved outside the families. A band must never grow far enough to reach them.
+  const RESERVED = ["PRIVACY_HEADER_RULE_ID", "THIRD_PARTY_COOKIE_RULE_ID",
+    "LOCATION_PRIVACY_HEADER_RULE_ID", "HTTPS_UPGRADE_RULE_ID", "HTTPS_UPGRADE_DYNAMIC_RULE_ID"];
+
+  const ranges = FAMILIES.map(([baseName, capName, label]) => {
+    const base = num(baseName);
+    const cap = num(capName);
+    assert(Number.isFinite(base) && Number.isFinite(cap),
+      "could not read " + baseName + "/" + capName + " from background.js");
+    return { label, base, end: base + cap - 1 };
+  }).sort((x, y) => x.base - y.base);
+
+  for (const r of ranges) console.log("  " + r.label + ": " + r.base + "-" + r.end);
+
+  for (let i = 1; i < ranges.length; i++) {
+    const prev = ranges[i - 1];
+    const cur = ranges[i];
+    assert(prev.end < cur.base,
+      "rule-id bands overlap: " + prev.label + " ends at " + prev.end
+      + " but " + cur.label + " starts at " + cur.base + " -- one family would overwrite the other");
+    console.log("  gap after " + prev.label + ": " + (cur.base - prev.end - 1));
+  }
+
+  for (const name of RESERVED) {
+    const id = num(name);
+    assert(Number.isFinite(id), "could not read " + name);
+    for (const r of ranges) {
+      assert(id < r.base || id > r.end,
+        name + " (" + id + ") falls inside the " + r.label + " band " + r.base + "-" + r.end);
+    }
+  }
+
+  console.log("[ok] DNR rule-id bands do not overlap each other or the reserved ids");
+}
+
 run();
 runDynamic();
+runBands();
