@@ -24,7 +24,17 @@ const ARCHIVE_EXT = /\.(zip|rar|7z|gz|tar|cab|ace|arj|tgz|bz2|xz|lzh)$/i;
 // mail/AV filters (Qakbot, IcedID, etc. ship malware inside .iso/.img/.vhd).
 const CONTAINER_EXT = /\.(iso|img|vhd|vhdx|udf)$/i;
 const MACRO_DOC_EXT = /\.(docm|xlsm|pptm|dotm|xlam|xltm|xlsb)$/i;
-const INSTALLER_HINT = /(setup|install|update|crack|keygen|patch|activator|loader|nulled|warez|serial|cracked|repack|pre-?activated|free-?download)/i;
+// These used to be one regex, so `setup` scored exactly the same as `keygen`. That is the most
+// common legitimate installer filename on Windows, and it pushed an ordinary installer from an
+// unlisted-but-honest vendor two whole grades -- executable (+3) plus installer (+3) = 6, which
+// is grade E, "Dangerous". Meanwhile the words that genuinely mean trouble were diluted by
+// sharing a bucket with them. Splitting helps both directions at once: fewer scares on safe
+// installers, and a cleaner signal when a name really is a crack.
+const BENIGN_INSTALLER_HINT = /(setup|install(er)?|update(r)?|full[-_. ]?installer)/i;
+const LURE_HINT = /(crack|keygen|activator|nulled|warez|serial|cracked|repack|pre-?activated|free-?download|activador|kmspico|autokms)/i;
+// Kept for the places that only care "does this name look like SOME kind of installer", such as
+// the raw-IP check, where either flavour is equally interesting.
+const INSTALLER_HINT = new RegExp(BENIGN_INSTALLER_HINT.source + '|' + LURE_HINT.source, 'i');
 const DOWNLOAD_PENDING_KEY = 'wardenone_pending_downloads';
 const DOWNLOAD_HANDLED_KEY = 'wardenone_download_handled';
 const DOWNLOAD_TRUSTED_KEY = 'wardenone_download_trusted_sites';
@@ -302,6 +312,34 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'lg.com', 'sony.com', 'kioxia.com', 'lexmark.com', 'ricoh.com',
   'garmin.com', 'gopro.com', 'dji.com',
   // Provider-controlled domains only. Shared CDNs/user-content hosts (CloudFront,
+  // --- security software (a scared user's first download is often one of these) ---
+  'malwarebytes.com', 'bitdefender.com', 'avast.com', 'avg.com', 'eset.com',
+  'kaspersky.com', 'norton.com', 'nortonlifelock.com', 'mcafee.com', 'trendmicro.com',
+  'sophos.com', 'f-secure.com', 'bleepingcomputer.com', 'piriform.com', 'ccleaner.com',
+  // --- browsers ---
+  'brave.com', 'opera.com', 'vivaldi.com', 'duckduckgo.com', 'torproject.org',
+  // --- communication / conferencing ---
+  'slack.com', 'slack-edge.com', 'telegram.org', 'signal.org', 'whatsapp.com', 'skype.com',
+  'teamviewer.com', 'anydesk.com', 'webex.com', 'gotomeeting.com',
+  // --- media, creative and office ---
+  'handbrake.fr', 'gimp.org', 'inkscape.org', 'blender.org', 'krita.org',
+  'libreoffice.org', 'openoffice.org', 'onlyoffice.com', 'foxit.com', 'foxitsoftware.com',
+  'irfanview.com', 'paint.net', 'getpaint.net', 'shotcut.org', 'kdenlive.org',
+  'davinciresolve.com', 'blackmagicdesign.com', 'sketchup.com', 'autodesk.com',
+  // --- gaming platforms and studios ---
+  'gog.com', 'ea.com', 'ubisoft.com', 'battle.net', 'blizzard.com', 'riotgames.com',
+  'minecraft.net', 'mojang.com', 'roblox.com', 'unity.com', 'unrealengine.com',
+  // --- hardware, drivers and peripherals ---
+  'corsair.com', 'razer.com', 'steelseries.com', 'msi.com', 'gigabyte.com', 'asrock.com',
+  'seagate.com', 'westerndigital.com', 'samsung.com', 'brother.com', 'brother-usa.com',
+  'realtek.com', 'displaylink.com', 'wacom.com', 'elgato.com', 'sandisk.com',
+  'acer.com', 'msi.com', 'razerzone.com', 'synology.com', 'qnap.com', 'ubnt.com', 'ui.com',
+  // --- utilities a PC owner is told to install ---
+  'winscp.net', 'putty.org', 'filezilla-project.org', 'rufus.ie', 'balena.io',
+  'cpuid.com', 'hwinfo.com', 'crystalmark.info', 'voidtools.com', 'sumatrapdfreader.org',
+  'qbittorrent.org', 'thunderbird.net', 'protonvpn.com', 'proton.me', 'mullvad.net',
+  'nordvpn.com', 'expressvpn.com', 'openvpn.net', 'wireguard.com',
+  'logmein.com', 'dropbox.com', 'box.com', 'sync.com', 'pcloud.com',
   // Fastly, Akamai, GitHub Pages/raw content, Azure CDN, jsDelivr, personal cloud
   // drives, etc.) are not trusted as publishers because arbitrary third parties can
   // host there.
@@ -1371,6 +1409,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   const onBlocklist = rd && (BLOCKED_DOMAINS.has(rd) || BLOCKED_DOMAINS.has(host));
   const httpInsecure = /^http:\/\//i.test(finalUrl || '');
   const installerName = INSTALLER_HINT.test(name);
+  const lureName = LURE_HINT.test(name);
   const trustMatch = trustedDownloadMatch(host, trustedSites);
   const danger = String(chromeDanger || '').toLowerCase();
   const chromeKnownBad = CHROME_DANGER_STRONG.has(danger);
@@ -1407,8 +1446,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   if (isDangerous) { score += W.executable; reasons.push('Executable / script file type'); }
   if (isMacro) { score += W.macroDoc; reasons.push('Office file that can contain macros'); }
   if (isContainer) { score += W.container; reasons.push('Disk-image file (often used to smuggle malware past scanners)'); }
-  if (isDangerous && installerName) { score += W.executableInstaller; reasons.push('Name suggests an installer/crack/keygen'); }
-  if (isArchive && installerName) { score += W.archiveInstaller; reasons.push('Archive named like a crack/keygen'); }
+  if (isDangerous && lureName) { score += W.executableInstaller; reasons.push('Name suggests a crack, keygen or pirated installer'); }
+  if (isArchive && lureName) { score += W.archiveInstaller; reasons.push('Archive named like a crack or keygen'); }
   if (isArchive) { score += W.archive; reasons.push('Archive (contents not visible until opened)'); }
   // A password-protected archive cannot be content-scanned by Chrome OR by our hash check --
   // encryption is a deliberate way to smuggle malware past every scanner. Elevate it so an
@@ -1522,7 +1561,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // trust list or known publisher). An attacker on an unknown/throwaway host can name a
   // payload "app-v2.1.0-x64.exe" for free; granting that a score discount nudged it below
   // the review threshold (D->C). On a trusted source the name is genuine corroboration.
-  if (looksVersionedRelease && !httpInsecure && !installerName && score > 0 && score <= 3
+  if (looksVersionedRelease && !httpInsecure && !lureName && score > 0 && score <= 3
     && (trustMatch || isKnownPublisherDomain(host))) {
     score -= W.versionedReleaseRebate; reasons.push('Filename looks like a normal versioned software release');
   }
@@ -1615,7 +1654,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // prominently offers "always trust this site" (grade C shows the Trust button), cutting the
   // daily friction of every niche installer being framed as high risk.
   if (!trustedEligible && isDangerous && !critical && !isArchive && !isContainer && !isMacro
-    && rd && !httpInsecure && !installerName && score === W.executable) {
+    && rd && !httpInsecure && !lureName && score === W.executable) {
     score -= 1;
     reasons.push('Single executable over HTTPS from an established site — reviewed with the option to always trust this site');
   }
