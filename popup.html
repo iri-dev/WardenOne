@@ -540,11 +540,13 @@
 .eyeshield-reset:hover{background:#e1cdf0;color:var(--ink-soft);transform:translateY(-1px);}
 .eyeshield-reset:active{transform:translateY(0);}
 .eyeshield-panel.is-disabled .eyeshield-reset{pointer-events:none;opacity:.85;}
-.wo-footer-link{margin:18px 16px 16px;text-align:center;}
+/* One stacked container with a shared row width. Two separately centred inline-flex links could
+   never line up: each centred its own differing width, so the longer label sat further right. */
+.wo-footer-link{margin:18px 16px 16px;display:flex;flex-direction:column;align-items:center;gap:6px;}
 .wo-footer-link a{
-  display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:6px 0;border:0;border-radius:0;background:transparent;color:var(--ink);text-decoration:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:flex-start;gap:7px;width:min(216px,100%);padding:6px 0;border:0;border-radius:0;background:transparent;color:var(--ink);text-decoration:none;cursor:pointer;
 }
-.wo-footer-link a::after{content:"\2192";color:var(--plum);font-size:14px;font-weight:900;line-height:1;transition:transform .12s ease;}
+.wo-footer-link a::after{content:"\2192";margin-left:auto;color:var(--plum);font-size:14px;font-weight:900;line-height:1;transition:transform .12s ease;}
 .wo-footer-link a:hover strong{text-decoration:underline;text-underline-offset:2px;}
 .wo-footer-link a:hover::after{transform:translateX(2px);}
 .wo-footer-icon{display:none;}
@@ -1485,6 +1487,12 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true" focusable="false"><path d="M12 3.5c2.1 1.2 4.1 1.6 5.8 1.7.2 4.2-.7 9.3-5.8 12.4C6.9 14.5 6 9.4 6.2 5.2c1.7-.1 3.7-.5 5.8-1.7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.4 12.2l1.7 1.7 3.7-4.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
       <span class="wo-footer-copy"><strong>Why these permissions?</strong><small>Plain-English trust guide</small></span>
+    </a>
+    <a id="wo-keys-link" href="api-keys.html" target="_blank" rel="noopener">
+      <span class="wo-footer-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true" focusable="false"><path d="M15.5 7.5a4 4 0 1 1-3.9 5H8.5l-1.5 1.5-1.5-1.5H3.5v-2.5h8.1a4 4 0 0 1 3.9-2.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16.5" cy="11.5" r="1.1" fill="currentColor"/></svg>
+      </span>
+      <span class="wo-footer-copy"><strong>How to get your API keys</strong><small>Free, optional, for a deeper scan</small></span>
     </a>
   </div>
 <script src="popup.js"></script>
