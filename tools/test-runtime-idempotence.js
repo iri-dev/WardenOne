@@ -38,7 +38,11 @@ const consent = read('consent-reject.js');
 const antiRedirect = read('anti-redirect.js');
 const permissionChain = read('permission-chain.js');
 
-assert(version === '1.0.1', 'manifest version should match the released build');
+// Deliberately not a literal. The assertions below are the ones that matter -- they take the
+// version from the manifest and require bridge.js, yt-adblock.js, consent-reject.js, content.js
+// and the rest to agree with it, so a bump that stopped halfway cannot ship. Demanding a specific
+// number on top of that found no bug and broke the gate every time the version honestly changed.
+assert(/^\d+\.\d+\.\d+$/.test(version), 'manifest version should be a plain semver number');
 
 assert(content.includes('const __WO_RUNTIME_VERSION="' + version + '"'), 'content source should use manifest-matched runtime version');
 assert(compact(runtime).includes('const__WO_RUNTIME_VERSION="' + version + '"'), 'runtime bundle should include manifest-matched runtime version');

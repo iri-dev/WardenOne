@@ -33,7 +33,11 @@ const popupJs = read('popup.js');
 const content = read('src/content.js');
 const manifest = JSON.parse(read('manifest.json'));
 
-assert(manifest.version === '1.0.1', 'manifest version should match the released build');
+// Not pinned to a literal, on purpose. It used to be, and then every release turned into a hunt
+// through the test suite for numbers to hand-edit -- busywork that caught nothing, because
+// test-runtime-idempotence.js already enforces the check with teeth: every shipped script must
+// carry the version the manifest declares. All this file needs is that the field is a real one.
+assert(/^\d+\.\d+\.\d+$/.test(manifest.version), 'manifest version should be a plain semver number');
 
 assert(/kind === 'protection-health'/.test(background), 'background should expose protection-health endpoint');
 assert(/buildProtectionHealthSummary/.test(background), 'background should build protection health summary');
