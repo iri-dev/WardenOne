@@ -209,7 +209,7 @@ toggleable, and any site can be allowlisted from the popup in one click.
 **From a release (no clone needed):**
 1. Download the latest `WardenOne-vX.Y.Z.zip` from the [current release](https://github.com/iri-dev/WardenOne/releases/latest) and unzip it.
 2. Open `chrome://extensions` and enable **Developer mode** (top-right).
-3. Click **Load unpacked** and select the unzipped `WardenOne` folder.
+3. Click **Load unpacked** and select the folder you just unzipped — the one with `manifest.json` directly inside it.
 
 **From source:** clone this repository and load the project folder the same way.
 

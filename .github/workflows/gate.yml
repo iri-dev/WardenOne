@@ -67,7 +67,15 @@ jobs:
         # The same command used to cut a real release, so this zip has the same
         # shape: .gitattributes export-ignore keeps tools/, src/, site/, docs/
         # and .github/ out of what people load unpacked.
-        run: git archive --format=zip --prefix=WardenOne/ -o WardenOne-latest.zip HEAD
+        #
+        # NO --prefix, deliberately. manifest.json has to sit at the root of the
+        # zip. With a prefix the archive contains a WardenOne/ folder, and every
+        # GUI unzipper ALSO creates a folder named after the archive -- so
+        # Windows "Extract All" produces WardenOne-latest\WardenOne\manifest.json.
+        # Pointing "Load unpacked" at the folder you just extracted then fails
+        # with "Manifest file is missing or unreadable", which is a miserable
+        # first experience and looks like the extension is broken.
+        run: git archive --format=zip -o WardenOne-latest.zip HEAD
 
       - name: Write the notes
         run: |
@@ -83,7 +91,8 @@ jobs:
           was published, but this build has had no hands-on testing beyond that.
 
           To install: unzip it, open `chrome://extensions`, turn on **Developer mode**, click
-          **Load unpacked** and pick the `WardenOne` folder.
+          **Load unpacked** and pick the folder you just unzipped — the one with `manifest.json`
+          directly inside it.
           EOF
           sed -i "s/__SHA__/$(git rev-parse --short HEAD)/" notes.md
           sed -i "s/__VERSION__/$(node -p "require('./manifest.json').version")/" notes.md

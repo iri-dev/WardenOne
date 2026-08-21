@@ -160,5 +160,51 @@ check('the scan covers a realistic surface', required.size >= 30, required.size 
   check('every referenced asset exists on disk', absent.length === 0, absent.join(', '));
 }
 
+/* ---- the package has to be loadable, not merely complete ------------------- *
+ * Shipping every file is not enough if the folder shape defeats "Load unpacked".
+ *
+ * The v1.0.1 zip was built with `git archive --prefix=WardenOne/`, so the archive contained a
+ * WardenOne/ folder holding everything. But every GUI unzipper ALSO creates a folder named after
+ * the archive, so Windows "Extract All" produced WardenOne-v1.0.1\WardenOne\manifest.json. Point
+ * Chrome at the folder you just extracted -- the obvious thing to do, and what the instructions
+ * said -- and it refuses with "Manifest file is missing or unreadable". The extension looks broken
+ * before it has run a line of code.
+ *
+ * So manifest.json belongs at the root of the archive, which is also what the Chrome Web Store
+ * expects. The command must stay prefix-free everywhere it is written down. */
+{
+  check('manifest.json sits at the root of the release package',
+    packaged.has('manifest.json'),
+    'nothing at the archive root -- "Load unpacked" on the extracted folder will fail');
+
+  // Nothing may be nested under a single wrapper directory.
+  const topLevel = new Set([...packaged].map((f) => f.split('/')[0]));
+  check('the package is not wrapped in a single folder',
+    !(topLevel.size === 1 && [...packaged].every((f) => f.includes('/'))),
+    'everything sits under "' + [...topLevel][0] + '/", which unzips one level too deep');
+
+  // The recipe is written in three places; a prefix creeping back into any of them reintroduces it.
+  const sources = [
+    ['.github/workflows/gate.yml', '.github/workflows/gate.yml'],
+    ['MAINTAINABILITY.md', 'MAINTAINABILITY.md'],
+  ];
+  for (const [label, file] of sources) {
+    const full = path.join(ROOT, file);
+    if (!fs.existsSync(full)) continue;
+    const text = fs.readFileSync(full, 'utf8');
+    // Only real invocations -- prose mentions "git archive" too, and matching those just prints
+    // the same check three times.
+    const commands = text.split(/\r?\n/).filter((line) =>
+      /git archive/.test(line) && /--format|\s-o\s/.test(line) && !/^\s*#/.test(line));
+    check('a git archive command was found in ' + label, commands.length > 0,
+      'the packaging recipe moved or was renamed, so this guard stopped guarding anything');
+    for (const line of commands) {
+      check('the git archive command in ' + label + ' has no --prefix',
+        !/--prefix/.test(line), line.trim());
+    }
+  }
+}
+
 if (failed) { console.error('\n' + failed + ' package completeness check(s) failed'); process.exit(1); }
-console.log('\npackage contains every asset the extension loads (' + required.size + ' checked)');
+console.log('\npackage contains every asset the extension loads (' + required.size + ' checked)'
+  + ' and unzips straight into a loadable folder');
