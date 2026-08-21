@@ -369,6 +369,12 @@
   .nav-btn svg { flex: none; opacity: 0.85; }
   .nav-btn:hover { color: #7d39b8; background: #ecdcf7; }
   .ck { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink); padding:4px 0; cursor:pointer; }
+  .ck.ck-2 { align-items:flex-start; }
+  .ck .ck-t { display:block; line-height:1.35; }
+  .ck .ck-n { display:block; }
+  .ck .ck-s { display:block; font-size:11px; font-weight:700; margin-top:1px; }
+  .ck .ck-s.keep { color:#1f693d; }
+  .ck .ck-s.out { color:#973c69; }
   .ck input { width:15px; height:15px; accent-color:#b06fd6; cursor:pointer; }
   .note {
     font-size: 11px; color: var(--ink-faint); padding: 6px 18px 8px; line-height: 1.5;
@@ -1376,13 +1382,24 @@
       <div class="row" style="display:block;">
         <div class="name" style="margin-bottom:6px;">Clean browser data</div>
         <div class="desc" style="margin-bottom:9px;">Select what to clear, then clean. This wipes the chosen data for all sites on this device.</div>
+        <label class="ck" style="margin-bottom:8px;">Time range
+          <select id="cl-since" style="margin-left:6px;">
+            <option value="0">Everything</option>
+            <option value="3600000">Last hour</option>
+            <option value="86400000">Last 24 hours</option>
+            <option value="604800000">Last 7 days</option>
+            <option value="2592000000">Last 30 days</option>
+          </select>
+        </label>
         <label class="ck"><input type="checkbox" id="cl-cache" checked> Cache</label>
-        <label class="ck"><input type="checkbox" id="cl-cookies"> Cookies &amp; sign-ins</label>
+        <label class="ck ck-2"><input type="checkbox" id="cl-consent" checked><span class="ck-t"><span class="ck-n">Consent banners &amp; tracking cookies</span><span class="ck-s keep">Keeps you signed in</span></span></label>
+        <label class="ck ck-2"><input type="checkbox" id="cl-cookies"><span class="ck-t"><span class="ck-n">All cookies &amp; sign-ins</span><span class="ck-s out">Signs you out of every site</span></span></label>
         <label class="ck"><input type="checkbox" id="cl-history"> Browsing history</label>
         <label class="ck"><input type="checkbox" id="cl-downloads"> Download history</label>
         <label class="ck"><input type="checkbox" id="cl-storage"> Local storage &amp; IndexedDB</label>
         <label class="ck"><input type="checkbox" id="cl-sw"> Service workers</label>
         <label class="ck"><input type="checkbox" id="cl-form"> Saved form data</label>
+        <label class="ck ck-2"><input type="checkbox" id="cl-perms"><span class="ck-t"><span class="ck-n">Camera, mic &amp; location permissions</span><span class="ck-s keep">Sites will ask again next time</span></span></label>
         <button class="btn" id="cl-run" style="width:100%;margin-top:10px;">Clean selected</button>
         <div id="cl-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>

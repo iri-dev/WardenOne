@@ -5636,6 +5636,58 @@ function reputationWarningText(verdict) {
 // makes on the block screen while looking at the evidence, and it lives in session
 // storage so it dies with the browser. A permanent malware exemption is not something
 // to grant from a single click.
+// ---- Site permissions granted to websites, swept in one go -------------------------------------
+//
+// Camera, microphone, location and notification grants accumulate exactly the way consent cookies
+// do: you allow one for a video call or a map, and it stays allowed forever because nothing ever
+// brings it back up. Chrome buries them one site at a time behind chrome://settings/content, so in
+// practice nobody revisits them.
+//
+// contentSettings cannot ENUMERATE which sites hold a grant -- the list-site-permissions handler
+// already says so, and that is a Chrome limitation rather than an omission here. What it CAN do is
+// clear a type back to 'ask', which is the useful half: the standing grants go, and a site that
+// genuinely needs the camera simply prompts again. Reset to ASK, never to BLOCK -- this is a
+// tidy-up, not a lockdown.
+//
+// Declared at module scope on purpose. The first version lived inside the message listener and read
+// SITE_PERMISSION_TYPES and contentSettingApi, two consts declared LATER in that same function --
+// so calling it from the clean-browser branch above them threw ReferenceError before it ran a line.
+// A `typeof` guard does not help there either: typeof on a const still in its temporal dead zone
+// throws as well. Self-contained here, with nothing to be in the dead zone of.
+const SWEEPABLE_SITE_PERMISSIONS = [
+  { key: 'camera', label: 'Camera' },
+  { key: 'microphone', label: 'Microphone' },
+  { key: 'location', label: 'Location' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'clipboard', label: 'Clipboard' },
+  { key: 'automaticDownloads', label: 'Automatic downloads' },
+  { key: 'midiSysex', label: 'MIDI devices' },
+];
+async function resetSensitiveSitePermissionsGlobally() {
+  const out = { reset: [], failed: [], unsupported: [] };
+  for (const type of SWEEPABLE_SITE_PERMISSIONS) {
+    let api = null;
+    try {
+      const group = chrome.contentSettings;
+      const candidate = group && group[type.key];
+      api = candidate && typeof candidate.clear === 'function' ? candidate : null;
+    } catch (_) { api = null; }
+    // Chrome does not expose every content-setting type to extensions, and which ones it exposes
+    // moves between versions. An absent type is not a failure -- there is simply nothing to clear.
+    if (!api) { out.unsupported.push(type.label); continue; }
+    const ok = await new Promise((resolve) => {
+      let settled = false;
+      const done = (v) => { if (settled) return; settled = true; clearTimeout(timer); resolve(v); };
+      const timer = setTimeout(() => done(false), 2000);
+      try {
+        api.clear({ scope: 'regular' }, () => { done(!chrome.runtime.lastError); });
+      } catch (_) { done(false); }
+    });
+    if (ok) out.reset.push(type.label); else out.failed.push(type.label);
+  }
+  return out;
+}
+
 const SAFE_BROWSING_BYPASS_KEY = '__wardenone_sb_bypass';
 async function safeBrowsingBypassAllows(host) {
   try {
@@ -11926,6 +11978,142 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Uses HIBP's public breaches endpoint filtered by domain (no auth needed for
   // the domain list). Returns breach names + dates so the user gets real context
   // about the site they're on. Fails gracefully if the API is unavailable.
+
+// ---- Consent-banner and tracking cookies, without signing anyone out ----------------------------
+//
+// "Accept all" leaves a cookie behind on every site that asked, and the ad and analytics networks
+// leave several more. They pile up for years. Clearing cookies wholesale gets rid of them, but it
+// also throws away every session cookie, so the price of tidying up is signing out of everything.
+//
+// This is deliberately built the safe way round: an ALLOWLIST of names to delete, not a blocklist
+// of names to keep. A cookie WardenOne does not recognise is left exactly where it is. That means
+// the worst case is a consent banner this list has never heard of surviving the clean -- never a
+// login being destroyed. A blocklist would have the opposite worst case, which is unacceptable for
+// a feature whose whole promise is "this will not sign you out".
+const CONSENT_COOKIE_EXACT = new Set([
+  // IAB TCF / generic consent strings
+  'euconsent', 'euconsent-v2', 'eupubconsent', 'eupubconsent-v2', 'addtl_consent',
+  'usprivacy', 'us_privacy', 'gdpr', 'gdpr_consent', 'consent', 'cookie_consent',
+  'cookieconsent_status', 'cookie_notice_accepted', 'viewed_cookie_policy',
+  // OneTrust
+  'optanonconsent', 'optanonalertboxclosed', 'otadditionalconsentstring',
+  // Cookiebot
+  'cookieconsent', 'cookiebotconsent',
+  // Sourcepoint
+  'consentuuid', 'sp_consent', '_sp_su', 'sp_landing',
+  // Didomi / Axeptio / Osano / Termly / Iubenda / Quantcast
+  'didomi_token', 'axeptio_authorized_vendors', 'axeptio_all_vendors', 'axeptio_cookies',
+  'osano_consentmanager', 'osano_consentmanager_uuid', 'termly_gdpr_consent',
+  '__cmpconsent', '__cmpiab', '__cmpcvcu', '__cmpcccu', 'quantcastchoice',
+  // Evidon
+  'notice_behavior', 'notice_gdpr_prefs', 'notice_preferences', 'notice_poptime',
+  '_evidon_consent_cookie', '_evidon_suppress_notification_cookie',
+  // WordPress plugin families
+  'cookielawinfoconsent', 'borlabs-cookie', 'complianz_consent_status',
+  'complianz_policy_id', 'moove_gdpr_popup', 'real_cookie_banner',
+  // Google's own consent cookie
+  'consent_v2',
+]);
+
+// Prefix matches, for the families that append a site or category id to the name.
+const CONSENT_COOKIE_PREFIX = [
+  'cookielawinfo-', 'cmplz_', '_iub_cs-', 'CybotCookiebotDialog', '_sp_v1_',
+  'axeptio_', 'termly-', 'osano_', 'usercentrics', 'ucs_', 'sfc-consent',
+];
+
+// Analytics and advertising cookies. None of these keep anyone signed in anywhere.
+const TRACKING_COOKIE_EXACT = new Set([
+  // Google Analytics / Ads / DoubleClick
+  '_ga', '_gid', '_gat', '_gcl_au', '_gcl_aw', '_gcl_dc', '_gac', '__utma', '__utmb',
+  '__utmc', '__utmt', '__utmv', '__utmz', 'ide', 'dsid', 'test_cookie', '1p_jar', 'aid', 'taid',
+  // Meta
+  '_fbp', '_fbc', 'fr',
+  // Microsoft / Bing / Clarity
+  '_uetsid', '_uetvid', '_uetmsclkid', 'muid', 'muidb', '_clck', '_clsk', 'clid', 'anonchk',
+  // Hotjar
+  '_hjid', '_hjfirstseen', '_hjabsolutesessioninprogress', '_hjincludedinsessionsample',
+  '_hjtldtest', '_hjcookietest', '_hjuserattributescachehash',
+  // HubSpot
+  '__hstc', '__hssrc', '__hssc', 'hubspotutk',
+  // Segment / Mixpanel / Matomo / Amplitude
+  'ajs_anonymous_id', 'ajs_user_id', 'ajs_group_id',
+  '_pk_ref', '_pk_cvar', '_pk_hsr', 'matomo_sessid',
+  // Social ad networks
+  '_scid', '_sctr', 'sc_at', '_ttp', 'ttclid', '_rdt_uuid', '_pin_unauth', '_derived_epik',
+  'personalization_id', 'li_sugr', 'usermatchhistory', 'analyticssynchistory', 'lidc', 'bcookie',
+  // Misc adtech
+  'uuid2', 'anj', 'khaos', 'tuuid', 'c', 'tdid', 'criteo', 'cto_bundle', 'cto_lwid',
+  'demdex', 'dpm', 'everest_g_v2', 'gckp', 'ug', 'uid', 'uids',
+]);
+
+const TRACKING_COOKIE_PREFIX = ['_ga_', '_gat_', '_hj', 'mp_', '_pk_id', '_pk_ses', 'amplitude_', 'amp_'];
+
+// Belt and braces. Even if a name somehow matched above, never remove something that looks like it
+// is holding a session together. This should never fire -- the lists are specific -- but a feature
+// that promises not to sign you out should not depend on a list being perfect.
+const SESSION_COOKIE_HINT = /(^|[_-])(sess|session|sid|auth|token|login|logged|remember|persist|csrf|xsrf|jwt|refresh|identity|account)([_-]|$)/i;
+
+// A handful of generic names above (c, uid, ug, uids, consent) are only safe to remove on the
+// adtech hosts that actually set them, never on a site the user has an account with.
+const GENERIC_TRACKER_NAMES = new Set(['c', 'uid', 'uids', 'ug', 'gckp', 'consent', 'cookie_consent']);
+const ADTECH_HOSTS = /(doubleclick|adnxs|adsrvr|criteo|demdex|rubiconproject|pubmatic|casalemedia|openx|adform|bidswitch|taboola|outbrain|scorecardresearch|quantserve|everesttech|adsymptotic|agkn|bluekai|krxd|mathtag|turn|yieldmo|sharethrough|33across|id5-sync|crwdcntrl)\.(net|com|io)$/i;
+
+function cookieIsDisposable(cookie) {
+  const name = String((cookie && cookie.name) || '');
+  const lower = name.toLowerCase();
+  const domain = String((cookie && cookie.domain) || '').replace(/^\./, '').toLowerCase();
+  if (!name) return false;
+
+  const exact = CONSENT_COOKIE_EXACT.has(lower) || TRACKING_COOKIE_EXACT.has(lower);
+  const consent = CONSENT_COOKIE_EXACT.has(lower)
+    || CONSENT_COOKIE_PREFIX.some((p) => lower.startsWith(p.toLowerCase()));
+  const tracking = TRACKING_COOKIE_EXACT.has(lower)
+    || TRACKING_COOKIE_PREFIX.some((p) => lower.startsWith(p.toLowerCase()));
+  if (!consent && !tracking) return false;
+
+  // The session guard applies to PREFIX matches only. An exact name is something we know by sight
+  // -- didomi_token is a consent string, not a login -- and letting the guard veto it would mean
+  // the safety net quietly cancels the feature for every vendor who put "token" in their name.
+  // A prefix match is a guess, so it still has to get past the guard.
+  if (!exact && SESSION_COOKIE_HINT.test(name)) return false;
+
+  // Generic names only count on hosts whose entire business is tracking.
+  if (GENERIC_TRACKER_NAMES.has(lower) && !ADTECH_HOSTS.test(domain)) return false;
+  return true;
+}
+
+// Rebuild the URL a cookie was set for, which is what chrome.cookies.remove needs.
+function cookieRemovalUrl(cookie) {
+  const domain = String((cookie && cookie.domain) || '').replace(/^\./, '');
+  if (!domain) return '';
+  return (cookie.secure ? 'https://' : 'http://') + domain + (cookie.path || '/');
+}
+
+async function cleanConsentAndTrackingCookies() {
+  if (!chrome.cookies || !chrome.cookies.getAll) return { removed: 0, kept: 0, sites: 0 };
+  let all = [];
+  try { all = await chrome.cookies.getAll({}); } catch (_) { return { removed: 0, kept: 0, sites: 0 }; }
+  if (!Array.isArray(all)) return { removed: 0, kept: 0, sites: 0 };
+  const sites = new Set();
+  let removed = 0;
+  for (const cookie of all) {
+    if (!cookieIsDisposable(cookie)) continue;
+    const url = cookieRemovalUrl(cookie);
+    if (!url) continue;
+    try {
+      await chrome.cookies.remove({
+        url,
+        name: cookie.name,
+        storeId: cookie.storeId,
+        partitionKey: cookie.partitionKey,
+      });
+      removed++;
+      sites.add(String(cookie.domain || '').replace(/^\./, ''));
+    } catch (_) {}
+  }
+  return { removed, kept: all.length - removed, sites: sites.size };
+}
+
   // ---- Browser cleaning: clear selected data types globally ----
   // The user chooses what to wipe (cache, cookies, history, downloads, storage,
   // service workers). All via the browsingData API. This is the user clearing
@@ -11934,17 +12122,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
         const t = msg.types;
+        // A time range, because "everything since the beginning" is rarely what someone means
+        // when they want to tidy up. Falls back to everything when nothing is asked for.
+        const sinceMs = Number(msg.sinceMs);
+        const since = Number.isFinite(sinceMs) && sinceMs > 0 ? Date.now() - sinceMs : 0;
         const dataTypes = {};
         if (t.cache) dataTypes.cacheStorage = true, dataTypes.cache = true;
         if (t.cookies) dataTypes.cookies = true;
         if (t.history) dataTypes.history = true;
         if (t.downloads) dataTypes.downloads = true;
-        if (t.storage) { dataTypes.localStorage = true; dataTypes.indexedDB = true; dataTypes.webSQL = true; }
+        // fileSystems was missing here while being cleared everywhere else in this file -- the
+        // File System API is another place a site can leave data behind.
+        if (t.storage) { dataTypes.localStorage = true; dataTypes.indexedDB = true; dataTypes.webSQL = true; dataTypes.fileSystems = true; }
         if (t.serviceWorkers) dataTypes.serviceWorkers = true;
         if (t.formData) dataTypes.formData = true;
-        if (Object.keys(dataTypes).length === 0) { sendResponse({ ok: false, error: 'nothing selected' }); return; }
-        await chrome.browsingData.remove({ since: 0 }, dataTypes);
-        sendResponse({ ok: true, cleared: Object.keys(dataTypes) });
+        let consent = null;
+        if (t.consentCookies) consent = await cleanConsentAndTrackingCookies();
+        let perms = null;
+        if (t.sitePermissions) perms = await resetSensitiveSitePermissionsGlobally();
+        if (Object.keys(dataTypes).length === 0) {
+          if (consent || perms) { sendResponse({ ok: true, cleared: [], consent, perms }); return; }
+          sendResponse({ ok: false, error: 'nothing selected' });
+          return;
+        }
+        await chrome.browsingData.remove({ since }, dataTypes);
+        sendResponse({ ok: true, cleared: Object.keys(dataTypes), consent, perms });
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
@@ -12652,6 +12854,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // ---- Privacy reset: put this site's exposed permissions back to browser defaults ----
+
   if (msg && msg.kind === 'reset-site-permissions' && msg.url) {
     (async () => {
       try {
@@ -12668,6 +12871,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // (kept) jump-to-settings handler name for the per-type buttons still works via
   // the popup opening chrome://settings/content/<type> directly.
+  if (msg && msg.kind === 'reset-all-site-permissions') {
+    if (!messageSenderIsExtensionPage(sender)) {
+      try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+      return true;
+    }
+    respond(resetSensitiveSitePermissionsGlobally().then((r) => Object.assign({ ok: true }, r)), sendResponse);
+    return true;
+  }
+
   if (msg && msg.kind === 'list-site-permissions') {
     sendResponse({ ok: true, note: 'Use the per-site scan; full enumeration isn\'t available to extensions.' });
     return true;

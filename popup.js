@@ -2936,23 +2936,52 @@ $('cl-run').addEventListener('click', () => {
     storage: $('cl-storage').checked,
     serviceWorkers: $('cl-sw').checked,
     formData: $('cl-form').checked,
+    sitePermissions: $('cl-perms').checked,
   };
   const out = $('cl-result');
   const anyChecked = Object.values(types).some(Boolean);
   if (!anyChecked) { out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)'; out.textContent = 'Pick at least one thing to clean.'; return; }
-  const willSignOut = types.cookies ? '\n\nClearing cookies will sign you out of websites.' : '';
+  // Only the all-cookies option signs anyone out. The consent sweep deliberately does not, so it
+  // must not inherit the scary confirmation -- not being frightening is the whole point of it.
+  const willSignOut = types.cookies ? '\n\nClearing ALL cookies will sign you out of websites.' : '';
   if (!confirm('Clean the selected browser data for all sites?' + willSignOut + '\n\nThis cannot be undone.')) return;
   const btn = $('cl-run');
   btn.disabled = true; btn.textContent = 'Cleaning…';
   out.style.display = 'block'; out.style.color = 'var(--ink-faint,#665674)'; out.textContent = '';
-  chrome.runtime.sendMessage({ kind: 'clean-browser', types }, (res) => { void chrome.runtime.lastError;
+  const sinceSel = $('cl-since');
+  const sinceMs = sinceSel ? Number(sinceSel.value) || 0 : 0;
+  chrome.runtime.sendMessage({ kind: 'clean-browser', types, sinceMs }, (res) => { void chrome.runtime.lastError;
     btn.disabled = false; btn.textContent = 'Clean selected';
     if (res && res.ok) {
       out.style.color = '#1f693d';
-      out.textContent = 'Cleaned: ' + res.cleared.map(prettyDataType).filter((v, i, a) => a.indexOf(v) === i).join(', ') + '.';
+      // Report the consent sweep by count. "Removed 143 across 62 sites, kept the rest" is the
+      // sentence that tells someone it worked AND that it did not touch their logins.
+      const parts = res.cleared.map(prettyDataType).filter((v, i, a) => a.indexOf(v) === i);
+      let text = parts.length ? 'Cleaned: ' + parts.join(', ') + '.' : '';
+      if (res.consent) {
+        const c = res.consent;
+        text += (text ? ' ' : '')
+          + (c.removed
+            ? 'Removed ' + c.removed + ' consent and tracking cookie' + (c.removed === 1 ? '' : 's')
+              + ' across ' + c.sites + ' site' + (c.sites === 1 ? '' : 's')
+              + '; kept the other ' + c.kept + ', so you are still signed in.'
+            : 'No consent or tracking cookies left to remove.');
+      }
+      if (res.perms) {
+        const p = res.perms;
+        text += (text ? ' ' : '')
+          + (p.reset && p.reset.length
+            ? 'Reset ' + p.reset.join(', ').toLowerCase() + ' back to asking.'
+            : (p.unsupported && p.unsupported.length
+              ? 'This Chrome does not let extensions reset those site permissions.'
+              : 'Site permissions could not be reset.'));
+      }
+      out.textContent = text;
     } else {
       out.style.color = 'var(--rose-deep,#973c69)';
-      out.textContent = 'Cleaning failed. Try again.';
+      // Show what actually went wrong. A bare "try again" sent me hunting for a while when the
+      // real answer -- a ReferenceError naming the exact binding -- was sitting in the response.
+      out.textContent = 'Cleaning failed: ' + ((res && res.error) || 'no response from WardenOne');
     }
   });
 });
