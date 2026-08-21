@@ -34,3 +34,77 @@ jobs:
 
       - name: Run the maintainability gate
         run: node tools/check-maintainability.js
+
+  # ---------------------------------------------------------------------------
+  # Why main publishes itself.
+  #
+  # A Release is pinned to the commit it was cut from, so the moment main moves
+  # ahead, the zip people download is out of date -- and the only way to fix that
+  # used to be cutting a whole new version by hand. That does not survive contact
+  # with normal work: v1.0.0 sat 171 commits behind before anyone noticed, and
+  # everyone who followed its install instructions in the meantime got July's
+  # extension while believing they had the current one.
+  #
+  # So every push that passes the gate above rebuilds a rolling `latest-build`
+  # and replaces the package attached to it. It is marked prerelease on purpose:
+  # GitHub never advertises a prerelease as "Latest", so the stable release stays
+  # the one ordinary visitors land on, and this sits beside it for anyone who
+  # wants current code. Nothing here needs a version number, which is the point.
+  # ---------------------------------------------------------------------------
+  rolling-build:
+    name: publish-latest-build
+    needs: gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Package the extension
+        # The same command used to cut a real release, so this zip has the same
+        # shape: .gitattributes export-ignore keeps tools/, src/, site/, docs/
+        # and .github/ out of what people load unpacked.
+        run: git archive --format=zip --prefix=WardenOne/ -o WardenOne-latest.zip HEAD
+
+      - name: Write the notes
+        run: |
+          # Quoted heredoc, so the backticks below stay literal markdown instead
+          # of being run as commands. The two values are filled in afterwards.
+          cat > notes.md <<'EOF'
+          **This is the development build: the current state of `main`, rebuilt on every change.**
+
+          Most people want [the latest stable release](../../releases/latest) instead. This one exists so
+          that the code on this repo is always downloadable without waiting for a version to be cut.
+
+          Built from commit `__SHA__` — extension version `__VERSION__`. The full gate passed before it
+          was published, but this build has had no hands-on testing beyond that.
+
+          To install: unzip it, open `chrome://extensions`, turn on **Developer mode**, click
+          **Load unpacked** and pick the `WardenOne` folder.
+          EOF
+          sed -i "s/__SHA__/$(git rev-parse --short HEAD)/" notes.md
+          sed -i "s/__VERSION__/$(node -p "require('./manifest.json').version")/" notes.md
+
+      - name: Move the rolling tag to this commit
+        run: |
+          git tag -f latest-build "$GITHUB_SHA"
+          git push -f origin latest-build
+
+      - name: Publish or refresh the rolling build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Updated in place rather than deleted and recreated, so watchers are
+          # not notified of a brand new release on every single push.
+          if gh release view latest-build >/dev/null 2>&1; then
+            gh release upload latest-build WardenOne-latest.zip --clobber
+            gh release edit latest-build --notes-file notes.md --prerelease
+          else
+            gh release create latest-build WardenOne-latest.zip \
+              --title "Development build (main)" \
+              --notes-file notes.md \
+              --prerelease
+          fi

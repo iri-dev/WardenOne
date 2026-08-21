@@ -235,6 +235,7 @@ function checkContentBuild() {
   'tools/test-cookie-cleaner.js',
   'tools/test-permission-sweep.js',
   'tools/test-toast-dedupe.js',
+  'tools/test-download-links.js',
   'tools/test-health-honesty.js',
   'tools/test-eyeshield-fetch-scope.js',
   // Compares what the extension loads against what `git archive` ships. The staged store ZIP was
@@ -345,6 +346,7 @@ checkCommand('download false-positive tests', ['tools/test-download-false-positi
 checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
 checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
 checkCommand('toast dedupe tests', ['tools/test-toast-dedupe.js']);
+checkCommand('download link tests', ['tools/test-download-links.js']);
 checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
 checkCommand('EyeShield fetch scope tests', ['tools/test-eyeshield-fetch-scope.js']);
 checkCommand('engine config ownership tests', ['tools/test-engine-config-ownership.js']);

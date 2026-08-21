@@ -8,7 +8,7 @@ The all-in-one privacy, security &amp; anti-scam extension for Chromium browsers
 
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
-[![Latest release](https://img.shields.io/github/v/release/iri-dev/WardenOne?color=e84393&label=release)](https://github.com/iri-dev/WardenOne/releases)
+[![Latest release](https://img.shields.io/github/v/release/iri-dev/WardenOne?color=e84393&label=release)](https://github.com/iri-dev/WardenOne/releases/latest)
 ![Protections](https://img.shields.io/badge/protections-80%2B-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
@@ -207,7 +207,7 @@ toggleable, and any site can be allowlisted from the popup in one click.
 ## Install
 
 **From a release (no clone needed):**
-1. Download the latest `WardenOne-vX.Y.Z.zip` from the [Releases](https://github.com/iri-dev/WardenOne/releases) page and unzip it.
+1. Download the latest `WardenOne-vX.Y.Z.zip` from the [current release](https://github.com/iri-dev/WardenOne/releases/latest) and unzip it.
 2. Open `chrome://extensions` and enable **Developer mode** (top-right).
 3. Click **Load unpacked** and select the unzipped `WardenOne` folder.
 
