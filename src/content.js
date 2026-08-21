@@ -2852,6 +2852,15 @@
       "trib.al",
       "shor.by"],
       LOGGER_API_PATHS=/\/(log|logs|track|tracker|tracking|visit|capture|collect|hit|beacon|pixel|api\/log|api\/track|api\/collect)(\/|$|\?)/i,
+      /* Analytics endpoints the network rules already block outright. Warning about these is
+         noise of the worst kind: the request never reached them, so the popup describes
+         something that did not happen and teaches the user that WardenOne cries wolf.
+         The detector hooks fetch/XHR in the page, which sees the ATTEMPT -- declarativeNetRequest
+         kills the request itself, and the two never talk to each other. So this list has to say
+         which destinations are already handled. Kept in step with rules-trackers.json.
+         Only skipped while tracker blocking is actually on: with it off nothing stops these, and
+         the warning is the only thing the user would get. */
+      ALREADY_BLOCKED_TRACKERS=/(^|\.)(google-analytics|analytics\.google|googletagmanager|doubleclick|g\.doubleclick|heapanalytics|hs-analytics|scorecardresearch|quantserve|mixpanel|amplitude|segment|fullstory|hotjar|mouseflow|crazyegg|luckyorange|inspectlet|chartbeat|matomo|clarity\.ms|bat\.bing|branch\.io|adjust|appsflyer|kochava|clevertap|newrelic|nr-data|bugsnag|sentry|datadoghq|logrocket|smartlook|yandex\.(ru|com)|mc\.yandex)\./i,
       regDom=regDomain,
       u2=s=>{
         try{
@@ -2985,6 +2994,7 @@
           const dest=regDom(url.hostname);
           if(isTrustedGoogleNoise(here,
           dest))return null;
+          if(!1!==WO.blockTrackers&&ALREADY_BLOCKED_TRACKERS.test(url.hostname+"."))return null;
           return dest===here||dest.endsWith("."+here)||here.endsWith("."+dest)?null:LOGGER_API_PATHS.test(url.pathname)?dest:null
         };
         let lastApiWarn=0;
@@ -15011,8 +15021,18 @@
         toastHostEl=h,
         h
       };
+      /* One toast per distinct thing per page, rather than a time window.
+         The old rule remembered only the LAST key for 1200ms, which meant two things: the same
+         warning came back every 1.2 seconds for as long as a page kept doing whatever it was
+         doing, and an A,B,A sequence showed A twice. On a page beaconing on a timer that is a
+         stream of identical popups, which is how someone learns to dismiss WardenOne without
+         reading it.
+         A Set keyed on type+target instead: each distinct thing gets exactly one toast, several
+         different things still each get theirs, and the set is emptied on navigation so a
+         reload or a move to another page starts fresh. */
       let lastToastAt=0,
-      recentKey="";
+      recentKey="",
+      toastSeen=new Set();
       const quietToastHost=v=>{
         try{
           const raw=String(v||"").trim();
@@ -15045,6 +15065,18 @@
         }
 
       };
+      const resetToastMemory=()=>{
+        try{toastSeen.clear()}catch(_){}
+        recentKey=""
+      };
+      try{
+        woOn(window,"popstate",resetToastMemory),
+        woOn(window,"hashchange",resetToastMemory),
+        woOn(window,"pageshow",resetToastMemory)
+      }
+      catch(_){
+
+      }
       const showToast=(type,
       detail)=>{
         if(!WO.enabled||!WO.showToasts||shouldQuietToast(type,
@@ -15054,7 +15086,11 @@
         const now=Date.now(),
         matched=detail&&detail.matched||"",
         key=type+"|"+matched;
+        if(toastSeen.has(key))return;
+        /* Still a short burst guard on top, so two DIFFERENT warnings firing in the same tick do
+           not stack on screen faster than they can be read. */
         if(key===recentKey&&now-lastToastAt<1200)return;
+        toastSeen.add(key),
         recentKey=key,
         lastToastAt=now;
         const wrap=ensureHost();
