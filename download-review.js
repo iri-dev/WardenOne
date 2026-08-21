@@ -276,7 +276,9 @@ function render(review) {
     : (grade === 'C' ? 'Review recommended' : 'Download paused for review');
   byId('grade').textContent = grade;
   byId('status').textContent = grade + ' - ' + (review.status || 'Review');
-  byId('score').textContent = typeof review.score === 'number' ? 'Local risk score: ' + review.score : '';
+  byId('score').textContent = typeof review.score === 'number'
+    ? 'Local risk score ' + review.score + ' of 10 - review starts at 2, danger at 6'
+    : '';
   byId('file').textContent = review.file || '(unknown file)';
   byId('source').textContent = review.source || '(unknown source)';
   byId('mime').textContent = review.mime || 'Unknown';
@@ -384,7 +386,11 @@ function render(review) {
     trustBtn.hidden = true;
     startCriticalCountdown();
   } else {
-    trustBtn.hidden = !(grade === 'C' && review.trustAllowed && !review.trusted && review.trustHost);
+    // C and D. D is where the recurring work file lands -- the weekly .xlsm, the intranet
+    // installer -- and offering no way to remember the decision meant clicking through a warning
+    // every time, which is the habit that gets people hurt. Only reachable now that trustHost is an
+    // exact host on shared CDNs and raw IPs rather than the whole platform.
+    trustBtn.hidden = !((grade === 'C' || grade === 'D') && review.trustAllowed && !review.trusted && review.trustHost);
     if (!trustBtn.hidden) trustBtn.textContent = 'Trust ' + review.trustHost + ' & Continue';
   }
 }
