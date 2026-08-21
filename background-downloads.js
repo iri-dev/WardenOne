@@ -31,7 +31,11 @@ const MACRO_DOC_EXT = /\.(docm|xlsm|pptm|dotm|xlam|xltm|xlsb)$/i;
 // sharing a bucket with them. Splitting helps both directions at once: fewer scares on safe
 // installers, and a cleaner signal when a name really is a crack.
 const BENIGN_INSTALLER_HINT = /(setup|install(er)?|update(r)?|full[-_. ]?installer)/i;
-const LURE_HINT = /(crack|keygen|activator|nulled|warez|serial|cracked|repack|pre-?activated|free-?download|activador|kmspico|autokms)/i;
+// Anchored to a non-letter boundary. Unanchored, these matched any word CONTAINING them, so
+// firecracker.exe and nutcracker-setup.exe graded E "Dangerous" -- and so did SerialMonitor.exe and
+// every serial-port utility, because bare `serial` is an ordinary English word. Narrowed to the
+// piracy form (serial-key / serialnum / serial code) so it still catches what it is meant to.
+const LURE_HINT = /(^|[^a-z])(crack|keygen|activator|nulled|warez|serial[-_ ]?(key|num|no|code)|cracked|repack|pre-?activated|free-?download|activador|kmspico|autokms)/i;
 // Kept for the places that only care "does this name look like SOME kind of installer", such as
 // the raw-IP check, where either flavour is equally interesting.
 const INSTALLER_HINT = new RegExp(BENIGN_INSTALLER_HINT.source + '|' + LURE_HINT.source, 'i');
@@ -89,7 +93,10 @@ const DOWNLOAD_GRADE_META = {
   A: { grade: 'A', status: 'Trusted', color: '#2e9e5b', action: 'allow' },
   B: { grade: 'B', status: 'Good', color: '#2e9e5b', action: 'allow' },
   C: { grade: 'C', status: 'Review Recommended', color: '#8b3fb0', action: 'review' },
-  D: { grade: 'D', status: 'High Risk', color: '#bd7a2a', action: 'review' },
+  // "High Risk" is a claim about the file. D's actual occupants are mostly files WardenOne could
+  // not place -- an unlisted vendor, a community mirror, a CDN. Saying High Risk for those is what
+  // wears out the word, so that E's "Dangerous" -- which really does mean it -- gets clicked past.
+  D: { grade: 'D', status: 'Unverified Source', color: '#bd7a2a', action: 'review' },
   E: { grade: 'E', status: 'Dangerous', color: '#c0392b', action: 'review' },
   F: { grade: 'F', status: 'Critical Threat', color: '#7f1d1d', action: 'review' },
 };
@@ -162,7 +169,7 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   // Microsoft / VS Code / GitHub
   'microsoft.com', 'visualstudio.com', 'vscode.dev', 'windows.com', 'office.com',
   'live.com', 'msftconnecttest.com', 'github.com', 'githubassets.com',
-  'dot.net', 'nuget.org', 'powershellgallery.com',
+  'dot.net', 'nuget.org', 'powershellgallery.com', 'githubusercontent.com',
   // Google
   'google.com', 'goog', 'chrome.com', 'gstatic.com',
   'android.com', 'dl.google.com', 'googleapis.com',
@@ -316,6 +323,11 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'malwarebytes.com', 'bitdefender.com', 'avast.com', 'avg.com', 'eset.com',
   'kaspersky.com', 'norton.com', 'nortonlifelock.com', 'mcafee.com', 'trendmicro.com',
   'sophos.com', 'f-secure.com', 'bleepingcomputer.com', 'piriform.com', 'ccleaner.com',
+  // --- operating systems and distros (an ISO is otherwise graded on the container alone) ---
+  'ubuntu.com', 'canonical.com', 'debian.org', 'fedoraproject.org', 'linuxmint.com',
+  'archlinux.org', 'opensuse.org', 'raspberrypi.com', 'raspberrypi.org', 'kernel.org',
+  // --- platforms whose real download host is not the marketing domain ---
+  'zoom.us', 'steamstatic.com', 'f-droid.org', 'forgecdn.net', 'curseforge.com',
   // --- browsers ---
   'brave.com', 'opera.com', 'vivaldi.com', 'duckduckgo.com', 'torproject.org',
   // --- communication / conferencing ---
@@ -362,7 +374,31 @@ function isKnownPublisherDomain(host) {
 // publisher endorsement of the specific file -- so they get a softened rebate rather than
 // the full silent score-zero, ensuring a disguised/crack-named payload from a random
 // repo/project still surfaces for review.
-const MULTITENANT_PUBLISHER_HOSTS = new Set(['github.com', 'sourceforge.net']);
+// githubusercontent.com is added alongside github.com because a real release download REDIRECTS
+// there -- github.com/../releases/download/.. lands on objects.githubusercontent.com, so the
+// softening written for github.com never applied to the host the file actually came from. It is
+// single-owner (GitHub/Microsoft), and it goes in BOTH sets: the publisher set to be eligible at
+// all, and this set so eligibility is the softened rebate rather than full silence.
+// Suffixes where anyone can take a subdomain, so the registrable domain is the platform rather
+// than an owner. Trusting the registrable domain here would hand over every tenant on it.
+const SHARED_HOSTING_SUFFIXES = new Set([
+  'cloudfront.net', 'amazonaws.com', 'windows.net', 'azureedge.net', 'azurewebsites.net',
+  'pages.dev', 'workers.dev', 'r2.dev', 'netlify.app', 'vercel.app', 'web.app',
+  'firebaseapp.com', 'herokuapp.com', 'github.io', 'gitlab.io', 'b-cdn.net', 'fastly.net',
+  'akamaized.net', 'googleusercontent.com', 'dropboxusercontent.com', 'appspot.com',
+  'blob.core.windows.net', 'digitaloceanspaces.com', 'backblazeb2.com', 'wasabisys.com',
+]);
+// The host a Trust decision should actually be recorded against.
+function downloadTrustTarget(host) {
+  const h = String(host || '');
+  if (!h) return '';
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return h;
+  const rd = regDomainBg(h);
+  if (!rd) return '';
+  return SHARED_HOSTING_SUFFIXES.has(rd) ? h : rd;
+}
+
+const MULTITENANT_PUBLISHER_HOSTS = new Set(['github.com', 'sourceforge.net', 'githubusercontent.com']);
 function isMultiTenantPublisherHost(host) {
   const h = normalizeDownloadTrustHost(host);
   if (!h) return false;
@@ -420,7 +456,7 @@ function shouldReviewDownload(rep) {
 
 function downloadRecommendation(grade) {
   if (grade === 'C') return 'Review the source before continuing.';
-  if (grade === 'D') return 'Proceed only if you expected this exact file and trust the site.';
+  if (grade === 'D') return 'WardenOne could not confirm where this came from. Continue if this is the file you meant to download from a site you know.';
   if (grade === 'E') return 'Cancellation is recommended unless you are completely sure this source is legitimate.';
   if (grade === 'F') return 'Cancel this download. Continuing could put this computer at serious risk.';
   return 'No action needed.';
@@ -1351,7 +1387,11 @@ async function handleDownloadDecision(id, decision, sender) {
 // one place instead of hunting through the scoring prose in scoreDownload(). Proven
 // behaviour-equivalent to the previous inline literals by a golden old-vs-new test.
 const DL_WEIGHT = {
-  chromeKnownBad: 100, chromeReviewFile: 3, chromeReviewOther: 2, chromePending: 1,
+  // chromePending is 0 on purpose. "Chrome has not finished its scan yet" is not a fact about the
+  // file, and at 1 point it combined with any other single 1-point signal to cross the review line
+  // -- opening a panel built on information that was still arriving. The reason line is kept, so it
+  // still shows up whenever the file is being reviewed for some real cause.
+  chromeKnownBad: 100, chromeReviewFile: 3, chromeReviewOther: 2, chromePending: 0,
   blocklist: 100, executable: 3, macroDoc: 3, container: 3,
   executableInstaller: 3, archiveInstaller: 5, archive: 1,
   noExtension: 2, noExtensionBinary: 2, uncommonType: 1,
@@ -1399,7 +1439,14 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   const W = DL_WEIGHT;
   const reasons = [];
   let host = '';
-  try { host = new URL(finalUrl || referrer || '').hostname; } catch (_) {}
+  // A blob: URL carries its origin inside itself -- blob:https://vault.bitwarden.com/<uuid>. Parsed
+  // naively the hostname comes out empty, so every in-page export (a password vault backup, a
+  // spreadsheet a web app generated) was charged unknownDomain, shown as "(unknown)" in the review
+  // panel, and could never match the publisher list or the user's own trusted sites.
+  try {
+    const raw = finalUrl || referrer || '';
+    host = new URL(/^blob:https?:/i.test(raw) ? raw.slice(5) : raw).hostname;
+  } catch (_) {}
   const rd = regDomainBg(host);
   const name = (filename || '').split(/[\\/]/).pop() || '';
   const isDangerous = DANGEROUS_EXT.test(name);
@@ -1408,6 +1455,13 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   const isMacro = MACRO_DOC_EXT.test(name);
   const onBlocklist = rd && (BLOCKED_DOMAINS.has(rd) || BLOCKED_DOMAINS.has(host));
   const httpInsecure = /^http:\/\//i.test(finalUrl || '');
+  // 192.168.x, 10.x, localhost, an intranet name: these are the office file server and the NAS in
+  // the spare room, not a drive-by drop. They were being charged the full public raw-IP family --
+  // insecure-http, raw-IP-installer, raw-IP-executable -- which put an ordinary intranet installer
+  // at grade E, the one tier with NO Continue button. nameTrick is excluded deliberately: a
+  // disguised Invoice.pdf.exe on the LAN keeps every point it earned and stays critical.
+  const privateHost = !!(host && isLocalOrPrivateHost(host));
+  let lanNoise = 0;
   const installerName = INSTALLER_HINT.test(name);
   const lureName = LURE_HINT.test(name);
   const trustMatch = trustedDownloadMatch(host, trustedSites);
@@ -1443,7 +1497,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     reasons.push('Chrome safety scanning is still pending');
   }
   if (onBlocklist) { score += W.blocklist; reasons.push('Source is on a known malware/phishing blocklist'); }
-  if (isDangerous) { score += W.executable; reasons.push('Executable / script file type'); }
+  if (isDangerous) { score += W.executable; reasons.push('This is a program, not a document'); }
   if (isMacro) { score += W.macroDoc; reasons.push('Office file that can contain macros'); }
   if (isContainer) { score += W.container; reasons.push('Disk-image file (often used to smuggle malware past scanners)'); }
   if (isDangerous && lureName) { score += W.executableInstaller; reasons.push('Name suggests a crack, keygen or pirated installer'); }
@@ -1466,7 +1520,10 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   const KNOWN_SAFE_EXT = /\.(pdf|docx?|xlsx?|pptx?|txt|rtf|csv|tsv|json|xml|ya?ml|html?|md|jpe?g|png|gif|webp|svg|bmp|tiff?|ico|heic|mp3|wav|flac|ogg|m4a|aac|mp4|mkv|mov|webm|avi|wmv|m4v|epub|mobi|ttf|otf|woff2?|odt|ods|odp)$/i;
   const hasExt = /\.[a-z0-9]{1,8}$/i.test(name);
   const knownType = isDangerous || isArchive || isContainer || isMacro || KNOWN_SAFE_EXT.test(name);
-  const binaryMime = /(octet-stream|x-msdownload|x-msdos-program|x-executable|x-mach-binary|x-elf)/i.test(String(mime || ''));
+  // octet-stream removed for the same reason as the named-document test further down: it means
+  // "unspecified binary", which dumb CDNs and share hosts send for everything they do not
+  // recognise. It is not an assertion that the file is a program.
+  const binaryMime = /(x-msdownload|x-msdos-program|x-executable|x-mach-binary|x-elf)/i.test(String(mime || ''));
   if (name && !hasExt) {
     score += W.noExtension; reasons.push('File has no extension (can hide what it really is)');
     if (binaryMime) { score += W.noExtensionBinary; reasons.push('No extension but served as a program/binary'); }
@@ -1474,7 +1531,10 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     score += W.uncommonType; reasons.push('Uncommon file type — confirm you trust the source');
   }
 
-  if (httpInsecure) { score += W.httpInsecure; reasons.push('Downloaded over insecure HTTP'); }
+  if (httpInsecure) {
+    score += W.httpInsecure; reasons.push('Downloaded over insecure HTTP');
+    if (privateHost) lanNoise += W.httpInsecure;
+  }
   if (!rd) { score += W.unknownDomain; reasons.push('Source domain could not be determined'); }
   if (/blob:/i.test(finalUrlText) && (isDangerous || isArchive || isContainer || isMacro)) {
     score += W.blobRiskyFile; reasons.push('Download uses a browser-generated blob URL that hides the original source');
@@ -1482,7 +1542,20 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     score += W.unusualProtocol; reasons.push('Download URL protocol is unusual for a risky file');
   }
 
-  if (/(^|[?&])(url|u|redirect|redir|target|dest|destination|next|download_url)=https?%3a/i.test(finalUrlText)) {
+  // Only when the embedded URL points somewhere ELSE. A vendor gateway that bounces you to its own
+  // CDN, or SourceForge handing off to its own mirror, is the normal shape of a download link --
+  // and the old test also missed the plain unencoded form entirely, so a genuinely foreign
+  // redirect went unnoticed while the harmless same-site one was charged. `u` is dropped: it is a
+  // common tracking parameter. Anything that will not parse fails closed and still scores.
+  const embedded = /(^|[?&])(url|redirect|redir|target|dest|destination|next|download_url)=(https?%3a[^&#]*|https?:\/\/[^&#]*)/i.exec(finalUrlText);
+  let embeddedForeign = false;
+  if (embedded) {
+    try {
+      const inner = regDomainBg(new URL(decodeURIComponent(embedded[3])).hostname);
+      embeddedForeign = !inner || inner !== rd;
+    } catch (_) { embeddedForeign = true; }
+  }
+  if (embeddedForeign) {
     score += W.redirectParam; reasons.push('Download URL hides another URL inside a redirect parameter');
   }
   const redirectRisk = normalizeDownloadRedirectRisk(redirectChain);
@@ -1518,10 +1591,17 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
       reasons.push('Redirect chain touched an abuse-prone domain before the download');
     }
   }
-  if (/%00|%2e%2e|\.\.\//i.test(urlPathQuery)) {
+  // A bare ../ inside a parameter VALUE is ordinary (?path=../releases/App.exe), and by the time a
+  // URL reaches here the browser has already normalised real traversal out of the path. What is
+  // still worth flagging is a null byte or a double-encoded traversal, which only appear on purpose.
+  if (/%00|%25(2e|32)|(^|[/?&=])\.\.(%2f|%5c)/i.test(urlPathQuery)) {
     score += W.obfuscatedPath; reasons.push('Download URL contains obfuscated path characters');
   }
-  if ((isDangerous || isArchive || isContainer || isMacro) && /(crack|keygen|activator|nulled|warez|free[-_%20 ]?nitro|steam[-_%20 ]?gift|wallet[-_%20 ]?(verify|update)|airdrop|claim[-_%20 ]?reward)/i.test(urlPathQuery + ' ' + host)) {
+  // Same non-letter boundary as LURE_HINT, and for the same reason: unanchored, `crack` matched the
+  // URL of firecracker.exe and nutcracker-setup.exe. This is the second copy of that pattern -- the
+  // filename test is not the only place it lives, so fixing one and not the other left the grade
+  // unchanged and the reason line reading "scam or piracy lure wording" over an ordinary download.
+  if ((isDangerous || isArchive || isContainer || isMacro) && /(^|[^a-z])(crack|keygen|activator|nulled|warez|free[-_%20 ]?nitro|steam[-_%20 ]?gift|wallet[-_%20 ]?(verify|update)|airdrop|claim[-_%20 ]?reward)/i.test(urlPathQuery + ' ' + host)) {
     score += W.lureWording; reasons.push('Download URL uses scam or piracy lure wording');
   }
 
@@ -1572,10 +1652,25 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   let dangerousMimeMismatch = false;
   try {
     const m = (mime || '').toLowerCase();
-    if (m && isDangerous && /(text|image|application\/pdf|officedocument)/.test(m)) {
+    // Anchored, and with an exemption for file types whose native content type genuinely IS text.
+    // Unanchored, `text` matched application/x-apple-diskimage? no -- but it did match every .js
+    // served as text/javascript, every .ps1/.reg/.url/.desktop served as text/plain and every
+    // .mhtml served as text/html. Those are not disagreements; that is the correct type for the
+    // file. A disguise still counts: the exemption is refused whenever the NAME is doing a trick.
+    const declaredDocType = /^(text\/|image\/)/.test(m) || /(application\/pdf|officedocument)/.test(m);
+    const textNativeExt = /\.(js|jse|vbs|vbe|wsf|wsh|ps1|psm1|hta|reg|url|scf|inf|desktop|iqy|slk|mht|mhtml|jnlp|bat|cmd|sh|py|pl|rb)$/i.test(name);
+    const nameTrick = hasDoubleExt || hasHiddenChars || hasPaddingTrick;
+    if (m && isDangerous && declaredDocType && !(textNativeExt && !nameTrick)) {
       score += W.mimeDisagree; reasons.push('File type and its declared content type disagree');
     }
-    if (m && /(x-msdownload|x-msdos-program|octet-stream)/.test(m) && /\.(pdf|jpg|jpeg|png|docx?|txt)$/i.test(name)) {
+    // application/octet-stream used to sit in this list beside x-msdownload. It does not belong.
+    // x-msdownload and x-msdos-program mean "this IS a Windows executable", which genuinely
+    // contradicts a .pdf name. octet-stream means "unspecified binary" -- it is what a great many
+    // ordinary servers send for every file they do not recognise, including perfectly normal PDFs.
+    // Treating it as a disguise cost more than a grade: it set dangerousMimeMismatch, which feeds
+    // `critical`, and critical DISABLES known-publisher silencing -- so a PDF from a trusted
+    // publisher served with a lazy content type was pulled out of silence and shown as High Risk.
+    if (m && /(x-msdownload|x-msdos-program)/.test(m) && /\.(pdf|jpg|jpeg|png|docx?|txt)$/i.test(name)) {
       score += W.mimeProgramNamedDoc; dangerousMimeMismatch = true; reasons.push('Served as a program but named like a document');
     }
   } catch (_) {}
@@ -1586,14 +1681,23 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
 
   // Executable from a bare IP over insecure HTTP with an installer/crack name is a
   // classic drive-by drop -- the combination is worse than its parts.
-  if (isDangerous && /^\d{1,3}(\.\d{1,3}){3}$/.test(host) && (installerName || isArchive)) {
+  // lureName, not installerName: this was the one consumer the benign/lure split did not repoint,
+  // so an ordinary Setup.exe from an intranet IP was still scored as though it were named crack.
+  if (isDangerous && /^\d{1,3}(\.\d{1,3}){3}$/.test(host) && (lureName || isArchive)) {
     score += W.ipHostInstaller; reasons.push('Executable with installer/crack name from a raw IP host');
+    if (privateHost) lanNoise += W.ipHostInstaller;
   }
 
   // IP-address host serving an executable -- common in malware drops; worse over HTTP
   const rawIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-  if (isDangerous && rawIp) { score += W.rawIpExecutable; reasons.push('Executable served directly from a raw IP address'); }
-  if (isDangerous && rawIp && httpInsecure) { score += W.rawIpInsecure; reasons.push('Insecure raw-IP source'); }
+  if (isDangerous && rawIp) {
+    score += W.rawIpExecutable; reasons.push('Executable served directly from a raw IP address');
+    if (privateHost) lanNoise += W.rawIpExecutable;
+  }
+  if (isDangerous && rawIp && httpInsecure) {
+    score += W.rawIpInsecure; reasons.push('Insecure raw-IP source');
+    if (privateHost) lanNoise += W.rawIpInsecure;
+  }
 
   // Archives/disk-images hide their contents until opened (the Qakbot/IcedID "exe inside
   // a zip/iso" pattern). We do NOT review every archive (most are benign), but legit
@@ -1601,6 +1705,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // strong drive-by-drop signal that would otherwise sit silent at grade B.
   if ((isArchive || isContainer) && rawIp) {
     score += W.rawIpExecutable; reasons.push('Archive/disk-image served directly from a raw IP address (contents hidden until opened)');
+    if (privateHost) lanNoise += W.rawIpExecutable;
   }
 
   // IDN / punycode host (xn--) for a download source -- lookalike-domain delivery
@@ -1611,10 +1716,27 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // so an executable served from one is weighted higher.
   if (/\.(zip|mov)$/i.test(host)) { score += W.confusableTld; reasons.push('Source on a filename-confusable TLD (.zip/.mov)'); }
   else if (/\.(cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol)$/i.test(host)) {
-    score += W.throwawayTld; reasons.push('Source on a throwaway-style TLD');
+    // Softened for ONE shape only: a lone clean executable, which is the ordinary small-vendor
+    // installer that happens to live on a cheap TLD. Everything else still pays.
+    //
+    // The first attempt here suppressed the charge whenever the score equalled the file-type
+    // baseline, which read as reasonable and was wrong: an archive scores 1 for being an archive,
+    // so the test suppressed the TLD charge for EVERY zip and 7z, and a hidden-contents archive
+    // from a throwaway domain -- the drive-by shape this rule exists for -- dropped to grade B and
+    // went silent. Measured, not reasoned: it took an attack battery to see it.
+    const loneCleanExe = isDangerous && !isArchive && !isContainer && !isMacro && score === W.executable;
+    if (!loneCleanExe) {
+      score += W.throwawayTld; reasons.push('Source on a throwaway-style TLD');
+    }
   }
 
   const critical = !!(onBlocklist || chromeKnownBad || hasDoubleExt || hasHiddenChars || hasPaddingTrick || dangerousMimeMismatch || redirectCritical);
+  // Refund the public-internet-only charges for a host on the user's own network -- but never for
+  // a file that is critical (disguised name, blocklisted, Chrome-flagged) or lure-named.
+  if (lanNoise > 0 && privateHost && !critical && !lureName) {
+    score = Math.max(0, score - lanNoise);
+    reasons.push('Source is on your own network, so raw-address and insecure-transport penalties were not applied');
+  }
   const knownPublisher = isKnownPublisherDomain(host);
   // A known, vetted publisher (microsoft.com, mozilla.org, github.com, ...) is
   // trusted automatically -- normal downloads from them stay silent. But critical
@@ -1654,9 +1776,21 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // prominently offers "always trust this site" (grade C shows the Trust button), cutting the
   // daily friction of every niche installer being framed as high risk.
   if (!trustedEligible && isDangerous && !critical && !isArchive && !isContainer && !isMacro
-    && rd && !httpInsecure && !lureName && score === W.executable) {
+    && rd && (!httpInsecure || privateHost) && !lureName && score === W.executable) {
     score -= 1;
-    reasons.push('Single executable over HTTPS from an established site — reviewed with the option to always trust this site');
+    reasons.push('Nothing against this file except that it is a program');
+  }
+  // The same reasoning for a lone clean disk image or macro document. An .iso weighs MORE than an
+  // executable (container 3 vs executable 3, but with no rebate) so every distro ISO from a
+  // community mirror was High Risk, and the finance team's weekly .xlsm was High Risk every
+  // Monday. Gated on exact score equality, so it can only ever move 3 to 2 and can never push a
+  // file below the review line.
+  if (!trustedEligible && !critical && !isDangerous && !isArchive
+    && rd && (!httpInsecure || privateHost) && !lureName
+    && ((isContainer && !isMacro && score === W.container)
+      || (isMacro && !isContainer && score === W.macroDoc))) {
+    score -= 1;
+    reasons.push('Nothing against this file except its type, and it came from an established site');
   }
 
   const meta = downloadGradeFromScore(score, (critical && (onBlocklist || redirectCritical)) || chromeKnownBad);
@@ -1673,8 +1807,12 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     trusted: !!(trustMatch || knownPublisher),
     trustedEligible,
     knownPublisher,
-    trustAllowed: !!(regDomainBg(host) && !critical && !redirectTrustBreaker),
-    trustHost: trustMatch || regDomainBg(host),
+    // What Trust hands over has to be what the button says. On a shared-hosting suffix the
+    // registrable domain is the PLATFORM -- trusting one cloudfront distribution would have
+    // allowlisted every distribution on cloudfront.net. On a raw IP it was a meaningless
+    // two-label fragment ("1.20" from 192.168.1.20). Both now resolve to the exact host.
+    trustAllowed: !!(downloadTrustTarget(host) && !critical && !redirectTrustBreaker),
+    trustHost: trustMatch || downloadTrustTarget(host),
     critical,
     blocklisted: !!(onBlocklist || chromeKnownBad || redirectCritical),
     chromeDanger: chromeDanger || '',
@@ -1727,6 +1865,14 @@ async function enrichDownloadWithDomainAge(rep, cfg) {
   } else if (age.ageDays < 90) {
     rep.score += 1;
     rep.reasons.push('Source domain is fairly new (' + age.ageDays + ' days old)');
+  } else if (age.ageDays >= 1825 && !age.privacy && age.registrantOrg && !rep.critical && !rep.blocklisted) {
+    // The mirror image of the new-domain penalties above. A domain registered five or more years
+    // ago to a named organisation, with nothing redacted, is real evidence -- but the key only ever
+    // spent points, never returned any, so paying for WHOIS bought interruptions and no
+    // reassurance. Floored at zero and refused on anything critical.
+    if (rep.score > 0) rep.score = Math.max(0, rep.score - 1);
+    rep.reasons.push('Source domain has belonged to ' + age.registrantOrg + ' for '
+      + Math.floor(age.ageDays / 365) + '+ years');
   } else {
     rep.reasons.push('Source domain age checked: ' + age.risk + ' risk');
   }
@@ -1743,7 +1889,23 @@ async function enrichDownloadWithExternalReputation(rep, url, cfg) {
     checks.push(safeBrowsingLookupUrl(url, { cfg, key: cfg.downloadSafeBrowsingKey }));
   }
   if (cfg && cfg.downloadVirusTotal === true && String(cfg.downloadVirusTotalKey || '').trim()) {
-    checks.push(checkVirusTotalUrl(url, cfg.downloadVirusTotalKey));
+    // Never send a private-network address or a URL's query string to VirusTotal. The query is
+    // where session tokens, signed-download parameters and one-time links live, and the host may be
+    // an intranet name that means nothing outside this network and everything inside it. Safe
+    // Browsing already goes through normalizePublicHttpUrl for exactly this reason; this did not,
+    // so switching the key on quietly shipped every download URL -- including files graded A that
+    // the user never even saw a panel for.
+    const vtUrl = normalizePublicHttpUrl(url);
+    if (vtUrl) {
+      let vtSafeUrl = vtUrl;
+      try {
+        const u = new URL(vtUrl);
+        u.search = '';
+        u.hash = '';
+        vtSafeUrl = u.href;
+      } catch (_) {}
+      checks.push(checkVirusTotalUrl(vtSafeUrl, cfg.downloadVirusTotalKey));
+    }
   }
   if (cfg && cfg.urlHaus === true && String(cfg.urlHausKey || '').trim()) {
     checks.push(urlHausLookupUrl(url, { cfg, key: cfg.urlHausKey, context: 'download' }));
@@ -1810,18 +1972,40 @@ async function enrichDownloadWithExternalReputation(rep, url, cfg) {
         rep.score += 10;
         rep.reasons.unshift('VirusTotal reports ' + malicious + ' malicious detections for this URL');
       } else if (malicious === 1 || suspicious >= 2) {
-        rep.score += 6;
+        // Capped on a vetted publisher. One engine out of ~70 disagreeing about a Mozilla or
+        // Microsoft installer is a false positive far more often than it is a compromise, and at
+        // the full weight it dragged a silent grade-A download to D or E -- publisher trust was
+        // applied before enrichment and never re-applied after. It can still warn; it can no
+        // longer outrank the match.
+        rep.score += (rep.trustedEligible ? 2 : 6);
         rep.reasons.unshift('VirusTotal reports suspicious URL detections');
       } else if (suspicious === 1) {
-        rep.score += 3;
+        rep.score += (rep.trustedEligible ? 2 : 3);
         rep.reasons.unshift('VirusTotal has one suspicious detection for this URL');
       }
     }
   });
+  // A clean consensus is evidence too. Until now every enrichment could only ever ADD points, so
+  // turning on a key bought more interruptions and never fewer -- a file scanned by seventy
+  // engines with nothing against it scored exactly the same as a file nobody had ever looked at.
+  // One point, floored at zero, refused on anything critical or blocklisted, and deliberately
+  // NOT keyed to the file hash: DOWNLOAD_HASH_SOURCE_META marks our only hash kind as
+  // exactFile:false because it hashes a re-fetch, so a server can serve clean bytes to us and
+  // malware to Chrome. A penalty resting on that fails safe; a rebate would not.
+  if (!rep.critical && !rep.blocklisted) {
+    const vtClean = results.find((r) => r && r.ok && !r.hit && r.provider === 'VirusTotal'
+      && r.stats && Number(r.stats.malicious || 0) === 0 && Number(r.stats.suspicious || 0) === 0
+      && Number(r.stats.harmless || 0) >= 10);
+    if (vtClean && rep.score > 0) {
+      rep.score = Math.max(0, rep.score - 1);
+      rep.reasons.push('VirusTotal found nothing against this file across '
+        + Number(vtClean.stats.harmless || 0) + ' engines');
+    }
+  }
   results.forEach((result) => {
     if (!result || !result.ok || result.hit || result.provider !== 'AbuseIPDB' || !result.warning) return;
     rep.trustAllowed = false;
-    rep.score += Number(result.score || 0) >= 50 ? 3 : 2;
+    rep.score += rep.trustedEligible ? 2 : (Number(result.score || 0) >= 50 ? 3 : 2);
     rep.reasons.unshift('AbuseIPDB reports suspicious raw-IP source (' + (result.score || 0) + '% abuse confidence)');
   });
   results.forEach((result) => {
@@ -2032,6 +2216,10 @@ async function runDownloadGuardScan(id, hint, reason) {
       // Resume if WE paused it -- either the scan's own pause, or the onCreated early-pause.
       if ((pauseResult && pauseResult.ok) || EARLY_PAUSED.has(key)) await downloadApiCall('resume', item.id);
       EARLY_PAUSED.delete(key);
+      // A review panel may already be open from an earlier scan that ran while Chrome had not
+      // finished its own check. The verdict is in now and it is clean, so withdraw the panel
+      // instead of leaving the user staring at a warning about a file that has been cleared.
+      try { await dismissDownloadReviewPanels(key); } catch (_) {}
       if (item.state === 'complete' && !DOWNLOAD_SAFE_LOGGED.has(key)) {
         DOWNLOAD_SAFE_LOGGED.add(key);
         logDownloadCheck(item, rep);

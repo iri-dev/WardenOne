@@ -173,7 +173,7 @@ async function main() {
   const exe = guard.scoreDownload('https://smallvendor.example/files/tool.exe', '', 'tool.exe', 'application/octet-stream', [], '');
   assert.strictEqual(exe.grade, 'C');
   assert.strictEqual(exe.action, 'review');
-  assert(reasonIncludes(exe, 'Executable / script file type'));
+  assert(reasonIncludes(exe, 'This is a program, not a document'));
 
   const archive = guard.scoreDownload('https://files.example/downloads/keygen.zip', '', 'keygen.zip', 'application/zip', [], '');
   assert(['D', 'E', 'F'].includes(archive.grade), 'archive lure should be reviewed strongly');

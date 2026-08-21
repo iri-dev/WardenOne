@@ -187,8 +187,64 @@ check('the rig can still produce a critical grade',
   for (const w of (sandbox.__benign ? ['setup', 'install', 'installer', 'update', 'updater'] : [])) {
     check('"' + w + '" counts as benign', sandbox.__benign.test(w) && !sandbox.__lure.test(w));
   }
-  for (const w of (sandbox.__lure ? ['crack', 'keygen', 'activator', 'nulled', 'warez', 'serial', 'cracked', 'repack'] : [])) {
+  for (const w of (sandbox.__lure ? ['crack', 'keygen', 'activator', 'nulled', 'warez', 'serial-key', 'cracked', 'repack'] : [])) {
     check('"' + w + '" counts as a lure', sandbox.__lure.test(w) && !sandbox.__benign.test(w));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Innocent names that merely CONTAIN a lure word.
+//
+// While the lure regex was an unanchored substring test, every one of these graded E "Dangerous":
+// firecracker and nutcracker contain "crack", and bare "serial" is an ordinary English word that
+// appears in the name of every serial-port utility ever shipped.
+// ---------------------------------------------------------------------------
+{
+  for (const [url, name] of [
+    ['https://smallvendor.example/dl/firecracker.exe', 'firecracker.exe'],
+    ['https://smallvendor.example/dl/nutcracker-setup.exe', 'nutcracker-setup.exe'],
+    ['https://smallvendor.example/dl/SerialMonitor.exe', 'SerialMonitor.exe'],
+    ['https://smallvendor.example/dl/serial-port-monitor-setup.exe', 'serial-port-monitor-setup.exe'],
+  ]) {
+    const g = gradeOf(url, name);
+    check('a name that merely contains a lure word is not treated as one: ' + name,
+      g === 'A' || g === 'B' || g === 'C',
+      'graded ' + g + ' -- the lure regex is unanchored again');
+  }
+  check('but the piracy form still counts',
+    ['D', 'E', 'F'].includes(gradeOf('https://sketchy.example/dl/adobe-serial-key.exe', 'adobe-serial-key.exe')));
+}
+
+// ---------------------------------------------------------------------------
+// 6. The attack battery. Every row is a realistic delivery; none may go silent.
+//
+// This section exists because a false-positive fix DID hollow out detection once. Suppressing the
+// throwaway-TLD charge whenever the score equalled the file-type baseline read as reasonable and
+// silently exempted every archive -- a zip from a .top domain dropped to grade B and went quiet.
+// Nothing else in this file noticed. Only running the attacks did.
+// ---------------------------------------------------------------------------
+{
+  const ATTACKS = [
+    ['cracked software', 'https://freewarez.click/dl/photoshop-crack-keygen.exe', 'photoshop-crack-keygen.exe'],
+    ['KMS activator', 'https://activate-win.xyz/kmspico-setup.exe', 'kmspico-setup.exe'],
+    ['double extension', 'https://invoices.example/Invoice.pdf.exe', 'Invoice.pdf.exe'],
+    ['padding trick', 'https://files.example/report            .exe', 'report            .exe'],
+    ['hidden-contents archive from a throwaway TLD', 'https://share.top/invoice-docs.zip', 'invoice-docs.zip'],
+    ['encrypted archive from a throwaway TLD', 'https://mail-attach.icu/statement.7z', 'statement.7z'],
+    ['ISO smuggling', 'https://delivery.cyou/order-details.iso', 'order-details.iso'],
+    ['macro doc from a throwaway TLD', 'https://hr-forms.sbs/onboarding.docm', 'onboarding.docm'],
+    ['raw public IP executable', 'http://45.147.230.11/update.exe', 'update.exe'],
+    ['punycode lookalike', 'https://xn--pypal-4ve.com/login-tool.exe', 'login-tool.exe'],
+    ['.zip TLD confusable', 'https://invoice.zip/statement.exe', 'statement.exe'],
+    ['LAN but disguised', 'http://192.168.1.20/Invoice.pdf.exe', 'Invoice.pdf.exe'],
+    ['LAN but a crack', 'http://192.168.1.20/office-activator.exe', 'office-activator.exe'],
+    ['crack on a known publisher host', 'https://github.com/a/b/releases/download/v1/game-crack.exe', 'game-crack.exe'],
+    ['keygen on a shared CDN', 'https://d1.cloudfront.net/x/adobe-keygen.exe', 'adobe-keygen.exe'],
+  ];
+  for (const [what, url, name] of ATTACKS) {
+    const g = gradeOf(url, name);
+    check('still surfaces: ' + what, g !== 'A' && g !== 'B',
+      'graded ' + g + ' -- this delivery would reach the user with no warning at all');
   }
 }
 

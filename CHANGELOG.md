@@ -6,6 +6,57 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Download Shield no longer calls ordinary installers dangerous. It scored the word
+  `setup` exactly the same as the word `keygen`, so an honest `MyApp-Setup.exe` from a
+  small vendor's own site came up as "Dangerous" -- the one warning level with no
+  Continue button. That is the most common installer filename on Windows. The two kinds
+  of word are told apart now, and the words that really do mean trouble are no longer
+  watered down by sharing a list with the word every honest installer uses.
+- Files whose names merely contain a worrying word are left alone. `firecracker.exe`
+  and `nutcracker-setup.exe` were flagged because they contain "crack", and every
+  serial-port tool was flagged because "serial" is an ordinary English word. Both
+  checks now look for whole words.
+- A file served with a vague content type is no longer treated as a disguise.
+  `application/octet-stream` just means "some kind of file" and a great many servers
+  send it for everything they have, so an ordinary PDF from such a server was shown as
+  High Risk -- and, worse, it overrode the trusted-publisher check, so even a PDF from a
+  well-known company was pulled out of quiet. The same applied to a `.js` file served
+  as JavaScript or a `.ps1` served as text, which is simply the correct type for those
+  files. A genuinely disguised name is still caught.
+- Your own network is not treated as a stranger's server. An installer on the office
+  file server or the box in the spare room was charged for being on a bare address and
+  for not using HTTPS -- neither of which means much on your own LAN -- and landed at
+  "Dangerous". A disguised file on your network is still caught in full.
+- Disk images and macro documents get the same benefit of the doubt as programs. A
+  Linux ISO from a community mirror and the spreadsheet your finance team sends every
+  Monday were both shown as High Risk with nothing else against them.
+- A download saved straight out of a web app is no longer treated as coming from
+  nowhere. Password-manager exports and files a site builds in the page were shown with
+  "(unknown)" as their source and charged for it.
+- Small honest projects on cheap domain endings are not condemned for the ending alone.
+  It still counts against a file when there is something else wrong.
+- "Always trust this site" now trusts the site you meant. On a shared hosting service it
+  was handing over every site on that service, and on a bare address it offered to trust
+  a meaningless fragment of the number. It is also offered on one more warning level, so
+  a file you get every week can be remembered instead of warned about every time.
+- The warning level called "High Risk" is now called "Unverified Source", which is what
+  it actually means: WardenOne could not work out where the file came from. Calling that
+  High Risk is what made the real "Dangerous" easier to click past.
+- A warning that opens while Chrome is still checking a file now goes away by itself
+  when the answer comes back clean, instead of sitting there worrying you about a file
+  that has been cleared.
+- Turning on a VirusTotal key no longer sends the private parts of a download link.
+  Addresses on your own network, and the sign-in tokens that live in the tail of a
+  download URL, were being sent along with it -- even for files that were never shown to
+  you.
+- One antivirus engine out of about seventy disagreeing about a well-known company's
+  installer can no longer drag it from silent to "Dangerous". It can still say so.
+- Adding a key now works in both directions. Until now every check could only ever count
+  against a file, so paying for a key bought you more interruptions and never fewer -- a
+  file that seventy engines had looked at and cleared scored the same as one nobody had
+  ever seen. A clean result, and a domain that has belonged to a named company for years,
+  now count in a file's favour.
+
 - Stopped a tab that stays open across an extension update from running two copies
   of the protection at once. Chrome does not re-inject into tabs that are already
   open when the extension updates, so the old copy carried on -- its observers
@@ -394,6 +445,17 @@ First public-release hardening pass.
   browser-verification challenge is present; request protections remain active.
 
 ### Added
+
+- A guide to getting your own API keys, linked at the bottom of the popup. The extra
+  checks WardenOne can do -- scanning a download against about seventy antivirus
+  engines, checking a site against live phishing feeds -- need keys from the services
+  that run them, and they are free. The page explains what each one adds, why you would
+  want it, and how to go and get it. None of them are required and the built-in
+  protection does not use them.
+- More than a hundred more software makers recognised by name, so downloads from them
+  stay quiet: antivirus companies, browsers, Slack and Telegram and Zoom, GIMP and
+  Blender and LibreOffice, Steam and GOG and the game studios, printer and graphics-card
+  drivers, the Linux distributions, and the utilities people are told to install.
 
 - Cryptojacking guard (on by default). Drive-by mining services are blocked on
   every resource type, and pages are blocked from reaching mining pools over
