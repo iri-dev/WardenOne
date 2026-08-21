@@ -6,6 +6,11 @@ First public-release hardening pass.
 
 ### Fixed
 
+- The privacy cleaner now also clears data sites leave in the File System API,
+  which it was clearing everywhere else in WardenOne but not here.
+- When cleaning fails, the cleaner now tells you what went wrong instead of just
+  saying to try again.
+
 - Download Shield no longer calls ordinary installers dangerous. It scored the word
   `setup` exactly the same as the word `keygen`, so an honest `MyApp-Setup.exe` from a
   small vendor's own site came up as "Dangerous" -- the one warning level with no
@@ -445,6 +450,24 @@ First public-release hardening pass.
   browser-verification challenge is present; request protections remain active.
 
 ### Added
+
+- Clear the cookies that pile up without being signed out of everything. Every
+  "accept all" you have ever clicked leaves a cookie behind, and the ad networks
+  leave several more, and they sit there for years. Clearing cookies got rid of
+  them -- along with every login you had, which is why nobody does it. There is now
+  a separate option that removes only the consent-banner and tracking cookies and
+  leaves the rest alone. It works from a list of names WardenOne recognises, so
+  anything it has not heard of is kept: the worst it can do is miss a banner, never
+  sign you out. It tells you afterwards how many it removed and how many it kept.
+- Clear the camera, microphone and location permissions sites have collected. You
+  allow one for a video call or a map and it stays allowed forever, because nothing
+  ever brings it up again. This hands them all back to "ask", so a site that really
+  needs your camera will simply ask you next time. Chrome does not let an extension
+  list which sites hold a permission, so this clears them rather than showing you a
+  list -- and it resets to ask, never to blocked.
+- A time range on the privacy cleaner. It used to clear everything since the
+  beginning of time whatever you picked; you can now choose the last hour, day,
+  week or month instead.
 
 - A guide to getting your own API keys, linked at the bottom of the popup. The extra
   checks WardenOne can do -- scanning a download against about seventy antivirus
