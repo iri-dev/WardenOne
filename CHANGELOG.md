@@ -6,6 +6,17 @@ First public-release hardening pass.
 
 ### Fixed
 
+- Warnings no longer repeat themselves. The same popup could come back every
+  second or so for as long as a page kept doing whatever set it off, which is how
+  you learn to dismiss a warning without reading it. Each distinct thing now warns
+  you once per page. Two different problems still get a warning each, and
+  reloading or moving to another page starts fresh.
+- Stopped warning about trackers that had already been blocked. WardenOne watches
+  what a page tries to do and separately blocks the request itself, and the two
+  were not comparing notes -- so you could get "Possible tracker" about a request
+  that never actually left your browser. It now stays quiet when the block has
+  already done its job, and still speaks up for anything it does not recognise.
+
 - The privacy cleaner now also clears data sites leave in the File System API,
   which it was clearing everywhere else in WardenOne but not here.
 - When cleaning fails, the cleaner now tells you what went wrong instead of just
