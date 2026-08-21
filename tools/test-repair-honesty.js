@@ -52,9 +52,13 @@ function area() {
 }
 
 // Three tabs standing in for the three real outcomes.
+// The engine version is read from the manifest rather than written out, because the scenario is
+// "this tab is running the shipped version" -- not "this tab is running 1.0.0". Hardcoding it
+// meant every version bump broke this suite for no reason at all.
+const SHIPPED_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
 const TABS = [
-  { id: 1, url: 'https://healthy.example/', engine: '1.0.0', bridgeAlive: true },   // freshly armed
-  { id: 2, url: 'https://orphan.example/', engine: '1.0.0', bridgeAlive: false },   // guard blocked re-arm
+  { id: 1, url: 'https://healthy.example/', engine: SHIPPED_VERSION, bridgeAlive: true },   // freshly armed
+  { id: 2, url: 'https://orphan.example/', engine: SHIPPED_VERSION, bridgeAlive: false },   // guard blocked re-arm
   { id: 3, url: 'https://gone.example/', engine: null, bridgeAlive: false },        // not scriptable
 ];
 

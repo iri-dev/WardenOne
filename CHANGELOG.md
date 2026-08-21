@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.1 — 2026-08-21
+
+Everything below this heading landed after the v1.0.0 release was published. If you
+installed from the v1.0.0 download, you do not have any of it.
+
+The headlines: a guide to getting your own API keys, with a link at the bottom of the
+popup. Download Shield stops calling ordinary installers dangerous. The privacy
+cleaner can clear consent-banner and tracking cookies without signing you out, reset
+the camera and microphone permissions sites have collected, and work over a time
+range. Warnings stopped repeating themselves, and stopped firing for trackers that
+had already been blocked.
+
+The detailed entries are in the 1.0.0 section below, which is where they were written
+as the work happened.
+
 ## 1.0.0 — 2026-07-29
 
 First public-release hardening pass.

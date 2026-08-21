@@ -17,7 +17,7 @@
 (function () {
   'use strict';
 
-  const BRIDGE_VERSION = '1.0.0';
+  const BRIDGE_VERSION = '1.0.1';
   if (window.__wardenOneBridgeVersion === BRIDGE_VERSION) {
     /* Same version: this document already has a current bridge. Let it re-run its replay,
        then stop -- unconditionally. The return used to sit INSIDE the typeof check, so a

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WardenOne",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minimum_chrome_version": "121",
   "description": "One extension. Every defence. Blocks ads, trackers, phishing, scams, malware downloads & IP grabbers. No account, no telemetry.",
   "homepage_url": "https://iri-dev.github.io/WardenOne/",

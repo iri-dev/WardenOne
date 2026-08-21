@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  const CONSENT_REJECT_VERSION = '1.0.0';
+  const CONSENT_REJECT_VERSION = '1.0.1';
   if (window.__wardenOneConsentRejectReadyVersion === CONSENT_REJECT_VERSION) return;
   /* A different version means this frame holds an older copy -- after an update, or because
      Repair reinstalled over it. Release what that copy held first, or both stay live and both
