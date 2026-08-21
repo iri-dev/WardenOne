@@ -38,7 +38,7 @@ const consent = read('consent-reject.js');
 const antiRedirect = read('anti-redirect.js');
 const permissionChain = read('permission-chain.js');
 
-assert(version === '1.0.0', 'manifest version should remain 1.0.0 for the first public release');
+assert(version === '1.0.1', 'manifest version should match the released build');
 
 assert(content.includes('const __WO_RUNTIME_VERSION="' + version + '"'), 'content source should use manifest-matched runtime version');
 assert(compact(runtime).includes('const__WO_RUNTIME_VERSION="' + version + '"'), 'runtime bundle should include manifest-matched runtime version');

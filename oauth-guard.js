@@ -12,7 +12,7 @@
 (function () {
   'use strict';
 
-  const WO_GUARD_VERSION = '1.0.0';
+  const WO_GUARD_VERSION = '1.0.1';
   /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
      tab that outlives an update keeps this script's old copy. A bare boolean flag made that
      permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the

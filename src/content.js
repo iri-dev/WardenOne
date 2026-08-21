@@ -1,7 +1,7 @@
 /* WardenOne — Copyright (C) 2026 iri · GNU GPL v3 or later, see LICENSE · Official source: https://github.com/iri-dev/WardenOne · Upstream filter-list attribution: CREDITS.md · A modified copy must say so, with a date (GPLv3 5a), and keep this notice. */
 !function(){
   "use strict";
-  const __WO_RUNTIME_VERSION="1.0.0";
+  const __WO_RUNTIME_VERSION="1.0.1";
   if(window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
   /* Amazon's real storefronts, enumerated. This used to be /(^|\.)amazon\.[a-z.]+$/i, which anchors the
      label but not the suffix -- so it matched any host the attacker owned, as long as some label

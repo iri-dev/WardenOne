@@ -18,7 +18,7 @@
 (function () {
   "use strict";
 
-  var YT_MODULE_VERSION = "1.0.0";
+  var YT_MODULE_VERSION = "1.0.1";
   if (window.__wardenOneYouTubeReadyVersion === YT_MODULE_VERSION) return;
   window.__wardenOneYouTubeVersion = YT_MODULE_VERSION;
 

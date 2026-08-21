@@ -19,7 +19,7 @@
 (function wardenOneTwitchAdblock() {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.0.1';
   // Hook-status chatter is opt-in: it printed into every twitch.tv page console
   // on every load. Ad-time logging stays on, since that is what makes a missed
   // ad diagnosable after the fact.
