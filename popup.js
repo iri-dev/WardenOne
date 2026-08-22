@@ -1796,6 +1796,18 @@ function fmtAgo(ts) {
   if (s < 86400) return Math.floor(s / 3600) + ' h ago';
   return Math.floor(s / 86400) + ' d ago';
 }
+// The same instant, worded for a stat tile rather than a sentence. The health panel puts three
+// tiles across a popup barely 310px wide, which leaves each value about 84px; "11 min ago" at
+// 15px/800 does not fit and was being clipped to "11 min a...". Everywhere the value sits in
+// prose ("Updated 11 min ago") keeps fmtAgo, where the longer wording reads better and has room.
+function fmtAgoShort(ts) {
+  if (!ts) return 'never';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
 function fmtCount(n) {
   return Number(n || 0).toLocaleString();
 }
@@ -1848,7 +1860,7 @@ function renderProtectionHealth() {
     if (blocked) blocked.textContent = fmtCount(res.blocked24h || 0);
     if (lists) {
       const list = res.list || {};
-      lists.textContent = list.updated ? fmtAgo(list.updated) : 'Built-in';
+      lists.textContent = list.updated ? fmtAgoShort(list.updated) : 'Built-in';
       const enforced = Number(list.active || 0) || Number(list.total || 0);
       lists.title = enforced ? ('Blocking ' + fmtCount(enforced) + ' domains' + (list.auxTotal ? ' plus ' + fmtCount(list.auxTotal) + ' page-list entries' : '')) : 'Built-in rules active';
     }

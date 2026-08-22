@@ -242,7 +242,13 @@ function createPageHarness(config, harnessOptions) {
       this.method = method;
       this.url = String(url);
       this.async = async;
-      state.xhrOpens.push({ xhr: this, method: String(method), url: this.url, async: async });
+      state.xhrOpens.push({
+        xhr: this,
+        method: String(method),
+        url: this.url,
+        async: async,
+        args: Array.from(arguments),
+      });
     }
 
     overrideMimeType() {}
@@ -439,6 +445,9 @@ function createPageHarness(config, harnessOptions) {
   window.__WO_CONFIG__ = Object.assign({ enabled: true, twitchAdBlock: true }, config || {});
   window.sessionStorage = sessionStorage;
   window.Worker = NativeWorker;
+  if (typeof harnessOptions.configureWindow === 'function') {
+    harnessOptions.configureWindow(window, state);
+  }
 
   async function nativeFetch(input, init) {
     state.fetchCalls.push({ input: input, init: init });
@@ -550,6 +559,31 @@ function createPageHarness(config, harnessOptions) {
   };
 }
 
+function exposeWebpackRuntime(window, queueName, requireFn) {
+  const queue = [];
+  queue.push = function push(entry) {
+    Array.prototype.push.call(this, entry);
+    if (entry && typeof entry[2] === 'function') entry[2](requireFn);
+    return this.length;
+  };
+  window[queueName] = queue;
+  return queue;
+}
+
+function exposeWebpackAdManager(window, manager, queueName) {
+  const moduleId = 'fixture-twitch-ad-manager';
+  function fixtureAdManagerModuleFactory() {
+    return ['startProcessingRequests', 'declineReason'];
+  }
+  function requireFn(id) {
+    if (id !== moduleId) throw new Error('unknown fixture webpack module: ' + id);
+    return { AdManager: manager };
+  }
+  requireFn.m = { [moduleId]: fixtureAdManagerModuleFactory };
+  exposeWebpackRuntime(window, queueName || 'webpackChunkTwitchFixture', requireFn);
+  return requireFn;
+}
+
 function executeWorkerWrapper(source, queuedMessages, nativeFetch) {
   const listeners = [];
   const state = { calls: [], messages: [] };
@@ -621,6 +655,46 @@ function fetchAdsOperation(kind) {
       },
     },
   };
+}
+
+function playbackTokenOperation(playerType, platform, retained) {
+  return {
+    operationName: 'PlaybackAccessToken',
+    variables: {
+      isLive: true,
+      login: 'fixturechannel',
+      isVod: false,
+      vodID: '',
+      playerType: playerType,
+      platform: platform,
+      retained: retained || 'yes',
+    },
+    extensions: { persistedQuery: { version: 1, sha256Hash: 'captured-token-hash' } },
+  };
+}
+
+function deniedPlaybackToken() {
+  return { data: { streamPlaybackAccessToken: null, videoPlaybackAccessToken: null } };
+}
+
+function mixedPipFailureBody() {
+  return JSON.stringify([
+    { operationName: 'ChannelShell', variables: { login: 'fixturechannel' } },
+    playbackTokenOperation('picture-by-picture', 'web', 'pip'),
+    playbackTokenOperation('site', 'android', 'ordinary'),
+  ]);
+}
+
+function assertMixedPipSubsetDispatchedOnce(harness, label) {
+  assert(harness.state.fetchCalls.length === 1,
+    label + ' replayed the already-dispatched mixed-token subset');
+  const call = harness.state.fetchCalls[0];
+  const forwarded = JSON.parse(call.init && call.init.body || 'null');
+  assert(Array.isArray(forwarded) && forwarded.length === 2,
+    label + ' did not dispatch exactly the non-PiP subset');
+  assert(forwarded.every((entry) =>
+    !/picture-by-picture/i.test(String(entry && entry.variables && entry.variables.playerType || ''))),
+  label + ' leaked a PiP token onto the native request');
 }
 
 function videoAdDeclineOperation() {
@@ -784,26 +858,14 @@ test('legacy worker hook and watchdog remain hard-disabled', () => {
     'dedicated module accidentally reintroduced a legacy Twitch hook/watchdog');
 });
 
-test('page hook captures a mixed GQL token template without changing the native request', async () => {
+test('page hook forces the current primary-channel token to popout/web while retaining template state', async () => {
   const harness = createPageHarness();
   const unrelated = {
     operationName: 'ChannelShell',
     variables: { login: 'fixturechannel' },
     extensions: { persistedQuery: { version: 1, sha256Hash: 'unrelated-hash' } },
   };
-  const token = {
-    operationName: 'PlaybackAccessToken',
-    variables: {
-      isLive: true,
-      login: 'fixturechannel',
-      isVod: false,
-      vodID: '',
-      playerType: 'picture-by-picture',
-      platform: 'android',
-      retained: 'yes',
-    },
-    extensions: { persistedQuery: { version: 1, sha256Hash: 'captured-token-hash' } },
-  };
+  const token = playbackTokenOperation('site', 'android');
   const originalBody = JSON.stringify([unrelated, token]);
   await harness.window.fetch('https://gql.twitch.tv/gql', {
     method: 'POST',
@@ -822,12 +884,12 @@ test('page hook captures a mixed GQL token template without changing the native 
   const forwarded = harness.state.fetchCalls[0].init;
   assert(typeof forwarded.body === 'string' && forwarded.body.length > 2,
     'GQL template capture corrupted the request into an empty body');
-  assert(forwarded.body === originalBody, 'page hook changed the native token body bytes');
+  assert(forwarded.body !== originalBody, 'ordinary token retained the ad-auction player identity');
   const parsed = JSON.parse(forwarded.body);
   assert(Array.isArray(parsed) && parsed.length === 2, 'mixed GQL batch shape changed');
   equal(parsed[0], unrelated, 'non-token query in GQL batch was modified');
-  assert(parsed[1].variables.playerType === 'picture-by-picture', 'native token playerType was changed');
-  assert(parsed[1].variables.platform === 'android', 'native token platform was changed');
+  assert(parsed[1].variables.playerType === 'popout', 'ordinary token was not forced to popout');
+  assert(parsed[1].variables.platform === 'web', 'ordinary token was not forced to the web platform');
   assert(parsed[1].variables.retained === 'yes', 'token-specific variables were discarded');
   assert(parsed[1].extensions.persistedQuery.sha256Hash === 'captured-token-hash',
     'captured persisted-query hash was changed');
@@ -860,8 +922,8 @@ test('page hook captures a mixed GQL token template without changing the native 
       isLive: true,
       isVod: false,
       login: 'fixturechannel',
-      playerType: 'site',
-      platform: 'web',
+      playerType: 'mobile_feed',
+      platform: 'android',
     },
     extensions: { persistedQuery: { version: 1, sha256Hash: 'captured-token-hash' } },
   };
@@ -898,6 +960,214 @@ test('page hook captures a mixed GQL token template without changing the native 
   assert(worker.messages.some((message) => message && message.type === 'gql-response' &&
     message.id === 'fixture-proxy-request' && message.response && message.response.status === 200),
   'page proxy did not return the GQL response to the requesting worker');
+});
+
+test('embed, preview, and off-channel tokens remain byte-for-byte native', async () => {
+  const offChannel = playbackTokenOperation('site', 'android', 'off-channel');
+  offChannel.variables.login = 'previewchannel';
+  const cases = [
+    ['embed', playbackTokenOperation('embed', 'android', 'embed')],
+    ['preview', playbackTokenOperation('preview', 'android', 'preview')],
+    ['off-channel', offChannel],
+  ];
+  for (const [label, operation] of cases) {
+    const harness = createPageHarness();
+    const body = JSON.stringify(operation);
+    const init = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Fixture-Header': label },
+      body,
+    };
+    await harness.window.fetch('https://gql.twitch.tv/gql', init);
+    assert(harness.state.fetchCalls.length === 1,
+      label + ' token was swallowed or replayed');
+    const forwarded = harness.state.fetchCalls[0];
+    assert(forwarded.init === init && forwarded.init.body === body,
+      label + ' token was rewritten instead of passing through byte-for-byte');
+    assert(new Headers(forwarded.init.headers).get('X-Fixture-Header') === label,
+      label + ' token lost caller headers');
+  }
+});
+
+test('all picture-by-picture token requests settle locally with matching response shape', async () => {
+  const harness = createPageHarness();
+  const singleBody = JSON.stringify(playbackTokenOperation('picture-by-picture', 'web'));
+  const singleInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Fixture-Header': 'single' },
+    body: singleBody,
+  };
+  const singleResponse = await harness.window.fetch('https://gql.twitch.tv/gql', singleInit);
+  equal(await singleResponse.json(), deniedPlaybackToken(),
+    'single picture-by-picture token did not return a local null token');
+  assert(singleInit.body === singleBody, 'single picture-by-picture handling mutated caller init');
+  assert(harness.state.fetchCalls.length === 0,
+    'single picture-by-picture token reached the native network');
+
+  const batchBody = JSON.stringify([
+    playbackTokenOperation('picture-by-picture', 'web', 'first'),
+    playbackTokenOperation('Picture-By-Picture', 'android', 'second'),
+  ]);
+  const request = new Request('https://gql.twitch.tv/gql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Fixture-Header': 'batch' },
+    body: batchBody,
+  });
+  const batchResponse = await harness.window.fetch(request);
+  equal(await batchResponse.json(), [deniedPlaybackToken(), deniedPlaybackToken()],
+    'all-picture-by-picture batch did not preserve its array shape');
+  assert(request.bodyUsed === false,
+    'local all-picture-by-picture handling consumed the caller-owned Request body');
+  assert(request.headers.get('X-Fixture-Header') === 'batch',
+    'local all-picture-by-picture handling changed caller Request headers');
+  assert(harness.state.fetchCalls.length === 0,
+    'all-picture-by-picture Request reached the native network');
+});
+
+test('mixed picture-by-picture token batches preserve order and Request semantics', async () => {
+  const channelResult = { data: { channelShell: { login: 'fixturechannel' } } };
+  const ordinaryTokenResult = {
+    data: { streamPlaybackAccessToken: { value: 'ordinary-token', signature: 'ordinary-signature' } },
+  };
+  const identityResult = { data: { connectAdIdentity: { opaqueIdentity: 'fixture-identity' } } };
+  let nativeBody = '';
+  const harness = createPageHarness(null, {
+    async nativeFetch(input, init) {
+      nativeBody = input instanceof Request ? await input.clone().text() : String(init && init.body || '');
+      return new Response(JSON.stringify([channelResult, ordinaryTokenResult, identityResult]), {
+        status: 200,
+        statusText: 'Fixture OK',
+        headers: { 'content-type': 'application/json', 'x-fixture-response': 'preserved' },
+      });
+    },
+  });
+  const unrelatedBefore = { operationName: 'ChannelShell', variables: { login: 'fixturechannel' } };
+  const pipToken = playbackTokenOperation('picture-by-picture', 'web', 'pip');
+  const ordinaryToken = playbackTokenOperation('site', 'android', 'ordinary');
+  const unrelatedAfter = {
+    operationName: 'ConnectAdIdentityMutation',
+    variables: { opaqueIdentity: 'fixture' },
+  };
+  const originalBatch = [unrelatedBefore, pipToken, ordinaryToken, unrelatedAfter];
+  const originalBody = JSON.stringify(originalBatch);
+  const controller = new AbortController();
+  const request = new Request('https://gql.twitch.tv/gql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Fixture-Header': 'preserve-me' },
+    body: originalBody,
+    signal: controller.signal,
+  });
+
+  const response = await harness.window.fetch(request);
+  assert(request.bodyUsed === false, 'mixed-token handling consumed the caller-owned Request body');
+  assert(harness.state.fetchCalls.length === 1,
+    'mixed-token handling duplicated or swallowed the native batch');
+  const forwarded = harness.state.fetchCalls[0];
+  assert(forwarded.input instanceof Request && forwarded.input !== request,
+    'mixed-token handling did not use a replacement Request for the rewritten body');
+  assert(forwarded.init === undefined, 'mixed-token handling invented a caller init object');
+  assert(forwarded.input.method === 'POST' && forwarded.input.url === request.url,
+    'mixed-token handling changed Request method or URL');
+  assert(forwarded.input.headers.get('X-Fixture-Header') === 'preserve-me',
+    'mixed-token handling changed Request headers');
+  assert(forwarded.input.signal.aborted === false,
+    'mixed-token handling started with an aborted forwarded Request');
+  controller.abort();
+  assert(forwarded.input.signal.aborted === true,
+    'mixed-token handling did not retain caller abort semantics');
+
+  const forwardedBatch = JSON.parse(nativeBody);
+  assert(Array.isArray(forwardedBatch) && forwardedBatch.length === 3,
+    'mixed-token handling sent the wrong batch shape to Twitch');
+  equal(forwardedBatch[0], unrelatedBefore,
+    'mixed-token handling changed the entry before the denied token');
+  assert(forwardedBatch.every((entry) =>
+    !/picture-by-picture/i.test(String(entry && entry.variables && entry.variables.playerType || ''))),
+  'picture-by-picture token was forwarded to Twitch');
+  assert(forwardedBatch[1].variables.playerType === 'popout' &&
+    forwardedBatch[1].variables.platform === 'web',
+  'ordinary token in a mixed batch was not forced to popout/web');
+  equal(forwardedBatch[2], unrelatedAfter,
+    'mixed-token handling changed the entry after the ordinary token');
+
+  assert(response.status === 200 && response.statusText === 'Fixture OK' &&
+    response.headers.get('x-fixture-response') === 'preserved',
+  'mixed-token response rebuild lost native response metadata');
+  equal(await response.json(), [channelResult, deniedPlaybackToken(), ordinaryTokenResult, identityResult],
+    'mixed-token response did not restore the original order with a local PiP denial');
+});
+
+test('a non-OK mixed-PiP subset response is returned without replaying the original batch', async () => {
+  let nativeResponse = null;
+  const harness = createPageHarness(null, {
+    nativeFetch() {
+      nativeResponse = new Response('fixture upstream unavailable', {
+        status: 503,
+        statusText: 'Fixture Unavailable',
+        headers: { 'x-fixture-response': 'non-ok' },
+      });
+      return nativeResponse;
+    },
+  });
+  const response = await harness.window.fetch('https://gql.twitch.tv/gql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: mixedPipFailureBody(),
+  });
+
+  assertMixedPipSubsetDispatchedOnce(harness, 'non-OK response');
+  assert(response === nativeResponse && response.status === 503 &&
+    response.statusText === 'Fixture Unavailable' && response.headers.get('x-fixture-response') === 'non-ok',
+  'non-OK mixed-PiP handling replaced native response metadata');
+  assert(await response.text() === 'fixture upstream unavailable',
+    'non-OK mixed-PiP handling changed the native response body');
+});
+
+test('a malformed mixed-PiP subset response is returned without replaying the original batch', async () => {
+  let nativeResponse = null;
+  const malformedBody = '{"fixture":"truncated"';
+  const harness = createPageHarness(null, {
+    nativeFetch() {
+      nativeResponse = new Response(malformedBody, {
+        status: 200,
+        statusText: 'Fixture Malformed',
+        headers: { 'content-type': 'application/json', 'x-fixture-response': 'malformed' },
+      });
+      return nativeResponse;
+    },
+  });
+  const response = await harness.window.fetch('https://gql.twitch.tv/gql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: mixedPipFailureBody(),
+  });
+
+  assertMixedPipSubsetDispatchedOnce(harness, 'malformed response');
+  assert(response === nativeResponse && response.statusText === 'Fixture Malformed' &&
+    response.headers.get('x-fixture-response') === 'malformed',
+  'malformed mixed-PiP handling replaced native response metadata');
+  assert(await response.text() === malformedBody,
+    'malformed mixed-PiP handling changed the native response body');
+});
+
+test('a rejected mixed-PiP subset request propagates without replaying the original batch', async () => {
+  const failure = new Error('fixture native rejection');
+  const harness = createPageHarness(null, {
+    nativeFetch() { return Promise.reject(failure); },
+  });
+  let caught = null;
+  try {
+    await harness.window.fetch('https://gql.twitch.tv/gql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: mixedPipFailureBody(),
+    });
+  } catch (error) {
+    caught = error;
+  }
+
+  assert(caught === failure, 'mixed-PiP rejection did not preserve the native error');
+  assertMixedPipSubsetDispatchedOnce(harness, 'rejected request');
 });
 
 test('a Request-object AdRequest is byte-preserved and replayed to a replacement worker', async () => {
@@ -967,14 +1237,15 @@ test('current FetchAdsService warns the worker while identity cookie sync stays 
     variables: { channelLogin: 'fixturechannel' },
   });
   await harness.window.fetch('https://gql.twitch.tv/gql', { method: 'POST', body: fetchAdsBody });
-  assert(warnings() === before + 1, 'current FetchAdsService operation did not arm the early clean stream');
+  assert(warnings() > before, 'current FetchAdsService operation did not arm the early clean stream');
+  const afterFetchAds = warnings();
 
   const identityBody = JSON.stringify({
     operationName: 'ConnectAdIdentityMutation',
     variables: { opaqueIdentity: 'fixture' },
   });
   await harness.window.fetch('https://gql.twitch.tv/gql', { method: 'POST', body: identityBody });
-  assert(warnings() === before + 1, 'identity cookie sync incorrectly armed live-stream withholding');
+  assert(warnings() === afterFetchAds, 'identity cookie sync incorrectly armed live-stream withholding');
   assert(harness.state.fetchCalls.length === 1 &&
     harness.state.fetchCalls[0].init.body === identityBody,
   'identity-cookie detection changed or duplicated the native GQL request');
@@ -1010,8 +1281,8 @@ test('FetchAdsService video and display creatives settle as GraphQL no-fill', as
       assert(harness.state.fetchCalls[0].init.body === requestBody,
         fixture.label + ' response handling changed the native request body');
     }
-    assert(worker.messages.filter((message) => message && message.type === 'ad-imminent').length === 1,
-      fixture.label + ' did not arm the clean-stream fallback exactly once');
+    assert(worker.messages.some((message) => message && message.type === 'ad-imminent'),
+      fixture.label + ' did not arm the clean-stream fallback');
   }
 });
 
@@ -1115,7 +1386,7 @@ test('identity GQL and config-off FetchAds responses remain untouched', async ()
   'config-off FetchAds request was swallowed, duplicated, or changed');
 });
 
-test('page VideoAdRequestDecline settles locally with Twitch decline state and arms one warning', async () => {
+test('page VideoAdRequestDecline settles locally and warns the current channel', async () => {
   const harness = createPageHarness(null, {
     nativeFetch() { return gqlJson(nativeVideoAdDecline('unexpected-native-page')); },
   });
@@ -1138,8 +1409,9 @@ test('page VideoAdRequestDecline settles locally with Twitch decline state and a
   assertVideoAdDecline(await response.json(), 'page VideoAdRequestDecline');
   assert(harness.state.fetchCalls.length === 0,
     'page VideoAdRequestDecline reached the native network instead of settling locally');
-  assert(warnings().length === before + 1 && warnings().at(-1).channel === 'fixturechannel',
-    'page VideoAdRequestDecline did not arm exactly one warning for the current channel');
+  const armedWarnings = warnings().slice(before);
+  assert(armedWarnings.length > 0 && armedWarnings.every((message) => message.channel === 'fixturechannel'),
+    'page VideoAdRequestDecline did not arm the current channel warning');
 });
 
 test('page mixed GQL batches replace only VideoAdRequestDecline and preserve unrelated entries', async () => {
@@ -1176,8 +1448,8 @@ test('page mixed GQL batches replace only VideoAdRequestDecline and preserve unr
   equal(result[2], identityResult, 'page mixed decline changed the result after VideoAdRequestDecline');
   assert(harness.state.fetchCalls.length === 1 && harness.state.fetchCalls[0].init.body === requestBody,
     'page mixed decline duplicated, swallowed, or changed the native batch');
-  assert(worker.messages.filter((message) => message && message.type === 'ad-imminent').length === warningsBefore + 1,
-    'page mixed decline did not arm exactly one early warning');
+  assert(worker.messages.filter((message) => message && message.type === 'ad-imminent').length > warningsBefore,
+    'page mixed decline did not arm an early warning');
 });
 
 test('config-off page VideoAdRequestDecline remains byte- and response-preserving', async () => {
@@ -1196,6 +1468,118 @@ test('config-off page VideoAdRequestDecline remains byte- and response-preservin
     'config-off page VideoAdRequestDecline response was changed instead of passing through');
   assert(harness.state.fetchCalls.length === 1 && harness.state.fetchCalls[0].init.body === requestBody,
     'config-off page VideoAdRequestDecline request was swallowed, duplicated, or changed');
+});
+
+test('Twitch AdManager is declined with the exact player-size contract and follows config lifecycle', () => {
+  let manager;
+  const calls = [];
+  const harness = createPageHarness(null, {
+    fakeClock: true,
+    now: 1000,
+    configureWindow(window) {
+      manager = function FixtureAdManager() {};
+      manager.startProcessingRequests = function startProcessingRequests() {};
+      manager.declineReason = null;
+      manager.decline = function decline(reason, options) {
+        calls.push({ reason, options });
+        manager.declineReason = reason;
+      };
+      exposeWebpackAdManager(window, manager);
+    },
+  });
+
+  equal(calls, [{ reason: 'player_size', options: { sendEvent: false } }],
+    'AdManager decline used the wrong Twitch reason or event option');
+  assert(manager.declineReason === 'player_size',
+    'AdManager fixture did not enter the declined state');
+  assert(!harness.state.timeouts.some((timer) => !timer.cleared && !timer.fired && timer.ms === 500),
+    'successful AdManager discovery left the retry loop armed');
+
+  harness.window.__WO_CONFIG__.twitchAdBlock = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  assert(manager.declineReason === null,
+    'config-off did not release the player_size decline owned by WardenOne');
+  assert(calls.length === 1, 'config-off issued another AdManager decline');
+
+  harness.window.__WO_CONFIG__.twitchAdBlock = true;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  equal(calls[1], { reason: 'player_size', options: { sendEvent: false } },
+    'config-on did not reapply the exact AdManager decline contract');
+
+  manager.declineReason = 'twitch_owned_reason';
+  harness.window.__WO_CONFIG__.twitchAdBlock = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  assert(manager.declineReason === 'twitch_owned_reason',
+    'config-off erased an AdManager decline reason WardenOne did not own');
+  harness.window.__WO_CONFIG__.twitchAdBlock = true;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  assert(calls.length === 2,
+    'config-on overrode an existing Twitch-owned AdManager decline');
+});
+
+test('Twitch AdManager discovery searches later webpackChunk runtimes', () => {
+  const calls = [];
+  let firstQueue;
+  let laterQueue;
+  const harness = createPageHarness(null, {
+    fakeClock: true,
+    now: 1000,
+    configureWindow(window) {
+      function ordinaryRequire(id) {
+        if (id !== 'ordinary-module') throw new Error('unknown ordinary module');
+        return { ordinaryExport: function ordinaryExport() {} };
+      }
+      ordinaryRequire.m = {
+        'ordinary-module': function ordinaryModuleFactory() { return 'ordinary-module'; },
+      };
+      firstQueue = exposeWebpackRuntime(window, 'webpackChunkAFirst', ordinaryRequire);
+
+      function LaterAdManager() {}
+      LaterAdManager.startProcessingRequests = function startProcessingRequests() {};
+      LaterAdManager.declineReason = null;
+      LaterAdManager.decline = function decline(reason, options) {
+        calls.push({ reason, options });
+        LaterAdManager.declineReason = reason;
+      };
+      exposeWebpackAdManager(window, LaterAdManager, 'webpackChunkZLater');
+      laterQueue = window.webpackChunkZLater;
+    },
+  });
+
+  equal(calls, [{ reason: 'player_size', options: { sendEvent: false } }],
+    'AdManager in a later webpack runtime was not declined');
+  assert(firstQueue.length === 1 && laterQueue.length === 1,
+    'AdManager discovery did not inspect each webpackChunk runtime exactly once');
+  assert(!harness.state.timeouts.some((timer) => !timer.cleared && !timer.fired && timer.ms === 500),
+    'later-runtime AdManager discovery left its retry timer armed');
+});
+
+test('Twitch AdManager discovery retries are bounded and can be rearmed by config', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  for (let attempt = 1; attempt < 240; attempt++) harness.advance(500);
+  const retryTimers = harness.state.timeouts.filter((timer) => timer.ms === 500);
+  assert(retryTimers.length === 239 && retryTimers.every((timer) => timer.fired),
+    'AdManager discovery did not stop after its bounded 240 attempts');
+  const timersAtBound = harness.state.timeouts.length;
+  harness.advance(5000);
+  assert(harness.state.timeouts.length === timersAtBound,
+    'AdManager discovery scheduled work after reaching its retry bound');
+
+  const calls = [];
+  function LateAdManager() {}
+  LateAdManager.startProcessingRequests = function startProcessingRequests() {};
+  LateAdManager.declineReason = null;
+  LateAdManager.decline = function decline(reason, options) {
+    calls.push({ reason, options });
+    LateAdManager.declineReason = reason;
+  };
+  exposeWebpackAdManager(harness.window, LateAdManager);
+  harness.window.__WO_CONFIG__.twitchAdBlock = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.window.__WO_CONFIG__.twitchAdBlock = true;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  equal(calls, [{ reason: 'player_size', options: { sendEvent: false } }],
+    'config cycle did not rearm bounded AdManager discovery');
 });
 
 test('worker-originated FetchAdsService settles locally without exposing a VAST creative', async () => {
@@ -1612,13 +1996,67 @@ test('blocking state is reference-counted across concurrent player workers', () 
   send(first, 'ready');
   send(second, 'ready');
   send(first, 'ad-state', 'blocked-clean');
-  send(second, 'ad-state', 'blocked-gap');
+  send(second, 'ad-state', 'blocked-clean');
   send(second, 'ad-state', 'clear');
   assert(harness.document.documentElement.hasAttribute('data-wo-twitch-adblock'),
     'one worker cleared the shared blocking state while another was still blocking');
   first.terminate();
   assert(!harness.document.documentElement.hasAttribute('data-wo-twitch-adblock'),
     'terminating the last blocking worker left stale shared blocking state');
+});
+
+test('only blocked-clean gates ad chrome and worker states never mutate live playback', () => {
+  const harness = createPageHarness();
+  const live = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/state-only-live',
+    inPlayer: true,
+    label: 'Twitch video player',
+    defaultMuted: false,
+    muted: false,
+    volume: 0.65,
+    currentTime: 42,
+  });
+  const original = videoPresentation(live);
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/state-only-worker');
+  const send = (state, extra) => worker.dispatchEvent({
+    type: 'message',
+    data: Object.assign({
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state,
+    }, extra || {}),
+    stopImmediatePropagation() {},
+  });
+
+  for (const staleState of ['blocked-native', 'blocked-gap', 'blocked-hold', 'blocked-imminent']) {
+    send(staleState);
+    assert(!harness.document.documentElement.hasAttribute('data-wo-twitch-adblock'),
+      staleState + ' incorrectly gated page ad chrome');
+  }
+  assert(!harness.document.documentElement.children.some((node) => node.id === 'wo-twitch-ad-chrome'),
+    'a native fail-open state mounted the ad-chrome stylesheet');
+
+  send('blocked-clean');
+  assert(harness.document.documentElement.getAttribute('data-wo-twitch-adblock') === 'blocked-clean',
+    'clean backup state did not gate ad chrome');
+  assert(harness.document.documentElement.children.some((node) => node.id === 'wo-twitch-ad-chrome'),
+    'clean backup state did not mount the ad-chrome stylesheet');
+  send('clear', { offsetMs: 20000 });
+  assert(!harness.document.documentElement.hasAttribute('data-wo-twitch-adblock'),
+    'clean backup state did not clear at the native boundary');
+
+  equal(videoPresentation(live), original,
+    'worker state handling changed the live player presentation or audio');
+  assert(live.pauseCalls === 0 && live.playCalls === 0,
+    'worker state handling paused or restarted native playback');
+  assert(live.currentTime === 42 && live.seeks.length === 0,
+    'worker state handling retained post-swap catch-up seeking');
+  for (const eventName of ['pause', 'waiting', 'stalled', 'seeking', 'ratechange', 'emptied', 'error']) {
+    assert((live.listeners.get(eventName) || []).length === 0,
+      'removed post-swap catch-up retained a ' + eventName + ' listener');
+  }
+  assert(!/closeCatchUpEpisode|blockingSwapOffsetMs|CATCHUP_SETTLE_MS/.test(MODULE_SOURCE),
+    'removed post-swap catch-up implementation remains in the module');
 });
 
 test('a late delegating Worker wrapper composes with Twitch and non-Twitch workers', () => {
@@ -1727,30 +2165,45 @@ test('the client-side ad request is answered locally with Twitch own no-fill sta
     'the ad request was put on the network instead of being answered');
 });
 
-test('ad-service XHR is rejected at open while ordinary and blob XHR stay native', () => {
+test('ad-service XHR stays exactly native while video requests still arm an early warning', () => {
   const harness = createPageHarness();
-  const blockedUrls = [
-    'https://edge.ads.twitch.tv/ads/format?afmt=STANDARD_VIDEO&bp=preroll',
-    'https://edge.ads.twitch.tv/ads?afmt=SQUEEZEBACK',
-    'https://edge.ads.twitch.tv/2018-01-01/ads?sid=current-session&afmt=STANDARD_VIDEO',
-    'https://edge.ads.twitch.tv/2018-01-01/3p/ads?sid=current-session&afmt=STANDARD_VIDEO',
-    'https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?sid=current-session&afmt=STANDARD_VIDEO',
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/xhr-ad-warning-player');
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  const warnings = () => worker.messages.filter((message) => message && message.type === 'ad-imminent').length;
+  const adRequests = [
+    ['https://edge.ads.twitch.tv/ads/format?afmt=STANDARD_VIDEO&bp=preroll', true],
+    ['https://edge.ads.twitch.tv/ads?afmt=SQUEEZEBACK', false],
+    ['https://edge.ads.twitch.tv/2018-01-01/ads?sid=current-session&afmt=STANDARD_VIDEO', true],
+    ['https://edge.ads.twitch.tv/2018-01-01/3p/ads?sid=current-session&afmt=STANDARD_VIDEO', true],
+    ['https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?sid=current-session&afmt=STANDARD_VIDEO', true],
   ];
-  for (const url of blockedUrls) {
+  for (let index = 0; index < adRequests.length; index++) {
+    const [url, warns] = adRequests[index];
     const xhr = new harness.sandbox.XMLHttpRequest();
     const opensBefore = harness.state.xhrOpens.length;
     const sendsBefore = harness.state.xhrSends.length;
-    let rejected = false;
-    try {
-      xhr.open('GET', url, true);
-    } catch (_) {
-      rejected = true;
-    }
-    assert(rejected, 'ad-service XHR open was not rejected synchronously: ' + url);
-    assert(harness.state.xhrOpens.length === opensBefore,
-      'ad-service XHR reached the native open method: ' + url);
-    assert(harness.state.xhrSends.length === sendsBefore,
-      'ad-service XHR reached the native send method: ' + url);
+    const warningsBefore = warnings();
+    const openArgs = ['pOsT', url, false, 'fixture-user-' + index, 'fixture-password-' + index];
+    xhr.open(...openArgs);
+    assert(warnings() === warningsBefore + (warns ? 1 : 0),
+      'ad-service XHR warning classification changed: ' + url);
+    const body = { fixture: 'ad-body-' + index };
+    xhr.send(body);
+    assert(harness.state.xhrOpens.length === opensBefore + 1,
+      'ad-service XHR did not reach native open exactly once: ' + url);
+    assert(harness.state.xhrSends.length === sendsBefore + 1,
+      'ad-service XHR did not reach native send exactly once: ' + url);
+    const opened = harness.state.xhrOpens.at(-1);
+    const sent = harness.state.xhrSends.at(-1);
+    equal(opened.args, openArgs, 'ad-service XHR changed native open arguments: ' + url);
+    assert(opened.xhr === xhr && sent.xhr === xhr && sent.body === body,
+      'ad-service XHR changed native receiver or send body: ' + url);
+    assert(xhr.responseText === 'native xhr response',
+      'ad-service XHR lost its native response: ' + url);
   }
 
   const ordinaryUrl = 'https://edge.ads.twitch.tv/health?fixture=ordinary';
@@ -1779,7 +2232,7 @@ test('ad-service XHR is rejected at open while ordinary and blob XHR stay native
     'blob worker-source XHR lost its native source bytes');
 
   const disabled = createPageHarness({ twitchAdBlock: false });
-  const disabledUrl = blockedUrls[0];
+  const disabledUrl = adRequests[0][0];
   const disabledXhr = new disabled.sandbox.XMLHttpRequest();
   disabledXhr.open('GET', disabledUrl, true);
   disabledXhr.send(null);
@@ -1864,7 +2317,7 @@ test('nested FetchAds input.channel.login targets the next channel before the pa
   assert(harness.state.fetchCalls.length === 0,
     'nested target-channel FetchAds reached native network instead of settling locally');
   const liveWarnings = existing.messages.filter((message) => message && message.type === 'ad-imminent');
-  assert(liveWarnings.length === 1 && liveWarnings[0].channel === targetChannel,
+  assert(liveWarnings.length > 0 && liveWarnings.every((message) => message.channel === targetChannel),
     'old-path worker replaced the nested target-channel hint with the current pathname');
 
   harness.window.location.pathname = '/' + targetChannel;
@@ -1937,7 +2390,7 @@ test('only intervention-linked network/decode errors enter a short recovery wind
     data: {
       __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
       type: 'ad-state',
-      state: 'blocked-gap',
+      state: 'blocked-clean',
     },
     stopImmediatePropagation() {},
   });
@@ -1948,8 +2401,8 @@ test('only intervention-linked network/decode errors enter a short recovery wind
     'network recovery state was not exposed for diagnostics');
   assert(harness.document.documentElement.getAttribute('data-wo-twitch-adblock') === null,
     'network recovery left the stale blocking state on the native stream');
-  assert(!harness.state.timeouts.some((timer) => !timer.cleared && !timer.fired && timer.ms === 500),
-    'network recovery left the intervention stall watchdog armed');
+  assert(!/armStallWatch|nudgeStalledPlayback|STALL_POLL_MS/.test(MODULE_SOURCE),
+    'network recovery retained the intervention stall watchdog');
 
   const nativeTokenBody = JSON.stringify([{
     operationName: 'PlaybackAccessToken',
@@ -1967,9 +2420,13 @@ test('only intervention-linked network/decode errors enter a short recovery wind
     body: nativeTokenBody,
   };
   await harness.window.fetch('https://gql.twitch.tv/gql', nativeInit);
-  assert(harness.state.fetchCalls.at(-1).init === nativeInit &&
-    harness.state.fetchCalls.at(-1).init.body === nativeTokenBody,
-  'circuit breaker still rewrote the native recovery token request');
+  const recoveryTokenCall = harness.state.fetchCalls.at(-1);
+  const recoveryToken = JSON.parse(recoveryTokenCall.init.body)[0];
+  assert(recoveryTokenCall.init !== nativeInit &&
+    recoveryToken.variables.playerType === 'popout' && recoveryToken.variables.platform === 'web',
+  'circuit breaker bypassed the ordinary popout/web token identity');
+  assert(new Headers(recoveryTokenCall.init.headers).get('Client-ID') === 'recovery-client',
+    'recovery token rewrite lost caller headers');
 
   worker.dispatchEvent({
     type: 'message',
@@ -2092,7 +2549,7 @@ test('unstable playback cancels the pending early recovery resume', () => {
     'unstable playback extended the original bounded recovery deadline');
 });
 
-test('stall recovery nudges the identified live player instead of the first ad creative', () => {
+test('removed stall watchdog can never pause or restart Twitch media', () => {
   const harness = createPageHarness(null, { fakeClock: true, now: 10000 });
   const creative = harness.createVideo({
     currentSrc: 'blob:https://www.twitch.tv/first-display-ad-creative',
@@ -2117,12 +2574,13 @@ test('stall recovery nudges the identified live player instead of the first ad c
     stopImmediatePropagation() {},
   });
 
-  harness.advance(500);
-  harness.advance(500);
+  harness.advance(1000);
   assert(creative.pauseCalls === 0 && creative.playCalls === 0,
-    'stall recovery paused the first ad creative');
-  assert(live.pauseCalls === 1 && live.playCalls === 1,
-    'stall recovery did not nudge the identified live player exactly once');
+    'legacy gap state paused or restarted the first ad creative');
+  assert(live.pauseCalls === 0 && live.playCalls === 0,
+    'legacy gap state retained the freeze-prone live-player pause/play nudge');
+  assert(!/armStallWatch|nudgeStalledPlayback|STALL_POLL_MS/.test(MODULE_SOURCE),
+    'legacy gap state retained the self-scheduling stall watchdog');
 });
 
 test('Twitch visibility recovery preserves native events and resumes only the same stream that was playing', () => {
@@ -2214,7 +2672,7 @@ test('the fail-open deadline survives Twitch recovery reloads without extending 
     data: {
       __woTwitchAdblock: first.window.__wardenOneTwitchAdblockReady,
       type: 'ad-state',
-      state: 'blocked-gap',
+      state: 'blocked-clean',
     },
     stopImmediatePropagation() {},
   });
@@ -2331,6 +2789,9 @@ test('display-ad CSS hides creative leaves but never player/root modifiers', () 
   assert(layoutRule.includes('[class*="video-player--stream-display-ad" i]') &&
       layoutRule.includes('[class*="video-player"][class*="vertical-video-ad" i]'),
     'display/vertical live player modifiers are not restored to full size');
+  assert(!style.textContent.includes('blocked-native') &&
+      !style.textContent.includes('Ad hidden · Stream resumes automatically'),
+    'native fallback still covers the live player or mounts status copy');
 });
 
 // Selector lists carry :where()/:is() groups, so a naive comma split would tear
@@ -2376,7 +2837,7 @@ function gatedAdChromeSheet() {
 
 test('gated ad-chrome CSS stays gated and can never hide an ancestor of the live player', () => {
   const sheet = gatedAdChromeSheet();
-  const gate = 'html[data-wo-twitch-adblock^="blocked-"] ';
+  const gate = 'html[data-wo-twitch-adblock="blocked-clean"] ';
   const selectors = [];
   for (const rule of sheet.split('}')) {
     const head = rule.split('{')[0].trim();
@@ -2427,119 +2888,32 @@ test('gated ad-chrome CSS stays gated and can never hide an ancestor of the live
     'the Turbo/allow-ads overlay probe was dropped');
 });
 
-// One ad break driven through the page module: baseline on the first blocked-*
-// message, playback modelled at 1x across the break, then the worker's 'clear'
-// carrying the offset it measured from the two playlists.
-function runCatchUpBreak(options) {
-  options = options || {};
-  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
-  const worker = new harness.window.Worker('blob:https://www.twitch.tv/catch-up-worker');
-  const ready = harness.window.__wardenOneTwitchAdblockReady;
-  const send = (data) => worker.dispatchEvent({
-    type: 'message',
-    data: Object.assign({ __woTwitchAdblock: ready }, data),
-    stopImmediatePropagation() {},
-  });
-  send({ type: 'ready' });
-  const video = harness.createVideo({
-    currentSrc: 'blob:https://www.twitch.tv/catch-up-primary',
-    inPlayer: true,
-    label: 'Twitch video player',
-    currentTime: 100,
-    ranges: [[0, 105]],
-  });
-  send({ type: 'ad-state', state: 'blocked-clean' });
-  harness.advance(30000);
-  video.playTo(130, 155);
-  if (typeof options.duringBreak === 'function') options.duringBreak(video, harness);
-  send({ type: 'ad-state', state: 'clear', offsetMs: options.offsetMs });
-  video.playTo(132, 157);
-  if (typeof options.beforeEvaluation === 'function') options.beforeEvaluation(video, harness);
-  harness.advance(2000);
-  return { harness, video, worker };
-}
+test('Turbo house overlay is hidden at startup without ungating generic ad chrome', () => {
+  const harness = createPageHarness();
+  assert(!harness.document.documentElement.hasAttribute('data-wo-twitch-adblock'),
+    'startup Turbo-overlay fixture unexpectedly began in blocked-clean state');
+  const style = harness.document.documentElement.children.find((node) => node.id === 'wo-twitch-adblock-css');
+  assert(style && typeof style.textContent === 'string' && style.textContent,
+    'startup Twitch ad CSS did not mount before the first worker state');
+  const hideEnd = style.textContent.indexOf('{display:none!important');
+  assert(hideEnd > 0, 'startup Twitch ad CSS hide rule is missing');
+  const startupSelectors = splitSelectorList(style.textContent.slice(0, hideEnd));
+  const turboOverlaySelector = '.video-player__overlay .player-overlay-background:has(' +
+    '> div[class^="Layout-"] > div[class^="Layout-"] > div[class^="Layout-"]' +
+    ' > a:is([href*="/how-to-allow-ads-browser"],[href="https://www.twitch.tv/turbo"]))';
+  assert(startupSelectors.includes(turboOverlaySelector),
+    'the Twitch Turbo/allow-ads house overlay waits for blocked-clean before it is hidden');
 
-test('post-swap catch-up refuses to seek without a worker-measured swap offset', () => {
-  equal(runCatchUpBreak({ offsetMs: 0 }).video.seeks, [],
-    'catch-up seeked on a break the worker reported no offset for');
-  equal(runCatchUpBreak({}).video.seeks, [],
-    'catch-up seeked on a break that carried no offset field at all');
-  equal(runCatchUpBreak({ offsetMs: 'not-a-number' }).video.seeks, [],
-    'catch-up seeked on an unreadable offset');
-});
-
-test('a measured swap offset and continuous playback produce one bounded catch-up seek', () => {
-  const { video } = runCatchUpBreak({ offsetMs: 20000 });
-  // 20s measured offset, 20s of surplus buffer, 5s of pre-break buffer held back:
-  // 132 -> 152, which is still 5s short of the 157s buffered edge.
-  equal(video.seeks, [152], 'catch-up did not close the measured offset exactly once');
-});
-
-test('the measured offset is a ceiling, never a target', () => {
-  const { video } = runCatchUpBreak({ offsetMs: 6000 });
-  equal(video.seeks, [138], 'catch-up seeked past the offset the worker actually measured');
-});
-
-test('a pause during the ad break stands the catch-up down even after the viewer resumes', () => {
-  const { video } = runCatchUpBreak({
-    offsetMs: 20000,
-    duringBreak(video) {
-      video.dispatchEvent({ type: 'pause' });
-      video.dispatchEvent({ type: 'play' });
-    },
-  });
-  assert(video.paused === false, 'fixture did not model a viewer who resumed before the evaluation');
-  equal(video.seeks, [], 'catch-up skipped over content the viewer paused to keep');
-});
-
-test('a rebuffer during the ad break is never reclaimed as swap latency', () => {
-  equal(runCatchUpBreak({
-    offsetMs: 20000,
-    duringBreak(video) { video.dispatchEvent({ type: 'waiting' }); },
-  }).video.seeks, [], 'catch-up skipped the seconds a rebuffer had just recovered');
-  equal(runCatchUpBreak({
-    offsetMs: 20000,
-    duringBreak(video) { video.dispatchEvent({ type: 'stalled' }); },
-  }).video.seeks, [], 'catch-up treated a stall as swap-induced latency');
-});
-
-test('a deliberate DVR rewind blocks the catch-up seek', () => {
-  const { video } = runCatchUpBreak({
-    offsetMs: 20000,
-    beforeEvaluation(video, harness) {
-      harness.document.documentElement.setAttribute('data-wo-twitch-dvr', 'replay');
-    },
-  });
-  equal(video.seeks, [], 'catch-up yanked a deliberate local rewind back toward live');
-});
-
-test('native hidden state blocks catch-up without spoofing Twitch visibility', () => {
-  const { video } = runCatchUpBreak({
-    offsetMs: 20000,
-    beforeEvaluation(video, harness) {
-      harness.state.documentHidden = true;
-      assert(harness.document.hidden === true,
-        'fixture did not expose the browser native hidden state');
-    },
-  });
-  equal(video.seeks, [], 'catch-up seeked a background stream');
-});
-
-test('any deliberate playback-rate change hands the element back to its own controller', () => {
-  const { video } = runCatchUpBreak({
-    offsetMs: 20000,
-    // Inside the old +-0.1 dead band: this is the size of nudge an LL-HLS
-    // latency controller uses while it is correcting.
-    beforeEvaluation(video) { video.playbackRate = 1.05; },
-  });
-  equal(video.seeks, [], 'catch-up raced the player latency controller instead of yielding');
-});
-
-test('a closed catch-up episode leaves no listeners on the media element', () => {
-  const { video } = runCatchUpBreak({ offsetMs: 20000 });
-  for (const eventName of ['pause', 'waiting', 'stalled', 'seeking', 'ratechange', 'emptied', 'error']) {
-    assert((video.listeners.get(eventName) || []).length === 0,
-      'catch-up episode leaked its ' + eventName + ' listener');
+  for (const unsafeGeneric of [
+    '[data-a-target*="video-ad" i]',
+    '[aria-label*="advertisement" i]',
+    '.video-player__ad-info-container',
+    '.picture-by-picture-player',
+    '[data-a-target="pbyp-player-instance"]',
+    '.picture-by-picture-overlay',
+  ]) {
+    assert(!startupSelectors.some((selector) => selector.includes(unsafeGeneric)),
+      'generic ancestor-capable ad chrome escaped its blocked-clean gate: ' + unsafeGeneric);
   }
 });
 

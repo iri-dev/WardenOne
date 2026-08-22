@@ -142,19 +142,21 @@ assert(/canvas width="1920" height="1080"/.test(harness) && /1000 \/ 60/.test(ha
 assert(/createMediaStreamDestination/.test(harness) && /data-current-time/.test(harness), 'browser harness should offer audio stress and expose playback progress');
 assert(/nativePlaybackButton\.addEventListener\('click'/.test(harness) && /data-paused/.test(harness), 'browser harness should exercise native pause and expose paused state');
 
-// ---- Cross-world DVR contract with the ad blocker ---------------------------
-// twitch-adblock.js (MAIN world) stands its post-ad catch-up seek down while the
-// viewer is deliberately behind. A rename on either side must fail here, not on
-// a live rewind that silently loses seconds from the recording.
+// ---- DVR/ad-blocker non-interference contract -------------------------------
+// The ad blocker no longer performs a post-ad catch-up seek at all. That is
+// stronger than coordinating one through a cross-world attribute: neither live
+// playback nor a deliberately delayed local replay can be moved by ad recovery.
 const adblock = read('twitch-adblock.js');
-assert(/data-wo-twitch-dvr/.test(rewind) && /data-wo-twitch-dvr/.test(adblock),
-  'the DVR replay signal must stay readable by the MAIN-world ad blocker');
+assert(/data-wo-twitch-dvr/.test(rewind),
+  'the DVR replay signal should remain available to its isolated-world UI');
 assert(/replayActive = true;[\s\S]{0,300}?markDeliberateRewind\(true\);/.test(rewind),
   'the replay signal must be published on the same synchronous edge as replayActive');
 assert((rewind.match(/markDeliberateRewind\(false\)/g) || []).length === 2,
   'both goLive and removeReplayLayer must clear the replay signal');
-assert(/wardenone-twitch-replay-layer/.test(rewind) && /wardenone-twitch-replay-layer/.test(adblock),
-  'the replay-layer fallback probe must keep matching the layer id');
+assert(/wardenone-twitch-replay-layer/.test(rewind),
+  'the rewind runtime must keep its stable replay-layer id');
+assert(!/currentTime\s*=/.test(adblock) && !/catchUpOnAdState|runCatchUp|evaluateCatchUp/.test(adblock),
+  'the ad blocker must not reintroduce a seek-based post-ad catch-up path');
 
 // ---- Privacy / non-interference guarantees ---------------------------------
 assert(!/SourceBuffer\.prototype/.test(rewind), 'runtime must not interfere with Twitch MediaSource eviction');

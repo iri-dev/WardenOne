@@ -15,6 +15,44 @@ had already been blocked.
 The detailed entries are in the 1.0.0 section below, which is where they were written
 as the work happened.
 
+### Fixed
+
+- Shortened blocklist-update ages in the compact protection-health tile so the
+  value no longer clips inside the popup.
+- Updated Twitch's clean-stream search to the currently effective identity order:
+  `mobile_feed/android`, `popout/web`, then `autoplay/android`. Every compatible
+  rendition is checked, so one stitched quality no longer discards a clean rung
+  from the same Twitch-signed session.
+- Re-anchored alternate Twitch playlists onto the player's existing
+  `MEDIA-SEQUENCE` timeline using `PROGRAM-DATE-TIME`. This removes the accumulated
+  sequence hole that could leave a stream farther behind after every ad break or
+  buffering until a manual pause/unpause.
+- Rejects ended, undated, backward, and stalled alternate playlists; ignores
+  out-of-order native responses; deduplicates the worker's initial master; and
+  invalidates in-flight work on channel/config changes. Clean identity and
+  rendition probes are staggered concurrently so a slow first route cannot consume
+  the whole pre-roll or mid-roll deadline.
+- Declined Twitch display ads through its own page AdManager and denied
+  picture-in-picture playback tokens locally without breaking mixed GraphQL
+  batches or replaying them after an error. XHR ad-service calls now remain native
+  instead of throwing from `open()`, while existing fetch/GraphQL no-fill handling
+  remains as a compatibility fallback.
+- Removed Twitch's HLS-gap, native cover/mute, pause/play, and page-seek fallbacks.
+  If Twitch supplies no clean local session, WardenOne now leaves native HLS and
+  LL-HLS media intact so the player keeps advancing instead of entering a hidden
+  ad loop or starving its decoder.
+- Refreshes an already-cached clean Twitch playlist as soon as Twitch warns that
+  an ad is imminent, reserves that one-shot result for a request that begins after
+  the warning, and briefly reuses it if the ad poll lands just afterward. Twitch's
+  narrowly identified "allow ads / get Turbo" house overlay is also hidden from
+  startup instead of waiting for the playlist handoff. This targets the remaining
+  one-to-two-second flash without adding segment blocking or continuous background
+  polling.
+- Counts media segments represented by `EXT-X-SKIP` in Twitch low-latency delta
+  playlists. A standards-compliant abbreviated refresh can no longer look older
+  than the preceding full window and bypass the clean warning-time handoff;
+  malformed or duplicate skip metadata fails open byte-for-byte.
+
 ## 1.0.0 — 2026-07-29
 
 First public-release hardening pass.

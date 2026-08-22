@@ -23,13 +23,66 @@ gratefully credit the upstream projects below.
 
   WardenOne's Twitch stream ad blocker (`twitch-adblock.js`) is a smaller, clean
   re-implementation whose clean-stream strategy is informed by the project's VAFT
-  and TTV-AB scripts: player-type substitution to obtain an ad-free HLS playlist,
-  GQL access-token proxying, and HLS ad-segment gapping as a fallback. It uses no
-  remote proxy and none of the upstream React/player-reload machinery.
+  and TTV-AB scripts: player-type substitution to obtain an ad-free HLS playlist
+  and GQL access-token proxying. It uses no remote proxy and none of the upstream
+  React/player-reload machinery.
 
   TwitchAdSolutions is distributed under the permissive **MIT License**:
   copyright © 2020–present TwitchAdSolutions Contributors. The upstream project
   was archived on 5 March 2026; the attribution and license remain applicable.
+
+- **TwitchAdBlock** (scamorza), v2.0.5 — <https://github.com/scamorza/TwitchAdBlock/tree/v2.0.5>
+
+  WardenOne adapts its current `mobile_feed/android` identity, ordered alternate
+  session search, compatible-rendition probing, `PROGRAM-DATE-TIME`-anchored HLS
+  sequence renumbering, Twitch AdManager decline, and mixed-batch-safe PiP token
+  denial. WardenOne keeps its own worker lifecycle, fail-open circuit breaker,
+  request preservation, and no-proxy policy; it does not use the upstream empty
+  segment, React, reload, or recovery-loop paths.
+
+  TwitchAdBlock is distributed under the **MIT License**:
+  copyright © 2020–present TwitchAdSolutions Contributors; copyright ©
+  2026–present TwitchAdBlock Contributors.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of
+  this software and associated documentation files (the "Software"), to deal in
+  the Software without restriction, including without limitation the rights to
+  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+  the Software, and to permit persons to whom the Software is furnished to do so,
+  subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+  FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+  IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+- **TTV-AB** (GosuDRM) — <https://github.com/GosuDRM/TTV-AB>
+
+  WardenOne's two-second, warning-time verified-playlist handoff is informed by
+  TTV-AB's fresh-backup cache and revalidation work. WardenOne independently
+  implements the idea inside its existing fail-open worker and does not adopt
+  TTV-AB's synthetic hold-media, player-rebuild, telemetry-spoofing, or recovery
+  machinery.
+
+  TTV-AB uses an **MIT-based license with an explicit repository-attribution
+  requirement**. Copyright © 2025 GosuDRM. Original repository:
+  <https://github.com/GosuDRM/TTV-AB>.
+
+- **uBlock Origin uAssets** — <https://github.com/uBlockOrigin/uAssets>
+
+  WardenOne adapts uAssets' narrowly content-scoped Twitch rule for the
+  "allow ads / get Turbo" player overlay so that house promotion is hidden
+  immediately, without unconditionally hiding generic player wrappers. The
+  upstream rule was introduced in
+  <https://github.com/uBlockOrigin/uAssets/commit/4464b7bdb7ab7a0b6272669e79c620a064abcd9f>.
+
+  uBlock Origin uAssets is distributed under the **GNU General Public License
+  v3**.
 
 ## Trackers & privacy
 

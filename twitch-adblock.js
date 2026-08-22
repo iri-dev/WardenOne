@@ -9,12 +9,12 @@
  *
  * Installs before Twitch's player and handles both server-side HLS ads and the
  * current display/audio-ad shells. The clean-stream strategy is informed by
- * the MIT-licensed TwitchAdSolutions VAFT and TTV-AB projects, but is
- * deliberately smaller:
- * no React internals, no player/page reloads, no polling watchdog, and no
- * remote proxy. If Twitch offers no clean alternate playlist, confirmed ad
- * media is represented with standard HLS gaps so no synthetic bytes enter
- * Twitch's decoder.
+ * the MIT-licensed TwitchAdSolutions, scamorza/TwitchAdBlock, and GosuDRM/TTV-AB
+ * projects. Its exact Turbo/allow-ads cosmetic rule is adapted from GPLv3-licensed
+ * uBlock Origin uAssets. This implementation is deliberately smaller: no React
+ * internals, no player/page reloads, no synthetic media, and no remote proxy. If
+ * Twitch offers no clean alternate playlist, native playback fails open instead
+ * of starving the decoder.
  */
 (function wardenOneTwitchAdblock() {
   'use strict';
@@ -64,6 +64,10 @@
     '.tw-ad-label',
     '.tw-ad-countdown'
   ].join(',');
+  const TWITCH_TURBO_OVERLAY_SELECTOR =
+    '.video-player__overlay .player-overlay-background:has(> div[class^="Layout-"] > div[class^="Layout-"]' +
+    ' > div[class^="Layout-"] > a:is([href*="/how-to-allow-ads-browser"],' +
+    '[href="https://www.twitch.tv/turbo"]))';
 
   if (!TWITCH_HOST_RE.test(location.hostname)) return;
   if (window.top !== window) {
@@ -131,7 +135,7 @@
   let revision = 0;
   const workers = new Set();
   const blockingWorkers = new Set();
-  let blockingSwapOffsetMs = 0;
+  const workerAdStates = new Map();
   const independentAdVideos = new Map();
   let primaryLiveVideo = null;
   let independentAdObserver = null;
@@ -210,9 +214,6 @@
           const resumed = video.play();
           if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
         }
-        try {
-          if (stallInterventionActive()) armStallWatch();
-        } catch (_) {}
       }
     } catch (_) {}
   }
@@ -284,6 +285,7 @@
     '.tw-ad-countdown',
     '.audio-ax-overlay-base',
     'button[aria-label="Learn more about this ad"]',
+    TWITCH_TURBO_OVERLAY_SELECTOR,
     '.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"])',
     '.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"])'
   ].join(',') + '{display:none!important;visibility:hidden!important;pointer-events:none!important;}\n' +
@@ -662,10 +664,8 @@
       document.documentElement.setAttribute('data-wo-twitch-fail-open', errorCode === 2 ? 'network' : 'decode');
     } catch (_) {}
     blockingWorkers.clear();
-    blockingSwapOffsetMs = 0;
-    clearStallWatch();
+    workerAdStates.clear();
     try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
-    try { closeCatchUpEpisode(); } catch (_) {}
     // Let Twitch's existing player recovery retry its untouched stream. This is
     // deliberately worker-scoped and temporary: user configuration is never
     // changed, no page reload is initiated, and the current setting is restored.
@@ -717,11 +717,10 @@
     setTwitchVisibilityGuardEnabled(enabled);
     if (!enabled) {
       blockingWorkers.clear();
-      blockingSwapOffsetMs = 0;
-      clearStallWatch();
+      workerAdStates.clear();
       try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
-      try { closeCatchUpEpisode(); } catch (_) {}
     }
+    syncAdManagerDecline();
     broadcastStreamConfig();
   }
 
@@ -742,11 +741,10 @@
     setTwitchVisibilityGuardEnabled(enabled);
     if (!enabled) {
       blockingWorkers.clear();
-      blockingSwapOffsetMs = 0;
-      clearStallWatch();
+      workerAdStates.clear();
       try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
-      try { closeCatchUpEpisode(); } catch (_) {}
     }
+    syncAdManagerDecline();
     broadcastStreamConfig();
   });
 
@@ -811,16 +809,85 @@
     }
   }
 
-  function patchTokenBody(body) {
-    if (typeof body !== 'string' || body.length > 1024 * 1024) return body;
+  const PRIMARY_PLAYER_TYPE = 'popout';
+
+  function deniedPlaybackTokenEntry() {
+    return { data: { streamPlaybackAccessToken: null, videoPlaybackAccessToken: null } };
+  }
+
+  function playbackTokenPlan(body) {
+    if (typeof body !== 'string' || !body || body.length > 1024 * 1024 ||
+        body.indexOf('PlaybackAccessToken') < 0) return null;
     try {
       const parsed = JSON.parse(body);
+      const entries = Array.isArray(parsed) ? parsed : [parsed];
+      if (!entries.length || !entries.some(tokenOperation)) return null;
       captureTokenTemplate(parsed);
-      // Capture only. The native token's playerType/platform belong to Twitch's
-      // current player session; alternate identities are confined to backups.
-      return body;
+      const pipMask = entries.map((entry) => tokenOperation(entry) &&
+        /picture-by-picture/i.test(String(entry.variables && entry.variables.playerType || '')));
+      const currentChannel = pageChannelName();
+      const forwarded = [];
+      let rewritten = false;
+      for (let index = 0; index < entries.length; index++) {
+        if (pipMask[index]) continue;
+        const entry = entries[index];
+        if (tokenOperation(entry)) {
+          const variables = entry.variables;
+          const login = validChannelName(variables.login);
+          const playerType = String(variables.playerType || '');
+          const primary = !!currentChannel && login === currentChannel &&
+            !/(?:embed|preview|picture-by-picture)/i.test(playerType);
+          if (primary && (variables.playerType !== PRIMARY_PLAYER_TYPE || variables.platform !== 'web')) {
+            variables.playerType = PRIMARY_PLAYER_TYPE;
+            variables.platform = 'web';
+            rewritten = true;
+          }
+        }
+        forwarded.push(entry);
+      }
+      const hasPip = pipMask.some(Boolean);
+      return {
+        batch: Array.isArray(parsed),
+        pipMask: pipMask,
+        hasPip: hasPip,
+        allPip: hasPip && forwarded.length === 0,
+        body: forwarded.length ? JSON.stringify(Array.isArray(parsed) ? forwarded : forwarded[0]) : '',
+        changed: hasPip || rewritten
+      };
     } catch (_) {
-      return body;
+      return null;
+    }
+  }
+
+  function deniedPlaybackTokenResponse(plan) {
+    const payload = plan.batch ? plan.pipMask.map(() => deniedPlaybackTokenEntry()) : deniedPlaybackTokenEntry();
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  async function spliceDeniedPlaybackTokens(response, plan) {
+    if (!plan || !plan.hasPip || plan.allPip || !response || !response.ok) return null;
+    try {
+      const parsed = JSON.parse(await response.clone().text());
+      const forwarded = Array.isArray(parsed) ? parsed : [parsed];
+      const expected = plan.pipMask.filter((blocked) => !blocked).length;
+      if (forwarded.length !== expected) return null;
+      const rebuilt = [];
+      let cursor = 0;
+      for (const blocked of plan.pipMask) {
+        rebuilt.push(blocked ? deniedPlaybackTokenEntry() : forwarded[cursor++]);
+      }
+      const headers = new Headers(response.headers);
+      headers.set('Content-Type', 'application/json');
+      return new Response(JSON.stringify(plan.batch ? rebuilt : rebuilt[0]), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headers
+      });
+    } catch (_) {
+      return null;
     }
   }
 
@@ -998,12 +1065,7 @@
     } catch (_) {}
   }
 
-  function noteAdServiceCall(init) {
-    try { noteAdServiceBody(init && typeof init.body === 'string' ? init.body : ''); } catch (_) {}
-  }
-
   function captureClientState(input, init) {
-    try { noteAdServiceCall(init); } catch (_) {}
     let changed = false;
     const headers = copyHeaders(input, init);
     changed = setState('clientId', headers.get('Client-ID') || '') || changed;
@@ -1118,10 +1180,45 @@
   // is never issued, so there is no CORS surface and no extension resource for
   // a page to probe.
   //
-  // Twitch currently reaches the service through both fetch and a VAST SDK XHR,
-  // so the same narrow URL test is installed on both transports below.
+  // Fetch can be settled locally with a real Response. XHR is deliberately left
+  // native below because throwing from open() strands the SDK lifecycle, while a
+  // partial synthetic XHR is observably incompatible with Twitch's player.
   function emptyAdResponse() {
     return new Response(null, { status: 204, statusText: 'No Content' });
+  }
+
+  function forwardPageGql(context, input, init, body, requestBody) {
+    noteAdServiceBody(body);
+    const tokenPlan = playbackTokenPlan(body);
+    if (tokenPlan && tokenPlan.allPip) {
+      try { return Promise.resolve(deniedPlaybackTokenResponse(tokenPlan)); } catch (_) {}
+    }
+    const forwardedBody = tokenPlan && tokenPlan.changed ? tokenPlan.body : body;
+    const adInfo = fetchAdsRequestInfo(forwardedBody);
+    const declineInfo = videoAdDeclineRequestInfo(forwardedBody);
+    let pending = null;
+    if (adInfo && adInfo.all) {
+      pending = settleGqlFetch(null, adInfo);
+    } else if (declineInfo && declineInfo.all) {
+      pending = settleVideoAdDecline(null, declineInfo);
+    } else {
+      let forwardedInput = input;
+      let forwardedInit = init;
+      if (tokenPlan && tokenPlan.changed) {
+        if (requestBody) {
+          forwardedInput = new Request(input, Object.assign({}, init || {}, { body: forwardedBody }));
+        } else {
+          forwardedInit = Object.assign({}, init || {}, { body: forwardedBody });
+        }
+      }
+      pending = nativeFetch.call(context, forwardedInput, forwardedInit);
+      pending = settleVideoAdDecline(settleGqlFetch(pending, adInfo), declineInfo);
+    }
+    if (!tokenPlan || !tokenPlan.hasPip) return pending;
+    return Promise.resolve(pending).then(async (response) => {
+      const rebuilt = await spliceDeniedPlaybackTokens(response, tokenPlan);
+      return rebuilt || response;
+    });
   }
 
   function installFetchHook() {
@@ -1158,29 +1255,13 @@
       if (!enabled || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
       captureClientState(input, init);
       if (init && typeof init.body === 'string') {
-        const adInfo = fetchAdsRequestInfo(init.body);
-        const declineInfo = videoAdDeclineRequestInfo(init.body);
-        const patched = patchTokenBody(init.body);
-        if (patched !== init.body) init = Object.assign({}, init, { body: patched });
-        if (adInfo && adInfo.all) return settleGqlFetch(null, adInfo);
-        if (declineInfo && declineInfo.all) return settleVideoAdDecline(null, declineInfo);
-        const pending = nativeFetch.call(this, input, init);
-        return settleVideoAdDecline(settleGqlFetch(pending, adInfo), declineInfo);
+        return forwardPageGql(this, input, init, init.body, false);
       } else if (typeof Request !== 'undefined' && input instanceof Request &&
                  String(init && init.method || input.method || '').toUpperCase() === 'POST') {
         const context = this;
         const originalInit = init;
         return input.clone().text().then((body) => {
-          noteAdServiceBody(body);
-          const adInfo = fetchAdsRequestInfo(body);
-          const declineInfo = videoAdDeclineRequestInfo(body);
-          const patched = patchTokenBody(body);
-          if (adInfo && adInfo.all) return settleGqlFetch(null, adInfo);
-          if (declineInfo && declineInfo.all) return settleVideoAdDecline(null, declineInfo);
-          const pending = patched === body
-            ? nativeFetch.call(context, input, originalInit)
-            : nativeFetch.call(context, new Request(input, Object.assign({}, originalInit || {}, { body: patched })));
-          return settleVideoAdDecline(settleGqlFetch(pending, adInfo), declineInfo);
+          return forwardPageGql(context, input, originalInit, body, true);
         }, () => nativeFetch.call(context, input, originalInit));
       }
       return nativeFetch.call(this, input, init);
@@ -1200,9 +1281,6 @@
       const target = String(url || '');
       if (enabled && AD_SERVICE_URL_RE.test(target)) {
         if (VIDEO_AD_SERVICE_URL_RE.test(target)) announceAdImminent();
-        const error = new Error('Network request failed');
-        error.name = 'NetworkError';
-        throw error;
       }
       return nativeXhrOpen.apply(this, arguments);
     }
@@ -1213,6 +1291,97 @@
     } catch (_) {}
   }
 
+  const adManagerState = {
+    attempts: 0,
+    timer: 0,
+    manager: null,
+    declinedByWarden: false
+  };
+
+  function twitchWebpackRequires() {
+    const runtimes = [];
+    try {
+      const keys = Object.keys(window).filter((name) => /^webpackChunk/i.test(name));
+      for (const key of keys) {
+        try {
+          const queue = window[key];
+          if (!queue || typeof queue.push !== 'function') continue;
+          let requireFn = null;
+          const entry = [[Symbol('wardenone-twitch')], {}, (runtimeRequire) => { requireFn = runtimeRequire; }];
+          queue.push(entry);
+          if (!requireFn) {
+            const index = queue.indexOf(entry);
+            if (index !== -1) queue.splice(index, 1);
+          } else if (!runtimes.includes(requireFn)) {
+            runtimes.push(requireFn);
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return runtimes;
+  }
+
+  function findTwitchAdManager(requireFns) {
+    for (const requireFn of requireFns || []) {
+      const factories = requireFn && requireFn.m || {};
+      for (const id of Object.keys(factories)) {
+        let source = '';
+        try { source = Function.prototype.toString.call(factories[id]); } catch (_) { continue; }
+        if (source.indexOf('startProcessingRequests') < 0 || source.indexOf('declineReason') < 0) continue;
+        let exports = null;
+        try { exports = requireFn(id); } catch (_) { continue; }
+        if (!exports) continue;
+        for (const name of Object.keys(exports)) {
+          let candidate = null;
+          try { candidate = exports[name]; } catch (_) { continue; }
+          if (typeof candidate === 'function' && typeof candidate.startProcessingRequests === 'function' &&
+              typeof candidate.decline === 'function') return candidate;
+        }
+      }
+    }
+    return null;
+  }
+
+  function releaseAdManagerDecline() {
+    if (adManagerState.timer) clearTimeout(adManagerState.timer);
+    adManagerState.timer = 0;
+    adManagerState.attempts = 0;
+    if (adManagerState.declinedByWarden && adManagerState.manager) {
+      try {
+        if (String(adManagerState.manager.declineReason || '') === 'player_size') {
+          adManagerState.manager.declineReason = null;
+        }
+      } catch (_) {}
+    }
+    adManagerState.declinedByWarden = false;
+  }
+
+  function syncAdManagerDecline() {
+    if (!enabled) {
+      releaseAdManagerDecline();
+      return;
+    }
+    if (adManagerState.declinedByWarden || adManagerState.timer) return;
+    const attempt = () => {
+      adManagerState.timer = 0;
+      if (!enabled || adManagerState.declinedByWarden) return;
+      adManagerState.attempts++;
+      try {
+        const manager = findTwitchAdManager(twitchWebpackRequires());
+        if (manager) {
+          adManagerState.manager = manager;
+          if (!manager.declineReason) {
+            manager.decline('player_size', { sendEvent: false });
+            adManagerState.declinedByWarden = String(manager.declineReason || '') === 'player_size';
+          }
+          if (manager.declineReason) return;
+        }
+      } catch (_) {}
+      if (adManagerState.attempts < 240) adManagerState.timer = woTimeout(attempt, 500);
+    };
+    attempt();
+  }
+
   // Swapping the video does not change what Twitch's own player believes: it still
   // reads the ad markers in the native playlist, so it keeps showing the "Ad" badge
   // and opens its picture-by-picture "watch while the ad plays" window over a
@@ -1221,97 +1390,6 @@
   //
   // Injected exactly once and never from a MutationObserver: a callback that writes
   // to the DOM it observes re-triggers itself and pins a renderer core.
-  // A break gaps every segment it contains, which can leave the player with
-  // nothing to decode and no reason to retry: the stream spins until the tab is
-  // hidden and shown again, because that is what makes it re-evaluate. Do that
-  // for the viewer. Armed only while a swap is active and briefly after, and it
-  // acts only when the element still believes it is playing while the playhead
-  // has stopped advancing, so ordinary buffering and a deliberate pause are never
-  // touched. setTimeout rather than setInterval: a raw-source check forbids
-  // intervals in this file, and a self-scheduling timeout also stops cleanly.
-  const STALL_ARM_MS = 45 * 1000;
-  // Tuned for how this actually fails. A gapped break freezes the playhead almost
-  // immediately, so waiting three whole seconds to confirm it only adds three
-  // seconds to every recovery. Two checks half a second apart still cannot be
-  // tripped by ordinary frame pacing -- a playing video advances currentTime every
-  // frame -- but it reacts in about a second instead of three.
-  const STALL_POLL_MS = 500;
-  const STALL_STRIKES = 2;
-  const STALL_NUDGE_GAP_MS = 2500;
-  let stallTimer = 0;
-  let stallArmedUntil = 0;
-  let stallLastTime = -1;
-  let stallStrikes = 0;
-  let stallLastNudgeAt = 0;
-
-  function clearStallWatch() {
-    stallArmedUntil = 0;
-    stallStrikes = 0;
-    stallLastTime = -1;
-    if (stallTimer) clearTimeout(stallTimer);
-    stallTimer = 0;
-  }
-
-  function stallInterventionActive() {
-    try {
-      const state = String(document.documentElement &&
-        document.documentElement.getAttribute('data-wo-twitch-adblock') || '');
-      return state === 'blocked-gap' || state === 'blocked-hold';
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function nudgeStalledPlayback() {
-    try {
-      const video = primaryPlayerVideo();
-      if (!stallInterventionActive() || pageActuallyHidden() || !video || video.paused ||
-          video.ended || video.seeking || Number(video.readyState || 0) < 3) {
-        stallStrikes = 0;
-        return;
-      }
-      const at = Number(video.currentTime);
-      if (Number.isFinite(at) && at !== stallLastTime) {
-        stallLastTime = at;
-        stallStrikes = 0;
-        return;
-      }
-      stallStrikes++;
-      if (stallStrikes < STALL_STRIKES) return;
-      if (Date.now() - stallLastNudgeAt < STALL_NUDGE_GAP_MS) return;
-      stallStrikes = 0;
-      stallLastNudgeAt = Date.now();
-      video.pause();
-      const resumed = video.play();
-      if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
-    } catch (_) {}
-  }
-
-  function scheduleStallCheck() {
-    if (stallTimer) return;
-    try {
-      stallTimer = woTimeout(() => {
-        stallTimer = 0;
-        nudgeStalledPlayback();
-        if (Date.now() <= stallArmedUntil) scheduleStallCheck();
-      }, STALL_POLL_MS);
-    } catch (_) {}
-  }
-
-  function armStallWatch() {
-    stallArmedUntil = Date.now() + STALL_ARM_MS;
-    stallStrikes = 0;
-    // Seed the baseline from the current position immediately, so the very first
-    // check half a second later is already a real comparison rather than a
-    // throwaway that costs an extra poll before anything can be detected.
-    try {
-      const video = primaryPlayerVideo();
-      stallLastTime = video ? Number(video.currentTime) : -1;
-    } catch (_) {
-      stallLastTime = -1;
-    }
-    scheduleStallCheck();
-  }
 
   let adChromeCssInstalled = false;
   function installAdChromeCss() {
@@ -1322,7 +1400,7 @@
       adChromeCssInstalled = true;
       const style = document.createElement('style');
       style.id = 'wo-twitch-ad-chrome';
-      const gate = 'html[data-wo-twitch-adblock^="blocked-"] ';
+      const gate = 'html[data-wo-twitch-adblock="blocked-clean"] ';
       // Honest status of this list: the exact-match badge selectors that used to
       // live here were byte-identical to ungated rules in adCss above, and the
       // badge was still visible during a live swap, so they demonstrably no
@@ -1374,353 +1452,9 @@
         // The purple full-player "allow ads / get Turbo" gate. Matched by content
         // rather than by class, because the wrapper classes also back the pause,
         // loading and mature-content screens.
-        gate + '.video-player__overlay .player-overlay-background:has(> div[class^="Layout-"] > div[class^="Layout-"]' +
-        ' > div[class^="Layout-"] > a:is([href*="/how-to-allow-ads-browser"],[href="https://www.twitch.tv/turbo"]))' +
-        '{display:none!important;}';
+        gate + TWITCH_TURBO_OVERLAY_SELECTOR + '{display:none!important;}';
       root.appendChild(style);
     } catch (_) {}
-  }
-
-  // Post-swap latency. The clean backup is a separate stream session with its own
-  // live edge, so when a swap ends the viewer is left behind by that session's
-  // offset for the rest of the sitting.
-  //
-  // That offset is NOT observable from this side of the page. currentTime,
-  // buffered and seekable describe the media timeline; none of them carries the
-  // wall-clock age of the content on it, and a swap does not stop the element --
-  // the playhead keeps advancing at 1x across it. Anything inferred here from
-  // "the playhead lost time" measures a pause or a rebuffer instead, and
-  // reclaiming those seconds would skip exactly the content the viewer was
-  // waiting for. So the budget is measured where both playlists are actually
-  // parsed -- in the worker, from #EXT-X-PROGRAM-DATE-TIME -- and arrives with
-  // the 'clear' transition. With no measurement there is no seek.
-  //
-  // Everything else is a refusal: the DVR (twitch-rewind.js, ISOLATED world) and
-  // Twitch's own latency controller also drive this element, and losing that race
-  // is worse than staying late.
-  const CATCHUP_SETTLE_MS = 2000;
-  const CATCHUP_BASELINE_RETRY_MS = 250;
-  const CATCHUP_BASELINE_TRIES = 8;
-  const CATCHUP_EPISODE_MAX_MS = 120 * 1000;
-  const CATCHUP_COOLDOWN_MS = 15 * 1000;
-  const CATCHUP_MIN_SECONDS = 1.5;
-  const CATCHUP_MAX_SECONDS = 25;
-  // The playhead must have advanced with the wall clock for the whole episode.
-  // Anything larger is a pause or a stall, which is the viewer's time, not ours;
-  // anything smaller than this is timer jitter.
-  const CATCHUP_CONTINUITY_TOLERANCE = 1;
-  const CATCHUP_EDGE_MARGIN_SECONDS = 1.5;
-  const CATCHUP_KEEP_BEHIND_MIN_SECONDS = 2;
-  const CATCHUP_KEEP_BEHIND_MAX_SECONDS = 8;
-  const CATCHUP_RANGE_TOLERANCE = 0.25;
-  // Any of these means another actor (the viewer, the network, the player's own
-  // controller) moved the element during the break. None of them is evidence of
-  // swap latency, and all of them look identical to it in a wall-clock reading.
-  const CATCHUP_DISQUALIFYING_EVENTS = ['pause', 'waiting', 'stalled', 'seeking', 'ratechange', 'emptied', 'error'];
-  let catchUpEpisode = null;
-  let catchUpTimer = 0;
-  let catchUpBaselineTimer = 0;
-  let lastCatchUpAt = 0;
-
-  function catchUpLog(message) {
-    // Ad-time logging stays on: a seek that lands wrong is otherwise invisible
-    // after the fact, and this is the one path with no offline reproduction.
-    try { console.log('[WO-Twitch] catch-up ' + message); } catch (_) {}
-  }
-
-  function deliberateRewindActive() {
-    // Fails CLOSED, unlike the rest of this file: skipping a catch-up only costs
-    // latency, while seeking during a local rewind cuts a hole in the recording
-    // the viewer is watching. Worlds cannot share state, so the DVR publishes its
-    // own attribute; the layer probe covers an older rewind build in the tab.
-    try {
-      const root = document.documentElement;
-      if (root && typeof root.getAttribute === 'function' && root.getAttribute('data-wo-twitch-dvr')) return true;
-      if (typeof document.getElementById === 'function') {
-        const layer = document.getElementById('wardenone-twitch-replay-layer');
-        if (layer && String(layer.style && layer.style.display || '') !== 'none') return true;
-      }
-      return false;
-    } catch (_) {
-      return true;
-    }
-  }
-
-  function catchUpSeekTarget() {
-    const video = primaryPlayerVideo();
-    if (!(video instanceof HTMLVideoElement) || !video.isConnected) return null;
-    // primaryPlayerVideo()'s fallback tiers accept any connected blob video, and
-    // both the DVR's replay surfaces and guarded ad creatives are blob videos in
-    // the same subtree. Seeking one of those rewrites the wrong picture.
-    try {
-      if (video.getAttribute('data-wardenone-replay') || video.getAttribute('data-wo-twitch-independent-ad')) return null;
-    } catch (_) {
-      return null;
-    }
-    if (!videoMediaSource(video).startsWith('blob:')) return null;
-    return video;
-  }
-
-  function catchUpContainingEnds(ranges, position) {
-    const ends = [];
-    let count = 0;
-    try {
-      count = ranges && typeof ranges.length === 'number' ? Number(ranges.length) || 0 : 0;
-    } catch (_) {
-      return ends;
-    }
-    for (let index = 0; index < count; index++) {
-      try {
-        const start = Number(ranges.start(index));
-        const end = Number(ranges.end(index));
-        if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-        if (position >= start - CATCHUP_RANGE_TOLERANCE && position <= end + CATCHUP_RANGE_TOLERANCE) ends.push(end);
-      } catch (_) {}
-    }
-    return ends;
-  }
-
-  function measureCatchUp(video) {
-    try {
-      const current = Number(video.currentTime);
-      if (!Number.isFinite(current) || current < 0) return null;
-      // A VOD has a finite duration and a complete seekable range, so "catching
-      // up" there would throw the viewer to the end of a broadcast they opened at
-      // a deliberate timestamp (twitch-vod-rewind.js does exactly that).
-      if (Number(video.duration) !== Infinity) return null;
-      // seekable can be advertised beyond what is decodable, so buffered decides
-      // where it is safe to land and seekable only grants permission. Requiring a
-      // single containing buffered range keeps the seek inside real media.
-      const buffered = catchUpContainingEnds(video.buffered, current);
-      if (buffered.length !== 1) return null;
-      const seekable = catchUpContainingEnds(video.seekable, current);
-      if (!seekable.length) return null;
-      const edge = Math.min(buffered[0], Math.max.apply(null, seekable));
-      const ahead = edge - current;
-      if (!Number.isFinite(edge) || !Number.isFinite(ahead) || ahead < 0) return null;
-      return { current: current, edge: edge, ahead: ahead };
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function catchUpUnsafeState(video) {
-    try {
-      if (video.error) return 'media-error';
-      if (video.paused === true) return 'paused';
-      if (video.ended === true) return 'ended';
-      if (video.seeking === true) return 'seeking';
-      // HAVE_FUTURE_DATA: the landing point has to play through immediately, or
-      // the seek reads as a stall and Twitch surfaces it as a network error.
-      if (Number(video.readyState || 0) < 3) return 'not-ready';
-      // Twitch's own controller is already chasing the edge. Two controllers on
-      // one element oscillate; let it finish. The tolerance is a float-comparison
-      // epsilon, not a behavioural window: LL-HLS latency controllers correct with
-      // small nudges (1.02-1.05), and any deliberate rate change at all says
-      // somebody else owns this element.
-      if (Math.abs(Number(video.playbackRate == null ? 1 : video.playbackRate) - 1) > 0.01) return 'rate';
-      // A hidden tab throttles timers, which inflates the wall-clock measurement
-      // with delay we did not cause.
-      if (pageActuallyHidden()) return 'hidden';
-    } catch (_) {
-      return 'unreadable';
-    }
-    return '';
-  }
-
-  // Sampling video.paused once, at fire time, is not a pause guard: a viewer who
-  // pauses mid-break and resumes before the evaluation passes it, and the pause
-  // has already been recorded as lost wall-clock time. Watch the element for the
-  // whole episode instead. These listeners are element- and episode-scoped, so
-  // they add no document listeners, no observer and no interval.
-  function disqualifyCatchUpEpisode(event) {
-    const episode = catchUpEpisode;
-    if (!episode || episode.disqualifiedBy) return;
-    episode.disqualifiedBy = String(event && event.type || 'unknown');
-  }
-
-  function unwatchCatchUpVideo(episode) {
-    const video = episode && episode.watched;
-    if (!video) return;
-    episode.watched = null;
-    try {
-      for (const name of CATCHUP_DISQUALIFYING_EVENTS) video.removeEventListener(name, disqualifyCatchUpEpisode);
-    } catch (_) {}
-  }
-
-  function watchCatchUpVideo(episode, video) {
-    if (!episode || !video || episode.watched === video) return;
-    unwatchCatchUpVideo(episode);
-    try {
-      for (const name of CATCHUP_DISQUALIFYING_EVENTS) woOn(video, name, disqualifyCatchUpEpisode);
-      episode.watched = video;
-    } catch (_) {
-      // An element that will not accept listeners cannot be watched, so it cannot
-      // be seeked either.
-      episode.disqualifiedBy = 'unwatchable';
-    }
-  }
-
-  function closeCatchUpEpisode() {
-    if (catchUpBaselineTimer) clearTimeout(catchUpBaselineTimer);
-    if (catchUpTimer) clearTimeout(catchUpTimer);
-    catchUpBaselineTimer = 0;
-    catchUpTimer = 0;
-    unwatchCatchUpVideo(catchUpEpisode);
-    catchUpEpisode = null;
-  }
-
-  function sampleCatchUpBaseline() {
-    catchUpBaselineTimer = 0;
-    const episode = catchUpEpisode;
-    if (!episode || episode.baseline) return;
-    const video = catchUpSeekTarget();
-    const measured = video ? measureCatchUp(video) : null;
-    if (measured) {
-      watchCatchUpVideo(episode, video);
-      episode.baseline = {
-        at: Date.now(),
-        video: video,
-        source: videoMediaSource(video),
-        path: location.pathname || '',
-        current: measured.current,
-        ahead: measured.ahead
-      };
-      return;
-    }
-    // A pre-roll can block before the element exists, and setAdState dedupes, so
-    // there is no second rising edge to sample on. Retry briefly, never poll.
-    if (episode.baselineTries++ >= CATCHUP_BASELINE_TRIES) return;
-    catchUpBaselineTimer = woTimeout(sampleCatchUpBaseline, CATCHUP_BASELINE_RETRY_MS);
-  }
-
-  // Returns true only to ask for one more settle window; every other outcome
-  // ends the episode, so a missed guard can never turn into a repeated seek.
-  function evaluateCatchUp(episode, baseline) {
-    const now = Date.now();
-    if (now - baseline.at > CATCHUP_EPISODE_MAX_MS) return false;
-    if (lastCatchUpAt && now - lastCatchUpAt < CATCHUP_COOLDOWN_MS) return false;
-    // The viewer paused, the stream rebuffered, or somebody changed the rate at
-    // some point during the break. Twitch resumes where it stalled and stays
-    // behind where the viewer paused; so do we.
-    if (episode.disqualifiedBy) {
-      catchUpLog('skipped: playback was interrupted (' + episode.disqualifiedBy + ')');
-      return false;
-    }
-    // A best-effort "is a swap still running" probe, not a sound one: the
-    // attribute is a single flag, not a refcount, so with more than one wrapped
-    // worker in the tab the first 'clear' erases it while another worker is still
-    // serving a backup. It catches the common single-worker case; the measured
-    // budget and the continuity checks below are what actually bound the seek.
-    if (document.documentElement && document.documentElement.hasAttribute('data-wo-twitch-adblock')) return false;
-    // A seek emits waiting/stalled, which cancels the early-resume check and
-    // stretches an open pass-through window out to its full length.
-    if (playbackFailOpenUntil > now) return false;
-    if (deliberateRewindActive()) return false;
-    const video = catchUpSeekTarget();
-    // A different element or a new blob URL means the player rebuilt its
-    // MediaSource, so the baseline describes a timeline that no longer exists.
-    if (!video || video !== baseline.video || videoMediaSource(video) !== baseline.source ||
-        (location.pathname || '') !== baseline.path) return false;
-    // Only an element that was watched for the whole episode can be trusted: on
-    // any other one a pause or a stall would have gone unrecorded.
-    if (episode.watched !== video) return false;
-    if (catchUpUnsafeState(video)) return false;
-    const measured = measureCatchUp(video);
-    if (!measured) return false;
-
-    // The measured budget: how much older the backup session's newest segment was
-    // than the native stream's, read off #EXT-X-PROGRAM-DATE-TIME in the worker
-    // while it held both playlists. This is the only evidence that the swap cost
-    // the viewer anything; without it nothing is reclaimed.
-    const budget = Number(episode.offsetSeconds) || 0;
-    if (!(budget >= CATCHUP_MIN_SECONDS)) {
-      catchUpLog('skipped: no measured swap offset');
-      return false;
-    }
-    const wallElapsed = (now - baseline.at) / 1000;
-    const played = measured.current - baseline.current;
-    // The playhead must have tracked the wall clock across the whole episode. If
-    // it fell behind, the viewer paused or the stream stalled and those seconds
-    // are theirs; if it ran ahead, another controller already corrected. A pause
-    // and a swap are indistinguishable in this reading, which is exactly why it
-    // is used to REFUSE rather than to size the seek.
-    if (played < -CATCHUP_RANGE_TOLERANCE || Math.abs(wallElapsed - played) > CATCHUP_CONTINUITY_TOLERANCE) {
-      catchUpLog('skipped: playback was not continuous (' + (wallElapsed - played).toFixed(2) + 's)');
-      return false;
-    }
-    // Reproduce the buffer-ahead the player itself chose before the break rather
-    // than inventing a target latency.
-    const keepBehind = Math.min(Math.max(baseline.ahead, CATCHUP_KEEP_BEHIND_MIN_SECONDS), CATCHUP_KEEP_BEHIND_MAX_SECONDS);
-    // What the break actually left sitting ahead of the playhead. Latency the
-    // viewer already had before the break is excluded by construction, and a
-    // player that never buffered a surplus has nothing to skip over.
-    const surplus = measured.ahead - baseline.ahead;
-    const allowed = Math.min(budget, surplus, measured.edge - keepBehind - measured.current, CATCHUP_MAX_SECONDS);
-    const target = Math.min(measured.current + allowed, measured.edge - CATCHUP_EDGE_MARGIN_SECONDS);
-    const delta = target - measured.current;
-    if (!Number.isFinite(delta) || delta < CATCHUP_MIN_SECONDS) {
-      // The worker reports clean when it returns a native playlist, which is
-      // before the player has appended those segments, so the first measurement
-      // still describes the backup timeline.
-      if (episode.evaluations++ < 1) return true;
-      catchUpLog('skipped: delta ' + delta.toFixed(2) + 's of a measured ' + budget.toFixed(2) + 's offset');
-      return false;
-    }
-    lastCatchUpAt = now;
-    // Advisory and never retried. If it does not stick, Twitch's own controller
-    // is driving and the cost is one break of latency, not a broken stream.
-    video.currentTime = target;
-    catchUpLog('seek +' + delta.toFixed(2) + 's of a measured ' + budget.toFixed(2) +
-      's offset (holding ' + keepBehind.toFixed(2) + 's behind edge)');
-    return false;
-  }
-
-  function runCatchUp() {
-    catchUpTimer = 0;
-    const episode = catchUpEpisode;
-    const baseline = episode && episode.baseline;
-    let retry = false;
-    try {
-      if (baseline) retry = evaluateCatchUp(episode, baseline) === true;
-    } catch (_) {}
-    if (retry) {
-      catchUpTimer = woTimeout(runCatchUp, CATCHUP_SETTLE_MS);
-      return;
-    }
-    closeCatchUpEpisode();
-  }
-
-  function catchUpOnAdState(blocking, offsetMs) {
-    if (blocking) {
-      if (catchUpTimer) clearTimeout(catchUpTimer);
-      catchUpTimer = 0;
-      // blocked-clean/gap/hold arrive as separate messages inside one pod. Only
-      // the first opens an episode: a baseline resampled mid-swap already carries
-      // the backup's latency and would authorise skipping watched content.
-      if (catchUpEpisode && Date.now() - catchUpEpisode.at <= CATCHUP_EPISODE_MAX_MS) return;
-      closeCatchUpEpisode();
-      catchUpEpisode = { at: Date.now(), baseline: null, baselineTries: 0, evaluations: 0,
-        watched: null, disqualifiedBy: '', offsetSeconds: 0 };
-      sampleCatchUpBaseline();
-      return;
-    }
-    const episode = catchUpEpisode;
-    // The first clean poll of a session emits clear with no preceding block.
-    if (!episode) return;
-    if (catchUpBaselineTimer) clearTimeout(catchUpBaselineTimer);
-    catchUpBaselineTimer = 0;
-    // The worker's measurement of how far behind the backup session ran. Bounded
-    // there; anything unreadable arrives as 0, which is a refusal.
-    const measuredOffset = Number(offsetMs);
-    episode.offsetSeconds = Number.isFinite(measuredOffset) && measuredOffset > 0 ? measuredOffset / 1000 : 0;
-    // Without a baseline there is nothing to compare the release against.
-    if (!episode.baseline) {
-      closeCatchUpEpisode();
-      return;
-    }
-    if (catchUpTimer) clearTimeout(catchUpTimer);
-    catchUpTimer = woTimeout(runCatchUp, CATCHUP_SETTLE_MS);
   }
 
   async function proxyWorkerGql(worker, message) {
@@ -1735,7 +1469,7 @@
     const playerType = String(variables && variables.playerType || '');
     if (!id || !tokenOperation(body) || !variables ||
         !/^[a-z0-9_]{1,25}$/i.test(String(variables.login || '')) ||
-        !['site', 'popout', 'mobile_web', 'embed'].includes(playerType)) {
+        !['mobile_feed', 'popout', 'autoplay', 'site', 'mobile_web', 'embed'].includes(playerType)) {
       fail('Rejected invalid GQL proxy request');
       return;
     }
@@ -1809,48 +1543,40 @@
     }
   }
 
-  function applyWorkerAdState(worker, state, offsetMs) {
-    const blocking = /^blocked-/.test(state);
-    const wasBlocking = blockingWorkers.size > 0;
+  function applyWorkerAdState(worker, state) {
+    const blocking = state === 'blocked-clean';
     if (blocking) {
       blockingWorkers.add(worker);
+      workerAdStates.set(worker, state);
       lastStreamInterventionAt = Date.now();
       installAdChromeCss();
-      if (state === 'blocked-gap' || state === 'blocked-hold') armStallWatch();
     } else {
       blockingWorkers.delete(worker);
-      const measuredOffset = Number(offsetMs);
-      if (Number.isFinite(measuredOffset) && measuredOffset > blockingSwapOffsetMs) {
-        blockingSwapOffsetMs = measuredOffset;
-      }
+      workerAdStates.delete(worker);
     }
     const stillBlocking = blockingWorkers.size > 0;
     try {
       if (stillBlocking) {
-        if (blocking) document.documentElement.setAttribute('data-wo-twitch-adblock', state);
+        const visibleState = workerAdStates.values().next().value || 'blocked-clean';
+        document.documentElement.setAttribute('data-wo-twitch-adblock', visibleState);
       } else {
         document.documentElement.removeAttribute('data-wo-twitch-adblock');
       }
     } catch (_) {}
-    if (!wasBlocking && stillBlocking) {
-      catchUpOnAdState(true, 0);
-    } else if (wasBlocking && !stillBlocking) {
-      clearStallWatch();
-      const finalOffset = blockingSwapOffsetMs;
-      blockingSwapOffsetMs = 0;
-      catchUpOnAdState(false, finalOffset);
-    }
   }
 
   function releaseWorkerAdState(worker) {
-    if (!blockingWorkers.has(worker)) return;
+    const wasBlocking = blockingWorkers.has(worker);
     blockingWorkers.delete(worker);
+    workerAdStates.delete(worker);
+    if (!wasBlocking) return;
     if (blockingWorkers.size === 0) {
-      clearStallWatch();
       try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
-      const finalOffset = blockingSwapOffsetMs;
-      blockingSwapOffsetMs = 0;
-      catchUpOnAdState(false, finalOffset);
+    } else {
+      try {
+        const visibleState = workerAdStates.values().next().value || 'blocked-clean';
+        document.documentElement.setAttribute('data-wo-twitch-adblock', visibleState);
+      } catch (_) {}
     }
   }
 
@@ -1877,6 +1603,12 @@
     const GQL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
     const MEDIA_TTL = 5 * 60 * 1000;
     const BACKUP_TTL = 2 * 60 * 1000;
+    const BACKUP_STALE_MS = 8 * 1000;
+    // A warning-time playlist refresh can finish just before the native ad poll.
+    // Keep that already-validated body only long enough to bridge the two requests;
+    // older media is polled and validated again before it can be served.
+    const BACKUP_PRIME_MS = 2 * 1000;
+    const BACKUP_SEARCH_TIMEOUT_MS = 2400;
     const NEGATIVE_TTL = 30 * 1000;
     const MEDIA_MAX = 128;
     const BACKUP_MAX = 12;
@@ -1894,10 +1626,13 @@
     // and does not delay mid-roll fallback, whose own wait stays bounded at 900ms.
     const BACKUP_POLL_TIMEOUT_MS = 1500;
     const COMPLETE_MEDIA_RETRY_MS = 650;
-    const CLEAN_NATIVE_TTL = 2500;
     const NATIVE_RELEASE_POLLS = 3;
-    const AD_QUARANTINE_MAX_MS = 45 * 1000;
+    const AD_QUARANTINE_MAX_MS = 120 * 1000;
     const TOKEN_HASH = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
+    const TOKEN_QUERY = 'query PlaybackAccessToken($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!, $platform: String!) {' +
+      ' streamPlaybackAccessToken(channelName: $login, params: {platform: $platform, playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) { value signature }' +
+      ' videoPlaybackAccessToken(id: $vodID, params: {platform: $platform, playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) { value signature }' +
+      ' }';
     const EMPTY_STATE = {
       tokenHash: TOKEN_HASH,
       tokenTemplate: null
@@ -1915,10 +1650,37 @@
     const pendingBackups = new Map();
     const pendingBackupPolls = new Map();
     const pendingGql = new Map();
+    const backupControllers = new Set();
+    const sequenceStates = new Map();
     let backupEpoch = 0;
     let activeChannel = '';
     let activeMediaProfile = null;
     let activeMasterGeneration = 0;
+    let activeMasterUrl = '';
+    let activeMasterText = '';
+
+    function invalidateBackupWork(clearSequences) {
+      backupEpoch++;
+      for (const controller of Array.from(backupControllers)) {
+        try { controller.abort(); } catch (_) {}
+      }
+      backupControllers.clear();
+      for (const pending of pendingGql.values()) {
+        try { clearTimeout(pending.timer); } catch (_) {}
+        try { pending.reject(new Error('backup session changed')); } catch (_) {}
+      }
+      pendingGql.clear();
+      backups.clear();
+      pendingBackups.clear();
+      pendingBackupPolls.clear();
+      if (clearSequences) sequenceStates.clear();
+    }
+
+    function interventionCurrent(info, epoch) {
+      if (!active || epoch !== backupEpoch) return false;
+      return !info || !info.masterGeneration ||
+        Number(info.masterGeneration) === Number(activeMasterGeneration);
+    }
 
     function post(type, extra) {
       try {
@@ -1949,7 +1711,7 @@
       try {
         const profile = fallbackVariant(activeChannel);
         if (profile && adWarningActive(profile.channel)) {
-          const pending = getBackup(profile, true);
+          const pending = primeBackupForAd(profile);
           if (pending && typeof pending.catch === 'function') pending.catch(() => {});
         }
       } catch (_) {}
@@ -1961,30 +1723,10 @@
     // therefore stay applied long after the break ended. Report transitions only,
     // including the return to clean playback.
     let lastAdStateSent = '';
-    // Post-swap latency budget for the page. The page cannot measure this: a swap
-    // does not stop the media element, so nothing on the timeline records that the
-    // segments now arriving are older than the ones the native stream is serving.
-    // Here both playlists are in hand at the same instant, and both carry
-    // #EXT-X-PROGRAM-DATE-TIME, so the age difference between their live edges is
-    // a direct reading rather than an inference. Reported once, with 'clear'.
-    let swapOffsetMs = 0;
-    function noteSwapOffset(nativeEdgeWall, backupEdgeWall) {
-      const native = Number(nativeEdgeWall);
-      const backup = Number(backupEdgeWall);
-      if (!Number.isFinite(native) || !Number.isFinite(backup)) return;
-      const offset = native - backup;
-      // A backup at or ahead of the native edge costs no latency, and one further
-      // behind than a whole quarantine window is a clock or manifest anomaly, not
-      // this break. Report nothing rather than a guess.
-      if (!(offset > 0) || offset > AD_QUARANTINE_MAX_MS) return;
-      if (offset > swapOffsetMs) swapOffsetMs = offset;
-    }
     function setAdState(state, channel) {
       if (state === lastAdStateSent) return;
       lastAdStateSent = state;
-      const offsetMs = state === 'clear' ? swapOffsetMs : 0;
-      if (state === 'clear') swapOffsetMs = 0;
-      post('ad-state', { state: state, channel: channel || '', offsetMs: offsetMs });
+      post('ad-state', { state: state, channel: channel || '' });
     }
 
     function urlOf(input) {
@@ -2050,7 +1792,10 @@
     }
 
     function nativeMediaInput(input, url, info) {
-      if (!info || (!info.adActive && !info.backupActive && !info.imminentActive)) return input;
+      // Cursor removal is needed only while this channel/session is returning an
+      // ordinary alternate playlist that cannot satisfy the native part cursor.
+      const state = sequenceStateFor(info);
+      if (!state || !state.backupActive) return input;
       const ordinaryUrl = withoutLowLatencyQuery(url);
       if (!ordinaryUrl || ordinaryUrl === url) return input;
       if (typeof input === 'string') return ordinaryUrl;
@@ -2063,6 +1808,25 @@
         }
       } catch (_) {}
       return input;
+    }
+
+    function clearNativeIntervention(info) {
+      const state = sequenceStateFor(info);
+      if (state) state.backupActive = false;
+    }
+
+    async function fetchNativeMedia(input, init, url, info) {
+      const forwarded = nativeMediaInput(input, url, info);
+      const changed = urlOf(forwarded) !== url;
+      try {
+        const response = await realFetch(forwarded, init);
+        if (!changed || (response && response.ok)) return { response: response, changed: changed };
+      } catch (error) {
+        if (!changed) throw error;
+      }
+      clearNativeIntervention(info);
+      setAdState('clear', info && info.channel || '');
+      return { response: await realFetch(input, init), changed: false, retriedExact: true };
     }
 
     async function retryCompleteMediaPlaylist(input, init, url) {
@@ -2186,6 +1950,20 @@
         .join(',');
     }
 
+    function videoCodecFamily(codecs) {
+      const first = String(codecs || '').split(',')[0].trim().toLowerCase().split('.')[0];
+      if (first === 'hev1' || first === 'hvc1') return 'hevc';
+      if (first === 'avc1' || first === 'avc3') return 'avc';
+      if (first === 'av01') return 'av1';
+      return first;
+    }
+
+    function audioCodecFamily(codecs) {
+      const values = String(codecs || '').split(',').slice(1)
+        .map((codec) => codec.trim().toLowerCase().split('.')[0]).filter(Boolean);
+      return values.sort().join(',');
+    }
+
     function resolutionArea(resolution) {
       const match = /^(\d+)x(\d+)$/i.exec(String(resolution || ''));
       return match ? Number(match[1]) * Number(match[2]) : 0;
@@ -2215,28 +1993,46 @@
       return variants;
     }
 
-    function chooseVariant(variants, wanted) {
+    function rankVariants(variants, wanted) {
       if (!variants || !variants.length) return null;
       const wantedCodecs = codecSignature(wanted && wanted.codecs);
-      // The replacement is returned through the already-open media playlist URL,
-      // so Twitch does not recreate its MediaSource/SourceBuffer. A merely similar
-      // codec family is not safe here: changing H.264 profile/level or the audio
-      // codec mid-buffer is a common Chromium MEDIA_ERR_DECODE / Twitch #3000 path.
-      if (!wantedCodecs) return null;
-      let pool = variants.filter((variant) => codecSignature(variant.codecs) === wantedCodecs);
+      const wantedVideoFamily = videoCodecFamily(wanted && wanted.codecs);
+      const wantedAudioFamily = audioCodecFamily(wanted && wanted.codecs);
+      // The existing SourceBuffer can accept another rendition in the same video
+      // decoder family, but not an AVC/HEVC/AV1 switch. Audio families must also
+      // agree; the later media-container probe rejects MPEG-TS/CMAF crossings.
+      if (!wantedVideoFamily) return null;
+      let pool = variants.filter((variant) =>
+        videoCodecFamily(variant.codecs) === wantedVideoFamily &&
+        (!wantedAudioFamily || !audioCodecFamily(variant.codecs) ||
+          audioCodecFamily(variant.codecs) === wantedAudioFamily));
       if (!pool.length) return null;
-      const groupCompatible = pool.filter((variant) =>
-        (!wanted.audio || !variant.audio || variant.audio === wanted.audio) &&
-        (!wanted.subtitles || !variant.subtitles || variant.subtitles === wanted.subtitles));
-      if (groupCompatible.length) pool = groupCompatible;
-      return pool.find((variant) => variant.video && variant.video === wanted.video) ||
-        pool.find((variant) => variant.resolution === wanted.resolution && (!wanted.fps || variant.fps === wanted.fps)) ||
-        pool.find((variant) => variant.resolution === wanted.resolution) ||
-        pool.reduce((best, variant) => {
-          if (!best) return variant;
-          const target = resolutionArea(wanted.resolution);
-          return Math.abs(resolutionArea(variant.resolution) - target) < Math.abs(resolutionArea(best.resolution) - target) ? variant : best;
-        }, null);
+      if (wanted && wanted.audio) pool = pool.filter((variant) => variant.audio === wanted.audio);
+      if (wanted && wanted.subtitles) pool = pool.filter((variant) => variant.subtitles === wanted.subtitles);
+      if (!pool.length) return null;
+      const targetArea = resolutionArea(wanted && wanted.resolution);
+      return pool.slice().sort((left, right) => {
+        const score = (variant) => {
+          const exactCodecs = codecSignature(variant.codecs) === wantedCodecs ? 0 : 1;
+          const exactVideo = variant.video && variant.video === wanted.video ? 0 : 1;
+          const exactResolution = variant.resolution === wanted.resolution ? 0 : 1;
+          const exactFps = !wanted.fps || variant.fps === wanted.fps ? 0 : 1;
+          return [exactCodecs, exactVideo, exactResolution, exactFps,
+            Math.abs(resolutionArea(variant.resolution) - targetArea),
+            Math.abs(Number(variant.bandwidth || 0) - Number(wanted.bandwidth || 0))];
+        };
+        const a = score(left);
+        const b = score(right);
+        for (let index = 0; index < a.length; index++) {
+          if (a[index] !== b[index]) return a[index] - b[index];
+        }
+        return 0;
+      });
+    }
+
+    function chooseVariant(variants, wanted) {
+      const ranked = rankVariants(variants, wanted);
+      return ranked && ranked[0] || null;
     }
 
     function absoluteUrl(rawUrl, baseUrl) {
@@ -2477,68 +2273,407 @@
       };
     }
 
-    function beginAdQuarantine(info, evidence) {
-      if (!info) return;
+    const SEQUENCE_TAG = '#EXT-X-MEDIA-SEQUENCE:';
+    const SEQUENCE_STEP_TOLERANCE = 6;
+
+    function sequenceStateFor(info) {
+      const channel = workerChannelName(info && info.channel) || channelFromMaster(info && info.master);
+      if (!channel) return null;
+      const key = channel + '|' + Number(info && info.masterGeneration || activeMasterGeneration || 0);
+      let state = sequenceStates.get(key);
+      if (!state) {
+        state = {
+          seqOffset: 0,
+          seqBackupOffset: 0,
+          seqHeads: Object.create(null),
+          seqSnapshots: Object.create(null),
+          nativeObserved: Object.create(null),
+          seqServedHead: null,
+          seqInBreak: false,
+          seqSource: null,
+          seqServedPdt: undefined,
+          seqServedNumber: undefined,
+          backupActive: false,
+          adActive: false,
+          lastConfirmedAdAt: 0,
+          adUntilSequence: 0,
+          adSequenceUrl: '',
+          cleanNativePolls: 0,
+          cleanCandidateUrl: '',
+          cleanCandidateSequence: null,
+          cleanCandidatePdt: null,
+          lastNativeText: '',
+          lastNativeUrl: '',
+          lastBridgeKey: ''
+        };
+        sequenceStates.set(key, state);
+        while (sequenceStates.size > 8) sequenceStates.delete(sequenceStates.keys().next().value);
+      }
+      return state;
+    }
+
+    function sequenceRead(text) {
+      const source = String(text || '');
+      const at = source.indexOf(SEQUENCE_TAG);
+      if (at < 0) return null;
+      const end = source.indexOf('\n', at);
+      const value = parseInt(source.substring(at + SEQUENCE_TAG.length, end < 0 ? source.length : end), 10);
+      return Number.isFinite(value) ? value : null;
+    }
+
+    function sequenceWrite(text, value) {
+      const source = String(text || '');
+      const at = source.indexOf(SEQUENCE_TAG);
+      if (at < 0 || !Number.isFinite(value) || value < 0) return null;
+      let end = source.indexOf('\n', at);
+      if (end < 0) end = source.length;
+      if (end > 0 && source.charAt(end - 1) === '\r') end--;
+      return source.substring(0, at) + SEQUENCE_TAG + Math.round(value) + source.substring(end);
+    }
+
+    function sequenceSegments(text) {
+      const segments = [];
+      let pdt = null;
+      for (const line of String(text || '').replace(/\r/g, '').split('\n')) {
+        if (line.indexOf('#EXT-X-PROGRAM-DATE-TIME:') === 0) {
+          pdt = Date.parse(line.slice(25));
+        } else if (line.indexOf('#EXTINF:') === 0) {
+          const duration = parseFloat(line.slice(8)) || 0;
+          segments.push({ pdt: Number.isFinite(pdt) ? pdt : null, duration: duration });
+          if (Number.isFinite(pdt) && duration > 0) pdt += duration * 1000;
+        }
+      }
+      return segments;
+    }
+
+    function sequenceSkippedSegments(text) {
+      let found = false;
+      let value = 0;
+      for (const rawLine of String(text || '').replace(/\r/g, '').split('\n')) {
+        const line = String(rawLine || '').trim();
+        if (line.toUpperCase().indexOf('#EXT-X-SKIP:') !== 0) continue;
+        if (found) return null;
+        found = true;
+        const attributes = line.replace(/^[^:]*:/, '');
+        const occurrences = attributes.match(/(?:^|,)SKIPPED-SEGMENTS=/gi);
+        if (!occurrences || occurrences.length !== 1) return null;
+        const skipped = Number(parseAttributes(line)['SKIPPED-SEGMENTS']);
+        if (!Number.isSafeInteger(skipped) || skipped < 0) return null;
+        value = skipped;
+      }
+      return found ? value : 0;
+    }
+
+    function sequenceTail(text) {
+      const sequence = sequenceRead(text);
+      const segments = sequenceSegments(text);
+      const last = segments[segments.length - 1];
+      if (sequence === null || !last || !Number.isFinite(last.pdt)) return null;
+      /* EXT-X-SKIP replaces earlier segment entries but not their logical media
+         sequence numbers. Count them for timeline math while preserving the
+         original delta playlist bytes and MEDIA-SEQUENCE value. */
+      const skipped = sequenceSkippedSegments(text);
+      if (skipped === null) return null;
+      const count = skipped + segments.length;
+      return {
+        number: sequence + count - 1,
+        pdt: last.pdt,
+        sequence: sequence,
+        count: count,
+        duration: last.duration || 2
+      };
+    }
+
+    function sequenceNumberAt(text, pdt) {
+      const sequence = sequenceRead(text);
+      const segments = sequenceSegments(text);
+      if (sequence === null || segments.length < 2 || !Number.isFinite(segments[0].pdt) ||
+          !Number.isFinite(segments[segments.length - 1].pdt) || !Number.isFinite(pdt)) return null;
+      const skipped = sequenceSkippedSegments(text);
+      if (skipped === null) return null;
+      const firstNumber = sequence + skipped;
+      const first = segments[0].pdt;
+      const last = segments[segments.length - 1].pdt;
+      if (!(last > first)) return null;
+      if (pdt >= first && pdt <= last) {
+        let at = first;
+        for (let index = 0; index < segments.length - 1; index++) {
+          const nextPdt = segments[index + 1].pdt;
+          const duration = nextPdt !== null && nextPdt !== undefined
+            ? nextPdt - at
+            : (segments[index].duration || 0) * 1000;
+          if (!(duration > 0)) continue;
+          if (pdt <= at + duration) return firstNumber + index + (pdt - at) / duration;
+          at += duration;
+        }
+        return firstNumber + segments.length - 1;
+      }
+      const step = (last - first) / (segments.length - 1);
+      if (!(step > 0)) return null;
+      const slack = last - first;
+      if (pdt < first - slack || pdt > last + slack) return null;
+      return firstNumber + (pdt - first) / step;
+    }
+
+    function sequenceServe(state, url, text, sequence, field) {
+      if (!state || sequence === null) return text;
+      const renditionKey = canonical(url);
+      const last = state.seqHeads[renditionKey];
+      const floor = Math.max(0, last === null || last === undefined ? 0 : last);
+      const head = sequence + Number(state[field] || 0);
+      if (head < floor) return null;
+      state.seqHeads[renditionKey] = head;
+      state.seqServedHead = head;
+      if (head === sequence) return text;
+      return sequenceWrite(text, head) || text;
+    }
+
+    function sequenceApplyNative(state, url, text) {
+      const served = sequenceServe(state, url, text, sequenceRead(text), 'seqOffset');
+      if (served === null) return null;
+      sequenceRecordServed(state, url, text, served);
+      return served;
+    }
+
+    function sequenceProposedOffset(state, text) {
+      if (!state || state.seqServedPdt === undefined || state.seqServedNumber === undefined) return false;
+      const here = sequenceNumberAt(text, state.seqServedPdt);
+      if (here === null) return null;
+      return Math.round(state.seqServedNumber - here);
+    }
+
+    function sequenceRecordServed(state, url, sourceText, servedText) {
+      if (!state) return;
+      const tail = sequenceTail(sourceText);
+      if (tail && state.seqServedHead !== null && state.seqServedHead !== undefined) {
+        state.seqServedPdt = tail.pdt;
+        state.seqServedNumber = state.seqServedHead + tail.count - 1;
+      }
+      state.seqSnapshots[canonical(url)] = servedText;
+    }
+
+    function sequenceObserveNative(state, url, text) {
+      if (!state) return { key: canonical(url), stale: false, tail: null };
+      const key = canonical(url);
+      const tail = sequenceTail(text);
+      if (!tail) return { key: key, stale: false, tail: null };
+      const previous = state.nativeObserved[key];
+      const stale = !!previous && (tail.pdt < previous.pdt ||
+        (tail.pdt === previous.pdt && tail.number < previous.number));
+      if (!stale && (!previous || tail.pdt > previous.pdt || tail.number > previous.number)) {
+        state.nativeObserved[key] = { pdt: tail.pdt, number: tail.number };
+      }
+      return { key: key, stale: stale, tail: tail };
+    }
+
+    function sequenceObservationCurrent(state, observation) {
+      if (!state || !observation || !observation.tail) return true;
+      const latest = state.nativeObserved[observation.key];
+      return !!latest && latest.pdt === observation.tail.pdt && latest.number === observation.tail.number;
+    }
+
+    function sequenceStaleResponse(state, observation, response) {
+      return response;
+    }
+
+    function sequenceResetToNative(state, url, text) {
+      if (!state) return;
+      state.seqOffset = 0;
+      state.seqBackupOffset = 0;
+      state.seqHeads = Object.create(null);
+      state.seqSnapshots = Object.create(null);
+      state.seqServedHead = null;
+      state.seqServedPdt = undefined;
+      state.seqServedNumber = undefined;
+      state.seqInBreak = false;
+      state.seqSource = null;
+      state.backupActive = false;
+      const sequence = sequenceRead(text);
+      if (sequence === null) return;
+      state.seqHeads[canonical(url)] = sequence;
+      state.seqServedHead = sequence;
+      sequenceRecordServed(state, url, text, text);
+    }
+
+    function oneShotNativeBridge(state, url, evidence) {
+      if (!state || !state.lastNativeText) return '';
+      let cleanEvidence = null;
+      try { cleanEvidence = playlistEvidence(state.lastNativeText); } catch (_) {}
+      if (!cleanEvidence || cleanEvidence.confirmed > 0 || cleanEvidence.fullPlayable < 1) return '';
+      const key = canonical(url) + '|' + String(Number.isFinite(evidence && evidence.mediaSequence)
+        ? evidence.mediaSequence : 'parts');
+      if (state.lastBridgeKey === key) return '';
+      state.lastBridgeKey = key;
+      return state.lastNativeText;
+    }
+
+    function sequenceNativeBreak(state, url, text) {
+      if (!state) return text;
+      const previousOffset = state.seqOffset;
+      const previousSource = state.seqSource;
+      const previousBreak = state.seqInBreak;
+      if (state.seqInBreak && state.seqSource !== 'native') {
+        const proposed = sequenceProposedOffset(state, text);
+        if (proposed === null || proposed === false) return null;
+        state.seqOffset = proposed;
+      }
+      state.seqInBreak = true;
+      state.seqSource = 'native';
+      const served = sequenceApplyNative(state, url, text);
+      if (served === null) {
+        state.seqOffset = previousOffset;
+        state.seqSource = previousSource;
+        state.seqInBreak = previousBreak;
+      }
+      return served;
+    }
+
+    function sequenceOutsideBreak(state, url, text, release) {
+      if (!state) return text;
+      if (state.seqInBreak && release) {
+        const previous = state.seqOffset;
+        let proposed = previous;
+        if (state.seqSource !== 'native') {
+          proposed = sequenceProposedOffset(state, text);
+          if (proposed === null || proposed === false) return null;
+        }
+        const head = sequenceRead(text);
+        const tail = sequenceTail(text);
+        if (head === null || !tail || state.seqServedNumber === undefined ||
+            state.seqServedPdt === undefined) return null;
+        const expected = (tail.pdt - state.seqServedPdt) / ((tail.duration || 2) * 1000);
+        const actual = head + proposed + tail.count - 1 - state.seqServedNumber;
+        if (Math.abs(actual - expected) > SEQUENCE_STEP_TOLERANCE) return null;
+        state.seqOffset = proposed;
+        state.seqInBreak = false;
+        state.seqSource = 'native';
+        const served = sequenceApplyNative(state, url, text);
+        if (served === null) {
+          state.seqOffset = previous;
+          state.seqInBreak = true;
+          return null;
+        }
+        return served;
+      }
+      return sequenceApplyNative(state, url, text);
+    }
+
+    function sequenceInsideBreak(state, url, nativeText, cleanText, source) {
+      if (!state) return cleanText;
+      const backup = sequenceTail(cleanText);
+      if (!backup) return null;
+      const sourceName = 'backup:' + String(source || '?');
+      const previousOffset = state.seqBackupOffset;
+      const previousSource = state.seqSource;
+      const previousBreak = state.seqInBreak;
+      if (!state.seqInBreak && state.seqServedPdt !== undefined && backup.pdt <= state.seqServedPdt) {
+        return null;
+      }
+      if (state.seqInBreak && state.seqSource !== sourceName) {
+        const proposed = sequenceProposedOffset(state, cleanText);
+        if (proposed === null || proposed === false) return null;
+        state.seqBackupOffset = proposed;
+        state.seqSource = sourceName;
+      }
+      if (!state.seqInBreak) {
+        state.seqInBreak = true;
+        state.seqSource = sourceName;
+        if (state.seqServedHead === null || state.seqServedHead === undefined) {
+          state.seqBackupOffset = 0;
+        } else {
+          const proposed = sequenceProposedOffset(state, cleanText);
+          if (proposed === null || proposed === false) {
+            state.seqInBreak = previousBreak;
+            state.seqSource = previousSource;
+            return null;
+          }
+          state.seqBackupOffset = proposed;
+        }
+      }
+      const served = sequenceServe(state, url, cleanText, backup.sequence, 'seqBackupOffset');
+      if (served === null) {
+        state.seqBackupOffset = previousOffset;
+        state.seqSource = previousSource;
+        state.seqInBreak = previousBreak;
+        return null;
+      }
+      sequenceRecordServed(state, url, cleanText, served);
+      return served;
+    }
+
+    function beginAdQuarantine(info, evidence, url) {
+      const state = sequenceStateFor(info);
+      if (!state) return;
       const now = Date.now();
       const target = Math.max(1, Number(evidence.targetDuration) || 2);
       const advertised = Math.max(target * 3, Number(evidence.advertisedDuration) || 0);
       const boundedDuration = Math.min(AD_QUARANTINE_MAX_MS / 1000, advertised);
-      info.imminentActive = false;
-      info.adActive = true;
-      info.lastConfirmedAdAt = now;
-      info.cleanNativePolls = 0;
+      state.adActive = true;
+      state.lastConfirmedAdAt = now;
+      state.cleanNativePolls = 0;
+      state.cleanCandidateUrl = '';
+      state.cleanCandidateSequence = null;
+      state.cleanCandidatePdt = null;
+      state.adSequenceUrl = canonical(url);
       if (Number.isFinite(evidence.mediaSequence)) {
         const until = evidence.mediaSequence + Math.max(3, Math.ceil(boundedDuration / target));
-        info.adUntilSequence = Math.max(Number(info.adUntilSequence) || 0, until);
+        state.adUntilSequence = Math.max(Number(state.adUntilSequence) || 0, until);
       }
     }
 
-    function nativeAdQuarantineState(info, evidence) {
-      if (!info || !info.adActive) return { active: false, release: false };
+    function nativeAdQuarantineState(info, evidence, url) {
+      const state = sequenceStateFor(info);
+      if (!state || !state.adActive) return { active: false, release: false, state: state };
       const markerFree = !evidence.hasMarker && !evidence.strongMetadata;
       const explicitlyLive = markerFree && evidence.fullPlayable > 0 &&
         evidence.explicitLive === evidence.fullPlayable;
-      info.cleanNativePolls = explicitlyLive ? (Number(info.cleanNativePolls) || 0) + 1 : 0;
-      const sequencePast = Number.isFinite(evidence.mediaSequence) && Number(info.adUntilSequence) > 0 &&
-        evidence.mediaSequence > Number(info.adUntilSequence);
-      const timedOut = Date.now() - (Number(info.lastConfirmedAdAt) || 0) >= AD_QUARANTINE_MAX_MS;
-      const release = info.cleanNativePolls >= NATIVE_RELEASE_POLLS || sequencePast || timedOut;
-      if (release) {
-        info.adActive = false;
-        info.adUntilSequence = 0;
-        info.cleanNativePolls = 0;
+      const tail = explicitlyLive ? sequenceTail(evidence.lines.join('\n')) : null;
+      if (explicitlyLive && tail) {
+        const candidateUrl = canonical(url);
+        if (candidateUrl !== state.cleanCandidateUrl) {
+          state.cleanCandidateUrl = candidateUrl;
+          state.cleanCandidateSequence = tail.number;
+          state.cleanCandidatePdt = tail.pdt;
+          state.cleanNativePolls = 1;
+        } else if (tail.number > Number(state.cleanCandidateSequence) &&
+                   tail.pdt > Number(state.cleanCandidatePdt)) {
+          state.cleanCandidateSequence = tail.number;
+          state.cleanCandidatePdt = tail.pdt;
+          state.cleanNativePolls = (Number(state.cleanNativePolls) || 0) + 1;
+        } else if (tail.number < Number(state.cleanCandidateSequence) ||
+                   tail.pdt < Number(state.cleanCandidatePdt)) {
+          state.cleanCandidateSequence = tail.number;
+          state.cleanCandidatePdt = tail.pdt;
+          state.cleanNativePolls = 1;
+        }
+      } else {
+        state.cleanCandidateUrl = '';
+        state.cleanCandidateSequence = null;
+        state.cleanCandidatePdt = null;
+        state.cleanNativePolls = 0;
       }
-      return { active: !release, release: release };
+      const sequencePast = markerFree && Number.isFinite(evidence.mediaSequence) &&
+        canonical(url) === state.adSequenceUrl && Number(state.adUntilSequence) > 0 &&
+        evidence.mediaSequence >= Number(state.adUntilSequence);
+      const timedOut = Date.now() - (Number(state.lastConfirmedAdAt) || 0) >= AD_QUARANTINE_MAX_MS;
+      const release = state.cleanNativePolls >= NATIVE_RELEASE_POLLS || sequencePast || timedOut;
+      if (release) {
+        state.adActive = false;
+        state.adUntilSequence = 0;
+        state.cleanNativePolls = 0;
+        state.cleanCandidateUrl = '';
+        state.cleanCandidateSequence = null;
+        state.cleanCandidatePdt = null;
+        state.adSequenceUrl = '';
+      }
+      return { active: !release, release: release, state: state };
     }
 
-    // Twitch serves low-latency HLS: the player issues blocking playlist reloads
-    // (_HLS_msn/_HLS_part) and expects the parts advertised by EXT-X-PART-INF /
-    // EXT-X-SERVER-CONTROL to keep arriving. Any playlist we synthesize or swap in
-    // during an ad break cannot honour that contract -- ad parts are removed, and a
-    // backup comes from a different session with its own sequence numbering -- so a
-    // player left in low-latency mode blocks on a part that never comes and surfaces
-    // it as network "Error #2000". Dropping the low-latency tags for the duration of
-    // the intervention makes the player fall back to ordinary polling, which costs a
-    // couple of seconds of latency during the break instead of killing playback.
-    // A marker-only poll can safely lose its forward-looking hints while retaining
-    // LL-HLS. Once the earlier ad-service warning is present, a complete playlist
-    // instead leaves LL-HLS coherently: every low-latency tag is removed together
-    // and the next native request drops its blocking cursors.
-    const AD_HINT_TAG_RE = /^#EXT-X-(?:TWITCH-PREFETCH|PRELOAD-HINT)\b/i;
+    // A clean backup is a different HLS session and cannot honour the native
+    // session's blocking part cursor. Serve it as ordinary HLS for the break.
     // Colon-anchored so part-only ad deltas can be recognized without also
     // matching EXT-X-PART-INF, which is configuration rather than media.
     const AD_PART_TAG_RE = /^#EXT-X-PART:/i;
-
-    function stripAdHints(text) {
-      const lines = String(text || '').replace(/\r/g, '').split('\n');
-      const out = [];
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (AD_HINT_TAG_RE.test(trimmed)) continue;
-        out.push(line);
-      }
-      return out.join('\n');
-    }
 
     function stripLowLatency(text) {
       const lines = String(text || '').replace(/\r/g, '').split('\n');
@@ -2557,6 +2692,7 @@
       if (String(first || '').trim().replace(/^\uFEFF/, '') !== '#EXTM3U') return '';
       if (!lines.some((line) => /^#EXT-X-TARGETDURATION:/i.test(String(line || '').trim()))) return '';
       if (lines.some((line) => /^#EXT-X-STREAM-INF:/i.test(String(line || '').trim()))) return '';
+      if (lines.some((line) => /^#EXT-X-ENDLIST\b/i.test(String(line || '').trim()))) return '';
       if (playlistEvidence(stripped).fullPlayable < 1) return '';
       return stripped;
     }
@@ -2584,39 +2720,6 @@
       return '';
     }
 
-    function stripAdPlaylist(text, forceAll) {
-      const evidence = playlistEvidence(text);
-      if (!evidence.confirmed && !forceAll) return String(text || '');
-      // A part-only delta response cannot be converted into a valid ordinary HLS
-      // playlist without inventing media. Passing it through is safer than feeding
-      // an empty/synthetic playlist to Twitch's decoder; the next complete reload
-      // will be handled with normal EXT-X-GAP tags.
-      if (evidence.fullPlayable < 1) return String(text || '');
-      const output = [];
-      for (let index = 0; index < evidence.lines.length; index++) {
-        let line = String(evidence.lines[index] || '');
-        if (/^#EXT-X-CUE-(?:OUT|IN)/i.test(line)) continue;
-        // Removing only the ad parts would leave a hole in the part sequence an
-        // LL-HLS player is still blocking on, so drop low-latency signalling wholesale.
-        if (LOW_LATENCY_TAG_RE.test(line)) continue;
-        if (evidence.inlineAds.has(index)) continue;
-        if ((AD_MARKER_RE.test(line) || STRONG_AD_METADATA_RE.test(line) || /\bSCTE35-OUT=/i.test(line)) &&
-            /^#EXT-X-(?:DATERANGE|TWITCH-)/i.test(line)) continue;
-        line = line
-          .replace(/(X-TV-TWITCH-AD-URL=")[^"]*(")/gi, '$1https://twitch.tv$2')
-          .replace(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")[^"]*(")/gi, '$1https://twitch.tv$2');
-        output.push(line);
-        if ((forceAll && /^#EXTINF:/i.test(line)) || evidence.fullAds.has(index)) {
-          // EXT-X-GAP advances the native HLS timeline without fetching or appending
-          // the ad segment. Keeping the original URI, sequence, container and codec
-          // metadata is intentional: a local MP4 placeholder can poison an existing
-          // MPEG-TS/CMAF SourceBuffer and surfaces as Twitch Error #3000.
-          if (!/^#EXT-X-GAP$/i.test(String(evidence.lines[index + 1] || '').trim())) output.push('#EXT-X-GAP');
-        }
-      }
-      return output.join('\n');
-    }
-
     function rememberVariant(url, info) {
       if (!url) return;
       info.ts = Date.now();
@@ -2635,12 +2738,20 @@
       return info;
     }
 
-    function activateMasterChannel(name) {
+    function activateMasterChannel(name, masterUrl, masterText) {
       const channel = String(name || '').trim().toLowerCase();
       if (!channel) return 0;
+      const url = String(masterUrl || '');
+      const text = String(masterText || '');
+      if (activeChannel === channel && activeMasterUrl === url && activeMasterText === text) {
+        return activeMasterGeneration;
+      }
+      invalidateBackupWork(true);
       activeMasterGeneration++;
       activeChannel = channel;
       activeMediaProfile = null;
+      activeMasterUrl = url;
+      activeMasterText = text;
       return activeMasterGeneration;
     }
 
@@ -2652,7 +2763,7 @@
       const name = String(channel || '').trim().toLowerCase();
       if (!name || !text) return 0;
       let generation = 0;
-      if (makeActive === true || !activeChannel) generation = activateMasterChannel(name);
+      if (makeActive === true || !activeChannel) generation = activateMasterChannel(name, masterUrl, text);
       else if (activeChannel === name) generation = activeMasterGeneration;
       let count = 0;
       for (const variant of parseMaster(text, responseUrl || masterUrl)) {
@@ -2843,12 +2954,13 @@
     }
 
     function tokenBody(channel, playerType) {
+      const platform = playerType === 'mobile_feed' || playerType === 'autoplay' ? 'android' : 'web';
       let body = null;
       try { body = client.tokenTemplate ? JSON.parse(JSON.stringify(client.tokenTemplate)) : null; } catch (_) {}
       if (!body || !operationIsToken(body)) {
         body = {
           operationName: 'PlaybackAccessToken',
-          variables: { isLive: true, login: channel, isVod: false, vodID: '', playerType: playerType, platform: 'web' },
+          variables: { isLive: true, login: channel, isVod: false, vodID: '', playerType: playerType, platform: platform },
           extensions: { persistedQuery: { version: 1, sha256Hash: client.tokenHash || TOKEN_HASH } }
         };
       }
@@ -2859,7 +2971,7 @@
         isVod: false,
         vodID: '',
         playerType: playerType,
-        platform: 'web'
+        platform: platform
       });
       body.extensions = body.extensions || {};
       body.extensions.persistedQuery = body.extensions.persistedQuery || { version: 1, sha256Hash: client.tokenHash || TOKEN_HASH };
@@ -2903,10 +3015,25 @@
     }
 
     async function accessToken(channel, playerType) {
-      const response = await proxyGql(tokenBody(channel, playerType));
-      if (!response.ok) throw new Error('token http ' + response.status);
-      const parsed = await response.json();
-      const token = findToken(parsed, 0);
+      const body = tokenBody(channel, playerType);
+      let response = await proxyGql(body);
+      let parsed = null;
+      if (response.ok) {
+        try { parsed = await response.json(); } catch (_) {}
+      }
+      let token = findToken(parsed, 0);
+      const persisted = !!(body.extensions && body.extensions.persistedQuery);
+      if ((!response.ok || !token || !token.value || !token.signature) && persisted) {
+        const fullBody = JSON.parse(JSON.stringify(body));
+        delete fullBody.extensions;
+        fullBody.query = TOKEN_QUERY;
+        response = await proxyGql(fullBody);
+        if (!response.ok) throw new Error('full token http ' + response.status);
+        parsed = await response.json();
+        token = findToken(parsed, 0);
+      } else if (!response.ok) {
+        throw new Error('token http ' + response.status);
+      }
       if (!token || !token.value || !token.signature) {
         // Twitch refuses a token with HTTP 200 and an error in the body, so the
         // status tells you nothing and the reason is the only way to tell a bad
@@ -2923,20 +3050,37 @@
       return token;
     }
 
-    async function fetchTextWithTimeout(url, timeoutMs) {
+    function abortControllerGroup(group) {
+      if (!group) return;
+      for (const controller of Array.from(group)) {
+        try { controller.abort(); } catch (_) {}
+      }
+      group.clear();
+    }
+
+    async function fetchTextWithTimeout(url, timeoutMs, group) {
       const controller = typeof AbortController === 'function' ? new AbortController() : null;
       let timer = 0;
       try {
+        if (controller) {
+          backupControllers.add(controller);
+          if (group) group.add(controller);
+        }
         if (controller) timer = setTimeout(() => controller.abort(), timeoutMs);
         const response = await realFetch(url, controller ? { signal: controller.signal } : undefined);
         if (!response.ok) throw new Error('http ' + response.status);
         return { response: response, text: await response.text() };
       } finally {
         if (timer) clearTimeout(timer);
+        if (controller) {
+          backupControllers.delete(controller);
+          if (group) group.delete(controller);
+        }
       }
     }
 
-    async function backupAttempt(info, playerType) {
+    async function backupAttempt(info, playerType, controllers) {
+      const epoch = backupEpoch;
       // A pre-roll is decided before the master has necessarily been mapped, so
       // info.channel can still be empty or malformed on the very first poll. The
       // token request then goes out with an unusable login and Twitch answers
@@ -2946,76 +3090,139 @@
       // it from there rather than asking for a token we know cannot be minted.
       const channel = workerChannelName(info.channel) || channelFromMaster(info.master);
       const token = await accessToken(channel, playerType);
+      if (!active || epoch !== backupEpoch) throw new Error('stale backup session');
       const masterUrl = new URL(info.master);
       masterUrl.searchParams.set('sig', token.signature);
       masterUrl.searchParams.set('token', token.value);
       if (playerType === 'embed') masterUrl.searchParams.set('parent_domains', 'twitchplayer');
       else masterUrl.searchParams.delete('parent_domains');
-      const master = await fetchTextWithTimeout(masterUrl.href, 1800);
-      const selected = chooseVariant(parseMaster(master.text, masterUrl.href), info);
-      if (!selected) throw new Error('no codec-compatible variant');
-      const mediaResult = await fetchTextWithTimeout(selected.url, 1800);
-      const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(mediaResult.text, selected.url));
-      const backupEvidence = normalized ? playlistEvidence(normalized) : null;
-      if (!normalized || !backupEvidence || backupEvidence.confirmed > 0) {
-        throw new Error('backup is not a clean complete media playlist');
-      }
-      const replacementContainer = mediaContainer(normalized);
-      if (info.mediaContainer && replacementContainer !== info.mediaContainer) {
-        throw new Error('backup changes media container');
-      }
-      return { url: selected.url, text: normalized, playerType: playerType, ts: Date.now(),
-        edgeWall: backupEvidence.edgeWall };
-    }
-
-    function raceBackupTypes(info, types) {
-      return new Promise((resolve) => {
-        let remaining = types.length;
+      const master = await fetchTextWithTimeout(masterUrl.href, 1800, controllers);
+      if (!active || epoch !== backupEpoch) throw new Error('stale backup session');
+      const candidates = rankVariants(parseMaster(master.text, masterUrl.href), info);
+      if (!candidates || !candidates.length) throw new Error('no codec-compatible variant');
+      return new Promise((resolve, reject) => {
         let settled = false;
-        const done = (value) => {
+        let nextIndex = 0;
+        let running = 0;
+        let completed = 0;
+        let secondTimer = 0;
+        let lastError = null;
+        const fail = (error) => {
+          lastError = error;
+          running--;
+          completed++;
           if (settled) return;
-          if (value) {
-            settled = true;
-            resolve(value);
-            return;
+          if (nextIndex < candidates.length) launchNext();
+          else if (running <= 0 && completed >= candidates.length) {
+            reject(lastError || new Error('backup has no clean codec-compatible rendition'));
           }
-          remaining--;
-          if (remaining <= 0) resolve(null);
         };
-        for (const type of types) backupAttempt(info, type).then(done, (e) => {
-          wlog('  backup[' + type + '] ch=' + (workerChannelName(info.channel) || channelFromMaster(info.master) || '(none)')
-            + ' failed: ' + ((e && e.message) || e));
-          done(null);
-        });
+        const launchNext = () => {
+          if (settled || nextIndex >= candidates.length) return;
+          const selected = candidates[nextIndex++];
+          running++;
+          fetchTextWithTimeout(selected.url, 1800, controllers).then((mediaResult) => {
+            if (!active || epoch !== backupEpoch) throw new Error('stale backup session');
+            const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(mediaResult.text, selected.url));
+            const backupEvidence = normalized ? playlistEvidence(normalized) : null;
+            const tail = normalized ? sequenceTail(normalized) : null;
+            if (!normalized || !backupEvidence || backupEvidence.confirmed > 0) {
+              throw new Error('backup rendition contains ads');
+            }
+            if (!tail) throw new Error('backup rendition has no live timing anchor');
+            const replacementContainer = mediaContainer(normalized);
+            if (info.mediaContainer && replacementContainer !== info.mediaContainer) {
+              throw new Error('backup rendition changes media container');
+            }
+            if (settled) return;
+            settled = true;
+            if (secondTimer) clearTimeout(secondTimer);
+            const createdAt = Date.now();
+            resolve({ url: selected.url, text: normalized, playerType: playerType,
+              resolution: selected.resolution, ts: createdAt, createdAt: createdAt,
+              masterGeneration: Number(info.masterGeneration || 0), edgeWall: backupEvidence.edgeWall,
+              lastTail: tail, lastAdvanceAt: createdAt });
+          }).catch(fail);
+        };
+        launchNext();
+        if (candidates.length > 1) {
+          secondTimer = setTimeout(() => {
+            secondTimer = 0;
+            if (!settled && running < 2) launchNext();
+          }, 60);
+        }
       });
     }
 
-    // Source-capable web player types are raced once per playback context. The
-    // Android/autoplay type is not committed because current players can stick at
-    // 360p or fail to transition back to the native stream after an ad break.
-    function firstCleanBackup(info, pendingWarm) {
-      if (!pendingWarm) return raceBackupTypes(info, ['site', 'popout', 'mobile_web', 'embed']);
-      const remainingTypes = raceBackupTypes(info, ['site', 'embed']);
+    async function orderedBackupTypes(info, types, controllers) {
+      for (const type of types) {
+        try {
+          const value = await backupAttempt(info, type, controllers);
+          if (value) return value;
+        } catch (error) {
+          wlog('  backup[' + type + '] ch=' +
+            (workerChannelName(info.channel) || channelFromMaster(info.master) || '(none)') +
+            ' failed: ' + ((error && error.message) || error));
+        }
+      }
+      return null;
+    }
+
+    // mobile_feed/android normally supplies the full same-codec ladder. At ad time
+    // popout/web and autoplay/android start alongside it: serial token + master +
+    // rendition walks cannot fit the player's 900ms media deadline. The first
+    // proven clean, codec-compatible live result wins and the losing media probes
+    // are aborted.
+    async function firstCleanBackup(info, pendingWarm) {
+      const controllers = new Set();
       return new Promise((resolve) => {
-        let remaining = 2;
-        let settled = false;
-        const done = (value) => {
-          if (settled) return;
+        let done = false;
+        let remaining = 3;
+        const startTimers = [];
+        const stop = () => {
+          clearTimeout(deadlineTimer);
+          for (const timer of startTimers) clearTimeout(timer);
+          abortControllerGroup(controllers);
+        };
+        const finish = (value) => {
+          if (done) return;
           if (value) {
-            settled = true;
+            done = true;
+            stop();
             resolve(value);
             return;
           }
           remaining--;
-          if (remaining <= 0) resolve(null);
+          if (remaining <= 0) {
+            done = true;
+            stop();
+            resolve(null);
+          }
         };
-        pendingWarm.then(done, () => done(null));
-        remainingTypes.then(done, () => done(null));
+        const start = (type, delay) => {
+          const run = () => {
+            if (done) return;
+            orderedBackupTypes(info, [type], controllers).then(finish, () => finish(null));
+          };
+          if (delay > 0) startTimers.push(setTimeout(run, delay));
+          else run();
+        };
+        const deadlineTimer = setTimeout(() => {
+          if (done) return;
+          done = true;
+          stop();
+          resolve(null);
+        }, BACKUP_SEARCH_TIMEOUT_MS);
+        if (pendingWarm) Promise.resolve(pendingWarm).then(finish, () => finish(null));
+        else start('mobile_feed', 0);
+        start('popout', pendingWarm ? 50 : 75);
+        start('autoplay', 150);
       });
     }
 
     function backupKey(info) {
-      return [info.channel, info.resolution, info.fps, codecSignature(info.codecs), info.video,
+      return [Number(info.masterGeneration || 0), info.channel, info.resolution, info.fps,
+        codecSignature(info.codecs), info.video,
         info.audio, info.subtitles].join('|');
     }
 
@@ -3037,9 +3244,11 @@
       if (!full && pendingBackups.has(warmKey)) return pendingBackups.get(warmKey);
       const pendingWarm = full ? pendingBackups.get(warmKey) : null;
       const pendingKey = full ? fullKey : warmKey;
+      const warmControllers = full ? null : new Set();
       const attempt = full
         ? firstCleanBackup(info, pendingWarm)
-        : raceBackupTypes(info, ['popout', 'mobile_web']);
+        : orderedBackupTypes(info, ['mobile_feed'], warmControllers)
+          .finally(() => abortControllerGroup(warmControllers));
       const pending = attempt.then((value) => {
         if (!active || epoch !== backupEpoch) return null;
         if (value) {
@@ -3054,7 +3263,9 @@
           info.warmRetryAt = Date.now() + 60 * 1000;
         }
         return value;
-      }, () => null).finally(() => pendingBackups.delete(pendingKey));
+      }, () => null).finally(() => {
+        if (pendingBackups.get(pendingKey) === pending) pendingBackups.delete(pendingKey);
+      });
       pendingBackups.set(pendingKey, pending);
       return pending;
     }
@@ -3062,6 +3273,7 @@
     function pollCachedBackup(cached) {
       const url = String(cached && cached.url || '');
       if (!url) return Promise.resolve(null);
+      if (Date.now() - Number(cached.createdAt || cached.ts || 0) >= BACKUP_TTL) return Promise.resolve(null);
       if (pendingBackupPolls.has(url)) return pendingBackupPolls.get(url);
       const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), BACKUP_POLL_TIMEOUT_MS)
         .then((current) => {
@@ -3069,31 +3281,85 @@
           if (!normalized) return null;
           const evidence = playlistEvidence(normalized);
           if (evidence.confirmed > 0) return null;
-          return { text: normalized, container: mediaContainer(normalized), edgeWall: evidence.edgeWall };
+          const tail = sequenceTail(normalized);
+          if (!tail) return null;
+          const previous = cached.lastTail;
+          if (previous && (tail.number < previous.number || tail.pdt < previous.pdt)) return null;
+          if (!previous || tail.number > previous.number || tail.pdt > previous.pdt) {
+            cached.lastTail = tail;
+            cached.lastAdvanceAt = Date.now();
+          } else if (Date.now() - Number(cached.lastAdvanceAt || cached.createdAt || cached.ts || 0) >=
+                     BACKUP_STALE_MS) {
+            return null;
+          }
+          return { text: normalized, container: mediaContainer(normalized), edgeWall: evidence.edgeWall,
+            tail: tail };
         }, () => null)
-        .finally(() => pendingBackupPolls.delete(url));
+        .finally(() => {
+          if (pendingBackupPolls.get(url) === pending) pendingBackupPolls.delete(url);
+        });
       pendingBackupPolls.set(url, pending);
       return pending;
     }
 
-    async function cachedBackupResponse(info, originalResponse, activate) {
+    function takeRecentPrimedBackup(cached) {
+      if (!cached || !cached.primed ||
+          Date.now() - Number(cached.primedAt || 0) > BACKUP_PRIME_MS) {
+        if (cached) {
+          cached.primed = null;
+          cached.primedAt = 0;
+        }
+        return null;
+      }
+      const primed = cached.primed;
+      cached.primed = null;
+      cached.primedAt = 0;
+      return primed;
+    }
+
+    function primeBackupForAd(info) {
+      if (!active || !info) return Promise.resolve(null);
+      const epoch = backupEpoch;
+      return getBackup(info, true).then((cached) => {
+        if (!interventionCurrent(info, epoch) || !cached || cached.failed) return null;
+        if (cached.primed &&
+            Date.now() - Number(cached.primedAt || 0) <= BACKUP_PRIME_MS) return cached.primed;
+        return pollCachedBackup(cached).then((current) => {
+          if (!interventionCurrent(info, epoch) || !current ||
+              (info.mediaContainer && current.container !== info.mediaContainer)) return null;
+          cached.primed = current;
+          cached.primedAt = Date.now();
+          return current;
+        }, () => null);
+      }, () => null);
+    }
+
+    async function cachedBackupResponse(info, originalResponse, activate, nativeText, nativeUrl, observation) {
       if (!active) return null;
       const epoch = backupEpoch;
       const key = backupKey(info);
       const cached = backups.get(key);
       if (cached && !cached.failed && Date.now() - cached.ts < BACKUP_TTL) {
         try {
-          const current = await pollCachedBackup(cached);
-          if (!active || epoch !== backupEpoch) return null;
-          if (current && (!info.mediaContainer || current.container === info.mediaContainer)) {
-            cached.ts = Date.now();
-            info.servedBackupEdge = current.edgeWall;
-            if (activate !== false) {
-              info.backupActive = true;
-              info.cleanNativePolls = 0;
+          let current = takeRecentPrimedBackup(cached);
+          if (!current) {
+            current = await pollCachedBackup(cached);
+            if (cached.primed === current) {
+              cached.primed = null;
+              cached.primedAt = 0;
             }
+          }
+          if (!interventionCurrent(info, epoch)) return null;
+          if (current && (!info.mediaContainer || current.container === info.mediaContainer)) {
+            info.servedBackupEdge = current.edgeWall;
             wlog('  clean stream via cached playerType=' + (cached.playerType || '?'));
-            return responseWithText(originalResponse, current.text, 'application/vnd.apple.mpegurl');
+            const state = sequenceStateFor(info);
+            if (observation && !sequenceObservationCurrent(state, observation)) return null;
+            const aligned = sequenceInsideBreak(state, nativeUrl || cached.url,
+              nativeText || '', current.text, (cached.playerType || '?') + ':' + cached.url);
+            if (aligned === null) return null;
+            if (activate !== false && state) state.backupActive = true;
+            return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
           }
           backups.delete(key);
         } catch (_) {
@@ -3103,27 +3369,15 @@
       return null;
     }
 
-    async function cleanBackupResponse(info, originalResponse, explicitPreroll) {
+    async function cleanBackupResponse(info, originalResponse, explicitPreroll, nativeText, nativeUrl, observation) {
       if (!active) return null;
       const epoch = backupEpoch;
       const startedAt = Date.now();
-      const cachedResponse = await cachedBackupResponse(info, originalResponse);
-      if (!active || epoch !== backupEpoch) return null;
+      const cachedResponse = await cachedBackupResponse(info, originalResponse, true, nativeText, nativeUrl,
+        observation);
+      if (!interventionCurrent(info, epoch)) return null;
       if (cachedResponse) return cachedResponse;
       const candidatePromise = getBackup(info, true);
-      if (info.lastCleanNative && Date.now() - info.lastCleanNativeAt <= CLEAN_NATIVE_TTL) {
-        const bridge = ordinaryMediaPlaylist(info.lastCleanNative);
-        const bridgeContainer = mediaContainer(bridge);
-        if (bridge && (!info.mediaContainer || bridgeContainer === info.mediaContainer)) {
-          candidatePromise.catch(() => {});
-          // A native snapshot at most CLEAN_NATIVE_TTL old. Its own age is real
-          // latency but it is not a separate session's offset, so nothing is
-          // recorded: under-reporting the budget only costs a catch-up.
-          info.servedBackupEdge = NaN;
-          wlog('  bridging with fresh clean native snapshot');
-          return responseWithText(originalResponse, bridge, 'application/vnd.apple.mpegurl');
-        }
-      }
       const preroll = explicitPreroll === true || !(info && info.servedClean);
       const waitBudget = preroll ? PREROLL_BACKUP_WAIT_MS : BACKUP_WAIT_MS;
       const remainingWait = Math.max(0, waitBudget - (Date.now() - startedAt));
@@ -3141,15 +3395,19 @@
           resolve(null);
         });
       });
-      if (!active || epoch !== backupEpoch) return null;
+      if (!interventionCurrent(info, epoch)) return null;
       wlog('  wait=' + waitBudget + 'ms preroll=' + (preroll ? 'YES' : 'no')
         + ' result=' + (candidate ? 'HIT' : 'MISS'));
       if (!candidate) return null;
-      info.backupActive = true;
-      info.cleanNativePolls = 0;
       info.servedBackupEdge = candidate.edgeWall;
       wlog('  clean stream via playerType=' + (candidate.playerType || '?'));
-      return responseWithText(originalResponse, candidate.text, 'application/vnd.apple.mpegurl');
+      const state = sequenceStateFor(info);
+      if (observation && !sequenceObservationCurrent(state, observation)) return null;
+      const aligned = sequenceInsideBreak(state, nativeUrl || candidate.url,
+        nativeText || '', candidate.text, (candidate.playerType || '?') + ':' + candidate.url);
+      if (aligned === null) return null;
+      if (state) state.backupActive = true;
+      return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
     }
 
     async function handleMaster(input, init, url) {
@@ -3212,7 +3470,7 @@
       prune(media, MEDIA_MAX, MEDIA_TTL);
       const profile = fallbackVariant(activeChannel);
       if (!profile) return null;
-      info = Object.assign({}, profile, { backupActive: false, cleanNativePolls: 0 });
+      info = Object.assign({}, profile);
       rememberVariant(url, info);
       touchMediaProfile(info);
       wlog('  bound ad media url to known profile ch=' + (info.channel || '?'));
@@ -3225,19 +3483,34 @@
       const firstPollWarm = !info.servedClean && !!client.tokenTemplate;
       if (!imminent && !firstPollWarm) return;
       try {
-        const pending = getBackup(info, imminent);
+        const pending = imminent ? primeBackupForAd(info) : getBackup(info, false);
         if (pending && typeof pending.catch === 'function') pending.catch(() => {});
       } catch (_) {}
     }
 
     async function handleMedia(input, init, url) {
       let info = mediaProfileForUrl(url);
+      let operationEpoch = backupEpoch;
+      // A clean request already in flight when the warning arrives belongs to the
+      // pre-break timeline. Do not let its later response consume the one-shot
+      // warning prime intended for the first request that actually sees the break.
+      const warningActiveAtRequestStart = adWarningActive(info && info.channel || activeChannel);
       startEarlyCleanBackup(info);
       // Once an intervention is active, do not issue blocking reloads for a native
       // LL-HLS sequence/part that the returned ordinary/backup playlist cannot
       // satisfy. The linked Request signal is preserved for Request inputs.
-      let response = await realFetch(nativeMediaInput(input, url, info), init);
+      const nativeResult = await fetchNativeMedia(input, init, url, info);
+      let response = nativeResult.response;
       if (!response.ok) return response;
+      if (nativeResult.retriedExact) return response;
+      if (!interventionCurrent(info, operationEpoch) && !info && active) {
+        info = mediaProfileForUrl(url);
+        if (info) {
+          operationEpoch = backupEpoch;
+          startEarlyCleanBackup(info);
+        }
+      }
+      if (!interventionCurrent(info, operationEpoch)) return response;
       if (!info) {
         info = mediaProfileForUrl(url);
         startEarlyCleanBackup(info);
@@ -3246,24 +3519,46 @@
       }
       let text = '';
       try { text = await response.clone().text(); } catch (_) { return response; }
-      if (!active) return response;
+      if (!interventionCurrent(info, operationEpoch)) return response;
       // A CDN challenge, gateway page or empty 200 is not a media playlist. Never
       // remember or replay it as a clean bridge; that turns a transient network
       // response into a deterministic Twitch #2000/#3000 failure on the next ad.
       if (!mediaPlaylistEnvelope(text)) return response;
+      /* EXT-X-SKIP is singular and requires one non-negative safe-integer count.
+         A malformed delta cannot be aligned safely, so leave it entirely native. */
+      if (sequenceSkippedSegments(text) === null) return response;
       if (info) {
         const observedContainer = mediaContainer(text);
         if (observedContainer) info.mediaContainer = observedContainer;
       }
       let evidence;
       try { evidence = playlistEvidence(text); } catch (_) { return response; }
+      let sequenceState = sequenceStateFor(info);
+      let nativeObservation = sequenceObserveNative(sequenceState, url, text);
+      if (nativeObservation.stale) return sequenceStaleResponse(sequenceState, nativeObservation, response);
+      if (sequenceState && evidence.fullPlayable > 0) {
+        sequenceState.lastNativeText = text;
+        sequenceState.lastNativeUrl = url;
+      }
       const confirmedPartOnlyDelta = evidence.confirmed > 0 && evidence.fullPlayable < 1 &&
         evidence.lines.some((line) => AD_PART_TAG_RE.test(String(line || '').trim()));
       if (confirmedPartOnlyDelta) {
         const deltaResponse = response;
-        beginAdQuarantine(info, evidence);
+        beginAdQuarantine(info, evidence, url);
         const complete = await retryCompleteMediaPlaylist(input, init, url);
-        if (!active) return deltaResponse;
+        if (!interventionCurrent(info, operationEpoch) && !info && active) {
+          info = mediaProfileForUrl(url);
+          if (info) {
+            operationEpoch = backupEpoch;
+            sequenceState = sequenceStateFor(info);
+            nativeObservation = sequenceObserveNative(sequenceState, url, text);
+            startEarlyCleanBackup(info);
+          }
+        }
+        if (!interventionCurrent(info, operationEpoch) ||
+            !sequenceObservationCurrent(sequenceState, nativeObservation)) {
+          return sequenceStaleResponse(sequenceState, nativeObservation, deltaResponse);
+        }
         if (!info) {
           info = mediaProfileForUrl(url);
           startEarlyCleanBackup(info);
@@ -3274,17 +3569,42 @@
             setAdState('clear', info && info.channel || '');
             return deltaResponse;
           }
+          sequenceState = sequenceStateFor(info);
+          const bridge = oneShotNativeBridge(sequenceState, url, evidence);
+          if (bridge) {
+            try { if (info) getBackup(info, true); } catch (_) {}
+            setAdState('blocked-clean', info && info.channel || '');
+            return responseWithText(deltaResponse, bridge, 'application/vnd.apple.mpegurl');
+          }
           if (info) {
             try {
-              const replacement = await cleanBackupResponse(info, deltaResponse, evidence.explicitPreroll);
+              sequenceState = sequenceStateFor(info);
+              const nativeAnchor = sequenceState && sequenceState.lastNativeText || text;
+              const replacement = await cleanBackupResponse(info, deltaResponse, evidence.explicitPreroll,
+                nativeAnchor, url, nativeObservation);
+              if (!interventionCurrent(info, operationEpoch) ||
+                  !sequenceObservationCurrent(sequenceState, nativeObservation)) {
+                return sequenceStaleResponse(sequenceState, nativeObservation, deltaResponse);
+              }
               if (replacement) {
                 setAdState('blocked-clean', info.channel);
                 return replacement;
               }
             } catch (_) {}
           }
+          sequenceState = sequenceStateFor(info);
+          if (sequenceState) sequenceState.backupActive = false;
+          const nativeText = sequenceNativeBreak(sequenceState, url, text);
+          if (nativeText === null) {
+            sequenceResetToNative(sequenceState, url, text);
+            setAdState('clear', info && info.channel || '');
+            return deltaResponse;
+          }
+          wlog('  -> no clean backup; passing native media through');
           setAdState('clear', info && info.channel || '');
-          return deltaResponse;
+          return nativeText !== text
+            ? responseWithText(deltaResponse, nativeText, 'application/vnd.apple.mpegurl')
+            : deltaResponse;
         }
         response = complete.response;
         text = complete.text;
@@ -3292,96 +3612,118 @@
         if (info) {
           const observedContainer = mediaContainer(text);
           if (observedContainer) info.mediaContainer = observedContainer;
+          sequenceState = sequenceStateFor(info);
+          if (sequenceState && evidence.fullPlayable > 0) {
+            sequenceState.lastNativeText = text;
+            sequenceState.lastNativeUrl = url;
+          }
         }
+        nativeObservation = sequenceObserveNative(sequenceState, url, text);
+        if (nativeObservation.stale) return sequenceStaleResponse(sequenceState, nativeObservation, response);
       }
       if (!evidence.confirmed) {
-        if (info && adWarningActive(info.channel)) {
+        const warningActive = adWarningActive(info && info.channel);
+        if (info && warningActive && warningActiveAtRequestStart) {
           try {
-            const early = await cleanBackupResponse(info, response);
+            const early = await cleanBackupResponse(info, response, false, text, url, nativeObservation);
+            if (!interventionCurrent(info, operationEpoch) ||
+                !sequenceObservationCurrent(sequenceState, nativeObservation)) {
+              return sequenceStaleResponse(sequenceState, nativeObservation, response);
+            }
             if (early) {
-              noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
               setAdState('blocked-clean', info.channel);
               return early;
             }
           } catch (_) {}
         }
-        const quarantine = nativeAdQuarantineState(info, evidence);
+        const quarantine = nativeAdQuarantineState(info, evidence, url);
+        sequenceState = quarantine.state || sequenceStateFor(info);
         if (quarantine.active) {
           // Twitch media playlists are sliding windows. An ad marker can vanish
           // one refresh before its generic/untitled media segments do, so never
-          // learn or return that refresh as clean. Keep serving the clean backup
-          // when available; otherwise gap its native media until the clean boundary.
+          // learn that refresh as clean. Keep serving the clean backup when it is
+          // available; otherwise fail open on native media without starving MSE.
           try {
-            const held = await cachedBackupResponse(info, response, false);
+            const held = await cachedBackupResponse(info, response, true, text, url, nativeObservation);
+            if (!interventionCurrent(info, operationEpoch) ||
+                !sequenceObservationCurrent(sequenceState, nativeObservation)) {
+              return sequenceStaleResponse(sequenceState, nativeObservation, response);
+            }
             if (held) {
-              noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
+              setAdState('blocked-clean', info && info.channel || '');
               return held;
             }
           } catch (_) {}
           try { getBackup(info, false); } catch (_) {}
-          wlog('  ad marker slid out; holding native stream until clean boundary');
-          setAdState('blocked-hold', info && info.channel || '');
-          return responseWithText(response, stripAdPlaylist(text, true), 'application/vnd.apple.mpegurl');
+          if (sequenceState) sequenceState.backupActive = false;
+          const nativeText = sequenceNativeBreak(sequenceState, url, text);
+          if (nativeText === null) {
+            sequenceResetToNative(sequenceState, url, text);
+            setAdState('clear', info && info.channel || '');
+            return response;
+          }
+          wlog('  ad marker slid out; no clean backup, passing native media through');
+          setAdState('clear', info && info.channel || '');
+          return nativeText !== text
+            ? responseWithText(response, nativeText, 'application/vnd.apple.mpegurl')
+            : response;
         }
-        if (quarantine.release && info) info.backupActive = false;
-        if (info && !evidence.hasMarker && !evidence.strongMetadata) {
-          const cleanNative = ordinaryMediaPlaylist(absolutizeMediaPlaylist(text, url));
-          if (cleanNative) {
-            info.lastCleanNative = cleanNative;
-            info.lastCleanNativeAt = Date.now();
-          }
-          if (info.backupActive) {
-            info.cleanNativePolls = (Number(info.cleanNativePolls) || 0) + 1;
-            if (info.cleanNativePolls < NATIVE_RELEASE_POLLS) {
-              try {
-                const held = await cachedBackupResponse(info, response, false);
-                if (held) {
-                  // The native playlist for this poll is already clean, so its
-                  // edge is the true live edge to measure the backup against.
-                  noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
-                  return held;
-                }
-              } catch (_) {}
-            }
-            info.backupActive = false;
-            info.cleanNativePolls = 0;
-          }
-        } else if (info && (evidence.hasMarker || evidence.strongMetadata)) {
+        if (quarantine.release && sequenceState) sequenceState.backupActive = false;
+        if (info && (evidence.hasMarker || evidence.strongMetadata)) {
           // Marker-only CSAI snapshots are not destroyed, but a replacement is
           // probed in the background in case confirmed ad media follows next poll.
           try { getBackup(info, false); } catch (_) {}
         }
-        // Once token identity is available, keep a bounded popout/mobile race warm
-        // during normal playback. Embed is frequently the identity Twitch gives
-        // the pre-roll to first. Waiting for the first marker guarantees a visible
-        // beat while alternate tokens and Usher are still cold. The site/embed
-        // remainder joins only at ad time; getBackup de-duplicates by profile.
+        // Keep mobile_feed/android warm during normal playback. The other two
+        // identities join only if an ad-time attempt needs them.
         if (info && client.tokenTemplate) { try { getBackup(info, false); } catch (_) {} }
         if (info) info.servedClean = true;
-        // A warning can precede the first marker by one LL-HLS poll. Prefer the
-        // already-started clean backup above. If every clean route misses, switch a
-        // complete native window to ordinary HLS as one coherent transition: all
-        // LL tags go together and the next request drops its blocking cursors. This
-        // prevents the first ad PART from being appended without handing the player
-        // an internally inconsistent part playlist. Part-only windows still fail
-        // open because inventing a complete manifest would risk #2000/#3000.
-        const warningActive = adWarningActive(info && info.channel);
-        if (info && (evidence.hasMarker || evidence.strongMetadata || warningActive)) {
+        sequenceState = sequenceState || sequenceStateFor(info);
+        if (sequenceState && sequenceState.backupActive && warningActive) {
           try {
-            const ordinary = warningActive ? ordinaryMediaPlaylist(text) : '';
-            const withheld = ordinary || stripAdHints(text);
-            if (withheld && withheld !== text && mediaPlaylistEnvelope(withheld)) {
-              if (ordinary) info.imminentActive = true;
-              setAdState('blocked-imminent', (info && info.channel) || '');
-              return responseWithText(response, withheld, 'application/vnd.apple.mpegurl');
+            const held = await cachedBackupResponse(info, response, true, text, url, nativeObservation);
+            if (!interventionCurrent(info, operationEpoch) ||
+                !sequenceObservationCurrent(sequenceState, nativeObservation)) {
+              return sequenceStaleResponse(sequenceState, nativeObservation, response);
+            }
+            if (held) {
+              setAdState('blocked-clean', info.channel);
+              return held;
+            }
+          } catch (_) {}
+          sequenceState.backupActive = false;
+        }
+        let aligned = text;
+        if (sequenceState && sequenceState.seqInBreak && warningActive) {
+          aligned = sequenceNativeBreak(sequenceState, url, text);
+        } else {
+          const release = !!(quarantine.release || (sequenceState && sequenceState.seqInBreak &&
+            !sequenceState.adActive && !warningActive));
+          aligned = sequenceOutsideBreak(sequenceState, url, text, release);
+        }
+        if (aligned === null && sequenceState && sequenceState.seqInBreak) {
+          try {
+            const held = await cachedBackupResponse(info, response, true, text, url, nativeObservation);
+            if (!interventionCurrent(info, operationEpoch) ||
+                !sequenceObservationCurrent(sequenceState, nativeObservation)) {
+              return sequenceStaleResponse(sequenceState, nativeObservation, response);
+            }
+            if (held) {
+              setAdState('blocked-clean', info && info.channel || '');
+              return held;
             }
           } catch (_) {}
         }
-        if (info && !warningActive) info.imminentActive = false;
+        if (aligned === null) {
+          sequenceResetToNative(sequenceState, url, text);
+          aligned = text;
+        }
         setAdState('clear', (info && info.channel) || '');
-        return response;
+        return aligned !== text
+          ? responseWithText(response, aligned, 'application/vnd.apple.mpegurl')
+          : response;
       }
-      beginAdQuarantine(info, evidence);
+      beginAdQuarantine(info, evidence, url);
       wlog('AD detected ' + url.slice(-40));
       wlog('  preroll=' + ((info && !info.servedClean) ? 'YES' : 'no')
         + ' prefetch=' + ((/#EXT-X-TWITCH-PREFETCH/i.test(text) ? 'Y' : 'n')
@@ -3391,24 +3733,32 @@
       if (!info) wlog('  no variant info (master not mapped for this media url)');
       if (info) {
         try {
-          const replacement = await cleanBackupResponse(info, response, evidence.explicitPreroll);
+          const replacement = await cleanBackupResponse(info, response, evidence.explicitPreroll, text, url,
+            nativeObservation);
+          if (!interventionCurrent(info, operationEpoch) ||
+              !sequenceObservationCurrent(sequenceState, nativeObservation)) {
+            return sequenceStaleResponse(sequenceState, nativeObservation, response);
+          }
           if (replacement) {
-            // Both playlists were in hand for this one poll, so the difference of
-            // their PROGRAM-DATE-TIME edges is the latency this swap costs.
-            noteSwapOffset(evidence.edgeWall, info.servedBackupEdge);
             wlog('  -> swapped to CLEAN backup');
             setAdState('blocked-clean', info.channel);
             return replacement;
           }
         } catch (e) { wlog('  backup swap error: ' + (e && e.message || e)); }
       }
-      if (info) {
-        info.backupActive = false;
-        info.cleanNativePolls = 0;
+      sequenceState = sequenceStateFor(info);
+      if (sequenceState) sequenceState.backupActive = false;
+      const nativeText = sequenceNativeBreak(sequenceState, url, text);
+      if (nativeText === null) {
+        sequenceResetToNative(sequenceState, url, text);
+        setAdState('clear', info && info.channel || '');
+        return response;
       }
-      wlog('  -> no clean backup; replacing confirmed ad media');
-      setAdState('blocked-gap', info && info.channel || '');
-      return responseWithText(response, stripAdPlaylist(text, false), 'application/vnd.apple.mpegurl');
+      wlog('  -> no clean backup; passing native ad media through');
+      setAdState('clear', info && info.channel || '');
+      return nativeText !== text
+        ? responseWithText(response, nativeText, 'application/vnd.apple.mpegurl')
+        : response;
     }
 
     try {
@@ -3437,20 +3787,7 @@
         if (!nextActive) {
           genericAdImminentUntil = 0;
           adImminentByChannel.clear();
-          backupEpoch++;
-          backups.clear();
-          pendingBackups.clear();
-          pendingBackupPolls.clear();
-          const seen = new Set();
-          for (const info of media.values()) {
-            if (!info || seen.has(info)) continue;
-            seen.add(info);
-            info.adActive = false;
-            info.backupActive = false;
-            info.imminentActive = false;
-            info.adUntilSequence = 0;
-            info.cleanNativePolls = 0;
-          }
+          invalidateBackupWork(true);
         }
       } else if (message.type === 'client-state' && message.state) {
         client = Object.assign({}, client, message.state);
@@ -3464,7 +3801,7 @@
           if (mapped && adWarningActive(message.channel || activeChannel)) {
             const profile = fallbackVariant(activeChannel);
             if (profile) {
-              const pending = getBackup(profile, true);
+              const pending = primeBackupForAd(profile);
               if (pending && typeof pending.catch === 'function') pending.catch(() => {});
             }
           }
@@ -3615,7 +3952,7 @@
           } else if (message.type === 'ad-state') {
             try {
               const state = String(message.state || 'active');
-              applyWorkerAdState(worker, state, message.offsetMs);
+              applyWorkerAdState(worker, state);
             } catch (_) {}
           } else if (message.type === 'log') {
             // Gated on the receiving side too. The worker only sends these when debugging, so this
