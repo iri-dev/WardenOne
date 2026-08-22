@@ -83,7 +83,7 @@ one switch, with fine-grained control over every piece.
 ### Ad &amp; content blocking — AdShield
 - **General** — EasyList / uBlock-style filtering (network + cosmetic + anti-adblock scriptlets).
 - **YouTube** — removes pre-roll and mid-roll video ads by pruning the ad schedule out of the player data; no black screen, no skip button.
-- **Twitch** — removes stitched-in pre-roll and mid-roll stream ads, with a silent-segment fallback so playback never breaks.
+- **Twitch** — replaces stitched pre-roll and mid-roll ads with another local, Twitch-signed clean stream, keeps its HLS sequence continuous across the swap, and declines display/PiP ads before their creatives load. No third-party proxy is used; if Twitch offers no clean session, playback fails open instead of freezing or looping behind a cover.
 - **Sponsored results &amp; AI answers** — strips sponsored Google / Brave results and their ad-click wrappers, and can hide Google / Brave AI answer panels.
 - **Mark answer-scraper results** (optional) — dims and labels results from sites that rank by republishing other people's answers, with a one-click **Show anyway**. It never removes them: ad blocking fails visibly, but a search filter that silently drops the one result you needed fails invisibly, and you'd never know it happened. The list auto-updates and can be extended without a new release.
 - **Google: plain web results only** (optional) — switches Google into its own "Web" mode: ten blue links, no AI overview, no enriched panels. It removes the clutter at the source rather than hiding it after paint, so nothing flashes in first and no selector can go stale when Google reshuffles its markup. Your Images, Videos and News tabs still work.
@@ -277,4 +277,5 @@ notices intact.
 
 WardenOne builds on the open-source blocking community. Sources are credited in
 [CREDITS.md](CREDITS.md): AdGuard (YouTube rules), EasyList / EasyPrivacy (tracker
-rules), and TwitchAdSolutions (Twitch strategy).
+rules), and TwitchAdSolutions, scamorza/TwitchAdBlock, GosuDRM/TTV-AB, and uBlock
+Origin uAssets (Twitch blocking).

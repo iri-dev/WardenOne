@@ -34,6 +34,7 @@ const CHANNEL = 'fixturechannel';
 const MASTER_URL = 'https://usher.ttvnw.net/api/v2/channel/hls/' + CHANNEL
   + '.m3u8?allow_source=true&allow_audio_only=true&p=fixture&parent_domains=twitch.tv';
 const MEDIA_URL = 'https://video-edge-fixture.ttvnw.net/original/chunked/index-dvr.m3u8?token=native';
+const AD_SEGMENT_URL = 'https://video-weaver-fixture.ttvnw.net/commercial/200.ts';
 
 const ORIGINAL_MASTER = `#EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
@@ -218,6 +219,40 @@ test('unmapped non-Twitch m3u8 traffic is an exact native pass-through', async (
   assert(runtime.state.gqlRequests.length === 0, 'unrelated m3u8 traffic started Twitch backup work');
 });
 
+test('stitched ad segments are exact native pass-through and are never denied', async () => {
+  const native = new Response('fixture native transport-stream bytes', {
+    status: 200,
+    headers: { 'content-type': 'video/mp2t' },
+  });
+  const runtime = createRuntime({
+    fetchRoute(url) {
+      assert(url === AD_SEGMENT_URL, 'worker rewrote an ad segment URL to ' + url);
+      return native;
+    },
+  });
+  const response = await runtime.fetch(AD_SEGMENT_URL);
+  assert(response === native, 'worker replaced or denied the native ad segment response');
+  assert(response.status === 200, 'worker changed the native ad segment status');
+  assert(await response.text() === 'fixture native transport-stream bytes',
+    'worker emptied or synthesized the native ad segment body');
+  assert(runtime.state.calls.length === 1, 'ad segment pass-through duplicated the native request');
+  assert(runtime.state.gqlRequests.length === 0, 'an ad segment request started backup work');
+});
+
+test('worker fallback contains no gap, cover, mute, pause, play, or seek primitive', () => {
+  assert(!/#EXT-X-GAP/i.test(WORKER_RUNTIME), 'worker can synthesize EXT-X-GAP media');
+  assert(!/video\/(?:mp2t|mp4)/i.test(WORKER_RUNTIME),
+    'worker contains a synthetic media-segment response type');
+  assert(!/blocked-native/i.test(MODULE_SOURCE),
+    'primary SSAI fallback can re-arm the legacy cover/mute state');
+  assert(!/\.(?:pause|play)\s*\(/.test(WORKER_RUNTIME),
+    'worker fallback can pause or play Twitch media');
+  assert(!/\.currentTime\s*=/.test(WORKER_RUNTIME),
+    'worker fallback can seek Twitch media');
+  assert(!/\.(?:muted|volume)\s*=/.test(WORKER_RUNTIME),
+    'worker fallback can mute the primary Twitch media element');
+});
+
 test('non-success media responses retain native status and body', async () => {
   const runtime = createRuntime({
     fetchRoute() { return hls('native service unavailable', 503); },
@@ -273,7 +308,7 @@ test('invalid HTTP-200 text is never replayed later as a clean HLS snapshot', as
   assert(/^#EXTM3U(?:\r?\n|$)/.test(body), 'ad recovery returned a non-HLS body');
 });
 
-test('low-latency cursor queries are removed only after an intervention starts', async () => {
+test('native suppression preserves low-latency cursor queries through recovery', async () => {
   const llUrl = MEDIA_URL + '&_HLS_msn=200&_HLS_part=2&_HLS_skip=YES';
   let mediaPoll = 0;
   const observedMediaUrls = [];
@@ -291,12 +326,12 @@ test('low-latency cursor queries are removed only after an intervention starts',
   await runtime.fetch(llUrl);
   await runtime.fetch(llUrl);
 
-  assert(observedMediaUrls[0] === llUrl, 'worker stripped low-latency cursors before any intervention');
+  assert(observedMediaUrls[0] === llUrl, 'worker stripped low-latency cursors before suppression');
   const recoveryUrl = new URL(observedMediaUrls[1]);
   assert(recoveryUrl.searchParams.get('token') === 'native', 'recovery changed a non-LL media query');
-  for (const key of ['_HLS_msn', '_HLS_part', '_HLS_skip']) {
-    assert(!recoveryUrl.searchParams.has(key), 'recovery retained blocking cursor ' + key);
-  }
+  assert(recoveryUrl.searchParams.get('_HLS_msn') === '200' &&
+      recoveryUrl.searchParams.get('_HLS_part') === '2' && recoveryUrl.searchParams.get('_HLS_skip') === 'YES',
+    'native suppression changed Twitch\'s LL-HLS recovery cursor');
   assert(observedMediaUrls.length === 2, 'LL recovery duplicated a native media poll');
 });
 
@@ -311,13 +346,42 @@ test('concurrent backup failure stays bounded and resolves every caller', async 
   await runtime.fetch(MASTER_URL);
   const responses = await Promise.all(Array.from({ length: 20 }, () => runtime.fetch(MEDIA_URL)));
   const bodies = await Promise.all(responses.map((response) => response.text()));
-  assert(bodies.every((body) => /^#EXTM3U(?:\r?\n|$)/.test(body)),
-    'backup failure returned an invalid media body');
-  assert(runtime.state.gqlRequests.length === 4,
-    'concurrent backup failure multiplied proxy attempts: ' + runtime.state.gqlRequests.length);
+  assert(bodies.every((body) => body === AD_MEDIA),
+    'backup failure emptied, gapped, or synthesized the native ad playlist');
+  assert(runtime.state.calls.length === 21,
+    'backup failure denied or duplicated a native playlist request: ' + runtime.state.calls.length);
+
+  const requests = runtime.state.gqlRequests.map((message) => message.body || {});
+  assert(requests.length === 6,
+    'three identity attempts should make one persisted and one full-query request each: ' + requests.length);
+  const expected = [
+    ['mobile_feed', 'android'],
+    ['popout', 'web'],
+    ['autoplay', 'android'],
+  ];
+  for (let index = 0; index < expected.length; index++) {
+    const persisted = requests[index * 2];
+    const full = requests[index * 2 + 1];
+    const pair = expected[index];
+    assert(persisted.variables && persisted.variables.playerType === pair[0] &&
+        persisted.variables.platform === pair[1],
+      'backup identity order/platform changed at attempt ' + (index + 1));
+    assert(persisted.extensions && persisted.extensions.persistedQuery,
+      pair[0] + ' did not begin with the captured persisted token request');
+    assert(full.variables && full.variables.playerType === pair[0] && full.variables.platform === pair[1] &&
+        typeof full.query === 'string' && full.query.includes('$platform'),
+      pair[0] + ' did not make exactly one platform-aware full-query retry');
+    assert(!full.extensions, pair[0] + ' full-query retry retained persisted-query metadata');
+  }
+
+  const adStates = runtime.state.messages
+    .filter((message) => message && message.type === 'ad-state')
+    .map((message) => message.state);
+  assert(adStates.length > 0 && adStates.every((state) => state === 'clear'),
+    'failed clean fallback armed cover/mute state: ' + adStates.join(','));
 
   await runtime.fetch(MEDIA_URL);
-  assert(runtime.state.gqlRequests.length === 4,
+  assert(runtime.state.gqlRequests.length === 6,
     'negative backup cache retried immediately after failure');
 });
 
