@@ -70,11 +70,25 @@
     50% { transform: translate3d(26px,-30px,0) scale(1.08); }
   }
 
-  /* ---------- pin-me arrow (points up to the toolbar) ---------- */
+  /* ---------- pin-me arrow (points up at the extensions puzzle) ----------
+     The SVG is 232px wide over a 0 0 232 150 viewBox, so one viewBox unit is one
+     pixel, and the arrowhead tip sits at x=214 -- i.e. 18px in from the graphic's
+     right edge. Whatever `right` is set to here, the tip lands (right + 18)px from
+     the window edge, so this value is what actually aims the arrow.
+
+     It used to be 18px, putting the tip 36px from the edge: that is the three-dot
+     menu, not the puzzle. Chrome's toolbar runs, right to left, [menu] [profile]
+     [puzzle] at roughly 30px per icon, which puts the puzzle near 90px in. So
+     72 + 18 = 90.
+
+     One honest caveat: a page cannot see the browser's own toolbar, so no value is
+     right for everyone -- someone with several pinned extensions has the puzzle much
+     further left. That is why the bubble carries the puzzle glyph itself: the arrow
+     points at the right neighbourhood, and the icon says what to look for. */
   .pin-arrow {
     position: fixed;
     top: 0;
-    right: 18px;
+    right: 72px;
     z-index: 40;
     width: 232px;
     pointer-events: none;
@@ -89,7 +103,13 @@
     50% { transform: translateY(10px); }
   }
   .pin-arrow .bubble-text { font: 900 15px/1.1 var(--display); fill: #fff; }
-  .pin-arrow .bubble-bg { fill: rgba(255,255,255,.16); stroke: rgba(255,255,255,.5); stroke-width: 1.4; }
+  /* Opaque, not a translucent white wash. The bubble is positioned against the top-right of the
+     window, and whether that lands on the purple backdrop or on the white scene card depends
+     entirely on how wide the window is -- a wide window leaves the card short of it, a narrower
+     one puts the card right underneath. At rgba(255,255,255,.16) with white text it simply
+     disappeared in the second case. A solid plum pill reads on both. */
+  .pin-arrow .bubble-bg { fill: #5f2779; stroke: rgba(255,255,255,.55); stroke-width: 1.4; }
+  .pin-arrow .bubble-icon path { fill: none; stroke: #fff; stroke-width: 1.7; stroke-linejoin: round; }
   .pin-arrow .stroke { fill: none; stroke: #fff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round;
     filter: drop-shadow(0 6px 14px rgba(20,8,34,.5));
     stroke-dasharray: 320; stroke-dashoffset: 320; animation: draw 1.1s ease forwards .25s; }
@@ -476,12 +496,21 @@
 
   <!-- arrow that points up to the toolbar during the pin step -->
   <div class="pin-arrow" aria-hidden="true">
-    <svg viewBox="0 0 232 150" xmlns="http://www.w3.org/2000/svg">
+    <!-- The bubble sits at y=78 rather than y=70 so it clears the "Skip setup" button, whose
+         bottom edge is at 65px. At y=70 the two pills sat 5px apart and read as a single
+         washed-out shape. -->
+    <svg viewBox="0 0 232 158" xmlns="http://www.w3.org/2000/svg">
       <g class="bubble">
-        <rect class="bubble-bg" x="6" y="70" width="178" height="48" rx="16"></rect>
-        <text class="bubble-text" x="24" y="100">Pin it here</text>
+        <rect class="bubble-bg" x="6" y="78" width="178" height="48" rx="16"></rect>
+        <!-- The same puzzle glyph as the card below, so the bubble names its own target.
+             The arrow can only ever point at roughly the right place; this cannot be
+             misread. -->
+        <g class="bubble-icon" transform="translate(18,90) scale(1.2)">
+          <path d="M9 4h2a1.5 1.5 0 1 1 3 0h2v3a1.5 1.5 0 1 0 0 3v3h-3a1.5 1.5 0 1 0-3 0H6v-3a1.5 1.5 0 1 1 0-3V4h3Z"></path>
+        </g>
+        <text class="bubble-text" x="50" y="108">Pin it here</text>
       </g>
-      <path class="stroke" d="M150 96 C 196 86, 214 60, 214 16"></path>
+      <path class="stroke" d="M150 104 C 196 94, 214 60, 214 16"></path>
       <path class="stroke" d="M196 28 L214 10 L226 32"></path>
     </svg>
   </div>

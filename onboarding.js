@@ -9,6 +9,39 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // ---- aim the pin arrow at the extensions puzzle ---------------------------
+  // A page cannot see the browser's own toolbar, so the arrow's target has to be inferred. The
+  // graphic is 232px wide over a 232-unit viewBox and its arrowhead sits 18 units in from the
+  // right, so the tip lands (right + 18)px from the window edge -- `right` is the aim.
+  //
+  // Chrome's toolbar ends [puzzle] [profile] [menu], and pinned extensions stack to the LEFT of
+  // the puzzle, so the puzzle stays put no matter how many are pinned: about 90px in.
+  //
+  // Brave is the case that breaks that assumption. It adds its own buttons to the RIGHT of the
+  // puzzle -- downloads, sidebar, wallet, rewards, shields, then the menu -- pushing the puzzle
+  // out to roughly 230px. Aiming at 90px there lands on the rewards icon, which is worse than not
+  // pointing at all.
+  //
+  // Brave is the one Chromium fork that reliably identifies itself, via navigator.brave.isBrave().
+  // Everything else keeps the Chrome figure: Edge and Opera also add buttons to the right, but
+  // how many depends on settings this page cannot see, and a wrong guess is no better than the
+  // default. The bubble carries the puzzle glyph precisely because none of this is exact -- the
+  // arrow gets the neighbourhood, the icon says what to look for.
+  const PIN_ARROW_RIGHT = { chromium: 72, brave: 212 };
+  function aimPinArrow() {
+    const arrow = document.querySelector('.pin-arrow');
+    if (!arrow) return;
+    const set = (px) => { arrow.style.right = px + 'px'; };
+    set(PIN_ARROW_RIGHT.chromium);
+    try {
+      const brave = navigator.brave;
+      if (brave && typeof brave.isBrave === 'function') {
+        brave.isBrave().then((yes) => { if (yes) set(PIN_ARROW_RIGHT.brave); }).catch(() => {});
+      }
+    } catch (_) { /* not Brave, or the probe is unavailable; the default already applies */ }
+  }
+  aimPinArrow();
+
   // ---- stepper state -------------------------------------------------------
   const STEPS = ['welcome', 'pin', 'protect', 'explore'];
   const scenes = {};
