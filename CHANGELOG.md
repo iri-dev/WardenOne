@@ -25,6 +25,9 @@ as the work happened.
 
 ### Fixed
 
+- Made GitHub's default Latest release follow the rolling, gate-passing `main`
+  package, and pointed repository and website download buttons directly at it.
+  Current builds no longer require a version bump just to become downloadable.
 - Shortened blocklist-update ages in the compact protection-health tile so the
   value no longer clips inside the popup.
 - Updated Twitch's clean-stream search to the currently effective identity order:

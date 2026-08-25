@@ -46,10 +46,10 @@ jobs:
   # extension while believing they had the current one.
   #
   # So every push that passes the gate above rebuilds a rolling `latest-build`
-  # and replaces the package attached to it. It is marked prerelease on purpose:
-  # GitHub never advertises a prerelease as "Latest", so the stable release stays
-  # the one ordinary visitors land on, and this sits beside it for anyone who
-  # wants current code. Nothing here needs a version number, which is the point.
+  # and replaces the package attached to it. It is explicitly GitHub's "Latest"
+  # release so the ordinary download never falls behind main. Versioned releases
+  # remain milestone archives; nothing here needs a new version number, which is
+  # the point.
   # ---------------------------------------------------------------------------
   rolling-build:
     name: publish-latest-build
@@ -82,10 +82,11 @@ jobs:
           # Quoted heredoc, so the backticks below stay literal markdown instead
           # of being run as commands. The two values are filled in afterwards.
           cat > notes.md <<'EOF'
-          **This is the development build: the current state of `main`, rebuilt on every change.**
+          **This is WardenOne's latest build: the current state of `main`, rebuilt after every passing change.**
 
-          Most people want [the latest stable release](../../releases/latest) instead. This one exists so
-          that the code on this repo is always downloadable without waiting for a version to be cut.
+          GitHub marks this rolling release as **Latest** so the normal download never falls behind the
+          repository. Versioned releases remain available as milestone archives and do not need to move
+          for every commit.
 
           Built from commit `__SHA__` — extension version `__VERSION__`. The full gate passed before it
           was published, but this build has had no hands-on testing beyond that.
@@ -110,10 +111,10 @@ jobs:
           # not notified of a brand new release on every single push.
           if gh release view latest-build >/dev/null 2>&1; then
             gh release upload latest-build WardenOne-latest.zip --clobber
-            gh release edit latest-build --notes-file notes.md --prerelease
+            gh release edit latest-build --notes-file notes.md --prerelease=false --latest
           else
             gh release create latest-build WardenOne-latest.zip \
-              --title "Development build (main)" \
+              --title "Latest build (main)" \
               --notes-file notes.md \
-              --prerelease
+              --latest
           fi
