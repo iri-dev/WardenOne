@@ -1,23 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-wardenone-page="download-review">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WardenOne Download Guard</title>
 <style>
   :root {
-    --bg: #efe2f7;
-    --panel: #fbf6fe;
-    --panel-2: #f4ebfb;
-    --ink: #3d2a52;
-    --soft: #7a5f93;
-    --faint: #a98fc0;
-    --line: #e3d3f1;
-    --purple: #8b3fb0;
-    --green: #2e9e5b;
-    --orange: #bd7a2a;
-    --red: #c0392b;
-    --critical: #7f1d1d;
+    --bg: var(--wo-bg);
+    --panel: var(--wo-surface);
+    --panel-2: var(--wo-surface-alt);
+    --ink: var(--wo-text);
+    --soft: var(--wo-text-soft);
+    --faint: var(--wo-text-faint);
+    --line: var(--wo-line);
+    --purple: var(--wo-brand-text);
+    --green: var(--wo-success);
+    --orange: var(--wo-warning);
+    --red: var(--wo-danger);
+    --critical: var(--wo-critical);
     --display: "Quicksand", "Nunito", "Segoe UI Rounded", system-ui, sans-serif;
     --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
   }
@@ -25,10 +25,7 @@
   body {
     min-width: 360px;
     margin: 0;
-    background:
-      radial-gradient(110% 75% at 0% 0%, #e3cdf4 0%, transparent 56%),
-      radial-gradient(110% 75% at 100% 0%, #f2cee4 0%, transparent 52%),
-      linear-gradient(180deg, var(--bg), #ead8f5);
+    background: var(--wo-page-background);
     color: var(--ink);
     font-family: var(--body);
     font-size: 13px;
@@ -49,7 +46,7 @@
     border-radius: 13px;
     display: grid;
     place-items: center;
-    background: linear-gradient(150deg, #b06fd6 0%, #e07aae 100%);
+    background: var(--wo-control-gradient);
     box-shadow: 0 5px 16px rgba(139, 63, 176, 0.32);
     flex: none;
   }
@@ -76,7 +73,7 @@
     align-items: center;
     padding: 13px;
     border-radius: 8px;
-    background: rgba(255,255,255,.55);
+    background: var(--wo-surface-wash);
     border: 1px solid var(--line);
     margin-bottom: 12px;
   }
@@ -130,7 +127,7 @@
     overflow-wrap: anywhere;
   }
   .panel {
-    background: rgba(255,255,255,.48);
+    background: var(--wo-surface-wash);
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 12px;
@@ -177,7 +174,7 @@
     font-size: 12px;
     cursor: pointer;
     color: var(--soft);
-    background: #e9d8f4;
+    background: var(--wo-control);
   }
   button:hover { filter: brightness(.98); }
   button:disabled {
@@ -186,7 +183,7 @@
   }
   .primary {
     color: #fff;
-    background: linear-gradient(135deg, #b06fd6 0%, #e07aae 100%);
+    background: var(--wo-control-gradient);
     box-shadow: 0 4px 14px rgba(139, 63, 176, .28);
   }
   .danger {
@@ -235,6 +232,8 @@
     margin-bottom: 10px;
   }
 </style>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 </head>
 <body>
   <main class="wrap">

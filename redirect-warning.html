@@ -1,24 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-wardenone-page="redirect-warning">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WardenOne - Redirect Check</title>
 <style>
   :root {
-    --bg: #ece0f7;
-    --bg-2: #f7e5f2;
-    --paper: #fffafd;
-    --paper-soft: #f7effb;
-    --ink: #3d2a52;
-    --ink-soft: #72568e;
-    --ink-faint: #9a7eb1;
-    --line: #dcc7ed;
-    --plum: #7b3f98;
-    --violet: #b06fd6;
-    --rose: #d65f9a;
-    --green: #35c779;
-    --shadow: 0 28px 90px rgba(72, 38, 96, .18);
+    --bg: var(--wo-bg);
+    --bg-2: var(--wo-bg-alt);
+    --paper: var(--wo-surface);
+    --paper-soft: var(--wo-surface-alt);
+    --ink: var(--wo-text);
+    --ink-soft: var(--wo-text-soft);
+    --ink-faint: var(--wo-text-faint);
+    --line: var(--wo-line);
+    --plum: var(--wo-brand-text);
+    --violet: var(--wo-violet);
+    --rose: var(--wo-rose-text);
+    --green: var(--wo-success);
+    --shadow: var(--wo-shadow);
     --display: "Quicksand", "Nunito", "Segoe UI Rounded", system-ui, sans-serif;
     --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
   }
@@ -30,10 +30,7 @@
     padding: 30px 18px;
     color: var(--ink);
     font: 15px/1.58 var(--body);
-    background:
-      radial-gradient(70% 60% at 0% 0%, rgba(176,111,214,.28), transparent 62%),
-      radial-gradient(62% 54% at 100% 4%, rgba(214,95,154,.22), transparent 58%),
-      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    background: var(--wo-page-background);
   }
   .panel {
     width: min(760px, 100%);
@@ -48,7 +45,7 @@
     color: #fff;
     background:
       radial-gradient(80% 120% at 95% 0%, rgba(223,108,169,.46), transparent 60%),
-      linear-gradient(135deg, #6a3a86 0%, #9a55b5 50%, #d65f9a 100%);
+      linear-gradient(135deg, #4f2b65 0%, var(--wo-violet) 50%, var(--wo-pink) 100%);
   }
   .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
   .mark {
@@ -83,7 +80,7 @@
     border: 1px solid var(--line);
     border-radius: 18px;
     padding: 16px;
-    background: rgba(255,255,255,.68);
+    background: var(--wo-surface-wash-strong);
   }
   .label {
     margin-bottom: 7px;
@@ -109,7 +106,7 @@
     padding: 0 18px;
     cursor: pointer;
     color: var(--ink);
-    background: #f0e3f6;
+    background: var(--wo-control);
     font: 900 13px/1 var(--display);
   }
   button.primary {
@@ -118,7 +115,7 @@
     background: linear-gradient(135deg, var(--violet), var(--rose));
     box-shadow: 0 14px 26px rgba(139,63,176,.28);
   }
-  button.continue { color: var(--ink-soft); background: rgba(255,255,255,.62); }
+  button.continue { color: var(--ink-soft); background: var(--wo-surface-wash); }
   .fineprint { margin-top: 16px; color: var(--ink-faint); font-size: 12px; }
   @media (max-width: 640px) {
     .hero, .content { padding: 24px; }
@@ -126,6 +123,8 @@
     .actions { display: grid; }
   }
 </style>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 </head>
 <body>
   <main class="panel">

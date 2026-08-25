@@ -15,6 +15,14 @@ had already been blocked.
 The detailed entries are in the 1.0.0 section below, which is where they were written
 as the work happened.
 
+### Added
+
+- Added a purple/plum dark theme across every extension page, with persistent Light/Dark
+  controls in the popup header, the Interface section, and onboarding. Light mode keeps
+  the original WardenOne design, including its native scrollbar geometry and lilac-pink
+  selected-mode controls; dark mode uses a flat background while preserving readable
+  warning, status, and disabled-control contrast.
+
 ### Fixed
 
 - Shortened blocklist-update ages in the compact protection-health tile so the

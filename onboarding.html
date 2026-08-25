@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-wardenone-page="onboarding">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -486,6 +486,8 @@
     .pin-arrow .stroke { stroke-dashoffset: 0; }
   }
 </style>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 </head>
 <body data-step="welcome">
   <div class="bg" aria-hidden="true">
@@ -545,6 +547,16 @@
               <span>Built by <a href="https://iri.dev" target="_blank" rel="noopener noreferrer">iri.dev</a></span>
               <span class="sep" aria-hidden="true"></span>
               <span>No accounts. No telemetry.</span>
+            </div>
+            <div class="onboarding-theme" aria-labelledby="onboarding-theme-title">
+              <div>
+                <strong id="onboarding-theme-title">Choose your theme</strong>
+                <span data-wardenone-theme-status>Light theme</span>
+              </div>
+              <div class="wo-theme-options" role="group" aria-labelledby="onboarding-theme-title">
+                <button type="button" class="wo-theme-option" data-wardenone-theme="light" aria-pressed="true">Light</button>
+                <button type="button" class="wo-theme-option" data-wardenone-theme="dark" aria-pressed="false">Dark</button>
+              </div>
             </div>
             <div class="hero-actions">
               <button class="btn primary" id="start" type="button">Get started <span class="ar" aria-hidden="true">&rarr;</span></button>

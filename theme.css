@@ -1,0 +1,450 @@
+/* Shared extension-page palette. Page styles consume the aliases below so the
+   purple/plum identity remains consistent without carrying a second light palette. */
+:root {
+  color-scheme: light;
+  --wo-bg: #ece0f7;
+  --wo-bg-alt: #e7d9f4;
+  --wo-bg-soft: #faf6fd;
+  --wo-surface: #fffafd;
+  --wo-surface-raised: #ffffff;
+  --wo-surface-alt: #f4ebfb;
+  --wo-surface-muted: #ede1f8;
+  --wo-control: #e2d2f2;
+  --wo-control-hover: #d9c3e9;
+  --wo-surface-wash: rgba(255, 255, 255, .58);
+  --wo-surface-wash-strong: rgba(255, 255, 255, .76);
+  --wo-text: #33223f;
+  --wo-text-soft: #5f476f;
+  --wo-text-faint: #695374;
+  --wo-line: #ddcce9;
+  --wo-line-strong: #bea4d1;
+  --wo-brand-text: #6f2f8a;
+  --wo-plum-deep: #54206d;
+  --wo-violet: #783593;
+  --wo-pink: #a33b72;
+  --wo-rose-text: #87335f;
+  --wo-on-brand: #ffffff;
+  --wo-success: #17633a;
+  --wo-success-solid: #24613c;
+  --wo-success-bg: #dcefe4;
+  --wo-success-line: #83b99a;
+  --wo-warning: #76470f;
+  --wo-warning-solid: #774810;
+  --wo-warning-bg: #f4e4ce;
+  --wo-warning-line: #c49a63;
+  --wo-danger: #9d2f37;
+  --wo-danger-solid: #982f38;
+  --wo-danger-bg: #f3dbe5;
+  --wo-danger-line: #d9a1b8;
+  --wo-critical: #71191f;
+  --wo-critical-solid: #65171d;
+  --wo-shadow: 0 18px 54px rgba(72, 38, 96, .17);
+  --wo-shadow-soft: 0 6px 24px rgba(72, 38, 96, .13);
+  --wo-page-background:
+    radial-gradient(85% 58% at 0% 0%, #e3cdf4 0%, transparent 60%),
+    radial-gradient(72% 54% at 100% 0%, #f2cee4 0%, transparent 58%),
+    linear-gradient(180deg, var(--wo-bg) 0%, var(--wo-bg-alt) 55%, var(--wo-bg-soft) 100%);
+  --wo-card-gradient: linear-gradient(160deg, var(--wo-surface), var(--wo-surface-alt));
+  --wo-control-gradient: linear-gradient(135deg, var(--wo-violet), var(--wo-pink));
+  --wo-focus: #8b43ad;
+
+}
+
+:root[data-wardenone-theme-resolved="dark"] {
+  color-scheme: dark;
+  --wo-bg: #160d1d;
+  --wo-bg-alt: #201329;
+  --wo-bg-soft: #281832;
+  --wo-surface: #25162f;
+  --wo-surface-raised: #30203a;
+  --wo-surface-alt: #2c1a37;
+  --wo-surface-muted: #352040;
+  --wo-control: #422950;
+  --wo-control-hover: #513362;
+  --wo-surface-wash: rgba(91, 56, 110, .4);
+  --wo-surface-wash-strong: rgba(105, 65, 125, .54);
+  --wo-text: #fbf6fe;
+  --wo-text-soft: #dcc9e5;
+  --wo-text-faint: #bea7ca;
+  --wo-line: #51325f;
+  --wo-line-strong: #704885;
+  --wo-brand-text: #e1b0f3;
+  --wo-plum-deep: #d69cea;
+  --wo-violet: #7a3996;
+  --wo-pink: #a43b72;
+  --wo-rose-text: #f0a7ca;
+  --wo-success: #93e1b0;
+  --wo-success-solid: #24613c;
+  --wo-success-bg: #183628;
+  --wo-success-line: #347453;
+  --wo-warning: #ffd08a;
+  --wo-warning-solid: #774810;
+  --wo-warning-bg: #3b2b1b;
+  --wo-warning-line: #75552b;
+  --wo-danger: #ffaaa4;
+  --wo-danger-solid: #982f38;
+  --wo-danger-bg: #43202b;
+  --wo-danger-line: #7c4052;
+  --wo-critical: #ff8f8f;
+  --wo-critical-solid: #65171d;
+  --wo-shadow: 0 22px 64px rgba(0, 0, 0, .42);
+  --wo-shadow-soft: 0 8px 28px rgba(0, 0, 0, .3);
+  --wo-page-background: var(--wo-bg);
+  --wo-focus: #dda7f2;
+
+  /* Dark mode deliberately overrides each page's original light aliases. */
+  --bg: var(--wo-bg);
+  --bg-2: var(--wo-bg-alt);
+  --bg-3: var(--wo-bg-soft);
+  --card: var(--wo-surface-alt);
+  --card-2: var(--wo-surface-muted);
+  --panel: var(--wo-surface);
+  --panel-2: var(--wo-surface-alt);
+  --panel-3: var(--wo-control);
+  --paper: var(--wo-surface-raised);
+  --paper-soft: var(--wo-surface);
+  --mist: var(--wo-surface-muted);
+  --mist-strong: var(--wo-control);
+  --ink: var(--wo-text);
+  --ink-soft: var(--wo-text-soft);
+  --ink-faint: var(--wo-text-faint);
+  --soft: var(--wo-text-soft);
+  --faint: var(--wo-text-faint);
+  --line: var(--wo-line);
+  --line-2: var(--wo-line-strong);
+  --line-strong: var(--wo-line-strong);
+  --plum: var(--wo-brand-text);
+  --purple: var(--wo-brand-text);
+  --plum-deep: var(--wo-plum-deep);
+  --violet: var(--wo-violet);
+  --pink: var(--wo-pink);
+  --grad-a: var(--wo-violet);
+  --grad-b: var(--wo-pink);
+  --green: var(--wo-success);
+  --amber: var(--wo-warning);
+  --orange: var(--wo-warning);
+  --warn: var(--wo-warning);
+  --danger: var(--wo-danger);
+  --red: var(--wo-danger);
+  --danger-bg: var(--wo-danger-bg);
+  --critical: var(--wo-critical);
+  --shadow: var(--wo-shadow);
+  --shadow-sm: var(--wo-shadow-soft);
+}
+
+:focus-visible {
+  outline-color: var(--wo-focus);
+}
+
+:root[data-wardenone-theme-resolved="dark"] button:disabled {
+  color: var(--wo-text-faint);
+  background: var(--wo-control);
+  border-color: var(--wo-line-strong);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+}
+:root[data-wardenone-theme-resolved="dark"] input:disabled,
+:root[data-wardenone-theme-resolved="dark"] select:disabled,
+:root[data-wardenone-theme-resolved="dark"] textarea:disabled,
+:root[data-wardenone-theme-resolved="dark"] [aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .72;
+}
+:root[data-wardenone-theme-resolved="dark"] .tg.disabled { opacity: .64; }
+
+/* Shared background and common app surfaces. */
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="cert-error"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="redirect-warning"][data-wardenone-theme-resolved="dark"] body {
+  background: var(--wo-page-background);
+}
+
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] {
+  --rose: var(--wo-rose-text);
+  --rose-deep: var(--wo-rose-text);
+  --wo-popup-soft-danger: var(--wo-danger);
+  --wo-popup-soft-danger-solid: var(--wo-danger-solid);
+  --wo-popup-soft-danger-bg: var(--wo-danger-bg);
+  --wo-popup-soft-danger-line: var(--wo-danger-line);
+  --wo-popup-neutral-risk: var(--wo-text-soft);
+  --wo-popup-grade-a: var(--wo-success-solid);
+  --wo-popup-grade-b: var(--wo-success-solid);
+  --wo-popup-grade-c: var(--wo-warning-solid);
+  --wo-popup-grade-d: var(--wo-warning-solid);
+  --wo-popup-grade-f: var(--wo-danger-solid);
+  --wo-popup-risk-low: var(--wo-success-solid);
+  --wo-popup-risk-medium: var(--wo-warning-solid);
+  --wo-popup-risk-high: var(--wo-danger-solid);
+  --wo-popup-mode-gradient: var(--wo-control-gradient);
+  --wo-popup-interface-gradient: var(--wo-control-gradient);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="light"] {
+  /* Preserve the established popup palette exactly; shared theme tokens only
+     replace the old literals so dynamically rendered content can follow dark mode. */
+  color-scheme: normal;
+  --wo-text: #2d1b40;
+  --wo-text-soft: #534064;
+  --wo-line: rgba(224, 206, 242, .5);
+  --wo-line-strong: #b89ad8;
+  --wo-brand-text: #833ca6;
+  --wo-surface-raised: #ffffff;
+  --wo-surface-muted: rgba(122, 95, 147, .1);
+  --wo-surface-wash: rgba(255, 255, 255, .55);
+  --wo-success: #1f693d;
+  --wo-success-solid: #1f693d;
+  --wo-success-bg: rgba(46, 158, 91, .08);
+  --wo-success-line: rgba(46, 158, 91, .2);
+  --wo-warning: #80531d;
+  --wo-warning-solid: #80531d;
+  --wo-danger: #a93226;
+  --wo-danger-solid: #a93226;
+  --wo-danger-bg: rgba(192, 57, 43, .07);
+  --wo-danger-line: rgba(192, 57, 43, .3);
+  --wo-card-gradient: linear-gradient(160deg, rgba(255, 255, 255, .7), rgba(245, 235, 251, .7));
+  --wo-popup-soft-danger: #973c69;
+  --wo-popup-soft-danger-solid: #973c69;
+  --wo-popup-soft-danger-bg: rgba(214, 90, 122, .1);
+  --wo-popup-soft-danger-line: #f0c8da;
+  --wo-popup-neutral-risk: #645871;
+  --wo-popup-grade-a: #1f693d;
+  --wo-popup-grade-b: #37672e;
+  --wo-popup-grade-c: #80531d;
+  --wo-popup-grade-d: #90491d;
+  --wo-popup-grade-f: #a93226;
+  --wo-popup-risk-low: #1f693d;
+  --wo-popup-risk-medium: #80531d;
+  --wo-popup-risk-high: #a93226;
+  --wo-popup-mode-gradient: linear-gradient(135deg, #b06ad4, #e07ab0);
+  --wo-popup-interface-gradient: linear-gradient(135deg, #9e61d1, #dd72aa);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .health-panel,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .master {
+  background: var(--wo-card-gradient);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .health-stat,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .health-note,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .api-field,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-shell,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-chip,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-value,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-mode-wrap {
+  background: var(--wo-surface-wash);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .tg .track { background: var(--wo-control); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .tg .knob,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-clear:hover,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-range::-webkit-slider-thumb,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-range::-moz-range-thumb { background: var(--wo-surface-raised); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .btn:hover,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .bmc-btn:hover,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-reset:hover { background: var(--wo-control-hover); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .btn.primary,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .tg input:checked + .track,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .tracker-mode-btn[aria-pressed="true"] { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .btn.soft-danger { color: var(--wo-danger); background: var(--wo-danger-bg); border-color: var(--wo-danger-line); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] :is(#mem-free, #forget-now) {
+  background: var(--wo-control-gradient) !important;
+  color: var(--wo-on-brand) !important;
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] #ss-clear {
+  border-color: var(--wo-danger-line) !important;
+  color: var(--wo-danger) !important;
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] #ss-panic {
+  background: linear-gradient(135deg, var(--wo-danger-solid), var(--wo-critical-solid)) !important;
+  color: var(--wo-on-brand) !important;
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-searchbar {
+  background: var(--wo-surface-wash);
+  box-shadow: none;
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search {
+  color: var(--wo-text);
+  border-color: var(--wo-line-strong);
+  background: transparent;
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search::placeholder { color: var(--wo-text-faint); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search:focus { background: var(--wo-surface-wash); border-color: var(--wo-focus); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-ico { color: var(--wo-text-faint); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] :is(.eyeshield-panel, .perm-list) {
+  background: var(--wo-card-gradient);
+  border-color: var(--wo-line);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-modes {
+  background: var(--wo-surface-wash);
+  border-color: var(--wo-line);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-mode:hover { background: var(--wo-control-hover); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-value:hover,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-value:focus,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-value.is-editing { background: var(--wo-surface-raised); color: var(--wo-brand-text); }
+:root[data-wardenone-page="popup"] .wo-theme-picker {
+  margin: 8px 16px 4px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+.wo-theme-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.wo-theme-copy strong { color: var(--ink); font: 800 12px/1 var(--display); }
+.wo-theme-copy span { color: var(--ink-faint); font-size: 10.5px; font-weight: 700; }
+.wo-theme-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.wo-interface-theme-options { flex: none; width: 112px; }
+.wo-theme-option {
+  min-height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--wo-surface-wash);
+  color: var(--ink-soft);
+  font: 800 10.5px/1 var(--display);
+  cursor: pointer;
+}
+.wo-theme-option:hover { background: var(--wo-control-hover); color: var(--ink); }
+.wo-theme-option[aria-pressed="true"] { border-color: transparent; background: var(--wo-control-gradient); color: var(--wo-on-brand); }
+:root[data-wardenone-page="popup"] .wo-interface-theme-options .wo-theme-option[aria-pressed="true"] {
+  background: var(--wo-popup-interface-gradient);
+}
+.wo-theme-quick {
+  position: absolute;
+  top: 35px;
+  right: 14px;
+  display: flex;
+  gap: 3px;
+}
+.wo-theme-quick .wo-theme-option {
+  width: 22px;
+  min-height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.wo-theme-quick .wo-theme-option svg { width: 12px; height: 12px; }
+
+/* Activity rows used literal pastel fills after the page palette. */
+:root[data-wardenone-page="history"] .row { background: var(--wo-surface); }
+:root[data-wardenone-page="history"] .row:nth-child(even) { background: var(--wo-surface-alt); }
+:root[data-wardenone-page="history"] .row:hover,
+:root[data-wardenone-page="history"] .row .btn { background: var(--wo-surface-raised); }
+:root[data-wardenone-page="history"] .row .btn:hover { background: var(--wo-control); border-color: var(--wo-line-strong); }
+:root[data-wardenone-page="history"] .rmain .pill { background: var(--wo-control); }
+:root[data-wardenone-page="history"] .panel-head .btn {
+  color: var(--wo-on-brand);
+  background: rgba(42, 28, 58, .52);
+  border-color: rgba(255, 255, 255, .34);
+}
+:root[data-wardenone-page="history"] .panel-head .btn:hover { background: rgba(42, 28, 58, .72); }
+:root[data-wardenone-page="history"] .ricon.block { color: var(--wo-danger); background: var(--wo-danger-bg); }
+:root[data-wardenone-page="history"] .ricon.warn { color: var(--wo-warning); background: var(--wo-warning-bg); }
+:root[data-wardenone-page="history"] .ricon.gate { color: var(--wo-brand-text); background: var(--wo-control); }
+
+/* Guide/help pages share the same ledger and card vocabulary. */
+:root[data-wardenone-page="network"] .panel,
+:root[data-wardenone-page="network"] .mini {
+  background: var(--wo-card-gradient);
+  border-color: var(--wo-line);
+}
+:root[data-wardenone-page="network"] .result.on { background: var(--wo-success-bg); border-color: var(--wo-success-line); color: var(--wo-success); }
+:root[data-wardenone-page="network"] .result.off { background: var(--wo-warning-bg); border-color: var(--wo-warning-line); color: var(--wo-warning); }
+:root[data-wardenone-page="network"] .result.err { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); color: var(--wo-danger); }
+
+:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.section-stat, .ledger-group, .external-ledger, .control-flow) {
+  background: var(--wo-card-gradient);
+  border-color: var(--wo-line);
+}
+:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-list, .control-body) { background: var(--wo-surface-alt); }
+:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-row, .service-row) { background: var(--wo-surface-wash); border-color: var(--wo-line); }
+:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-row, .service-row):nth-child(even) { background: var(--wo-surface-wash-strong); }
+:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) .perm-row:hover { background: var(--wo-control); }
+:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-id code, .boundary, .hostline, .control-item) {
+  background: var(--wo-surface-raised);
+  border-color: var(--wo-line-strong);
+  color: var(--wo-text-soft);
+}
+:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) .footer { background: var(--wo-surface-wash); border-color: var(--wo-line); }
+
+/* Onboarding keeps its original light design; these overrides apply only in dark mode. */
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] {
+  --bg-0: #120b18;
+  --bg-1: #21112d;
+  --bg-2: #432157;
+  --bg-3: #702b58;
+  --paper: var(--wo-surface);
+  --paper-2: var(--wo-surface-alt);
+}
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] body { background: var(--wo-bg); }
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] :is(.feat, .pin-card, .link-card, .seg, .stat, .cover, .btn.ghost) {
+  background: var(--wo-surface-raised);
+  border-color: var(--wo-line);
+}
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] :is(.pin-num, .puzzle-illo, .note) { background: var(--wo-surface-alt); }
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] .btn { background: var(--wo-control); color: var(--wo-text-soft); }
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] .btn.primary { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] .controls {
+  background: var(--wo-surface-alt);
+  border-color: var(--wo-line);
+}
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] .cover-frame {
+  --cover-bg: var(--wo-surface-raised);
+}
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] .cover-frame::before {
+  background: linear-gradient(to bottom, var(--wo-surface-raised) 22%, rgba(48, 32, 58, 0));
+}
+:root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] .cover-frame::after {
+  background: linear-gradient(to top, var(--wo-surface-raised) 22%, rgba(48, 32, 58, 0));
+}
+.onboarding-theme {
+  margin-top: 18px;
+  padding: 12px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper-2);
+}
+.onboarding-theme > div:first-child { display: grid; gap: 3px; }
+.onboarding-theme strong { color: var(--ink); font: 900 13px/1.1 var(--display); }
+.onboarding-theme span { color: var(--ink-faint); font-size: 11px; font-weight: 700; }
+.onboarding-theme .wo-theme-options { flex: none; width: 150px; }
+
+:root[data-wardenone-page="download-review"] {
+  --purple: var(--wo-violet);
+  --green: var(--wo-success-solid);
+  --orange: var(--wo-warning-solid);
+  --red: var(--wo-danger-solid);
+  --critical: var(--wo-critical-solid);
+}
+:root[data-wardenone-page="download-review"] .grade-band,
+:root[data-wardenone-page="download-review"] .detail-row { background: var(--wo-surface-wash); }
+:root[data-wardenone-page="download-review"] button { background: var(--wo-control); color: var(--wo-text-soft); }
+:root[data-wardenone-page="download-review"] .primary { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
+:root[data-wardenone-page="download-review"] .danger { background: var(--wo-danger-solid); color: var(--wo-on-brand); }
+:root[data-wardenone-page="download-review"] .trust { color: var(--wo-success); border-color: var(--wo-success-line); background: var(--wo-success-bg); }
+:root[data-wardenone-page="download-review"] .grade-f .grade-band { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); }
+
+:is(:root[data-wardenone-page="cert-error"], :root[data-wardenone-page="safe-browsing-block"]) .panel,
+:root[data-wardenone-page="redirect-warning"] .panel { background: var(--wo-card-gradient); border-color: var(--wo-line); box-shadow: var(--wo-shadow); }
+:is(:root[data-wardenone-page="cert-error"], :root[data-wardenone-page="safe-browsing-block"]) button,
+:root[data-wardenone-page="redirect-warning"] button { background: var(--wo-control); color: var(--wo-text-soft); }
+:is(:root[data-wardenone-page="cert-error"], :root[data-wardenone-page="safe-browsing-block"]) button.primary,
+:root[data-wardenone-page="redirect-warning"] button.primary { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
+:root[data-wardenone-page="safe-browsing-block"] button.danger { color: var(--wo-danger); border-color: var(--wo-danger-line); background: transparent; }
+:root[data-wardenone-page="safe-browsing-block"] button.danger:disabled { color: var(--wo-danger); border-color: var(--wo-danger-line); background: var(--wo-danger-bg); opacity: 1; }
+:root[data-wardenone-page="safe-browsing-block"] button.danger:not(:disabled):hover { background: var(--wo-danger-bg); }
+:root[data-wardenone-page="safe-browsing-block"] .escape { border-color: var(--wo-line); }
+:root[data-wardenone-page="redirect-warning"] :is(.route-card, .reason, button.continue) { background: var(--wo-surface-wash); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wo-theme-option { transition: none; }
+}

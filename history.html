@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-wardenone-page="history">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WardenOne - Activity</title>
 <style>
   :root {
-    --bg:#ece0f7; --card:#f7f0fc; --card-2:#f1e7fa;
-    --ink:#3d2a52; --ink-soft:#7a5f93; --ink-faint:#a98fc0;
-    --line:#ece0f7; --line-2:#e0cef2;
-    --plum:#8b3fb0; --grad-a:#b06fd6; --grad-b:#e07aae;
-    --rose-deep:#c84f8b; --warn:#bd7a2a;
+    --bg:var(--wo-bg); --card:var(--wo-surface); --card-2:var(--wo-surface-alt);
+    --ink:var(--wo-text); --ink-soft:var(--wo-text-soft); --ink-faint:var(--wo-text-faint);
+    --line:var(--wo-line); --line-2:var(--wo-line-strong);
+    --plum:var(--wo-brand-text); --grad-a:var(--wo-violet); --grad-b:var(--wo-pink);
+    --rose-deep:var(--wo-rose-text); --warn:var(--wo-warning);
     --display:"Quicksand","Nunito","Segoe UI Rounded",system-ui,sans-serif;
     --body:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif;
   }
@@ -688,26 +688,26 @@
 
   /* Final activity dashboard theme */
   :root{
-    --bg:#ece0f7;
-    --bg-2:#e7d9f4;
-    --bg-3:#faf6fd;
-    --panel:#fbf6fe;
-    --panel-2:#f2def2;
-    --panel-3:#dec5ed;
+    --bg:var(--wo-bg);
+    --bg-2:var(--wo-bg-alt);
+    --bg-3:var(--wo-bg-soft);
+    --panel:var(--wo-surface);
+    --panel-2:var(--wo-surface-alt);
+    --panel-3:var(--wo-control);
     --panel-dark:#5b387a;
     --panel-dark-2:#8e43a9;
-    --ink:#3d2a52;
-    --ink-soft:#705689;
-    --ink-faint:#9a7eb1;
-    --line:#dfcdec;
-    --line-2:#c8aedf;
-    --plum:#8b3fb0;
-    --plum-deep:#5f2779;
-    --rose-deep:#d65f9a;
-    --pink:#df6ca9;
-    --warn:#bd7a2a;
-    --grad-a:#b06fd6;
-    --grad-b:#df6ca9;
+    --ink:var(--wo-text);
+    --ink-soft:var(--wo-text-soft);
+    --ink-faint:var(--wo-text-faint);
+    --line:var(--wo-line);
+    --line-2:var(--wo-line-strong);
+    --plum:var(--wo-brand-text);
+    --plum-deep:var(--wo-plum-deep);
+    --rose-deep:var(--wo-rose-text);
+    --pink:var(--wo-pink);
+    --warn:var(--wo-warning);
+    --grad-a:var(--wo-violet);
+    --grad-b:var(--wo-pink);
     --display:"Quicksand","Nunito","Segoe UI Rounded","SF Pro Rounded",system-ui,sans-serif;
     --body:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif;
   }
@@ -747,7 +747,7 @@
       linear-gradient(180deg, rgba(42,28,58,.48), rgba(42,28,58,.18)),
       radial-gradient(86% 190% at 94% 100%, rgba(223,108,169,.34), transparent 56%),
       radial-gradient(70% 160% at 12% -70%, rgba(255,255,255,.13), transparent 62%),
-      linear-gradient(135deg, rgba(91,56,122,.96), rgba(142,67,169,.92) 52%, rgba(218,100,166,.88));
+      linear-gradient(135deg, #4f2b65, var(--wo-violet) 52%, var(--wo-pink));
     box-shadow:0 28px 80px rgba(72,38,96,.16), inset 0 1px 0 rgba(255,255,255,.16);
   }
   .activity-hero::after{
@@ -831,7 +831,7 @@
       inset 0 1px 0 rgba(255,255,255,.24);
   }
   .hero-pills span:first-child{
-    background:linear-gradient(135deg,#b861d6 0%,#df6ca9 100%);
+    background:var(--wo-control-gradient);
     border-color:rgba(255,255,255,.22);
     box-shadow:
       0 14px 34px rgba(129,57,164,.24),
@@ -920,7 +920,7 @@
     padding:18px 20px;
     color:#fff;
     background:
-      linear-gradient(135deg, rgba(91,56,122,.96), rgba(142,67,169,.92) 52%, rgba(218,100,166,.88));
+      linear-gradient(135deg, #4f2b65, var(--wo-violet) 52%, var(--wo-pink));
     border-bottom:1px solid rgba(255,255,255,.18);
   }
   .panel-kicker{
@@ -1000,15 +1000,15 @@
     gap:14px;
     padding:15px 18px;
     color:var(--ink);
-    background:#f7f1fb;
+    background:var(--wo-surface);
     border-bottom:1px solid var(--line);
     transition:background .15s ease;
   }
   .row:nth-child(even){
-    background:#efe6f5;
+    background:var(--wo-surface-alt);
   }
   .row:hover{
-    background:#fff;
+    background:var(--wo-surface-raised);
   }
   .row > div:not([class]),
   .rmain{
@@ -1028,16 +1028,16 @@
     height:18px;
   }
   .ricon.block{
-    color:#b62f79;
-    background:#f2d6e7;
+    color:var(--wo-danger);
+    background:var(--wo-danger-bg);
   }
   .ricon.warn{
-    color:#995816;
-    background:#f0dfcd;
+    color:var(--wo-warning);
+    background:var(--wo-warning-bg);
   }
   .ricon.gate{
-    color:#6c328f;
-    background:#e4d5ef;
+    color:var(--wo-brand-text);
+    background:var(--wo-control);
   }
   .rtitle{
     margin-bottom:3px;
@@ -1068,13 +1068,13 @@
     padding:7px 10px !important;
     border-color:var(--line-2);
     color:var(--ink-soft);
-    background:#fff;
+    background:var(--wo-surface-raised);
     font-size:11px !important;
   }
   .row .btn:hover{
     color:var(--plum);
-    background:#f5edf9;
-    border-color:#b99acd;
+    background:var(--wo-control);
+    border-color:var(--wo-line-strong);
   }
   .rmain .pill{
     display:inline-flex;
@@ -1082,7 +1082,7 @@
     padding:3px 7px;
     border-radius:999px;
     color:var(--ink-soft);
-    background:#e7d8f0;
+    background:var(--wo-control);
     font:700 10.5px/1 var(--display);
   }
   .empty{
@@ -1196,6 +1196,8 @@
 
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 </style>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 </head>
 <body>
   <div class="wrap">

@@ -695,7 +695,7 @@ function renderTrackerLearner() {
           btn.className = 'btn';
           btn.style.cssText = 'padding:5px 8px;font-size:10px;';
           const on = (item.mode || 'auto') === value;
-          if (on) btn.style.cssText += 'background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:#fff;border-color:transparent;';
+          if (on) btn.style.cssText += 'background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:var(--wo-on-brand);border-color:transparent;';
           btn.textContent = text;
           btn.addEventListener('click', () => {
             if (on) return;

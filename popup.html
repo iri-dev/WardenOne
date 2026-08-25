@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-wardenone-page="popup">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -572,11 +572,21 @@
     }
     .wo-sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
       overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
-  </style>
+</style>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 </head>
 <body>
   <div class="head">
     <div class="credit"><span>by</span><strong>iri.dev</strong></div>
+    <div class="wo-theme-quick" role="group" aria-label="Quick theme switch">
+      <button type="button" class="wo-theme-option" data-wardenone-theme="light" aria-pressed="true" aria-label="Use light theme" title="Light theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path></svg>
+      </button>
+      <button type="button" class="wo-theme-option" data-wardenone-theme="dark" aria-pressed="false" aria-label="Use dark theme" title="Dark theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"></path></svg>
+      </button>
+    </div>
     <div class="shield">
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
         <path d="M12 2.5c2.6 1.4 5 1.8 7 1.9.3 4.9-.6 11.3-7 15.1C5.6 15.7 4.7 9.3 5 4.4c2 0 4.4-.5 7-1.9z" fill="#ffffff" fill-opacity="0.22"/>
@@ -1321,6 +1331,13 @@
     </section>
 <h2>Interface</h2>
     <div class="card-group">
+    <div class="row">
+      <div><div class="name" id="wo-theme-title">Theme</div><div class="desc" data-wardenone-theme-status>Light theme</div></div>
+      <div class="wo-theme-options wo-interface-theme-options" role="group" aria-labelledby="wo-theme-title">
+        <button type="button" class="wo-theme-option" data-wardenone-theme="light" aria-pressed="true">Light</button>
+        <button type="button" class="wo-theme-option" data-wardenone-theme="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
     <div class="row">
       <div><div class="name">Show block notifications</div><div class="desc">Pop-up toast when something is blocked, with the reason</div></div>
       <label class="tg"><input type="checkbox" data-key="showToasts"><span class="track"></span><span class="knob"></span></label>
