@@ -40,6 +40,10 @@ tmp/
 # Local backups of the ad-block engines before the rewrite (not published)
 backup/
 
+# Private maintainer notes. These names must never be tracked or published.
+CWS-SUBMISSION.md
+MAINTAINABILITY.md
+
 # Local publish worktree (nested clone, not source)
 .publish/
 

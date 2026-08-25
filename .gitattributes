@@ -27,6 +27,8 @@ tools/ export-ignore
 src/ export-ignore
 .github/ export-ignore
 README.md export-ignore
+# Defence in depth for private maintainer notes: .gitignore and the gate reject
+# these names, while export-ignore also keeps them out if somebody force-adds one.
 CWS-SUBMISSION.md export-ignore
 MAINTAINABILITY.md export-ignore
 # The store wants a privacy-policy URL, and the live page is the one that matters.

@@ -4,8 +4,8 @@
 # had two consequences nobody asked for. Every push to main rebuilt the site, so
 # the Deployments list grew by one entry per commit whether or not the commit
 # touched anything the site serves. And because the source was the branch root,
-# the WHOLE repository was a website: background.js, manifest.json, the rule
-# lists and CWS-SUBMISSION.md were all live URLs.
+# the WHOLE repository was a website: runtime code, the manifest, rule lists,
+# and repository-internal files were all live URLs.
 #
 # So the site is now built from a staged directory containing only the pages that
 # belong on it. That is a whitelist by construction -- a file that is not copied

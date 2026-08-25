@@ -25,7 +25,6 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const POLICY = fs.readFileSync(path.join(ROOT, 'PRIVACY.md'), 'utf8');
-const SUBMISSION = fs.readFileSync(path.join(ROOT, 'CWS-SUBMISSION.md'), 'utf8');
 
 let failed = 0;
 function check(name, condition, extra) {
@@ -90,8 +89,6 @@ check('the policy says it checks the SITE, not the user account',
 const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 check('the unreachable password handler is gone from the worker',
   !bg.includes('api.pwnedpasswords.com') && !bg.includes("kind === 'breach-check'"));
-check('the submission notes no longer list the removed endpoint',
-  !SUBMISSION.includes('api.pwnedpasswords.com'));
 check('the policy explains the removal rather than silently dropping it',
   /no password checking in wardenone/.test(policy));
 
@@ -100,26 +97,6 @@ check('the policy no longer claims every provider needs an API key',
   !/off by default, your own api key required/.test(policy));
 check('OpenPhish is identified as the keyless exception',
   /openphish is the exception/.test(policy));
-
-// Both public documents must agree; the store answers are written from them.
-for (const host of ['haveibeenpwned.com', 'rdap.org']) {
-  check('CWS-SUBMISSION.md also names ' + host, SUBMISSION.includes(host));
-}
-
-// The M13 fix initially missed CWS-SUBMISSION.md's prose, which still described the password
-// prefix without naming the host -- and the hostname assertion above sailed straight past it.
-// Describing a feature that does not exist is the same defect whether or not a URL is spelled out.
-const submission = SUBMISSION.toLowerCase();
-check('the submission notes do not describe a password-hash prefix as shipping',
-  !/password-hash prefix|k-anonymity/.test(submission));
-
-// M14. Store readiness: the dashboard answers, the hosted policy and the code must agree.
-check('the store checklist no longer calls the data categories a judgment call',
-  !/judgment call/.test(submission));
-check('Website content and Web history are declared rather than debated',
-  /tick both/.test(submission) && /web history/.test(submission));
-check('the checklist carries a field-by-field inventory',
-  /field-by-field inventory/.test(submission));
 
 // The Limited Use affirmation has to live on the hosted privacy page, because that is the page
 // the dashboard points at. PRIVACY.md IS that page -- Pages serves it from main.

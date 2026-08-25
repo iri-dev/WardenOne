@@ -47,6 +47,22 @@ function check(name, condition, extra) {
   console.error('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
+/* Internal maintainer notes do not belong in the public repository. .gitignore blocks an
+ * accidental add; this index check also catches `git add -f`, case variants, and moving either
+ * filename into a subdirectory. */
+{
+  const trackedResult = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' });
+  check('the tracked-file list can be inspected', trackedResult.status === 0,
+    String(trackedResult.stderr || '').trim());
+  if (trackedResult.status === 0) {
+    const forbiddenNames = new Set(['cws-submission.md', 'maintainability.md']);
+    const forbidden = trackedResult.stdout.split('\0').filter(Boolean).filter((file) =>
+      forbiddenNames.has(path.posix.basename(file).toLowerCase()));
+    check('private maintainer notes are not tracked', forbidden.length === 0,
+      forbidden.join(', '));
+  }
+}
+
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const shippedJs = fs.readdirSync(ROOT).filter((f) => /\.js$/.test(f));
 const shippedHtml = fs.readdirSync(ROOT).filter((f) => /\.html$/.test(f));
@@ -183,10 +199,10 @@ check('the scan covers a realistic surface', required.size >= 30, required.size 
     !(topLevel.size === 1 && [...packaged].every((f) => f.includes('/'))),
     'everything sits under "' + [...topLevel][0] + '/", which unzips one level too deep');
 
-  // The recipe is written in three places; a prefix creeping back into any of them reintroduces it.
+  // The release workflow is the authoritative recipe; a prefix creeping into it reintroduces the
+  // broken nested-folder package.
   const sources = [
     ['.github/workflows/gate.yml', '.github/workflows/gate.yml'],
-    ['MAINTAINABILITY.md', 'MAINTAINABILITY.md'],
   ];
   for (const [label, file] of sources) {
     const full = path.join(ROOT, file);

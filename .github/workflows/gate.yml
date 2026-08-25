@@ -1,6 +1,6 @@
-# Runs the same gate that has to pass before a commit (see MAINTAINABILITY.md):
-# syntax checks, the byte-exact src/content.js -> content.min.js rebuild, the
-# security posture check, and every tools/test-*.js suite.
+# Runs the same gate that has to pass before a commit: syntax checks, the
+# byte-exact src/content.js -> content.min.js rebuild, the security posture
+# check, and every tools/test-*.js suite.
 #
 # It runs on Linux even though the extension is developed on Windows. That is
 # safe because .gitattributes normalises every text file to LF in the working
