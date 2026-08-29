@@ -196,6 +196,63 @@ async function main() {
   assert.strictEqual(spotifyTrick.critical, true, 'double-extension trick stays critical even on a trusted publisher CDN');
   assert.strictEqual(spotifyTrick.trustedEligible, false, 'critical tricks override publisher trust');
 
+  // Chrome uses "uncommon" when a URL is not downloaded often. That is weak prevalence
+  // evidence, not a malware verdict, and generated files naturally have one-off URLs. It used
+  // to carry the whole two-point review threshold by itself, so a normal document created in
+  // Claude was paused even though neither Chrome nor WardenOne had found anything dangerous.
+  const claudeDocument = guard.scoreDownload(
+    'https://7dc2f9c1-61f8-4da2-a541-850fe27bb83d.claudeusercontent.com/v1/files/report.docx?direct=1',
+    'https://claude.ai/chat/4cbf7cf1-6de4-4de3-b469-19a6790aa112',
+    'report.docx',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    [],
+    'uncommon'
+  );
+  assert.strictEqual(claudeDocument.knownPublisher, true, 'Claude user-content hosts should be recognized');
+  assert.strictEqual(claudeDocument.trustedEligible, true, 'a clean Claude document should be trust-eligible');
+  assert.strictEqual(claudeDocument.grade, 'A', 'an uncommon one-off Claude document should stay quiet');
+  assert.strictEqual(claudeDocument.action, 'allow');
+  assert(reasonIncludes(claudeDocument, 'Chrome says this download is uncommon'));
+
+  // The broad false-positive fix must not depend on putting every honest web app in a hard-coded
+  // list. These Chrome states say only that the URL is rare or that scanning was incomplete, so a
+  // normal document on any clean HTTPS site stays quiet unless another signal corroborates them.
+  for (const weakChromeState of ['uncommon', 'blockedtoolarge', 'deepscannedfailed', 'blockedscanfailed']) {
+    const generatedDocument = guard.scoreDownload(
+      'https://exports.productivity.example/files/one-off-report.pdf',
+      'https://productivity.example/workspace',
+      'one-off-report.pdf',
+      'application/pdf',
+      [],
+      weakChromeState
+    );
+    assert.strictEqual(generatedDocument.grade, 'B', weakChromeState + ' alone should stay below review');
+    assert.strictEqual(generatedDocument.action, 'allow');
+  }
+
+  // Low prevalence can still corroborate an intrinsically risky file type. The tuning must not
+  // turn a never-seen executable into a silent download.
+  const uncommonExecutable = guard.scoreDownload(
+    'https://smallvendor.example/files/tool.exe',
+    '',
+    'tool.exe',
+    'application/octet-stream',
+    [],
+    'uncommon'
+  );
+  assert.notStrictEqual(uncommonExecutable.action, 'allow', 'an uncommon executable should still be reviewed');
+
+  const disguisedClaudeFile = guard.scoreDownload(
+    'https://7dc2f9c1-61f8-4da2-a541-850fe27bb83d.claudeusercontent.com/v1/files/invoice.pdf.exe',
+    'https://claude.ai/chat/4cbf7cf1-6de4-4de3-b469-19a6790aa112',
+    'invoice.pdf.exe',
+    'application/octet-stream',
+    [],
+    ''
+  );
+  assert.strictEqual(disguisedClaudeFile.critical, true, 'Claude platform trust must not excuse a disguised executable');
+  assert.strictEqual(disguisedClaudeFile.trustedEligible, false);
+
   const redirect = guard.scoreDownload(
     'https://files.example/download?redirect=https%3A%2F%2Fevil.example%2Fpayload.exe',
     '',

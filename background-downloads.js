@@ -88,6 +88,9 @@ const DOWNLOAD_REVIEW_TTL_MS = 2 * 60 * 60 * 1000;
 const DOWNLOAD_HANDLED_TTL_MS = 24 * 60 * 60 * 1000;
 const CHROME_DANGER_STRONG = new Set(['url', 'content', 'host', 'unwanted', 'deepscannedopeneddangerous', 'sensitivecontentblock', 'accountcompromise']);
 const CHROME_DANGER_MEDIUM = new Set(['file', 'uncommon', 'passwordprotected', 'blockedtoolarge', 'sensitivecontentwarning', 'deepscannedfailed', 'blockedscanfailed']);
+// These describe prevalence or an incomplete scan, not a positive dangerous-file finding. Keep
+// them as corroboration, but never let one of them cross the review threshold on its own.
+const CHROME_DANGER_WEAK = new Set(['uncommon', 'blockedtoolarge', 'deepscannedfailed', 'blockedscanfailed']);
 const CHROME_DANGER_PENDING = new Set(['asyncscanning', 'asynclocalpasswordscanning', 'promptforscanning', 'promptforlocalpasswordscanning']);
 const DOWNLOAD_GRADE_META = {
   A: { grade: 'A', status: 'Trusted', color: '#2e9e5b', action: 'allow' },
@@ -280,6 +283,9 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'onlyoffice.com', 'wps.com', 'wpsoffice.com', 'softmaker.com', 'freeoffice.com',
   'grammarly.com', 'zotero.org', 'xmind.app', 'xmind.net', 'anytype.io',
   'standardnotes.com', 'joplinapp.org', 'techsmith.com',
+  // Claude creates downloadable documents and archives inside the web app. Its artifact/file
+  // host is multi-tenant, so it receives only the limited platform rebate below, not full trust.
+  'anthropic.com', 'claude.ai', 'claude.com', 'claudeusercontent.com',
   // dev tools / editors / IDEs / terminals / databases
   'sublimetext.com', 'sublimemerge.com', 'gitkraken.com', 'sourcetreeapp.com',
   'atlassian.com', 'fork.dev', 'tortoisegit.org', 'tortoisesvn.net',
@@ -387,6 +393,7 @@ const SHARED_HOSTING_SUFFIXES = new Set([
   'firebaseapp.com', 'herokuapp.com', 'github.io', 'gitlab.io', 'b-cdn.net', 'fastly.net',
   'akamaized.net', 'googleusercontent.com', 'dropboxusercontent.com', 'appspot.com',
   'blob.core.windows.net', 'digitaloceanspaces.com', 'backblazeb2.com', 'wasabisys.com',
+  'claudeusercontent.com',
 ]);
 // The host a Trust decision should actually be recorded against.
 function downloadTrustTarget(host) {
@@ -398,7 +405,9 @@ function downloadTrustTarget(host) {
   return SHARED_HOSTING_SUFFIXES.has(rd) ? h : rd;
 }
 
-const MULTITENANT_PUBLISHER_HOSTS = new Set(['github.com', 'sourceforge.net', 'githubusercontent.com']);
+const MULTITENANT_PUBLISHER_HOSTS = new Set([
+  'github.com', 'sourceforge.net', 'githubusercontent.com', 'claudeusercontent.com',
+]);
 function isMultiTenantPublisherHost(host) {
   const h = normalizeDownloadTrustHost(host);
   if (!h) return false;
@@ -1391,7 +1400,7 @@ const DL_WEIGHT = {
   // file, and at 1 point it combined with any other single 1-point signal to cross the review line
   // -- opening a panel built on information that was still arriving. The reason line is kept, so it
   // still shows up whenever the file is being reviewed for some real cause.
-  chromeKnownBad: 100, chromeReviewFile: 3, chromeReviewOther: 2, chromePending: 0,
+  chromeKnownBad: 100, chromeReviewFile: 3, chromeReviewOther: 2, chromeReviewWeak: 1, chromePending: 0,
   blocklist: 100, executable: 3, macroDoc: 3, container: 3,
   executableInstaller: 3, archiveInstaller: 5, archive: 1,
   noExtension: 2, noExtensionBinary: 2, uncommonType: 1,
@@ -1485,7 +1494,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     else if (danger === 'unwanted') reasons.unshift('Chrome says this download is potentially unwanted or unsafe');
     else reasons.unshift('Chrome flagged this download as dangerous');
   } else if (chromeReview) {
-    score += danger === 'file' ? W.chromeReviewFile : W.chromeReviewOther;
+    score += danger === 'file' ? W.chromeReviewFile
+      : (CHROME_DANGER_WEAK.has(danger) ? W.chromeReviewWeak : W.chromeReviewOther);
     if (danger === 'file') reasons.push('Chrome says the filename is suspicious');
     else if (danger === 'uncommon') reasons.push('Chrome says this download is uncommon');
     else if (danger === 'passwordprotected') reasons.push('Chrome says this file is password-protected');

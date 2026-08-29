@@ -25,6 +25,14 @@ as the work happened.
 
 ### Fixed
 
+- Download Shield no longer treats a low-prevalence URL or an incomplete Chrome scan
+  as enough evidence to interrupt a safe document. Those labels now support a real
+  file, source or filename concern instead of crossing the review threshold alone,
+  which stops one-off exports from web apps being called risky merely because every
+  generated link is new. Claude, Anthropic and Claude's separate user-content host
+  are recognised explicitly; the user-content host receives only limited platform
+  trust, and executables, password-protected archives, disguised names, blocklist hits
+  and Chrome's known-malicious verdicts still surface in full.
 - Made GitHub's default Latest release follow the rolling, gate-passing `main`
   package, and pointed repository and website download buttons directly at it.
   Current builds no longer require a version bump just to become downloadable.
