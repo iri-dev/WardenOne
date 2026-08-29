@@ -1138,5 +1138,57 @@
         "other"
       ]
     }
+  },
+  {
+    "id": 45,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "fwpixel.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 46,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "dv.tech"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
   }
 ]

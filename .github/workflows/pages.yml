@@ -1,31 +1,18 @@
-# Publishes the handful of documents that are meant to be a public web page.
+# Publishes the documents that are meant to be a public web page.
 #
-# Pages used to be set to "deploy from a branch" with the source path at /, which
-# had two consequences nobody asked for. Every push to main rebuilt the site, so
-# the Deployments list grew by one entry per commit whether or not the commit
-# touched anything the site serves. And because the source was the branch root,
-# the WHOLE repository was a website: runtime code, the manifest, rule lists,
-# and repository-internal files were all live URLs.
+# The site is built from a staged directory containing only those pages, so a file
+# that is not copied in the step below cannot be published by accident.
 #
-# So the site is now built from a staged directory containing only the pages that
-# belong on it. That is a whitelist by construction -- a file that is not copied
-# in the step below cannot be published by accident, however the repo grows.
-#
-# Jekyll stays in the loop deliberately. PRIVACY.md is the single source for the
-# privacy policy the Web Store listing points at, and it is Jekyll that renders
-# it to HTML at /PRIVACY. Uploading raw markdown instead would 404 that URL.
+# Jekyll stays in the loop because PRIVACY.md is the source for the privacy policy
+# the Web Store listing points at, and Jekyll renders it to HTML at /PRIVACY.
+# Uploading raw markdown would 404 that URL.
 name: Pages
 
-# Deployed on request, not on push.
+# Deployed on request, not on push: CHANGELOG.md is one of the published files and
+# changes with almost every fix, which would add a deployment per commit.
 #
-# Narrowing the trigger to the published documents was not enough: CHANGELOG.md is one of them and
-# it changes with almost every user-visible fix, so the Deployments list still grew an entry per
-# commit. The site content it would have republished each time is a release-note edit nobody is
-# waiting on.
-#
-# So there is no push trigger. Run this workflow when something on the site actually needs to go
-# live -- in particular after editing PRIVACY.md, because the Web Store listing points at the
-# rendered copy of it and a stale one would be a policy claim that no longer matches the code.
+# Run this when something on the site needs to go live -- in particular after
+# editing PRIVACY.md, since the Web Store listing points at the rendered copy.
 on:
   workflow_dispatch:
 
@@ -34,7 +21,7 @@ permissions:
   pages: write
   id-token: write
 
-# Never cancel a Pages deploy in flight: the privacy policy URL has to stay up.
+# Never cancel a deploy in flight: the privacy policy URL has to stay up.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -51,53 +38,44 @@ jobs:
 
       - name: Stage the published pages
         run: |
-          # site/ is tracked in the repo now, so the landing page, robots.txt and
-          # sitemap.xml are real reviewable files rather than a heredoc buried in
-          # this workflow. Staging into a separate directory keeps the whitelist
-          # property: only what is copied here can be published.
+          # Only what is copied here can be published.
           mkdir -p _pages
           cp site/index.html _pages/
           cp site/404.html _pages/
           cp site/stolen.html _pages/
-          # Search Console verification. Google re-checks this periodically, so the file
-          # has to stay served, not just exist long enough to pass once.
+          # Search Console verification. Google re-checks periodically, so this has
+          # to stay served rather than just pass once.
           cp site/google*.html _pages/
           cp site/robots.txt _pages/
           cp site/sitemap.xml _pages/
           cp PRIVACY.md _pages/
           cp SUPPORT.md _pages/
-          # The release history and the upstream credits are documents a person may
-          # reasonably want to read before installing anything, so they belong on the
-          # site rather than only inside the repository. Both are already written for
-          # a reader rather than for a build, and Jekyll renders them at /CHANGELOG
-          # and /CREDITS the same way it renders the privacy policy.
+          # Release history and upstream credits, rendered at /CHANGELOG and /CREDITS.
           cp CHANGELOG.md _pages/
           cp CREDITS.md _pages/
 
-          # The images the landing page references. Copied individually and renamed
-          # so the page never depends on the repo's directory layout, and so no other
-          # screenshot can reach the site by being dropped into docs/.
+          # Images the landing page references, copied individually and renamed so the
+          # page does not depend on the repo's directory layout.
           mkdir -p _pages/icons
           cp icons/icon128.png _pages/icons/
           cp docs/store/promo-440x280.png _pages/promo.png
-          # The unpadded original, not docs/store/popup.png -- that one is letterboxed to
-          # 1280x800 for the Web Store listing, so on a web page it would render the
-          # popup as a small panel adrift in empty space.
+          # The unpadded original, not docs/store/popup.png -- that one is letterboxed
+          # to 1280x800 for the Web Store listing.
           cp docs/popup.png _pages/screenshot-popup.png
 
           cat > _pages/_config.yml <<'CONFIG'
           title: WardenOne
           description: Privacy and security extension for Chromium browsers.
           # index.html carries its own <head>, so Jekyll must not wrap it in a theme.
-          # PRIVACY.md and SUPPORT.md still get rendered to HTML as before.
+          # PRIVACY.md and SUPPORT.md still get rendered to HTML.
           CONFIG
 
           echo "staged:" && ls -1R _pages
 
       - uses: actions/configure-pages@v5
 
-      # Relative links in index.md keep working without a baseurl, so the site is
-      # not tied to the repository name.
+      # Relative links keep working without a baseurl, so the site is not tied to the
+      # repository name.
       - uses: actions/jekyll-build-pages@v1
         with:
           source: ./_pages

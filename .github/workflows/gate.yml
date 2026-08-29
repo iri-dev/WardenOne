@@ -1,11 +1,10 @@
-# Runs the same gate that has to pass before a commit: syntax checks, the
-# byte-exact src/content.js -> content.min.js rebuild, the security posture
-# check, and every tools/test-*.js suite.
+# Runs the maintainability gate: syntax checks, the byte-exact
+# src/content.js -> content.min.js rebuild, the security posture check, and every
+# tools/test-*.js suite. No dependencies to install.
 #
-# It runs on Linux even though the extension is developed on Windows. That is
-# safe because .gitattributes normalises every text file to LF in the working
-# tree on all platforms, so the byte-exact rebuild check compares the same bytes
-# here as it does locally. There are no dependencies to install.
+# Runs on Linux although development is on Windows. .gitattributes normalises text
+# files to LF in the working tree on every platform, so the byte-exact rebuild
+# check compares the same bytes here as it does locally.
 name: Gate
 
 on:
@@ -35,22 +34,9 @@ jobs:
       - name: Run the maintainability gate
         run: node tools/check-maintainability.js
 
-  # ---------------------------------------------------------------------------
-  # Why main publishes itself.
-  #
-  # A Release is pinned to the commit it was cut from, so the moment main moves
-  # ahead, the zip people download is out of date -- and the only way to fix that
-  # used to be cutting a whole new version by hand. That does not survive contact
-  # with normal work: v1.0.0 sat 171 commits behind before anyone noticed, and
-  # everyone who followed its install instructions in the meantime got July's
-  # extension while believing they had the current one.
-  #
-  # So every push that passes the gate above rebuilds a rolling `latest-build`
-  # and replaces the package attached to it. It is explicitly GitHub's "Latest"
-  # release so the ordinary download never falls behind main. Versioned releases
-  # remain milestone archives; nothing here needs a new version number, which is
-  # the point.
-  # ---------------------------------------------------------------------------
+  # Every push that passes the gate rebuilds the rolling `latest-build` release and
+  # replaces the package attached to it, so the ordinary download always matches
+  # main. Versioned releases stay as milestone archives and do not move.
   rolling-build:
     name: publish-latest-build
     needs: gate
@@ -64,23 +50,19 @@ jobs:
           fetch-depth: 0
 
       - name: Package the extension
-        # The same command used to cut a real release, so this zip has the same
-        # shape: .gitattributes export-ignore keeps tools/, src/, site/, docs/
-        # and .github/ out of what people load unpacked.
+        # Same command used to cut a real release: .gitattributes export-ignore keeps
+        # tools/, src/, site/, docs/ and .github/ out of the package.
         #
-        # NO --prefix, deliberately. manifest.json has to sit at the root of the
-        # zip. With a prefix the archive contains a WardenOne/ folder, and every
-        # GUI unzipper ALSO creates a folder named after the archive -- so
-        # Windows "Extract All" produces WardenOne-latest\WardenOne\manifest.json.
-        # Pointing "Load unpacked" at the folder you just extracted then fails
-        # with "Manifest file is missing or unreadable", which is a miserable
-        # first experience and looks like the extension is broken.
+        # No --prefix. manifest.json must sit at the root of the zip, because GUI
+        # unzippers also create a folder named after the archive -- with a prefix,
+        # "Extract All" gives WardenOne-latest\WardenOne\manifest.json and
+        # "Load unpacked" then fails with "Manifest file is missing or unreadable".
         run: git archive --format=zip -o WardenOne-latest.zip HEAD
 
       - name: Write the notes
         run: |
-          # Quoted heredoc, so the backticks below stay literal markdown instead
-          # of being run as commands. The two values are filled in afterwards.
+          # Quoted heredoc so the backticks stay literal markdown. The two
+          # placeholders are filled in below.
           cat > notes.md <<'EOF'
           **This is WardenOne's latest build: the current state of `main`, rebuilt after every passing change.**
 
@@ -107,8 +89,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Updated in place rather than deleted and recreated, so watchers are
-          # not notified of a brand new release on every single push.
+          # Updated in place rather than recreated, so watchers are not notified of a
+          # new release on every push.
           if gh release view latest-build >/dev/null 2>&1; then
             gh release upload latest-build WardenOne-latest.zip --clobber
             gh release edit latest-build --notes-file notes.md --prerelease=false --latest
