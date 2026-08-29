@@ -858,7 +858,7 @@ test('legacy worker hook and watchdog remain hard-disabled', () => {
     'dedicated module accidentally reintroduced a legacy Twitch hook/watchdog');
 });
 
-test('page hook forces the current primary-channel token to popout/web while retaining template state', async () => {
+test('page hook preserves the current primary-channel token byte-for-byte while retaining template state', async () => {
   const harness = createPageHarness();
   const unrelated = {
     operationName: 'ChannelShell',
@@ -866,8 +866,8 @@ test('page hook forces the current primary-channel token to popout/web while ret
     extensions: { persistedQuery: { version: 1, sha256Hash: 'unrelated-hash' } },
   };
   const token = playbackTokenOperation('site', 'android');
-  const originalBody = JSON.stringify([unrelated, token]);
-  await harness.window.fetch('https://gql.twitch.tv/gql', {
+  const originalBody = '[\n  ' + JSON.stringify(unrelated) + ',\n  ' + JSON.stringify(token) + '\n]';
+  const originalInit = {
     method: 'POST',
     headers: {
       'Client-ID': 'captured-client-id',
@@ -878,21 +878,14 @@ test('page hook forces the current primary-channel token to popout/web while ret
       Authorization: 'OAuth captured-authorization',
     },
     body: originalBody,
-  });
+  };
+  await harness.window.fetch('https://gql.twitch.tv/gql', originalInit);
 
   assert(harness.state.fetchCalls.length === 1, 'page GQL hook made extra requests');
   const forwarded = harness.state.fetchCalls[0].init;
-  assert(typeof forwarded.body === 'string' && forwarded.body.length > 2,
-    'GQL template capture corrupted the request into an empty body');
-  assert(forwarded.body !== originalBody, 'ordinary token retained the ad-auction player identity');
-  const parsed = JSON.parse(forwarded.body);
-  assert(Array.isArray(parsed) && parsed.length === 2, 'mixed GQL batch shape changed');
-  equal(parsed[0], unrelated, 'non-token query in GQL batch was modified');
-  assert(parsed[1].variables.playerType === 'popout', 'ordinary token was not forced to popout');
-  assert(parsed[1].variables.platform === 'web', 'ordinary token was not forced to the web platform');
-  assert(parsed[1].variables.retained === 'yes', 'token-specific variables were discarded');
-  assert(parsed[1].extensions.persistedQuery.sha256Hash === 'captured-token-hash',
-    'captured persisted-query hash was changed');
+  assert(forwarded === originalInit, 'ordinary primary token replaced the caller init');
+  assert(forwarded.body === originalBody,
+    'ordinary primary token was parsed or rewritten instead of remaining byte-exact');
 
   const worker = new harness.window.Worker('blob:https://www.twitch.tv/fixture-player-worker');
   assert(worker instanceof harness.NativeWorker, 'dedicated wrapper did not construct the native worker');
@@ -1084,9 +1077,8 @@ test('mixed picture-by-picture token batches preserve order and Request semantic
   assert(forwardedBatch.every((entry) =>
     !/picture-by-picture/i.test(String(entry && entry.variables && entry.variables.playerType || ''))),
   'picture-by-picture token was forwarded to Twitch');
-  assert(forwardedBatch[1].variables.playerType === 'popout' &&
-    forwardedBatch[1].variables.platform === 'web',
-  'ordinary token in a mixed batch was not forced to popout/web');
+  equal(forwardedBatch[1], ordinaryToken,
+    'mixed PiP filtering changed the ordinary native token');
   equal(forwardedBatch[2], unrelatedAfter,
     'mixed-token handling changed the entry after the ordinary token');
 
@@ -2421,10 +2413,8 @@ test('only intervention-linked network/decode errors enter a short recovery wind
   };
   await harness.window.fetch('https://gql.twitch.tv/gql', nativeInit);
   const recoveryTokenCall = harness.state.fetchCalls.at(-1);
-  const recoveryToken = JSON.parse(recoveryTokenCall.init.body)[0];
-  assert(recoveryTokenCall.init !== nativeInit &&
-    recoveryToken.variables.playerType === 'popout' && recoveryToken.variables.platform === 'web',
-  'circuit breaker bypassed the ordinary popout/web token identity');
+  assert(recoveryTokenCall.init === nativeInit && recoveryTokenCall.init.body === nativeTokenBody,
+    'recovery changed an ordinary primary token request');
   assert(new Headers(recoveryTokenCall.init.headers).get('Client-ID') === 'recovery-client',
     'recovery token rewrite lost caller headers');
 

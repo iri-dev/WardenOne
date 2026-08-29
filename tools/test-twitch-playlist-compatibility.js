@@ -744,6 +744,180 @@ test('cached clean-backup polling tolerates an 800ms media leg without refreshin
     'slow cached-media poll discarded its valid token and attempted a forbidden refresh');
 });
 
+test('a late cached mid-roll uses one fresh native bridge within the total 900ms budget', async () => {
+  const ads = [501, 502, 503].map((sequence) => markedAd(
+    '#EXT-X-DATERANGE:ID="stitched-ad-full-bridge-' + sequence +
+      '",CLASS="twitch-stitched-ad",DURATION=2.0',
+    'full-bridge-' + sequence).replace('#EXT-X-MEDIA-SEQUENCE:501',
+      '#EXT-X-MEDIA-SEQUENCE:' + sequence));
+  const settledBackup = sequencedPlaylist({
+    sequence: 99102,
+    startMs: Date.parse('2026-07-23T00:00:04.000Z'),
+    title: 'live',
+    path: 'settled-full-bridge-backup',
+  });
+  let nativePoll = 0;
+  let delayBackup = false;
+  let backupPolls = 0;
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute: standardFetchRoute({
+      originalMedia() {
+        if (!nativePoll++) return CLEAN_MEDIA;
+        return ads[Math.min(nativePoll - 2, ads.length - 1)];
+      },
+      backupMedia(url, init) {
+        backupPolls++;
+        if (!delayBackup) return settledBackup;
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve(settledBackup);
+          }, 1300);
+          const signal = init && init.signal;
+          const abort = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            const error = new Error('fixture delayed clean-backup poll aborted');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (signal) {
+            if (signal.aborted) abort();
+            else signal.addEventListener('abort', abort, { once: true });
+          }
+        });
+      },
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const cleanBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(cleanBody === CLEAN_MEDIA, 'fixture did not establish a clean native bridge');
+  for (let turn = 0; turn < 12 && backupPolls < 1; turn++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert(backupPolls === 1, 'fixture did not cache its initial exact-rendition backup');
+
+  delayBackup = true;
+  const bridgeStarted = performance.now();
+  const bridged = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const bridgeElapsed = performance.now() - bridgeStarted;
+  assert(bridgeElapsed < 1150,
+    'cached mid-roll escaped the total 900ms budget: ' + bridgeElapsed.toFixed(1) + 'ms');
+  assert(bridged === CLEAN_MEDIA && !bridged.includes('/commercial/'),
+    'late clean search exposed the first full ad instead of one fresh native bridge');
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const settledStarted = performance.now();
+  const settled = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const settledElapsed = performance.now() - settledStarted;
+  assert(settledElapsed <= 250,
+    'late clean result was discarded instead of primed: ' + settledElapsed.toFixed(1) + 'ms');
+  assert(settled.includes('/settled-full-bridge-backup/') && !settled.includes('/commercial/'),
+    'the next poll did not adopt the clean backup that settled behind the bridge');
+
+  const replayStarted = performance.now();
+  const notReplayed = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const replayElapsed = performance.now() - replayStarted;
+  assert(replayElapsed < 1150,
+    'second delayed poll escaped the total 900ms budget: ' + replayElapsed.toFixed(1) + 'ms');
+  assert(notReplayed.includes('/commercial/full-bridge-503.ts') &&
+    !notReplayed.includes('/live/99100.ts'),
+  'the consumed clean native bridge replayed again within the same ad episode');
+});
+
+test('a late cold backup is primed for the poll after its one native bridge', async () => {
+  const lateBackup = sequencedPlaylist({
+    sequence: 99102,
+    startMs: Date.parse('2026-07-23T00:00:04.000Z'),
+    title: 'live',
+    path: 'late-cold-backup',
+  });
+  let nativePoll = 0;
+  let backupPolls = 0;
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia() { return nativePoll++ === 0 ? CLEAN_MEDIA : STITCHED_AD; },
+      backupMedia(url, init) {
+        backupPolls++;
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve(lateBackup);
+          }, 1100);
+          const signal = init && init.signal;
+          const abort = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            const error = new Error('fixture delayed cold backup aborted');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (signal) {
+            if (signal.aborted) abort();
+            else signal.addEventListener('abort', abort, { once: true });
+          }
+        });
+      },
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  assert(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text() === CLEAN_MEDIA,
+    'late-cold fixture did not establish native playback');
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+
+  const bridged = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(bridged === CLEAN_MEDIA && !bridged.includes('/commercial/'),
+    'late cold acquisition exposed the ad instead of its one native bridge');
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const pollsAfterLateResult = backupPolls;
+  const started = performance.now();
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+
+  assert(elapsed <= 250, 'primed late cold backup was re-polled: ' + elapsed.toFixed(1) + 'ms');
+  assert(body.includes('/late-cold-backup/') && !body.includes('/commercial/'),
+    'the poll after a late cold acquisition did not consume its validated result');
+  assert(backupPolls === pollsAfterLateResult,
+    'the poll after a late cold acquisition started another rendition request');
+});
+
+test('a conclusive clean-route failure does not hold old native media as a bridge', async () => {
+  let nativePoll = 0;
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute: standardFetchRoute({
+      originalMedia() { return nativePoll++ === 0 ? CLEAN_MEDIA : STITCHED_AD; },
+      backupMedia: CLEAN_MEDIA,
+    }),
+    gqlRoute() {
+      return jsonResponse({ errors: [{ message: 'fixture has no clean alternate' }] }, 403);
+    },
+  });
+  await mapMaster(runtime);
+  assert(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text() === CLEAN_MEDIA,
+    'definitive-miss fixture did not establish native playback');
+  for (let turn = 0; turn < 8; turn++) await new Promise((resolve) => setImmediate(resolve));
+
+  const started = performance.now();
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+  assert(elapsed <= 250, 'conclusive clean-route miss exceeded 250ms: ' + elapsed.toFixed(1) + 'ms');
+  assertNativeFailOpen(runtime, body, STITCHED_AD, 'conclusive clean-route miss');
+});
+
 test('SCTE35-OUT DATERANGE is detected without rewriting the native timeline', async () => {
   const url = 'https://video-edge-fixture.ttvnw.net/unmapped/scte35-timed.m3u8';
   const runtime = createRuntime({
@@ -944,16 +1118,55 @@ test('backup selection never crosses the original H.264 codec family', async () 
     'backup selection changed codec or resolution');
 });
 
-test('backup selection permits a same-decoder H.264 profile when exact codecs are unavailable', async () => {
-  const wrongProfileMaster = () => `#EXTM3U
-#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.4D401F,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
-https://video-edge-fixture.ttvnw.net/backup/wrong-profile/index.m3u8
+test('an in-place backup requires an exact codec, resolution, frame rate, group, and range', async () => {
+  const cases = [
+    { label: 'H.264 profile', codecs: 'avc1.4D401F,mp4a.40.2', resolution: '1920x1080',
+      fps: '60.000', video: 'chunked', videoRange: '' },
+    { label: 'resolution', codecs: 'avc1.64002A,mp4a.40.2', resolution: '1280x720',
+      fps: '60.000', video: 'chunked', videoRange: '' },
+    { label: 'frame rate', codecs: 'avc1.64002A,mp4a.40.2', resolution: '1920x1080',
+      fps: '30.000', video: 'chunked', videoRange: '' },
+    { label: 'video group', codecs: 'avc1.64002A,mp4a.40.2', resolution: '1920x1080',
+      fps: '60.000', video: 'alternate-source', videoRange: '' },
+    { label: 'video range', codecs: 'avc1.64002A,mp4a.40.2', resolution: '1920x1080',
+      fps: '60.000', video: 'chunked', videoRange: 'PQ' },
+  ];
+
+  for (const scenario of cases) {
+    const candidate = 'mismatch-' + scenario.label.toLowerCase().replace(/\W+/g, '-');
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({
+        originalMedia: STITCHED_AD,
+        backupMaster() {
+          return `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="${scenario.codecs}",RESOLUTION=${scenario.resolution},VIDEO="${scenario.video}",FRAME-RATE=${scenario.fps}${scenario.videoRange ? ',VIDEO-RANGE=' + scenario.videoRange : ''}
+https://video-edge-fixture.ttvnw.net/backup/fixture/${candidate}.m3u8
+`;
+        },
+        backupMedia: CLEAN_MEDIA,
+      }),
+      gqlRoute(message) {
+        return jsonResponse(nestedToken(message.body.variables.playerType));
+      },
+    });
+    await mapMaster(runtime);
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assertNativeFailOpen(runtime, body, STITCHED_AD, scenario.label + ' mismatch');
+    assert(!runtime.state.calls.some((call) => call.url.includes('/' + candidate + '.m3u8')),
+      scenario.label + ' mismatch was probed despite being unsafe in-place');
+  }
+});
+
+test('an omitted HLS video range remains equivalent to explicit SDR', async () => {
+  const explicitSdrMaster = () => `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000,VIDEO-RANGE=SDR
+https://video-edge-fixture.ttvnw.net/backup/fixture/explicit-sdr.m3u8
 `;
   const runtime = createRuntime({
     fetchRoute: standardFetchRoute({
       originalMedia: STITCHED_AD,
-      backupMaster: wrongProfileMaster,
-      backupMedia() { return CLEAN_MEDIA; },
+      backupMaster: explicitSdrMaster,
+      backupMedia: CLEAN_MEDIA,
     }),
     gqlRoute(message) {
       return jsonResponse(nestedToken(message.body.variables.playerType));
@@ -961,19 +1174,26 @@ https://video-edge-fixture.ttvnw.net/backup/wrong-profile/index.m3u8
   });
   await mapMaster(runtime);
   const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
-  assert(body === CLEAN_MEDIA, 'same-family H.264 fallback was not used');
-  assert(runtime.state.calls.some((call) => /wrong-profile/.test(call.url)),
-    'same-family H.264 rendition was never probed');
+  assert(body === CLEAN_MEDIA, 'explicit SDR was rejected against an equivalent omitted video range');
+  assert(runtime.state.calls.some((call) => /explicit-sdr\.m3u8/.test(call.url)),
+    'explicit SDR exact rendition was never probed');
 });
 
-test('a stitched preferred rendition does not discard a later clean compatible rung', async () => {
+test('a stitched preferred rendition does not discard a later clean exact rendition', async () => {
+  const twoExactRenditions = () => `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/fixture/h264-1080-first.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=8400000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/fixture/h264-1080-second.m3u8
+`;
   const runtime = createRuntime({
     fetchRoute: standardFetchRoute({
       originalMedia: STITCHED_AD,
+      backupMaster: twoExactRenditions,
       backupMedia(url) {
-        if (/h264-1080/.test(url)) return STITCHED_AD;
-        if (/h264-720/.test(url)) return CLEAN_MEDIA;
-        throw new Error('unexpected codec candidate: ' + url);
+        if (/h264-1080-first/.test(url)) return STITCHED_AD;
+        if (/h264-1080-second/.test(url)) return CLEAN_MEDIA;
+        throw new Error('unexpected exact-rendition candidate: ' + url);
       },
     }),
     gqlRoute(message) {
@@ -982,10 +1202,11 @@ test('a stitched preferred rendition does not discard a later clean compatible r
   });
   await mapMaster(runtime);
   const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
-  assert(body === CLEAN_MEDIA, 'second compatible rendition was not returned');
-  const mediaCalls = runtime.state.calls.filter((call) => /\/backup\/.+h264-.+\.m3u8/.test(call.url));
-  assert(mediaCalls.length === 2 && /h264-1080/.test(mediaCalls[0].url) && /h264-720/.test(mediaCalls[1].url),
-    'compatible rungs were not searched in ranked order: ' + JSON.stringify(mediaCalls.map((call) => call.url)));
+  assert(body === CLEAN_MEDIA, 'second exact rendition was not returned');
+  const mediaCalls = runtime.state.calls.filter((call) => /\/backup\/.+h264-1080-.+\.m3u8/.test(call.url));
+  assert(mediaCalls.length >= 2 && /h264-1080-first/.test(mediaCalls[0].url) &&
+    mediaCalls.some((call) => /h264-1080-second/.test(call.url)),
+  'exact renditions were not searched in ranked order: ' + JSON.stringify(mediaCalls.map((call) => call.url)));
 });
 
 test('backup selection never crosses MPEG-TS and fragmented-MP4 containers', async () => {
@@ -1138,6 +1359,40 @@ test('failed part-only retry uses the fresh clean native bridge instead of retur
   assert(body !== PART_ONLY_AD, 'confirmed ad parts escaped even though a clean bridge was available');
   assert(body.includes('/live/99100.ts') && !body.includes('/stitched-ad/'),
     'failed part-only retry did not return the fresh clean native bridge');
+});
+
+test('a stale native snapshot is never replayed as a part-only bridge', async () => {
+  const blockingUrl = ORIGINAL_MEDIA_URL + '&_HLS_msn=812&_HLS_part=1&_HLS_skip=YES';
+  const mediaPath = new URL(ORIGINAL_MEDIA_URL).pathname;
+  let cleanEstablished = false;
+  const standardRoute = standardFetchRoute({ originalMedia: CLEAN_MEDIA, backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: 100000,
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      const parsed = new URL(url);
+      if (parsed.pathname !== mediaPath) return standardRoute(url, init, state);
+      if (!cleanEstablished) {
+        cleanEstablished = true;
+        return hlsResponse(CLEAN_MEDIA);
+      }
+      if (parsed.searchParams.has('_HLS_msn')) return hlsResponse(PART_ONLY_AD);
+      throw new Error('fixture ordinary retry failed after the bridge became stale');
+    },
+    gqlRoute() {
+      return jsonResponse({ errors: [{ message: 'fixture has no clean alternate' }] }, 403);
+    },
+  });
+  await mapMaster(runtime);
+  assert(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text() === CLEAN_MEDIA,
+    'stale-bridge fixture did not establish its native snapshot');
+  for (let turn = 0; turn < 8; turn++) await new Promise((resolve) => setImmediate(resolve));
+  runtime.advance(6001);
+
+  const body = await (await runtime.fetch(blockingUrl)).text();
+  assert(body === PART_ONLY_AD && !body.includes('/live/99100.ts'),
+    'a native snapshot older than the bridge freshness window was replayed');
 });
 
 test('part-only ordinary retry times out once at 650ms then uses a clean backup', async () => {
@@ -2120,6 +2375,351 @@ test('an actively polled media profile remains mapped beyond five minutes', asyn
     'active profile did not report its clean replacement');
 });
 
+test('one transient lower-rendition poll cannot steal a sustained source-quality backup', async () => {
+  const lowerMediaUrl = 'https://video-edge-fixture.ttvnw.net/original/720p60/index-dvr.m3u8?token=lower';
+  const detachedAdUrl = 'https://video-edge-fixture.ttvnw.net/original/detached-quality-ad.m3u8?token=ad';
+  const qualityMaster = `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${ORIGINAL_MEDIA_URL}
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,CODECS="avc1.4D401F,mp4a.40.2",RESOLUTION=1280x720,VIDEO="720p60",FRAME-RATE=60.000
+${lowerMediaUrl}
+`;
+  const sustainedBackup = sequencedPlaylist({
+    sequence: 99102,
+    startMs: Date.parse('2026-07-23T00:00:04.000Z'),
+    title: 'live',
+    path: 'sustained-quality-backup',
+  });
+  let delaySourceBackup = false;
+  const standardRoute = standardFetchRoute({
+    originalMaster: qualityMaster,
+    originalMedia: CLEAN_MEDIA,
+    backupMedia(url, init) {
+      if (!delaySourceBackup || !/h264-1080\.m3u8/.test(url)) return sustainedBackup;
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve(sustainedBackup);
+        }, 1300);
+        const signal = init && init.signal;
+        const abort = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          const error = new Error('fixture delayed source-quality backup poll aborted');
+          error.name = 'AbortError';
+          reject(error);
+        };
+        if (signal) {
+          if (signal.aborted) abort();
+          else signal.addEventListener('abort', abort, { once: true });
+        }
+      });
+    },
+  });
+  let sourcePolls = 0;
+  let lowerPolls = 0;
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      const path = new URL(url).pathname;
+      if (path === new URL(ORIGINAL_MEDIA_URL).pathname) {
+        const index = sourcePolls++;
+        const sourceBody = sequencedPlaylist({
+          sequence: 99100 + index,
+          startMs: Date.parse('2026-07-23T00:00:00.000Z') + index * 2000,
+          title: 'live',
+          path: 'sustained-source-native',
+        }).replace(/https:\/\/video-edge-fixture\.ttvnw\.net\/sustained-source-native\//g, 'segments/');
+        return hlsResponse(sourceBody);
+      }
+      if (path === new URL(lowerMediaUrl).pathname) {
+        const index = lowerPolls++;
+        return hlsResponse(sequencedPlaylist({
+          sequence: 88100 + index,
+          startMs: Date.parse('2026-07-23T00:00:00.000Z') + index * 2000,
+          title: 'live',
+          path: 'transient-lower-native',
+        }));
+      }
+      if (path === new URL(detachedAdUrl).pathname) return hlsResponse(STITCHED_AD);
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const firstSource = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const secondSource = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(firstSource.includes('segments/99100.ts') && secondSource.includes('segments/99101.ts'),
+    'source-quality fixture did not establish two advancing native polls');
+  for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve));
+
+  assert((await (await runtime.fetch(lowerMediaUrl)).text()).includes('/transient-lower-native/'),
+    'transient lower-rendition probe did not stay native');
+  for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve));
+  delaySourceBackup = true;
+  const beforeDetached = runtime.state.calls.length;
+  const detachedStarted = performance.now();
+  const body = await (await runtime.fetch(detachedAdUrl)).text();
+  const detachedElapsed = performance.now() - detachedStarted;
+  const detachedBackupCalls = runtime.state.calls.slice(beforeDetached)
+    .filter((call) => /\/backup\/.+\.m3u8/.test(call.url));
+
+  assert(detachedElapsed < 1150,
+    'source-quality bridge escaped the total 900ms budget: ' + detachedElapsed.toFixed(1) + 'ms');
+  assert(body.includes(new URL('segments/99101.ts', ORIGINAL_MEDIA_URL).href) &&
+    !body.includes('/transient-lower-native/') && !body.includes('/commercial/'),
+  'detached ad bridged the wrong rendition or resolved its relative media against the ad URL');
+  assert(detachedBackupCalls.length > 0 && detachedBackupCalls.every((call) =>
+    /h264-1080\.m3u8/.test(call.url)),
+  'one transient 720p poll stole the 1080p backup target: ' +
+    JSON.stringify(detachedBackupCalls.map((call) => call.url)));
+});
+
+test('one transient same-metadata fMP4 poll cannot steal sustained MPEG-TS ownership', async () => {
+  const fmp4MediaUrl = 'https://video-edge-fixture.ttvnw.net/container-owner/fmp4.m3u8?token=fmp4';
+  const detachedAdUrl = 'https://video-edge-fixture.ttvnw.net/container-owner/detached-ad.m3u8?token=ad';
+  const containerMaster = `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${ORIGINAL_MEDIA_URL}
+#EXT-X-STREAM-INF:BANDWIDTH=8400000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${fmp4MediaUrl}
+`;
+  const containerBackupMaster = (signature) => `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/${signature}/container-owner-source-ts.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=8400000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/${signature}/container-owner-transient-fmp4.m3u8
+`;
+  const sourceBackup = sequencedPlaylist({
+    sequence: 99103,
+    startMs: Date.parse('2026-07-23T00:00:06.000Z'),
+    title: 'live',
+    path: 'container-owner-source-backup',
+  });
+  const transientFmp4 = fmp4SequencedPlaylist({
+    sequence: 99500,
+    startMs: Date.parse('2026-07-23T00:10:00.000Z'),
+    title: 'live',
+    path: 'container-owner-transient-native',
+  });
+  const transientBackup = fmp4SequencedPlaylist({
+    sequence: 99503,
+    startMs: Date.parse('2026-07-23T00:10:06.000Z'),
+    title: 'live',
+    path: 'container-owner-transient-backup',
+  });
+  const opaqueAd = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:99600
+#EXT-X-DATERANGE:ID="stitched-ad-container-owner",CLASS="twitch-stitched-ad",DURATION=2.0
+#EXTINF:2.000,advertisement
+https://video-weaver-fixture.ttvnw.net/commercial/opaque-container
+`;
+  let sourcePolls = 0;
+  let delaySourceBackup = false;
+  const standardRoute = standardFetchRoute({
+    originalMaster: containerMaster,
+    originalMedia: CLEAN_MEDIA,
+    backupMaster: containerBackupMaster,
+    backupMedia(url, init) {
+      if (/container-owner-transient-fmp4/.test(url)) return transientBackup;
+      if (!/container-owner-source-ts/.test(url)) throw new Error('unexpected container backup: ' + url);
+      if (!delaySourceBackup) return sourceBackup;
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve(sourceBackup);
+        }, 1300);
+        const signal = init && init.signal;
+        const abort = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          const error = new Error('fixture delayed sustained-container backup poll aborted');
+          error.name = 'AbortError';
+          reject(error);
+        };
+        if (signal) {
+          if (signal.aborted) abort();
+          else signal.addEventListener('abort', abort, { once: true });
+        }
+      });
+    },
+  });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      const path = new URL(url).pathname;
+      if (path === new URL(ORIGINAL_MEDIA_URL).pathname) {
+        const index = sourcePolls++;
+        return hlsResponse(sequencedPlaylist({
+          sequence: 99100 + index,
+          startMs: Date.parse('2026-07-23T00:00:00.000Z') + index * 2000,
+          title: 'live',
+          path: 'container-owner-source-native',
+        }));
+      }
+      if (path === new URL(fmp4MediaUrl).pathname) return hlsResponse(transientFmp4);
+      if (path === new URL(detachedAdUrl).pathname) return hlsResponse(opaqueAd);
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve));
+  await runtime.fetch(fmp4MediaUrl);
+  for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve));
+  delaySourceBackup = true;
+
+  const body = await (await runtime.fetch(detachedAdUrl)).text();
+  assert(body.includes('/container-owner-source-native/') && body.includes('.ts') &&
+    !body.includes('#EXT-X-MAP') && !body.includes('/container-owner-transient-native/') &&
+    !body.includes('/commercial/opaque-container'),
+  'one transient fMP4 poll inherited MPEG-TS ownership counters or supplied its bridge');
+});
+
+test('concurrent same-metadata TS and fMP4 ads never share a backup flight', async () => {
+  const tsMediaUrl = 'https://video-edge-fixture.ttvnw.net/container-flight/source.m3u8?format=ts&token=ts';
+  const fmp4MediaUrl = 'https://video-edge-fixture.ttvnw.net/container-flight/source.m3u8?format=fmp4&token=fmp4';
+  const sourceMaster = `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${tsMediaUrl}
+#EXT-X-STREAM-INF:BANDWIDTH=8400000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${fmp4MediaUrl}
+`;
+  const replacementMaster = (signature) => `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/${signature}/container-flight-ts.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=8400000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+https://video-edge-fixture.ttvnw.net/backup/${signature}/container-flight-fmp4.m3u8
+`;
+  const tsClean = sequencedPlaylist({ sequence: 100, startMs: SEQUENCE_BASE_TIME,
+    title: 'live', path: 'container-flight-ts-native' });
+  const tsAd = sequencedPlaylist({ sequence: 101, startMs: SEQUENCE_BASE_TIME + 2000,
+    marker: '#EXT-X-DATERANGE:ID="stitched-ad-container-flight-ts",CLASS="twitch-stitched-ad",DURATION=4.0',
+    title: 'advertisement', path: 'commercial/container-flight-ts' });
+  const tsBackup = sequencedPlaylist({ sequence: 101, startMs: SEQUENCE_BASE_TIME + 2000,
+    title: 'live', path: 'container-flight-ts-backup' });
+  const fmp4Clean = fmp4SequencedPlaylist({ sequence: 100, startMs: SEQUENCE_BASE_TIME,
+    title: 'live', path: 'container-flight-fmp4-native' });
+  const fmp4Ad = fmp4SequencedPlaylist({ sequence: 101, startMs: SEQUENCE_BASE_TIME + 2000,
+    marker: '#EXT-X-DATERANGE:ID="stitched-ad-container-flight-fmp4",CLASS="twitch-stitched-ad",DURATION=4.0',
+    title: 'advertisement', path: 'commercial/container-flight-fmp4' });
+  const fmp4Backup = fmp4SequencedPlaylist({ sequence: 101, startMs: SEQUENCE_BASE_TIME + 2000,
+    title: 'live', path: 'container-flight-fmp4-backup' });
+  let ads = false;
+  const runtime = createRuntime({
+    fetchRoute(url, init) {
+      const parsed = new URL(url);
+      if (parsed.hostname === 'gql.twitch.tv') return jsonResponse([]);
+      if (parsed.hostname === 'usher.ttvnw.net') {
+        const signature = parsed.searchParams.get('sig');
+        return hlsResponse(signature ? replacementMaster(signature) : sourceMaster);
+      }
+      if (parsed.pathname === new URL(tsMediaUrl).pathname && parsed.searchParams.get('format') === 'ts') {
+        return hlsResponse(ads ? tsAd : tsClean);
+      }
+      if (parsed.pathname === new URL(fmp4MediaUrl).pathname && parsed.searchParams.get('format') === 'fmp4') {
+        return hlsResponse(ads ? fmp4Ad : fmp4Clean);
+      }
+      if (/container-flight-ts\.m3u8$/.test(parsed.pathname)) {
+        return new Promise((resolve) => setTimeout(() => resolve(hlsResponse(tsBackup)), 120));
+      }
+      if (/container-flight-fmp4\.m3u8$/.test(parsed.pathname)) {
+        return new Promise((resolve) => setTimeout(() => resolve(hlsResponse(fmp4Backup)), 120));
+      }
+      throw new Error('unexpected container-flight request: ' + url);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await runtime.fetch(MASTER_URL);
+  await runtime.fetch(tsMediaUrl);
+  await runtime.fetch(fmp4MediaUrl);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+  ads = true;
+
+  const responses = await Promise.all([runtime.fetch(tsMediaUrl), runtime.fetch(fmp4MediaUrl)]);
+  const bodies = await Promise.all(responses.map((response) => response.text()));
+  assert(bodies[0].includes('/container-flight-ts-backup/') && bodies[0].includes('.ts') &&
+    !bodies[0].includes('#EXT-X-MAP') && !bodies[0].includes('/commercial/'),
+  'MPEG-TS ad did not receive its own exact-container backup');
+  assert(bodies[1].includes('/container-flight-fmp4-backup/') && bodies[1].includes('#EXT-X-MAP') &&
+    bodies[1].includes('.m4s') && !bodies[1].includes('/commercial/'),
+  'fMP4 ad shared the MPEG-TS flight or failed open on its native ad');
+  const backupCalls = runtime.state.calls.filter((call) => /container-flight-(?:ts|fmp4)\.m3u8/.test(call.url));
+  assert(backupCalls.some((call) => /container-flight-ts\.m3u8/.test(call.url)) &&
+    backupCalls.some((call) => /container-flight-fmp4\.m3u8/.test(call.url)),
+  'same-metadata containers were not acquired through independent backup flights');
+});
+
+test('the first clean lower rendition owns a detached backup before its second poll', async () => {
+  const lowerMediaUrl = 'https://video-edge-fixture.ttvnw.net/lower-first/720p60.m3u8?token=lower';
+  const detachedAdUrl = 'https://video-edge-fixture.ttvnw.net/lower-first/detached-ad.m3u8?token=ad';
+  const lowerFirstMaster = `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${ORIGINAL_MEDIA_URL}
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,CODECS="avc1.4D401F,mp4a.40.2",RESOLUTION=1280x720,VIDEO="720p60",FRAME-RATE=60.000
+${lowerMediaUrl}
+`;
+  const lowerNative = sequencedPlaylist({
+    sequence: 88100,
+    startMs: Date.parse('2026-07-23T00:00:00.000Z'),
+    title: 'live',
+    path: 'lower-first-native',
+  });
+  const lowerBackup = sequencedPlaylist({
+    sequence: 88102,
+    startMs: Date.parse('2026-07-23T00:00:04.000Z'),
+    title: 'live',
+    path: 'lower-first-backup',
+  });
+  const standardRoute = standardFetchRoute({
+    originalMaster: lowerFirstMaster,
+    originalMedia: CLEAN_MEDIA,
+    backupMedia: lowerBackup,
+  });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      const path = new URL(url).pathname;
+      if (path === new URL(lowerMediaUrl).pathname) return hlsResponse(lowerNative);
+      if (path === new URL(detachedAdUrl).pathname) return hlsResponse(STITCHED_AD);
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  assert((await (await runtime.fetch(lowerMediaUrl)).text()).includes('/lower-first-native/'),
+    'lower-first fixture did not establish its one real clean poll');
+  for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve));
+  const beforeDetached = runtime.state.calls.length;
+  const body = await (await runtime.fetch(detachedAdUrl)).text();
+  const backupCalls = runtime.state.calls.slice(beforeDetached)
+    .filter((call) => /\/backup\/.+\.m3u8/.test(call.url));
+
+  assert(body.includes('/lower-first-backup/') && !body.includes('/commercial/'),
+    'detached ad did not preserve the first real lower rendition');
+  assert(backupCalls.length > 0 && backupCalls.every((call) => /h264-720\.m3u8/.test(call.url)),
+    'detached ad guessed source quality before a second lower poll: ' +
+      JSON.stringify(backupCalls.map((call) => call.url)));
+});
+
 test('detached ad fallback stays on the active channel even when another channel maps later', async () => {
   const otherChannel = 'otherfixture';
   const otherMasterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/' + otherChannel + '.m3u8?p=other';
@@ -2428,6 +3028,21 @@ function sequencedPlaylist(options) {
     lines.push('#EXTINF:2.000,' + (options.title || 'live'));
     lines.push('https://video-edge-fixture.ttvnw.net/' + (options.path || 'sequence') + '/' +
       (options.sequence + index) + '.ts');
+  }
+  return lines.concat('').join('\n');
+}
+
+function fmp4SequencedPlaylist(options) {
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-TARGETDURATION:2',
+    '#EXT-X-MEDIA-SEQUENCE:' + options.sequence,
+    '#EXT-X-MAP:URI="https://video-edge-fixture.ttvnw.net/' + (options.path || 'fmp4-sequence') +
+      '/init.mp4"'];
+  if (options.marker) lines.push(options.marker);
+  for (let index = 0; index < 3; index++) {
+    lines.push('#EXT-X-PROGRAM-DATE-TIME:' + new Date(options.startMs + index * 2000).toISOString());
+    lines.push('#EXTINF:2.000,' + (options.title || 'live'));
+    lines.push('https://video-edge-fixture.ttvnw.net/' + (options.path || 'fmp4-sequence') + '/' +
+      (options.sequence + index) + '.m4s');
   }
   return lines.concat('').join('\n');
 }

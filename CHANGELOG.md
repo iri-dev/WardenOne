@@ -63,6 +63,13 @@ as the work happened.
   playlists. A standards-compliant abbreviated refresh can no longer look older
   than the preceding full window and bypass the clean warning-time handoff;
   malformed or duplicate skip metadata fails open byte-for-byte.
+- Restored Twitch's native primary playback identity and limited clean-stream
+  swaps to the player's exact resolution, frame rate, codec profile, media groups,
+  HDR range, and container. A sustained source-quality rendition can no longer be
+  stolen by one lower-quality probe, while cached refresh and full-search work now
+  share one real serving deadline. If a clean route is still finishing, one fresh
+  marker-free native window bridges the break once and the late result is reserved
+  for the next poll, avoiding the short substitute-ad flash without a replay loop.
 
 ## 1.0.0 — 2026-07-29
 
