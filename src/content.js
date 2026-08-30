@@ -102,6 +102,98 @@
     }
 
   };
+  /* Stopping an XHR by calling abort() before send() looks right and does nothing.
+  XMLHttpRequest only fires abort/error/loadend when the send() flag is set, and
+  these blocks run INSTEAD of send -- so the flag is never set, no event is ever
+  dispatched, and the page sits waiting for a callback that cannot arrive. Every
+  upload that keys on onload/onerror/onloadend hangs on "sending" forever, which
+  reads as WardenOne breaking the site rather than blocking one request.
+  fetch rejects and sendBeacon returns false; this gives XHR the same courtesy. A
+  blocked request IS a network error from the page's point of view, so it is given
+  that terminal state: status 0, readyState DONE, then readystatechange, error and
+  loadend. readyState and status are shadowed as own properties because the real
+  accessors live on the prototype and cannot be assigned from outside.
+  Asynchronous on purpose -- a real request does not fail before send() returns,
+  and firing inline would re-enter page code from inside its own call. */
+  const __woFailXhr=xhr=>{
+    try{
+      setTimeout(()=>{
+        try{
+          const shadow=(name,value)=>{
+            try{
+              Object.defineProperty(xhr,name,{
+                value:value,
+                configurable:!0
+              })
+            }
+            catch(_){
+
+            }
+
+          };
+          shadow("readyState",4),
+          shadow("status",0),
+          shadow("statusText",""),
+          shadow("responseURL",""),
+          shadow("responseText",""),
+          shadow("response","");
+          const fire=(type,progress)=>{
+            try{
+              let ev;
+              try{
+                ev=progress?new ProgressEvent(type):new Event(type)
+              }
+              catch(_){
+                ev=document.createEvent("Event"),
+                ev.initEvent(type,!1,!1)
+              }
+              xhr.dispatchEvent(ev)
+            }
+            catch(_){
+
+            }
+
+          };
+          fire("readystatechange",!1),
+          fire("error",!0),
+          fire("loadend",!0)
+        }
+        catch(_){
+
+        }
+
+      },
+      0)
+    }
+    catch(_){
+
+    }
+
+  };
+  /* Internal bridge listeners must bypass XSS Behavior Guard's MessageEvent.data
+     instrumentation. Otherwise WardenOne itself becomes the "page consumer" that
+     registers every window message as attacker-controlled input before application
+     code has read it, destroying source-to-sink causality. */
+  const __woNativeMessageDataGetter=(()=>{
+    try{
+      const proto=window.MessageEvent&&MessageEvent.prototype,
+      desc=proto&&Object.getOwnPropertyDescriptor(proto,"data");
+      return desc&&"function"==typeof desc.get?desc.get:null
+    }
+    catch(_){
+      return null
+    }
+
+  })(),
+  __woMessageData=event=>{
+    try{
+      return __woNativeMessageDataGetter?__woNativeMessageDataGetter.call(event):event&&event.data
+    }
+    catch(_){
+      return void 0
+    }
+
+  };
   try{
     window.__wardenOneDispose=()=>{
       try{
@@ -432,6 +524,7 @@
     monitorLoggerApi:!0,
     detectPhishing:!0,
     behavioralScan:!0,
+    xssBehaviorGuard:!0,
     blockHighConfidencePhishing:!1,
     customBrands:{
 
@@ -490,6 +583,13 @@
     antiClickjacking:!0,
     intranetProtection:!0,
     mediaShield:!0,
+    fullscreenGuard:!0,
+    fakeWindowGuard:!0,
+    deviceAccessGuard:!0,
+    notificationAbuseGuard:!0,
+    capabilityGuard:!0,
+    logThirdPartyBeacons:!0,
+    backTrapGuard:!0,
     blockCameraMic:!0,
     blockScreenCapture:!0,
     blockGeolocation:!0,
@@ -505,7 +605,21 @@
     socialWidgetGuard:!0,
     blockSupercookies:!0,
     gestureWindowMs:2400,
-    allowlist:[]
+    allowlist:[],
+    /* Turning a protection off used to mean off everywhere, and turning a site off
+    meant off entirely -- so one guard misfiring on one site cost either that guard
+    on every site or every guard on that site. Two narrower escape hatches:
+    allowlistUntil maps a host to the moment its allowlisting lapses, so "not now"
+    does not have to mean "not ever"; siteOverrides maps a host to the individual
+    features switched off there, leaving the rest of the engine running. Both are
+    resolved at the bridge, so everything downstream -- this engine and every
+    other content script -- sees one already-decided config. */
+    allowlistUntil:{
+
+    },
+    siteOverrides:{
+
+    }
   };
   function buildConfig(overrides){
     const cfg=Object.assign({
@@ -568,6 +682,7 @@
       monitorLoggerApi:gate(cfg.monitorLoggerApi),
       detectPhishing:gate(cfg.detectPhishing),
       behavioralScan:gate(cfg.behavioralScan),
+      xssBehaviorGuard:gate(cfg.xssBehaviorGuard),
       blockHighConfidencePhishing:gate(cfg.blockHighConfidencePhishing),
       customBrands:cfg.customBrands||{
 
@@ -627,6 +742,13 @@
       antiClickjacking:gate(!1!==cfg.antiClickjacking),
       intranetProtection:gate(!1!==cfg.intranetProtection),
       mediaShield:gate(cfg.mediaShield),
+      fullscreenGuard:gate(cfg.fullscreenGuard),
+      fakeWindowGuard:gate(cfg.fakeWindowGuard),
+      deviceAccessGuard:gate(!0),
+      notificationAbuseGuard:gate(cfg.notificationAbuseGuard),
+      capabilityGuard:gate(!0),
+      logThirdPartyBeacons:gate(!0),
+      backTrapGuard:gate(cfg.backTrapGuard),
       blockCameraMic:gate(cfg.blockCameraMic),
       blockScreenCapture:gate(cfg.blockScreenCapture),
       blockGeolocation:gate(!0===cfg.blockGeolocation),
@@ -641,7 +763,14 @@
       unshimLinks:gate(cfg.unshimLinks),
       socialWidgetGuard:gate(cfg.socialWidgetGuard),
       blockSupercookies:gate(cfg.blockSupercookies),
-      gestureWindowMs:cfg.gestureWindowMs
+      gestureWindowMs:cfg.gestureWindowMs,
+      /* Not gated by the master switch: these decide whether to STAY QUIET, so
+         losing them can only ever produce more noise, never less protection.
+         They are here at all because buildConfig is a whitelist, not a copy --
+         a key the worker writes and the engine reads is invisible until it is
+         named here, and nothing anywhere throws to say so. */
+      toastMutes:cfg.toastMutes&&"object"==typeof cfg.toastMutes?cfg.toastMutes:null,
+      toastMemory:cfg.toastMemory&&"object"==typeof cfg.toastMemory?cfg.toastMemory:null
     };
     if(!masterOn){
       for(const k of Object.keys(out))"gestureWindowMs"!==k&&("customBrands"!==k?Array.isArray(out[k])?out[k]=[]:"boolean"==typeof out[k]&&(out[k]=!1):out[k]={
@@ -740,7 +869,7 @@
   woOn(window,"message",
   e=>{
     if(e.source!==window)return;
-    const m=e.data;
+    const m=__woMessageData(e);
     if(!m||"wardenone-bg-response"!==m.source||m.token!==__woToken)return;
     const pending=__woPendingRequests.get(String(m.id||""));
     if(pending){
@@ -762,7 +891,7 @@
   woOn(window,"message",
   e=>{
     if(e.source!==window)return;
-    const m=e.data;
+    const m=__woMessageData(e);
     if(m&&"object"==typeof m)if("wardenone-handshake"!==m.source||"string"!=typeof m.token){
       if("wardenone"===m.source&&"config"===m.kind&&m.overrides){
         if(null===__woToken||m.token!==__woToken)return void __woEmit({
@@ -1071,7 +1200,7 @@
     try{
       woOn(window,"message",
       e=>{
-        const m=e&&e.data;
+        const m=__woMessageData(e);
         if(e.source!==window||!m||"wardenone-safe-browsing"!==m.source)return;
         if(null===__woToken||m.token!==__woToken)return;
         const id=String(m.id||""),
@@ -2736,16 +2865,44 @@
         }
 
       }
+      /* sendBeacon is where the tracking pixel went. Checking three ad-heavy pages
+      turned up not one 1x1 image between them -- the technique is gone -- while a
+      single news front page fired fourteen beacons, to doubleclick and to an
+      Akamai RUM endpoint among others.
+      Those two are on the filter lists and never reach the network. This is about
+      the ones that are on NO list: they leave silently and, until now, left no
+      trace anywhere, so there was no way to find out it had happened. Recorded
+      only, never blocked, and deliberately quiet -- fourteen cards for one page
+      view would be unusable, and none of this is a decision the user has to make.
+      One entry per destination per page, capped, so a page that beacons in a loop
+      cannot flood the log. */
       if(navigator.sendBeacon){
-        const realBeacon=navigator.sendBeacon.bind(navigator);
+        const realBeacon=navigator.sendBeacon.bind(navigator),
+        beaconSeen=new Set;
         navigator.sendBeacon=function(url,
         data){
           const hit=isGrabberURL(url);
-          return hit?(log("blocked_grabber_beacon",
+          if(hit)return log("blocked_grabber_beacon",
           {
             matched:hit
           }),
-          !1):realBeacon(url,
+          !1;
+          try{
+            if(!1!==WO.logThirdPartyBeacons&&beaconSeen.size<12){
+              const dom=regDomain(new URL(String(url||""),
+              location.href).hostname);
+              dom&&dom!==regDomain(location.hostname)&&!beaconSeen.has(dom)&&(beaconSeen.add(dom),
+              log("detected_beacon",
+              {
+                matched:dom,
+                quiet:!0
+              }))
+            }
+          }
+          catch(_){
+
+          }
+          return realBeacon(url,
           data)
         }
 
@@ -3094,7 +3251,7 @@
           args);
           noteBlock();
           try{
-            this.abort()
+            __woFailXhr(this)
           }
           catch(_){
 
@@ -3218,6 +3375,16 @@
           return a===10||a===127||a===192&&b===168||a===172&&b>=16&&b<=31||a===169&&b===254
         }
         if(/\.(local|localdomain|lan|home|internal|intranet|corp)$/i.test(h))return!0;
+        /* Names the background caught resolving to a private address. A hostname
+           cannot reveal that about itself, so the answer is handed down from the
+           one place that can see it: chrome.webRequest reports the resolved IP
+           once a response starts. That makes this detection, not prevention --
+           the request that exposed the rebinding has already happened. Every
+           request after it is refused by the guard that was already here. */
+        if(Array.isArray(WO.rebindQuarantine)&&WO.rebindQuarantine.some(d=>{
+          const q=String(d||"").toLowerCase();
+          return q&&(h===q||h.endsWith("."+q))
+        }))return!0;
         return/^(router|gateway|modem|fritz\.box|myfiosgateway\.com|tplinkwifi\.net|routerlogin\.net|routerlogin\.com|asusrouter\.com|miwifi\.com)$/i.test(h)||/(^|\/)(admin|login|cgi-bin|goform|setup|webfig|luci)(\/|$)/i.test(p)&&/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|router|gateway|modem)/i.test(h)
       }
       catch(_){
@@ -3276,7 +3443,7 @@
         RX.prototype.send=function(...args){
           if(this.__wo_local_block){
             try{
-              this.abort()
+              __woFailXhr(this)
             }
             catch(_){
 
@@ -3285,6 +3452,97 @@
           }
           return oSend.apply(this,
           args)
+        }
+
+      }
+      /* WebTransport is a full bidirectional channel to the same host over HTTP/3.
+         Guarding fetch, XHR and WebSocket while leaving it open means a page can
+         reach an intranet address by simply choosing a different constructor. */
+      /* Server-sent events reach any URL the page names, so leaving EventSource
+         unwrapped is the same hole WebTransport was: the guard covers fetch, XHR
+         and sockets, and the page picks the one constructor nobody hooked. */
+      /* A worker runs in its own realm with a pristine fetch and a pristine
+         WebSocket, so every hook above is invisible from inside one. What actually
+         holds the line there is the network layer, which sees a request whatever
+         realm made it. This refuses the front door as well, so the attempt is
+         named and recorded rather than only being dropped by a rule. */
+      if(window.Worker){
+        const RealWorker=window.Worker;
+        window.Worker=function(url,
+        opts){
+          if(blockLocal(url,
+          "worker"))throw new DOMException("Blocked by WardenOne Intranet Guard",
+          "SecurityError");
+          return void 0===opts?new RealWorker(url):new RealWorker(url,
+          opts)
+        },
+        window.Worker.prototype=RealWorker.prototype;
+        try{
+          Object.setPrototypeOf(window.Worker,
+          RealWorker)
+        }
+        catch(_){
+
+        }
+
+      }
+      if(window.SharedWorker){
+        const RealShared=window.SharedWorker;
+        window.SharedWorker=function(url,
+        opts){
+          if(blockLocal(url,
+          "sharedworker"))throw new DOMException("Blocked by WardenOne Intranet Guard",
+          "SecurityError");
+          return void 0===opts?new RealShared(url):new RealShared(url,
+          opts)
+        },
+        window.SharedWorker.prototype=RealShared.prototype;
+        try{
+          Object.setPrototypeOf(window.SharedWorker,
+          RealShared)
+        }
+        catch(_){
+
+        }
+
+      }
+      if(window.EventSource){
+        const RealES=window.EventSource;
+        window.EventSource=function(url,
+        init){
+          if(blockLocal(url,
+          "eventsource"))throw new DOMException("Blocked by WardenOne Intranet Guard",
+          "SecurityError");
+          return void 0===init?new RealES(url):new RealES(url,
+          init)
+        },
+        window.EventSource.prototype=RealES.prototype;
+        try{
+          Object.setPrototypeOf(window.EventSource,
+          RealES)
+        }
+        catch(_){
+
+        }
+
+      }
+      if(window.WebTransport){
+        const RealWT=window.WebTransport;
+        window.WebTransport=function(url,
+        options){
+          if(blockLocal(url,
+          "webtransport"))throw new DOMException("Blocked by WardenOne Intranet Guard",
+          "SecurityError");
+          return void 0===options?new RealWT(url):new RealWT(url,
+          options)
+        },
+        window.WebTransport.prototype=RealWT.prototype;
+        try{
+          Object.setPrototypeOf(window.WebTransport,
+          RealWT)
+        }
+        catch(_){
+
         }
 
       }
@@ -3564,7 +3822,7 @@
           RX.prototype.send=function(...args){
             if(this.__wo_risky_block){
               try{
-                this.abort()
+                __woFailXhr(this)
               }
               catch(_){
 
@@ -3573,6 +3831,96 @@
             }
             return oSend.apply(this,
             args)
+          }
+
+        }
+        /* Same reasoning as the Intranet Guard hook: a transport the guard does not
+           know about is a guard the page can walk around. */
+        /* Server-sent events reach any URL the page names, so leaving EventSource
+           unwrapped is the same hole WebTransport was: the guard covers fetch, XHR
+           and sockets, and the page picks the one constructor nobody hooked. */
+        /* A worker runs in its own realm with a pristine fetch and a pristine
+           WebSocket, so every hook above is invisible from inside one. What actually
+           holds the line there is the network layer, which sees a request whatever
+           realm made it. This refuses the front door as well, so the attempt is
+           named and recorded rather than only being dropped by a rule. */
+        if(window.Worker){
+          const RealWorker=window.Worker;
+          window.Worker=function(url,
+          opts){
+            if(blockRisk(url,
+            "worker"))throw new DOMException("Blocked by WardenOne Risky-site Mode",
+            "SecurityError");
+            return void 0===opts?new RealWorker(url):new RealWorker(url,
+            opts)
+          },
+          window.Worker.prototype=RealWorker.prototype;
+          try{
+            Object.setPrototypeOf(window.Worker,
+            RealWorker)
+          }
+          catch(_){
+
+          }
+
+        }
+        if(window.SharedWorker){
+          const RealShared=window.SharedWorker;
+          window.SharedWorker=function(url,
+          opts){
+            if(blockRisk(url,
+            "sharedworker"))throw new DOMException("Blocked by WardenOne Risky-site Mode",
+            "SecurityError");
+            return void 0===opts?new RealShared(url):new RealShared(url,
+            opts)
+          },
+          window.SharedWorker.prototype=RealShared.prototype;
+          try{
+            Object.setPrototypeOf(window.SharedWorker,
+            RealShared)
+          }
+          catch(_){
+
+          }
+
+        }
+        if(window.EventSource){
+          const RealES=window.EventSource;
+          window.EventSource=function(url,
+          init){
+            if(blockRisk(url,
+            "eventsource"))throw new DOMException("Blocked by WardenOne Risky-site Mode",
+            "SecurityError");
+            return void 0===init?new RealES(url):new RealES(url,
+            init)
+          },
+          window.EventSource.prototype=RealES.prototype;
+          try{
+            Object.setPrototypeOf(window.EventSource,
+            RealES)
+          }
+          catch(_){
+
+          }
+
+        }
+        if(window.WebTransport){
+          const RealWT=window.WebTransport;
+          window.WebTransport=function(url,
+          options){
+            if(blockRisk(url,
+            "webtransport"))throw new DOMException("Blocked by WardenOne Risky-site Mode",
+            "SecurityError");
+            return void 0===options?new RealWT(url):new RealWT(url,
+            options)
+          },
+          window.WebTransport.prototype=RealWT.prototype;
+          try{
+            Object.setPrototypeOf(window.WebTransport,
+            RealWT)
+          }
+          catch(_){
+
           }
 
         }
@@ -3718,215 +4066,21 @@
         error:String(e)
       })
     }
-    let cookieBlockerInstalled=!1,
-    cookieBlockerOriginalOwnDesc=null,
-    cookieBlockLogCount=0;
-    const restoreCookieBlocker=()=>{
-      if(cookieBlockerInstalled){
-        try{
-          cookieBlockerOriginalOwnDesc?Object.defineProperty(document,
-          "cookie",
-          cookieBlockerOriginalOwnDesc):delete document.cookie
-        }
-        catch(_){
+    /* The third-party-cookie blocker and the supercookie sweep that used to sit
+       here were both gated on being inside a cross-origin subframe, in an engine
+       the manifest injects with all_frames:false -- so neither could ever run.
+       Both now live in anti-redirect.js, which is the MAIN-world script that
+       does reach every frame, and are covered by tools/test-tracker-frame-guard.js.
+       Removed rather than left annotated: an untested second copy that cannot
+       run is not a reference implementation, it is something to keep in step
+       with for no benefit.
 
-        }
-        cookieBlockerInstalled=!1,
-        cookieBlockerOriginalOwnDesc=null;
-        try{
-          document.__woCookieBlockerActive=!1,
-          document.__woCookieBlockerReason=""
-        }
-        catch(_){
-
-        }
-
-      }
-
-    },
-    applyCookieBlocker=()=>{
-      const knownTrackerFrame=/(^|\.)(scorecardresearch\.com|criteo\.(com|net)|taboola\.com|outbrain\.com|doubleclick\.net|googlesyndication\.com|google-analytics\.com|googletagmanager\.com|quantserve\.com|adsrvr\.org|adnxs\.com|rubiconproject\.com|openx\.net|pubmatic\.com|bluekai\.com|demdex\.net|everesttech\.net|hotjar\.com|fullstory\.com|mouseflow\.com)$/i.test(location.hostname),
-      reason=WO.blockThirdPartyCookies&&knownTrackerFrame&&(()=>{
-        try{
-          if(window.top===window.self)return!1;
-          try{
-            return siteKey(window.top.location.hostname)!==siteKey(location.hostname)
-          }
-          catch(_){
-            return!0
-          }
-
-        }
-        catch(_){
-          return!0
-        }
-
-      })()?"thirdparty":"";
-      if(reason){
-        if(!cookieBlockerInstalled||document.__woCookieBlockerReason!==reason){
-          restoreCookieBlocker();
-          try{
-            cookieBlockerOriginalOwnDesc=Object.prototype.hasOwnProperty.call(document,
-            "cookie")?Object.getOwnPropertyDescriptor(document,
-            "cookie"):null,
-            Object.defineProperty(document,
-            "cookie",
-            {
-              configurable:!0,
-              get:()=>"",
-              set:()=>(++cookieBlockLogCount<=50&&log("blocked_thirdparty_cookie",
-              {
-                scope:reason
-              }),
-              !0)
-            }),
-            cookieBlockerInstalled=!0;
-            try{
-              document.__woCookieBlockerActive=!0,
-              document.__woCookieBlockerReason=reason
-            }
-            catch(_){
-
-            }
-            log("thirdparty_cookie_guard_active",
-            {
-
-            })
-          }
-          catch(e){
-            log("thirdparty_cookie_failed",
-            {
-              error:String(e)
-            })
-          }
-
-        }
-
-      }
-      else restoreCookieBlocker()
-    };
-    applyCookieBlocker();
-    try{
-      woOn(document,"wo-config-change",
-      applyCookieBlocker)
-    }
-    catch(_){
-
-    }
-    let supercookieGuardInstalled=!1;
-    const installSupercookieGuard=()=>{
-      if(supercookieGuardInstalled||!WO.blockSupercookies)return;
-      const TRACKER_STORAGE_HOSTS=/(^|\.)(scorecardresearch\.com|criteo\.com|criteo\.net|taboola\.com|outbrain\.com|doubleclick\.net|googlesyndication\.com|google-analytics\.com|googletagmanager\.com|quantserve\.com|adsrvr\.org|adnxs\.com|rubiconproject\.com|openx\.net|pubmatic\.com|rlcdn\.com|mathtag\.com|bluekai\.com|demdex\.net|everesttech\.net|lijit\.com|sharethrough\.com|yieldmo\.com|facebook\.com|fbcdn\.net)$/i;
-      if(!(()=>{
-        if(!TRACKER_STORAGE_HOSTS.test(location.hostname))return!1;
-        try{
-          return window.top!==window.self&&regDomain(window.top.location.hostname)!==regDomain(location.hostname)
-        }
-        catch(_){
-          return window.top!==window.self
-        }
-
-      })())return;
-      supercookieGuardInstalled=!0;
-      const clearTrackerStorage=()=>{
-        try{
-          localStorage.clear()
-        }
-        catch(_){
-
-        }
-        try{
-          sessionStorage.clear()
-        }
-        catch(_){
-
-        }
-        try{
-          window.name=""
-        }
-        catch(_){
-
-        }
-        try{
-          (document.cookie||"").split(";").forEach(c=>{
-            const name=c.split("=")[0].trim();
-            name&&(document.cookie=name+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/",
-            document.cookie=name+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=."+regDomain(location.hostname))
-          })
-        }
-        catch(_){
-
-        }
-        try{
-          indexedDB&&indexedDB.databases&&indexedDB.databases().then(dbs=>(dbs||[]).forEach(db=>{
-            try{
-              db&&db.name&&indexedDB.deleteDatabase(db.name)
-            }
-            catch(_){
-
-            }
-
-          })).catch(()=>{
-
-          })
-        }
-        catch(_){
-
-        }
-        try{
-          window.caches&&caches.keys&&caches.keys().then(keys=>(keys||[]).forEach(k=>{
-            try{
-              caches.delete(k)
-            }
-            catch(_){
-
-            }
-
-          })).catch(()=>{
-
-          })
-        }
-        catch(_){
-
-        }
-
-      };
-      clearTrackerStorage();
-      try{
-        const oSet=Storage.prototype.setItem;
-        Storage.prototype.setItem=function(){
-          try{
-            clearTrackerStorage()
-          }
-          catch(_){
-
-          }
-
-        },
-        Storage.prototype.removeItem=function(){
-
-        },
-        Storage.prototype.clear=function(){
-
-        },
-        Storage.prototype.__woSupercookieOriginalSetItem=oSet
-      }
-      catch(_){
-
-      }
-      log("cleared_tracker_supercookie",
-      {
-        host:location.hostname
-      })
-    };
-    installSupercookieGuard();
-    try{
-      woOn(document,"wo-config-change",
-      installSupercookieGuard)
-    }
-    catch(_){
-
-    }
+       The flag below outlives them on purpose. SessionShield's storage watcher
+       reads it further down to avoid wrapping document.cookie twice, and with
+       nothing left to set it the answer is simply always "not wrapped" -- which
+       is true. Deleting it would turn that read into a ReferenceError swallowed
+       by a try/catch, taking the watcher down silently. */
+    let cookieBlockerInstalled=!1;
     if(WO.sessionShield)try{
       const mask=v=>(v=String(v||"")).length<=12?"****":v.slice(0,
       6)+"...hidden..."+v.slice(-4),
@@ -4269,8 +4423,22 @@
           "googleusercontent.com"]
         },
         {
+          /* Only the sign-in and mail hosts were listed, so every other Microsoft 365
+          surface fell outside the family -- and sharepoint.com, which is where Office
+          actually stores what you upload, was not a global destination either. The
+          result: attaching a file to a Microsoft Form was read as a token leaving
+          forms.office.com for an unrelated host, and the upload was blocked. office.com
+          is matched by suffix, so it covers forms/word/excel/powerpoint and the rest in
+          one entry rather than a list that has to be maintained per product. */
           pages:["login.microsoftonline.com",
-          "outlook.office.com"],
+          "outlook.office.com",
+          "office.com",
+          "office365.com",
+          "microsoft365.com",
+          "microsoft.com",
+          "sharepoint.com",
+          "onmicrosoft.com",
+          "live.com"],
           destinations:["microsoft.com",
           "microsoft365.com",
           "microsoftonline.com",
@@ -4278,8 +4446,14 @@
           "outlook.com",
           "office.com",
           "office365.com",
+          "office.net",
           "sharepoint.com",
+          "sharepointonline.com",
           "onmicrosoft.com",
+          "onedrive.com",
+          "1drv.ms",
+          /* OneDrive and SharePoint move file content over svc.ms. */
+          "svc.ms",
           "msftauth.net",
           "msauth.net",
           "azure.com",
@@ -4639,7 +4813,7 @@
             arguments);
             flagExfil(this.__wo_dest);
             try{
-              this.abort()
+              __woFailXhr(this)
             }
             catch(_){
 
@@ -4908,7 +5082,7 @@
                   flagSkimExfil(this.__wo_skurl),
                   warnSkim("blocked card data via XHR");
                   try{
-                    this.abort()
+                    __woFailXhr(this)
                   }
                   catch(_){
 
@@ -5118,6 +5292,48 @@
           return/^xn--/i.test(h)||/\.(cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol)$/i.test(h)||/^[a-f0-9]{12,}$/i.test(label)||digits>=4&&digits>=.3*label.length||((h.match(/-/g)||[]).length>=3||h.length>=42)&&/\b(pay|checkout|secure|verify|gift|prize|refund|delivery|support|billing|card)\b/i.test(h.replace(/[.-]/g,
           " "))
         },
+        /* Which embedded payment forms on this page come from somewhere they
+           should not.
+
+           The card fields on a checkout are very often not in this document at
+           all: Stripe, Adyen and every other processor render them inside an
+           iframe on their own origin, and that arrangement is exactly what makes
+           them safe. The check this replaces asked the opposite question -- "am I
+           inside an untrusted frame" -- from an engine that is only ever injected
+           into the top of a page, so it could never be true and never once fired.
+
+           Asked from up here it is a better question rather than merely a working
+           one: the top frame can see every embedded payment form at once,
+           including ones whose own script would have kept an injected guard out.
+
+           Only a raw IP address or a host that already looks like a fake payment
+           domain counts. Flagging every third-party frame would flag the
+           advertisement on the page, and a checkout warning that cries wolf is
+           worse than no checkout warning at all. */
+        untrustedPaymentFrames=()=>{
+          const out=[];
+          try{
+            const frames=document.querySelectorAll("iframe[src]");
+            for(let i=0;i<frames.length&&out.length<3;i++){
+              let h="";
+              try{
+                h=new URL(frames[i].getAttribute("src"),
+                location.href).hostname.replace(/^www\./,
+                "").toLowerCase()
+              }
+              catch(_){
+                continue
+              }
+              if(!h||sameSiteHost(h)||trustedPaymentHost(h))continue;
+              (rawHost(h)||suspiciousPaymentHost(h))&&out.indexOf(h)<0&&out.push(h)
+            }
+
+          }
+          catch(_){
+
+          }
+          return out
+        },
         paymentPageText=()=>{
           try{
             const chunks=[document.title,
@@ -5276,9 +5492,10 @@
             hard=!0,
             reasons.push("this checkout is on a raw IP address")
           }
-          if(window.top!==window&&!trustedPaymentHost(location.hostname)){
-            suspiciousPaymentHost(location.hostname)||rawHost(location.hostname)?(hard=!0,
-            reasons.push("card fields are inside an untrusted embedded frame")):unknownOffsite=!0
+          const badPaymentFrames=untrustedPaymentFrames();
+          if(badPaymentFrames.length){
+            hard=!0,
+            reasons.push("card fields are inside an untrusted embedded frame ("+badPaymentFrames[0]+")")
           }
           const pageRisk=pagePaymentRisk();
           pageRisk.hard&&(hard=!0),
@@ -5538,7 +5755,7 @@
                   blockCardSend(risk,
                   !1);
                   try{
-                    this.abort()
+                    __woFailXhr(this)
                   }
                   catch(_){
 
@@ -5547,7 +5764,7 @@
                 }
                 if(!confirmPaymentRisk(risk)){
                   try{
-                    this.abort()
+                    __woFailXhr(this)
                   }
                   catch(_){
 
@@ -6424,26 +6641,372 @@
       })
     }
     if(WO.commandPasteGuard)try{
-      const CMD_PATTERNS=[/powershell(\.exe)?\s+.*-(enc|encodedcommand|e)\b/i,
-      /\b(iwr|irm|invoke-(webrequest|expression)|iex)\b[\s\S]*\|\s*iex\b/i,
-      /\bcurl\b[\s\S]*\|\s*(bash|sh|zsh)\b/i,
-      /\bwget\b[\s\S]*\|\s*(bash|sh|zsh)\b/i,
+      const CMD_PATTERNS=[/\b(?:powershell|pwsh)(?:\.exe)?\s+.{0,1200}?-(?:e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)\b/i,
+      /\b(iwr|irm|invoke-(webrequest|expression)|iex)\b[\s\S]{0,1200}?\|\s*iex\b/i,
+      /\b(?:iex|invoke-expression)\s*\(\s*(?:iwr|irm|invoke-webrequest)\b/i,
+      /\bcurl\b[\s\S]{0,1200}?\|\s*(bash|sh|zsh)\b/i,
+      /\bwget\b[\s\S]{0,1200}?\|\s*(bash|sh|zsh)\b/i,
+      /\b(?:curl|wget)\b[^\r\n]{0,800}(?:-o|--output)\b[^\r\n]{0,300}(?:&&|;|\n)\s*(?:chmod\s+\+x\s+)?(?:\.\/|bash\b|sh\b|zsh\b|cmd(?:\.exe)?\b|powershell(?:\.exe)?\b|pwsh(?:\.exe)?\b)/i,
       /\bmshta\b\s+https?:/i,
-      /\bcmd(\.exe)?\s+\/c\b/i,
-      /\bregsvr32\b.*\/i:/i,
-      /\bcertutil\b.*-urlcache/i,
-      /\bbitsadmin\b.*\/transfer/i,
-      /\b(rundll32|msiexec)\b.*https?:/i,
-      /powershell(\.exe)?\s+.*(downloadstring|downloadfile|webclient|invoke-webrequest)/i],
-      looksLikeCommand=text=>{
-        const t=String(text||"");
-        return!(t.length<8||t.length>4e3)&&CMD_PATTERNS.some(re=>re.test(t))
-      };
-      let cmdWarned=!1;
-      const showCommandPanel=sample=>{
+      /\bregsvr32\b.{0,1200}\/i:/i,
+      /\bcertutil\b.{0,1200}-urlcache/i,
+      /\bbitsadmin\b.{0,1200}\/transfer/i,
+      /\b(rundll32|msiexec)\b.{0,1200}https?:/i,
+      /\b(?:powershell|pwsh)(?:\.exe)?\s+.{0,1200}(downloadstring|downloadfile|webclient|invoke-webrequest)/i],
+      CONTEXT_COMMAND_PATTERNS=[/\bcmd(?:\.exe)?(?:\s+\/[dqs]\b)*\s*\/c\b/i],
+      CONSOLE_CODE_PATTERNS=[/\b(?:document\.cookie|localStorage|sessionStorage)\b[\s\S]{0,500}\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b/i,
+      /\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b[\s\S]{0,500}\b(?:document\.cookie|localStorage|sessionStorage)\b/i,
+      /\beval\s*\(\s*atob\s*\(/i,
+      /\b(?:document\.body|document\.documentElement)\.innerHTML\s*=/i],
+      CLICKFIX_INSTRUCTIONS=[[/\b(?:type|enter|paste)\s+["'“”]?enable\s+pasting["'“”]?\b/i,
+      "Enable pasting"],
+      [/\bpaste\s+(?:this|it|the\s+(?:text|code|command))\s+(?:in|into)\s+(?:the\s+)?(?:developer\s+)?console(?:\s+tab)?\b/i,
+      "Paste into Console"],
+      [/\b(?:press\s+)?(?:ctrl|control)\s*\+\s*shift\s*\+\s*i\b/i,
+      "Press Ctrl+Shift+I"],
+      [/\bpress\s+(?:the\s+)?f12\b/i,
+      "Press F12"],
+      [/\b(?:open|launch)\s+(?:(?:chrome|browser)\s+)?(?:dev(?:eloper)?\s*tools?|developer\s+tools?)\b/i,
+      "Open DevTools"],
+      [/\b(?:open|select|switch\s+to|go\s+to)\s+(?:the\s+)?(?:developer\s+)?console(?:\s+tab)?\b/i,
+      "Open Console"],
+      [/\b(?:(?:press|hold)\s+)?(?:win(?:dows)?(?:\s+key)?)\s*\+\s*r\b/i,
+      "Press Win+R"],
+      [/\b(?:press\s+)?(?:ctrl|control)\s*\+\s*v\b/i,
+      "Paste with Ctrl+V"],
+      [/\bopen\s+(?:powershell|cmd|command\s+prompt|terminal|run\s+dialog)\b/i,
+      "Open a command shell"],
+      [/\bpaste\b[^\n.]{0,100}\b(?:powershell|terminal|run\s+dialog|cmd|command\s+prompt)\b/i,
+      "Paste into a command shell"]],
+      CLICKFIX_HUMAN_VERIFICATION=/(?:verify|confirm|prove)(?:\s+that)?\s+you(?:'re|\s+are)?\s+(?:a\s+)?human|human\s+verification|complete\s+(?:the\s+)?captcha|(?:verify|confirm|prove)\s+(?:that\s+)?you(?:'re|\s+are)?\s+not\s+(?:a\s+)?robot|i(?:'m|\s+am)\s+not\s+a\s+robot/i,
+      CLICKFIX_VERIFICATION_STEPS=/(?:security\s+)?verification\s+(?:step|steps|required)|complete\s+(?:the\s+)?verification/i,
+      CLICKFIX_PASTE_GUIDANCE=/(?:copy|paste|type|enter)[^\n.]{0,100}(?:console|devtools|developer\s+tools|powershell|terminal|command\s+prompt|run\s+dialog)|(?:console|devtools|developer\s+tools|powershell|terminal|command\s+prompt|run\s+dialog)[^\n.]{0,100}(?:copy|paste|type|enter)|(?:press\s+)?(?:ctrl|control)\s*\+\s*v/i,
+      /* Where an install one-liner is the point of the page. WinUtil, SpotX and
+      every other script project put "run this in PowerShell" next to a
+      download-and-run command, which is the exact shape ClickFix uses -- so on
+      any host missing from this list the guard warned on the copy button of a
+      repo the user had deliberately navigated to.
+      This list is not a way past the guard. Fake human-verification wording
+      overrides it (clickfixDocsMayCorrelate), so the actual ClickFix pattern
+      still fires on every host here, github.com included.
+      Deliberately NOT here: github.io and gitlab.io. Those are public suffixes --
+      anyone gets a subdomain and serves arbitrary HTML from it, so trusting them
+      would hand every attacker a quiet host. The githubusercontent hosts are here
+      instead because they serve file content as plain text: there is no rendered
+      page to build a lure in. */
+      CLICKFIX_DOC_HOST=/(^|\.)(developer\.mozilla\.org|developers\.google\.com|web\.dev|stackoverflow\.com|stackexchange\.com|github\.com|githubusercontent\.com|gitlab\.com|bitbucket\.org|codeberg\.org|sr\.ht|codepen\.io|codesandbox\.io|learn\.microsoft\.com|docs\.microsoft\.com|npmjs\.com|pypi\.org|crates\.io|pkg\.go\.dev|rubygems\.org|packagist\.org|nuget\.org|docs\.docker\.com|kubernetes\.io|go\.dev|rust-lang\.org|python\.org|nodejs\.org)$/i,
+      normalizeClickfixText=text=>{
+        let value=String(text||"");
         try{
-          if(__woWarn.up("wo-cmd-warn"))return;
+          value=value.normalize("NFKC")
+        }
+        catch(_){
+
+        }
+        return value.replace(/[\u00AD\u180E\u200B-\u200D\u2060\uFEFF]/g,
+        "").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g,
+        " ").replace(/[\u2010-\u2015\u2212]/g,
+        "-").replace(/[\u2018\u2019]/g,
+        "'").replace(/[\u201C\u201D]/g,
+        '"').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,
+        " ")
+      },
+      clickfixRegexHit=(text,
+      pattern)=>{
+        const match=String(text||"").match(pattern);
+        return match?{
+          index:"number"==typeof match.index?match.index:0,
+          sample:String(match[0]||"")
+        }:null
+      },
+      clickfixRegexHits=(text,
+      pattern)=>{
+        const hits=[];
+        try{
+          const scan=new RegExp(pattern.source,
+          pattern.flags.replace(/g/g,
+          "")+"g");
+          let match;
+          while(hits.length<8&&(match=scan.exec(String(text||"")))){
+            hits.push({
+              index:match.index,
+              sample:String(match[0]||"")
+            });
+            match[0]||scan.lastIndex++
+          }
+        }
+        catch(_){
+
+        }
+        return hits
+      },
+      clickfixNearestRegexHit=(text,
+      pattern,
+      nearIndex)=>{
+        const hits=clickfixRegexHits(text,
+        pattern);
+        if(!hits.length)return null;
+        return"number"==typeof nearIndex?hits.sort((a,
+        b)=>Math.abs(a.index-nearIndex)-Math.abs(b.index-nearIndex))[0]:hits[0]
+      },
+      instructionEvidence=(text,
+      nearIndex)=>{
+        const value=normalizeClickfixText(text),
+        priorities={
+          "Enable pasting":6,
+          "Press Win+R":5,
+          "Paste into Console":4,
+          "Paste into a command shell":4,
+          "Open a command shell":4,
+          "Press Ctrl+Shift+I":3,
+          "Press F12":3,
+          "Open DevTools":3,
+          "Open Console":3,
+          "Paste with Ctrl+V":1
+        },
+        hits=[];
+        CLICKFIX_INSTRUCTIONS.forEach(item=>clickfixRegexHits(value,
+        item[0]).forEach(hit=>hits.push({
+          index:hit.index,
+          sample:hit.sample,
+          instruction:item[1],
+          priority:priorities[item[1]]||0
+        })));
+        if(!hits.length)return null;
+        return hits.sort((a,
+        b)=>{
+          if("number"==typeof nearIndex){
+            const aDistance=Math.abs(a.index-nearIndex),
+            bDistance=Math.abs(b.index-nearIndex),
+            aNear=aDistance<=2800,
+            bNear=bDistance<=2800;
+            if(aNear!==bNear)return aNear?-1:1;
+            if(aNear&&aDistance!==bDistance)return aDistance-bDistance
+          }
+          return b.priority-a.priority||a.index-b.index
+        })[0]
+      },
+      instructionFor=text=>{
+        const found=instructionEvidence(text);
+        return found?found.instruction:""
+      },
+      clickfixDocsContext=()=>{
+        try{
+          return CLICKFIX_DOC_HOST.test(location.hostname)||/(?:^|\/)(?:docs?|documentation|reference|tutorials?|developer-tools)(?:\/|$)/i.test(location.pathname||"")
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      clickfixTrustedDocsContext=()=>{
+        try{
+          return CLICKFIX_DOC_HOST.test(location.hostname)
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      suspiciousCommandEvidence=(text,
+      allowPageText,
+      consoleContext)=>{
+        let t=normalizeClickfixText(text);
+        if(t.length<8)return null;
+        if(allowPageText&&t.length>3e4)t=t.slice(0,
+        3e4);
+        else if(!allowPageText&&t.length>65536)t=t.slice(0,
+        32768)+" "+t.slice(-32768);
+        const patterns=consoleContext?CMD_PATTERNS.concat(CONTEXT_COMMAND_PATTERNS,
+        CONSOLE_CODE_PATTERNS):CMD_PATTERNS,
+        found=patterns.map(re=>clickfixRegexHit(t,
+        re)).find(Boolean);
+        return found?{
+          index:found.index,
+          sample:String(found.sample||"").slice(0,
+          4e3)
+        }:null
+      },
+      suspiciousCommandMatch=(text,
+      allowPageText,
+      consoleContext)=>{
+        const found=suspiciousCommandEvidence(text,
+        allowPageText,
+        consoleContext);
+        return found?found.sample:""
+      },
+      clickfixEvidenceNear=(left,
+      right,
+      limit)=>!!(left&&right&&Math.abs((left.index||0)-(right.index||0))<=limit),
+      clickfixDocsMayCorrelate=signal=>!signal.trustedDocumentation||signal.fakeCaptcha||"Enable pasting"===signal.instruction,
+      clickfixHighRiskCorrelation=(signal,
+      sample)=>{
+        if(signal&&signal.fakeCaptcha||"Enable pasting"===String(signal&&signal.instruction||"")||"Press Win+R"===String(signal&&signal.instruction||""))return!0;
+        if(!/Console|DevTools|F12|Ctrl\+Shift\+I/.test(String(signal&&signal.instruction||"")))return!1;
+        const value=normalizeClickfixText(sample);
+        return CONSOLE_CODE_PATTERNS.slice(0,
+        3).some(pattern=>pattern.test(value))
+      },
+      clickfixHighRiskPage=signal=>!!(signal&&(signal.fakeCaptcha||"Enable pasting"===signal.instruction||"Press Win+R"===signal.instruction&&signal.pasteGuidance)),
+      clickfixUserActivated=()=>{
+        try{
+          const recent=Date.now()-clickfixLastTrustedGesture<1500,
+          active=!navigator.userActivation||navigator.userActivation.isActive;
+          return!!(recent&&active)
+        }
+        catch(_){
+          return!1
+        }
+      },
+      clickfixVisiblePageText=()=>{
+        try{
+          const body=document.body;
+          if(!body)return"";
+          if("string"==typeof body.innerText)return body.innerText;
+          return String(body.textContent||"")
+        }
+        catch(_){
+          return""
+        }
+      },
+      inspectClickfixPage=()=>{
+        const rawBodyText=String(clickfixVisiblePageText()),
+        boundedBodyText=rawBodyText.length>3e4?rawBodyText.slice(0,
+        15e3)+" "+rawBodyText.slice(-15e3):rawBodyText,
+        bodyText=normalizeClickfixText(boundedBodyText),
+        commandHit=suspiciousCommandEvidence(bodyText,
+        !0,
+        !0),
+        instructionHit=instructionEvidence(bodyText,
+        commandHit&&commandHit.index),
+        instruction=instructionHit?instructionHit.instruction:"",
+        humanHit=instructionHit&&clickfixNearestRegexHit(bodyText,
+        CLICKFIX_HUMAN_VERIFICATION,
+        instructionHit.index),
+        verificationHit=instructionHit&&clickfixNearestRegexHit(bodyText,
+        CLICKFIX_VERIFICATION_STEPS,
+        instructionHit.index),
+        guidanceHit=instructionHit&&clickfixNearestRegexHit(bodyText,
+        CLICKFIX_PASTE_GUIDANCE,
+        instructionHit.index),
+        pasteGuidance=!!(instructionHit&&(clickfixEvidenceNear(instructionHit,
+        guidanceHit,
+        1200)||"Enable pasting"===instruction||"Paste into Console"===instruction)),
+        fakeCaptcha=!!(clickfixEvidenceNear(instructionHit,
+        humanHit,
+        1800)||"Paste with Ctrl+V"!==instruction&&pasteGuidance&&clickfixEvidenceNear(instructionHit,
+        verificationHit,
+        1800)),
+        commandSample=clickfixEvidenceNear(instructionHit,
+        commandHit,
+        fakeCaptcha?2800:1600)?commandHit.sample:"";
+        return{
+          instruction:instruction,
+          fakeCaptcha:fakeCaptcha,
+          pasteGuidance:pasteGuidance,
+          documentation:clickfixDocsContext(),
+          trustedDocumentation:clickfixTrustedDocsContext(),
+          commandSample:commandSample
+        }
+      };
+      let clickfixHighestWarning=0,
+      clickfixPanelLevel=0,
+      clickfixLastPageSignature="",
+      suspiciousClipboardSeen=!1,
+      suspiciousClipboardBlocked=!1,
+      suspiciousClipboardWhere="",
+      suspiciousClipboardAt=0,
+      clickfixCorrelatedLogged=!1,
+      clickfixLastTrustedGesture=0,
+      clickfixLocationKey=String(location.href||"");
+      const clickfixActivitySeen=new Map,
+      CLICKFIX_SAFE_WHERE=new Set(["page instructions",
+      "clipboard",
+      "clipboard (execCommand)",
+      "clipboard (copy event)",
+      "copied selection"]),
+      resetClickfixRouteState=()=>{
+        clickfixHighestWarning=0,
+        clickfixPanelLevel=0,
+        clickfixLastPageSignature="",
+        suspiciousClipboardSeen=!1,
+        suspiciousClipboardBlocked=!1,
+        suspiciousClipboardWhere="",
+        suspiciousClipboardAt=0,
+        clickfixCorrelatedLogged=!1,
+        clickfixActivitySeen.clear();
+        try{
+          const prior=__woWarn.seen.get("wo-cmd-warn");
+          prior&&prior.remove(),
+          __woWarn.seen.delete("wo-cmd-warn")
+        }
+        catch(_){
+
+        }
+
+      },
+      refreshClickfixRouteState=()=>{
+        const current=String(location.href||"");
+        current!==clickfixLocationKey&&(clickfixLocationKey=current,
+        resetClickfixRouteState())
+      },
+      noteClickfixActivity=(kind,
+      signal,
+      where,
+      blocked)=>{
+        const types={
+          instruction:"warned_clickfix_instruction",
+          fakeCaptcha:"warned_clickfix_fake_captcha",
+          clipboard:"warned_clickfix_clipboard",
+          correlated:"warned_clickfix_correlated"
+        },
+        type=types[kind]||"warned_command_paste",
+        instruction=String(signal&&signal.instruction||("clipboard"===kind?"No matching page instruction":"Command-paste guidance")).slice(0,
+        40),
+        eventKey=type+"|"+instruction,
+        priorOutcome=clickfixActivitySeen.get(eventKey),
+        blockedUpgrade=!1===priorOutcome&&!!blocked,
+        sameTypeCount=Array.from(clickfixActivitySeen.keys()).filter(key=>key.startsWith(type+"|")).length,
+        typeLimit="instruction"===kind?2:"correlated"===kind?2:1;
+        if(!0===priorOutcome||!1===priorOutcome&&!blocked||!blockedUpgrade&&sameTypeCount>=typeLimit)return;
+        clickfixActivitySeen.set(eventKey,
+        !!blocked),
+        "correlated"===kind&&(clickfixCorrelatedLogged=!0);
+        const urgent=!!(signal&&signal.pasteGuidance),
+        confidence="correlated"===kind?"Very high":"fakeCaptcha"===kind||"clipboard"===kind?"High":urgent?"Moderate":"Low",
+        severity="correlated"===kind?"High":"fakeCaptcha"===kind||"clipboard"===kind||urgent?"Medium":"Low",
+        why="correlated"===kind?"This page combined "+instruction+" guidance with suspicious command content prepared for copying. That source-and-instruction combination is a strong ClickFix/self-XSS signal.":"fakeCaptcha"===kind?"This page paired fake 'verify you are human' wording with "+instruction+" guidance. Real CAPTCHA checks do not require browser developer tools or command shells.":"clipboard"===kind?"This page prepared command content matching malware-delivery or console-exfiltration patterns for copying. No matching ClickFix instruction was visible at the time.":"This page displayed "+instruction+" guidance. By itself this is only a weak ClickFix signal.",
+        safeWhere=CLICKFIX_SAFE_WHERE.has(where)?where:"page";
+        log(type,
+        {
+          instruction:instruction,
+          evidence:"correlated"===kind?"Instruction + suspicious command":"clipboard"===kind?"Suspicious clipboard command":signal&&signal.fakeCaptcha?"Fake verification + instruction":"Instruction text only",
+          where:safeWhere,
+          confidence:confidence,
+          severity:severity,
+          blocked:!!blocked,
+          why:why,
+          outcome:blocked?"Suspicious clipboard write was blocked.":"Warning only; WardenOne did not access or modify Chrome DevTools."
+        })
+      },
+      showCommandPanel=(sample,
+      signal,
+      level,
+      kind)=>{
+        try{
+          if(__woWarn.up("wo-cmd-warn")){
+            if(level<=clickfixPanelLevel)return;
+            try{
+              const prior=__woWarn.seen.get("wo-cmd-warn");
+              prior&&prior.remove()
+            }
+            catch(_){
+
+            }
+
+          }
           if(!document.body&&!document.documentElement)return;
+          clickfixPanelLevel=level;
           const wrap=document.createElement("div");
           wrap.id="wo-cmd-warn",
           wrap.setAttribute("style",
@@ -6451,17 +7014,17 @@
           const tag=document.createElement("div");
           tag.setAttribute("style",
           "display:inline-block!important;background:rgba(192,57,43,.14)!important;color:#c0392b!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:11px!important;letter-spacing:.04em!important;text-transform:uppercase!important;padding:3px 9px!important;border-radius:8px!important;margin:0 0 8px 0!important;"),
-          tag.textContent="Scam warning - do not paste this",
+          tag.textContent="ClickFix warning - do not paste this",
           wrap.appendChild(tag);
           const title=document.createElement("div");
           title.setAttribute("style",
           "font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:14.5px!important;color:#2d1b40!important;margin:0 0 6px 0!important;"),
-          title.textContent="This page is trying to get you to run a command",
+          title.textContent="correlated"===kind?"Verification steps and a suspicious command were detected":"fakeCaptcha"===kind?"These verification steps look like a ClickFix scam":"clipboard"===kind?"This page tried to copy a suspicious command":"This page wants you to paste into developer tools",
           wrap.appendChild(title);
           const body=document.createElement("div");
           if(body.setAttribute("style",
           "font-size:12.5px!important;color:#4a3661!important;line-height:1.55!important;margin:0 0 10px 0!important;"),
-          body.textContent='A real website never asks you to press Win+R or open PowerShell/Terminal and paste something to "verify" yourself. This is a known scam (ClickFix) used to install malware. Do not paste or run anything it gave you.',
+          body.textContent="fakeCaptcha"===kind||"correlated"===kind?'A real CAPTCHA never asks you to open DevTools, Console, PowerShell, Terminal, or the Run dialog and paste something. This is a common ClickFix trick used to run malware or steal account data.':"Do not paste or run this content unless you independently understand and trust it. WardenOne does not hook Chrome's DevTools Console; Chrome owns that protected interface and has its own self-XSS barrier.",
           wrap.appendChild(body),
           sample){
             const code=document.createElement("div");
@@ -6494,23 +7057,131 @@
         }
 
       },
-      warnCommand=(where,
-      sample)=>{
-        cmdWarned||(cmdWarned=!0,
-        log("warned_command_paste",
-        {
-          where:String(where||"").slice(0,
-          30)
-        }),
-        showCommandPanel(sample))
+      warnClickfix=(kind,
+      signal,
+      where,
+      sample,
+      blocked)=>{
+        const urgent=!!(signal&&signal.pasteGuidance),
+        level="correlated"===kind?3:"instruction"===kind&&!urgent?1:2;
+        noteClickfixActivity(kind,
+        signal,
+        where,
+        blocked),
+        level>clickfixHighestWarning&&(clickfixHighestWarning=level),
+        level>=2&&showCommandPanel(sample,
+        signal,
+        level,
+        kind)
+      },
+      handleSuspiciousClipboard=(where,
+      text,
+      blocked)=>{
+        if(!WO.commandPasteGuard)return!1;
+        refreshClickfixRouteState();
+        const found=inspectClickfixPage(),
+        safeSignal={
+          instruction:found.instruction,
+          fakeCaptcha:found.fakeCaptcha,
+          pasteGuidance:found.pasteGuidance
+        },
+        contextualCommand=!!(found.instruction&&(found.fakeCaptcha||found.pasteGuidance||/Console|DevTools|F12|Ctrl\+Shift\+I|Enable pasting/.test(found.instruction))),
+        sample=suspiciousCommandMatch(text,
+        !1,
+        contextualCommand);
+        if(!sample)return!1;
+        const highRiskCorrelation=clickfixHighRiskCorrelation(found,
+        sample),
+        correlated=!!(found.instruction&&(clickfixDocsMayCorrelate(found)||highRiskCorrelation)),
+        userActivated=clickfixUserActivated(),
+        shouldBlock=!!blocked&&(!userActivated||correlated&&highRiskCorrelation);
+        if(!correlated&&userActivated&&found.trustedDocumentation)return!1;
+        suspiciousClipboardSeen=!0,
+        suspiciousClipboardBlocked=shouldBlock,
+        suspiciousClipboardWhere=where,
+        suspiciousClipboardAt=Date.now(),
+        warnClickfix(correlated?"correlated":"clipboard",
+        safeSignal,
+        where,
+        sample,
+        shouldBlock);
+        return shouldBlock
       };
+      ["pointerdown",
+      "keydown",
+      "click"].forEach(type=>woOn(document,
+      type,
+      event=>{
+        event&&event.isTrusted===!1||(clickfixLastTrustedGesture=Date.now())
+      },
+      !0));
       if(navigator.clipboard&&navigator.clipboard.writeText){
         const realW=navigator.clipboard.writeText.bind(navigator.clipboard);
         navigator.clipboard.writeText=function(text){
-          return looksLikeCommand(text)?(warnCommand("clipboard",
-          text),
+          const stableText=String(null==text?"":text);
+          return handleSuspiciousClipboard("clipboard",
+          stableText,
+          !0)?(
           Promise.reject(new DOMException("Blocked by WardenOne command-paste guard",
-          "NotAllowedError"))):realW(text)
+          "NotAllowedError"))):realW(stableText)
+        }
+
+      }
+      if(navigator.clipboard&&navigator.clipboard.write){
+        const realWriteItems=navigator.clipboard.write.bind(navigator.clipboard),
+        readClipboardBlob=blob=>{
+          if(!blob||"function"!=typeof blob.text)return Promise.resolve("");
+          const size=Number(blob.size);
+          if(Number.isFinite(size)&&size>65536&&"function"==typeof blob.slice){
+            const first=blob.slice(0,
+            32768),
+            last=blob.slice(Math.max(0,
+            size-32768),
+            size);
+            return Promise.all([first&&"function"==typeof first.text?first.text():"",
+            last&&"function"==typeof last.text?last.text():""]).then(parts=>parts.join("\n"))
+          }
+          return Promise.resolve(blob.text())
+        };
+        navigator.clipboard.write=function(items){
+          const stableItems=Array.from(items||[]),
+          activatedAtEntry=clickfixUserActivated(),
+          pageAtEntry=inspectClickfixPage(),
+          inspectBeforeWrite=!activatedAtEntry||!!(pageAtEntry.fakeCaptcha||"Enable pasting"===pageAtEntry.instruction||"Press Win+R"===pageAtEntry.instruction&&pageAtEntry.pasteGuidance),
+          readItems=()=>Promise.all(stableItems.slice(0,
+          8).map(item=>{
+              try{
+                const types=Array.from(item&&item.types||[]),
+                type=types.find(value=>/^text\/plain$/i.test(String(value||"")))||types.find(value=>/^text\/html$/i.test(String(value||"")));
+                if(!type||!item||"function"!=typeof item.getType)return Promise.resolve("");
+                return Promise.resolve(item.getType(type)).then(readClipboardBlob).then(value=>String(null==value?"":value),
+                ()=>"")
+              }
+              catch(_){
+                return Promise.resolve("")
+              }
+
+            })).then(values=>values.join("\n"));
+          if(!inspectBeforeWrite){
+            const nativeResult=realWriteItems(stableItems);
+            Promise.resolve().then(readItems).then(text=>{
+              text&&handleSuspiciousClipboard("clipboard",
+              text,
+              !1)
+            },
+            ()=>{
+
+            });
+            return nativeResult
+          }
+          return readItems().then(text=>{
+            if(text&&handleSuspiciousClipboard("clipboard",
+            text,
+            !0))throw new DOMException("Blocked by WardenOne command-paste guard",
+            "NotAllowedError");
+            return realWriteItems(stableItems)
+          },
+          ()=>realWriteItems(stableItems))
         }
 
       }
@@ -6522,14 +7193,21 @@
             let staged="";
             try{
               const ae=document.activeElement;
-              staged=ae&&(null!=ae.value?ae.value:ae.textContent)||String(document.getSelection?document.getSelection():"")
+              if(ae&&null!=ae.value){
+                const value=String(ae.value),
+                start=Number(ae.selectionStart),
+                end=Number(ae.selectionEnd);
+                staged=Number.isFinite(start)&&Number.isFinite(end)&&end>start?value.slice(start,
+                end):value
+              }
+              else staged=String(document.getSelection?document.getSelection():"")||String(ae&&ae.textContent||"")
             }
             catch(_){
 
             }
-            if(looksLikeCommand(staged))return warnCommand("clipboard (execCommand)",
-            staged),
-            !1
+            if(handleSuspiciousClipboard("clipboard (execCommand)",
+            staged,
+            !0))return!1
           }
           return prevExec.call(document,
           cmd,
@@ -6540,9 +7218,25 @@
       woOn(document,"copy",
       e=>{
         try{
+          if(e&&e.isTrusted===!1)return;
           const sel=String(document.getSelection?document.getSelection():"");
-          looksLikeCommand(sel)&&warnCommand("copied selection",
-          sel)
+          handleSuspiciousClipboard("copied selection",
+          sel,
+          !1);
+          const transfer=e&&e.clipboardData,
+          realSet=transfer&&"function"==typeof transfer.setData&&transfer.setData.bind(transfer);
+          if(realSet)transfer.setData=function(type,
+          value){
+            const textType=/^(?:text|text\/plain)$/i.test(String(type||""));
+            if(textType&&handleSuspiciousClipboard("clipboard (copy event)",
+            String(null==value?"":value),
+            !0)){
+              try{e.preventDefault()}catch(_){ }
+              return
+            }
+            return realSet(type,
+            value)
+          }
         }
         catch(_){
 
@@ -6550,14 +7244,36 @@
 
       },
       !0);
-      const RUN_INSTRUCTION=/(press\s+(win(dows)?\s*\+\s*r)|windows\s*key\s*\+\s*r|open\s+(powershell|cmd|command prompt|terminal|run dialog)|paste.*(powershell|terminal|run|cmd)|verify\s+you('?re| are)\s+(a\s+)?human.*(paste|run|press))/i,
-      scanPageForClickFix=()=>{
-        if(!cmdWarned)try{
-          const bodyText=(document.body&&document.body.textContent||"").slice(0,
-          2e4);
-          if(!bodyText)return;
-          RUN_INSTRUCTION.test(bodyText)&&CMD_PATTERNS.some(re=>re.test(bodyText))&&warnCommand("page instructions",
-          bodyText.match(/[^\n]*(?:powershell|iex|curl|mshta|cmd|certutil)[^\n]*/i)?.[0]||"")
+      const scanPageForClickFix=()=>{
+        if(!WO.commandPasteGuard)return;
+        try{
+          refreshClickfixRouteState();
+          const found=inspectClickfixPage();
+          if(!found.instruction)return;
+          const safeSignal={
+            instruction:found.instruction,
+            fakeCaptcha:found.fakeCaptcha,
+            pasteGuidance:found.pasteGuidance
+          },
+          recentClipboard=suspiciousClipboardSeen&&Date.now()-suspiciousClipboardAt<3e4,
+          signature=found.instruction+"|"+(found.fakeCaptcha?"captcha":"plain")+"|"+(found.commandSample?"command":"none")+"|"+(recentClipboard?"clipboard":"none");
+          if(signature===clickfixLastPageSignature&&(clickfixHighestWarning<2||__woWarn.up("wo-cmd-warn")))return;
+          clickfixLastPageSignature=signature;
+          if(clickfixDocsMayCorrelate(found)&&(recentClipboard||found.commandSample&&clickfixHighRiskPage(found)))warnClickfix("correlated",
+          safeSignal,
+          suspiciousClipboardWhere||"page instructions",
+          found.commandSample,
+          suspiciousClipboardBlocked);
+          else if(found.fakeCaptcha)warnClickfix("fakeCaptcha",
+          safeSignal,
+          "page instructions",
+          "",
+          !1);
+          else if(!found.documentation&&"Paste with Ctrl+V"!==found.instruction)warnClickfix("instruction",
+          safeSignal,
+          "page instructions",
+          "",
+          !1)
         }
         catch(_){
 
@@ -6571,9 +7287,9 @@
           once:!0
         });
         try{
-          let pending=!1;
-          woObserve(()=>{
-            cmdWarned||pending||(pending=!0,
+        let pending=!1;
+        woObserve(()=>{
+            pending||(pending=!0,
             setTimeout(()=>{
               pending=!1,
               scanPageForClickFix()
@@ -10765,65 +11481,6 @@
     catch(_){
 
     }
-    if(WO.capReferrer)try{
-      const setMeta=()=>{
-        try{
-          if(document.querySelector('meta[name="referrer"][data-rg]'))return;
-          const m=document.createElement("meta");
-          m.name="referrer",
-          m.content="strict-origin-when-cross-origin",
-          m.setAttribute("data-rg",
-          "1"),
-          (document.head||document.documentElement).appendChild(m)
-        }
-        catch(_){
-
-        }
-
-      };
-      setMeta(),
-      document.head||woOn(document,"DOMContentLoaded",
-      setMeta,
-      {
-        once:!0
-      });
-      const stampRef=el=>{
-        try{
-          !el||"A"!==el.tagName&&"AREA"!==el.tagName&&"FORM"!==el.tagName&&"IMG"!==el.tagName&&"IFRAME"!==el.tagName||el.getAttribute("referrerpolicy")||el.setAttribute("referrerpolicy",
-          "strict-origin-when-cross-origin")
-        }
-        catch(_){
-
-        }
-
-      },
-      sweepRef=root=>{
-        try{
-          (root||document).querySelectorAll("a,area,form,img,iframe").forEach(stampRef)
-        }
-        catch(_){
-
-        }
-
-      };
-      document.documentElement&&sweepRef(document);
-      try{
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&stampRef(n),
-          n&&n.querySelectorAll&&sweepRef(n)
-        })
-      }
-      catch(_){
-
-      }
-      log("capreferrer_on",
-      {
-
-      })
-    }
-    catch(_){
-
-    }
     if(!1&&WO.autoRejectConsent&&!/(^|\.)(paypal\.com|stripe\.com|checkout\.com|adyen\.com|braintreepayments\.com|braintreegateway\.com|klarna\.com|squareup\.com|cash\.app)$/i.test(location.hostname))try{
       const REJECT_TEXT=[/^reject all$/i,
       /^reject all non-essential/i,
@@ -11004,12 +11661,13 @@
     catch(_){
 
     }
-    if(WO.behavioralScan||WO.fingerprintProbeDetection)try{
+    if(WO.behavioralScan||WO.xssBehaviorGuard||WO.fingerprintProbeDetection)try{
       const here=regDomain(location.hostname),
       fullHost=location.hostname.toLowerCase(),
-      /* Mainstream sites and the asset/CDN domains they load from. Two uses: the
-      behavioural scanner never runs ON these pages, and a request TO one of them
-      is never counted as "phoning home". Matched on the registrable domain via
+      /* Mainstream sites and the asset/CDN domains they load from. Baseline
+      behavioral scoring never runs ON these pages; XSS Behavior Guard may still
+      observe an exact executable reflection, but URL text alone scores nothing.
+      A request TO one of these domains is never counted as "phoning home". Matched on the registrable domain via
       SITE_BOUNDARY.site(), NOT as a substring -- the old brand-substring regex
       both missed the sites people actually use (x.com, reddit, linkedin ... all
       scored as unknown) and let a lookalike like fake-google.com.evil pass as
@@ -11192,8 +11850,24 @@
       "blizzard.com",
       "ea.com",
       "ubisoft.com"]),
+      BEHAVE_SHARED_TENANT_SUFFIXES=["github.io",
+      "amazonaws.com",
+      "cloudfront.net",
+      "pages.dev",
+      "netlify.app",
+      "vercel.app",
+      "web.app",
+      "firebaseapp.com",
+      "workers.dev",
+      "herokuapp.com"],
+      isSharedTenantHost=host=>{
+        const h=String(host||"").toLowerCase().replace(/^\.+|\.+$/g,
+        "");
+        return BEHAVE_SHARED_TENANT_SUFFIXES.some(suffix=>h!==suffix&&h.endsWith("."+suffix))
+      },
       isReputableBehaveHost=host=>{
         try{
+          if(isSharedTenantHost(host))return!1;
           const s=SITE_BOUNDARY.site(host);
           return!!s&&BEHAVE_REPUTABLE_SITES.has(s)
         }
@@ -11202,7 +11876,8 @@
         }
 
       };
-      if(here&&"localhost"!==here&&!/^\d+\.\d+\.\d+\.\d+$/.test(fullHost)&&!isReputableBehaveHost(fullHost)){
+      const baselineBehaviorOn=!!WO.behavioralScan&&!isReputableBehaveHost(fullHost);
+      if(here&&"localhost"!==here&&!/^\d+\.\d+\.\d+\.\d+$/.test(fullHost)&&(baselineBehaviorOn||WO.xssBehaviorGuard)){
         let score=0;
         const reasons=[],
         seenSignals=new Set,
@@ -11214,18 +11889,21 @@
         browsing -- and at score 60+ the background LEARNS the domain and starts
         DNR-blocking it. Known-logger hits stand alone; nothing else does. */
         BEHAVE_HARD_KEYS=["known-logger",
-        "known-logger-event"],
+        "known-logger-event",
+        "xss-reflection"],
         BEHAVE_IDENTITY_KEYS=["known-logger",
         "known-logger-event",
         "new-domain",
         "young-domain",
         "random-host",
         "abuse-tld",
-        "shortener-domain"],
+        "shortener-domain",
+        "phishing-page"],
         hasSignalIn=keys=>keys.some(k=>seenSignals.has(k));
         let lastWarnBand=0,
+        xssRiskPoints=0,
         establishedDomain=!1,
-        ageChecked=!1;
+        ageChecked=!baselineBehaviorOn;
         const riskLevel=()=>score>=100?"Dangerous":score>=60?"Suspicious":score>=30?"Caution":"Safe",
         riskBand=()=>score>=100?3:score>=60?2:score>=30?1:0,
         updatePageRisk=key=>{
@@ -11256,39 +11934,1865 @@
           updatePageRisk(sigKey),
           maybeWarn())
         },
-        knownLogger=(WO.grabberDomains||[]).find(d=>here===d||here.endsWith("."+d));
-        knownLogger&&addSignal(100,
-        "Known IP logger domain ("+knownLogger+")",
-        "known-logger");
+        addXssSignal=(pts,
+        why,
+        key)=>{
+          const sigKey=key||why;
+          seenSignals.has(sigKey)||(xssRiskPoints+=pts,
+          addSignal(pts,
+          why,
+          sigKey))
+        };
+        if(baselineBehaviorOn){
+          const knownLogger=(WO.grabberDomains||[]).find(d=>here===d||here.endsWith("."+d));
+          knownLogger&&addSignal(100,
+          "Known IP logger domain ("+knownLogger+")",
+          "known-logger");
+          try{
+            const nav=performance.getEntriesByType&&performance.getEntriesByType("navigation")[0];
+            nav&&nav.redirectCount>=2&&addSignal(20,
+            "Multiple redirects before this page loaded",
+            "multi-redirect")
+          }
+          catch(_){
+
+          }
+          /(^|\.)(bit\.ly|bitly\.com|tinyurl\.com|is\.gd|t\.co|short\.io|rebrand\.ly|rebrandly\.com|rb\.gy|cutt\.ly|tiny\.cc|v\.gd|ow\.ly|buff\.ly|shorturl\.at|bl\.ink|soo\.gd|lnkd\.in)$/i.test(here)&&addSignal(20,
+          "Known URL shortener domain",
+          "shortener-domain"),
+          (s=>{
+            if(s.length<8)return!1;
+            const digits=(s.match(/\d/g)||[]).length,
+            hexish=/^[a-f0-9]{12,}$/i.test(s),
+            noVowelRun=/[bcdfghjklmnpqrstvwxz]{6,}/i.test(s),
+            manyDigits=digits>=.35*s.length&&digits>=4;
+            return hexish||noVowelRun||manyDigits
+          })(here.split(".")[0]||"")&&addSignal(10,
+          "Random-looking domain name",
+          "random-host"),
+          /\.(cfd|sbs|top|xyz|click|link|live|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|skin|bar|fit)$/i.test(fullHost)&&addSignal(10,
+          "Throwaway-style TLD",
+          "abuse-tld"),
+          ((fullHost.match(/-/g)||[]).length>=3||fullHost.length>=40)&&addSignal(10,
+          "Unusually long / hyphenated host",
+          "long-host")
+        }
+        const xssGuardOn=()=>!!WO.xssBehaviorGuard,
+        xssEntityDecode=value=>String(value||"").replace(/&amp;?/gi,
+        "&").replace(/&lt;?/gi,
+        "<").replace(/&gt;?/gi,
+        ">").replace(/&quot;?/gi,
+        '"').replace(/&apos;?|&#0*39;?/gi,
+        "'").replace(/&colon;?/gi,
+        ":").replace(/&#(?:x([0-9a-f]{1,6})|([0-9]{1,7}));?/gi,
+        (all,
+        hex,
+        dec)=>{
+          try{
+            const code=parseInt(hex||dec,
+            hex?16:10);
+            return code>=0&&code<=1114111?String.fromCodePoint(code):all
+          }
+          catch(_){
+            return all
+          }
+
+        }),
+        xssDecodeVariants=(value,
+        requestedLimit=4096)=>{
+          const limit=Math.max(1,
+          Math.min(65536,
+          Number(requestedLimit)||4096)),
+          out=[],
+          seen=new Set,
+          add=item=>{
+            const text=String(item||"").slice(0,
+            limit);
+            text&&!seen.has(text)&&(seen.add(text),
+            out.push(text))
+          };
+          let current=String(value||"").slice(0,
+          limit);
+          for(let i=0;
+          i<3&&current;
+          i++){
+            add(current),
+            add(xssEntityDecode(current));
+            let next=current.replace(/%u([0-9a-f]{4})/gi,
+            (all,
+            code)=>String.fromCharCode(parseInt(code,
+            16))).replace(/\+/g,
+            " ");
+            try{
+              next=decodeURIComponent(next)
+            }
+            catch(_){
+
+            }
+            if(next===current)break;
+            current=next
+          }
+          return out
+        },
+        xssUrlShape=value=>{
+          const text=xssEntityDecode(value).replace(/[\u0000-\u001f\u007f]+/g,
+          " ");
+          return/<\s*\/?\s*script\b/i.test(text)||/<\s*(?:img|svg|iframe|object|embed|video|audio|body|input|details|marquee|math)\b/i.test(text)||/<\s*[a-z][^>]{0,320}\s+on[a-z]{2,30}\s*=/i.test(text)||/\b(?:onerror|onload|onclick|onfocus|onmouseover|onpointerover|onanimationstart|ontoggle)\s*=/i.test(text)||/(?:^|[\s"'=])(javascript\s*:|data\s*:\s*text\/html)/i.test(text)||/["'`]\s*;[\s\S]{0,120}\b(?:alert|confirm|prompt|eval|fetch|setTimeout|setInterval)\s*\(/i.test(text)
+        },
+        xssExecutableShape=value=>{
+          const raw=String(value||"").slice(0,
+          65536);
+          if(/^\s*(?:on[a-z]{2,30}|srcdoc)\s*=/i.test(raw)||/<\s*\/?\s*script\b/i.test(raw)||/<\s*[a-z][^>]{0,800}\s+on[a-z]{2,30}\s*=/i.test(raw))return!0;
+          const tags=raw.match(/<[^>]{1,1200}>/g)||[];
+          return tags.some(tag=>/(?:\s|^)(?:href|src|action|formaction|xlink:href|srcdoc)\s*=\s*["']?\s*(?:javascript\s*:|data\s*:\s*text\/html)/i.test(xssEntityDecode(tag)))||/^(?:\s*)(?:href|src|action|formaction|xlink:href|srcdoc)\s*=\s*(?:javascript\s*:|data\s*:\s*text\/html)/i.test(xssEntityDecode(raw))
+        },
+        xssCodeShape=value=>/(?:\b(?:return|throw|function|eval|alert|confirm|prompt|fetch|import)\b|\b(?:window|document|globalthis|location)\s*(?:\.|\[)|\b[a-z_$][\w$]*(?:\.[\w$]+)*\s*\(|=>|[;{}])/i.test(String(value||"")),
+        xssGenericDerivedHandler=value=>/^(?:this\.(?:remove|blur|focus)\s*\(\s*\)|this\.(?:onerror|onload)\s*=\s*null|event\.preventDefault\s*\(\s*\)|return\s+false|void\s+0)\s*;?$/i.test(String(value||"").trim()),
+        xssComparable=(value,
+        limit=4096)=>String(value||"").toLowerCase().replace(/\s+/g,
+        " ").trim().slice(0,
+        limit),
+        xssDocumentationContext=()=>{
+          try{
+            return isReputableBehaveHost(fullHost)||/(?:^|\.)(?:developer|developers|docs|learn)\./i.test(fullHost)||/(?:^|\/)(?:docs?|documentation|reference|examples?|tutorials?|playground|security-research|xss)(?:\/|$)/i.test(location.pathname||"")
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        xssTrustedDocumentationContext=()=>{
+          try{
+            return/^(?:developer\.mozilla\.org|developer\.chrome\.com|developers\.google\.com|learn\.microsoft\.com|docs\.github\.com|developer\.apple\.com|web\.dev|codepen\.io|jsfiddle\.net|codesandbox\.io|localhost|127(?:\.\d{1,3}){3}|\[?::1\]?)$/i.test(fullHost)
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        xssBenignDocumentationCode=value=>/^\s*return\s+(?:true|false|null|undefined|-?\d+(?:\.\d+)?|"[^"\r\n]{0,256}"|'[^'\r\n]{0,256}')\s*;?\s*$/i.test(String(value||""));
+        let xssUrlEvidence=!1,
+        ensureXssSinkWrappers=()=>{
+
+        },
+        xssMessageOriginGetter=null,
+        xssMessageOriginTracking=!1,
+        xssMessageDataGetterInstalled=!1,
+        xssLocationKey="",
+        xssWindowNameKey="";
+        const xssSources=[],
+        xssSourceKeys=new Set,
+        xssInertScriptNodes=new WeakSet,
+        xssMessageOriginRead=new WeakSet,
+        xssMessageWeakSeen=new WeakSet,
+        XSS_MESSAGE_SOURCE_TTL=1e4,
+        xssWindowMessageEvent=event=>{
+          try{
+            if(!event)return!1;
+            if(event.target===window||event.currentTarget===window)return!0;
+            const source=event.source;
+            return!!source&&"function"==typeof source.postMessage&&!("start"in source)&&!("scriptURL"in source)
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        xssMeaningful=value=>{
+          const text=xssComparable(value);
+          return!!text&&/[a-z0-9<>{}()[\]="'`:;\/]/i.test(text)&&(text.length>=12||xssUrlShape(text)||xssExecutableShape(text)||xssCodeShape(text))
+        },
+        removeXssSources=predicate=>{
+          for(let index=xssSources.length-1;
+          index>=0;
+          index--){
+            const candidate=xssSources[index];
+            if(!predicate(candidate))continue;
+            xssSources.splice(index,
+            1),
+            candidate&&xssSourceKeys.delete(candidate.sourceKey)
+          }
+        },
+        pruneExpiredXssSources=()=>{
+          const cutoff=Date.now()-XSS_MESSAGE_SOURCE_TTL;
+          removeXssSources(candidate=>"postMessage event.data"===candidate.source&&candidate.createdAt<cutoff)
+        },
+        xssMessageOriginWasRead=candidate=>{
+          try{
+            return!!(candidate&&candidate.messageEvent&&xssMessageOriginRead.has(candidate.messageEvent))
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        xssTenantBoundary=host=>{
+          const h=String(host||"").toLowerCase().replace(/^\.+|\.+$/g,
+          "");
+          for(const suffix of BEHAVE_SHARED_TENANT_SUFFIXES)if(h!==suffix&&h.endsWith("."+suffix)){
+            if("amazonaws.com"===suffix)return h;
+            const prefix=h.slice(0,
+            -(suffix.length+1)).split(".").filter(Boolean),
+            tenant=prefix[prefix.length-1]||"";
+            return tenant?tenant+"."+suffix:h
+          }
+          return SITE_BOUNDARY.site(h)
+        },
+        xssOriginsSameSite=(left,
+        right)=>{
+          try{
+            if(left===right)return!0;
+            const leftSite=xssTenantBoundary(new URL(left).hostname),
+            rightSite=xssTenantBoundary(new URL(right).hostname);
+            return!!leftSite&&leftSite===rightSite
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        addXssSourceCandidate=(value,
+        source,
+        meta)=>{
+          const text=String(value||"").trim().slice(0,
+          4096),
+          comparable=xssComparable(text),
+          untrustedMessage=!!(meta&&meta.untrustedMessage),
+          initialMarkupEligible=/^(?:location\.search|location\.pathname|document\.referrer)$/.test(String(source||"")),
+          executableShape=xssUrlShape(text)||xssExecutableShape(text),
+          codeShape=xssCodeShape(text),
+          payloadShape=!!(meta&&meta.payloadShape),
+          sourceKey=String(source||"source")+"|"+comparable+"|"+(untrustedMessage?"untrusted":"other")+"|"+(payloadShape?"payload":"plain");
+          if(!xssMeaningful(text))return;
+          if(xssSourceKeys.has(sourceKey)){
+            const existing=xssSources.find(candidate=>candidate.sourceKey===sourceKey);
+            existing&&"postMessage event.data"===existing.source&&(existing.createdAt=Date.now(),
+            existing.messageEvent=meta&&meta.messageEvent||existing.messageEvent);
+            return
+          }
+          if(xssSources.length>=96){
+            const oldest=xssSources.shift();
+            oldest&&xssSourceKeys.delete(oldest.sourceKey)
+          }
+          xssSourceKeys.add(sourceKey),
+          xssSources.push({
+            text:text,
+            comparable:comparable,
+            source:String(source||"source").slice(0,
+            48),
+            untrustedMessage:untrustedMessage,
+            initialMarkupEligible:initialMarkupEligible,
+            executableShape:executableShape,
+            codeShape:codeShape,
+            payloadShape:payloadShape,
+            createdAt:Date.now(),
+            messageEvent:meta&&meta.messageEvent||null,
+            sourceKey:sourceKey
+          })
+        },
+        registerXssSource=(value,
+        source,
+        urlSource=!1,
+        meta)=>{
+          if(!xssGuardOn()||"string"!=typeof value)return;
+          let shaped=!1;
+          xssDecodeVariants(value,
+          65536).forEach(variant=>{
+            const variantShaped=xssUrlShape(variant),
+            variantMeta=Object.assign({
+
+            },
+            meta||{
+
+            },
+            {
+              payloadShape:!!(meta&&meta.payloadShape||variantShaped)
+            });
+            addXssSourceCandidate(variant,
+            source,
+            variantMeta),
+            variantShaped&&(shaped=!0);
+            const event=variant.match(/\b(on[a-z]{2,30})\s*=\s*(?:"([^"]{4,4096})"|'([^']{4,4096})'|([^\s"'<>`]{4,1024}))/i),
+            eventValue=event&&(event[2]||event[3]||event[4]||""),
+            scheme=variant.match(/(?:javascript\s*:|data\s*:\s*text\/html)[\s\S]{0,1024}/i),
+            scriptBody=variant.match(/<\s*script\b[^>]*>([\s\S]{4,2048}?)<\s*\/\s*script\s*>/i),
+            scriptSrc=variant.match(/<\s*script\b[^>]*\ssrc\s*=\s*(?:"([^"]{4,2048})"|'([^']{4,2048})'|([^\s>]{4,2048}))/i),
+            breakout=variant.match(/["'`]\s*;[\s\S]{0,256}\b(?:alert|confirm|prompt|eval|fetch|setTimeout|setInterval|Function)\s*\([^)]{0,1024}\)[\s\S]{0,128}/i);
+            event&&(addXssSourceCandidate(event[0],
+            source,
+            variantMeta),
+            xssGenericDerivedHandler(eventValue)||
+            addXssSourceCandidate(eventValue,
+            source,
+            variantMeta)),
+            scriptBody&&addXssSourceCandidate(scriptBody[1],
+            source,
+            variantMeta),
+            scriptSrc&&addXssSourceCandidate(scriptSrc[1]||scriptSrc[2]||scriptSrc[3],
+            source,
+            variantMeta),
+            breakout&&addXssSourceCandidate(breakout[0],
+            source,
+            variantMeta),
+            scheme&&(addXssSourceCandidate(scheme[0],
+            source,
+            variantMeta),
+            addXssSourceCandidate(scheme[0].replace(/^\s*(?:javascript\s*:|data\s*:\s*text\/html\s*,?)/i,
+            ""),
+            source,
+            variantMeta))
+          }),
+          urlSource&&shaped&&!xssUrlEvidence&&(xssUrlEvidence=!0,
+          xssDocumentationContext()||addXssSignal(15,
+          "Script-like data appeared in the navigation URL",
+          "xss-url-payload"));
+          try{ensureXssSinkWrappers()}catch(_){ }
+        },
+        registerHashParts=(raw,
+        source,
+        urlSource)=>{
+          const value=String(raw||"").replace(/^#/,
+          "");
+          registerXssSource(value,
+          source,
+          urlSource),
+          value.split(/[&;]/).slice(0,
+          24).forEach(part=>registerXssSource(part.replace(/^[^=]*=/,
+          ""),
+          source,
+          urlSource))
+        },
+        registerUrlObject=(url,
+        source)=>{
+          try{
+            url.searchParams.forEach(value=>registerXssSource(value,
+            source,
+            !0)),
+            registerXssSource(String(url.search||"").replace(/^\?/,
+            ""),
+            source,
+            !0),
+            registerHashParts(url.hash,
+            source.includes("referrer")?"document.referrer":"location.hash",
+            !0)
+          }
+          catch(_){
+
+          }
+
+        },
+        registerLocationSources=()=>{
+          try{
+            const current=new URL(location.href);
+            if(current.href!==xssLocationKey){
+              xssLocationKey=current.href,
+              xssUrlEvidence=!1,
+              removeXssSources(candidate=>/^location\./.test(String(candidate&&candidate.source||"")))
+            }
+            registerUrlObject(current,
+            "location.search"),
+            String(current.pathname||"").split("/").slice(0,
+            24).forEach(value=>{
+              xssDecodeVariants(value).some(xssUrlShape)&&registerXssSource(value,
+              "location.pathname",
+              !0)
+            })
+          }
+          catch(_){
+
+          }
+
+        },
+        registerMessageData=(value,
+        meta)=>{
+          const seen=new WeakSet;
+          let count=0;
+          const visit=(item,
+          depth)=>{
+            if(count>=16)return;
+            if("string"==typeof item)return count++,
+            void registerXssSource(item,
+            "postMessage event.data",
+            !1,
+            meta);
+            if(!item||"object"!=typeof item||depth>=2||seen.has(item))return;
+            seen.add(item);
+            let keys=[];
+            try{keys=Object.keys(item).slice(0,16)}catch(_){return}
+            keys.forEach(key=>{
+              try{visit(item[key],depth+1)}catch(_){ }
+            })
+          };
+          visit(value,
+          0)
+        },
+        refreshMutableXssSources=()=>{
+          pruneExpiredXssSources(),
+          registerLocationSources();
+          try{
+            const currentName=String(window.name||"");
+            currentName!==xssWindowNameKey&&(xssWindowNameKey=currentName,
+            removeXssSources(candidate=>"window.name"===String(candidate&&candidate.source||""))),
+            registerXssSource(currentName,
+            "window.name")
+          }catch(_){ }
+        },
+        xssExecutableScriptText=value=>{
+          const raw=String(value||"").slice(0,
+          65536),
+          out=[];
+          let quote="",
+          escaped=!1,
+          lineComment=!1,
+          blockComment=!1;
+          for(let i=0;
+          i<raw.length;
+          i++){
+            const ch=raw[i],
+            next=raw[i+1]||"";
+            if(lineComment){
+              if("\n"===ch||"\r"===ch)lineComment=!1,
+              out.push(ch);
+              else out.push(" ");
+              continue
+            }
+            if(blockComment){
+              if("*"===ch&&"/"===next)blockComment=!1,
+              out.push(" "),
+              out.push(" "),
+              i++;
+              else out.push(" ");
+              continue
+            }
+            if(quote){
+              if(escaped)escaped=!1;
+              else if("\\"===ch)escaped=!0;
+              else if(ch===quote)quote="";
+              out.push(" ");
+              continue
+            }
+            if("/"===ch&&"/"===next)lineComment=!0,
+            out.push(" "),
+            out.push(" "),
+            i++;
+            else if("/"===ch&&"*"===next)blockComment=!0,
+            out.push(" "),
+            out.push(" "),
+            i++;
+            else if("'"===ch||'"'===ch||"`"===ch)quote=ch,
+            out.push(" ");
+            else out.push(ch)
+          }
+          return out.join("")
+        },
+        xssCandidateInExecutableScript=(raw,
+        candidate)=>{
+          if(!candidate||!candidate.text)return!1;
+          const executable=xssComparable(xssExecutableScriptText(raw),
+          65536);
+          return xssDecodeVariants(candidate.text).some(variant=>{
+            const comparable=xssComparable(variant,
+            4096);
+            if(comparable.length>=4&&executable.includes(comparable))return!0;
+            const breakout=String(variant||"").match(/^[^"'`]{0,64}["'`]([\s\S]{4,1024})$/);
+            if(breakout){
+              const tail=xssComparable(breakout[1].replace(/(?:\/\/|\/\*)[\s\S]*$/,
+              ""),
+              1024);
+              if(tail.length>=8&&xssCodeShape(tail)&&executable.includes(tail))return!0
+            }
+            const atoms=String(variant||"").match(/\b(?:alert|confirm|prompt|eval|fetch|setTimeout|setInterval|Function)\s*\([^)]{0,512}\)/gi)||[];
+            return atoms.some(atom=>{
+              const code=xssComparable(atom,
+              1024);
+              return code.length>=8&&executable.includes(code)
+            })
+          })
+        },
+        /* A code sink is only meaningful when the reflected value is itself shaped
+        like code or markup AND lands where it actually runs -- not inside a string
+        literal. Without both tests any ordinary query string or session id that a
+        page embeds in an analytics config scored 65 points and warned. That is
+        "the site called Function()", which is not evidence of anything. */
+        xssCodeSinkCandidate=(candidate,
+        raw)=>!!(candidate&&(candidate.codeShape||candidate.payloadShape||candidate.executableShape||candidate.untrustedMessage)&&xssCandidateInExecutableScript(raw,
+        candidate)),
+        /* For a script URL the only question that matters is whether the source
+        controls WHERE the script comes from. A value appended as a query parameter
+        to a first-party or CDN script URL -- cache busting, campaign tags, session
+        ids -- cannot change what executes, so it must not score. */
+        xssScriptOriginSpan=value=>{
+          const raw=String(value||"").trim();
+          if(/^(?:javascript\s*:|data\s*:|blob\s*:|vbscript\s*:)/i.test(raw))return raw.length;
+          const authority=raw.match(/^[a-z][a-z0-9+.\-]{0,30}:\/\/[^\/?#]*|^\/\/[^\/?#]*/i);
+          return authority?authority[0].length:0
+        },
+        xssScriptSrcCandidate=(candidate,
+        raw)=>{
+          if(!candidate||!candidate.text)return!1;
+          const value=String(raw||"").trim(),
+          haystack=xssComparable(value,
+          65536),
+          originEnd=xssComparable(value.slice(0,
+          xssScriptOriginSpan(value)),
+          65536).length;
+          return xssDecodeVariants(candidate.text).some(variant=>{
+            const needle=xssComparable(variant,
+            4096);
+            if(needle.length<8)return!1;
+            const at=haystack.indexOf(needle);
+            return at>=0&&at<=originEnd
+          })
+        },
+        xssActiveHtmlMarkup=value=>{
+          const raw=String(value||"").slice(0,
+          65536),
+          lower=raw.toLowerCase(),
+          out=[],
+          rawTextTags=new Set(["textarea",
+          "title",
+          "style",
+          "xmp",
+          "iframe",
+          "noembed",
+          "noframes",
+          "noscript",
+          "plaintext",
+          "script"]),
+          add=text=>{
+            text&&out.push(text)
+          },
+          tagEnd=start=>{
+            let quote="";
+            for(let index=start+1;
+            index<raw.length&&index-start<=8192;
+            index++){
+              const ch=raw[index];
+              if(quote){
+                ch===quote&&(quote="");
+                continue
+              }
+              if('"'===ch||"'"===ch){
+                quote=ch;
+                continue
+              }
+              if(">"===ch)return index
+            }
+            return-1
+          };
+          if(!raw.includes("<"))return raw;
+          let cursor=0,
+          templateDepth=0;
+          while(cursor<raw.length){
+            const start=raw.indexOf("<",
+            cursor);
+            if(start<0)break;
+            if(raw.startsWith("<!--",
+            start)){
+              const commentEnd=raw.indexOf("-->",
+              start+4);
+              if(commentEnd<0)break;
+              cursor=commentEnd+3;
+              continue
+            }
+            const end=tagEnd(start);
+            if(end<0)break;
+            const tag=raw.slice(start,
+            end+1),
+            match=tag.match(/^<\s*(\/?)\s*([a-z0-9:-]+)\b/i);
+            if(!match){
+              cursor=start+1;
+              continue
+            }
+            const closing=!!match[1],
+            name=String(match[2]||"").toLowerCase();
+            if("template"===name){
+              if(closing){
+                templateDepth?templateDepth--:add(tag)
+              }
+              else templateDepth++;
+              cursor=end+1;
+              continue
+            }
+            const active=!templateDepth;
+            active&&add(tag);
+            if(!closing&&rawTextTags.has(name)){
+              if("plaintext"===name)break;
+              const closeStart=lower.indexOf("</"+name,
+              end+1);
+              if(closeStart<0){
+                active&&"script"===name&&add(raw.slice(end+1));
+                break
+              }
+              const closeEnd=tagEnd(closeStart);
+              if(closeEnd<0)break;
+              active&&add("script"===name?raw.slice(end+1,
+              closeEnd+1):raw.slice(closeStart,
+              closeEnd+1)),
+              cursor=closeEnd+1;
+              continue
+            }
+            cursor=end+1
+          }
+          return out.join("").slice(0,
+          65536)
+        },
+        xssHtmlTags=value=>{
+          const raw=String(value||"").slice(0,
+          65536),
+          tags=[];
+          let cursor=0;
+          while(cursor<raw.length){
+            const start=raw.indexOf("<",
+            cursor);
+            if(start<0)break;
+            let quote="",
+            end=start+1;
+            for(;
+            end<raw.length&&end-start<=8192;
+            end++){
+              const ch=raw[end];
+              if(quote){
+                ch===quote&&(quote="");
+                continue
+              }
+              if('"'===ch||"'"===ch){
+                quote=ch;
+                continue
+              }
+              if(">"===ch){
+                tags.push(raw.slice(start,
+                end+1)),
+                end++;
+                break
+              }
+            }
+            cursor=Math.max(start+1,
+            end)
+          }
+          return tags
+        },
+        xssHtmlExecutionFragments=(value,
+        includeScriptContent=!1)=>{
+          const raw=String(value||"").slice(0,
+          65536),
+          activeRaw=xssActiveHtmlMarkup(raw),
+          out=[],
+          outBytes={
+            value:0
+          },
+          add=value=>{
+            const text=String(value||"").slice(0,
+            8192);
+            text&&outBytes.value<65536&&(out.push(text),
+            outBytes.value+=text.length)
+          };
+          try{
+            if(includeScriptContent)
+            for(const match of activeRaw.matchAll(/<\s*script\b([^>]*)>([\s\S]{0,8192}?)(?:<\s*\/\s*script\s*>|$)/gi)){
+              const attrs=String(match[1]||""),
+              typeMatch=attrs.match(/\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i),
+              type=String(typeMatch&&(typeMatch[1]||typeMatch[2]||typeMatch[3])||"").trim().toLowerCase();
+              type&&!/^(?:module|text\/(?:javascript|ecmascript)|application\/(?:javascript|ecmascript))$/.test(type)||add(xssExecutableScriptText(match[2]))
+            }
+          }
+          catch(_){
+
+          }
+          try{
+            const tagMarkup=activeRaw.replace(/(<\s*script\b[^>]*>)[\s\S]*?(<\s*\/\s*script\s*>|$)/gi,
+            "$1$2"),
+            tags=xssHtmlTags(tagMarkup);
+            for(let i=0;
+            i<tags.length;
+            i++){
+              const tag=tags[i],
+              scriptTag=/^<\s*script\b/i.test(tag);
+              if(scriptTag&&!includeScriptContent)continue;
+              for(const attr of tag.matchAll(/\s(on[a-z]{2,30}|srcdoc|href|src|action|formaction|xlink:href)\s*=\s*(?:"([^"]{0,4096})"|'([^']{0,4096})'|([^\s>]{1,4096}))/gi)){
+                const name=String(attr[1]||"").toLowerCase(),
+                attrValue=attr[2]||attr[3]||attr[4]||"";
+                (/^on/.test(name)||"srcdoc"===name||scriptTag&&"src"===name||/^(?:javascript\s*:|data\s*:\s*text\/html)/i.test(xssEntityDecode(attrValue)))&&add(attrValue)
+              }
+            }
+          }
+          catch(_){
+
+          }
+          const standalone=activeRaw.match(/^\s*(on[a-z]{2,30}|srcdoc|href|src|action|formaction|xlink:href)\s*=\s*([\s\S]*)$/i);
+          if(standalone){
+            const name=String(standalone[1]||"").toLowerCase(),
+            attrValue=String(standalone[2]||"").replace(/^(["'])([\s\S]*)\1$/,
+            "$2");
+            (/^on/.test(name)||"srcdoc"===name||/^(?:javascript\s*:|data\s*:\s*text\/html)/i.test(xssEntityDecode(attrValue)))&&add(attrValue)
+          }
+          return out
+        },
+        xssCandidateInExecutableHtml=(raw,
+        candidate,
+        includeScriptContent)=>{
+          if(!candidate||!candidate.comparable)return!1;
+          const fragments=xssHtmlExecutionFragments(raw,
+          includeScriptContent);
+          return fragments.some(fragment=>xssDecodeVariants(fragment,
+          8192).some(variant=>xssComparable(variant,
+          8192).includes(candidate.comparable)))
+        },
+        xssCandidateReachedSink=(value,
+        kind="html",
+        sourceFilter,
+        sink)=>{
+          if(!xssGuardOn()||"string"!=typeof value)return null;
+          refreshMutableXssSources();
+          if(!xssSources.length)return null;
+          const raw=String(value||"").slice(0,
+          65536);
+          if("html"===kind&&!xssExecutableShape(raw)||"code"===kind&&raw.trim().length<4)return null;
+          const includeScriptContent=/^(?:document\.write|document\.writeln|iframe\.srcdoc)$/.test(String(sink||"")),
+          samples=xssDecodeVariants(raw,
+          65536).map(sample=>xssComparable(sample,
+          65536)),
+          matches=xssSources.filter(candidate=>(!sourceFilter||sourceFilter(candidate,
+          raw,
+          kind))&&("code"!==kind||!xssTrustedDocumentationContext()||candidate.untrustedMessage||candidate.payloadShape||!xssBenignDocumentationCode(candidate.text))&&samples.some(sample=>candidate.comparable.length>=8&&sample.includes(candidate.comparable))&&("html"!==kind||xssCandidateInExecutableHtml(raw,
+          candidate,
+          includeScriptContent)));
+          return matches.find(candidate=>candidate.untrustedMessage)||matches[0]||null
+        };
+        registerLocationSources();
         try{
-          const nav=performance.getEntriesByType&&performance.getEntriesByType("navigation")[0];
-          nav&&nav.redirectCount>=2&&addSignal(20,
-          "Multiple redirects before this page loaded",
-          "multi-redirect")
+          xssWindowNameKey=String(window.name||""),
+          registerXssSource(xssWindowNameKey,
+          "window.name")
+        }catch(_){ }
+        try{
+          if(document.referrer){
+            const referrer=new URL(document.referrer);
+            registerUrlObject(referrer,
+            "document.referrer")
+          }
         }
         catch(_){
 
         }
-        /(^|\.)(bit\.ly|bitly\.com|tinyurl\.com|is\.gd|t\.co|short\.io|rebrand\.ly|rebrandly\.com|rb\.gy|cutt\.ly|tiny\.cc|v\.gd|ow\.ly|buff\.ly|shorturl\.at|bl\.ink|soo\.gd|lnkd\.in)$/i.test(here)&&addSignal(20,
-        "Known URL shortener domain",
-        "shortener-domain"),
-        (s=>{
-          if(s.length<8)return!1;
-          const digits=(s.match(/\d/g)||[]).length,
-          hexish=/^[a-f0-9]{12,}$/i.test(s),
-          noVowelRun=/[bcdfghjklmnpqrstvwxz]{6,}/i.test(s),
-          manyDigits=digits>=.35*s.length&&digits>=4;
-          return hexish||noVowelRun||manyDigits
-        })(here.split(".")[0]||"")&&addSignal(10,
-        "Random-looking domain name",
-        "random-host"),
-        /\.(cfd|sbs|top|xyz|click|link|live|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|skin|bar|fit)$/i.test(fullHost)&&addSignal(10,
-        "Throwaway-style TLD",
-        "abuse-tld"),
-        ((fullHost.match(/-/g)||[]).length>=3||fullHost.length>=40)&&addSignal(10,
-        "Unusually long / hyphenated host",
-        "long-host");
-        let interacted=!1;
+        let xssCorrelationPoints=0,
+        xssActivityCount=0,
+        xssStrongActivityLogged=!1;
+        const xssActivitySeen=new Map,
+        xssActivityTypes={
+          html:"warned_potential_dom_xss",
+          code:"warned_potential_xss_code_execution",
+          navigation:"warned_potential_xss_navigation",
+          script:"warned_potential_xss_script_injection",
+          privileged:"warned_potential_xss_privileged_action"
+        },
+        xssActivitySources={
+          "location.search":"this page's URL query",
+          "location.hash":"this page's URL fragment",
+          "location.pathname":"this page's URL path",
+          "window.name":"window.name",
+          "document.referrer":"the referring page's URL",
+          "postMessage event.data":"cross-window message data"
+        },
+        xssActivitySinks=new Set(["innerHTML",
+        "outerHTML",
+        "ShadowRoot.innerHTML",
+        "setHTMLUnsafe",
+        "iframe.srcdoc",
+        "insertAdjacentHTML",
+        "document.write",
+        "document.writeln",
+        "DOM insertion",
+        "setAttribute",
+        "script.setAttribute",
+        "location.href",
+        "location.assign",
+        "location.replace",
+        "Navigation API",
+        "window.open",
+        "script.src",
+        "script.text",
+        "script.textContent",
+        "Function constructor",
+        "setTimeout",
+        "setInterval",
+        "initial reflected markup"]),
+        noteXssActivity=(source,
+        sink,
+        points,
+        category)=>{
+          const safeSource=Object.prototype.hasOwnProperty.call(xssActivitySources,
+          source)?String(source):"attacker-controlled browser input",
+          sourceDescription=xssActivitySources[safeSource]||safeSource,
+          safeSink=xssActivitySinks.has(String(sink))?String(sink):"sensitive browser sink",
+          safeCategory=Object.prototype.hasOwnProperty.call(xssActivityTypes,
+          category)?String(category):"source-to-sink",
+          key=safeSource+"|"+safeCategory,
+          prior=xssActivitySeen.get(key),
+          upgrade=!!(prior&&points>prior.points),
+          strong=points>=70;
+          if(prior&&!upgrade||!upgrade&&xssActivityCount>=3&&(!strong||xssStrongActivityLogged))return;
+          prior||xssActivityCount++,
+          xssActivitySeen.set(key,
+          {
+            points:points,
+            at:Date.now()
+          }),
+          strong&&(xssStrongActivityLogged=!0),
+          log(xssActivityTypes[safeCategory]||"warned_xss_behavior",
+          {
+            source:safeSource,
+            sink:safeSink,
+            category:safeCategory,
+            confidence:points>=70?"Very high":points>=60?"High":"Moderate",
+            severity:points>=70?"High":points>=60?"Medium":"Low",
+            risk:(points>=70?"Very-high":points>=60?"High":"Moderate")+"-confidence behavior signal",
+            why:"html"===safeCategory?"Executable content assigned to "+safeSink+" contained text matching a fresh value from "+sourceDescription+". This can indicate DOM XSS, but WardenOne has not confirmed a vulnerability.":"code"===safeCategory?"Text passed to "+safeSink+" matched a fresh value from "+sourceDescription+". The sink can compile or execute strings, but matching text alone does not confirm exploitation.":"navigation"===safeCategory?"A navigation target passed to "+safeSink+" matched fresh data from "+sourceDescription+". This is supporting evidence of unsafe navigation, not proof of exploitation.":"script"===safeCategory?"A script source or body assigned through "+safeSink+" matched fresh data from "+sourceDescription+". This can indicate unsafe script creation or loading, but WardenOne has not confirmed that malicious code ran.":"Data used by "+safeSink+" matched a fresh value from "+sourceDescription+". WardenOne observed supporting behavior, not confirmed exploitation.",
+            outcome:"Observed locally; no request or page action was blocked."
+          })
+        },
+        noteXssSink=(sink,
+        value,
+        target,
+        kind="html",
+        sourceFilter)=>{
+          try{
+            if(!xssGuardOn()||target&&"TEXTAREA"===String(target.tagName||"").toUpperCase())return;
+            const reached=xssCandidateReachedSink(value,
+            kind,
+            sourceFilter,
+            sink);
+            if(!reached)return;
+            const originRead=xssMessageOriginWasRead(reached),
+            uncheckedMessage=reached.untrustedMessage&&!originRead,
+            dangerousNavigation="navigation"===kind&&/^\s*(?:javascript\s*:|data\s*:\s*text\/html)/i.test(xssEntityDecode(String(value||""))),
+            hardCorrelation="html"===kind||"code"===kind||"script"===kind||dangerousNavigation,
+            basePoints="script"===kind||"code"===kind||dangerousNavigation?65:"navigation"===kind?30:"privileged"===kind?60:60,
+            targetPoints=uncheckedMessage?"script"===kind||"privileged"===kind?75:"code"===kind||dangerousNavigation?70:"navigation"===kind?35:60:basePoints,
+            prefix=uncheckedMessage?"Unverified cross-site ":reached.untrustedMessage?"Cross-site ":"",
+            corroboratedNavigation="navigation"!==kind||dangerousNavigation||reached.payloadShape||reached.executableShape||hasSignalIn(BEHAVE_IDENTITY_KEYS)||!!(WO.__pageRisk&&WO.__pageRisk.phishing);
+            if(hardCorrelation&&targetPoints>xssCorrelationPoints){
+              const delta=targetPoints-xssCorrelationPoints,
+              first=0===xssCorrelationPoints;
+              xssCorrelationPoints=targetPoints,
+              addXssSignal(delta,
+              prefix+"value from "+reached.source+" reached a sensitive sink ("+sink+")",
+              first?"xss-reflection":"xss-reflection-upgrade-"+targetPoints)
+            }
+            else if(!hardCorrelation)addXssSignal(10,
+            reached.untrustedMessage?prefix+"message data influenced a navigation target ("+sink+")":"Data from "+reached.source+" influenced a navigation target ("+sink+")",
+            "xss-message-navigation");
+            corroboratedNavigation&&noteXssActivity(reached.source,
+            sink,
+            targetPoints,
+            kind)
+          }
+          catch(_){
+
+          }
+
+        },
+        xssScriptElementExecutable=node=>{
+          try{
+            if(!node||"SCRIPT"!==String(node.tagName||"").toUpperCase()||xssInertScriptNodes.has(node))return!1;
+            if(node.noModule||node.hasAttribute&&node.hasAttribute("nomodule"))return!1;
+            const type=String(node.type||node.getAttribute&&node.getAttribute("type")||"").trim().toLowerCase();
+            return!type||/^(?:module|text\/(?:javascript|ecmascript)|application\/(?:javascript|ecmascript))$/.test(type)
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        xssScriptNodesUnder=root=>{
+          const nodes=[],
+          add=node=>{
+            node&&"SCRIPT"===String(node.tagName||"").toUpperCase()&&nodes.length<384&&nodes.push(node)
+          };
+          try{
+            add(root);
+            const descendants=root&&root.querySelectorAll&&root.querySelectorAll("script");
+            for(let i=0;
+            descendants&&i<descendants.length&&nodes.length<384;
+            i++)add(descendants[i])
+          }
+          catch(_){
+
+          }
+          return nodes
+        },
+        xssScriptNodeSet=root=>new Set(xssScriptNodesUnder(root)),
+        markXssParsedScripts=(root,
+        prior)=>{
+          try{
+            for(const script of xssScriptNodesUnder(root))prior&&prior.has(script)||xssInertScriptNodes.add(script)
+          }
+          catch(_){
+
+          }
+
+        },
+        propagateXssInertScripts=(source,
+        copy)=>{
+          try{
+            const originals=xssScriptNodesUnder(source),
+            copies=xssScriptNodesUnder(copy),
+            count=Math.min(originals.length,
+            copies.length);
+            for(let i=0;
+            i<count;
+            i++)xssInertScriptNodes.has(originals[i])&&xssInertScriptNodes.add(copies[i])
+          }
+          catch(_){
+
+          }
+
+        },
+        markXssWrapper=(fn,
+        name)=>{
+          try{
+            Object.defineProperty(fn,
+            "__wardenoneXssBehaviorGuard",
+            {
+              value:!0
+            })
+          }
+          catch(_){
+
+          }
+          try{name&&Object.defineProperty(fn,
+          "name",
+          {
+            value:name,
+            configurable:!0
+          })}catch(_){ }
+          return fn
+        },
+        patchXssSetter=(proto,
+        name,
+        label,
+        kind="html",
+        filter,
+        sourceFilter,
+        acceptedSample,
+        lifecycle)=>{
+          try{
+            const desc=proto&&Object.getOwnPropertyDescriptor(proto,
+            name),
+            real=desc&&desc.set;
+            if(!real||real.__wardenoneXssBehaviorGuard)return;
+            const wrapped=markXssWrapper(function(value){
+              const target=this,
+              shouldInspect=!filter||filter(target);
+              let lifecycleState=null;
+              try{lifecycle&&lifecycle.before&&(lifecycleState=lifecycle.before(target,
+              value))}catch(_){ }
+              const result=real.call(target,
+              value);
+              try{lifecycle&&lifecycle.after&&lifecycle.after(target,
+              value,
+              result,
+              lifecycleState)}catch(_){ }
+              if(shouldInspect){
+                let sample=value;
+                try{acceptedSample&&(sample=acceptedSample(target,
+                value,
+                desc))}catch(_){sample="string"==typeof value?value:""}
+                noteXssSink(label||name,
+                sample,
+                target,
+                kind,
+                sourceFilter)
+              }
+              return result
+            },
+            "set "+name);
+            Object.defineProperty(proto,
+            name,
+            Object.assign({
+
+            },
+            desc,
+            {
+              set:wrapped
+            }))
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssMethod=(owner,
+        name,
+        sample,
+        label,
+        kind="html",
+        sourceFilter,
+        lifecycle)=>{
+          try{
+            const real=owner&&owner[name];
+            if("function"!=typeof real||real.__wardenoneXssBehaviorGuard)return;
+            owner[name]=markXssWrapper(function(...args){
+              let lifecycleState=null;
+              try{lifecycle&&lifecycle.before&&(lifecycleState=lifecycle.before(this,
+              args))}catch(_){ }
+              const result=real.apply(this,
+              args);
+              try{lifecycle&&lifecycle.after&&lifecycle.after(this,
+              args,
+              result,
+              lifecycleState)}catch(_){ }
+              try{
+                const value=sample(args,
+                this),
+                sinkLabel="function"==typeof label?label(args,
+                this):label||name,
+                sinkKind="function"==typeof kind?kind(args,
+                this):kind;
+                noteXssSink(sinkLabel,
+                value,
+                this,
+                sinkKind,
+                sourceFilter)
+              }
+              catch(_){
+
+              }
+              return result
+            },
+            name)
+          }
+          catch(_){
+
+          }
+
+        },
+        xssExecutionTargetLive=target=>{
+          try{
+            if(!target)return!1;
+            if(target===document||9===Number(target.nodeType))return!0;
+            if(target.isConnected)return!0;
+            return!!(target.host&&target.host.isConnected)
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        xssInsertionRoots=values=>{
+          const roots=[],
+          add=node=>{
+            if(!node||"object"!=typeof node||roots.length>=96)return;
+            const nodeType=Number(node.nodeType)||0;
+            if(11===nodeType){
+              let children=null;
+              try{children=node.childNodes}catch(_){ }
+              for(let i=0;
+              children&&i<children.length&&roots.length<96;
+              i++)add(children[i]);
+              return
+            }
+            (1===nodeType||9===nodeType)&&roots.push({
+              node:node,
+              wasLive:xssExecutionTargetLive(node)
+            })
+          };
+          for(let i=0;
+          values&&i<values.length&&i<64;
+          i++)add(values[i]);
+          return roots
+        },
+        xssInsertedNodeFindings=root=>{
+          const findings=[],
+          queue=[root],
+          add=(label,
+          value,
+          target,
+          kind="html",
+          sourceFilter)=>{
+            "string"==typeof value&&value&&findings.length<96&&findings.push({
+              label:label,
+              value:value.slice(0,
+              65536),
+              target:target,
+              kind:kind,
+              sourceFilter:sourceFilter
+            })
+          };
+          for(let visited=0;
+          queue.length&&visited<384&&findings.length<96;
+          visited++){
+            const node=queue.shift();
+            if(!node)continue;
+            const nodeType=Number(node.nodeType)||0,
+            tag=String(node.tagName||"").toUpperCase();
+            if("TEMPLATE"===tag)continue;
+            if(1===nodeType){
+              if("SCRIPT"===tag&&xssScriptElementExecutable(node)){
+                let scriptType="",
+                scriptSrc="",
+                scriptBody="";
+                try{scriptType=String(node.type||node.getAttribute&&node.getAttribute("type")||"").trim().toLowerCase()}catch(_){ }
+                if(!scriptType||/^(?:module|text\/(?:javascript|ecmascript)|application\/(?:javascript|ecmascript))$/.test(scriptType)){
+                  try{scriptSrc=String(node.src||node.getAttribute&&node.getAttribute("src")||"")}catch(_){ }
+                  try{scriptBody=String(node.text||node.textContent||"")}catch(_){ }
+                  scriptSrc&&add("DOM insertion",
+                  scriptSrc,
+                  node,
+                  "script"),
+                  scriptBody&&add("DOM insertion",
+                  scriptBody,
+                  node,
+                  "script",
+                  (candidate,
+                  raw)=>xssCandidateInExecutableScript(raw,
+                  candidate))
+                }
+              }
+              let attributes=null;
+              try{attributes=node.attributes}catch(_){ }
+              for(let i=0;
+              attributes&&i<attributes.length&&i<96;
+              i++){
+                const attribute=attributes[i],
+                name=String(attribute&&attribute.name||"").toLowerCase(),
+                value=String(attribute&&attribute.value||"");
+                if(/^on[a-z]{2,30}$/.test(name)||"srcdoc"===name||/^(?:href|src|action|formaction|xlink:href)$/.test(name)&&/^(?:javascript\s*:|data\s*:\s*text\/html)/i.test(xssEntityDecode(value)))add("DOM insertion",
+                name+"="+value,
+                node)
+              }
+            }
+            let children=null;
+            try{children=node.childNodes}catch(_){ }
+            for(let i=0;
+            children&&i<children.length&&queue.length<384;
+            i++)queue.push(children[i])
+          }
+          return findings
+        },
+        inspectXssInsertedRoots=(roots,
+        destinationWasLive)=>{
+          try{
+            for(const entry of roots){
+              const root=entry&&entry.node;
+              if(!root||entry.wasLive)continue;
+              const current=xssExecutionTargetLive(root)?xssInsertedNodeFindings(root):[];
+              for(const finding of current)noteXssSink(finding.label,
+              finding.value,
+              finding.target,
+              finding.kind,
+              finding.sourceFilter);
+              if(destinationWasLive&&!current.some(finding=>"script"===finding.kind))for(const finding of entry.beforeFindings||[])"script"!==finding.kind||noteXssSink(finding.label,
+              finding.value,
+              finding.target,
+              finding.kind,
+              finding.sourceFilter)
+            }
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssInsertionMethod=(owner,
+        name,
+        select,
+        destination)=>{
+          try{
+            const real=owner&&owner[name];
+            if("function"!=typeof real||real.__wardenoneXssBehaviorGuard)return;
+            owner[name]=markXssWrapper(function(...args){
+              let roots=[];
+              try{roots=xssInsertionRoots(select?select(args,
+              this):args)}catch(_){ }
+              for(const entry of roots)try{entry.beforeFindings=xssInsertedNodeFindings(entry.node)}catch(_){entry.beforeFindings=[]}
+              let destinationWasLive=!1;
+              try{destinationWasLive=xssExecutionTargetLive(destination?destination(this,
+              args):this)}catch(_){ }
+              const result=real.apply(this,
+              args);
+              inspectXssInsertedRoots(roots,
+              destinationWasLive);
+              return result
+            },
+            name)
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssInertParserMethod=(owner,
+        name)=>{
+          try{
+            const real=owner&&owner[name];
+            if("function"!=typeof real||real.__wardenoneXssInertParser)return;
+            const wrapped=markXssWrapper(function(...args){
+              const result=real.apply(this,
+              args);
+              markXssParsedScripts(result);
+              return result
+            },
+            name);
+            try{Object.defineProperty(wrapped,
+            "__wardenoneXssInertParser",
+            {
+              value:!0
+            })}catch(_){ }
+            owner[name]=wrapped
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssScriptClone=(owner,
+        name,
+        sourceFrom)=>{
+          try{
+            const real=owner&&owner[name];
+            if("function"!=typeof real||real.__wardenoneXssScriptClone)return;
+            const wrapped=markXssWrapper(function(...args){
+              const source=sourceFrom?sourceFrom(this,
+              args):this,
+              result=real.apply(this,
+              args);
+              propagateXssInertScripts(source,
+              result);
+              return result
+            },
+            name);
+            try{Object.defineProperty(wrapped,
+            "__wardenoneXssScriptClone",
+            {
+              value:!0
+            })}catch(_){ }
+            owner[name]=wrapped
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssFunctionConstructor=()=>{
+          try{
+            const real=window.Function;
+            if("function"!=typeof real||real.__wardenoneXssBehaviorGuard)return;
+            const wrapped=markXssWrapper(function(...args){
+              const body=args.length?args[args.length-1]:"",
+              result=new.target?Reflect.construct(real,
+              args,
+              new.target===wrapped?real:new.target):real(...args);
+              "string"==typeof body&&noteXssSink("Function constructor",
+              body,
+              null,
+              "code",
+              xssCodeSinkCandidate);
+              return result
+            },
+            "Function");
+            try{wrapped.prototype=real.prototype}catch(_){ }
+            try{Object.defineProperty(wrapped,"length",{value:1,configurable:!0})}catch(_){ }
+            try{
+              const ctorDesc=Object.getOwnPropertyDescriptor(real.prototype,
+              "constructor");
+              ctorDesc&&ctorDesc.value===real&&Object.defineProperty(real.prototype,
+              "constructor",
+              Object.assign({
+
+              },
+              ctorDesc,
+              {
+                value:wrapped
+              }))
+            }
+            catch(_){
+
+            }
+            const desc=Object.getOwnPropertyDescriptor(window,
+            "Function");
+            desc?Object.defineProperty(window,
+            "Function",
+            Object.assign({
+
+            },
+            desc,
+            {
+              value:wrapped
+            })):window.Function=wrapped
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssTimer=name=>{
+          try{
+            const real=window[name];
+            if("function"!=typeof real||real.__wardenoneXssBehaviorGuard)return;
+            window[name]=markXssWrapper(function(handler,
+            ...args){
+              "string"==typeof handler&&noteXssSink(name,
+              handler,
+              null,
+              "code",
+              xssCodeSinkCandidate);
+              return real.call(this,
+              handler,
+              ...args)
+            },
+            name)
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssRouteRefresh=name=>{
+          try{
+            const owner=window.History&&History.prototype,
+            real=owner&&owner[name];
+            if("function"!=typeof real||real.__wardenoneXssBehaviorGuard)return;
+            owner[name]=markXssWrapper(function(...args){
+              const result=real.apply(this,
+              args);
+              try{
+                refreshMutableXssSources(),
+                ensureXssSinkWrappers()
+              }
+              catch(_){
+
+              }
+              return result
+            },
+            name)
+          }
+          catch(_){
+
+          }
+
+        },
+        patchXssMessageData=()=>{
+          try{
+            const proto=window.MessageEvent&&MessageEvent.prototype,
+            originDesc=proto&&Object.getOwnPropertyDescriptor(proto,
+            "origin"),
+            originReal=originDesc&&originDesc.get,
+            desc=proto&&Object.getOwnPropertyDescriptor(proto,
+            "data"),
+            real=desc&&desc.get;
+            if(!real||real.__wardenoneXssBehaviorGuard)return;
+            if(originReal&&!originReal.__wardenoneXssBehaviorGuard){
+              xssMessageOriginGetter=originReal;
+              try{
+                const originWrapped=markXssWrapper(function(){
+                  try{xssMessageOriginRead.add(this)}catch(_){ }
+                  return originReal.call(this)
+                },
+                "get origin");
+                Object.defineProperty(proto,
+                "origin",
+                Object.assign({
+
+                },
+                originDesc,
+                {
+                  get:originWrapped
+                })),
+                xssMessageOriginTracking=!0
+              }
+              catch(_){
+
+              }
+
+            }
+            const wrapped=markXssWrapper(function(){
+              const value=real.call(this);
+              try{
+                if(!xssWindowMessageEvent(this))return value;
+                let origin="",
+                pageOrigin="";
+                try{origin=xssMessageOriginGetter?String(xssMessageOriginGetter.call(this)||""):""}catch(_){ }
+                try{pageOrigin=new URL(location.href).origin}catch(_){ }
+                const untrustedMessage=!origin||"null"===origin||!!pageOrigin&&!xssOriginsSameSite(origin,
+                pageOrigin);
+                untrustedMessage&&registerMessageData(value,
+                {
+                  untrustedMessage:untrustedMessage,
+                  messageEvent:this
+                });
+                if(untrustedMessage&&xssMessageOriginTracking&&!xssMessageWeakSeen.has(this)){
+                  xssMessageWeakSeen.add(this);
+                  const event=this;
+                  setTimeout(()=>{
+                    try{
+                      xssMessageOriginRead.has(event)||xssDocumentationContext()||addXssSignal(5,
+                      "Cross-origin message data was read without an observed origin access",
+                      "xss-message-origin-unchecked")
+                    }
+                    catch(_){
+
+                    }
+
+                  },
+                  0)
+                }
+              }
+              catch(_){
+
+              }
+              return value
+            },
+            "get data");
+            Object.defineProperty(proto,
+            "data",
+            Object.assign({
+
+            },
+            desc,
+            {
+              get:wrapped
+            })),
+            xssMessageDataGetterInstalled=!0
+          }
+          catch(_){
+
+          }
+
+        };
+        let xssSinksInstalled=!1,
+        xssNavigationListening=!1;
+        const xssNavigationCandidate=candidate=>!!(candidate&&(candidate.payloadShape||candidate.executableShape||candidate.untrustedMessage&&!xssMessageOriginWasRead(candidate))),
+        patchXssNavigationApi=()=>{
+          try{
+            const navigation=window.navigation;
+            if(xssNavigationListening||!navigation||"function"!=typeof navigation.addEventListener)return;
+            xssNavigationListening=!0,
+            woOn(navigation,
+            "navigate",
+            event=>{
+              try{
+                if(!event||event.isTrusted===!1||event.downloadRequest||/^(?:reload|traverse)$/.test(String(event.navigationType||"")))return;
+                const destination=event.destination;
+                if(!destination||destination.sameDocument)return;
+                const value=String(destination.url||"");
+                value&&noteXssSink("Navigation API",
+                value,
+                null,
+                "navigation",
+                xssNavigationCandidate)
+              }
+              catch(_){
+
+              }
+
+            }),
+            woOn(navigation,
+            "currententrychange",
+            ()=>{
+              try{refreshMutableXssSources(),ensureXssSinkWrappers()}catch(_){ }
+            })
+          }
+          catch(_){
+
+          }
+
+        };
+        ensureXssSinkWrappers=()=>{
+          if(!xssGuardOn()||xssSinksInstalled||!xssSources.length)return;
+          xssSinksInstalled=!0,
+          patchXssSetter(window.Element&&Element.prototype,
+          "innerHTML",
+          "innerHTML",
+          "html",
+          target=>"TEMPLATE"!==String(target&&target.tagName||"").toUpperCase()&&xssExecutionTargetLive(target),
+          null,
+          target=>String(target.innerHTML||""),
+          {
+            after:target=>"TEMPLATE"===String(target&&target.tagName||"").toUpperCase()||markXssParsedScripts(target)
+          }),
+          patchXssSetter(window.Element&&Element.prototype,
+          "outerHTML",
+          "outerHTML",
+          "html",
+          target=>xssExecutionTargetLive(target),
+          null,
+          null,
+          {
+            before:target=>{
+              const root=target&&target.parentNode;
+              return{
+                root:root,
+                prior:xssScriptNodeSet(root)
+              }
+            },
+            after:(target,
+            value,
+            result,
+            state)=>state&&markXssParsedScripts(state.root,
+            state.prior)
+          }),
+          patchXssSetter(window.ShadowRoot&&ShadowRoot.prototype,
+          "innerHTML",
+          "ShadowRoot.innerHTML",
+          "html",
+          target=>xssExecutionTargetLive(target),
+          null,
+          target=>String(target.innerHTML||""),
+          {
+            after:target=>markXssParsedScripts(target)
+          }),
+          patchXssMethod(window.Element&&Element.prototype,
+          "setHTMLUnsafe",
+          (args,
+          target)=>xssExecutionTargetLive(target)?String(target.innerHTML||""):"",
+          "setHTMLUnsafe",
+          "html",
+          null,
+          {
+            after:target=>markXssParsedScripts(target)
+          }),
+          patchXssMethod(window.ShadowRoot&&ShadowRoot.prototype,
+          "setHTMLUnsafe",
+          (args,
+          target)=>xssExecutionTargetLive(target)?String(target.innerHTML||""):"",
+          "setHTMLUnsafe",
+          "html",
+          null,
+          {
+            after:target=>markXssParsedScripts(target)
+          }),
+          patchXssSetter(window.HTMLIFrameElement&&HTMLIFrameElement.prototype,
+          "srcdoc",
+          "iframe.srcdoc",
+          "html",
+          target=>xssExecutionTargetLive(target),
+          null,
+          target=>String(target.srcdoc||"")),
+          patchXssMethod(window.Element&&Element.prototype,
+          "insertAdjacentHTML",
+          (args,
+          target)=>xssExecutionTargetLive(target)?args[1]:"",
+          "insertAdjacentHTML",
+          "html",
+          null,
+          {
+            before:(target,
+            args)=>{
+              const outside=/^(?:beforebegin|afterend)$/i.test(String(args[0]||"")),
+              root=outside?target&&target.parentNode:target;
+              return{
+                root:root,
+                prior:xssScriptNodeSet(root)
+              }
+            },
+            after:(target,
+            args,
+            result,
+            state)=>state&&markXssParsedScripts(state.root,
+            state.prior)
+          }),
+          patchXssMethod(window.Document&&Document.prototype,
+          "write",
+          args=>args.filter(value=>"string"==typeof value).join(""),
+          "document.write"),
+          patchXssMethod(window.Document&&Document.prototype,
+          "writeln",
+          args=>args.filter(value=>"string"==typeof value).join(""),
+          "document.writeln"),
+          patchXssMethod(window.Element&&Element.prototype,
+          "setAttribute",
+          (args,
+          target)=>{
+            const name=String(args[0]||""),
+            scriptSrc="SCRIPT"===String(target&&target.tagName||"").toUpperCase()&&/^src$/i.test(name);
+            if(!xssExecutionTargetLive(target)||scriptSrc&&!xssScriptElementExecutable(target)||!/^(?:on[a-z]{2,30}|srcdoc|href|src|action|formaction|xlink:href)$/i.test(name))return"";
+            return name+"="+String(target.getAttribute&&target.getAttribute(name)||"")
+          },
+          (args,
+          target)=>{
+            const tag=String(target&&target.tagName||"").toUpperCase(),
+            attribute=String(args[0]||"");
+            return"SCRIPT"===tag&&/^src$/i.test(attribute)?"script.setAttribute":"IFRAME"===tag&&/^srcdoc$/i.test(attribute)?"iframe.srcdoc":"setAttribute"
+          },
+          (args,
+          target)=>"SCRIPT"===String(target&&target.tagName||"").toUpperCase()&&/^src$/i.test(String(args[0]||""))?"script":"html",
+          (candidate,
+          raw,
+          kind)=>"script"!==kind||xssScriptSrcCandidate(candidate,
+          String(raw||"").replace(/^\s*src\s*=/i,
+          ""))),
+          patchXssNavigationApi(),
+          patchXssMethod(window,
+          "open",
+          args=>args[0],
+          "window.open",
+          "navigation",
+          xssNavigationCandidate),
+          patchXssSetter(window.HTMLScriptElement&&HTMLScriptElement.prototype,
+          "src",
+          "script.src",
+          "script",
+          target=>xssExecutionTargetLive(target)&&xssScriptElementExecutable(target),
+          xssScriptSrcCandidate,
+          target=>String(target.src||"")),
+          patchXssSetter(window.HTMLScriptElement&&HTMLScriptElement.prototype,
+          "text",
+          "script.text",
+          "script",
+          target=>xssExecutionTargetLive(target)&&xssScriptElementExecutable(target),
+          xssCodeSinkCandidate,
+          target=>String(target.text||"")),
+          patchXssSetter(window.Node&&Node.prototype,
+          "textContent",
+          "script.textContent",
+          "script",
+          target=>xssExecutionTargetLive(target)&&xssScriptElementExecutable(target),
+          xssCodeSinkCandidate,
+          target=>String(target.textContent||"")),
+          patchXssInsertionMethod(window.Node&&Node.prototype,
+          "appendChild",
+          args=>[args[0]]),
+          patchXssInsertionMethod(window.Node&&Node.prototype,
+          "insertBefore",
+          args=>[args[0]]),
+          patchXssInsertionMethod(window.Node&&Node.prototype,
+          "replaceChild",
+          args=>[args[0]]);
+          for(const owner of [window.Element&&Element.prototype,
+          window.Document&&Document.prototype,
+          window.DocumentFragment&&DocumentFragment.prototype])for(const name of ["append",
+          "prepend",
+          "replaceChildren"])patchXssInsertionMethod(owner,
+          name);
+          for(const owner of [window.Element&&Element.prototype,
+          window.CharacterData&&CharacterData.prototype,
+          window.DocumentType&&DocumentType.prototype])for(const name of ["before",
+          "after",
+          "replaceWith"])patchXssInsertionMethod(owner,
+          name);
+          patchXssInsertionMethod(window.Element&&Element.prototype,
+          "insertAdjacentElement",
+          args=>[args[1]]),
+          patchXssInsertionMethod(window.Range&&Range.prototype,
+          "insertNode",
+          args=>[args[0]],
+          range=>range&&range.commonAncestorContainer),
+          patchXssInsertionMethod(window.Range&&Range.prototype,
+          "surroundContents",
+          args=>[args[0]],
+          range=>range&&range.commonAncestorContainer),
+          patchXssInertParserMethod(window.DOMParser&&DOMParser.prototype,
+          "parseFromString"),
+          patchXssInertParserMethod(window.Document&&Document,
+          "parseHTMLUnsafe"),
+          patchXssScriptClone(window.Node&&Node.prototype,
+          "cloneNode"),
+          patchXssScriptClone(window.Document&&Document.prototype,
+          "importNode",
+          (target,
+          args)=>args[0]),
+          patchXssFunctionConstructor(),
+          patchXssTimer("setTimeout"),
+          patchXssTimer("setInterval")
+        };
+        if(xssGuardOn()){
+          patchXssMessageData(),
+          patchXssRouteRefresh("pushState"),
+          patchXssRouteRefresh("replaceState"),
+          woOn(window,
+          "message",
+          event=>{
+            try{
+              if(xssMessageDataGetterInstalled||!event||!xssWindowMessageEvent(event))return;
+              const origin=String(event.origin||""),
+              pageOrigin=new URL(location.href).origin;
+              const untrustedMessage=!origin||"null"===origin||!xssOriginsSameSite(origin,
+              pageOrigin);
+              untrustedMessage&&registerMessageData(event.data,
+              {
+                untrustedMessage:!0,
+                messageEvent:event
+              })
+            }
+            catch(_){
+
+            }
+
+          }),
+          woOn(window,
+          "hashchange",
+          ()=>{
+            try{refreshMutableXssSources(),ensureXssSinkWrappers()}catch(_){ }
+          }),
+          woOn(window,
+          "popstate",
+          ()=>{
+            try{refreshMutableXssSources(),ensureXssSinkWrappers()}catch(_){ }
+          }),
+          ensureXssSinkWrappers();
+          const scanInitialXssReflection=()=>{
+            try{
+              if(!xssSources.length)return;
+              const eventAttributes=["onabort",
+              "onanimationcancel",
+              "onanimationend",
+              "onanimationiteration",
+              "onanimationstart",
+              "onauxclick",
+              "onbeforeinput",
+              "onbeforetoggle",
+              "onblur",
+              "oncancel",
+              "oncanplay",
+              "oncanplaythrough",
+              "onchange",
+              "onclick",
+              "onclose",
+              "oncontextmenu",
+              "oncopy",
+              "oncut",
+              "ondblclick",
+              "ondrag",
+              "ondragend",
+              "ondragenter",
+              "ondragleave",
+              "ondragover",
+              "ondragstart",
+              "ondrop",
+              "onended",
+              "onerror",
+              "onfocus",
+              "onformdata",
+              "oninput",
+              "oninvalid",
+              "onkeydown",
+              "onkeypress",
+              "onkeyup",
+              "onload",
+              "onloadeddata",
+              "onloadedmetadata",
+              "onmessage",
+              "onmousedown",
+              "onmouseenter",
+              "onmouseleave",
+              "onmousemove",
+              "onmouseout",
+              "onmouseover",
+              "onmouseup",
+              "onpaste",
+              "onplay",
+              "onplaying",
+              "onpointercancel",
+              "onpointerdown",
+              "onpointerenter",
+              "onpointerleave",
+              "onpointermove",
+              "onpointerout",
+              "onpointerover",
+              "onpointerup",
+              "onreset",
+              "onresize",
+              "onscroll",
+              "onselect",
+              "onsubmit",
+              "ontoggle",
+              "ontouchcancel",
+              "ontouchend",
+              "ontouchmove",
+              "ontouchstart",
+              "ontransitioncancel",
+              "ontransitionend",
+              "ontransitionrun",
+              "ontransitionstart",
+              "onwheel"],
+              selector=["script",
+              "[srcdoc]",
+              "[href^='javascript:' i]",
+              "[src^='data:text/html' i]",
+              "[action^='javascript:' i]",
+              "[formaction^='javascript:' i]"].concat(eventAttributes.map(name=>"["+name+"]")).join(","),
+              nodes=document.querySelectorAll(selector);
+              let inspected=0;
+              for(let i=0;
+              i<nodes.length&&inspected<512;
+              i++){
+                const node=nodes[i],
+                sample="string"==typeof node.outerHTML?node.outerHTML:"",
+                isScript="SCRIPT"===String(node&&node.tagName||"").toUpperCase();
+                if(isScript){
+                  if(!xssScriptElementExecutable(node))continue;
+                  inspected++;
+                  let scriptSrc="",
+                  scriptBody="";
+                  try{scriptSrc=String(node.src||node.getAttribute&&node.getAttribute("src")||"")}catch(_){ }
+                  try{scriptBody=String(node.text||node.textContent||"")}catch(_){ }
+                  if(!scriptBody){
+                    const bodyMatch=sample.match(/<\s*script\b[^>]*>([\s\S]*?)(?:<\s*\/\s*script\s*>|$)/i);
+                    scriptBody=bodyMatch?bodyMatch[1]:""
+                  }
+                  if(scriptSrc)noteXssSink("script.src",
+                  scriptSrc,
+                  node,
+                  "script",
+                  candidate=>!!(candidate&&candidate.initialMarkupEligible&&xssScriptSrcCandidate(candidate,
+                  scriptSrc)));
+                  else noteXssSink("initial reflected markup",
+                  scriptBody,
+                  node,
+                  "code",
+                  candidate=>!!(candidate&&candidate.initialMarkupEligible&&candidate.codeShape&&xssCandidateInExecutableScript(scriptBody,
+                  candidate)));
+                  continue
+                }
+                inspected++;
+                noteXssSink("initial reflected markup",
+                sample,
+                node,
+                "html",
+                candidate=>!!(candidate&&candidate.initialMarkupEligible))
+              }
+
+            }
+            catch(_){
+
+            }
+
+          };
+          "loading"===document.readyState?woOn(document,
+          "DOMContentLoaded",
+          scanInitialXssReflection,
+          {
+            once:!0
+          }):setTimeout(scanInitialXssReflection,
+          0)
+        }
+        const correlateXssContext=()=>{
+          if(!xssUrlEvidence)return;
+          try{
+            const risk=WO.__pageRisk||{
+
+            };
+            risk.phishing&&addXssSignal(30,
+            "Script-like navigation data appeared on a deceptive look-alike page",
+            "phishing-page");
+            const credentialField=document.querySelector&&document.querySelector('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]'),
+            identity=hasSignalIn(BEHAVE_IDENTITY_KEYS);
+            credentialField&&identity&&addXssSignal(15,
+            "Script-like navigation data appeared on a page requesting credentials",
+            "xss-credential-page")
+          }
+          catch(_){
+
+          }
+
+        };
+        xssUrlEvidence&&(setTimeout(correlateXssContext,
+        700),
+        setTimeout(correlateXssContext,
+        2500));
+        if(baselineBehaviorOn){
+          let interacted=!1;
         ["click",
         "keydown",
         "pointerdown",
@@ -11506,6 +14010,32 @@
         catch(_){
 
         }
+        /* Asking for a WebGPU adapter is the same question as the WebGL vendor
+           probe above, asked with a newer API, so it is counted the same way.
+           Detection lives here and spoofing lives in the noise block, for the
+           same reason patchGLProbe and patchGL are separate: they are two
+           features with two switches, and one must not need the other to be on.
+           Chaining is intentional -- the noise block wraps whatever it finds, so
+           whichever ends up outermost, both still run. */
+        try{
+          if(navigator.gpu&&navigator.gpu.requestAdapter){
+            const gpuProbe=navigator.gpu,
+            realAdapterRequest=gpuProbe.requestAdapter;
+            gpuProbe.requestAdapter=function requestAdapter(...args){
+              try{
+                noteFingerprint("WebGPU adapter probe")
+              }
+              catch(_){
+
+              }
+              return realAdapterRequest.apply(gpuProbe,args)
+            }
+          }
+
+        }
+        catch(_){
+
+        }
         try{
           if(navigator.geolocation){
             const geo=navigator.geolocation,
@@ -11553,6 +14083,7 @@
         catch(_){
           ageChecked=!0
         }
+        }
         /* addSignal calls this the moment a signal lands, so without the grace
         window the verdict was decided before the RDAP domain-age answer came back
         and the "established domain" suppression below could never apply. The 4.5s
@@ -11571,6 +14102,11 @@
             host:here,
             score:score,
             level:riskLevel(),
+            learningEligible:score-xssRiskPoints>=(xssRiskPoints?100:60),
+            independentEvidenceScore:score-xssRiskPoints,
+            xssObserved:seenSignals.has("xss-reflection"),
+            why:seenSignals.has("xss-reflection")?"XSS Behavior Guard correlated data from a potentially attacker-controlled browser source with an executable page sink. This is strong behavior evidence, not proof that exploitation succeeded.":"",
+            action:seenSignals.has("xss-reflection")?"Do not enter sensitive information unless you trust this page and expected the supplied input.":"",
             reasons:reasons.slice(0,
             10)
           }))
@@ -11969,12 +14505,18 @@
       phishHit.confidence="high"),
       phishHit){
         try{
-          WO.__pageRisk={
+          WO.__pageRisk=Object.assign({
+
+          },
+          WO.__pageRisk||{
+
+          },
+          {
             phishing:!0,
             brand:phishHit.brand,
             kind:phishHit.kind,
             confidence:phishHit.confidence
-          }
+          })
 
         }
         catch(_){
@@ -12476,11 +15018,11 @@
       const woCores=woPick([4,8,8,12,16],"hwc"),
       woMem=woPick([4,8,8],"devmem"),
       woGpu=woPick([
-        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)"},
-        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) HD Graphics 630 (0x0000591B) Direct3D11 vs_5_0 ps_5_0, D3D11)"},
-        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)"},
-        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"},
-        {v:"Google Inc. (AMD)",r:"ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)"}
+        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
+        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) HD Graphics 630 (0x0000591B) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
+        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"turing"}},
+        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"ampere"}},
+        {v:"Google Inc. (AMD)",r:"ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"amd",architecture:"gcn-4"}}
       ],"gpu");
       const patchGL=proto=>{
         if(!proto||!proto.getParameter)return;
@@ -12512,6 +15054,180 @@
         }
 
       };
+      /* WebGPU.
+
+         The WebGL spoof above is worth exactly as much as the surfaces that agree
+         with it. navigator.gpu answers the same question with better evidence:
+         adapter.info names the vendor and architecture, and adapter.limits is
+         roughly thirty integers whose combination identifies a GPU model more
+         precisely than UNMASKED_RENDERER ever did. It answers whether or not
+         WebGL has been touched.
+
+         So the failure here is not "WebGPU is unprotected". It is that a page
+         reading "NVIDIA GeForce RTX 3060" from WebGL and a real Radeon from
+         WebGPU has not been handed noise, it has been handed a contradiction --
+         rarer than either true answer, and an announcement that an extension is
+         rewriting one of them. The adapter below is therefore derived from the
+         same seeded pick that WebGL uses, so the two agree by construction rather
+         than by anyone remembering to keep them in step.
+
+         Limits are reported as the WebGPU specification's own required minimums.
+         Noise would be wrong twice over: a random set of thirty integers is a
+         near-unique identifier, and a value below the truth can break a page. The
+         spec defaults are the one set every conformant implementation supports,
+         so every user of this shield reports the same thing, and a page that
+         stays inside them cannot fail. A page that asks for more still gets it --
+         requestDevice validates against the real adapter, not against what was
+         reported here -- so the ceiling is on what is disclosed, not on what is
+         granted.
+
+         features is deliberately left alone. It carries a real signal (bc vs etc2
+         vs astc texture compression splits desktop from mobile) but hiding a
+         feature does not make a page ask for it anyway, it makes the page take
+         its fallback path or fail. That is a visible cost for a partial gain. */
+      try{
+        const woGpuLimits={
+          maxTextureDimension1D:8192,
+          maxTextureDimension2D:8192,
+          maxTextureDimension3D:2048,
+          maxTextureArrayLayers:256,
+          maxBindGroups:4,
+          maxBindGroupsPlusVertexBuffers:24,
+          maxBindingsPerBindGroup:1e3,
+          maxDynamicUniformBuffersPerPipelineLayout:8,
+          maxDynamicStorageBuffersPerPipelineLayout:4,
+          maxSampledTexturesPerShaderStage:16,
+          maxSamplersPerShaderStage:16,
+          maxStorageBuffersPerShaderStage:8,
+          maxStorageTexturesPerShaderStage:4,
+          maxUniformBuffersPerShaderStage:12,
+          maxUniformBufferBindingSize:65536,
+          maxStorageBufferBindingSize:134217728,
+          minUniformBufferOffsetAlignment:256,
+          minStorageBufferOffsetAlignment:256,
+          maxVertexBuffers:8,
+          maxBufferSize:268435456,
+          maxVertexAttributes:16,
+          maxVertexBufferArrayStride:2048,
+          maxInterStageShaderComponents:64,
+          maxInterStageShaderVariables:16,
+          maxColorAttachments:8,
+          maxColorAttachmentBytesPerSample:32,
+          maxComputeWorkgroupStorageSize:16384,
+          maxComputeInvocationsPerWorkgroup:256,
+          maxComputeWorkgroupSizeX:256,
+          maxComputeWorkgroupSizeY:256,
+          maxComputeWorkgroupSizeZ:64,
+          maxComputeWorkgroupsPerDimension:65535
+        },
+        woGpuInfo=(woGpu&&woGpu.g)||{vendor:"intel",architecture:"gen-9"},
+        /* A real GPUAdapterInfo keeps device and description empty in Chrome
+           unless the origin trial for unmasked info is on, so filling them in
+           would stand out rather than blend in. */
+        fakeInfo=Object.freeze({
+          vendor:woGpuInfo.vendor,
+          architecture:woGpuInfo.architecture,
+          device:"",
+          description:"",
+          subgroupMinSize:4,
+          subgroupMaxSize:128,
+          isFallbackAdapter:!1
+        }),
+        /* Every value a proxy hands back has to keep the identity a real object
+           would give it. A get trap that returns v.bind(t) fresh each time makes
+           adapter.requestDevice !== adapter.requestDevice, which no real object
+           does, and that inequality is a cleaner extension-detector than any of
+           the values this shield is hiding. So each wrapper memoises what it
+           hands out, and the substituted members are built once per object. */
+        stableGet=(target,fixed)=>{
+          const memo=new Map;
+          return(t,k)=>{
+            if(memo.has(k))return memo.get(k);
+            if(fixed&&Object.prototype.hasOwnProperty.call(fixed,k)){
+              memo.set(k,fixed[k]);
+              return fixed[k]
+            }
+            const v=Reflect.get(t,k);
+            if("function"!=typeof v)return v;
+            const bound=v.bind(t);
+            memo.set(k,bound);
+            return bound
+          }
+        },
+        /* GPUSupportedLimits keeps its values on accessors on the prototype, so
+           the object cannot be copied or assigned over. A proxy answers the known
+           names from the table and forwards anything a newer Chrome adds, which
+           fails open on an unknown limit rather than throwing on it. */
+        wrapLimits=real=>{
+          try{
+            const get=stableGet(real,woGpuLimits);
+            return new Proxy(real,{
+              get:(t,k)=>"string"==typeof k&&Object.prototype.hasOwnProperty.call(woGpuLimits,k)?woGpuLimits[k]:get(t,k),
+              has:(t,k)=>Object.prototype.hasOwnProperty.call(woGpuLimits,k)||Reflect.has(t,k)
+            })
+          }
+          catch(_){
+            return real
+          }
+
+        },
+        wrapDevice=dev=>{
+          if(!dev||"object"!=typeof dev)return dev;
+          try{
+            const get=stableGet(dev,{
+              limits:wrapLimits(dev.limits),
+              adapterInfo:fakeInfo
+            });
+            return new Proxy(dev,{get})
+          }
+          catch(_){
+            return dev
+          }
+
+        },
+        wrapAdapter=real=>{
+          if(!real||"object"!=typeof real)return real;
+          try{
+            const realDevice=real.requestDevice,
+            fixed={
+              limits:wrapLimits(real.limits),
+              info:fakeInfo,
+              requestAdapterInfo:cloak(function requestAdapterInfo(){
+                return Promise.resolve(fakeInfo)
+              },"requestAdapterInfo")
+            };
+            /* The device carries its own copy of the limits and, in newer Chrome,
+               its own adapterInfo. Wrapping the adapter and leaving the device
+               alone would move the leak one call to the right, which is the most
+               natural way to get this wrong. */
+            "function"==typeof realDevice&&(fixed.requestDevice=cloak(function requestDevice(...args){
+              return Promise.resolve(realDevice.apply(real,args)).then(wrapDevice)
+            },"requestDevice"));
+            const get=stableGet(real,fixed);
+            return new Proxy(real,{get})
+          }
+          catch(_){
+            return real
+          }
+
+        };
+        if(navigator.gpu&&navigator.gpu.requestAdapter){
+          const gpu=navigator.gpu,
+          realRequest=gpu.requestAdapter;
+          /* No probe reporting here on purpose: this block has no reporter in
+             scope, and reaching for one would throw inside the replacement
+             function -- which would break WebGPU on every page rather than
+             failing quietly. Counting the probe is the detection block's job and
+             is gated on its own switch. */
+          gpu.requestAdapter=cloak(function requestAdapter(...args){
+            return Promise.resolve(realRequest.apply(gpu,args)).then(wrapAdapter)
+          },"requestAdapter")
+        }
+
+      }
+      catch(_){
+
+      }
       if(window.WebGLRenderingContext&&patchGL(WebGLRenderingContext.prototype),
       window.WebGL2RenderingContext&&patchGL(WebGL2RenderingContext.prototype),
       window.AnalyserNode){
@@ -12671,7 +15387,159 @@
         24),
         defp(Screen.prototype,
         "pixelDepth",
-        24))
+        24),
+        /* isExtended answers "does this person have more than one monitor" with
+           no permission prompt in front of it at all, which makes it a cheap and
+           unusually stable bit to collect. Everyone reports one screen. */
+        defp(Screen.prototype,
+        "isExtended",
+        !1)),
+        /* The Window Management API answers that same question again in far more
+           detail: every attached display's size, position, label and scaling. A
+           permission sits in front of it, but a page that is granted one is handed
+           a layout close to unique.
+
+           Built from the same rounded numbers the Screen spoof above reports, so
+           the two cannot disagree -- one screen, at the size this browser already
+           claims. devicePixelRatio is deliberately the real one: nothing spoofs
+           window.devicePixelRatio, so inventing a value here would contradict a
+           number the page can read directly, and a contradiction is a sharper
+           identifier than the truth it replaced. */
+        "function"==typeof window.getScreenDetails&&(window.getScreenDetails=cloak(function getScreenDetails(){
+          const one={
+            availLeft:0,
+            availTop:0,
+            availWidth:screenW,
+            availHeight:screenH,
+            width:screenW,
+            height:screenH,
+            colorDepth:24,
+            pixelDepth:24,
+            devicePixelRatio:window.devicePixelRatio||1,
+            isExtended:!1,
+            isInternal:!0,
+            isPrimary:!0,
+            label:"",
+            left:0,
+            top:0,
+            onchange:null
+          };
+          return Promise.resolve({
+            screens:[one],
+            currentScreen:one,
+            oncurrentscreenchange:null,
+            onscreenschange:null,
+            addEventListener(){
+
+            },
+            removeEventListener(){
+
+            },
+            dispatchEvent(){
+              return!0
+            }
+
+          })
+        },"getScreenDetails"))
+      }
+      catch(_){
+
+      }
+      /* Local Font Access. queryLocalFonts() hands back every font installed on
+         the machine, by family and PostScript name. That list is not a hint, it
+         is close to an identifier on its own: it carries the operating system,
+         the office suite, the design tools, the language packs and whatever the
+         person installed by hand, and unlike a measured-width font probe it is
+         exact and cheap.
+
+         The refusal is a rejection rather than a short list, because the most
+         common real answer to this API is already a rejection -- it sits behind a
+         permission prompt most people decline. Returning a curated set of twenty
+         universal fonts would be a stranger answer than saying no: real machines
+         have hundreds, so a tidy list is itself a signature. The error and its
+         message are the ones Chrome produces when someone clicks Block. */
+      try{
+        "function"==typeof window.queryLocalFonts&&(window.queryLocalFonts=cloak(function queryLocalFonts(){
+          return Promise.reject(new DOMException("Permission denied.","NotAllowedError"))
+        },"queryLocalFonts"))
+      }
+      catch(_){
+
+      }
+      /* navigator.keyboard.getLayoutMap() reports what each physical key produces,
+         which is a direct read of the keyboard layout and therefore of country and
+         language. It needs no permission.
+
+         The answer is US QWERTY, because that is what the rest of the engine
+         already claims: navigator.language is masked to en-US and Header Shield
+         sends Accept-Language: en-US. A keyboard that disagreed with both would
+         be the contradiction this whole layer exists to avoid producing. */
+      try{
+        const kbFp=navigator.keyboard;
+        if(kbFp&&"function"==typeof kbFp.getLayoutMap){
+          const US_LAYOUT=[
+            ["KeyA","a"],["KeyB","b"],["KeyC","c"],["KeyD","d"],["KeyE","e"],["KeyF","f"],
+            ["KeyG","g"],["KeyH","h"],["KeyI","i"],["KeyJ","j"],["KeyK","k"],["KeyL","l"],
+            ["KeyM","m"],["KeyN","n"],["KeyO","o"],["KeyP","p"],["KeyQ","q"],["KeyR","r"],
+            ["KeyS","s"],["KeyT","t"],["KeyU","u"],["KeyV","v"],["KeyW","w"],["KeyX","x"],
+            ["KeyY","y"],["KeyZ","z"],
+            ["Digit1","1"],["Digit2","2"],["Digit3","3"],["Digit4","4"],["Digit5","5"],
+            ["Digit6","6"],["Digit7","7"],["Digit8","8"],["Digit9","9"],["Digit0","0"],
+            ["Minus","-"],["Equal","="],["BracketLeft","["],["BracketRight","]"],
+            ["Backslash","\\"],["Semicolon",";"],["Quote","'"],["Backquote","`"],
+            ["Comma",","],["Period","."],["Slash","/"],["Space"," "]
+          ];
+          kbFp.getLayoutMap=cloak(function getLayoutMap(){
+            /* A KeyboardLayoutMap is a read-only Map. A real Map answers get,
+               has, size, keys, values, entries and forEach the same way, so
+               handing one back behaves correctly for every caller. */
+            return Promise.resolve(new Map(US_LAYOUT))
+          },"getLayoutMap")
+        }
+
+      }
+      catch(_){
+
+      }
+      /* speechSynthesis.getVoices() lists the installed text-to-speech voices.
+         The set is a fingerprint of the operating system, its version and every
+         language pack on the machine -- "Microsoft Hazel Desktop" says Windows
+         and says British English, without asking anything.
+
+         Filtered rather than emptied. An empty list breaks every page that reads
+         aloud, and it is also a conspicuous answer, since almost every real
+         browser has at least one voice. Keeping the ones that match the language
+         this browser already claims removes the language-pack signal while
+         leaving speech working in the locale the page was told about. If the
+         filter would empty the list, the original is returned -- a broken feature
+         is a worse outcome than a narrower one. */
+      try{
+        const synth=window.speechSynthesis;
+        if(synth&&"function"==typeof synth.getVoices){
+          const realVoices=synth.getVoices.bind(synth),
+          claimedLang=String(navigator.language||"en-US").slice(0,2).toLowerCase();
+          synth.getVoices=cloak(function getVoices(){
+            try{
+              const all=realVoices();
+              if(!all||!all.length)return all;
+              const kept=all.filter(v=>{
+                try{
+                  return String(v&&v.lang||"").slice(0,2).toLowerCase()===claimedLang
+                }
+                catch(_){
+                  return!1
+                }
+
+              });
+              return kept.length?kept:all
+            }
+            catch(_){
+              return realVoices()
+            }
+
+          },"getVoices")
+        }
+
       }
       catch(_){
 
@@ -12902,7 +15770,7 @@
           args);
           noteIpLookup(this.__wo_ip_lookup_url);
           try{
-            this.abort()
+            __woFailXhr(this)
           }
           catch(_){
 
@@ -12910,6 +15778,28 @@
 
         },
         Object.defineProperty(RX.prototype.send,
+        "__wardenoneIpPrivacy",
+        {
+          value:!0
+        }))
+      }
+      /* An IP-lookup endpoint reached over WebTransport deanonymises exactly as
+         well as one reached over a socket. */
+      if(window.WebTransport){
+        const RealWT=window.WebTransport;
+        RealWT.__wardenoneIpPrivacy||(window.WebTransport=function(url,
+        options){
+          const hit=ipLookupUrl(url);
+          if(hit)throw noteIpLookup(hit),
+          new DOMException("IP lookup transport blocked by WardenOne",
+          "SecurityError");
+          return void 0===options?new RealWT(url):new RealWT(url,
+          options)
+        },
+        window.WebTransport.prototype=RealWT.prototype,
+        Object.setPrototypeOf&&Object.setPrototypeOf(window.WebTransport,
+        RealWT),
+        Object.defineProperty(window.WebTransport,
         "__wardenoneIpPrivacy",
         {
           value:!0
@@ -13956,6 +16846,1531 @@
         error:String(e)
       })
     }
+    /* Speech recognition, which reaches the microphone without going through
+    getUserMedia -- so the whole of Media Shield above, which hooks getUserMedia, watched
+    it happen and said nothing. A page could listen while the guard reported silence.
+    That is worse than an uncovered API. "Block camera & microphone" is a promise about
+    the microphone, and there was a way to the microphone it did not cover, so the switch
+    was not telling the truth. This makes it true.
+    The second half is worth saying out loud: Chrome's implementation is not local. Audio
+    from the page's microphone is sent to a speech service to be transcribed, so this is
+    not only listening, it is listening somewhere else.
+    Refusing is done the way the browser refuses. start() returns nothing either way, so
+    a thrown error would break pages that never expected one; what a page DOES handle is
+    the denial it already gets when someone clicks Block -- an error event carrying
+    "not-allowed", then end. That path is already written on every site that uses this,
+    so refusing this way costs them nothing they have not already coded for.
+    Trusted media hosts are exempt exactly as they are for getUserMedia, and with the
+    switch off this only writes a line. */
+    if(WO.mediaShield)try{
+      const SR_HOSTS=["SpeechRecognition",
+      "webkitSpeechRecognition"];
+      let srLogged=0;
+      const srNote=(type,
+      detail)=>{
+        if(!(++srLogged>3))try{
+          log(type,
+          detail)
+        }
+        catch(_){
+
+        }
+
+      },
+      srDeny=self=>{
+        /* Emulate a permission denial on the object the page is holding, on a later turn
+        so the page's own start() call has returned first -- the browser does the same. */
+        setTimeout(()=>{
+          for(const ev of["error",
+          "end"])try{
+            const e=new Event(ev);
+            "error"===ev&&(e.error="not-allowed",
+            e.message="Blocked by WardenOne Media Shield");
+            const handler=self["on"+ev];
+            "function"==typeof handler&&handler.call(self,
+            e),
+            self.dispatchEvent&&self.dispatchEvent(e)
+          }
+          catch(_){
+
+          }
+
+        },
+        0)
+      };
+      SR_HOSTS.forEach(name=>{
+        try{
+          const ctor=window[name],
+          proto=ctor&&ctor.prototype,
+          realStart=proto&&proto.start;
+          if("function"!=typeof realStart||realStart.__wardenoneSpeechGuard)return;
+          proto.start=Object.assign(function(...args){
+            const blocked=!1!==WO.blockCameraMic&&!trustedMediaHost;
+            srNote(blocked?"blocked_speech_capture":"warned_speech_capture",
+            {
+              api:name,
+              severity:"High",
+              confidence:"Very high",
+              why:blocked?"This page tried to start speech recognition, which listens through your microphone. It does not go through the camera and microphone permission the rest of Media Shield watches, and Chrome sends the audio away to be transcribed rather than doing it on your machine.":"This page started speech recognition, which listens through your microphone and sends the audio away to be transcribed. Blocking camera and microphone access is turned off, so it was allowed.",
+              action:blocked?"Nothing to do. If you came here to dictate or use voice search, allow camera and microphone for this site.":"If you did not start this yourself, leave the page -- it is listening.",
+              outcome:blocked?"Refused the same way the browser refuses it, so the page sees an ordinary permission denial.":"Recorded only; listening was not blocked."
+            });
+            if(blocked)return void srDeny(this);
+            return realStart.apply(this,
+            args)
+          },
+          {__wardenoneSpeechGuard:!0})
+        }
+        catch(_){
+
+        }
+
+      })
+    }
+    catch(_){
+
+    }
+    /* Back-button trapping. A page pushes a history entry, then pushes another one
+    every time you press Back, so Back never leaves. Scam and "you have a virus"
+    pages do it to keep you where they put you.
+    Pushing history is not the tell -- every single-page app does it constantly. The
+    tell is pushing the SAME url you are already on, immediately after a popstate,
+    which is the moment Back fired and the only reason to re-arm. One of those could
+    be an app restoring a modal; a run of them is a trap, so the first is allowed and
+    every one after it is refused -- the page simply does not get to re-add the entry,
+    and Back works on the next press. Nothing already in your history is changed or
+    removed; unwinding someone's history from underneath them would be worse than the
+    trap, and is a different thing entirely from declining to add to it. */
+    if(WO.backTrapGuard&&WO_TOP)try{
+      let btLastPop=0,
+      btRearms=0,
+      btGestureAt=0,
+      btGestureless=0,
+      btWarned=!1;
+      /* How long after Back a push still counts as answering it. */
+      const BT_POP_WINDOW=1200,
+      /* How long a real interaction keeps vouching for the pushes that follow. Generous,
+      because a single-page app can take a moment to finish a transition it started. */
+      BT_GESTURE_WINDOW=5e3,
+      /* A budget, not a ban. An app normalising its route on load legitimately pushes once
+      or twice before anyone has touched anything, so a hard no would break ordinary sites.
+      Six is far past what those need and far under a flood, which runs to dozens. */
+      BT_GESTURELESS_PUSHES=6;
+      const btUrl=()=>{
+        try{return String(location.href||"")}catch(_){return""}
+      },
+      btTarget=u=>{
+        if(null==u||""===u)return btUrl();
+        /* An address that cannot be resolved returns something no href can equal, so a push
+        we failed to understand is allowed through rather than refused. Erring the other way
+        would let one unparseable url turn this into a block on an ordinary page. */
+        try{return new URL(String(u),btUrl()).href}catch(_){return""}
+      },
+      /* One notice per page whichever way the page went about it: they are the same abuse
+      wearing different clothes, and a person who has just been told Back is being fought
+      does not need telling three times. The wording says which one it was. */
+      btNotice=(why,outcome)=>{
+        if(btWarned)return;
+        btWarned=!0;
+        try{
+          log("warned_back_trap",
+          {
+            severity:"Medium",
+            confidence:"High",
+            why:why,
+            action:"Press Back again -- it should leave now. If the page keeps fighting, close the tab; nothing on it needs you to stay.",
+            outcome:outcome+" Your history itself was not rewritten -- nothing already in it was changed or removed."
+          })
+        }
+        catch(_){
+
+        }
+
+      },
+      /* What separates an app from a trap is not how many entries it adds but whether anyone
+      asked. Every ordinary interaction vouches for the pushes that follow it -- scrolling and
+      wheeling included, or an endless list would run out of budget for behaving normally. */
+      btGesture=()=>{
+        const now=Date.now();
+        now-btGestureAt<150||(btGestureAt=now,
+        btGestureless=0)
+      };
+      for(const btEv of["pointerdown","mousedown","keydown","touchstart","click","wheel","scroll"])woOn(window,
+      btEv,
+      btGesture,
+      {capture:!0,passive:!0});
+      woOn(window,
+      "popstate",
+      ()=>{
+        btLastPop=Date.now()
+      });
+      const btWatch=name=>{
+        try{
+          const real=history&&history[name];
+          if("function"!=typeof real||real.__wardenoneBackTrap)return;
+          const wrapped=function(state,
+          title,
+          url){
+            /* Refuse rather than record. The trap is the page re-adding the address you
+            are already on the instant Back fires, so declining exactly that call is the
+            whole fix, and it touches nothing already in your history.
+            The decision has to be made BEFORE the real call, which is why the target is
+            resolved here rather than compared afterwards.
+            The first one is still allowed: a single re-add right after Back can be an app
+            restoring a modal, and that judgement is older than this refusal. From the
+            second onward it is a run, which no ordinary page produces, so Back starts
+            working again on the very next press. */
+            try{
+              const btNow=Date.now();
+              if(btUrl()===btTarget(url)&&btLastPop&&btNow-btLastPop<BT_POP_WINDOW&&++btRearms>=2)return void btNotice("Each time you pressed Back this page put the same address straight back into your history, so Back could not leave. Pages that do this are usually trying to keep you on a scam or a fake alert.",
+              "The repeat entries were refused, so Back works again.");
+              /* The other shape, and the one that does not need you to press Back at all: the
+              page quietly stacks entries while you read, so that by the time you do press it,
+              Back has to be pressed once for every entry before it can leave. Nothing asked
+              for any of them, which is what separates it from an app you are using. */
+              if((!btGestureAt||btNow-btGestureAt>BT_GESTURE_WINDOW)&&++btGestureless>BT_GESTURELESS_PUSHES)return void btNotice("This page kept adding entries to your history without you doing anything. That is a way of burying the page you came from, so Back has to be pressed over and over before it can leave.",
+              "The extra entries were refused, so Back needs one press.")
+            }
+            catch(_){
+
+            }
+            return real.apply(this,
+            arguments)
+          };
+          wrapped.__wardenoneBackTrap=!0,
+          history[name]=wrapped
+        }
+        catch(_){
+
+        }
+
+      },
+      /* Third shape: you press Back and the page immediately sends you forward again, so the
+      entry you just left is the entry you are on. Refused only inside the window after Back,
+      because a Next button on a gallery is the same call and has every right to work. */
+      btRefuseForward=()=>btLastPop&&Date.now()-btLastPop<BT_POP_WINDOW&&(btNotice("You pressed Back and this page sent you straight forward again, so Back could not take you anywhere.",
+      "The forward jump was refused, so Back works."),
+      !0),
+      btWatchForward=()=>{
+        try{
+          const realGo=history&&history.go;
+          "function"!=typeof realGo||realGo.__wardenoneBackTrap||(history.go=Object.assign(function(delta){
+            try{
+              if((Number(delta)||0)>0&&btRefuseForward())return
+            }
+            catch(_){
+
+            }
+            return realGo.apply(this,
+            arguments)
+          },
+          {__wardenoneBackTrap:!0}));
+          const realForward=history&&history.forward;
+          "function"!=typeof realForward||realForward.__wardenoneBackTrap||(history.forward=Object.assign(function(){
+            try{
+              if(btRefuseForward())return
+            }
+            catch(_){
+
+            }
+            return realForward.apply(this,
+            arguments)
+          },
+          {__wardenoneBackTrap:!0}))
+        }
+        catch(_){
+
+        }
+
+      };
+      btWatch("pushState"),
+      btWatchForward()
+    }
+    catch(_){
+
+    }
+    /* Three capabilities a page can reach for that nothing here could see. None is
+    blocked -- Chrome puts its own confirmation in front of each, and the payment
+    sheet in particular is something people genuinely use. What was missing was the
+    line in the log.
+    Payment sheet: the card guard watches card fields in forms and knew nothing
+    about the native sheet, which is a different path to the same place.
+    Idle detection: reports whether you are at the keyboard and whether the screen
+    is locked. It is presence tracking, and worth knowing about.
+    Install prompt: an installed site opens in its own window with no address bar,
+    which is the same missing-chrome problem as the two spoofing guards above -- so
+    a page that asks to install itself is worth a note, especially one you did not
+    go looking to install. */
+    if(WO.capabilityGuard)try{
+      let capLogged=0;
+      const capNote=(type,
+      detail)=>{
+        if(!(++capLogged>4))try{
+          log(type,
+          detail)
+        }
+        catch(_){
+
+        }
+
+      },
+      capWrap=(owner,
+      name,
+      onCall)=>{
+        try{
+          const real=owner&&owner[name];
+          if("function"!=typeof real||real.__wardenoneCapability)return;
+          const wrapped=function(...args){
+            try{onCall.call(this,args)}catch(_){ }
+            return real.apply(this,
+            args)
+          };
+          wrapped.__wardenoneCapability=!0,
+          owner[name]=wrapped
+        }
+        catch(_){
+
+        }
+
+      };
+      /* Only which payment methods were offered. Amounts and line items are the
+      user's own transaction and have no business in a history file. */
+      capWrap(window.PaymentRequest&&PaymentRequest.prototype,
+      "show",
+      function(){
+        let methods="";
+        try{
+          methods=(this&&this.__woMethods||[]).slice(0,
+          4).join(", ")
+        }
+        catch(_){
+
+        }
+        capNote("warned_payment_sheet",
+        {
+          methods:String(methods).slice(0,
+          80),
+          severity:"Medium",
+          confidence:"High",
+          why:"This site opened Chrome's payment sheet. Nothing is paid unless you confirm it there, but a checkout you did not start is worth a second look.",
+          action:"Only confirm if you meant to buy something here. Check the site is who you think it is first.",
+          outcome:"Recorded only; the sheet was not interfered with."
+        })
+      });
+      try{
+        const RealPayment=window.PaymentRequest;
+        if("function"==typeof RealPayment&&!RealPayment.__wardenoneCapability){
+          const WrappedPayment=function(methodData,
+          ...rest){
+            const made=new RealPayment(methodData,
+            ...rest);
+            try{
+              made.__woMethods=(Array.isArray(methodData)?methodData:[]).map(entry=>String(entry&&entry.supportedMethods||"").slice(0,
+              40)).filter(Boolean)
+            }
+            catch(_){
+
+            }
+            return made
+          };
+          WrappedPayment.prototype=RealPayment.prototype,
+          WrappedPayment.__wardenoneCapability=!0,
+          window.PaymentRequest=WrappedPayment
+        }
+      }
+      catch(_){
+
+      }
+      capWrap(window.IdleDetector&&IdleDetector.prototype,
+      "start",
+      ()=>{
+        capNote("warned_idle_watch",
+        {
+          severity:"Medium",
+          confidence:"High",
+          why:"This site started watching whether you are at the keyboard and whether your screen is locked. That is presence tracking; it does not need it to show you a page.",
+          action:"If you did not expect it, remove this site's idle-detection permission in Chrome's site settings.",
+          outcome:"Recorded only; the watch was not stopped."
+        })
+      });
+      /* The event object belongs to the page once its own listener runs, so the
+      only chance to see prompt() being called is to wrap it on the way past. */
+      woOn(window,
+      "beforeinstallprompt",
+      event=>{
+        try{
+          const real=event&&event.prompt;
+          if("function"!=typeof real||real.__wardenoneCapability)return;
+          const wrapped=function(...args){
+            /* Our own bookkeeping must never be what breaks the page's install prompt,
+            which is why every other wrapper here shields the call the same way. */
+            try{capNote("warned_app_install_prompt",
+            {
+              severity:"Medium",
+              confidence:"High",
+              why:"This site asked to install itself as an app. An installed site opens in its own window with no address bar, so there is nothing on screen afterwards to tell you which site you are looking at.",
+              action:"Only install sites you trust and meant to install. Cancel if you did not ask for this.",
+              outcome:"Recorded only; the install prompt was not blocked."
+            })}catch(_){ }
+            return real.apply(this,
+            args)
+          };
+          wrapped.__wardenoneCapability=!0;
+          try{
+            event.prompt=wrapped
+          }
+          catch(_){
+
+          }
+
+        }
+        catch(_){
+
+        }
+
+      },
+      !0);
+      /* Registering a service worker. This is the one thing on the page that outlives the
+      page: once registered it stays, and from then on it sits in front of every request
+      the browser makes to this origin, on visits the page itself has nothing to do with.
+      That is also how a site works offline and how push arrives, so it is ordinary and
+      blocking it would break real applications -- but it is a foothold, and a script that
+      was compromised for an afternoon can leave one behind that lasts.
+      It is also the far side of a limit already written down here: a notification raised
+      from a worker's push event is created outside the page, where a content script cannot
+      reach it. The registration IS reachable, so at least the moment one is installed is
+      no longer invisible.
+      Scope is recorded as how much it covers, never as a path. "The whole site" and "part
+      of the site" is the difference worth knowing; the path itself would put a page you
+      visited into the log for nothing. */
+      capWrap("undefined"!=typeof navigator&&navigator.serviceWorker,
+      "register",
+      function(args){
+        let whole=!0;
+        try{
+          const opt=args&&args[1],
+          scope=opt&&opt.scope?String(opt.scope):"/";
+          whole="/"===new URL(scope,
+          location.href).pathname
+        }
+        catch(_){
+
+        }
+        capNote("warned_service_worker",
+        {
+          /* The site's own name. It was deliberately left out before, on the
+             reasoning that the script's address would put a visited page into
+             the log -- which is right about the PATH and wrong about the HOST.
+             Without it the warning reads "this site installed a service worker"
+             with no way to tell which one, and a worker outlives the tab, so by
+             the time anyone reads the entry the tab that caused it is gone. The
+             hostname is already recorded alongside every event as the tab URL;
+             naming it here costs nothing and makes the warning actionable. */
+          host:location.hostname,
+          matched:whole?"whole site":"part of the site",
+          severity:"Medium",
+          confidence:"Very high",
+          why:location.hostname+" installed a service worker. It stays after you close the tab and sits in front of every request to "+(whole?"the whole site":"part of the site")+" from then on, including visits you make later. That is how sites work offline and how push notifications arrive, so it is ordinary -- but it is also the one thing a page can leave behind.",
+          action:"Nothing to do if you use this site. If you do not recognise it, clearing the site's data in Chrome removes the worker with it.",
+          outcome:"Recorded only; the worker was registered. The address it was registered from is not stored, only how much of the site it covers."
+        })
+      })
+    }
+    catch(_){
+
+    }
+    /* Push-notification abuse. The permission itself is already watched by
+    permission-chain.js, which records that a prompt happened and how it was
+    answered -- that wrapper is left alone here rather than stacked on. What it
+    cannot say is anything about the two halves that matter:
+    Before: the page coaxing the click. "Click Allow to continue", "Press Allow to
+    verify you are not a robot" -- the same trick as ClickFix, aimed at Chrome's own
+    prompt. That is the moment worth catching, because a permission never granted
+    cannot be abused later.
+    After: what actually arrives. "Your PC is infected", "(1) new message" -- OS-
+    looking alerts leading to scam pages, which is the whole reason the permission
+    is farmed in the first place.
+    Known limit, and it is a real one: a notification shown from a service worker's
+    push event is created in the worker, not the page, and a content script cannot
+    reach it. What is covered is everything the page itself raises. The wording of
+    the notification is never stored -- only which shape it matched. */
+    if(WO.notificationAbuseGuard&&!trustedMediaHost)try{
+      const NOTIF_COAX=/\b(?:click|press|tap|hit|select|choose)\s+(?:on\s+)?(?:the\s+)?["'\u201C\u2018]?allow["'\u201D\u2019]?\b|\ballow\s+(?:the\s+)?notifications?\s+(?:to|and|for)\b|\ballow\s+(?:us\s+)?to\s+continue\b|\ballow\b[^.\n]{0,40}\b(?:to\s+continue|to\s+watch|to\s+download|to\s+proceed|if\s+you\s+are\s+not\s+a\s+robot)\b/i,
+      NOTIF_SCAM=[[/\b(?:virus|malware|trojan|spyware|ransomware)\b[^.\n]{0,60}\b(?:detect|found|infect|remove|clean|scan)/i,
+      "fake malware alert"],
+      [/\byour\s+(?:pc|computer|device|system|iphone|android|mac|windows)\b[^.\n]{0,40}\b(?:is|has been|was)\b[^.\n]{0,30}\b(?:infect|hack|compromis|at risk|damaged)/i,
+      "fake malware alert"],
+      [/\(\s*\d+\s*\)\s*(?:new\s+)?(?:message|notification|match|friend)/i,
+      "fake unread-message badge"],
+      [/\byou(?:'ve| have)?\s+won\b|\bclaim\s+your\b|\bcongratulations\b[^.\n]{0,40}\b(?:winner|prize|reward|gift)/i,
+      "prize bait"],
+      [/\b(?:subscription|licence|license|antivirus)\b[^.\n]{0,40}\b(?:expired|expiring|has ended|renew)/i,
+      "fake expiry notice"],
+      [/\bupdate\s+(?:your\s+)?(?:flash|player|browser|chrome|driver|software)\b/i,
+      "fake update prompt"],
+      [/\b(?:security\s+alert|immediate\s+action|act\s+now|final\s+warning)\b/i,
+      "urgency bait"]],
+      notifSeen=new Set;
+      let notifLogged=0,
+      notifCoaxPending=0;
+      const notifNote=(type,
+      detail)=>{
+        if(!(++notifLogged>4))try{
+          log(type,
+          detail)
+        }
+        catch(_){
+
+        }
+
+      },
+      /* Only the shape is recorded. The notification's own wording is page-supplied
+      content and has no business in a history file. */
+      notifShapeOf=text=>{
+        const value=String(text||"").replace(/\s+/g," ").slice(0,400);
+        if(!value)return"";
+        for(let i=0;i<NOTIF_SCAM.length;i++){
+          if(NOTIF_SCAM[i][0].test(value))return NOTIF_SCAM[i][1]
+        }
+        return""
+      },
+      notifScam=(title,
+      body)=>{
+        try{
+          const shape=notifShapeOf(title)||notifShapeOf(body);
+          if(!shape||notifSeen.has(shape))return;
+          notifSeen.add(shape),
+          notifNote("warned_notification_scam",
+          {
+            shape:shape,
+            severity:"High",
+            confidence:"High",
+            why:"A notification this page raised reads like a "+shape+". Alerts of that shape are the usual payload of a farmed notification permission, and they lead to scam pages rather than anything on this site.",
+            action:"Do not click it. Remove this site's notification permission in Chrome's site settings.",
+            outcome:"Recorded only; the notification was not suppressed."
+          })
+        }
+        catch(_){
+
+        }
+
+      },
+      notifOptionText=options=>{
+        try{
+          return options&&"object"==typeof options?String(options.body||"")+" "+String(options.title||""):""
+        }
+        catch(_){
+          return""
+        }
+
+      };
+      try{
+        const RealNotification=window.Notification;
+        if("function"==typeof RealNotification&&!RealNotification.__wardenoneNotifGuard){
+          const Wrapped=function(title,
+          options){
+            try{notifScam(title,notifOptionText(options))}catch(_){ }
+            return new RealNotification(title,
+            options)
+          };
+          Wrapped.prototype=RealNotification.prototype,
+          Wrapped.__wardenoneNotifGuard=!0;
+          ["permission",
+          "maxActions"].forEach(name=>{
+            try{
+              Object.defineProperty(Wrapped,
+              name,
+              {
+                get:()=>RealNotification[name],
+                configurable:!0
+              })
+            }
+            catch(_){
+
+            }
+
+          }),
+          /* requestPermission is deliberately passed straight through.
+          permission-chain.js owns that wrapper; wrapping it here too would report
+          one prompt twice and stack two layers on the same method. */
+          ["requestPermission"].forEach(name=>{
+            try{
+              Wrapped[name]=function(...args){
+                return RealNotification[name].apply(RealNotification,
+                args)
+              }
+            }
+            catch(_){
+
+            }
+
+          }),
+          window.Notification=Wrapped
+        }
+      }
+      catch(_){
+
+      }
+      try{
+        const proto=window.ServiceWorkerRegistration&&ServiceWorkerRegistration.prototype,
+        real=proto&&proto.showNotification;
+        if("function"==typeof real&&!real.__wardenoneNotifGuard){
+          const wrapped=function(title,
+          options){
+            try{notifScam(title,notifOptionText(options))}catch(_){ }
+            return real.apply(this,
+            arguments)
+          };
+          wrapped.__wardenoneNotifGuard=!0,
+          proto.showNotification=wrapped
+        }
+      }
+      catch(_){
+
+      }
+      /* The coaxing only matters while the answer is still open: once the site has
+      been allowed or blocked the wording is just wording. */
+      const notifCheckCoax=()=>{
+        try{
+          if(!WO_TOP)return;
+          let state="";
+          try{state=String(window.Notification&&Notification.permission||"")}catch(_){ }
+          if("default"!==state)return;
+          if(notifSeen.has("coax"))return;
+          let text="";
+          try{text=String(document.body&&document.body.innerText||"").replace(/\s+/g," ").slice(0,20000)}catch(_){ }
+          if(!text||!NOTIF_COAX.test(text))return;
+          notifSeen.add("coax"),
+          notifNote("warned_notification_bait",
+          {
+            severity:"Medium",
+            confidence:"High",
+            why:"This page is telling you to click Allow on the notification prompt. Sites that have to talk you into it are usually farming the permission to push adverts and fake alerts later, not to send you anything you asked for.",
+            action:"Choose Block unless you specifically want alerts from this site.",
+            outcome:"Recorded only; the page and the prompt were left alone."
+          })
+        }
+        catch(_){
+
+        }
+
+      },
+      notifQueueCoax=()=>{
+        notifCoaxPending||(notifCoaxPending=1,
+        setTimeout(()=>{
+          notifCoaxPending=0,
+          notifCheckCoax()
+        },
+        1200))
+      };
+      setTimeout(notifCheckCoax,
+      1500);
+      try{
+        const observer=__woObserver(notifQueueCoax);
+        observer.observe(document.documentElement||document.body,
+        {
+          childList:!0,
+          subtree:!0
+        }),
+        setTimeout(()=>{
+          try{observer.disconnect()}catch(_){ }
+        },
+        45e3)
+      }
+      catch(_){
+
+      }
+
+    }
+    catch(_){
+
+    }
+    /* WebUSB, Web Serial, WebHID and Web Bluetooth. These reach past the page and
+    talk to hardware: firmware, serial devices, raw HID -- which includes security
+    keys. The permission chain watched camera, microphone, notifications and
+    clipboard-read and knew nothing about any of them, so a site asking to speak to
+    a USB device left no trace anywhere in WardenOne.
+    Chrome puts a device chooser in front of each one and that chooser is the real
+    gate, so nothing here blocks: a hardware wallet, a board flasher and a stream
+    deck are all ordinary uses and refusing them would be wrong. What was missing
+    was the record. Two things get one: asking, and -- separately -- reading back a
+    device that was granted on some earlier visit, which needs no prompt at all and
+    is therefore the only part of this that can happen while you are not looking.
+    Never records what the device is. The count is the whole payload. */
+    if(WO.deviceAccessGuard)try{
+      const DEV_SURFACES=[["usb",
+      "USB",
+      "requestDevice",
+      "getDevices"],
+      ["serial",
+      "serial port",
+      "requestPort",
+      "getPorts"],
+      ["hid",
+      "HID",
+      "requestDevice",
+      "getDevices"],
+      ["bluetooth",
+      "Bluetooth",
+      "requestDevice",
+      "getDevices"]],
+      /* Raw HID reaches security keys, and USB and serial reach firmware. Bluetooth
+      is a smaller blast radius: nearby devices, still worth a line in the log. */
+      DEV_SEVERITY={
+        usb:"High",
+        serial:"High",
+        hid:"High",
+        bluetooth:"Medium",
+        /* Plain MIDI enumerates the music hardware attached to this machine, which is a
+        fingerprint most people would not guess they were handing over. sysex is a
+        different thing: System Exclusive is the channel a device's own firmware listens
+        on, so a page holding it is not playing notes, it is talking to the hardware --
+        which puts it alongside raw HID rather than alongside Bluetooth. */
+        midi:"Medium",
+        "midi-sysex":"High"
+      },
+      devCounts=Object.create(null),
+      noteDevice=(kind,
+      api,
+      label,
+      count)=>{
+        try{
+          const key=kind+":"+api;
+          if((devCounts[key]=(devCounts[key]||0)+1)>3)return;
+          const silent="silent"===kind;
+          log(silent?"warned_device_silent":"warned_device_request",
+          {
+            api:String(api).slice(0,
+            16),
+            devices:silent?Math.min(99,
+            Number(count)||0):0,
+            severity:DEV_SEVERITY[api]||"Medium",
+            confidence:silent?"Very high":"High",
+            why:silent?"This page read back a "+label+" device you allowed it to use on an earlier visit. That needs no prompt, so it can happen without you being asked again.":"This page asked to connect to a "+label+" device. Chrome will ask you to choose one; nothing is connected unless you pick it.",
+            action:silent?"If you did not expect this site to use your hardware, remove its device access in Chrome's site settings.":"Only choose a device if you came here to use it. Cancel if the request is unexpected.",
+            outcome:"Recorded only; the request was not blocked and no device details were read."
+          })
+        }
+        catch(_){
+
+        }
+
+      },
+      devWrapRequest=(owner,
+      name,
+      api,
+      label)=>{
+        try{
+          const real=owner&&owner[name];
+          if("function"!=typeof real||real.__wardenoneDeviceGuard)return;
+          const wrapped=function(...args){
+            noteDevice("request",
+            api,
+            label,
+            0);
+            return real.apply(this,
+            args)
+          };
+          wrapped.__wardenoneDeviceGuard=!0,
+          owner[name]=wrapped
+        }
+        catch(_){
+
+        }
+
+      },
+      /* The enumerate call is the quiet one, but an empty list means nothing was
+      ever granted and there is no story to tell -- so the result decides, not the
+      call. The page's own promise is handed back untouched; the inspection runs on
+      a derived one, with its own rejection handler so nothing is left unhandled. */
+      devWrapEnumerate=(owner,
+      name,
+      api,
+      label)=>{
+        try{
+          const real=owner&&owner[name];
+          if("function"!=typeof real||real.__wardenoneDeviceGuard)return;
+          const wrapped=function(...args){
+            const out=real.apply(this,
+            args);
+            try{
+              out&&"function"==typeof out.then&&out.then(list=>{
+                try{
+                  const found=list&&"number"==typeof list.length?list.length:0;
+                  found&&noteDevice("silent",
+                  api,
+                  label,
+                  found)
+                }
+                catch(_){
+
+                }
+
+              },
+              ()=>{
+
+              })
+            }
+            catch(_){
+
+            }
+            return out
+          };
+          wrapped.__wardenoneDeviceGuard=!0,
+          owner[name]=wrapped
+        }
+        catch(_){
+
+        }
+
+      };
+      DEV_SURFACES.forEach(entry=>{
+        try{
+          const owner=navigator&&navigator[entry[0]];
+          owner&&(devWrapRequest(owner,
+          entry[2],
+          entry[0],
+          entry[1]),
+          devWrapEnumerate(owner,
+          entry[3],
+          entry[0],
+          entry[1]))
+        }
+        catch(_){
+
+        }
+
+      });
+      /* MIDI is the fifth of the family and the one that was missed, largely because it
+      does not fit the shape above: there is no navigator.midi object carrying a request
+      and an enumerate, just a single call. It is wrapped on its own for that reason, and
+      shares everything else -- the same counter, the same notice, the same silence when
+      the guard is off. Nothing is blocked; Chrome asks, and web synths and controller
+      editors are real uses. */
+      try{
+        const realMidi="undefined"!=typeof navigator&&navigator.requestMIDIAccess;
+        "function"!=typeof realMidi||realMidi.__wardenoneDeviceGuard||(navigator.requestMIDIAccess=Object.assign(function(...args){
+          try{
+            noteDevice("request",
+            args[0]&&args[0].sysex?"midi-sysex":"midi",
+            "MIDI",
+            0)
+          }
+          catch(_){
+
+          }
+          return realMidi.apply(this,
+          args)
+        },
+        {__wardenoneDeviceGuard:!0}))
+      }
+      catch(_){
+
+      }
+
+    }
+    catch(_){
+
+    }
+    /* The File System Access API, which is the same story as the four above and was the
+    one thing in this family nothing watched. showDirectoryPicker hands a site read -- or
+    with mode readwrite, write -- over a whole folder tree on this machine, and the handle
+    survives: a site can keep it in IndexedDB and come back to it on a later visit. That is
+    a bigger reach than any of the device APIs already covered here, and "pick your
+    Downloads folder so we can scan it" is a shape scams already use.
+    Nothing is blocked, for the same reason nothing is blocked above: Chrome's own picker
+    is the real gate, and web editors, photo tools and IDEs use these properly every day.
+    Refusing them would break real work to prevent nothing Chrome was not already asking
+    about. What was missing was the line in the log.
+    Two things get one, and the second matters more. Asking is the loud case -- a picker
+    opens and you are looking at it. The quiet case is a site that already holds a granted
+    handle from an earlier visit: queryPermission answers "granted" and it can read or write
+    with no prompt at all, which is the only part of this that happens while you are not
+    looking. So the ANSWER decides there, not the call, exactly as with getDevices above.
+    The folder is never named. Which API, and read versus write, is the whole payload --
+    recording the path would put the thing being protected into the log. */
+    if(WO.deviceAccessGuard)try{
+      const FS_PICKERS=[["showDirectoryPicker",
+      "folder",
+      "High"],
+      ["showOpenFilePicker",
+      "file",
+      "Medium"],
+      ["showSaveFilePicker",
+      "file to write",
+      "Medium"]],
+      fsCounts=Object.create(null),
+      /* readwrite is the difference between a site reading your folder and changing it,
+      and it is the one word in the options worth keeping. */
+      fsMode=args=>{
+        try{
+          const o=args&&args[0];
+          return o&&"readwrite"===o.mode?"readwrite":"read"
+        }
+        catch(_){
+          return "read"
+        }
+
+      },
+      noteFile=(kind,
+      api,
+      label,
+      severity,
+      mode)=>{
+        try{
+          const key=kind+":"+api;
+          if((fsCounts[key]=(fsCounts[key]||0)+1)>3)return;
+          const silent="silent"===kind,
+          write="readwrite"===mode;
+          log(silent?"warned_file_silent":"warned_file_request",
+          {
+            api:String(api).slice(0,
+            24),
+            mode:mode,
+            severity:silent||write?"High":severity,
+            confidence:silent?"Very high":"High",
+            why:silent?"This page still has "+(write?"read and write":"read")+" access to a folder or file you granted it on an earlier visit. That needs no prompt, so it can be used without you being asked again.":"This page asked for "+(write?"read and write":"read")+" access to a "+label+" on your computer. Chrome will ask you to choose one; nothing is shared unless you pick it.",
+            action:silent?"If you did not expect this site to keep reaching your files, remove its file access in Chrome's site settings.":"Only choose a "+label+" if you came here to do that. Cancel if the request is unexpected, and never grant a whole folder to a page that offers to scan or clean it.",
+            outcome:"Recorded only; the request was not blocked and nothing about the file or folder was read."
+          })
+        }
+        catch(_){
+
+        }
+
+      };
+      FS_PICKERS.forEach(entry=>{
+        try{
+          const real=window[entry[0]];
+          if("function"!=typeof real||real.__wardenoneFileGuard)return;
+          const wrapped=function(...args){
+            noteFile("request",
+            entry[0],
+            entry[1],
+            entry[2],
+            fsMode(args));
+            return real.apply(this,
+            args)
+          };
+          wrapped.__wardenoneFileGuard=!0,
+          window[entry[0]]=wrapped
+        }
+        catch(_){
+
+        }
+
+      });
+      /* The quiet half. A handle kept from an earlier visit answers "granted" here and the
+      site can go straight to the file; nothing prompts. The page's own promise is handed
+      back untouched and the inspection runs on a derived one, with its own rejection
+      handler so nothing is left unhandled. */
+      try{
+        const proto=window.FileSystemHandle&&window.FileSystemHandle.prototype,
+        realQuery=proto&&proto.queryPermission;
+        "function"!=typeof realQuery||realQuery.__wardenoneFileGuard||(proto.queryPermission=Object.assign(function(...args){
+          const out=realQuery.apply(this,
+          args);
+          try{
+            out&&"function"==typeof out.then&&out.then(state=>{
+              try{
+                "granted"===state&&noteFile("silent",
+                "queryPermission",
+                "file",
+                "High",
+                fsMode(args))
+              }
+              catch(_){
+
+              }
+
+            },
+            ()=>{
+
+            })
+          }
+          catch(_){
+
+          }
+          return out
+        },
+        {__wardenoneFileGuard:!0}))
+      }
+      catch(_){
+
+      }
+
+    }
+    catch(_){
+
+    }
+    /* Browser-in-the-Browser. The page draws a window inside itself -- title bar,
+    close button, an address bar reading accounts.google.com -- and puts its own
+    sign-in form in it. No window ever opens, so nothing that watches window.open
+    sees anything; the popup blocker has nothing to block. It is the standard way
+    OAuth sign-in is phished, and WardenOne already guards the real provider pages
+    while having nothing to say about the fake ones.
+    What gives it away is a container drawn as a window whose title strip carries a
+    domain the page does not own. That alone is not enough -- online IDEs frame
+    their preview pane exactly like this, and design tools draw browser mockups --
+    so a place to type a password has to be inside the same container. That is the
+    whole point of the attack, so requiring it costs nothing and removes the two
+    biggest sources of noise outright. An embedded frame counts instead only when
+    the title strip names a real identity provider, which is the one case where the
+    form is out of reach in a child document. */
+    if(WO.fakeWindowGuard&&WO_TOP&&!trustedMediaHost&&!/(^|\.)(codesandbox\.io|csb\.app|stackblitz\.com|codepen\.io|jsfiddle\.net|glitch\.me|replit\.com|repl\.co|figma\.com|webcontainer\.io)$/i.test(location.hostname))try{
+      const FW_CONTROL=/[\u00D7\u2715\u2716\u2A2F]|[\u2212\u2013\u2014]|[\u25A1\u2610\u2B1C]|\u26AB|\u25CF\s*\u25CF/,
+      FW_DOMAIN=/(?:https?:\/\/)?((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,6}(?:com|net|org|io|co|dev|app|gov|edu|uk|de|fr|jp|cn|ru|br|in|au|ca|nl|se|no|es|it|pl|ch|be|at|dk|fi|cz|pt|gr|tr|kr|mx|ar|cl|za|nz|ie|il|sg|hk|tw|th|vn|id|my|ph))(?![a-z0-9-])/gi,
+      /* The providers this attack impersonates. Only these may substitute an
+      embedded frame for a visible password field. */
+      FW_IDP=/(^|\.)(google\.com|microsoftonline\.com|microsoft\.com|live\.com|office\.com|apple\.com|facebook\.com|github\.com|gitlab\.com|okta\.com|auth0\.com|discord\.com|x\.com|twitter\.com|linkedin\.com|amazon\.com|paypal\.com|steampowered\.com|battle\.net|roblox\.com)$/i,
+      FW_HEADER_PX=72,
+      fwHost=regDomain(location.hostname),
+      fwSeen=new Set;
+      let fwPending=0,
+      fwRuns=0;
+      const fwOwnText=el=>{
+        try{
+          let out="";
+          for(let node=el.firstChild;node&&out.length<200;node=node.nextSibling){
+            if(3===node.nodeType)out+=node.nodeValue||""
+          }
+          return out.replace(/\s+/g," ").trim().slice(0,200)
+        }
+        catch(_){
+          return""
+        }
+
+      },
+      /* Read only the strip where a window's title bar would be, and only text each
+      node owns. Reading the whole container would find the sign-in form's own
+      "google.com" wording and call every real login modal a fake window. */
+      fwInspectHeader=(container,
+      box)=>{
+        const out={
+          host:"",
+          control:!1
+        };
+        try{
+          const kids=container.querySelectorAll("*"),
+          limit=box.top+FW_HEADER_PX;
+          let looked=0;
+          for(let i=0;i<kids.length&&looked<160;i++){
+            let kidBox;
+            try{kidBox=kids[i].getBoundingClientRect()}catch(_){continue}
+            if(!kidBox||kidBox.top>limit||kidBox.bottom<box.top)continue;
+            looked++;
+            const text=fwOwnText(kids[i]);
+            if(!text)continue;
+            if(FW_CONTROL.test(text))out.control=!0;
+            if(!out.host){
+              FW_DOMAIN.lastIndex=0;
+              let hit;
+              while(hit=FW_DOMAIN.exec(text)){
+                const shown=String(hit[1]||"").toLowerCase();
+                if(regDomain(shown)!==fwHost){
+                  out.host=shown;
+                  break
+                }
+              }
+            }
+          }
+        }
+        catch(_){
+
+        }
+        return out
+      },
+      fwCredentialInside=container=>{
+        try{
+          return!!container.querySelector('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]')
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      fwFrameInside=container=>{
+        try{
+          return!!container.querySelector("iframe")
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      fwWarn=shown=>{
+        try{
+          if(__woWarn.up("wo-fake-window"))return;
+          if(!document.body&&!document.documentElement)return;
+          const wrap=document.createElement("div");
+          wrap.id="wo-fake-window",
+          wrap.setAttribute("style",
+          "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:520px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
+          const tag=document.createElement("div");
+          tag.setAttribute("style",
+          "display:inline-block!important;background:rgba(192,57,43,.14)!important;color:#c0392b!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:11px!important;letter-spacing:.04em!important;text-transform:uppercase!important;padding:3px 9px!important;border-radius:8px!important;margin:0 0 8px 0!important;"),
+          tag.textContent="Fake sign-in window",
+          wrap.appendChild(tag);
+          const title=document.createElement("div");
+          title.setAttribute("style",
+          "font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:14.5px!important;color:#2d1b40!important;margin:0 0 6px 0!important;"),
+          title.textContent="That sign-in window is part of this page",
+          wrap.appendChild(title);
+          const body=document.createElement("div");
+          body.setAttribute("style",
+          "font-size:12.5px!important;color:#4a3661!important;line-height:1.55!important;margin:0 0 6px 0!important;"),
+          body.textContent="It looks like a separate browser window, but no window opened -- this page drew it, including its address bar. Anything typed into it goes to this site. A real sign-in window can be dragged outside the page and has the browser's own address bar.",
+          wrap.appendChild(body);
+          const mkRow=(label,
+          value,
+          color)=>{
+            const l=document.createElement("div");
+            l.setAttribute("style",
+            "font-size:10.5px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.04em!important;color:#7a5f93!important;margin:8px 0 2px 0!important;"),
+            l.textContent=label,
+            wrap.appendChild(l);
+            const v=document.createElement("div");
+            v.setAttribute("style",
+            "font-family:ui-monospace,Menlo,Consolas,monospace!important;font-size:12px!important;color:"+color+"!important;background:rgba(192,57,43,.06)!important;border:1px solid rgba(192,57,43,.18)!important;border-radius:8px!important;padding:8px 10px!important;word-break:break-all!important;"),
+            v.textContent=value,
+            wrap.appendChild(v)
+          };
+          mkRow("The window claims",
+          shown,
+          "#b91c1c"),
+          mkRow("You are actually on",
+          location.hostname,
+          "#166534");
+          const btn=document.createElement("button");
+          btn.setAttribute("style",
+          "width:100%!important;margin-top:12px!important;border:none!important;cursor:pointer!important;background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;border-radius:10px!important;padding:10px 14px!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
+          btn.textContent="I understand  -  do not sign in here",
+          btn.addEventListener("click",
+          ()=>{
+            try{wrap.remove()}catch(_){ }
+          }),
+          wrap.appendChild(btn),
+          (document.body||document.documentElement).appendChild(wrap),
+          __woWarn.mark("wo-fake-window",wrap)
+        }
+        catch(_){
+
+        }
+
+      },
+      fwScan=()=>{
+        try{
+          if(++fwRuns>40)return;
+          const vw=window.innerWidth||0,
+          vh=window.innerHeight||0,
+          nodes=document.body?document.body.querySelectorAll("div,section,dialog,aside,form"):[];
+          let looked=0;
+          for(let i=0;i<nodes.length&&looked<500;i++){
+            const el=nodes[i];
+            let box;
+            try{box=el.getBoundingClientRect()}catch(_){continue}
+            /* Window-shaped: big enough to be a sign-in window, not the page itself. */
+            if(!box||box.width<300||box.height<180||box.width>.97*vw&&box.height>.97*vh)continue;
+            looked++;
+            let position="";
+            try{position=getComputedStyle(el).position}catch(_){ }
+            if("fixed"!==position&&"absolute"!==position)continue;
+            const header=fwInspectHeader(el,
+            box);
+            if(!header.host||!header.control)continue;
+            const credential=fwCredentialInside(el),
+            provider=FW_IDP.test(regDomain(header.host));
+            if(!credential&&!(provider&&fwFrameInside(el)))continue;
+            if(fwSeen.has(header.host))return;
+            fwSeen.add(header.host),
+            log("warned_fake_window",
+            {
+              shown:String(header.host).slice(0,60),
+              evidence:credential?"Window controls, a foreign address and a password field":"Window controls and an identity provider's address around an embedded frame",
+              confidence:credential&&provider?"Very high":"High",
+              severity:"High",
+              why:"A box on this page is drawn to look like a separate browser window showing "+String(header.host).slice(0,60)+", but no window opened -- the page drew it, address bar included. Anything typed into it goes to this site.",
+              action:"Do not sign in there. Open the provider yourself in a new tab instead.",
+              outcome:"Warned only; nothing on the page was removed."
+            }),
+            fwWarn(header.host);
+            return
+          }
+        }
+        catch(_){
+
+        }
+
+      },
+      fwQueue=()=>{
+        fwPending||(fwPending=1,
+        setTimeout(()=>{
+          fwPending=0,
+          fwScan()
+        },
+        900))
+      };
+      setTimeout(fwScan,
+      1200),
+      woOn(document,
+      "click",
+      fwQueue,
+      !0);
+      try{
+        const observer=__woObserver(fwQueue);
+        observer.observe(document.documentElement||document.body,
+        {
+          childList:!0,
+          subtree:!0
+        }),
+        setTimeout(()=>{
+          try{observer.disconnect()}catch(_){ }
+        },
+        6e4)
+      }
+      catch(_){
+
+      }
+
+    }
+    catch(_){
+
+    }
+    /* Fullscreen phishing. The page takes the whole screen, paints its own browser
+    on top -- address bar, padlock, a domain it does not own -- and asks for a
+    password. Chrome's "press Esc" hint fades after a couple of seconds and the
+    attack is simply timed around it; once it is gone the fake chrome is the only
+    chrome on screen and there is nothing left to compare it against.
+    Warned, never blocked. Legitimate fullscreen is video, games, slide decks and
+    maps, and breaking those to catch this would be the worse trade by a distance.
+    The signal that actually separates the attack from a slide is a domain the page
+    does not own, drawn in the top strip of the screen: a real address bar cannot be
+    there, because the browser's is gone. That alone is not enough -- a presentation
+    can put a URL on a title slide -- so it has to arrive with either browser
+    furniture (a padlock, reload or back glyph) or somewhere to type a password. */
+    if(WO.fullscreenGuard&&WO_TOP&&!trustedMediaHost)try{
+      const FS_TOP_BAND=.18,
+      FS_CHROME_GLYPH=/[\u{1F512}\u{1F513}\u{1F510}\u{1F50F}]|[\u2190\u2192\u21BA\u21BB\u27F2\u27F3]|\u2039|\u203A/u,
+      FS_DOMAIN=/(?:https?:\/\/)?((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,6}(?:com|net|org|io|co|dev|app|gov|edu|uk|de|fr|jp|cn|ru|br|in|au|ca|nl|se|no|es|it|pl|ch|be|at|dk|fi|cz|pt|gr|tr|kr|mx|ar|cl|za|nz|ie|il|sg|hk|tw|th|vn|id|my|ph))(?![a-z0-9-])/gi,
+      fsHost=regDomain(location.hostname),
+      fsSeen=new Set;
+      /* Set when this page has been caught drawing browser furniture. The
+         keyboard and pointer guards below escalate from recording to refusing
+         once it is true. */
+      let fsSpoofSeen=!1;
+      let fsChecks=0;
+      /* A real media fullscreen is a video or canvas that owns the screen. Anything
+      that fills it that completely has no room left for a fake address bar. */
+      const fsIsMediaSurface=el=>{
+        try{
+          if(!el)return!1;
+          const tag=String(el.tagName||"").toUpperCase();
+          if("VIDEO"===tag||"CANVAS"===tag||"EMBED"===tag||"OBJECT"===tag)return!0;
+          const media=el.querySelector&&el.querySelector("video,canvas");
+          if(!media)return!1;
+          const box=media.getBoundingClientRect();
+          return box.width*box.height>=.6*(window.innerWidth*window.innerHeight)
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      fsVisibleText=el=>{
+        try{
+          let out="";
+          for(let node=el.firstChild;node&&out.length<300;node=node.nextSibling){
+            if(3===node.nodeType)out+=node.nodeValue||""
+          }
+          return out.replace(/\s+/g," ").trim().slice(0,300)
+        }
+        catch(_){
+          return""
+        }
+
+      },
+      /* Only the strip where a browser's own chrome would have been, and only text a
+      node owns itself -- walking whole subtrees would pick up the page's body copy
+      and call any article that mentions a URL an address bar. */
+      fsScanTopBand=()=>{
+        const limit=Math.max(48,window.innerHeight*FS_TOP_BAND),
+        found={
+          domains:[],
+          glyph:!1
+        };
+        let inspected=0;
+        try{
+          const nodes=document.body?document.body.querySelectorAll("*"):[];
+          for(let i=0;i<nodes.length&&inspected<1200;i++){
+            const el=nodes[i];
+            let box;
+            try{box=el.getBoundingClientRect()}catch(_){continue}
+            if(!box||box.top>limit||box.bottom<0||box.width<40||box.height<8)continue;
+            inspected++;
+            const text=fsVisibleText(el);
+            if(!text)continue;
+            if(FS_CHROME_GLYPH.test(text))found.glyph=!0;
+            FS_DOMAIN.lastIndex=0;
+            let hit;
+            while((hit=FS_DOMAIN.exec(text))&&found.domains.length<8){
+              const shown=regDomain(String(hit[1]||"").toLowerCase());
+              shown&&shown!==fsHost&&!found.domains.includes(shown)&&found.domains.push(shown)
+            }
+          }
+        }
+        catch(_){
+
+        }
+        return found
+      },
+      fsHasCredentialField=()=>{
+        try{
+          return!!document.querySelector('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]')
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      fsExit=()=>{
+        try{
+          document.exitFullscreen?document.exitFullscreen():document.webkitExitFullscreen&&document.webkitExitFullscreen()
+        }
+        catch(_){
+
+        }
+
+      },
+      fsWarn=(shown,
+      credential)=>{
+        try{
+          if(__woWarn.up("wo-fullscreen-spoof"))return;
+          if(!document.body&&!document.documentElement)return;
+          const wrap=document.createElement("div");
+          wrap.id="wo-fullscreen-spoof",
+          wrap.setAttribute("style",
+          "all:initial!important;position:fixed!important;left:50%!important;top:24px!important;transform:translateX(-50%)!important;z-index:2147483647!important;max-width:520px!important;width:calc(100% - 32px)!important;background:rgba(255,247,247,.99)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important;border:2px solid #c0392b!important;border-radius:16px!important;padding:16px 18px!important;box-shadow:0 18px 52px rgba(120,20,20,.4)!important;font-family:Nunito,system-ui,sans-serif!important;");
+          const tag=document.createElement("div");
+          tag.setAttribute("style",
+          "display:inline-block!important;background:rgba(192,57,43,.14)!important;color:#c0392b!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:11px!important;letter-spacing:.04em!important;text-transform:uppercase!important;padding:3px 9px!important;border-radius:8px!important;margin:0 0 8px 0!important;"),
+          tag.textContent="Full-screen address bar warning",
+          wrap.appendChild(tag);
+          const title=document.createElement("div");
+          title.setAttribute("style",
+          "font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:14.5px!important;color:#2d1b40!important;margin:0 0 6px 0!important;"),
+          title.textContent="This page is drawing its own address bar",
+          wrap.appendChild(title);
+          const body=document.createElement("div");
+          body.setAttribute("style",
+          "font-size:12.5px!important;color:#4a3661!important;line-height:1.55!important;margin:0 0 6px 0!important;"),
+          body.textContent=credential?"The page went full screen and painted an address bar showing a site it is not. Your browser's real address bar is hidden while this is on screen, so nothing above is coming from Chrome. Do not type a password here.":"The page went full screen and painted an address bar showing a site it is not. Your browser's real address bar is hidden while this is on screen, so nothing above is coming from Chrome.",
+          wrap.appendChild(body);
+          const mkRow=(label,
+          value,
+          color)=>{
+            const l=document.createElement("div");
+            l.setAttribute("style",
+            "font-size:10.5px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.04em!important;color:#7a5f93!important;margin:8px 0 2px 0!important;"),
+            l.textContent=label,
+            wrap.appendChild(l);
+            const v=document.createElement("div");
+            v.setAttribute("style",
+            "font-family:ui-monospace,Menlo,Consolas,monospace!important;font-size:12px!important;color:"+color+"!important;background:rgba(192,57,43,.06)!important;border:1px solid rgba(192,57,43,.18)!important;border-radius:8px!important;padding:8px 10px!important;word-break:break-all!important;"),
+            v.textContent=value,
+            wrap.appendChild(v)
+          };
+          mkRow("The page shows",
+          shown,
+          "#b91c1c"),
+          mkRow("You are actually on",
+          location.hostname,
+          "#166534");
+          const btn=document.createElement("button");
+          btn.setAttribute("style",
+          "width:100%!important;margin-top:12px!important;border:none!important;cursor:pointer!important;background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;border-radius:10px!important;padding:10px 14px!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
+          btn.textContent="Leave full screen",
+          btn.addEventListener("click",
+          ()=>{
+            fsExit();
+            try{wrap.remove()}catch(_){ }
+          }),
+          wrap.appendChild(btn),
+          (document.body||document.documentElement).appendChild(wrap),
+          __woWarn.mark("wo-fullscreen-spoof",wrap)
+        }
+        catch(_){
+
+        }
+
+      },
+      fsInspect=()=>{
+        try{
+          const el=document.fullscreenElement||document.webkitFullscreenElement;
+          if(!el||fsIsMediaSurface(el))return;
+          const band=fsScanTopBand();
+          if(!band.domains.length)return;
+          const credential=fsHasCredentialField();
+          if(!band.glyph&&!credential)return;
+          const shown=band.domains[0];
+          if(fsSeen.has(shown))return;
+          fsSeen.add(shown),
+          fsSpoofSeen=!0,
+          log("warned_fullscreen_spoof",
+          {
+            shown:String(shown).slice(0,60),
+            evidence:band.glyph&&credential?"Address bar and a password field":band.glyph?"Browser controls drawn by the page":"Foreign address and a password field",
+            confidence:band.glyph&&credential?"Very high":"High",
+            severity:"High",
+            why:"While full screen this page drew what looks like an address bar showing "+String(shown).slice(0,60)+", which is not the site you are on. The browser's own address bar is hidden in full screen, so there is nothing on screen to compare it against.",
+            action:"Leave full screen before typing anything. Check the real address afterwards.",
+            outcome:"Warned only; full screen was not exited for you."
+          }),
+          fsWarn(shown,
+          credential)
+        }
+        catch(_){
+
+        }
+
+      },
+      /* The fake chrome is painted just after the transition, not before it, so one
+      look on the event itself sees the page as it was. A couple of later passes
+      cost nothing and catch the version that animates in. */
+      fsOnChange=()=>{
+        try{
+          const el=document.fullscreenElement||document.webkitFullscreenElement;
+          if(!el){
+            fsChecks=0;
+            return
+          }
+          if(fsChecks)return;
+          fsChecks=1,
+          setTimeout(fsInspect,
+          400),
+          setTimeout(fsInspect,
+          1400)
+        }
+        catch(_){
+
+        }
+
+      };
+      /* Keyboard lock, and the instruction directly above it.
+
+         The warning this guard raises ends with "Leave full screen before typing
+         anything." navigator.keyboard.lock(["Escape"]) is the page's answer to
+         that sentence: with Escape held by the page, the single keypress the
+         advice depends on stops doing what it says. Chrome's fallback is to hold
+         Escape down for a moment, which works and is discoverable only by someone
+         who already knows it exists -- which is not the person being phished.
+
+         The comment at the top of this guard already allows that the "press Esc"
+         hint fades and the attack is timed around it. This is the same problem
+         one step further on: the hint is gone AND the key is taken.
+
+         Escape is the only key refused. A game locking W, A, S, D and F11 is the
+         reason this API exists, and taking that away would buy nothing -- so an
+         explicit list keeps every key in it except that one. A no-argument call
+         captures the whole keyboard and cannot be filtered, so it is recorded,
+         and refused only once this page has already been caught drawing a fake
+         address bar. Warn, don't block, stays the rule until the page has shown
+         what it is. */
+      try{
+        const kb=navigator.keyboard;
+        if(kb&&"function"==typeof kb.lock){
+          const realLock=kb.lock.bind(kb);
+          kb.lock=function lock(keys){
+            try{
+              const wantsEscape=!arguments.length||!Array.isArray(keys)||keys.some(k=>/^Escape$/i.test(String(k||"")));
+              if(!wantsEscape)return realLock(keys);
+              if(Array.isArray(keys)&&keys.length){
+                /* Give back everything asked for except the one key the warning
+                   depends on. Nothing else the page wanted is affected. */
+                const kept=keys.filter(k=>!/^Escape$/i.test(String(k||"")));
+                log("blocked_keyboard_lock",
+                {
+                  requested:keys.length,
+                  kept:kept.length,
+                  severity:"Medium",
+                  why:"This page tried to capture the Escape key while full screen, which is the key that gets you out.",
+                  action:"Escape was left working. Every other key it asked for was granted.",
+                  outcome:"Escape stayed yours."
+                });
+                return kept.length?realLock(kept):Promise.resolve()
+              }
+              if(fsSpoofSeen){
+                log("blocked_keyboard_lock",
+                {
+                  requested:0,
+                  kept:0,
+                  severity:"High",
+                  why:"This page already drew a fake address bar, and then tried to capture the whole keyboard, including the key that leaves full screen.",
+                  action:"The request was refused. Press Escape to leave full screen.",
+                  outcome:"Keyboard lock refused."
+                });
+                return Promise.reject(new DOMException("Keyboard lock refused by WardenOne","NotAllowedError"))
+              }
+              log("detected_keyboard_lock",
+              {
+                requested:0,
+                severity:"Low",
+                why:"This page captured the whole keyboard while full screen. Games and presentations do this legitimately.",
+                action:"Hold Escape for a moment if you need to leave full screen."
+              });
+              return realLock(keys)
+            }
+            catch(_){
+              return realLock(keys)
+            }
+
+          }
+        }
+
+      }
+      catch(_){
+
+      }
+      /* Pointer lock hides the cursor and hands the page every mouse movement.
+         On its own that is a first-person game. On a page that has already been
+         caught painting browser furniture it removes the last thing separating a
+         fake window from a real one -- you cannot see what you are about to
+         click. Same rule as above: recorded always, refused only after the page
+         has shown what it is. */
+      try{
+        const pl=window.Element&&Element.prototype&&Element.prototype.requestPointerLock;
+        pl&&(Element.prototype.requestPointerLock=function requestPointerLock(...args){
+          try{
+            if(fsSpoofSeen){
+              log("blocked_pointer_lock",
+              {
+                severity:"High",
+                why:"This page drew a fake address bar and then tried to hide your cursor.",
+                action:"The request was refused so you can see what you are clicking.",
+                outcome:"Cursor left visible."
+              });
+              return void 0
+            }
+
+          }
+          catch(_){
+
+          }
+          return pl.apply(this,args)
+        })
+      }
+      catch(_){
+
+      }
+      woOn(document,
+      "fullscreenchange",
+      fsOnChange),
+      woOn(document,
+      "webkitfullscreenchange",
+      fsOnChange)
+    }
+    catch(_){
+
+    }
     if(WO.removeOverlays&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
       /* Mutable on purpose: start() sets it and the observer timeout clears it. It used to sit
          inside the const chain below, where the first assignment threw TypeError and aborted
@@ -14243,7 +18658,28 @@
           smallBait=baitSignal&&r.width>=48&&r.height>=48,
           positioned="fixed"===pos||"sticky"===pos||"absolute"===pos,
           looksModal=positioned&&(z>=20||coversLots||isCentered||"dialog"===el.getAttribute("role")||"true"===el.getAttribute("aria-modal")),
-          strongAdEvidence=adSignal||baitSignal&&nuisanceText;
+          /* Where the evidence came from matters as much as what it said.
+
+             blob is innerText plus the attributes plus class and id, and a word
+             in innerText says what a container is ABOUT, not what it IS. On a
+             site whose actual content is sponsored tournaments, one card reading
+             "Sponsored" made the entire content region match AD_SIGNAL -- and
+             because the header and both sidebars sit outside it, the region was
+             not wide enough to be caught by tooHuge. The page went blank with
+             its furniture still standing.
+
+             So for anything large, only STRUCTURAL evidence counts: a class, an
+             id, an aria-label, a test id. Those are the author naming the thing;
+             body text is the author writing about something. Small floating
+             widgets keep the text signal, because there the text IS the ad --
+             "Download now", "Allow notifications" -- and there is no article
+             underneath to lose. */
+          structuralBlob=attrs+" "+(el.className||"")+" "+(el.id||""),
+          bigEnoughToMatter=r.width>=innerWidth*.5&&r.height>=innerHeight*.3,
+          adSignalHere=bigEnoughToMatter?AD_SIGNAL.test(structuralBlob):adSignal,
+          nuisanceHere=bigEnoughToMatter?NUISANCE.test(structuralBlob):nuisanceText,
+          baitHere=bigEnoughToMatter?BAIT_SIGNAL.test(structuralBlob):baitSignal,
+          strongAdEvidence=adSignalHere||baitHere&&nuisanceHere;
           if(fakeNotifyVisual(el,
           r,
           cs,
@@ -14853,11 +19289,13 @@
       const TOAST_INFO={
         blocked_popup:{
           title:"Popup blocked",
-          why:"A new tab/window tried to open without you clicking anything."
+          why:"A new tab/window tried to open without you clicking anything.",
+          dwell:5300
         },
         blocked_gestureless_nav:{
           title:"Forced redirect blocked",
-          why:"The page tried to send you elsewhere without a click."
+          why:"The page tried to send you elsewhere without a click.",
+          dwell:5900
         },
         blocked_meta_refresh:{
           title:"Auto-redirect blocked",
@@ -14873,19 +19311,23 @@
         },
         blocked_grabber_fetch:{
           title:"IP-grabber blocked",
-          why:"A hidden request to a known logger was stopped before sending."
+          why:"A hidden request to a known logger was stopped before sending.",
+          dwell:6482
         },
         blocked_grabber_xhr:{
           title:"IP-grabber blocked",
-          why:"A background request to a known logger was stopped."
+          why:"A background request to a known logger was stopped.",
+          dwell:5768
         },
         blocked_grabber_beacon:{
           title:"IP-grabber blocked",
-          why:"A tracking beacon to a known logger was stopped."
+          why:"A tracking beacon to a known logger was stopped.",
+          dwell:5768
         },
         blocked_grabber_pixel:{
           title:"Tracking pixel blocked",
-          why:"A 1x1 logger pixel was stopped before it loaded."
+          why:"A 1x1 logger pixel was stopped before it loaded.",
+          dwell:4300
         },
         blocked_ip_lookup:{
           title:"IP lookup blocked",
@@ -14913,17 +19355,136 @@
         },
         blocked_skimmer_exfil:{
           title:"Card/password theft blocked",
-          why:"Sensitive form data was about to leave this page for another domain. WardenOne stopped it."
+          why:"Sensitive form data was about to leave this page for another domain. WardenOne stopped it.",
+          dwell:10000
         },
         blocked_payment_card_submit:{
           title:"Card submission blocked",
           why:"This checkout looked risky, so WardenOne stopped credit/debit card details before they were sent.",
+          dwell:10000,
           severity:"High",
           action:"Card details were not sent. Leave unless you can verify the merchant and address."
         },
+        blocked_confirm_bait:{
+          title:"Fake confirm box removed",
+          why:"A box drawn by this page to look like a browser prompt was removed. It never said what you would be confirming, because there was nothing to confirm - the click itself was the point, and the page can spend it on opening a popup or sending you elsewhere.",
+          severity:"Medium",
+          action:"Nothing to do. If part of the page stopped working, turn this off in WardenOne's settings."
+        },
+        detected_beacon:{
+          title:"Data sent in the background",
+          why:"This page quietly sent a small report to another company's server using a beacon - the modern replacement for the tracking pixel. It was not blocked, because a beacon is also how ordinary sites report crashes and page timings.",
+          severity:"Low",
+          action:"Nothing to do. This is recorded so you can see where a page talks to, not because anything went wrong."
+        },
+        warned_confirm_bait:{
+          title:"Fake confirm box",
+          why:"This box is part of the page, not your browser, and it does not say what you are confirming. Its only job is to collect one click, which the page can then spend on opening a popup or sending you to another site.",
+          severity:"Medium",
+          action:"Close it with the X. Nothing on the page needs you to press Continue."
+        },
+        warned_back_trap:{
+          title:"Back button trapped",
+          why:"Each time you pressed Back this page put the same address straight back into your history, so Back cannot leave.",
+          severity:"Medium",
+          action:"Press Back repeatedly, or close the tab. Nothing here needs you to stay."
+        },
+        warned_payment_sheet:{
+          title:"Payment sheet opened",
+          why:"This site opened Chrome's payment sheet. Nothing is paid unless you confirm it there.",
+          severity:"Medium",
+          action:"Only confirm if you meant to buy something here."
+        },
+        warned_idle_watch:{
+          title:"Presence tracking started",
+          why:"This site started watching whether you are at the keyboard and whether your screen is locked. It does not need that to show you a page.",
+          severity:"Medium",
+          action:"Remove this site's idle-detection permission in Chrome's site settings if you did not expect it."
+        },
+        warned_app_install_prompt:{
+          title:"Asked to install itself",
+          why:"This site asked to install itself as an app. An installed site opens in its own window with no address bar to check.",
+          severity:"Medium",
+          action:"Only install sites you trust and meant to install."
+        },
+        warned_notification_bait:{
+          title:"Notification bait",
+          why:"This page is telling you to click Allow on the notification prompt. Sites that have to talk you into it are usually farming the permission to push adverts and fake alerts later.",
+          severity:"Medium",
+          action:"Choose Block unless you specifically want alerts from this site."
+        },
+        warned_notification_scam:{
+          title:"Scam-shaped notification",
+          why:"A notification this page raised reads like a fake alert - the usual payload of a farmed notification permission.",
+          severity:"High",
+          action:"Do not click it. Remove this site's notification permission in Chrome's site settings."
+        },
+        warned_device_request:{
+          title:"Hardware access requested",
+          why:"This site asked to connect to a device on your machine. Chrome will ask you to choose one - nothing is connected unless you pick it.",
+          severity:"High",
+          action:"Only choose a device if you came here to use it. Cancel if the request is unexpected."
+        },
+        warned_device_silent:{
+          title:"Hardware read without a prompt",
+          why:"This site read back a device you allowed it to use on an earlier visit. That needs no prompt, so it can happen without you being asked again.",
+          severity:"High",
+          action:"If you did not expect this site to use your hardware, remove its device access in Chrome's site settings."
+        },
+        warned_service_worker:{
+          title:"Installed a service worker",
+          /* Was the longest card on screen by a distance -- 74 words, near
+             eighteen seconds -- and it fires on a lot of ordinary sites, so it
+             was the one people watched sit there. Shortened by saying less
+             rather than by pinning a dwell under it: the pace is reading time,
+             and a pin below reading time is a card that leaves mid-sentence.
+             The two things worth keeping are both still here -- that the worker
+             outlives the tab, and that this is how normal features work, which
+             is what stops it reading as an attack. */
+          why:"This site installed a service worker: code that outlives the tab and handles its later requests. Offline reading and push notifications work this way.",
+          severity:"Medium",
+          action:"Clearing the site's data in Chrome removes it."
+        },
+        blocked_speech_capture:{
+          title:"Speech recognition blocked",
+          why:"This page tried to listen through your microphone using speech recognition, which does not go through the microphone permission the rest of Media Shield watches. Chrome sends that audio away to be transcribed.",
+          severity:"High",
+          action:"Nothing to do. If you came here to dictate or use voice search, allow camera and microphone for this site."
+        },
+        warned_speech_capture:{
+          title:"Speech recognition started",
+          why:"This page is listening through your microphone using speech recognition, and Chrome sends that audio away to be transcribed. Blocking camera and microphone is turned off, so it was allowed.",
+          severity:"High",
+          action:"If you did not start this yourself, leave the page - it is listening."
+        },
+        warned_file_request:{
+          title:"File or folder access requested",
+          why:"This site asked for access to a file or folder on your computer. Chrome will ask you to choose one - nothing is shared unless you pick it.",
+          severity:"High",
+          action:"Only choose one if you came here to do that. Never grant a whole folder to a page offering to scan or clean it."
+        },
+        warned_file_silent:{
+          title:"File access from an earlier visit",
+          why:"This site still holds access to a file or folder you granted it before. That needs no prompt, so it can be used without you being asked again.",
+          severity:"High",
+          action:"If you did not expect this site to keep reaching your files, remove its file access in Chrome's site settings."
+        },
+        warned_fake_window:{
+          title:"Fake sign-in window",
+          why:"A box on this page is drawn to look like a separate browser window, address bar and all. No window opened - the page drew it, so anything typed into it goes to this site.",
+          severity:"High",
+          action:"Do not sign in there. Open the provider yourself in a new tab instead."
+        },
+        warned_fullscreen_spoof:{
+          title:"Fake address bar",
+          why:"This page went full screen and drew its own address bar showing a site it is not. Your browser's real one is hidden while full screen is on.",
+          severity:"High",
+          action:"Leave full screen before typing anything, then check the real address."
+        },
         blocked_media_capture:{
           title:"Camera or mic blocked",
-          why:"This site tried to access your camera or microphone. Media Shield stopped it."
+          why:"This site tried to access your camera or microphone. Media Shield stopped it.",
+          dwell:7967
         },
         blocked_screen_capture:{
           title:"Screen capture blocked",
@@ -14939,7 +19500,12 @@
         },
         blocked_hidden_media:{
           title:"Hidden media blocked",
-          why:"A hidden audio/video player tried to run in the background."
+          why:"A hidden audio/video player tried to run in the background.",
+          /* Short enough that the model clamps it to the 3.3s floor, and at the
+             floor it reads as a flicker rather than a notice. Three tenths is
+             not a retune of the pace -- it is this card, which says its whole
+             piece in one line and was going before that line had landed. */
+          dwell:3600
         },
         blocked_suspicious_webrtc:{
           title:"Suspicious WebRTC blocked",
@@ -14947,7 +19513,8 @@
         },
         warned_media_capture:{
           title:"Camera or mic requested",
-          why:"This site requested camera or microphone access."
+          why:"This site requested camera or microphone access.",
+          dwell:5868
         },
         warned_hidden_media_capture:{
           title:"Hidden media request",
@@ -15052,6 +19619,24 @@
       shouldQuietToast=(type,
       detail)=>{
         try{
+          /* Silenced by the reader, for a while or for good. Checked first: a
+             person who said "not now" has answered the question this card
+             exists to ask, and asking again is not a second warning, it is the
+             same one ignoring them. */
+          /* Already said within the hour, about this same site. A statement
+             repeated on every reload stops being information. */
+          const memory=WO.toastMemory;
+          if(memory){
+            const host=String(location.hostname||"").replace(/^www./,"").toLowerCase(),
+            seenAt=Number(memory[type+"|"+host]||0);
+            if(seenAt&&Date.now()-seenAt<18e5)return!0
+          }
+          const mutes=WO.toastMutes;
+          if(mutes&&Object.prototype.hasOwnProperty.call(mutes,type)){
+            const until=Number(mutes[type]);
+            if(until===0||until>Date.now())return!0
+          }
+          if("behavioral_risk"===type&&detail&&detail.xssObserved)return!0;
           if(!QUIET_GOOGLE_TOAST_TYPES.has(type))return!1;
           const page=quietToastHost(location.hostname);
           if(!QUIET_GOOGLE_PAGE_RE.test(page))return!1;
@@ -15067,7 +19652,8 @@
       };
       const resetToastMemory=()=>{
         try{toastSeen.clear()}catch(_){}
-        recentKey=""
+        recentKey="",
+        lastToastAt=0
       };
       try{
         woOn(window,"popstate",resetToastMemory),
@@ -15084,20 +19670,47 @@
         const info=TOAST_INFO[type];
         if(!info)return;
         const now=Date.now(),
-        matched=detail&&detail.matched||"",
-        key=type+"|"+matched;
-        if(toastSeen.has(key))return;
-        /* Still a short burst guard on top, so two DIFFERENT warnings firing in the same tick do
-           not stack on screen faster than they can be read. */
-        if(key===recentKey&&now-lastToastAt<1200)return;
-        toastSeen.add(key),
-        recentKey=key,
-        lastToastAt=now;
-        const wrap=ensureHost();
-        if(!wrap)return;
+        matched=detail&&detail.matched||"";
+        /* What the card will actually SAY has to be decided before we can ask whether we have
+        already said it. */
         const detailWhy=detail&&detail.why?String(detail.why):info.why,
         severity=detail&&detail.severity?String(detail.severity):info.severity||(/^blocked_/.test(type)?"Blocked":/^warned_/.test(type)?"Warning":"Notice"),
         action=detail&&detail.action?String(detail.action):info.action||(/^blocked_/.test(type)?"WardenOne stopped it. No action is needed unless you expected this.":/^warned_/.test(type)?"Check the address and only continue if you trust this site.":"Review this page before sharing sensitive information.");
+        /* Identity is the wording, not the thing that triggered it. This used to key on
+        type+matched, so a page loading five trackers produced five cards carrying the same
+        title, the same explanation, the same severity and the same advice, differing only in
+        the small monospace host underneath. To the person reading them that is one warning
+        shown five times, and a warning shown five times is one nobody reads the sixth time.
+        The matched value is deliberately NOT part of the key: it is a detail of the card, not
+        the identity of it. Every occurrence is still recorded in the Activity Center, which is
+        where the full list belongs -- the toast only has to say a thing happened, once.
+        The wording IS in the key, so a guard that explains itself differently for a genuinely
+        different situation still gets its own card. */
+        const key=type+"|"+detailWhy+"|"+severity+"|"+action;
+        if(toastSeen.has(key))return;
+        /* Nothing already on screen may be pushed off by a burst arriving in the same moment.
+        Distinct warnings are staggered rather than dropped -- dropping one loses the only
+        notice a person gets, and this queue cannot grow without bound because the set above
+        admits each distinct wording exactly once per page. */
+        toastSeen.add(key);
+        /* Report it once, here, where the decision to show is final -- not at
+           render, which is deferred by the stagger and would double-report a
+           card that never appeared. The worker takes the host from the tab. */
+        try{
+          __woBackgroundRequest({kind:"toast-shown",type:type})
+        }
+        catch(_){
+
+        }
+        const gap=lastToastAt?Math.max(0,900-(now-lastToastAt)):0;
+        lastToastAt=(lastToastAt?Math.max(now,lastToastAt+900):now),
+        recentKey=key;
+        if(gap>0)return void setTimeout(()=>renderToast(type,detail,info,detailWhy,severity,action,matched),gap);
+        renderToast(type,detail,info,detailWhy,severity,action,matched)
+      },
+      renderToast=(type,detail,info,detailWhy,severity,action,matched)=>{
+        const wrap=ensureHost();
+        if(!wrap)return;
         const card=document.createElement("div");
         S(card,
         'all:initial!important;box-sizing:border-box!important;display:flex!important;gap:11px!important;align-items:flex-start!important;background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;border-left:4px solid #9d54c9!important;border-radius:14px!important;padding:13px 15px!important;box-shadow:0 8px 28px rgba(120,55,160,.26)!important;color:#3d2a52!important;font-family:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;opacity:0!important;transform:translateX(120%)!important;transition:transform .34s cubic-bezier(.34,1.56,.64,1),opacity .25s!important;');
@@ -15119,7 +19732,185 @@
         "font-family:ui-monospace,monospace!important;font-size:11px!important;color:#7a5f93!important;margin-top:6px!important;word-break:break-all!important;background:#ede1f8!important;border-radius:7px!important;padding:5px 8px!important;",
         String(matched).slice(0,
         80));
-        const dismiss=()=>{
+        /* "Stop telling me this." A warning with no way to turn it off is one
+           people learn to close without reading, and a reader who has decided a
+           kind of notice is not for them has given an answer -- the honest thing
+           is to take it. An hour or two for a site being noisy mid-task, the
+           working day for one being noisy all day, and always for a card that
+           is simply not wanted. Nothing shorter than an hour is offered: the
+           shown-recently memory already keeps a repeat quiet for thirty
+           minutes, so a shorter mute would be a button that changes nothing.
+           The last one reads "Always", not "Never", because the row asks how
+           long to HIDE this: every other answer on it is a length of time, and
+           "Never" answers a different question -- it looks like it means "never
+           hide", which is the opposite of what pressing it does.
+           Every one of them is listed and reversible in the popup, so the
+           permanent one is not a trap. */
+        /* Four filled chips under the message made the card look like a dialog
+           with a button bar, and they sat at the same weight as the warning
+           itself -- five things shouting where there had been one. A control
+           nobody is looking for should not compete with the thing they are.
+           So: a hairline above it, which says "this row is about the card, not
+           part of it", and buttons that are plain text until the pointer is on
+           one. Legible at rest, unmistakably a button under the cursor, and
+           quiet the rest of the time. */
+        try{
+          const muteRow=oDiv(body,
+          "display:flex!important;flex-wrap:nowrap!important;gap:1px!important;align-items:center!important;margin-top:9px!important;padding-top:7px!important;border-top:1px solid rgba(157,84,201,.16)!important;");
+          oTextDiv(muteRow,
+          "font-size:10px!important;color:#a08db3!important;flex:0 1 auto!important;white-space:nowrap!important;overflow:hidden!important;margin-right:4px!important;",
+          "Hide this:");
+          /* One base, two endings. Written out rather than composed so that what
+             the button looks like is readable in one line each. */
+          const muteFace="all:initial!important;box-sizing:border-box!important;flex:0 0 auto!important;cursor:pointer!important;font-family:inherit!important;font-size:10.5px!important;font-weight:600!important;line-height:15px!important;white-space:nowrap!important;padding:2px 6px!important;border-radius:7px!important;",
+          muteRest=muteFace+"color:#8f77a6!important;background:transparent!important;border:1px solid transparent!important;",
+          muteHover=muteFace+"color:#5d3f78!important;background:#f2e9f9!important;border:1px solid #e0cff0!important;";
+          [["1h",60],["2h",120],["Today",480],["Always",0]].forEach(([label,minutes])=>{
+            const b=document.createElement("button");
+            S(b,muteRest),
+            b.type="button",
+            b.textContent=label,
+            b.addEventListener("mouseenter",()=>{try{S(b,muteHover)}catch(_){}}),
+            b.addEventListener("focus",()=>{try{S(b,muteHover)}catch(_){}}),
+            b.addEventListener("mouseleave",()=>{try{S(b,muteRest)}catch(_){}}),
+            b.addEventListener("blur",()=>{try{S(b,muteRest)}catch(_){}}),
+            b.addEventListener("click",
+            ev=>{
+              try{
+                ev.preventDefault(),
+                ev.stopPropagation(),
+                __woBackgroundRequest({kind:"mute-toast",type:type,minutes:minutes}),
+                muteRow.textContent="",
+                oTextDiv(muteRow,"font-size:10.5px!important;color:#6b4f85!important;",0===minutes?"Hidden from now on. Undo it in WardenOne.":"Hidden for "+label+". Undo it in WardenOne."),
+                setTimeout(()=>{try{dismiss()}catch(_){}},1400)
+              }
+              catch(_){
+
+              }
+
+            },
+            !0),
+            muteRow.appendChild(b)
+          })
+        }
+        catch(_){
+
+        }
+        /* A warning that vanishes before it can be read teaches people to ignore
+        warnings. Five flat seconds covered the title but not the explanation,
+        the severity, the advice and the matched value underneath it. Dwell now
+        scales with how much there is to read at an unhurried pace, starting well
+        above the old timeout, and it stops completely while the pointer or the
+        keyboard focus is on the card, so a long explanation can always be
+        finished. The bar along the bottom edge shows the time left and visibly
+        freezes while it is paused. */
+        const readingWords=text=>String(text||"").trim().split(/\s+/).reduce((total,
+        token)=>token?total+Math.max(1,
+        Math.ceil(token.length/10)):total,
+        0),
+        /* Time to READ the card, not a guess. Every token counts as a word, and a
+        long one -- a URL, a hostname, a hyphenated compound -- counts as more than
+        one, because that is how long it takes to get through. Priced at 168 words
+        per minute: an unhurried pace, well under the ~240 wpm adult average, so the
+        wordiest card is still finishable without rushing. Across the shipped cards
+        this lands between roughly 4 and 14 seconds by how much each one actually
+        says, where every single one of them used to get five.
+        The SHAPE of that curve -- the pace, the knee, the taper -- comes from
+        reviewing all the cards on screen, one at a time, over three rounds, not
+        from picking numbers. Against the last round it is out by 0.44s rms, and the
+        widest disagreement between two cards of IDENTICAL length in that review was
+        1.0s, so the pace is sitting on the noise in the judgement rather than on
+        anything a better curve could fix. Do not chase that remainder by retuning
+        the pace; it is not there to be found.
+        The reading curve is then discounted, in two parts, both of them deliberate
+        steps away from the review rather than fits to it.
+        The flat term is the first: negative on purpose, because three seconds have
+        since come off every card in real use, where the short ones were the ones
+        that dragged. It applies uniformly, so the ORDER of the cards never changes.
+        The floor tracks it down, or the shortest card would be the one card that
+        kept the seconds.
+        The second is a band discount, and it is the one part of this model that
+        deliberately breaks the rule above. Cards reading under seven seconds are
+        left exactly where they are. Cards in the seven-second band lose a full
+        second. Cards past eight seconds lose half of one.
+        That ordering IS inverted, on purpose and by direct instruction, and the
+        inversion is real rather than theoretical: a 27-word card reads as 7.2s and
+        now shows for 6.2s, while a 26-word card reads as 6.9s and still shows for
+        6.9s. One word more, seven tenths of a second less. If two of them ever
+        stack, the wordier card goes first.
+        It is one step, at the seven-second edge, and the test suite pins it to
+        exactly one -- a SECOND inversion, or a wider one, would be a mistake
+        rather than a decision, and is still caught. Do not "fix" this step by
+        clamping it; it was asked for twice with this consequence spelled out. The
+        way to remove it, if it is ever unwanted, is to let the cards just under
+        seven seconds come down too.
+        Past 37 words the rate drops, because a card that long stops being read
+        and starts being skimmed: people take the title and the first line, then
+        decide. The review bore that out -- the longest cards were the ones that
+        still felt slow after the rest were right. A taper rather than a cut-off
+        above some number of seconds, because a cut-off is a step: it would leave a
+        45-word card sitting longer on screen than a 50-word one, which is visible
+        and wrong. This way the curve only ever rises with length.
+        Ten cards carry an explicit dwell instead, for three different reasons.
+        A blocked popup and a blocked tracking pixel fire on ordinary pages
+        constantly, and reviewing them on screen put them well below what their
+        word count asks for -- no single pace that also suits a phishing warning
+        can say "this one happens on every page".
+        The other five came out of the last round of on-screen review, where they
+        were each still a few tenths long after the model and the band trims had
+        had their say. Three of them share one title, "IP-grabber blocked", and
+        differ only in which transport was stopped, so they were adjusted as one
+        card even though the reading model sees three.
+        The last three are the first pinned for SEVERITY rather than for length or
+        frequency: a forced redirect is common enough to shorten, while a blocked
+        card skimmer and a blocked card submission both matter far more than their
+        word counts imply and were given a full ten seconds each. That is a real
+        signal the model does not carry -- it prices by reading time alone, so a
+        one-line warning about a stolen card is worth exactly as much as a one-line
+        warning about an autoplaying video.
+        Either way it is a property of the card, so it is written on the card, and
+        everything else stays computed -- including anything added later. But note
+        which direction this is drifting: if severity keeps producing pins, the
+        answer is a severity term in the model, not a longer list of exceptions. */
+        cardWords=readingWords(info.title)+readingWords(detailWhy)+readingWords("Severity: "+severity)+readingWords(action)+readingWords(matched),
+        readMs=-2400+357*Math.min(cardWords,
+        37)+206*Math.max(0,
+        cardWords-37),
+        dwellMs=Math.min(3e4,
+        Math.max(3300,
+        "number"==typeof info.dwell?info.dwell:readMs<7e3?readMs:readMs-(readMs<8e3?1e3:500))),
+        progress=oDiv(card,
+        "position:absolute!important;left:0!important;right:0!important;bottom:0!important;height:3px!important;background:linear-gradient(90deg,#c48ae6,#9d54c9)!important;border-radius:0 0 14px 14px!important;transform:scaleX(1)!important;transform-origin:left center!important;pointer-events:none!important;opacity:.85!important;");
+        let remainingMs=dwellMs,
+        countingFrom=0,
+        dwellTimer=0;
+        const paintProgress=(fromScale,
+        ms)=>{
+          try{
+            progress.style.setProperty("transition",
+            "none",
+            "important"),
+            progress.style.setProperty("transform",
+            "scaleX("+fromScale+")",
+            "important"),
+            void progress.offsetWidth,
+            ms>0&&(progress.style.setProperty("transition",
+            "transform "+ms+"ms linear",
+            "important"),
+            progress.style.setProperty("transform",
+            "scaleX(0)",
+            "important"))
+          }
+          catch(_){
+
+          }
+
+        },
+        dismiss=()=>{
+          dwellTimer&&clearTimeout(dwellTimer),
+          dwellTimer=0,
+          document.removeEventListener("visibilitychange",
+          onVisibility),
           card.style.setProperty("opacity",
           "0",
           "important"),
@@ -15128,7 +19919,43 @@
           "important"),
           setTimeout(()=>card.remove(),
           350)
+        },
+        holdDwell=()=>{
+          dwellTimer&&(clearTimeout(dwellTimer),
+          dwellTimer=0,
+          remainingMs=Math.max(1500,
+          remainingMs-(Date.now()-countingFrom)),
+          paintProgress(remainingMs/dwellMs,
+          0))
+        },
+        resumeDwell=()=>{
+          dwellTimer||document.hidden||(countingFrom=Date.now(),
+          dwellTimer=setTimeout(dismiss,
+          remainingMs),
+          paintProgress(remainingMs/dwellMs,
+          remainingMs))
+        },
+        onVisibility=()=>{
+          document.hidden?holdDwell():resumeDwell()
         };
+        card.style.setProperty("position",
+        "relative",
+        "important"),
+        woOn(card,
+        "mouseenter",
+        holdDwell),
+        woOn(card,
+        "mouseleave",
+        resumeDwell),
+        woOn(card,
+        "focusin",
+        holdDwell),
+        woOn(card,
+        "focusout",
+        resumeDwell),
+        woOn(document,
+        "visibilitychange",
+        onVisibility);
         for(oBtn(card,
         "flex:none!important;width:26px!important;height:26px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:rgba(61,42,82,.06)!important;color:#5f456f!important;border-radius:999px!important;font-size:15px!important;font-weight:800!important;line-height:1!important;padding:0!important;margin:-5px -6px 0 2px!important;",
         "x",
@@ -15140,10 +19967,9 @@
           "important"),
           card.style.setProperty("transform",
           "translateX(0)",
-          "important")
-        }),
-        setTimeout(dismiss,
-        5e3);
+          "important"),
+          resumeDwell()
+        });
         wrap.children.length>4;
         )wrap.removeChild(wrap.firstChild)
       };
@@ -15152,7 +19978,11 @@
         const d=e&&e.detail||{
 
         };
-        (/^blocked_|^detected_|^warned_/.test(d.type||"")||"behavioral_risk"===d.type)&&showToast(d.type,
+        /* quiet means the guard cleaned something up that the user never saw and
+        never had a decision to make about. It still reaches the Activity Center;
+        it just does not interrupt. Distinct from "silent", which only suppresses
+        the redirect interstitial and deliberately still raises a card. */
+        d.detail&&!0===d.detail.quiet||(/^blocked_|^detected_|^warned_/.test(d.type||"")||"behavioral_risk"===d.type)&&showToast(d.type,
         d.detail)
       }),
       woOn(document,"wo-config-change",
@@ -15174,6 +20004,12 @@
       badgeButton=null,
       badgePanel=null,
       fadeT=null,
+      badgeScrollbarWidth=null,
+      /* How long the badge stays legible before it settles back to a hint. It
+      announces itself once, then gets out of the way -- four seconds of that on
+      every page load was long enough to sit in the corner of a search result and
+      be read twice. */
+      BADGE_FADE_MS=1110,
       badgeEventsBound=!1,
       renderBadge=()=>{
 
@@ -15212,7 +20048,7 @@
         if(!root)return;
         clearNode(root);
         const style=document.createElement("style");
-        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b{position:fixed;bottom:16px;right:16px;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.38);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s,box-shadow .2s,background .3s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:52px;right:16px;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
+        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b{position:fixed;bottom:16px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.38);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s,box-shadow .2s,background .3s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:52px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
         const badge=document.createElement("div"),
         dot=document.createElement("span"),
         label=document.createElement("span"),
@@ -15238,6 +20074,54 @@
         root.appendChild(badge),
         root.appendChild(panel)
       },
+      /* The badge is 16px from the viewport's CONTENT edge, and a fixed element
+      cannot cross a classic scrollbar. So on a page that scrolls there is a
+      scrollbar's width of chrome beyond the badge, and on a page that does not --
+      or one that draws overlay scrollbars -- there is nothing there and the badge
+      hugs the window. One rule, two different-looking results, and the second one
+      reads as too tight.
+      Pad by whatever a classic scrollbar would have occupied, so the gap to the
+      window edge is the same on both. Where the browser draws overlay scrollbars
+      the reference is zero and nothing moves; where a scrollbar is actually
+      present the gutter cancels the padding and nothing moves there either. Only
+      the scrollbar-less page is corrected, which is the one that looked wrong. */
+      measureScrollbarWidth=()=>{
+        if(null!==badgeScrollbarWidth)return badgeScrollbarWidth;
+        badgeScrollbarWidth=0;
+        try{
+          const parent=document.body||document.documentElement;
+          if(parent){
+            const probe=document.createElement("div");
+            probe.setAttribute("style",
+            "all:initial!important;position:absolute!important;top:-9999px!important;left:-9999px!important;width:100px!important;height:100px!important;overflow:scroll!important;visibility:hidden!important;pointer-events:none!important;"),
+            parent.appendChild(probe),
+            badgeScrollbarWidth=Math.max(0,
+            Math.min(40,
+            probe.offsetWidth-probe.clientWidth)),
+            probe.remove()
+          }
+        }
+        catch(_){
+          badgeScrollbarWidth=0
+        }
+        return badgeScrollbarWidth
+      },
+      alignBadge=()=>{
+        try{
+          if(!badgeHost||!badgeHost.style)return;
+          const doc=document.documentElement,
+          gutter=Math.max(0,
+          (window.innerWidth||0)-(doc&&doc.clientWidth||0)),
+          pad=Math.max(0,
+          measureScrollbarWidth()-gutter);
+          badgeHost.style.setProperty("--rg-gutter",
+          pad+"px")
+        }
+        catch(_){
+
+        }
+
+      },
       mount=()=>{
         if(!1!==WO.showBadge){
           if(!badgeHost||!document.documentElement.contains(badgeHost))try{
@@ -15250,6 +20134,19 @@
             stale&&stale!==badgeHost&&stale.remove();
             const host=badgeHost=document.createElement("div");
             host.id="rg-badge-host",
+            /* The shadow root protects what is inside it; nothing was protecting the
+            host. A page rule matching div or #rg-badge-host could style it, and a
+            transform, filter, contain, perspective or backdrop-filter on the host
+            makes it the containing block for the fixed-position badge inside its
+            own shadow tree -- which would move the badge to the host's corner
+            instead of the window's, with no way to tell from inside.
+            all:initial takes the host out of reach of page CSS. Fixed and
+            zero-sized on top of that keeps it out of the page's layout entirely,
+            so it cannot affect margins or last-child selectors either. The badge
+            stays anchored to the viewport: position:fixed on an ancestor does not
+            create a containing block, only the properties listed above do. */
+            host.setAttribute("style",
+            "all:initial!important;position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483646!important;pointer-events:none!important;"),
             host.attachShadow({
               mode:"open"
             }),
@@ -15259,17 +20156,18 @@
             pEl=badgePanel=host.shadowRoot.getElementById("rg-p");
             bEl.addEventListener("click",
             ()=>pEl.classList.toggle("open")),
+            alignBadge(),
             fadeT=setTimeout(()=>{
               bEl.classList.contains("hot")||bEl.classList.contains("damaged")||bEl.classList.remove("show")
             },
-            4e3),
+            BADGE_FADE_MS),
             brightenBadge=()=>{
               bEl.classList.add("show"),
               clearTimeout(fadeT),
               fadeT=setTimeout(()=>{
                 bEl.classList.contains("hot")||bEl.classList.contains("damaged")||bEl.classList.remove("show")
               },
-              4e3)
+              BADGE_FADE_MS)
             };
             const LABELS={
               blocked_popup:"Forced popups",
@@ -15304,6 +20202,7 @@
             };
             if(renderBadge=()=>{
               if(!badgeHost||!badgeHost.shadowRoot)return;
+              alignBadge();
               const nEl=host.shadowRoot.getElementById("rg-n"),
               listEl=host.shadowRoot.getElementById("rg-list");
               if(WO.__damaged){
@@ -15341,7 +20240,12 @@
               bEl.classList.add("pop"))
             },
             !badgeEventsBound){
-              badgeEventsBound=!0;
+              badgeEventsBound=!0,
+              /* A scrollbar can appear or vanish long after load -- an SPA growing
+              its content, or the window being resized past a breakpoint. */
+              woOn(window,
+              "resize",
+              alignBadge);
               const NO_BADGE_TYPES=new Set(["blocked_tracker_request",
               "detected_thirdparty_tracker",
               "blocked_thirdparty_cookie",

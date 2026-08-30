@@ -2445,9 +2445,22 @@ test('only intervention-linked network/decode errors enter a short recovery wind
 
   primary.error = { code: 3 };
   harness.document.dispatchEvent({ type: 'error', target: primary });
+  assert(configs().at(-1).enabled === true,
+    'one old intervention opened a second recovery window after its first bounded fail-open');
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state: 'blocked-clean',
+      channel: 'fixturechannel',
+    },
+    stopImmediatePropagation() {},
+  });
+  harness.document.dispatchEvent({ type: 'error', target: primary });
   assert(configs().at(-1).enabled === false &&
     harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'decode',
-  'primary MEDIA_ERR_DECODE did not trip the stream circuit breaker');
+  'fresh intervention-linked MEDIA_ERR_DECODE did not trip the stream circuit breaker');
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
   harness.document.dispatchEvent({ type: 'wo-config-change' });
   harness.advance(8000);
@@ -2537,6 +2550,318 @@ test('unstable playback cancels the pending early recovery resume', () => {
   harness.advance(5600);
   assert(configs().at(-1).enabled === true,
     'unstable playback extended the original bounded recovery deadline');
+});
+
+test('persistent intervention-linked waiting enters bounded native fail-open without touching media', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 10000 });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/stall-fail-open-worker');
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state: 'blocked-clean',
+    },
+    stopImmediatePropagation() {},
+  });
+  const primary = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/stall-fail-open-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 100,
+  });
+  const configs = () => worker.messages.filter((message) => message && message.type === 'config');
+
+  harness.document.dispatchEvent({ type: 'waiting', target: primary });
+  harness.advance(3999);
+  assert(configs().at(-1).enabled === true,
+    'brief buffering disabled interception before the bounded stall threshold');
+  harness.advance(1);
+  assert(configs().at(-1).enabled === false,
+    'persistent intervention-linked waiting did not release the worker to native playback');
+  assert(harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'stall',
+    'persistent waiting did not expose its bounded fail-open reason');
+  assert(primary.pauseCalls === 0 && primary.playCalls === 0 && primary.seeks.length === 0,
+    'stall fail-open paused, restarted, or sought the live video');
+
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(1200);
+  assert(configs().at(-1).enabled === true,
+    'stable native playback did not re-enable interception after stall recovery');
+});
+
+test('brief or unrelated waiting never disables Twitch interception', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 20000 });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/brief-waiting-worker');
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  const primary = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/brief-waiting-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 200,
+  });
+  const configs = () => worker.messages.filter((message) => message && message.type === 'config');
+
+  harness.document.dispatchEvent({ type: 'waiting', target: primary });
+  harness.advance(4000);
+  assert(configs().at(-1).enabled === true,
+    'an unrelated native buffering event disabled interception');
+
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state',
+      state: 'blocked-clean',
+    },
+    stopImmediatePropagation() {},
+  });
+  harness.document.dispatchEvent({ type: 'waiting', target: primary });
+  harness.advance(2000);
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(2000);
+  assert(configs().at(-1).enabled === true &&
+    harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+  'a brief intervention-linked wait survived the playing event and entered fail-open');
+  assert(primary.pauseCalls === 0 && primary.playCalls === 0 && primary.seeks.length === 0,
+    'brief-wait handling touched the live media element');
+});
+
+test('buffered playback does not retire provenance before a frozen window is exhausted', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 10000 });
+  const ready = harness.window.__wardenOneTwitchAdblockReady;
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/delayed-freeze-worker');
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: ready, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  const primary = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/delayed-freeze-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 100,
+  });
+  worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: ready,
+      type: 'ad-state',
+      state: 'blocked-clean',
+      channel: 'fixturechannel',
+    },
+    stopImmediatePropagation() {},
+  });
+
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(1200);
+  primary.playTo(108, 108);
+  harness.document.dispatchEvent({ type: 'waiting', target: primary });
+  harness.advance(4000);
+  const configs = worker.messages.filter((message) => message && message.type === 'config');
+  assert(configs.at(-1).enabled === false &&
+    harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'stall',
+  'buffered playback retired provenance before the frozen media window was exhausted');
+});
+
+test('a previous channel intervention cannot disable a replacement stream startup', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 10000 });
+  const ready = harness.window.__wardenOneTwitchAdblockReady;
+  const oldVideo = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/old-channel-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 20,
+  });
+  const oldWorker = new harness.window.Worker('blob:https://www.twitch.tv/old-channel-worker');
+  const sendState = (worker, state, channel) => worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: ready, type: 'ad-state', state: state, channel: channel },
+    stopImmediatePropagation() {},
+  });
+  sendState(oldWorker, 'blocked-clean', 'fixturechannel');
+  sendState(oldWorker, 'clear', 'fixturechannel');
+  oldWorker.terminate();
+  oldVideo.isConnected = false;
+
+  harness.window.location.pathname = '/differentchannel';
+  harness.window.location.href = 'https://www.twitch.tv/differentchannel';
+  const newWorker = new harness.window.Worker('blob:https://www.twitch.tv/new-channel-worker');
+  newWorker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: ready, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  const newVideo = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/new-channel-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 0,
+  });
+  harness.document.dispatchEvent({ type: 'waiting', target: newVideo });
+  harness.advance(4000);
+  const configs = newWorker.messages.filter((message) => message && message.type === 'config');
+  assert(configs.at(-1).enabled === true &&
+    harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+  'old-channel intervention disabled the replacement stream during normal startup');
+});
+
+test('an active intervention cannot be rebound to a replacement media source', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 10000 });
+  const ready = harness.window.__wardenOneTwitchAdblockReady;
+  const oldVideo = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/old-source-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 20,
+  });
+  const oldWorker = new harness.window.Worker('blob:https://www.twitch.tv/old-source-worker');
+  oldWorker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: ready,
+      type: 'ad-state',
+      state: 'blocked-clean',
+      channel: 'fixturechannel',
+    },
+    stopImmediatePropagation() {},
+  });
+  oldVideo.isConnected = false;
+
+  const newWorker = new harness.window.Worker('blob:https://www.twitch.tv/new-source-worker');
+  newWorker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: ready, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  const newVideo = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/new-source-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 0,
+  });
+  harness.document.dispatchEvent({ type: 'waiting', target: newVideo });
+  harness.advance(4000);
+  const configs = newWorker.messages.filter((message) => message && message.type === 'config');
+  assert(configs.at(-1).enabled === true &&
+    harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+  'old active worker rebound its intervention to a replacement MediaSource');
+});
+
+test('config-off clears a pending stall recovery on both configuration paths', () => {
+  for (const mode of ['page-event', 'bridge-message']) {
+    const harness = createPageHarness(null, { fakeClock: true, now: 10000 });
+    const ready = harness.window.__wardenOneTwitchAdblockReady;
+    const primary = harness.createVideo({
+      currentSrc: 'blob:https://www.twitch.tv/config-cycle-primary-' + mode,
+      inPlayer: true,
+      label: 'Twitch video player',
+      currentTime: 10,
+    });
+    const worker = new harness.window.Worker('blob:https://www.twitch.tv/config-cycle-worker-' + mode);
+    worker.dispatchEvent({
+      type: 'message',
+      data: { __woTwitchAdblock: ready, type: 'ready' },
+      stopImmediatePropagation() {},
+    });
+    worker.dispatchEvent({
+      type: 'message',
+      data: {
+        __woTwitchAdblock: ready,
+        type: 'ad-state',
+        state: 'blocked-clean',
+        channel: 'fixturechannel',
+      },
+      stopImmediatePropagation() {},
+    });
+    harness.document.dispatchEvent({ type: 'waiting', target: primary });
+    harness.advance(1000);
+
+    if (mode === 'bridge-message') {
+      const token = 'config-cycle-token';
+      harness.window.dispatchEvent({
+        type: 'message', source: harness.window,
+        data: { source: 'wardenone-handshake', token: token },
+      });
+      harness.window.dispatchEvent({
+        type: 'message', source: harness.window,
+        data: {
+          source: 'wardenone', kind: 'config', token: token,
+          overrides: { enabled: true, twitchAdBlock: false },
+        },
+      });
+      harness.window.dispatchEvent({
+        type: 'message', source: harness.window,
+        data: {
+          source: 'wardenone', kind: 'config', token: token,
+          overrides: { enabled: true, twitchAdBlock: true },
+        },
+      });
+    } else {
+      harness.window.__WO_CONFIG__.twitchAdBlock = false;
+      harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+      harness.window.__WO_CONFIG__.twitchAdBlock = true;
+      harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+    }
+
+    harness.advance(3000);
+    const configs = worker.messages.filter((message) => message && message.type === 'config');
+    assert(configs.at(-1).enabled === true &&
+      harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+    mode + ' allowed a pre-disable stall timer to disable the re-enabled worker');
+  }
+});
+
+test('a queued blocked state cannot repopulate provenance during native fail-open', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 10000 });
+  const ready = harness.window.__wardenOneTwitchAdblockReady;
+  const primary = harness.createVideo({
+    currentSrc: 'blob:https://www.twitch.tv/queued-state-primary',
+    inPlayer: true,
+    label: 'Twitch video player',
+    currentTime: 10,
+    error: { code: 2 },
+  });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/queued-state-worker');
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: ready, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+  const sendBlockedState = () => worker.dispatchEvent({
+    type: 'message',
+    data: {
+      __woTwitchAdblock: ready,
+      type: 'ad-state',
+      state: 'blocked-clean',
+      channel: 'fixturechannel',
+    },
+    stopImmediatePropagation() {},
+  });
+  sendBlockedState();
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  sendBlockedState();
+  assert(harness.document.documentElement.getAttribute('data-wo-twitch-adblock') === null,
+    'queued pre-disable state remounted blocking chrome during native fail-open');
+
+  primary.error = null;
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(1200);
+  harness.document.dispatchEvent({ type: 'waiting', target: primary });
+  harness.advance(4000);
+  const configs = worker.messages.filter((message) => message && message.type === 'config');
+  assert(configs.at(-1).enabled === true &&
+    harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+  'queued blocked state opened a second recovery window after native playback resumed');
 });
 
 test('removed stall watchdog can never pause or restart Twitch media', () => {

@@ -319,10 +319,15 @@ for (const g of GUARDS) {
   // exact defect this replaced.
   const planner = bg.slice(bg.indexOf('function repairMainWorldFilesForUrl'),
     bg.indexOf('function isTwitchFrameUrl'));
-  const isoBuild = bg.slice(bg.indexOf('const isolatedAlwaysFiles = []'),
-    bg.indexOf('const isolatedAlwaysFiles = []') + 400)
-    + bg.slice(bg.indexOf('const isolatedFiles = isolatedAlwaysFiles.slice()'),
-      bg.indexOf('const isolatedFiles = isolatedAlwaysFiles.slice()') + 300);
+  /* Both halves run to the statement that ends them rather than a fixed character count. A
+     magic offset silently shortens as the block above it grows -- a guard added at the end of
+     the per-frame list fell outside a 300-char window and read as having no executor at all,
+     which is the same false alarm this check exists to prevent. */
+  const isoAlwaysAt = bg.indexOf('const isolatedAlwaysFiles = []');
+  const isoFilesAt = bg.indexOf('const isolatedFiles = isolatedAlwaysFiles.slice()');
+  assert(isoAlwaysAt >= 0 && isoFilesAt > isoAlwaysAt, 'the ISOLATED file build moved in background.js');
+  const isoBuild = bg.slice(isoAlwaysAt, bg.indexOf('const tabs = await chrome.tabs.query', isoAlwaysAt))
+    + bg.slice(isoFilesAt, bg.indexOf('await markWardenOneCopiesStale', isoFilesAt));
   for (const c of components) {
     const where = c.world === 'MAIN' ? planner : isoBuild;
     check('repair executes ' + c.file + ' (' + c.world + '), not just marks it',

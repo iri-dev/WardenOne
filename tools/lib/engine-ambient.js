@@ -53,6 +53,17 @@ function declaredAmbientNames(src) {
 // fragment actually constructs one.
 const SHIMS = {
   __woKeep: 'var __woKeep=[];',
+  // Fails a blocked XHR the way the engine does. A lifted fragment that blocks a
+  // request has to be able to do that without the sandbox owning a real XHR, and
+  // the terminal events are the part a page actually observes.
+  __woFailXhr: 'var __woFailXhr=function(xhr){try{'
+    + 'if(!xhr||typeof xhr.dispatchEvent!=="function")return;'
+    + 'xhr.readyState=4;xhr.status=0;xhr.statusText="";'
+    + 'xhr.responseText="";xhr.response="";'
+    + 'xhr.dispatchEvent({type:"readystatechange"});'
+    + 'xhr.dispatchEvent({type:"error"});'
+    + 'xhr.dispatchEvent({type:"loadend"});'
+    + '}catch(_){}};',
   __woHold: 'var __woHold=function(item){return item;};',
   __woObserver: 'var __woObserver=function(){'
     + 'if(typeof MutationObserver==="undefined")throw new Error("sandbox has no MutationObserver");'
@@ -65,6 +76,13 @@ const SHIMS = {
     + 'return setInterval.apply(null,arguments);};',
   __woAbort: 'var __woAbort={signal:undefined,abort:function(){}};',
   __woOpts: 'var __woOpts=function(o){return o;};',
+  __woNativeMessageDataGetter: 'var __woNativeMessageDataGetter=(function(){try{'
+    + 'if(typeof MessageEvent==="undefined")return null;'
+    + 'var d=Object.getOwnPropertyDescriptor(MessageEvent.prototype,"data");'
+    + 'return d&&typeof d.get==="function"?d.get:null;}catch(_){return null;}})();',
+  __woMessageData: 'var __woMessageData=function(event){try{'
+    + 'return __woNativeMessageDataGetter?__woNativeMessageDataGetter.call(event):event&&event.data;'
+    + '}catch(_){return undefined;}};',
   woOn: 'var woOn=function(target,type,fn,o){'
     + 'if(target&&typeof target.addEventListener==="function")target.addEventListener(type,fn,o);};',
 };

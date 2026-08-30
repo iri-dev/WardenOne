@@ -28,8 +28,14 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
-const CONTENT = fs.readFileSync(path.join(ROOT, 'src/content.js'), 'utf8');
+/* Read with one newline convention. These files are edited by whatever tool
+   is to hand, so a slice that hunts for a line break must not depend on which
+   convention the last write happened to leave behind. */
+const CR = String.fromCharCode(13);
+const LF = String.fromCharCode(10);
+const lf = (s) => s.split(CR + LF).join(LF);
+const POPUP_JS = lf(fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8'));
+const CONTENT = lf(fs.readFileSync(path.join(ROOT, 'src/content.js'), 'utf8'));
 
 let passed = 0;
 function check(name, cond, extra) {
@@ -124,7 +130,7 @@ check('a token-named key still counts without a token-shaped value', /namedLikeT
 /* ---- clearing and hiding exposed tokens ----
  * These two handlers delete a user's session and rewrite their cookies, so the
  * guards around them matter more than the happy path does. */
-const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const BG = lf(fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8'));
 const clearFn = BG.slice(BG.indexOf("msg.kind === 'clear-exposed-tokens'"), BG.indexOf("msg.kind === 'harden-site-cookies'"));
 const hardenFn = BG.slice(BG.indexOf("msg.kind === 'harden-site-cookies'"), BG.indexOf("msg.kind === 'cookie-audit'"));
 

@@ -171,6 +171,115 @@ const microsoftUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/autho
   check('M2 actual Microsoft consent surface warns', state.modals.length === 1 && state.reports.length > 0, state);
 }
 
+/*
+ * Signing in to GitHub with GitHub's own tooling was warned about as a risky
+ * third-party OAuth grant. GitHub CLI, GitHub Desktop, GitHub Mobile and
+ * Codespaces all land on the same /login/oauth/authorize page as any other app,
+ * and `repo` there scored High -- so the guard fired every time, on a grant
+ * with no third party in it.
+ *
+ * The exemption has to survive someone trying to wear it. The publisher line is
+ * rendered by the provider, but the app supplies the name printed after "by",
+ * so the phrase is anchored to the sentence that asks for access and refuses a
+ * second "by" in between.
+ */
+const githubRepoUrl = 'https://github.com/login/oauth/authorize?client_id=xyz&scope=repo%20delete_repo';
+const githubGrantTail = ' wants to access your iri account Repositories Public and private '
+  + 'read and write all public and private repository data Authorize Cancel';
+
+{
+  const state = runCase({
+    url: 'https://github.com/login?client_id=abc&return_to=%2Flogin%2Foauth%2Fauthorize%3Fscope%3Drepo',
+    body: 'Sign in to GitHub to continue to Example App Username or email address Password Forgot password? Sign in New to GitHub? Create an account',
+    actions: ['Sign in', 'Create an account'],
+    headings: ['Sign in to GitHub'],
+  });
+  check('H1 GitHub credential page during an OAuth hand-off never warns',
+    state.modals.length === 0 && state.reports.length === 0, state);
+}
+
+{
+  const state = runCase({
+    url: 'https://github.com/login/oauth/authorize?client_id=abc&scope=repo%20read%3Aorg',
+    body: 'Authorize GitHub CLI GitHub CLI by GitHub' + githubGrantTail,
+    actions: ['Authorize GitHub CLI', 'Cancel'],
+    headings: ['Authorize GitHub CLI'],
+  });
+  check('H2 GitHub authorising its own app is not a third-party grant',
+    state.modals.length === 0 && state.reports.length === 0, state);
+}
+
+{
+  const state = runCase({
+    url: 'https://github.com/login/oauth/authorize?client_id=abc&scope=repo&redirect_uri=https%3A%2F%2Fgithub.com%2Fcodespaces%2Fauth',
+    body: 'Authorize Codespaces Codespaces' + githubGrantTail,
+    actions: ['Authorize', 'Cancel'],
+    headings: ['Authorize Codespaces'],
+  });
+  check('H3 a redirect back to the provider itself is first-party',
+    state.modals.length === 0 && state.reports.length === 0, state);
+}
+
+{
+  const state = runCase({
+    url: githubRepoUrl,
+    body: 'Authorize Sketchy Deploy Sketchy Deploy by evil-corp' + githubGrantTail,
+    actions: ['Authorize Sketchy Deploy', 'Cancel'],
+    headings: ['Authorize Sketchy Deploy'],
+  });
+  check('H4 a real third-party repo grant still warns',
+    state.modals.length === 1 && state.reports.length > 0, state);
+}
+
+for (const impostor of [
+  { what: 'a hyphenated lookalike publisher', publisher: 'GitHub-Support' },
+  { what: 'a typosquatted publisher', publisher: 'GitHubb' },
+  { what: 'a domain-shaped publisher', publisher: 'github.io' },
+]) {
+  const state = runCase({
+    url: githubRepoUrl,
+    body: 'Authorize Repo Sync Repo Sync by ' + impostor.publisher + githubGrantTail,
+    actions: ['Authorize Repo Sync', 'Cancel'],
+    headings: ['Authorize Repo Sync'],
+  });
+  check('H5 ' + impostor.what + ' cannot pass as first-party',
+    state.modals.length === 1 && state.reports.length > 0, { publisher: impostor.publisher, state });
+}
+
+{
+  const state = runCase({
+    url: githubRepoUrl,
+    body: 'Authorize Deploy by GitHub Deploy by GitHub by evil-corp' + githubGrantTail,
+    actions: ['Authorize', 'Cancel'],
+    headings: ['Authorize Deploy by GitHub'],
+  });
+  check('H6 an app NAMED "... by GitHub" cannot borrow the publisher line',
+    state.modals.length === 1 && state.reports.length > 0, state);
+}
+
+{
+  const state = runCase({
+    url: githubRepoUrl,
+    body: 'Authorize Sketchy Deploy Sketchy Deploy by evil-corp' + githubGrantTail
+      + ' Terms Privacy Docs Blog This site is powered by GitHub',
+    actions: ['Authorize Sketchy Deploy', 'Cancel'],
+    headings: ['Authorize Sketchy Deploy'],
+  });
+  check('H7 a "powered by GitHub" footer does not exempt the page',
+    state.modals.length === 1 && state.reports.length > 0, state);
+}
+
+{
+  const state = runCase({
+    url: 'https://github.com/login/oauth/authorize?client_id=xyz&scope=repo&redirect_uri=https%3A%2F%2Fgithub.com.evil.tld%2Fcb',
+    body: 'Authorize Repo Sync Repo Sync by evil-corp' + githubGrantTail,
+    actions: ['Authorize Repo Sync', 'Cancel'],
+    headings: ['Authorize Repo Sync'],
+  });
+  check('H8 a redirect to a lookalike domain is not the provider',
+    state.modals.length === 1 && state.reports.length > 0, state);
+}
+
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

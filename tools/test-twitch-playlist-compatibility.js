@@ -2755,7 +2755,48 @@ ${otherMediaUrl}
   const fallbackRequests = runtime.state.gqlRequests.slice(before);
   assert(fallbackRequests.length > 0, 'detached ad fixture did not exercise clean-backup fallback');
   assert(fallbackRequests.every((request) => request.body.variables.login === otherChannel),
-    'detached ad fallback crossed from the active channel to a later unrelated master');
+  'detached ad fallback crossed from the active channel to a later unrelated master');
+});
+
+test('blocked-clean state is reannounced when the active channel changes without a clear', async () => {
+  const firstChannel = 'statefirst';
+  const secondChannel = 'statesecond';
+  const firstMasterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/' + firstChannel + '.m3u8?p=first';
+  const secondMasterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/' + secondChannel + '.m3u8?p=second';
+  const firstMediaUrl = 'https://video-edge-fixture.ttvnw.net/state-first/chunked/index.m3u8?token=first';
+  const secondMediaUrl = 'https://video-edge-fixture.ttvnw.net/state-second/chunked/index.m3u8?token=second';
+  const channelMaster = (mediaUrl) => `#EXTM3U
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1080p60 (source)",AUTOSELECT=YES,DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=8500000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,VIDEO="chunked",FRAME-RATE=60.000
+${mediaUrl}
+`;
+  const adPaths = new Set([
+    new URL(firstMediaUrl).pathname,
+    new URL(secondMediaUrl).pathname,
+  ]);
+  const standardRoute = standardFetchRoute({ backupMedia: CLEAN_MEDIA });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(firstChannel) },
+    fetchRoute(url, init, state) {
+      if (adPaths.has(new URL(url).pathname)) return hlsResponse(STITCHED_AD);
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+
+  runtime.sendMaster(firstMasterUrl, channelMaster(firstMediaUrl), firstChannel, true);
+  const firstBody = await (await runtime.fetch(firstMediaUrl)).text();
+  runtime.sendMaster(secondMasterUrl, channelMaster(secondMediaUrl), secondChannel, true);
+  const secondBody = await (await runtime.fetch(secondMediaUrl)).text();
+  assert(firstBody === CLEAN_MEDIA && secondBody === CLEAN_MEDIA,
+    'channel-state fixture did not clean both consecutive ad playlists');
+  const blockedStates = runtime.state.messages.filter((message) =>
+    message && message.type === 'ad-state' && message.state === 'blocked-clean');
+  assert(blockedStates.some((message) => message.channel === firstChannel) &&
+    blockedStates.some((message) => message.channel === secondChannel),
+  'same blocking state was deduplicated across two active channels');
 });
 
 test('a queued warning from the previous channel cannot roll back rapid-switch pre-roll recovery', async () => {
@@ -3322,6 +3363,68 @@ test('cached backup polls reject backward and long-stale live windows', async ()
     assert(states.length && states[states.length - 1].state === 'clear',
       scenario.label + ' cached playlist left a clean intervention active');
   }
+});
+
+test('a reacquired backup cannot replay the same frozen media window forever', async () => {
+  let nativePoll = 0;
+  let backupPoll = 0;
+  let backupSequence = 9900;
+  let backupStart = SEQUENCE_BASE_TIME;
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: 3000000,
+    fetchRoute: standardFetchRoute({
+      originalMedia() {
+        const index = nativePoll++;
+        return sequencedPlaylist({
+          sequence: 700 + index,
+          startMs: SEQUENCE_BASE_TIME + index * 2000,
+          marker: '#EXT-X-DATERANGE:ID="stitched-ad-frozen-reacquire-' + index +
+            '",CLASS="twitch-stitched-ad",DURATION=30.0',
+          title: 'advertisement',
+          path: 'frozen-reacquire-native-ad',
+        });
+      },
+      backupMedia() {
+        backupPoll++;
+        return sequencedPlaylist({
+          sequence: backupSequence,
+          startMs: backupStart,
+          title: 'live',
+          path: 'frozen-reacquire-clean-backup',
+        });
+      },
+    }),
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(first.includes('/frozen-reacquire-clean-backup/'),
+    'frozen-window fixture did not establish its first clean replacement');
+
+  runtime.advance(9000);
+  const stale = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(backupPoll >= 3,
+    'fixture did not poll then reacquire the stale route: ' + backupPoll);
+  assert(stale.includes('/frozen-reacquire-native-ad/') &&
+    !stale.includes('/frozen-reacquire-clean-backup/'),
+  'a freshly reacquired route replayed the already-consumed media window');
+  const statesAfterStale = runtime.state.messages.filter((message) =>
+    message && message.type === 'ad-state');
+  assert(statesAfterStale.length && statesAfterStale[statesAfterStale.length - 1].state === 'clear',
+    'frozen replacement did not release the clean intervention before native fail-open');
+
+  backupSequence++;
+  backupStart += 2000;
+  runtime.advance(1000);
+  const recovered = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(recovered.includes('/frozen-reacquire-clean-backup/') &&
+    !recovered.includes('/frozen-reacquire-native-ad/'),
+  'the exact clean route was not reusable after its media window advanced');
 });
 
 test('an out-of-order native response is not renumbered upward or allowed to rewrite sequence state', async () => {

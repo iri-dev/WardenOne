@@ -49,7 +49,7 @@ function sourceBetween(startNeedle, endNeedle, includeStart) {
 // the shipped one rather than a re-implementation.
 const HELPERS = 'const ' + sourceBetween('SITE_BOUNDARY=(()=>{', 'isGoogleSearchResults=').replace(/,$/, '');
 const SCANNER = sourceBetween(
-  'if(WO.behavioralScan||WO.fingerprintProbeDetection)try{',
+  'if(WO.behavioralScan||WO.xssBehaviorGuard||WO.fingerprintProbeDetection)try{',
   'catch(e){log("behavioral_scan_failed"',
 ) + 'catch(e){this.__scanError=e}';
 
@@ -116,6 +116,7 @@ function runScan(options) {
     __woBackgroundRequest(msg, cb) { ageRequests.push({ msg, cb }); },
     WO: {
       behavioralScan: true,
+      xssBehaviorGuard: true,
       fingerprintProbeDetection: true,
       grabberDomains: opts.grabberDomains || [],
     },
@@ -159,7 +160,7 @@ const BUSY_PAGE = {
   ageDays: 4000,
 };
 
-test('mainstream sites are not behaviourally scanned at all', () => {
+test('mainstream sites receive no baseline behavioral scoring', () => {
   const sites = [
     ['https://x.com/home', 'https://abs.twimg.com/app.js'],
     ['https://twitter.com/home', 'https://pbs.twimg.com/media/a.jpg'],
@@ -177,7 +178,7 @@ test('mainstream sites are not behaviourally scanned at all', () => {
   for (const [page, asset] of sites) {
     const result = runScan(Object.assign({ page, requests: [asset] }, BUSY_PAGE));
     assert.strictEqual(result.warnings.length, 0, page + ' raised a suspicious-behaviour warning');
-    assert.strictEqual(result.risk, null, page + ' was behaviourally scored at all');
+    assert.strictEqual(result.risk, null, page + ' received baseline behavioral points');
     assert.strictEqual(result.ageRequests.length, 0, page + ' spent a domain-age lookup');
   }
 });

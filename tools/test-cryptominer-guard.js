@@ -24,6 +24,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const SEED = JSON.parse(fs.readFileSync(path.join(ROOT, 'cryptominer-domains.json'), 'utf8'));
@@ -46,6 +47,29 @@ function num(name) {
   const m = BG.match(new RegExp('const\\s+' + name + '\\s*=\\s*(\\d+)\\s*;'));
   assert(m, 'missing constant ' + name + ' in background.js');
   return Number(m[1]);
+}
+
+/* Resource-type lists are derived from a single ALL_DNR_RESOURCE_TYPES
+   inventory now, so a regex for "const X = [...]" no longer finds them. Resolve
+   the right-hand side instead, in a sandbox seeded with the constants it may
+   refer to. These assertions then check the value that actually ships rather
+   than the shape the source happens to be written in -- which is the point,
+   since the invariants below are about behaviour, not syntax. */
+function constDecl(name) {
+  const at = BG.indexOf('const ' + name + ' =');
+  assert(at >= 0, 'missing constant ' + name + ' in background.js');
+  const end = BG.indexOf(';', at);
+  assert(end > at, 'unterminated constant ' + name + ' in background.js');
+  return BG.slice(at, end + 1);
+}
+
+function resourceTypeList(name) {
+  const needed = ['ALL_DNR_RESOURCE_TYPES', 'SECURITY_RESOURCE_TYPES', name]
+    .filter((n, i, a) => a.indexOf(n) === i);
+  const sandbox = { __result: null };
+  vm.runInNewContext(needed.map(constDecl).join(' ') + ' __result = ' + name + ';', sandbox);
+  assert(Array.isArray(sandbox.__result), name + ' did not resolve to an array');
+  return sandbox.__result;
 }
 
 function arrayLiteral(name) {
@@ -91,7 +115,7 @@ function run() {
     ? true : assert.fail('would block legitimate infrastructure: ' + overlap.join(', ')));
 
   // ---- the false-positive-critical invariants --------------------------
-  const poolTypes = arrayLiteral('MINER_POOL_RESOURCE_TYPES');
+  const poolTypes = resourceTypeList('MINER_POOL_RESOURCE_TYPES');
   check('pool rules never block main_frame (visiting a pool must still work)',
     !poolTypes.includes('main_frame'));
   check('pool rules still cover websocket (stratum runs over WSS)',
@@ -103,7 +127,7 @@ function run() {
   check('miner-host rules are NOT limited to third-party',
     (applyBody.match(/domainType:\s*'thirdParty'/g) || []).length === 1);
 
-  const minerTypes = arrayLiteral('MINER_RESOURCE_TYPES');
+  const minerTypes = resourceTypeList('MINER_RESOURCE_TYPES');
   check('miner-host rules cover main_frame and websocket',
     minerTypes.includes('main_frame') && minerTypes.includes('websocket'));
 
@@ -153,8 +177,12 @@ function run() {
   check('deep detection defaults OFF in popup', /cryptominerCpuWatch:\s*false/.test(POPUP_JS));
   check('deep detection is not switched on by "Turn everything on"',
     /MANUAL_ONLY_TOGGLES\s*=\s*new Set\(\[[^\]]*'cryptominerCpuWatch'/.test(POPUP_JS));
-  /* Slice by named anchors, and insist both exist. The old end anchor lived in
-     the permission watcher and moved with it into background-extension-watch.js. */
+  /* Slice by named anchors, and insist both exist. The end anchor used to be
+     EXT_HIGH_RISK_PERMS; when that constant moved to background-extension-watch.js
+     indexOf returned -1, slice(start, -1) quietly ran to the end of the file, and
+     this check started scanning all of background.js and failing on an unrelated
+     mention. A slice whose bounds are not verified is not a check, it is a
+     coincidence. */
   const bundleStart = BG.indexOf('const ONBOARDING_RECOMMENDED');
   const bundleEnd = BG.indexOf('const REMOTE_LISTS');
   assert(bundleStart >= 0, 'missing ONBOARDING_RECOMMENDED anchor in background.js');

@@ -52,7 +52,11 @@ const LABELS = {
   warned_keystroke_pressure: 'Heavy keystroke monitoring',
   warned_honeytoken_read: 'Script read a decoy credential (honeytoken)',
   warned_techsupport_scam: 'Tech-support scam / browser-lock page',
-  warned_command_paste: 'Blocked a command-paste scam (ClickFix)',
+  warned_clickfix_instruction: 'Possible ClickFix instruction',
+  warned_clickfix_fake_captcha: 'Suspicious fake verification steps',
+  warned_clickfix_clipboard: 'Suspicious command prepared for copying',
+  warned_clickfix_correlated: 'Likely ClickFix scam detected',
+  warned_command_paste: 'Potential command-paste scam (ClickFix)',
   warned_paste_protection: 'Warned before pasting a secret into a risky page',
   warned_form_trap: 'Flagged a suspicious (possibly fake) login form',
   warned_fake_update: 'Fake software-update scam',
@@ -60,6 +64,36 @@ const LABELS = {
   warned_permission_chain: 'Risky permission chain',
   warned_oauth_grant: 'Risky OAuth grant',
   warned_script_drift: 'Third-party script changed',
+  warned_fullscreen_spoof: 'Fake address bar in full screen',
+  warned_fake_window: 'Fake sign-in window',
+  blocked_frame_top_redirect: 'Embedded frame redirected the tab',
+  blocked_ad_auction_redirect: 'Forced into an ad click tracker',
+  blocked_forced_redirect: 'Sent to another site on its own',
+  blocked_confirm_bait: 'Fake confirm box removed',
+  blocked_overlay_ad_frame: 'Floating ad frame removed',
+  detected_beacon: 'Data sent in the background',
+  cleaned_site_cookies: 'Cookies cleared after you left',
+  cleaned_site_service_worker: 'Service worker removed after you left',
+  cleaned_site_storage: 'Tracking IDs cleared as you left',
+  warned_confirm_bait: 'Fake confirm box',
+  warned_back_trap: 'Back button trapped',
+  warned_engine_disabled: 'Page switched WardenOne off',
+  warned_payment_sheet: 'Payment sheet opened',
+  warned_idle_watch: 'Presence tracking started',
+  warned_app_install_prompt: 'Asked to install itself as an app',
+  warned_service_worker: 'Installed a service worker',
+  warned_notification_bait: 'Talked into allowing notifications',
+  warned_notification_scam: 'Scam-shaped notification',
+  warned_device_request: 'Hardware access requested',
+  warned_device_silent: 'Hardware read without a prompt',
+  warned_file_request: 'File or folder access requested',
+  warned_file_silent: 'File access held from an earlier visit',
+  warned_potential_dom_xss: 'Potential DOM XSS detected',
+  warned_potential_xss_code_execution: 'Potential dynamic-code injection',
+  warned_potential_xss_navigation: 'Suspicious source-controlled navigation',
+  warned_potential_xss_script_injection: 'Potential script injection',
+  warned_potential_xss_privileged_action: 'Suspicious message-driven action',
+  warned_xss_behavior: 'Potential XSS behavior detected',
   blocked_tracker_request: 'First-party tracker blocked',
   blocked_thirdparty_cookie: 'Third-party cookie blocked',
   session_token_exposed: 'Session token exposed (SessionShield)',
@@ -79,6 +113,8 @@ const LABELS = {
   forget_me_wiped: 'Forgot a site on leaving',
   blocked_media_capture: 'Camera/mic access blocked',
   blocked_screen_capture: 'Screen capture blocked',
+  blocked_speech_capture: 'Speech recognition blocked',
+  warned_speech_capture: 'Speech recognition started',
   blocked_autoplay_media: 'Autoplay media blocked',
   blocked_hidden_media: 'Hidden media blocked',
   blocked_suspicious_webrtc: 'Suspicious WebRTC blocked',
@@ -87,6 +123,22 @@ const LABELS = {
   warned_screen_capture: 'Screen capture requested',
   warned_hidden_screen_capture: 'Hidden screen request',
 };
+
+const XSS_ACTIVITY_TYPES = new Set([
+  'warned_potential_dom_xss',
+  'warned_potential_xss_code_execution',
+  'warned_potential_xss_navigation',
+  'warned_potential_xss_script_injection',
+  'warned_potential_xss_privileged_action',
+  'warned_xss_behavior',
+]);
+const CLICKFIX_ACTIVITY_TYPES = new Set([
+  'warned_clickfix_instruction',
+  'warned_clickfix_fake_captcha',
+  'warned_clickfix_clipboard',
+  'warned_clickfix_correlated',
+  'warned_command_paste',
+]);
 
 // category for the row icon: block (shield), warn (triangle), gate (eye)
 function iconCategory(type) {
@@ -194,6 +246,11 @@ function detailText(e) {
     const k = d.kind ? d.kind.toUpperCase() + ' ' : '';
     return k + 'copied ' + shortHash(d.copied) + ' -> pasted ' + shortHash(d.pasted);
   }
+  if (CLICKFIX_ACTIVITY_TYPES.has(e.type)) {
+    const assessment = [d.confidence && ('Confidence: ' + d.confidence), d.severity && ('Severity: ' + d.severity)].filter(Boolean).join(' / ');
+    const evidence = [d.instruction, d.evidence, d.where].filter(Boolean).join(' / ');
+    return [d.why, assessment, evidence && ('Evidence: ' + evidence), d.outcome].filter(Boolean).join(' - ');
+  }
   if (e.type === 'warned_permission_chain') {
     const perms = Array.isArray(d.permissions) && d.permissions.length ? d.permissions.join(', ') : '';
     const allowed = Array.isArray(d.allowed) && d.allowed.length ? 'Allowed: ' + d.allowed.join(', ') : '';
@@ -214,6 +271,11 @@ function detailText(e) {
     if (d.newHosts && d.newHosts.length) bits.push('Hosts: ' + d.newHosts.slice(0, 3).join(', '));
     if (d.newHash) bits.push('Hash ' + shortHash(d.previousHash) + ' -> ' + shortHash(d.newHash));
     return bits.join(' - ');
+  }
+  if (XSS_ACTIVITY_TYPES.has(e.type)) {
+    const flow = [d.source, d.sink].filter(Boolean).join(' -> ');
+    const assessment = [d.confidence && ('Confidence: ' + d.confidence), d.severity && ('Severity: ' + d.severity)].filter(Boolean).join(' / ');
+    return [d.why, assessment, flow && ('Technical: ' + flow), d.outcome].filter(Boolean).join(' - ');
   }
   if (e.type === 'forget_me_wiped') {
     const bits = [];
@@ -400,7 +462,15 @@ function shortUrl(u) {
   catch { return u.slice(0, 40); }
 }
 
+function isImpossibleInitialXssFlow(e) {
+  const d = e && e.detail || {};
+  return XSS_ACTIVITY_TYPES.has(e && e.type)
+    && String(d.source || '').toLowerCase() === 'postmessage event.data'
+    && String(d.sink || '').toLowerCase() === 'initial reflected markup';
+}
+
 function render(hist) {
+  hist = hist.filter((e) => !isImpossibleInitialXssFlow(e));
   const rows = document.getElementById('rows');
   const total = hist.length;
   const blocked = hist.filter((e) => /^blocked_|^detected_|^gated_/.test(e.type)).length;

@@ -17,11 +17,272 @@ as the work happened.
 
 ### Added
 
+- Added a fully local Extension Security Centre. Every installed extension now gets
+  three separate, explainable signals: an exact-ID lookup against a bundled incident
+  database, its current Chrome capability reach, and its version/permission change
+  history. Reviews bind to the exact current snapshot and automatically become stale
+  after a meaningful update. The centre includes search and filters, Chrome's own
+  permission-warning text, explicit disable and Chrome-confirmed removal controls,
+  plus bounded import of a user's own local exact-ID intelligence. The initial
+  catalogue has 21 source-linked exact identities, including four historical incident
+  records (three bound only to the documented affected version). No extension ID is
+  uploaded, “unknown” is never called safe, and powerful access is never called
+  malicious without an exact evidence record.
+- Added DNS rebinding detection. Intranet protection decides from the hostname a page
+  asks for, which is the right call for what it does and no help at all when a
+  perfectly ordinary-looking name quietly resolves to your own network. WardenOne now
+  watches the address each site actually resolves to, and blocks a name for the rest
+  of the session when it comes back pointing at your network, or when it answers
+  publicly once and privately the next time - which is what a rebinding attack looks
+  like. Being straight about the limit: the browser gives extensions no way to check
+  an address before a request goes out, so the request that reveals the trick has
+  already happened. This catches everything after it, not the first one. Pages you
+  open yourself that live on your own network, like a local dev server, are left
+  alone.
+- Intranet protection is now enforced at the network layer as well as in the page.
+  The page-level guard rewrites what a page can call, and a background worker gets
+  its own private copy of those same functions that no rewrite ever reaches - so a
+  few lines running in one could reach your network with the guard still sitting
+  there. Rewriting workers to close that would break real sites (a strict content
+  policy stops them loading at all, module workers lose the paths their imports
+  resolve against, and a service worker cannot be rewritten at any price), so the
+  same refusal now happens where a request looks identical whichever part of a page
+  made it. Pages served from your own network keep full access to it, including to
+  other devices on it.
+- Added a record of who asks for your cookies across sites. Anything embedded in a
+  page - a comment box, a video player, an ad frame - can ask for its cookies back
+  across sites through the one route browsers still allow, and until now nobody could
+  see who asked. Every request is now recorded with the name of whoever made it,
+  requests from known trackers are refused outright, and anything asking while
+  invisible or without you having clicked first is flagged. Ordinary embedded
+  sign-ins keep working, because they run on the same mechanism. A separate setting
+  refuses every request instead; it is off by default and deliberately left out of
+  both "Turn everything on" and the maximum-privacy bundle, because switching it on
+  is a choice to break embedded logins.
+- Full-screen protection now keeps the Escape key working. The warning it shows ends
+  with "leave full screen before typing anything", and a page could take that key
+  away - leaving the one instruction the warning depends on doing nothing. Escape is
+  now filtered out of any key a page asks to capture, and every other key it asked
+  for is still granted, so games and presentations are untouched. A page that has
+  already been caught drawing a fake address bar is refused outright, and refused the
+  ability to hide your cursor along with it.
+- Added an opt-in setting that lifts full-screen cookie walls - the consent-or-pay
+  sheet that covers the page and freezes scrolling, where there is no "reject" to
+  click. Nothing is clicked, so nothing is consented to and no consent cookie is
+  written. It is off by default because it cannot always work: on some sites the
+  article was never sent to the browser at all, so WardenOne measures what is behind
+  the wall and puts the wall back rather than leave a blank page, and publishers who
+  keep the wall on a separate domain are out of reach entirely. Built from a
+  101-site live test; the notes in `consent-wall.js` record which finding forced
+  which part of the design.
+- Grouped the three cookie-banner settings together, and each now opens by naming the
+  situation it answers: the banner offers a way to refuse, it offers none, or you
+  accepted it yourself. "Clear a site's cookies after accepting" used to sit in a
+  different section from the other two, with nothing explaining how any of them
+  related.
+- Added XSS Behavior Guard. It watches values from the URL, `window.name`,
+  `postMessage` and the referrer for ones that arrive somewhere code actually runs,
+  and records what it saw with a confidence and a severity. It is local, never
+  stores the matched value, and does not claim to block XSS - page-originated
+  findings are warning-only and can never create a blocking rule.
+- Added ClickFix and self-XSS detection for the "run this in PowerShell", "open
+  DevTools", "enable pasting" and fake human-verification scripts. A warning needs
+  both the instruction and the command, so a page that merely mentions a console is
+  left alone.
+- Expanded Header Shield with third-party Client Hint reduction, optional strict
+  cross-site referrer removal, and opt-in ETag protection limited to known tracker
+  infrastructure. First-party, sign-in, CAPTCHA and payment paths stay excluded.
 - Added a purple/plum dark theme across every extension page, with persistent Light/Dark
   controls in the popup header, the Interface section, and onboarding. Light mode keeps
   the original WardenOne design, including its native scrollbar geometry and lilac-pink
   selected-mode controls; dark mode uses a flat background while preserving readable
   warning, status, and disabled-control contrast.
+- Added back-button trap detection. Some pages push the address you are already on
+  every time you press Back, so Back never leaves; scam and fake-alert pages use it
+  to keep you where they put you. Pushing history is not the tell, since every
+  single-page app does it constantly, so it takes a repeat immediately after Back
+  fired. Your history is never rewritten.
+- Added visibility for three things nothing could see before: Chrome's native
+  payment sheet, idle detection - which reports whether you are at the keyboard and
+  whether your screen is locked - and a site asking to install itself as an app.
+  Nothing is blocked, since Chrome confirms each one. Only which payment methods
+  were offered is recorded, never the amount or the item.
+- Added notification-bait and scam-alert detection: the page talking you into
+  clicking Allow, and the fake alerts that farmed permissions exist to deliver. The
+  bait warning only fires while the answer is still open. Nothing is suppressed and
+  the wording is never stored, only which shape it matched. One limit worth stating:
+  a notification raised from a service worker's push event is created outside the
+  page, where a content script cannot reach it.
+- Added hardware-access visibility for WebUSB, Web Serial, WebHID and Web Bluetooth.
+  These talk to firmware, serial devices and raw HID, security keys included, and
+  nothing watched them before. Two things are recorded: asking, and separately
+  reading back a device you allowed on an earlier visit - that one needs no prompt,
+  so it is the part that can happen while you are not looking. Nothing is blocked
+  and the device itself is never recorded.
+- Added Browser-in-the-Browser detection. A page can draw a window inside itself,
+  title bar and address bar included, and put its own sign-in form in it. No real
+  window opens, so a popup blocker has nothing to block. WardenOne now warns when a
+  window-shaped box shows a domain the page does not own and offers somewhere to
+  type a password. Online IDEs, design tools, ordinary login modals and the usual
+  media hosts are left alone.
+- Added full-screen address-bar protection. In full screen the real address bar is
+  gone, so a page can paint one of its own and ask for a password with nothing left
+  to check it against. WardenOne warns when a page draws a domain it does not own at
+  the top of the screen, and offers to leave full screen. Video, games, slideshows
+  and maps are untouched.
+- Added per-site control. The allowlist turns the whole engine off permanently, so
+  one guard misreading one site cost either that guard everywhere or every guard
+  there. Two narrower levers now sit beside it in a **This site** panel: pause
+  everything here for 15 minutes, an hour or 8 hours, and turn off one protection
+  here. A site can only ever switch a protection off, never on.
+- Added a record of background reports. Tracking pixels have largely been replaced
+  by beacons, and a beacon to a host on no blocklist used to leave no trace at all.
+  Third-party ones are now noted in the Activity Center by destination - one entry
+  per destination per page, never the payload. Nothing is blocked: ordinary sites
+  report crashes and page timings the same way.
+
+### Changed
+
+- Rebuilt Extension Security Centre trust decisions around exact, evidence-bound
+  contracts. Publisher-verified identities, catalogue-only Web Store listings and
+  documented incidents are now separate states; a store-list snapshot can no longer
+  excuse powerful access. Only a bundled per-ID contract can mark capabilities as
+  expected, and imported records cannot borrow one. Development, sideloaded or
+  unclassified copies of a verified ID are surfaced as source mismatches. Base Chrome
+  capabilities such as clipboard read, blocking web requests and all-site access now
+  participate in the contract check even when no hand-written database signature
+  exists. The popup shows decisions rather than duplicating a debug-style permission
+  dump, while the full Centre puts the action queue first and folds quiet verified
+  extensions away. Bitwarden and Claude remain calm for their documented normal
+  access, but gain a warning for access outside their own contract.
+- Cookie stripping now covers every kind of request on domains that exist only to
+  track you. Across the web generally it stays limited to tracking pixels and beacons,
+  and that limit is deliberate: signing in and single sign-on set their cookies on
+  frames, scripts and background requests, and stripping those signs you out. That
+  reasoning does not apply to an ad network, which is never the far side of a sign-in
+  - and a tracker setting a cookie reaches for a frame or a script long before it
+  reaches for a pixel. So the wider version arrived as a second rule scoped to the
+  known-tracker list rather than by loosening the first one.
+- Anti-fingerprinting now answers the newer measuring surfaces: the fonts installed
+  on your machine, the monitors attached to it, whether there is more than one at all,
+  your keyboard layout, and the text-to-speech voices your system shipped with. Each
+  answer is kept consistent with what WardenOne already reports elsewhere - the screen
+  layout uses the same dimensions the rest of the engine claims, the keyboard matches
+  the language it says you speak - because two different answers to one question
+  identify someone better than either answer on its own. The font list is declined the
+  way the permission prompt itself is declined, which is what most people do anyway;
+  a tidy list of twenty universal fonts would stand out more than saying no, since real
+  machines have hundreds. Speech voices are filtered to the language rather than
+  emptied, so pages that read aloud keep working.
+- Blocking a malware or phishing domain now covers every kind of request a browser
+  can make, rather than six of the fifteen. The missing ones included WebTransport, a
+  full two-way channel to the same server, so a blocked site was still reachable by a
+  page simply choosing a different way to connect. Tracker and ad rules stay narrower
+  on purpose, since those lists are far larger and an occasional wrong entry should
+  fail visibly rather than quietly mangle a page - but they now cover every plain
+  data channel too.
+- Anti-fingerprinting now answers for WebGPU, and answers consistently. Sites can ask
+  a newer graphics interface the same question the older one already answered, and
+  giving two different replies is worse than giving neither: the contradiction is
+  rarer than the truth and gives away that something is rewriting one of them. Both
+  now come from a single per-session identity, and the capability numbers WebGPU
+  reports are the standard minimums every machine supports, so users of the shield
+  look alike rather than uniquely odd.
+- Cross-site cookie blocking now does what its name says inside tracker frames. The
+  network half only ever removed cookies from tracking pixels and beacons - correctly
+  so, because sign-in and federation set theirs on frames and scripts, and stripping
+  those signs you out - and the half meant to cover frames had never run, because it
+  lived in a script that is only injected into the top of a page. It now runs where
+  frames actually are, limited to a fixed list of hosts that exist only to track.
+- The setting's description was rewritten to say what it really covers. It had named
+  frames, which was the one thing it did not do.
+- Closed a way to the microphone that "Block camera & microphone" did not cover. Media
+  Shield hooks getUserMedia; speech recognition does not go through it, so a page could
+  call start() and be listening while the microphone guard reported nothing at all. That
+  is worse than an API nobody had got to yet - the switch is a promise about the
+  microphone, and there was a route to the microphone it did not close. It does now.
+  Worth knowing either way: Chrome does not do this on your machine. The audio from your
+  microphone is sent away to be transcribed, so it is not only listening, it is listening
+  somewhere else. With the switch off it is recorded rather than blocked, and trusted
+  media hosts stay exempt exactly as they are for camera and microphone.
+  Refusing is done the way the browser refuses: start() returns nothing whether it works
+  or not, so throwing would break pages that never expected an exception. What every page
+  using this has already written is the path for someone clicking Block - an error
+  carrying "not-allowed", then end - so that is the path the refusal takes.
+- Added MIDI to the hardware group, the one device API that had been missed. It does not
+  fit the shape of the others - there is no navigator.midi object with a request and an
+  enumerate on it, just a single call - which is most of why it was passed over. Two levels
+  are recorded separately, and the gap between them is the point: plain access enumerates
+  the music hardware attached to your machine, which is a fingerprint most people would not
+  guess they were handing over, while sysex is the channel a device own firmware listens
+  on, so a page holding it is not playing notes, it is talking to the hardware. That one
+  carries the same severity as raw HID.
+- Added a note when a site installs a service worker. It is the one thing a page can leave
+  behind: once registered it stays after the tab closes and sits in front of every request
+  to that site from then on, including visits later. That is how offline and push work, so
+  nothing is blocked - but a script that was compromised for an afternoon can leave one
+  that lasts. It is also the reachable half of a limit already noted here: a notification
+  raised from a worker push event is created outside the page where a content script cannot
+  go, but the registration itself is right there. How much of the site the worker covers is
+  recorded; the path it was registered from is not.
+- Extended hardware-access visibility to cover the File System Access API, which was the
+  one thing in that family nothing watched. `showDirectoryPicker()` gives a site read - or
+  with readwrite, write - over a whole folder tree on your machine, and the grant survives
+  the visit, because the site can keep the handle and come back to it. That is a wider
+  reach than any of WebUSB, Web Serial, WebHID or Bluetooth, all four of which were
+  already recorded, and "pick your Downloads folder so we can scan it" is a shape scams
+  already use. Nothing is blocked, for the same reason nothing is blocked for the device
+  APIs: Chrome's own picker is the real gate and web editors, photo tools and IDEs use
+  these properly every day. Two things are recorded - asking, and separately still holding
+  access granted on an earlier visit, which needs no prompt at all and is the part that
+  can happen while you are not looking. The file and the folder are never recorded, only
+  which kind of access and whether it was read or write.
+- A page that switches WardenOne's in-page engine off is now noticed, and the engine
+  is put back. The engine runs in the same world as the page, so the page can reach it
+  and turn it off - that is a limit of how browser extensions inject page-level code and
+  cannot be prevented from inside that world. The engine already answered half of it, by
+  clearing its own health markers when disposed so the tab stops claiming to be protected
+  and a fresh copy can take hold. What was missing was anything to install that fresh
+  copy: one call as the page loaded switched the engine off for the whole visit, silently.
+  The part of WardenOne the page cannot reach now watches for that, has the worker confirm
+  it rather than take its word, reinstalls the engine, and writes it down. A page doing
+  this to you is worth knowing about in its own right.
+- Back-button traps are now stopped, not just reported, and all three shapes of them
+  are covered rather than only the obvious one:
+  - Putting the address you are already on straight back into your history each time
+    you press Back. The first is allowed, since a single re-add right after Back can
+    be an app restoring a modal; every one after it is declined.
+  - Stacking entries while you read, so the page you came from ends up buried and Back
+    has to be pressed once for every entry before it can leave. Nothing asked for any
+    of them, which is what separates it from an app you are using, so beyond a small
+    allowance they are declined.
+  - Sending you forward again the instant you press Back, undoing it. Declined only
+    inside the moment after Back, so an ordinary Next button still works.
+
+  The test for all three is whether anything you did asked for it: every interaction -
+  click, key, scroll - vouches for the history changes that follow, which is why an app
+  you are actually using is never affected. Nothing already in your history is changed
+  or removed; declining to add an entry is a different thing from taking one away, and
+  WardenOne never navigates you itself.
+- Three settings that only ever wrote to the Activity Center are no longer settings.
+  Background reports, hardware access and browser capabilities block nothing and change
+  nothing on the page, so a switch implied there was protection to turn off when there
+  was not. They are now listed together under "What WardenOne watches", which says
+  plainly that they observe and never block. The master switch and the site allowlist
+  still turn them off with everything else.
+  Back-button traps started in that group and left it: once it began refusing a page's
+  history calls rather than only noting them, it was changing what the page could do,
+  which is exactly the line that decides whether something gets a switch. It has one,
+  on by default.
+- The three separate switches for frame-driven redirects, fake confirm boxes and
+  floating ad frames are now one, "Block popup and redirect tricks". They arrived
+  separately while chasing one site's popups and read as three unrelated settings,
+  but they are one behaviour: a page trying to take a click it can spend, or move
+  your tab out from under you. Turning any of the three off individually is no
+  longer possible; the merged switch defaults to on as all three did.
+- Rewrote the two IP-logger descriptions, which were half-sentence stubs while
+  everything around them was a paragraph, and said nothing about what each one
+  actually does or which half of the problem it covers.
 
 ### Fixed
 
@@ -47,6 +308,139 @@ as the work happened.
   are recognised explicitly; the user-content host receives only limited platform
   trust, and executables, password-protected archives, disguised names, blocklist hits
   and Chrome's known-malicious verdicts still surface in full.
+- Fixed a site being blocked for handing you a file. A page sending the tab to another
+  domain to deliver a download was treated as a hijack and covered with an interstitial,
+  so you got neither the file nor a reason. The guard exists to stop the tab being sent
+  somewhere you did not ask to go, and that does not happen with a download - Chrome
+  turns the navigation into a download and the page you were on stays where it is. What
+  the interstitial actually stopped was the file, and whether a file is safe to have is
+  Download Shield's decision: it grades every one, blocks the known-bad and holds the
+  risky for a review you can cancel, with the reason attached. A download destination is
+  now handed to it rather than blocked here. Only while Download Shield is on - with it
+  off there is nothing to hand the decision to, so the old behaviour stands. A page
+  merely *called* `/download` is not a file and is still caught.
+- Fixed the same warning appearing several times over. Repeat suppression keyed on what
+  triggered a warning rather than on what it said, so a page loading five trackers
+  produced five cards with the same title, the same explanation, the same severity and
+  the same advice, differing only in the small host printed underneath. That is one
+  warning shown five times. Warnings are now identified by their wording, so the same
+  one appears once per page however many things set it off; every occurrence is still
+  listed in the Activity Center. Warnings that genuinely differ still each appear, and
+  ones arriving at the same moment are now spaced out instead of stacking - the guard
+  meant to do that had a condition that could never be true, so it had never once run.
+- Fixed the scroll lock being left on after a fake confirm box was removed. The
+  release only cleared an inline `overflow`, which a live sweep of full-screen
+  overlays found is the one form the lock almost never takes - it is normally a class
+  on `<html>`, where there is no inline style to clear, or `position: fixed` on the
+  body, which takes the page out of flow and collapses it to a single screen. Either
+  way the box vanished and the page stayed frozen. It now removes the lock class,
+  falls back to clearing inline styles and then to overriding the stylesheet, checks
+  after each step by actually trying to scroll, and puts you back at the position the
+  box had parked you at.
+- Added clearing cookies after you accept them. Turn it on and any site where you
+  accept a cookie banner has its consent and tracking cookies cleared again once
+  you leave - when its last tab closes or you navigate away. It uses the same rules
+  as the manual cleaner, so it cannot sign you out: only known consent and tracking
+  cookie names are touched, never the whole site, and anything it does not
+  recognise is left where it is.
+  The tracking IDs a site keeps in localStorage go with them, which is where most
+  measurement moved once third-party cookies started dying. That is also where most
+  sites keep the session token, so it works by vendor namespace rather than by
+  pattern: a key goes because it belongs to a company whose business is measurement,
+  not because it looks tracker-ish. Names like _hjSessionUser and _uetsid read as
+  credentials and are cleared anyway, because the namespace is known; anything
+  called analytics_opt_out or tracking_id is left alone, because it is not. Two
+  vetoes override even a known vendor - a value shaped like a JWT is a credential
+  whatever its key says, and anything over a kilobyte is application state rather
+  than an id. Off by default.
+- Fixed cookie banners offering "Required cookies only" not being answered.
+  The matcher wanted the word "only" directly beside "necessary", "essential" or
+  "required", so "Only required cookies" was recognised while "Required cookies
+  only" - the more common wording - was not, and the banner stayed up.
+- Fixed pages throwing you off the site you asked for. A page could send your whole
+  tab to an ad network without you touching anything, and where it lands is
+  auctioned per visit, so blocking by destination never held for long. WardenOne now
+  stops the jump itself: if a page moves the tab and you clicked nothing, you get a
+  warning with the choice to continue. Sign-in redirects, link shorteners and
+  anything you typed or clicked yourself are unaffected.
+- Fixed forced redirects that no in-page check could see. An embedded frame can move
+  the whole tab, and a redirect that happens before the page is delivered leaves no
+  page to run a check in. Both are now caught outside the page, and a chain that
+  ends somewhere other than the site you asked for is recorded even when it is short
+  and clean.
+- Fixed fake confirm boxes. A page can draw its own dialog - "Please confirm to
+  continue", "The file is ready to download", an OK button - to collect a single
+  click, which it then spends on opening a popup or moving your tab. These are
+  removed on sight, quietly. A real dialog says what you are agreeing to, so
+  anything naming a price, a file, an account, an age or a password is left alone.
+- Fixed floating ad frames, judged separately because they impersonate nothing -
+  just a graphic with an INSTALL badge. What marks them is the frame: built by
+  script, no address of its own, sandboxed to allow popups. Anything loaded from a
+  real address, including payment forms, captchas and players, is left alone.
+- Fixed a box demanding you click Allow to see the page. It called itself an age
+  check, which is the one subject the rules protect, but a real age gate has no
+  reason to mention the browser's own permission button. A site asking for
+  notifications honestly, without holding the page hostage, is untouched.
+- Added fwpixel.com and dv.tech to the tracker list. Both turned up beaconing during
+  a survey of twelve sites and were on none of the shipped lists. DoubleVerify is ad
+  verification, so if a site's video stalls rather than skipping an ad break, that is
+  the entry to remove.
+- Fixed the allowlist not covering the redirect guard. It is a separate all-URLs
+  content script and was handed the raw toggles rather than the allowlist-gated ones,
+  so allowing a site left forced-popup, gestureless-navigation and meta-refresh
+  blocking running there anyway.
+- Fixed the session-security grade being harsher than the evidence. The cookie audit
+  asked for cookies on the exact hostname while session cookies are set on the
+  registrable domain, so a site with an obvious session cookie was graded as having
+  none - which also skipped the only part of the score a site could earn points in.
+  A session readable by scripts was also charged twice when the same token appeared
+  in both storage and a cookie, and the storage penalty alone was enough to drop an
+  otherwise-clean site two grades.
+- Fixed uploads hanging on "sending" instead of failing. A blocked request called
+  `abort()` in place of `send()`, and that fires no events at all, so the page waited
+  forever for a result that was never coming.
+- Fixed attaching a file to a Microsoft Form being blocked. The token guard's
+  Microsoft family listed only the sign-in and mail hosts, not the storage endpoints
+  Office actually uses.
+- Stopped ClickFix warning on install commands published by the projects that own
+  them. A script project putting "run this in PowerShell" beside its own installer
+  is the same shape as the attack, so the publisher now matters.
+- Stopped OAuth Guard warning about a provider signing you in to its own app.
+  GitHub CLI, GitHub Desktop and Codespaces use the same authorize page as anyone
+  else, and being asked to approve GitHub to GitHub is not a phishing signal.
+- Stopped the XSS guard reporting ordinary data. A value now has to be shaped like
+  code or markup *and* land where code actually runs; a query parameter appended to
+  a script URL, a `srcdoc` set through `setAttribute`, upload and OAuth navigation,
+  short message values, quoted script strings and escaped examples no longer count.
+  Weak evidence also names where it came from rather than calling everything
+  "message data".
+- Fixed the XSS guard reading its own bridge messages through its own instrumented
+  getter, which could make unrelated page messages look attacker-controlled.
+- Kept separate tenants on shared hosts - `github.io`, `pages.dev`, Netlify, Vercel,
+  Cloudflare Workers, Firebase and S3/CloudFront - on distinct `postMessage` trust
+  boundaries, so one tenant is not trusted as another.
+- Rebuilt Activity Center detail for XSS, behavioral-risk and ClickFix events from
+  values the background owns rather than anything the page can forge, and stopped
+  those events teaching the automatic blocklist.
+- Warnings now stay on screen long enough to read. Every card used to be dismissed
+  after a flat five seconds whether it said "Popup blocked" or carried four lines of
+  explanation, so the ones worth reading were the ones you could not finish. Each
+  card now gets time measured from its own text, reviewed on screen one at a time.
+  Popup save errors are no longer cleared before the message can be read.
+- Fixed the "Guard active" badge. It announced itself for four seconds on every page
+  load, sat at a different distance from the edge depending on whether the page had
+  a scrollbar, and could be moved or restyled by the page itself.
+- Fixed popup search collapsing EyeShield into a lone, malformed Dark button.
+  EyeShield now appears as one complete result with all four modes and its controls.
+- Restyled the **This site** controls to use the popup's established section
+  heading, card spacing and stacked action layout.
+- Serialized Header Shield rule updates so fast toggle changes cannot leave stale
+  rules behind. Client Hint, strict referrer and cache-validator protection still
+  preserve top-level, sign-in and payment paths.
+- Restored the exact pre-dark-mode light palettes, gradients, translucent panels,
+  warning colours and shadows on every full-page screen. Shared surface overrides
+  are now dark-only, so the dark theme layer cannot alter the light design.
+
 - Made GitHub's default Latest release follow the rolling, gate-passing `main`
   package, and pointed repository and website download buttons directly at it.
   Current builds no longer require a version bump just to become downloadable.
@@ -92,6 +486,13 @@ as the work happened.
   share one real serving deadline. If a clean route is still finishing, one fresh
   marker-free native window bridges the break once and the late result is reserved
   for the next poll, avoiding the short substitute-ad flash without a replay loop.
+- Prevents a frozen Twitch alternate playlist from becoming fresh again merely by
+  reacquiring the same consumed media window. The worker now falls back to the
+  advancing native stream, and four seconds of intervention-linked buffering opens
+  one bounded native recovery window without pausing, seeking, restarting, or
+  reloading the player; stable playback restores interception early. Recovery is
+  scoped to the exact channel and MediaSource, and a channel, source, or setting
+  change cannot carry an old stall timer into the next stream.
 
 ## 1.0.0 — 2026-07-29
 

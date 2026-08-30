@@ -83,6 +83,8 @@ check('every tab-reachable message kind has a rate limit',
 const PRIVILEGED = ['clean-browser', 'clear-site-data', 'clear-learned', 'set-config',
   'apply-onboarding-recommended', 'apply-onboarding-max-privacy', 'force-list-update',
   'download-trust-add', 'download-trust-remove', 'breach-check',
+  'review-extension-snapshot', 'forget-extension-review', 'import-extension-reputation',
+  'clear-imported-extension-reputation', 'open-installed-extension-details',
   // Grants a temporary exemption from a malware/phishing verdict. Only the block
   // screen may ask for it; a page being able to self-exempt would defeat the block.
   'safe-browsing-allow-once'];

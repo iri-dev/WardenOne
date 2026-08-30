@@ -37,7 +37,8 @@ function check(name, condition, extra) {
 // forms appear in the worker; neither is a curated list.
 function runtimeHosts() {
   const hosts = new Set();
-  for (const file of ['background.js', 'background-downloads.js', 'background-memory.js', 'background-startup.js']) {
+  for (const file of ['background.js', 'background-downloads.js', 'background-memory.js', 'background-startup.js',
+    'background-extension-watch.js', 'background-extension-reputation.js', 'extensions.js']) {
     let src = '';
     try { src = fs.readFileSync(path.join(ROOT, file), 'utf8'); } catch (_) { continue; }
     for (const m of src.matchAll(/fetch\(\s*[`'"]([^`'"]*)/g)) {
@@ -112,7 +113,7 @@ check('the affirmation is a section a reviewer can find, not a buried clause',
 check('the affirmation states the no-advertising limb explicitly',
   /never.{0,40}transferred or used for advertising/.test(policy));
 check('the policy date was refreshed alongside the content',
-  /last updated: august 14, 2026/.test(policy));
+  /last updated: august 30, 2026/.test(policy));
 
 if (failed) { console.error('\n' + failed + ' disclosure check(s) failed'); process.exit(1); }
 console.log('\nprivacy disclosure contract holds (' + hosts.length + ' runtime endpoints checked)');

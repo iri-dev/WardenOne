@@ -164,12 +164,28 @@ async function main() {
     const localFiles = h.watch.classifyExtensionRisk(makeExtension('files', { hostPermissions: ['file:///*'] }));
     assert(localFiles.flags.some((text) => /local file URLs/.test(text)), 'file access needs an honest local-file label');
     assert(!localFiles.flags.some((text) => /all websites/.test(text)), 'file:// must not be mislabeled as all websites');
+    const manyHosts = h.watch.classifyExtensionRisk(makeExtension('many-hosts', {
+      hostPermissions: Array.from({ length: 25 }, (_, index) => 'https://site' + index + '.example/*'),
+    }));
+    assert(['medium', 'high'].includes(manyHosts.level), 'many separately listed hosts should not look like narrow access');
     const reduced = h.watch.describeExtensionDelta(
       { id: 'reduced', name: 'Reduced', version: '1', enabled: true, installType: 'normal', permissions: ['storage', 'cookies', '<all_urls>'] },
       { id: 'reduced', name: 'Reduced', version: '2', enabled: true, installType: 'normal', permissions: ['storage'] },
       Date.now());
     assert.strictEqual(reduced.severity, 'low', 'permission removal should be described as reduced risk, not a warning');
     assert(reduced.reasons.some((reason) => /Access decreased/.test(reason)));
+    const sourceChanged = h.watch.describeExtensionDelta(
+      { id: 'source', name: 'Source', version: '1', enabled: true, disabledReason: '', installType: 'normal', permissions: ['storage'] },
+      { id: 'source', name: 'Source', version: '1', enabled: true, disabledReason: '', installType: 'sideload', permissions: ['storage'] },
+      Date.now());
+    assert.strictEqual(sourceChanged.severity, 'medium', 'a change to a sideloaded source should be visible for review');
+    assert(sourceChanged.reasons.some((reason) => /outside Chrome/.test(reason)));
+    const permissionApproval = h.watch.describeExtensionDelta(
+      { id: 'approval', name: 'Approval', version: '1', enabled: false, disabledReason: '', installType: 'normal', permissions: ['storage'] },
+      { id: 'approval', name: 'Approval', version: '1', enabled: false, disabledReason: 'permissions_increase', installType: 'normal', permissions: ['storage'] },
+      Date.now());
+    assert.strictEqual(permissionApproval.severity, 'medium');
+    assert(/waiting for approval/.test(permissionApproval.summary));
   }
 
   {
@@ -177,7 +193,7 @@ async function main() {
     const first = await h.watch.reconcileExtensionChanges('initial');
     assert.deepStrictEqual(Array.from(first), [], 'first inventory should establish a baseline without flooding');
     const baseline = h.state.storage.wardenone_ext_baseline;
-    assert.strictEqual(baseline.schema, 2);
+    assert.strictEqual(baseline.schema, 3);
     assert.strictEqual(baseline.extensions.existing.version, '1.0.0');
     assert.strictEqual(baseline.extensions.existing.enabled, true);
     assert.strictEqual(alerts(h).length, 0);
@@ -249,7 +265,7 @@ async function main() {
     assert.strictEqual(h.state.tabsCreated.length, 0, 'unrelated notification clicks must be ignored');
     h.events.notificationClick.fire(notificationId);
     assert.strictEqual(h.state.tabsCreated.length, 1);
-    assert(/popup\.html#ext-alerts-row$/.test(h.state.tabsCreated[0].url));
+    assert(/extensions\.html$/.test(h.state.tabsCreated[0].url));
   }
 
   {
@@ -264,7 +280,7 @@ async function main() {
     assert.strictEqual(alerts(h).length, 1, 'legacy permission arrays should be diffed, not erased');
     assert.strictEqual(alerts(h)[0].kind, 'permissions_changed');
     assert(alerts(h)[0].gainedPermissions.includes('downloads'));
-    assert.strictEqual(h.state.storage.wardenone_ext_baseline.schema, 2);
+    assert.strictEqual(h.state.storage.wardenone_ext_baseline.schema, 3);
   }
 
   {
@@ -313,11 +329,13 @@ async function main() {
     const popupHtml = fs.readFileSync('popup.html', 'utf8');
     const history = fs.readFileSync('history.js', 'utf8');
     assert(background.includes("importScripts('background-extension-watch.js')"));
+    assert(background.includes("importScripts('background-extension-reputation.js')"));
     assert(!startup.includes('await snapshotExtensionBaseline()'), 'startup must not overwrite a change before it is recorded');
     assert(popupHtml.includes('id="ext-alerts-ack"'), 'important changes need an explicit review action');
     assert(popup.includes("kind: 'ack-extension-alerts'"));
-    assert(popup.includes('Extension Watch could not read the local inventory'), 'watcher failures must replace the reassuring empty state');
-    assert(popup.includes('changes.wardenone_ext_alerts) loadExtensionAlerts()'), 'an open popup should refresh when a change arrives');
+    assert(popup.includes('Extension Security Centre could not build the local report'), 'watcher failures must replace the reassuring empty state');
+    assert(popup.includes('changes.wardenone_ext_alerts || changes.wardenone_ext_reviews'), 'an open popup should refresh when a change arrives');
+    assert(popup.includes("chrome.runtime.getURL('extensions.html')"), 'the popup should open the full local review surface');
     const alertLoader = popup.slice(popup.indexOf('function loadExtensionAlerts()'), popup.indexOf("$('ext-alerts-clear')"));
     assert(!alertLoader.includes("setBadgeText({ text: '' })"), 'opening the popup must not silently acknowledge an alert');
     assert(history.includes("extension_change: 'Installed extension changed'"));

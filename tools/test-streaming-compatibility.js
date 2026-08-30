@@ -19,6 +19,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const resourceTypes = require('./lib/resource-types.js');
 // Lifted engine fragments can reference the engine's shared helpers (woOn and the
 // observer/timer factories). A fragment only sees what its sandbox provides, so those are
 // installed as shims before the slice runs -- see tools/lib/engine-ambient.js.
@@ -147,9 +148,10 @@ function mutationHeavyCosmeticMemory(host) {
 }
 
 function loadRemoteRulePriorityHelpers() {
-  const sandbox = {
-    RESOURCE_TYPES: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'],
-  };
+  /* Was a pasted copy of the list, which went stale the moment the shipped
+     list changed and kept passing anyway. Take the real declarations. */
+  const sandbox = {};
+  vm.runInNewContext(resourceTypes.prelude() + '; Object.assign(this, { ' + Object.keys(resourceTypes.resolveAll()).map((n) => n + ': ' + n).join(', ') + ' });', sandbox);
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(

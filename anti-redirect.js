@@ -96,6 +96,7 @@
     blockGesturelessNav: true,
     blockForcedPopups: true,
     strictPopupShield: true,
+    blockPopupTricks: true,
     gestureWindowMs: 2400,
   };
   let lastGestureAt = 0;
@@ -148,13 +149,513 @@
     return cfg().__configReady === true;
   }
 
+  // Every other guard honours the user's allowlist; this one never did. It is a
+  // separate <all_urls> content script, statically declared, so it cannot be
+  // skipped per host at injection time -- and the bridge hands it the raw toggles
+  // rather than the allowlist-gated ones the main engine computes for itself. The
+  // result was that "allow this site" left forced-popup, gestureless-navigation
+  // and meta-refresh blocking running there anyway. The allowlist travels with
+  // the config, so the check belongs here.
+  function hostAllowedByUser() {
+    try {
+      const list = cfg().allowlist;
+      if (!Array.isArray(list) || !list.length) return false;
+      const host = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+      if (!host) return false;
+      return list.some((item) => {
+        const d = String(item || '').replace(/^www\./, '').replace(/^\.+|\.+$/g, '').toLowerCase();
+        return !!(d && (host === d || host.endsWith('.' + d)));
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
   function masterEnabled() {
     const c = cfg();
-    return configReady() && c.enabled !== false;
+    return configReady() && c.enabled !== false && !hostAllowedByUser();
   }
 
   function navigationEnabled() {
     return TOP_FRAME && masterEnabled() && cfg().blockGesturelessNav !== false;
+  }
+
+  // A cross-origin iframe navigating the TOP window is invisible from in here.
+  // Setting top.location from another origin goes through Chrome's cross-origin
+  // path, which never invokes the accessor this file installs on the top frame's
+  // own location object -- and the hooks below are top-frame-only anyway. The
+  // service worker CAN see the resulting navigation, but not who caused it, so
+  // these two signals give it the missing half: "the click landed on a player and
+  // targeted nothing", and "this frame authorised the navigation itself".
+  // Did the click land on something laid OVER the page rather than in it? A fake
+  // "Please confirm to continue" dialog exists to collect exactly one trusted
+  // click, because that click is what lets the page open a popup or move the tab.
+  // Counting it as the user authorising a jump is the entire mechanism of the bait,
+  // and it is how a page walks straight past the forced-redirect check.
+  function gestureOnOverlay(target) {
+    try {
+      for (let el = target, depth = 0; el && el.nodeType === 1 && depth < 10; el = el.parentElement, depth++) {
+        const cs = getComputedStyle(el);
+        if (cs.position !== 'fixed' && cs.position !== 'absolute') continue;
+        const z = parseInt(cs.zIndex, 10);
+        if (!(z >= 1000)) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width >= 160 && r.height >= 80) return el;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // A dialog that asks you to confirm without ever saying what. Real confirmations
+  // name the thing: an amount, a file, an account, a site. "Attention / Please
+  // confirm to continue" names nothing because there is nothing -- the click IS the
+  // product. Kept deliberately narrow, and it only ever warns.
+  // A generic action with no object. Not "Download report.pdf" -- just "DOWNLOAD".
+  const BAIT_CONTROL = /^(?:continue|ok|okay|confirm|proceed|yes|allow|start|go|next|watch|play|download|install|get|open|view|claim|unlock|access|resume|stream|free|enter|i\s*am|i['\u2019]m)\b/i;
+
+  // Two lists, because they are doing two different jobs.
+  //
+  // HARD names something being transacted: money, a file, a credential, a deletion.
+  // These always exclude, wherever the box came from, because a mistake there costs
+  // the user something real.
+  //
+  // SOFT names something being CLAIMED as a reason -- your age, cookies, terms,
+  // your account. These are the excuses bait borrows, which is exactly why they
+  // only exclude when the box is part of the page itself. A site's own age gate is
+  // drawn by the site; it does not arrive in an anonymous injected frame, so inside
+  // one the excuse carries no weight. Getting this split wrong in the other
+  // direction is what let a payment dialog become eligible the moment it appeared
+  // in a frame.
+  const BAIT_SUBJECT_HARD = new RegExp([
+    '[£$\\u20ac]\\s?\\d',
+    '\\b\\d+(?:\\.\\d+)?\\s?(?:kb|mb|gb|bytes)\\b',
+    '\\b[\\w-]+\\.(?:pdf|zip|docx?|xlsx?|csv|png|jpe?g|mp4|mp3|exe|dmg|apk|txt)\\b',
+    '\\bpayment', '\\bpassword', '\\bsign\\s?in', '\\blog\\s?in', '\\bdelete',
+    '\\bcancel\\s+your', '\\bsubscription', '\\border\\b',
+  ].join('|'), 'i');
+
+  const BAIT_SUBJECT_SOFT = new RegExp([
+    '\\bcookie', '\\bconsent', '\\bage\\b', '\\b18\\b', '\\bolder\\b', '\\badult',
+    '\\bverify', '\\bterms\\b', '\\bprivacy\\b', '\\bemail\\b', '\\baccount\\b',
+    '\\bversion\\b', '\\bupdate\\s+to\\b',
+  ].join('|'), 'i');
+
+  function overlayControls(el) {
+    const out = [];
+    const push = (node) => {
+      const text = String((node && node.innerText) || (node && node.value) || '').replace(/\s+/g, ' ').trim();
+      if (text && text.length <= 24) {
+        out.push({ text: text, href: node.getAttribute ? node.getAttribute('href') : null });
+      }
+    };
+    try {
+      const nodes = el.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]');
+      for (let i = 0; i < nodes.length && out.length < 8; i++) push(nodes[i]);
+      if (out.length) return out;
+      // Nothing in there calls itself a button. That is not unusual and it is not
+      // an accident -- there is no reason for this markup to be honest, and a
+      // dialog built out of plain divs and spans was reaching this function and
+      // leaving with an empty list, which failed on the very first rail. So fall
+      // back to leaf elements carrying a short label of their own: whatever the tag
+      // says, a leaf with "OK" in it is the thing being clicked.
+      const all = el.querySelectorAll('*');
+      for (let i = 0; i < all.length && i < 400 && out.length < 8; i++) {
+        const node = all[i];
+        if (node.children && node.children.length) continue;
+        push(node);
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  // Judged on shape. The previous version still required a confirmation PHRASE, and
+  // that was the same mistake in a smaller font: the wording changed three times --
+  // "Please confirm to continue", "Continue now?", "The file is ready to download"
+  // -- and every rewrite walked past a list of phrases. There is no sentence to
+  // match on, so nothing here matches one.
+  //
+  // What the box cannot do without is the shape: it appears over the page after
+  // load, it is too short to say what it wants, it names no subject, it asks for
+  // nothing (a box with a real field is asking for something real), and its
+  // affirmative control leads nowhere -- because the click is the product, and a
+  // control that actually went somewhere would have to say where.
+  // Making access to the page conditional on clicking the BROWSER's own Allow
+  // button. That is the notification-permission scam, and it is worth its own rule
+  // because it defeats the subject exclusion below on purpose: this one announced
+  // "OVER 18" precisely because age is the one subject that excuses anything, and
+  // the exclusion that exists to protect real age gates would have waved it
+  // straight through.
+  // A real age gate never mentions Allow -- it has no reason to know what the
+  // browser's permission dialog says. And a site that legitimately asks for
+  // notifications does not hold the content hostage to them; it is the coupling of
+  // "click Allow" to "to view / to continue" that makes this what it is.
+  const BAIT_PERMISSION_COERCION = /\b(?:click|press|tap|choose|select|hit)\s*(?:on\s*)?["'\u2018\u2019\u201c\u201d]?allow["'\u2018\u2019\u201c\u201d]?[^.]{0,40}?\b(?:to\s+)?(?:view|continue|watch|access|enter|download|proceed|see|play)\b/i;
+
+  // anonymousFrame means this box arrived in a frame the page BUILT -- no address
+  // of its own, nothing for a filter list to match. That matters because it is the
+  // only thing separating this from a real age gate.
+  //
+  // The box that forced this said "I AM 18" and "EXIT", which is exactly what a
+  // genuine age gate says, and the age exclusion exists precisely so genuine ones
+  // are never touched. There is no wording that tells them apart, and pretending
+  // otherwise would mean breaking real age gates to catch fake ones.
+  //
+  // But a site's own age gate is part of its own page. It does not arrive in an
+  // anonymous injected frame, because it has no reason to -- the site could just
+  // draw it. So inside such a frame the subject exclusions do not apply: the
+  // provenance has already answered the question the words cannot. Anything in the
+  // page itself keeps the full protection.
+  function confirmBaitOverlay(overlay, anonymousFrame) {
+    try {
+      if (!overlay) return false;
+      const text = String(overlay.innerText || '').replace(/\s+/g, ' ').trim();
+      if (text && text.length <= 140 && BAIT_PERMISSION_COERCION.test(text)) {
+        // The words are the whole tell here, so the controls are not asked to
+        // identify themselves -- this one's buttons were a red cross and a green
+        // tick with no text in them at all, which no label-matching would ever see.
+        let clickable = false;
+        try {
+          clickable = !!(overlay.querySelector
+            && overlay.querySelector('a,button,[role="button"],img,svg,input,[onclick]'));
+        } catch (_) {
+          clickable = false;
+        }
+        if (clickable) return true;
+        // No real control in there, so fall through and let the ordinary rules
+        // judge it on its labels. This branch only ever adds a way to say yes.
+      }
+      // Explaining takes room. The four seen so far are 51, 43, 55 and 39 characters.
+      if (!text || text.length > 140) return false;
+      if (BAIT_SUBJECT_HARD.test(text)) return false;
+      if (!anonymousFrame && BAIT_SUBJECT_SOFT.test(text)) return false;
+      // A box with somewhere to type is collecting something, not just a click.
+      try {
+        if (overlay.querySelector('input[type="text"],input[type="email"],input[type="password"],input[type="search"],input:not([type]),textarea,select')) return false;
+      } catch (_) {}
+      const controls = overlayControls(overlay);
+      if (!controls.length || controls.length > 4) return false;
+      const affirmative = controls.filter((c) => BAIT_CONTROL.test(c.text));
+      if (!affirmative.length) return false;
+      // A control that genuinely goes somewhere says where. These never do.
+      return !affirmative.some((c) => c.href);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Deliberately NOT top-frame only. These boxes are injected into a third-party
+  // frame, which is the whole trick: from the top frame elementFromPoint returns the
+  // <iframe> element, and an iframe has no innerText, so the shape test looked at an
+  // empty string and said "not bait" every single time. The guard has to run where
+  // the box actually is. This script already runs in every frame; only this check
+  // was refusing to.
+  function confirmBaitEnabled() {
+    const c = cfg();
+    // Deliberately NOT gated on configReady(), unlike everything else here. The
+    // config arrives by message, and in a third-party frame that message may never
+    // arrive at all -- there is no reason to assume the bridge completed a handshake
+    // inside somebody else's ad frame. Waiting for it there means never running.
+    // The cost of that asymmetry is small and one-directional: every default in
+    // this file is already "on", so acting before the config lands only ever does
+    // what the config would have said anyway, and if it lands saying otherwise the
+    // next sweep honours it. The allowlist check still applies, and reads as
+    // "not allowed" while the list is absent, which is the same answer it gives on
+    // any site the user has not allowed.
+    return c.enabled !== false && c.blockPopupTricks !== false && !hostAllowedByUser();
+  }
+
+  // Waiting for the click was the flaw in warning about this: by the time it fired
+  // the page already had what it wanted. These are removed on sight instead.
+  // Only nodes the page ADDS are examined -- scanning the document on every
+  // mutation would cost more than the thing it is looking for -- and the check is
+  // deferred a moment because a dialog is usually inserted before it is filled in.
+  // The cap is a runaway brake, not a budget. A page that keeps putting these back
+  // should keep having them taken away; what must not happen is an unbounded
+  // remove/reinsert loop.
+  const BAIT_REMOVE_CAP = 25;
+  let baitRemoved = 0;
+  const baitPending = new Set();
+
+  // These boxes lock the page behind them, and removing the box without releasing the lock
+  // leaves a page nobody can scroll.
+  //
+  // This used to clear an inline overflow and nothing else, which missed almost every real
+  // one. Measured across a 101-site sweep of full-screen overlays: the lock is normally a
+  // CLASS on <html> or <body> (sp-message-open, modal-open, a plain noScroll), so there is no
+  // inline style to clear -- and the modern form is position:fixed on the body, which takes it
+  // out of flow and collapses the document to one viewport, something clearing overflow cannot
+  // undo at all. On one site that left a page reporting 900px of scroll height instead of
+  // 27,967px.
+  //
+  // Cheapest tier first, and each tier only runs if the page is still stuck: removing the
+  // class leaves no trace of ours behind, whereas the !important fallback does.
+  const BAIT_LOCK_CLASS_RE = /^(?:modal-open|no-?scroll|noscroll|scroll-?lock(?:ed)?|is-?locked|body-?lock(?:ed)?|overflow-?hidden|is-clipped|ReactModal__Body--open|prevent-?scroll|disable-?scroll|fixed-?body|popup-?open|sp-message-open)$/i;
+  function baitPageStuck() {
+    // scrollHeight stays at its full value while the page is frozen, so it cannot answer this.
+    // Asking the page to scroll and reading the offset back can.
+    try {
+      const y = window.scrollY;
+      if (y > 50) return false;
+      window.scrollTo(0, 700);
+      const moved = window.scrollY > 50;
+      window.scrollTo(0, y);
+      return !moved;
+    } catch (_) { return false; }
+  }
+  function releaseBaitLock() {
+    try {
+      const html = document.documentElement;
+      const body = document.body;
+      if (!html || !body || !baitPageStuck()) return;
+      // The parked scroll offset. These boxes set body top to minus the offset to hold the
+      // reader's place; clearing it without reading it back drops them at the top of the page.
+      let parked = 0;
+      try { parked = Math.abs(parseInt(getComputedStyle(body).top, 10) || 0); } catch (_) {}
+
+      for (const el of [html, body]) {
+        try {
+          for (const cls of Array.from(el.classList)) {
+            if (BAIT_LOCK_CLASS_RE.test(cls)) el.classList.remove(cls);
+          }
+        } catch (_) {}
+      }
+      if (baitPageStuck()) {
+        for (const el of [html, body]) {
+          for (const prop of ['position', 'top', 'left', 'width', 'height', 'overflow', 'overflow-y']) {
+            try { el.style.removeProperty(prop); } catch (_) {}
+          }
+        }
+      }
+      if (baitPageStuck()) {
+        try {
+          body.style.setProperty('position', 'static', 'important');
+          body.style.setProperty('overflow', 'visible', 'important');
+          body.style.setProperty('height', 'auto', 'important');
+          html.style.setProperty('overflow', 'visible', 'important');
+        } catch (_) {}
+      }
+      if (parked) { try { window.scrollTo(0, parked); } catch (_) {} }
+    } catch (_) {}
+  }
+  function sweepConfirmBait() {
+    const nodes = Array.from(baitPending);
+    baitPending.clear();
+    if (!confirmBaitEnabled() || baitRemoved >= BAIT_REMOVE_CAP) return;
+    const candidates = [];
+    for (const node of nodes) {
+      try {
+        if (!node.isConnected) continue;
+        const box = gestureOnOverlay(node) || (isOverlayBox(node) ? node : null);
+        if (box && candidates.indexOf(box) === -1) candidates.push(box);
+      } catch (_) {}
+    }
+    for (const box of boxesInTheWay()) {
+      if (candidates.indexOf(box) === -1) candidates.push(box);
+    }
+    for (const entry of sameOriginFrameBoxes()) {
+      try {
+        if (!entry.frame.isConnected) continue;
+        if (overlayAdFramesEnabled() && !confirmBaitOverlay(entry.body, entry.anonymous)
+            && overlayAdFrame(entry.frame, entry.body)) {
+          if (baitRemoved >= BAIT_REMOVE_CAP) break;
+          baitRemoved++;
+          try { entry.frame.remove(); } catch (_) {}
+          emit('blocked_overlay_ad_frame', { matched: 'script-built frame, no address', silent: true, quiet: true });
+          continue;
+        }
+        if (!confirmBaitOverlay(entry.body, entry.anonymous)) continue;
+        if (baitRemoved >= BAIT_REMOVE_CAP) break;
+        baitRemoved++;
+        const label = String(entry.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+        try { entry.frame.remove(); } catch (_) {}
+        // A bait box framed from the same origin locks the host page exactly as an inline
+        // one does, so it needs the same release.
+        releaseBaitLock();
+        emit('blocked_confirm_bait', { matched: label, silent: true, quiet: true });
+      } catch (_) {}
+    }
+    for (const overlay of candidates) {
+      try {
+        if (!overlay.isConnected || !confirmBaitOverlay(overlay)) continue;
+        baitRemoved++;
+        const label = String(overlay.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+        try { overlay.remove(); } catch (_) {}
+        releaseBaitLock();
+        emit('blocked_confirm_bait', { matched: label, silent: true, quiet: true });
+      } catch (_) {}
+    }
+  }
+
+  function isOverlayBox(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      if (r.width < 160 || r.height < 80) return false;
+      const cs = getComputedStyle(el);
+      if (cs.position === 'fixed' || cs.position === 'absolute' || cs.position === 'sticky') return true;
+      // Inside a frame the FRAME is the thing sitting over the page, so the box in
+      // it has no reason to be positioned at all -- and requiring it to be was the
+      // second half of why this never fired. A box filling most of a small frame is
+      // what that frame is for.
+      if (!TOP_FRAME) {
+        const w = window.innerWidth || 0;
+        const h = window.innerHeight || 0;
+        return w > 0 && h > 0 && r.width >= w * 0.6 && r.height >= h * 0.4;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Whatever the browser paints on top IS the thing in the way -- no z-index
+  // threshold to guess at, no stacking context to reason about, and nothing for a
+  // page to sidestep by picking a different number.
+  //
+  // Sampled across a grid rather than straight down the middle. Three points on the
+  // centre line found the centred dialogs and missed the one that moved to the top
+  // right corner, which is exactly the kind of thing that moves. A grid costs the
+  // same order of work and does not care where the box sits.
+  //
+  // elementFromPoint forces layout, so this is rate-limited: on a page whose DOM
+  // churns constantly the mutation path would otherwise run it several times a
+  // second for nothing.
+  let lastGridAt = 0;
+  function boxesInTheWay() {
+    const found = [];
+    try {
+      const w = window.innerWidth || 0;
+      const h = window.innerHeight || 0;
+      if (w < 150 || h < 120) return found;   // an ad frame is smaller than a page
+      const now = Date.now();
+      if (now - lastGridAt < 500) return found;
+      lastGridAt = now;
+      const fractions = [0.15, 0.3, 0.5, 0.7, 0.85];
+      for (let a = 0; a < fractions.length; a++) {
+        for (let b = 0; b < fractions.length; b++) {
+          if (found.length >= 6) return found;
+          let el = document.elementFromPoint(Math.floor(w * fractions[a]), Math.floor(h * fractions[b]));
+          // Walk up to the box itself rather than the label inside it.
+          for (let i = 0; el && el.nodeType === 1 && i < 8; i++) {
+            if (isOverlayBox(el)) { if (found.indexOf(el) === -1) found.push(el); break; }
+            el = el.parentElement;
+          }
+        }
+      }
+    } catch (_) {}
+    return found;
+  }
+
+  // Where the box actually turned out to be. Reported live from the page: every
+  // frame on it was src=about:blank or had no src at all, and every one was
+  // position:static with z-index:auto. Both halves of that mattered.
+  //
+  // Static and unpositioned means the frame is not an "overlay" by any measure this
+  // file had -- elementFromPoint lands on its container, the container holds an
+  // iframe and therefore has no innerText, and the shape test read an empty string
+  // and said "not bait". Every wording fix was being applied to something that was
+  // never reached.
+  //
+  // about:blank / no src means the frame was built by script and is SAME-ORIGIN, so
+  // its document can simply be read from here. That is the opening: the box inside
+  // is judged by exactly the same seven rails as any other, and if it is bait the
+  // FRAME goes, because the frame is the thing that would otherwise redraw it.
+  // A cross-origin frame throws on contentDocument and is skipped -- that case
+  // belongs to the copy of this script running inside it.
+  // These frames are inserted empty and filled a moment later, so a sweep that
+  // arrives between the two finds an empty body, decides it is not bait, and does
+  // not look again until the next scheduled pass -- which is why the box was
+  // visible for about a second before going. Watching each frame's own document
+  // means the sweep happens the instant it is filled, rather than whenever the
+  // next timer happens to land.
+  const watchedFrameDocs = new WeakSet();
+  function watchFrameDocument(doc) {
+    try {
+      if (!doc || watchedFrameDocs.has(doc)) return;
+      watchedFrameDocs.add(doc);
+      const observer = woObserver(() => { woTimeout(sweepConfirmBait, 30); });
+      observer.observe(doc.documentElement || doc, { childList: true, subtree: true });
+    } catch (_) {}
+  }
+
+  // A different animal from the confirm box, and judged separately because it is
+  // not pretending to be anything: no sentence, no confirmation, no impersonated
+  // prompt -- just a graphic with a call to action. The confirm-box rule reads text
+  // and correctly refuses to touch this, and widening THAT rule to cover a picture
+  // would take real widgets with it.
+  //
+  // What marks it out is the frame rather than the artwork. It has no address at
+  // all: script built it, so there is nothing for a filter list to match on. And it
+  // is sandboxed with popups allowed, which is an odd thing to want unless clicking
+  // is meant to open something. Every legitimate embed of this shape -- payment
+  // forms, captchas, players, maps -- is loaded from a real src. Together with
+  // "holds a clickable thing and says almost nothing", that is specific enough to
+  // act on, and it has its own switch because it is a judgement call.
+  function overlayAdFrame(frame, body) {
+    try {
+      const src = String(frame.getAttribute('src') || '').trim().toLowerCase();
+      if (src && src !== 'about:blank') return false;
+      const sandbox = String(frame.getAttribute('sandbox') || '').toLowerCase();
+      if (!sandbox || sandbox.indexOf('allow-popups') === -1) return false;
+      const text = String(body.innerText || '').replace(/\s+/g, ' ').trim();
+      // Anything that explains itself is not a bare creative.
+      if (text.length > 40) return false;
+      return !!body.querySelector('a,img,button,[onclick]');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function overlayAdFramesEnabled() {
+    const c = cfg();
+    return c.enabled !== false && c.blockPopupTricks !== false && !hostAllowedByUser();
+  }
+
+  function sameOriginFrameBoxes() {
+    const out = [];
+    try {
+      const frames = document.querySelectorAll('iframe');
+      for (let i = 0; i < frames.length && out.length < 8; i++) {
+        const frame = frames[i];
+        let doc = null;
+        try { doc = frame.contentDocument; } catch (_) { doc = null; }
+        if (!doc) continue;
+        // Watched whatever size it is RIGHT NOW, before the size test below. A
+        // frame that starts 0x0 and is grown and filled later would otherwise never
+        // be watched at all: the size test skipped it, so nothing was listening to
+        // its document, and growing it changes no childList in the parent for the
+        // outer observer to see either. The timed sweeps cover the first few
+        // seconds; this covers the rest of the page's life.
+        watchFrameDocument(doc);
+        const r = frame.getBoundingClientRect();
+        if (r.width < 160 || r.height < 80) continue;
+        if (!doc.body) continue;
+        const src = String(frame.getAttribute('src') || '').trim().toLowerCase();
+        out.push({ frame: frame, body: doc.body, anonymous: !src || src === 'about:blank' });
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  function frameTopRedirectEnabled() {
+    return TOP_FRAME && masterEnabled() && cfg().blockPopupTricks !== false;
+  }
+
+  let lastGestureBeacon = 0;
+  function signal(kind, extra) {
+    if (!token) return;
+    // The gesture beacon fires on every click and keypress. The worker only needs
+    // to know one happened recently, so twice a second is plenty and keeps this
+    // well inside the bridge budget.
+    if (kind === 'gesture') {
+      const now = Date.now();
+      if (now - lastGestureBeacon < 500) return;
+      lastGestureBeacon = now;
+    }
+    try {
+      document.dispatchEvent(new CustomEvent('wo-nav-signal', {
+        detail: Object.assign({ token, kind }, extra || {}),
+      }));
+    } catch (_) {}
   }
 
   function popupEnabled() {
@@ -435,6 +936,21 @@
     return false;
   }
 
+  // The "your browser is out of date -- install this one to keep watching" funnel.
+  // It is an affiliate page, not malware, but it is reached by force and it exists
+  // to get software installed, so it is a destination no click ever really asked
+  // for. Two shapes, both distinctive:
+  //   - a "preland"/"prelander" path. That is ad-industry jargon for the page shown
+  //     before the real offer; ordinary sites do not serve anything called that.
+  //   - a hostname that is itself a sales pitch for a browser.
+  function fakeInstallLander(host, raw) {
+    let path = '';
+    try { path = new URL(String(raw || ''), location.href).pathname.toLowerCase(); } catch (_) { path = ''; }
+    if (/(?:^|\/)pre-?land(?:er|ing)?(?:\/|$)/.test(path)) return true;
+    return /(?:^|[.-])(?:boost|speed|fast|turbo|update|install|get|download|secure|safe|best|new)[-_]?(?:you|your|my|the)?[-_]?browsers?(?:[.-]|$)/i
+      .test(String(host || ''));
+  }
+
   function suspiciousRedirectTarget(rawTarget) {
     const targetHost = hostOf(rawTarget);
     if (!targetHost) return false;
@@ -446,7 +962,14 @@
     // malware TLDs.
     if (/\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|mom|hair|tattoo|skin|beauty|makeup|bond|autos|boats|christmas)$/i.test(targetHost)) return true;
     if (/(^|\.)(popads|popcash|propellerads|adsterra|hilltopads|exoclick|juicyads|trafficjunky|mgid|revcontent|adcash|clickadu|ad-maven|admaven|onclickads|onclicka|popmyads|adnxs|popunder[a-z]*|bidvertiser|clickaine|adskeeper|galaksion|coinzilla|adexchangeprime|hookgate|adventurefeeds)\.[a-z.]+$/i.test(targetHost)) return true;
-    if (/(adurl|popunder|onclickad|campaign|aff_id|affiliate|clickid|utm_source=ad|doubleclick|adservice|taboola|outbrain)/i.test(raw)) return true;
+    // A redirect that carries its real destination as a parameter arrives percent-
+    // encoded, so "utm_source%3Dads" never matched "utm_source=ad" and neither did
+    // an encoded aff_id or clickid. That is the ORDINARY shape of an ad hop, not an
+    // edge case, so the decoded form has to be tested as well as the raw one.
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch (_) { decoded = raw; }
+    if (/(adurl|popunder|onclickad|campaign|aff_id|affiliate|clickid|utm_source=ad|doubleclick|adservice|taboola|outbrain)/i.test(raw + ' ' + decoded)) return true;
+    if (fakeInstallLander(targetHost, raw)) return true;
     return false;
   }
 
@@ -560,6 +1083,31 @@
     const explicitUrl = explicitUrlFromElement(target);
     intendedHost = explicitUrl ? hostOf(explicitUrl) : regHost(location.hostname);
     intentWasExplicit = !!(explicitUrl && intendedHost);
+    // Only when the click landed on a player AND targeted no URL of its own. A
+    // thumbnail that is genuinely a link around an iframe sets intentWasExplicit,
+    // so it never raises this -- which is the whole reason the worker can act on
+    // it without cancelling ordinary navigation.
+    if (frameTopRedirectEnabled()) {
+      if (lastGestureTainted && !intentWasExplicit) signal('player-gesture');
+      // Separately, and regardless of what was clicked: the worker cannot tell a
+      // forced redirect from one the user asked for, and "did anything at all
+      // happen in this tab just now" is the difference.
+      //
+      // Except when the click was harvested. A click on a bare overlay control with
+      // no destination of its own is exactly what a fake confirm dialog is built to
+      // collect, so it does not get to authorise a cross-site jump. A real link or
+      // button inside an overlay still does, because it names where it goes -- and
+      // a genuine navigation the page drives still announces itself separately
+      // through top-nav-authorized, so nothing legitimate depends on this beacon.
+      const overlay = intentWasExplicit ? null : gestureOnOverlay(target);
+      if (!overlay) signal('gesture');
+      else if (confirmBaitOverlay(overlay)) {
+        emit('warned_confirm_bait', {
+          matched: String(lastIntentText || '').slice(0, 40),
+          silent: true,
+        });
+      }
+    }
     lastIntentStructural = false;
     try {
       const el = target && target.closest ? target.closest('a,button,input,[role="button"],[tabindex]') : target;
@@ -648,9 +1196,18 @@
   }
 
   function blockNavigation(rawTarget, kind) {
-    if (!navigationEnabled()) return false;
+    // Reaching this function at all means the TOP frame drove the navigation, so
+    // every path that lets one through has to say so -- otherwise the worker sees
+    // a top-frame navigation it cannot attribute and treats ours as a hijack.
+    if (!navigationEnabled()) {
+      if (!sameSiteTarget(rawTarget)) signal('top-nav-authorized');
+      return false;
+    }
     if (sameSiteTarget(rawTarget)) return false;
-    if (navigationTargetAllowed(rawTarget)) return false;
+    if (navigationTargetAllowed(rawTarget)) {
+      signal('top-nav-authorized');
+      return false;
+    }
     markHostile();
     const targetHost = hostOf(rawTarget);
     const gestured = freshGesture();
@@ -1099,6 +1656,300 @@
     }, true);
   } catch (_) {}
 
+  try {
+    const baitObserver = woObserver((records) => {
+      if (!confirmBaitEnabled() || baitRemoved >= BAIT_REMOVE_CAP) return;
+      let queued = false;
+      for (const rec of records) {
+        const added = rec.addedNodes || [];
+        for (let i = 0; i < added.length && baitPending.size < 40; i++) {
+          const node = added[i];
+          if (node && node.nodeType === 1) { baitPending.add(node); queued = true; }
+        }
+      }
+      if (queued) woTimeout(sweepConfirmBait, 60);
+    });
+    baitObserver.observe(document.documentElement || document, { childList: true, subtree: true });
+    // The observer alone was not enough, for two reasons that both bite once.
+    // The config arrives by message AFTER this script starts, and until it does
+    // masterEnabled() is false -- so a box inserted early was seen, refused, and
+    // never looked at again, because insertion only happens once. And a box that is
+    // hidden and re-shown adds no nodes at all. A short bounded schedule covers
+    // both without an interval running for the life of the page.
+    for (const delay of [120, 350, 800, 2000, 4000, 8000, 15000]) {
+      woTimeout(() => { baitPending.clear(); sweepConfirmBait(); }, delay);
+    }
+  } catch (_) {}
+
+  // ---------------------------------------------------------------------------
+  // Tracker-frame cookie and storage guard.
+  //
+  // "Block third-party cookies" has a network half and an in-page half. The
+  // network half is a declarativeNetRequest rule that is deliberately limited to
+  // image and ping responses: sign-in and federation set their cookies on
+  // frames, scripts and XHR, and stripping those signs people out. Covering the
+  // frame case was the in-page half's job -- but that code lived in the main
+  // engine, which the manifest injects with all_frames:false, so its "am I a
+  // cross-origin subframe" test could never be true and the frame half had never
+  // run once. Same story for the blockSupercookies storage sweep. This file is
+  // the one MAIN-world script that does run in every frame at document_start, so
+  // the frame half belongs here.
+  //
+  // Scope stays deliberately narrow: a fixed list of hosts that exist only to
+  // track. Anything broader is a login-compat incident waiting to happen, which
+  // is the whole reason the network half is narrow too.
+  const TRACKER_FRAME_HOSTS = [
+    'scorecardresearch.com', 'criteo.com', 'criteo.net', 'taboola.com', 'outbrain.com',
+    'doubleclick.net', 'googlesyndication.com', 'google-analytics.com', 'googletagmanager.com',
+    'quantserve.com', 'adsrvr.org', 'adnxs.com', 'rubiconproject.com', 'openx.net',
+    'pubmatic.com', 'bluekai.com', 'demdex.net', 'everesttech.net', 'hotjar.com',
+    'fullstory.com', 'mouseflow.com',
+  ];
+
+  function isTrackerHost(host) {
+    host = String(host || '').toLowerCase();
+    while (host.charAt(host.length - 1) === '.') host = host.slice(0, -1);
+    return TRACKER_FRAME_HOSTS.some((d) => host === d || host.endsWith('.' + d));
+  }
+
+  // A host framing itself is first-party to itself. What matters is cross-SITE
+  // storage, so the embedder has to be a different site. If reading top is
+  // refused, that refusal IS the cross-origin answer.
+  function isCrossSiteFrame() {
+    try {
+      if (TOP_FRAME) return false;
+      try {
+        return baseDomain(window.top.location.hostname) !== baseDomain(location.hostname);
+      } catch (_) {
+        return true;
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isTrackerFrame() {
+    return isCrossSiteFrame() && isTrackerHost(location.hostname);
+  }
+
+  function trackerCookiesBlocked() {
+    try { return masterEnabled() && !!cfg().blockThirdPartyCookies; } catch (_) { return false; }
+  }
+
+  // The activity log has always had a name for this -- history.js calls it
+  // "Third-party cookie blocked" and the worker keeps it off the red badge on
+  // purpose, since it is routine rather than alarming. Nothing had ever emitted
+  // it: the only sender lived in the main engine's dead subframe branch. Moving
+  // the behaviour here without the reporting would have left the feature working
+  // and invisible, which is its own kind of broken.
+  //
+  // Capped, because a tracker frame writes cookies in a loop and fifty identical
+  // entries teach nobody anything.
+  let trackerCookieLogged = 0;
+
+  function noteTrackerCookieBlocked() {
+    if (trackerCookieLogged >= 50) return;
+    trackerCookieLogged++;
+    try {
+      emit('blocked_thirdparty_cookie', {
+        scope: String(location.hostname || '').slice(0, 200),
+        why: 'a known tracker in an embedded frame tried to store a cross-site cookie',
+      });
+    } catch (_) {}
+  }
+
+  let trackerStorageCleared = false;
+
+  function clearTrackerFrameStorage() {
+    if (trackerStorageCleared) return;
+    try { if (!masterEnabled() || !cfg().blockSupercookies) return; } catch (_) { return; }
+    if (!isTrackerFrame()) return;
+    trackerStorageCleared = true;
+    try { localStorage.clear(); } catch (_) {}
+    try { sessionStorage.clear(); } catch (_) {}
+    try { window.name = ''; } catch (_) {}
+    try {
+      String(document.cookie || '').split(';').forEach((pair) => {
+        const name = pair.split('=')[0].trim();
+        if (!name) return;
+        const dead = '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+        try { document.cookie = name + dead; } catch (_) {}
+        try { document.cookie = name + dead + ';domain=.' + baseDomain(location.hostname); } catch (_) {}
+      });
+    } catch (_) {}
+    try {
+      if (indexedDB && typeof indexedDB.databases === 'function') {
+        indexedDB.databases().then((dbs) => {
+          (dbs || []).forEach((db) => {
+            try { if (db && db.name) indexedDB.deleteDatabase(db.name); } catch (_) {}
+          });
+        }).catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  // Installed at document_start so it beats the frame's own scripts. Config
+  // arrives later over postMessage, so the decision is made per access rather
+  // than at install time -- before config lands, and whenever the feature is
+  // off, both accessors fall straight through to the real cookie jar.
+  if (isTrackerFrame()) {
+    try {
+      const native = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+      if (native && typeof native.get === 'function' && typeof native.set === 'function') {
+        Object.defineProperty(document, 'cookie', {
+          configurable: true,
+          enumerable: true,
+          get() { return trackerCookiesBlocked() ? '' : native.get.call(document); },
+          set(v) {
+            if (!trackerCookiesBlocked()) { native.set.call(document, v); return; }
+            noteTrackerCookieBlocked();
+          },
+        });
+      }
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // Storage Access API.
+  //
+  // document.requestStorageAccess() is how an embedded third party asks for its
+  // unpartitioned cookies back. It is the sanctioned route around the very
+  // partitioning the rest of this extension leans on, and nothing in Chromium
+  // exposes it to an extension: there is no contentSettings type for storage
+  // access, declarativeNetRequest cannot see a JavaScript call, and a grant
+  // produces no request that looks different from any other. The page API is the
+  // only lever there is.
+  //
+  // Which decides where this lives. The caller is by definition inside the
+  // cross-origin frame, and permission-chain.js -- the natural home for it on
+  // paper -- is injected all_frames:false. A hook there could never once fire.
+  //
+  // Refusing everything is not the goal and would be a login-compat incident:
+  // this is the mechanism behind embedded sign-in, embedded checkout and comment
+  // logins. Known trackers are refused, everything else is recorded so it can be
+  // seen at all, and blanket refusal is a switch someone can choose.
+  const SAA_DENIED = 'Storage access refused by WardenOne';
+
+  function storageAccessEnabled() {
+    try { return masterEnabled() && cfg().storageAccessGuard !== false; } catch (_) { return false; }
+  }
+
+  function refuseEveryStorageAccess() {
+    try { return masterEnabled() && cfg().blockAllStorageAccess === true; } catch (_) { return false; }
+  }
+
+  // Inside its own frame a hidden embed still reports its layout size, so this
+  // needs no access to the parent. A frame with no area is not showing anyone a
+  // sign-in button.
+  function frameHasNoArea() {
+    try { return window.innerWidth <= 2 || window.innerHeight <= 2; } catch (_) { return false; }
+  }
+
+  // Chrome's storage-access heuristics grant without ever prompting when the
+  // embedded site was used first-party recently, so "the user must have seen a
+  // prompt" is not true. A request with no transient activation behind it is the
+  // interesting case, not the normal one. Absent API means no opinion, not
+  // suspicion -- guessing wrong here produces a warning on every ordinary embed.
+  function hasTransientActivation() {
+    try {
+      const ua = navigator.userActivation;
+      return !ua || typeof ua.isActive !== 'boolean' ? true : ua.isActive;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function storageAccessSuspicions() {
+    const out = [];
+    try {
+      if (isTrackerHost(location.hostname)) out.push('it belongs to a known tracker');
+      if (!hasTransientActivation()) out.push('nothing was clicked or typed first');
+      if (frameHasNoArea()) out.push('the frame is invisible');
+    } catch (_) {}
+    return out;
+  }
+
+  function noteStorageAccess(method, refused, why) {
+    const detail = {
+      // The embedded origin is the whole point of recording this: it is the one
+      // party the top page cannot see and the user was never shown.
+      host: String(location.hostname || '').slice(0, 200),
+      method,
+      why: why.join(', ') || 'an embedded third party asked for its cross-site cookies',
+    };
+    if (refused) emit('blocked_storage_access', detail);
+    else if (why.length) emit('warned_storage_access', detail);
+    else emit('detected_storage_access', detail);
+  }
+
+  function installStorageAccessGuard() {
+    let proto;
+    try { proto = window.Document && Document.prototype; } catch (_) { return; }
+    if (!proto) return;
+
+    // The embedded-frame side. Cross-site only: a same-site frame asking for its
+    // own storage is not a third party by any definition that matters.
+    if (isCrossSiteFrame() && typeof proto.requestStorageAccess === 'function') {
+      const realRequest = proto.requestStorageAccess;
+      proto.requestStorageAccess = function requestStorageAccess(...args) {
+        if (!storageAccessEnabled()) return realRequest.apply(this, args);
+        const why = storageAccessSuspicions();
+        const refused = refuseEveryStorageAccess() || isTrackerHost(location.hostname);
+        noteStorageAccess('requestStorageAccess', refused, why);
+        // A rejected promise is the shape every caller already handles, because
+        // the user has always been able to decline. Throwing synchronously, or
+        // resolving with nothing, is not a refusal any page understands.
+        if (refused) return Promise.reject(new DOMException(SAA_DENIED, 'NotAllowedError'));
+        return realRequest.apply(this, args);
+      };
+    }
+
+    // hasStorageAccess() takes no gesture and shows no prompt, so it is a silent
+    // probe whose answer is itself a cross-site signal: it tells an embed whether
+    // it has been granted before. Worth recording even when nothing is requested.
+    if (isCrossSiteFrame() && typeof proto.hasStorageAccess === 'function') {
+      const realHas = proto.hasStorageAccess;
+      proto.hasStorageAccess = function hasStorageAccess(...args) {
+        if (!storageAccessEnabled()) return realHas.apply(this, args);
+        const refused = refuseEveryStorageAccess() || isTrackerHost(location.hostname);
+        noteStorageAccess('hasStorageAccess', refused, refused ? ['it belongs to a known tracker'] : []);
+        // Under refusal the honest answer is the one an ungranted frame gets.
+        if (refused) return Promise.resolve(false);
+        return realHas.apply(this, args);
+      };
+    }
+
+    // The other direction, and the one that is easy to forget: the TOP page can
+    // ask on an embed's behalf. Same grant, same consequence, opposite caller.
+    if (TOP_FRAME && typeof proto.requestStorageAccessFor === 'function') {
+      const realFor = proto.requestStorageAccessFor;
+      proto.requestStorageAccessFor = function requestStorageAccessFor(origin, ...rest) {
+        if (!storageAccessEnabled()) return realFor.call(this, origin, ...rest);
+        let host = '';
+        try { host = new URL(String(origin)).hostname; } catch (_) { host = String(origin || '').slice(0, 200); }
+        const tracker = isTrackerHost(host);
+        const refused = refuseEveryStorageAccess() || tracker;
+        const why = tracker ? ['it belongs to a known tracker'] : [];
+        if (!hasTransientActivation()) why.push('nothing was clicked or typed first');
+        const detail = {
+          host: String(host || '').slice(0, 200),
+          method: 'requestStorageAccessFor',
+          why: why.join(', ') || 'this page asked for an embedded third party to get its cross-site cookies',
+        };
+        if (refused) emit('blocked_storage_access', detail);
+        else if (why.length) emit('warned_storage_access', detail);
+        else emit('detected_storage_access', detail);
+        if (refused) return Promise.reject(new DOMException(SAA_DENIED, 'NotAllowedError'));
+        return realFor.call(this, origin, ...rest);
+      };
+    }
+  }
+
+  // Installed at document_start, before the frame's own scripts run. The config
+  // arrives later over postMessage, so every decision is made per call and the
+  // wrappers fall straight through until it lands.
+  installStorageAccessGuard();
+
   woOn(window, 'message', (event) => {
     if (event.source !== window) return;
     const msg = event.data || {};
@@ -1114,8 +1965,10 @@
         blockGesturelessNav: true,
         blockForcedPopups: true,
         strictPopupShield: true,
+        blockPopupTricks: true,
         gestureWindowMs: DEFAULT_WINDOW_MS,
       }, msg.overrides, { __configReady: true });
+      clearTrackerFrameStorage();
     }
   }, true);
 }());

@@ -159,10 +159,13 @@ function declaredScripts() {
 const PAGE_AND_WORKER_JS = [
   'background.js',
   'background-startup.js',
+  'background-extension-watch.js',
+  'background-extension-reputation.js',
   'background-memory.js',
   'background-downloads.js',
   'download-review.js',
   'popup.js',
+  'extensions.js',
   'history.js',
   'network.js',
   'onboarding.js',

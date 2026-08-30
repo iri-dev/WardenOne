@@ -12,7 +12,7 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
 const css = read('theme.css');
 const source = read('theme.js');
 const pages = [
-  'popup.html', 'history.html', 'network.html', 'onboarding.html', 'permissions.html',
+  'popup.html', 'history.html', 'network.html', 'onboarding.html', 'permissions.html', 'extensions.html',
   'api-keys.html', 'download-review.html', 'cert-error.html',
   'safe-browsing-block.html', 'redirect-warning.html',
 ];
@@ -28,6 +28,11 @@ for (const page of pages) {
 const popupHtml = read('popup.html');
 const popupSource = read('popup.js');
 const onboardingHtml = read('onboarding.html');
+const inlineStyle = (page) => {
+  const match = read(page).match(/<style>([\s\S]*?)<\/style>/);
+  assert(match, page + ' must keep its page-specific stylesheet');
+  return match[1];
+};
 assert(!/data-wardenone-theme="system"/.test(popupHtml + onboardingHtml), 'theme controls must not offer System');
 assert((popupHtml.match(/data-wardenone-theme="light"/g) || []).length >= 2, 'popup must offer Light in the header and Interface section');
 assert((popupHtml.match(/data-wardenone-theme="dark"/g) || []).length >= 2, 'popup must offer Dark in the header and Interface section');
@@ -42,6 +47,58 @@ assert(/--wo-page-background:\s*var\(--wo-bg\)/.test(darkBlockSource(css)), 'dar
 assert(/--bg:\s*#ece0f7/.test(popupHtml) && /radial-gradient\(125% 80% at 0% 0%, #e3cdf4/.test(popupHtml), 'popup must retain its original light palette and background');
 assert(/onboarding[^}]+dark[^}]+\.cover-frame\s*\{\s*--cover-bg:\s*var\(--wo-surface-raised\)/.test(css), 'dark onboarding cover scroller must replace its light paper background');
 assert(/cover-frame::before[\s\S]*?rgba\(48,\s*32,\s*58,\s*0\)[\s\S]*?cover-frame::after[\s\S]*?rgba\(48,\s*32,\s*58,\s*0\)/.test(css), 'dark onboarding cover fades must not retain the light paper RGB');
+
+const originalLightSignatures = {
+  'history.html': [
+    /--panel:#fbf6fe;[\s\S]*?--panel-2:#f2def2;[\s\S]*?--panel-3:#dec5ed;/,
+    /linear-gradient\(135deg, rgba\(91,56,122,\.96\), rgba\(142,67,169,\.92\) 52%, rgba\(218,100,166,\.88\)\)/,
+    /\.row\{[\s\S]*?background:#f7f1fb;[\s\S]*?\.row:nth-child\(even\)\{[\s\S]*?background:#efe6f5;/,
+  ],
+  'network.html': [
+    /--paper: #fff;[\s\S]*?--paper-soft: #fbf6fe;[\s\S]*?--mist: #f2def2;[\s\S]*?--mist-strong: #dec5ed;/,
+    /\.btn:hover \{ transform: translateY\(-1px\); background: rgba\(242, 222, 242, \.3\); \}/,
+    /\.result\.on \{ background: #e4f5ec;[\s\S]*?\.result\.off \{ background: #f7e6d6;[\s\S]*?\.result\.err \{ background: #f6dced;/,
+  ],
+  'permissions.html': [
+    /--paper: #fff;[\s\S]*?--paper-soft: #fbf6fe;[\s\S]*?--mist: #f2def2;[\s\S]*?--mist-strong: #dec5ed;/,
+    /\.perm-row:nth-child\(even\) \{ background: rgba\(255, 255, 255, \.24\); \}/,
+    /linear-gradient\(180deg, rgba\(248, 240, 253, \.82\), rgba\(243, 235, 249, \.74\)\)/,
+  ],
+  'api-keys.html': [
+    /--paper: #fff;[\s\S]*?--paper-soft: #fbf6fe;[\s\S]*?--mist: #f2def2;[\s\S]*?--mist-strong: #dec5ed;/,
+    /\.perm-row:nth-child\(even\) \{ background: rgba\(255, 255, 255, \.24\); \}/,
+    /linear-gradient\(180deg, rgba\(248, 240, 253, \.82\), rgba\(243, 235, 249, \.74\)\)/,
+  ],
+  'download-review.html': [
+    /--bg: #efe2f7;[\s\S]*?--panel: #fbf6fe;[\s\S]*?--panel-2: #f4ebfb;/,
+    /radial-gradient\(110% 75% at 0% 0%, #e3cdf4[\s\S]*?linear-gradient\(180deg, var\(--bg\), #ead8f5\)/,
+    /\.panel \{[\s\S]*?background: rgba\(255,255,255,\.48\);/,
+  ],
+  'cert-error.html': [
+    /--bg:#ece0f7;--card:#f7f0fc;--card-2:#f1e7fa;/,
+    /radial-gradient\(85% 55% at 0% 0%, #e6d2f6[\s\S]*?linear-gradient\(180deg,#ece0f7 0%,#e8daf5 100%\)/,
+    /border:1px solid rgba\(255,255,255,\.68\)[\s\S]*?box-shadow:0 18px 54px rgba\(80,30,110,\.18\)/,
+  ],
+  'safe-browsing-block.html': [
+    /--bg:#ece0f7;--card:#f7f0fc;--card-2:#f1e7fa;/,
+    /button\.danger\{background:transparent;color:#a8305f;border:1\.5px solid #e2a8c2\}/,
+    /button\.danger:not\(:disabled\):hover\{background:#fdeef4\}/,
+  ],
+  'redirect-warning.html': [
+    /--bg: #ece0f7;[\s\S]*?--bg-2: #f7e5f2;[\s\S]*?--paper: #fffafd;[\s\S]*?--paper-soft: #f7effb;/,
+    /linear-gradient\(135deg, #6a3a86 0%, #9a55b5 50%, #d65f9a 100%\)/,
+    /button\.continue \{ color: var\(--ink-soft\); background: rgba\(255,255,255,\.62\); \}/,
+  ],
+};
+for (const [page, signatures] of Object.entries(originalLightSignatures)) {
+  const styles = inlineStyle(page);
+  for (const signature of signatures) {
+    assert(signature.test(styles), page + ' must retain the established light-mode colors and surfaces');
+  }
+}
+
+const unscopedLightOverrides = /:root\[data-wardenone-page="(?:history|network|permissions|api-keys|download-review|cert-error|safe-browsing-block|redirect-warning)"\](?!\[data-wardenone-theme-resolved="dark"\])/g;
+assert(!unscopedLightOverrides.test(css), 'shared page-specific surface overrides must be scoped to dark mode');
 
 function darkBlockSource(stylesheet) {
   const match = stylesheet.match(/:root\[data-wardenone-theme-resolved="dark"\]\s*\{([\s\S]*?)\n\}/);

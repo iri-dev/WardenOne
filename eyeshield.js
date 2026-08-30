@@ -1462,6 +1462,12 @@
       text: '#111318',
       muted: '#555c68',
       link: '#1558c0',
+      // Which of these have you already opened? Every mode forces one colour
+      // onto every link, and a forced link colour silently takes :visited with
+      // it -- so a page of search results all looked equally unread. This is
+      // the one piece of state the browser keeps FOR the reader, and it is the
+      // difference between a results page and a list.
+      visited: '#681da8',
       focus: '#4b7bec',
       selection: '#285fbd',
     };
@@ -1489,6 +1495,16 @@
       text: '#ffffff',
       muted: '#a9b0bc',
       link: '#8ab4ff',
+      // Violet against the blue of an unread link -- a hue apart, not a shade
+      // apart, so it survives being read quickly and does not depend on anyone
+      // remembering which of two blues means what.
+      //
+      // The first attempt at this was #cba6f7, and it was the right hue and the
+      // wrong colour: pale enough that beside a light blue it read as a lighter
+      // blue. Hue distance was never the problem -- that was already 49deg --
+      // saturation was. This carries the same hue further from grey. 7.4:1 on
+      // true black.
+      visited: '#c07cf0',
       focus: '#6ea8ff',
       selection: '#2f5fb0',
     };
@@ -1511,6 +1527,7 @@
     text: '#f1f3f6',
     muted: '#a8afbb',
     link: '#8ab4ff',
+    visited: '#c07cf0',
     focus: '#7ba7ff',
     selection: '#2f5fb0',
   };
@@ -1599,6 +1616,18 @@
       + text + '{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + muted + '{color:' + p.muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + 'a[href],[role="link"]{color:' + p.link + ' !important;-webkit-text-fill-color:currentColor !important;}'
+      // The line above takes :visited down with it. A forced link colour applies
+      // to both states, so on a page of results every link came out the same
+      // colour whether or not the reader had already opened it. Restoring it
+      // costs one rule, and :visited outranks the plain selector, so the order
+      // here is for reading rather than for the cascade.
+      //
+      // -webkit-text-fill-color paints OVER color, so it has to be repeated
+      // here or the fill from the rule above keeps painting the unvisited
+      // colour on top. currentColor is correct and was checked on a real
+      // search page rather than reasoned about: Chrome resolves it against the
+      // visited colour, and the purple comes back.
+      + 'a[href]:visited,[role="link"]:visited{color:' + p.visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + field + '{background-color:' + p.input + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
       + field + '::placeholder{color:' + p.muted + ' !important;-webkit-text-fill-color:' + p.muted + ' !important;opacity:1 !important;}'
       + 'input[type="checkbox"],input[type="radio"],input[type="range"]{accent-color:' + p.primary + ' !important;}'
@@ -2282,6 +2311,7 @@
         muted: '#5f6368',
         icon: '#3c4043',
         link: '#1a0dab',
+        visited: '#681da8',
       };
     }
     return {
@@ -2298,6 +2328,7 @@
       muted: p.muted,
       icon: p.text,
       link: p.link,
+      visited: p.visited,
     };
   }
 
@@ -2409,6 +2440,12 @@
       + '#search button,#search [role="button"],#search [aria-label*="More" i],#search [aria-label*="Tools" i],#rhs button,#rhs [role="button"]{background:' + chip + ' !important;background-color:' + chip + ' !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:' + border + ' !important;box-shadow:none !important;}'
       + '#search svg,#search path,#rhs svg,#rhs path,#gb svg,#gb path{color:' + text + ' !important;fill:currentColor !important;stroke:currentColor !important;}'
       + '.LC20lb,.DKV0Md,.yuRUbf a h3{color:#1a0dab !important;-webkit-text-fill-color:currentColor !important;}'
+      // Same as the dark sheet: the rule above colours the title, and Chrome
+      // will not honour it on a visited link's h3. Light mode got away with it
+      // because the colour Chrome substitutes there is a purple close enough to
+      // the intended one to pass for it. Being right by luck is still a thing
+      // that stops being true, and it is one line to not depend on it.
+      + '#search a:visited h3,#rso a:visited h3,#rhs a:visited h3,#search a:visited .LC20lb,#rso a:visited .LC20lb,.yuRUbf a:visited h3{color:' + visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + nativeNav + '{background-color:transparent !important;box-shadow:none !important;text-shadow:none !important;-webkit-text-fill-color:initial !important;}'
       + '#navcnt a,#navcnt a span,#foot a,#bres a,#swml a{color:#1a0dab !important;-webkit-text-fill-color:currentColor !important;text-decoration:none !important;}'
       + '#navcnt .csb,#navcnt span[style*="background-position"],#foot .csb,#foot span[style*="background-position"]{background-image:url("/images/nav_logo321.webp") !important;background-repeat:no-repeat !important;background-color:transparent !important;color:transparent !important;-webkit-text-fill-color:transparent !important;}'
@@ -2541,11 +2578,20 @@
     const text = gp.text;
     const muted = gp.muted;
     const link = gp.link;
+    const visited = gp.visited;
     return 'html,body,#main,#cnt,#rcnt,#center_col,#rso,#rhs,[role="main"]{background:' + bg + ' !important;background-color:' + bg + ' !important;color:' + text + ' !important;}'
       + '#search,#rso,#rhs,#center_col,.MjjYud,.ULSxyf,.g,.Ww4FFb,.kp-blk{background:transparent !important;color:' + text + ' !important;border-color:' + border + ' !important;}'
       + '#search p,#search li,#rso p,#rso li,#search span,#rso span,.VuuXrf,.IsZvec,.VwiC3b,.MUxGbd,.hgKElc,.LEwnzc,.kno-rdesc,.kb0PBd{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#search p *,#search li *,#rso p *,#rso li *,.VuuXrf *,.IsZvec *,.VwiC3b *,.MUxGbd *,.hgKElc *,.LEwnzc *{color:inherit !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#search a,#rso a,#rhs a,#search a *,#rso a *,#rhs a *{color:' + link + ' !important;-webkit-text-fill-color:currentColor !important;}'
+      // Light mode has had this since it was written; dark and ultra never did,
+      // which is why a results page in either one read as entirely unvisited.
+      // The generic a[href]:visited rule cannot reach here -- an #id selector
+      // outranks it -- so the Google sheet has to say it again. The descendant
+      // half matters as much as the anchor: a result title is an h3 inside the
+      // link, and without it the title keeps the unvisited colour while only
+      // the bare anchors change.
+      + '#search a:visited,#rso a:visited,#rhs a:visited,#search a:visited *,#rso a:visited *,#rhs a:visited *{color:' + visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '[aria-label="AI Overview"],[aria-label="AI Overview"]{background:' + bg + ' !important;background-color:' + bg + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;text-shadow:none !important;}'
       + '[aria-label="AI Overview"] *,[aria-label="AI Overview"] ~ div *{text-shadow:none !important;}'
       + '[aria-label="AI Overview"] div[role="button"],[aria-label="AI Overview"] button,#search [aria-expanded],#search [aria-controls],#search g-expandable-container,#search g-inner-card,#search .Ww4FFb,#search .wDYxhc{background:' + surface + ' !important;background-color:' + surface + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;box-shadow:none !important;}'
@@ -2570,6 +2616,22 @@
       // i.e. the least important line on every result was the loudest thing on it.
       // These two win on specificity (102 and 110), not on ordering luck.
       + '#search a h3,#rso a h3,#rhs a h3,#search h3 a,#rso h3 a,#search a .LC20lb,#rso a .LC20lb{color:' + link + ' !important;-webkit-text-fill-color:currentColor !important;}'
+      // The result TITLE needs its own :visited rule, and the reason is not the
+      // cascade. Chrome refuses author colour on anything INSIDE a visited link:
+      // set the h3 green and an unvisited title goes green while a visited one
+      // does not -- it gets the browser's own visited colour instead, which on a
+      // dark page is a pale lavender that reads as washed-out blue. So the
+      // generic '#search a:visited *' above cannot reach the title however
+      // specific it is, and the title rule right above this one cannot either.
+      // A rule naming the h3 with :visited on the anchor is the one thing that
+      // does apply. Verified on a real results page: with only this rule changed
+      // the title follows, and with it removed the title goes back to the
+      // browser's colour while the site-name line still changes.
+      //
+      // This is what "only the URL turned purple, the headline stayed blue"
+      // was: one of the two lines was being coloured by us and the other by
+      // Chrome.
+      + '#search a:visited h3,#rso a:visited h3,#rhs a:visited h3,#search h3 a:visited,#rso h3 a:visited,#search a:visited .LC20lb,#rso a:visited .LC20lb{color:' + visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '#search cite,#rso cite,#search .VuuXrf,#rso .VuuXrf,#search .UdQCqe,#rso .UdQCqe,#search .byrV5b,#rso .byrV5b,#search .tjvcx,#rso .tjvcx{color:' + muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + googleSearchBoxCSS(remap);
   }

@@ -778,6 +778,50 @@ function check(name, cond, extra) {
   check('T41c player facade automatically closes after its grace period', blocked.closed === true, blocked);
 }
 
+// T42: the user's allowlist reaches this guard too.
+//
+// Every other guard honours it. This one is a separate <all_urls> content script,
+// statically declared so it cannot be skipped per host at injection time, and the
+// bridge hands it the raw toggles rather than the allowlist-gated ones the main
+// engine computes for itself. "Allow this site" therefore left forced-popup,
+// gestureless-navigation and meta-refresh blocking running there anyway.
+{
+  const t = build({ hostname: 'videosite.com', href: 'https://videosite.com/page', config: { allowlist: ['videosite.com'] } });
+  t.open('https://ads1-example.com/x');
+  check('T42 allowlisted host may open a popup without a gesture', t.state.opened.length === 1, t.state);
+}
+
+{
+  const t = build({ hostname: 'sub.videosite.com', href: 'https://sub.videosite.com/page', config: { allowlist: ['videosite.com'] } });
+  t.open('https://ads1-example.com/x');
+  check('T42b the allowlist covers subdomains', t.state.opened.length === 1, t.state);
+}
+
+{
+  const t = build({ hostname: 'www.videosite.com', href: 'https://www.videosite.com/page', config: { allowlist: ['www.videosite.com'] } });
+  t.open('https://ads1-example.com/x');
+  check('T42c www is normalised on both sides', t.state.opened.length === 1, t.state);
+}
+
+{
+  const t = build({ hostname: 'videosite.com', href: 'https://videosite.com/page', config: { allowlist: ['othersite.com'] } });
+  t.open('https://ads1-example.com/x');
+  check('T42d an unrelated allowlist entry protects nothing', t.state.opened.length === 0, t.state);
+}
+
+{
+  // A suffix match must be on a label boundary: notvideosite.com is not videosite.com.
+  const t = build({ hostname: 'notvideosite.com', href: 'https://notvideosite.com/page', config: { allowlist: ['videosite.com'] } });
+  t.open('https://ads1-example.com/x');
+  check('T42e a lookalike host is not allowlisted', t.state.opened.length === 0, t.state);
+}
+
+{
+  const t = build({ hostname: 'videosite.com', href: 'https://videosite.com/page', config: { allowlist: [] } });
+  t.open('https://ads1-example.com/x');
+  check('T42f an empty allowlist changes nothing', t.state.opened.length === 0, t.state);
+}
+
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

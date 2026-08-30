@@ -50,3 +50,10 @@ MAINTAINABILITY.md
 # Local review notes. Kept out of the repo.
 AUDIT-*.html
 THEFT-*.md
+
+# Local toast-timing harness. Kept off GitHub deliberately: the page embeds a
+# copy of the shipped toast code, and the two files only make sense as a pair,
+# so the builder goes with it. The gate skips its checks when they are absent
+# rather than failing, so CI stays green without them.
+tools/toast-harness.html
+tools/build-toast-harness.js

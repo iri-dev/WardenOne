@@ -245,6 +245,46 @@ check('sensitive account context remains protected even when reject and accept l
   sensitiveDialogClicks.length === 0,
   JSON.stringify(sensitiveDialogClicks));
 
+/* Which button counts as "no".
+   The matcher had two alternatives that required the adjective and "only" to be
+   adjacent, so "Only required cookies" was recognised and "Required cookies only"
+   was not -- and the second is the more common wording on a UK/EU banner. Nothing
+   tested the wording list, so it read as working. Both directions matter here: a
+   miss leaves the banner up, and a false positive clicks Accept for the user. */
+const rejectMatch = consent.match(/const REJECT_RE = (\/.*\/i);/);
+check('the reject matcher is still findable', !!rejectMatch);
+if (rejectMatch) {
+  const REJECT_RE = eval(rejectMatch[1]);
+  const LABELS = [
+    ['Required cookies only', true],
+    ['Necessary cookies only', true],
+    ['Essential cookies only', true],
+    ['Strictly necessary cookies only', true],
+    ['Only required cookies', true],
+    ['Only necessary cookies', true],
+    ['Essential only', true],
+    ['Use necessary cookies only', true],
+    ['Reject all', true],
+    ['Decline', true],
+    ['Continue without accepting', true],
+    ['Do not sell my personal information', true],
+    // A bare "Strictly necessary cookies" is as often a section label beside a
+    // toggle as it is a button, so it needs the word "only" to count.
+    ['Strictly necessary cookies', false],
+    ['Manage preferences', false],
+    ['Accept all cookies', false],
+    ['Accept all', false],
+    ['Allow all cookies', false],
+    ['OK', false],
+    ['Got it', false],
+    ['I agree', false],
+  ];
+  for (const [label, want] of LABELS) {
+    check((want ? 'counts as no: ' : 'never clicked: ') + label,
+      REJECT_RE.test(label) === want, label);
+  }
+}
+
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

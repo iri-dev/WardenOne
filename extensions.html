@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en" data-wardenone-page="extensions">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WardenOne — Extension Security Centre</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  :root {
+    --page: #eee3f7;
+    --page-deep: #e4d5f1;
+    --paper: #fffafd;
+    --paper-soft: #f8f0fc;
+    --ink: #39284b;
+    --soft: #604b72;
+    --faint: #6f5e7c;
+    --line: #dfcfea;
+    --plum: #7b389d;
+    --violet: #7d3fa2;
+    --rose: #a93c74;
+    --danger: #a52f45;
+    --danger-bg: #fff0f3;
+    --warning: #8b5b19;
+    --warning-bg: #fff8e8;
+    --info: #4f5199;
+    --info-bg: #f2f1ff;
+    --calm: #276b4a;
+    --calm-bg: #edf9f2;
+    --shadow: 0 22px 58px rgba(77, 39, 102, .13);
+    --display: "Quicksand", "Nunito", "Segoe UI Rounded", system-ui, sans-serif;
+    --body: "Nunito", "Segoe UI", system-ui, sans-serif;
+  }
+  :root[data-wardenone-theme-resolved="dark"] {
+    --page: #201a26;
+    --page-deep: #201a26;
+    --paper: #302539;
+    --paper-soft: #382b42;
+    --ink: #f4eaf8;
+    --soft: #cdbad6;
+    --faint: #a993b5;
+    --line: #594663;
+    --plum: #d39ae8;
+    --danger: #ff9daf;
+    --danger-bg: #432832;
+    --warning: #f2c477;
+    --warning-bg: #403523;
+    --info: #bfc0ff;
+    --info-bg: #31314d;
+    --calm: #86d9ad;
+    --calm-bg: #263d34;
+    --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  html { min-height: 100%; background: var(--page); }
+  body {
+    min-height: 100vh;
+    margin: 0;
+    color: var(--ink);
+    font: 14px/1.5 var(--body);
+    background:
+      radial-gradient(65% 48% at 2% 0%, rgba(169, 91, 208, .25), transparent 65%),
+      radial-gradient(55% 42% at 98% 4%, rgba(213, 95, 152, .18), transparent 62%),
+      linear-gradient(180deg, var(--page), var(--page-deep));
+  }
+  :root[data-wardenone-theme-resolved="dark"] body { background: var(--page); }
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; opacity: .55; }
+  :focus-visible { outline: 3px solid rgba(169, 91, 208, .38); outline-offset: 2px; }
+  .topbar {
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    color: #fff;
+    background: linear-gradient(130deg, #4c305f 0%, #7f3e99 52%, #c35c91 100%);
+    box-shadow: 0 8px 28px rgba(68, 33, 87, .2);
+  }
+  .top-inner, .page { width: min(1180px, calc(100% - 36px)); margin: 0 auto; }
+  .top-inner { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand img { width: 40px; height: 40px; border-radius: 12px; box-shadow: 0 8px 20px rgba(27, 10, 36, .24); }
+  .brand strong { display: block; font: 800 17px/1.1 var(--display); }
+  .brand span { display: block; margin-top: 3px; color: rgba(255,255,255,.75); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .top-links { display: flex; align-items: center; gap: 10px; }
+  .top-links a { color: rgba(255,255,255,.86); font-weight: 800; text-decoration: none; padding: 8px 10px; border-radius: 9px; }
+  .top-links a:hover { color: #fff; background: rgba(255,255,255,.1); }
+  .page { display: flex; flex-direction: column; padding: 28px 0 56px; }
+  .hero { order: 1; display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end; margin-bottom: 16px; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; color: var(--plum); font: 900 10px/1 var(--display); letter-spacing: .13em; text-transform: uppercase; }
+  .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #42ad73; box-shadow: 0 0 0 5px rgba(66,173,115,.13); }
+  h1 { margin: 10px 0 7px; font: 900 clamp(28px, 4vw, 40px)/1.04 var(--display); letter-spacing: -.025em; }
+  .lead { max-width: 780px; margin: 0; color: var(--soft); font-size: 15px; }
+  .hero-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+  .btn {
+    min-height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 15px;
+    color: var(--ink);
+    background: rgba(255,250,253,.76);
+    font-weight: 850;
+    box-shadow: 0 8px 20px rgba(77,39,102,.07);
+  }
+  .btn:hover { transform: translateY(-1px); border-color: #c9addd; }
+  .btn.primary { color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--violet), var(--rose)); }
+  .btn.danger { color: var(--danger); border-color: #edc2cb; background: var(--danger-bg); }
+  .btn.small { min-height: 34px; padding: 7px 11px; border-radius: 9px; font-size: 12px; box-shadow: none; }
+  .status {
+    order: 2;
+    display: none;
+    margin: 0 0 18px;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    color: var(--soft);
+    background: rgba(255,250,253,.72);
+  }
+  .status.show { display: block; }
+  .status.error { color: var(--danger); border-color: #edc2cb; background: var(--danger-bg); }
+  .health-banner { order: 3; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 13px; align-items: center;
+    margin: 0 0 14px; padding: 15px 17px; border: 1px solid #bfe5ce; border-left: 4px solid var(--calm);
+    border-radius: 15px; background: var(--calm-bg); }
+  .health-banner.warning { border-color: #ead5a8; border-left-color: var(--warning); background: var(--warning-bg); }
+  .health-banner.danger { border-color: #e9b9c4; border-left-color: var(--danger); background: var(--danger-bg); }
+  .health-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #fff;
+    background: var(--calm); font: 900 17px/1 var(--display); }
+  .health-banner.warning .health-mark { background: var(--warning); }
+  .health-banner.danger .health-mark { background: var(--danger); }
+  .health-title { margin: 0; font: 900 17px/1.2 var(--display); }
+  .health-copy { margin: 3px 0 0; color: var(--soft); font-size: 12.5px; }
+  .summary { order: 7; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin: 22px 0 12px; }
+  .summary-card, .panel {
+    border: 1px solid rgba(213,194,228,.92);
+    background: rgba(255,250,253,.84);
+    box-shadow: var(--shadow);
+  }
+  .summary-card { border-radius: 16px; padding: 17px; }
+  .summary-card b { display: block; font: 900 28px/1 var(--display); color: var(--plum); }
+  .summary-card span { display: block; margin-top: 7px; color: var(--soft); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+  .panel { border-radius: 18px; padding: 19px; margin-bottom: 18px; }
+  .db-panel { order: 8; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 22px; align-items: center; }
+  .panel-title { margin: 0; font: 900 17px/1.2 var(--display); }
+  .panel-copy { margin: 6px 0 0; color: var(--soft); }
+  .db-facts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
+  .fact { border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; color: var(--soft); background: var(--paper-soft); font-size: 11px; font-weight: 750; }
+  .local-badge { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 8px 11px; color: var(--calm); background: var(--calm-bg); border: 1px solid #bfe5ce; font-weight: 900; font-size: 11px; white-space: nowrap; }
+  .local-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #39a76b; }
+  .controls { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 12px; align-items: center; }
+  .control-panel { order: 4; margin-bottom: 8px; }
+  .search { width: 100%; min-height: 43px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px; color: var(--ink); background: rgba(255,255,255,.78); }
+  .filters { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+  .filter { min-height: 36px; border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; color: var(--soft); background: var(--paper-soft); font-weight: 800; }
+  .filter.active { color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--violet), var(--rose)); }
+  .list-head { order: 5; display: flex; justify-content: space-between; gap: 18px; align-items: center; margin: 14px 1px 12px; }
+  .list-head h2 { margin: 0; font: 900 21px/1.2 var(--display); }
+  .list-head span { color: var(--faint); font-size: 12px; }
+  .extension-list { order: 6; display: grid; gap: 13px; }
+  .extension-card { border: 1px solid var(--line); border-left: 3px solid var(--info); border-radius: 14px; padding: 16px;
+    background: var(--paper); box-shadow: 0 8px 22px rgba(77,39,102,.07); }
+  .extension-card.tone-danger { border-left-color: var(--danger); }
+  .extension-card.tone-warning { border-left-color: var(--warning); }
+  .extension-card.tone-info { border-left-color: var(--info); }
+  .extension-card.tone-calm { border-left-color: var(--calm); }
+  .card-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+  .ext-name { margin: 0; font: 900 18px/1.25 var(--display); overflow-wrap: anywhere; }
+  .meta { margin-top: 5px; color: var(--faint); font-size: 12px; overflow-wrap: anywhere; }
+  .verdict { flex: none; border-radius: 999px; padding: 6px 9px; font: 900 10px/1 var(--display); letter-spacing: .055em; }
+  .verdict.danger { color: var(--danger); background: #ffe5eb; border: 1px solid #efb5c1; }
+  .verdict.warning { color: var(--warning); background: #fff0c9; border: 1px solid #e7cb86; }
+  .verdict.info { color: var(--info); background: var(--info-bg); border: 1px solid #d0cff2; }
+  .verdict.calm { color: var(--calm); background: var(--calm-bg); border: 1px solid #bfe5ce; }
+  /* The card body: the answer, then what it can do, then the evidence folded
+     away. The old three-row Reputation/Access/Change block printed everything
+     the engine knew and left the reader to work out which part mattered. */
+  .ext-answer { margin: 10px 0 0; font-size: 14px; line-height: 1.45; color: var(--ink); }
+  .ext-quiet, .ext-change { margin: 8px 0 0; font-size: 13px; color: var(--ink-soft); }
+  .ext-capabilities { margin-top: 10px; }
+  /* Sentence case, not uppercase. These headings carry a phrase ("Expected for a
+     browser assistant that acts for you"), and a whole sentence in capitals reads
+     as shouting and wraps badly. */
+  /* A count is not a finding. "1" under "Need attention" tells you a number;
+     the line under it tells you what the number is about, which is the part
+     that decides whether you click. */
+  /* The fold that hides the cards nobody needs to read. */
+  .quiet-fold { border: 1px dashed var(--line); border-radius: 12px; padding: 4px 14px 6px; margin-top: 4px; }
+  .quiet-summary { cursor: pointer; list-style: none; padding: 10px 0; font-size: 13.5px;
+    font-weight: 650; color: var(--ink); user-select: none; }
+  .quiet-summary::-webkit-details-marker { display: none; }
+  .quiet-summary::before { content: "▸ "; color: var(--ink-soft); }
+  .quiet-fold[open] .quiet-summary::before { content: "▾ "; }
+  .quiet-summary:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 6px; }
+  .quiet-names { font-size: 12px; color: var(--ink-soft); line-height: 1.5; padding-bottom: 8px; }
+  .quiet-fold[open] .quiet-names { padding-bottom: 12px; }
+  .quiet-fold .extension-card { margin-top: 10px; }
+  .list-section { display: grid; gap: 10px; }
+  .list-section + .list-section { margin-top: 8px; }
+  .section-heading { margin: 3px 2px 0; font: 900 15px/1.2 var(--display); }
+  .section-copy { margin: -5px 2px 2px; color: var(--faint); font-size: 11.5px; }
+  .summary-why { display: block; margin-top: 5px; font-style: normal; font-size: 11.5px;
+    line-height: 1.35; color: var(--ink-soft); }
+  .cap-heading { font-size: 12px; font-weight: 650; letter-spacing: 0;
+    color: var(--ink-soft); margin: 10px 0 4px; }
+  .cap-list { margin: 0; padding-left: 16px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+  .cap-list li { margin: 1px 0; }
+  /* Colour carries the only distinction that matters here: whether this
+     capability is what the extension is for. */
+  .cap-list.cap-unexpected { color: var(--danger); }
+  .cap-list.cap-unexpected::marker, .cap-list.cap-unexpected li::marker { color: var(--danger); }
+  .cap-list.cap-expected li::marker { color: var(--calm); }
+  .cap-list.cap-other li::marker { color: var(--ink-soft); }
+  details.evidence { margin-top: 11px; }
+  .evidence-summary { cursor: pointer; font-size: 12.5px; color: var(--ink-soft); list-style: none;
+    padding: 5px 0; user-select: none; }
+  .evidence-summary::-webkit-details-marker { display: none; }
+  .evidence-summary::before { content: "▸ "; }
+  details.evidence[open] .evidence-summary::before { content: "▾ "; }
+  .evidence-summary:hover { color: var(--ink); }
+  .evidence-summary:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 4px; }
+  .signals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 15px; }
+  .signal { border: 1px solid rgba(219,202,232,.9); border-radius: 13px; padding: 12px; background: rgba(255,255,255,.58); min-width: 0; }
+  .signal-label { display: block; margin-bottom: 5px; color: var(--faint); font: 900 9px/1 var(--display); letter-spacing: .09em; text-transform: uppercase; }
+  .signal strong { display: block; font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+  .signal p { margin: 5px 0 0; color: var(--soft); font-size: 11.5px; line-height: 1.4; }
+  .evidence { margin: 13px 0 0; padding: 11px 13px; border-radius: 11px; color: var(--soft); background: rgba(123,56,157,.055); font-size: 12px; }
+  .evidence b { color: var(--ink); }
+  .evidence-link { display: inline-flex; margin-top: 7px; color: var(--plum); font-weight: 850; }
+  .reason-list { margin: 6px 0 0; padding-left: 18px; }
+  .reason-list li { margin: 3px 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+  .action-note { flex: 1 1 260px; color: var(--soft); font-size: 11.5px; font-weight: 700; }
+  .empty { padding: 34px 20px; border: 1px dashed #cdb7dd; border-radius: 16px; text-align: center; color: var(--soft); background: rgba(255,250,253,.56); }
+  details.intel { margin-top: 18px; }
+  details.intel summary { cursor: pointer; color: var(--plum); font-weight: 850; }
+  .intel-body { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: center; margin-top: 12px; padding: 14px; border-radius: 12px; background: var(--paper-soft); }
+  .intel-body p { margin: 0; color: var(--soft); font-size: 12px; }
+  .intel-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .intel-file-label { position: relative; overflow: hidden; }
+  .intel-file-label input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .intel-file-label:has(input:focus-visible) { outline: 3px solid rgba(169, 91, 208, .38); outline-offset: 2px; }
+  .boundary { margin-top: 22px; padding: 14px 16px; border-radius: 14px; color: var(--soft); background: rgba(255,250,253,.62); border: 1px solid var(--line); font-size: 12px; }
+  .boundary strong { color: var(--ink); }
+  :root[data-wardenone-theme-resolved="dark"] .btn:not(.primary):not(.danger),
+  :root[data-wardenone-theme-resolved="dark"] .status,
+  :root[data-wardenone-theme-resolved="dark"] .summary-card,
+  :root[data-wardenone-theme-resolved="dark"] .panel,
+  :root[data-wardenone-theme-resolved="dark"] .extension-card,
+  :root[data-wardenone-theme-resolved="dark"] .signal,
+  :root[data-wardenone-theme-resolved="dark"] .empty,
+  :root[data-wardenone-theme-resolved="dark"] .boundary { background: var(--paper); border-color: var(--line); }
+  :root[data-wardenone-theme-resolved="dark"] .search { background: #251e2b; border-color: var(--line); }
+  :root[data-wardenone-theme-resolved="dark"] .btn.danger { border-color: #784653; background: var(--danger-bg); }
+  :root[data-wardenone-theme-resolved="dark"] .status.error { border-color: #784653; background: var(--danger-bg); }
+  :root[data-wardenone-theme-resolved="dark"] .health-banner { border-color: #426953; background: var(--calm-bg); }
+  :root[data-wardenone-theme-resolved="dark"] .health-banner.warning { border-color: #76613a; background: var(--warning-bg); }
+  :root[data-wardenone-theme-resolved="dark"] .health-banner.danger { border-color: #784653; background: var(--danger-bg); }
+  :root[data-wardenone-theme-resolved="dark"] .verdict.danger { color: var(--danger); background: #56303b; border-color: #8c5060; }
+  :root[data-wardenone-theme-resolved="dark"] .verdict.warning { color: var(--warning); background: #50411f; border-color: #806a39; }
+  :root[data-wardenone-theme-resolved="dark"] .verdict.info { color: var(--info); background: var(--info-bg); border-color: #565780; }
+  :root[data-wardenone-theme-resolved="dark"] .verdict.calm,
+  :root[data-wardenone-theme-resolved="dark"] .local-badge { color: var(--calm); background: var(--calm-bg); border-color: #426953; }
+  :root[data-wardenone-theme-resolved="dark"] .evidence { background: rgba(211,154,232,.1); }
+  @media (max-width: 860px) {
+    .summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .signals { grid-template-columns: 1fr; }
+    .hero, .db-panel, .controls, .intel-body { grid-template-columns: 1fr; }
+    .hero-actions, .filters, .intel-actions { justify-content: flex-start; }
+  }
+  @media (max-width: 560px) {
+    .top-links a:not(:last-child) { display: none; }
+    .page { padding-top: 26px; }
+    .summary { grid-template-columns: 1fr 1fr; }
+    .card-top { display: block; }
+    .verdict { display: inline-block; margin-top: 10px; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-inner">
+      <div class="brand">
+        <img src="icons/icon48.png" alt="">
+        <div><strong>WardenOne</strong><span>Local extension intelligence</span></div>
+      </div>
+      <nav class="top-links" aria-label="WardenOne pages">
+        <a href="history.html">Activity</a>
+        <a href="permissions.html">Privacy</a>
+        <a href="popup.html">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <div class="eyebrow">On-device assessment</div>
+        <h1 id="page-title">Extension Security Centre</h1>
+        <p class="lead">One honest local view of every installed extension: publisher-verified identity or catalogue-only context, the capabilities Chrome says it has, and what materially changed.</p>
+      </div>
+      <div class="hero-actions">
+        <button class="btn" id="ack-changes" type="button">Mark change alerts reviewed</button>
+        <button class="btn primary" id="rescan" type="button">Scan locally now</button>
+      </div>
+    </section>
+
+    <div class="status show" id="scan-status" role="status" aria-live="polite">Reading Chrome's installed-extension inventory and local database…</div>
+    <div class="status error" id="scan-error" role="alert"></div>
+
+    <section class="health-banner" id="health-banner" aria-live="polite">
+      <div class="health-mark" id="health-mark" aria-hidden="true">✓</div>
+      <div><h2 class="health-title" id="health-title">Checking installed extensions…</h2>
+        <p class="health-copy" id="health-copy">Comparing identity, current capabilities, install source and local changes.</p></div>
+    </section>
+
+    <section class="summary" aria-label="Extension assessment summary">
+      <div class="summary-card"><b id="sum-installed">—</b><span>Installed</span><em id="sum-installed-why" class="summary-why"></em></div>
+      <div class="summary-card"><b id="sum-attention">—</b><span>Need a decision</span><em id="sum-attention-why" class="summary-why"></em></div>
+      <div class="summary-card"><b id="sum-matches">—</b><span>Incident matches</span><em id="sum-matches-why" class="summary-why"></em></div>
+      <div class="summary-card"><b id="sum-changed">—</b><span>Unreviewed access changes</span><em id="sum-changed-why" class="summary-why"></em></div>
+      <div class="summary-card"><b id="sum-reviewed">—</b><span>Access decisions saved</span><em id="sum-reviewed-why" class="summary-why"></em></div>
+    </section>
+
+    <section class="panel db-panel" aria-labelledby="db-title">
+      <div>
+        <h2 class="panel-title" id="db-title">Local reputation database</h2>
+        <p class="panel-copy" id="db-copy">Loading the bundled exact-ID catalogue…</p>
+        <div class="db-facts" id="db-facts"></div>
+      </div>
+      <div class="local-badge">No extension IDs uploaded</div>
+    </section>
+
+    <section class="panel control-panel" aria-label="Search and filters">
+      <div class="controls">
+        <label>
+          <span class="signal-label">Search name or exact ID</span>
+          <input class="search" id="extension-search" type="search" autocomplete="off" placeholder="Search installed extensions">
+        </label>
+        <div class="filters" role="group" aria-label="Filter extension assessments">
+          <button class="filter active" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter" type="button" data-filter="attention" aria-pressed="false">Attention</button>
+          <button class="filter" type="button" data-filter="changed" aria-pressed="false">Changes</button>
+          <button class="filter" type="button" data-filter="verified" aria-pressed="false">Verified identity</button>
+          <button class="filter" type="button" data-filter="catalogued" aria-pressed="false">Catalogue only</button>
+          <button class="filter" type="button" data-filter="unknown" aria-pressed="false">No record</button>
+        </div>
+      </div>
+
+      <details class="intel">
+        <summary>Advanced: import your own local intelligence JSON</summary>
+        <div class="intel-body">
+          <p>Imported exact-ID records stay in local extension storage. They are validated, capped at 2 MB / 2,000 entries, cannot override a stronger bundled warning, and can never grant a bundled expected-access contract. This never enables a remote feed.</p>
+          <div class="intel-actions">
+            <label class="btn small intel-file-label"><span>Choose JSON file</span><input id="intel-file" type="file" accept="application/json,.json"></label>
+            <button class="btn small danger" id="clear-intel" type="button">Clear imported records</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <div class="list-head">
+      <h2>Installed extensions</h2>
+      <span id="result-count" role="status" aria-live="polite">Waiting for scan</span>
+    </div>
+    <section class="extension-list" id="extension-list"></section>
+
+  </main>
+  <script src="theme.js"></script>
+  <script src="extensions.js"></script>
+</body>
+</html>

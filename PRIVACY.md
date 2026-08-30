@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: August 14, 2026**
+**Last updated: August 30, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -42,6 +42,10 @@ account by WardenOne, and is **not** uploaded to us:
 - Download-review records for the Download Guard.
 - A short-lived reputation cache and "learned" risky-domain list, so repeat checks are
   faster and work offline.
+- The installed-extension inventory, change timeline, exact-version review snapshots,
+  and any exact-ID reputation records you deliberately import. The bundled extension
+  reputation database is read from WardenOne's own package; installed extension IDs
+  are not sent to a reputation server.
 - Any API keys you choose to enter for optional reputation providers (stored locally so
   the extension can authenticate to the provider you enabled).
 
@@ -159,9 +163,12 @@ the store listing; in summary:
   "Forget this site" tools.
 - **History** — used only by "Forget this site" to remove entries for a domain you choose;
   WardenOne does not continuously read or transmit your history.
-- **Management** — to **list** your installed extensions and flag newly added or
-  high-risk ones for your review. WardenOne cannot and does not disable, install, or scan
-  other extensions; it only shows you what is there.
+- **Management** — to **list** installed extension IDs, versions, permissions, install
+  type and enabled state for the local Extension Security Centre. WardenOne compares
+  exact IDs with its bundled on-device incident database and watches meaningful access
+  changes. It cannot read or scan another extension's source package. It disables or
+  requests Chrome-confirmed removal only when you press that extension's explicit
+  button; it never installs, disables, or removes another extension automatically.
 - **Tabs / tab groups / alarms / notifications / storage** — for the toolbar badge, the
   startup safety check, the Memory Shield (sleeping idle tabs), scheduled list updates,
   security alerts, and saving your settings locally.

@@ -6,26 +6,26 @@
 <title>WardenOne - Network Protection</title>
 <style>
   :root {
-    --bg: var(--wo-bg);
-    --bg-2: var(--wo-bg-alt);
-    --bg-3: var(--wo-bg-soft);
-    --paper: var(--wo-surface-raised);
-    --paper-soft: var(--wo-surface);
-    --mist: var(--wo-surface-muted);
-    --mist-strong: var(--wo-control);
-    --ink: var(--wo-text);
-    --ink-soft: var(--wo-text-soft);
-    --ink-faint: var(--wo-text-faint);
-    --line: var(--wo-line);
-    --line-strong: var(--wo-line-strong);
-    --plum: var(--wo-brand-text);
-    --plum-deep: var(--wo-plum-deep);
-    --violet: var(--wo-violet);
-    --rose: var(--wo-rose-text);
-    --pink: var(--wo-pink);
-    --green: var(--wo-success);
-    --amber: var(--wo-warning);
-    --shadow: var(--wo-shadow);
+    --bg: #ece0f7;
+    --bg-2: #e7d9f4;
+    --bg-3: #faf6fd;
+    --paper: #fff;
+    --paper-soft: #fbf6fe;
+    --mist: #f2def2;
+    --mist-strong: #dec5ed;
+    --ink: #3d2a52;
+    --ink-soft: #705689;
+    --ink-faint: #9a7eb1;
+    --line: #dfcdec;
+    --line-strong: #c8aedf;
+    --plum: #8b3fb0;
+    --plum-deep: #5f2779;
+    --violet: #b06fd6;
+    --rose: #d65f9a;
+    --pink: #df6ca9;
+    --green: #2e9e5b;
+    --amber: #bd7a2a;
+    --shadow: 0 28px 80px rgba(72, 38, 96, .16);
     --display: "Quicksand", "Nunito", "Segoe UI Rounded", "SF Pro Rounded", system-ui, sans-serif;
     --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
   }
@@ -54,7 +54,7 @@
       linear-gradient(180deg, rgba(42, 28, 58, .48), rgba(42, 28, 58, .18)),
       radial-gradient(86% 190% at 94% 100%, rgba(223, 108, 169, .34), transparent 56%),
       radial-gradient(70% 160% at 12% -70%, rgba(255, 255, 255, .13), transparent 62%),
-      linear-gradient(135deg, #4f2b65, var(--wo-violet) 52%, var(--wo-pink));
+      linear-gradient(135deg, rgba(91, 56, 122, .96), rgba(142, 67, 169, .92) 52%, rgba(218, 100, 166, .88));
   }
   .topbar::after {
     content: "";
@@ -179,7 +179,7 @@
     background:
       radial-gradient(56% 86% at 74% 38%, rgba(255, 255, 255, .16), transparent 60%),
       radial-gradient(42% 70% at 20% 100%, rgba(223, 108, 169, .28), transparent 62%),
-      linear-gradient(135deg, #4f2b65, var(--wo-violet) 52%, var(--wo-pink));
+      linear-gradient(135deg, rgba(91, 56, 122, .96), rgba(142, 67, 169, .92) 52%, rgba(218, 100, 166, .88));
   }
   .hero::after {
     content: "";
@@ -235,26 +235,26 @@
     border: 1px solid rgba(255, 255, 255, .22);
     border-radius: 13px;
     padding: 13px 18px;
-    background: rgba(42, 28, 58, .48);
+    background: rgba(242, 222, 242, .2);
     color: #fff;
     cursor: pointer;
     font: 900 13px/1 var(--display);
     box-shadow: 0 18px 40px rgba(48, 24, 62, .16);
     transition: transform .15s ease, background .15s ease, box-shadow .15s ease;
   }
-  .btn:hover { transform: translateY(-1px); background: rgba(42, 28, 58, .68); }
+  .btn:hover { transform: translateY(-1px); background: rgba(242, 222, 242, .3); }
   .btn.primary {
     border-color: transparent;
-    background: var(--wo-control-gradient);
+    background: linear-gradient(135deg, #b861d6 0%, #df6ca9 100%);
     box-shadow: 0 22px 50px rgba(89, 34, 112, .28);
   }
-  .btn.primary:hover { background: var(--wo-control-gradient); }
+  .btn.primary:hover { background: linear-gradient(135deg, #c26ddb 0%, #e673b0 100%); }
   .hero-card {
     position: relative;
     border: 1px solid rgba(255, 255, 255, .22);
     border-radius: 22px;
     padding: 24px;
-    background: rgba(42, 28, 58, .48);
+    background: rgba(242, 222, 242, .2);
     box-shadow: 0 18px 40px rgba(48, 24, 62, .16);
   }
   .hero-card h2 { font: 900 24px/1.08 var(--display); color: #fff; }
@@ -265,7 +265,7 @@
     align-items: center;
     padding: 12px 14px;
     border-radius: 12px;
-    background: rgba(42, 28, 58, .38);
+    background: rgba(242, 222, 242, .18);
     border: 1px solid rgba(255, 255, 255, .16);
     color: rgba(255, 255, 255, .92);
     font-weight: 800;
@@ -293,7 +293,7 @@
     overflow: hidden;
     border: 1px solid rgba(200, 174, 223, .76);
     border-radius: 24px;
-    background: var(--wo-card-gradient);
+    background: linear-gradient(180deg, rgba(255, 255, 255, .76), rgba(246, 238, 251, .76));
     box-shadow: var(--shadow);
   }
   .panel-top {
@@ -376,7 +376,7 @@
     align-items: start;
     padding: 14px;
     border-radius: 16px;
-    background: var(--wo-surface-wash);
+    background: rgba(255, 255, 255, .56);
     border: 1px solid rgba(223, 205, 236, .9);
   }
   .steps li::before {
@@ -403,9 +403,9 @@
     line-height: 1.55;
   }
   .result.show { display: block; }
-  .result.on { background: var(--wo-success-bg); border: 1px solid var(--wo-success-line); color: var(--wo-success); }
-  .result.off { background: var(--wo-warning-bg); border: 1px solid var(--wo-warning-line); color: var(--wo-warning); }
-  .result.err { background: var(--wo-danger-bg); border: 1px solid var(--wo-danger-line); color: var(--wo-danger); }
+  .result.on { background: #e4f5ec; border: 1px solid rgba(46, 158, 91, .28); color: #236d42; }
+  .result.off { background: #f7e6d6; border: 1px solid rgba(189, 122, 42, .3); color: #805517; }
+  .result.err { background: #f6dced; border: 1px solid rgba(214, 95, 154, .34); color: #9e315f; }
   .back-link {
     display: inline-flex;
     align-items: center;

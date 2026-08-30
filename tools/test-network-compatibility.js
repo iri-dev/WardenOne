@@ -16,6 +16,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const resourceTypes = require('./lib/resource-types.js');
 /* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
  * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
  * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
@@ -38,6 +39,10 @@ function sourceBetween(start, end) {
 }
 
 function arrayConstant(name) {
+  /* Resource-type lists derive from a shared inventory now rather than being
+     array literals, so a regex for "const X = [...]" no longer finds them. Ask
+     the resolver for those, and keep the regex for every other constant. */
+  if (/RESOURCE_TYPES$/.test(name)) return resourceTypes.resolve(name, BACKGROUND);
   const match = BACKGROUND.match(new RegExp('const\\s+' + name + '\\s*=\\s*(\\[[\\s\\S]*?\\]);'));
   assert(match, 'missing array constant: ' + name);
   return vm.runInNewContext(match[1]);
@@ -96,11 +101,11 @@ function loadMediaCompatibilityRules() {
       state.rules = state.rules.filter((rule) => !removeSet.has(rule.id)).concat(addRules);
     },
   };
-  const sandbox = {
+  const sandbox = Object.assign({
     MEDIA_COMPAT_RULE_BASE: 806000,
     chrome: { declarativeNetRequest },
     console,
-  };
+  }, resourceTypes.resolveAll(BACKGROUND));
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
@@ -153,10 +158,11 @@ function runStoredConfigUpdateMigration(config) {
 }
 
 function loadExactDomainRuleHelpers() {
-  const sandbox = {
-    RESOURCE_TYPES: Array.from(arrayConstant('RESOURCE_TYPES')),
-    LOGIN_COMPAT_RESOURCE_TYPES: Array.from(arrayConstant('LOGIN_COMPAT_RESOURCE_TYPES')),
-  };
+  /* Seed every resource-type list rather than naming the two this happened to
+     need. domainToRule started reading a third the day security rules widened,
+     and a sandbox that stubs a hand-picked subset fails as a ReferenceError at
+     the moment the code under test grows, not at the moment it goes wrong. */
+  const sandbox = Object.assign({}, resourceTypes.resolveAll(BACKGROUND));
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
