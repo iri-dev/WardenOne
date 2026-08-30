@@ -153,8 +153,14 @@ function run() {
   check('deep detection defaults OFF in popup', /cryptominerCpuWatch:\s*false/.test(POPUP_JS));
   check('deep detection is not switched on by "Turn everything on"',
     /MANUAL_ONLY_TOGGLES\s*=\s*new Set\(\[[^\]]*'cryptominerCpuWatch'/.test(POPUP_JS));
+  /* Slice by named anchors, and insist both exist. The old end anchor lived in
+     the permission watcher and moved with it into background-extension-watch.js. */
+  const bundleStart = BG.indexOf('const ONBOARDING_RECOMMENDED');
+  const bundleEnd = BG.indexOf('const REMOTE_LISTS');
+  assert(bundleStart >= 0, 'missing ONBOARDING_RECOMMENDED anchor in background.js');
+  assert(bundleEnd > bundleStart, 'missing REMOTE_LISTS anchor after the onboarding bundles');
   check('deep detection is not in any onboarding bundle',
-    !/cryptominerCpuWatch/.test(BG.slice(BG.indexOf('ONBOARDING_RECOMMENDED'), BG.indexOf('const EXT_HIGH_RISK_PERMS'))));
+    !/cryptominerCpuWatch/.test(BG.slice(bundleStart, bundleEnd)));
 
   // Off by default is only meaningful if the script is not loaded at all.
   const reconcile = BG.slice(BG.indexOf('async function reconcileMinerDetectInjection'));

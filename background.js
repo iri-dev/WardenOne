@@ -1150,143 +1150,13 @@ chrome.runtime.onStartup?.addListener(() => {
 });
 
 /* ===========================================================================
- * PERMISSION CHANGE WATCHER
+ * INSTALLED-EXTENSION CHANGE WATCH
  * ---------------------------------------------------------------------------
- * Threat: a trusted extension you installed long ago gets sold or compromised,
- * and a silent background update adds powerful new permissions ("read & change
- * data on ALL websites", read cookies, intercept requests). Chrome applies many
- * such updates without a prompt. We keep a baseline of each extension's
- * permissions and alert you when an extension GAINS high-risk ones.
- *
- * HONEST SCOPE: the management API lets us observe permissions and react -- it
- * does NOT let us block another extension's update or scan it for malware. This
- * is an early-warning system so YOU can review/remove, not a hard block.
+ * A serialized, version-aware inventory replaces the old permission-only event
+ * handler. The module records installs, updates, access changes, enable/disable
+ * changes and removals, and backs event delivery with a periodic local scan.
  * ========================================================================== */
-const EXT_BASELINE_KEY = 'wardenone_ext_baseline';
-const EXT_ALERTS_KEY = 'wardenone_ext_alerts';
-const EXT_ALERTS_MAX = 30;
-// permissions we consider high-risk if newly gained (label shown to the user)
-const EXT_HIGH_RISK_PERMS = {
-  '<all_urls>': 'can now read & change data on ALL websites',
-  tabs: 'can now see all your open tabs and their URLs',
-  history: 'can now read your browsing history',
-  cookies: 'can now read your cookies (including login sessions)',
-  webRequest: 'can now intercept your network requests',
-  webRequestBlocking: 'can now block/modify your network requests',
-  proxy: 'can now route your traffic through a proxy',
-  debugger: 'can now use the powerful debugger API',
-  management: 'can now manage your other extensions',
-  nativeMessaging: 'can now talk to programs on your computer',
-  clipboardRead: 'can now read your clipboard',
-  declarativeNetRequestWithHostAccess: 'can now act on requests across sites',
-  scripting: 'can now inject scripts into pages',
-};
-const EXT_ALL_SITE_HOSTS = new Set(['<all_urls>', '*://*/*', 'http://*/*', 'https://*/*', 'file:///*']);
-
-function extPermSet(ext) {
-  // normalise an extension's permissions + host permissions into a flat Set, with
-  // any "all sites" host pattern collapsed to the <all_urls> sentinel.
-  const out = new Set();
-  for (const p of (ext.permissions || [])) out.add(p);
-  for (const h of (ext.hostPermissions || [])) {
-    out.add(EXT_ALL_SITE_HOSTS.has(h) ? '<all_urls>' : ('host:' + h));
-  }
-  return out;
-}
-
-async function watcherEnabled() {
-  try {
-    const s = await localGet('wardenone_config');
-    const cfg = (s && s.wardenone_config) || {};
-    return cfg.enabled !== false && cfg.watchExtensionPermissions !== false;
-  } catch (_) { return false; }
-}
-
-async function snapshotExtensionBaseline() {
-  // record current permissions for every installed extension (called on first run
-  // and after we process changes) so future growth is detectable.
-  try {
-    const all = await chrome.management.getAll();
-    const baseline = {};
-    for (const e of all) {
-      if (e.type !== 'extension' || e.id === chrome.runtime.id) continue;
-      baseline[e.id] = Array.from(extPermSet(e)).sort();
-    }
-    await localSet({ [EXT_BASELINE_KEY]: baseline });
-    return baseline;
-  } catch (_) { return {}; }
-}
-
-async function recordExtAlert(alert) {
-  try {
-    const store = await localGet(EXT_ALERTS_KEY);
-    const list = (store && store[EXT_ALERTS_KEY]) || [];
-    list.unshift(alert);
-    await localSet({ [EXT_ALERTS_KEY]: list.slice(0, EXT_ALERTS_MAX) });
-  } catch (_) {}
-}
-
-async function checkExtensionForNewPermissions(ext) {
-  if (!ext || ext.type !== 'extension' || ext.id === chrome.runtime.id) return;
-  if (!(await watcherEnabled())) return;
-  try {
-    const store = await localGet(EXT_BASELINE_KEY);
-    const baseline = (store && store[EXT_BASELINE_KEY]) || {};
-    const prev = new Set(baseline[ext.id] || []);
-    const curr = extPermSet(ext);
-    const gained = [];
-    for (const p of curr) if (!prev.has(p)) gained.push(p);
-
-    // which gained permissions are high-risk?
-    const riskGained = [];
-    for (const g of gained) {
-      if (g === '<all_urls>' && EXT_HIGH_RISK_PERMS['<all_urls>']) riskGained.push(EXT_HIGH_RISK_PERMS['<all_urls>']);
-      else if (EXT_HIGH_RISK_PERMS[g]) riskGained.push(EXT_HIGH_RISK_PERMS[g]);
-    }
-
-    // only alert when there's a baseline (not first-ever sighting) AND real risk grew
-    const hadBaseline = Object.prototype.hasOwnProperty.call(baseline, ext.id);
-    if (hadBaseline && riskGained.length) {
-      const alert = {
-        id: ext.id,
-        name: ext.name || '(unknown extension)',
-        gained: Array.from(new Set(riskGained)),
-        when: Date.now(),
-      };
-      await recordExtAlert(alert);
-      if (await extensionUiAllowed()) {
-        // a visible notification -- this is important enough to surface immediately
-        try {
-          chrome.notifications.create('wo-extperm-' + ext.id + '-' + Date.now(), {
-            type: 'basic',
-            iconUrl: 'icons/icon128.png',
-            title: 'Extension gained new permissions',
-            message: (ext.name || 'An extension') + ' ' + alert.gained[0] + (alert.gained.length > 1 ? ' (and ' + (alert.gained.length - 1) + ' more)' : '') + '. Tap WardenOne to review.',
-            priority: 2,
-          });
-        } catch (_) {}
-        try { chrome.action.setBadgeText({ text: '!' }); chrome.action.setBadgeBackgroundColor({ color: '#c0392b' }); } catch (_) {}
-      }
-    }
-
-    // refresh this extension's baseline entry either way
-    baseline[ext.id] = Array.from(curr).sort();
-    await localSet({ [EXT_BASELINE_KEY]: baseline });
-  } catch (_) {}
-}
-
-// management.onInstalled fires on install AND on update (when the new version's
-// permissions differ) -- exactly the compromise/sale scenario. onEnabled covers a
-// re-enable that might coincide with a perms change.
-try {
-  chrome.management.onInstalled.addListener((info) => { checkExtensionForNewPermissions(info); });
-  chrome.management.onEnabled.addListener((info) => { checkExtensionForNewPermissions(info); });
-  // establish a baseline shortly after startup if we don't have one yet
-  chrome.management.getAll().then(async () => {
-    const store = await localGet(EXT_BASELINE_KEY);
-    if (!store || !store[EXT_BASELINE_KEY]) await snapshotExtensionBaseline();
-  }).catch(() => {});
-} catch (_) {}
+importScripts('background-extension-watch.js');
 
 /* ===========================================================================
  * STARTUP SECURITY CHECK
@@ -10920,6 +10790,7 @@ async function buildProtectionHealthSummary() {
     'wardenone_list_meta',
     SUPPLEMENTAL_LIST_META_KEY,
     EXT_ALERTS_KEY,
+    EXT_WATCH_STATUS_KEY,
     typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'wardenone_startup_report',
   ]);
   const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
@@ -10952,7 +10823,17 @@ async function buildProtectionHealthSummary() {
   }
 
   const alerts = Array.isArray(store && store[EXT_ALERTS_KEY]) ? store[EXT_ALERTS_KEY] : [];
-  if (alerts.length) addIssue('danger', alerts.length + ' extension permission alert(s) need review.');
+  const unreadExtensionAlerts = alerts.filter((event) => event && !event.reviewedAt
+    && (event.severity === 'medium' || event.severity === 'high' || event.severity === 'critical'));
+  const criticalExtensionAlerts = unreadExtensionAlerts.filter((event) => event.severity === 'critical' || event.severity === 'high');
+  if (unreadExtensionAlerts.length) {
+    addIssue(criticalExtensionAlerts.length ? 'danger' : 'warn', unreadExtensionAlerts.length
+      + ' important extension change' + (unreadExtensionAlerts.length === 1 ? '' : 's') + ' need review.');
+  }
+  const extensionWatchStatusValue = store && store[EXT_WATCH_STATUS_KEY];
+  if (cfg.watchExtensionPermissions !== false && extensionWatchStatusValue && extensionWatchStatusValue.state === 'error') {
+    addIssue('warn', 'Extension Watch could not complete its last inventory check.');
+  }
   const startupReport = store && store[typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'wardenone_startup_report'];
   const startupFindings = (startupReport && Array.isArray(startupReport.tabs) ? startupReport.tabs.length : 0)
     + (startupReport && Array.isArray(startupReport.extensions) ? startupReport.extensions.length : 0);
@@ -12163,34 +12044,16 @@ async function cleanConsentAndTrackingCookies() {
     (async () => {
       try {
         const all = await chrome.management.getAll();
-        const HIGH_RISK = {
-          '<all_urls>': 'Can read & change data on ALL websites',
-          'tabs': 'Can see your open tabs and their URLs',
-          'history': 'Can read your browsing history',
-          'cookies': 'Can read your cookies (incl. login sessions)',
-          'webRequest': 'Can intercept your network requests',
-          'proxy': 'Can route your traffic through a proxy',
-          'debugger': 'Can use the powerful debugger API',
-          'management': 'Can manage your other extensions',
-          'downloads': 'Can manage your downloads',
-          'nativeMessaging': 'Can talk to programs on your computer',
-          'clipboardRead': 'Can read your clipboard',
-        };
         const items = all
           .filter((e) => e.type === 'extension' && e.id !== chrome.runtime.id)
           .map((e) => {
-            const perms = (e.permissions || []).concat(e.hostPermissions || []);
-            const flags = [];
-            // host permissions that mean "all sites"
-            const allSites = (e.hostPermissions || []).some((h) => h === '<all_urls>' || h === '*://*/*' || h === 'http://*/*' || h === 'https://*/*');
-            if (allSites) flags.push(HIGH_RISK['<all_urls>']);
-            for (const pr of (e.permissions || [])) { if (HIGH_RISK[pr]) flags.push(HIGH_RISK[pr]); }
+            const risk = classifyExtensionRisk(e);
             return {
               name: e.name, id: e.id, enabled: e.enabled,
-              fromStore: e.installType === 'normal' || e.installType === 'admin',
               installType: e.installType,
-              riskFlags: Array.from(new Set(flags)),
-              riskScore: flags.length,
+              riskFlags: risk.flags,
+              riskScore: risk.score,
+              riskLevel: risk.level,
             };
           })
           .sort((a, b) => b.riskScore - a.riskScore);
@@ -12206,8 +12069,13 @@ async function cleanConsentAndTrackingCookies() {
   if (msg && msg.kind === 'get-extension-alerts') {
     (async () => {
       try {
-        const store = await localGet(EXT_ALERTS_KEY);
-        sendResponse({ ok: true, alerts: (store && store[EXT_ALERTS_KEY]) || [] });
+        await reconcileExtensionChanges('popup');
+        const store = await localGet([EXT_ALERTS_KEY, EXT_WATCH_STATUS_KEY]);
+        sendResponse({
+          ok: true,
+          alerts: (store && store[EXT_ALERTS_KEY]) || [],
+          status: (store && store[EXT_WATCH_STATUS_KEY]) || null,
+        });
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
@@ -12215,7 +12083,26 @@ async function cleanConsentAndTrackingCookies() {
     return true;
   }
   if (msg && msg.kind === 'clear-extension-alerts') {
-    (async () => { try { await localSet({ [EXT_ALERTS_KEY]: [] }); sendResponse({ ok: true }); } catch (e) { sendResponse({ ok: false, error: String(e) }); } })();
+    (async () => {
+      try {
+        await acknowledgeExtensionAlerts();
+        await localSet({ [EXT_ALERTS_KEY]: [] });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'ack-extension-alerts') {
+    (async () => {
+      try {
+        const alerts = await acknowledgeExtensionAlerts();
+        sendResponse({ ok: true, alerts });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
+    })();
     return true;
   }
 
@@ -12236,7 +12123,15 @@ async function cleanConsentAndTrackingCookies() {
   }
 
   if (msg && msg.kind === 'clear-startup-report') {
-    (async () => { try { await localSet({ [STARTUP_REPORT_KEY]: null }); try { chrome.action.setBadgeText({ text: '' }); } catch (_) {} sendResponse({ ok: true }); } catch (e) { sendResponse({ ok: false, error: String(e) }); } })();
+    (async () => {
+      try {
+        await localSet({ [STARTUP_REPORT_KEY]: null });
+        await refreshExtensionAttentionBadge();
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
+    })();
     return true;
   }
 

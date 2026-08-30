@@ -142,6 +142,7 @@ function checkContentBuild() {
 [
   'background.js',
   'background-startup.js',
+  'background-extension-watch.js',
   'background-memory.js',
   'background-downloads.js',
   'bridge.js',
@@ -162,6 +163,7 @@ function checkContentBuild() {
   'tools/check-security-posture.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
+  'tools/test-extension-change-watch.js',
   'tools/test-dynamic-registrations.js',
   'tools/test-consent-reject.js',
   'tools/test-privacy-disclosure.js',
@@ -326,6 +328,7 @@ checkCommand('shared extension theme tests', ['tools/test-theme.js']);
 checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
+checkCommand('extension change watcher tests', ['tools/test-extension-change-watch.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);
 checkCommand('repair honesty tests', ['tools/test-repair-honesty.js']);
 checkCommand('engine teardown tests', ['tools/test-engine-teardown.js']);

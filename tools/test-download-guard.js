@@ -196,6 +196,56 @@ async function main() {
   assert.strictEqual(spotifyTrick.critical, true, 'double-extension trick stays critical even on a trusted publisher CDN');
   assert.strictEqual(spotifyTrick.trustedEligible, false, 'critical tricks override publisher trust');
 
+  // Shared CDN families are never trusted wholesale. Only these vendor-operated delivery
+  // hostnames are eligible, so normal official installers stay quiet without blessing an
+  // attacker's S3/Azure/Akamai tenant.
+  const exactOfficialInstallers = [
+    ['https://dl.discordapp.net/apps/win/DiscordSetup.exe', 'DiscordSetup.exe'],
+    ['https://awscli.amazonaws.com/AWSCLIV2.msi', 'AWSCLIV2.msi'],
+    ['https://azurecliprod.blob.core.windows.net/msi/azure-cli.msi', 'azure-cli.msi'],
+    ['https://epicgames-download1.akamaized.net/EpicInstaller.msi', 'EpicInstaller.msi'],
+    ['https://setup.rbxcdn.com/RobloxPlayerLauncher.exe', 'RobloxPlayerLauncher.exe'],
+    ['https://gdlp01.c-wss.com/gds/driver-setup.exe', 'driver-setup.exe'],
+  ];
+  for (const [url, name] of exactOfficialInstallers) {
+    const report = guard.scoreDownload(url, '', name, 'application/octet-stream', [], '');
+    assert.strictEqual(report.knownPublisher, true, url + ' should match the exact official installer host');
+    assert.strictEqual(report.grade, 'A', url + ' should keep a clean official installer quiet');
+    assert.strictEqual(report.action, 'allow');
+  }
+  for (const url of [
+    'https://attacker.amazonaws.com/payload.exe',
+    'https://attacker.blob.core.windows.net/payload.exe',
+    'https://attacker.akamaized.net/payload.exe',
+    'https://uploads.rbxcdn.com/payload.exe',
+    'https://uploads.c-wss.com/payload.exe',
+  ]) {
+    const report = guard.scoreDownload(url, '', 'payload.exe', 'application/octet-stream', [], '');
+    assert.strictEqual(report.knownPublisher, false, url + ' must not inherit trust from a sibling tenant');
+    assert.notStrictEqual(report.action, 'allow', url + ' should still be reviewed');
+  }
+
+  const addedOfficialPublishers = [
+    'https://www.kali.org/get-kali/kali-linux.iso',
+    'https://tails.net/install/tails.iso',
+    'https://alpinelinux.org/downloads/alpine.iso',
+    'https://nixos.org/download/nixos.iso',
+    'https://freebsd.org/where/freebsd.iso',
+    'https://cloudflareclient.com/install/WARPSetup.exe',
+    'https://k8s.io/releases/kubernetes.zip',
+    'https://win-rar.com/fileadmin/winrar-setup.exe',
+  ];
+  for (const url of addedOfficialPublishers) {
+    const name = url.split('/').pop();
+    const report = guard.scoreDownload(url, '', name, 'application/octet-stream', [], '');
+    assert.strictEqual(report.knownPublisher, true, url + ' should be recognized as publisher-controlled');
+    assert.strictEqual(report.action, 'allow', url + ' should not interrupt a clean download');
+  }
+
+  const exactHostTrick = guard.scoreDownload('https://awscli.amazonaws.com/AWSCLIV2.pdf.exe', '', 'AWSCLIV2.pdf.exe', 'application/octet-stream', [], '');
+  assert.strictEqual(exactHostTrick.critical, true, 'exact installer-host trust must not excuse disguise tricks');
+  assert.strictEqual(exactHostTrick.trustedEligible, false);
+
   // Chrome uses "uncommon" when a URL is not downloaded often. That is weak prevalence
   // evidence, not a malware verdict, and generated files naturally have one-off URLs. It used
   // to carry the whole two-point review threshold by itself, so a normal document created in

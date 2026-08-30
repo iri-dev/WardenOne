@@ -9,13 +9,13 @@
  * Loaded synchronously from background.js with importScripts().
  *
  * Shared globals provided by background.js/domain-utils.js:
- *   DEFAULT_CONFIG, localGet, regDomainBg, BLOCKED_DOMAINS, EXT_BASELINE_KEY,
- *   snapshotExtensionBaseline
+ *   DEFAULT_CONFIG, localGet, regDomainBg, BLOCKED_DOMAINS,
+ *   reconcileExtensionChanges, refreshExtensionAttentionBadge
  * Shared globals exposed for background.js message handlers:
  *   STARTUP_REPORT_KEY, runStartupCheck(), loginRiskVerdict()
  */
 
-/* global chrome, DEFAULT_CONFIG, localGet, regDomainBg, BLOCKED_DOMAINS, EXT_BASELINE_KEY, snapshotExtensionBaseline */
+/* global chrome, DEFAULT_CONFIG, localGet, regDomainBg, BLOCKED_DOMAINS, reconcileExtensionChanges, refreshExtensionAttentionBadge */
 /* ===========================================================================
  * STARTUP SECURITY CHECK
  * ---------------------------------------------------------------------------
@@ -205,20 +205,20 @@ async function runStartupCheck(reason, opts = {}) {
       }
     }
   } catch (_) {}
-  // 2) extensions that appeared since our baseline
+  // 2) extension changes use the same serialized reconciler as live events and
+  //    the periodic backstop. The old startup path independently snapshotted the
+  //    inventory and could erase the exact change the live watcher needed to show.
   try {
-    const store = await localGet(EXT_BASELINE_KEY);
-    const baseline = (store && store[EXT_BASELINE_KEY]) || {};
-    const all = await chrome.management.getAll();
-    for (const e of all) {
-      if (e.type !== 'extension' || e.id === chrome.runtime.id) continue;
-      const isNew = !Object.prototype.hasOwnProperty.call(baseline, e.id);
-      if (isNew) {
-        const perms = (e.permissions || []).concat(e.hostPermissions || []);
-        const allSites = (e.hostPermissions || []).some((h) => h === '<all_urls>' || h === '*://*/*' || h === 'http://*/*' || h === 'https://*/*');
-        const risky = allSites || (e.permissions || []).some((p) => ['tabs', 'history', 'cookies', 'webRequest', 'proxy', 'debugger', 'nativeMessaging', 'clipboardRead', 'management'].includes(p));
-        findings.extensions.push({ id: e.id, name: (e.name || '').slice(0, 80), enabled: e.enabled, allSites: !!allSites, risky: !!risky });
-      }
+    const events = await reconcileExtensionChanges('startup');
+    for (const event of events) {
+      findings.extensions.push({
+        id: event.id,
+        name: String(event.name || '').slice(0, 80),
+        enabled: event.enabled !== false,
+        risky: event.severity === 'medium' || event.severity === 'high' || event.severity === 'critical',
+        severity: event.severity,
+        change: event.summary,
+      });
     }
   } catch (_) {}
   // Downloads are intentionally NOT scanned at startup any more. The Download Guard
@@ -229,19 +229,20 @@ async function runStartupCheck(reason, opts = {}) {
   const total = findings.tabs.length + findings.extensions.length;
   findings.total = total;
   try { await localSet({ [STARTUP_REPORT_KEY]: findings }); } catch (_) {}
-  if (total > 0 && await extensionUiAllowed()) {
-    try { chrome.action.setBadgeText({ text: String(total > 9 ? '9+' : total) }); chrome.action.setBadgeBackgroundColor({ color: '#c0392b' }); } catch (_) {}
+  const uiAllowed = await extensionUiAllowed();
+  if (uiAllowed) {
+    try { await refreshExtensionAttentionBadge(); } catch (_) {}
+  }
+  if (total > 0 && uiAllowed) {
     try {
       chrome.notifications.create('wo-startup-' + Date.now(), {
         type: 'basic', iconUrl: 'icons/icon128.png',
         title: 'WardenOne startup check', priority: 1,
         message: total + ' thing' + (total === 1 ? '' : 's') + ' to review: ' +
-          [findings.tabs.length ? findings.tabs.length + ' tab(s)' : '', findings.extensions.length ? findings.extensions.length + ' new extension(s)' : ''].filter(Boolean).join(', '),
+          [findings.tabs.length ? findings.tabs.length + ' tab(s)' : '', findings.extensions.length ? findings.extensions.length + ' extension change(s)' : ''].filter(Boolean).join(', '),
       });
     } catch (_) {}
   }
-  // refresh the extension baseline so "new" is relative to now going forward
-  try { await snapshotExtensionBaseline(); } catch (_) {}
   return findings;
 }
 

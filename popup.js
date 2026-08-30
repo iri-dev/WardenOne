@@ -1993,6 +1993,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.wardenone_config) adoptExternalConfigChange(changes.wardenone_config.newValue);
   if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta)) renderListMeta();
   if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
+  if (area === 'local' && changes.wardenone_ext_alerts) loadExtensionAlerts();
+  if (area === 'local' && changes.wardenone_startup_report) loadStartupReport();
   if (area === 'local' && changes.wardenone_tracker_learner) renderTrackerLearner();
 });
 
@@ -3030,39 +3032,101 @@ function loadExtensionAlerts() {
   const listEl = $('ext-alerts-list');
   const emptyEl = $('ext-alerts-empty');
   const clearBtn = $('ext-alerts-clear');
-  if (!listEl || !emptyEl || !clearBtn) return;
+  const ackBtn = $('ext-alerts-ack');
+  if (!listEl || !emptyEl || !clearBtn || !ackBtn) return;
   chrome.runtime.sendMessage({ kind: 'get-extension-alerts' }, (res) => {
-    if (chrome.runtime.lastError || !res || !res.ok) return;
+    const runtimeError = chrome.runtime.lastError;
+    if (runtimeError || !res || !res.ok) {
+      listEl.style.display = 'none';
+      clearBtn.style.display = 'none';
+      ackBtn.style.display = 'none';
+      emptyEl.style.display = '';
+      emptyEl.style.color = 'var(--wo-popup-soft-danger)';
+      emptyEl.textContent = 'Extension Watch could not read the local inventory. ' +
+        String((runtimeError && runtimeError.message) || (res && res.error) || 'Reload WardenOne and try again.');
+      return;
+    }
     const alerts = res.alerts || [];
+    const status = res.status || {};
+    emptyEl.style.color = '';
     if (!alerts.length) {
       listEl.style.display = 'none';
       clearBtn.style.display = 'none';
+      ackBtn.style.display = 'none';
       emptyEl.style.display = '';
+      if (status.state === 'error') {
+        emptyEl.style.color = 'var(--wo-popup-soft-danger)';
+        emptyEl.textContent = 'The last inventory check failed: ' + (status.lastError || 'Chrome did not return the extension list.') + ' Try reloading WardenOne.';
+      } else if (status.state === 'disabled' || status.enabled === false) {
+        emptyEl.textContent = 'Extension Watch is turned off. Existing timeline entries are kept locally.';
+      } else {
+        const watched = Number(status.watchedCount) || 0;
+        emptyEl.textContent = 'Watching ' + watched + ' installed extension' + (watched === 1 ? '' : 's') +
+          (status.lastChecked ? ' · checked ' + fmtAlertAge(status.lastChecked) : '') + '. No changes detected.';
+      }
       return;
     }
     emptyEl.style.display = 'none';
     listEl.style.display = '';
     clearBtn.style.display = '';
     listEl.textContent = '';
-    // viewing the alerts clears the "!" badge
-    try { chrome.action.setBadgeText({ text: '' }); } catch (_) {}
+    const watchState = document.createElement('div');
+    watchState.style.cssText = 'font-size:10.5px;color:var(--wo-text-soft);margin:0 1px 7px;line-height:1.35;';
+    if (status.state === 'error') {
+      watchState.style.color = 'var(--wo-popup-soft-danger)';
+      watchState.textContent = 'Latest inventory check failed: ' + (status.lastError || 'Chrome did not return the extension list.') + ' Earlier changes are shown below.';
+    } else {
+      const watched = Number(status.watchedCount) || 0;
+      watchState.textContent = 'Watching ' + watched + ' extension' + (watched === 1 ? '' : 's') +
+        (status.lastChecked ? ' · checked ' + fmtAlertAge(status.lastChecked) : '');
+    }
+    listEl.appendChild(watchState);
+    const unread = alerts.filter((a) => a && !a.reviewedAt && ['medium', 'high', 'critical'].includes(a.severity));
+    ackBtn.style.display = unread.length ? '' : 'none';
     alerts.forEach((a) => {
       const card = document.createElement('div');
-      card.style.cssText = 'border:1px solid var(--wo-danger-line);background:var(--wo-danger-bg);border-radius:10px;padding:8px 10px;margin-bottom:6px;';
+      const level = ['low', 'medium', 'high', 'critical'].includes(a.severity) ? a.severity : 'high';
+      const palette = level === 'critical' || level === 'high'
+        ? ['var(--wo-danger-line)', 'var(--wo-danger-bg)', 'var(--wo-danger)']
+        : (level === 'medium'
+          ? ['var(--wo-warning-line)', 'var(--wo-warning-bg)', 'var(--wo-warning)']
+          : ['var(--wo-line)', 'var(--wo-surface-wash)', 'var(--wo-text-soft)']);
+      card.style.cssText = 'border:1px solid ' + palette[0] + ';background:' + palette[1] + ';border-radius:10px;padding:9px 10px;margin-bottom:6px;';
+      const top = document.createElement('div');
+      top.style.cssText = 'display:flex;justify-content:space-between;gap:8px;align-items:flex-start;';
       const name = document.createElement('div');
-      name.style.cssText = 'font-weight:700;font-size:12px;color:var(--wo-text);';
-      name.textContent = a.name + ' \u00b7 ' + fmtAlertAge(a.when);
-      card.appendChild(name);
-      (a.gained || []).forEach((g) => {
+      name.style.cssText = 'font-weight:700;font-size:12px;color:var(--wo-text);min-width:0;';
+      name.textContent = (a.name || '(unknown extension)') + ' · ' + fmtAlertAge(a.when);
+      top.appendChild(name);
+      const badge = document.createElement('span');
+      badge.style.cssText = 'flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;color:' + palette[2] + ';';
+      badge.textContent = level.toUpperCase() + (!a.reviewedAt && level !== 'low' ? ' · NEW' : '');
+      top.appendChild(badge);
+      card.appendChild(top);
+      const summary = document.createElement('div');
+      summary.style.cssText = 'font-size:11px;color:var(--wo-text);margin-top:4px;font-weight:600;';
+      summary.textContent = a.summary || 'Extension permissions changed';
+      card.appendChild(summary);
+      if (a.fromVersion && a.toVersion && a.fromVersion !== a.toVersion) {
+        const version = document.createElement('div');
+        version.style.cssText = 'font-size:10.5px;color:var(--wo-text-soft);margin-top:2px;';
+        version.textContent = 'Version ' + a.fromVersion + ' → ' + a.toVersion;
+        card.appendChild(version);
+      }
+      const reasons = Array.isArray(a.reasons) && a.reasons.length ? a.reasons : (a.gained || []);
+      reasons.forEach((reason) => {
         const li = document.createElement('div');
-        li.style.cssText = 'font-size:11px;color:var(--wo-danger);margin-top:2px;';
-        li.textContent = '- ' + g;
+        li.style.cssText = 'font-size:10.5px;color:' + palette[2] + ';margin-top:3px;line-height:1.35;';
+        li.textContent = '• ' + reason;
         card.appendChild(li);
       });
       listEl.appendChild(card);
     });
   });
 }
+$('ext-alerts-ack')?.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ kind: 'ack-extension-alerts' }, () => { void chrome.runtime.lastError; loadExtensionAlerts(); });
+});
 $('ext-alerts-clear')?.addEventListener('click', () => {
   chrome.runtime.sendMessage({ kind: 'clear-extension-alerts' }, () => { void chrome.runtime.lastError; loadExtensionAlerts(); });
 });
@@ -3086,7 +3150,6 @@ function renderStartupReport(report) {
   listEl.style.display = '';
   clearBtn.style.display = '';
   listEl.textContent = '';
-  try { chrome.action.setBadgeText({ text: '' }); } catch (_) {}
   const section = (title, items, fmt) => {
     if (!items || !items.length) return;
     const head = document.createElement('div');
@@ -3101,7 +3164,7 @@ function renderStartupReport(report) {
     });
   };
   section('Risky open tabs', tabs, (t) => (t.title || t.host || 'Tab') + ' — ' + t.host + ' (' + t.why + ')');
-  section('Recently installed extensions', extensions, (e) => e.name + (e.allSites ? ' — can access all sites' : (e.risky ? ' — has high-risk permissions' : '')) + (e.enabled ? '' : ' (disabled)'));
+  section('Extension changes', extensions, (e) => e.name + (e.change ? ' — ' + e.change : (e.risky ? ' — important access change' : '')) + (e.enabled ? '' : ' (disabled)'));
 }
 function loadStartupReport() {
   chrome.runtime.sendMessage({ kind: 'get-startup-report' }, (res) => {
@@ -3152,8 +3215,8 @@ $('ext-review').addEventListener('click', () => {
     out.textContent = '';
     if (!res || !res.ok) { out.style.color = 'var(--wo-popup-soft-danger)'; out.textContent = 'Could not list extensions.'; out.dataset.open = '1'; return; }
     if (!Array.isArray(res.extensions) || !res.extensions.length) { out.style.color = 'var(--ink-faint)'; out.textContent = 'No other extensions installed.'; out.dataset.open = '1'; return; }
-    const risky = res.extensions.filter((e) => e.riskScore > 0);
-    out.appendChild(makeLine(res.extensions.length + ' other extension(s); ' + risky.length + ' with high-risk permissions:', risky.length ? 'var(--wo-warning)' : 'var(--wo-success)', true));
+    const risky = res.extensions.filter((e) => e.riskLevel === 'medium' || e.riskLevel === 'high' || e.riskLevel === 'critical');
+    out.appendChild(makeLine(res.extensions.length + ' other extension(s); ' + risky.length + ' with medium-or-higher access risk:', risky.length ? 'var(--wo-warning)' : 'var(--wo-success)', true));
     res.extensions.forEach((e) => {
       const row = document.createElement('div');
       row.style.cssText = 'margin:6px 0 0;padding:8px 10px;background:var(--wo-surface-wash);border-radius:8px;';
@@ -3164,13 +3227,14 @@ $('ext-review').addEventListener('click', () => {
       nm.textContent = e.name + (e.enabled ? '' : ' (disabled)');
       top.appendChild(nm);
       const badge = document.createElement('span');
-      const sev = e.riskScore >= 2 ? 'var(--wo-danger-solid)' : (e.riskScore === 1 ? 'var(--wo-warning-solid)' : 'var(--wo-success-solid)');
+      const level = ['low', 'medium', 'high', 'critical'].includes(e.riskLevel) ? e.riskLevel : 'low';
+      const sev = level === 'critical' || level === 'high' ? 'var(--wo-danger-solid)' : (level === 'medium' ? 'var(--wo-warning-solid)' : 'var(--wo-success-solid)');
       badge.style.cssText = 'flex:none;font-size:9.5px;font-weight:700;color:var(--wo-on-brand);background:' + sev + ';padding:2px 7px;border-radius:6px;';
-      badge.textContent = e.riskScore >= 2 ? 'HIGH' : (e.riskScore === 1 ? 'MEDIUM' : 'LOW');
+      badge.textContent = level.toUpperCase();
       top.appendChild(badge);
       row.appendChild(top);
-      if (!e.fromStore) {
-        row.appendChild(makeLine('Not installed from the Web Store (' + e.installType + ')', 'var(--wo-danger)'));
+      if (e.installType === 'development' || e.installType === 'sideload' || e.installType === 'other') {
+        row.appendChild(makeLine('Installed from a non-standard source (' + e.installType + ')', 'var(--wo-danger)'));
       }
       e.riskFlags.forEach((flagText) => {
         const fl = document.createElement('div');
@@ -3180,7 +3244,7 @@ $('ext-review').addEventListener('click', () => {
       });
       out.appendChild(row);
     });
-    out.appendChild(makeLine('High-risk permissions aren\'t proof an extension is bad — popular tools need them too. But review anything you don\'t recognize, and remove unused extensions at chrome://extensions.', 'var(--ink-faint)'));
+    out.appendChild(makeLine('These levels measure potential reach, not whether an extension is malware. Broad access can be legitimate; what matters most is an unexpected increase after an update. Review anything you do not recognize and remove unused extensions at chrome://extensions.', 'var(--ink-faint)'));
     out.dataset.open = '1';
   });
 });

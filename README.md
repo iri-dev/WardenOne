@@ -129,6 +129,7 @@ one switch, with fine-grained control over every piece.
 
 ### Download protection — Download Shield
 - No-account **A–F download grading** from the URL, source, filename, file type, Chrome signals, and blocklists — known-bad blocked outright, risky ones held for a review you can cancel.
+- Clean downloads from publisher-controlled sites and exact official installer hosts stay quiet. Shared cloud/CDN families are not trusted wholesale, and disguise tricks or known-malware signals always override publisher trust.
 - Optional **domain-age checks** (RDAP / WhoisXML) and a **VirusTotal URL scanner**.
 
 ### Network &amp; IP protection
@@ -141,8 +142,8 @@ one switch, with fine-grained control over every piece.
 
 ### Site data, session &amp; extension control
 - **Forget Me &amp; Logins** — one toggle for "never let sites remember me": wipe a site's cookies and storage when you leave, so nothing keeps you logged in or recognises you next visit (allowlisted sites are kept), plus a one-click "forget this site now".
-- **Emergency Logout**, a **Privacy Cleaner** (selective wipe), a **live per-site Session Security grade** (A–F: connection, JWT exposure, token storage, cookie security), and an **extension watchdog** that flags installed extensions gaining risky permissions in an update.
-- **Startup security check** — on browser launch, scans restored tabs and recently-installed extensions for risky signs.
+- **Emergency Logout**, a **Privacy Cleaner** (selective wipe), a **live per-site Session Security grade** (A–F: connection, JWT exposure, token storage, cookie security), and a local **Extension Watch** timeline for installs, versions, permissions, enabled state, and removals. Capability combinations determine the access-risk level; harmless updates are recorded without interrupting you.
+- **Startup security check** — on browser launch, scans restored tabs and reconciles the installed-extension inventory without overwriting missed changes.
 - **Settings backup** — export every toggle to a file and import it back on a reinstall or a new machine. Nothing syncs to a server and there's no account, so this is the only way you don't rebuild 140-odd settings by hand. API keys are never written to the file, and an imported file can't inject one.
 - **On-demand site tools** — check a domain's age (RDAP), look it up against Have I Been Pwned, scan where a site stores login tokens, or review every installed extension's permissions.
 

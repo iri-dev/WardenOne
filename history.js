@@ -46,6 +46,7 @@ const LABELS = {
   blocked_phishing: 'Blocked phishing look-alike',
   download_reputation: 'Download Guard checked',
   download_guard: 'Download Guard decision',
+  extension_change: 'Installed extension changed',
   blocked_clipboard_hijack: 'Blocked clipboard hijack',
   warned_clipboard_swap: 'Clipboard swap detected (crypto address)',
   warned_keystroke_pressure: 'Heavy keystroke monitoring',
@@ -89,7 +90,7 @@ const LABELS = {
 
 // category for the row icon: block (shield), warn (triangle), gate (eye)
 function iconCategory(type) {
-  if (/^warned_/.test(type) || type === 'session_token_exposed' || type === 'login_thirdparty_scripts' || type === 'session_token_written' || type === 'skimmer_suspected' || type === 'download_reputation' || type === 'behavioral_risk') return 'warn';
+  if (/^warned_/.test(type) || type === 'session_token_exposed' || type === 'login_thirdparty_scripts' || type === 'session_token_written' || type === 'skimmer_suspected' || type === 'download_reputation' || type === 'behavioral_risk' || type === 'extension_change') return 'warn';
   if (/^gated_/.test(type) || type === 'download_guard' || type === 'detected_download_gate' || type === 'memory_tab_slept' || type === 'memory_free_ram' || type === 'memory_dupes_closed' || type === 'memory_group_slept' || type === 'tab_limit_slept' || type === 'tab_limit_closed' || type === 'forget_me_wiped' || type === 'reload_loop_broken') return 'gate';
   return 'block';
 }
@@ -140,6 +141,12 @@ function fmtMinutes(min) {
 
 function detailText(e) {
   const d = e.detail || {};
+  if (e.type === 'extension_change') {
+    const version = d.fromVersion && d.toVersion && d.fromVersion !== d.toVersion
+      ? 'Version ' + d.fromVersion + ' -> ' + d.toVersion : '';
+    const reasons = Array.isArray(d.reasons) && d.reasons.length ? d.reasons.join('; ') : '';
+    return [d.name, d.summary, d.severity && ('Risk: ' + d.severity), version, reasons].filter(Boolean).join(' - ');
+  }
   if (e.type === 'download_reputation' || e.type === 'download_guard') {
     const parts = [];
     if (d.grade || d.status) parts.push([d.grade, d.status].filter(Boolean).join(' - '));

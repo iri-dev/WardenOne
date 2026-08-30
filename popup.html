@@ -1421,7 +1421,7 @@
         <div id="cl-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>
       <div class="row">
-        <div><div class="name">Watch for extension permission changes</div><div class="desc">Alerts you if an installed extension gains high-risk permissions in an update (e.g. suddenly "read & change data on all sites") — the sign of a sold or compromised extension. On by default.</div></div>
+        <div><div class="name">Watch installed-extension changes</div><div class="desc">Keeps a local inventory of versions, permissions and enabled state. Harmless updates stay in the timeline; new powerful access is highlighted and explained. On by default.</div></div>
         <label class="tg"><input type="checkbox" data-key="watchExtensionPermissions"><span class="track"></span><span class="knob"></span></label>
       </div>
       <div class="row">
@@ -1436,9 +1436,10 @@
         <button class="btn" id="startup-clear" style="width:100%;margin-top:6px;font-size:11px;display:none;">Clear report</button>
       </div>
       <div class="row" style="display:block;" id="ext-alerts-row">
-        <div class="name" style="margin-bottom:3px;">Extension permission alerts</div>
-        <div class="desc" id="ext-alerts-empty" style="margin-bottom:8px;">No permission changes detected. You'll be alerted here if an extension gains risky access.</div>
+        <div class="name" style="margin-bottom:3px;">Extension change timeline</div>
+        <div class="desc" id="ext-alerts-empty" style="margin-bottom:8px;">Checking the local extension inventory…</div>
         <div id="ext-alerts-list" style="display:none;"></div>
+        <button class="btn" id="ext-alerts-ack" style="width:100%;margin-top:7px;font-size:11px;display:none;">Mark important changes reviewed</button>
         <button class="btn" id="ext-alerts-clear" style="width:100%;margin-top:7px;font-size:11px;display:none;">Clear alerts</button>
       </div>
       <div class="row">
@@ -1447,7 +1448,7 @@
       </div>
       <div class="row" style="display:block;">
         <div class="name" style="margin-bottom:3px;">Review installed extensions</div>
-        <div class="desc" style="margin-bottom:8px;">Lists your extensions and flags ones with high-risk permissions. Note: Chrome doesn't allow any extension to scan others for malware or block installs — this is a permissions reviewer, not a scanner.</div>
+        <div class="desc" style="margin-bottom:8px;">Compares capability combinations and access breadth. Chrome doesn't allow one extension to scan another's code, so these are explainable access-risk levels—not malware verdicts.</div>
         <button class="btn" id="ext-review" style="width:100%;">Review my extensions</button>
         <div id="ext-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>

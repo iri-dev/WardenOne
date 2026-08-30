@@ -175,7 +175,7 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'dot.net', 'nuget.org', 'powershellgallery.com', 'githubusercontent.com',
   // Google
   'google.com', 'goog', 'chrome.com', 'gstatic.com',
-  'android.com', 'dl.google.com', 'googleapis.com',
+  'android.com', 'dl.google.com', 'googleapis.com', 'gvt1.com', 'gvt2.com',
   // Mozilla
   'mozilla.org', 'mozilla.net', 'firefox.com',
   // Apple
@@ -192,6 +192,7 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'erlang.org', 'ziglang.org', 'dart.dev', 'flutter.dev', 'kotlinlang.org',
   'r-project.org', 'posit.co', 'quarto.org', 'julia-lang.org', 'vagrantup.com',
   'hashicorp.com', 'terraform.io', 'podman.io', 'kubernetes.io', 'helm.sh',
+  'k8s.io',
   'sqlite.org', 'postgresql.org', 'mysql.com', 'mariadb.org', 'mongodb.com',
   'redis.io', 'elastic.co',
   // widely-used apps
@@ -223,6 +224,7 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'peazip.org', 'codecguide.com', 'foobar2000.org', 'mpv.io', 'kodi.tv',
   'plex.tv', 'wacom.com', 'elgato.com', 'focusrite.com', 'framework.com',
   'obsproject.github.io', 'piriform.com', 'ccleaner.com', 'bleachbit.org',
+  'dropboxstatic.com', 'cloudflareclient.com', 'win-rar.com', 'dotpdn.com',
   'recuva.com', 'windirstat.net', 'wiztreefree.com', 'diskinternals.com',
   'altools.co.kr', 'bandisoft.com',
   // streaming / media services
@@ -243,6 +245,7 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'eset.com', 'kaspersky.com', 'avast.com', 'avg.com', 'avira.com', 'norton.com',
   'mcafee.com', 'trendmicro.com', 'sophos.com', 'f-secure.com', 'emsisoft.com',
   'virustotal.com', 'wireshark.org', 'clamav.net', 'clamwin.com', 'crowdstrike.com',
+  'kaspersky-labs.com', 'avcdn.net',
   'sentinelone.com', 'paloaltonetworks.com', 'checkpoint.com', 'fortinet.com',
   'webroot.com', 'zonealarm.com', 'comodo.com', 'glasswire.com', 'portmaster.app',
   'safing.io', 'keepass.info', 'keepassxc.org', 'yubico.com', 'veracrypt.fr',
@@ -263,6 +266,7 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   'humblebundle.com', 'bethesda.net', 'wargaming.net', 'warframe.com',
   'square-enix-games.com', 'overwolf.com', 'store.steampowered.com',
   'steamstatic.com', 'steamcontent.com', 'epicgames.dev', 'gog-statics.com',
+  'ubi.com', 'riotcdn.net',
   'playvalorant.com', 'leagueoflegends.com', 'roblox.com', 'robloxcdn.com',
   'minecraftservices.com',
   // cloud/platform vendor CLIs and agents
@@ -332,6 +336,9 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   // --- operating systems and distros (an ISO is otherwise graded on the container alone) ---
   'ubuntu.com', 'canonical.com', 'debian.org', 'fedoraproject.org', 'linuxmint.com',
   'archlinux.org', 'opensuse.org', 'raspberrypi.com', 'raspberrypi.org', 'kernel.org',
+  'kali.org', 'tails.net', 'manjaro.org', 'alpinelinux.org', 'rockylinux.org',
+  'almalinux.org', 'centos.org', 'nixos.org', 'gentoo.org', 'freebsd.org',
+  'openbsd.org', 'netbsd.org', 'elementary.io', 'zorin.com', 'endeavouros.com',
   // --- platforms whose real download host is not the marketing domain ---
   'zoom.us', 'steamstatic.com', 'f-droid.org', 'forgecdn.net', 'curseforge.com',
   // --- browsers ---
@@ -363,9 +370,22 @@ const KNOWN_PUBLISHER_DOMAINS = new Set([
   // host there.
 ]);
 
+// These are exact, vendor-operated delivery hosts on otherwise shared infrastructure.
+// Trust must never widen to sibling tenants: awscli.amazonaws.com is the official AWS
+// CLI route, while arbitrary-bucket.amazonaws.com remains an ordinary untrusted source.
+const EXACT_OFFICIAL_INSTALLER_HOSTS = new Set([
+  'dl.discordapp.net',
+  'awscli.amazonaws.com',
+  'azurecliprod.blob.core.windows.net',
+  'epicgames-download1.akamaized.net',
+  'setup.rbxcdn.com',
+  'gdlp01.c-wss.com',
+]);
+
 function isKnownPublisherDomain(host) {
   const h = normalizeDownloadTrustHost(host);
   if (!h) return false;
+  if (EXACT_OFFICIAL_INSTALLER_HOSTS.has(h)) return true;
   if (KNOWN_PUBLISHER_DOMAINS.has(h)) return true;
   // match subdomains: dl.google.com -> google.com, update.code.visualstudio.com etc.
   for (const dom of KNOWN_PUBLISHER_DOMAINS) {
@@ -411,6 +431,7 @@ const MULTITENANT_PUBLISHER_HOSTS = new Set([
 function isMultiTenantPublisherHost(host) {
   const h = normalizeDownloadTrustHost(host);
   if (!h) return false;
+  if (EXACT_OFFICIAL_INSTALLER_HOSTS.has(h)) return false;
   for (const dom of MULTITENANT_PUBLISHER_HOSTS) {
     if (h === dom || h.endsWith('.' + dom)) return true;
   }

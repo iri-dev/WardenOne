@@ -25,6 +25,20 @@ as the work happened.
 
 ### Fixed
 
+- Rebuilt Extension Watch around a versioned local inventory. It now records new
+  installs, version-only updates, permission and host-access changes, enable/disable
+  changes and removals; a 15-minute local reconciliation catches events Chrome did
+  not deliver. One shared capability classifier explains combinations such as broad
+  site access plus cookies or script injection. Harmless updates stay quietly in the
+  timeline, important changes remain unread until explicitly reviewed, notification
+  clicks open the review surface, failures are visible, and every change also reaches
+  Activity Center. The first inventory is still a quiet baseline, not a mass warning.
+- Expanded Download Shield's publisher routes with additional official operating-
+  system, security, utility and game-vendor domains. Vendor delivery routes that sit
+  on shared AWS, Azure, Akamai and similar infrastructure are trusted by exact host
+  only, so the real installer stays quiet without trusting an attacker's sibling
+  tenant. Filename disguises, malicious Chrome verdicts and risky redirect chains
+  continue to override every publisher exception.
 - Download Shield no longer treats a low-prevalence URL or an incomplete Chrome scan
   as enough evidence to interrupt a safe document. Those labels now support a real
   file, source or filename concern instead of crossing the review threshold alone,
