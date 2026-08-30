@@ -6,22 +6,25 @@
 <title>WardenOne - Dangerous Site Blocked</title>
 <style>
   :root{
-    --bg:var(--wo-bg);--card:var(--wo-surface);--card-2:var(--wo-surface-alt);
-    --ink:var(--wo-text);--ink-soft:var(--wo-text-soft);--ink-faint:var(--wo-text-faint);
-    --line:var(--wo-line);--plum:var(--wo-brand-text);--danger:var(--wo-danger);--danger-bg:var(--wo-danger-bg);
+    --bg:#ece0f7;--card:#f7f0fc;--card-2:#f1e7fa;
+    --ink:#3d2a52;--ink-soft:#7a5f93;--ink-faint:#a98fc0;
+    --line:#e0cef2;--plum:#8b3fb0;--danger:#c0392b;--danger-bg:#f6dced;
     --display:"Quicksand","Nunito","Segoe UI Rounded",system-ui,sans-serif;
     --body:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
     min-height:100vh;display:grid;place-items:center;padding:32px 20px;
-    background:var(--wo-page-background);
+    background:
+      radial-gradient(85% 55% at 0% 0%, #e6d2f6 0%, transparent 58%),
+      radial-gradient(70% 50% at 100% 0%, #f4d2e6 0%, transparent 55%),
+      linear-gradient(180deg,#ece0f7 0%,#e8daf5 100%);
     color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.55;
   }
   .panel{
     width:min(720px,100%);background:linear-gradient(160deg,var(--card),var(--card-2));
-    border:1px solid var(--wo-line);border-radius:20px;padding:30px;
-    box-shadow:var(--wo-shadow);
+    border:1px solid rgba(255,255,255,.68);border-radius:20px;padding:30px;
+    box-shadow:0 18px 54px rgba(80,30,110,.18);
   }
   .top{display:flex;align-items:center;gap:16px;margin-bottom:18px}
   .badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--danger-bg);color:var(--danger);flex:none}
@@ -35,15 +38,15 @@
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
   button{
     border:0;border-radius:12px;padding:11px 16px;font-family:var(--display);
-    font-weight:800;font-size:13px;cursor:pointer;background:var(--wo-control);color:var(--ink-soft);
+    font-weight:800;font-size:13px;cursor:pointer;background:#e2d2f2;color:var(--ink-soft);
   }
-  button.primary{background:var(--wo-control-gradient);color:var(--wo-on-brand);box-shadow:0 4px 14px rgba(139,63,176,.32)}
+  button.primary{background:linear-gradient(135deg,#b06fd6,#e07aae);color:#fff;box-shadow:0 4px 14px rgba(139,63,176,.32)}
   /* The way out is deliberately the quietest control on the screen: outlined, not
      filled, and it only becomes usable once the countdown has run. */
-  button.danger{background:transparent;color:var(--wo-danger);border:1.5px solid var(--wo-danger-line)}
+  button.danger{background:transparent;color:#a8305f;border:1.5px solid #e2a8c2}
   button.danger:disabled{opacity:.55;cursor:not-allowed}
-  button.danger:not(:disabled):hover{background:var(--wo-danger-bg)}
-  .escape{margin-top:20px;padding-top:4px;border-top:1px solid var(--wo-line)}
+  button.danger:not(:disabled):hover{background:#fdeef4}
+  .escape{margin-top:20px;padding-top:4px;border-top:1px solid #efe2f7}
   .note{font-size:12px;color:var(--ink-faint);margin-top:18px}
   @media (max-width:560px){
     .panel{padding:22px}

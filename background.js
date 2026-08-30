@@ -174,10 +174,205 @@ function safeDetailAssign(target, source) {
   return target;
 }
 
+const XSS_ACTIVITY_MESSAGE_TYPES = new Set([
+  'warned_potential_dom_xss',
+  'warned_potential_xss_code_execution',
+  'warned_potential_xss_navigation',
+  'warned_potential_xss_script_injection',
+  'warned_potential_xss_privileged_action',
+  'warned_xss_behavior',
+]);
+const XSS_ACTIVITY_MESSAGE_SOURCES = new Set([
+  'location.search', 'location.hash', 'location.pathname', 'window.name',
+  'document.referrer', 'postMessage event.data', 'attacker-controlled browser input',
+]);
+const XSS_ACTIVITY_MESSAGE_SINKS = new Set([
+  'innerHTML', 'outerHTML', 'ShadowRoot.innerHTML', 'setHTMLUnsafe', 'iframe.srcdoc',
+  'insertAdjacentHTML', 'document.write', 'document.writeln', 'DOM insertion', 'setAttribute',
+  'script.setAttribute', 'location.href', 'location.assign', 'location.replace',
+  'Navigation API', 'window.open', 'script.src', 'script.text', 'script.textContent',
+  'Function constructor', 'setTimeout', 'setInterval', 'initial reflected markup',
+  'sensitive browser sink',
+]);
+const XSS_ACTIVITY_CATEGORY_BY_TYPE = {
+  warned_potential_dom_xss: 'html',
+  warned_potential_xss_code_execution: 'code',
+  warned_potential_xss_navigation: 'navigation',
+  warned_potential_xss_script_injection: 'script',
+  warned_potential_xss_privileged_action: 'privileged',
+  warned_xss_behavior: 'source-to-sink',
+};
+const XSS_ACTIVITY_SOURCE_DESCRIPTIONS = {
+  'location.search': "this page's URL query",
+  'location.hash': "this page's URL fragment",
+  'location.pathname': "this page's URL path",
+  'window.name': 'window.name',
+  'document.referrer': "the referring page's URL",
+  'postMessage event.data': 'cross-window message data',
+  'attacker-controlled browser input': 'browser-controlled input',
+};
+const CLICKFIX_ACTIVITY_MESSAGE_TYPES = new Set([
+  'warned_clickfix_instruction',
+  'warned_clickfix_fake_captcha',
+  'warned_clickfix_clipboard',
+  'warned_clickfix_correlated',
+  'warned_command_paste',
+]);
+const CLICKFIX_ACTIVITY_INSTRUCTIONS = new Set([
+  'Enable pasting', 'Press Win+R', 'Paste into Console',
+  'Paste into a command shell', 'Open a command shell',
+  'Press Ctrl+Shift+I', 'Press F12', 'Open DevTools', 'Open Console',
+  'Paste with Ctrl+V', 'No matching page instruction', 'Command-paste guidance',
+]);
+const CLICKFIX_ACTIVITY_WHERE = new Set([
+  'page instructions', 'clipboard', 'clipboard (execCommand)',
+  'clipboard (copy event)', 'copied selection', 'page',
+]);
+const SECURITY_EVENT_HISTORY_SEEN = Object.create(null);
+const SECURITY_EVENT_HISTORY_COOLDOWN_MS = 30000;
+
+function normalizeXssActivityDetail(type, detail) {
+  const d = detail && typeof detail === 'object' ? detail : {};
+  const source = XSS_ACTIVITY_MESSAGE_SOURCES.has(String(d.source || ''))
+    ? String(d.source) : 'attacker-controlled browser input';
+  const sink = XSS_ACTIVITY_MESSAGE_SINKS.has(String(d.sink || ''))
+    ? String(d.sink) : 'sensitive browser sink';
+  const category = XSS_ACTIVITY_CATEGORY_BY_TYPE[type] || 'source-to-sink';
+  const sourceDescription = XSS_ACTIVITY_SOURCE_DESCRIPTIONS[source] || 'browser-controlled input';
+  const confidence = new Set(['Moderate', 'High', 'Very high']).has(String(d.confidence || ''))
+    ? String(d.confidence) : (category === 'navigation' ? 'Moderate' : (category === 'script' ? 'Very high' : 'High'));
+  const severity = confidence === 'Very high' ? 'High' : (confidence === 'High' ? 'Medium' : 'Low');
+  let why = 'Data used by ' + sink + ' matched a recent value from ' + sourceDescription
+    + '. WardenOne observed supporting behavior, not confirmed exploitation.';
+  if (category === 'html') {
+    why = 'Executable content assigned to ' + sink + ' contained text matching a recent value from '
+      + sourceDescription + '. This can indicate DOM XSS, but WardenOne has not confirmed a vulnerability.';
+  } else if (category === 'code') {
+    why = 'Text passed to ' + sink + ' matched a recent value from ' + sourceDescription
+      + '. The sink can compile or execute strings, but matching text alone does not confirm exploitation.';
+  } else if (category === 'navigation') {
+    why = 'A navigation target passed to ' + sink + ' matched recent data from ' + sourceDescription
+      + '. This is supporting evidence of unsafe navigation, not proof of exploitation.';
+  } else if (category === 'script') {
+    why = 'A script source or body assigned through ' + sink + ' matched recent data from '
+      + sourceDescription + '. This can indicate unsafe script creation or loading, but WardenOne has not confirmed that malicious code ran.';
+  }
+  return {
+    source,
+    sink,
+    category,
+    confidence,
+    severity,
+    risk: confidence + '-confidence behavior signal',
+    why,
+    outcome: 'Observed locally; this page action was not blocked.',
+  };
+}
+
+function normalizeBehavioralRiskDetail(detail, sender) {
+  const d = detail && typeof detail === 'object' ? detail : {};
+  const score = Math.max(0, Math.min(200, Math.round(Number(d.score) || 0)));
+  const level = score >= 100 ? 'Dangerous' : (score >= 60 ? 'Suspicious' : (score >= 30 ? 'Caution' : 'Safe'));
+  const xssObserved = d.xssObserved === true;
+  return {
+    host: messageHostFromText(sender && sender.tab && sender.tab.url),
+    score,
+    level,
+    learningEligible: false,
+    independentEvidenceScore: Math.max(0, Math.min(score, Math.round(Number(d.independentEvidenceScore) || 0))),
+    xssObserved,
+    reasons: [xssObserved
+      ? 'XSS Behavior Guard matched recent browser-controlled text to an executable sink'
+      : 'Local behavioral signals crossed the warning threshold'],
+    why: xssObserved
+      ? 'This is behavior evidence, not proof that exploitation succeeded.'
+      : 'Several local behavior signals raised this page risk level.',
+    action: xssObserved
+      ? 'Do not enter sensitive information unless you trust this page and expected the supplied input.'
+      : 'Review the Activity Center details before trusting this page.',
+  };
+}
+
+function normalizeClickfixActivityDetail(type, detail) {
+  const d = detail && typeof detail === 'object' ? detail : {};
+  const instruction = CLICKFIX_ACTIVITY_INSTRUCTIONS.has(String(d.instruction || ''))
+    ? String(d.instruction) : (type === 'warned_clickfix_clipboard'
+      ? 'No matching page instruction' : 'Command-paste guidance');
+  const where = CLICKFIX_ACTIVITY_WHERE.has(String(d.where || '')) ? String(d.where) : 'page';
+  const kind = type === 'warned_clickfix_correlated' ? 'correlated'
+    : (type === 'warned_clickfix_fake_captcha' ? 'fakeCaptcha'
+      : ((type === 'warned_clickfix_clipboard' || type === 'warned_command_paste') ? 'clipboard' : 'instruction'));
+  const blocked = d.blocked === true && (kind === 'clipboard' || kind === 'correlated');
+  const urgent = instruction === 'Enable pasting' || instruction === 'Paste into Console'
+    || instruction === 'Paste into a command shell' || instruction === 'Press Win+R';
+  const confidence = kind === 'correlated' ? 'Very high'
+    : ((kind === 'fakeCaptcha' || kind === 'clipboard') ? 'High' : (urgent ? 'Moderate' : 'Low'));
+  const severity = kind === 'correlated' ? 'High'
+    : ((kind === 'fakeCaptcha' || kind === 'clipboard' || urgent) ? 'Medium' : 'Low');
+  const evidence = kind === 'correlated' ? 'Instruction + suspicious command'
+    : (kind === 'clipboard' ? 'Suspicious clipboard command'
+      : (kind === 'fakeCaptcha' ? 'Fake verification + instruction' : 'Instruction text only'));
+  const why = kind === 'correlated'
+    ? 'This page combined ' + instruction + ' guidance with suspicious command content prepared for copying. That combination is a strong ClickFix/self-XSS signal.'
+    : (kind === 'fakeCaptcha'
+      ? "This page paired fake 'verify you are human' wording with " + instruction + ' guidance. Real CAPTCHA checks do not require developer tools or command shells.'
+      : (kind === 'clipboard'
+        ? 'This page prepared command content matching malware-delivery or console-exfiltration patterns for copying.'
+        : 'This page displayed ' + instruction + ' guidance. By itself this is only a weak ClickFix signal.'));
+  return {
+    instruction,
+    evidence,
+    where,
+    confidence,
+    severity,
+    blocked,
+    why,
+    outcome: blocked ? 'Suspicious clipboard write was blocked.'
+      : 'Warning only; WardenOne did not access or modify Chrome DevTools.',
+  };
+}
+
+function securityHistoryAllowed(type, detail, sender) {
+  const tabId = Number(sender && sender.tab && sender.tab.id);
+  const d = detail && typeof detail === 'object' ? detail : {};
+  const key = String(Number.isInteger(tabId) ? tabId : 'tab') + '|' + String(type || '') + '|'
+    + String(d.source || d.level || d.instruction || '') + '|' + String(d.sink || '')
+    + '|' + (d.blocked === true ? 'blocked' : 'warning');
+  const now = Date.now();
+  const last = SECURITY_EVENT_HISTORY_SEEN[key] || 0;
+  SECURITY_EVENT_HISTORY_SEEN[key] = now;
+  if (Object.keys(SECURITY_EVENT_HISTORY_SEEN).length > 1000) {
+    const cutoff = now - SECURITY_EVENT_HISTORY_COOLDOWN_MS * 4;
+    Object.keys(SECURITY_EVENT_HISTORY_SEEN).forEach((entry) => {
+      if (SECURITY_EVENT_HISTORY_SEEN[entry] < cutoff) delete SECURITY_EVENT_HISTORY_SEEN[entry];
+    });
+  }
+  return now - last > SECURITY_EVENT_HISTORY_COOLDOWN_MS;
+}
+
 function normalizeTabBlockMessage(msg, sender) {
   const type = String((msg && msg.type) || 'block');
   const detail = (msg && msg.detail && typeof msg.detail === 'object') ? safeDetailAssign({}, msg.detail) : (msg && msg.detail) || null;
   const out = { type, detail, log: true };
+  if (XSS_ACTIVITY_MESSAGE_TYPES.has(type)) {
+    out.detail = normalizeXssActivityDetail(type, detail);
+    out.log = securityHistoryAllowed(type, out.detail, sender);
+    return out;
+  }
+  if (CLICKFIX_ACTIVITY_MESSAGE_TYPES.has(type)) {
+    out.detail = normalizeClickfixActivityDetail(type, detail);
+    out.log = securityHistoryAllowed(type, out.detail, sender);
+    return out;
+  }
+  if (type === 'behavioral_risk') {
+    out.detail = normalizeBehavioralRiskDetail(detail, sender);
+    /* The specific XSS event already gives the Activity Center its useful source/sink
+       explanation. Do not add a second generic site-reputation row unless separate
+       behavioral evidence materially strengthens the finding. */
+    out.log = !(out.detail.xssObserved && out.detail.independentEvidenceScore < 30)
+      && securityHistoryAllowed(type, out.detail, sender);
+    return out;
+  }
   if (type !== 'blocked_token_exfil') return out;
 
   const detailObj = (detail && typeof detail === 'object') ? detail : { matched: String(detail || '') };
@@ -251,7 +446,8 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       'detected_thirdparty_tracker',
       'blocked_token_exfil',
     ]);
-    const isWarning = /^warned_/.test(normalized.type || '') || normalized.type === 'detected_download_gate' || NO_BADGE_TYPES.has(normalized.type || '');
+    const isWarning = /^warned_/.test(normalized.type || '') || normalized.type === 'behavioral_risk'
+      || normalized.type === 'detected_download_gate' || NO_BADGE_TYPES.has(normalized.type || '');
     if (!isWarning) {
       bumpBadge(tabId);
     }
@@ -260,6 +456,11 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     // each other (dropping entries). A single buffered writer reads once, appends
     // ALL pending entries, and writes once.
     if (normalized.log) {
+      /* A worker outlives its tab, so remember which site installed one while
+         it is still possible to attribute it to a tab. */
+      if (normalized.type === 'warned_service_worker' && sender.tab && sender.tab.url) {
+        noteServiceWorkerRegistration(sender.tab.url);
+      }
       queueHistory({
         type: normalized.type || 'block',
         detail: normalized.detail || null,
@@ -268,9 +469,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       });
     }
 
-    // ADAPTIVE LEARNING: always learn confirmed grabber domains, but only learn
-    // behavioral reputation hits once they reach Suspicious/Dangerous. Caution
-    // still shows in history without poisoning the future blocklist.
+    // ADAPTIVE LEARNING: only background-corroborated detector paths may change
+    // the learned blocklist. Behavioral/XSS events originate in MAIN-world page
+    // instrumentation and cross a page-visible CustomEvent, so they are warnings
+    // only even when their local score is high.
     try {
       // SECURITY: wo-events arrive via a DOM CustomEvent the MAIN-world page shares,
       // so a malicious page can FORGE them. Never learn an attacker-supplied domain
@@ -283,12 +485,6 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       if (tabHost && msg.type === 'detected_grabber_domain') {
         // the page itself is the grabber -> learning its own host is correct
         learnDomain(tabHost, 'known IP-grabber behavior');
-      } else if (tabHost && msg.type === 'behavioral_risk') {
-        // the behavioral scanner flagged the current page -> learn its own host
-        const score = Number(msg.detail && msg.detail.score) || 0;
-        const level = String((msg.detail && msg.detail.level) || '');
-        const shouldLearn = score >= 60 || /^(Suspicious|Dangerous)$/i.test(level);
-        if (shouldLearn) learnDomain(tabHost, 'flagged by behavioral scanner (' + (level || score) + ')');
       }
       // NOTE: blocked_safe_browsing_* events are about a LINK/TARGET, not the page,
       // and arrive via a forgeable content event -- we deliberately do NOT auto-learn
@@ -561,6 +757,7 @@ chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
     noteHttpNavigationAttempt(details);
     handleSafeBrowsingNavigation(details);
     resetRedirectChain(details.tabId, details.url);
+    maybeFlagFrameDrivenRedirect(details);
     // Tab-under signature: this tab spawned a popup moments ago and is now itself navigating
     // (the opener being driven). Log-only -- no blocking, so no false-positive breakage.
     const popAt = POPUP_OPENED_AT[details.tabId];
@@ -770,6 +967,18 @@ function resetRedirectChain(tabId, startUrl) {
   const dom = registrableDomainBg(host) || host;
   REDIRECT_CHAINS[tabId] = { hops: [], domains: dom ? [dom] : [], startedAt: Date.now(), flagged: false };
 }
+// Mirrors fakeInstallLander() in anti-redirect.js. The in-page copy only ever sees
+// navigations the page itself drives; a server-side 30x chain reaches neither it
+// nor any content script, so this half is what covers "I clicked nothing and was
+// sent there".
+function chainFakeInstallLander(rawUrl) {
+  let u;
+  try { u = new URL(String(rawUrl || '')); } catch (_) { return false; }
+  if (/(?:^|\/)pre-?land(?:er|ing)?(?:\/|$)/.test(u.pathname.toLowerCase())) return true;
+  return /(?:^|[.-])(?:boost|speed|fast|turbo|update|install|get|download|secure|safe|best|new)[-_]?(?:you|your|my|the)?[-_]?browsers?(?:[.-]|$)/i
+    .test(u.hostname);
+}
+
 function noteRedirectHop(details) {
   if (!details || details.frameId !== 0 || details.tabId == null || details.tabId < 0) return;
   const chain = REDIRECT_CHAINS[details.tabId] || (REDIRECT_CHAINS[details.tabId] = { hops: [], domains: [], startedAt: Date.now(), flagged: false });
@@ -787,6 +996,10 @@ function noteRedirectHop(details) {
     chain.flagged = true;
     chain.abuseTld = true;
   }
+  if (chainFakeInstallLander(details.redirectUrl)) {
+    chain.flagged = true;
+    chain.fakeInstall = true;
+  }
   rememberRecentRedirectChain(details.tabId, details.redirectUrl || details.url || '', chain, 'redirect-hop');
 }
 
@@ -801,12 +1014,321 @@ function redirectChainContainsKnownAuth(chain, finalUrl) {
 }
 
 function redirectChainShouldInterrupt(chain, finalUrl) {
-  if (!chain || (!chain.blocklisted && !chain.abuseTld)) return false;
+  // A software-install funnel is not on any blocklist and does not need an abuse
+  // TLD -- boost-you-browser.com is an ordinary .com -- so before this it was
+  // logged and allowed through like any long chain.
+  if (!chain || (!chain.blocklisted && !chain.abuseTld && !chain.fakeInstall)) return false;
   // Known identity-provider chains often contain many cross-site hops and one-time
   // callback URLs. Replacing the completed callback with an interstitial makes the
   // login unrecoverable, so known auth plumbing is log-only even when a community
   // feed produced a false-positive hop.
   return !redirectChainContainsKnownAuth(chain, finalUrl);
+}
+
+// ---- Frame-driven top navigation -------------------------------------------
+// The hole yomi.to walked through. Two layers watched redirects and NEITHER could
+// see this one:
+//   - anti-redirect.js hooks Location.assign/replace and the href setter, but only
+//     in the top frame -- and a CROSS-ORIGIN iframe setting top.location goes
+//     through Chrome's cross-origin path, which never runs a JS accessor the top
+//     frame installed. No in-page hook, in any frame, can observe it.
+//   - the redirect-chain detector accumulates HTTP 30x hops. A frame navigating
+//     its parent is client-side, so it never becomes a hop.
+// Chrome only permits it with a user activation, which on a streaming page is the
+// click on "play". So the signature is: the click landed on a player and targeted
+// no URL of its own (the content script says so), then the top frame went
+// cross-site without our own hooks claiming it. An anchor wrapped around a
+// thumbnail sets intentWasExplicit and never raises the gesture signal, which is
+// what keeps ordinary navigation out of this.
+// Interstitial, never a silent cancel: a wrong call here must stay recoverable.
+const PLAYER_GESTURE_AT = Object.create(null);
+const TOP_NAV_OWNED_AT = Object.create(null);
+const LAST_TOP_URL = Object.create(null);
+const LAST_GESTURE_AT = Object.create(null);
+const FRAME_REDIRECT_WINDOW_MS = 1500;
+const FORCED_NAV_GESTURE_MS = 5000;
+
+function noteNavSignal(tabId, signal) {
+  if (tabId == null || tabId < 0) return { ok: true };
+  if (signal === 'player-gesture') PLAYER_GESTURE_AT[tabId] = Date.now();
+  else if (signal === 'top-nav-authorized') TOP_NAV_OWNED_AT[tabId] = Date.now();
+  else if (signal === 'gesture') LAST_GESTURE_AT[tabId] = Date.now();
+  return { ok: true };
+}
+
+// Ad-auction click trackers. These parameters are the machinery of a real-time
+// auction -- what the click cost, which publisher and zone sold it, which campaign
+// and creative won -- and they belong in server-to-server traffic. A TOP-LEVEL page
+// carrying two or more of them is a click being monetised, not a page anyone asked
+// to see.
+// Matching the TRACKER rather than where it sends you is the whole point. Loading
+// yomi.to twice produced the same tracker with a different campaign, placement and
+// price each time, and a different destination behind it: an install funnel once, a
+// 404 the next. The destination is auctioned per visit, so blocking by destination
+// is chasing a number that is designed to change. The tracker is the fixed part.
+// Whatever drove the navigation -- a 30x, a script, a frame, a synthesised click --
+// the worker sees the top-frame navigation, so this needs no cooperation from the
+// page and works in exactly the places every in-page hook is blind.
+function adAuctionClickUrl(rawUrl) {
+  let query = '';
+  try { query = new URL(String(rawUrl || '')).search; } catch (_) { return false; }
+  if (!query) return false;
+  const field = /(?:^|[?&])(?:cost_cpc|cost_cpm|publisher_id|zone_id|campaign_id|placement_id|banner_id|creative_id|sub_id[a-z0-9_]*|aff_id|affiliate_id|click_?id)=/ig;
+  let hits = 0;
+  while (field.exec(query)) { hits++; if (hits >= 2) return true; }
+  return false;
+}
+
+// Matching trackers was always going to lose. yomi.to handed out migullexte.com
+// /click.php one day and rm358.com/4/11216888?var=..&ymid=..&var_3=.. the next --
+// a different network with none of the same parameters. The redirect broker
+// rotates the tracker as readily as the destination, so any signature written
+// today describes yesterday.
+//
+// What does not rotate is the shape of the event: a page you were already on
+// sends the whole tab to another site, and you never touched it. That is true of
+// every one of these regardless of which network is being paid, and it does not
+// need the URL to look like anything in particular.
+//
+// So the rule is about ATTRIBUTION, not reputation. Anything the user did in this
+// tab authorises the jump -- a click, a keypress, or our own in-page hooks saying
+// they allowed it. Federated login is excluded because it legitimately moves you
+// to another domain without a click on the page you leave. And this runs on the
+// navigation event itself, which fires once per navigation rather than once per
+// redirect hop, so a server-side shortener resolving inside a single navigation
+// never reaches it -- only "the page loaded, then threw me somewhere" does.
+//
+// It raises the interstitial rather than cancelling, so the cost of being wrong
+// is one click on Continue.
+async function maybeBlockForcedTopRedirect(details) {
+  const tabId = details && details.tabId;
+  if (tabId == null || tabId < 0) return;
+  // Chrome already classifies why a navigation happened, and guessing from the
+  // absence of a gesture was badly wrong: the omnibox is not a page, so typing a
+  // search from a new tab produced no gesture and got read as a forced jump. Only
+  // client_redirect means "the page did this to you"; typed, link, bookmark,
+  // generated and reload never reach here now.
+  const why = Array.isArray(details && details.transitionQualifiers) ? details.transitionQualifiers : [];
+  if (!why.includes('client_redirect')) return;
+  let toUrl;
+  try { toUrl = new URL(String(details.url || '')); } catch (_) { return; }
+  if (!/^https?:$/.test(toUrl.protocol)) return;
+  const fromUrl = LAST_TOP_URL[tabId] || '';
+  if (!fromUrl) return;               // the tab's first page: nothing to be thrown off
+  // The SOURCE has to be a real web page too. chrome://newtab and our own
+  // interstitial are not sites that can force you anywhere -- and missing this is
+  // what made Continue loop, because the warning page became the "previous page"
+  // and its own navigation to the destination was flagged all over again.
+  let fromParsed;
+  try { fromParsed = new URL(fromUrl); } catch (_) { return; }
+  if (!/^https?:$/.test(fromParsed.protocol)) return;
+  const fromHost = registrableDomainBg(fromParsed.hostname) || '';
+  const toHost = registrableDomainBg(toUrl.hostname) || '';
+  if (!fromHost || !toHost || fromHost === toHost) return;
+  const now = Date.now();
+  if (now - (LAST_GESTURE_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS) return;
+  if (now - (TOP_NAV_OWNED_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS) return;
+  try {
+    if (isLoginCompatibilityUrl(details.url) || isLoginCompatibilityUrl(fromUrl)) return;
+  } catch (_) {}
+  let cfg = {};
+  try { const st = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {}); } catch (_) {}
+  if (cfg.enabled === false || cfg.blockPopupTricks === false) return;
+  try {
+    const allow = activeAllowlist(cfg) || [];
+    if (allow.some((h) => registrableDomainBg(String(h)) === fromHost)) return;
+  } catch (_) {}
+  // One shot per page: a site that retries must not stack interstitials.
+  LAST_GESTURE_AT[tabId] = now;
+  // The auction fields do not decide anything any more -- they only let the notice
+  // say what this particular jump was for.
+  const tracker = adAuctionClickUrl(details.url);
+  queueHistory({
+    type: tracker ? 'blocked_ad_auction_redirect' : 'blocked_forced_redirect',
+    detail: {
+      from: fromHost,
+      matched: toUrl.hostname,
+      why: tracker
+        ? 'The tab was sent into an ad click tracker without anyone touching it.'
+        : 'The tab was sent to another site without anyone touching it.',
+    },
+    url: String(details.url || '').slice(0, 300),
+    at: now,
+  });
+  try {
+    await chrome.tabs.update(tabId, {
+      url: redirectWarningPageUrl({
+        sourceUrl: String(fromUrl).slice(0, 900),
+        targetUrl: String(details.url || '').slice(0, 1200),
+        kind: tracker ? 'ad-auction-redirect' : 'forced-redirect',
+        why: fromHost + ' sent this tab to ' + toUrl.hostname + ' on its own'
+          + (tracker ? ', through an ad click tracker,' : '')
+          + ' without you clicking anything. Where these land changes every visit,'
+          + ' so it is a different site each time.',
+      }),
+    });
+  } catch (_) {}
+}
+
+function forgetNavSignals(tabId) {
+  delete PLAYER_GESTURE_AT[tabId];
+  delete TOP_NAV_OWNED_AT[tabId];
+  delete LAST_GESTURE_AT[tabId];
+}
+
+// The other half of the engine watchdog. bridge.js runs in the ISOLATED world, which a page
+// cannot reach, and tells us when the MAIN-world engine never announced itself. The engine
+// shares its world with the page and can be switched off from it -- that is a limit of
+// MAIN-world injection, not a bug, and the engine already answers it halfway by clearing its
+// own ready markers on dispose so a fresh injection can take hold. What was missing was
+// anything to do the injecting: one dispose at document_start switched it off for the life of
+// the page, silently. This puts it back.
+//
+// The bridge's word is not taken for it. A page cannot speak to the worker directly, but the
+// claim still costs an executeScript, so it is verified in the MAIN world first and only acted
+// on when the marker really is absent. Once per tab per page load, so a page that keeps
+// disposing cannot turn this into a loop -- it just keeps losing the engine it disposed.
+const ENGINE_REARMED_AT = Object.create(null);
+async function verifyEngineInTab(sender) {
+  const tabId = sender && sender.tab && sender.tab.id;
+  const frameId = sender && typeof sender.frameId === 'number' ? sender.frameId : 0;
+  if (tabId == null || tabId < 0 || frameId !== 0) return { ok: false };
+  const url = String((sender.tab && sender.tab.url) || sender.url || '');
+  if (!/^https?:/i.test(url)) return { ok: false };
+  let cfg = {};
+  try { const st = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {}); } catch (_) {}
+  // Nothing to re-arm if the engine is meant to be off here.
+  if (cfg.enabled === false) return { ok: false, reason: 'master-off' };
+  try {
+    const host = new URL(url).hostname;
+    const allow = activeAllowlist(cfg) || [];
+    if (allow.some((h) => registrableDomainBg(String(h)) === registrableDomainBg(host))) return { ok: false, reason: 'allowlisted' };
+  } catch (_) {}
+  const target = { tabId, frameIds: [frameId] };
+  let marker = '';
+  try {
+    const res = await chrome.scripting.executeScript({
+      target,
+      world: 'MAIN',
+      func: () => (typeof window.__wardenOneReadyVersion === 'string' ? window.__wardenOneReadyVersion : ''),
+    });
+    marker = (res && res[0] && typeof res[0].result === 'string') ? res[0].result : '';
+  } catch (_) {
+    return { ok: false, reason: 'not-scriptable' };   // frame gone; not a finding
+  }
+  if (marker) return { ok: true, reason: 'present' };
+  const last = ENGINE_REARMED_AT[tabId] || 0;
+  if (Date.now() - last < 30000) return { ok: false, reason: 'already-rearmed' };
+  ENGINE_REARMED_AT[tabId] = Date.now();
+  try {
+    await chrome.scripting.executeScript({ target, world: 'MAIN', files: ['content.min.js', 'permission-chain.js'] });
+  } catch (_) {
+    return { ok: false, reason: 'reinject-failed' };
+  }
+  queueHistory({
+    type: 'warned_engine_disabled',
+    detail: {
+      matched: (() => { try { return new URL(url).hostname; } catch (_) { return ''; } })(),
+      severity: 'Medium',
+      confidence: 'High',
+      why: 'This page switched WardenOne\'s in-page engine off. A page shares a world with it and can do that; what it cannot do is stop the part of WardenOne it has no access to from noticing.',
+      action: 'Nothing to do -- the engine was put back. If a site does this every time you visit, it is worth knowing why it does not want to be watched.',
+      outcome: 'The engine was reinstalled on this page.',
+    },
+    url: url.slice(0, 300),
+    at: Date.now(),
+  });
+  return { ok: true, reason: 'rearmed' };
+}
+
+// A navigation that resolves to a file is not a tab hijack, and the interstitial below was
+// firing on them.
+//
+// The reasoning the frame-redirect guard rests on is "this tab was sent somewhere you did not
+// ask to go". That harm does not happen for a download: Chrome turns the navigation into a
+// download and the page you were on stays exactly where it is. Nothing was hijacked. What the
+// interstitial actually prevented was the FILE -- and whether a file is safe to have is
+// Download Shield's decision, not this one's. It grades every download, blocks the known-bad
+// outright and holds the risky for a review you can cancel, and it says why. Cancelling the
+// navigation here took that judgement away and left someone with neither the file nor a
+// reason, on a site that was behaving normally.
+//
+// Executable extensions are exempted too, deliberately. An .exe arriving after a click on a
+// player is exactly the case Download Shield grades worst and holds; it is better handled
+// there, where the answer comes with an explanation, than here, where it arrives as a wall.
+//
+// The exemption is conditional on Download Shield actually being on, so this hands the
+// decision over rather than dropping it. With Download Shield off, the old behaviour stands.
+//
+// Only this guard needs it. maybeBlockForcedTopRedirect and evaluateRedirectChain run on
+// onCommitted and onCompleted, and a navigation that becomes a download reaches neither.
+const DOWNLOAD_TARGET_RE = /\.(?:7z|aab|apk|appx|appxbundle|avi|bat|bin|bz2|cab|cmd|crx|csv|deb|dmg|docx?|docm|epub|exe|flac|flv|gz|img|iso|jar|m4a|m4v|mkv|mobi|mov|mp3|mp4|msi|msix|msp|msu|odp|ods|odt|ogg|pdf|pkg|pptx?|pptm|ps1|psd|rar|rpm|run|scr|sh|sit|tar|tgz|torrent|txz|vhd|wav|webm|wmv|xlsx?|xlsm|xlsb|xpi|xz|zip|zst)(?:$|[?#])/i;
+function navigationIsFileDownload(rawUrl) {
+  let u;
+  try { u = new URL(String(rawUrl || '')); } catch (_) { return false; }
+  if (!/^https?:$/.test(u.protocol)) return false;
+  if (DOWNLOAD_TARGET_RE.test(u.pathname)) return true;
+  // Release CDNs, mirror pickers and signed links routinely carry the filename in the query
+  // rather than the path, so the query earns the same look. Checked separately from the path
+  // so a query parameter can never make an ordinary page URL look like a file.
+  return DOWNLOAD_TARGET_RE.test(u.search);
+}
+
+async function maybeFlagFrameDrivenRedirect(details) {
+  const tabId = details && details.tabId;
+  if (tabId == null || tabId < 0) return;
+  const gestureAt = PLAYER_GESTURE_AT[tabId];
+  if (!gestureAt) return;
+  const now = Date.now();
+  if (now - gestureAt > FRAME_REDIRECT_WINDOW_MS) return;
+  // Our own top-frame hooks announce everything they let through, so if one just
+  // did, the page navigated itself and the click layer has already judged it.
+  const ownedAt = TOP_NAV_OWNED_AT[tabId];
+  if (ownedAt && now - ownedAt <= FRAME_REDIRECT_WINDOW_MS) return;
+  const fromUrl = LAST_TOP_URL[tabId] || '';
+  if (!fromUrl) return;
+  let fromHost = '';
+  let toHost = '';
+  try { fromHost = registrableDomain(new URL(fromUrl).hostname); } catch (_) { return; }
+  try { toHost = registrableDomain(new URL(String(details.url || '')).hostname); } catch (_) { return; }
+  if (!fromHost || !toHost || fromHost === toHost) return;
+  let cfg = {};
+  try { const st = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {}); } catch (_) {}
+  if (cfg.enabled === false || cfg.blockPopupTricks === false) return;
+  // Hand a download to the guard that grades downloads. See navigationIsFileDownload above.
+  // The signals are cleared as well, so the one gesture cannot be spent again on the next
+  // navigation -- a download and then a real hijack would otherwise share the same click.
+  if (cfg.downloadReputation !== false && navigationIsFileDownload(details.url)) {
+    forgetNavSignals(tabId);
+    return;
+  }
+  try {
+    const allow = activeAllowlist(cfg) || [];
+    if (allow.some((h) => registrableDomain(String(h)) === fromHost)) return;
+  } catch (_) {}
+  // One shot per gesture: a page that keeps trying must not stack interstitials.
+  forgetNavSignals(tabId);
+  queueHistory({
+    type: 'blocked_frame_top_redirect',
+    detail: {
+      from: fromHost,
+      matched: toHost,
+      why: 'An embedded frame navigated the whole tab after a click on the player.',
+    },
+    url: String(details.url || '').slice(0, 300),
+    at: now,
+  });
+  try {
+    await chrome.tabs.update(tabId, {
+      url: redirectWarningPageUrl({
+        sourceUrl: String(fromUrl).slice(0, 900),
+        targetUrl: String(details.url || '').slice(0, 1200),
+        kind: 'frame-top-redirect',
+        why: 'Something embedded in ' + fromHost + ' sent this tab to ' + toHost
+          + ' after you clicked the player. You did not click a link to it.',
+      }),
+    });
+  } catch (_) {}
 }
 
 async function evaluateRedirectChain(details) {
@@ -819,10 +1341,22 @@ async function evaluateRedirectChain(details) {
   if (cfg.enabled === false || cfg.detectRedirectChains === false) return;
   const hops = chain.hops.length;
   const distinctDomains = chain.domains.length;
-  const longChain = hops >= 4 || distinctDomains >= 4;          // log-worthy
   const finalUrl = (chain.hops[chain.hops.length - 1] && chain.hops[chain.hops.length - 1].to) || details.url || '';
-  const confirmedThreat = !!(chain.blocklisted || chain.abuseTld);
+  const confirmedThreat = !!(chain.blocklisted || chain.abuseTld || chain.fakeInstall);
   const authChain = redirectChainContainsKnownAuth(chain, finalUrl);
+  // Landing somewhere other than the site actually asked for is worth recording
+  // even when the chain is short and carries nothing known-bad. This is the case
+  // that made a forced redirect impossible to diagnose at all: one 30x hop across
+  // two domains sits under the >= 4 bar, has no blocklisted hop, and was thrown
+  // away without a trace -- so the Activity Center showed nothing whatsoever for a
+  // navigation the user never asked for. Log-only; it decides nothing.
+  // Federated login legitimately ends on a different domain every time, so those
+  // stay out of it or the log fills with the one thing that is always fine.
+  const requested = chain.domains[0] || '';
+  let landed = '';
+  try { landed = registrableDomainBg(new URL(String(finalUrl)).hostname) || ''; } catch (_) { landed = ''; }
+  const leftRequestedSite = !!(requested && landed && requested !== landed && !authChain);
+  const longChain = hops >= 4 || distinctDomains >= 4 || leftRequestedSite;   // log-worthy
   // Hop/domain counts alone are never a reason to replace a completed navigation.
   // Federated login, payment, CDN and regional routing can all cross many domains.
   const suspicious = redirectChainShouldInterrupt(chain, finalUrl);
@@ -830,7 +1364,7 @@ async function evaluateRedirectChain(details) {
   rememberRecentRedirectChain(details.tabId, finalUrl, chain, 'completed-navigation');
   queueHistory({
     type: 'redirect_chain',
-    detail: { hops, domains: distinctDomains, flagged: !!chain.flagged, authChain, chain: chain.domains.slice(0, 12) },
+    detail: { hops, domains: distinctDomains, flagged: !!chain.flagged, authChain, leftRequestedSite, requested, chain: chain.domains.slice(0, 12) },
     url: String(finalUrl).slice(0, 300),
     at: Date.now(),
   });
@@ -852,7 +1386,30 @@ try {
   chrome.webNavigation?.onCreatedNavigationTarget?.addListener((details) => {
     if (details && details.sourceTabId != null && details.sourceTabId >= 0) POPUP_OPENED_AT[details.sourceTabId] = Date.now();
   });
-  chrome.tabs.onRemoved.addListener((tabId) => { delete REDIRECT_CHAINS[tabId]; delete POPUP_OPENED_AT[tabId]; });
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    const left = domainOfTab(tabId);
+    delete REDIRECT_CHAINS[tabId];
+    delete POPUP_OPENED_AT[tabId];
+    delete LAST_TOP_URL[tabId];
+    forgetNavSignals(tabId);
+    forgetRebindTab(tabId);
+    if (left) maybeClearOnLeave(left);
+    if (left) maybeClearServiceWorkersOnLeave(left);
+  });
+  // A committed page is a clean slate: the previous page's click must not be able
+  // to explain the next page's navigation.
+  chrome.webNavigation?.onCommitted?.addListener((details) => {
+    if (details.frameId !== 0) return;
+    // Before LAST_TOP_URL moves on: the guard needs the page being left, and
+    // transitionQualifiers only exists on this event. Everything it reads from the
+    // old state is read synchronously, ahead of its first await, so the two lines
+    // below cannot race it.
+    maybeBlockForcedTopRedirect(details);
+    const left = domainOfTab(details.tabId);
+    LAST_TOP_URL[details.tabId] = String(details.url || '');
+    forgetNavSignals(details.tabId);
+    if (left && left !== domainOfTab(details.tabId)) maybeClearOnLeave(left);
+  });
 } catch (_) {}
 
 // Fallback reset via tabs.onUpdated (in case webNavigation perm isn't present).
@@ -884,6 +1441,10 @@ const DEFAULT_CONFIG = {
   blockGesturelessNav: true,
   blockForcedPopups: true,
   strictPopupShield: true,
+  blockPopupTricks: true,
+  logThirdPartyBeacons: true,
+  clearServiceWorkersOnLeave: false,
+  clearCookiesOnLeave: false,
   blockMetaRefresh: true,
   detectRedirectChains: true,
   warnGrabberDomains: true,
@@ -902,6 +1463,7 @@ const DEFAULT_CONFIG = {
   monitorLoggerApi: true,
   detectPhishing: true,
   behavioralScan: true,
+  xssBehaviorGuard: true,
   blockHighConfidencePhishing: false,
   removeOverlays: true,
   autoSkipDownloadAds: true,
@@ -920,8 +1482,11 @@ const DEFAULT_CONFIG = {
   killPrefetch: false,
   lazyLoadMedia: false,
   deAmp: false,
+  clientHintProtection: true,
   capReferrer: false,
+  trackerCacheProtection: false,
   autoRejectConsent: true,
+  removeConsentWalls: false,
   trackerLearner: true,
   unshimLinks: true,
   socialWidgetGuard: true,
@@ -992,8 +1557,12 @@ const DEFAULT_CONFIG = {
   riskySiteMode: true,
   antiClickjacking: true,
   intranetProtection: true,
+  dnsRebindGuard: true,
+  intranetNetworkRules: true,
+  storageAccessGuard: true,
+  blockAllStorageAccess: false,
   loginCompatibility: true,
-  mediaShield: true,
+  mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, deviceAccessGuard: true, notificationAbuseGuard: true, capabilityGuard: true, backTrapGuard: true,
   blockCameraMic: true,
   blockScreenCapture: true,
   blockGeolocation: true,
@@ -1042,6 +1611,8 @@ const DEFAULT_CONFIG = {
   forgetMeHistory: false,   // also clear the site from browser history
   forgetMeAllConfirmedAt: 0,
   allowlist: [],
+  allowlistUntil: {},
+  siteOverrides: {},
 };
 
 // ---- Onboarding protection bundles ----------------------------------------
@@ -1058,6 +1629,9 @@ const ONBOARDING_RECOMMENDED = {
   blockGesturelessNav: true,
   blockForcedPopups: true,
   strictPopupShield: true,
+  blockPopupTricks: true,
+  logThirdPartyBeacons: true,
+  clearCookiesOnLeave: false,
   blockMetaRefresh: true,
   detectRedirectChains: true,
   warnGrabberDomains: true,
@@ -1083,6 +1657,7 @@ const ONBOARDING_RECOMMENDED = {
   blockCryptominers: true,
   autoUpdateLists: true,
   autoRejectConsent: true,
+  xssBehaviorGuard: true,
 };
 const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
   antiFingerprint: true,
@@ -1091,7 +1666,9 @@ const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
   breachCheck: true,
   clipboardGuard: true,
   blockSuspiciousWebRTC: true,
+  clientHintProtection: true,
   capReferrer: true,
+  trackerCacheProtection: true,
   deAmp: true,
 });
 
@@ -1142,6 +1719,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 chrome.runtime.onStartup?.addListener(() => {
+  clearRebindQuarantine();
   scheduleUpdates();
   pruneStorageIfNeeded('startup').catch(() => {});
   updateRemoteListsWithRetry('startup');
@@ -1157,6 +1735,7 @@ chrome.runtime.onStartup?.addListener(() => {
  * changes and removals, and backs event delivery with a periodic local scan.
  * ========================================================================== */
 importScripts('background-extension-watch.js');
+importScripts('background-extension-reputation.js');
 
 /* ===========================================================================
  * STARTUP SECURITY CHECK
@@ -1922,12 +2501,18 @@ const NEVER_BLOCK_ALLOW_RULES_BUDGET = 200;
 const SCRIPT_SHIELD_RULES_BUDGET = 161;
 const FINGERPRINT_SCRIPT_RULES_BUDGET = 80;
 const GOOGLE_SEARCH_ALLOW_RULES_BUDGET = 20;
-const SMALL_SESSION_RULES_BUDGET = 64; // headers, cookie stripping, HTTPS, IP lookup, etc.
+const SMALL_SESSION_RULES_BUDGET = 64;
+// One block rule per hostname caught resolving to a private address this session.
+const REBIND_QUARANTINE_RULES_BUDGET = 128;
+// One block rule per private-address pattern, at the network layer, so the
+// guarantee holds in every JavaScript realm including workers.
+const INTRANET_NETWORK_RULES_BUDGET = 16; // headers, cookie stripping, HTTPS, IP lookup, etc.
 const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET
   + ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
   + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + SAFE_SEARCH_RULES_BUDGET
   + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
-  + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET;
+  + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET
+  + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET;
 // The ceiling is checked at BUILD time by tools/test-dnr-budget.js, which reads the
 // band names straight out of the expression above so a new band is covered without
 // anyone remembering to add it. A runtime console.error here could only ever repeat
@@ -1937,7 +2522,34 @@ const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDG
 // limit was 5,000 for dynamic and session rules combined, which this budget exceeds
 // nearly six times over. The test asserts the two together so the floor cannot be
 // lowered without the budget coming down with it.
-const RESOURCE_TYPES = ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'];
+// Every resource type Chromium's declarativeNetRequest recognises, in the order
+// the API documents them. This is the inventory the rest of the file measures
+// itself against; tools/test-transport-shield.js fails if it drifts from the set
+// Chrome actually supports, which is how webtransport went missing for a year.
+//
+// A partial list is a silent hole. Blocking a malware domain on six of fifteen
+// transports is not blocking it: WebTransport alone is a full bidirectional
+// channel to the same host over HTTP/3, and nothing in a partial list stops it.
+const ALL_DNR_RESOURCE_TYPES = [
+  'main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object',
+  'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webtransport',
+  'webbundle', 'other',
+];
+
+// Malware, phishing and scam domains get the whole inventory. There is no
+// transport on which reaching a known-hostile host is acceptable, and no
+// compatibility argument for one either -- the site is not meant to load.
+const SECURITY_RESOURCE_TYPES = ALL_DNR_RESOURCE_TYPES;
+
+// Tracker and ad domains stay narrower on purpose. Those lists are large and
+// occasionally wrong, and a false positive on stylesheet, font, media or object
+// silently mangles a page rather than failing loudly. What they do get is every
+// pure data channel, because those carry no rendering risk and are exactly where
+// an exfiltration path would hide.
+const RESOURCE_TYPES = [
+  'main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket',
+  'webtransport', 'webbundle', 'csp_report', 'other',
+];
 const LIST_FETCH_TIMEOUT_MS = 12000;
 const LIST_FETCH_CONCURRENCY = 4;
 const LIST_SOURCE_MAX_BYTES = 18 * 1024 * 1024;
@@ -2080,6 +2692,37 @@ const THIRD_PARTY_COOKIE_RULE_ID = 900001;
 // commonly establish state on main-frame, iframe, script or XHR responses.
 const THIRD_PARTY_COOKIE_RESOURCE_TYPES = ['image', 'ping'];
 const LOCATION_PRIVACY_HEADER_RULE_ID = 900002;
+const CLIENT_HINT_HIGH_ENTROPY_RULE_ID = 900003;
+const CLIENT_HINT_TRACKER_RULE_ID = 900004;
+const STRICT_REFERRER_RULE_ID = 900005;
+const TRACKER_CACHE_RULE_ID = 900006;
+const HEADER_SHIELD_RULE_IDS = [
+  CLIENT_HINT_HIGH_ENTROPY_RULE_ID,
+  CLIENT_HINT_TRACKER_RULE_ID,
+  STRICT_REFERRER_RULE_ID,
+  TRACKER_CACHE_RULE_ID,
+];
+const HEADER_SHIELD_RESOURCE_TYPES = ALL_DNR_RESOURCE_TYPES;
+// A cross-site top-level navigation is classified as third-party to its initiator,
+// but it becomes the destination's first-party document. Keep its Client Hints
+// intact for compatibility; the optional strict-referrer mode intentionally uses
+// the broader list because cross-site navigations are exactly what it controls.
+const CLIENT_HINT_RESOURCE_TYPES = HEADER_SHIELD_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
+const TRACKER_CACHE_RESOURCE_TYPES = ['image', 'xmlhttprequest'];
+const HIGH_ENTROPY_CLIENT_HINT_HEADERS = [
+  'Sec-CH-UA-Full-Version',
+  'Sec-CH-UA-Full-Version-List',
+  'Sec-CH-UA-Platform-Version',
+  'Sec-CH-UA-Arch',
+  'Sec-CH-UA-Bitness',
+  'Sec-CH-UA-Model',
+  'Sec-CH-UA-WoW64',
+];
+const LOW_ENTROPY_CLIENT_HINT_HEADERS = [
+  'Sec-CH-UA',
+  'Sec-CH-UA-Mobile',
+  'Sec-CH-UA-Platform',
+];
 const IP_LOOKUP_BLOCK_RULE_BASE = 900020;
 const IP_LOOKUP_BLOCK_DOMAINS = [
   'api.ipify.org',
@@ -2102,7 +2745,7 @@ const IP_LOOKUP_BLOCK_DOMAINS = [
   'ipdata.co',
   'db-ip.com',
 ];
-const IP_LOOKUP_BLOCK_RESOURCE_TYPES = ['sub_frame', 'script', 'image', 'xmlhttprequest', 'ping', 'websocket', 'other'];
+const IP_LOOKUP_BLOCK_RESOURCE_TYPES = ['sub_frame', 'script', 'image', 'xmlhttprequest', 'ping', 'websocket', 'webtransport', 'other'];
 
 // Allowlist exemption rules live in their own high ID band. When a site is
 // allowlisted we add an `allowAllRequests` rule for it so the user's choice ALSO
@@ -2166,20 +2809,7 @@ const GOOGLE_SEARCH_ALLOW_RULE_MAX = 20;
 const SCRIPT_SHIELD_MODE_KEY = 'wardenone_script_shield_mode';
 const SCRIPT_TRUSTED_KEY = 'wardenone_script_trusted_hosts';
 
-const LOGIN_COMPAT_RESOURCE_TYPES = [
-  'main_frame',
-  'sub_frame',
-  'stylesheet',
-  'script',
-  'image',
-  'font',
-  'object',
-  'xmlhttprequest',
-  'ping',
-  'media',
-  'websocket',
-  'other',
-];
+const LOGIN_COMPAT_RESOURCE_TYPES = ALL_DNR_RESOURCE_TYPES;
 
 // Official identity / CAPTCHA / payment endpoints that commonly need to survive
 // third-party cookie stripping and tracker/ad rules during sign-in. These are not
@@ -2454,7 +3084,7 @@ const TRACKER_LEARN_STORAGE_MAX = 600;
 // request-shaped telemetry. A shared player/embed host can legitimately serve
 // both scripts and frames, so learner evidence must never take either of those
 // functional resource types offline.
-const TRACKER_RESOURCE_TYPES = ['image', 'xmlhttprequest', 'ping'];
+const TRACKER_RESOURCE_TYPES = ['image', 'xmlhttprequest', 'ping', 'webtransport'];
 const X_APP_COMPAT_DOMAINS = new Set(['x.com', 'twitter.com', 'twimg.com']);
 const TRACKER_PROTECTED_DOMAINS = new Set([
   'google.com', 'gstatic.com', 'googleusercontent.com', 'googleapis.com',
@@ -2480,6 +3110,10 @@ function normalizeLearnedDomain(value) {
   try {
     const host = normalizeAllowlistHost(value);
     if (!host || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return '';
+    // Hosting-provider boundaries are lossy. Check the full host first so GitHub's
+    // dedicated S3 upload origins cannot collapse into the broad amazonaws.com apex.
+    if (isNeverBlockDomain(host) || X_APP_COMPAT_DOMAINS.has(host)) return '';
+    if (/(?:^|\.)s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/i.test(host)) return host;
     const rd = registrableDomainBg(host) || host;
     if (!rd || isNeverBlockDomain(rd) || X_APP_COMPAT_DOMAINS.has(rd)) return '';
     return rd;
@@ -2531,7 +3165,7 @@ async function applyLearnedRules() {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: [] });
       return;
     }
-    const allowlist = normalizeAllowlistHosts(cfg.allowlist || []);
+    const allowlist = activeAllowlist(cfg);
     let changed = false;
     const normalizedLearned = {};
     Object.keys(LEARNED || {}).forEach((raw) => {
@@ -2634,8 +3268,14 @@ const MINER_FEED_MAX = 1000;
 const MINER_POOL_RULE_OFFSET = 700; // pool rules occupy the tail of the band
 const MINER_HOSTS = new Set();
 const MINER_POOL_HOSTS = new Set();
-const MINER_RESOURCE_TYPES = ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'websocket', 'ping', 'image', 'media', 'object', 'other'];
-const MINER_POOL_RESOURCE_TYPES = ['sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'];
+// A domain on a miner list is hostile, not ambiguous, so it gets the same
+// treatment as any other security block: every transport, no exceptions.
+const MINER_RESOURCE_TYPES = SECURITY_RESOURCE_TYPES;
+// Pool rules are third-party only, so main_frame is deliberately absent -- a
+// user typing a pool address into the URL bar is not the attack. WebTransport
+// matters here more than anywhere: a mining pool's whole job is a long-lived
+// bidirectional channel, and it is the obvious successor to their WebSocket.
+const MINER_POOL_RESOURCE_TYPES = SECURITY_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
 function addMinerDomains(arr, target) {
   for (const d of (Array.isArray(arr) ? arr : [])) {
     const v = String(d || '').trim().toLowerCase().replace(/^\*?\.?/, '').replace(/\/.*$/, '');
@@ -3129,6 +3769,16 @@ const SITE_BREACH_MAX_BYTES = 512 * 1024;
 // keep the historical *Bg names used throughout this file.
 function regDomainBg(host) { return regDomain(host); }
 function registrableDomainBg(host) { return registrableDomain(host); }
+// chrome.cookies.getAll's domain filter matches that host and its SUBdomains.
+// Session cookies are normally set on the registrable domain (".twitch.tv"), which
+// is a PARENT of "www.twitch.tv" and so was filtered straight out. Both cookie
+// checks below were therefore grading a site on cookies it could not see: the audit
+// reported "no session cookies" for sites that plainly have one, which also skipped
+// the entire cookie-hygiene section of the score -- the only place a site could earn
+// points at all.
+function cookieAuditDomain(hostname) {
+  return registrableDomainBg(hostname) || hostname;
+}
 
 function normalizeAllowlistHost(value) {
   let raw = String(value || '').trim();
@@ -3169,6 +3819,26 @@ function normalizeAllowlistHosts(list, limit) {
     seen.add(h);
     out.push(h);
   });
+  return out;
+}
+
+// The allowlist the rest of the worker should act on: the permanent entries plus
+// any temporary pass that has not lapsed. Expired entries stop counting the moment
+// they lapse; they are removed from storage when the popup next writes, because
+// pruning on read would mean a storage write from inside a decision path.
+function activeAllowlist(cfg) {
+  const base = normalizeAllowlistHosts((cfg && cfg.allowlist) || [], 1000);
+  const until = cfg && cfg.allowlistUntil;
+  if (!until || typeof until !== 'object') return base;
+  const now = Date.now();
+  const out = base.slice();
+  for (const host of Object.keys(until)) {
+    if (out.length >= 1000) break;
+    const at = Number(until[host]);
+    if (!Number.isFinite(at) || at <= now) continue;
+    const h = normalizeAllowlistHost(host);
+    if (h && !out.includes(h)) out.push(h);
+  }
   return out;
 }
 
@@ -6140,7 +6810,10 @@ async function applyMediaCompatibilityRules(enabled) {
       __mediaCompatibilityRulesEnabled = enabled;
       return;
     }
-    const allTypes = ['sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'media', 'websocket', 'other'];
+    // Every type except main_frame: this allows subresources for embeds, not
+    // navigations. Kept in step with RESOURCE_TYPES so a widened block rule
+    // cannot outrun the allow rule that exists to keep embeds working.
+    const allTypes = ALL_DNR_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
     const xAppTypes = allTypes.filter((type) => type !== 'ping');
     const frameAllowRules = [
       { domain: 'youtube.com' },
@@ -6234,7 +6907,7 @@ function refreshAllowlistRules() {
     localGet('wardenone_config').then((res) => {
       const cfg = (res && res.wardenone_config) || {};
       if (cfg.enabled === false) { applyAllowlistRules([]); return; }
-      applyAllowlistRules(cfg.allowlist || []);
+      applyAllowlistRules(activeAllowlist(cfg));
     }).catch(() => {});
   } catch (_) {}
 }
@@ -6537,8 +7210,11 @@ function refreshExtensionState() {
       const stateKey = [
         on ? 1 : 0,
         cfg.sendPrivacySignals !== false ? 1 : 0,
+        cfg.clientHintProtection !== false ? 1 : 0,
+        cfg.capReferrer === true ? 1 : 0,
+        cfg.trackerCacheProtection === true ? 1 : 0,
         cfg.blockThirdPartyCookies !== false ? 1 : 0,
-        normalizeAllowlistHosts(cfg.allowlist || []).join(','),
+        activeAllowlist(cfg).join(','),
         cfg.loginCompatibility !== false ? 1 : 0,
         cfg.forceHttps === true ? 1 : 0,
         cfg.adShield !== false ? 1 : 0,
@@ -6573,14 +7249,21 @@ function refreshExtensionState() {
       const applied = [];
       const run = (result) => { applied.push(Promise.resolve(result)); };
       run(applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false));
+      run(applyHeaderShieldRules({
+        clientHints: on && cfg.clientHintProtection !== false,
+        strictReferrer: on && cfg.capReferrer === true,
+        trackerCache: on && cfg.trackerCacheProtection === true,
+      }));
       run(applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false));
-      run(applyAllowlistRules(on ? (cfg.allowlist || []) : []));
+      run(applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false));
+      run(applyAllowlistRules(on ? activeAllowlist(cfg) : []));
       run(applyMediaCompatibilityRules(on));
       run(applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false));
       run(applyHttpsUpgradeRule(on && cfg.forceHttps === true));
       run(refreshBlocklistRuleset(cfg));
       run(reconcileEyeShieldInjection(cfg));
       run(reconcileConsentRejectInjection(cfg));
+      run(reconcileConsentWallInjection(cfg));
       run(reconcileMinerDetectInjection(cfg));
       run(reconcileSearchJunkInjection(cfg));
       run(reconcileGoogleCleanupCssInjection(cfg));
@@ -6591,6 +7274,7 @@ function refreshExtensionState() {
       run(applyGlobalLocationBlock(on && cfg.blockGeolocation === true));
       run(applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true));
       run(applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false));
+      run(applyIntranetNetworkRules(on && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false));
       Promise.allSettled(applied).then((results) => {
         if (generation !== __refreshExtensionStateGeneration) return;   // a newer desired state took over
         if (results.some((r) => r.status === 'rejected')) return;       // leave the key so this is retried
@@ -6605,6 +7289,7 @@ function refreshExtensionState() {
       refreshBlocklistRuleset();
       reconcileEyeShieldInjection();
       reconcileConsentRejectInjection();
+      reconcileConsentWallInjection();
       reconcileMinerDetectInjection();
       reconcileSearchJunkInjection();
       reconcileGoogleCleanupCssInjection({ enabled: false });
@@ -6615,6 +7300,8 @@ function refreshExtensionState() {
       refreshGlobalLocationBlock();
       applyLocationPrivacyHeaderRule(false);
       applyIpLookupBlockRules(false);
+    applyIntranetNetworkRules(false);
+      applyIntranetNetworkRules(false);
     });
   } catch (_) {
     refreshPrivacyHeaders();
@@ -6625,6 +7312,7 @@ function refreshExtensionState() {
     refreshBlocklistRuleset();
     reconcileEyeShieldInjection();
     reconcileConsentRejectInjection();
+    reconcileConsentWallInjection();
     reconcileMinerDetectInjection();
     reconcileSearchJunkInjection();
     reconcileGoogleCleanupCssInjection({ enabled: false });
@@ -6994,6 +7682,208 @@ async function reconcileConsentRejectInjection(cfgArg) {
   } catch (_) {}
 }
 
+// ===== Consent wall lifting (opt-in, registered only while on) =====
+// consent-wall.js removes the full-screen sheet that a consent-or-pay banner puts over the
+// page. It is off by default, so unlike consent-reject the usual state is unregistered and
+// the file is never parsed. It runs top-frame only: the sheet is always an element of the
+// top document, even when the sheet itself is an iframe.
+const CONSENT_WALL_SCRIPT_ID = 'wo-consent-wall-dynamic';
+function consentWallActive(cfg) {
+  cfg = cfg || {};
+  return cfg.enabled !== false
+    && (cfg.removeConsentWalls === true || cfg.removeConsentWalls === 'true' || cfg.removeConsentWalls === 1);
+}
+function injectConsentWallIntoOpenTabs() {
+  try {
+    chrome.tabs.query({}, (tabs) => {
+      for (const t of (tabs || [])) {
+        if (!t || t.id == null || !/^https?:/i.test(t.url || '')) continue;
+        // Same login/payment guard as consent-reject: executeScript cannot honor
+        // excludeMatches the way registerContentScripts does, so the URL is checked here.
+        if (consentRejectExcludedUrl(t.url)) continue;
+        try {
+          chrome.scripting.executeScript(
+            { target: { tabId: t.id }, world: 'ISOLATED', files: ['consent-wall.js'] },
+            () => { void chrome.runtime.lastError; },
+          );
+        } catch (_) {}
+      }
+    });
+  } catch (_) {}
+}
+async function reconcileConsentWallInjection(cfgArg) {
+  if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
+  let cfg = cfgArg;
+  if (!cfg) {
+    try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
+  }
+  const want = consentWallActive(cfg);
+  let have = false;
+  try {
+    const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [CONSENT_WALL_SCRIPT_ID] });
+    have = Array.isArray(reg) && reg.length > 0;
+  } catch (_) { have = false; }
+  try {
+    const scriptDef = {
+      id: CONSENT_WALL_SCRIPT_ID,
+      matches: ['<all_urls>'],
+      // A full-viewport element at the top of the stacking context IS the flow on a sign-in,
+      // captcha or checkout page. Removing it there would break the thing the user came for.
+      excludeMatches: CONSENT_REJECT_EXCLUDE_MATCHES,
+      js: ['consent-wall.js'],
+      runAt: 'document_start',
+      allFrames: false,
+      persistAcrossSessions: true,
+    };
+    if (want && have && chrome.scripting.updateContentScripts) {
+      try {
+        await chrome.scripting.updateContentScripts([scriptDef]);
+      } catch (_) {
+        try { await chrome.scripting.unregisterContentScripts({ ids: [CONSENT_WALL_SCRIPT_ID] }); } catch (_) {}
+        await chrome.scripting.registerContentScripts([scriptDef]);
+        injectConsentWallIntoOpenTabs();
+      }
+    } else if (want && !have) {
+      await chrome.scripting.registerContentScripts([scriptDef]);
+      injectConsentWallIntoOpenTabs();
+    } else if (!want && have) {
+      await chrome.scripting.unregisterContentScripts({ ids: [CONSENT_WALL_SCRIPT_ID] });
+    }
+  } catch (_) {}
+}
+
+let __packagedHeaderTrackerDomains = null;
+async function packagedHeaderTrackerDomains() {
+  if (__packagedHeaderTrackerDomains) return __packagedHeaderTrackerDomains;
+  try {
+    const response = await fetch(chrome.runtime.getURL('rules-trackers.json'));
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const rules = await response.json();
+    const domains = [];
+    const seen = new Set();
+    (Array.isArray(rules) ? rules : []).forEach((rule) => {
+      const requestDomains = rule && rule.condition && rule.condition.requestDomains;
+      (Array.isArray(requestDomains) ? requestDomains : []).forEach((value) => {
+        // Keep the exact scope shipped by rules-trackers.json. Collapsing a host
+        // such as connect.facebook.net to facebook.net would silently broaden a
+        // tracker-specific header rule onto unrelated functional subdomains.
+        const domain = normalizeAllowlistHost(value);
+        if (!domain || seen.has(domain)) return;
+        seen.add(domain);
+        domains.push(domain);
+      });
+    });
+    __packagedHeaderTrackerDomains = domains.slice(0, 1000);
+    return __packagedHeaderTrackerDomains;
+  } catch (e) {
+    console.warn('[WardenOne] packaged tracker domains unavailable for Header Shield', e);
+    return [];
+  }
+}
+
+let __headerShieldStateKey = '';
+let __headerShieldDesired = { clientHints: false, strictReferrer: false, trackerCache: false };
+let __headerShieldQueue = Promise.resolve();
+function applyHeaderShieldRules(options) {
+  const desired = options && typeof options === 'object' ? options : {};
+  __headerShieldDesired = {
+    clientHints: desired.clientHints === true,
+    strictReferrer: desired.strictReferrer === true,
+    trackerCache: desired.trackerCache === true,
+  };
+  __headerShieldQueue = __headerShieldQueue.catch(() => {}).then(async () => {
+    const snapshot = __headerShieldDesired;
+    const clientHints = snapshot.clientHints;
+    const strictReferrer = snapshot.strictReferrer;
+    const trackerCache = snapshot.trackerCache;
+    const stateKey = [clientHints ? 1 : 0, strictReferrer ? 1 : 0, trackerCache ? 1 : 0].join('|');
+    if (stateKey === __headerShieldStateKey) return;
+
+    const trackerDomains = (clientHints || trackerCache) ? await packagedHeaderTrackerDomains() : [];
+    const removeHeader = (header) => ({ header, operation: 'remove' });
+    const compatibilityExclusions = {
+      excludedRequestDomains: LOGIN_COMPAT_NEVER_BLOCK_DOMAINS,
+      excludedInitiatorDomains: LOGIN_COMPAT_NEVER_BLOCK_DOMAINS,
+    };
+    const rules = [];
+
+    if (clientHints) {
+      rules.push({
+        id: CLIENT_HINT_HIGH_ENTROPY_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: HIGH_ENTROPY_CLIENT_HINT_HEADERS.map(removeHeader),
+        },
+        condition: Object.assign({
+          domainType: 'thirdParty',
+          resourceTypes: CLIENT_HINT_RESOURCE_TYPES,
+        }, compatibilityExclusions),
+      });
+      if (trackerDomains.length) {
+        rules.push({
+          id: CLIENT_HINT_TRACKER_RULE_ID,
+          priority: 2,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: LOW_ENTROPY_CLIENT_HINT_HEADERS.map(removeHeader),
+            responseHeaders: ['Accept-CH', 'Critical-CH'].map(removeHeader),
+          },
+          condition: Object.assign({
+            requestDomains: trackerDomains,
+            domainType: 'thirdParty',
+            resourceTypes: CLIENT_HINT_RESOURCE_TYPES,
+          }, compatibilityExclusions),
+        });
+      }
+    }
+
+    if (strictReferrer) {
+      rules.push({
+        id: STRICT_REFERRER_RULE_ID,
+        priority: 2,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [{ header: 'Referer', operation: 'remove' }],
+        },
+        condition: Object.assign({
+          domainType: 'thirdParty',
+          resourceTypes: HEADER_SHIELD_RESOURCE_TYPES,
+        }, compatibilityExclusions),
+      });
+    }
+
+    if (trackerCache && trackerDomains.length) {
+      rules.push({
+        id: TRACKER_CACHE_RULE_ID,
+        priority: 2,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [{ header: 'If-None-Match', operation: 'remove' }],
+          responseHeaders: [{ header: 'ETag', operation: 'remove' }],
+        },
+        condition: Object.assign({
+          requestDomains: trackerDomains,
+          domainType: 'thirdParty',
+          requestMethods: ['get', 'head'],
+          resourceTypes: TRACKER_CACHE_RESOURCE_TYPES,
+        }, compatibilityExclusions),
+      });
+    }
+
+    try {
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: HEADER_SHIELD_RULE_IDS,
+        addRules: rules,
+      });
+      __headerShieldStateKey = stateKey;
+    } catch (e) {
+      console.warn('[WardenOne] Header Shield rules failed', e);
+    }
+  });
+  return __headerShieldQueue;
+}
+
 // Add or remove the rule that appends "DNT: 1" and "Sec-GPC: 1" request headers
 // to outgoing requests, matching the navigator.* signals set in content.min.js.
 let __privacyHeaderRuleEnabled = null;
@@ -7118,6 +8008,77 @@ async function applyThirdPartyCookieRule(enabled) {
   }
 }
 
+// The narrow rule above strips Set-Cookie from images and pings only, and that
+// narrowness is correct for third parties as a class: sign-in and federation set
+// their cookies on frames, scripts and XHR, and stripping those signs people out.
+// It is the reason the rule has stayed six types short of the fifteen a browser
+// can issue.
+//
+// That reason does not apply to a request aimed at doubleclick.net. A domain
+// whose only purpose is measurement is never the far side of an SSO handoff, so
+// on those hosts the wide version is safe -- and the wide version is where the
+// cookies actually are, since a tracker that wants to set one reaches for a frame
+// or a script long before it reaches for a pixel.
+//
+// So: everything keeps the narrow rule, and known trackers additionally get the
+// full set. Same list Header Shield already uses, kept at the exact host scope
+// the packaged rules ship, and still carrying the login-compat exclusions in case
+// a name ever lands on both lists.
+const TRACKER_COOKIE_RULE_ID = 900007;
+
+function trackerCookieResourceTypes() {
+  // main_frame stays out for the same reason it does everywhere else: navigating
+  // to a host yourself is not the attack this addresses.
+  return SECURITY_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
+}
+
+let __trackerCookieRuleEnabled = null;
+
+async function applyTrackerCookieRule(enabled) {
+  try {
+    if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+    enabled = !!enabled;
+    if (__trackerCookieRuleEnabled === enabled) return;
+    if (!enabled) {
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [TRACKER_COOKIE_RULE_ID],
+        addRules: [],
+      });
+      __trackerCookieRuleEnabled = enabled;
+      return;
+    }
+    const domains = await packagedHeaderTrackerDomains();
+    if (!domains.length) {
+      // No list, no rule. A requestDomains condition with an empty array matches
+      // every domain, which would turn this into exactly the blanket wide rule
+      // the narrow one exists to avoid.
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [TRACKER_COOKIE_RULE_ID],
+        addRules: [],
+      });
+      __trackerCookieRuleEnabled = false;
+      return;
+    }
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [TRACKER_COOKIE_RULE_ID],
+      addRules: [{
+        id: TRACKER_COOKIE_RULE_ID,
+        priority: 1,
+        action: { type: 'modifyHeaders', responseHeaders: [{ header: 'set-cookie', operation: 'remove' }] },
+        condition: {
+          domainType: 'thirdParty',
+          requestDomains: domains,
+          resourceTypes: trackerCookieResourceTypes(),
+          excludedRequestDomains: LOGIN_COMPAT_NEVER_BLOCK_DOMAINS,
+        },
+      }],
+    });
+    __trackerCookieRuleEnabled = enabled;
+  } catch (e) {
+    console.warn('[WardenOne] tracker cookie rule failed', e);
+  }
+}
+
 // Read the setting and apply. Called on install/startup and whenever settings change.
 function refreshPrivacyHeaders() {
   try {
@@ -7125,7 +8086,13 @@ function refreshPrivacyHeaders() {
       const cfg = (res && res.wardenone_config) || {};
       const on = cfg.enabled !== false;
       applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false);
+      applyHeaderShieldRules({
+        clientHints: on && cfg.clientHintProtection !== false,
+        strictReferrer: on && cfg.capReferrer === true,
+        trackerCache: on && cfg.trackerCacheProtection === true,
+      });
       applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false);
+      applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false);
     }).catch(() => {});
   } catch (_) {}
 }
@@ -7526,7 +8493,7 @@ async function getForgetConfig() {
     mode: cfg.forgetMeMode === 'list' ? 'list' : allConfirmed ? 'all' : 'off',
     list: normalizeAllowlistHosts(cfg.forgetMeList || []),
     history: cfg.forgetMeHistory === true,
-    allowlist: normalizeAllowlistHosts(cfg.allowlist || []),
+    allowlist: activeAllowlist(cfg),
   };
 }
 
@@ -7543,7 +8510,7 @@ function forgetDomainFor(host, cfg) {
   const rd = registrableDomainBg(host);
   if (!rd) return '';
   if (isForgetPersistenceProtected(host) || isForgetPersistenceProtected(rd)) return '';
-  if (cfg.mode === 'all') return hostMatchesAllowlist(host, cfg.allowlist) || hostMatchesAllowlist(rd, cfg.allowlist) ? '' : rd;
+  if (cfg.mode === 'all') return hostMatchesAllowlist(host, activeAllowlist(cfg)) || hostMatchesAllowlist(rd, activeAllowlist(cfg)) ? '' : rd;
   if (cfg.mode === 'list') return hostMatchesAllowlist(host, cfg.list) || hostMatchesAllowlist(rd, cfg.list) ? rd : '';
   return '';
 }
@@ -7785,7 +8752,10 @@ function domainToRule(domain, id, sourceKind) {
     id,
     priority: kind === 'security' ? 3000 : 1000,
     action: { type: 'block' },
-    condition: { requestDomains: [domain], resourceTypes: RESOURCE_TYPES },
+    condition: {
+      requestDomains: [domain],
+      resourceTypes: kind === 'security' ? SECURITY_RESOURCE_TYPES : RESOURCE_TYPES,
+    },
   };
 }
 
@@ -9337,10 +10307,14 @@ const SERIALIZED_STATE_APPLIERS = [
   'reconcileMinerDetectInjection',
   'reconcileEyeShieldInjection',
   'reconcileConsentRejectInjection',
+  'reconcileConsentWallInjection',
   'applyPrivacyHeaderRule',
+  'applyHeaderShieldRules',
   'applyLocationPrivacyHeaderRule',
   'applyIpLookupBlockRules',
+  'applyIntranetNetworkRules',
   'applyThirdPartyCookieRule',
+  'applyTrackerCookieRule',
   'applyHttpsUpgradeRule',
   'applyFingerprintScriptRules',
   'applySearchParamRules',
@@ -10544,6 +11518,14 @@ async function updateRemoteLists(reason) {
 // destructive or browser-wide stays extension-page only.
 const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'rg-block',
+  /* Silencing a notice, and reporting that one was shown. Both carry a warning
+     type and nothing else; the host is taken from the sending tab. Missing from
+     this list they were rejected as 'Not allowed from this context' before ever
+     reaching their handler -- the guard working exactly as intended, on a kind
+     nobody had registered. */
+  'mute-toast',
+  'toast-shown',
+  'consent-accepted',
   'redirect-warning',
   'safe-browsing-check',
   'login-domain-age',
@@ -10568,6 +11550,18 @@ const TAB_CONTEXT_RATE_LIMITS = {
   // count: the page can bypass its own limiter. Set high enough that a genuinely
   // ad-heavy page reporting real blocks is never cut off.
   'rg-block': { max: 300, windowMs: 60000 },
+  // Silencing a notice is something a person does by hand, a few times at most.
+  // The ceiling is here for the forged-event case: a hostile page cannot mute a
+  // warning about itself faster than a person could, and cannot use the channel
+  // to hammer storage.
+  'mute-toast': { max: 20, windowMs: 60000 },
+  // One report per notice actually shown, and the worker writes at most once per
+  // type and host per hour regardless -- so this ceiling only ever bites a page
+  // forging the event.
+  'toast-shown': { max: 60, windowMs: 60000 },
+  // One per page is all that is ever sent; the ceiling is only here because every
+  // tab-allowed kind needs one.
+  'consent-accepted': { max: 12, windowMs: 60000 },
   'redirect-warning': { max: 8, windowMs: 60000 },
   'safe-browsing-check': { max: 45, windowMs: 60000 },
   'domain-age': { max: 12, windowMs: 60000 },
@@ -10707,6 +11701,320 @@ function isDefaultPortHttpUrl(raw) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Intranet Guard, network layer.
+//
+// Everything Intranet Guard did lived in the page: fetch, XHR, WebSocket,
+// EventSource, WebTransport, beacons, forms and element sources, all rewritten
+// in the MAIN world. That is a complete list of the page's networking, and it is
+// worth nothing to a Worker.
+//
+// A worker gets its own JavaScript realm with a pristine fetch and a pristine
+// WebSocket. Two lines of script inside one reaches the LAN with every in-page
+// hook still sitting there, untouched, on an object the worker never sees. The
+// same is true of a service worker, and of anything else that escapes the page
+// realm.
+//
+// The tempting fix is to instrument workers too, by fetching their source and
+// re-serving it from a blob with a shim in front. That is what the Twitch
+// blocker does for one known script, and it does not generalise: a site whose
+// CSP omits worker-src blob: stops constructing workers at all, a module worker
+// loses the base URL its relative imports resolve against, and a service worker
+// cannot be registered from a blob URL at all -- the spec forbids it. Chasing
+// realms means breaking pages to protect them.
+//
+// So the guarantee moves to the layer every realm already shares. A request to a
+// private address is refused by declarativeNetRequest whether it came from the
+// page, a dedicated worker, a shared worker, a service worker, or something that
+// has not been invented yet. No realm to instrument, nothing to keep in step.
+const INTRANET_NET_RULE_BASE = 932200;
+const INTRANET_NET_RULES_BUDGET = 16;
+
+// RE2, matched against the whole URL. The optional userinfo group matters:
+// http://x@192.168.1.1/ is the same request wearing a hat, and an anchor that
+// only allows scheme-then-host would miss it.
+const INTRANET_NET_PATTERNS = [
+  String.raw`^(https?|wss?)://([^/@]*@)?(10|127)\.`,
+  String.raw`^(https?|wss?)://([^/@]*@)?192\.168\.`,
+  String.raw`^(https?|wss?)://([^/@]*@)?169\.254\.`,
+  String.raw`^(https?|wss?)://([^/@]*@)?172\.(1[6-9]|2[0-9]|3[01])\.`,
+  String.raw`^(https?|wss?)://([^/@]*@)?0\.0\.0\.0([:/]|$)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?\[?(::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:|fe[89ab][0-9a-f]:)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?localhost([:/]|$)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?[^/:]+\.(local|localdomain|lan|home|internal|intranet|corp)([:/]|$)`,
+];
+
+// main_frame is deliberately absent, for the same reason the mining-pool rules
+// leave it out: typing your router's address, or clicking a link to it, is the
+// user asking. The attack is a page reaching the LAN underneath them.
+function intranetNetResourceTypes() {
+  return SECURITY_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
+}
+
+// A page served FROM the LAN talking to the LAN is a local dashboard, not an
+// attack, and the in-page guard has always allowed it -- publicPage() gates the
+// whole thing. domainType:'thirdParty' covers a local page talking to itself,
+// but not a local page pulling from a second device, which is exactly what a
+// home dashboard with a camera on another address does. Those tabs are excluded
+// by id, reusing the local-context map the rebinding detector already maintains
+// from the resolved address, so a name like camera.lan counts too.
+function locallyServedTabIds() {
+  const out = [];
+  try {
+    REBIND_TAB_IS_LOCAL.forEach((isLocal, tabId) => {
+      if (isLocal && tabId >= 0) out.push(tabId);
+    });
+  } catch (_) {}
+  return out;
+}
+
+let __intranetNetRulesKey = null;
+
+async function applyIntranetNetworkRules(enabled) {
+  try {
+    if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+    enabled = !!enabled;
+    const excludedTabIds = enabled ? locallyServedTabIds() : [];
+    // Rebuilding on every navigation would be a DNR write per page load. Most
+    // browsing never has a local tab open, so this key is stable in practice.
+    const key = enabled ? excludedTabIds.slice().sort((a, b) => a - b).join(',') : 'off';
+    if (__intranetNetRulesKey === key) return;
+
+    const removeRuleIds = INTRANET_NET_PATTERNS.map((_, i) => INTRANET_NET_RULE_BASE + i);
+    const addRules = enabled ? INTRANET_NET_PATTERNS.map((regexFilter, i) => {
+      const condition = {
+        regexFilter,
+        domainType: 'thirdParty',
+        resourceTypes: intranetNetResourceTypes(),
+      };
+      if (excludedTabIds.length) condition.excludedTabIds = excludedTabIds;
+      return {
+        id: INTRANET_NET_RULE_BASE + i,
+        // Below login-compat's 96000, above ordinary blocking. A LAN address is
+        // never an identity provider, but the ordering stays consistent with
+        // every other guard rather than being special.
+        priority: 94000,
+        action: { type: 'block' },
+        condition,
+      };
+    }) : [];
+
+    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
+    __intranetNetRulesKey = key;
+  } catch (e) {
+    console.warn('[WardenOne] intranet network rules failed', e);
+  }
+}
+
+// Called when a tab's local-context answer changes, so the exclusion list
+// follows the tabs rather than a page load.
+function refreshIntranetNetworkRules() {
+  try {
+    localGet('wardenone_config').then((stored) => {
+      const cfg = (stored && stored.wardenone_config) || {};
+      const on = cfg.enabled !== false && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false;
+      applyIntranetNetworkRules(on);
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+// ---------------------------------------------------------------------------
+// DNS rebinding — the second layer the comment above admits is missing.
+//
+// Intranet Guard reads hostnames. That is the right call for what it does and
+// no help at all against rebinding: evil.example resolves to 192.168.1.1 and no
+// string test will ever notice. Chromium gives extensions no synchronous
+// "resolve this name before you allow the request" hook, so the FIRST request to
+// a rebound host cannot be stopped from here by anyone, at any price. What can
+// be stopped is every request after it.
+//
+// chrome.webRequest reports details.ip on a completed response: the address the
+// name actually resolved to, observed after the fact. That answers the one
+// question a hostname cannot — did this public-looking name just hand back a LAN
+// address? — and the name is then quarantined for the rest of the session, both
+// as a network rule and as a local target the page guard already knows how to
+// refuse.
+//
+// So this is detection, and the popup copy says detection. Direct LAN access is
+// prevented; rebinding is caught on the second request, not the first. Claiming
+// otherwise would be a lie a determined attacker gets to collect on.
+const REBIND_QUARANTINE_RULE_BASE = 932000;
+const REBIND_QUARANTINE_MAX = 128;
+const REBIND_HOST_CLASS = new Map();
+const REBIND_TAB_IS_LOCAL = new Map();
+const REBIND_QUARANTINED = new Map();
+
+// Address classes worth refusing. CGNAT (100.64/10) is in because that is where
+// carrier-grade equipment and a good deal of consumer mesh gear lives.
+function classifyResolvedIp(raw) {
+  const ip = String(raw || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!ip) return '';
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+    const p = ip.split('.').map(Number);
+    if (p.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return '';
+    if (p[0] === 0 || p[0] === 127) return 'loopback';
+    if (p[0] === 10) return 'private';
+    if (p[0] === 192 && p[1] === 168) return 'private';
+    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return 'private';
+    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return 'private';
+    if (p[0] === 169 && p[1] === 254) return 'linklocal';
+    return 'public';
+  }
+  if (ip.indexOf(':') >= 0) {
+    const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+    if (mapped) return classifyResolvedIp(mapped[1]);
+    if (ip === '::1' || ip === '::') return 'loopback';
+    if (/^f[cd][0-9a-f]{2}:/.test(ip)) return 'private';
+    if (/^fe[89ab][0-9a-f]:/.test(ip)) return 'linklocal';
+    return 'public';
+  }
+  return '';
+}
+
+function rebindQuarantineRules() {
+  const hosts = Array.from(REBIND_QUARANTINED.keys()).slice(0, REBIND_QUARANTINE_MAX);
+  return hosts.map((host, i) => ({
+    id: REBIND_QUARANTINE_RULE_BASE + i,
+    // Above tracker and security blocks, below the login-compat allow rules: a
+    // quarantine should not be the thing that locks someone out of their own
+    // identity provider if a name ever lands here wrongly.
+    priority: 95000,
+    action: { type: 'block' },
+    condition: { requestDomains: [host], resourceTypes: SECURITY_RESOURCE_TYPES },
+  }));
+}
+
+async function syncRebindQuarantineRules() {
+  try {
+    if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const removeRuleIds = existing
+      .filter((r) => r.id >= REBIND_QUARANTINE_RULE_BASE && r.id < REBIND_QUARANTINE_RULE_BASE + REBIND_QUARANTINE_MAX)
+      .map((r) => r.id);
+    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules: rebindQuarantineRules() });
+  } catch (e) {
+    console.warn('[WardenOne] rebind quarantine rules failed', e);
+  }
+}
+
+// The page guard cannot see resolved addresses, so it is told the answer. The
+// list rides along in the config because that is the channel content scripts
+// already listen to; a second channel would be a second thing to keep in sync.
+async function publishRebindQuarantine() {
+  try {
+    const hosts = Array.from(REBIND_QUARANTINED.keys()).slice(0, REBIND_QUARANTINE_MAX);
+    const stored = await localGet('wardenone_config');
+    const cfg = Object.assign({}, (stored && stored.wardenone_config) || {});
+    cfg.rebindQuarantine = hosts;
+    await localSet({ wardenone_config: cfg });
+  } catch (_) {}
+}
+
+function rebindGuardEnabled(cfg) {
+  return !!cfg && cfg.enabled !== false && cfg.intranetProtection !== false && cfg.dnsRebindGuard !== false;
+}
+
+async function quarantineReboundHost(host, signal, details) {
+  if (REBIND_QUARANTINED.has(host) || REBIND_QUARANTINED.size >= REBIND_QUARANTINE_MAX) return;
+  const stored = await localGet('wardenone_config');
+  const cfg = (stored && stored.wardenone_config) || {};
+  if (!rebindGuardEnabled(cfg)) return;
+  if (hostMatchesAllowlist(host, activeAllowlist(cfg))) return;
+
+  REBIND_QUARANTINED.set(host, { at: Date.now(), signal });
+  await syncRebindQuarantineRules();
+  await publishRebindQuarantine();
+
+  const why = signal === 'flip'
+    ? host + ' answered with a public address and then a private one, which is what a DNS rebinding attack looks like.'
+    : host + ' is a public-looking name that resolves to an address on your own network.';
+  queueHistory({
+    type: 'dns_rebind_quarantine',
+    detail: {
+      host,
+      signal,
+      severity: signal === 'flip' ? 'High' : 'Medium',
+      note: why + ' Further requests to it are blocked for this session.',
+    },
+    url: String((details && details.url) || '').slice(0, 200),
+    at: Date.now(),
+  });
+}
+
+// Observe-only: this runs after the response has started, which is exactly why
+// it is a second layer and not a first one.
+function noteResolvedAddress(details) {
+  try {
+    if (!details || !details.ip || !details.url) return;
+    const host = new URL(details.url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (!host) return;
+    const cls = classifyResolvedIp(details.ip);
+    if (!cls) return;
+    const local = cls !== 'public';
+    const tabId = typeof details.tabId === 'number' ? details.tabId : -1;
+
+    // The top-level document sets the context for its tab. Someone who types a
+    // hostname that resolves to their own machine is a developer running a dev
+    // server, not a victim, and everything that page then loads is a local page
+    // talking to itself. Recording it here is what keeps that case quiet.
+    if (details.type === 'main_frame') {
+      if (tabId >= 0 && REBIND_TAB_IS_LOCAL.get(tabId) !== local) {
+        REBIND_TAB_IS_LOCAL.set(tabId, local);
+        refreshIntranetNetworkRules();
+      }
+      REBIND_HOST_CLASS.set(host, cls);
+      return;
+    }
+
+    const previous = REBIND_HOST_CLASS.get(host);
+    REBIND_HOST_CLASS.set(host, cls);
+    if (!local) return;
+    // A name that was already local by sight is Intranet Guard's business and is
+    // blocked on sight; there is nothing hidden about it to quarantine.
+    if (isLocalOrPrivateHost(host)) return;
+    if (REBIND_TAB_IS_LOCAL.get(tabId) === true) return;
+    if (REBIND_QUARANTINED.has(host)) return;
+
+    quarantineReboundHost(host, previous === 'public' ? 'flip' : 'private', details);
+  } catch (_) {}
+}
+
+async function clearRebindQuarantine() {
+  REBIND_QUARANTINED.clear();
+  REBIND_HOST_CLASS.clear();
+  REBIND_TAB_IS_LOCAL.clear();
+  await syncRebindQuarantineRules();
+  await publishRebindQuarantine();
+}
+
+// The worker is evicted after seconds of idle and re-evaluated on the next event,
+// so in-memory state is not session state. Rehydrating here is what makes the
+// quarantine last as long as the copy says it does; onStartup is what ends it.
+async function restoreRebindQuarantine() {
+  try {
+    const stored = await localGet('wardenone_config');
+    const hosts = ((stored && stored.wardenone_config) || {}).rebindQuarantine;
+    if (!Array.isArray(hosts) || !hosts.length) return;
+    hosts.slice(0, REBIND_QUARANTINE_MAX).forEach((host) => {
+      const h = String(host || '').toLowerCase();
+      if (h && !REBIND_QUARANTINED.has(h)) REBIND_QUARANTINED.set(h, { at: 0, signal: 'restored' });
+    });
+    await syncRebindQuarantineRules();
+  } catch (_) {}
+}
+restoreRebindQuarantine();
+
+function forgetRebindTab(tabId) {
+  if (!REBIND_TAB_IS_LOCAL.has(tabId)) return;
+  REBIND_TAB_IS_LOCAL.delete(tabId);
+  refreshIntranetNetworkRules();
+}
+
+try {
+  chrome.webRequest?.onResponseStarted?.addListener(noteResolvedAddress, { urls: ['<all_urls>'] });
+} catch (_) {}
+
+
 async function fetchPublicStylesheetText(rawUrl) {
   let url = normalizePublicHttpUrl(rawUrl);
   if (!url || !isDefaultPortHttpUrl(url)) return { ok: false, error: 'bad url' };
@@ -10740,19 +12048,24 @@ async function fetchPublicStylesheetText(rawUrl) {
 const HEALTH_SHIELD_KEYS = [
   'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'detectRedirectChains', 'blockMetaRefresh',
   'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'certificateGuard', 'blockTrackers',
-  'adShield', 'scriptletEngine', 'twitchAdBlock', 'sendPrivacySignals', 'fingerprintProbeDetection',
-  'blockFingerprintScripts', 'antiFingerprint', 'blockThirdPartyCookies', 'blockFirstPartyTrackers',
-  'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard',
-  'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing',
-  'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank',
-  'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect',
-  'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector',
-  'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking',
-  'intranetProtection', 'mediaShield', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation',
-  'blockAutoplayMedia', 'gateAdultSites', 'adultHeuristics', 'warnRedirectParams', 'warnShorteners',
-  'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'removeOverlays',
-  'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'autoUpdateLists', 'trackerLearner', 'unshimLinks',
-  'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies', 'watchExtensionPermissions', 'startupCheck',
+  'adShield', 'scriptletEngine', 'twitchAdBlock', 'sendPrivacySignals', 'clientHintProtection',
+  'capReferrer', 'trackerCacheProtection', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockThirdPartyCookies',
+  'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers',
+  'paymentCardGuard', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation',
+  'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus',
+  'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation',
+  'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'scamLockGuard', 'commandPasteGuard',
+  'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard',
+  'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'mediaShield',
+  'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture',
+  'blockGeolocation', 'blockAutoplayMedia', 'gateAdultSites', 'adultHeuristics', 'warnRedirectParams',
+  'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan',
+  'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers',
+  'autoUpdateLists', 'trackerLearner', 'unshimLinks', 'cleanCopyLinks', 'socialWidgetGuard',
+  'blockSupercookies', 'watchExtensionPermissions', 'startupCheck', 'blockPopupTricks', 'antiFingerprintNoise',
+  'autoRejectConsent', 'removeConsentWalls', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'blockAllCookies', 'deAmp',
+  'breachCheck', 'keystrokePressure', 'honeytokenMode', 'cryptominerCpuWatch', 'safeSearch',
+  'backTrapGuard',
 ];
 
 function healthCountActiveShields(cfg) {
@@ -10817,9 +12130,22 @@ async function buildProtectionHealthSummary() {
   if (!list.updated && cfg.autoUpdateLists !== false) addIssue('info', 'Remote lists have not updated yet; built-in rules are active.');
   else if (listAge > 7 * 24 * 60 * 60 * 1000) addIssue('info', 'Remote lists are more than 7 days old.');
   else if (listAge > 72 * 60 * 60 * 1000) addIssue('info', 'Remote lists are getting stale.');
+  // A feed that did not answer is not a problem you have. Updates merge sources and never wipe
+  // on a failed fetch, so the copy already downloaded stays active and nothing is unprotected --
+  // the next run usually picks it up. Reporting every transient miss put a permanent-looking
+  // note under "You're safe" that read like damage and asked the reader to do something about
+  // it, when there was nothing to do. So it is only worth saying when it actually cost you
+  // something: every source failed, or the lists have gone stale because they keep failing.
   if (list.sources && Number(list.sources.failed || 0) > 0) {
     const failedFeeds = Number(list.sources.failed);
-    addIssue('info', failedFeeds + (failedFeeds === 1 ? ' filter list was' : ' filter lists were') + ' unreachable during the last update.');
+    const totalFeeds = Number(list.sources.total || 0);
+    const staleNow = listAge > 72 * 60 * 60 * 1000;
+    if (totalFeeds > 0 && failedFeeds >= totalFeeds) {
+      addIssue('warn', 'No filter list could be reached on the last update. The copies already downloaded are still active, so nothing is unprotected, but new threats have stopped arriving.');
+    } else if (staleNow) {
+      addIssue('info', failedFeeds + (failedFeeds === 1 ? ' filter list keeps' : ' filter lists keep')
+        + ' failing to update, which is why the rest are behind. What was already downloaded is still active.');
+    }
   }
 
   const alerts = Array.isArray(store && store[EXT_ALERTS_KEY]) ? store[EXT_ALERTS_KEY] : [];
@@ -11076,7 +12402,7 @@ async function recordPermissionChainSignal(sender, msg, granted) {
   const pageUrl = String(tab.url || sender.url || '');
   if (!/^https?:\/\//i.test(pageUrl)) return { ok: true, ignored: 'non-http' };
   const host = messageCleanHost(pageUrl);
-  if (host && hostMatchesAllowlist(host, cfg.allowlist || [])) return { ok: true, ignored: 'allowlisted' };
+  if (host && hostMatchesAllowlist(host, activeAllowlist(cfg))) return { ok: true, ignored: 'allowlisted' };
   const site = registrableDomain(host || '');
   const permission = cleanPermissionChainKey(msg && msg.permission);
   if (!permission) return { ok: false, error: 'Unknown permission signal.' };
@@ -11232,7 +12558,7 @@ async function recordOAuthGrantWarning(sender, msg) {
   const pageUrl = String(tab.url || sender.url || '');
   if (!/^https?:\/\//i.test(pageUrl)) return { ok: true, ignored: 'non-http' };
   const pageHost = messageCleanHost(pageUrl);
-  if (pageHost && hostMatchesAllowlist(pageHost, cfg.allowlist || [])) return { ok: true, ignored: 'allowlisted' };
+  if (pageHost && hostMatchesAllowlist(pageHost, activeAllowlist(cfg))) return { ok: true, ignored: 'allowlisted' };
   const grant = (msg && msg.grant && typeof msg.grant === 'object') ? msg.grant : {};
   const provider = cleanOAuthProvider(grant.provider);
   if (!provider || !oauthProviderHostAllowed(provider, pageHost)) return { ok: false, error: 'Provider mismatch.' };
@@ -11480,7 +12806,7 @@ async function handleScriptDriftScan(sender, msg) {
   const pageUrl = String((tab && tab.url) || sender.url || '');
   if (!/^https?:\/\//i.test(pageUrl)) return { ok: true, ignored: 'non-http', warnings: [] };
   const pageHost = messageCleanHost(pageUrl);
-  if (pageHost && hostMatchesAllowlist(pageHost, cfg.allowlist || [])) return { ok: true, ignored: 'allowlisted', warnings: [] };
+  if (pageHost && hostMatchesAllowlist(pageHost, activeAllowlist(cfg))) return { ok: true, ignored: 'allowlisted', warnings: [] };
   const pageSite = registrableDomain(pageHost || '');
   const rawScripts = Array.isArray(msg && msg.scripts) ? msg.scripts : [];
   const normalized = [];
@@ -11554,6 +12880,392 @@ async function handleScriptDriftScan(sender, msg) {
 }
 
 // Let the popup trigger a manual refresh.
+// These live out here on purpose. Declared inside the onMessage listener
+// below -- which is where they were first written -- a function declaration is
+// scoped to that block, so the navigation listeners that call maybeClearOnLeave
+// and noteServiceWorkerRegistration threw ReferenceError instead, and every
+// const above was rebuilt empty on each message, so SW_REGISTERED_AT could
+// never remember anything long enough to be used.
+
+// ---- Consent-banner and tracking cookies, without signing anyone out ----------------------------
+//
+// "Accept all" leaves a cookie behind on every site that asked, and the ad and analytics networks
+// leave several more. They pile up for years. Clearing cookies wholesale gets rid of them, but it
+// also throws away every session cookie, so the price of tidying up is signing out of everything.
+//
+// This is deliberately built the safe way round: an ALLOWLIST of names to delete, not a blocklist
+// of names to keep. A cookie WardenOne does not recognise is left exactly where it is. That means
+// the worst case is a consent banner this list has never heard of surviving the clean -- never a
+// login being destroyed. A blocklist would have the opposite worst case, which is unacceptable for
+// a feature whose whole promise is "this will not sign you out".
+const CONSENT_COOKIE_EXACT = new Set([
+// IAB TCF / generic consent strings
+'euconsent', 'euconsent-v2', 'eupubconsent', 'eupubconsent-v2', 'addtl_consent',
+'usprivacy', 'us_privacy', 'gdpr', 'gdpr_consent', 'consent', 'cookie_consent',
+'cookieconsent_status', 'cookie_notice_accepted', 'viewed_cookie_policy',
+// OneTrust
+'optanonconsent', 'optanonalertboxclosed', 'otadditionalconsentstring',
+// Cookiebot
+'cookieconsent', 'cookiebotconsent',
+// Sourcepoint
+'consentuuid', 'sp_consent', '_sp_su', 'sp_landing',
+// Didomi / Axeptio / Osano / Termly / Iubenda / Quantcast
+'didomi_token', 'axeptio_authorized_vendors', 'axeptio_all_vendors', 'axeptio_cookies',
+'osano_consentmanager', 'osano_consentmanager_uuid', 'termly_gdpr_consent',
+'__cmpconsent', '__cmpiab', '__cmpcvcu', '__cmpcccu', 'quantcastchoice',
+// Evidon
+'notice_behavior', 'notice_gdpr_prefs', 'notice_preferences', 'notice_poptime',
+'_evidon_consent_cookie', '_evidon_suppress_notification_cookie',
+// WordPress plugin families
+'cookielawinfoconsent', 'borlabs-cookie', 'complianz_consent_status',
+'complianz_policy_id', 'moove_gdpr_popup', 'real_cookie_banner',
+// Google's own consent cookie
+'consent_v2',
+]);
+
+// Prefix matches, for the families that append a site or category id to the name.
+const CONSENT_COOKIE_PREFIX = [
+'cookielawinfo-', 'cmplz_', '_iub_cs-', 'CybotCookiebotDialog', '_sp_v1_',
+'axeptio_', 'termly-', 'osano_', 'usercentrics', 'ucs_', 'sfc-consent',
+];
+
+// Analytics and advertising cookies. None of these keep anyone signed in anywhere.
+const TRACKING_COOKIE_EXACT = new Set([
+// Google Analytics / Ads / DoubleClick
+'_ga', '_gid', '_gat', '_gcl_au', '_gcl_aw', '_gcl_dc', '_gac', '__utma', '__utmb',
+'__utmc', '__utmt', '__utmv', '__utmz', 'ide', 'dsid', 'test_cookie', '1p_jar', 'aid', 'taid',
+// Meta
+'_fbp', '_fbc', 'fr',
+// Microsoft / Bing / Clarity
+'_uetsid', '_uetvid', '_uetmsclkid', 'muid', 'muidb', '_clck', '_clsk', 'clid', 'anonchk',
+// Hotjar
+'_hjid', '_hjfirstseen', '_hjabsolutesessioninprogress', '_hjincludedinsessionsample',
+'_hjtldtest', '_hjcookietest', '_hjuserattributescachehash',
+// HubSpot
+'__hstc', '__hssrc', '__hssc', 'hubspotutk',
+// Segment / Mixpanel / Matomo / Amplitude
+'ajs_anonymous_id', 'ajs_user_id', 'ajs_group_id',
+'_pk_ref', '_pk_cvar', '_pk_hsr', 'matomo_sessid',
+// Social ad networks
+'_scid', '_sctr', 'sc_at', '_ttp', 'ttclid', '_rdt_uuid', '_pin_unauth', '_derived_epik',
+'personalization_id', 'li_sugr', 'usermatchhistory', 'analyticssynchistory', 'lidc', 'bcookie',
+// Misc adtech
+'uuid2', 'anj', 'khaos', 'tuuid', 'c', 'tdid', 'criteo', 'cto_bundle', 'cto_lwid',
+'demdex', 'dpm', 'everest_g_v2', 'gckp', 'ug', 'uid', 'uids',
+]);
+
+const TRACKING_COOKIE_PREFIX = ['_ga_', '_gat_', '_hj', 'mp_', '_pk_id', '_pk_ses', 'amplitude_', 'amp_'];
+
+// Belt and braces. Even if a name somehow matched above, never remove something that looks like it
+// is holding a session together. This should never fire -- the lists are specific -- but a feature
+// that promises not to sign you out should not depend on a list being perfect.
+const SESSION_COOKIE_HINT = /(^|[_-])(sess|session|sid|auth|token|login|logged|remember|persist|csrf|xsrf|jwt|refresh|identity|account)([_-]|$)/i;
+
+// A handful of generic names above (c, uid, ug, uids, consent) are only safe to remove on the
+// adtech hosts that actually set them, never on a site the user has an account with.
+const GENERIC_TRACKER_NAMES = new Set(['c', 'uid', 'uids', 'ug', 'gckp', 'consent', 'cookie_consent']);
+const ADTECH_HOSTS = /(doubleclick|adnxs|adsrvr|criteo|demdex|rubiconproject|pubmatic|casalemedia|openx|adform|bidswitch|taboola|outbrain|scorecardresearch|quantserve|everesttech|adsymptotic|agkn|bluekai|krxd|mathtag|turn|yieldmo|sharethrough|33across|id5-sync|crwdcntrl)\.(net|com|io)$/i;
+
+function cookieIsDisposable(cookie) {
+const name = String((cookie && cookie.name) || '');
+const lower = name.toLowerCase();
+const domain = String((cookie && cookie.domain) || '').replace(/^\./, '').toLowerCase();
+if (!name) return false;
+
+const exact = CONSENT_COOKIE_EXACT.has(lower) || TRACKING_COOKIE_EXACT.has(lower);
+const consent = CONSENT_COOKIE_EXACT.has(lower)
+    || CONSENT_COOKIE_PREFIX.some((p) => lower.startsWith(p.toLowerCase()));
+const tracking = TRACKING_COOKIE_EXACT.has(lower)
+    || TRACKING_COOKIE_PREFIX.some((p) => lower.startsWith(p.toLowerCase()));
+if (!consent && !tracking) return false;
+
+// The session guard applies to PREFIX matches only. An exact name is something we know by sight
+// -- didomi_token is a consent string, not a login -- and letting the guard veto it would mean
+// the safety net quietly cancels the feature for every vendor who put "token" in their name.
+// A prefix match is a guess, so it still has to get past the guard.
+if (!exact && SESSION_COOKIE_HINT.test(name)) return false;
+
+// Generic names only count on hosts whose entire business is tracking.
+if (GENERIC_TRACKER_NAMES.has(lower) && !ADTECH_HOSTS.test(domain)) return false;
+return true;
+}
+
+// Rebuild the URL a cookie was set for, which is what chrome.cookies.remove needs.
+function cookieRemovalUrl(cookie) {
+const domain = String((cookie && cookie.domain) || '').replace(/^\./, '');
+if (!domain) return '';
+return (cookie.secure ? 'https://' : 'http://') + domain + (cookie.path || '/');
+}
+
+// Tidy up after a banner the user had to accept.
+//
+// Auto-reject handles a banner that offers a way to say no. This is for the ones
+// that do not: the user clicks Accept to get at the page, and the cookies that
+// bought them entry sit there afterwards. When the last tab for that site closes,
+// its consent and tracking cookies go with it.
+//
+// It uses the same classifier as the manual cleaner, so it cannot sign anyone out:
+// only names on the consent/tracking lists are touched, a prefix match still has to
+// clear the session guard, and generic names count only on adtech hosts. What it
+// deliberately does NOT do is clear the whole domain -- that would take the login
+// with it, and a feature that logs you out of everything you visited is not a
+// feature anybody keeps switched on.
+//
+// Off by default. Clearing data the user did not ask to lose is not a default.
+const CONSENT_ACCEPTED_AT = Object.create(null);
+
+// Whatever this tab was showing is now being left. domainOfTab reads it before
+// the record is dropped, because after that there is nothing to attribute the
+// cookies to.
+function domainOfTab(tabId) {
+    try { return registrableDomainBg(new URL(String(LAST_TOP_URL[tabId] || '')).hostname) || ''; } catch (_) { return ''; }
+}
+
+function noteConsentAccepted(tabId, url, clearedStorage) {
+let dom = '';
+try { dom = registrableDomainBg(new URL(String(url || '')).hostname); } catch (_) { dom = ''; }
+if (dom) CONSENT_ACCEPTED_AT[dom] = Date.now();
+const cleared = Number(clearedStorage) || 0;
+if (dom && cleared > 0) {
+    queueHistory({
+      type: 'cleaned_site_storage',
+      detail: {
+        matched: dom,
+        count: cleared,
+        why: 'Tracking IDs this site stored were cleared as you left it. Your sign-in was left alone.',
+      },
+      url: 'https://' + dom + '/',
+      at: Date.now(),
+    });
+}
+return { ok: true };
+}
+
+async function domainStillOpen(domain) {
+try {
+    const tabs = await chrome.tabs.query({});
+    return (tabs || []).some((t) => {
+      try { return registrableDomainBg(new URL(String(t.url || '')).hostname) === domain; } catch (_) { return false; }
+    });
+} catch (_) {
+    // Unable to tell, so assume it is still open: leaving cookies alone is the
+    // recoverable mistake.
+    return true;
+}
+}
+
+async function clearCookiesForDomain(domain) {
+if (!chrome.cookies || !chrome.cookies.getAll) return 0;
+let all = [];
+try { all = await chrome.cookies.getAll({ domain }); } catch (_) { return 0; }
+let removed = 0;
+for (const cookie of all || []) {
+    if (!cookieIsDisposable(cookie)) continue;
+    const url = cookieRemovalUrl(cookie);
+    if (!url) continue;
+    try {
+      await chrome.cookies.remove({
+        url, name: cookie.name, storeId: cookie.storeId, partitionKey: cookie.partitionKey,
+      });
+      removed++;
+    } catch (_) {}
+}
+return removed;
+}
+
+// ---------------------------------------------------------------------------
+// Service workers, cleared when you leave.
+//
+// A service worker is the one thing a site leaves behind that keeps running.
+// Cookies sit there until something reads them; a worker sits in front of every
+// later request to that site and can wake up without a tab open. So "clear the
+// site's data when I go" that stops at cookies leaves the most persistent part
+// of the visit in place.
+//
+// Deliberately narrow, and off by default. It only touches sites that actually
+// registered a worker while you were there -- which WardenOne knows, because
+// the page guard reports the registration -- and only once no tab of that site
+// is left open. A blanket sweep would break every site that legitimately uses
+// one for offline reading or push, and those are the sites people notice.
+const SW_REGISTERED_AT = Object.create(null);
+const SW_REGISTERED_MAX = 200;
+
+function noteServiceWorkerRegistration(url) {
+try {
+    const host = new URL(String(url || '')).hostname.replace(/^www\./, '').toLowerCase();
+    if (!host) return;
+    SW_REGISTERED_AT[host] = Date.now();
+    /* Bounded: a long session across many sites must not grow this without end. */
+    const hosts = Object.keys(SW_REGISTERED_AT);
+    if (hosts.length > SW_REGISTERED_MAX) {
+      hosts.sort((a, b) => SW_REGISTERED_AT[a] - SW_REGISTERED_AT[b])
+        .slice(0, hosts.length - SW_REGISTERED_MAX)
+        .forEach((old) => { delete SW_REGISTERED_AT[old]; });
+    }
+} catch (_) {}
+}
+
+async function clearServiceWorkersForDomain(domain) {
+if (!chrome.browsingData || typeof chrome.browsingData.removeServiceWorkers !== 'function') return false;
+/* Both schemes: a site reached over http and https keeps separate registrations,
+     and clearing one while leaving the other is the kind of half-measure that
+     reads as done and is not. */
+const origins = ['https://' + domain, 'http://' + domain, 'https://www.' + domain, 'http://www.' + domain];
+try {
+    await chrome.browsingData.removeServiceWorkers({ origins });
+    return true;
+} catch (e) {
+    console.warn('[WardenOne] service worker clear failed', e);
+    return false;
+}
+}
+
+async function maybeClearServiceWorkersOnLeave(domain) {
+if (!domain || !SW_REGISTERED_AT[domain]) return;
+let cfg = {};
+try {
+    const st = await localGet('wardenone_config');
+    cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {});
+} catch (_) { return; }
+if (cfg.enabled === false || cfg.clearServiceWorkersOnLeave !== true) return;
+if (hostMatchesAllowlist(domain, activeAllowlist(cfg))) return;
+/* Still open somewhere else: leaving one tab is not leaving the site. */
+if (await domainStillOpen(domain)) return;
+delete SW_REGISTERED_AT[domain];
+if (!(await clearServiceWorkersForDomain(domain))) return;
+queueHistory({
+    type: 'cleaned_site_service_worker',
+    detail: {
+      matched: domain,
+      why: domain + ' installed a service worker while you were there, so it was removed when you left. '
+        + 'A worker outlives the tab and sits in front of every later request to the site.',
+    },
+    url: 'https://' + domain + '/',
+    at: Date.now(),
+});
+}
+
+/* Silencing a kind of notice, for a while or for good.
+
+   Kept in the config rather than a private store for one reason: the config is
+   already pushed to every content script, so the engine can check a mute
+   without asking anything. It also means the popup can list and undo them with
+   the code it already has for settings, and that a mute survives the worker
+   being evicted -- a notice you silenced coming back in ten minutes because
+   Chrome recycled a service worker would be its own small betrayal. */
+/* A short memory of what has already been said, so reloading a page does not
+   re-say it.
+
+   A notice is a statement about a thing that happened, not about a page load,
+   and the same statement repeated on every refresh stops being information and
+   becomes weather. An hour is the window: long enough that reading a page,
+   reloading it, and coming back after a coffee stays quiet; short enough that
+   tomorrow it can tell you again, because a site quietly installing a worker
+   every day IS worth hearing again.
+
+   Keyed on type AND host: the same kind of notice about a different site is a
+   different statement, and suppressing it would hide the thing worth knowing.
+   The host comes from the sending tab, never from the page. */
+const TOAST_MEMORY_WINDOW_MS = 30 * 60 * 1000;
+const TOAST_MEMORY_MAX = 250;
+
+function toastMemoryKey(type, url) {
+try {
+    const host = new URL(String(url || '')).hostname.replace(/^www./, '').toLowerCase();
+    return host ? String(type) + '|' + host : '';
+} catch (_) { return ''; }
+}
+
+async function recordToastShown(rawType, url) {
+const type = String(rawType || '');
+if (!/^[a-z_]{3,60}$/.test(type)) return;
+const key = toastMemoryKey(type, url);
+if (!key) return;
+const stored = await localGet('wardenone_config');
+const cfg = Object.assign({}, (stored && stored.wardenone_config) || {});
+const memory = Object.assign({}, cfg.toastMemory || {});
+const now = Date.now();
+/* Already remembered and still inside the window: nothing to write. This is
+     what keeps a busy page from turning every notice into a storage write. */
+if (memory[key] && now - Number(memory[key]) < TOAST_MEMORY_WINDOW_MS) return;
+memory[key] = now;
+Object.keys(memory).forEach((k) => {
+    if (now - Number(memory[k]) >= TOAST_MEMORY_WINDOW_MS) delete memory[k];
+});
+const keys = Object.keys(memory);
+if (keys.length > TOAST_MEMORY_MAX) {
+    keys.sort((a, b) => memory[a] - memory[b]).slice(0, keys.length - TOAST_MEMORY_MAX)
+      .forEach((old) => { delete memory[old]; });
+}
+cfg.toastMemory = memory;
+await localSet({ wardenone_config: cfg });
+}
+async function muteToastType(rawType, rawMinutes) {
+const type = String(rawType || "");
+if (!/^[a-z_]{3,60}$/.test(type)) return;
+const minutes = Number(rawMinutes);
+if (![60, 120, 480, 0].includes(minutes)) return;
+const stored = await localGet("wardenone_config");
+const cfg = Object.assign({}, (stored && stored.wardenone_config) || {});
+const mutes = Object.assign({}, cfg.toastMutes || {});
+/* 0 means forever. A timestamp means until then. */
+mutes[type] = minutes ? Date.now() + minutes * 60000 : 0;
+/* Bounded, and expired entries swept on every write so the list the popup
+     shows is the list that is actually in force. */
+const now = Date.now();
+Object.keys(mutes).forEach((key) => {
+    if (mutes[key] !== 0 && Number(mutes[key]) <= now) delete mutes[key];
+});
+cfg.toastMutes = mutes;
+await localSet({ wardenone_config: cfg });
+}
+
+async function maybeClearOnLeave(domain) {
+if (!domain || !CONSENT_ACCEPTED_AT[domain]) return;
+let cfg = {};
+try { const st = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {}); } catch (_) {}
+if (cfg.enabled === false || cfg.clearCookiesOnLeave !== true) return;
+if (await domainStillOpen(domain)) return;
+delete CONSENT_ACCEPTED_AT[domain];
+const removed = await clearCookiesForDomain(domain);
+if (!removed) return;
+queueHistory({
+    type: 'cleaned_site_cookies',
+    detail: {
+      matched: domain,
+      count: removed,
+      why: 'You accepted cookies here, so they were cleared when you left. Your sign-in was left alone.',
+    },
+    url: 'https://' + domain + '/',
+    at: Date.now(),
+});
+}
+
+async function cleanConsentAndTrackingCookies() {
+if (!chrome.cookies || !chrome.cookies.getAll) return { removed: 0, kept: 0, sites: 0 };
+let all = [];
+try { all = await chrome.cookies.getAll({}); } catch (_) { return { removed: 0, kept: 0, sites: 0 }; }
+if (!Array.isArray(all)) return { removed: 0, kept: 0, sites: 0 };
+const sites = new Set();
+let removed = 0;
+for (const cookie of all) {
+    if (!cookieIsDisposable(cookie)) continue;
+    const url = cookieRemovalUrl(cookie);
+    if (!url) continue;
+    try {
+      await chrome.cookies.remove({
+        url,
+        name: cookie.name,
+        storeId: cookie.storeId,
+        partitionKey: cookie.partitionKey,
+      });
+      removed++;
+      sites.add(String(cookie.domain || '').replace(/^\./, ''));
+    } catch (_) {}
+}
+return { removed, kept: all.length - removed, sites: sites.size };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Defense-in-depth: device-wide DESTRUCTIVE actions (clear ALL site data, wipe a
   // site) must originate from a WardenOne extension page (popup/options), never from
@@ -11610,6 +13322,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     respond(buildProtectionHealthSummary(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'toast-shown' && messageSenderIsTab(sender)) {
+    recordToastShown(msg.type, sender.tab && sender.tab.url).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg && msg.kind === 'mute-toast' && messageSenderIsTab(sender)) {
+    muteToastType(msg.type, msg.minutes).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg && msg.kind === 'consent-accepted' && messageSenderIsTab(sender)) {
+    respond(noteConsentAccepted(sender && sender.tab && sender.tab.id,
+      sender && sender.tab && sender.tab.url, msg.clearedStorage), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'wo-engine-check' && messageSenderIsTab(sender)) {
+    respond(verifyEngineInTab(sender), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'wo-nav-signal' && messageSenderIsTab(sender)) {
+    respond(noteNavSignal(sender && sender.tab && sender.tab.id, msg.signal), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'redirect-warning' && messageSenderIsTab(sender)) {
@@ -11860,140 +13593,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // the domain list). Returns breach names + dates so the user gets real context
   // about the site they're on. Fails gracefully if the API is unavailable.
 
-// ---- Consent-banner and tracking cookies, without signing anyone out ----------------------------
-//
-// "Accept all" leaves a cookie behind on every site that asked, and the ad and analytics networks
-// leave several more. They pile up for years. Clearing cookies wholesale gets rid of them, but it
-// also throws away every session cookie, so the price of tidying up is signing out of everything.
-//
-// This is deliberately built the safe way round: an ALLOWLIST of names to delete, not a blocklist
-// of names to keep. A cookie WardenOne does not recognise is left exactly where it is. That means
-// the worst case is a consent banner this list has never heard of surviving the clean -- never a
-// login being destroyed. A blocklist would have the opposite worst case, which is unacceptable for
-// a feature whose whole promise is "this will not sign you out".
-const CONSENT_COOKIE_EXACT = new Set([
-  // IAB TCF / generic consent strings
-  'euconsent', 'euconsent-v2', 'eupubconsent', 'eupubconsent-v2', 'addtl_consent',
-  'usprivacy', 'us_privacy', 'gdpr', 'gdpr_consent', 'consent', 'cookie_consent',
-  'cookieconsent_status', 'cookie_notice_accepted', 'viewed_cookie_policy',
-  // OneTrust
-  'optanonconsent', 'optanonalertboxclosed', 'otadditionalconsentstring',
-  // Cookiebot
-  'cookieconsent', 'cookiebotconsent',
-  // Sourcepoint
-  'consentuuid', 'sp_consent', '_sp_su', 'sp_landing',
-  // Didomi / Axeptio / Osano / Termly / Iubenda / Quantcast
-  'didomi_token', 'axeptio_authorized_vendors', 'axeptio_all_vendors', 'axeptio_cookies',
-  'osano_consentmanager', 'osano_consentmanager_uuid', 'termly_gdpr_consent',
-  '__cmpconsent', '__cmpiab', '__cmpcvcu', '__cmpcccu', 'quantcastchoice',
-  // Evidon
-  'notice_behavior', 'notice_gdpr_prefs', 'notice_preferences', 'notice_poptime',
-  '_evidon_consent_cookie', '_evidon_suppress_notification_cookie',
-  // WordPress plugin families
-  'cookielawinfoconsent', 'borlabs-cookie', 'complianz_consent_status',
-  'complianz_policy_id', 'moove_gdpr_popup', 'real_cookie_banner',
-  // Google's own consent cookie
-  'consent_v2',
-]);
-
-// Prefix matches, for the families that append a site or category id to the name.
-const CONSENT_COOKIE_PREFIX = [
-  'cookielawinfo-', 'cmplz_', '_iub_cs-', 'CybotCookiebotDialog', '_sp_v1_',
-  'axeptio_', 'termly-', 'osano_', 'usercentrics', 'ucs_', 'sfc-consent',
-];
-
-// Analytics and advertising cookies. None of these keep anyone signed in anywhere.
-const TRACKING_COOKIE_EXACT = new Set([
-  // Google Analytics / Ads / DoubleClick
-  '_ga', '_gid', '_gat', '_gcl_au', '_gcl_aw', '_gcl_dc', '_gac', '__utma', '__utmb',
-  '__utmc', '__utmt', '__utmv', '__utmz', 'ide', 'dsid', 'test_cookie', '1p_jar', 'aid', 'taid',
-  // Meta
-  '_fbp', '_fbc', 'fr',
-  // Microsoft / Bing / Clarity
-  '_uetsid', '_uetvid', '_uetmsclkid', 'muid', 'muidb', '_clck', '_clsk', 'clid', 'anonchk',
-  // Hotjar
-  '_hjid', '_hjfirstseen', '_hjabsolutesessioninprogress', '_hjincludedinsessionsample',
-  '_hjtldtest', '_hjcookietest', '_hjuserattributescachehash',
-  // HubSpot
-  '__hstc', '__hssrc', '__hssc', 'hubspotutk',
-  // Segment / Mixpanel / Matomo / Amplitude
-  'ajs_anonymous_id', 'ajs_user_id', 'ajs_group_id',
-  '_pk_ref', '_pk_cvar', '_pk_hsr', 'matomo_sessid',
-  // Social ad networks
-  '_scid', '_sctr', 'sc_at', '_ttp', 'ttclid', '_rdt_uuid', '_pin_unauth', '_derived_epik',
-  'personalization_id', 'li_sugr', 'usermatchhistory', 'analyticssynchistory', 'lidc', 'bcookie',
-  // Misc adtech
-  'uuid2', 'anj', 'khaos', 'tuuid', 'c', 'tdid', 'criteo', 'cto_bundle', 'cto_lwid',
-  'demdex', 'dpm', 'everest_g_v2', 'gckp', 'ug', 'uid', 'uids',
-]);
-
-const TRACKING_COOKIE_PREFIX = ['_ga_', '_gat_', '_hj', 'mp_', '_pk_id', '_pk_ses', 'amplitude_', 'amp_'];
-
-// Belt and braces. Even if a name somehow matched above, never remove something that looks like it
-// is holding a session together. This should never fire -- the lists are specific -- but a feature
-// that promises not to sign you out should not depend on a list being perfect.
-const SESSION_COOKIE_HINT = /(^|[_-])(sess|session|sid|auth|token|login|logged|remember|persist|csrf|xsrf|jwt|refresh|identity|account)([_-]|$)/i;
-
-// A handful of generic names above (c, uid, ug, uids, consent) are only safe to remove on the
-// adtech hosts that actually set them, never on a site the user has an account with.
-const GENERIC_TRACKER_NAMES = new Set(['c', 'uid', 'uids', 'ug', 'gckp', 'consent', 'cookie_consent']);
-const ADTECH_HOSTS = /(doubleclick|adnxs|adsrvr|criteo|demdex|rubiconproject|pubmatic|casalemedia|openx|adform|bidswitch|taboola|outbrain|scorecardresearch|quantserve|everesttech|adsymptotic|agkn|bluekai|krxd|mathtag|turn|yieldmo|sharethrough|33across|id5-sync|crwdcntrl)\.(net|com|io)$/i;
-
-function cookieIsDisposable(cookie) {
-  const name = String((cookie && cookie.name) || '');
-  const lower = name.toLowerCase();
-  const domain = String((cookie && cookie.domain) || '').replace(/^\./, '').toLowerCase();
-  if (!name) return false;
-
-  const exact = CONSENT_COOKIE_EXACT.has(lower) || TRACKING_COOKIE_EXACT.has(lower);
-  const consent = CONSENT_COOKIE_EXACT.has(lower)
-    || CONSENT_COOKIE_PREFIX.some((p) => lower.startsWith(p.toLowerCase()));
-  const tracking = TRACKING_COOKIE_EXACT.has(lower)
-    || TRACKING_COOKIE_PREFIX.some((p) => lower.startsWith(p.toLowerCase()));
-  if (!consent && !tracking) return false;
-
-  // The session guard applies to PREFIX matches only. An exact name is something we know by sight
-  // -- didomi_token is a consent string, not a login -- and letting the guard veto it would mean
-  // the safety net quietly cancels the feature for every vendor who put "token" in their name.
-  // A prefix match is a guess, so it still has to get past the guard.
-  if (!exact && SESSION_COOKIE_HINT.test(name)) return false;
-
-  // Generic names only count on hosts whose entire business is tracking.
-  if (GENERIC_TRACKER_NAMES.has(lower) && !ADTECH_HOSTS.test(domain)) return false;
-  return true;
-}
-
-// Rebuild the URL a cookie was set for, which is what chrome.cookies.remove needs.
-function cookieRemovalUrl(cookie) {
-  const domain = String((cookie && cookie.domain) || '').replace(/^\./, '');
-  if (!domain) return '';
-  return (cookie.secure ? 'https://' : 'http://') + domain + (cookie.path || '/');
-}
-
-async function cleanConsentAndTrackingCookies() {
-  if (!chrome.cookies || !chrome.cookies.getAll) return { removed: 0, kept: 0, sites: 0 };
-  let all = [];
-  try { all = await chrome.cookies.getAll({}); } catch (_) { return { removed: 0, kept: 0, sites: 0 }; }
-  if (!Array.isArray(all)) return { removed: 0, kept: 0, sites: 0 };
-  const sites = new Set();
-  let removed = 0;
-  for (const cookie of all) {
-    if (!cookieIsDisposable(cookie)) continue;
-    const url = cookieRemovalUrl(cookie);
-    if (!url) continue;
-    try {
-      await chrome.cookies.remove({
-        url,
-        name: cookie.name,
-        storeId: cookie.storeId,
-        partitionKey: cookie.partitionKey,
-      });
-      removed++;
-      sites.add(String(cookie.domain || '').replace(/^\./, ''));
-    } catch (_) {}
-  }
-  return { removed, kept: all.length - removed, sites: sites.size };
-}
 
   // ---- Browser cleaning: clear selected data types globally ----
   // The user chooses what to wipe (cache, cookies, history, downloads, storage,
@@ -12035,32 +13634,90 @@ async function cleanConsentAndTrackingCookies() {
     return true;
   }
 
-  // ---- Extension permissions review (LIST + flag only) ----
-  // HONEST SCOPE: Chrome forbids one extension from scanning another for malware
-  // or blocking installs. The management API can only LIST installed extensions
-  // and their requested permissions. We surface that and flag high-risk
-  // permissions so the user can review -- it is a reviewer, NOT a malware scanner.
+  // ---- Local Extension Security Centre ----
+  // Reputation is an exact-ID lookup in a bundled local database. Access risk and
+  // inventory changes are separate facts: broad permissions are not a malware
+  // verdict, while a missing database record is never presented as proof of safety.
   if (msg && msg.kind === 'list-extensions') {
     (async () => {
       try {
-        const all = await chrome.management.getAll();
-        const items = all
-          .filter((e) => e.type === 'extension' && e.id !== chrome.runtime.id)
-          .map((e) => {
-            const risk = classifyExtensionRisk(e);
-            return {
-              name: e.name, id: e.id, enabled: e.enabled,
-              installType: e.installType,
-              riskFlags: risk.flags,
-              riskScore: risk.score,
-              riskLevel: risk.level,
-            };
-          })
-          .sort((a, b) => b.riskScore - a.riskScore);
-        sendResponse({ ok: true, extensions: items });
+        const report = await buildExtensionSecurityReport({ trigger: 'legacy-list' });
+        sendResponse({ ok: true, extensions: report.extensions, database: report.database, summary: report.summary });
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
+    })();
+    return true;
+  }
+
+  if (msg && msg.kind === 'extension-security-report') {
+    (async () => {
+      try {
+        sendResponse(await buildExtensionSecurityReport({
+          trigger: msg.trigger === 'manual' ? 'manual' : 'security-centre',
+          reloadDatabase: msg.reloadDatabase === true,
+        }));
+      } catch (e) { sendResponse({ ok: false, error: String(e) }); }
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'review-extension-snapshot') {
+    if (!messageSenderIsExtensionPath(sender, 'extensions.html')) {
+      sendResponse({ ok: false, error: 'Not allowed from this page.' });
+      return true;
+    }
+    (async () => {
+      try {
+        const review = await reviewExtensionSnapshotById(String(msg.id || ''));
+        sendResponse({ ok: true, review });
+      } catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'forget-extension-review') {
+    if (!messageSenderIsExtensionPath(sender, 'extensions.html')) {
+      sendResponse({ ok: false, error: 'Not allowed from this page.' });
+      return true;
+    }
+    (async () => {
+      try { await forgetExtensionReview(String(msg.id || '')); sendResponse({ ok: true }); }
+      catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'import-extension-reputation') {
+    if (!messageSenderIsExtensionPath(sender, 'extensions.html')) {
+      sendResponse({ ok: false, error: 'Not allowed from this page.' });
+      return true;
+    }
+    (async () => {
+      try { sendResponse(Object.assign({ ok: true }, await importExtensionReputationDatabase(msg.database))); }
+      catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'clear-imported-extension-reputation') {
+    if (!messageSenderIsExtensionPath(sender, 'extensions.html')) {
+      sendResponse({ ok: false, error: 'Not allowed from this page.' });
+      return true;
+    }
+    (async () => {
+      try { await clearImportedExtensionReputation(); sendResponse({ ok: true }); }
+      catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'open-installed-extension-details') {
+    if (!messageSenderIsExtensionPath(sender, 'extensions.html')) {
+      sendResponse({ ok: false, error: 'Not allowed from this page.' });
+      return true;
+    }
+    (async () => {
+      try {
+        const extension = await findInstalledExtension(String(msg.id || ''));
+        await chrome.tabs.create({ url: 'chrome://extensions/?id=' + extension.id });
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: String(e && e.message || e) }); }
     })();
     return true;
   }
@@ -12841,7 +14498,7 @@ async function cleanConsentAndTrackingCookies() {
         const maxDays = Number(cfg.loginAgeMaxDays) > 0 ? Number(cfg.loginAgeMaxDays) : 30;
         const host = messageCleanHost(msg.domain);
         if (!host) { sendResponse({ ok: false }); return; }
-        if (hostMatchesAllowlist(host, cfg.allowlist || [])) { sendResponse({ ok: true, ignored: 'allowlisted', isNew: false, hardBlock: false }); return; }
+        if (hostMatchesAllowlist(host, activeAllowlist(cfg))) { sendResponse({ ok: true, ignored: 'allowlisted', isNew: false, hardBlock: false }); return; }
         let age = null;
         try {
           const found = await lookupDomainAge(host, cfg);
@@ -13216,7 +14873,7 @@ async function cleanConsentAndTrackingCookies() {
         if (!origin) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
         const CSRF_NAME = /(csrf|xsrf)/i;
         const AUTHISH = /(sess|token|auth|sid|login|jwt)/i;
-        const cookies = await chrome.cookies.getAll({ domain: u.hostname });
+        const cookies = await chrome.cookies.getAll({ domain: cookieAuditDomain(u.hostname) });
         let hardened = 0, skippedCsrf = 0, failed = 0;
         for (const c of cookies) {
           if (c.httpOnly) continue;
@@ -13258,7 +14915,7 @@ async function cleanConsentAndTrackingCookies() {
         if (!/^https?:$/.test(u.protocol)) { sendResponse({ ok: false, error: 'Open a normal web page first.' }); return; }
         const origin = await activeTabMatchesOrigin(u.origin);
         if (!origin) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
-        const cookies = await chrome.cookies.getAll({ domain: u.hostname });
+        const cookies = await chrome.cookies.getAll({ domain: cookieAuditDomain(u.hostname) });
         let total = 0, secure = 0, httpOnly = 0, sameSite = 0, sessionLike = 0;
         const weak = [];
         for (const c of cookies) {
@@ -13331,7 +14988,7 @@ async function cleanConsentAndTrackingCookies() {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-      const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'yt-adblock.js', 'twitch-adblock.js', 'twitch-rewind.js', 'bridge.js', 'background.js', 'background-startup.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'popup.html', 'popup.js', 'history.html', 'history.js', 'network.html', 'network.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
+      const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'yt-adblock.js', 'twitch-adblock.js', 'twitch-rewind.js', 'bridge.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'popup.html', 'popup.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
 
       // 1. core files present & non-empty
       for (const f of CORE_FILES) {
@@ -13348,7 +15005,7 @@ async function cleanConsentAndTrackingCookies() {
       }
 
       // 2. JSON files actually parse
-      for (const jf of ['manifest.json', 'rules.json']) {
+      for (const jf of ['manifest.json', 'rules.json', 'extension-reputation.json']) {
         try {
           const r = await fetch(chrome.runtime.getURL(jf));
           JSON.parse(await r.text());
@@ -13445,6 +15102,7 @@ async function cleanConsentAndTrackingCookies() {
         if (eyeShieldThemingActive(repairCfg)) isolatedAlwaysFiles.push('eyeshield.js');
         isolatedAlwaysFiles.push('bridge.js');
         const consentOn = consentRejectActive(repairCfg);
+        const consentWallOn = consentWallActive(repairCfg);
         const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
 
         // executeScript resolving proves only that injection was ATTEMPTED. Every content
@@ -13495,6 +15153,7 @@ async function cleanConsentAndTrackingCookies() {
           // Same as YouTube: executed, never marked. It gained a dispose earlier in this audit, so
           // re-injection now releases the previous copy rather than stacking a second one.
           { file: 'consent-reject.js', world: 'ISOLATED', flag: '__wardenOneConsentRejectReadyVersion' },
+          { file: 'consent-wall.js', world: 'ISOLATED', flag: '__wardenOneConsentWallReadyVersion' },
         ];
         // The flags to mark in a frame are exactly those whose file that frame is receiving.
         const repairFlagsForFiles = (world, files) => REPAIR_COMPONENTS
@@ -13587,6 +15246,9 @@ async function cleanConsentAndTrackingCookies() {
             const mainFiles = repairMainWorldFilesForUrl(frameUrl, frameId);
             const isolatedFiles = isolatedAlwaysFiles.slice();
             if (consentOn && !consentRejectExcludedUrl(frameUrl)) isolatedFiles.push('consent-reject.js');
+            // Top frame only, matching how it is registered: the sheet is always an element
+            // of the top document, even when the sheet itself is an iframe.
+            if (consentWallOn && frameId === 0 && !consentRejectExcludedUrl(frameUrl)) isolatedFiles.push('consent-wall.js');
             await markWardenOneCopiesStale(target, 'MAIN', mainFiles || []);
             await markWardenOneCopiesStale(target, 'ISOLATED', isolatedFiles);
             if (mainFiles && mainFiles.length) {

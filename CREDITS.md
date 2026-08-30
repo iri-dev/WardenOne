@@ -161,6 +161,55 @@ Rulesets compiled from the above and **redistributed inside the package**:
 
 <!-- END GENERATED SOURCE INVENTORY -->
 
+## Installed-extension incident data
+
+- **The Great Suspender security incident record** —
+  <https://github.com/greatsuspender/thegreatsuspender/issues/1263>
+
+  WardenOne's bundled `extension-reputation.json` contains a manually curated factual
+  record for the exact legacy extension ID involved in this documented compromise.
+  Its `all_versions` scope records that identity-wide history and the obsolete store
+  identity; it does not claim that every released version contained the compromised
+  code. No upstream code or list is copied. The record is deliberately labelled as a
+  historical incident rather than a current malware verdict, a blanket claim that
+  every unknown extension is clean, or an assumption that a display name proves identity.
+
+- **Recognized official extension identities** —
+  [uBlock Origin](https://github.com/gorhill/uBlock),
+  [Bitwarden](https://bitwarden.com/help/getting-started-browserext/),
+  [1Password](https://support.1password.com/getting-started-browser/),
+  [MetaMask](https://github.com/MetaMask/metamask-extension),
+  [React Developer Tools](https://github.com/facebook/react/tree/main/packages/react-devtools-extensions),
+  [Dark Reader](https://darkreader.org/blog/attention/),
+  [Privacy Badger](https://privacybadger.org/),
+  [Vimium](https://vimium.github.io/),
+  [Grammarly](https://support.grammarly.com/hc/en-us/articles/8343923417485-How-to-deploy-Grammarly-for-Chrome),
+  [LastPass](https://community.lastpass.com/discussion/1954/anybody-ever-see-this-in-their-history-on-chrome-i-had-this-showing-today-when-my-screen-filled-with-sirens-and-warnings-to-call-a-number-it-shows-lass-pass-on-this-see-chrome-extension),
+  [Dashlane](https://support.dashlane.com/hc/en-us/articles/16995550348050-Extension-deployment-using-macOS-and-Jamf),
+  [Keeper](https://docs.keeper.io/enterprise-guide/deploying-keeper-to-end-users/keeper-fill/linux/json-policy-deployment-chrome),
+  [Zotero Connector](https://chromewebstore.google.com/detail/zotero-connector/ekhagklcjbdpajgpjgmbionohlpdbjgc),
+  [DuckDuckGo](https://duckduckgo.com/duckduckgo-help-pages/desktop/chrome),
+  [Ghostery](https://www.ghostery.com/enterprise-privacy-solutions/documentation/chrome),
+  [NordVPN](https://chromewebstore.google.com/detail/vpn-for-chrome-nordvpn-pr/fjoaledfpmneenckfbpdfhkmimnjocfa), and
+  [Google Translate](https://chromewebstore.google.com/detail/google-translate/aapbdbdomjkkjkaonfhkkikfgjllcleb)
+
+  The same local file records these projects' exact Chrome extension IDs as
+  `recognized_identity`. That label supplies identity context only: it is deliberately
+  not `known_safe`, does not override capability risk, and does not silence a later
+  version or permission change.
+
+- **Version-scoped historical extension incidents** —
+  [MEGA 3.39.4](https://mega.nz/blog_47),
+  [Web Developer 0.4.9](https://chrispederick.com/blog/2017/08/03/web-developer-for-chrome-compromised/), and
+  [Copyfish 2.8.5](https://ui.vision/blog/chrome-extension-adware/)
+
+  Each record is bound to the exact Chrome extension ID and the exact affected
+  version named by the project or author. It does not label a repaired or current
+  version malicious. The MEGA identity is independently confirmed by its
+  [official Chrome listing](https://chromewebstore.google.com/detail/mega/bigefpfhnfcobdlfbedofhhaibnlghod),
+  Web Developer by its [official repository](https://github.com/chrispederick/web-developer),
+  and Copyfish by its [official repository](https://github.com/A9T9/Copyfish).
+
 ## Notes
 
 - These lists are compiled into Chrome's Declarative Net Request (DNR) rule

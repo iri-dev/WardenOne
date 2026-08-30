@@ -277,6 +277,12 @@
     padding: 11px 0; border-bottom: 1px solid var(--line);
   }
   .row:last-child { border-bottom: none; }
+  /* Watch-only entries. No toggle, so the text takes the full width instead of leaving a
+     gap where a control used to be, and the lead-in reads as a note rather than a setting. */
+  .row.watch, .row.watch-lead { display: block; }
+  .row.watch .desc, .row.watch-lead .desc { max-width: none; }
+  .row.watch-lead { border-bottom: 1px solid var(--line); }
+  .row.watch-lead .desc { margin-top: 0; }
   .row .name { font-size: 13px; font-weight: 600; color: var(--ink); }
   .row .desc { font-size: 11px; color: var(--ink-faint); margin-top: 2px; max-width: 230px; line-height: 1.4; }
   /* toggle */
@@ -359,6 +365,18 @@
   .tool-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px; }
   .tool-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:9px 0; }
   .tool-actions .btn { padding:9px 10px; border-radius:11px; }
+  .row.site-pause-row { display:grid; gap:9px; }
+  .site-pause-row .desc,.site-override-row .desc { max-width:none; }
+  .site-pause-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+  .site-pause-actions .btn { min-width:0; padding:8px 10px; }
+  .row.site-pause-active-row { gap:12px; }
+  .site-pause-active-row[hidden] { display:none; }
+  .site-pause-active-row .btn { flex:none; padding:8px 14px; }
+  .row.site-override-row { display:block; border-bottom:none; }
+  .site-override-actions { display:flex; gap:6px; margin-top:8px; }
+  .site-override-actions .api-field { flex:1; min-width:0; }
+  .site-override-actions .btn { flex:none; padding:8px 14px; }
+  .site-override-list { margin-top:8px; }
   .btn.soft-danger { color:#953a69; background:#f1d5e8; border:1px solid #ecc2dc; }
   .btn.soft-danger:hover { background:#edc8df; }
   .shortcut-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:9px; }
@@ -704,6 +722,14 @@
       <label class="tg"><input type="checkbox" data-key="blockGesturelessNav"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name">Block popup and redirect tricks</div><div class="desc">Takes away the tricks a page uses to get a click it can spend: fake "Please confirm to continue" prompts, script-built frames holding a bare INSTALL badge, and embedded players that move your whole tab when you click them. Real confirmations, payment forms, captchas and ordinary players are left alone.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockPopupTricks"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Stop back-button traps</div><div class="desc">Three ways a page stops Back from working, all refused: putting the address you are already on straight back each time you press it; quietly stacking entries while you read, so Back has to be pressed once for every one of them; and shoving you forward again the instant you press Back. What separates a trap from an app you are using is whether anything you did asked for it, so ordinary browsing is untouched. Nothing already in your history is changed or removed &mdash; declining to add an entry is not the same as taking one away.</div></div>
+      <label class="tg"><input type="checkbox" data-key="backTrapGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
       <div><div class="name">Detect redirect chains</div><div class="desc">Watches server-side redirect hops and freezes long or rotating CPA chains before the final landing page. Helps when the URL changes too quickly for normal in-page checks.</div></div>
       <label class="tg"><input type="checkbox" data-key="detectRedirectChains"><span class="track"></span><span class="knob"></span></label>
     </div>
@@ -715,11 +741,11 @@
 <h2>IP protection</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Block IP-grabber beacons</div><div class="desc">Stop embedded logger pixels/fetches before they send</div></div>
+      <div><div class="name">Block IP-grabber beacons</div><div class="desc">Someone can hide a logger in an ordinary-looking page &mdash; an image or a background request to a grabber service &mdash; and your address is recorded just by the page loading. This stops those requests before they leave, so there is nothing to record.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockGrabberResources"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Warn on IP-logger pages</div><div class="desc">Flag known grabber domains (Grabify, IPLogger…)</div></div>
+      <div><div class="name">Warn on IP-logger pages</div><div class="desc">The other half: a link sent to you that goes to the grabber itself &mdash; Grabify, IPLogger and the rest &mdash; usually dressed up as a redirect to somewhere you meant to go. You get told what the page is before you use it. The page still loads; nothing is blocked here.</div></div>
       <label class="tg"><input type="checkbox" data-key="warnGrabberDomains"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -908,6 +934,10 @@
       <label class="tg"><input type="checkbox" data-key="sendPrivacySignals"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name">Reduce third-party Client Hints</div><div class="desc">Removes detailed browser version, OS version, architecture, bitness, and device model from third-party requests. Known tracker hosts also lose basic browser hints. First-party sites keep their normal compatibility data; Anti-fingerprinting mode reduces the matching navigator.userAgentData values too.</div></div>
+      <label class="tg"><input type="checkbox" data-key="clientHintProtection"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
       <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional randomization for canvas, WebGL vendor strings, audio buffers, and coarse hardware hints. It can break canvas-heavy sites and may make rare setups more unique, so it stays opt-in.</div></div>
       <label class="tg"><input type="checkbox" data-key="antiFingerprintNoise"><span class="track"></span><span class="knob"></span></label>
     </div>
@@ -920,7 +950,7 @@
       <label class="tg"><input type="checkbox" data-key="blockFingerprintScripts"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block third-party cookies</div><div class="desc">Strips Set-Cookie from embedded third-party frames, so they can't store new cross-site tracking cookies. Cookies a site already saved can still be sent. First-party logins keep working.</div></div>
+      <div><div class="name">Block third-party cookies</div><div class="desc">Strips Set-Cookie from third-party pixels and beacons so they cannot store new cross-site tracking cookies, and clears cookies and storage inside frames belonging to known trackers. It is deliberately not applied to frames, scripts and XHR in general: sign-in and federation set their cookies on exactly those, and stripping them signs you out. Cookies a site already saved can still be sent. First-party logins keep working.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockThirdPartyCookies"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -940,16 +970,32 @@
       <label class="tg"><input type="checkbox" data-key="trackerLearner"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name">Block tracker cache validators</div><div class="desc">Removes If-None-Match and ETag only on passive requests to WardenOne's known tracker hosts, preventing cache-tag respawning without disabling normal browser caching. Opt-in because repeated tracker responses can use more bandwidth.</div></div>
+      <label class="tg"><input type="checkbox" data-key="trackerCacheProtection"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
       <div><div class="name">De-AMP pages</div><div class="desc">Skip Google/AMP cache pages and go straight to the real article. Rewrites AMP links and redirects AMP pages to their original URL. Opt-in.</div></div>
       <label class="tg"><input type="checkbox" data-key="deAmp"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Trim referrer to origin</div><div class="desc">Only tell the next site which domain you came from, not the full page address. Cuts what trackers learn about your browsing. Opt-in.</div></div>
+      <div><div class="name">Strict cross-site referrer protection</div><div class="desc">Removes the Referer header on cross-site requests while keeping same-site referrers. Sign-in, CAPTCHA, and payment destinations are excluded for compatibility. Opt-in because some hotlink and hand-off flows rely on a referrer.</div></div>
       <label class="tg"><input type="checkbox" data-key="capReferrer"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Auto-reject cookie banners</div><div class="desc">Automatically rejects cookie/consent pop-ups, opens choices when needed, disables optional tracking, and never clicks Accept. On by default.</div></div>
+      <div><div class="name">Auto-reject cookie banners</div><div class="desc">When the banner offers a way to say no, WardenOne takes it — opening the choices if it has to, turning off optional tracking, never clicking Accept. On by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="autoRejectConsent"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Lift full-screen cookie walls</div><div class="desc">When it offers none: the sheet that covers the page and freezes scrolling. Lifted without clicking anything, so nothing is consented to. Goes back if the page turns out to be empty behind it. Some sites keep the wall on a separate domain, where nothing can reach it. Opt-in.</div></div>
+      <label class="tg"><input type="checkbox" data-key="removeConsentWalls"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Clear a site's cookies after accepting</div><div class="desc">When you accept one yourself. The site's consent and tracking cookies, and the IDs it stored, are cleared once you leave. Sign-ins are left alone. Off by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="clearCookiesOnLeave"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Remove a site's service worker when you leave</div><div class="desc">A service worker is the one thing a site leaves running after you close the tab &mdash; it sits in front of every later request to that site and can wake up on its own. This removes it once you have closed every tab for a site that installed one while you were there. Off by default, because sites that legitimately use one for offline reading or notifications will lose that until you visit again.</div></div>
+      <label class="tg"><input type="checkbox" data-key="clearServiceWorkersOnLeave"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
       <div><div class="name">Clean tracking redirects on links</div><div class="desc">Rewrite outbound links that hide the real destination behind a tracker (Facebook l.php, Google /url, Reddit out, etc.) so a click goes straight there.</div></div>
@@ -1123,11 +1169,23 @@
       <label class="tg"><input type="checkbox" data-key="mediaShield"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block camera &amp; microphone</div><div class="desc">Stop sites from opening mic/camera prompts or hidden capture streams</div></div>
+      <div><div class="name">Full-screen address bar</div><div class="desc">In full screen the browser's own address bar is hidden, so a page can paint a fake one showing a site it isn't. Warns when a page does that &mdash; video, games and slideshows are untouched.</div></div>
+      <label class="tg"><input type="checkbox" data-key="fullscreenGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Fake sign-in windows</div><div class="desc">Warns when a page draws a box made to look like a separate browser sign-in window &mdash; title bar, close button, an address bar it painted itself &mdash; and asks for a password in it. Online IDEs and design tools are excluded.</div></div>
+      <label class="tg"><input type="checkbox" data-key="fakeWindowGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Notification bait</div><div class="desc">Flags pages that talk you into clicking Allow on the notification prompt, and alerts that arrive reading like &ldquo;your PC is infected&rdquo;. Nothing is suppressed &mdash; alerts pushed from a service worker are outside a page script's reach.</div></div>
+      <label class="tg"><input type="checkbox" data-key="notificationAbuseGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Block camera &amp; microphone</div><div class="desc">Stops sites opening camera or microphone prompts, and blocks capture started without you doing anything at all. That includes speech recognition, which reaches the microphone by a different route and would otherwise listen with nothing here noticing &mdash; and which Chrome sends away to be transcribed rather than doing on your machine. YouTube, Twitch and X are exempt so calls and uploads still work; anywhere else, a site that wants the microphone has to ask when you are actually there.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockCameraMic"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block screen capture</div><div class="desc">Stop pages from requesting screen-share capture</div></div>
+      <div><div class="name">Block screen capture</div><div class="desc">Stops a page asking to record your screen or a window. On by default because a screen-share prompt you did not go looking for is almost always a scam walking you into one. YouTube, Twitch and X are exempt so ordinary players and calls still work.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockScreenCapture"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1135,18 +1193,18 @@
       <label class="tg"><input type="checkbox" data-key="blockGeolocation"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block hidden media abuse</div><div class="desc">Stop hidden background players while leaving normal visible videos alone</div></div>
+      <div><div class="name">Block hidden media abuse</div><div class="desc">Stops players that run with nothing on screen &mdash; the ones that exist to autoplay an ad, hold a wake-lock, or keep a tab alive. Visible players you can see and pause are left alone, as are YouTube, Twitch and X.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockAutoplayMedia"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
 <h2>Adult-site safety</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Warn on adult-site redirects</div><div class="desc">"Are you sure?" screen on unwanted 18+ arrivals</div></div>
+      <div><div class="name">Warn on adult-site redirects</div><div class="desc">Shows an "are you sure?" screen when you arrive on an 18+ site you did not go looking for, so a mistyped address or a sneaky redirect never drops you (or a kid on the family computer) straight onto explicit content. Going there deliberately still works.</div></div>
       <label class="tg"><input type="checkbox" data-key="gateAdultSites"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Catch unlisted adult sites</div><div class="desc">Heuristic for sites not on the list (some false hits)</div></div>
+      <div><div class="name">Catch unlisted adult sites</div><div class="desc">Catches adult sites that are not on any list yet, by how the page behaves rather than by name. Newly registered sites rotate faster than any list can follow. It judges on signals, so it will occasionally be wrong &mdash; the gate is a question, never a block.</div></div>
       <label class="tg"><input type="checkbox" data-key="adultHeuristics"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="border-bottom:none;">
@@ -1157,19 +1215,19 @@
 <h2>Advanced detection (catches rotating/custom domains)</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Warn on redirecting links</div><div class="desc">Flag links that route through ?url=/?redirect= to another site</div></div>
+      <div><div class="name">Warn on redirecting links</div><div class="desc">Flags links that carry another address inside them &mdash; the ?url= and ?redirect= shape &mdash; so a link that looks like it stays on this site but hands you to another one says so first.</div></div>
       <label class="tg"><input type="checkbox" data-key="warnRedirectParams"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Warn on shortened links</div><div class="desc">Flag bit.ly, tinyurl, etc. that hide their destination</div></div>
+      <div><div class="name">Warn on shortened links</div><div class="desc">Flags bit.ly, tinyurl and the rest, which hide where a link actually goes until you are already there. You get told what it is before you follow it; the link still works if you want it.</div></div>
       <label class="tg"><input type="checkbox" data-key="warnShorteners"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Monitor for tracker requests</div><div class="desc">Warn when a page hits a logging endpoint on another domain</div></div>
+      <div><div class="name">Monitor for tracker requests</div><div class="desc">Warns when a page quietly posts to a logging endpoint on someone else's domain. Hosts the network rules already block stay silent, so this only speaks about the ones that would otherwise have got through unseen.</div></div>
       <label class="tg"><input type="checkbox" data-key="monitorLoggerApi"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Detect fake / phishing sites</div><div class="desc">Warn when a domain imitates a known brand (paypal, bank, etc.)</div></div>
+      <div><div class="name">Detect fake / phishing sites</div><div class="desc">Warns when a domain is dressed up as one you know &mdash; a swapped letter, a lookalike character, the right brand on the wrong suffix. It reads the address rather than a list, so it catches ones registered this morning.</div></div>
       <label class="tg"><input type="checkbox" data-key="detectPhishing"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1185,6 +1243,10 @@
       <label class="tg"><input type="checkbox" data-key="behavioralScan"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name">XSS Behavior Guard</div><div class="desc">Warns when a value from the address bar, another site, or a page message reaches somewhere the browser would run it as code &mdash; the shape of a cross-site scripting attempt. Normal app routing, uploads and escaped examples are left alone, and the value itself is never recorded.</div></div>
+      <label class="tg"><input type="checkbox" data-key="xssBehaviorGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
       <div><div class="name">Script drift guard</div><div class="desc">Baselines third-party script hashes and warns when the same CDN/script URL later serves changed code with new behavior or outbound hosts. On by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="scriptDriftGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
@@ -1193,12 +1255,28 @@
       <label class="tg"><input type="checkbox" data-key="riskySiteMode"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Anti-clickjacking checks</div><div class="desc">Warn before sensitive clicks in hidden, covered, or suspicious embedded frames.</div></div>
+      <div><div class="name">Anti-clickjacking checks</div><div class="desc">Warns before a click that matters &mdash; sign in, password, checkout, pay, transfer, authorise, allow, install &mdash; lands on something hidden, covered by another element, or otherwise not where it looks. Ordinary buttons in plain sight never raise it.</div></div>
       <label class="tg"><input type="checkbox" data-key="antiClickjacking"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Intranet/router protection</div><div class="desc">Public pages cannot silently send fetch, XHR, forms, beacons, or sockets to local admin panels.</div></div>
+      <div><div class="name">Intranet/router protection</div><div class="desc">Public pages cannot silently reach local admin panels &mdash; fetch, XHR, forms, beacons, sockets, scripts, frames and media are all covered. This works by reading the address a page asks for, so it stops anything aimed at your network by name or by IP. A public-looking name that quietly resolves to your router is a different problem, handled below.</div></div>
       <label class="tg"><input type="checkbox" data-key="intranetProtection"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">DNS rebinding detection</div><div class="desc">Watches the address each site actually resolves to. When a normal-looking name comes back pointing at your own network &mdash; or answers publicly once and privately the next time, which is what a rebinding attack looks like &mdash; that name is blocked for the rest of the session. Being honest about the limit: the browser gives extensions no way to check an address before the request goes out, so the request that reveals the trick has already happened. This catches everything after it, not the first one. Pages you open yourself that live on your own network, like a local dev server, are left alone.</div></div>
+      <label class="tg"><input type="checkbox" data-key="dnsRebindGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Enforce it at the network layer too</div><div class="desc">The protection above works by rewriting what a page can call. A background worker gets its own private copy of those same functions, untouched, so a few lines running in one could reach your network with the guard still sitting there. This adds a second rule that refuses local addresses no matter which part of a page asked, which is the only way to cover workers without rewriting their code and breaking them. Pages you opened from your own network keep full access to it, including other devices on it. Turn this off if something on your network stops loading and you would rather have it back.</div></div>
+      <label class="tg"><input type="checkbox" data-key="intranetNetworkRules"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Watch cross-site cookie requests</div><div class="desc">Something embedded in a page &mdash; a comment box, a video player, an ad frame &mdash; can ask for its own cookies back across sites, using the one route browsers still allow. You were never shown who asked. WardenOne records every request with the name of whoever made it, refuses the ones from known trackers outright, and flags anything that asks while invisible or without you clicking a thing. Ordinary embedded sign-ins are left to work.</div></div>
+      <label class="tg"><input type="checkbox" data-key="storageAccessGuard"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Refuse every cross-site cookie request</div><div class="desc">Turns the above from watching into refusing: no embedded thing gets its cookies back across sites, tracker or not. Off by default, and left out of &ldquo;Turn everything on&rdquo;, because this is the mechanism behind signing in through an embedded box &mdash; comment logins, embedded checkouts, some SSO frames. Turn it on if you would rather those break than let anything through.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockAllStorageAccess"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
 <h2>SessionShield — login &amp; session protection</h2>
@@ -1240,7 +1318,7 @@
       <label class="tg"><input type="checkbox" data-key="honeytokenMode"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Command paste guard</div><div class="desc">Blocks the "ClickFix" scam where a page tells you to press Win+R or open PowerShell and paste a command to "verify you're human." Warns you and stops the command reaching your clipboard. On by default.</div></div>
+      <div><div class="name">Command paste guard</div><div class="desc">Detects ClickFix and self-XSS instructions such as Win+R, F12, Ctrl+Shift+I, DevTools, Console, PowerShell, and “enable pasting,” including fake “verify you’re human” steps. Suspicious programmatic clipboard writes are blocked, risky copied selections trigger a warning, and instruction-plus-command matches receive a stronger warning. WardenOne does not access Chrome’s own DevTools interface. On by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="commandPasteGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1271,7 +1349,7 @@
 <h2>Blocklist (auto-updating)</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Block known malicious sites</div><div class="desc">Hard-block malware, phishing &amp; scam domains from vetted threat feeds</div></div>
+      <div><div class="name">Block known malicious sites</div><div class="desc">Hard-blocks known malware, phishing and scam domains from vetted threat feeds &mdash; tens of thousands of them, millions across the feeds &mdash; before the page loads at all. This is the one to leave on if you leave nothing else.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockMalwareSites"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1283,7 +1361,7 @@
       <label class="tg"><input type="checkbox" data-key="cryptominerCpuWatch"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Auto-update blocklist</div><div class="desc">Pull fresh phishing, scam, IP-logger, adult-warning, and page-protection lists daily</div></div>
+      <div><div class="name">Auto-update blocklist</div><div class="desc">Pulls fresh phishing, scam, IP-logger, adult-warning and page-rule lists once a day. The built-in rules still work without it, but new threats stop arriving &mdash; and a list that failed to fetch keeps the copy already downloaded rather than leaving a gap.</div></div>
       <label class="tg"><input type="checkbox" data-key="autoUpdateLists"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="border-bottom:none;">
@@ -1329,6 +1407,21 @@
         <button type="button" class="eyeshield-reset" id="eyeshield-reset">Reset to default</button>
       </details>
     </section>
+<h2>What WardenOne watches</h2>
+    <div class="card-group">
+    <div class="row watch-lead">
+      <div class="desc">These three only ever write to the Activity Center. They block nothing and change nothing on the page, so there is no protection here to switch off &mdash; they are listed so you can see what is being watched. The master switch and the site allowlist still turn them off with everything else.</div>
+    </div>
+    <div class="row watch">
+      <div><div class="name">Background reports</div><div class="desc">Pages send measurement to other companies in the background now, where a tracking pixel used to be. Those go past on no blocklist and leave no trace, so the destination is noted here &mdash; the host, once per page. What was sent is never read or stored.</div></div>
+    </div>
+    <div class="row watch">
+      <div><div class="name">Hardware and file access</div><div class="desc">When a site asks to talk to a USB, serial, HID or Bluetooth device, or asks for a MIDI device or a file or folder on your computer &mdash; and separately when it comes back to one you granted on an earlier visit, which needs no prompt and so can happen while you are not looking. Folder access reaches furthest of any of these: a whole tree, and it persists, which is why "pick your Downloads folder so we can scan it" is worth recognising. Chrome's own picker still decides. The device, file and folder are never recorded &mdash; only which kind of access, and whether it was read or write.</div></div>
+    </div>
+    <div class="row watch">
+      <div><div class="name">Browser capabilities</div><div class="desc">Four things that leave no other trace. Installing a service worker is the one that outlasts the visit &mdash; it stays after the tab closes and sits in front of every later request to the site, which is how offline and push work and also how a page leaves something behind. Asking to install itself matters next: an installed site opens in its own window with no address bar &mdash; the same blind spot the fake-window and full-screen guards exist for. Idle detection tells a site when you are at your desk and when your screen is locked. Chrome's payment sheet is a route to card details the form guard cannot see. Chrome still confirms each one; only which payment methods were offered is noted, never the amount or the item.</div></div>
+    </div>
+    </div>
 <h2>Interface</h2>
     <div class="card-group">
     <div class="row">
@@ -1341,6 +1434,16 @@
     <div class="row">
       <div><div class="name">Show block notifications</div><div class="desc">Pop-up toast when something is blocked, with the reason</div></div>
       <label class="tg"><input type="checkbox" data-key="showToasts"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <!-- Everything silenced from a notification card, and the way back. A
+         "never show this again" that cannot be found afterwards is a trap, so
+         the list only appears when there is something on it. -->
+    <div class="row" id="muted-toasts-row">
+      <div style="width:100%;">
+        <div class="name" style="margin-bottom:3px;">Notifications you silenced</div>
+        <div class="desc" style="margin-bottom:7px;">Press 1h, 2h, Today or Always on any notification and it appears here. Bring it back whenever you like.</div>
+        <div id="muted-toasts-list"></div>
+      </div>
     </div>
     <div class="row">
       <div><div class="name">Show on-page badge</div><div class="desc">A soft, fading guard badge in the corner - brightens when it blocks something, warns if a component breaks</div></div>
@@ -1436,8 +1539,15 @@
         <button class="btn" id="startup-clear" style="width:100%;margin-top:6px;font-size:11px;display:none;">Clear report</button>
       </div>
       <div class="row" style="display:block;" id="ext-alerts-row">
-        <div class="name" style="margin-bottom:3px;">Extension change timeline</div>
-        <div class="desc" id="ext-alerts-empty" style="margin-bottom:8px;">Checking the local extension inventory…</div>
+        <!-- Plain text. It was brand-purple inside a bold heading, so it
+             inherited the weight and read as part of the title; then a pill,
+             which was more furniture than a one-word note deserves. It is just
+             a quiet aside, so it looks like one. -->
+        <div class="name" style="margin-bottom:3px;">Extension alerts <span style="font-weight:400;color:var(--wo-text-soft);">Local</span></div>
+        <div class="desc" style="margin-bottom:8px;">Shows urgent exact-ID reputation findings and unreviewed version or access changes. Use the review panel below for every installed extension.</div>
+        <div id="ext-security-summary" style="font-size:11.5px;font-weight:700;color:var(--ink);margin-bottom:3px;"></div>
+        <div id="ext-security-db" class="desc" style="margin-bottom:8px;"></div>
+        <div class="desc" id="ext-alerts-empty" role="status" aria-live="polite" style="margin-bottom:8px;">Building the local extension report…</div>
         <div id="ext-alerts-list" style="display:none;"></div>
         <button class="btn" id="ext-alerts-ack" style="width:100%;margin-top:7px;font-size:11px;display:none;">Mark important changes reviewed</button>
         <button class="btn" id="ext-alerts-clear" style="width:100%;margin-top:7px;font-size:11px;display:none;">Clear alerts</button>
@@ -1448,9 +1558,10 @@
       </div>
       <div class="row" style="display:block;">
         <div class="name" style="margin-bottom:3px;">Review installed extensions</div>
-        <div class="desc" style="margin-bottom:8px;">Compares capability combinations and access breadth. Chrome doesn't allow one extension to scan another's code, so these are explainable access-risk levels—not malware verdicts.</div>
+        <div class="desc" style="margin-bottom:8px;">Quick local review of every installed extension using exact-ID reputation records, Chrome's own permission warnings, capability combinations, and the latest version or access change. “No record” is not a safety guarantee.</div>
         <button class="btn" id="ext-review" style="width:100%;">Review my extensions</button>
-        <div id="ext-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+        <button class="btn" id="ext-review-open" style="width:100%;margin-top:6px;font-size:11px;">Open the full Security Centre</button>
+        <div id="ext-result" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>
       <div class="row" style="display:block;">
         <div class="tool-head">
@@ -1483,6 +1594,38 @@
       </div>
     </div>
 </div>
+
+  <section class="group site-controls-section" id="site-controls-group" aria-labelledby="site-controls-title">
+  <h2 id="site-controls-title">This site</h2>
+  <div class="card-group" id="site-controls" aria-labelledby="site-controls-title">
+    <div class="row site-pause-row">
+      <div>
+        <div class="name">Pause everything here</div>
+        <div class="desc" id="site-pause-desc">Turns WardenOne off on this site for a while, then turns it back on by itself. Use this instead of the allowlist when something is in your way right now.</div>
+      </div>
+      <div class="site-pause-actions">
+        <button class="btn" id="site-pause-15">15m</button>
+        <button class="btn" id="site-pause-60">1h</button>
+        <button class="btn" id="site-pause-480">8h</button>
+      </div>
+    </div>
+    <div class="row site-pause-active-row" id="site-pause-active-row" hidden>
+      <div><div class="name" id="site-pause-active">Paused</div><div class="desc">Protection comes back on its own — no need to remember.</div></div>
+      <button class="btn" id="site-pause-cancel">Resume now</button>
+    </div>
+    <div class="row site-override-row">
+      <div>
+        <div class="name">Turn off one protection here</div>
+        <div class="desc">Keeps everything else running. For when a single guard misreads one site rather than being wrong everywhere.</div>
+        <div class="site-override-actions">
+          <select class="api-field" id="site-off-pick"></select>
+          <button class="btn" id="site-off-add">Turn off</button>
+        </div>
+        <div id="site-off-list" class="site-override-list"></div>
+      </div>
+    </div>
+  </div>
+  </section>
 
   <div class="foot">
     <button class="btn" id="allowlist">Allowlist this site</button>

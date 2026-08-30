@@ -582,6 +582,52 @@
     }
   }
 
+  // Signing in to a provider's OWN app is not a third-party grant. "GitHub CLI
+  // by GitHub", GitHub Desktop, GitHub Mobile and Codespaces all land on the same
+  // /login/oauth/authorize page as any other app, and asking for `repo` there
+  // scored High -- so the guard warned every time someone signed in to GitHub
+  // with GitHub's own tooling. There is no third party to be warned about.
+  //
+  // Two independent signals, either sufficient:
+  //
+  //  1. The redirect sends the code back to the provider's own domain. An
+  //     attacker cannot register their app against github.com's redirect, so
+  //     this one cannot be spoofed -- but the authorize URL usually omits
+  //     redirect_uri and falls back to the app's registered default, so it is
+  //     often simply absent.
+  //  2. The provider's own page names itself as the publisher. This text is
+  //     rendered by the provider, not by the app; the app only supplies the name
+  //     the provider prints after "by". The trailing guard matters: without it
+  //     an app published by "GitHub-Support" would read as first-party, which is
+  //     exactly the impersonation an attacker would try.
+  //
+  // This suppresses the warning rather than lowering it, because a first-party
+  // scope set is what the user just asked for by starting the sign-in.
+  function isFirstPartyGrant(provider, u) {
+    try {
+      const redirect = redirectInfo(u);
+      if (redirect.host && provider.hosts.some((h) => {
+        const owner = cleanHost(h);
+        return redirect.host === owner || redirect.host.endsWith('.' + owner);
+      })) return true;
+      const name = String(provider.name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (!name) return false;
+      // Anchored to the sentence that asks for access, not loose in the page: a
+      // "powered by GitHub" footer on a third-party consent screen would
+      // otherwise exempt it. The tempered middle refuses a second "by", so an
+      // app NAMED "Something by GitHub" cannot borrow the publisher line either
+      // -- that renders as "Something by GitHub by evil-corp wants to access".
+      const publisher = new RegExp(
+        '\\bby\\s+' + name + '(?![\\w.-])(?:(?!\\bby\\b)[\\s\\S]){0,60}?\\s'
+        + '(?:wants to access|would like permission|requesting access|would like to access)',
+        'i'
+      );
+      return publisher.test(bodyText());
+    } catch (_) {
+      return false;
+    }
+  }
+
   function addRisk(risks, label, scope, weight, reason) {
     const key = label + '|' + scope;
     if (risks.some((r) => r.key === key)) return;
@@ -818,6 +864,7 @@
     const provider = providerForUrl(u);
     if (!provider || !provider.likely(u)) return;
     if (!isConsentGrantSurface(provider, u)) return;
+    if (isFirstPartyGrant(provider, u)) return;
     const grant = scoreGrant(provider, u);
     if (grant.risk === 'Low') return;
     showOAuthWarning(grant);

@@ -101,6 +101,21 @@ check('detail: plain array entry untouched', clean.list[1] === 'not a url at all
 check('detail: non-string values preserved', clean.count === 3 && clean.flag === true);
 check('detail: no secret survives anywhere', !/SECRET123/.test(JSON.stringify(clean)));
 
+const xssDetail = sanitizeHistoryDetail({
+  source: 'location.search',
+  sink: 'innerHTML',
+  confidence: 'High',
+  severity: 'Medium',
+  why: 'A value originating from this page\'s URL query was inserted into innerHTML.',
+  evidenceUrl: 'https://site.example/callback?access_token=SECRET123',
+  outcome: 'Observed locally; no request or page action was blocked.',
+}, 0);
+check('XSS detail URL is sanitized through the shared history privacy boundary',
+  !/SECRET123|access_token|\?/.test(JSON.stringify(xssDetail)), JSON.stringify(xssDetail));
+check('XSS safe source/sink and assessment labels survive sanitization',
+  xssDetail.source === 'location.search' && xssDetail.sink === 'innerHTML'
+    && xssDetail.confidence === 'High' && xssDetail.severity === 'Medium');
+
 // queueHistory must be the choke point, so no caller can reintroduce this.
 const queueBody = source.slice(source.indexOf('function queueHistory(entry)'),
   source.indexOf('function queueHistory(entry)') + 700);

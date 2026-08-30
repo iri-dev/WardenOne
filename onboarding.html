@@ -242,6 +242,9 @@
   .feat.g4 .ic { background: linear-gradient(135deg, #b14a8e, #df6ca9); }
   .feat.g5 .ic { background: linear-gradient(135deg, #6a2f86, #b06fd6); }
   .feat.g6 .ic { background: linear-gradient(135deg, #4a72b1, #6f9bd6); }
+  .feat.g7 .ic { background: linear-gradient(135deg, #2f7a6a, #55c2a4); }
+  .feat.g8 .ic { background: linear-gradient(135deg, #8a5ad6, #c07ae8); }
+  .feat.g9 .ic { background: linear-gradient(135deg, #c05a5a, #e08a6a); }
   .feat .ic svg { width: 23px; height: 23px; }
   .feat h3 { margin: 0 0 5px; font: 900 16px/1.16 var(--display); color: var(--ink); }
   .feat p { margin: 0; color: var(--ink-soft); font-size: 13.5px; line-height: 1.4; }
@@ -651,6 +654,21 @@
             <h3>Permission &amp; OAuth watch</h3>
             <p>Watches camera, mic, location, and shady sign-in prompts.</p>
           </article>
+          <article class="feat g7">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.8"/></svg></div>
+            <h3>Fingerprint shield</h3>
+            <p>Blurs the details sites measure to recognise you &mdash; canvas, GPU, fonts, hardware.</p>
+          </article>
+          <article class="feat g8">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 20h8M12 17v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+            <h3>Your home network</h3>
+            <p>Keeps web pages away from your router and devices &mdash; even from background workers.</p>
+          </article>
+          <article class="feat g9">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 9.5h15M4.5 14.5h15M12 3.8c-3 3.4-3 12.9 0 16.4c3-3.5 3-12.9 0-16.4Z" stroke="currentColor" stroke-width="1.6"/></svg></div>
+            <h3>Cross-site cookies</h3>
+            <p>Names whoever asks for your cookies across sites, and turns the trackers down.</p>
+          </article>
         </div>
 
         <div class="more-head">Everything else WardenOne covers</div>
@@ -660,7 +678,12 @@
             <div class="cover"><span class="d r"></span><span>Phishing &amp; scam detection</span></div>
             <div class="cover"><span class="d r"></span><span>Card-skimmer detection</span></div>
             <div class="cover"><span class="d r"></span><span>Fake-update traps</span></div>
+            <div class="cover"><span class="d r"></span><span>Browser-in-the-Browser detection</span></div>
+            <div class="cover"><span class="d r"></span><span>Full-screen address-bar guard</span></div>
+            <div class="cover"><span class="d r"></span><span>Notification-bait warnings</span></div>
             <div class="cover"><span class="d"></span><span>Redirect-chain breaker</span></div>
+            <div class="cover"><span class="d"></span><span>Popup &amp; click-stealing tricks</span></div>
+            <div class="cover"><span class="d"></span><span>Back-button traps stopped</span></div>
             <div class="cover"><span class="d"></span><span>Link-shortener checks</span></div>
             <div class="cover"><span class="d"></span><span>IP-grabber &amp; logger blocking</span></div>
             <div class="cover"><span class="d"></span><span>WebRTC IP-leak shield</span></div>
@@ -670,12 +693,17 @@
             <div class="cover"><span class="d b"></span><span>Cookie-banner auto-reject</span></div>
             <div class="cover"><span class="d b"></span><span>Supercookie &amp; fingerprint-script defense</span></div>
             <div class="cover"><span class="d b"></span><span>Global Privacy Control signals</span></div>
+            <div class="cover"><span class="d b"></span><span>Background-report log</span></div>
+            <div class="cover"><span class="d b"></span><span>Hardware-access visibility</span></div>
+            <div class="cover"><span class="d b"></span><span>Full-screen cookie walls <span class="optin">opt-in</span></span></div>
             <div class="cover"><span class="d b"></span><span>Forget-me-when-I-leave</span></div>
             <div class="cover"><span class="d b"></span><span>Breach &amp; password checks <span class="optin">opt-in</span></span></div>
             <div class="cover"><span class="d g"></span><span>Certificate &amp; TLS-error guard</span></div>
             <div class="cover"><span class="d g"></span><span>Stale-login age checks</span></div>
             <div class="cover"><span class="d g"></span><span>Camera, mic &amp; screen guards</span></div>
             <div class="cover"><span class="d"></span><span>Extension-permission watch</span></div>
+            <div class="cover"><span class="d"></span><span>XSS behaviour watch</span></div>
+            <div class="cover"><span class="d"></span><span>Per-site pause &amp; overrides</span></div>
             <div class="cover"><span class="d"></span><span>Script-drift &amp; supply-chain checks</span></div>
             <div class="cover"><span class="d g"></span><span>VirusTotal &amp; Safe Browsing <span class="optin">your key</span></span></div>
             <div class="cover"><span class="d g"></span><span>Memory saver &amp; tab limiter</span></div>

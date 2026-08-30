@@ -195,7 +195,7 @@
   const STRONG_CONSENT_TEXT_RE = /\b(cookie|cookies|consent|gdpr|ccpa|cpra|cmp|onetrust|didomi|usercentrics|trustarc|truste|sourcepoint|quantcast|iubenda|cookiebot|cookieyes|osano|termly|axeptio|civic|crownpeak|cookielaw|cookiehub|ketch|advertising choices|personal(?:ized|ised) ads?|legitimate interest|vendors?|partners?|tracking|do not sell|do not share)\b/i;
   const WEAK_CONSENT_TEXT_RE = /\b(privacy|preferences?)\b/i;
   const CONSENT_ACTION_TEXT_RE = /\b(reject(?:\s+all)?|decline(?:\s+all)?|deny(?:\s+all)?|refuse(?:\s+all)?|accept(?:\s+all)?|manage(?:\s+(?:options|choices|settings|privacy|consent))?|cookie\s+settings|privacy\s+settings|necessary\s+only|essential\s+only|opt\s*out|object\s+to\s+all|do\s+not\s+(?:sell|share|consent)|don'?t\s+consent|vendors?|partners?|tracking|advertising choices?|alle ablehnen|tout refuser|rechazar todo|rifiuta|afwijzen|weigeren|odrzu|rejeitar)\b/i;
-  const REJECT_RE = /\b(reject(?:\s+all)?|reject\s+optional|decline(?:\s+all)?|deny(?:\s+all)?|refuse(?:\s+all)?|disagree|do\s+not\s+(?:accept|agree|consent|sell|share)|don'?t\s+consent|necessary\s+only|essential\s+only|required\s+only|only\s+(?:necessary|essential|required)|use\s+(?:necessary|essential|required)|save\s+without\s+accepting|continue\s+without\s+accepting|opt\s*out|object\s+to\s+all|disable\s+all|turn\s+off\s+all|withdraw\s+consent|alle ablehnen|tout refuser|rechazar todo|rifiuta tutt|afwijzen|alles weigeren|odrzu|rejeitar tudo|avvisa alla)\b/i;
+  const REJECT_RE = /\b(reject(?:\s+all)?|reject\s+optional|decline(?:\s+all)?|deny(?:\s+all)?|refuse(?:\s+all)?|disagree|do\s+not\s+(?:accept|agree|consent|sell|share)|don'?t\s+consent|(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?\s+only|only\s+(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?|use\s+(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?|save\s+without\s+accepting|continue\s+without\s+accepting|opt\s*out|object\s+to\s+all|disable\s+all|turn\s+off\s+all|withdraw\s+consent|alle ablehnen|tout refuser|rechazar todo|rifiuta tutt|afwijzen|alles weigeren|odrzu|rejeitar tudo|avvisa alla)\b/i;
   const OPEN_SETTINGS_RE = /\b(customi[sz]e|manage(?:\s+(?:options|choices|settings|privacy|consent|preferences))?|cookie\s+settings|privacy\s+settings|privacy\s+choices|preferences?|settings|options|choices|more\s+options|configure|set\s+preferences)\b/i;
   const SAVE_CHOICES_RE = /\b(save|confirm|apply|submit|store|update|finish|done)\b.*\b(choices?|preferences?|settings?|selection|privacy|consent)\b|\b(confirm|save|apply)\s+my\s+choices?\b|\b(save|confirm|apply)\s+selection\b|\bclose\s+and\s+save\b/i;
   const OPTIONAL_PURPOSE_RE = /\b(advertis(?:e|ing|ement)|marketing|personal(?:ization|isation|ized|ised)|target(?:ed|ing)?|analytics?|statistics?|measurement|performance|social\s+media|social\s+networks?|vendors?|partners?|third[\s-]?part(?:y|ies)|legitimate\s+interest|profiling|sale|share|tracking|remarketing|recommendations?|experiments?|audience|commercial|optional|non[\s-]?essential)\b/i;
@@ -699,6 +699,120 @@
       });
     } catch (_) {}
   }
+
+  // The one case auto-reject cannot help with: a banner offering no way to say no,
+  // where the user clicks Accept themselves to get at the page. Noting that lets the
+  // worker tidy up after them when they leave. Only a real click counts -- a
+  // synthetic one is the page consenting on its own behalf, which is not consent.
+  let acceptReported = false;
+  woOn(document, 'click', (event) => {
+    try {
+      if (acceptReported || !event || event.isTrusted !== true) return;
+      const el = event.target && event.target.closest
+        ? event.target.closest('button,[role="button"],a,input[type="button"],input[type="submit"]')
+        : null;
+      if (!el) return;
+      const label = elementText(el);
+      if (!label || !ACCEPT_RE.test(label)) return;
+      if (REJECT_RE.test(label)) return;
+      if (!consentBannerAncestor(el)) return;
+      acceptReported = true;
+      chrome.runtime.sendMessage({ kind: 'consent-accepted' }, () => { void chrome.runtime.lastError; });
+    } catch (_) {}
+  }, true);
+
+  // Clearing the tracking IDs a site keeps in localStorage, on the way out.
+  //
+  // This is where the tracking went when third-party cookies started dying: the
+  // analytics vendors keep their client id here now, and nothing was touching it.
+  // It is also where most sites keep the session token, so this can only ever work
+  // by name -- never a wholesale wipe, which is all the browsingData API can do for
+  // an origin and which would sign the user out of everything they visited.
+  //
+  // Three ideas make it safe enough to run unattended:
+  //
+  // 1. Only VENDOR namespaces. A key is removed because it belongs to a company
+  //    whose entire business is measurement, not because it looks tracker-ish. That
+  //    is why the guard below is a list of prefixes rather than a pattern: "_hj"
+  //    is Hotjar's whole namespace and nothing else lives there, whereas anything
+  //    matching /track|analytics|id/ would eventually eat somebody's app state.
+  // 2. Vendor names win over the session guard, deliberately. Several of these
+  //    read as credentials -- _hjSessionUser, _uetsid, ajs_user_id -- and a blanket
+  //    "never touch anything with session in it" rule would quietly cancel the
+  //    feature for exactly the vendors it exists for. They are safe because the
+  //    namespace is known, not because the name looks harmless.
+  // 3. Two vetoes that apply even to a vendor match: a value shaped like a JWT is
+  //    a credential whatever its key is called, and a value over a kilobyte is
+  //    application state rather than an id. Either one and the key is left alone.
+  //
+  // Analytics libraries regenerate a missing client id on their next call -- it is
+  // their ordinary first-visit path -- so this cannot break a page that is still
+  // open in another tab.
+  const LS_VENDOR_PREFIX = [
+    '_ga', '_gid', '_gat', '__utm',      // Google Analytics, past and present
+    '_hj',                                // Hotjar
+    '_uet',                               // Microsoft UET
+    '_clck', '_clsk',                     // Microsoft Clarity
+    'amp_', 'amplitude_',                 // Amplitude
+    'mp_', 'mixpanel',                    // Mixpanel
+    'ajs_',                               // Segment
+    'optimizely',                         // Optimizely
+    'ym_', '_ym_',                        // Yandex Metrica
+    '_fbp', '_fbc',                       // Meta
+    'euconsent', 'addtl_consent', 'usprivacy',
+    'OptanonConsent', 'OptanonAlertBoxClosed', 'didomi_', 'CookieConsent',
+    'cookieconsent_status',
+  ];
+  const LS_JWT_RE = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
+  const LS_MAX_VALUE = 1024;
+  const LS_MAX_KEYS = 40;
+
+  function trackingStorageKey(key, value) {
+    const k = String(key || '');
+    if (!k) return false;
+    const lower = k.toLowerCase();
+    if (!LS_VENDOR_PREFIX.some((p) => lower.startsWith(p.toLowerCase()))) return false;
+    const v = String(value == null ? '' : value);
+    if (v.length > LS_MAX_VALUE) return false;
+    if (LS_JWT_RE.test(v.trim())) return false;
+    return true;
+  }
+
+  function clearTrackingStorage() {
+    let removed = 0;
+    try {
+      if (config.clearCookiesOnLeave !== true) return 0;
+      const doomed = [];
+      for (let i = 0; i < localStorage.length && doomed.length < LS_MAX_KEYS; i++) {
+        const key = localStorage.key(i);
+        let value = '';
+        try { value = localStorage.getItem(key); } catch (_) { continue; }
+        if (trackingStorageKey(key, value)) doomed.push(key);
+      }
+      for (const key of doomed) {
+        try { localStorage.removeItem(key); removed++; } catch (_) {}
+      }
+    } catch (_) {
+      // Storage can be unavailable entirely (a sandboxed frame, or the user has
+      // site data switched off). Nothing to do and nothing to report.
+      return 0;
+    }
+    return removed;
+  }
+
+  let storageCleared = false;
+  function sweepStorageOnLeave() {
+    if (storageCleared || !acceptReported) return;
+    storageCleared = true;
+    const removed = clearTrackingStorage();
+    if (!removed) return;
+    try {
+      chrome.runtime.sendMessage({ kind: 'consent-accepted', clearedStorage: removed },
+        () => { void chrome.runtime.lastError; });
+    } catch (_) {}
+  }
+
+  woOn(window, 'pagehide', sweepStorageOnLeave, true);
 
   function logAction(kind, label) {
     const now = Date.now();

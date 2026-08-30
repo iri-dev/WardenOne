@@ -481,6 +481,127 @@ function loadCookieEscape() {
     ENGINE.indexOf(ADOPT.slice(0, 40)) < ENGINE.indexOf('const host=badgeHost=document.createElement("div")'));
 }
 
+// ---------------------------------------------------------------------------
+// 7. The badge host itself. The shadow root protects what is inside it; nothing
+//    was protecting the host, which carried no styles at all. A page rule
+//    matching div or #rg-badge-host could reach it, and transform, filter,
+//    contain, perspective or backdrop-filter on the host makes it the containing
+//    block for the fixed-position badge inside its own shadow tree -- moving the
+//    badge to the host's corner instead of the window's.
+//
+//    Measured in a real engine against a page rule of
+//    "#rg-badge-host{transform:translateX(-120px) translateY(-80px)}":
+//    an unstyled host put the badge 136px/96px from the corner instead of 16/16.
+//    With all:initial it stayed at 16/16.
+// ---------------------------------------------------------------------------
+{
+  const hostStyle = (ENGINE.match(/host\.id="rg-badge-host",[\s\S]{0,900}?host\.setAttribute\("style",\s*"([^"]+)"/) || [])[1] || '';
+  check('the badge host is styled at all', !!hostStyle);
+  check('page CSS cannot reach the badge host', /all:initial!important/.test(hostStyle),
+    'without all:initial a page rule can move the badge by capturing its containing block');
+  for (const [name, re] of [
+    ['it is out of the page layout', /position:fixed!important/],
+    ['it takes up no space', /width:0!important[\s\S]*height:0!important/],
+    ['it does not swallow clicks meant for the page', /pointer-events:none!important/],
+  ]) check('badge host: ' + name, re.test(hostStyle), hostStyle);
+
+  // all:initial resets pointer-events too, so the badge and its panel have to
+  // take their own back or the button stops responding.
+  const shadowCss = (ENGINE.match(/:host\{all:initial\}[\s\S]{0,4000}?';/) || [''])[0];
+  check('the badge itself still receives clicks',
+    /\.b\{[^}]*pointer-events:auto/.test(shadowCss), 'the badge would be unclickable');
+  check('the panel still receives clicks',
+    /\.panel\{[^}]*pointer-events:auto/.test(shadowCss), 'the panel would be unclickable');
+
+  // Source-only fixes that never reach the build are invisible everywhere but here.
+  check('the packaged engine carries the hardened host',
+    MIN.includes('all:initial!important;position:fixed!important;top:0!important;left:0!important'));
+}
+
+// ---------------------------------------------------------------------------
+// 8. Where the badge sits, on a page that scrolls and one that does not.
+//
+//    A fixed element is placed against the viewport's CONTENT edge and cannot
+//    cross a classic scrollbar. So the same 16px inset leaves a scrollbar's width
+//    of chrome beyond the badge on a scrolling page, and nothing at all on a page
+//    that does not scroll -- where it then hugs the window and reads as too tight.
+//
+//    The correction pads by whatever a classic scrollbar would have taken. It has
+//    to be a no-op in the two cases where the page is already right: a page that
+//    genuinely has the scrollbar, and a browser that draws overlay scrollbars and
+//    therefore never reserves the width at all.
+// ---------------------------------------------------------------------------
+{
+  check('the badge offset is driven by a measured gutter, not a constant',
+    /\.b\{[^}]*right:calc\(16px \+ var\(--rg-gutter,0px\)\)/.test(ENGINE),
+    'the badge went back to a fixed inset');
+  check('the panel follows the badge',
+    /\.panel\{[^}]*right:calc\(16px \+ var\(--rg-gutter,0px\)\)/.test(ENGINE),
+    'the panel would drift away from the badge it belongs to');
+
+  const align = (ENGINE.match(/alignBadge=\(\)=>\{[\s\S]*?\n      \},/) || [''])[0];
+  check('the padding is the shortfall against a real scrollbar, never a sum',
+    /pad=Math\.max\(0,\s*measureScrollbarWidth\(\)-gutter\)/.test(align.replace(/\s+/g, ' ')),
+    'padding a page that already has a scrollbar would push the badge inwards twice');
+  check('the page gutter is read from the document, not assumed',
+    /window\.innerWidth\|\|0\)-\(doc&&doc\.clientWidth\|\|0\)/.test(align.replace(/\s+/g, ' ')));
+
+  const measure = (ENGINE.match(/measureScrollbarWidth=\(\)=>\{[\s\S]*?\n      \},/) || [''])[0];
+  check('the scrollbar width is measured once and remembered',
+    /if\(null!==badgeScrollbarWidth\)return badgeScrollbarWidth/.test(measure.replace(/\s+/g, ' ')),
+    'probing on every refresh would touch the DOM for a number that cannot change');
+  check('the measurement probe is always taken back out', /probe\.remove\(\)/.test(measure),
+    'a hidden probe left in the page is a node the site did not ask for');
+  check('a wild measurement cannot move the badge off screen',
+    /Math\.min\(\s*40,/.test(measure.replace(/\s+/g, ' ')));
+  check('measurement failure leaves the badge where it was',
+    /catch\(_\)\{\s*badgeScrollbarWidth=0\s*\}/.test(measure.replace(/\s+/g, ' ')),
+    'a throwing probe must fall back to no padding, not to NaN');
+
+  check('the badge is aligned when it is built', /\(\)=>pEl\.classList\.toggle\("open"\)\),\s*alignBadge\(\)/
+    .test(ENGINE.replace(/\s+/g, ' ').replace(/ \)/g, ')').replace(/\( /g, '(')) ||
+    /alignBadge\(\),/.test(ENGINE), 'the first paint would use the wrong inset');
+  check('the badge is realigned when the window changes shape',
+    /woOn\(\s*window,\s*"resize",\s*alignBadge\)/.test(ENGINE.replace(/\s+/g, ' ')),
+    'a scrollbar appearing later would leave the badge at the old inset');
+  check('the resize listener is bound once, not on every repair',
+    ENGINE.indexOf('"resize",') > ENGINE.indexOf('badgeEventsBound=!0'),
+    'each engine repair would stack another listener');
+
+  check('the packaged engine carries the correction',
+    MIN.includes('right:calc(16px + var(--rg-gutter,0px))') && MIN.includes('measureScrollbarWidth'));
+}
+
+// ---------------------------------------------------------------------------
+// 9. How long the badge stays legible.
+//
+//    It announces itself once and then settles back to a hint. The dwell is
+//    restarted every time the badge is brightened, so the value exists in two
+//    places -- and two copies of a number that must agree is how a badge ends up
+//    fading at one speed on load and another after something happens.
+// ---------------------------------------------------------------------------
+{
+  const declared = ENGINE.match(/BADGE_FADE_MS=(\d+)/);
+  check('the fade dwell is named once, not written out twice', !!declared,
+    'two literal timeouts can drift apart silently');
+  if (declared) {
+    const ms = Number(declared[1]);
+    check('the badge does not sit there being read twice', ms <= 2000, ms + 'ms');
+    check('the badge is still legible before it fades', ms >= 800,
+      ms + 'ms is too brief to notice the badge appeared at all');
+
+    const uses = (ENGINE.match(/BADGE_FADE_MS/g) || []).length;
+    check('both fade timers use the named dwell', uses >= 3,
+      'found ' + uses + ' references; expected the declaration plus both timers');
+    check('no literal fade timeout survives alongside it',
+      !/remove\("show"\)\s*\}\s*,\s*\d+e?\d*\)/.test(ENGINE.replace(/\s+/g, '')),
+      'a hardcoded timeout is still racing the named one');
+
+    check('the packaged engine carries the same dwell',
+      MIN.includes('BADGE_FADE_MS=' + ms) && (MIN.match(/BADGE_FADE_MS/g) || []).length >= 3);
+  }
+}
+
 if (failures) {
   console.error('[fail] owned-UI tests: ' + failures + ' failure(s)');
   process.exit(1);

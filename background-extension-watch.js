@@ -21,7 +21,7 @@ var EXT_BASELINE_KEY = 'wardenone_ext_baseline';
 var EXT_ALERTS_KEY = 'wardenone_ext_alerts';
 var EXT_WATCH_STATUS_KEY = 'wardenone_ext_watch_status';
 var EXT_ALERTS_MAX = 60;
-var EXT_WATCH_SCHEMA = 2;
+var EXT_WATCH_SCHEMA = 3;
 var EXT_WATCH_ALARM = 'wardenone-extension-watch';
 var EXT_WATCH_INTERVAL_MINUTES = 15;
 
@@ -43,6 +43,7 @@ var EXT_PERMISSION_CAPABILITIES = Object.freeze({
   scripting: { weight: 1, label: 'Can inject scripts into permitted pages' },
 });
 var EXT_ATTENTION_LEVELS = new Set(['medium', 'high', 'critical']);
+var EXT_RISK_RANK = { low: 0, medium: 1, high: 2, critical: 3 };
 
 function extPermSet(ext) {
   var out = new Set();
@@ -102,9 +103,25 @@ function extensionRiskFromTokens(tokens, installType) {
     score += 2;
     capabilities.push({ permission: 'combination:broad-sensitive-data', weight: 2, label: 'Broad site access is combined with sensitive browser data access' });
   }
-  if (installType === 'development' || installType === 'sideload' || installType === 'other') {
+  const finiteHostCount = Array.from(set).filter((token) => token.startsWith('host:') && !token.startsWith('host:file://')).length;
+  if (finiteHostCount >= 8) {
+    const hostWeight = finiteHostCount >= 100 ? 5 : (finiteHostCount >= 25 ? 3 : 2);
+    score += hostWeight;
+    capabilities.push({
+      permission: 'scope:finite-hosts',
+      weight: hostWeight,
+      label: 'Can access ' + finiteHostCount + ' separately listed site patterns',
+    });
+  }
+  if (installType === 'development') {
     score += 3;
-    capabilities.push({ permission: 'installType:' + installType, weight: 3, label: 'Installed from an unpacked or non-standard source (' + installType + ')' });
+    capabilities.push({ permission: 'installType:development', weight: 3, label: 'Loaded unpacked in Chrome developer mode' });
+  } else if (installType === 'sideload') {
+    score += 4;
+    capabilities.push({ permission: 'installType:sideload', weight: 4, label: 'Installed outside Chrome\'s usual listing flow' });
+  } else if (installType === 'other') {
+    score += 2;
+    capabilities.push({ permission: 'installType:other', weight: 2, label: 'Chrome reports an unclassified install source' });
   }
 
   capabilities.sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label));
@@ -122,14 +139,17 @@ function classifyExtensionRisk(ext) {
   return Object.assign({ permissions }, risk);
 }
 
-function extensionDescriptor(ext) {
+function extensionDescriptor(ext, previous) {
   return {
     id: String((ext && ext.id) || ''),
     name: String((ext && ext.name) || '(unknown extension)').slice(0, 160),
     version: String((ext && ext.version) || ''),
     enabled: !!(ext && ext.enabled),
+    disabledReason: String((ext && ext.disabledReason) || ''),
+    mayDisable: !(ext && ext.mayDisable === false),
     installType: String((ext && ext.installType) || 'unknown'),
     permissions: Array.from(extPermSet(ext)).sort(),
+    firstSeenAt: Number(previous && previous.firstSeenAt) || Date.now(),
   };
 }
 
@@ -137,7 +157,7 @@ function normalizeExtensionBaseline(raw) {
   const normalized = { schema: EXT_WATCH_SCHEMA, capturedAt: 0, extensions: {} };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return normalized;
 
-  const source = raw.schema === EXT_WATCH_SCHEMA && raw.extensions && typeof raw.extensions === 'object'
+  const source = raw.extensions && typeof raw.extensions === 'object' && !Array.isArray(raw.extensions)
     ? raw.extensions
     : raw;
   normalized.capturedAt = Number(raw.capturedAt) || 0;
@@ -150,8 +170,11 @@ function normalizeExtensionBaseline(raw) {
         name: '',
         version: '',
         enabled: null,
+        disabledReason: '',
+        mayDisable: true,
         installType: '',
         permissions: Array.from(new Set(value.map(String))).sort(),
+        firstSeenAt: 0,
         legacy: true,
       };
       continue;
@@ -162,8 +185,11 @@ function normalizeExtensionBaseline(raw) {
       name: String(value.name || '').slice(0, 160),
       version: String(value.version || ''),
       enabled: typeof value.enabled === 'boolean' ? value.enabled : null,
+      disabledReason: String(value.disabledReason || ''),
+      mayDisable: value.mayDisable !== false,
       installType: String(value.installType || ''),
       permissions: Array.from(new Set(Array.isArray(value.permissions) ? value.permissions.map(String) : [])).sort(),
+      firstSeenAt: Number(value.firstSeenAt) || 0,
       legacy: value.legacy === true,
     };
   }
@@ -223,29 +249,52 @@ function describeExtensionDelta(previous, current, now) {
   const gained = current.permissions.filter((permission) => !prevPermissions.has(permission));
   const removed = previous.permissions.filter((permission) => !currPermissions.has(permission));
   const gainedRisk = extensionRiskFromTokens(new Set(gained), 'normal');
+  const previousRisk = extensionRiskFromTokens(prevPermissions, previous.installType);
+  const currentRisk = extensionRiskFromTokens(currPermissions, current.installType);
+  const previousCapabilities = new Set(previousRisk.capabilities.map((capability) => capability.permission));
+  const gainedCapabilities = new Set(gainedRisk.capabilities.map((capability) => capability.permission));
+  const newlyActivated = currentRisk.capabilities.filter((capability) => !previousCapabilities.has(capability.permission));
+  const joinedCapabilities = newlyActivated.filter((capability) => !gainedCapabilities.has(capability.permission));
+  const combinedDeltaScore = gainedRisk.score + joinedCapabilities.reduce((sum, capability) => sum + capability.weight, 0);
+  let combinedDeltaLevel = extensionRiskLevel(combinedDeltaScore);
+  if (joinedCapabilities.some((capability) => capability.permission.startsWith('combination:') || capability.permission === 'scope:finite-hosts')
+      && EXT_RISK_RANK[currentRisk.level] > EXT_RISK_RANK[combinedDeltaLevel]) {
+    combinedDeltaLevel = currentRisk.level;
+  }
   const versionChanged = !previous.legacy && !!previous.version && previous.version !== current.version;
   const stateChanged = !previous.legacy && typeof previous.enabled === 'boolean' && previous.enabled !== current.enabled;
+  const installTypeChanged = !previous.legacy && !!previous.installType && previous.installType !== current.installType;
+  const disabledReasonChanged = !previous.legacy && previous.disabledReason !== current.disabledReason;
   const metadataChanged = !previous.legacy && ((previous.name && previous.name !== current.name)
-    || (previous.installType && previous.installType !== current.installType));
+    || installTypeChanged || disabledReasonChanged);
 
   if (!gained.length && !removed.length && !versionChanged && !stateChanged && !metadataChanged) return null;
 
   if (versionChanged || gained.length || removed.length) {
-    const accessChanged = gained.length || removed.length;
+    const accessChanged = gained.length || removed.length || joinedCapabilities.length;
+    const permissionIncreaseDisable = !current.enabled && current.disabledReason === 'permissions_increase'
+      && (stateChanged || disabledReasonChanged);
     const kind = versionChanged ? 'updated' : 'permissions_changed';
     let summary = versionChanged
       ? 'Updated from ' + previous.version + ' to ' + current.version
       : 'Permissions changed';
     if (gained.length) summary += ' and gained ' + gained.length + ' permission' + (gained.length === 1 ? '' : 's');
     else if (removed.length) summary += ' and removed access';
+    else if (joinedCapabilities.length) summary += ' and changed its capability or install-source profile';
     else summary += ' with no new access';
-    const reasons = gainedRisk.flags.slice();
-    if (!gained.length && versionChanged) reasons.push('No new permissions were added in this update');
+    const reasons = Array.from(new Set(joinedCapabilities.map((capability) => capability.label).concat(gainedRisk.flags)));
+    if (!gained.length && versionChanged && !joinedCapabilities.length) reasons.push('No new permissions were added in this update');
     if (!gained.length && removed.length) reasons.push('Access decreased; no new permissions were added');
     if (gained.length && !gainedRisk.flags.length) reasons.push('Only lower-impact access was added: ' + gained.map(extensionPermissionLabel).join('; '));
     if (removed.length) reasons.push('Removed: ' + removed.map(extensionPermissionLabel).join('; '));
-    let severity = gained.length ? gainedRisk.level : 'low';
-    if (!current.enabled && severity !== 'low') severity = lowerExtensionSeverity(severity);
+    let severity = (gained.length || joinedCapabilities.length) ? combinedDeltaLevel : 'low';
+    if (permissionIncreaseDisable) {
+      summary += '; Chrome disabled it until you approve the increased access';
+      reasons.unshift('Chrome requires you to approve the extension\'s increased access before it can run again');
+      if (EXT_RISK_RANK[severity] < EXT_RISK_RANK.medium) severity = 'medium';
+    } else if (!current.enabled && severity !== 'low') {
+      severity = lowerExtensionSeverity(severity);
+    }
     return makeExtensionEvent(kind, current, previous, {
       when: now,
       severity,
@@ -260,13 +309,38 @@ function describeExtensionDelta(previous, current, now) {
   if (stateChanged) {
     const profile = extensionRiskFromTokens(new Set(current.permissions), current.installType);
     const enabled = current.enabled;
+    const permissionIncreaseDisable = !enabled && current.disabledReason === 'permissions_increase';
     return makeExtensionEvent(enabled ? 'enabled' : 'disabled', current, previous, {
       when: now,
-      severity: enabled ? lowerExtensionSeverity(profile.level) : 'low',
-      summary: enabled ? 'Extension was enabled again' : 'Extension was disabled',
-      reasons: enabled && profile.flags.length
-        ? ['Re-enabled with these existing capabilities: ' + profile.flags.slice(0, 2).join('; ')]
-        : [enabled ? 'Re-enabled without high-impact access' : 'Disabled extensions cannot act on browser activity'],
+      severity: enabled ? lowerExtensionSeverity(profile.level)
+        : (permissionIncreaseDisable ? (profile.level === 'low' ? 'medium' : lowerExtensionSeverity(profile.level)) : 'low'),
+      summary: enabled ? 'Extension was enabled again' : (permissionIncreaseDisable
+        ? 'Chrome disabled this extension after it requested more permissions'
+        : 'Extension was disabled'),
+      reasons: permissionIncreaseDisable
+        ? ['Chrome requires you to approve the extension\'s increased access before it can run again']
+        : (enabled && profile.flags.length
+          ? ['Re-enabled with these existing capabilities: ' + profile.flags.slice(0, 2).join('; ')]
+          : [enabled ? 'Re-enabled without high-impact access' : 'Disabled extensions cannot act on browser activity']),
+    });
+  }
+
+  if (installTypeChanged) {
+    const sourceRisk = extensionRiskFromTokens(new Set(), current.installType);
+    return makeExtensionEvent('metadata_changed', current, previous, {
+      when: now,
+      severity: sourceRisk.level,
+      summary: 'Extension install source changed',
+      reasons: sourceRisk.flags.length ? sourceRisk.flags : ['Chrome now reports the install source as ' + current.installType],
+    });
+  }
+
+  if (disabledReasonChanged && current.disabledReason === 'permissions_increase') {
+    return makeExtensionEvent('metadata_changed', current, previous, {
+      when: now,
+      severity: 'medium',
+      summary: 'Chrome is waiting for approval of increased extension access',
+      reasons: ['Chrome disabled the extension until its new permissions are approved'],
     });
   }
 
@@ -374,7 +448,7 @@ async function snapshotExtensionBaseline() {
     const extensions = {};
     for (const ext of all) {
       if (!ext || ext.type !== 'extension' || ext.id === chrome.runtime.id) continue;
-      extensions[ext.id] = extensionDescriptor(ext);
+      extensions[ext.id] = extensionDescriptor(ext, null);
     }
     const baseline = { schema: EXT_WATCH_SCHEMA, capturedAt: Date.now(), extensions };
     await localSet({
@@ -402,6 +476,18 @@ function extensionNotificationMessage(event) {
   return (event.name + version + ': ' + firstReason + '. Click to review the full change.').slice(0, 240);
 }
 
+function extensionNotificationTitle(event) {
+  if (event && event.kind === 'reputation_changed') {
+    return event.severity === 'critical'
+      ? 'Critical local extension reputation match'
+      : 'Extension reputation changed';
+  }
+  if (event && event.kind === 'disabled' && /more permissions|increased access/i.test(String(event.summary || ''))) {
+    return 'Extension permission approval required';
+  }
+  return event && event.severity === 'critical' ? 'Critical extension access increase' : 'Extension access changed';
+}
+
 async function refreshExtensionAttentionBadge() {
   try {
     const store = await localGet([EXT_ALERTS_KEY, 'wardenone_startup_report']);
@@ -424,7 +510,7 @@ async function notifyExtensionEvents(events) {
       chrome.notifications.create('wo-extwatch-' + event.eventId, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
-        title: event.severity === 'critical' ? 'Critical extension change' : 'Extension access changed',
+        title: extensionNotificationTitle(event),
         message: extensionNotificationMessage(event),
         priority: event.severity === 'critical' || event.severity === 'high' ? 2 : 1,
       });
@@ -476,7 +562,7 @@ async function reconcileExtensionChangesNow(trigger, options) {
     const current = {};
     for (const ext of all) {
       if (!ext || ext.type !== 'extension' || ext.id === chrome.runtime.id) continue;
-      current[ext.id] = extensionDescriptor(ext);
+      current[ext.id] = extensionDescriptor(ext, baseline.extensions[ext.id]);
     }
 
     const nextBaseline = { schema: EXT_WATCH_SCHEMA, capturedAt: now, extensions: current };
@@ -588,7 +674,7 @@ try {
     const id = String(notificationId || '');
     if (!id.startsWith('wo-extwatch-') && !id.startsWith('wo-extperm-')) return;
     try { chrome.notifications.clear(id); } catch (_) {}
-    try { chrome.tabs.create({ url: chrome.runtime.getURL('popup.html#ext-alerts-row') }); } catch (_) {}
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('extensions.html') }); } catch (_) {}
   });
 } catch (_) {}
 
@@ -608,6 +694,7 @@ try {
     snapshotExtensionBaseline,
     acknowledgeExtensionAlerts,
     refreshExtensionAttentionBadge,
+    extensionNotificationTitle,
     ensureExtensionWatchAlarm,
   };
 } catch (_) {}

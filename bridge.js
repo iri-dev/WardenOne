@@ -1159,8 +1159,49 @@
     });
   }
 
+  // A host is allowlisted if it is on the permanent list, or if it holds a
+  // temporary pass that has not lapsed yet. Expired entries simply stop counting;
+  // pruning them from storage is the popup's job, not something to do on a hot
+  // path in every frame.
+  function bridgeActiveAllowlist(config) {
+    const base = Array.isArray(config && config.allowlist) ? config.allowlist.slice(0, 1000) : [];
+    const until = config && config.allowlistUntil;
+    if (!until || typeof until !== 'object') return base;
+    const now = Date.now();
+    let added = 0;
+    for (const host of Object.keys(until)) {
+      if (added >= 200) break;
+      const at = Number(until[host]);
+      if (Number.isFinite(at) && at > now) { base.push(host); added++; }
+    }
+    return base;
+  }
+
+  // Which individual protections the user switched off for the page we are on.
+  // Only ever turns something OFF: a site cannot enable a protection the user
+  // disabled globally, so a stored true is ignored.
+  function bridgeSiteOverridesFor(config, host) {
+    const out = {};
+    try {
+      const rules = config && config.siteOverrides;
+      if (!rules || typeof rules !== 'object') return out;
+      const h = bridgeCleanHost(host);
+      if (!h) return out;
+      for (const pattern of Object.keys(rules)) {
+        const d = bridgeCleanHost(pattern);
+        if (!d || !(h === d || h.endsWith('.' + d))) continue;
+        const entry = rules[pattern];
+        if (!entry || typeof entry !== 'object') continue;
+        for (const key of Object.keys(entry)) {
+          if (entry[key] === false && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(key)) out[key] = false;
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
   function bridgeHostAllowedByUser() {
-    return bridgeHostMatchesList(location.hostname, bridgeConfig.allowlist || []);
+    return bridgeHostMatchesList(location.hostname, bridgeActiveAllowlist(bridgeConfig));
   }
 
   const SEARCH_AI_PREPAINT_CSS = [
@@ -1328,7 +1369,18 @@
       if (/Key$/.test(field)) delete clean[field];
     }
     delete clean.forgetMeAllConfirmedAt;
-    clean.allowlist = sanitizeBridgeHostList(clean.allowlist, 1000);
+    // Everything downstream reads clean.allowlist and never learns that a pass
+    // was temporary, which is the point: one resolution, no second opinion.
+    clean.allowlist = sanitizeBridgeHostList(bridgeActiveAllowlist(clean), 1000);
+    delete clean.allowlistUntil;
+    // Per-site switches are applied here rather than shipped as data, so no
+    // downstream script has to remember to consult them.
+    const siteOff = bridgeSiteOverridesFor(clean, location.hostname);
+    for (const key of Object.keys(siteOff)) {
+      if (typeof clean[key] === 'boolean') clean[key] = false;
+    }
+    clean.siteOverridesApplied = Object.keys(siteOff).filter((k) => typeof clean[k] === 'boolean');
+    delete clean.siteOverrides;
     clean.forgetMeList = sanitizeBridgeHostList(clean.forgetMeList, 1000);
     // The stored `raw.*Extra` lists are user/remote supplied and still need the full
     // gate. learnedGrabberDomains and supplementalLists.* already came out of it at the
@@ -1379,14 +1431,53 @@
 
   // 1. Listen for the custom events the main-world trap dispatches on document,
   //    and forward block/detection counts to the background for the toolbar badge.
+  /* ---- engine watchdog -------------------------------------------------------------
+     The MAIN-world engine shares its world with the page, so a page can call its dispose
+     and switch it off. That is a known limit of MAIN-world injection and cannot be
+     prevented from inside that world -- the page owns it. The engine already answers it
+     halfway: disposing clears its own ready markers, so the tab stops claiming to be
+     protected and a fresh injection can take hold. The comment there says the point is
+     that "the bypass has to be repeated rather than done once and left".
+     It was not, though, because nothing ever re-injected. One call at document_start
+     switched the engine off for the life of the page and no one found out.
+     This half closes that. It runs in the ISOLATED world, which the page cannot reach or
+     read, so a page can silence the engine but cannot silence the thing that notices. If
+     the engine never announced itself, or announced itself and then went quiet, the worker
+     is asked to look and put it back.
+     A page can still spoof the marker to look installed. That is a much higher bar than
+     one call, and it is the honest limit of what this can do. */
+  let bridgeEngineSeen = false;
+  let bridgeEngineChecks = 0;
+  const bridgeCheckEngine = (why) => {
+    if (bridgeEngineChecks++ > 4) return;   // never a loop, whatever the page does
+    try {
+      chrome.runtime.sendMessage({ kind: 'wo-engine-check', why: String(why || '').slice(0, 40) },
+        () => { void chrome.runtime.lastError; });
+    } catch (_) { /* worker asleep; the next trigger will try again */ }
+  };
+  try {
+    if (window.top === window && /^https?:$/.test(location.protocol)) {
+      /* Long enough that a slow page has finished installing, short enough to matter. */
+      woTimeout(() => { if (!bridgeEngineSeen) bridgeCheckEngine('never-announced'); }, 6000);
+      /* Coming back to a tab is a free moment to re-check, and it is when a page that
+         switched the engine off after load would otherwise keep the benefit. */
+      woOn(document, 'visibilitychange', () => {
+        if (document.visibilityState === 'visible' && !bridgeEngineSeen) bridgeCheckEngine('still-absent');
+      });
+    }
+  } catch (_) {}
+
   woOn(document, 'wo-event', (e) => {
     const d = (e && e.detail) || {};
     // Route only token-bearing events. The token is not treated as a true secret;
     // background learning and privileged actions are separately constrained.
     if (d.token !== TOKEN) return;
     const type = d.type || '';
-    if (/^blocked_|^detected_|^gated_|^warned_/.test(type)) {
-      if (!bridgeRateOk('wo-event', 240, 60000)) return;
+    if (type === 'installed') bridgeEngineSeen = true;
+    const securitySignal = type === 'behavioral_risk'
+      || /^warned_(?:potential_)?xss_|^warned_potential_(?:dom_xss|xss_)|^warned_clickfix_|^warned_command_paste$/.test(type);
+    if (/^blocked_|^detected_|^gated_|^warned_/.test(type) || type === 'behavioral_risk') {
+      if (!bridgeRateOk(securitySignal ? 'wo-security-event' : 'wo-event', securitySignal ? 12 : 240, 60000)) return;
       try {
         chrome.runtime.sendMessage({ kind: 'rg-block', type, detail: boundedBridgeDetail(d.detail) }, () => { void chrome.runtime.lastError; });
       } catch (_) {
@@ -1400,6 +1491,21 @@
         } catch (_) {}
       }
     }
+  });
+
+  // Navigation attribution signals. Deliberately NOT routed through the wo-event
+  // path above: they are not findings, must never reach the history or the badge,
+  // and are far too frequent for the security-event budget.
+  woOn(document, 'wo-nav-signal', (e) => {
+    const d = (e && e.detail) || {};
+    if (d.token !== TOKEN) return;
+    const kind = d.kind === 'player-gesture' || d.kind === 'top-nav-authorized' || d.kind === 'gesture'
+      ? d.kind : '';
+    if (!kind) return;
+    if (!bridgeRateOk('wo-nav-signal', 180, 60000)) return;
+    try {
+      chrome.runtime.sendMessage({ kind: 'wo-nav-signal', signal: kind }, () => { void chrome.runtime.lastError; });
+    } catch (_) {}
   });
 
   // 2. Pull any saved config overrides and hand them to the main world.
@@ -1541,6 +1647,26 @@
         if (!hostname || !/^[a-z0-9.-]+$/i.test(hostname)) return null;
         if (!relaySamePageHost(hostname)) return null;
         return { kind: 'adshield-cosmetic', hostname, playerPage: msg.playerPage === true };
+      }
+      /* Silencing one kind of notice. The page can only name a warning TYPE and
+         a duration -- never a host, never a setting -- so the worst a hostile
+         page can do with this channel is quieten a card about itself, which it
+         could already achieve by not triggering one. */
+      /* 'I showed this one.' Same narrow shape as the mute: a type and nothing
+         else. The host is taken from the sending tab by the worker, never from
+         the page, so a page cannot claim to have shown a notice on someone
+         else's site and silence it there. */
+      if (msg.kind === 'toast-shown') {
+        const type = String(msg.type || '');
+        if (!/^[a-z_]{3,60}$/.test(type)) return null;
+        return { kind: 'toast-shown', type };
+      }
+      if (msg.kind === 'mute-toast') {
+        const type = String(msg.type || '');
+        if (!/^[a-z_]{3,60}$/.test(type)) return null;
+        const minutes = Number(msg.minutes);
+        if (![60, 120, 480, 0].includes(minutes)) return null;
+        return { kind: 'mute-toast', type, minutes };
       }
       if (msg.kind === 'domain-age') {
         const domain = String(msg.domain || '').replace(/^www\./, '').toLowerCase();

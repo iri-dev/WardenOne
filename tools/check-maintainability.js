@@ -143,10 +143,12 @@ function checkContentBuild() {
   'background.js',
   'background-startup.js',
   'background-extension-watch.js',
+  'background-extension-reputation.js',
   'background-memory.js',
   'background-downloads.js',
   'bridge.js',
   'popup.js',
+  'extensions.js',
   'theme.js',
   'onboarding.js',
   'download-review.js',
@@ -164,14 +166,40 @@ function checkContentBuild() {
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
   'tools/test-extension-change-watch.js',
+  'tools/test-extension-reputation.js',
   'tools/test-dynamic-registrations.js',
   'tools/test-consent-reject.js',
+  'tools/test-consent-wall.js',
+  'tools/test-protection-count.js',
+  'tools/test-engine-watchdog.js',
+  'tools/test-file-access-guard.js',
+  'tools/test-speech-guard.js',
+  'tools/test-tracker-frame-guard.js',
+  'tools/test-transport-shield.js',
+  'tools/test-dns-rebind-guard.js',
+  'tools/test-webgpu-shield.js',
+  'tools/test-storage-access-guard.js',
+  'tools/test-worker-realm-guard.js',
+  'tools/test-keyboard-lock-guard.js',
+  'tools/test-fingerprint-surfaces.js',
+  'tools/test-payment-frame-origin.js',
+  'tools/test-overlay-evidence.js',
+  'tools/test-background-scope.js',
+  'tools/test-toast-mutes.js',
+  'tools/test-tracker-cookie-rule.js',
+  'tools/test-known-limits.js',
+  'tools/test-extension-verdicts.js',
   'tools/test-privacy-disclosure.js',
+  'tools/test-header-shield.js',
+  'tools/test-xss-behavior-guard.js',
+  'tools/test-xss-event-boundary.js',
+  'tools/test-clickfix-guard.js',
   'tools/test-engine-config-ownership.js',
   'tools/test-engine-config-source.js',
   'tools/test-permission-chain-trust.js',
   'tools/test-warning-dialogs.js',
   'tools/test-phishing-false-positives.js',
+  'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
   'tools/test-protection-health.js',
   'tools/test-twitch-adblock.js',
@@ -210,6 +238,7 @@ function checkContentBuild() {
   'tools/test-reputation-fetch.js',
   'tools/test-shared-dom-watcher.js',
   'tools/test-popup-contrast.js',
+  'tools/test-popup-search.js',
   'tools/test-theme.js',
   'tools/test-popup-labels.js',
   'tools/test-message-rate-limits.js',
@@ -238,6 +267,12 @@ function checkContentBuild() {
   'tools/test-download-false-positives.js',
   'tools/test-cookie-cleaner.js',
   'tools/test-permission-sweep.js',
+  'tools/test-device-access-guard.js',
+  'tools/test-capability-guards.js',
+  'tools/test-notification-guard.js',
+  'tools/test-fake-window-guard.js',
+  'tools/test-fullscreen-guard.js',
+  'tools/test-site-controls.js',
   'tools/test-toast-dedupe.js',
   'tools/test-download-links.js',
   'tools/test-health-honesty.js',
@@ -258,6 +293,7 @@ function checkContentBuild() {
   'anti-redirect.js',
   'cert-error.js',
   'consent-reject.js',
+  'consent-wall.js',
   'domain-utils.js',
   'history.js',
   'network.js',
@@ -279,6 +315,7 @@ function checkContentBuild() {
   'cryptominer-domains.json',
   'search-junk-domains.json',
   'supplemental-manifest.json',
+  'extension-reputation.json',
 ].forEach(checkJson);
 
 checkImports('background.js');
@@ -297,6 +334,10 @@ checkCommand('hostile message hardening tests', ['tools/test-message-hardening.j
 checkCommand('message rate limit tests', ['tools/test-message-rate-limits.js']);
 checkCommand('secret hygiene tests', ['tools/test-secret-hygiene.js']);
 checkCommand('history privacy tests', ['tools/test-history-privacy.js']);
+checkCommand('Header Shield tests', ['tools/test-header-shield.js']);
+checkCommand('XSS Behavior Guard tests', ['tools/test-xss-behavior-guard.js']);
+checkCommand('XSS event-boundary tests', ['tools/test-xss-event-boundary.js']);
+checkCommand('ClickFix guard tests', ['tools/test-clickfix-guard.js']);
 checkCommand('runtime config lifecycle tests', ['tools/test-runtime-config-lifecycle.js']);
 checkCommand('network compatibility tests', ['tools/test-network-compatibility.js']);
 checkCommand('Smart Script Shield recovery tests', ['tools/test-smart-script-recovery.js']);
@@ -324,15 +365,37 @@ checkCommand('popup config merge tests', ['tools/test-popup-config-merge.js']);
 checkCommand('reputation fetch tests', ['tools/test-reputation-fetch.js']);
 checkCommand('shared DOM watcher tests', ['tools/test-shared-dom-watcher.js']);
 checkCommand('popup contrast tests', ['tools/test-popup-contrast.js']);
+checkCommand('popup settings-search tests', ['tools/test-popup-search.js']);
 checkCommand('shared extension theme tests', ['tools/test-theme.js']);
 checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('extension change watcher tests', ['tools/test-extension-change-watch.js']);
+checkCommand('extension reputation tests', ['tools/test-extension-reputation.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);
 checkCommand('repair honesty tests', ['tools/test-repair-honesty.js']);
 checkCommand('engine teardown tests', ['tools/test-engine-teardown.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
+checkCommand('consent wall tests', ['tools/test-consent-wall.js']);
+checkCommand('protection count tests', ['tools/test-protection-count.js']);
+checkCommand('engine watchdog tests', ['tools/test-engine-watchdog.js']);
+checkCommand('file access guard tests', ['tools/test-file-access-guard.js']);
+checkCommand('speech guard tests', ['tools/test-speech-guard.js']);
+checkCommand('tracker frame guard tests', ['tools/test-tracker-frame-guard.js']);
+checkCommand('transport shield tests', ['tools/test-transport-shield.js']);
+checkCommand('DNS rebind guard tests', ['tools/test-dns-rebind-guard.js']);
+checkCommand('WebGPU shield tests', ['tools/test-webgpu-shield.js']);
+checkCommand('storage access guard tests', ['tools/test-storage-access-guard.js']);
+checkCommand('worker realm guard tests', ['tools/test-worker-realm-guard.js']);
+checkCommand('keyboard lock guard tests', ['tools/test-keyboard-lock-guard.js']);
+checkCommand('fingerprint surface tests', ['tools/test-fingerprint-surfaces.js']);
+checkCommand('payment frame origin tests', ['tools/test-payment-frame-origin.js']);
+checkCommand('overlay evidence tests', ['tools/test-overlay-evidence.js']);
+checkCommand('background scope tests', ['tools/test-background-scope.js']);
+checkCommand('toast mute tests', ['tools/test-toast-mutes.js']);
+checkCommand('tracker cookie rule tests', ['tools/test-tracker-cookie-rule.js']);
+checkCommand('known limit tripwires', ['tools/test-known-limits.js']);
+checkCommand('extension verdict tests', ['tools/test-extension-verdicts.js']);
 // Previously orphaned suites. All eight passed when run by hand, which was precisely the danger:
 // the source was fine, so nothing drew attention to the fact that nothing was checking it.
 checkCommand('engine ambient tests', ['tools/test-engine-ambient.js']);
@@ -351,6 +414,12 @@ checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure
 checkCommand('download false-positive tests', ['tools/test-download-false-positives.js']);
 checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
 checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
+checkCommand('device access guard tests', ['tools/test-device-access-guard.js']);
+checkCommand('notification guard tests', ['tools/test-notification-guard.js']);
+checkCommand('capability guard tests', ['tools/test-capability-guards.js']);
+checkCommand('fake-window guard tests', ['tools/test-fake-window-guard.js']);
+checkCommand('full-screen guard tests', ['tools/test-fullscreen-guard.js']);
+checkCommand('site control tests', ['tools/test-site-controls.js']);
 checkCommand('toast dedupe tests', ['tools/test-toast-dedupe.js']);
 checkCommand('download link tests', ['tools/test-download-links.js']);
 checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
@@ -370,6 +439,7 @@ checkCommand('location guard tests', ['tools/test-location-guard.js']);
 checkCommand('supplemental list tests', ['tools/test-supplemental-lists.js']);
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
+checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);
@@ -379,6 +449,9 @@ checkCommand('Twitch VOD rewind tests', ['tools/test-twitch-vod-rewind.js']);
 checkCommand('onboarding bundle tests', ['tools/test-onboarding-bundles.js']);
 checkCommand('runtime idempotence tests', ['tools/test-runtime-idempotence.js']);
 checkCommand('anti redirect tests', ['tools/test-anti-redirect.js']);
+checkCommand('frame-driven redirect tests', ['tools/test-frame-redirect-guard.js']);
+checkCommand('beacon logging tests', ['tools/test-beacon-logging.js']);
+checkCommand('clear-on-leave tests', ['tools/test-clear-on-leave.js']);
 checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js']);
 checkCommand('X compatibility tests', ['tools/test-x-compatibility.js']);
 checkCommand('YouTube adblock tests', ['tools/test-yt-adblock.js']);

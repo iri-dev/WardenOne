@@ -1,5 +1,5 @@
-/* Shared extension-page palette. Page styles consume the aliases below so the
-   purple/plum identity remains consistent without carrying a second light palette. */
+/* Shared extension-page theme tokens. Each page's established light palette remains
+   authoritative; these tokens provide common controls and dark-mode overrides. */
 :root {
   color-scheme: light;
   --wo-bg: #ece0f7;
@@ -331,46 +331,46 @@
 .wo-theme-quick .wo-theme-option svg { width: 12px; height: 12px; }
 
 /* Activity rows used literal pastel fills after the page palette. */
-:root[data-wardenone-page="history"] .row { background: var(--wo-surface); }
-:root[data-wardenone-page="history"] .row:nth-child(even) { background: var(--wo-surface-alt); }
-:root[data-wardenone-page="history"] .row:hover,
-:root[data-wardenone-page="history"] .row .btn { background: var(--wo-surface-raised); }
-:root[data-wardenone-page="history"] .row .btn:hover { background: var(--wo-control); border-color: var(--wo-line-strong); }
-:root[data-wardenone-page="history"] .rmain .pill { background: var(--wo-control); }
-:root[data-wardenone-page="history"] .panel-head .btn {
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .row { background: var(--wo-surface); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .row:nth-child(even) { background: var(--wo-surface-alt); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .row:hover,
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .row .btn { background: var(--wo-surface-raised); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .row .btn:hover { background: var(--wo-control); border-color: var(--wo-line-strong); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .rmain .pill { background: var(--wo-control); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .panel-head .btn {
   color: var(--wo-on-brand);
   background: rgba(42, 28, 58, .52);
   border-color: rgba(255, 255, 255, .34);
 }
-:root[data-wardenone-page="history"] .panel-head .btn:hover { background: rgba(42, 28, 58, .72); }
-:root[data-wardenone-page="history"] .ricon.block { color: var(--wo-danger); background: var(--wo-danger-bg); }
-:root[data-wardenone-page="history"] .ricon.warn { color: var(--wo-warning); background: var(--wo-warning-bg); }
-:root[data-wardenone-page="history"] .ricon.gate { color: var(--wo-brand-text); background: var(--wo-control); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .panel-head .btn:hover { background: rgba(42, 28, 58, .72); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .ricon.block { color: var(--wo-danger); background: var(--wo-danger-bg); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .ricon.warn { color: var(--wo-warning); background: var(--wo-warning-bg); }
+:root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .ricon.gate { color: var(--wo-brand-text); background: var(--wo-control); }
 
 /* Guide/help pages share the same ledger and card vocabulary. */
-:root[data-wardenone-page="network"] .panel,
-:root[data-wardenone-page="network"] .mini {
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .panel,
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .mini {
   background: var(--wo-card-gradient);
   border-color: var(--wo-line);
 }
-:root[data-wardenone-page="network"] .result.on { background: var(--wo-success-bg); border-color: var(--wo-success-line); color: var(--wo-success); }
-:root[data-wardenone-page="network"] .result.off { background: var(--wo-warning-bg); border-color: var(--wo-warning-line); color: var(--wo-warning); }
-:root[data-wardenone-page="network"] .result.err { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); color: var(--wo-danger); }
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.on { background: var(--wo-success-bg); border-color: var(--wo-success-line); color: var(--wo-success); }
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.off { background: var(--wo-warning-bg); border-color: var(--wo-warning-line); color: var(--wo-warning); }
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.err { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); color: var(--wo-danger); }
 
-:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.section-stat, .ledger-group, .external-ledger, .control-flow) {
+:is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) :is(.section-stat, .ledger-group, .external-ledger, .control-flow) {
   background: var(--wo-card-gradient);
   border-color: var(--wo-line);
 }
-:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-list, .control-body) { background: var(--wo-surface-alt); }
-:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-row, .service-row) { background: var(--wo-surface-wash); border-color: var(--wo-line); }
-:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-row, .service-row):nth-child(even) { background: var(--wo-surface-wash-strong); }
-:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) .perm-row:hover { background: var(--wo-control); }
-:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) :is(.perm-id code, .boundary, .hostline, .control-item) {
+:is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) :is(.perm-list, .control-body) { background: var(--wo-surface-alt); }
+:is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) :is(.perm-row, .service-row) { background: var(--wo-surface-wash); border-color: var(--wo-line); }
+:is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) :is(.perm-row, .service-row):nth-child(even) { background: var(--wo-surface-wash-strong); }
+:is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) .perm-row:hover { background: var(--wo-control); }
+:is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) :is(.perm-id code, .boundary, .hostline, .control-item) {
   background: var(--wo-surface-raised);
   border-color: var(--wo-line-strong);
   color: var(--wo-text-soft);
 }
-:is(:root[data-wardenone-page="permissions"], :root[data-wardenone-page="api-keys"]) .footer { background: var(--wo-surface-wash); border-color: var(--wo-line); }
+:is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) .footer { background: var(--wo-surface-wash); border-color: var(--wo-line); }
 
 /* Onboarding keeps its original light design; these overrides apply only in dark mode. */
 :root[data-wardenone-page="onboarding"][data-wardenone-theme-resolved="dark"] {
@@ -418,32 +418,32 @@
 .onboarding-theme span { color: var(--ink-faint); font-size: 11px; font-weight: 700; }
 .onboarding-theme .wo-theme-options { flex: none; width: 150px; }
 
-:root[data-wardenone-page="download-review"] {
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] {
   --purple: var(--wo-violet);
   --green: var(--wo-success-solid);
   --orange: var(--wo-warning-solid);
   --red: var(--wo-danger-solid);
   --critical: var(--wo-critical-solid);
 }
-:root[data-wardenone-page="download-review"] .grade-band,
-:root[data-wardenone-page="download-review"] .detail-row { background: var(--wo-surface-wash); }
-:root[data-wardenone-page="download-review"] button { background: var(--wo-control); color: var(--wo-text-soft); }
-:root[data-wardenone-page="download-review"] .primary { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
-:root[data-wardenone-page="download-review"] .danger { background: var(--wo-danger-solid); color: var(--wo-on-brand); }
-:root[data-wardenone-page="download-review"] .trust { color: var(--wo-success); border-color: var(--wo-success-line); background: var(--wo-success-bg); }
-:root[data-wardenone-page="download-review"] .grade-f .grade-band { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); }
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] .grade-band,
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] .detail-row { background: var(--wo-surface-wash); }
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] button { background: var(--wo-control); color: var(--wo-text-soft); }
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] .primary { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] .danger { background: var(--wo-danger-solid); color: var(--wo-on-brand); }
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] .trust { color: var(--wo-success); border-color: var(--wo-success-line); background: var(--wo-success-bg); }
+:root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] .grade-f .grade-band { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); }
 
-:is(:root[data-wardenone-page="cert-error"], :root[data-wardenone-page="safe-browsing-block"]) .panel,
-:root[data-wardenone-page="redirect-warning"] .panel { background: var(--wo-card-gradient); border-color: var(--wo-line); box-shadow: var(--wo-shadow); }
-:is(:root[data-wardenone-page="cert-error"], :root[data-wardenone-page="safe-browsing-block"]) button,
-:root[data-wardenone-page="redirect-warning"] button { background: var(--wo-control); color: var(--wo-text-soft); }
-:is(:root[data-wardenone-page="cert-error"], :root[data-wardenone-page="safe-browsing-block"]) button.primary,
-:root[data-wardenone-page="redirect-warning"] button.primary { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
-:root[data-wardenone-page="safe-browsing-block"] button.danger { color: var(--wo-danger); border-color: var(--wo-danger-line); background: transparent; }
-:root[data-wardenone-page="safe-browsing-block"] button.danger:disabled { color: var(--wo-danger); border-color: var(--wo-danger-line); background: var(--wo-danger-bg); opacity: 1; }
-:root[data-wardenone-page="safe-browsing-block"] button.danger:not(:disabled):hover { background: var(--wo-danger-bg); }
-:root[data-wardenone-page="safe-browsing-block"] .escape { border-color: var(--wo-line); }
-:root[data-wardenone-page="redirect-warning"] :is(.route-card, .reason, button.continue) { background: var(--wo-surface-wash); }
+:is(:root[data-wardenone-page="cert-error"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"]) .panel,
+:root[data-wardenone-page="redirect-warning"][data-wardenone-theme-resolved="dark"] .panel { background: var(--wo-card-gradient); border-color: var(--wo-line); box-shadow: var(--wo-shadow); }
+:is(:root[data-wardenone-page="cert-error"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"]) button,
+:root[data-wardenone-page="redirect-warning"][data-wardenone-theme-resolved="dark"] button { background: var(--wo-control); color: var(--wo-text-soft); }
+:is(:root[data-wardenone-page="cert-error"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"]) button.primary,
+:root[data-wardenone-page="redirect-warning"][data-wardenone-theme-resolved="dark"] button.primary { background: var(--wo-control-gradient); color: var(--wo-on-brand); }
+:root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"] button.danger { color: var(--wo-danger); border-color: var(--wo-danger-line); background: transparent; }
+:root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"] button.danger:disabled { color: var(--wo-danger); border-color: var(--wo-danger-line); background: var(--wo-danger-bg); opacity: 1; }
+:root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"] button.danger:not(:disabled):hover { background: var(--wo-danger-bg); }
+:root[data-wardenone-page="safe-browsing-block"][data-wardenone-theme-resolved="dark"] .escape { border-color: var(--wo-line); }
+:root[data-wardenone-page="redirect-warning"][data-wardenone-theme-resolved="dark"] :is(.route-card, .reason, button.continue) { background: var(--wo-surface-wash); }
 
 @media (prefers-reduced-motion: reduce) {
   .wo-theme-option { transition: none; }

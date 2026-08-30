@@ -7,6 +7,7 @@
 'use strict';
 
 const fs = require('fs');
+const resourceTypes = require('./lib/resource-types.js');
 
 const background = fs.readFileSync('background.js', 'utf8');
 
@@ -121,11 +122,18 @@ const mediaBody = bodyOf('applyMediaCompatibilityRules');
 check('media compatibility never installs an edge.ads Twitch block',
   !/edge\.ads\.twitch\.tv/.test(mediaBody),
   'edge ads must stay network-allowed so Twitch can advance its ad lifecycle');
+/* The allow rule's types come from the shared DNR inventory now, so the literal
+   'media' no longer appears anywhere in this function. Resolve the list and look
+   at what it contains: the invariant was always that Twitch media is allowed
+   through, never that a particular word was present in the source. */
+const mediaAllowTypes = /allTypes = ALL_DNR_RESOURCE_TYPES/.test(mediaBody)
+  ? resourceTypes.resolve('ALL_DNR_RESOURCE_TYPES').filter((type) => type !== 'main_frame')
+  : (mediaBody.match(/'[a-z_]+'/g) || []).map((token) => token.slice(1, -1));
 check('Twitch media compatibility allow remains installed',
   /\{ domain:\s*'twitch\.tv', initiators:\s*\['twitch\.tv'\] \}/.test(mediaBody)
     && /priority:\s*90000/.test(mediaBody)
     && /action:\s*\{ type:\s*'allow' \}/.test(mediaBody)
-    && /'media'/.test(mediaBody),
+    && mediaAllowTypes.includes('media'),
   'targeted page guarding must retain the broad Twitch media allow');
 check('media compatibility refresh no longer depends on the Twitch ad-block toggle',
   /applyMediaCompatibilityRules\(cfg\.enabled !== false\)/.test(background)

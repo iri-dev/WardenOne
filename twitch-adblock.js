@@ -129,6 +129,11 @@
       } catch (_) {}
     }
   };
+  const woClearTimeout = (id) => {
+    if (!id) return;
+    woPending.delete(id);
+    try { clearTimeout(id); } catch (_) {}
+  };
 
   let enabled = true;
   let bridgeToken = '';
@@ -136,6 +141,8 @@
   const workers = new Set();
   const blockingWorkers = new Set();
   const workerAdStates = new Map();
+  const workerInterventionScopes = new Map();
+  const recentStreamInterventions = new Map();
   const independentAdVideos = new Map();
   let primaryLiveVideo = null;
   let independentAdObserver = null;
@@ -148,13 +155,17 @@
   const PLAYBACK_FAIL_OPEN_MS = 8 * 1000;
   const PLAYBACK_FAIL_OPEN_SETTLE_MS = 1200;
   const PLAYBACK_INTERVENTION_ERROR_WINDOW_MS = 15 * 1000;
+  const PLAYBACK_STALL_FAIL_OPEN_DELAY_MS = 4 * 1000;
   const PLAYBACK_FAIL_OPEN_STORAGE_KEY = '__woTwitchFailOpenUntil';
   let playbackFailOpenUntil = loadPlaybackFailOpenUntil();
   let playbackFailOpenTimer = 0;
   let playbackFailOpenResumeTimer = 0;
   let playbackFailOpenResumeVideo = null;
   let playbackFailOpenResumeSource = '';
-  let lastStreamInterventionAt = 0;
+  let playbackStallFailOpenTimer = 0;
+  let playbackStallFailOpenVideo = null;
+  let playbackStallFailOpenSource = '';
+  let playbackStallFailOpenTime = 0;
 
   const nativeFetch = window.fetch;
   const NativeWorker = window.Worker;
@@ -611,16 +622,82 @@
   }
 
   function clearPlaybackFailOpenResumeTimer() {
-    if (playbackFailOpenResumeTimer) clearTimeout(playbackFailOpenResumeTimer);
+    if (playbackFailOpenResumeTimer) woClearTimeout(playbackFailOpenResumeTimer);
     playbackFailOpenResumeTimer = 0;
     playbackFailOpenResumeVideo = null;
     playbackFailOpenResumeSource = '';
   }
 
+  function clearPlaybackStallFailOpenTimer() {
+    if (playbackStallFailOpenTimer) woClearTimeout(playbackStallFailOpenTimer);
+    playbackStallFailOpenTimer = 0;
+    playbackStallFailOpenVideo = null;
+    playbackStallFailOpenSource = '';
+    playbackStallFailOpenTime = 0;
+  }
+
+  function streamInterventionKey(channel, source) {
+    return String(channel || '') + '\n' + String(source || '');
+  }
+
+  function rememberStreamIntervention(scope) {
+    if (!scope || !scope.source || !scope.source.startsWith('blob:')) return;
+    const key = streamInterventionKey(scope.channel, scope.source);
+    recentStreamInterventions.delete(key);
+    recentStreamInterventions.set(key, {
+      channel: scope.channel,
+      source: scope.source,
+      at: scope.at
+    });
+    while (recentStreamInterventions.size > 8) {
+      recentStreamInterventions.delete(recentStreamInterventions.keys().next().value);
+    }
+  }
+
+  function bindWorkerInterventionScope(scope, video, source, now) {
+    if (!scope || !(video instanceof HTMLVideoElement) ||
+        !source || !source.startsWith('blob:')) return false;
+    if (scope.source && (scope.video !== video || scope.source !== source)) return false;
+    const currentChannel = pageChannelName();
+    if (!scope.channel || !currentChannel || scope.channel !== currentChannel) return false;
+    scope.video = video;
+    scope.source = source;
+    scope.at = now;
+    rememberStreamIntervention(scope);
+    return true;
+  }
+
+  function streamInterventionLinked(video, source, now) {
+    const currentChannel = pageChannelName();
+    for (const worker of blockingWorkers) {
+      const scope = workerInterventionScopes.get(worker);
+      if (!scope || !scope.channel || !currentChannel || scope.channel !== currentChannel) continue;
+      if (scope.video === video && scope.source === source) return true;
+      if (!scope.source && bindWorkerInterventionScope(scope, video, source, now)) return true;
+    }
+    const key = streamInterventionKey(currentChannel, source);
+    const recent = recentStreamInterventions.get(key);
+    if (!recent || now - Number(recent.at || 0) >
+        PLAYBACK_INTERVENTION_ERROR_WINDOW_MS) {
+      if (recent) recentStreamInterventions.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  function clearStreamInterventionProvenance() {
+    clearPlaybackStallFailOpenTimer();
+    blockingWorkers.clear();
+    workerAdStates.clear();
+    workerInterventionScopes.clear();
+    recentStreamInterventions.clear();
+  }
+
   function resumeStreamInterception() {
-    if (playbackFailOpenTimer) clearTimeout(playbackFailOpenTimer);
+    if (playbackFailOpenTimer) woClearTimeout(playbackFailOpenTimer);
     playbackFailOpenTimer = 0;
     clearPlaybackFailOpenResumeTimer();
+    clearPlaybackStallFailOpenTimer();
     playbackFailOpenUntil = 0;
     persistPlaybackFailOpenUntil();
     try { document.documentElement.removeAttribute('data-wo-twitch-fail-open'); } catch (_) {}
@@ -637,6 +714,52 @@
     resumeStreamInterception();
   }
 
+  function beginPlaybackFailOpen(reason) {
+    const now = Date.now();
+    if (!enabled || playbackFailOpenUntil > now) return false;
+    playbackFailOpenUntil = now + PLAYBACK_FAIL_OPEN_MS;
+    persistPlaybackFailOpenUntil();
+    if (playbackFailOpenTimer) woClearTimeout(playbackFailOpenTimer);
+    clearPlaybackFailOpenResumeTimer();
+    clearStreamInterventionProvenance();
+    playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, PLAYBACK_FAIL_OPEN_MS);
+    try { document.documentElement.setAttribute('data-wo-twitch-fail-open', reason || 'media'); } catch (_) {}
+    try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
+    broadcastStreamConfig();
+    return true;
+  }
+
+  function armPlaybackStallFailOpen(video) {
+    if (!enabled || !(video instanceof HTMLVideoElement) || !video.isConnected || video.paused || video.ended) return;
+    if (independentAdVideos.has(video) || video.getAttribute('data-wo-twitch-independent-ad') === 'true') return;
+    const source = videoMediaSource(video);
+    if (!source.startsWith('blob:') || primaryPlayerVideo() !== video) return;
+    const now = Date.now();
+    if (!streamInterventionLinked(video, source, now)) return;
+    if (playbackFailOpenUntil > now) return;
+    if (playbackStallFailOpenTimer && playbackStallFailOpenVideo === video &&
+        playbackStallFailOpenSource === source) return;
+    clearPlaybackStallFailOpenTimer();
+    playbackStallFailOpenVideo = video;
+    playbackStallFailOpenSource = source;
+    playbackStallFailOpenTime = Number(video.currentTime || 0);
+    playbackStallFailOpenTimer = woTimeout(() => {
+      const expectedVideo = playbackStallFailOpenVideo;
+      const expectedSource = playbackStallFailOpenSource;
+      const expectedTime = playbackStallFailOpenTime;
+      playbackStallFailOpenTimer = 0;
+      playbackStallFailOpenVideo = null;
+      playbackStallFailOpenSource = '';
+      playbackStallFailOpenTime = 0;
+      if (!enabled || expectedVideo !== video || !video.isConnected || video.paused || video.ended || video.error ||
+          primaryPlayerVideo() !== video || videoMediaSource(video) !== expectedSource ||
+          Number(video.currentTime || 0) > expectedTime + 0.25) return;
+      const current = Date.now();
+      if (!streamInterventionLinked(video, expectedSource, current)) return;
+      beginPlaybackFailOpen('stall');
+    }, PLAYBACK_STALL_FAIL_OPEN_DELAY_MS);
+  }
+
   function primaryPlaybackVideoFailed(event) {
     const video = event && event.target;
     if (video === playbackFailOpenResumeVideo) clearPlaybackFailOpenResumeTimer();
@@ -644,40 +767,32 @@
     if (independentAdVideos.has(video) || video.getAttribute('data-wo-twitch-independent-ad') === 'true') return;
     const errorCode = Number(video.error && video.error.code || 0);
     if (errorCode !== 2 && errorCode !== 3) return;
-    if (!videoMediaSource(video).startsWith('blob:') || primaryPlayerVideo() !== video) return;
+    const source = videoMediaSource(video);
+    if (!source.startsWith('blob:') || primaryPlayerVideo() !== video) return;
 
     // Do not blame arbitrary CDN/offline/player failures on the blocker. Turning
     // interception off for unrelated errors exposes prerolls and midrolls while
     // doing nothing to repair the underlying network failure.
     const now = Date.now();
-    if (!lastStreamInterventionAt || now - lastStreamInterventionAt > PLAYBACK_INTERVENTION_ERROR_WINDOW_MS) return;
+    if (!streamInterventionLinked(video, source, now)) return;
     // A second error cancels an optimistic early-resume check without extending
     // the original bounded deadline.
     if (playbackFailOpenUntil > now) return;
 
-    playbackFailOpenUntil = now + PLAYBACK_FAIL_OPEN_MS;
-    persistPlaybackFailOpenUntil();
-    if (playbackFailOpenTimer) clearTimeout(playbackFailOpenTimer);
-    clearPlaybackFailOpenResumeTimer();
-    playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, PLAYBACK_FAIL_OPEN_MS);
-    try {
-      document.documentElement.setAttribute('data-wo-twitch-fail-open', errorCode === 2 ? 'network' : 'decode');
-    } catch (_) {}
-    blockingWorkers.clear();
-    workerAdStates.clear();
-    try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
     // Let Twitch's existing player recovery retry its untouched stream. This is
     // deliberately worker-scoped and temporary: user configuration is never
     // changed, no page reload is initiated, and the current setting is restored.
-    broadcastStreamConfig();
+    beginPlaybackFailOpen(errorCode === 2 ? 'network' : 'decode');
   }
 
   function primaryPlaybackVideoRecovered(event) {
-    if (!enabled || playbackFailOpenUntil <= Date.now() || playbackFailOpenResumeTimer) return;
     const video = event && event.target;
+    if (video === playbackStallFailOpenVideo) clearPlaybackStallFailOpenTimer();
     if (!(video instanceof HTMLVideoElement) || !video.isConnected) return;
-    if (!videoMediaSource(video).startsWith('blob:') || primaryPlayerVideo() !== video) return;
+    const source = videoMediaSource(video);
+    if (!source.startsWith('blob:') || primaryPlayerVideo() !== video) return;
     if (video.error || video.paused === true || Number(video.readyState || 0) < 2) return;
+    if (!enabled || playbackFailOpenUntil <= Date.now() || playbackFailOpenResumeTimer) return;
     // Give Twitch's untouched MediaSource a brief stable-playback window, then
     // resume blocking instead of leaving the rest of an ad pod unfiltered.
     playbackFailOpenResumeVideo = video;
@@ -696,7 +811,13 @@
   }
 
   function primaryPlaybackVideoUnstable(event) {
-    if (event && event.target === playbackFailOpenResumeVideo) clearPlaybackFailOpenResumeTimer();
+    const video = event && event.target;
+    if (video === playbackFailOpenResumeVideo) clearPlaybackFailOpenResumeTimer();
+    if (event && (event.type === 'waiting' || event.type === 'stalled')) {
+      armPlaybackStallFailOpen(video);
+    } else if (video === playbackStallFailOpenVideo) {
+      clearPlaybackStallFailOpenTimer();
+    }
   }
 
   woOn(document, 'error', primaryPlaybackVideoFailed, true);
@@ -716,8 +837,7 @@
     setIndependentAdGuardEnabled(enabled);
     setTwitchVisibilityGuardEnabled(enabled);
     if (!enabled) {
-      blockingWorkers.clear();
-      workerAdStates.clear();
+      clearStreamInterventionProvenance();
       try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
     }
     syncAdManagerDecline();
@@ -740,8 +860,7 @@
     setIndependentAdGuardEnabled(enabled);
     setTwitchVisibilityGuardEnabled(enabled);
     if (!enabled) {
-      blockingWorkers.clear();
-      workerAdStates.clear();
+      clearStreamInterventionProvenance();
       try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
     }
     syncAdManagerDecline();
@@ -1527,16 +1646,28 @@
     }
   }
 
-  function applyWorkerAdState(worker, state) {
-    const blocking = state === 'blocked-clean';
+  function applyWorkerAdState(worker, state, channelHint) {
+    const blocking = state === 'blocked-clean' && streamInterceptionEnabled();
     if (blocking) {
+      const now = Date.now();
+      const channel = validChannelName(channelHint) || pageChannelName();
+      const scope = { channel: channel, video: null, source: '', at: now };
       blockingWorkers.add(worker);
       workerAdStates.set(worker, state);
-      lastStreamInterventionAt = Date.now();
+      workerInterventionScopes.set(worker, scope);
+      const currentChannel = pageChannelName();
+      if (channel && currentChannel && channel === currentChannel) {
+        const video = primaryPlayerVideo();
+        const source = video && videoMediaSource(video);
+        if (video && source && source.startsWith('blob:')) {
+          bindWorkerInterventionScope(scope, video, source, now);
+        }
+      }
       installAdChromeCss();
     } else {
       blockingWorkers.delete(worker);
       workerAdStates.delete(worker);
+      workerInterventionScopes.delete(worker);
     }
     const stillBlocking = blockingWorkers.size > 0;
     try {
@@ -1553,6 +1684,7 @@
     const wasBlocking = blockingWorkers.has(worker);
     blockingWorkers.delete(worker);
     workerAdStates.delete(worker);
+    workerInterventionScopes.delete(worker);
     if (!wasBlocking) return;
     if (blockingWorkers.size === 0) {
       try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
@@ -1712,10 +1844,13 @@
     // therefore stay applied long after the break ended. Report transitions only,
     // including the return to clean playback.
     let lastAdStateSent = '';
+    let lastAdStateChannel = '';
     function setAdState(state, channel) {
-      if (state === lastAdStateSent) return;
+      const currentChannel = workerChannelName(channel);
+      if (state === lastAdStateSent && currentChannel === lastAdStateChannel) return;
       lastAdStateSent = state;
-      post('ad-state', { state: state, channel: channel || '' });
+      lastAdStateChannel = currentChannel;
+      post('ad-state', { state: state, channel: currentChannel });
     }
 
     function urlOf(input) {
@@ -2254,6 +2389,7 @@
           seqSource: null,
           seqServedPdt: undefined,
           seqServedNumber: undefined,
+          backupProgress: Object.create(null),
           backupActive: false,
           adActive: false,
           lastConfirmedAdAt: 0,
@@ -2548,10 +2684,24 @@
       return sequenceApplyNative(state, url, text);
     }
 
-    function sequenceInsideBreak(state, url, nativeText, cleanText, source) {
+    function sequenceInsideBreak(state, url, nativeText, cleanText, source, profileKey) {
       if (!state) return cleanText;
       const backup = sequenceTail(cleanText);
       if (!backup) return null;
+      /* Cache acquisition time cannot prove playback progress: a frozen route can
+         be reacquired as a new candidate carrying the same already-consumed edge.
+         Keep the last edge per exact playback profile outside the candidate cache.
+         Equal edges are normal for a few fast HLS polls, but after the stale bound
+         the intervention must fail open until that exact route actually advances. */
+      const now = Date.now();
+      const progressKey = String(profileKey || source || '?');
+      const progress = state.backupProgress[progressKey];
+      const previousProgressPdt = Number(progress && progress.pdt);
+      const hasPreviousProgress = Number.isFinite(previousProgressPdt);
+      const backupAdvanced = !hasPreviousProgress || backup.pdt > previousProgressPdt;
+      if (hasPreviousProgress && backup.pdt < previousProgressPdt) return null;
+      if (hasPreviousProgress && !backupAdvanced &&
+          now - Number(progress && progress.at || 0) >= BACKUP_STALE_MS) return null;
       const sourceName = 'backup:' + String(source || '?');
       const previousOffset = state.seqBackupOffset;
       const previousSource = state.seqSource;
@@ -2588,6 +2738,15 @@
         return null;
       }
       sequenceRecordServed(state, url, cleanText, served);
+      if (backupAdvanced) {
+        state.backupProgress[progressKey] = { pdt: backup.pdt, at: now };
+        const progressKeys = Object.keys(state.backupProgress);
+        if (progressKeys.length > 8) {
+          progressKeys.sort((left, right) => Number(state.backupProgress[left].at || 0) -
+            Number(state.backupProgress[right].at || 0));
+          delete state.backupProgress[progressKeys[0]];
+        }
+      }
       return served;
     }
 
@@ -3434,7 +3593,8 @@
             const state = sequenceStateFor(info);
             if (observation && !sequenceObservationCurrent(state, observation)) return null;
             const aligned = sequenceInsideBreak(state, nativeUrl || cached.url,
-              nativeText || '', current.text, (cached.playerType || '?') + ':' + cached.url);
+              nativeText || '', current.text, (cached.playerType || '?') + ':' + cached.url,
+              playbackProfileKey(info));
             if (aligned === null) return null;
             if (activate !== false && state) state.backupActive = true;
             return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
@@ -3492,7 +3652,8 @@
       const state = sequenceStateFor(info);
       if (observation && !sequenceObservationCurrent(state, observation)) return null;
       const aligned = sequenceInsideBreak(state, nativeUrl || candidate.url,
-        nativeText || '', candidate.text, (candidate.playerType || '?') + ':' + candidate.url);
+        nativeText || '', candidate.text, (candidate.playerType || '?') + ':' + candidate.url,
+        playbackProfileKey(info));
       if (aligned === null) return null;
       if (state) state.backupActive = true;
       return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
@@ -3879,7 +4040,10 @@
       try { if (event.stopImmediatePropagation) event.stopImmediatePropagation(); } catch (_) {}
       if (message.type === 'config') {
         const nextActive = message.enabled !== false;
-        if (nextActive !== active) lastAdStateSent = '';
+        if (nextActive !== active) {
+          lastAdStateSent = '';
+          lastAdStateChannel = '';
+        }
         active = nextActive;
         if (!nextActive) {
           genericAdImminentUntil = 0;
@@ -4049,7 +4213,7 @@
           } else if (message.type === 'ad-state') {
             try {
               const state = String(message.state || 'active');
-              applyWorkerAdState(worker, state);
+              applyWorkerAdState(worker, state, message.channel);
             } catch (_) {}
           } else if (message.type === 'log') {
             // Gated on the receiving side too. The worker only sends these when debugging, so this

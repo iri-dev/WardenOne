@@ -45,43 +45,49 @@ function syncConfigCheckboxes(key, checked) {
 }
 
 const KEYS = [
-  'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'detectRedirectChains', 'blockMetaRefresh',
-  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'scriptletEngine', 'twitchAdBlock', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'antiFingerprint', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
-  'mediaShield', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
+  'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'blockPopupTricks', 'backTrapGuard', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'detectRedirectChains', 'blockMetaRefresh',
+  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'scriptletEngine', 'twitchAdBlock', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
+  'mediaShield', 'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
   'gateAdultSites', 'adultHeuristics', 'safeSearch',
-  'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
+  'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
   'showToasts', 'showBadge', 'silentMode',
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
   'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia',
-  'deAmp', 'capReferrer', 'autoRejectConsent',
+  'deAmp', 'clientHintProtection', 'capReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls',
   'trackerLearner', 'unshimLinks', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
 ];
 
 const DEFAULTS = {
   enabled: true,
-  blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockMetaRefresh: true,
+  blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, backTrapGuard: true, clearCookiesOnLeave: false, clearServiceWorkersOnLeave: false, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
-  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, scriptletEngine: true, twitchAdBlock: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: true, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, openPhishKey: '', phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
-  mediaShield: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
+  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, scriptletEngine: true, twitchAdBlock: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: true, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, openPhishKey: '', phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
+  mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, notificationAbuseGuard: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
   eyeShieldWarmth: 0, eyeShieldWarmthByHost: {}, eyeShieldGrayscale: 0, eyeShieldGrayscaleByHost: {},
   warnRedirectParams: true, warnShorteners: true, monitorLoggerApi: true,
-  detectPhishing: true, blockHighConfidencePhishing: false, behavioralScan: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, cryptominerCpuWatch: false, autoUpdateLists: true,
+  detectPhishing: true, blockHighConfidencePhishing: false, behavioralScan: true, xssBehaviorGuard: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, cryptominerCpuWatch: false, autoUpdateLists: true,
   showToasts: true, showBadge: true, showDownloadBar: true, silentMode: false,
   memoryShield: true, memoryMode: 'balanced', memoryMinutesOverride: 0,
   memoryNeverPinned: true, memoryNeverAudio: true, memoryNeverForms: true, memoryNeverPayment: true,
   tabLimitGuard: false, tabLimitMax: 20, tabLimitClose: false, tabLimitMinIdleMinutes: 30, tabLimitWarn: true,
-  blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, deAmp: false, capReferrer: false, autoRejectConsent: true,
+  blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: false, autoRejectConsent: true, removeConsentWalls: false,
   trackerLearner: true, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
   forgetMeMode: 'off', forgetMeList: [], forgetMeHistory: false, forgetMeAllConfirmedAt: 0,
   oneOpenPerGesture: true, stripTrackingParams: true, gestureWindowMs: 2400, allowlist: [],
+  // host -> epoch ms at which its allowlisting lapses. Lets "allow this site" be
+  // temporary without becoming a permanent hole someone forgets about.
+  allowlistUntil: {},
+  // host -> { featureKey: false }. Turns one protection off on one site instead of
+  // everywhere, or the whole engine off there.
+  siteOverrides: {},
 };
 
 // cryptominerCpuWatch is here because "Turn everything on" should not quietly
 // start benchmarking the CPU on every page you visit. It is opt-in on purpose.
-const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode', 'cryptominerCpuWatch']);
-const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'antiFingerprint', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'paymentCardGuard', 'blockGeolocation']);
+const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess']);
+const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'paymentCardGuard', 'blockGeolocation']);
 
 const REPUTATION_PROVIDERS = [
   { key: 'urlHaus', keyField: 'urlHausKey', statusId: 'urlhaus-key-status', label: 'URLhaus', use: 'malware URL and download intelligence', emptyText: 'Paste a URLhaus Auth-Key to enable malware URL/download checks.', activeText: 'URLhaus malware URL checks are on. Known malware delivery URLs will be blocked.' },
@@ -258,6 +264,7 @@ function applyToUI() {
     const key = el.getAttribute('data-config-text');
     el.value = config[key] || '';
   });
+  renderMutedToasts(config);
   syncBreachVisibility();
   syncProviderStatus();
   reflectMasterDisable();
@@ -333,6 +340,163 @@ function paintTabLimitUI() {
 
 // The site-breach lookup only works when its toggle is on (it contacts an
 // external service, so it's opt-in). Disable the button + note when off.
+/* Everything the reader has silenced, and the way back.
+ *
+ * A "never show this again" with no way to find it afterwards is a trap, so this
+ * is the other half of the button on the notification card. The row hides itself
+ * when nothing is muted rather than sitting there empty -- an always-present
+ * panel reading "nothing here" is furniture.
+ *
+ * Expired entries are swept on render as well as on write, so what is listed is
+ * what is actually in force. A card that says "silenced until 14:05" when 14:05
+ * was an hour ago is worse than no card. */
+/* The words on the card, not the name of the code that drew it.
+
+   This panel exists to be recognised: someone silenced a notice a minute ago
+   and wants the same notice back. De-prefixing the internal key gets close
+   enough to read as correct -- and then hands them "Abuseipdb server" for
+   what the card called a suspicious server, or "Honeytoken read" for
+   suspicious script behaviour. Recognisable only if you wrote the code.
+
+   Kept in step with the engine's TOAST_INFO by the toast-mutes gate, which
+   fails if a type gains a title here that the card does not use, or gains a
+   card without a title here. The fallback stays for a type mid-rename. */
+const TOAST_TITLES = {
+  blocked_popup: 'Popup blocked',
+  blocked_gestureless_nav: 'Forced redirect blocked',
+  blocked_meta_refresh: 'Auto-redirect blocked',
+  blocked_redirect_chain: 'Redirect chain stopped',
+  detected_grabber_domain: 'IP-logger detected',
+  blocked_grabber_fetch: 'IP-grabber blocked',
+  blocked_grabber_xhr: 'IP-grabber blocked',
+  blocked_grabber_beacon: 'IP-grabber blocked',
+  blocked_grabber_pixel: 'Tracking pixel blocked',
+  blocked_ip_lookup: 'IP lookup blocked',
+  blocked_grabber_element: 'Grabber element removed',
+  blocked_safe_browsing_link: 'Dangerous link blocked',
+  blocked_safe_browsing_form: 'Form submission blocked',
+  blocked_safe_browsing_paste: 'Secret paste blocked',
+  blocked_token_exfil: 'Sensitive request protected',
+  blocked_skimmer_exfil: 'Card/password theft blocked',
+  blocked_payment_card_submit: 'Card submission blocked',
+  blocked_confirm_bait: 'Fake confirm box removed',
+  detected_beacon: 'Data sent in the background',
+  warned_confirm_bait: 'Fake confirm box',
+  warned_back_trap: 'Back button trapped',
+  warned_payment_sheet: 'Payment sheet opened',
+  warned_idle_watch: 'Presence tracking started',
+  warned_app_install_prompt: 'Asked to install itself',
+  warned_notification_bait: 'Notification bait',
+  warned_notification_scam: 'Scam-shaped notification',
+  warned_device_request: 'Hardware access requested',
+  warned_device_silent: 'Hardware read without a prompt',
+  warned_service_worker: 'Installed a service worker',
+  blocked_speech_capture: 'Speech recognition blocked',
+  warned_speech_capture: 'Speech recognition started',
+  warned_file_request: 'File or folder access requested',
+  warned_file_silent: 'File access from an earlier visit',
+  warned_fake_window: 'Fake sign-in window',
+  warned_fullscreen_spoof: 'Fake address bar',
+  blocked_media_capture: 'Camera or mic blocked',
+  blocked_screen_capture: 'Screen capture blocked',
+  blocked_geolocation: 'Location blocked',
+  blocked_autoplay_media: 'Autoplay media blocked',
+  blocked_hidden_media: 'Hidden media blocked',
+  blocked_suspicious_webrtc: 'Suspicious WebRTC blocked',
+  warned_media_capture: 'Camera or mic requested',
+  warned_hidden_media_capture: 'Hidden media request',
+  warned_screen_capture: 'Screen capture requested',
+  warned_hidden_screen_capture: 'Unexpected screen-share request',
+  warned_shortener: 'Shortened link',
+  warned_redirect_param: 'Redirecting link',
+  warned_logger_api: 'Possible tracker',
+  warned_abuseipdb_server: 'Suspicious server',
+  warned_url_reputation: 'Suspicious URL reputation',
+  warned_phishing: 'Possible fake site',
+  warned_payment_card_entry: 'Check this checkout',
+  warned_fake_update: 'Fake update scam',
+  warned_keystroke_pressure: 'Heavy text-input monitoring',
+  warned_honeytoken_read: 'Suspicious script behaviour detected',
+  behavioral_risk: 'Suspicious site behavior',
+};
+
+function humanToastType(type) {
+  const known = Object.prototype.hasOwnProperty.call(TOAST_TITLES, type) && TOAST_TITLES[type];
+  if (known) return known;
+  const label = String(type || '').replace(/^(blocked|warned|detected|gated|cleaned)_/, '').replace(/_/g, ' ');
+  return label ? label.charAt(0).toUpperCase() + label.slice(1) : type;
+}
+
+
+function muteRemaining(until) {
+  if (until === 0) return 'Always hidden';
+  const left = Number(until) - Date.now();
+  if (left <= 0) return '';
+  const mins = Math.round(left / 60000);
+  if (mins < 60) return 'Hidden for ' + mins + ' more minute' + (mins === 1 ? '' : 's');
+  const hours = Math.round(mins / 60);
+  return 'Hidden for ' + hours + ' more hour' + (hours === 1 ? '' : 's');
+}
+
+function renderMutedToasts(cfg) {
+  const row = document.getElementById('muted-toasts-row');
+  const list = document.getElementById('muted-toasts-list');
+  if (!row || !list) return;
+  const mutes = (cfg && cfg.toastMutes) || {};
+  const now = Date.now();
+  const live = Object.keys(mutes)
+    .filter((type) => mutes[type] === 0 || Number(mutes[type]) > now)
+    .sort();
+  list.textContent = '';
+  /* Always shown, empty or not. It used to hide itself when nothing was muted,
+     which is tidier and meant that someone looking for the place to undo a
+     "never show this again" found nothing -- indistinguishable from the feature
+     not existing. An empty state that says so is worth the row. */
+  if (!live.length) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:11.5px;color:var(--wo-text-soft);padding:2px 0;';
+    empty.textContent = 'Nothing silenced right now.';
+    list.appendChild(empty);
+    return;
+  }
+
+  live.forEach((type) => {
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--wo-line);';
+    const text = document.createElement('div');
+    text.style.cssText = 'flex:1;min-width:0;';
+    const name = document.createElement('div');
+    name.style.cssText = 'font-size:12px;font-weight:600;color:var(--wo-text);';
+    name.textContent = humanToastType(type);
+    const when = document.createElement('div');
+    when.style.cssText = 'font-size:10.5px;color:var(--wo-text-soft);';
+    when.textContent = muteRemaining(mutes[type]);
+    text.appendChild(name);
+    text.appendChild(when);
+    item.appendChild(text);
+
+    const undo = document.createElement('button');
+    undo.type = 'button';
+    undo.className = 'btn';
+    undo.style.cssText = 'flex:none;font-size:11px;padding:3px 9px;';
+    undo.textContent = 'Show again';
+    undo.addEventListener('click', () => {
+      undo.disabled = true;
+      /* Through persistConfig, which is the one place allowed to write
+         wardenone_config -- a second writer is how two panels start racing each
+         other and a setting silently reverts. popupChangedKeys diffs config
+         against the saved snapshot, so mutating it here is enough to have this
+         key written and nothing else touched. */
+      const updated = Object.assign({}, config.toastMutes || {});
+      delete updated[type];
+      config.toastMutes = updated;
+      persistConfig(() => renderMutedToasts(config), () => { undo.disabled = false; });
+    });
+    item.appendChild(undo);
+    list.appendChild(item);
+  });
+}
+
 function syncBreachVisibility() {
   const btn = $('ss-sitebreach');
   if (btn) {
@@ -668,6 +832,10 @@ function load() {
     config.showDownloadBar = true;
     applyToUI();
     updateAllowlistBtn();
+    // Painted after applyToUI so the per-site list can read each protection's
+    // label out of its own row rather than keeping a second copy of the wording.
+    wireSiteControls();
+    paintSiteControls();
     renderDownloadTrustList();
     renderTrackerLearner();
     loadExtensionAlerts();
@@ -683,13 +851,21 @@ function save(afterSave) {
   saveConfig('Saved', afterSave);
 }
 
+let savedTickTimer = 0;
 function setSavedTick(text, isError) {
   const tick = $('saved-tick');
   if (!tick) return;
   tick.textContent = text || '';
   tick.className = isError ? '' : 'saved';
   tick.style.color = isError ? 'var(--wo-danger)' : '';
-  if (text) setTimeout(() => { tick.textContent = ''; tick.style.color = ''; }, 2200);
+  // An error has something to read; a success tick is one word. Clearing both
+  // after the same 2.2s meant the message that mattered was the one that got
+  // taken away before it could be read.
+  if (text) {
+    const dwell = isError ? Math.min(12000, Math.max(6000, 2000 + 60 * String(text).length)) : 2600;
+    clearTimeout(savedTickTimer);
+    savedTickTimer = setTimeout(() => { tick.textContent = ''; tick.style.color = ''; }, dwell);
+  }
 }
 
 // A provider's API key has no purpose once that provider is switched off, and
@@ -1161,6 +1337,214 @@ function updateAllowlistBtn() {
     const on = (config.allowlist || []).includes(host);
     btn.textContent = on ? 'Trusted — click to protect' : 'Allowlist this site';
     btn.style.borderColor = on ? 'var(--green)' : 'var(--line-2)';
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Per-site control.
+//
+// Until now the only site-level lever was the allowlist, which turns the whole
+// engine off, permanently, until someone remembers to undo it. So a single guard
+// misreading a single site cost either that guard everywhere or every guard
+// there. Two narrower levers:
+//
+//   Pause     allowlistUntil[host] = when it lapses. Same effect as the
+//             allowlist, but it expires on its own.
+//   Turn off  siteOverrides[host][key] = false. One protection, one site,
+//             everything else still running.
+//
+// Both are resolved in bridge.js before the config reaches any content script,
+// so nothing downstream has to know they exist.
+// ---------------------------------------------------------------------------
+
+// Expired passes are dropped whenever we write, which is the only moment we are
+// already touching storage. Reading is left alone -- a decision path should not
+// be issuing writes.
+function prunePausedSites() {
+  const until = config.allowlistUntil;
+  if (!until || typeof until !== 'object') { config.allowlistUntil = {}; return; }
+  const now = Date.now();
+  for (const host of Object.keys(until)) {
+    const at = Number(until[host]);
+    if (!Number.isFinite(at) || at <= now) delete until[host];
+  }
+}
+
+function pausedUntilFor(host) {
+  const at = Number((config.allowlistUntil || {})[host]);
+  return Number.isFinite(at) && at > Date.now() ? at : 0;
+}
+
+function siteOverridesFor(host) {
+  const entry = (config.siteOverrides || {})[host];
+  return entry && typeof entry === 'object' ? entry : null;
+}
+
+function describeRemaining(ms) {
+  const mins = Math.max(1, Math.round(ms / 60000));
+  if (mins < 60) return mins + (mins === 1 ? ' minute' : ' minutes');
+  const hours = Math.round(mins / 60);
+  return hours + (hours === 1 ? ' hour' : ' hours');
+}
+
+// The label a protection shows in its own row, so the per-site list never drifts
+// from the wording everywhere else. Falls back to the config key if a row has no
+// visible name -- better a key than a blank option.
+function protectionLabel(key) {
+  const input = document.querySelector('input[data-key="' + key + '"]');
+  const row = input && input.closest ? input.closest('.row') : null;
+  const name = row && row.querySelector ? row.querySelector('.name') : null;
+  const text = name ? String(name.textContent || '').trim() : '';
+  return text || key;
+}
+
+function paintSiteControls() {
+  activeTabHost((host) => {
+    const panel = $('site-controls');
+    if (!panel) return;
+    const section = $('site-controls-group') || panel;
+    const pick = $('site-off-pick');
+    const list = $('site-off-list');
+    const activeRow = $('site-pause-active-row');
+    const activeText = $('site-pause-active');
+    if (!host) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+    panel.hidden = false;
+
+    const until = pausedUntilFor(host);
+    if (activeRow) activeRow.hidden = !until;
+    if (until && activeText) {
+      activeText.textContent = 'Paused on ' + host + ' for another ' + describeRemaining(until - Date.now());
+    }
+
+    if (pick && !pick.dataset.filled) {
+      const options = KEYS
+        .filter((key) => typeof DEFAULTS[key] === 'boolean')
+        .map((key) => ({ key, label: protectionLabel(key) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      pick.textContent = '';
+      for (const option of options) {
+        const el = document.createElement('option');
+        el.value = option.key;
+        el.textContent = option.label;
+        pick.appendChild(el);
+      }
+      pick.dataset.filled = '1';
+    }
+
+    if (list) {
+      list.textContent = '';
+      const entry = siteOverridesFor(host);
+      const off = entry ? Object.keys(entry).filter((key) => entry[key] === false) : [];
+      if (!off.length) {
+        const empty = document.createElement('div');
+        empty.className = 'desc';
+        empty.textContent = 'Nothing turned off on ' + host + '.';
+        list.appendChild(empty);
+        return;
+      }
+      for (const key of off) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;';
+        const name = document.createElement('div');
+        name.className = 'desc';
+        name.style.cssText = 'flex:1;min-width:0;';
+        name.textContent = protectionLabel(key) + ' — off here';
+        const undo = document.createElement('button');
+        undo.className = 'btn';
+        undo.style.cssText = 'flex:none;padding:5px 10px;font-size:11px;';
+        undo.textContent = 'Undo';
+        undo.addEventListener('click', () => setSiteOverride(host, key, true));
+        row.appendChild(name);
+        row.appendChild(undo);
+        list.appendChild(row);
+      }
+    }
+  });
+}
+
+function pauseSite(minutes) {
+  activeTabHost((host) => {
+    if (!host) return;
+    prunePausedSites();
+    config.allowlistUntil = config.allowlistUntil || {};
+    config.allowlistUntil[host] = Date.now() + Math.max(1, Number(minutes) || 0) * 60000;
+    const note = $('note');
+    persistConfig((adopted) => {
+      if (adopted.length) repaintExternalConfigKeys(adopted);
+      setNote(note, [
+        { t: host, cls: 'saved' },
+        { t: ' paused for ' + describeRemaining(minutes * 60000) + ' — protection returns by itself (reload to apply).' },
+      ]);
+      paintSiteControls();
+    }, (err) => {
+      delete config.allowlistUntil[host];
+      setNote(note, [{ t: 'Could not pause this site: ' + (err.message || String(err)) }]);
+      paintSiteControls();
+    });
+  });
+}
+
+function resumeSite() {
+  activeTabHost((host) => {
+    if (!host || !config.allowlistUntil) return;
+    const previous = config.allowlistUntil[host];
+    delete config.allowlistUntil[host];
+    const note = $('note');
+    persistConfig((adopted) => {
+      if (adopted.length) repaintExternalConfigKeys(adopted);
+      setNote(note, [{ t: 'Protection ' }, { t: 'resumed', cls: 'saved' }, { t: ' on ' + host + ' (reload to apply).' }]);
+      paintSiteControls();
+    }, (err) => {
+      if (previous) config.allowlistUntil[host] = previous;
+      setNote(note, [{ t: 'Could not resume: ' + (err.message || String(err)) }]);
+      paintSiteControls();
+    });
+  });
+}
+
+// on === true removes the override rather than storing a true: a site may only
+// ever turn a protection OFF, never switch one on that is off globally.
+function setSiteOverride(host, key, on) {
+  if (!host || !key) return;
+  config.siteOverrides = config.siteOverrides || {};
+  const before = JSON.stringify(config.siteOverrides[host] || null);
+  const entry = config.siteOverrides[host] || {};
+  if (on) delete entry[key];
+  else entry[key] = false;
+  if (Object.keys(entry).length) config.siteOverrides[host] = entry;
+  else delete config.siteOverrides[host];
+  const note = $('note');
+  persistConfig((adopted) => {
+    if (adopted.length) repaintExternalConfigKeys(adopted);
+    setNote(note, [
+      { t: protectionLabel(key), cls: 'saved' },
+      { t: (on ? ' turned back on for ' : ' turned off for ') + host + ' (reload to apply).' },
+    ]);
+    paintSiteControls();
+  }, (err) => {
+    const restored = before === 'null' ? null : JSON.parse(before);
+    if (restored) config.siteOverrides[host] = restored;
+    else delete config.siteOverrides[host];
+    setNote(note, [{ t: 'Could not save that: ' + (err.message || String(err)) }]);
+    paintSiteControls();
+  });
+}
+
+function wireSiteControls() {
+  const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+  on('site-pause-15', () => pauseSite(15));
+  on('site-pause-60', () => pauseSite(60));
+  on('site-pause-480', () => pauseSite(480));
+  on('site-pause-cancel', resumeSite);
+  on('site-off-add', () => {
+    const pick = $('site-off-pick');
+    const key = pick && pick.value;
+    if (!key) return;
+    activeTabHost((host) => setSiteOverride(host, key, false));
   });
 }
 
@@ -1993,7 +2377,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.wardenone_config) adoptExternalConfigChange(changes.wardenone_config.newValue);
   if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta)) renderListMeta();
   if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
-  if (area === 'local' && changes.wardenone_ext_alerts) loadExtensionAlerts();
+  if (area === 'local' && (changes.wardenone_ext_alerts || changes.wardenone_ext_reviews
+      || changes.wardenone_ext_reputation_custom)) loadExtensionAlerts();
   if (area === 'local' && changes.wardenone_startup_report) loadStartupReport();
   if (area === 'local' && changes.wardenone_tracker_learner) renderTrackerLearner();
 });
@@ -2164,7 +2549,14 @@ function computeScore(data, cookies) {
     else if (w.store) { storePenalty += w.store; storeHits++; }
   });
   urlPenalty = Math.min(40, urlPenalty);
-  storePenalty = Math.min(24, storePenalty);
+  // A session in script-readable storage is a real weakness and also how almost
+  // every modern app is built. At 24 it alone dropped an otherwise-clean site two
+  // whole grades, which said "you are riskier than you are" about most of the web
+  // and left the letter unable to distinguish an ordinary SPA from a careless one.
+  // The URL cap stays 40: putting a credential in the URL really is worse, because
+  // it leaves the origin entirely -- into history, the Referer header, and every
+  // link anyone pastes. Keeping the gap between the two is the point.
+  storePenalty = Math.min(16, storePenalty);
   // Mishandling a credential on the page that asks for one is worse than doing it
   // on a blog, so the same evidence costs more there.
   if (sensitive) {
@@ -2194,13 +2586,21 @@ function computeScore(data, cookies) {
       // missing Secure means it can travel in clear text. They are different
       // failures and a flat per-cookie number priced both too cheaply -- two
       // cookies with neither flag used to still earn a B.
-      let cookiePenalty = 0;
+      let httpOnlyPenalty = 0;
+      let securePenalty = 0;
       const missing = { httpOnly: 0, secure: 0 };
       ck.weak.forEach((c) => {
-        if (!c.httpOnly) { cookiePenalty += 9; missing.httpOnly++; }
-        if (!c.secure) { cookiePenalty += 7; missing.secure++; }
+        if (!c.httpOnly) { httpOnlyPenalty += 9; missing.httpOnly++; }
+        if (!c.secure) { securePenalty += 7; missing.secure++; }
       });
-      score -= Math.min(34, cookiePenalty);
+      // "A script on this origin can read the session" is ONE failure however many
+      // places the evidence turns up. A session sitting in localStorage AND in a
+      // non-HttpOnly cookie is usually the same token, so it was being charged
+      // twice for one design decision. Charge it once, at the higher of the two.
+      // Missing Secure is a genuinely different failure -- the cookie travels in
+      // clear text -- so that still adds on top.
+      const alreadyCharged = Math.min(Math.min(34, httpOnlyPenalty), storePenalty);
+      score -= Math.min(34, Math.min(34, httpOnlyPenalty) - alreadyCharged + securePenalty);
       if (missing.httpOnly) reasons.push(missing.httpOnly + ' session cookie(s) readable by scripts (no HttpOnly)');
       if (missing.secure) reasons.push(missing.secure + ' session cookie(s) can be sent unencrypted (no Secure)');
     } else {
@@ -3033,23 +3433,52 @@ function loadExtensionAlerts() {
   const emptyEl = $('ext-alerts-empty');
   const clearBtn = $('ext-alerts-clear');
   const ackBtn = $('ext-alerts-ack');
+  const summaryEl = $('ext-security-summary');
+  const databaseEl = $('ext-security-db');
   if (!listEl || !emptyEl || !clearBtn || !ackBtn) return;
-  chrome.runtime.sendMessage({ kind: 'get-extension-alerts' }, (res) => {
+  chrome.runtime.sendMessage({ kind: 'extension-security-report', trigger: 'popup' }, (res) => {
     const runtimeError = chrome.runtime.lastError;
     if (runtimeError || !res || !res.ok) {
       listEl.style.display = 'none';
       clearBtn.style.display = 'none';
       ackBtn.style.display = 'none';
+      if (summaryEl) summaryEl.textContent = '';
+      if (databaseEl) databaseEl.textContent = '';
       emptyEl.style.display = '';
       emptyEl.style.color = 'var(--wo-popup-soft-danger)';
-      emptyEl.textContent = 'Extension Watch could not read the local inventory. ' +
+      emptyEl.textContent = 'Extension Security Centre could not build the local report. ' +
         String((runtimeError && runtimeError.message) || (res && res.error) || 'Reload WardenOne and try again.');
       return;
     }
-    const alerts = res.alerts || [];
-    const status = res.status || {};
+    const alerts = Array.isArray(res.recentChanges) ? res.recentChanges : [];
+    const status = res.watcher || {};
+    const summary = res.summary || {};
+    const database = res.database || {};
+    const extensions = Array.isArray(res.extensions) ? res.extensions : [];
+    const allUrgent = extensions.filter((item) => item && item.verdict && item.verdict.needsAttention);
+    const urgent = allUrgent.slice(0, 3);
+    const urgentIds = new Set(allUrgent.map((item) => item.id));
+    const unread = alerts.filter((a) => a && !a.reviewedAt
+      && ['medium', 'high', 'critical'].includes(a.severity));
+    /* A verdict already explains the same underlying event better than the raw
+       watcher record. Show it once, and keep routine/reviewed version events in
+       the full Centre timeline instead of making this popup noisy forever. */
+    const visibleChanges = unread.filter((a) => !urgentIds.has(a.id));
+    if (summaryEl) {
+      const decisions = Number(summary.attention) || 0;
+      summaryEl.textContent = (Number(summary.installed) || 0) + ' monitored · '
+        + decisions + ' decision' + (decisions === 1 ? '' : 's')
+        + (status.lastChecked ? ' · checked ' + fmtAlertAge(status.lastChecked) : '');
+    }
+    if (databaseEl) {
+      databaseEl.style.color = database.available ? '' : 'var(--wo-popup-soft-danger)';
+      databaseEl.textContent = database.available
+        ? (Number(database.verifiedIdentityRecordCount) || 0) + ' publisher-verified identities · '
+          + (Number(database.cataloguedListingRecordCount) || 0) + ' catalogue references · local only'
+        : 'The local database is unavailable; access and change analysis still works, but no reassuring match result is shown.';
+    }
     emptyEl.style.color = '';
-    if (!alerts.length) {
+    if (!visibleChanges.length && !urgent.length) {
       listEl.style.display = 'none';
       clearBtn.style.display = 'none';
       ackBtn.style.display = 'none';
@@ -3060,15 +3489,24 @@ function loadExtensionAlerts() {
       } else if (status.state === 'disabled' || status.enabled === false) {
         emptyEl.textContent = 'Extension Watch is turned off. Existing timeline entries are kept locally.';
       } else {
+        /* The state this should usually be in, so it is worth saying properly.
+           "0 need attention" next to a wall of cards was the old shape; now the
+           list is genuinely empty most of the time, and the panel should read as
+           a result rather than an absence. Recognised extensions are counted
+           because that is the reassuring part: WardenOne knows what they are,
+           and what they can do is what that kind of extension does. */
         const watched = Number(status.watchedCount) || 0;
-        emptyEl.textContent = 'Watching ' + watched + ' installed extension' + (watched === 1 ? '' : 's') +
-          (status.lastChecked ? ' · checked ' + fmtAlertAge(status.lastChecked) : '') + '. No changes detected.';
+        const known = Number(summary.recognized) || 0;
+        emptyEl.textContent = 'Watching ' + watched + ' installed extension' + (watched === 1 ? '' : 's')
+          + (known ? ' · ' + known + ' verified with expected access' : '')
+          + (status.lastChecked ? ' · checked ' + fmtAlertAge(status.lastChecked) : '')
+          + '. Nothing needs you.';
       }
       return;
     }
     emptyEl.style.display = 'none';
     listEl.style.display = '';
-    clearBtn.style.display = '';
+    clearBtn.style.display = visibleChanges.length ? '' : 'none';
     listEl.textContent = '';
     const watchState = document.createElement('div');
     watchState.style.cssText = 'font-size:10.5px;color:var(--wo-text-soft);margin:0 1px 7px;line-height:1.35;';
@@ -3081,17 +3519,84 @@ function loadExtensionAlerts() {
         (status.lastChecked ? ' · checked ' + fmtAlertAge(status.lastChecked) : '');
     }
     listEl.appendChild(watchState);
-    const unread = alerts.filter((a) => a && !a.reviewedAt && ['medium', 'high', 'critical'].includes(a.severity));
     ackBtn.style.display = unread.length ? '' : 'none';
-    alerts.forEach((a) => {
+    if (urgent.length) {
+      const heading = document.createElement('div');
+      heading.style.cssText = 'font-weight:700;font-size:11px;color:var(--wo-text);margin:6px 1px 5px;';
+      heading.textContent = 'Needs attention';
+      listEl.appendChild(heading);
+      urgent.forEach((item) => {
+        /* Neutral card, coloured edge. Filling the whole card with the warning
+           wash made every entry look like an emergency and made the panel look
+           like a hazard sign -- and the tan is doing that job for a row that
+           often just means "have a look at this". The severity now lives in a
+           3px accent and the badge, on the ordinary surface every other row in
+           this popup uses, so the list reads as a list. */
+        const card = document.createElement('div');
+        const dangerous = item.verdict.tone === 'danger';
+        const accent = dangerous ? 'var(--wo-danger)' : 'var(--wo-warning)';
+        card.style.cssText = 'border:1px solid var(--wo-line);border-left:3px solid ' + accent
+          + ';background:var(--wo-surface);border-radius:8px;padding:8px 10px;margin-bottom:5px;';
+        const top = document.createElement('div');
+        top.style.cssText = 'display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:2px;';
+        const name = document.createElement('div');
+        name.style.cssText = 'font-weight:650;font-size:12px;color:var(--wo-text);min-width:0;'
+          + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        name.textContent = item.name + (item.enabled ? '' : ' (disabled)');
+        name.title = item.name;
+        top.appendChild(name);
+        const badge = document.createElement('span');
+        /* Sentence case, not shouting. "UNEXPECTED ACCESS" in caps beside a tan
+           background reads as an alarm even when the finding is mild. */
+        badge.style.cssText = 'flex:none;font-size:9.5px;font-weight:700;letter-spacing:.02em;color:' + accent + ';';
+        badge.textContent = String(item.verdict.label || '').toLowerCase()
+          .replace(/^./, (c) => c.toUpperCase());
+        top.appendChild(badge);
+        card.appendChild(top);
+        /* One sentence saying what is actually going on, instead of three
+           colon-prefixed fields. "Reputation: Recognized identity — exact ID
+           match / Access: HIGH / Change: ..." is a debug dump: it makes the
+           reader do the reasoning the engine already did, and it looks alarming
+           whatever it says. recommendedAction is now specific enough to stand on
+           its own -- it names the capability, or the kind of extension and what
+           that kind needs. */
+        card.appendChild(makeLine(item.recommendedAction || item.reputation.label, 'var(--wo-text)'));
+        /* The evidence, quieter and underneath, for anyone who wants it. A
+           documented compromise leads with its evidence; anything else leads
+           with what it can reach. */
+        const evidence = item.verdict.tone === 'danger' && item.reputation && item.reputation.reason
+          ? String(item.reputation.reason).split('. ')[0]
+          : (item.capabilities && item.capabilities.unexpected && item.capabilities.unexpected.length
+            ? item.capabilities.unexpected.map((s) => s.label).join(' · ')
+            : ((item.access.reasons && item.access.reasons[0]) || ''));
+        /* The advice already names the capability when there is an unexpected
+           one, so printing the evidence underneath repeated the same sentence in
+           two colours -- which reads as two findings and makes the card twice as
+           tall for nothing. Show it only when it says something the line above
+           did not. */
+        const advice = String(item.recommendedAction || '').toLowerCase();
+        const alreadySaid = evidence && advice.indexOf(String(evidence).toLowerCase().slice(0, 40)) >= 0;
+        if (evidence && !alreadySaid) card.appendChild(makeLine(evidence, 'var(--wo-text-soft)'));
+        if (item.latestChange) card.appendChild(makeLine('Changed: ' + item.latestChange.summary, 'var(--wo-text-soft)'));
+        listEl.appendChild(card);
+      });
+    }
+    if (visibleChanges.length) {
+      const heading = document.createElement('div');
+      heading.style.cssText = 'font-weight:700;font-size:11px;color:var(--wo-text);margin:8px 1px 5px;';
+      heading.textContent = 'Changes needing a decision';
+      listEl.appendChild(heading);
+    }
+    visibleChanges.slice(0, 4).forEach((a) => {
       const card = document.createElement('div');
       const level = ['low', 'medium', 'high', 'critical'].includes(a.severity) ? a.severity : 'high';
       const palette = level === 'critical' || level === 'high'
-        ? ['var(--wo-danger-line)', 'var(--wo-danger-bg)', 'var(--wo-danger)']
+        ? ['var(--wo-danger)', 'var(--wo-danger)']
         : (level === 'medium'
-          ? ['var(--wo-warning-line)', 'var(--wo-warning-bg)', 'var(--wo-warning)']
-          : ['var(--wo-line)', 'var(--wo-surface-wash)', 'var(--wo-text-soft)']);
-      card.style.cssText = 'border:1px solid ' + palette[0] + ';background:' + palette[1] + ';border-radius:10px;padding:9px 10px;margin-bottom:6px;';
+          ? ['var(--wo-warning)', 'var(--wo-warning)']
+          : ['var(--wo-line)', 'var(--wo-text-soft)']);
+      card.style.cssText = 'border:1px solid var(--wo-line);border-left:3px solid ' + palette[0]
+        + ';background:var(--wo-surface);border-radius:8px;padding:8px 10px;margin-bottom:5px;';
       const top = document.createElement('div');
       top.style.cssText = 'display:flex;justify-content:space-between;gap:8px;align-items:flex-start;';
       const name = document.createElement('div');
@@ -3099,8 +3604,8 @@ function loadExtensionAlerts() {
       name.textContent = (a.name || '(unknown extension)') + ' · ' + fmtAlertAge(a.when);
       top.appendChild(name);
       const badge = document.createElement('span');
-      badge.style.cssText = 'flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;color:' + palette[2] + ';';
-      badge.textContent = level.toUpperCase() + (!a.reviewedAt && level !== 'low' ? ' · NEW' : '');
+      badge.style.cssText = 'flex:none;font-size:9px;font-weight:750;letter-spacing:.02em;color:' + palette[1] + ';';
+      badge.textContent = level.replace(/^./, (c) => c.toUpperCase()) + ' · new';
       top.appendChild(badge);
       card.appendChild(top);
       const summary = document.createElement('div');
@@ -3114,9 +3619,9 @@ function loadExtensionAlerts() {
         card.appendChild(version);
       }
       const reasons = Array.isArray(a.reasons) && a.reasons.length ? a.reasons : (a.gained || []);
-      reasons.forEach((reason) => {
+      reasons.slice(0, 2).forEach((reason) => {
         const li = document.createElement('div');
-        li.style.cssText = 'font-size:10.5px;color:' + palette[2] + ';margin-top:3px;line-height:1.35;';
+        li.style.cssText = 'font-size:10.5px;color:var(--wo-text-soft);margin-top:3px;line-height:1.35;';
         li.textContent = '• ' + reason;
         card.appendChild(li);
       });
@@ -3199,53 +3704,91 @@ $('startup-clear')?.addEventListener('click', () => {
   chrome.runtime.sendMessage({ kind: 'clear-startup-report' }, () => { void chrome.runtime.lastError; loadStartupReport(); });
 });
 
-$('ext-review').addEventListener('click', () => {
+function openExtensionSecurityCentre() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('extensions.html') });
+}
+$('ext-review-open')?.addEventListener('click', openExtensionSecurityCentre);
+$('ext-review')?.addEventListener('click', () => {
   const out = $('ext-result');
   const btn = $('ext-review');
+  if (!out || !btn) return;
   if (out.dataset.open === '1') {
     out.dataset.open = '';
     out.style.display = 'none';
     out.textContent = '';
+    btn.textContent = 'Review my extensions';
     return;
   }
-  btn.disabled = true; btn.textContent = 'Reviewing…';
-  out.style.display = 'block'; out.textContent = '';
-  chrome.runtime.sendMessage({ kind: 'list-extensions' }, (res) => { void chrome.runtime.lastError;
-    btn.disabled = false; btn.textContent = 'Review my extensions';
+  btn.disabled = true;
+  btn.textContent = 'Reviewing locally…';
+  out.style.display = 'block';
+  out.textContent = 'Reading Chrome\'s extension inventory and bundled local database…';
+  chrome.runtime.sendMessage({ kind: 'extension-security-report', trigger: 'manual' }, (res) => {
+    const runtimeError = chrome.runtime.lastError;
+    btn.disabled = false;
+    btn.textContent = 'Hide extension review';
     out.textContent = '';
-    if (!res || !res.ok) { out.style.color = 'var(--wo-popup-soft-danger)'; out.textContent = 'Could not list extensions.'; out.dataset.open = '1'; return; }
-    if (!Array.isArray(res.extensions) || !res.extensions.length) { out.style.color = 'var(--ink-faint)'; out.textContent = 'No other extensions installed.'; out.dataset.open = '1'; return; }
-    const risky = res.extensions.filter((e) => e.riskLevel === 'medium' || e.riskLevel === 'high' || e.riskLevel === 'critical');
-    out.appendChild(makeLine(res.extensions.length + ' other extension(s); ' + risky.length + ' with medium-or-higher access risk:', risky.length ? 'var(--wo-warning)' : 'var(--wo-success)', true));
-    res.extensions.forEach((e) => {
-      const row = document.createElement('div');
-      row.style.cssText = 'margin:6px 0 0;padding:8px 10px;background:var(--wo-surface-wash);border-radius:8px;';
-      const top = document.createElement('div');
-      top.style.cssText = 'display:flex;justify-content:space-between;gap:8px;align-items:center;';
-      const nm = document.createElement('span');
-      nm.style.cssText = 'font-weight:700;color:var(--ink);font-size:11.5px;';
-      nm.textContent = e.name + (e.enabled ? '' : ' (disabled)');
-      top.appendChild(nm);
-      const badge = document.createElement('span');
-      const level = ['low', 'medium', 'high', 'critical'].includes(e.riskLevel) ? e.riskLevel : 'low';
-      const sev = level === 'critical' || level === 'high' ? 'var(--wo-danger-solid)' : (level === 'medium' ? 'var(--wo-warning-solid)' : 'var(--wo-success-solid)');
-      badge.style.cssText = 'flex:none;font-size:9.5px;font-weight:700;color:var(--wo-on-brand);background:' + sev + ';padding:2px 7px;border-radius:6px;';
-      badge.textContent = level.toUpperCase();
-      top.appendChild(badge);
-      row.appendChild(top);
-      if (e.installType === 'development' || e.installType === 'sideload' || e.installType === 'other') {
-        row.appendChild(makeLine('Installed from a non-standard source (' + e.installType + ')', 'var(--wo-danger)'));
-      }
-      e.riskFlags.forEach((flagText) => {
-        const fl = document.createElement('div');
-        fl.style.cssText = 'color:var(--ink-soft);font-size:10.5px;margin-top:2px;';
-        fl.textContent = '• ' + flagText;
-        row.appendChild(fl);
-      });
-      out.appendChild(row);
-    });
-    out.appendChild(makeLine('These levels measure potential reach, not whether an extension is malware. Broad access can be legitimate; what matters most is an unexpected increase after an update. Review anything you do not recognize and remove unused extensions at chrome://extensions.', 'var(--ink-faint)'));
     out.dataset.open = '1';
+    if (runtimeError || !res || !res.ok) {
+      out.style.color = 'var(--wo-popup-soft-danger)';
+      out.textContent = 'Could not build the local extension review. ' + String((runtimeError && runtimeError.message) || (res && res.error) || 'Reload WardenOne and try again.');
+      return;
+    }
+    out.style.color = '';
+    const extensions = Array.isArray(res.extensions) ? res.extensions : [];
+    const summary = res.summary || {};
+    const database = res.database || {};
+    const attention = extensions.filter((item) => item && item.verdict && item.verdict.needsAttention);
+    const incidents = (Number(summary.knownHarmful) || 0) + (Number(summary.reportedOrHistorical) || 0);
+    out.appendChild(makeLine(attention.length
+      ? attention.length + ' decision' + (attention.length === 1 ? '' : 's') + ' need you'
+      : 'No action needed', attention.length ? 'var(--wo-warning)' : 'var(--wo-success)', true));
+    out.appendChild(makeLine(extensions.length + ' monitored · '
+      + (Number(summary.verifiedIdentities) || 0) + ' publisher-verified · '
+      + (Number(summary.catalogued) || 0) + ' catalogue-only · '
+      + incidents + ' incident match' + (incidents === 1 ? '' : 'es'), 'var(--wo-text-soft)'));
+    if (!database.available) {
+      out.appendChild(makeLine('The local database is unavailable. Access and change analysis still works, but no identity result is assumed.',
+        'var(--wo-popup-soft-danger)'));
+    }
+    if (!extensions.length) {
+      out.appendChild(makeLine('Chrome reported no other installed extensions.', 'var(--ink-faint)'));
+      return;
+    }
+    if (!attention.length) {
+      out.appendChild(makeLine((Number(summary.recognized) || 0)
+        ? (Number(summary.recognized) || 0) + ' verified extension' + ((Number(summary.recognized) || 0) === 1 ? '' : 's')
+          + ' currently match their evidence-backed access contract.'
+        : 'No documented incident, unexpected powerful capability, or unreviewed risky change was found.', 'var(--wo-text)'));
+    }
+    attention.slice(0, 5).forEach((item) => {
+      const card = document.createElement('div');
+      const tone = item.verdict && item.verdict.tone;
+      const accent = tone === 'danger' ? 'var(--wo-danger)' : 'var(--wo-warning)';
+      card.style.cssText = 'margin:7px 0 0;padding:8px 10px;border:1px solid var(--wo-line);border-left:3px solid '
+        + accent + ';background:var(--wo-surface);border-radius:8px;';
+      const top = document.createElement('div');
+      top.style.cssText = 'display:flex;justify-content:space-between;gap:7px;align-items:flex-start;';
+      const name = document.createElement('span');
+      name.style.cssText = 'font-weight:700;color:var(--wo-text);font-size:11.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      name.textContent = item.name + ' · v' + (item.version || '?') + (item.enabled ? '' : ' (disabled)');
+      name.title = item.name;
+      top.appendChild(name);
+      const badge = document.createElement('span');
+      badge.style.cssText = 'flex:none;font-size:9px;font-weight:750;letter-spacing:.02em;color:' + accent + ';';
+      badge.textContent = String((item.verdict && item.verdict.label) || 'Needs review').toLowerCase()
+        .replace(/^./, (c) => c.toUpperCase());
+      top.appendChild(badge);
+      card.appendChild(top);
+      card.appendChild(makeLine(item.recommendedAction || 'Review this extension in the full Centre.', 'var(--wo-text)'));
+      if (item.pendingChange) card.appendChild(makeLine(item.pendingChange.summary, 'var(--wo-text-soft)'));
+      out.appendChild(card);
+    });
+    if (attention.length > 5) {
+      out.appendChild(makeLine('+' + (attention.length - 5) + ' more decision' + (attention.length - 5 === 1 ? '' : 's')
+        + ' in the full Security Centre.', 'var(--wo-text-soft)'));
+    }
+    out.appendChild(makeLine('Open the full Security Centre for evidence, the complete change timeline, and access decisions.', 'var(--ink-faint)'));
   });
 });
 
@@ -3993,8 +4536,11 @@ $('verify-repair').addEventListener('click', () => {
     var rows=[];
     // Standard .row elements (all toggle rows inside card-groups)
     document.querySelectorAll('.row').forEach(function(row){rows.push(buildKeywords(row));});
-    // EyeShield interactive elements
-    document.querySelectorAll('.eyeshield-mode, .eyeshield-slider-row, .eyeshield-extras, .eyeshield-reset, .eyeshield-modes, .eyeshield-range, .eyeshield-value, #eyeshield-brightness, #eyeshield-contrast, #eyeshield-saturation, #eyeshield-warmth, #eyeshield-grayscale').forEach(function(el){rows.push(buildKeywords(el));});
+    // EyeShield is one compound control. Indexing its descendants separately made a
+    // search for "dark" hide Normal, Light, Ultra, brightness and Extras inside the
+    // still-visible panel, leaving a broken one-button mode selector.
+    var eyePanel=$('eyeshield-panel');
+    if(eyePanel)rows.push(buildKeywords(eyePanel));
     // Master switch area
     var masterEl=$('master-state');
     if(masterEl)rows.push(buildKeywords(masterEl));
@@ -4010,7 +4556,7 @@ $('verify-repair').addEventListener('click', () => {
     document.querySelectorAll('.wo-search-chip').forEach(function(el){rows.push(buildKeywords(el));});
     // The no-result area is status UI, not a searchable setting.
     // Scan site / breach / domain age buttons
-    ['ss-scan','ss-sitebreach','ss-domage','ss-clear','ss-panic','cl-run','ext-review','verify-repair','startup-run','mem-free','mem-dupes','mem-tab-usage','mem-zombies','perm-scan','perm-reset','ug-btn'].forEach(function(id){
+    ['ss-scan','ss-sitebreach','ss-domage','ss-clear','ss-panic','cl-run','ext-review','ext-review-open','verify-repair','startup-run','mem-free','mem-dupes','mem-tab-usage','mem-zombies','perm-scan','perm-reset','ug-btn'].forEach(function(id){
       var el=$(id);
       if(el)rows.push(buildKeywords(el));
     });
@@ -4029,11 +4575,9 @@ $('verify-repair').addEventListener('click', () => {
     if(alBtn)rows.push(buildKeywords(alBtn));
     // Add the section headings too so sections are findable by their heading text
     document.querySelectorAll('.group>h2, .eyeshield-panel+h2, #js-shield+h2').forEach(function(h3){
+      if(h3.id==='eyeshield-title'||h3.id==='site-controls-title')return;
       rows.push(buildKeywords(h3));
     });
-    // EyeShield panel heading
-    var eyeTitle=$('eyeshield-title');
-    if(eyeTitle)rows.push(buildKeywords(eyeTitle));
     // Activity log / Network buttons
     ['open-activity','open-network'].forEach(function(id){
       var el=$(id);
@@ -4079,9 +4623,16 @@ $('verify-repair').addEventListener('click', () => {
       if(r.parentIds.indexOf(qt)>=0)return 50;
       // Synonym match via expanded text
       if(r.text.indexOf(qt)>=0)return 40;
-      // Fuzzy/typo match
+      // Fuzzy/typo match.
+      // Two edits used to be allowed from six characters up, which is a third of a
+      // six-letter word -- so searching "speech" matched "speed", and "speech rec"
+      // returned Twitch local rewind, whose description happens to carry both "speed"
+      // and "records". Two edits now need a word long enough for two edits to still
+      // leave it recognisable. Every real typo this is for -- microphon, fingerprnt,
+      // notifcation, clipboad, downlaod, certifcate -- is one edit, or long enough to
+      // keep its allowance.
       if(qt.length>=4){
-        var th=qt.length<=5?1:2,c0=qt.charCodeAt(0);
+        var th=qt.length<=7?1:2,c0=qt.charCodeAt(0);
         for(var i=0;i<r.words.length;i++){
           var w=r.words[i];
           if(w.charCodeAt(0)!==c0)continue;
@@ -4113,19 +4664,26 @@ $('verify-repair').addEventListener('click', () => {
         g.classList.toggle('wo-hidden',hide);
         var hh=g.previousElementSibling;
         if(hh&&/^H[1-6]$/.test(hh.tagName))hh.classList.toggle('wo-hidden',hide);
-      });
-      // Hide/show EyeShield panel based on whether any of its indexed children are visible
-      var eyePanel=$('eyeshield-panel');
-      if(eyePanel){
-        var eyeVisible=!q;
-        if(q){
-          eyeVisible=false;
-          // Check all indexed eyeShield children within the panel
-          var eyeSelectors='.eyeshield-mode, .eyeshield-slider-row, .eyeshield-extras, .eyeshield-reset, .eyeshield-modes, .eyeshield-range, .eyeshield-value';
-          var eyeKids=eyePanel.querySelectorAll(eyeSelectors);
-          for(var ei=0;ei<eyeKids.length;ei++){if(!eyeKids[ei].classList.contains('wo-hidden')){eyeVisible=true;break;}}
+        var rewind=g.parentElement;
+        if(rewind&&rewind.classList.contains('rewind-drop')){
+          var rewindOpenAttr='data-wo-search-was-open';
+          if(q){
+            if(!rewind.hasAttribute(rewindOpenAttr))rewind.setAttribute(rewindOpenAttr,rewind.open?'true':'false');
+            rewind.classList.toggle('wo-hidden',hide);
+            if(!hide)rewind.open=true;
+          }else{
+            rewind.classList.remove('wo-hidden');
+            if(rewind.hasAttribute(rewindOpenAttr)){
+              rewind.open=rewind.getAttribute(rewindOpenAttr)==='true';
+              rewind.removeAttribute(rewindOpenAttr);
+            }
+          }
         }
-        eyePanel.classList.toggle('wo-hidden',!eyeVisible);
+      });
+      // The panel itself is the indexed result, so its heading follows that one
+      // semantic match while every control inside keeps its normal layout.
+      if(eyePanel){
+        var eyeVisible=!eyePanel.classList.contains('wo-hidden');
         var eyeH3=eyePanel.previousElementSibling;
         if(eyeH3&&/^H[1-6]$/.test(eyeH3.tagName))eyeH3.classList.toggle('wo-hidden',!eyeVisible);
       }

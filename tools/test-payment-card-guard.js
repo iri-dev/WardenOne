@@ -105,6 +105,19 @@ function makeSandbox(opts = {}) {
     abort() {
       this.__aborted = true;
     }
+    // A blocked request is failed rather than silently abandoned, so the fake has
+    // to be able to receive the terminal events a real uploader listens for.
+    addEventListener(type, fn) {
+      (this.__listeners = this.__listeners || {});
+      (this.__listeners[type] = this.__listeners[type] || []).push(fn);
+    }
+    dispatchEvent(event) {
+      (this.__events = this.__events || []).push(event && event.type);
+      ((this.__listeners || {})[event && event.type] || []).forEach((fn) => fn(event));
+      const handler = this['on' + (event && event.type)];
+      if (typeof handler === 'function') handler(event);
+      return true;
+    }
   }
   class WebSocket {
     constructor(target) {
@@ -638,8 +651,14 @@ check('analytics traffic on a real checkout does not fire unless it carries the 
     xhr.send('card=' + validCard());
     assert.strictEqual(hasLog(s, 'warned_payment_card_entry'), true);
     assert.strictEqual(s.__confirmCalls.length, 1);
-    assert.strictEqual(xhr.__aborted, true);
-    assert.strictEqual(xhr.__sent, undefined);
+    assert.strictEqual(xhr.__sent, undefined, 'the card was sent anyway');
+    // Calling abort() before send() fires nothing -- the page would wait forever
+    // for a callback that cannot arrive. The block has to be observable.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepStrictEqual(xhr.__events, ['readystatechange', 'error', 'loadend'],
+      'a declined card send left the page hanging instead of failing');
+    assert.strictEqual(xhr.readyState, 4);
+    assert.strictEqual(xhr.status, 0);
   });
   finish();
 })();
