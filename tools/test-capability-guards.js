@@ -331,6 +331,8 @@ function capWorld(options) {
   const registered = [];
   const swContainer = {
     register(url, opts) { registered.push({ url, opts }); return Promise.resolve({ scope: 'native-registration' }); },
+    // Non-null exactly when a worker is already serving this page for this origin.
+    controller: o.alreadyControlled ? { scriptURL: 'https://site.example/sw.js' } : null,
   };
   const sandbox = {
     WO: { capabilityGuard: o.enabled !== false },
@@ -470,6 +472,42 @@ function capWorld(options) {
     w.registerWorker('/sw.js');
     check('with the guard off nothing is recorded', w.logs.length === 0, w.logs);
     check('and the registration is untouched', w.registered.length === 1, w.registered);
+  }
+
+  /* Reported as "surely this is false firing" for twitch, github and challengermode, and
+     the reading was right for a reason worth writing down: the call is not the event.
+     The documented way to use a service worker is to call register() on every page load,
+     and when a registration already exists that call does nothing and returns the existing
+     one. So every visit to a site that installed a worker once produced "this site
+     installed a service worker" -- a true statement about a call and a false one about
+     what happened. Checked on both sites: one registration each, page already controlled,
+     nothing installed on the visit that raised the warning. */
+  {
+    const w = capWorld({ alreadyControlled: true });
+    w.registerWorker('/sw.js');
+    const d = w.logs[0] && w.logs[0].detail;
+    /* The event still goes out. It has to: the worker keeps the list of sites that have a
+       service worker, and clear-on-leave acts on that list, so suppressing the message
+       would quietly stop the cleanup working for every site whose worker predates this
+       visit -- which is nearly all of them. */
+    check('the worker is still told this site has one, so clear-on-leave still knows',
+      w.logs.length === 1 && w.logs[0].type === 'warned_service_worker', w.logs);
+    check('but it is marked as something that was already there',
+      !!d && d.existing === true, d);
+    check('and it does not claim an installation happened',
+      !!d && !/installed a service worker/i.test(d.why) && /already had/i.test(d.why), d && d.why);
+    check('and the call is still passed through untouched',
+      w.registered.length === 1, w.registered);
+  }
+  {
+    /* The other half, so the check above cannot be satisfied by silencing the guard. */
+    const w = capWorld({ alreadyControlled: false });
+    w.registerWorker('/sw.js');
+    const d2 = w.logs[0] && w.logs[0].detail;
+    check('a first install on an uncontrolled page is still reported',
+      w.logs.length === 1 && w.logs[0].type === 'warned_service_worker', w.logs);
+    check('and that one does say an installation happened',
+      !!d2 && d2.existing === false && /installed a service worker/i.test(d2.why), d2 && d2.why);
   }
 
   /* capabilityGuard blocks nothing at all -- Chrome confirms the payment sheet, the idle

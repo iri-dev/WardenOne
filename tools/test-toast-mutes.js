@@ -61,6 +61,48 @@ function loadQuietRule() {
 
 const isMuted = loadQuietRule();
 
+/* The whole of shouldQuietToast, so the "nothing happened" clause is exercised where it
+   really sits rather than asserted about as text. */
+function loadWholeQuietRule() {
+  const at = CONTENT.indexOf('shouldQuietToast=(type,detail)=>{');
+  assert(at > 0, 'shouldQuietToast is not in the built engine');
+  const open = CONTENT.indexOf('{', CONTENT.indexOf('=>', at));
+  let depth = 0;
+  let end = open;
+  for (; end < CONTENT.length; end++) {
+    if (CONTENT[end] === '{') depth++;
+    else if (CONTENT[end] === '}') { depth--; if (!depth) break; }
+  }
+  const body = CONTENT.slice(open + 1, end);
+  const sandbox = { WO: {}, Object, Number, Date, String, location: { hostname: 'example.com' }, __quiet: null };
+  vm.createContext(sandbox);
+  return (type, detail, wo) => {
+    sandbox.WO = wo || {};
+    sandbox.__type = type;
+    sandbox.__detail = detail;
+    vm.runInContext('__quiet=(function(type,detail){' + body + 'return!1})(__type,__detail);', sandbox);
+    return sandbox.__quiet;
+  };
+}
+
+(function anEventAboutNothingDrawsNoCard() {
+  /* Reported as "twitch, github and challengermode installed a service worker — surely
+     this is false firing". It was, for a precise reason: the documented way to use a
+     service worker is to call register() on EVERY page load, and when a registration
+     already exists that call does nothing. Both sites came back with one registration and
+     the page already controlled, so nothing was installed on the visit that warned.
+     The event still has to go out -- clear-on-leave reads the worker's list of sites that
+     have one -- so the card is what gets suppressed, not the message. */
+  const quiet = loadWholeQuietRule();
+  check('an event marked as nothing-happened draws no card',
+    quiet('warned_service_worker', { existing: true }) === true);
+  check('the same event without that mark still draws one',
+    quiet('warned_service_worker', { existing: false }) !== true);
+  check('and a missing detail is not treated as nothing-happened',
+    quiet('warned_service_worker', null) !== true,
+    'the absence of a flag must not silence a card');
+}());
+
 (function mutesAreHonoured() {
   const future = Date.now() + 15 * 60000;
   const past = Date.now() - 60000;

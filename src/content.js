@@ -17246,6 +17246,29 @@
       capWrap("undefined"!=typeof navigator&&navigator.serviceWorker,
       "register",
       function(args){
+        /* Calling register() is not the same as installing anything.
+           The documented way to use a service worker is to call register() on
+           every page load; when a registration for that scope already exists the
+           call is a no-op that hands back the existing one. So a site that
+           installed a worker months ago calls register() again on every single
+           visit, and reporting the CALL said "this site installed a service
+           worker" every time -- on twitch, on github, on anything modern.
+           Checked rather than assumed: both of those come back with one
+           registration and the page already controlled, so nothing was being
+           installed on the visit that raised the warning.
+           controller is the synchronous answer to "was there already one":
+           it is non-null exactly when this page is already being served by a
+           worker for this origin, which cannot be true of a first install.
+           A hard reload is the one gap -- it starts the page uncontrolled even
+           though a registration exists -- and it is rare, deliberate, and worth
+           less than the race that reading the registration list would cost. */
+        let existing=!1;
+        try{
+          existing=!!(navigator&&navigator.serviceWorker&&navigator.serviceWorker.controller)
+        }
+        catch(_){
+
+        }
         let whole=!0;
         try{
           const opt=args&&args[1],
@@ -17268,9 +17291,18 @@
              naming it here costs nothing and makes the warning actionable. */
           host:location.hostname,
           matched:whole?"whole site":"part of the site",
+          /* The event still goes out when a worker was already there. It has to:
+             the worker keeps the list of sites that have one, and that list is
+             what clear-on-leave acts on -- suppress the message and the cleanup
+             quietly stops working for every site you did not install a worker on
+             during this exact visit. What changes is that this one does not draw
+             a card, and does not claim an installation happened. */
+          existing:existing,
           severity:"Medium",
           confidence:"Very high",
-          why:location.hostname+" installed a service worker. It stays after you close the tab and sits in front of every request to "+(whole?"the whole site":"part of the site")+" from then on, including visits you make later. That is how sites work offline and how push notifications arrive, so it is ordinary -- but it is also the one thing a page can leave behind.",
+          why:existing
+            ?location.hostname+" already had a service worker, and asked for it again on this visit. Nothing new was installed. A worker sits in front of every request to "+(whole?"the whole site":"part of the site")+" and stays until the site's data is cleared."
+            :location.hostname+" installed a service worker. It stays after you close the tab and sits in front of every request to "+(whole?"the whole site":"part of the site")+" from then on, including visits you make later. That is how sites work offline and how push notifications arrive, so it is ordinary -- but it is also the one thing a page can leave behind.",
           action:"Nothing to do if you use this site. If you do not recognise it, clearing the site's data in Chrome removes the worker with it.",
           outcome:"Recorded only; the worker was registered. The address it was registered from is not stored, only how much of the site it covers."
         })
@@ -19619,6 +19651,16 @@
       shouldQuietToast=(type,
       detail)=>{
         try{
+          /* Nothing happened. Some events are raised because a capability was
+             USED, not because anything changed -- a site calling register() for
+             the service worker it already has is the case this exists for, and
+             the documented way to use one is to call register() on every page
+             load. The event is still worth sending, because the worker keeps
+             the list of sites that have one, but there is nothing to tell the
+             reader, and telling them anyway is how "twitch, github and
+             challengermode installed a service worker" appeared on every visit
+             to three sites that had installed nothing. */
+          if(detail&&detail.existing)return!0;
           /* Silenced by the reader, for a while or for good. Checked first: a
              person who said "not now" has answered the question this card
              exists to ask, and asking again is not a second warning, it is the
