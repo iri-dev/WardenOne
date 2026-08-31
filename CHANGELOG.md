@@ -162,10 +162,13 @@ as the work happened.
 - Twitch's client-side ad refusal now survives the ad SDK reset that runs when a
   long-lived player rebuilds or changes content. That reset used to clear WardenOne's
   decline after it had been applied successfully, leaving the same tab able to fetch
-  a full-player creative hours or days later. Clean alternate streams also warm one
-  bounded range from their newest media segment before Twitch asks for it, reducing
-  the short transition spinner without changing quality, seeking, pausing or delaying
-  the playlist response.
+  a full-player creative hours or days later. A clean alternate stream now starts its
+  two playable edge choices before Twitch receives the replacement playlist, then
+  hands the player's matching request the already-started response instead of making
+  it download the same segment again. Fragmented-MP4 streams do the same for their
+  decoder init map. Unused work is bounded and cancelled on a channel or setting
+  change, ranged media stays native, and none of this changes quality, seeking,
+  pausing or the playlist response deadline.
 - Rebuilt Extension Security Centre trust decisions around exact, evidence-bound
   contracts. Publisher-verified identities, catalogue-only Web Store listings and
   documented incidents are now separate states; a store-list snapshot can no longer

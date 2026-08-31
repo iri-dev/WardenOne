@@ -1783,6 +1783,9 @@
     const MEDIA_MAX = 128;
     const BACKUP_MAX = 12;
     const BACKUP_WAIT_MS = 900;
+    const BACKUP_WARM_TTL_MS = 6 * 1000;
+    const BACKUP_WARM_MAX = 16;
+    const BACKUP_WARM_HISTORY_MAX = 128;
     const NATIVE_BRIDGE_MAX_MS = 6 * 1000;
     // A pre-roll is the one break where nothing is playing yet, so holding the
     // first media playlist costs start-up latency instead of freezing video the
@@ -1822,7 +1825,8 @@
     const pendingBackupPolls = new Map();
     const pendingGql = new Map();
     const backupControllers = new Set();
-    const warmedBackupSegments = new Map();
+    const warmedBackupResources = new Map();
+    const warmedBackupHistory = new Map();
     const sequenceStates = new Map();
     let backupEpoch = 0;
     let activeChannel = '';
@@ -1849,6 +1853,8 @@
       backups.clear();
       pendingBackups.clear();
       pendingBackupPolls.clear();
+      clearWarmedBackupResources();
+      warmedBackupHistory.clear();
       if (clearSequences) sequenceStates.clear();
     }
 
@@ -3542,30 +3548,141 @@
       return pending;
     }
 
-    function warmBackupSegment(text) {
+    function discardWarmedBackupResource(url, entry, abort) {
+      if (!entry) return;
+      if (warmedBackupResources.get(url) === entry) warmedBackupResources.delete(url);
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.timer = 0;
+      if (abort && entry.controller) {
+        try { entry.controller.abort(); } catch (_) {}
+      }
+    }
+
+    function clearWarmedBackupResources() {
+      for (const [url, entry] of Array.from(warmedBackupResources.entries())) {
+        discardWarmedBackupResource(url, entry, true);
+      }
+    }
+
+    function rememberWarmedBackupUrl(url, at) {
+      warmedBackupHistory.delete(url);
+      warmedBackupHistory.set(url, at);
+      while (warmedBackupHistory.size > BACKUP_WARM_HISTORY_MAX) {
+        warmedBackupHistory.delete(warmedBackupHistory.keys().next().value);
+      }
+    }
+
+    /* A detached playlist is useful only after its first media bytes reach MSE.
+       Starting a partial Range request did not accomplish that: Twitch immediately
+       opened a separate full request and still waited through a cold CDN leg. Start
+       the real resource here and let the worker hand that exact Response to the
+       player's first matching GET. The one-shot entry keeps bodies from being
+       replayed, while the controller and short TTL bound resources never claimed. */
+    function startWarmedBackupResource(url) {
+      if (!active || !/^https?:\/\//i.test(String(url || '')) || warmedBackupResources.has(url)) return;
+      const now = Date.now();
+      const previous = Number(warmedBackupHistory.get(url) || 0);
+      if (previous && now - previous < BACKUP_TTL) return;
+      if (previous) warmedBackupHistory.delete(url);
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const entry = { at: now, epoch: backupEpoch, controller: controller, timer: 0,
+        promise: null, claimed: false };
+      rememberWarmedBackupUrl(url, now);
+      try {
+        entry.promise = Promise.resolve(realFetch(url, controller ? { signal: controller.signal } : undefined))
+          .then((response) => {
+            if (response && response.ok) return response;
+            warmedBackupHistory.delete(url);
+            discardWarmedBackupResource(url, entry, false);
+            return null;
+          }, () => {
+            warmedBackupHistory.delete(url);
+            discardWarmedBackupResource(url, entry, false);
+            return null;
+          });
+      } catch (_) {
+        warmedBackupHistory.delete(url);
+        if (controller) {
+          try { controller.abort(); } catch (_) {}
+        }
+        return;
+      }
+      warmedBackupResources.set(url, entry);
+      entry.timer = setTimeout(() => discardWarmedBackupResource(url, entry, true), BACKUP_WARM_TTL_MS);
+      while (warmedBackupResources.size > BACKUP_WARM_MAX) {
+        const oldestUrl = warmedBackupResources.keys().next().value;
+        discardWarmedBackupResource(oldestUrl, warmedBackupResources.get(oldestUrl), true);
+      }
+    }
+
+    function warmBackupResources(text, coldHandoff) {
       if (!active || !text) return;
-      let mediaUrl = '';
+      const mediaUrls = [];
+      let mapUrl = '';
+      let byterange = false;
       try {
         const lines = String(text).replace(/\r/g, '').split('\n');
-        for (let index = lines.length - 1; index >= 0; index--) {
-          const line = String(lines[index] || '').trim();
-          if (line && line.charAt(0) !== '#' && /^https?:\/\//i.test(line)) {
-            mediaUrl = line;
-            break;
+        for (const rawLine of lines) {
+          const line = String(rawLine || '').trim();
+          if (!line) continue;
+          if (/^#EXT-X-MAP:/i.test(line)) {
+            const attributes = parseAttributes(line);
+            const mapped = String(attributes.URI || '');
+            if (!attributes.BYTERANGE && /^https?:\/\//i.test(mapped)) mapUrl = mapped;
+            continue;
           }
+          if (/^#EXT-X-BYTERANGE:/i.test(line)) {
+            byterange = true;
+            continue;
+          }
+          if (line.charAt(0) === '#') continue;
+          if (!byterange && /^https?:\/\//i.test(line)) mediaUrls.push(line);
+          byterange = false;
         }
       } catch (_) {}
-      if (!mediaUrl || warmedBackupSegments.has(mediaUrl)) return;
-      warmedBackupSegments.set(mediaUrl, Date.now());
-      while (warmedBackupSegments.size > 128) {
-        warmedBackupSegments.delete(warmedBackupSegments.keys().next().value);
-      }
+      if (coldHandoff && mapUrl) startWarmedBackupResource(mapUrl);
+      /* Twitch can choose either of the last two full segments at a cold live edge.
+         Later polls need only the newest one because its predecessor was already
+         started by the preceding replacement playlist. */
+      const count = coldHandoff ? 2 : 1;
+      for (const url of mediaUrls.slice(-count)) startWarmedBackupResource(url);
+    }
+
+    async function takeWarmedBackupResource(input, init, url) {
+      const entry = warmedBackupResources.get(url);
+      if (!entry || entry.claimed) return null;
+      let method = '';
       try {
-        Promise.resolve(realFetch(mediaUrl, { headers: { Range: 'bytes=0-65535' } }))
-          .then((response) => response && typeof response.arrayBuffer === 'function'
-            ? response.arrayBuffer() : null)
-          .catch(() => {});
+        method = String(init && init.method ||
+          (typeof Request !== 'undefined' && input instanceof Request && input.method) || 'GET').toUpperCase();
+      } catch (_) {
+        method = 'GET';
+      }
+      let ranged = false;
+      try {
+        const headers = init && init.headers
+          ? new Headers(init.headers)
+          : (typeof Request !== 'undefined' && input instanceof Request ? input.headers : null);
+        ranged = !!(headers && headers.get('range'));
       } catch (_) {}
+      if (method !== 'GET' || ranged || Date.now() - Number(entry.at || 0) > BACKUP_WARM_TTL_MS) {
+        if (Date.now() - Number(entry.at || 0) > BACKUP_WARM_TTL_MS) {
+          discardWarmedBackupResource(url, entry, true);
+        }
+        return null;
+      }
+      if (mediaRequestAborted(input, init)) return null;
+      entry.claimed = true;
+      const response = await entry.promise;
+      discardWarmedBackupResource(url, entry, false);
+      if (!active || Number(entry.epoch) !== Number(backupEpoch) ||
+          !response || !response.ok || mediaRequestAborted(input, init)) {
+        if (response && response.body && typeof response.body.cancel === 'function') {
+          try { Promise.resolve(response.body.cancel()).catch(() => {}); } catch (_) {}
+        }
+        return null;
+      }
+      return response;
     }
 
     function settleBeforeDeadline(promise, deadlineAt) {
@@ -3677,7 +3794,7 @@
               nativeText || '', current.text, (cached.playerType || '?') + ':' + cached.url,
               playbackProfileKey(info));
             if (aligned === null) return null;
-            warmBackupSegment(current.text);
+            warmBackupResources(current.text, !(state && state.backupActive));
             if (activate !== false && state) state.backupActive = true;
             return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
           }
@@ -3737,7 +3854,7 @@
         nativeText || '', candidate.text, (candidate.playerType || '?') + ':' + candidate.url,
         playbackProfileKey(info));
       if (aligned === null) return null;
-      warmBackupSegment(candidate.text);
+      warmBackupResources(candidate.text, !(state && state.backupActive));
       if (state) state.backupActive = true;
       return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
     }
@@ -4171,6 +4288,10 @@
     self.fetch = async function twitchWorkerFetch(input, init) {
       if (!active) return realFetch(input, init);
       const url = urlOf(input);
+      if (warmedBackupResources.has(url)) {
+        const warmed = await takeWarmedBackupResource(input, init, url);
+        if (warmed) return warmed;
+      }
       if (GQL_RE.test(url)) {
         return handleWorkerGql(input, init);
       }

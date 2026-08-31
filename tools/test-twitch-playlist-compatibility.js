@@ -744,7 +744,7 @@ test('cached clean-backup polling tolerates an 800ms media leg without refreshin
     'slow cached-media poll discarded its valid token and attempted a forbidden refresh');
 });
 
-test('a clean backup warms its exact edge segment without delaying or duplicating the swap', async () => {
+test('a clean backup hands its already-started edge segment to the player without delaying the swap', async () => {
   const cleanBackup = sequencedPlaylist({
     sequence: 99100,
     startMs: SEQUENCE_BASE_TIME,
@@ -760,7 +760,7 @@ test('a clean backup warms its exact edge segment without delaying or duplicatin
       if (/\/warm-edge-segment\/\d+\.ts(?:[?#]|$)/.test(url)) {
         warmCalls.push({ url, init });
         return warmGate.then(() => new Response(new Uint8Array([1, 2, 3]), {
-          status: 206,
+          status: 200,
           headers: { 'content-type': 'video/mp2t' },
         }));
       }
@@ -780,22 +780,87 @@ test('a clean backup warms its exact edge segment without delaying or duplicatin
   const firstBody = await first.text();
   assert(firstBody.includes('/warm-edge-segment/'),
     'clean backup was not served while its edge warm-up stayed in flight');
-  for (let turn = 0; turn < 8 && warmCalls.length < 1; turn++) await Promise.resolve();
-  assert(warmCalls.length === 1,
-    'clean backup did not warm exactly one current media segment');
-  assert(warmCalls[0].url.endsWith('/warm-edge-segment/99102.ts'),
-    'clean backup warmed something other than its newest full media segment');
-  assert(warmCalls[0].init && warmCalls[0].init.headers &&
-    warmCalls[0].init.headers.Range === 'bytes=0-65535',
-  'clean backup warm-up did not use the bounded byte range');
+  for (let turn = 0; turn < 8 && warmCalls.length < 2; turn++) await Promise.resolve();
+  equal(warmCalls.map((call) => call.url), [
+    'https://video-edge-fixture.ttvnw.net/warm-edge-segment/99101.ts',
+    'https://video-edge-fixture.ttvnw.net/warm-edge-segment/99102.ts',
+  ], 'a cold handoff did not start its two playable edge choices');
+  assert(warmCalls.every((call) => call.init && call.init.signal && !call.init.headers),
+    'clean backup warm-up was not a cancellable full-segment request');
 
-  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  const playerRequest = runtime.fetch(warmCalls[1].url);
   await Promise.resolve();
-  assert(warmCalls.length === 1,
-    'the same clean media edge was warmed more than once');
+  assert(warmCalls.length === 2,
+    'the player duplicated the already-started edge request');
+  const rangedRequest = runtime.fetch(warmCalls[0].url, { headers: { Range: 'bytes=0-31' } });
+  await Promise.resolve();
+  assert(warmCalls.length === 3 && warmCalls[2].url === warmCalls[0].url &&
+    warmCalls[2].init.headers.Range === 'bytes=0-31',
+  'a ranged media request incorrectly claimed the full warm response');
   releaseWarm();
-  await Promise.resolve();
-  await Promise.resolve();
+  const playerResponse = await playerRequest;
+  await rangedRequest;
+  equal(Array.from(new Uint8Array(await playerResponse.arrayBuffer())), [1, 2, 3],
+    'the player did not receive the body from the already-started edge request');
+  assert(warmCalls.length === 3,
+    'claiming the clean edge created a second native request');
+
+  await runtime.fetch(warmCalls[1].url);
+  assert(warmCalls.length === 4,
+    'the already-started response was replayed instead of remaining one-shot');
+  runtime.configure(false);
+});
+
+test('a fragmented-MP4 handoff starts its init and media resources and cancels both on config-off', async () => {
+  const timedFmp4Backup = CLEAN_FMP4_MEDIA.replace(
+    '#EXT-X-MEDIA-SEQUENCE:99100\n',
+    '#EXT-X-MEDIA-SEQUENCE:99100\n#EXT-X-PROGRAM-DATE-TIME:2026-07-23T00:00:00.000Z\n');
+  const standardRoute = standardFetchRoute({
+    originalMedia: FMP4_STITCHED_AD,
+    backupMedia: timedFmp4Backup,
+  });
+  const warmCalls = [];
+  const aborted = [];
+  const runtime = createRuntime({
+    fetchRoute(url, init, state) {
+      if (/\/live\/(?:init\.mp4|99100\.m4s)(?:[?#]|$)/.test(url)) {
+        warmCalls.push({ url, init });
+        return new Promise((resolve, reject) => {
+          const signal = init && init.signal;
+          const abort = () => {
+            aborted.push(url);
+            const error = new Error('fixture warm resource cancelled');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (signal) {
+            if (signal.aborted) abort();
+            else signal.addEventListener('abort', abort, { once: true });
+          }
+        });
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body.includes('#EXT-X-MAP:') && body.includes('/live/99100.m4s'),
+    'fragmented-MP4 backup was not served while its resources stayed in flight');
+  for (let turn = 0; turn < 8 && warmCalls.length < 2; turn++) await Promise.resolve();
+  equal(warmCalls.map((call) => call.url), [
+    'https://video-edge-fixture.ttvnw.net/live/init.mp4',
+    'https://video-edge-fixture.ttvnw.net/live/99100.m4s',
+  ], 'fragmented-MP4 handoff did not start both decoder resources');
+
+  runtime.configure(false);
+  for (let turn = 0; turn < 8 && aborted.length < 2; turn++) await Promise.resolve();
+  equal(aborted.slice().sort(), warmCalls.map((call) => call.url).sort(),
+    'config-off left unused warm resources in flight');
 });
 
 test('a late cached mid-roll uses one fresh native bridge within the total 900ms budget', async () => {
