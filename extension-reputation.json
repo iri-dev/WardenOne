@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "datasetVersion": "2026.08.30.472",
-  "generatedAt": "2026-08-30T00:00:00Z",
+  "datasetVersion": "2026.08.31.473",
+  "generatedAt": "2026-08-31T00:00:00Z",
   "description": "Local exact-ID extension intelligence with three deliberately separate states: documented incidents, publisher-verified identities with explicit capability contracts, and catalogue-only Chrome Web Store listings. A catalogue match identifies a listing name only; it never proves safety or excuses access. Runtime lookups and reviews stay on this device.",
   "sources": {
     "great-suspender-incident": {
@@ -17,7 +17,7 @@
     "bitwarden-official": {
       "label": "Bitwarden Password Manager Chrome Web Store listing",
       "reference": "https://chromewebstore.google.com/detail/bitwarden-password-manage/nngceckbapebfimnlniiiahkandclblb",
-      "retrievedAt": "2026-08-30"
+      "retrievedAt": "2026-08-31"
     },
     "onepassword-official": {
       "label": "1Password official browser-extension documentation",
@@ -713,8 +713,16 @@
         "kind": "all_versions"
       },
       "source": "bitwarden-official",
-      "reviewedAt": "2026-08-30",
-      "capabilityProfile": "password_manager"
+      "reviewedAt": "2026-08-31",
+      "capabilityProfile": "password_manager",
+      "capabilityContract": {
+        "expected": [
+          "clipboard-read"
+        ],
+        "needs": "read and fill sign-in forms on any site, copy credentials to the clipboard for you to paste, check and clear Bitwarden-created clipboard entries after the configured interval, answer HTTP authentication prompts, and talk to its desktop app",
+        "evidence": "Bitwarden's official Manifest V3 source declares clipboardRead and clipboardWrite. Bitwarden's security FAQ explains that clipboard access supports scheduled clearing and lets it check the last-copied vault item so unrelated clipboard content is not removed.",
+        "reference": "https://bitwarden.com/help/security-faqs/"
+      }
     },
     "aeblfdkhhhdcdjpifhhbdiojplfjncoa": {
       "name": "1Password — Password Manager",

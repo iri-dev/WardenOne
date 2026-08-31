@@ -143,6 +143,13 @@ as the work happened.
 
 ### Changed
 
+- Twitch's client-side ad refusal now survives the ad SDK reset that runs when a
+  long-lived player rebuilds or changes content. That reset used to clear WardenOne's
+  decline after it had been applied successfully, leaving the same tab able to fetch
+  a full-player creative hours or days later. Clean alternate streams also warm one
+  bounded range from their newest media segment before Twitch asks for it, reducing
+  the short transition spinner without changing quality, seeking, pausing or delaying
+  the playlist response.
 - Rebuilt Extension Security Centre trust decisions around exact, evidence-bound
   contracts. Publisher-verified identities, catalogue-only Web Store listings and
   documented incidents are now separate states; a store-list snapshot can no longer
@@ -154,7 +161,10 @@ as the work happened.
   exists. The popup shows decisions rather than duplicating a debug-style permission
   dump, while the full Centre puts the action queue first and folds quiet verified
   extensions away. Bitwarden and Claude remain calm for their documented normal
-  access, but gain a warning for access outside their own contract.
+  access, but gain a warning for access outside their own contract. Bitwarden's
+  officially declared clipboard read is now explained by an exact-ID override for
+  copying credentials for you to paste and safely clearing them; that exception is
+  not inherited by another password manager merely because it has the same category.
 - Cookie stripping now covers every kind of request on domains that exist only to
   track you. Across the web generally it stays limited to tracking pixels and beacons,
   and that limit is deliberate: signing in and single sign-on set their cookies on

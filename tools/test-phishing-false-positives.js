@@ -131,7 +131,16 @@ console.log('[ok] phishing false-positive checks passed');
   const detectStart = source.indexOf('const BRANDS={');
   const loopEnd = source.indexOf('if(phishHit)break', detectStart);
   assert(detectStart >= 0 && loopEnd > detectStart, 'phishing detection region not found');
-  const detectSrc = source.slice(detectStart, source.indexOf('}', loopEnd) + 1);
+  /* SITE_BOUNDARY is defined far above the detector, and the detector uses it to
+     resolve the registrable label instead of counting dots from the right. Lift
+     it too, or every case here dies with "not defined" -- which reads on a
+     pass/fail count exactly like "nothing is flagged any more". */
+  const sbStart = source.indexOf('SITE_BOUNDARY=(()=>{');
+  const sbEnd = source.indexOf('VERIFICATION_FLOW_POLICY=(()=>{', sbStart);
+  assert(sbStart >= 0 && sbEnd > sbStart, 'SITE_BOUNDARY region not found');
+  const boundarySrc = 'const ' + source.slice(sbStart, sbEnd).replace(/,\s*$/, ';');
+  const detectSrc = boundarySrc + String.fromCharCode(10)
+    + source.slice(detectStart, source.indexOf('}', loopEnd) + 1);
 
   function verdictFor(hostname) {
     const sandbox = {
