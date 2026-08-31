@@ -14331,7 +14331,15 @@
       const here=(location.hostname||"").replace(/^www\./,
       "").toLowerCase(),
       parts=here.split("."),
-      sld=parts.length>=2?parts[parts.length-2]:here,
+      /* The registrable label, not "the second one from the right".
+         Counting labels has no idea what a public suffix is, so sony.co.uk
+         read as sld="co" -- and every brand check downstream then compared
+         "sony" against "co", decided the brand was only a SUBDOMAIN, and
+         called Sony's own UK site a Sony spoof. Same for wise.edu.au and
+         anything else under a two-part suffix. SITE_BOUNDARY.site already
+         knows the difference and is used for exactly this elsewhere in the
+         file; the detector was the one place still counting dots. */
+      sld=(SITE_BOUNDARY.site(here).split(".")[0]||here),
       fullHost=here,
       visualNorm=s=>s.replace(/rn/g,
       "m").replace(/vv/g,
@@ -14468,7 +14476,11 @@
       "pnc"]);
       let phishHit=null;
       const isPuny=/(^|\.)xn--/i.test(here),
-      hasPhishWord=/(login|signin|sign-in|secure|security|verify|verification|account|update|confirm|wallet|recovery|unlock|suspended)/.test(here);
+      hasPhishWord=/(login|signin|sign-in|secure|security|verify|verification|account|update|confirm|wallet|recovery|unlock|suspended)/.test(here),
+      /* The same list the grabber/payment host filter uses. A registrable
+         domain on one of these is not proof of anything by itself, which is
+         why it only ever promotes a hit that already matched a brand. */
+      onThrowawayTld=/\.(cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|zip|mov|hair|tattoo)$/i.test(here);
       if(!/^(steamdb|appleinsider|9to5google|9to5mac|amazonaws|googleapis|googleusercontent|gstatic|applemusic|paypalobjects|fbcdn|akamai|cloudfront)/.test(sld))for(const brand of Object.keys(BRANDS)){
         if(isLegit(brand)){
           phishHit=null;
@@ -14488,7 +14500,18 @@
         else sld!==brand||isLegit(brand)||COMMON_WORD_BRANDS.has(brand)?parts.includes(brand)&&sld!==brand&&!isLegit(brand)?phishHit={
           brand:brand,
           kind:"subdomain-spoof",
-          confidence:"high"
+          /* A brand word somewhere to the left of the registrable domain is
+             the weakest of these signals, and it was the only one rated
+             high. It fires on apple.stackexchange.com, crypto.stanford.edu,
+             target.scene7.com and chase.pgatour.com -- ordinary sites whose
+             subdomain happens to be a word that is also a brand, which is
+             most short words. Nine of fifteen real hostnames tried came back
+             high on this rule alone.
+             It stays a warning, because occasionally it is right. It stops
+             being HIGH unless something corroborates it: a phishing word in
+             the host, or a registrable domain on a throwaway TLD. Real kit
+             like apple.secure-login.tk carries both and is unaffected. */
+          confidence:hasPhishWord||onThrowawayTld?"high":"medium"
         }
         :sld!==brand&&sld.includes(brand)&&sld.length<=brand.length+20&&hasPhishWord&&(phishHit={
           brand:brand,

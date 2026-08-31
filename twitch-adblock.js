@@ -1398,7 +1398,9 @@
     attempts: 0,
     timer: 0,
     manager: null,
-    declinedByWarden: false
+    declinedByWarden: false,
+    nativeReset: null,
+    resetWrapper: null
   };
 
   function twitchWebpackRequires() {
@@ -1445,6 +1447,56 @@
     return null;
   }
 
+  function restoreAdManagerResetGuard() {
+    const manager = adManagerState.manager;
+    const wrapper = adManagerState.resetWrapper;
+    const nativeReset = adManagerState.nativeReset;
+    if (manager && wrapper && nativeReset) {
+      try {
+        if (manager.reset === wrapper) manager.reset = nativeReset;
+      } catch (_) {}
+    }
+    adManagerState.nativeReset = null;
+    adManagerState.resetWrapper = null;
+  }
+
+  function applyAdManagerDecline(manager) {
+    if (!enabled || !manager || manager.declineReason) return false;
+    try {
+      manager.decline('player_size', { sendEvent: false });
+      const owned = String(manager.declineReason || '') === 'player_size';
+      if (adManagerState.manager === manager) adManagerState.declinedByWarden = owned;
+      return owned;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function installAdManagerResetGuard(manager) {
+    if (!manager || typeof manager.reset !== 'function') return;
+    if (adManagerState.manager === manager && adManagerState.resetWrapper &&
+        manager.reset === adManagerState.resetWrapper) return;
+    if (adManagerState.manager && adManagerState.manager !== manager) restoreAdManagerResetGuard();
+    const nativeReset = manager.reset;
+    function twitchAdManagerReset() {
+      const result = nativeReset.apply(this, arguments);
+      if (enabled && adManagerState.manager === manager) {
+        adManagerState.declinedByWarden = false;
+        applyAdManagerDecline(manager);
+      }
+      return result;
+    }
+    try {
+      Object.defineProperty(twitchAdManagerReset, '__woTwitchCurrent', { value: VERSION });
+      Object.defineProperty(twitchAdManagerReset, 'name', { value: nativeReset.name || 'reset' });
+      Object.defineProperty(twitchAdManagerReset, 'length', { value: nativeReset.length });
+      twitchAdManagerReset.toString = Function.prototype.toString.bind(nativeReset);
+      manager.reset = twitchAdManagerReset;
+      adManagerState.nativeReset = nativeReset;
+      adManagerState.resetWrapper = twitchAdManagerReset;
+    } catch (_) {}
+  }
+
   function releaseAdManagerDecline() {
     if (adManagerState.timer) clearTimeout(adManagerState.timer);
     adManagerState.timer = 0;
@@ -1456,8 +1508,11 @@
         }
       } catch (_) {}
     }
+    restoreAdManagerResetGuard();
     adManagerState.declinedByWarden = false;
   }
+
+  woHold({ disconnect: releaseAdManagerDecline });
 
   function syncAdManagerDecline() {
     if (!enabled) {
@@ -1472,11 +1527,10 @@
       try {
         const manager = findTwitchAdManager(twitchWebpackRequires());
         if (manager) {
+          if (adManagerState.manager && adManagerState.manager !== manager) restoreAdManagerResetGuard();
           adManagerState.manager = manager;
-          if (!manager.declineReason) {
-            manager.decline('player_size', { sendEvent: false });
-            adManagerState.declinedByWarden = String(manager.declineReason || '') === 'player_size';
-          }
+          installAdManagerResetGuard(manager);
+          if (!manager.declineReason) applyAdManagerDecline(manager);
           if (manager.declineReason) return;
         }
       } catch (_) {}
@@ -1768,6 +1822,7 @@
     const pendingBackupPolls = new Map();
     const pendingGql = new Map();
     const backupControllers = new Set();
+    const warmedBackupSegments = new Map();
     const sequenceStates = new Map();
     let backupEpoch = 0;
     let activeChannel = '';
@@ -3487,6 +3542,32 @@
       return pending;
     }
 
+    function warmBackupSegment(text) {
+      if (!active || !text) return;
+      let mediaUrl = '';
+      try {
+        const lines = String(text).replace(/\r/g, '').split('\n');
+        for (let index = lines.length - 1; index >= 0; index--) {
+          const line = String(lines[index] || '').trim();
+          if (line && line.charAt(0) !== '#' && /^https?:\/\//i.test(line)) {
+            mediaUrl = line;
+            break;
+          }
+        }
+      } catch (_) {}
+      if (!mediaUrl || warmedBackupSegments.has(mediaUrl)) return;
+      warmedBackupSegments.set(mediaUrl, Date.now());
+      while (warmedBackupSegments.size > 128) {
+        warmedBackupSegments.delete(warmedBackupSegments.keys().next().value);
+      }
+      try {
+        Promise.resolve(realFetch(mediaUrl, { headers: { Range: 'bytes=0-65535' } }))
+          .then((response) => response && typeof response.arrayBuffer === 'function'
+            ? response.arrayBuffer() : null)
+          .catch(() => {});
+      } catch (_) {}
+    }
+
     function settleBeforeDeadline(promise, deadlineAt) {
       const remaining = Math.max(0, Number(deadlineAt || 0) - Date.now());
       if (!remaining) {
@@ -3596,6 +3677,7 @@
               nativeText || '', current.text, (cached.playerType || '?') + ':' + cached.url,
               playbackProfileKey(info));
             if (aligned === null) return null;
+            warmBackupSegment(current.text);
             if (activate !== false && state) state.backupActive = true;
             return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
           }
@@ -3655,6 +3737,7 @@
         nativeText || '', candidate.text, (candidate.playerType || '?') + ':' + candidate.url,
         playbackProfileKey(info));
       if (aligned === null) return null;
+      warmBackupSegment(candidate.text);
       if (state) state.backupActive = true;
       return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
     }

@@ -237,6 +237,20 @@ function assess(id, overrides) {
        differently. */
     check('profile ' + name + ' names only real capability signatures', unknown.length === 0, unknown.join(', '));
   });
+  Object.entries(DB.entries).forEach(([id, entry]) => {
+    if (!entry.capabilityContract) return;
+    const known = new Set((DB.capabilitySignatures || []).map((s) => s.id).concat([
+      'all-site-data', 'tab-metadata', 'history-access', 'cookie-access', 'network-observation',
+      'blocking-web-request', 'declarative-network-control', 'traffic-proxy', 'debugger-control',
+      'extension-management', 'native-program-bridge', 'clipboard-read', 'downloads-control',
+      'script-injection', 'script-everywhere', 'session-data-everywhere', 'wide-finite-host-set',
+      'nonstandard-install',
+    ]));
+    const unknown = (entry.capabilityContract.expected || []).filter((c) => !known.has(c));
+    check('exact contract ' + id + ' names only real capabilities', unknown.length === 0, unknown.join(', '));
+    check('exact contract ' + id + ' cites its evidence',
+      !!entry.capabilityContract.evidence && /^https:\/\//.test(entry.capabilityContract.reference || ''));
+  });
 }());
 
 (function recognitionNeverImpliesSafety() {
@@ -620,8 +634,25 @@ function assess(id, overrides) {
     permissions: ['storage', 'scripting', 'nativeMessaging', 'clipboardRead'],
     hostPermissions: ['<all_urls>'],
   });
-  check('Bitwarden gaining clipboard-read access is not silently recognised',
-    clipboard.verdict.code === 'unexpected_capability', clipboard.verdict.code);
+  check('Bitwarden clipboard-read access matches its exact official manifest contract',
+    clipboard.verdict.code === 'recognized_expected', clipboard.verdict.code);
+  check('Bitwarden clipboard-read remains visible as expected access',
+    clipboard.capabilities.expected.some((c) => c.id === 'clipboard-read'),
+    JSON.stringify(clipboard.capabilities.expected));
+  check('Bitwarden clipboard rationale explains the legitimate use',
+    /clipboard/i.test(clipboard.capabilities.profile.needs)
+      && /clipboardRead/.test(clipboard.capabilities.profile.evidence)
+      && clipboard.capabilities.profile.identitySpecific === true,
+    JSON.stringify(clipboard.capabilities.profile));
+
+  const otherPasswordManagerClipboard = assess('aeblfdkhhhdcdjpifhhbdiojplfjncoa', {
+    name: '1Password — Password Manager',
+    permissions: ['storage', 'scripting', 'nativeMessaging', 'clipboardRead'],
+    hostPermissions: ['<all_urls>'],
+  });
+  check('Bitwarden clipboard evidence does not excuse another password manager',
+    otherPasswordManagerClipboard.verdict.code === 'unexpected_capability',
+    otherPasswordManagerClipboard.verdict.code);
 
   const CLAUDE = 'fcoeoabgfenejglbffodgkkbkcdhcgfn';
   const normalClaude = assess(CLAUDE, {
@@ -661,6 +692,11 @@ function assess(id, overrides) {
       name: 'Imported browser agent', status: 'recognized_identity',
       reason: 'A deliberately untrusted imported identity record for the regression test.',
       categories: ['browser_agent'], capabilityProfile: 'browser_agent',
+      capabilityContract: {
+        expected: ['debugger-control'], needs: 'claim debugger access is normal',
+        evidence: 'Untrusted imports must not create permission exceptions.',
+        reference: 'https://example.invalid/untrusted-contract',
+      },
       affected: { kind: 'all_versions' }, source: 'local', reviewedAt: '2026-08-30',
     } },
   };
@@ -678,6 +714,9 @@ function assess(id, overrides) {
   }, customDb, {}, [], []);
   check('an imported category cannot select a bundled allow-profile',
     imported.capabilities.profile === null, JSON.stringify(imported.capabilities.profile));
+  check('an imported record cannot add an exact-id capability exception',
+    checked.database.entries[id].capabilityContract === null,
+    JSON.stringify(checked.database.entries[id].capabilityContract));
   check('the imported browser-agent claim does not suppress powerful access',
     imported.verdict.needsAttention === true, imported.verdict.code);
 }());

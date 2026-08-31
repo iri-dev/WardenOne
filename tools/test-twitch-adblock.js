@@ -1509,6 +1509,65 @@ test('Twitch AdManager is declined with the exact player-size contract and follo
     'config-on overrode an existing Twitch-owned AdManager decline');
 });
 
+test('Twitch AdManager decline survives the SDK reset used by long-lived players', () => {
+  let manager;
+  let nativeReset;
+  const calls = [];
+  const resetReceivers = [];
+  const harness = createPageHarness(null, {
+    fakeClock: true,
+    now: 1000,
+    configureWindow(window) {
+      manager = function FixtureAdManager() {};
+      manager.startProcessingRequests = function startProcessingRequests() {};
+      manager.declineReason = null;
+      manager.decline = function decline(reason, options) {
+        calls.push({ reason, options });
+        manager.declineReason = reason;
+      };
+      nativeReset = function reset() {
+        resetReceivers.push(this);
+        manager.declineReason = null;
+        return 'native-reset-result';
+      };
+      manager.reset = nativeReset;
+      exposeWebpackAdManager(window, manager);
+    },
+  });
+
+  assert(manager.reset !== nativeReset,
+    'AdManager reset was not guarded after discovery');
+  assert(manager.reset() === 'native-reset-result',
+    'AdManager reset guard changed the native return value');
+  assert(resetReceivers.length === 1 && resetReceivers[0] === manager,
+    'AdManager reset guard changed the native receiver');
+  equal(calls, [
+    { reason: 'player_size', options: { sendEvent: false } },
+    { reason: 'player_size', options: { sendEvent: false } },
+  ], 'AdManager reset did not restore WardenOne decline');
+  assert(manager.declineReason === 'player_size',
+    'AdManager reset left the long-lived player able to request a creative');
+
+  harness.window.__WO_CONFIG__.twitchAdBlock = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  assert(manager.reset === nativeReset,
+    'config-off did not restore Twitch native AdManager reset');
+  manager.reset();
+  assert(calls.length === 2 && manager.declineReason === null,
+    'native AdManager reset was still declined while protection was disabled');
+
+  manager.declineReason = 'twitch_owned_reason';
+  harness.window.__WO_CONFIG__.twitchAdBlock = true;
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  assert(calls.length === 2 && manager.declineReason === 'twitch_owned_reason',
+    'config-on overwrote a Twitch-owned decline before its lifecycle reset');
+  assert(manager.reset !== nativeReset,
+    'config-on did not restore the AdManager reset guard');
+  manager.reset();
+  equal(calls[2], { reason: 'player_size', options: { sendEvent: false } },
+    'AdManager reset did not take ownership after Twitch cleared its own reason');
+});
+
 test('Twitch AdManager discovery searches later webpackChunk runtimes', () => {
   const calls = [];
   let firstQueue;

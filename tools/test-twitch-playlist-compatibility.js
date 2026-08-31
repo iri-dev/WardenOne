@@ -744,6 +744,60 @@ test('cached clean-backup polling tolerates an 800ms media leg without refreshin
     'slow cached-media poll discarded its valid token and attempted a forbidden refresh');
 });
 
+test('a clean backup warms its exact edge segment without delaying or duplicating the swap', async () => {
+  const cleanBackup = sequencedPlaylist({
+    sequence: 99100,
+    startMs: SEQUENCE_BASE_TIME,
+    title: 'live',
+    path: 'warm-edge-segment',
+  });
+  const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: cleanBackup });
+  const warmCalls = [];
+  let releaseWarm;
+  const warmGate = new Promise((resolve) => { releaseWarm = resolve; });
+  const runtime = createRuntime({
+    fetchRoute(url, init, state) {
+      if (/\/warm-edge-segment\/\d+\.ts(?:[?#]|$)/.test(url)) {
+        warmCalls.push({ url, init });
+        return warmGate.then(() => new Response(new Uint8Array([1, 2, 3]), {
+          status: 206,
+          headers: { 'content-type': 'video/mp2t' },
+        }));
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+
+  const first = await Promise.race([
+    runtime.fetch(ORIGINAL_MEDIA_URL),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('segment warm-up delayed the playlist')), 250)),
+  ]);
+  const firstBody = await first.text();
+  assert(firstBody.includes('/warm-edge-segment/'),
+    'clean backup was not served while its edge warm-up stayed in flight');
+  for (let turn = 0; turn < 8 && warmCalls.length < 1; turn++) await Promise.resolve();
+  assert(warmCalls.length === 1,
+    'clean backup did not warm exactly one current media segment');
+  assert(warmCalls[0].url.endsWith('/warm-edge-segment/99102.ts'),
+    'clean backup warmed something other than its newest full media segment');
+  assert(warmCalls[0].init && warmCalls[0].init.headers &&
+    warmCalls[0].init.headers.Range === 'bytes=0-65535',
+  'clean backup warm-up did not use the bounded byte range');
+
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  await Promise.resolve();
+  assert(warmCalls.length === 1,
+    'the same clean media edge was warmed more than once');
+  releaseWarm();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+
 test('a late cached mid-roll uses one fresh native bridge within the total 900ms budget', async () => {
   const ads = [501, 502, 503].map((sequence) => markedAd(
     '#EXT-X-DATERANGE:ID="stitched-ad-full-bridge-' + sequence +

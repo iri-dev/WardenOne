@@ -151,6 +151,24 @@ function extensionVersionAffected(version, affected) {
   return false;
 }
 
+/* A broad kind-profile says what password managers generally need. An exact-ID
+   contract records the extra capability that one verified product documents.
+   Keeping those layers separate is important: Bitwarden declaring clipboard
+   read must not silently excuse the same permission on every password manager. */
+function sanitizeExtensionCapabilityContract(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const expected = Array.from(new Set((Array.isArray(raw.expected) ? raw.expected : [])
+    .map((value) => extensionReputationText(value, 80))
+    .filter((value) => /^[a-z0-9-]{2,80}$/.test(value)))).slice(0, 20);
+  const needs = extensionReputationText(raw.needs, 400);
+  const evidence = extensionReputationText(raw.evidence, 700);
+  const reference = extensionReputationText(raw.reference, 500);
+  /* Per-identity exceptions require a human-readable purpose and a cited HTTPS
+     source. An undocumented allow-list entry is rejected instead of trusted. */
+  if (!expected.length || !needs || !evidence || !/^https:\/\//i.test(reference)) return null;
+  return { expected, needs, evidence, reference };
+}
+
 function sanitizeExtensionReputationRecord(id, raw, sources, origin) {
   if (!EXTENSION_ID_RE.test(String(id || '')) || !raw || typeof raw !== 'object') return null;
   const status = extensionReputationText(raw.status, 40);
@@ -181,6 +199,8 @@ function sanitizeExtensionReputationRecord(id, raw, sources, origin) {
        profile; imported intelligence cannot turn a category into an allowlist. */
     capabilityProfile: origin === 'custom' || status !== 'recognized_identity'
       ? '' : extensionReputationText(raw.capabilityProfile, 80),
+    capabilityContract: origin === 'custom' || status !== 'recognized_identity'
+      ? null : sanitizeExtensionCapabilityContract(raw.capabilityContract),
     affected,
     source,
     reviewedAt,
@@ -234,6 +254,11 @@ function sanitizeCapabilityProfiles(raw, signatures) {
   return out;
 }
 
+function extensionKnownCapabilityIds(signatures) {
+  return new Set((signatures || []).map((signature) => signature.id)
+    .concat(Object.values(EXT_BASE_CAPABILITY_IDS)));
+}
+
 function validateExtensionReputationDatabase(raw, options) {
   const origin = options && options.origin === 'custom' ? 'custom' : 'bundled';
   const maxEntries = origin === 'custom' ? EXT_REPUTATION_MAX_CUSTOM_ENTRIES : 100000;
@@ -265,6 +290,16 @@ function validateExtensionReputationDatabase(raw, options) {
       signatureIds.add(signature.id);
       signatures.push(signature);
     }
+    const knownCapabilities = extensionKnownCapabilityIds(signatures);
+    Object.values(entries).forEach((record) => {
+      if (!record.capabilityContract) return;
+      const filtered = record.capabilityContract.expected.filter((id) => knownCapabilities.has(id));
+      if (filtered.length !== record.capabilityContract.expected.length) {
+        errors.push('An unknown per-identity capability was ignored for ' + record.id + '.');
+      }
+      record.capabilityContract = filtered.length
+        ? Object.assign({}, record.capabilityContract, { expected: filtered }) : null;
+    });
   }
   const fatal = Number(raw.schema) !== EXT_REPUTATION_SCHEMA || ids.length > maxEntries;
   return {
@@ -383,6 +418,7 @@ function extensionReputationRecordDigest(record, capabilityProfile) {
     reason: record.reason,
     categories: record.categories,
     capabilityProfile: record.capabilityProfile,
+    capabilityContract: record.capabilityContract,
     affected: record.affected,
     source: record.source,
     reviewedAt: record.reviewedAt,
@@ -478,6 +514,7 @@ function lookupExtensionReputation(extension, database) {
       recordDigest: '',
       origin: '',
       capabilityProfile: '',
+      capabilityContract: null,
       nameMismatch: true,
     };
   }
@@ -491,6 +528,7 @@ function lookupExtensionReputation(extension, database) {
       reason: record.reason,
       categories: record.categories.slice(),
       capabilityProfile: record.capabilityProfile || '',
+      capabilityContract: record.capabilityContract ? Object.assign({}, record.capabilityContract) : null,
       source: Object.assign({}, record.source),
       reviewedAt: record.reviewedAt,
       recordDigest: extensionReputationRecordDigest(record, profile),
@@ -508,6 +546,7 @@ function lookupExtensionReputation(extension, database) {
       recordDigest: '',
       origin: '',
       capabilityProfile: '',
+      capabilityContract: null,
     };
   }
   return {
@@ -520,6 +559,7 @@ function lookupExtensionReputation(extension, database) {
     recordDigest: '',
     origin: '',
     capabilityProfile: '',
+    capabilityContract: null,
   };
 }
 
@@ -705,13 +745,17 @@ function extensionCapabilityProfile(reputation, database) {
   const profileName = String(reputation.capabilityProfile || '');
   const profile = profileName && profiles[profileName];
   if (!profile) return null;
+  const contract = reputation.capabilityContract && typeof reputation.capabilityContract === 'object'
+    ? reputation.capabilityContract : null;
   return {
     category: profileName,
     label: String(profile.label || profileName),
-    needs: String(profile.needs || ''),
-    expected: Array.isArray(profile.expected) ? profile.expected.slice() : [],
-    evidence: String(profile.evidence || ''),
-    reference: String(profile.reference || ''),
+    needs: String((contract && contract.needs) || profile.needs || ''),
+    expected: Array.from(new Set((Array.isArray(profile.expected) ? profile.expected : [])
+      .concat(contract && Array.isArray(contract.expected) ? contract.expected : []))),
+    evidence: String((contract && contract.evidence) || profile.evidence || ''),
+    reference: String((contract && contract.reference) || profile.reference || ''),
+    identitySpecific: !!contract,
   };
 }
 

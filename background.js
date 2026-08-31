@@ -1660,6 +1660,18 @@ const ONBOARDING_RECOMMENDED = {
   xssBehaviorGuard: true,
 };
 const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
+  /* Acting on the detector rather than only narrating it.
+     A high-confidence verdict is a tld-swap (paypal.tk), a visual typosquat
+     (paypa1.com), a homograph, or a brand subdomain with a phishing word or a
+     throwaway TLD beside it. Those are worth stopping, and until now nothing
+     stopped them: the switch existed but sat off in the defaults, off in
+     Recommended and off here, so the strongest anti-phishing action shipped
+     unreachable from any guided path.
+     It goes in this bundle and not Recommended because blocking is the one
+     action here that can be wrong in a way the reader cannot work around, and
+     someone who chose maximum privacy has said which way they want that call
+     to go. The warning still fires for everyone either way. */
+  blockHighConfidencePhishing: true,
   antiFingerprint: true,
   antiFingerprintNoise: true,
   blockFirstPartyTrackers: true,
