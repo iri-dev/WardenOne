@@ -190,6 +190,7 @@ function checkContentBuild() {
   'tools/test-known-limits.js',
   'tools/test-extension-verdicts.js',
   'tools/test-privacy-disclosure.js',
+  'tools/test-pwned-password-check.js',
   'tools/test-header-shield.js',
   'tools/test-xss-behavior-guard.js',
   'tools/test-xss-event-boundary.js',
@@ -444,6 +445,7 @@ checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.j
 checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']);
 checkCommand('phishing confidence tests', ['tools/test-phishing-confidence.js']);
 checkCommand('default agreement tests', ['tools/test-default-agreement.js']);
+checkCommand('pwned password check tests', ['tools/test-pwned-password-check.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);

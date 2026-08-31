@@ -97,6 +97,9 @@
     blockForcedPopups: true,
     strictPopupShield: true,
     blockPopupTricks: true,
+    blockTokenExfil: true,
+    detectSkimmers: true,
+    paymentCardGuard: true,
     gestureWindowMs: 2400,
   };
   let lastGestureAt = 0;
@@ -1681,6 +1684,469 @@
     }
   } catch (_) {}
 
+  /* CREDENTIAL_FRAME_GUARD_START
+     The full protection engine stays in the top frame: parsing all of it into every
+     advertising, media and application frame would be a large permanent cost. This
+     narrow layer runs only in child frames and owns the credential-facing boundary
+     the top document cannot see. It remembers bounded card/password/token values in
+     this realm and blocks an exact value when it is sent to an unrelated destination.
+     No value is emitted, persisted or handed to the isolated bridge. */
+  const CREDENTIAL_FRAME_VALUE_LIMIT = 80;
+  const CREDENTIAL_FRAME_TRUSTED_BASES = new Set([
+    'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com',
+    'microsoft.com', 'microsoftonline.com', 'msauth.net', 'msftauth.net', 'live.com',
+    'apple.com', 'icloud.com', 'cdn-apple.com', 'paypal.com', 'paypalobjects.com',
+    'stripe.com', 'stripe.network', 'braintreegateway.com', 'braintreepayments.com',
+    'braintree-api.com', 'adyen.com', 'adyenpayments.com', 'checkout.com',
+    'hcaptcha.com', 'recaptcha.net', 'arkoselabs.com', 'funcaptcha.com',
+  ]);
+  const credentialFrameValues = new Map();
+  const credentialFrameXhrs = new WeakMap();
+  let credentialFrameLastFieldScan = 0;
+  let credentialFrameBlocked = 0;
+  let credentialFrameTokensSeeded = false;
+
+  function credentialFrameEnabled(key) {
+    const c = cfg();
+    return !TOP_FRAME
+      && window.__wardenOneAntiRedirectHardener === WO_GUARD_VERSION
+      && c.enabled !== false
+      && c[key] !== false
+      && !hostAllowedByUser();
+  }
+
+  function credentialFrameBaseUrl() {
+    const candidates = [];
+    try { candidates.push(document.baseURI); } catch (_) {}
+    try { candidates.push(location.href); } catch (_) {}
+    try { candidates.push(document.referrer); } catch (_) {}
+    for (const candidate of candidates) {
+      try {
+        const parsed = new URL(String(candidate || ''));
+        if (/^https?:$/.test(parsed.protocol)) return parsed.href;
+      } catch (_) {}
+    }
+    return '';
+  }
+
+  function credentialFrameSourceHost() {
+    try { return regHost(new URL(credentialFrameBaseUrl()).hostname); } catch (_) { return ''; }
+  }
+
+  function credentialFrameTarget(rawTarget) {
+    try {
+      const base = credentialFrameBaseUrl();
+      if (!base) return null;
+      const parsed = new URL(String(rawTarget || base), base);
+      if (!/^(?:https?|wss?):$/.test(parsed.protocol)) return null;
+      const sourceHost = credentialFrameSourceHost();
+      const targetHost = regHost(parsed.hostname);
+      if (!sourceHost || !targetHost || sameParty(sourceHost, targetHost)) return null;
+      return { url: parsed, host: targetHost, sourceHost };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function credentialFrameTrustedHost(host) {
+    const clean = regHost(host);
+    if (!clean) return false;
+    for (const base of CREDENTIAL_FRAME_TRUSTED_BASES) {
+      if (clean === base || clean.endsWith('.' + base)) return true;
+    }
+    return false;
+  }
+
+  function credentialFrameLuhn(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.length < 13 || digits.length > 19) return false;
+    let sum = 0;
+    let alternate = false;
+    for (let i = digits.length - 1; i >= 0; i--) {
+      let n = Number(digits.charAt(i));
+      if (!Number.isFinite(n)) return false;
+      if (alternate) { n *= 2; if (n > 9) n -= 9; }
+      sum += n;
+      alternate = !alternate;
+    }
+    return sum % 10 === 0;
+  }
+
+  function credentialFrameFieldKind(field) {
+    try {
+      if (!field || !/^(?:INPUT|TEXTAREA)$/.test(String(field.tagName || '').toUpperCase())) return '';
+      const type = String(field.type || '').toLowerCase();
+      const hint = [field.name, field.id, field.autocomplete, field.placeholder,
+        field.getAttribute && field.getAttribute('aria-label')].join(' ').toLowerCase();
+      if (type === 'password') return 'password';
+      if (/cc-|card|credit|debit|cardnumber|ccnum|(?:^|\W)pan(?:\W|$)|cvc|cvv|security.?code/.test(hint)) return 'card';
+    } catch (_) {}
+    return '';
+  }
+
+  function credentialFrameRemember(value, kind) {
+    try {
+      let clean = String(value == null ? '' : value).trim();
+      if (!clean || clean.length > 2048) return;
+      if (kind === 'card') {
+        clean = clean.replace(/\D/g, '');
+        if (!credentialFrameLuhn(clean)) return;
+      } else if (kind === 'password') {
+        if (clean.length < 6 || clean.length > 512) return;
+      } else if (kind === 'token') {
+        clean = clean.replace(/^Bearer\s+/i, '').replace(/^['"]|['"]$/g, '');
+        if (clean.length < 16 || clean.length > 1024) return;
+      } else {
+        return;
+      }
+      if (credentialFrameValues.has(clean)) credentialFrameValues.delete(clean);
+      credentialFrameValues.set(clean, kind);
+      while (credentialFrameValues.size > CREDENTIAL_FRAME_VALUE_LIMIT) {
+        credentialFrameValues.delete(credentialFrameValues.keys().next().value);
+      }
+    } catch (_) {}
+  }
+
+  function credentialFrameRememberField(field) {
+    const kind = credentialFrameFieldKind(field);
+    if (!kind) return;
+    if (kind === 'password' && !credentialFrameEnabled('detectSkimmers')) return;
+    if (kind === 'card' && !credentialFrameEnabled('detectSkimmers')
+        && !credentialFrameEnabled('paymentCardGuard')) return;
+    credentialFrameRemember(field.value, kind);
+  }
+
+  function credentialFrameScanFields(root, force) {
+    try {
+      const now = Date.now();
+      if (!force && now - credentialFrameLastFieldScan < 250) return;
+      credentialFrameLastFieldScan = now;
+      const fields = (root && root.querySelectorAll ? root : document).querySelectorAll('input,textarea');
+      const max = Math.min((fields && fields.length) || 0, 120);
+      for (let i = 0; i < max; i++) credentialFrameRememberField(fields[i]);
+    } catch (_) {}
+  }
+
+  function credentialFrameSensitiveKey(key) {
+    const normalized = String(key || '').trim().replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+      .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+    if (!normalized || /(?:captcha|challenge|human|verification)_?(?:response|answer)?$/.test(normalized)) return false;
+    return /(^|_)(?:token|auth|authorization|session|sess|jwt|bearer|secret|credential|password|passwd)(?:_|$)/.test(normalized)
+      || /(^|_)(?:api|private|csrf|xsrf|access|refresh|identity|client)_(?:key|token|secret|id)(?:_|$)/.test(normalized);
+  }
+
+  function credentialFrameRememberTokenText(value, key) {
+    try {
+      const text = String(value == null ? '' : value).trim();
+      if (!text || text.length > 8192) return;
+      if (credentialFrameSensitiveKey(key)) credentialFrameRemember(text, 'token');
+      const matches = text.match(/\b(?:ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Fa-f0-9]{32,}|[A-Za-z0-9_-]{40,})\b/g) || [];
+      for (let i = 0; i < Math.min(matches.length, 12); i++) credentialFrameRemember(matches[i], 'token');
+    } catch (_) {}
+  }
+
+  function credentialFrameSeedTokens() {
+    if (credentialFrameTokensSeeded || !credentialFrameEnabled('blockTokenExfil')) return;
+    credentialFrameTokensSeeded = true;
+    try {
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        if (!store) continue;
+        const max = Math.min(Number(store.length) || 0, 160);
+        for (let i = 0; i < max; i++) {
+          const key = store.key(i);
+          credentialFrameRememberTokenText(store.getItem(key), key);
+        }
+      }
+    } catch (_) {}
+    try {
+      const cookies = String(document.cookie || '').split(';').slice(0, 160);
+      for (const cookie of cookies) {
+        const at = cookie.indexOf('=');
+        if (at > 0) credentialFrameRememberTokenText(cookie.slice(at + 1), cookie.slice(0, at));
+      }
+    } catch (_) {}
+  }
+
+  function credentialFrameDataText(data) {
+    try {
+      if (data == null) return '';
+      if (typeof data === 'string') return data.slice(0, 1048576);
+      if (typeof URLSearchParams !== 'undefined' && data instanceof URLSearchParams) return data.toString().slice(0, 1048576);
+      if (typeof FormData !== 'undefined' && data instanceof FormData) {
+        const parts = [];
+        data.forEach((value, key) => {
+          if (parts.length < 160 && typeof value !== 'object') parts.push(String(key) + '=' + String(value));
+        });
+        return parts.join('&').slice(0, 1048576);
+      }
+      if (typeof Headers !== 'undefined' && data instanceof Headers) {
+        const parts = [];
+        data.forEach((value, key) => { if (parts.length < 160) parts.push(String(key) + ': ' + String(value)); });
+        return parts.join('\n').slice(0, 1048576);
+      }
+      if (typeof ArrayBuffer !== 'undefined' && (data instanceof ArrayBuffer || ArrayBuffer.isView(data))) {
+        if ((data.byteLength || 0) > 524288 || typeof TextDecoder === 'undefined') return '';
+        return new TextDecoder('utf-8').decode(data).slice(0, 1048576);
+      }
+      if (typeof data === 'object') return JSON.stringify(data).slice(0, 1048576);
+      return String(data).slice(0, 1048576);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function credentialFrameHeadersText(headers) {
+    try {
+      if (Array.isArray(headers)) return headers.map(credentialFrameHeadersText).join('\n').slice(0, 1048576);
+      if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+        const parts = [];
+        headers.forEach((value, key) => { if (parts.length < 160) parts.push(String(key) + ': ' + String(value)); });
+        return parts.join('\n').slice(0, 1048576);
+      }
+      if (headers && typeof headers === 'object') {
+        return Object.keys(headers).slice(0, 160)
+          .map((key) => String(key) + ': ' + String(headers[key])).join('\n').slice(0, 1048576);
+      }
+      return credentialFrameDataText(headers);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function credentialFrameHasToken(text) {
+    const haystack = String(text || '');
+    if (haystack.length < 16) return false;
+    if (/\b(?:ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Fa-f0-9]{32,}|[A-Za-z0-9_-]{40,})\b/.test(haystack)) return true;
+    const pair = /(?:^|[?&\n{,;])\s*['"]?([A-Za-z0-9_-]{1,64})['"]?\s*(?:=|:)\s*['"]?(?:Bearer\s+)?([A-Za-z0-9_.-]{16,})/gi;
+    let match;
+    while ((match = pair.exec(haystack))) {
+      if (credentialFrameSensitiveKey(match[1])) return true;
+    }
+    for (const [value, kind] of credentialFrameValues) {
+      if (kind === 'token' && value.length >= 16
+          && (haystack.indexOf(value) >= 0 || haystack.indexOf(encodeURIComponent(value)) >= 0)) return true;
+    }
+    return false;
+  }
+
+  function credentialFrameHasRemembered(text, wantedKind) {
+    const haystack = String(text || '');
+    if (!haystack) return false;
+    let decoded = haystack;
+    try { decoded = decodeURIComponent(haystack.replace(/\+/g, ' ')); } catch (_) {}
+    let digitHaystack = '';
+    for (const [value, kind] of credentialFrameValues) {
+      if (kind !== wantedKind) continue;
+      if (wantedKind === 'card') {
+        if (!digitHaystack) digitHaystack = decoded.replace(/\D/g, '');
+        if (digitHaystack.indexOf(value) >= 0) return true;
+      } else if (haystack.indexOf(value) >= 0 || decoded.indexOf(value) >= 0
+          || haystack.indexOf(encodeURIComponent(value)) >= 0) {
+        return true;
+      }
+      try {
+        for (let padding = 0; padding < 3; padding++) {
+          const core = btoa('xx'.slice(0, padding) + value).slice(4, -4);
+          if (core.length >= 10 && haystack.indexOf(core) >= 0) return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  function credentialFramePaymentRisk(target) {
+    try {
+      const host = target.host;
+      const label = host.split('.')[0] || '';
+      const rawIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || /^\[[0-9a-f:]+\]$/i.test(host);
+      const odd = /^xn--/i.test(host)
+        || /\.(?:cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol)$/.test(host)
+        || /^[a-f0-9]{12,}$/i.test(label);
+      return target.url.protocol !== 'https:' && target.url.protocol !== 'wss:' || rawIp || odd;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function credentialFrameNoteBlock(type, target, channel) {
+    if (++credentialFrameBlocked > 40) return;
+    emit(type, {
+      dest: String(target && target.host || '').slice(0, 120),
+      channel: String(channel || '').slice(0, 24),
+      frame: true,
+    });
+  }
+
+  function credentialFrameBlocks(rawTarget, data, headers, channel) {
+    const target = credentialFrameTarget(rawTarget);
+    if (!target) return false;
+    credentialFrameScanFields(document, false);
+    credentialFrameSeedTokens();
+    const text = String(rawTarget || '') + '\n' + credentialFrameDataText(data)
+      + '\n' + credentialFrameHeadersText(headers);
+    const trusted = credentialFrameTrustedHost(target.host);
+    if (credentialFrameEnabled('blockTokenExfil') && !trusted && credentialFrameHasToken(text)) {
+      credentialFrameNoteBlock('blocked_token_exfil', target, channel);
+      return true;
+    }
+    const hasCard = credentialFrameHasRemembered(text, 'card');
+    const hasPassword = credentialFrameHasRemembered(text, 'password');
+    if (hasCard && credentialFrameEnabled('paymentCardGuard') && credentialFramePaymentRisk(target)) {
+      credentialFrameNoteBlock('blocked_payment_card_submit', target, channel);
+      return true;
+    }
+    if ((hasCard || hasPassword) && credentialFrameEnabled('detectSkimmers') && !trusted) {
+      credentialFrameNoteBlock('blocked_skimmer_exfil', target, channel);
+      return true;
+    }
+    return false;
+  }
+
+  function credentialFrameFormData(form) {
+    try { return new FormData(form); } catch (_) {}
+    try {
+      const pairs = [];
+      const fields = form && form.querySelectorAll ? form.querySelectorAll('input,textarea,select') : [];
+      const max = Math.min((fields && fields.length) || 0, 160);
+      for (let i = 0; i < max; i++) pairs.push(String(fields[i].name || '') + '=' + String(fields[i].value || ''));
+      return pairs.join('&');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function credentialFrameFailXhr(xhr) {
+    woTimeout(() => {
+      try {
+        const shadow = (name, value) => {
+          try { Object.defineProperty(xhr, name, { configurable: true, value }); } catch (_) {}
+        };
+        shadow('readyState', 4);
+        shadow('status', 0);
+        shadow('statusText', '');
+        shadow('responseURL', '');
+        const makeEvent = (type) => {
+          try { return new ProgressEvent(type); } catch (_) {
+            try { return new Event(type); } catch (_) { return { type }; }
+          }
+        };
+        for (const type of ['readystatechange', 'error', 'loadend']) {
+          try { xhr.dispatchEvent(makeEvent(type)); } catch (_) {}
+        }
+      } catch (_) {}
+    }, 0);
+  }
+
+  function installCredentialFrameGuard() {
+    if (TOP_FRAME) return;
+    woOn(document, 'input', (event) => {
+      try { credentialFrameRememberField(event && event.target); } catch (_) {}
+    }, true);
+
+    try {
+      if (typeof window.fetch === 'function') {
+        const realFetch = window.fetch;
+        window.fetch = function credentialFrameFetch(input, init) {
+          try {
+            const url = typeof input === 'string' || input instanceof URL ? String(input) : input && input.url;
+            const body = init && init.body !== undefined ? init.body : input && input.body;
+            const headers = [input && input.headers, init && init.headers];
+            if (credentialFrameBlocks(url, body, headers, 'fetch')) {
+              return Promise.reject(new DOMException('Blocked by WardenOne credential guard', 'SecurityError'));
+            }
+          } catch (_) {}
+          return realFetch.apply(this, arguments);
+        };
+      }
+    } catch (_) {}
+
+    try {
+      if (navigator && typeof navigator.sendBeacon === 'function') {
+        const realBeacon = navigator.sendBeacon.bind(navigator);
+        navigator.sendBeacon = function credentialFrameBeacon(url, data) {
+          if (credentialFrameBlocks(url, data, null, 'beacon')) return false;
+          return realBeacon(url, data);
+        };
+      }
+    } catch (_) {}
+
+    try {
+      if (window.XMLHttpRequest && XMLHttpRequest.prototype) {
+        const realOpen = XMLHttpRequest.prototype.open;
+        const realSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+        const realSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function credentialFrameXhrOpen(method, url) {
+          credentialFrameXhrs.set(this, { url, headers: [] });
+          return realOpen.apply(this, arguments);
+        };
+        if (typeof realSetHeader === 'function') {
+          XMLHttpRequest.prototype.setRequestHeader = function credentialFrameXhrHeader(name, value) {
+            try {
+              const state = credentialFrameXhrs.get(this);
+              if (state && state.headers.length < 80) state.headers.push(String(name) + ': ' + String(value));
+            } catch (_) {}
+            return realSetHeader.apply(this, arguments);
+          };
+        }
+        XMLHttpRequest.prototype.send = function credentialFrameXhrSend(body) {
+          const state = credentialFrameXhrs.get(this) || { url: '', headers: [] };
+          if (credentialFrameBlocks(state.url, body, state.headers, 'xhr')) {
+            credentialFrameFailXhr(this);
+            return undefined;
+          }
+          return realSend.apply(this, arguments);
+        };
+      }
+    } catch (_) {}
+
+    try {
+      if (window.WebSocket && WebSocket.prototype && typeof WebSocket.prototype.send === 'function') {
+        const realWebSocketSend = WebSocket.prototype.send;
+        WebSocket.prototype.send = function credentialFrameWebSocketSend(data) {
+          if (credentialFrameBlocks(this && this.url, data, null, 'websocket')) return undefined;
+          return realWebSocketSend.apply(this, arguments);
+        };
+      }
+    } catch (_) {}
+
+    try {
+      if (window.Storage && Storage.prototype && typeof Storage.prototype.setItem === 'function') {
+        const realStorageSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function credentialFrameStorageSetItem(key, value) {
+          if (credentialFrameEnabled('blockTokenExfil')) credentialFrameRememberTokenText(value, key);
+          return realStorageSetItem.apply(this, arguments);
+        };
+      }
+    } catch (_) {}
+
+    try {
+      if (window.HTMLFormElement && HTMLFormElement.prototype) {
+        const realFrameSubmit = HTMLFormElement.prototype.submit;
+        HTMLFormElement.prototype.submit = function credentialFrameSubmit() {
+          credentialFrameScanFields(this, true);
+          const action = this && this.action ? this.action : credentialFrameBaseUrl();
+          if (credentialFrameBlocks(action, credentialFrameFormData(this), null, 'form')) return undefined;
+          return realFrameSubmit.apply(this, arguments);
+        };
+      }
+    } catch (_) {}
+
+    woOn(document, 'submit', (event) => {
+      try {
+        const form = event && event.target;
+        if (!form) return;
+        credentialFrameScanFields(form, true);
+        const action = form.action || credentialFrameBaseUrl();
+        if (!credentialFrameBlocks(action, credentialFrameFormData(form), null, 'form')) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      } catch (_) {}
+    }, true);
+  }
+
+  installCredentialFrameGuard();
+  /* CREDENTIAL_FRAME_GUARD_END */
+
   // ---------------------------------------------------------------------------
   // Tracker-frame cookie and storage guard.
   //
@@ -1966,6 +2432,9 @@
         blockForcedPopups: true,
         strictPopupShield: true,
         blockPopupTricks: true,
+        blockTokenExfil: true,
+        detectSkimmers: true,
+        paymentCardGuard: true,
         gestureWindowMs: DEFAULT_WINDOW_MS,
       }, msg.overrides, { __configReady: true });
       clearTrackerFrameStorage();

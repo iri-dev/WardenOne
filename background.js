@@ -11553,6 +11553,11 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'adshield-cosmetic',
   'domain-age',
   'eyeshield-fetch-css',
+  /* The isolated bridge owns both watchdogs. Keeping them out of this table meant
+     the generic sender gate rejected them before their deliberately tab-scoped
+     handlers could run, so engine repair and navigation attribution were inert. */
+  'wo-engine-check',
+  'wo-nav-signal',
 ]);
 const TAB_CONTEXT_RATE_LIMITS = {
   // Every tab-allowed kind needs an entry. rg-block is the highest-volume one --
@@ -11592,6 +11597,10 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'adshield-cosmetic': { max: 12, windowMs: 60000 },
   'set-site-permission': { max: 3, windowMs: 60000 },
   'eyeshield-fetch-css': { max: 150, windowMs: 60000 },
+  /* The bridge sends at most five engine checks per document. Navigation signals
+     can be frequent on media pages, so its worker-side ceiling matches the bridge. */
+  'wo-engine-check': { max: 8, windowMs: 60000 },
+  'wo-nav-signal': { max: 180, windowMs: 60000 },
 };
 const TAB_SAFE_BROWSING_CONTEXTS = new Set(['link', 'paste', 'form']);
 function messageSenderIsExtensionPage(sender) {

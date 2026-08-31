@@ -172,6 +172,8 @@ console.log('\nengine watchdog\n');
     /kind: 'wo-engine-check'/.test(BRIDGE));
   check('the worker only listens to a real tab',
     /msg\.kind === 'wo-engine-check' && messageSenderIsTab\(sender\)/.test(BG));
+  check('the tab-context gate lets the watchdog reach that handler',
+    /TAB_CONTEXT_ALLOWED_MESSAGES = new Set\(\[[\s\S]*?'wo-engine-check'[\s\S]*?\]\);/.test(BG));
   check('the bridge stops asking rather than looping',
     /bridgeEngineChecks\+\+ > 4/.test(BRIDGE));
   check('an engine that announced itself is never reported',

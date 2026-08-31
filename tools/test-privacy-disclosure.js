@@ -86,12 +86,33 @@ check('the 120-domain cap is disclosed', /120/.test(policy));
 check('the policy says it checks the SITE, not the user account',
   /not your account/.test(policy));
 
-// The removed feature must be gone from code and not re-described as shipping.
+/* The password check is back, deliberately, and the shape of the old mistake is
+   what this now guards. Last time the handler existed in the worker and NOTHING
+   could reach it, while the policy described it in detail -- a documented feature
+   that did not exist. So the pairing runs both ways: the policy has to describe
+   it, and the interface has to actually offer it. */
 const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-check('the unreachable password handler is gone from the worker',
-  !bg.includes('api.pwnedpasswords.com') && !bg.includes("kind === 'breach-check'"));
-check('the policy explains the removal rather than silently dropping it',
-  /no password checking in wardenone/.test(policy));
+const popupHtml = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
+const popupJs = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+
+check('the policy describes the password check', /pwnedpasswords\.com/.test(policy));
+check('the policy says what actually leaves the device',
+  /five hexadecimal characters|first five characters/i.test(policy));
+check('the policy says the answer is not written down',
+  /written nowhere/i.test(policy));
+
+/* The reason the last one was removed: a documented feature with no way in. */
+check('the interface actually offers it', /id="ss-pwned"/.test(popupHtml),
+  'the policy would be describing something unreachable again');
+check('and something is wired to that control', /ss-pwned/.test(popupJs));
+
+/* It runs from the extension page. Re-adding it as a message kind would hand
+   pages a channel to submit hash prefixes through, which is what the old
+   'breach-check' kind was. */
+check('the worker has no password message kind', !bg.includes("kind === 'breach-check'"),
+  'a page-reachable channel for hash prefixes is back');
+check('the lookup does not run in the worker', !bg.includes('api.pwnedpasswords.com'),
+  'it belongs in the extension page, where no tab can reach it');
 
 // OpenPhish was described as needing a key it has never needed.
 check('the policy no longer claims every provider needs an API key',

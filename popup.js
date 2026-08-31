@@ -4330,6 +4330,136 @@ document.querySelectorAll('.perm-link').forEach((b) => {
 });
 
 // ----- SessionShield: how old is this domain? (RDAP, on-demand) -----
+/* Password exposure, by k-anonymity range query.
+ *
+ * The whole point is that the service never learns which password was asked
+ * about. The password is hashed here; only the first five characters of the
+ * hash are sent; the reply contains every suffix sharing that prefix -- hundreds
+ * of unrelated passwords -- and the match is made in this function.
+ *
+ * It runs in the popup rather than the worker on purpose. An earlier version of
+ * this feature lived in background.js behind a 'breach-check' message, which
+ * meant a channel existed that a page could post hash prefixes into; nothing in
+ * the interface could reach it, so what shipped was a documented feature that
+ * did not exist and an open channel that did. The extension page already holds
+ * the host permission, so doing it here needs no message kind at all.
+ */
+const PWNED_PREFIX_LEN = 5;
+const PWNED_TIMEOUT_MS = 8000;
+
+async function sha1Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-1', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+}
+
+$('ss-pwned').addEventListener('click', async () => {
+  const input = $('ss-pwned-input');
+  const out = $('ss-pwned-result');
+  const btn = $('ss-pwned');
+  const password = input ? input.value : '';
+
+  out.style.display = 'block';
+  out.textContent = '';
+  if (!password) {
+    out.style.color = 'var(--ink-faint)';
+    out.textContent = 'Type a password into the box first.';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  out.style.color = 'var(--ink-faint)';
+  out.textContent = 'Hashing on this device…';
+
+  /* Cleared whichever way this ends, including the throw. The value has no
+     reason to outlive the click, and the box is the only place it exists. */
+  const finish = () => {
+    btn.disabled = false;
+    btn.textContent = 'Check this password';
+    if (input) input.value = '';
+  };
+
+  let hash = '';
+  try {
+    hash = await sha1Hex(password);
+    const prefix = hash.slice(0, PWNED_PREFIX_LEN);
+    const suffix = hash.slice(PWNED_PREFIX_LEN);
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), PWNED_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch('https://api.pwnedpasswords.com/range/' + prefix, {
+        method: 'GET',
+        /* Padding makes every bucket answer at a similar size. Without it the
+           length of the reply narrows down which prefix was asked for, which is
+           visible to anything on the path even though the body is encrypted. */
+        headers: { 'Add-Padding': 'true' },
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        cache: 'no-store',
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res || !res.ok) {
+      /* Never render a failure as good news. "Not found" and "could not ask"
+         look the same on screen unless this says which one happened. */
+      out.style.color = 'var(--ink-faint)';
+      out.textContent = res && res.status === 429
+        ? 'The service is busy right now. Wait a minute and try again.'
+        : 'Could not check right now — this is not an all-clear. Try again shortly.';
+      finish();
+      return;
+    }
+
+    const body = await res.text();
+    let count = 0;
+    for (const line of body.split('\n')) {
+      const sep = line.indexOf(':');
+      if (sep < 0) continue;
+      if (line.slice(0, sep).trim().toUpperCase() !== suffix) continue;
+      count = parseInt(line.slice(sep + 1).trim(), 10) || 0;
+      break;
+    }
+
+    out.textContent = '';
+    if (!count) {
+      out.style.color = 'var(--wo-success)';
+      out.appendChild(makeLine('Not found in any known breach.', 'var(--wo-success)', true));
+      out.appendChild(makeLine('This password does not appear in Have I Been Pwned’s collection of breached passwords. That is not the same as it being a strong password.', 'var(--ink-soft)'));
+    } else {
+      out.style.color = 'var(--wo-danger)';
+      out.appendChild(makeLine('Found in known breaches ' + count.toLocaleString() + (count === 1 ? ' time.' : ' times.'), 'var(--wo-danger)', true));
+      out.appendChild(makeLine('This exact password is in public breach data, so it is on the lists attackers try first. Change it anywhere you use it, and do not reuse it.', 'var(--ink-soft)'));
+    }
+    out.appendChild(makeLine('Only the first ' + PWNED_PREFIX_LEN + ' characters of the hash were sent. The password never left this device, and this answer has not been saved.', 'var(--ink-faint)'));
+  } catch (err) {
+    out.style.color = 'var(--ink-faint)';
+    out.textContent = (err && err.name === 'AbortError')
+      ? 'The service took too long to answer — this is not an all-clear. Try again shortly.'
+      : 'Could not check right now — this is not an all-clear. Try again shortly.';
+  } finally {
+    hash = '';
+    finish();
+  }
+});
+
+/* Typing a new one clears the last answer. Leaving a red "found in breaches"
+   result sitting above a different password is a way to misread it. */
+if ($('ss-pwned-input')) {
+  $('ss-pwned-input').addEventListener('input', () => {
+    const out = $('ss-pwned-result');
+    if (out && out.style.display !== 'none') { out.style.display = 'none'; out.textContent = ''; }
+  });
+}
+
 $('ss-domage').addEventListener('click', () => {
   const out = $('ss-domage-result');
   const btn = $('ss-domage');
