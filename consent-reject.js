@@ -78,16 +78,6 @@
     }
   };
 
-  /* chrome.storage.onChanged is not one of the events woOnMessage covers, but it lands in the
-     same registry, so the dispose above releases it with everything else. */
-  const woOnStorage = (fn) => {
-    try {
-      chrome.storage.onChanged.addListener(fn);
-      woChromeListeners.push([chrome.storage.onChanged, fn]);
-    } catch (_) {}
-    return fn;
-  };
-
   const DEFAULTS = {
     enabled: true,
     autoRejectConsent: true,
@@ -238,8 +228,9 @@
 
   function loadConfig(done) {
     try {
-      chrome.storage.local.get('wardenone_config', (res) => {
-        config = Object.assign({}, DEFAULTS, (res && res.wardenone_config) || {});
+      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+        void chrome.runtime.lastError;
+        config = Object.assign({}, DEFAULTS, (!chrome.runtime.lastError && res && res.ok && res.overrides) || {});
         updateActive();
         if (typeof done === 'function') done();
       });
@@ -927,10 +918,8 @@
     });
   }
 
-  try {
-    woOnStorage((changes, area) => {
-      if (area !== 'local' || !changes.wardenone_config) return;
-      config = Object.assign({}, DEFAULTS, changes.wardenone_config.newValue || {});
+  const refreshConfigState = (overrides) => {
+      config = Object.assign({}, DEFAULTS, overrides || {});
       const wasActive = active;
       updateActive();
       if (active) {
@@ -940,6 +929,21 @@
         try { observer.disconnect(); } catch (_) {}
         observer = null;
       }
+  };
+
+  try {
+    woOnMessage((msg) => {
+      if (!msg) return;
+      if (msg.kind === 'config-update') refreshConfigState(msg.overrides);
+      if (msg.kind === 'content-config-refresh') loadConfig(() => {
+        if (active) {
+          startObserver();
+          queueScan();
+        } else if (observer) {
+          try { observer.disconnect(); } catch (_) {}
+          observer = null;
+        }
+      });
     });
   } catch (_) {}
 

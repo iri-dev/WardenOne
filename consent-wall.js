@@ -104,14 +104,6 @@
     } catch (_) {}
     return fn;
   };
-  const woOnStorage = (fn) => {
-    try {
-      chrome.storage.onChanged.addListener(fn);
-      woChromeListeners.push([chrome.storage.onChanged, fn]);
-    } catch (_) {}
-    return fn;
-  };
-
   window.__wardenOneConsentWallDispose = () => {
     try { restoreAll('dispose'); } catch (_) {}
     try { woAbort.abort(); } catch (_) {}
@@ -402,8 +394,9 @@
 
   function loadConfig(done) {
     try {
-      chrome.storage.local.get('wardenone_config', (res) => {
-        config = Object.assign({}, DEFAULTS, (res && res.wardenone_config) || {});
+      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+        void chrome.runtime.lastError;
+        config = Object.assign({}, DEFAULTS, (!chrome.runtime.lastError && res && res.ok && res.overrides) || {});
         updateActive();
         if (typeof done === 'function') done();
       });
@@ -577,20 +570,20 @@
     restoreAll('off');
   }
 
-  woOnStorage((changes, area) => {
-    if (area !== 'local' || !changes || !changes.wardenone_config) return;
-    loadConfig(() => {
-      if (active) start();
-      else if (started) stop();
-    });
-  });
-
   woOnMessage((msg) => {
-    if (!msg || msg.type !== 'config-updated') return;
-    loadConfig(() => {
+    if (!msg) return;
+    if (msg.kind === 'config-update') {
+      config = Object.assign({}, DEFAULTS, msg.overrides || {});
+      updateActive();
       if (active) start();
       else if (started) stop();
-    });
+    }
+    if (msg.kind === 'content-config-refresh') {
+      loadConfig(() => {
+        if (active) start();
+        else if (started) stop();
+      });
+    }
   });
 
   loadConfig(() => {

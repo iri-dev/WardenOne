@@ -380,8 +380,8 @@ test('repair selects the full engine only for frame zero', () => {
   const topFiles = Array.from(selectRepairFiles(url, 0) || []);
   const childFiles = Array.from(selectRepairFiles(url, 7) || []);
   assert(topFiles.includes('content.min.js'), 'top-frame repair no longer restores the full engine');
-  assert.deepStrictEqual(childFiles, ['anti-redirect.js'],
-    'child-frame repair must contain only the lightweight redirect guard');
+  assert.deepStrictEqual(childFiles, ['domain-utils.js', 'anti-redirect.js'],
+    'child-frame repair must contain only the shared identity helper and lightweight redirect guard');
 
   const repair = sourceBetween(BACKGROUND, '// 5. re-inject', '\n      sendResponse(report);');
   assert(/repairMainWorldFilesForUrl\(frameUrl,\s*frameId\)/.test(repair),

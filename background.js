@@ -16,6 +16,40 @@
 // top of the worker so this file and the popup use ONE implementation (see domain-utils.js).
 importScripts('domain-utils.js');
 
+/* Content scripts are untrusted extension contexts: they execute beside arbitrary pages and
+   should never be able to enumerate local configuration, provider credentials, history, or
+   learned browsing data. Chrome exposes storage.local to them by default, so close that API
+   boundary before any worker event handlers are registered. Content scripts receive only the
+   bounded, secret-free snapshot served by content-config-get below. */
+function restrictStorageToTrustedContexts() {
+  for (const area of [chrome.storage && chrome.storage.local, chrome.storage && chrome.storage.session]) {
+    try {
+      if (!area || typeof area.setAccessLevel !== 'function') continue;
+      const pending = area.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+      if (pending && typeof pending.catch === 'function') pending.catch((e) => console.warn('[WardenOne] storage access restriction failed', e));
+    } catch (e) {
+      console.warn('[WardenOne] storage access restriction failed', e);
+    }
+  }
+}
+restrictStorageToTrustedContexts();
+
+// Chrome storage.local is shared with the regular profile even when the extension
+// runs in split incognito mode. Keep the context bit at the worker boundary so every
+// persistence path can make the same decision without trusting a message sender.
+const INCOGNITO_CONTEXT = (() => {
+  try { return !!(chrome.extension && chrome.extension.inIncognitoContext); } catch (_) { return false; }
+})();
+const CONTENT_SETTING_SCOPE = INCOGNITO_CONTEXT ? 'incognito_session_only' : 'regular';
+
+function contentSettingSetDetails(primaryPattern, setting) {
+  return { primaryPattern, setting, scope: CONTENT_SETTING_SCOPE };
+}
+
+function contentSettingGetDetails(primaryUrl) {
+  return { primaryUrl, incognito: INCOGNITO_CONTEXT };
+}
+
 // Per-tab counters: { [tabId]: number }
 const counts = {};
 // Version reported to external reputation APIs (Safe Browsing, PhishTank). Sourced
@@ -514,6 +548,11 @@ let __histPersistTimer = null;
 // small write instead of doing storage I/O for every event.
 function persistHistBufferNow() {
   __histPersistTimer = null;
+  if (INCOGNITO_CONTEXT) {
+    __histBuffer = [];
+    try { chrome.storage.session.remove('__wardenone_hist_buffer').catch(() => {}); } catch (_) {}
+    return;
+  }
   try {
     if (!__histBuffer.length) {
       try { chrome.storage.session.remove('__wardenone_hist_buffer').catch(() => {}); } catch (_) {}
@@ -524,6 +563,7 @@ function persistHistBufferNow() {
   } catch (_) {}
 }
 function persistHistBuffer() {
+  if (INCOGNITO_CONTEXT) return;
   if (__histPersistTimer) return;
   __histPersistTimer = setTimeout(persistHistBufferNow, 150);
 }
@@ -612,6 +652,7 @@ function sanitizeHistoryDetail(value, depth) {
 }
 
 function queueHistory(entry) {
+  if (INCOGNITO_CONTEXT) return;
   // Sanitised here, at the one choke point every history write already passes
   // through, so no future caller can reintroduce this by forgetting to strip.
   const safe = Object.assign({}, entry);
@@ -643,16 +684,20 @@ function markHistRecoveryDone() {
   __histRecoveryDone = true;
   if (__histBuffer.length) scheduleHistoryFlush();
 }
-try {
-  chrome.storage.session.get('__wardenone_hist_buffer', (x) => {
-    try {
-      const recovered = (x && Array.isArray(x.__wardenone_hist_buffer)) ? x.__wardenone_hist_buffer : [];
-      if (recovered.length) __histBuffer = recovered.concat(__histBuffer);
-    } catch (_) {}
-    markHistRecoveryDone();
-  });
-} catch (_) {
+if (INCOGNITO_CONTEXT) {
   markHistRecoveryDone();
+} else {
+  try {
+    chrome.storage.session.get('__wardenone_hist_buffer', (x) => {
+      try {
+        const recovered = (x && Array.isArray(x.__wardenone_hist_buffer)) ? x.__wardenone_hist_buffer : [];
+        if (recovered.length) __histBuffer = recovered.concat(__histBuffer);
+      } catch (_) {}
+      markHistRecoveryDone();
+    });
+  } catch (_) {
+    markHistRecoveryDone();
+  }
 }
 // A storage.session API that never calls back must not wedge history for the life of the worker.
 // The gate opens regardless after a bounded wait; losing the recovered entries is bad, refusing to
@@ -664,6 +709,11 @@ function scheduleHistoryFlush() {
 }
 function flushHistory() {
   __histTimer = null;
+  if (INCOGNITO_CONTEXT) {
+    __histBuffer = [];
+    __histWriting = false;
+    return;
+  }
   if (__histWriting || !__histBuffer.length) return;
   // Hold the first drain until recovery has settled. Re-armed rather than dropped, so entries
   // queued during a cold start are written as soon as the gate opens.
@@ -1614,6 +1664,82 @@ const DEFAULT_CONFIG = {
   allowlistUntil: {},
   siteOverrides: {},
 };
+
+const CONTENT_CONFIG_EXTRA_FIELDS = new Set([
+  'rebindQuarantine',
+  'grabberDomainsExtra',
+  'adultDomainsExtra',
+  'trustedPaymentHostsExtra',
+]);
+
+function contentConfigFieldAllowed(field) {
+  if (!field || /Key$/.test(field) || field === 'forgetMeAllConfirmedAt') return false;
+  return Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG, field) || CONTENT_CONFIG_EXTRA_FIELDS.has(field);
+}
+
+function sanitizeContentConfig(raw) {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const out = {};
+  for (const field of Object.keys(source)) {
+    if (!contentConfigFieldAllowed(field)) continue;
+    try { out[field] = JSON.parse(JSON.stringify(source[field])); } catch (_) {}
+  }
+  return out;
+}
+
+function sanitizeLearnedForContent(raw) {
+  const out = {};
+  let count = 0;
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  for (const value of Object.keys(source)) {
+    if (count >= 1000) break;
+    const host = String(value || '').replace(/^www\./, '').toLowerCase();
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(host)) continue;
+    out[host] = true;
+    count++;
+  }
+  return out;
+}
+
+function sanitizeSearchJunkForContent(raw) {
+  const source = Array.isArray(raw) ? raw : (raw && raw.scraperHosts);
+  return sanitizeSupplementalBucket(source, 'searchJunkDomainsExtra');
+}
+
+async function buildContentConfigSnapshot() {
+  const store = await localGet([
+    'wardenone_config',
+    'wardenone_learned',
+    SUPPLEMENTAL_LIST_STORAGE_KEY,
+    'wardenone_search_junk_domains',
+  ]);
+  return {
+    ok: true,
+    overrides: sanitizeContentConfig(store && store.wardenone_config),
+    learned: sanitizeLearnedForContent(store && store.wardenone_learned),
+    supplemental: sanitizeSupplementalLists(store && store[SUPPLEMENTAL_LIST_STORAGE_KEY]),
+    searchJunkDomains: sanitizeSearchJunkForContent(store && store.wardenone_search_junk_domains),
+  };
+}
+
+let __contentConfigRefreshTimer = null;
+function scheduleContentConfigRefresh() {
+  if (__contentConfigRefreshTimer) return;
+  __contentConfigRefreshTimer = setTimeout(() => {
+    __contentConfigRefreshTimer = null;
+    try {
+      chrome.tabs.query({}, (tabs) => {
+        void chrome.runtime.lastError;
+        for (const tab of (tabs || [])) {
+          if (!tab || tab.id == null) continue;
+          try {
+            chrome.tabs.sendMessage(tab.id, { kind: 'content-config-refresh' }, () => { void chrome.runtime.lastError; });
+          } catch (_) {}
+        }
+      });
+    } catch (_) {}
+  }, 50);
+}
 
 // ---- Onboarding protection bundles ----------------------------------------
 // "Recommended" = the always-safe security + tracking defenses that don't break
@@ -3019,11 +3145,12 @@ function repairMainWorldFilesForUrl(rawUrl, frameId) {
     const topFrame = Number(frameId) === 0;
     const files = [];
     const add = (file) => { if (!files.includes(file)) files.push(file); };
+    // Every MAIN-world consumer below uses the same tenant-aware identity policy.
+    add('domain-utils.js');
     if (topFrame) {
       add('content.min.js');
       add('permission-chain.js');
     }
-    // anti-redirect is the intentionally lightweight all-frame guard.
     add('anti-redirect.js');
     if (isTwitchFrameUrl(rawUrl)) add('twitch-adblock.js');
     if (isYouTubeFrameUrl(rawUrl)) {
@@ -3792,6 +3919,27 @@ function cookieAuditDomain(hostname) {
   return registrableDomainBg(hostname) || hostname;
 }
 
+function siteContentSettingPatterns(rawUrl) {
+  const u = new URL(rawUrl);
+  const host = u.hostname;
+  return Array.from(new Set([u.origin + '/*', 'https://' + host + '/*', 'http://' + host + '/*']));
+}
+
+function cookieContentSettingPatterns(rawUrl) {
+  const u = new URL(rawUrl);
+  const host = u.hostname;
+  const site = registrableDomainBg(host) || host;
+  const patterns = [
+    'https://' + host + '/*',
+    'http://' + host + '/*',
+    'https://*.' + site + '/*',
+    'http://*.' + site + '/*',
+    'https://' + site + '/*',
+    'http://' + site + '/*',
+  ];
+  return Array.from(new Set(patterns));
+}
+
 function normalizeAllowlistHost(value) {
   let raw = String(value || '').trim();
   if (!raw || raw.length > 512) return '';
@@ -3857,7 +4005,7 @@ function activeAllowlist(cfg) {
 function hostMatchesAllowlist(host, allowlist) {
   const h = normalizeAllowlistHost(host);
   if (!h) return false;
-  return normalizeAllowlistHosts(allowlist).some((d) => h === d || h.endsWith('.' + d));
+  return normalizeAllowlistHosts(allowlist).some((d) => hostMatchesSite(h, d));
 }
 
 function sameStringList(a, b) {
@@ -3924,17 +4072,57 @@ function localGet(key) {
   return new Promise((resolve) => chrome.storage.local.get(key, resolve));
 }
 
+/* These stores are derived from sites visited or explicitly inspected. In split
+ * incognito mode storage.local still belongs to the lasting extension profile, so
+ * letting any of them through would leave private activity behind after the window
+ * closes. Protection settings and downloaded intelligence are intentionally absent:
+ * they are not browsing records and the private worker still needs them. */
+const INCOGNITO_EPHEMERAL_LOCAL_KEYS = new Set([
+  'wardenone_history',
+  'wardenone_learned',
+  'wardenone_tracker_learner',
+  'wardenone_domain_age_cache',
+  'wardenone_whoisxml_cache',
+  'wardenone_safe_browsing_cache',
+  'wardenone_phishtank_cache',
+  'wardenone_abuseipdb_cache',
+  'wardenone_urlhaus_cache',
+  'wardenone_whoisxml_reputation_cache',
+  'wardenone_whoisxml_threat_cache',
+  'wardenone_breach_cache',
+  'wardenone_script_drift_baselines',
+  'wardenone_hidden_elements',
+  'wardenone_script_trusted_hosts',
+  'wardenone_js_allowlist',
+  'wardenone_adshield_allowlist',
+  'wardenone_pending_downloads',
+  'wardenone_download_handled',
+  'wardenone_download_trusted_sites',
+  'wardenone_session_started_at',
+]);
+
+function persistentLocalPayload(obj) {
+  if (!INCOGNITO_CONTEXT || !obj || typeof obj !== 'object') return obj;
+  const safe = {};
+  for (const key of Object.keys(obj)) {
+    if (!INCOGNITO_EPHEMERAL_LOCAL_KEYS.has(key)) safe[key] = obj[key];
+  }
+  return safe;
+}
+
 function localSet(obj) {
+  const payload = persistentLocalPayload(obj);
+  if (!payload || !Object.keys(payload).length) return Promise.resolve();
   return new Promise((resolve, reject) => {
     try {
-      chrome.storage.local.set(obj, () => {
+      chrome.storage.local.set(payload, () => {
         const err = chrome.runtime.lastError;
         if (err) reject(new Error(err.message || String(err)));
         else {
           // keep the cache fresh immediately on our own writes (before onChanged fires),
           // closing the write->immediate-read staleness window.
-          if (obj && Object.prototype.hasOwnProperty.call(obj, 'wardenone_config')) {
-            __cfgCacheSet(__cfgClone(obj.wardenone_config) || {});
+          if (Object.prototype.hasOwnProperty.call(payload, 'wardenone_config')) {
+            __cfgCacheSet(__cfgClone(payload.wardenone_config) || {});
           }
           resolve();
         }
@@ -3986,7 +4174,9 @@ async function writeStorageTelemetry(reason, extra) {
     updatedAt: Date.now(),
     reason: String(reason || ''),
   }, extra || {});
-  try { await localSet({ [STORAGE_META_KEY]: meta }); } catch (_) {}
+  if (!INCOGNITO_CONTEXT) {
+    try { await localSet({ [STORAGE_META_KEY]: meta }); } catch (_) {}
+  }
   return meta;
 }
 
@@ -4035,6 +4225,9 @@ function storagePruneLadder() {
 }
 
 async function pruneStorageIfNeeded(reason) {
+  // A private-window event must not prune, truncate or timestamp the regular
+  // profile's durable stores merely because both contexts share storage.local.
+  if (INCOGNITO_CONTEXT) return { incognito: true, pruned: false, reason: String(reason || '') };
   const before = await storageGetBytesInUse(null);
   if (!before || before < STORAGE_SOFT_LIMIT_BYTES) {
     return writeStorageTelemetry(reason, { pruned: false });
@@ -6232,7 +6425,7 @@ async function resetSensitiveSitePermissionsGlobally() {
       const done = (v) => { if (settled) return; settled = true; clearTimeout(timer); resolve(v); };
       const timer = setTimeout(() => done(false), 2000);
       try {
-        api.clear({ scope: 'regular' }, () => { done(!chrome.runtime.lastError); });
+        api.clear({ scope: CONTENT_SETTING_SCOPE }, () => { done(!chrome.runtime.lastError); });
       } catch (_) { done(false); }
     });
     if (ok) out.reset.push(type.label); else out.failed.push(type.label);
@@ -7018,7 +7211,7 @@ function getCookieSettingForProbe() {
     };
     const timer = setTimeout(() => finish(null), 1200);
     try {
-      cs.get({ primaryUrl: COOKIE_SETTING_PROBE_URL }, (d) => {
+      cs.get(contentSettingGetDetails(COOKIE_SETTING_PROBE_URL), (d) => {
         const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
         finish(err ? null : (d && d.setting));
       });
@@ -7051,7 +7244,7 @@ function setGlobalCookieSetting(setting) {
     }, 2500);
     GLOBAL_COOKIE_PATTERNS.forEach((primaryPattern) => {
       try {
-        cs.set({ primaryPattern, setting }, () => {
+        cs.set(contentSettingSetDetails(primaryPattern, setting), () => {
           const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
           finish(!err);
         });
@@ -7075,7 +7268,7 @@ function getLocationSettingForProbe() {
     };
     const timer = setTimeout(() => finish(null), 1200);
     try {
-      cs.get({ primaryUrl: LOCATION_SETTING_PROBE_URL }, (d) => {
+      cs.get(contentSettingGetDetails(LOCATION_SETTING_PROBE_URL), (d) => {
         const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
         finish(err ? null : (d && d.setting));
       });
@@ -7108,7 +7301,7 @@ function setGlobalLocationSetting(setting) {
     }, 2500);
     GLOBAL_LOCATION_PATTERNS.forEach((primaryPattern) => {
       try {
-        cs.set({ primaryPattern, setting }, () => {
+        cs.set(contentSettingSetDetails(primaryPattern, setting), () => {
           const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
           finish(!err);
         });
@@ -8344,6 +8537,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // other extension contexts, or our own localSet). newValue is the full post-write config.
   if (area === 'local' && changes.wardenone_config) {
     __cfgCacheSet(__cfgClone(changes.wardenone_config.newValue) || {});
+  }
+  if (area === 'local' && (changes.wardenone_config
+      || changes.wardenone_learned
+      || changes[SUPPLEMENTAL_LIST_STORAGE_KEY]
+      || changes.wardenone_search_junk_domains)) {
+    scheduleContentConfigRefresh();
   }
   // A feed (or manual edit) that updates the local known-malware hash set -> reload it.
   if (area === 'local' && changes.wardenone_malware_hashes) {
@@ -10183,19 +10382,19 @@ function isMediaCompatDomain(domain) {
 // Globally-trusted infrastructure that must NEVER be turned into a block rule,
 // no matter what a downloaded community blocklist or a heuristic learner says.
 // Aggressive lists (and the occasional poisoned/over-broad phishing feed) sometimes
-// include GitHub user-content hosts (e.g. a *.github.io phishing page leaks the
-// apex github.io, or objects/raw.githubusercontent.com lands on a tracker list),
+// include GitHub delivery hosts such as objects/raw.githubusercontent.com,
 // which would block code hosting wholesale. This is a false-positive shield only:
 // it never relaxes blocking for any other host, and per-URL reputation/Safe Browsing
 // hits are unaffected.
 const NEVER_BLOCK_DOMAINS = new Set([
   'github.com',
-  'githubusercontent.com',
   'raw.githubusercontent.com',
   'objects.githubusercontent.com',
-  'github.io',
+  // The project homepage is one exact tenant. github.io itself is a public suffix;
+  // trusting it by suffix would protect every unrelated tenant, including phish.
+  'iri-dev.github.io',
   'githubassets.com',
-'mail.google.com', 'accounts.google.com', 'apis.google.com', 'gstatic.com', 'googleusercontent.com',
+'mail.google.com', 'accounts.google.com', 'apis.google.com', 'gstatic.com',
   // User-confirmed false-positive exemption: blocked by a downloaded threat feed, not a bundled rule.
   // Keeps all other shields active; the page navigation is un-blocked via rules.json id166 (priority 3000).
   'gamedrive.org',
@@ -10211,6 +10410,15 @@ LOGIN_COMPAT_NEVER_BLOCK_DOMAINS.forEach((domain) => NEVER_BLOCK_DOMAINS.add(dom
   'cloudflare.com', 'cloudflare.net',
 ].forEach((domain) => NEVER_BLOCK_DOMAINS.add(domain));
 
+/* A downloaded rule naming a shared platform apex would block every tenant, so the
+ * apex itself is ignored. Unlike NEVER_BLOCK_DOMAINS this set is exact-only: a child
+ * tenant remains blockable on its own evidence. */
+const NEVER_BLOCK_PUBLIC_SUFFIXES = new Set([
+  ...WARDENONE_PRIVATE_SUFFIXES,
+  ...WARDENONE_OPAQUE_TENANT_SUFFIXES,
+  'githubusercontent.com',
+]);
+
 function isGithubUploadInfraDomain(domain) {
   return /^github(?:-[a-z0-9]+)*\.s3\.amazonaws\.com$/i.test(String(domain || ''));
 }
@@ -10219,6 +10427,7 @@ function isNeverBlockDomain(domain) {
   const d = String(domain || '').replace(/^www\./, '').toLowerCase();
   if (!d) return false;
   if (isGithubUploadInfraDomain(d)) return true;
+  if (NEVER_BLOCK_PUBLIC_SUFFIXES.has(d)) return true;
   if (NEVER_BLOCK_DOMAINS.has(d)) return true;
   for (const safe of NEVER_BLOCK_DOMAINS) {
     if (d.endsWith('.' + safe)) return true;
@@ -10644,6 +10853,103 @@ const LIST_TOTAL_DROP_RATIO = 0.5;
 const LIST_TOTAL_SPIKE_RATIO = 1.8;
 const LIST_TOTAL_SPIKE_FLOOR = 5000;
 const LIST_STALE_ALERT_THROTTLE_MS = 12 * 60 * 60 * 1000;
+const LIST_SEMANTIC_SKETCH_SIZE = 128;
+const LIST_SEMANTIC_MIN_VALUES = 32;
+const LIST_SEMANTIC_MIN_OVERLAP = 0.35;
+
+function listIntegritySeed(value) {
+  const existing = String(value || '').toLowerCase();
+  if (/^[a-f0-9]{32}$/.test(existing)) return existing;
+  try {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch (_) {
+    let fallback = '';
+    for (let i = 0; i < 4; i++) fallback += Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0');
+    return fallback.slice(0, 32);
+  }
+}
+
+function keyedListHash(value, seed) {
+  const text = String(seed || '') + '\u0000' + String(value || '');
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x7feb352d);
+  hash ^= hash >>> 15;
+  hash = Math.imul(hash, 0x846ca68b);
+  hash ^= hash >>> 16;
+  return hash >>> 0;
+}
+
+function listSemanticSketch(seed, domains, optionRules) {
+  const selected = [];
+  const selectedSet = new Set();
+  let maximum = -1;
+  let maximumIndex = -1;
+  const refreshMaximum = () => {
+    maximum = -1;
+    maximumIndex = -1;
+    for (let i = 0; i < selected.length; i++) {
+      if (selected[i] > maximum) {
+        maximum = selected[i];
+        maximumIndex = i;
+      }
+    }
+  };
+  const consider = (token) => {
+    const hash = keyedListHash(token, seed);
+    if (selectedSet.has(hash)) return;
+    if (selected.length < LIST_SEMANTIC_SKETCH_SIZE) {
+      selected.push(hash);
+      selectedSet.add(hash);
+      if (hash > maximum) {
+        maximum = hash;
+        maximumIndex = selected.length - 1;
+      }
+      return;
+    }
+    if (hash >= maximum || maximumIndex < 0) return;
+    selectedSet.delete(maximum);
+    selected[maximumIndex] = hash;
+    selectedSet.add(hash);
+    refreshMaximum();
+  };
+  for (const domain of (Array.isArray(domains) ? domains : [])) consider('d:' + String(domain || ''));
+  for (const rule of (Array.isArray(optionRules) ? optionRules : [])) {
+    consider('r:' + JSON.stringify([rule && rule.condition, rule && rule.action]));
+  }
+  selected.sort((a, b) => a - b);
+  return selected;
+}
+
+function semanticSketchOverlap(previousSketch, nextSketch) {
+  const previous = Array.isArray(previousSketch) ? previousSketch : [];
+  const next = Array.isArray(nextSketch) ? nextSketch : [];
+  if (previous.length < LIST_SEMANTIC_MIN_VALUES || next.length < LIST_SEMANTIC_MIN_VALUES) return null;
+  let i = 0;
+  let j = 0;
+  let shared = 0;
+  while (i < previous.length && j < next.length) {
+    const a = Number(previous[i]);
+    const b = Number(next[j]);
+    if (a === b) { shared++; i++; j++; }
+    else if (a < b) i++;
+    else j++;
+  }
+  return shared / Math.min(previous.length, next.length);
+}
+
+function listSemanticDriftReason(previous, hash, nextSketch) {
+  if (!previous || !previous.sha256 || previous.sha256 === hash) return '';
+  const overlap = semanticSketchOverlap(previous.semanticSketch, nextSketch);
+  if (overlap == null || overlap >= LIST_SEMANTIC_MIN_OVERLAP) return '';
+  return 'content overlap fell to ' + Math.round(overlap * 100) + '% after the source hash changed';
+}
 
 function listCountDriftReason(previous, next, label, opts) {
   const prev = Number(previous || 0);
@@ -10662,12 +10968,13 @@ async function loadListIntegrity() {
     const store = await localGet(LIST_INTEGRITY_KEY);
     const data = store && store[LIST_INTEGRITY_KEY];
     return {
+      seed: listIntegritySeed(data && data.seed),
       sources: data && data.sources && typeof data.sources === 'object' ? data.sources : {},
       alerts: Array.isArray(data && data.alerts) ? data.alerts.slice(-30) : [],
       lastStaleAlertAt: Number(data && data.lastStaleAlertAt || 0),
     };
   } catch (_) {
-    return { sources: {}, alerts: [], lastStaleAlertAt: 0 };
+    return { seed: listIntegritySeed(''), sources: {}, alerts: [], lastStaleAlertAt: 0 };
   }
 }
 
@@ -10680,15 +10987,16 @@ async function saveListIntegrity(integrity, acceptedRecords, alerts, reason) {
     const nextAlerts = ((integrity && integrity.alerts) || []).concat(alerts || []).slice(-30);
     await localSet({
       [LIST_INTEGRITY_KEY]: {
-        version: 1,
+        version: 2,
         updatedAt: Date.now(),
-      reason: String(reason || ''),
-      sources,
-      alerts: nextAlerts,
-      lastStaleAlertAt: Number(integrity && integrity.lastStaleAlertAt || 0),
-    },
-  });
-    return { sources, alerts: nextAlerts };
+        reason: String(reason || ''),
+        seed: listIntegritySeed(integrity && integrity.seed),
+        sources,
+        alerts: nextAlerts,
+        lastStaleAlertAt: Number(integrity && integrity.lastStaleAlertAt || 0),
+      },
+    });
+    return { seed: listIntegritySeed(integrity && integrity.seed), sources, alerts: nextAlerts };
   } catch (e) {
     console.warn('[WardenOne] list integrity metadata save failed', e);
     return integrity || { sources: {}, alerts: [] };
@@ -10713,9 +11021,10 @@ function listIntegrityAlert(scope, url, reason, extra) {
   return alert;
 }
 
-function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, optionRules) {
+function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, optionRules, seed) {
   const domainCount = Array.isArray(domains) ? domains.length : 0;
   const optionRuleCount = Array.isArray(optionRules) ? optionRules.length : 0;
+  const semanticSketch = listSemanticSketch(seed, domains, optionRules);
   const reasons = [];
   const maxBytes = listSourceByteLimit(url);
   if (byteLength > maxBytes) reasons.push('source size exceeds cap (' + byteLength + ' > ' + maxBytes + ' bytes)');
@@ -10741,12 +11050,15 @@ function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, o
       spikeFloor: 200,
     });
     if (optionReason) reasons.push(optionReason);
+    const semanticReason = listSemanticDriftReason(previous, hash, semanticSketch);
+    if (semanticReason) reasons.push(semanticReason);
   }
   const record = {
     sha256: hash,
     byteLength,
     domainCount,
     optionRuleCount,
+    semanticSketch,
     acceptedAt: Date.now(),
     url,
   };
@@ -10814,7 +11126,8 @@ async function fetchListSource(url, reason, integrity) {
       hash,
       byteLength,
       domains,
-      optionRules
+      optionRules,
+      integrity && integrity.seed
     );
     if (!verdict.ok) {
       console.warn('[WardenOne] source integrity rejected (' + reason + '):', url, verdict.reason);
@@ -10962,18 +11275,28 @@ function parseSupplementalListText(source, text) {
   return sanitizeSupplementalLists(out);
 }
 
-function supplementalSourceRecord(source, hash, byteLength, lists) {
+function supplementalSourceDomains(lists) {
+  const clean = sanitizeSupplementalLists(lists);
+  const out = [];
+  for (const bucket of Object.keys(clean)) {
+    for (const domain of clean[bucket]) out.push(bucket + ':' + domain);
+  }
+  return out;
+}
+
+function supplementalSourceRecord(source, hash, byteLength, lists, seed) {
   return {
     url: source && source.url,
     label: source && source.label,
     sha256: hash,
     byteLength,
     counts: supplementalListCounts(lists),
+    semanticSketch: listSemanticSketch(seed, supplementalSourceDomains(lists), []),
     acceptedAt: Date.now(),
   };
 }
 
-function evaluateSupplementalSourceIntegrity(source, previous, hash, byteLength, lists) {
+function evaluateSupplementalSourceIntegrity(source, previous, hash, byteLength, lists, seed) {
   const reasons = [];
   if (previous) {
     const byteReason = listCountDriftReason(previous.byteLength, byteLength, 'supplemental byte size', {
@@ -10990,12 +11313,14 @@ function evaluateSupplementalSourceIntegrity(source, previous, hash, byteLength,
       if (reason) reasons.push(reason);
     }
   }
-  const record = supplementalSourceRecord(source, hash, byteLength, lists);
+  const record = supplementalSourceRecord(source, hash, byteLength, lists, seed);
+  const semanticReason = listSemanticDriftReason(previous, hash, record.semanticSketch);
+  if (semanticReason) reasons.push(semanticReason);
   if (reasons.length) return { ok: false, record, reason: reasons.join('; ') };
   return { ok: true, record };
 }
 
-async function fetchSupplementalListSource(source, reason, previousRecord) {
+async function fetchSupplementalListSource(source, reason, previousRecord, seed) {
   const url = source && source.url;
   if (source && source.localPath) {
     try {
@@ -11005,7 +11330,7 @@ async function fetchSupplementalListSource(source, reason, previousRecord) {
       const byteLength = utf8ByteLength(text);
       const lists = parseSupplementalListText(source, text);
       const hash = await sha256TextHex(text);
-      const record = supplementalSourceRecord(source, hash, byteLength, lists);
+      const record = supplementalSourceRecord(source, hash, byteLength, lists, seed);
       return { ok: true, source, url, lists, integrityRecord: record };
     } catch (e) {
       return { ok: false, source, url, error: String(e) };
@@ -11026,7 +11351,7 @@ async function fetchSupplementalListSource(source, reason, previousRecord) {
     const byteLength = fetched.byteLength || utf8ByteLength(text);
     const lists = parseSupplementalListText(source, text);
     const hash = await sha256TextHex(text);
-    const verdict = evaluateSupplementalSourceIntegrity(source, previousRecord, hash, byteLength, lists);
+    const verdict = evaluateSupplementalSourceIntegrity(source, previousRecord, hash, byteLength, lists, seed);
     if (!verdict.ok) {
       return {
         ok: false,
@@ -11092,6 +11417,7 @@ async function updateSupplementalLists(reason) {
   const candidate = emptySupplementalLists();
   const touchedBuckets = {};
   const previousRecords = (previousMeta && previousMeta.sourceRecords) || {};
+  const semanticSeed = listIntegritySeed(previousMeta && previousMeta.sourceIntegritySeed);
   const acceptedRecords = Object.assign({}, previousRecords);
   const failures = [];
   let succeededSources = 0;
@@ -11100,7 +11426,7 @@ async function updateSupplementalLists(reason) {
 
   for (let i = 0; i < sources.length; i += LIST_FETCH_CONCURRENCY) {
     const batch = sources.slice(i, i + LIST_FETCH_CONCURRENCY);
-    const results = await Promise.all(batch.map((source) => fetchSupplementalListSource(source, reason, previousRecords[source.url])));
+    const results = await Promise.all(batch.map((source) => fetchSupplementalListSource(source, reason, previousRecords[source.url], semanticSeed)));
     for (const result of results) {
       if (!result.ok) {
         failedSources++;
@@ -11119,6 +11445,21 @@ async function updateSupplementalLists(reason) {
     }
   }
 
+  if (rejectedSources) {
+    const meta = Object.assign({}, previousMeta || {}, {
+      version: SUPPLEMENTAL_LIST_VERSION,
+      lastAttempt: Date.now(),
+      reason,
+      counts: supplementalListCounts(previousLists),
+      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
+      failures: failures.slice(-8),
+      sourceIntegritySeed: semanticSeed,
+      sourceRecords: previousRecords,
+    });
+    await localSet({ [SUPPLEMENTAL_LIST_META_KEY]: meta });
+    return { ok: false, integrityRejected: true, error: 'Supplemental list integrity guard quarantined the update', meta };
+  }
+
   if (!succeededSources) {
     const meta = Object.assign({}, previousMeta || {}, {
       version: SUPPLEMENTAL_LIST_VERSION,
@@ -11127,6 +11468,8 @@ async function updateSupplementalLists(reason) {
       counts: supplementalListCounts(previousLists),
       sources: { total: sources.length, succeeded: 0, failed: failedSources, rejected: rejectedSources },
       failures: failures.slice(-8),
+      sourceIntegritySeed: semanticSeed,
+      sourceRecords: previousRecords,
     });
     await localSet({ [SUPPLEMENTAL_LIST_META_KEY]: meta });
     return { ok: false, error: 'No supplemental list sources reachable', meta };
@@ -11144,6 +11487,7 @@ async function updateSupplementalLists(reason) {
     failures: failures.slice(-8),
     rejected: merged.rejected,
     keptPrevious: merged.keptPrevious,
+    sourceIntegritySeed: semanticSeed,
     sourceRecords: acceptedRecords,
   };
   await localSet({ [SUPPLEMENTAL_LIST_STORAGE_KEY]: lists, [SUPPLEMENTAL_LIST_META_KEY]: meta });
@@ -11378,6 +11722,18 @@ async function updateRemoteListsCore(reason) {
     }
   }
 
+  if (rejectedSources) {
+    await saveListIntegrity(integrity, {}, integrityAlerts, reason);
+    console.warn('[WardenOne] source integrity rejected; quarantining the entire list refresh');
+    return {
+      ok: false,
+      integrityRejected: true,
+      error: 'List integrity guard quarantined the update',
+      meta: previousMeta,
+      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
+    };
+  }
+
   // Fail safe: if EVERY source failed, keep existing dynamic rules untouched.
   if (!anySucceeded || !merged.size) {
     console.warn('[WardenOne] no sources reachable; keeping existing rules');
@@ -11530,6 +11886,7 @@ async function updateRemoteLists(reason) {
 // destructive or browser-wide stays extension-page only.
 const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'rg-block',
+  'content-config-get',
   /* Silencing a notice, and reporting that one was shown. Both carry a warning
      type and nothing else; the host is taken from the sending tab. Missing from
      this list they were rejected as 'Not allowed from this context' before ever
@@ -11567,6 +11924,10 @@ const TAB_CONTEXT_RATE_LIMITS = {
   // count: the page can bypass its own limiter. Set high enough that a genuinely
   // ad-heavy page reporting real blocks is never cut off.
   'rg-block': { max: 300, windowMs: 60000 },
+  /* One bridge runs in every frame and the smaller isolated guards each request their own
+     least-privilege snapshot. Keep enough room for frame-heavy applications while still
+     preventing a compromised tab from turning configuration reads into a storage flood. */
+  'content-config-get': { max: 500, windowMs: 60000 },
   // Silencing a notice is something a person does by hand, a few times at most.
   // The ceiling is here for the forged-event case: a hostile page cannot mute a
   // warning about itself faster than a person could, and cannot use the channel
@@ -11923,6 +12284,9 @@ async function syncRebindQuarantineRules() {
 // already listen to; a second channel would be a second thing to keep in sync.
 async function publishRebindQuarantine() {
   try {
+    // Session DNR rules remain active in the private split worker. Do not mirror
+    // their hostnames into the shared, durable config store.
+    if (INCOGNITO_CONTEXT) return;
     const hosts = Array.from(REBIND_QUARANTINED.keys()).slice(0, REBIND_QUARANTINE_MAX);
     const stored = await localGet('wardenone_config');
     const cfg = Object.assign({}, (stored && stored.wardenone_config) || {});
@@ -12013,6 +12377,7 @@ async function clearRebindQuarantine() {
 // quarantine last as long as the copy says it does; onStartup is what ends it.
 async function restoreRebindQuarantine() {
   try {
+    if (INCOGNITO_CONTEXT) return;
     const stored = await localGet('wardenone_config');
     const hosts = ((stored && stored.wardenone_config) || {}).rebindQuarantine;
     if (!Array.isArray(hosts) || !hosts.length) return;
@@ -13345,6 +13710,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(buildProtectionHealthSummary(), sendResponse);
     return true;
   }
+  if (msg && msg.kind === 'content-config-get' && messageSenderIsTab(sender)) {
+    respond(buildContentConfigSnapshot(), sendResponse);
+    return true;
+  }
   if (msg && msg.kind === 'toast-shown' && messageSenderIsTab(sender)) {
     recordToastShown(msg.type, sender.tab && sender.tab.url).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
     return true;
@@ -13848,14 +14217,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     javascript: ['allow', 'block'],
     sound: ['allow', 'block'],
   };
-  // Registrable-domain reducer (handles common multi-part TLDs like co.uk).
-  const registrableDomain = (host) => {
-    const parts = String(host).replace(/^www\./, '').toLowerCase().split('.');
-    if (parts.length <= 2) return parts.join('.');
-    const last2 = parts.slice(-2).join('.');
-    const multi = /^(co|com|org|net|gov|ac|edu|gob|gouv)\.[a-z]{2}$/;
-    return multi.test(last2) ? parts.slice(-3).join('.') : last2;
-  };
   // Patterns for a per-site content setting. Most permissions are scoped to the
   // exact host. COOKIES ARE SPECIAL: a site's session/auth cookies are usually set
   // on the registrable domain and shared across subdomains (youtube.com sets on
@@ -13865,26 +14226,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // loop. Blocking the WHOLE registrable domain (and its subdomains) makes the
   // "no cookies" state CONSISTENT, so the site settles as logged-out instead of
   // looping. We also include the auth domains that the big providers bounce through.
-  const siteUrlPatterns = (url) => {
-    const u = new URL(url);
-    const host = u.host;
-    return Array.from(new Set([u.origin + '/*', 'https://' + host + '/*', 'http://' + host + '/*']));
-  };
-  const cookieUrlPatterns = (url) => {
-    const u = new URL(url);
-    const host = u.host;
-    const reg = registrableDomain(host);
-    const pats = [
-      'https://' + host + '/*',
-      'http://' + host + '/*',
-      // whole registrable domain + all subdomains -- the key fix for the loop
-      'https://*.' + reg + '/*',
-      'http://*.' + reg + '/*',
-      'https://' + reg + '/*',
-      'http://' + reg + '/*',
-    ];
-    return Array.from(new Set(pats));
-  };
+  const siteUrlPatterns = siteContentSettingPatterns;
+  const cookieUrlPatterns = cookieContentSettingPatterns;
   const contentSettingApi = (key, method) => {
     try {
       const group = chrome.contentSettings;
@@ -13923,7 +14266,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
         patterns.forEach((primaryPattern) => {
           try {
-            cs.set({ primaryPattern, setting: type.reset }, () => {
+            cs.set(contentSettingSetDetails(primaryPattern, type.reset), () => {
               const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
               if (err) errors.push(primaryPattern + ': ' + err);
               finish();
@@ -13977,7 +14320,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
         patterns.forEach((primaryPattern) => {
           try {
-            cs.set({ primaryPattern, setting: type.reset }, () => {
+            cs.set(contentSettingSetDetails(primaryPattern, type.reset), () => {
               const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
               if (err) errors.push(primaryPattern + ': ' + err);
               finish();
@@ -14008,7 +14351,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       let done = false;
       const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, 900);
       try {
-        cs.get({ primaryUrl: url }, (d) => {
+        cs.get(contentSettingGetDetails(url), (d) => {
           if (done) return;
           done = true;
           clearTimeout(timer);
@@ -14057,7 +14400,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
         const timer = setTimeout(() => finish(null), 1200);
         try {
-          cs.get({ primaryUrl: url }, (d) => {
+          cs.get(contentSettingGetDetails(url), (d) => {
             clearTimeout(timer);
             const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
             finish(err ? null : (d && d.setting));
@@ -14136,7 +14479,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
     patterns.forEach((primaryPattern) => {
       try {
-        cs.set({ primaryPattern, setting }, () => {
+        cs.set(contentSettingSetDetails(primaryPattern, setting), () => {
           const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
           if (err) errors.push(err);
           finish();
@@ -14170,7 +14513,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const jsClearRules = () => new Promise((resolve) => {
     try {
       const cs = contentSettingApi('javascript', 'clear');
-      if (cs) cs.clear({ scope: 'regular' }, () => { void chrome.runtime.lastError; resolve(); });
+      if (cs) cs.clear({ scope: CONTENT_SETTING_SCOPE }, () => { void chrome.runtime.lastError; resolve(); });
       else resolve();
     } catch (_) { resolve(); }
   });
@@ -14383,7 +14726,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           };
           patterns.forEach((primaryPattern) => {
             try {
-              cs.set({ primaryPattern, setting: msg.setting }, () => {
+              cs.set(contentSettingSetDetails(primaryPattern, msg.setting), () => {
                 const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
                 if (err) errors.push(err);
                 finish();
@@ -14405,7 +14748,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             let done = false;
             const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, 1200);
             try {
-              csGet.get({ primaryUrl: msg.url }, (d) => {
+              csGet.get(contentSettingGetDetails(msg.url), (d) => {
                 if (done) return;
                 done = true;
                 clearTimeout(timer);

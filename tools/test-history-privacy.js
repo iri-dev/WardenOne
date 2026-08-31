@@ -289,6 +289,7 @@ console.log('\nhistory privacy checks passed');
     };
     const sandbox = {
       Object, Array, Set, String, Number, Math, JSON,
+      INCOGNITO_CONTEXT: false,
       // M26 added a cold-start gate that flushHistory reads. These cases exercise the WRITE path,
       // not the cold start, so the gate stands open -- M26's own cases below drive it closed.
       // Declared here because the lifted region starts at scheduleHistoryFlush and so does not

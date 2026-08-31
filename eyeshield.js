@@ -240,7 +240,7 @@
     return isManagedThemeHost() && !needsManagedObserverHost() ? [document] : rootsList();
   }
 
-  // Anti-flash: chrome.storage is async, so at document_start the page would
+  // Anti-flash: the trusted config snapshot is async, so at document_start the page would
   // paint in its native colours (white flash on YouTube etc.) before our theme
   // lands. We cache the last mode in the page's localStorage (synchronous) and
   // paint a dark/light backdrop immediately. Replaced by the real theme once
@@ -3353,16 +3353,17 @@
   }
 
   function loadConfig() {
-    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.get('wardenone_config', (res) => { setConfig(res && res.wardenone_config); });
+    try {
+      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+        void chrome.runtime.lastError;
+        if (!chrome.runtime.lastError && res && res.ok) setConfig(res.overrides || {});
+      });
+    } catch (_) {}
   }
 
   window.__wardenOneEyeShieldApplyConfig = setConfig;
   window.__wardenOneEyeShieldRefresh = function () {
-    try {
-      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
-      chrome.storage.local.get('wardenone_config', (res) => { setConfig(res && res.wardenone_config); });
-    } catch (e) {}
+    loadConfig();
   };
 
   // late-loading stylesheets (web fonts, async CSS) — re-theme after full load
@@ -3375,17 +3376,10 @@
   loadConfig();
 
   try {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.wardenone_config) {
-        setConfig(changes.wardenone_config.newValue || {});
-      }
-    });
-  } catch (e) {}
-
-  try {
     woOnMessage((msg) => {
-      if (!msg || msg.kind !== 'config-update') return;
-      setConfig(msg.overrides || {});
+      if (!msg) return;
+      if (msg.kind === 'config-update') setConfig(msg.overrides || {});
+      if (msg.kind === 'content-config-refresh') loadConfig();
     });
   } catch (e) {}
 }());

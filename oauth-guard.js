@@ -445,22 +445,32 @@
     return configLoaded && config.silentMode === true;
   }
 
-  try {
-    chrome.storage?.local?.get('wardenone_config', (res) => {
-      config = Object.assign({}, config, (res && res.wardenone_config) || {});
-      configLoaded = true;
-      woTimeout(scanOAuthGrant, 150);
-    });
-    chrome.storage?.onChanged?.addListener((changes, area) => {
-      if (area === 'local' && changes.wardenone_config) {
-        config = Object.assign({}, config, changes.wardenone_config.newValue || {});
+  function requestContentConfig(runScan) {
+    try {
+      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+        void chrome.runtime.lastError;
+        if (!chrome.runtime.lastError && res && res.ok) config = Object.assign({}, config, res.overrides || {});
         configLoaded = true;
-      }
-    });
-  } catch (_) {
-    configLoaded = true;
-    try { woTimeout(scanOAuthGrant, 150); } catch (_) {}
+        if (runScan) woTimeout(scanOAuthGrant, 150);
+      });
+    } catch (_) {
+      configLoaded = true;
+      if (runScan) { try { woTimeout(scanOAuthGrant, 150); } catch (_) {} }
+    }
   }
+  requestContentConfig(true);
+  const contentConfigListener = (msg) => {
+    if (!msg) return;
+    if (msg.kind === 'config-update') {
+      config = Object.assign({}, config, msg.overrides || {});
+      configLoaded = true;
+    }
+    if (msg.kind === 'content-config-refresh') requestContentConfig(false);
+  };
+  try {
+    chrome.runtime.onMessage.addListener(contentConfigListener);
+    woHold({ disconnect: () => chrome.runtime.onMessage.removeListener(contentConfigListener) });
+  } catch (_) {}
 
   function cleanHost(host) {
     return String(host || '').replace(/^www\./, '').replace(/^\.+|\.+$/g, '').toLowerCase();

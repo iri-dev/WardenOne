@@ -174,7 +174,7 @@
   const woChromeListeners = [];
   const woOnMessage = (fn) => {
     try {
-      woOnMessage(fn);
+      chrome.runtime.onMessage.addListener(fn);
       woChromeListeners.push([chrome.runtime.onMessage, fn]);
     } catch (_) {}
     return fn;
@@ -484,13 +484,19 @@
     if (enabled) start(); else shutdown();
   }
 
-  try {
-    chrome.storage.local.get('wardenone_config', function (result) {
-      applyConfig(result && result.wardenone_config);
-    });
-    chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area === 'local' && changes.wardenone_config) applyConfig(changes.wardenone_config.newValue || {});
-    });
-  } catch (_) {}
+  function requestContentConfig() {
+    try {
+      chrome.runtime.sendMessage({ kind: 'content-config-get' }, function (result) {
+        void chrome.runtime.lastError;
+        if (!chrome.runtime.lastError && result && result.ok) applyConfig(result.overrides || {});
+      });
+    } catch (_) {}
+  }
+  requestContentConfig();
+  woOnMessage(function (msg) {
+    if (!msg) return;
+    if (msg.kind === 'config-update') applyConfig(msg.overrides || {});
+    if (msg.kind === 'content-config-refresh') requestContentConfig();
+  });
   woOn(window, 'pagehide', shutdown, { once: true });
 })();

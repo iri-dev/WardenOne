@@ -235,7 +235,17 @@ function run(scenario) {
         },
         onChanged: { addListener() {} },
       },
-      runtime: { onMessage: { addListener() {} }, sendMessage(m) { world.messages.push(m); } },
+      runtime: {
+        lastError: null,
+        onMessage: { addListener() {} },
+        sendMessage(m, done) {
+          if (m && m.kind === 'content-config-get' && typeof done === 'function') {
+            done({ ok: true, overrides: Object.assign({ enabled: true, removeConsentWalls: true }, s.config || {}) });
+            return;
+          }
+          world.messages.push(m);
+        },
+      },
     },
     setTimeout(fn, delay) { const id = timers.length + 1; timers.push({ id, fn, at: now + (delay || 0) }); return id; },
     clearTimeout(id) { const i = timers.findIndex((t) => t.id === id); if (i >= 0) timers.splice(i, 1); },

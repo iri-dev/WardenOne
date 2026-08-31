@@ -81,6 +81,7 @@ function load(present) {
 
   const sandbox = {
     Object, Array, String, Number, Promise, console, JSON, Boolean, Math,
+    INCOGNITO_CONTEXT: false,
     SAFE_BROWSING_CACHE_KEY: 'wardenone_safe_browsing_cache',
     PHISHTANK_CACHE_KEY: 'wardenone_phishtank_cache',
     ABUSEIPDB_CACHE_KEY: 'wardenone_abuseipdb_cache',

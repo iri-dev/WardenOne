@@ -214,9 +214,10 @@
     try { woOn(window, 'popstate', scheduleScan); } catch (_) {}
   }
 
-  chrome.storage.local.get(['wardenone_config', 'wardenone_search_junk_domains', 'wardenone_aux_lists'], function (store) {
+  chrome.runtime.sendMessage({ kind: 'content-config-get' }, function (response) {
     try { void chrome.runtime.lastError; } catch (_) {}
-    var cfg = (store && store.wardenone_config) || {};
+    if (chrome.runtime.lastError || !response || !response.ok) return;
+    var cfg = response.overrides || {};
     if (cfg.enabled === false || cfg.flagSearchJunk !== true) return;
     /* An allowlisted search engine is left completely alone. */
     var allow = Array.isArray(cfg.allowlist) ? cfg.allowlist : [];
@@ -225,9 +226,8 @@
       if (a && (host === a || host.endsWith('.' + a))) return;
     }
 
-    var extra = store && store.wardenone_search_junk_domains;
-    addHosts(Array.isArray(extra) ? extra : (extra && extra.scraperHosts));
-    var aux = store && store.wardenone_aux_lists;
+    addHosts(response.searchJunkDomains);
+    var aux = response.supplemental;
     addHosts(aux && aux.searchJunkDomainsExtra);
 
     fetch(chrome.runtime.getURL('search-junk-domains.json'), { cache: 'no-store' })

@@ -34,6 +34,7 @@ const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'anti-redirect.js'), 'utf8');
+const DOMAIN_UTILS = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -112,6 +113,7 @@ function build(opts) {
     });
   }
 
+  vm.runInContext(DOMAIN_UTILS, sandbox);
   vm.runInContext(SRC, sandbox);
 
   function fire(data) {

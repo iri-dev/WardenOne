@@ -99,6 +99,8 @@ function loadStores(options = {}) {
       Object.assign(state.storage, obj);
     },
   };
+  sandbox.downloadStateGet = sandbox.localGet;
+  sandbox.downloadStateSet = sandbox.localSet;
   vm.createContext(sandbox);
   vm.runInContext([
     liftBetween(BACKGROUND, 'const __subsystemQueues = new Map();', 'const SERIALIZED_STATE_APPLIERS = ['),
@@ -199,6 +201,7 @@ async function testStoreOwnership() {
     const s = loadStores({ failWrites: true });
     await s.api.rememberPendingDownload(review(1)).catch(() => {});
     s.sandbox.localSet = async (obj) => { s.writes.push(obj); Object.assign(s.storage, obj); };
+    s.sandbox.downloadStateSet = s.sandbox.localSet;
     const done = await Promise.race([
       s.api.rememberPendingDownload(review(2)).then(() => 'done'),
       new Promise((r) => setTimeout(() => r('wedged'), 200)),

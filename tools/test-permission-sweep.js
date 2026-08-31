@@ -60,6 +60,7 @@ if (from < 0 || to <= from) { process.exit(1); }
 function sweepWith(contentSettings) {
   const sandbox = {
     console, Promise, setTimeout, clearTimeout, Object, Array,
+    CONTENT_SETTING_SCOPE: 'regular',
     chrome: { runtime: { lastError: null }, contentSettings },
   };
   vm.createContext(sandbox);
@@ -103,6 +104,7 @@ const okType = () => ({ clear: (opts, cb) => cb() });
     const cs = { camera: okType(), location: okType(), notifications: okType(), automaticDownloads: okType() };
     const sandbox = {
       console, Promise, setTimeout, clearTimeout, Object, Array,
+      CONTENT_SETTING_SCOPE: 'regular',
       chrome: { runtime: { lastError: null }, contentSettings: cs },
     };
     cs.microphone = { clear: (opts, cb) => { sandbox.chrome.runtime.lastError = { message: 'denied' }; cb(); sandbox.chrome.runtime.lastError = null; } };

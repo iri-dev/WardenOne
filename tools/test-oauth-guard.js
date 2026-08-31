@@ -77,7 +77,12 @@ function runCase(options) {
       },
       runtime: {
         lastError: null,
+        onMessage: { addListener() {}, removeListener() {} },
         sendMessage(message, callback) {
+          if (message && message.kind === 'content-config-get') {
+            if (callback) callback({ ok: true, overrides: { enabled: true, oauthGuard: true, silentMode: false } });
+            return;
+          }
           state.reports.push(message);
           if (callback) callback();
         },

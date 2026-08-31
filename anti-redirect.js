@@ -134,7 +134,7 @@
     'microsoft.com', 'microsoftonline.com', 'msauth.net', 'msftauth.net', 'live.com', 'office.com',
     'paypal.com', 'paypalobjects.com', 'stripe.com', 'stripe.network', 'braintreegateway.com',
     'braintreepayments.com', 'adyen.com', 'adyenpayments.com', 'twitter.com', 'x.com', 't.co',
-    'linkedin.com', 'github.com', 'gitlab.com', 'amazon.com', 'amazonaws.com', 'amazoncognito.com',
+    'linkedin.com', 'github.com', 'gitlab.com', 'amazon.com', 'amazoncognito.com',
     'spotify.com', 'youtube.com', 'googlevideo.com', 'ytimg.com', 'twitch.tv', 'ttvnw.net',
     'jtvnw.net', 'twitchcdn.net', 'zoom.us', 'slack.com', 'dropbox.com', 'okta.com',
     'oktacdn.com', 'oktapreview.com', 'okta-emea.com', 'auth0.com', 'onelogin.com',
@@ -165,10 +165,7 @@
       if (!Array.isArray(list) || !list.length) return false;
       const host = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
       if (!host) return false;
-      return list.some((item) => {
-        const d = String(item || '').replace(/^www\./, '').replace(/^\.+|\.+$/g, '').toLowerCase();
-        return !!(d && (host === d || host.endsWith('.' + d)));
-      });
+      return list.some((item) => hostMatchesSite(host, item));
     } catch (_) {
       return false;
     }
@@ -700,7 +697,7 @@
     host = regHost(host);
     if (!host) return false;
     for (const base of TRUSTED_BASE_DOMAINS) {
-      if (host === base || host.endsWith('.' + base)) return true;
+      if (hostMatchesSite(host, base)) return true;
     }
     return false;
   }
@@ -839,19 +836,20 @@
   }
 
   function baseDomain(host) {
-    const parts = regHost(host).split('.').filter(Boolean);
-    if (parts.length <= 2) return parts.join('.');
-    const last2 = parts.slice(-2).join('.');
-    // Multi-label public suffixes (co.uk, com.au, gov.uk, ...) keep a third label so
-    // two unrelated sites under the same suffix are NOT treated as the same party.
-    // Mirrors the canonical registrableDomain() heuristic in domain-utils.js.
-    return /^(co|com|org|net|gov|ac|edu|gob|gouv)\.[a-z]{2}$/.test(last2) ? parts.slice(-3).join('.') : last2;
+    /* domain-utils.js is injected immediately before this script in the same MAIN
+       world. Keeping the wrapper makes every existing navigation/storage caller use
+       the shared private-suffix policy without retaining a second reducer here. */
+    try { return registrableDomain(host); } catch (_) { return regHost(host); }
   }
 
   function sameParty(a, b) {
     a = regHost(a);
     b = regHost(b);
-    return !!(a && b && (a === b || a.endsWith('.' + b) || b.endsWith('.' + a) || baseDomain(a) === baseDomain(b)));
+    return !!(a && b && (
+      hostMatchesSite(a, b)
+      || hostMatchesSite(b, a)
+      || sameSiteDomain(a, b)
+    ));
   }
 
   function decodedUrlishText(value) {
@@ -1752,7 +1750,7 @@
     const clean = regHost(host);
     if (!clean) return false;
     for (const base of CREDENTIAL_FRAME_TRUSTED_BASES) {
-      if (clean === base || clean.endsWith('.' + base)) return true;
+      if (hostMatchesSite(clean, base)) return true;
     }
     return false;
   }
