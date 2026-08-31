@@ -44,6 +44,31 @@ const DOWNLOAD_HANDLED_KEY = 'wardenone_download_handled';
 const DOWNLOAD_TRUSTED_KEY = 'wardenone_download_trusted_sites';
 try { globalThis.DOWNLOAD_TRUSTED_KEY = DOWNLOAD_TRUSTED_KEY; } catch (_) {}
 
+/* Download reviews contain the source URL and filename. storage.local is shared
+ * with the regular profile, so the private split worker keeps its review/decision
+ * state and site trust in storage.session instead. Mixed reads (config + trust)
+ * merge the two areas without moving ordinary settings out of durable storage. */
+const PRIVATE_DOWNLOAD_STORE_KEYS = new Set([
+  DOWNLOAD_PENDING_KEY, DOWNLOAD_HANDLED_KEY, DOWNLOAD_TRUSTED_KEY, 'wardenone_session_started_at',
+]);
+function privateDownloadContext() {
+  try { return typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT; } catch (_) { return false; }
+}
+function downloadStateGet(keys) {
+  if (!privateDownloadContext()) return localGet(keys);
+  const list = Array.isArray(keys) ? keys : [keys];
+  const sessionKeys = list.filter((key) => PRIVATE_DOWNLOAD_STORE_KEYS.has(key));
+  const localKeys = list.filter((key) => !PRIVATE_DOWNLOAD_STORE_KEYS.has(key));
+  return Promise.all([
+    localKeys.length ? localGet(localKeys) : Promise.resolve({}),
+    sessionKeys.length ? chrome.storage.session.get(sessionKeys) : Promise.resolve({}),
+  ]).then(([durable, transient]) => Object.assign({}, durable || {}, transient || {}));
+}
+function downloadStateSet(obj) {
+  if (!privateDownloadContext()) return localSet(obj);
+  return chrome.storage.session.set(obj);
+}
+
 const DOWNLOAD_HASH_TIMEOUT_MS = 15000;
 const DOWNLOAD_HASH_MAX_BYTES = 50 * 1024 * 1024;
 const DOWNLOAD_HASH_SOURCE = Object.freeze({
@@ -137,12 +162,12 @@ const DOWNLOAD_SAFE_LOGGED = new Set();
 // download from minutes earlier became "previous session", lost its pending record, was marked
 // handled, and had its review panel closed -- left paused with nothing to explain it.
 let SESSION_STARTED_AT = 0;
-localGet('wardenone_session_started_at').then((x) => {
+downloadStateGet('wardenone_session_started_at').then((x) => {
   SESSION_STARTED_AT = (x && x.wardenone_session_started_at) || 0;
 }).catch(() => {});
 async function markBrowserSessionStart() {
   SESSION_STARTED_AT = Date.now();
-  try { await localSet({ wardenone_session_started_at: SESSION_STARTED_AT }); } catch (_) {}
+  try { await downloadStateSet({ wardenone_session_started_at: SESSION_STARTED_AT }); } catch (_) {}
 }
 function downloadStartedBeforeSession(item) {
   if (!SESSION_STARTED_AT) return false;               // unknown (first run) -> don't suppress
@@ -449,7 +474,7 @@ function trustedDownloadMatch(host, trustedSites) {
 }
 
 async function getTrustedDownloadSites() {
-  const x = await localGet(DOWNLOAD_TRUSTED_KEY);
+  const x = await downloadStateGet(DOWNLOAD_TRUSTED_KEY);
   return normalizeAllowlistHosts(x && x[DOWNLOAD_TRUSTED_KEY], 1000);
 }
 
@@ -460,14 +485,14 @@ async function addTrustedDownloadSite(host) {
   if (list.length >= 1000 && !list.includes(clean)) return { ok: false, error: 'Trusted site list is full.' };
   if (!list.some((x) => normalizeAllowlistHost(x) === clean)) list.push(clean);
   list.sort();
-  await localSet({ [DOWNLOAD_TRUSTED_KEY]: list });
+  await downloadStateSet({ [DOWNLOAD_TRUSTED_KEY]: list });
   return { ok: true, host: clean, items: list };
 }
 
 async function removeTrustedDownloadSite(host) {
   const clean = normalizeAllowlistHost(host);
   const list = (await getTrustedDownloadSites()).filter((x) => normalizeAllowlistHost(x) !== clean);
-  await localSet({ [DOWNLOAD_TRUSTED_KEY]: list });
+  await downloadStateSet({ [DOWNLOAD_TRUSTED_KEY]: list });
   return { ok: true, host: clean, items: list };
 }
 
@@ -1007,7 +1032,7 @@ function withDownloadStore(name, task) {
 async function rememberPendingDownload(review) {
   PENDING_DOWNLOADS[review.id] = review;
   return withDownloadStore(DOWNLOAD_PENDING_KEY, async () => {
-    const x = await localGet(DOWNLOAD_PENDING_KEY);
+    const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
     const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
     store[review.id] = review;
     const entries = Object.entries(store).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
@@ -1015,14 +1040,14 @@ async function rememberPendingDownload(review) {
       const old = entries.pop();
       if (old) delete store[old[0]];
     }
-    await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+    await downloadStateSet({ [DOWNLOAD_PENDING_KEY]: store });
   });
 }
 
 async function getPendingDownload(id) {
   const key = String(id || '');
   if (PENDING_DOWNLOADS[key]) return PENDING_DOWNLOADS[key];
-  const x = await localGet(DOWNLOAD_PENDING_KEY);
+  const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
   const store = (x && x[DOWNLOAD_PENDING_KEY]) || {};
   if (store[key]) PENDING_DOWNLOADS[key] = store[key];
   return store[key] || null;
@@ -1032,17 +1057,17 @@ async function removePendingDownload(id) {
   const key = String(id || '');
   delete PENDING_DOWNLOADS[key];
   return withDownloadStore(DOWNLOAD_PENDING_KEY, async () => {
-    const x = await localGet(DOWNLOAD_PENDING_KEY);
+    const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
     const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
     delete store[key];
-    await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+    await downloadStateSet({ [DOWNLOAD_PENDING_KEY]: store });
   });
 }
 
 // The read half, unqueued on purpose: callers that already hold the lane use this one, because a
 // task that waited on its own lane would wait forever.
 async function readHandledDownloads() {
-  const x = await localGet(DOWNLOAD_HANDLED_KEY);
+  const x = await downloadStateGet(DOWNLOAD_HANDLED_KEY);
   const store = (x && x[DOWNLOAD_HANDLED_KEY] && typeof x[DOWNLOAD_HANDLED_KEY] === 'object') ? x[DOWNLOAD_HANDLED_KEY] : {};
   const now = Date.now();
   let changed = false;
@@ -1058,7 +1083,7 @@ async function readHandledDownloads() {
 async function getHandledDownloads() {
   return withDownloadStore(DOWNLOAD_HANDLED_KEY, async () => {
     const { store, changed } = await readHandledDownloads();
-    if (changed) await localSet({ [DOWNLOAD_HANDLED_KEY]: store });
+    if (changed) await downloadStateSet({ [DOWNLOAD_HANDLED_KEY]: store });
     return store;
   });
 }
@@ -1081,7 +1106,7 @@ async function rememberHandledDownload(id, decision) {
       const old = entries.pop();
       if (old) delete store[old[0]];
     }
-    await localSet({ [DOWNLOAD_HANDLED_KEY]: store });
+    await downloadStateSet({ [DOWNLOAD_HANDLED_KEY]: store });
   });
 }
 
@@ -1120,7 +1145,7 @@ async function cleanupDownloadReviews(closeTabs) {
     // awaits on downloads.search in between, which is a long time for a concurrent add to be lost
     // in. Queued with the adds and removes so it cannot drop a review created while it was looking.
     const { store, activeIds } = await withDownloadStore(DOWNLOAD_PENDING_KEY, async () => {
-      const x = await localGet(DOWNLOAD_PENDING_KEY);
+      const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
       const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
       const now = Date.now();
       const activeIds = new Set();
@@ -1144,7 +1169,7 @@ async function cleanupDownloadReviews(closeTabs) {
         }
       }
 
-      if (changed) await localSet({ [DOWNLOAD_PENDING_KEY]: store });
+      if (changed) await downloadStateSet({ [DOWNLOAD_PENDING_KEY]: store });
       return { store, activeIds };
     });
     void store;
@@ -1168,14 +1193,14 @@ async function cleanupDownloadReviews(closeTabs) {
 // to resume/cancel -- we never silently continue a risky download.
 async function quiesceDownloadReviewsForNewSession() {
   try {
-    const x = await localGet(DOWNLOAD_PENDING_KEY);
+    const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
     const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
     for (const id of Object.keys(store)) {
       const review = store[id] || {};
       await rememberHandledDownload(review.downloadId != null ? review.downloadId : id, 'previous-session');
     }
     for (const k of Object.keys(PENDING_DOWNLOADS)) delete PENDING_DOWNLOADS[k];
-    await localSet({ [DOWNLOAD_PENDING_KEY]: {} });
+    await downloadStateSet({ [DOWNLOAD_PENDING_KEY]: {} });
     await dismissDownloadReviewPanels();
   } catch (_) {}
 }
@@ -2206,7 +2231,7 @@ async function runDownloadGuardScan(id, hint, reason) {
       return;
     }
 
-    const cfgStore = await localGet(['wardenone_config', DOWNLOAD_TRUSTED_KEY]);
+    const cfgStore = await downloadStateGet(['wardenone_config', DOWNLOAD_TRUSTED_KEY]);
     const cfg = (cfgStore && cfgStore.wardenone_config) || {};
     if (cfg.enabled === false || cfg.downloadReputation === false) {
       // Guard is off -> never leave a file stuck in the onCreated early-pause.

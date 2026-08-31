@@ -632,7 +632,7 @@
     host=location.hostname.replace(/^www\./,
     "").toLowerCase(),
     onAllowlist=["wootility.io",
-    "shopify.com"].concat(cfg.allowlist||[]).some(h=>host===h||host.endsWith("."+h)),
+    "shopify.com"].concat(cfg.allowlist||[]).some(h=>hostMatchesSite(host,h)),
     masterOn=!1!==cfg.enabled&&!onAllowlist,
     gate=v=>!!masterOn&&v,
     cleanHostList=(list,

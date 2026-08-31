@@ -25,6 +25,7 @@ const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.join(__dirname, '..');
 const ANTI_REDIRECT = fs.readFileSync(path.join(ROOT, 'anti-redirect.js'), 'utf8');
+const DOMAIN_UTILS = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const POPUP = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
 const CONTENT = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
@@ -296,6 +297,7 @@ function buildHarness(options) {
 
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
+  vm.runInContext(DOMAIN_UTILS, sandbox, { filename: 'domain-utils.js' });
   vm.runInContext(ANTI_REDIRECT, sandbox, { filename: 'anti-redirect.js' });
   const innerWindow = vm.runInContext('window', sandbox);
 
@@ -357,9 +359,11 @@ test('fresh install enables strict shield but an explicitly stored false survive
 
 test('manifest runs the lightweight popup guard in all frames without widening the full engine', () => {
   const scripts = Array.isArray(MANIFEST.content_scripts) ? MANIFEST.content_scripts : [];
-  const popupEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.length === 1 && entry.js[0] === 'anti-redirect.js');
+  const popupEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('anti-redirect.js'));
   assert(popupEntry && popupEntry.world === 'MAIN' && popupEntry.run_at === 'document_start' && popupEntry.all_frames === true,
     'anti-redirect does not have a dedicated all-frame MAIN-world entry');
+  assert(JSON.stringify(popupEntry.js.slice(-2)) === JSON.stringify(['domain-utils.js', 'anti-redirect.js']),
+    'anti-redirect no longer receives the shared site-identity policy first');
   const fullEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('content.min.js'));
   assert(fullEntry && fullEntry.all_frames === false && !fullEntry.js.includes('anti-redirect.js'),
     'full content engine was widened to subframes or still bundles anti-redirect');

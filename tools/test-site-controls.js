@@ -37,6 +37,7 @@ const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const POPUP = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const ANTI_REDIRECT = fs.readFileSync(path.join(ROOT, 'anti-redirect.js'), 'utf8');
+const DOMAIN_UTILS = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 const SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 
 function grabFn(src, name, label) {
@@ -54,6 +55,7 @@ function grabFn(src, name, label) {
 
 const sandbox = { console, Date, Number, Object, Array, String, Set, Math, JSON };
 vm.createContext(sandbox);
+vm.runInContext(DOMAIN_UTILS, sandbox);
 for (const name of ['bridgeCleanHost', 'bridgeHostMatchesList', 'bridgeActiveAllowlist', 'bridgeSiteOverridesFor']) {
   vm.runInContext(grabFn(BRIDGE, name, 'bridge.js'), sandbox);
 }

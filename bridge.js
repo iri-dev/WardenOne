@@ -1153,10 +1153,7 @@
   function bridgeHostMatchesList(host, list) {
     const h = bridgeCleanHost(host);
     if (!h || !Array.isArray(list)) return false;
-    return list.some((item) => {
-      const d = bridgeCleanHost(item);
-      return !!(d && (h === d || h.endsWith('.' + d)));
-    });
+    return list.some((item) => hostMatchesSite(h, item));
   }
 
   // A host is allowlisted if it is on the permanent list, or if it holds a
@@ -1189,7 +1186,7 @@
       if (!h) return out;
       for (const pattern of Object.keys(rules)) {
         const d = bridgeCleanHost(pattern);
-        if (!d || !(h === d || h.endsWith('.' + d))) continue;
+        if (!d || !hostMatchesSite(h, d)) continue;
         const entry = rules[pattern];
         if (!entry || typeof entry !== 'object') continue;
         for (const key of Object.keys(entry)) {
@@ -1508,41 +1505,28 @@
     } catch (_) {}
   });
 
-  // 2. Pull any saved config overrides and hand them to the main world.
-  //    The main-world script reads window.__WO_CONFIG__ at install; we also
-  //    support a late override via postMessage for when settings change.
-  try {
-    chrome.storage?.local?.get(['wardenone_config', 'wardenone_learned', 'wardenone_aux_lists'], (res) => {
-      setLearnedGrabberDomains(res && res.wardenone_learned);
-      setSupplementalLists(res && res.wardenone_aux_lists);
-      const overrides = res && res.wardenone_config;
-      sendConfig(overrides || {});
-    });
-  } catch (_) {}
-
-  try {
-    chrome.storage?.onChanged?.addListener((changes, area) => {
-      if (area !== 'local') return;
-      const learnedChanged = !!changes.wardenone_learned;
-      if (learnedChanged) setLearnedGrabberDomains(changes.wardenone_learned.newValue);
-      const supplementalChanged = !!changes.wardenone_aux_lists;
-      if (supplementalChanged) setSupplementalLists(changes.wardenone_aux_lists.newValue);
-      if (changes.wardenone_config) {
-        sendConfig(changes.wardenone_config.newValue || {});
-      } else if (learnedChanged || supplementalChanged) {
-        chrome.storage.local.get('wardenone_config', (res) => {
-          const overrides = res && res.wardenone_config;
-          sendConfig(overrides || {});
-        });
-      }
-    });
-  } catch (_) {}
+  // 2. Request the bounded content-script snapshot from the trusted worker. storage.local also
+  //    holds provider credentials and private activity, so content scripts are deliberately
+  //    denied direct access to it even though this isolated world cannot be read by page JS.
+  const requestContentConfig = () => {
+    try {
+      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+        void chrome.runtime.lastError;
+        if (chrome.runtime.lastError || !res || !res.ok) return;
+        setLearnedGrabberDomains(res.learned);
+        setSupplementalLists(res.supplemental);
+        sendConfig(res.overrides || {});
+      });
+    } catch (_) {}
+  };
+  requestContentConfig();
 
   // Relay live config changes (from the options/popup page) into the page.
   try {
     const smartFrameReloadedUrls = new Set();
     woOnMessage((msg, _sender, sendResponse) => {
       if (msg && msg.kind === 'config-update' && msg.overrides) sendConfig(msg.overrides);
+      if (msg && msg.kind === 'content-config-refresh') requestContentConfig();
       if (msg && msg.kind === 'smart-script-route-changed') {
         smartFrameReloadedUrls.clear();
         armSmartPlayerObservation();

@@ -179,12 +179,15 @@ function runtimeHarness(initialPath) {
     setInterval: function (callback) { intervalCallback = callback; return 1; },
     clearInterval: function () {},
     chrome: {
-      storage: {
-        local: { get: function (_key, callback) {
-          callback({ wardenone_config: { enabled: true, twitchVodRewind: true } });
-        } },
-        onChanged: { addListener: function () {} }
-      }
+      runtime: {
+        lastError: null,
+        onMessage: { addListener: function () {}, removeListener: function () {} },
+        sendMessage: function (message, callback) {
+          if (message && message.kind === 'content-config-get' && typeof callback === 'function') {
+            callback({ ok: true, overrides: { enabled: true, twitchVodRewind: true } });
+          }
+        }
+      },
     }
   };
   context.globalThis = context;

@@ -19,6 +19,7 @@ const vm = require('vm');
 const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'anti-redirect.js'), 'utf8');
+const DOMAIN_UTILS = fs.readFileSync(path.join(__dirname, '..', 'domain-utils.js'), 'utf8');
 
 const PREDS = {
   'a[href],area[href]': (el) => (el.tagName === 'A' || el.tagName === 'AREA') && (el.attrs.href != null || el.href),
@@ -160,6 +161,7 @@ function build(opts) {
 
   installPlatformGlobals(sandbox);
   vm.createContext(sandbox);
+  vm.runInContext(DOMAIN_UTILS, sandbox);
   vm.runInContext(SRC, sandbox);
   // Inside the vm, `window` resolves to the contextified global proxy, not the
   // raw sandbox object — the handshake's `event.source !== window` check needs

@@ -140,8 +140,24 @@ as the work happened.
   Third-party ones are now noted in the Activity Center by destination - one entry
   per destination per page, never the payload. Nothing is blocked: ordinary sites
   report crashes and page timings the same way.
+- Extended session-token, form-skimmer and payment-card protection into embedded
+  frames without loading the full page engine there. A small frame-only layer watches
+  outgoing fetch, XHR, beacon, WebSocket and form paths for the exact credential values
+  entered or stored in that frame, blocks unrelated destinations, keeps established
+  identity and payment processors working, and never records the credential itself.
 
 ### Changed
+
+- Remote network and supplemental feeds now keep a keyed semantic fingerprint as
+  well as their SHA-256 hash and size/count baseline. A hash change with implausibly
+  low content overlap quarantines the whole refresh, preserving the last known-good
+  rules instead of silently accepting a same-size substitution or dropping only the
+  rejected source from a partially rebuilt ruleset.
+- Extension storage is now restricted to trusted extension pages and workers.
+  Content scripts no longer read the full local store beside arbitrary websites;
+  they request a bounded background snapshot that excludes provider API keys,
+  private confirmation state, activity details and unknown future fields, with a
+  tab-only rate limit and live refresh path.
 
 - Twitch's client-side ad refusal now survives the ad SDK reset that runs when a
   long-lived player rebuilds or changes content. That reset used to clear WardenOne's
@@ -296,6 +312,21 @@ as the work happened.
 
 ### Fixed
 
+- Fixed shared hosting platforms being mistaken for one site. GitHub Pages,
+  Netlify, Vercel, Cloudflare Pages, S3-style storage and other multi-tenant hosts
+  now keep tenant identities separate across allowlists, trusted destinations,
+  learned rules and per-site cookie controls. Platform-apex blocklist mistakes are
+  still ignored without making every tenant unblockable.
+- Private windows now run in a split extension context, keep site-permission changes
+  session-only, and refuse durable history, learned-domain, reputation, breach,
+  script-baseline and site-trust writes. Paused-download review state stays available
+  for recovery within the private session without surviving it. Private activity also
+  cannot prune or timestamp the regular profile's extension storage.
+- Fixed the isolated engine watchdog and navigation-attribution relay being rejected
+  by the service worker's tab-message allowlist before their handlers could run. The
+  watchdog can now restore a page-disposed MAIN-world engine, while redirect decisions
+  once again receive the user and player gestures used to distinguish intended travel
+  from a frame-driven tab hijack.
 - Rebuilt Extension Watch around a versioned local inventory. It now records new
   installs, version-only updates, permission and host-access changes, enable/disable
   changes and removals; a 15-minute local reconciliation catches events Chrome did

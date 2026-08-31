@@ -266,6 +266,9 @@ function checkContentBuild() {
   'tools/test-warning-ownership.js',
   'tools/test-tracker-learner-trust.js',
   'tools/test-frame-scope-disclosure.js',
+  'tools/test-frame-credential-guard.js',
+  'tools/test-site-identity.js',
+  'tools/test-incognito-isolation.js',
   'tools/test-download-false-positives.js',
   'tools/test-cookie-cleaner.js',
   'tools/test-permission-sweep.js',
@@ -414,6 +417,9 @@ checkCommand('blocker durability tests', ['tools/test-blocker-durability.js']);
 checkCommand('warning ownership tests', ['tools/test-warning-ownership.js']);
 checkCommand('tracker learner trust tests', ['tools/test-tracker-learner-trust.js']);
 checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure.js']);
+checkCommand('frame credential guard tests', ['tools/test-frame-credential-guard.js']);
+checkCommand('shared-host site identity tests', ['tools/test-site-identity.js']);
+checkCommand('incognito isolation tests', ['tools/test-incognito-isolation.js']);
 checkCommand('download false-positive tests', ['tools/test-download-false-positives.js']);
 checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
 checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
@@ -429,6 +435,7 @@ checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
 checkCommand('EyeShield fetch scope tests', ['tools/test-eyeshield-fetch-scope.js']);
 checkCommand('engine config ownership tests', ['tools/test-engine-config-ownership.js']);
 checkCommand('engine config source tests', ['tools/test-engine-config-source.js']);
+checkCommand('content storage boundary tests', ['tools/test-content-storage-boundary.js']);
 checkCommand('package completeness tests', ['tools/test-package-completeness.js']);
 checkCommand('permission-chain trust tests', ['tools/test-permission-chain-trust.js']);
 checkCommand('warning dialog tests', ['tools/test-warning-dialogs.js']);
@@ -440,6 +447,7 @@ checkCommand('clean copy tests', ['tools/test-clean-copy.js']);
 checkCommand('IP privacy tests', ['tools/test-ip-privacy.js']);
 checkCommand('location guard tests', ['tools/test-location-guard.js']);
 checkCommand('supplemental list tests', ['tools/test-supplemental-lists.js']);
+checkCommand('list integrity enforcement tests', ['tools/test-list-integrity-enforcement.js']);
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
 checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']);

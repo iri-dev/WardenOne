@@ -71,6 +71,7 @@ function harness(options) {
     Number,
     String,
     JSON,
+    INCOGNITO_CONTEXT: false,
     REBIND_QUARANTINE_RULES_BUDGET: 128,
     localGet: async () => ({ wardenone_config: config }),
     localSet: async (obj) => {

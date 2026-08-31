@@ -140,7 +140,14 @@ function runConsentDialog(dialogText, labels) {
         local: { get(_key, done) { done({ wardenone_config: { enabled: true, autoRejectConsent: true } }); } },
         onChanged: { addListener() {} },
       },
-      runtime: { sendMessage() {} },
+      runtime: {
+        lastError: null,
+        sendMessage(message, done) {
+          if (message && message.kind === 'content-config-get' && typeof done === 'function') {
+            done({ ok: true, overrides: { enabled: true, autoRejectConsent: true } });
+          }
+        },
+      },
     },
     requestAnimationFrame(fn) { fn(); },
     setTimeout(fn, delay) { if (delay === 0) fn(); return 1; },

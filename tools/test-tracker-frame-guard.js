@@ -29,6 +29,7 @@ const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'anti-redirect.js'), 'utf8');
+const DOMAIN_UTILS = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 
 let pass = 0;
 const failures = [];
@@ -111,6 +112,7 @@ function build(opts) {
     set(v) { state.name = String(v); },
   });
 
+  vm.runInContext(DOMAIN_UTILS, sandbox);
   vm.runInContext(SRC, sandbox);
 
   function fire(data) {
