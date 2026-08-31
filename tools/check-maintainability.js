@@ -268,6 +268,7 @@ function checkContentBuild() {
   'tools/test-download-false-positives.js',
   'tools/test-cookie-cleaner.js',
   'tools/test-permission-sweep.js',
+  'tools/test-default-agreement.js',
   'tools/test-device-access-guard.js',
   'tools/test-capability-guards.js',
   'tools/test-notification-guard.js',
@@ -442,6 +443,7 @@ checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
 checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']);
 checkCommand('phishing confidence tests', ['tools/test-phishing-confidence.js']);
+checkCommand('default agreement tests', ['tools/test-default-agreement.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);
