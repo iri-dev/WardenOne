@@ -69,10 +69,26 @@ const rateLimits = new Set(
 );
 const kinds = [...new Set([...source.matchAll(/msg\.kind === '([a-z0-9-]+)'/g)].map((m) => m[1]))];
 
+/* A handler existing is not enough: the tab-context gate runs before dispatch. The
+ * engine watchdog and navigation relay both spent a release in that exact state --
+ * emitted by bridge.js, handled by background.js, and rejected between the two.
+ * Derive the literal bridge sends so another message cannot fall into that gap. */
+const bridgeSource = fs.readFileSync('bridge.js', 'utf8');
+const bridgeKinds = [...new Set(
+  [...bridgeSource.matchAll(/chrome\.runtime\.sendMessage\(\s*\{\s*kind:\s*'([a-z0-9-]+)'/g)]
+    .map((m) => m[1]),
+)];
+const SPECIAL_TAB_ESCAPES = new Set(['set-site-permission']);
+const unroutableBridgeKinds = bridgeKinds.filter((kind) =>
+  !allowed.has(kind) && !SPECIAL_TAB_ESCAPES.has(kind));
+
 check('background handles a non-trivial message surface', kinds.length >= 60, kinds.length + ' kinds');
 check('the tab allowlist is a strict subset of the surface',
   [...allowed].every((k) => kinds.includes(k)),
   [...allowed].filter((k) => !kinds.includes(k)).join(', '));
+check('every literal bridge message can pass the tab-context gate',
+  unroutableBridgeKinds.length === 0,
+  'rejected before dispatch: ' + unroutableBridgeKinds.join(', '));
 
 /* Rule: anything reachable from a web page must be rate limited. */
 const unlimited = [...allowed].filter((k) => !rateLimits.has(k));

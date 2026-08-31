@@ -103,11 +103,36 @@ The reply is cached **on your device** for **12 hours**, so revisiting a site do
 anything. That cache holds at most **120 domains**; the oldest entries are dropped past that.
 Clearing WardenOne's data removes it.
 
-There is **no password checking in WardenOne.** Earlier versions of this policy described a
-password k-anonymity lookup against `api.pwnedpasswords.com`. That feature was never reachable
-in the shipped extension — no part of the interface offered it — and the unused code behind it
-has been removed. If a password checker is ever added, it will be documented here before it
-ships, not after.
+### 3b. Password exposure check (manual, you press the button, no account involved)
+
+Session Shield has a **Check password exposure** box. Nothing watches what you type into web
+pages; this only ever sees what you type into that one box, when you press that one button.
+
+An earlier version of this policy described a password lookup that **no part of the interface
+could reach**. That dead code was removed rather than wired up, and this section replaces it —
+documented before the feature ships, as the previous version of this policy promised.
+
+What leaves your device is **five hexadecimal characters**, and nothing else:
+
+1. The password is hashed with SHA-1 **on your device**.
+2. The **first five characters** of that hash are sent to `api.pwnedpasswords.com`.
+3. That service returns **every** hash suffix in that bucket — hundreds of them, for hundreds
+   of thousands of unrelated passwords.
+4. Your browser compares them **locally** and finds out whether one is yours.
+
+This is Have I Been Pwned's *k-anonymity* range protocol. The service cannot tell which of the
+returned hashes you were asking about, and cannot reconstruct the password from a five-character
+prefix. The full password and the full hash never leave the machine.
+
+The request is sent **without cookies and without a referrer**, and asks for a **padded**
+response, so the size of the reply does not narrow down which prefix was requested.
+
+The result is shown on screen and **written nowhere** — not to history, not to storage, not to
+the badge. Close the popup and there is no record of it. WardenOne never learns your password,
+and never learns whether you have one that was breached beyond the moment it tells you.
+
+Your **email address is never sent anywhere.** The account-search side of Have I Been Pwned
+needs an authenticated key and transmits the address itself; WardenOne does not use it.
 
 ### 4. Login page age check (opt-in, off by default, no API key needed)
 

@@ -343,6 +343,8 @@ async function main() {
     /'player-gesture'|'top-nav-authorized'/.test(relay) && /if \(!kind\) return;/.test(relay),
     'an unknown kind must not reach the worker');
   check('it is rate limited', /bridgeRateOk\('wo-nav-signal'/.test(relay));
+  check('the tab-context gate lets navigation signals reach the worker',
+    /TAB_CONTEXT_ALLOWED_MESSAGES = new Set\(\[[\s\S]*?'wo-nav-signal'[\s\S]*?\]\);/.test(BG));
   check('a nav signal never becomes a history entry or a badge count',
     !/rg-block/.test(relay) && !/queueHistory/.test(relay),
     'these fire on ordinary clicks; they are attribution, not findings');
