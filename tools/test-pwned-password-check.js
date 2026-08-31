@@ -243,6 +243,27 @@ function world(opts) {
     /does not read what you type/i.test(POPUP_HTML));
 }());
 
+(function theBoxSaysWhereItSends() {
+  /* An unlabelled password field inside a browser extension is, visually, the
+     exact thing this extension warns people about. Trust here cannot come from
+     the box asserting it is trustworthy -- it comes from naming the service and
+     letting someone go and look at it. */
+  const at = POPUP_HTML.indexOf('Check password exposure');
+  const row = POPUP_HTML.slice(at, POPUP_HTML.indexOf('ss-pwned-result', at));
+  check('the service is named', /Have I Been Pwned/.test(row),
+    'a password box with no named destination is indistinguishable from a phishing box');
+  check('and it can be checked without trusting us',
+    /haveibeenpwned\.com/.test(row), 'no way to go and look');
+  check('the outbound link cannot reach back into the popup',
+    !/haveibeenpwned[^>]*>/.test(row) || /rel="noopener noreferrer"/.test(row),
+    'target=_blank without noopener hands the opened page a window reference');
+  /* Why the prefix is safe, not just that it is short. "Five characters" means
+     nothing on its own to someone deciding whether to type a password in. */
+  check('it says why five characters is safe',
+    /never learns which one|hundreds of possible answers/i.test(row),
+    'the mechanism is stated but not the reason it protects anything');
+}());
+
 process.on('exit', () => {
   if (failures.length) {
     console.error('FAIL (' + failures.length + ')');
