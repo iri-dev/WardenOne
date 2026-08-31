@@ -560,7 +560,7 @@
     detectSkimmers:!0,
     paymentCardGuard:!0,
     breachCheck:!1,
-    forceHttps:!0,
+    forceHttps:!1,
     downloadSafeBrowsing:!1,
     abuseIpDb:!1,
     openPhish:!1,
