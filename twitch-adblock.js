@@ -3738,6 +3738,12 @@
         return pollCachedBackup(cached).then((current) => {
           if (!interventionCurrent(info, epoch) || !current ||
               (info.mediaContainer && current.container !== info.mediaContainer)) return null;
+          /* The ad-service warning normally arrives before Twitch's first ad
+             playlist poll. Spend that lead time starting the clean edge media,
+             not merely refreshing its manifest: waiting until the replacement
+             is handed to the player leaves a cold CDN request on the playback
+             path and produces the short spinner the early warning can avoid. */
+          warmBackupResources(current.text, true);
           cached.primed = current;
           cached.primedAt = Date.now();
           return current;
