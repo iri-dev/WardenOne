@@ -2044,6 +2044,93 @@ test('a completed warning-time refresh is primed for the next ad poll and cleare
     'cleared prime bypassed a fresh clean-session search after config reset');
 });
 
+test('a completed ad warning warms the clean edge before the native ad poll starts', async () => {
+  let nativePoll = 0;
+  let backupPoll = 0;
+  const warmCalls = [];
+  const nativeClean = sequencedPlaylist({
+    sequence: 400,
+    startMs: SEQUENCE_BASE_TIME,
+    title: 'live',
+    path: 'warning-warm-native-clean',
+  });
+  const nativeAd = sequencedPlaylist({
+    sequence: 401,
+    startMs: SEQUENCE_BASE_TIME + 2000,
+    marker: '#EXT-X-DATERANGE:ID="stitched-ad-warning-warm",CLASS="twitch-stitched-ad",DURATION=4.0',
+    title: 'advertisement',
+    path: 'warning-warm-native-ad',
+  });
+  const cachedClean = sequencedPlaylist({
+    sequence: 9400,
+    startMs: SEQUENCE_BASE_TIME,
+    title: 'live',
+    path: 'warning-warm-cached',
+  });
+  const warningClean = sequencedPlaylist({
+    sequence: 9401,
+    startMs: SEQUENCE_BASE_TIME + 2000,
+    title: 'live',
+    path: 'warning-warm-edge',
+  });
+  const standardRoute = standardFetchRoute({
+    originalMedia() {
+      return nativePoll++ === 0 ? nativeClean : nativeAd;
+    },
+    backupMedia() {
+      return backupPoll++ === 0 ? cachedClean : warningClean;
+    },
+  });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute(url, init, state) {
+      if (/\/warning-warm-edge\/\d+\.ts(?:[?#]|$)/.test(url)) {
+        warmCalls.push({ url, init });
+        return new Response(new Uint8Array([4, 2]), {
+          status: 200,
+          headers: { 'content-type': 'video/mp2t' },
+        });
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  const setup = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(setup.includes('/warning-warm-native-clean/'),
+    'warning warm fixture did not establish native playback');
+  for (let turn = 0; turn < 12 && backupPoll < 1; turn++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert(backupPoll === 1, 'warning warm fixture did not cache its clean alternate');
+
+  runtime.announceAdImminent(CHANNEL);
+  for (let turn = 0; turn < 12 && (backupPoll < 2 || warmCalls.length < 2); turn++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  assert(nativePoll === 1,
+    'the native ad poll started before the warning could warm clean media');
+  equal(warmCalls.map((call) => call.url), [
+    'https://video-edge-fixture.ttvnw.net/warning-warm-edge/9402.ts',
+    'https://video-edge-fixture.ttvnw.net/warning-warm-edge/9403.ts',
+  ], 'the warning did not start both playable clean-edge choices');
+  assert(warmCalls.every((call) => call.init && call.init.signal && !call.init.headers),
+    'warning-time media warming did not use cancellable full requests');
+
+  const replaced = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(replaced.includes('/warning-warm-edge/') && !replaced.includes('/warning-warm-native-ad/'),
+    'the native ad poll did not consume the warning-time clean playlist');
+  const playerResponse = await runtime.fetch(warmCalls[1].url);
+  equal(Array.from(new Uint8Array(await playerResponse.arrayBuffer())), [4, 2],
+    'the player did not receive the media response started by the warning');
+  assert(warmCalls.length === 2,
+    'the handoff duplicated media already started by the warning');
+  runtime.configure(false);
+});
+
 test('a pre-warning native clean response cannot consume the prime needed by the first Turbo preload hint', async () => {
   let nativePoll = 0;
   let backupPoll = 0;
