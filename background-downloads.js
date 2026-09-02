@@ -1291,13 +1291,13 @@ async function openDownloadReview(review) {
   const canNotify = await extensionUiAllowed();
   if (canNotify) {
     try {
-      chrome.notifications.create('wo-dl-' + review.id, {
+      await showWardenSystemNotification('wo-dl-' + review.id, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title: 'Download Shield: ' + (review.status || ('Grade ' + review.grade)),
         message: (review.file || 'A download') + '\n' + (review.recommendation || 'Review this download.'),
         priority: 2,
-      });
+      }, 'download_review');
     } catch (_) {}
   }
   return { ok: true, notification: canNotify, silent: !canNotify };

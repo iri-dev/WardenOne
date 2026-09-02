@@ -161,8 +161,16 @@ function normalizeExtensionBaseline(raw) {
     ? raw.extensions
     : raw;
   normalized.capturedAt = Number(raw.capturedAt) || 0;
+  /* WardenOne is skipped when the current inventory is taken, so it must be
+     skipped here too. A baseline captured before that exclusion existed still
+     carries our own id; the removal pass below walks the BASELINE, finds the id
+     missing from the current scan, and reports that WardenOne was uninstalled --
+     to the reader, WardenOne flagging itself, in its own Security Centre. */
+  var selfId = '';
+  try { selfId = (chrome && chrome.runtime && chrome.runtime.id) || ''; } catch (_) { selfId = ''; }
   for (const id of Object.keys(source)) {
     if (id === 'schema' || id === 'capturedAt' || id === 'extensions') continue;
+    if (selfId && id === selfId) continue;
     const value = source[id];
     if (Array.isArray(value)) {
       normalized.extensions[id] = {
@@ -497,8 +505,12 @@ async function refreshExtensionAttentionBadge() {
     const startupCount = (report && Array.isArray(report.tabs) ? report.tabs.length : 0)
       + (report && Array.isArray(report.extensions) ? report.extensions.length : 0);
     const text = unread ? '!' : (startupCount ? String(startupCount > 9 ? '9+' : startupCount) : '');
-    chrome.action.setBadgeText({ text });
-    if (text) chrome.action.setBadgeBackgroundColor({ color: '#c0392b' });
+    if (typeof setWardenExtensionAttentionBadgeState === 'function') {
+      setWardenExtensionAttentionBadgeState(text);
+    } else {
+      chrome.action.setBadgeText({ text });
+      if (text) chrome.action.setBadgeBackgroundColor({ color: '#c0392b' });
+    }
   } catch (_) {}
 }
 
@@ -507,13 +519,13 @@ async function notifyExtensionEvents(events) {
   if (!important.length || !(await extensionWatchUiAllowed())) return;
   for (const event of important) {
     try {
-      chrome.notifications.create('wo-extwatch-' + event.eventId, {
+      await showWardenSystemNotification('wo-extwatch-' + event.eventId, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title: extensionNotificationTitle(event),
         message: extensionNotificationMessage(event),
         priority: event.severity === 'critical' || event.severity === 'high' ? 2 : 1,
-      });
+      }, 'extension_change');
     } catch (_) {}
   }
   await refreshExtensionAttentionBadge();
@@ -585,13 +597,21 @@ async function reconcileExtensionChangesNow(trigger, options) {
       if (!Object.prototype.hasOwnProperty.call(current, id)) events.push(extensionRemovalEvent(baseline.extensions[id], now));
     }
 
-    const oldAlerts = Array.isArray(stored && stored[EXT_ALERTS_KEY]) ? stored[EXT_ALERTS_KEY] : [];
+    /* Sweep any alert about ourselves that a previous version already wrote.
+       Fixing the cause stops new ones; it does not retract the one already
+       sitting in the reader's Security Centre, and "WardenOne was removed" is
+       not something they should have to dismiss by hand. */
+    var ownId = '';
+    try { ownId = (chrome && chrome.runtime && chrome.runtime.id) || ''; } catch (_) { ownId = ''; }
+    const storedAlerts = Array.isArray(stored && stored[EXT_ALERTS_KEY]) ? stored[EXT_ALERTS_KEY] : [];
+    const oldAlerts = ownId ? storedAlerts.filter((event) => !event || event.id !== ownId) : storedAlerts;
+    const sweptSelfAlert = oldAlerts.length !== storedAlerts.length;
     const alerts = events.concat(oldAlerts).slice(0, EXT_ALERTS_MAX);
     const storageUpdate = {
       [EXT_BASELINE_KEY]: nextBaseline,
       [EXT_WATCH_STATUS_KEY]: status,
     };
-    if (events.length) storageUpdate[EXT_ALERTS_KEY] = alerts;
+    if (events.length || sweptSelfAlert) storageUpdate[EXT_ALERTS_KEY] = alerts;
     await localSet(storageUpdate);
     logExtensionEvents(events);
     await notifyExtensionEvents(events);

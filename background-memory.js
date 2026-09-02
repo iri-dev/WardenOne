@@ -381,14 +381,14 @@ function fmtIdleMinutes(min) {
 async function notifyTabLimitClosed(host, idleMin) {
   if (!(await extensionUiAllowed())) return;
   try {
-    chrome.notifications.create('wo-tablimit-' + Date.now(), {
+    await showWardenSystemNotification('wo-tablimit-' + Date.now(), {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
       title: 'Tab Limit',
       message: 'Closed an old tab to stay under your limit: ' + (host || 'a tab')
         + (idleMin ? ' (inactive ' + fmtIdleMinutes(idleMin) + ')' : ''),
       priority: 1,
-    });
+    }, 'tab_limit_closed');
   } catch (_) {}
 }
 

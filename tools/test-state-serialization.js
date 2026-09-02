@@ -355,7 +355,15 @@ function testCoverage() {
     .map((m) => m.replace(/^(?:async )?function /, '').replace(/\($/, '')));
 
   // applyScriptShieldRules owns its own serialization chain and is excluded on purpose.
-  const EXCLUDED = new Set(['applyScriptShieldRules']);
+  //
+  // applyBadgeCountOperation is a naming collision with this rule, not a state
+  // applier. The list exists for work that settles asynchronously against the
+  // browser -- DNR rulesets, content-script registrations -- where two calls can
+  // land out of order. That function only mutates the in-memory `counts` map,
+  // and its ordering is already held by badgePendingOperations, which queues
+  // every write until the session counts have been recovered. Serialising it
+  // would add a chain around a synchronous object write.
+  const EXCLUDED = new Set(['applyScriptShieldRules', 'applyBadgeCountOperation']);
   const missing = defined.filter((n) => !listed.has(n) && !EXCLUDED.has(n));
   check('every side-effecting state applier is serialized',
     missing.length === 0,

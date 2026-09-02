@@ -50,7 +50,7 @@ const KEYS = [
   'mediaShield', 'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
   'gateAdultSites', 'adultHeuristics', 'safeSearch',
   'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
-  'showToasts', 'showBadge', 'silentMode',
+  'showToasts', 'showBadge', 'silentMode', 'elementZapper',
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
   'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia',
   'deAmp', 'clientHintProtection', 'capReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls',
@@ -68,7 +68,8 @@ const DEFAULTS = {
   eyeShieldWarmth: 0, eyeShieldWarmthByHost: {}, eyeShieldGrayscale: 0, eyeShieldGrayscaleByHost: {},
   warnRedirectParams: true, warnShorteners: true, monitorLoggerApi: true,
   detectPhishing: true, blockHighConfidencePhishing: false, behavioralScan: true, xssBehaviorGuard: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, cryptominerCpuWatch: false, autoUpdateLists: true,
-  showToasts: true, showBadge: true, showDownloadBar: true, silentMode: false,
+  showToasts: true, showBadge: true, showDownloadBar: true, silentMode: false, elementZapper: true,
+  notificationSettings: typeof wardenNotificationDefaultSettings === 'function' ? wardenNotificationDefaultSettings() : { version: 4, defaultDuration: 'reading', position: 'top-right', retentionDays: 30, groupSimilar: true, badgeEnabled: false, soundEnabled: false, soundMode: 'important', volume: 0.55, rules: {} },
   memoryShield: true, memoryMode: 'balanced', memoryMinutesOverride: 0,
   memoryNeverPinned: true, memoryNeverAudio: true, memoryNeverForms: true, memoryNeverPayment: true,
   tabLimitGuard: false, tabLimitMax: 20, tabLimitClose: false, tabLimitMinIdleMinutes: 30, tabLimitWarn: true,
@@ -265,6 +266,8 @@ function applyToUI() {
     el.value = config[key] || '';
   });
   renderMutedToasts(config);
+  if ($('ss-pick')) $('ss-pick').disabled = config.elementZapper === false;
+  try { renderHiddenList(); } catch (_) {}
   syncBreachVisibility();
   syncProviderStatus();
   reflectMasterDisable();
@@ -952,6 +955,13 @@ function sanitizeImportedSettings(raw) {
     if (SECRET_FIELD_RE.test(key)) { ignored++; return; }
     const def = DEFAULTS[key];
     const val = raw[key];
+    if (key === 'notificationSettings') {
+      if (!val || typeof val !== 'object' || Array.isArray(val)) { ignored++; return; }
+      settings[key] = typeof sanitizeWardenNotificationSettings === 'function'
+        ? sanitizeWardenNotificationSettings(val)
+        : JSON.parse(JSON.stringify(DEFAULTS.notificationSettings));
+      return;
+    }
     if (typeof def === 'boolean') {
       if (typeof val === 'boolean') settings[key] = val; else ignored++;
     } else if (typeof def === 'number') {
@@ -2381,7 +2391,24 @@ chrome.storage.onChanged.addListener((changes, area) => {
       || changes.wardenone_ext_reputation_custom)) loadExtensionAlerts();
   if (area === 'local' && changes.wardenone_startup_report) loadStartupReport();
   if (area === 'local' && changes.wardenone_tracker_learner) renderTrackerLearner();
+  if (area === 'local' && changes.wardenone_notifications) renderNotificationUnread(changes.wardenone_notifications.newValue);
 });
+
+function renderNotificationUnread(value) {
+  const button = $('open-notifications');
+  if (!button) return;
+  if (value === undefined) {
+    chrome.storage.local.get('wardenone_notifications', (stored) => renderNotificationUnread(stored && stored.wardenone_notifications));
+    return;
+  }
+  const unread = (Array.isArray(value) ? value : []).filter((item) => item && !item.read).length;
+  /* The count is no longer drawn beside the button. It was a second copy of a
+     number the toolbar shield already carries, sitting inside a row of plain
+     navigation buttons where nothing else has a badge -- so it read as an alert
+     about the popup rather than a count of things waiting elsewhere.
+     It stays in the accessible name, where it is the only way to know. */
+  button.setAttribute('aria-label', 'Notification centre' + (unread ? ', ' + unread + ' unread' : ''));
+}
 
 function labelToggleControls() {
   let named = 0;
@@ -2451,6 +2478,7 @@ load();
 renderUpdateGuardian();
 renderListMeta();
 renderProtectionHealth();
+renderNotificationUnread();
 
 $('open-activity').addEventListener('click', (e) => {
   e.preventDefault();
@@ -2460,6 +2488,10 @@ $('open-activity').addEventListener('click', (e) => {
 $('open-network').addEventListener('click', (e) => {
   e.preventDefault();
   window.open(chrome.runtime.getURL('network.html'));
+});
+$('open-notifications').addEventListener('click', (e) => {
+  e.preventDefault();
+  window.open(chrome.runtime.getURL('notifications.html'));
 });
 
 // ----- Verify & Repair -----
@@ -4344,6 +4376,127 @@ document.querySelectorAll('.perm-link').forEach((b) => {
  * did not exist and an open channel that did. The extension page already holds
  * the host permission, so doing it here needs no message kind at all.
  */
+/* The element picker: starting it, and the way back from it.
+ *
+ * The picker itself is injected on demand rather than declared in the manifest,
+ * so it costs nothing on pages nobody asked about and no page script can start
+ * it -- there is no content script sitting there listening for a signal.
+ *
+ * The list below is not decoration. Something hidden with no way to bring it
+ * back is worse than whatever it was hiding, and the reader will not remember
+ * the selector, the page or the day. Same lesson as the silenced notifications:
+ * the undo has to be somewhere findable, and it has to be visible whether or
+ * not anything is in it.
+ */
+function pickerHostFromTab(tab) {
+  try { return new URL(tab.url).hostname; } catch (_) { return ''; }
+}
+
+function renderHiddenList() {
+  const wrap = $('hidden-list-wrap');
+  const list = $('hidden-list');
+  const summary = $('hidden-list-summary');
+  if (!wrap || !list) return;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const host = pickerHostFromTab(tabs[0] || {});
+    wrap.style.display = 'block';
+    list.textContent = '';
+    if (!host) {
+      if (summary) summary.textContent = 'Saved on this site';
+      const empty = document.createElement('div');
+      empty.className = 'desc';
+      empty.textContent = 'Open a normal web page to see saved hidden elements.';
+      list.appendChild(empty);
+      return;
+    }
+    chrome.runtime.sendMessage({ kind: 'hidden-list', hostname: host }, (res) => {
+      void chrome.runtime.lastError;
+      list.textContent = '';
+      const entries = Array.isArray(res && res.entries)
+        ? res.entries
+        : ((res && res.selectors) || []).map((selector) => ({ hostname: (res && res.host) || host, selector }));
+      if (summary) summary.textContent = 'Saved on this site (' + entries.length + ')';
+      if (!entries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'desc';
+        empty.textContent = 'Nothing is saved for this site yet.';
+        list.appendChild(empty);
+        return;
+      }
+      entries.forEach((entry) => {
+        const sel = String((entry && entry.selector) || '');
+        const savedHost = String((entry && entry.hostname) || host);
+        if (!sel) return;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--wo-border);';
+        const label = document.createElement('div');
+        label.style.cssText = 'flex:1 1 auto;min-width:0;font:11px ui-monospace,monospace;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        label.textContent = sel;
+        label.title = sel + (savedHost && savedHost !== host ? ' (saved on ' + savedHost + ')' : '');
+        const undo = document.createElement('button');
+        undo.className = 'btn';
+        undo.style.cssText = 'flex:0 0 auto;padding:3px 9px;font-size:11px;';
+        undo.textContent = 'Show again';
+        undo.addEventListener('click', () => {
+          undo.disabled = true;
+          chrome.runtime.sendMessage({ kind: 'hidden-remove', hostname: savedHost, selector: sel }, () => {
+            void chrome.runtime.lastError;
+            /* No reload. The worker tells every matching tab to rebuild its
+               hidden-element stylesheet and to drop the Zapper's mark from
+               anything the list no longer covers, so the element comes back in
+               place. Reloading once per undo -- which is what this did -- looked
+               like a reload loop to WardenOne's own detector the moment somebody
+               undid more than one thing. */
+            renderHiddenList();
+          });
+        });
+        row.appendChild(label);
+        row.appendChild(undo);
+        list.appendChild(row);
+      });
+    });
+  });
+}
+
+if ($('manage-hidden-elements')) {
+  $('manage-hidden-elements').addEventListener('click', (event) => {
+    event.preventDefault();
+    window.open(chrome.runtime.getURL('hidden-elements.html'));
+  });
+}
+
+if ($('ss-pick')) {
+  $('ss-pick').addEventListener('click', () => {
+    const out = $('ss-pick-result');
+    out.style.display = 'block';
+    out.style.color = 'var(--ink-faint)';
+    if (config.elementZapper === false) {
+      out.textContent = 'Turn on Element Zapper first.';
+      return;
+    }
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab || !/^https?:/i.test(tab.url || '')) {
+        out.textContent = 'Open a normal web page first.';
+        return;
+      }
+      const target = { tabId: tab.id };
+      /* One injection. The mode flag this used to set first is gone with the
+         second tool it selected between. */
+      chrome.scripting.executeScript({ target, files: ['element-picker.js'] }, () => {
+        if (chrome.runtime.lastError) {
+          out.textContent = 'This page does not allow WardenOne to run here.';
+          return;
+        }
+        out.textContent = 'Zapper started — click the thing you want gone.';
+        /* The popup closes the moment focus moves to the page, which is the
+           point: the reader is choosing over there now, not in here. */
+        setTimeout(() => window.close(), 250);
+      });
+    });
+  });
+}
+
 const PWNED_PREFIX_LEN = 5;
 const PWNED_TIMEOUT_MS = 8000;
 
@@ -4450,7 +4603,6 @@ $('ss-pwned').addEventListener('click', async () => {
     finish();
   }
 });
-
 /* Typing a new one clears the last answer. Leaving a red "found in breaches"
    result sitting above a different password is a way to misread it. */
 if ($('ss-pwned-input')) {
@@ -4709,7 +4861,7 @@ $('verify-repair').addEventListener('click', () => {
       rows.push(buildKeywords(h3));
     });
     // Activity log / Network buttons
-    ['open-activity','open-network'].forEach(function(id){
+    ['open-activity','open-notifications','open-network'].forEach(function(id){
       var el=$(id);
       if(el)rows.push(buildKeywords(el));
     });

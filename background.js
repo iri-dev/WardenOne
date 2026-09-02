@@ -15,6 +15,7 @@
 // Shared eTLD+1 helpers (regDomain / registrableDomain). Imported synchronously at the
 // top of the worker so this file and the popup use ONE implementation (see domain-utils.js).
 importScripts('domain-utils.js');
+importScripts('notification-manager.js');
 
 /* Content scripts are untrusted extension contexts: they execute beside arbitrary pages and
    should never be able to enumerate local configuration, provider credentials, history, or
@@ -114,59 +115,182 @@ function clearTabMessageRates(tabId) {
 }
 
 function setBadge(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
   const n = counts[tabId] || 0;
-  const text = n > 0 ? String(n) : '';
   try {
-    chrome.action.setBadgeText({ tabId, text });
-    chrome.action.setBadgeBackgroundColor({ tabId, color: '#dc2626' });
+    // `null` removes this tab's override and reveals the global attention/unread
+    // badge. An empty string would create a tab-scoped blank that masks it.
+    chrome.action.setBadgeText({ tabId, text: n > 0 ? String(n) : null });
   } catch (_) {}
 }
 
-// Tabs whose count we are recovering, and how many blocks arrived while we waited.
-const badgeRecovering = Object.create(null);
+// Block counts and the toolbar's visible text are deliberately separate. A tab with no block
+// override inherits the global extension/unread badge, so parsing the visible text after an MV3
+// worker restart could turn "7 unread" into "8 blocked". storage.session survives worker sleeps
+// but is cleared with the browser session, which matches the lifetime of tab IDs and page counts.
+const BADGE_COUNTS_SESSION_KEY = '__wardenone_badge_counts';
+let badgeCountsReady = false;
+let badgeCountsRecoveryFinished = false;
+const badgePendingOperations = [];
+let badgeCountsWriteActive = false;
+let badgeCountsWriteAgain = false;
 
-// `counts` lives only in the worker, and MV3 suspends the worker after about 30 seconds idle.
-// Chrome keeps the per-tab badge TEXT across that, but our counter comes back absent -- so the
-// next block on a page showing 47 used to set the badge to 1. The number that communicates what
-// the extension is doing was wrong in the direction that undersells it.
-//
-// Chrome's own badge text is the authoritative surviving value, so when we have no count for a
-// tab we ask for it and continue from there. No new storage, and it inherits Chrome's per-tab
-// lifetime semantics for free. Navigation resets assign 0 rather than deleting, so a fresh page
-// is distinguishable from a resumed worker and does not recover a stale number.
+let wardenExtensionAttentionBadgeText = '';
+let wardenNotificationBadgeUnread = 0;
+let wardenNotificationBadgeEnabled = false;
+
+function boundedBadgeCount(value, cap) {
+  const n = Math.max(0, Math.floor(Number(value) || 0));
+  if (!n) return '';
+  return n > cap ? String(cap) + '+' : String(n);
+}
+
+function renderWardenGlobalBadge() {
+  const notificationText = wardenNotificationBadgeEnabled
+    ? boundedBadgeCount(wardenNotificationBadgeUnread, 99)
+    : '';
+  const text = wardenExtensionAttentionBadgeText || notificationText;
+  try {
+    chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+    chrome.action.setBadgeText({ text });
+  } catch (_) {}
+}
+
+function setWardenNotificationBadgeState(unread, enabled) {
+  wardenNotificationBadgeUnread = Math.max(0, Math.floor(Number(unread) || 0));
+  wardenNotificationBadgeEnabled = enabled !== false;
+  renderWardenGlobalBadge();
+}
+
+function setWardenExtensionAttentionBadgeState(text) {
+  const value = String(text || '');
+  wardenExtensionAttentionBadgeText = value === '!'
+    ? '!'
+    : (/^(?:[1-9]|9\+)$/.test(value) ? value : '');
+  renderWardenGlobalBadge();
+}
+
+function badgeCountsSnapshot() {
+  const out = {};
+  for (const key of Object.keys(counts)) {
+    const tabId = Number(key);
+    const n = Math.max(0, Math.floor(Number(counts[key]) || 0));
+    if (Number.isInteger(tabId) && tabId >= 0 && n > 0) out[key] = n;
+  }
+  return out;
+}
+
+function persistBadgeCounts() {
+  if (!badgeCountsReady) return;
+  if (badgeCountsWriteActive) {
+    badgeCountsWriteAgain = true;
+    return;
+  }
+  const area = chrome.storage && chrome.storage.session;
+  if (!area || typeof area.set !== 'function') return;
+  badgeCountsWriteActive = true;
+  const payload = { [BADGE_COUNTS_SESSION_KEY]: badgeCountsSnapshot() };
+  let finished = false;
+  const done = () => {
+    if (finished) return;
+    finished = true;
+    badgeCountsWriteActive = false;
+    if (badgeCountsWriteAgain) {
+      badgeCountsWriteAgain = false;
+      persistBadgeCounts();
+    }
+  };
+  try {
+    const pending = area.set(payload, done);
+    if (pending && typeof pending.then === 'function') pending.then(done, done);
+  } catch (_) { done(); }
+}
+
+function applyBadgeCountOperation(operation) {
+  const tabId = operation && operation.tabId;
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  if (operation.kind === 'increment') counts[tabId] = (counts[tabId] || 0) + 1;
+  else if (operation.kind === 'reset') counts[tabId] = 0;
+  else if (operation.kind === 'remove') delete counts[tabId];
+}
+
+function finishBadgeCountRecovery(stored) {
+  if (badgeCountsRecoveryFinished) return;
+  badgeCountsRecoveryFinished = true;
+  const recovered = stored && stored[BADGE_COUNTS_SESSION_KEY];
+  if (recovered && typeof recovered === 'object' && !Array.isArray(recovered)) {
+    for (const key of Object.keys(recovered)) {
+      const tabId = Number(key);
+      const n = Math.max(0, Math.floor(Number(recovered[key]) || 0));
+      if (Number.isInteger(tabId) && tabId >= 0 && n > 0) counts[tabId] = n;
+    }
+  }
+  for (const operation of badgePendingOperations.splice(0)) applyBadgeCountOperation(operation);
+  badgeCountsReady = true;
+
+  // Normalise old tab-scoped empty strings to `null`, restore real block overrides, and prune
+  // counts for tabs that disappeared while the worker was asleep.
+  try {
+    chrome.tabs?.query?.({}, (tabs) => {
+      void chrome.runtime.lastError;
+      const open = new Set();
+      for (const tab of tabs || []) {
+        if (!tab || !Number.isInteger(tab.id) || tab.id < 0) continue;
+        open.add(String(tab.id));
+        setBadge(tab.id);
+      }
+      for (const key of Object.keys(counts)) {
+        if (!open.has(String(key))) delete counts[key];
+      }
+      persistBadgeCounts();
+    });
+  } catch (_) { persistBadgeCounts(); }
+}
+
+function beginBadgeCountRecovery() {
+  const area = chrome.storage && chrome.storage.session;
+  if (!area || typeof area.get !== 'function') {
+    finishBadgeCountRecovery({});
+    return;
+  }
+  try {
+    const pending = area.get(BADGE_COUNTS_SESSION_KEY, finishBadgeCountRecovery);
+    if (pending && typeof pending.then === 'function') pending.then(finishBadgeCountRecovery, () => finishBadgeCountRecovery({}));
+  } catch (_) { finishBadgeCountRecovery({}); }
+  // A broken storage shim must not leave the badge permanently frozen.
+  try { setTimeout(() => finishBadgeCountRecovery({}), 3000); } catch (_) { finishBadgeCountRecovery({}); }
+}
+
 function bumpBadge(tabId) {
   if (!Number.isInteger(tabId) || tabId < 0) return;
-  if (counts[tabId] !== undefined) {
-    counts[tabId] += 1;
-    setBadge(tabId);
+  if (!badgeCountsReady) {
+    badgePendingOperations.push({ kind: 'increment', tabId });
     return;
   }
-  // Blocks landing during the round trip accumulate here instead of each starting their own.
-  if (badgeRecovering[tabId] !== undefined) {
-    badgeRecovering[tabId] += 1;
+  applyBadgeCountOperation({ kind: 'increment', tabId });
+  setBadge(tabId);
+  persistBadgeCounts();
+}
+
+function resetBadge(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  if (!badgeCountsReady) {
+    badgePendingOperations.push({ kind: 'reset', tabId });
     return;
   }
-  badgeRecovering[tabId] = 1;
-  // Read BEFORE writing anything: setting the badge first would make us read our own value back.
-  try {
-    chrome.action.getBadgeText({ tabId }, (text) => {
-      void chrome.runtime.lastError;
-      const pending = badgeRecovering[tabId];
-      // The tab can close while this read is in flight. onRemoved has already cleared both
-      // maps by then, so writing here would put back a counter for a tab that no longer
-      // exists and leave it there until the worker dies. An absent entry means cancelled.
-      if (pending === undefined) return;
-      delete badgeRecovering[tabId];
-      const prior = parseInt(String(text || ''), 10);
-      counts[tabId] = (Number.isFinite(prior) && prior > 0 ? prior : 0) + pending;
-      setBadge(tabId);
-    });
-  } catch (_) {
-    const pending = badgeRecovering[tabId] || 1;
-    delete badgeRecovering[tabId];
-    counts[tabId] = pending;
-    setBadge(tabId);
+  applyBadgeCountOperation({ kind: 'reset', tabId });
+  setBadge(tabId);
+  persistBadgeCounts();
+}
+
+function removeBadge(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  if (!badgeCountsReady) {
+    badgePendingOperations.push({ kind: 'remove', tabId });
+    return;
   }
+  applyBadgeCountOperation({ kind: 'remove', tabId });
+  persistBadgeCounts();
 }
 
 const TOKEN_EXFIL_HISTORY_COOLDOWN_MS = 90000;
@@ -425,34 +549,9 @@ function normalizeTabBlockMessage(msg, sender) {
   return out;
 }
 
-// Seed the counters from what Chrome is already showing, rather than writing over it.
-//
-// This block used to call setBadge for every tab at module evaluation. counts is empty at that
-// point, so setBadge wrote '' to each tab and destroyed the very value bumpBadge later tries to
-// recover from -- the badge went 47 -> '' -> 1 rather than 47 -> 48. Top-level evaluation means
-// the worker restarted, not that the browser did, so clearing was never the right behaviour here:
-// the tabs are the same tabs and their counts are still meaningful.
-//
-// Reading instead of writing also means the recovery path in bumpBadge is a fallback for tabs
-// this misses, rather than the only thing standing between a suspension and a wrong number.
-try {
-  chrome.tabs?.query?.({}, (tabs) => {
-    void chrome.runtime.lastError;
-    (tabs || []).forEach((t) => {
-      if (!t || t.id == null) return;
-      try {
-        chrome.action.getBadgeText({ tabId: t.id }, (text) => {
-          void chrome.runtime.lastError;
-          // Never overwrite a live counter: blocks can land while this query is in flight, and
-          // the value they produced is newer than the text Chrome had before it.
-          if (counts[t.id] !== undefined) return;
-          const prior = parseInt(String(text || ''), 10);
-          if (Number.isFinite(prior) && prior > 0) counts[t.id] = prior;
-        });
-      } catch (_) {}
-    });
-  });
-} catch (_) {}
+// Recover before any visible block event is interpreted. Operations that arrive during the
+// asynchronous read are replayed in order, so navigation and tab-close events win over stale data.
+beginBadgeCountRecovery();
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!sender || !sender.tab || sender.tab.id == null) return;
@@ -660,6 +759,7 @@ function queueHistory(entry) {
   if (safe.detail !== undefined && safe.detail !== null) {
     safe.detail = sanitizeHistoryDetail(safe.detail, 0);
   }
+  try { recordWardenNotification(safe); } catch (_) {}
   __histBuffer.push(safe);
   persistHistBuffer();
   scheduleHistoryFlush();
@@ -1475,9 +1575,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 
 // Clean up when a tab closes.
 chrome.tabs.onRemoved.addListener((tabId) => {
-  delete counts[tabId];
-  // A recovery still in flight for a tab that has gone would otherwise sit here forever.
-  delete badgeRecovering[tabId];
+  /* Through removeBadge, not a raw delete.
+     badgeRecovering was the old model's in-flight map and no longer exists, so
+     this line threw a ReferenceError on EVERY tab close -- taking the two
+     cleanups below with it, since nothing after a throw in a listener runs.
+     The raw `delete counts[tabId]` went for the same reason the rest of the
+     badge writes go through the queue: before the session counts have been
+     recovered it is a write into a map that is about to be overwritten, and a
+     queued increment for that tab would bring it back. */
+  removeBadge(tabId);
   clearTabMessageRates(tabId);
   clearSmartScriptRecoveryForTab(tabId);
 });
@@ -1487,6 +1593,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 const DEFAULT_CONFIG = {
   enabled: true,
   watchExtensionPermissions: true,
+  /* The right-click element tools. On by default because they do nothing at all
+     until somebody opens the menu and picks one -- there is no cost to a reader
+     who never uses them, and a feature nobody can find is a feature nobody has. */
+  elementZapper: true,
   startupCheck: true,
   blockGesturelessNav: true,
   blockForcedPopups: true,
@@ -1636,6 +1746,18 @@ const DEFAULT_CONFIG = {
   // Heuristic, and its confirmation step is a CPU micro-benchmark. Off unless asked for.
   cryptominerCpuWatch: false,
   showToasts: true,
+  notificationSettings: {
+    version: 4,
+    defaultDuration: 'reading',
+    position: 'top-right',
+    retentionDays: 30,
+    groupSimilar: true,
+    badgeEnabled: false,
+    soundEnabled: false,
+    soundMode: 'important',
+    volume: 0.55,
+    rules: {},
+  },
   showBadge: true,
   showDownloadBar: true,
   silentMode: false,
@@ -1682,6 +1804,10 @@ function sanitizeContentConfig(raw) {
   const out = {};
   for (const field of Object.keys(source)) {
     if (!contentConfigFieldAllowed(field)) continue;
+    if (field === 'notificationSettings') {
+      out[field] = sanitizeWardenNotificationSettings(source[field]);
+      continue;
+    }
     try { out[field] = JSON.parse(JSON.stringify(source[field])); } catch (_) {}
   }
   return out;
@@ -1740,6 +1866,8 @@ function scheduleContentConfigRefresh() {
     } catch (_) {}
   }, 50);
 }
+
+try { DEFAULT_CONFIG.notificationSettings = wardenNotificationDefaultSettings(); } catch (_) {}
 
 // ---- Onboarding protection bundles ----------------------------------------
 // "Recommended" = the always-safe security + tracking defenses that don't break
@@ -4079,6 +4207,7 @@ function localGet(key) {
  * they are not browsing records and the private worker still needs them. */
 const INCOGNITO_EPHEMERAL_LOCAL_KEYS = new Set([
   'wardenone_history',
+  'wardenone_notifications',
   'wardenone_learned',
   'wardenone_tracker_learner',
   'wardenone_domain_age_cache',
@@ -11908,6 +12037,15 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'open-site-settings',
   'reset-site-permissions',
   'adshield-cosmetic',
+  /* The element zapper. It runs as an injected content script, so it reaches the
+     worker as a tab sender like any other. It is deliberately NOT relayed by
+     bridge.js, so a page's own script cannot reach it -- and even if it could,
+     every one of these is pinned to the sender's own host below, so the worst
+     available is hiding something on the page doing the asking, which it can
+     already do without us. */
+  'hidden-add',
+  'hidden-remove',
+  'hidden-list',
   'domain-age',
   'eyeshield-fetch-css',
   /* The isolated bridge owns both watchdogs. Keeping them out of this table meant
@@ -11956,6 +12094,10 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'open-site-settings': { max: 2, windowMs: 60000 },
   'reset-site-permissions': { max: 2, windowMs: 60000 },
   'adshield-cosmetic': { max: 12, windowMs: 60000 },
+  /* Hiding something is a thing a person does by hand, a few times at most. */
+  'hidden-add': { max: 30, windowMs: 60000 },
+  'hidden-remove': { max: 30, windowMs: 60000 },
+  'hidden-list': { max: 60, windowMs: 60000 },
   'set-site-permission': { max: 3, windowMs: 60000 },
   'eyeshield-fetch-css': { max: 150, windowMs: 60000 },
   /* The bridge sends at most five engine checks per document. Navigation signals
@@ -12540,7 +12682,7 @@ async function buildProtectionHealthSummary() {
   const criticalExtensionAlerts = unreadExtensionAlerts.filter((event) => event.severity === 'critical' || event.severity === 'high');
   if (unreadExtensionAlerts.length) {
     addIssue(criticalExtensionAlerts.length ? 'danger' : 'warn', unreadExtensionAlerts.length
-      + ' important extension change' + (unreadExtensionAlerts.length === 1 ? '' : 's') + ' need review.');
+      + ' important extension change' + (unreadExtensionAlerts.length === 1 ? ' needs' : 's need') + ' review.');
   }
   const extensionWatchStatusValue = store && store[EXT_WATCH_STATUS_KEY];
   if (cfg.watchExtensionPermissions !== false && extensionWatchStatusValue && extensionWatchStatusValue.state === 'error') {
@@ -13266,6 +13408,238 @@ async function handleScriptDriftScan(sender, msg) {
 }
 
 // Let the popup trigger a manual refresh.
+// ---- Hidden elements: the reader's own cosmetic rules ---------------------
+//
+// Everything else AdShield hides comes from a list somebody else maintains.
+// These are the ones the reader picked by hand, on a page in front of them, and
+// they are treated differently in three ways:
+//
+//   - they survive AdShield being off or the site being allowlisted, because
+//     "I do not want ad blocking here" and "I do not want to see that box" are
+//     different sentences
+//   - they are listed and reversible per site, because a thing you hid and
+//     cannot bring back is worse than the thing you hid
+//   - the selector is validated before it is ever stored, not before it is used
+//
+// That last one is the security-relevant part. A selector goes on to be joined
+// with commas and pasted into a stylesheet, so a value containing a brace ends
+// the rule and starts writing CSS of its own. Nothing today can put an arbitrary
+// string in here -- they come from the picker, which builds them out of the DOM
+// -- but "nothing can reach it today" is a property of the current code, not of
+// this store, and the check is one function.
+const HIDDEN_STORE_KEY = 'wardenone_hidden_elements';
+const HIDDEN_MAX_HOSTS = 500;
+const HIDDEN_MAX_PER_HOST = 100;
+const HIDDEN_MAX_SELECTOR_LEN = 400;
+
+function isSafeSelector(value) {
+  const sel = String(value || '').trim();
+  if (!sel || sel.length > HIDDEN_MAX_SELECTOR_LEN) return false;
+  // Anything that could close the rule, open an at-rule, comment out the rest,
+  // or smuggle a second declaration in.
+  /* '>' stays in: it is the child combinator, and the picker builds selectors
+     out of it, so blocking it rejected the picker's own output. '<' is never
+     valid in a selector. The rest are the characters that can close the
+     display:none rule and start writing declarations of the caller's choosing. */
+  if (/[{}<;@\\]/.test(sel)) return false;
+  if (sel.indexOf('/*') >= 0 || sel.indexOf('*/') >= 0) return false;
+  // Control characters and line breaks, which some parsers treat as separators.
+  for (let i = 0; i < sel.length; i++) if (sel.charCodeAt(i) < 0x20) return false;
+  // Hiding the page itself is not a cosmetic rule, it is a broken tab with no
+  // obvious way back. The picker refuses these too; this is the backstop.
+  if (/^\s*(html|body|:root|\*)\s*$/i.test(sel)) return false;
+  return true;
+}
+
+async function readHiddenElements() {
+  try {
+    const store = await chrome.storage.local.get(HIDDEN_STORE_KEY);
+    const raw = store && store[HIDDEN_STORE_KEY];
+    if (!raw || typeof raw !== 'object') return {};
+    const out = {};
+    for (const host of Object.keys(raw)) {
+      const clean = normalizeAllowlistHost(host);
+      if (!clean) continue;
+      const list = Array.isArray(raw[host]) ? raw[host] : [];
+      const kept = [];
+      for (const sel of list) {
+        if (kept.length >= HIDDEN_MAX_PER_HOST) break;
+        if (!isSafeSelector(sel) || kept.indexOf(sel) >= 0) continue;
+        kept.push(String(sel).trim());
+      }
+      if (kept.length) out[clean] = kept;
+    }
+    return out;
+  } catch (_) { return {}; }
+}
+
+function hiddenSelectorsForHost(all, hostname) {
+  return hiddenEntriesForHost(all, hostname).map((entry) => entry.selector);
+}
+
+function hiddenEntriesForHost(all, hostname) {
+  const host = normalizeAllowlistHost(hostname);
+  if (!host || !all) return [];
+  /* A rule saved on the registrable domain applies to its subdomains, so
+     hiding a banner on example.com does not have to be redone on
+     www.example.com and shop.example.com. Saving is always done against the
+     exact host the reader was on; this only widens matching. */
+  const out = [];
+  for (const key of Object.keys(all)) {
+    if (host === key || host.endsWith('.' + key)) {
+      for (const selector of all[key]) out.push({ hostname: key, selector });
+    }
+  }
+  return out.slice(0, HIDDEN_MAX_PER_HOST);
+}
+
+async function refreshHiddenRulesForHost(hostname) {
+  const changedHost = normalizeAllowlistHost(hostname);
+  if (!changedHost) return;
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs || []) {
+      let tabHost = '';
+      try { tabHost = normalizeAllowlistHost(new URL(tab.url || '').hostname); } catch (_) {}
+      if (!tabHost || (tabHost !== changedHost && !tabHost.endsWith('.' + changedHost))) continue;
+      try {
+        chrome.tabs.sendMessage(tab.id, { kind: 'hidden-rules-refresh' }, () => { void chrome.runtime.lastError; });
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+async function addHiddenElement(hostname, selector) {
+  const host = normalizeAllowlistHost(hostname);
+  if (!host) return { ok: false, error: 'Invalid site.' };
+  if (!isSafeSelector(selector)) return { ok: false, error: 'That element could not be described safely.' };
+  const all = await readHiddenElements();
+  const list = all[host] ? all[host].slice() : [];
+  const sel = String(selector).trim();
+  if (list.indexOf(sel) >= 0) return { ok: true, selectors: list, already: true };
+  if (list.length >= HIDDEN_MAX_PER_HOST) {
+    return { ok: false, error: 'You have hidden as much as WardenOne will remember for this site.' };
+  }
+  if (!all[host] && Object.keys(all).length >= HIDDEN_MAX_HOSTS) {
+    return { ok: false, error: 'Too many sites have hidden elements. Clear some first.' };
+  }
+  list.push(sel);
+  all[host] = list;
+  await localSet({ [HIDDEN_STORE_KEY]: all });
+  void refreshHiddenRulesForHost(host);
+  return { ok: true, selectors: list };
+}
+
+/* Wipe every saved rule on every site.
+   Deliberately NOT in TAB_CONTEXT_ALLOWED_MESSAGES: the generic sender gate
+   refuses any kind missing from that table when the sender is a tab, so this one
+   is reachable only from an extension page. add/remove are safe from a tab
+   because each is pinned to that tab's own host; "all of them" has no host to be
+   pinned to, so a page must never be able to ask for it. */
+async function clearHiddenElements(hostname) {
+  const all = await readHiddenElements();
+  let hosts;
+  if (hostname) {
+    /* One site. Normalised the same way add and remove do it, so "www.twitch.tv"
+       and "twitch.tv" clear the entry they wrote. */
+    const host = normalizeAllowlistHost(hostname);
+    if (!host) return { ok: false, error: 'Invalid site.' };
+    if (!all[host]) return { ok: true, cleared: 0 };
+    delete all[host];
+    hosts = [host];
+  } else {
+    hosts = Object.keys(all);
+    for (const host of hosts) delete all[host];
+  }
+  await localSet({ [HIDDEN_STORE_KEY]: all });
+  /* Every host that had a rule needs its open tabs told, or the elements stay
+     hidden until each one is reloaded. */
+  for (const host of hosts) void refreshHiddenRulesForHost(host);
+  return { ok: true, cleared: hosts.length };
+}
+
+async function removeHiddenElement(hostname, selector) {
+  const host = normalizeAllowlistHost(hostname);
+  if (!host) return { ok: false, error: 'Invalid site.' };
+  const all = await readHiddenElements();
+  const list = all[host] ? all[host].filter((s) => s !== String(selector).trim()) : [];
+  if (list.length) all[host] = list; else delete all[host];
+  await localSet({ [HIDDEN_STORE_KEY]: all });
+  void refreshHiddenRulesForHost(host);
+  return { ok: true, selectors: list };
+}
+
+// ---- Right-click: the WardenOne submenu ------------------------------------
+//
+// One entry: zap saves the clicked element immediately and keeps zapping until
+// the reader presses Done.
+//
+// Rebuilt on every start: an evicted-and-restarted service worker has no menus
+// until something makes them, and removeAll has to come first or each restart
+// stacks another copy of every entry.
+const WO_MENU_ROOT = 'wardenone-root';
+const WO_MENU_ZAP = 'wardenone-zap';
+
+async function installWardenContextMenu() {
+  try {
+    if (!chrome.contextMenus) return;
+    /* A toggle that only decides whether the entries exist. Nothing else about
+       the tools is conditional, because nothing else about them runs until one
+       of the entries is clicked. */
+    let on = true;
+    try {
+      const store = await localGet('wardenone_config');
+      const cfg = (store && store.wardenone_config) || {};
+      on = cfg.elementZapper !== false && cfg.enabled !== false;
+    } catch (_) { on = true; }
+    chrome.contextMenus.removeAll(() => {
+      void chrome.runtime.lastError;
+      if (!on) return;
+      const page = ['page', 'frame', 'image', 'video'];
+      const pages = ['http://*/*', 'https://*/*'];
+      const add = (opts) => {
+        try { chrome.contextMenus.create(opts, () => { void chrome.runtime.lastError; }); } catch (_) {}
+      };
+      add({ id: WO_MENU_ROOT, title: 'WardenOne', contexts: page, documentUrlPatterns: pages });
+      add({ id: WO_MENU_ZAP, parentId: WO_MENU_ROOT, title: 'Zap this element', contexts: page, documentUrlPatterns: pages });
+    });
+  } catch (_) {}
+}
+
+try {
+  chrome.runtime.onInstalled.addListener(installWardenContextMenu);
+  chrome.runtime.onStartup.addListener(installWardenContextMenu);
+} catch (_) {}
+/* And once now, for a worker woken by anything that is neither of those. */
+installWardenContextMenu();
+/* The switch has to take effect without a restart, or turning it off looks
+   broken until the next browser start. */
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes && changes.wardenone_config) installWardenContextMenu();
+  });
+} catch (_) {}
+
+function startElementTool(tab, frameId) {
+  if (!tab || typeof tab.id !== 'number') return;
+  /* chrome:// and the store refuse injection, and a silent failure there reads
+     as the feature being broken rather than as the page refusing. */
+  if (!/^https?:/i.test(String(tab.url || ''))) return;
+  const target = { tabId: tab.id, frameIds: [frameId || 0] };
+  /* This used to be two injections: a tiny one to set a mode flag, then the tool.
+     There is one tool now, so there is nothing to tell it. */
+  try {
+    chrome.scripting.executeScript({ target, files: ['element-picker.js'] }, () => { void chrome.runtime.lastError; });
+  } catch (_) {}
+}
+
+try {
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (!info) return;
+    if (info.menuItemId === WO_MENU_ZAP) { startElementTool(tab, info.frameId); return; }
+  });
+} catch (_) {}
+
 // These live out here on purpose. Declared inside the onMessage listener
 // below -- which is where they were first written -- a function declaration is
 // scoped to that block, so the navigation listeners that call maybeClearOnLeave
@@ -13685,6 +14059,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
     return true;
   }
+  if (msg && /^hidden-(add|remove|list)$/.test(msg.kind || '') && messageSenderIsTab(sender)
+      && !messageSenderMatchesHost(sender, msg.hostname)) {
+    try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+    return true;
+  }
   if (msg && msg.kind === 'adshield-cosmetic' && messageSenderIsTab(sender) && !messageSenderMatchesHost(sender, msg.hostname)) {
     try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
     return true;
@@ -13715,7 +14094,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'toast-shown' && messageSenderIsTab(sender)) {
-    recordToastShown(msg.type, sender.tab && sender.tab.url).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    Promise.all([
+      recordToastShown(msg.type, sender.tab && sender.tab.url),
+      playWardenNotificationSoundForType(msg.type),
+    ]).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg && msg.kind === 'notification-sound-preview') {
+    if (!messageSenderIsExtensionPage(sender)) {
+      try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+      return true;
+    }
+    playWardenNotificationSound(msg.sound, msg.volume).then(
+      () => sendResponse({ ok: true }),
+      (error) => sendResponse({ ok: false, error: String(error && error.message || error) })
+    );
     return true;
   }
   if (msg && msg.kind === 'mute-toast' && messageSenderIsTab(sender)) {
@@ -14967,10 +15360,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // computeCosmeticForHost): avoids re-reading and re-deserialising the
         // multi-MB cosmetic blob, and re-walking it, on every page and frame.
         const mem = await getCosmeticMem();
-        sendResponse(computeCosmeticForHost(msg.hostname, mem, msg.playerPage === true));
+        const out = computeCosmeticForHost(msg.hostname, mem, msg.playerPage === true) || {};
+        /* Carried on the same reply, in a field of their own.
+           The engine clears the AdShield stylesheet when a site is allowlisted
+           or the shield is off, and these must survive both: "do not block ads
+           here" and "do not show me that box" are different sentences, and a
+           reader who hid something by hand and then allowlisted the site should
+           not silently get it back. Kept separate so the engine can put them in
+           their own style element rather than one that gets emptied. */
+        try { out.userSelectors = hiddenSelectorsForHost(await readHiddenElements(), msg.hostname); }
+        catch (_) { out.userSelectors = []; }
+        sendResponse(out);
       } catch (e) {
         sendResponse({ ok: false, error: String(e), selectors: [] });
       }
+    })();
+    return true;
+  }
+
+  if (msg && msg.kind === 'hidden-add' && msg.hostname) {
+    respond(addHiddenElement(msg.hostname, msg.selector), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'hidden-remove' && msg.hostname) {
+    respond(removeHiddenElement(msg.hostname, msg.selector), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'hidden-clear') {
+    respond(clearHiddenElements(msg.hostname), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'hidden-list' && msg.hostname) {
+    (async () => {
+      const all = await readHiddenElements();
+      const host = normalizeAllowlistHost(msg.hostname);
+      sendResponse({
+        ok: true,
+        host,
+        selectors: (host && all[host]) || [],
+        inherited: hiddenSelectorsForHost(all, msg.hostname),
+        entries: hiddenEntriesForHost(all, msg.hostname),
+      });
     })();
     return true;
   }
@@ -15352,7 +15782,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-      const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'yt-adblock.js', 'twitch-adblock.js', 'twitch-rewind.js', 'bridge.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'popup.html', 'popup.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'yt-adblock.js', 'twitch-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
 
       // 1. core files present & non-empty
       for (const f of CORE_FILES) {

@@ -157,6 +157,62 @@
     return true;
   }
 
+  /* User-picked hidden elements are not AdShield rules. Load them directly from
+     this isolated bridge so they still apply when AdShield is off or the site is
+     allowlisted. Keeping this request here also avoids exposing hidden-add/remove
+     through the forgeable MAIN-world relay below. */
+  function bridgeSafeUserSelector(value) {
+    const selector = String(value || '').trim();
+    if (!selector || selector.length > 400 || /[{}<;@\\]/.test(selector)) return '';
+    if (selector.indexOf('/*') >= 0 || selector.indexOf('*/') >= 0) return '';
+    for (let i = 0; i < selector.length; i++) if (selector.charCodeAt(i) < 0x20) return '';
+    if (/^(html|body|:root|\*)$/i.test(selector)) return '';
+    return selector;
+  }
+  function bridgeLoadUserHidden() {
+    try {
+      if (!/^https?:$/.test(location.protocol) || !location.hostname) return;
+      chrome.runtime.sendMessage({ kind: 'hidden-list', hostname: location.hostname }, (res) => {
+        void chrome.runtime.lastError;
+        if (!res || !res.ok) return;
+        const selectors = (Array.isArray(res.inherited) ? res.inherited : [])
+          .map(bridgeSafeUserSelector).filter(Boolean).slice(0, 100);
+        let style = document.querySelector('style[data-wardenone-user-hidden="true"]');
+        if (!style) {
+          style = document.createElement('style');
+          style.id = 'wo-user-hidden';
+          style.setAttribute('data-wardenone-user-hidden', 'true');
+          (document.head || document.documentElement).appendChild(style);
+        }
+        style.textContent = selectors.map((selector) => selector + '{display:none!important;}').join('');
+
+        /* The in-page Zapper marks what it hid with an attribute as well as
+           relying on this stylesheet, and that attribute outlives the rule being
+           deleted -- so dropping a selector left the element gone until the page
+           was reloaded. That is exactly why undo in the popup used to reload the
+           tab after EVERY item, which on a site with a few saved rules looked
+           like a reload loop and tripped WardenOne's own detector. Clearing the
+           mark here makes undo take effect in place, so nothing has to reload. */
+        try {
+          const marked = document.querySelectorAll('[data-wardenone-zapped="true"]');
+          for (let i = 0; i < marked.length; i++) {
+            const node = marked[i];
+            let stillHidden = false;
+            for (let j = 0; j < selectors.length; j++) {
+              try { if (node.matches(selectors[j])) { stillHidden = true; break; } } catch (_) {}
+            }
+            if (!stillHidden) node.removeAttribute('data-wardenone-zapped');
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+  bridgeLoadUserHidden();
+  woOnMessage((msg) => {
+    if (!msg || msg.kind !== 'hidden-rules-refresh') return;
+    bridgeLoadUserHidden();
+  });
+
   // MAIN-world events are visible to the page and must be treated as untrusted.
   // Keep useful diagnostics, but never let a page enqueue megabytes of nested
   // data into extension messaging/history storage.

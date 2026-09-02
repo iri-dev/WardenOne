@@ -148,6 +148,10 @@ function checkContentBuild() {
   'background-downloads.js',
   'bridge.js',
   'popup.js',
+  'notifications.js',
+  'notification-schema.js',
+  'notification-manager.js',
+  'offscreen.js',
   'extensions.js',
   'theme.js',
   'onboarding.js',
@@ -200,6 +204,7 @@ function checkContentBuild() {
   'tools/test-permission-chain-trust.js',
   'tools/test-warning-dialogs.js',
   'tools/test-phishing-false-positives.js',
+  'tools/test-element-picker.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
   'tools/test-protection-health.js',
@@ -276,6 +281,7 @@ function checkContentBuild() {
   'tools/test-device-access-guard.js',
   'tools/test-capability-guards.js',
   'tools/test-notification-guard.js',
+  'tools/test-notification-center.js',
   'tools/test-fake-window-guard.js',
   'tools/test-fullscreen-guard.js',
   'tools/test-site-controls.js',
@@ -301,7 +307,9 @@ function checkContentBuild() {
   'consent-reject.js',
   'consent-wall.js',
   'domain-utils.js',
+  'element-picker.js',
   'history.js',
+  'hidden-elements.js',
   'network.js',
   'oauth-guard.js',
   'permission-chain.js',
@@ -425,6 +433,7 @@ checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
 checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
 checkCommand('device access guard tests', ['tools/test-device-access-guard.js']);
 checkCommand('notification guard tests', ['tools/test-notification-guard.js']);
+checkCommand('Notification Centre tests', ['tools/test-notification-center.js']);
 checkCommand('capability guard tests', ['tools/test-capability-guards.js']);
 checkCommand('fake-window guard tests', ['tools/test-fake-window-guard.js']);
 checkCommand('full-screen guard tests', ['tools/test-fullscreen-guard.js']);
@@ -454,6 +463,7 @@ checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']
 checkCommand('phishing confidence tests', ['tools/test-phishing-confidence.js']);
 checkCommand('default agreement tests', ['tools/test-default-agreement.js']);
 checkCommand('pwned password check tests', ['tools/test-pwned-password-check.js']);
+checkCommand('element picker tests', ['tools/test-element-picker.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);

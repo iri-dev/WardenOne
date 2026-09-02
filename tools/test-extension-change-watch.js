@@ -90,6 +90,10 @@ function createHarness(options) {
       for (const key of Object.keys(update || {})) state.storage[key] = clone(update[key]);
     },
     queueHistory: (entry) => state.history.push(clone(entry)),
+    showWardenSystemNotification: async (id, details) => {
+      state.notifications.push({ id, details: clone(details) });
+      return true;
+    },
     chrome: {
       runtime: {
         id: 'wardenone-self',
@@ -186,6 +190,51 @@ async function main() {
       Date.now());
     assert.strictEqual(permissionApproval.severity, 'medium');
     assert(/waiting for approval/.test(permissionApproval.summary));
+  }
+
+  /* WardenOne must never appear in its own Security Centre.
+     It is skipped when the current inventory is taken, but the removal pass
+     walks the stored BASELINE -- so a baseline written before that exclusion
+     existed still carries our own id, the id is missing from the current scan,
+     and the reader is told "WardenOne was removed" by WardenOne. Reported as
+     "the extension centre thing is flagging warden one thats so dumb". */
+  {
+    const h = createHarness({ extensions: [makeExtension('existing')] });
+    /* A baseline from the older build: it has us in it. */
+    h.state.storage.wardenone_ext_baseline = {
+      schema: 3,
+      capturedAt: Date.now() - 60000,
+      extensions: {
+        existing: { id: 'existing', name: 'existing', version: '1.0.0', enabled: true, permissions: [], firstSeenAt: 1 },
+        'wardenone-self': { id: 'wardenone-self', name: 'WardenOne', version: '1.0.0', enabled: true, permissions: [], firstSeenAt: 1 },
+      },
+    };
+    await h.watch.reconcileExtensionChanges('stale-baseline');
+    const aboutUs = alerts(h).filter((event) => event && event.id === 'wardenone-self');
+    assert.strictEqual(aboutUs.length, 0, 'WardenOne must not raise an alert about itself');
+    assert.strictEqual(
+      h.state.storage.wardenone_ext_baseline.extensions['wardenone-self'],
+      undefined,
+      'our own id must be dropped from a stale baseline, not carried forward',
+    );
+  }
+
+  /* And an alert a previous build already wrote is swept, because fixing the
+     cause does not retract the one already sitting in front of the reader. */
+  {
+    const h = createHarness({ extensions: [makeExtension('existing')] });
+    await h.watch.reconcileExtensionChanges('initial');
+    h.state.storage.wardenone_ext_alerts = [
+      { id: 'wardenone-self', name: 'WardenOne', kind: 'removed', severity: 'low', summary: 'Extension was removed' },
+    ];
+    h.state.extensions.push(makeExtension('benign', { name: 'Helpful Notes' }));
+    h.events.installed.fire(h.state.extensions[1]);
+    await flushScheduled(h);
+    assert.strictEqual(
+      alerts(h).filter((event) => event && event.id === 'wardenone-self').length,
+      0,
+      'an alert about ourselves left by an earlier build must be swept',
+    );
   }
 
   {

@@ -42,6 +42,30 @@
     },
     mark(id,el){
       this.seen.set(id,el)
+    },
+    /* WardenOne's own warnings are appended to the page they are warning about,
+       so anything that reads document.body reads them back. That is not a
+       theoretical problem: the ClickFix panel says "A real CAPTCHA never asks you
+       to open DevTools, Console, PowerShell, Terminal, or the Run dialog and
+       paste something", which matches its own verification-steps AND
+       paste-guidance detectors. The panel therefore keeps its own evidence alive,
+       and re-appears the moment it is dismissed. Every panel registers itself
+       here, so subtracting these strings covers new panels for free. */
+    strip(text){
+      let out=String(text||"");
+      if(!out)return out;
+      this.seen.forEach(el=>{
+        try{
+          if(!el||!el.isConnected)return;
+          const own=el.innerText||el.textContent||"";
+          if(own&&own.length>8)out=out.split(own).join(" ")
+        }
+        catch(_){
+
+        }
+
+      });
+      return out
     }
   };
   /* The node buildOverlay most recently created, so mountBlocker can hold the element it
@@ -598,6 +622,18 @@
     showBadge:!0,
     showDownloadBar:!0,
     showToasts:!0,
+    notificationSettings:{
+      version:4,
+      defaultDuration:"reading",
+      position:"top-right",
+      retentionDays:30,
+      groupSimilar:!0,
+      badgeEnabled:!1,
+      soundEnabled:!1,
+      soundMode:"important",
+      volume:.55,
+      rules:{}
+    },
     oneOpenPerGesture:!0,
     stripTrackingParams:!0,
     cleanCopyLinks:!0,
@@ -757,6 +793,7 @@
       showBadge:cfg.showBadge,
       showDownloadBar:cfg.showDownloadBar,
       showToasts:cfg.showToasts,
+      notificationSettings:cfg.notificationSettings&&"object"==typeof cfg.notificationSettings?cfg.notificationSettings:DEFAULTS.notificationSettings,
       oneOpenPerGesture:cfg.oneOpenPerGesture,
       stripTrackingParams:cfg.stripTrackingParams,
       cleanCopyLinks:gate(!1!==cfg.cleanCopyLinks),
@@ -1060,6 +1097,15 @@
        anything earlier -- and the scam scan can run synchronously when body already exists. One
        definition, per the house rule, rather than a second copy of the same list. */
     trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname),
+    /* Assistant surfaces, where the page text is a conversation the user is
+       having rather than the page talking to them. Asking an assistant about
+       tech-support scams or about ClickFix produces a page whose text contains
+       every trigger phrase, which is how a WardenOne scam-lock ended up over a
+       chat about WardenOne's own scam detection. These are first-party origins:
+       chatgpt.com is never itself running the scam, so the page-text heuristics
+       have nothing to find here. Clipboard writes are still watched, because
+       those are an action rather than something somebody said. */
+    conversationHost=/(^|\.)(chatgpt\.com|openai\.com|claude\.ai|anthropic\.com|gemini\.google\.com|bard\.google\.com|aistudio\.google\.com|perplexity\.ai|copilot\.microsoft\.com|poe\.com|grok\.com|deepseek\.com|mistral\.ai|huggingface\.co)$/i.test(location.hostname),
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
     SITE_BOUNDARY=(()=>{
@@ -6591,7 +6637,7 @@
          skipped, using the established trustedMediaHost list rather than a new one. */
       const SCAM_NEAR=600,
       scamScan=()=>{
-        if(scamShown||trustedMediaHost)return;
+        if(scamShown||trustedMediaHost||conversationHost)return;
         try{
           const t=(document.body&&document.body.textContent||"").slice(0,
           2e4);
@@ -6860,10 +6906,16 @@
       },
       clickfixVisiblePageText=()=>{
         try{
+          /* On an assistant surface the body text is the conversation, so asking
+             one how ClickFix works writes the whole attack into the page. The
+             frame's own host is what is checked, so a scam embedded in an iframe
+             is still read normally. Clipboard hooks are untouched: this only
+             removes the text the instruction heuristics read. */
+          if(conversationHost)return"";
           const body=document.body;
           if(!body)return"";
-          if("string"==typeof body.innerText)return body.innerText;
-          return String(body.textContent||"")
+          const raw="string"==typeof body.innerText?body.innerText:String(body.textContent||"");
+          return __woWarn.strip(raw)
         }
         catch(_){
           return""
@@ -6911,6 +6963,8 @@
       };
       let clickfixHighestWarning=0,
       clickfixPanelLevel=0,
+      /* Reset with the rest of the route state, so a new page starts fresh. */
+      clickfixDismissedLevel=0,
       clickfixLastPageSignature="",
       suspiciousClipboardSeen=!1,
       suspiciousClipboardBlocked=!1,
@@ -6928,6 +6982,7 @@
       resetClickfixRouteState=()=>{
         clickfixHighestWarning=0,
         clickfixPanelLevel=0,
+        clickfixDismissedLevel=0,
         clickfixLastPageSignature="",
         suspiciousClipboardSeen=!1,
         suspiciousClipboardBlocked=!1,
@@ -6994,6 +7049,8 @@
       level,
       kind)=>{
         try{
+          /* Already told, and told at least this loudly. */
+          if(level<=clickfixDismissedLevel)return;
           if(__woWarn.up("wo-cmd-warn")){
             if(level<=clickfixPanelLevel)return;
             try{
@@ -7040,6 +7097,14 @@
           btn.textContent="Got it, I won't paste it",
           btn.addEventListener("click",
           ()=>{
+            /* Dismissing used to remove the node and nothing else, so the next
+               scan -- often the one triggered by this very panel's own text --
+               built it straight back. Reading the warning is an answer; repeating
+               it is nagging. Recorded at the dismissed level so a genuinely worse
+               signal can still get through, because that is new information
+               rather than the same warning again. */
+            clickfixDismissedLevel=Math.max(clickfixDismissedLevel,
+            level);
             try{
               wrap.remove()
             }
@@ -9252,6 +9317,30 @@
           res=>{
             try{
               if(!res||!res.ok)return;
+              /* The reader's own hidden elements, in a stylesheet of their own.
+                 They are applied BEFORE the allowlist/disabled exit below,
+                 because that exit empties the AdShield sheet -- and a thing
+                 somebody hid by hand should not come back because they later
+                 allowlisted the site for ads. Separate element, so neither one
+                 can clear the other.
+                 Re-validated here even though the worker validates on write:
+                 these are pasted into a stylesheet, and a value carrying a
+                 brace ends the rule and starts writing CSS of its own. */
+              try{
+                const bad="{}<;@".split(""),
+                us=(Array.isArray(res.userSelectors)?res.userSelectors:[]).filter(sel=>"string"==typeof sel&&sel.length>0&&sel.length<400&&!bad.some(c=>sel.indexOf(c)>=0));
+                let ue=document.getElementById("wo-user-hidden");
+                if(us.length){
+                  ue||(ue=document.createElement("style"),
+                  ue.id="wo-user-hidden",
+                  (document.head||document.documentElement).appendChild(ue));
+                  ue.textContent=us.join(",")+"{display:none!important;}"
+                }
+                else ue&&(ue.textContent="")
+              }
+              catch(_){
+
+              }
               if(res.allowlisted||res.disabled)return styleEl&&(styleEl.textContent=""),
               void log("adshield_skipped",
               {
@@ -19631,6 +19720,62 @@
         }
 
       };
+      const NOTIFICATION_RULE_DEFAULTS={
+        dangerous_site:{mode:"toast",duration:"default"},
+        dangerous_link:{mode:"toast",duration:"10000"},
+        password_exposure:{mode:"toast",duration:"default"},
+        clickfix_clipboard:{mode:"toast",duration:"default"},
+        suspicious_download:{mode:"toast",duration:"default"},
+        suspicious_redirect:{mode:"toast",duration:"10000"},
+        tracker_blocked:{mode:"history",duration:"3000"},
+        fingerprinting_prevented:{mode:"toast",duration:"5000"},
+        ip_privacy:{mode:"toast",duration:"5000"},
+        protection_list_updated:{mode:"history",duration:"default"},
+        extension_changed:{mode:"toast",duration:"10000"},
+        protection_failure:{mode:"toast",duration:"default"},
+        experimental_warning:{mode:"history",duration:"default"},
+        system_message:{mode:"history",duration:"default"}
+      },
+      notificationRuleId=type=>{
+        const value=String(type||"").toLowerCase();
+        if(Object.prototype.hasOwnProperty.call(NOTIFICATION_RULE_DEFAULTS,value))return value;
+        if(/download/.test(value))return"suspicious_download";
+        if(/extension|permission_change/.test(value))return"extension_changed";
+        if(/engine_disabled|protection_failure|degraded|repair_failed|component_error/.test(value))return"protection_failure";
+        if(/list_integrity|protection_list_updated|list_updated|rules_updated/.test(value))return"protection_list_updated";
+        if(/experimental/.test(value))return"experimental_warning";
+        if(/clipboard|clickfix|command_paste|paste_protection/.test(value))return"clickfix_clipboard";
+        if(/password|credential|token|skimmer|payment|honeytoken|insecure_login|new_domain_login|login_thirdparty/.test(value))return"password_exposure";
+        if(/safe_browsing_(link|form|paste)|dangerous_link|url_reputation|shortener/.test(value))return"dangerous_link";
+        if(/phish|malware|cryptominer|techsupport|fake_update|fake_window|fullscreen_spoof|notification_scam|abuseipdb|form_trap|xss|behavioral_risk|certificate|http_only/.test(value))return"dangerous_site";
+        if(/popup|redirect|meta_refresh|back_trap|confirm_bait|reload_loop|overlay_ad_frame|frame_top|gestureless_nav|app_install|notification_bait|autoplay_media|blocked_hidden_media/.test(value))return"suspicious_redirect";
+        if(/fingerprint/.test(value))return"fingerprinting_prevented";
+        if(/grabber|ip_lookup|webrtc|geolocation|media_capture|screen_capture|speech_capture|device_|file_|service_worker/.test(value))return"ip_privacy";
+        if(/tracker|beacon|cookie|social_widget|supercookie|storage_access|logger_api|idle_watch|keystroke/.test(value))return"tracker_blocked";
+        return"system_message"
+      },
+      notificationPreference=type=>{
+        const base=DEFAULTS.notificationSettings,
+        raw=WO.notificationSettings&&"object"==typeof WO.notificationSettings?WO.notificationSettings:base,
+        id=notificationRuleId(type),
+        fallback=NOTIFICATION_RULE_DEFAULTS[id]||NOTIFICATION_RULE_DEFAULTS.system_message,
+        incoming=raw.rules&&raw.rules[id]&&"object"==typeof raw.rules[id]?raw.rules[id]:fallback,
+        oldPersistentDefault=Number(raw.version||0)<3&&["dangerous_site","password_exposure","clickfix_clipboard","suspicious_download","protection_failure"].includes(id)&&"persistent"===incoming.mode&&"persistent"===incoming.duration,
+        effective=oldPersistentDefault?fallback:incoming,
+        enabled=effective.enabled!==!1,
+        mode=enabled?(["history","toast","persistent"].includes(effective.mode)?effective.mode:fallback.mode):"off",
+        duration=["default","3000","5000","10000","15000","persistent"].includes(String(effective.duration))?String(effective.duration):fallback.duration,
+        savedGlobal=Number(raw.version||0)<3&&"5000"===String(raw.defaultDuration)?"reading":String(raw.defaultDuration),
+        globalDuration=["reading","3000","5000","10000","15000","persistent"].includes(savedGlobal)?savedGlobal:base.defaultDuration;
+        return{mode:mode,duration:"default"===duration?globalDuration:duration}
+      },
+      notificationPositionStyle=()=>{
+        const raw=WO.notificationSettings&&"object"==typeof WO.notificationSettings?WO.notificationSettings:DEFAULTS.notificationSettings,
+        position=["top-right","top-left","bottom-right","bottom-left"].includes(raw.position)?raw.position:"top-right",
+        top=position.startsWith("top"),
+        right=position.endsWith("right");
+        return(top?"top:14px!important;bottom:auto!important;":"top:auto!important;bottom:14px!important;")+(right?"right:14px!important;left:auto!important;":"right:auto!important;left:14px!important;")
+      };
       let toastHostEl=null;
       const ensureHost=()=>{
         if(toastHostEl&&document.documentElement.contains(toastHostEl))return toastHostEl;
@@ -19638,7 +19783,7 @@
         const h=document.createElement("div");
         return h.id="rg-toast-host",
         S(h,
-        "all:initial!important;position:fixed!important;top:14px!important;right:14px!important;z-index:2147483647!important;display:flex!important;flex-direction:column!important;gap:10px!important;max-width:340px!important;font-family:system-ui,-apple-system,sans-serif!important;margin:0!important;padding:0!important;"),
+        "all:initial!important;position:fixed!important;"+notificationPositionStyle()+"z-index:2147483647!important;display:flex!important;flex-direction:column!important;gap:10px!important;max-width:340px!important;font-family:system-ui,-apple-system,sans-serif!important;margin:0!important;padding:0!important;"),
         document.documentElement.appendChild(h),
         toastHostEl=h,
         h
@@ -19734,6 +19879,8 @@
         detail))return;
         const info=TOAST_INFO[type];
         if(!info)return;
+        const preference=notificationPreference(type);
+        if("off"===preference.mode||"history"===preference.mode)return;
         const now=Date.now(),
         matched=detail&&detail.matched||"";
         /* What the card will actually SAY has to be decided before we can ask whether we have
@@ -19776,7 +19923,8 @@
       renderToast=(type,detail,info,detailWhy,severity,action,matched)=>{
         const wrap=ensureHost();
         if(!wrap)return;
-        const card=document.createElement("div");
+        const preference=notificationPreference(type),
+        card=document.createElement("div");
         S(card,
         'all:initial!important;box-sizing:border-box!important;display:flex!important;gap:11px!important;align-items:flex-start!important;background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;border-left:4px solid #9d54c9!important;border-radius:14px!important;padding:13px 15px!important;box-shadow:0 8px 28px rgba(120,55,160,.26)!important;color:#3d2a52!important;font-family:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;opacity:0!important;transform:translateX(120%)!important;transition:transform .34s cubic-bezier(.34,1.56,.64,1),opacity .25s!important;');
         const body=oDiv(card,
@@ -19944,13 +20092,18 @@
         dwellMs=Math.min(3e4,
         Math.max(3300,
         "number"==typeof info.dwell?info.dwell:readMs<7e3?readMs:readMs-(readMs<8e3?1e3:500))),
+        configuredDuration=Number(preference.duration),
+        persistent="persistent"===preference.mode||"persistent"===preference.duration,
+        activeDwellMs=persistent?0:configuredDuration||dwellMs,
         progress=oDiv(card,
         "position:absolute!important;left:0!important;right:0!important;bottom:0!important;height:3px!important;background:linear-gradient(90deg,#c48ae6,#9d54c9)!important;border-radius:0 0 14px 14px!important;transform:scaleX(1)!important;transform-origin:left center!important;pointer-events:none!important;opacity:.85!important;");
-        let remainingMs=dwellMs,
+        persistent&&(progress.style.setProperty("display","none","important"),card.setAttribute("data-wardenone-persistent","true"));
+        let remainingMs=activeDwellMs,
         countingFrom=0,
         dwellTimer=0;
         const paintProgress=(fromScale,
         ms)=>{
+          if(persistent)return;
           try{
             progress.style.setProperty("transition",
             "none",
@@ -19986,18 +20139,20 @@
           350)
         },
         holdDwell=()=>{
+          if(persistent)return;
           dwellTimer&&(clearTimeout(dwellTimer),
           dwellTimer=0,
           remainingMs=Math.max(1500,
           remainingMs-(Date.now()-countingFrom)),
-          paintProgress(remainingMs/dwellMs,
+          paintProgress(remainingMs/activeDwellMs,
           0))
         },
         resumeDwell=()=>{
+          if(persistent)return;
           dwellTimer||document.hidden||(countingFrom=Date.now(),
           dwellTimer=setTimeout(dismiss,
           remainingMs),
-          paintProgress(remainingMs/dwellMs,
+          paintProgress(remainingMs/activeDwellMs,
           remainingMs))
         },
         onVisibility=()=>{
@@ -20035,8 +20190,11 @@
           "important"),
           resumeDwell()
         });
-        wrap.children.length>4;
-        )wrap.removeChild(wrap.firstChild)
+        wrap.children.length>6;
+        ){
+          const removable=Array.from(wrap.children).find(item=>"true"!==item.getAttribute("data-wardenone-persistent"));
+          wrap.removeChild(removable||wrap.firstChild)
+        }
       };
       woOn(document,"wo-event",
       e=>{
@@ -20055,6 +20213,12 @@
         if(!WO.enabled||!WO.showToasts)try{
           toastHostEl&&toastHostEl.remove(),
           toastHostEl=null
+        }
+        catch(_){
+
+        }
+        else try{
+          toastHostEl&&S(toastHostEl,"all:initial!important;position:fixed!important;"+notificationPositionStyle()+"z-index:2147483647!important;display:flex!important;flex-direction:column!important;gap:10px!important;max-width:340px!important;font-family:system-ui,-apple-system,sans-serif!important;margin:0!important;padding:0!important;")
         }
         catch(_){
 

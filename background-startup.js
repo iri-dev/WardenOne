@@ -235,12 +235,20 @@ async function runStartupCheck(reason, opts = {}) {
   }
   if (total > 0 && uiAllowed) {
     try {
-      chrome.notifications.create('wo-startup-' + Date.now(), {
+      queueHistory({
+        type: 'startup_review',
+        url: '',
+        at: Date.now(),
+        detail: { message: total + ' item' + (total === 1 ? '' : 's') + ' need review.' },
+      });
+    } catch (_) {}
+    try {
+      await showWardenSystemNotification('wo-startup-' + Date.now(), {
         type: 'basic', iconUrl: 'icons/icon128.png',
         title: 'WardenOne startup check', priority: 1,
         message: total + ' thing' + (total === 1 ? '' : 's') + ' to review: ' +
           [findings.tabs.length ? findings.tabs.length + ' tab(s)' : '', findings.extensions.length ? findings.extensions.length + ' extension change(s)' : ''].filter(Boolean).join(', '),
-      });
+      }, 'startup_review');
     } catch (_) {}
   }
   return findings;

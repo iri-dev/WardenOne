@@ -156,6 +156,7 @@
 /* Shared background and common app surfaces. */
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] body,
 :root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] body,
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] body,
 :root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] body,
 :root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"] body,
 :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"] body,
@@ -330,6 +331,25 @@
 }
 .wo-theme-quick .wo-theme-option svg { width: 12px; height: 12px; }
 
+/* The notification centre carries the activity page's stylesheet, so it inherits
+   the same literal white fills -- and it had never declared a page name, so none
+   of the dark overrides below could reach it. Rows stayed pale while the text
+   went light, which left every setting label white on white. */
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .row { background: var(--wo-surface); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .row:nth-child(even) { background: var(--wo-surface-alt); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .row:hover { background: var(--wo-surface-raised); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .rulehead { background: var(--wo-surface-alt); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .settings-nav { background: var(--wo-surface); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .settings-nav a:hover { background: var(--wo-surface-raised); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .item { background: var(--wo-surface); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .item.unread { background: var(--wo-surface-raised); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .day { background: var(--wo-surface-alt); }
+:root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .panel-head .act {
+  color: var(--wo-on-brand);
+}
+/* The toast preview is deliberately exempt: it is a picture of the real toast,
+   which is drawn on other people's pages and is light whatever this page is. */
+
 /* Activity rows used literal pastel fills after the page palette. */
 :root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .row { background: var(--wo-surface); }
 :root[data-wardenone-page="history"][data-wardenone-theme-resolved="dark"] .row:nth-child(even) { background: var(--wo-surface-alt); }
@@ -407,12 +427,26 @@
   padding: 12px 13px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  border: 1px solid var(--line);
+  /* Was space-between, which pinned the two buttons to the far right of a
+     full-width row and left a lake of empty box between them and the label they
+     belong to. They read as part of that label, so they sit next to it. */
+  justify-content: flex-start;
+  gap: 18px;
   border-radius: 14px;
   background: var(--paper-2);
 }
+/* No outline on the box or on the buttons inside it. The onboarding card is
+   already a bordered surface; a second border inside it, around a third border
+   on each button, is three frames deep for one choice. The buttons keep their
+   own background, which is what actually distinguishes them. */
+.onboarding-theme .wo-theme-option {
+  border-color: transparent;
+  /* A fill instead of the outline. Without either, the unchosen option reads as
+     a word sitting next to a button rather than the other half of a pair. */
+  background: var(--wo-control);
+}
+.onboarding-theme .wo-theme-option:hover { background: var(--wo-control-hover); }
+.onboarding-theme .wo-theme-option[aria-pressed="true"] { background: var(--wo-control-gradient); }
 .onboarding-theme > div:first-child { display: grid; gap: 3px; }
 .onboarding-theme strong { color: var(--ink); font: 900 13px/1.1 var(--display); }
 .onboarding-theme span { color: var(--ink-faint); font-size: 11px; font-weight: 700; }
