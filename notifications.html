@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-wardenone-page="notifications">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notification Centre — WardenOne</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="guide-shell.css">
+<script src="theme.js"></script>
+</head>
+<body>
+<header class="guide-topbar">
+  <div class="guide-wrap guide-topbar-inner">
+    <a class="guide-brand" href="popup.html" aria-label="Back to WardenOne popup">
+      <span class="guide-brand-mark" aria-hidden="true"><img src="icons/icon128.png" alt=""></span>
+      <span><span class="guide-brand-name">WardenOne</span><span class="guide-brand-sub">Notification centre</span></span>
+    </a>
+    <div class="guide-toplinks">
+      <nav class="guide-nav" aria-label="Notification centre sections">
+        <a class="is-active" href="#notifications" data-notification-view="recent" aria-current="location">Recent</a>
+        <a href="#preferences" data-notification-view="prefs">Preferences</a>
+        <a href="history.html">Activity</a>
+      </nav>
+      <div class="guide-credit">Developer <strong>iri.dev</strong></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="guide-hero">
+    <div class="guide-wrap guide-hero-inner">
+      <div>
+        <div class="guide-eyebrow">Local notification centre</div>
+        <h1>Every notice, under your control.</h1>
+        <p class="guide-lead"><strong>See what WardenOne told you and decide what should interrupt next time.</strong> Notices use the same reading-time fade they had before the centre unless you choose a different duration.</p>
+        <div class="guide-hero-actions">
+          <a class="guide-btn primary" href="#notifications">Review recent notices</a>
+          <a class="guide-btn" href="history.html">Activity centre</a>
+          <a class="guide-btn" href="https://github.com/iri-dev/WardenOne" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 19c-4 1.2-4-2-5.5-2.5M15 22v-3.8c0-1 .1-1.4-.5-2 2.8-.3 5.8-1.4 5.8-6.3 0-1.4-.5-2.6-1.3-3.5.1-.3.6-1.7-.1-3.5 0 0-1.1-.4-3.6 1.3a12.4 12.4 0 00-6.6 0C6.2 2.5 5.1 2.9 5.1 2.9c-.7 1.8-.2 3.2-.1 3.5a5 5 0 00-1.3 3.5c0 4.9 3 6 5.8 6.3-.4.4-.6.9-.6 1.8V22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>GitHub page</a>
+        </div>
+        <div class="guide-pills" aria-label="Notification storage details">
+          <span>Stored on this device</span>
+          <span>Silent unless you ask</span>
+          <span>You choose what interrupts</span>
+        </div>
+      </div>
+      <aside class="guide-summary" aria-label="Notification summary">
+        <div class="summary-label">At a glance</div>
+        <div class="metric-grid">
+          <div class="metric"><div class="n" id="stat-unread">0</div><div class="l">Unread</div></div>
+          <div class="metric"><div class="n" id="stat-today">0</div><div class="l">Today</div></div>
+          <div class="metric"><div class="n" id="stat-total">0</div><div class="l">Stored</div></div>
+        </div>
+        <p class="summary-copy">History stays available after a toast fades, so a short-lived notice is never lost.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="guide-section" id="notifications">
+    <div class="guide-wrap">
+      <div class="guide-section-head">
+        <div><div class="guide-kicker">Notification ledger</div><h2>Review recent notices.</h2></div>
+        <p>Filter the local record by protection area, mark it read, or clear it without changing your Activity history.</p>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab" id="tab-recent" role="tab" aria-selected="true" aria-controls="pane-recent">Recent</button>
+        <button class="tab" id="tab-prefs" role="tab" aria-selected="false" aria-controls="pane-prefs">Preferences</button>
+      </div>
+
+      <section id="pane-recent" role="tabpanel" aria-labelledby="tab-recent">
+        <div class="panel">
+          <div class="bar">
+            <button class="chip" data-filter="all" aria-pressed="true">All</button>
+            <button class="chip" data-filter="security" aria-pressed="false">Security</button>
+            <button class="chip" data-filter="privacy" aria-pressed="false">Privacy</button>
+            <button class="chip" data-filter="wardenone" aria-pressed="false">WardenOne</button>
+            <div class="sp"></div>
+            <button class="act" id="nc-read">Mark all read</button>
+            <button class="act" id="nc-clear">Clear history</button>
+          </div>
+          <div id="nc-list" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section id="pane-prefs" role="tabpanel" aria-labelledby="tab-prefs" hidden>
+        <div class="settings-shell">
+          <nav class="settings-nav" id="settings-nav" aria-label="Settings sections"></nav>
+          <div class="settings-body">
+            <div class="panel" id="sec-behaviour">
+              <div class="panel-head"><h2>How notices behave <span class="sub">applies to anything not set on its own below</span></h2></div>
+              <div class="row">
+                <div class="grow"><div class="name">Default time on screen</div><div class="desc">Reading time uses the actual words in each notice. Pick a fixed time only if you want every card to last equally long.</div></div>
+                <button class="act" id="pref-try"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.7 7.1l7 4.9-7 4.9z"></path></svg><span>Try it</span></button>
+                <select id="pref-duration">
+                  <option value="reading">Reading time (recommended)</option>
+                  <option value="3000">3 seconds</option><option value="5000">5 seconds</option>
+                  <option value="10000">10 seconds</option><option value="15000">15 seconds</option>
+                  <option value="persistent">Until dismissed</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="grow"><div class="name">Where they appear</div><div class="desc">The corner WardenOne's own toasts show in.</div></div>
+                <select id="pref-position">
+                  <option value="top-right">Top right</option><option value="top-left">Top left</option>
+                  <option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="grow"><div class="name">Group repeats</div><div class="desc">One line saying “12 trackers blocked” instead of twelve lines.</div></div>
+                <label class="sw"><input type="checkbox" id="pref-group"><span></span></label>
+              </div>
+              <div class="row">
+                <div class="grow"><div class="name">Show unread count on the toolbar icon</div><div class="desc">Off by default to keep the pinned shield clean. Turn it on if you want the count there.</div></div>
+                <label class="sw"><input type="checkbox" id="pref-badge"><span></span></label>
+              </div>
+              <div class="row">
+                <div class="grow"><div class="name">Keep history for</div><div class="desc">Older entries are dropped. Nothing leaves the device either way.</div></div>
+                <select id="pref-retention">
+                  <option value="1">24 hours</option><option value="7">7 days</option>
+                  <option value="30">30 days</option><option value="0">Until I clear it</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="panel" id="sec-sound">
+              <div class="panel-head"><h2>Sound <span class="sub">off until you turn it on</span></h2></div>
+              <div class="note">WardenOne is silent by default. A security tool that pings on every tracker is one people mute and then stop hearing when it matters.</div>
+              <div class="row">
+                <div class="grow"><div class="name">Play sounds</div><div class="desc">Uses a short bundled clip. Nothing is streamed.</div></div>
+                <label class="sw"><input type="checkbox" id="pref-sound"><span></span></label>
+              </div>
+              <div class="row">
+                <div class="grow"><div class="name">Which ones make a sound</div></div>
+                <select id="pref-soundmode">
+                  <option value="all">Everything</option><option value="important">Warnings and above</option>
+                  <option value="critical">Critical only</option><option value="none">None</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="grow"><div class="name">Volume</div><div class="desc">Pick a sound to hear it at this level. Each category can use its own below.</div></div>
+                <select id="pref-soundpick"></select>
+                <input type="range" id="pref-volume" min="0" max="100" step="5">
+                <span id="pref-volume-label" style="min-width:38px;text-align:right;color:var(--guide-faint);font-size:12px"></span>
+                <button class="act" id="pref-preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.7 7.1l7 4.9-7 4.9z"></path></svg><span>Preview</span></button>
+              </div>
+            </div>
+
+            <div id="nc-rules"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<footer class="guide-footer">
+  <div class="guide-wrap guide-footer-inner">
+    <span><strong>Local by design.</strong> Notification history is stored only on this device.</span>
+    <span>Nothing here is uploaded or shared.</span>
+  </div>
+</footer>
+<script src="notification-schema.js"></script>
+<script src="notifications.js"></script>
+</body>
+</html>

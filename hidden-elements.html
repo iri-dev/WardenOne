@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en" data-wardenone-page="hidden-elements">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WardenOne - Zapped elements</title>
+<!-- The theme first, the shared guide shell second, this page's own rules last.
+     guide-shell.css is what makes this look like the DNS, permissions and API-key
+     guides rather than a dialog that grew: same topbar, same hero, same section
+     heads, same footer. Anything below is only what is particular to a list of
+     saved selectors. -->
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="guide-shell.css">
+<script src="theme.js"></script>
+<style>
+  /* Site groups. The shell supplies .guide-panel, .panel-head and .panel-note,
+     so only the collapsible list itself is described here. */
+  .toolbar{display:flex;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid var(--guide-line)}
+  .search{width:100%;border:1px solid var(--guide-line-strong);border-radius:11px;background:var(--guide-paper);color:var(--guide-ink);padding:10px 12px;font:600 13px/1.2 var(--body);outline:none}
+  .search:focus{border-color:var(--wo-focus,var(--guide-plum));box-shadow:0 0 0 3px color-mix(in srgb,var(--guide-plum) 20%,transparent)}
+  .status{min-height:21px;padding:9px 22px;color:var(--guide-faint);font-size:12px;border-bottom:1px solid var(--guide-line)}
+  /* Reset all is irreversible, so it asks once and only turns red for the answer.
+     Sitting there permanently red, it would be the loudest thing on a page whose
+     usual job is removing one rule. */
+  .reset{flex:none;white-space:nowrap;border:1px solid var(--guide-line-strong);border-radius:11px;background:var(--guide-paper);color:var(--guide-soft);padding:10px 14px;font:750 12.5px/1 var(--display);cursor:pointer}
+  .reset:hover{border-color:var(--guide-plum);color:var(--guide-plum)}
+  .reset[data-armed="true"]{border-color:var(--wo-danger,#c84f8b);background:color-mix(in srgb,var(--wo-danger,#c84f8b) 12%,transparent);color:var(--wo-danger,#c84f8b)}
+  .reset:disabled{cursor:wait;opacity:.55}
+  /* The per-site one sits in the summary row beside the count, so it is smaller
+     and does not push the hostname around when its label grows on arming. */
+  .reset.small{padding:6px 10px;font-size:11.5px;border-radius:9px}
+  .site summary{gap:10px}
+  #site-list{padding:10px 22px 18px}
+
+  /* The shell's summary card assumes three figures. There are two here, and a
+     third empty cell reads as a number that failed to load. */
+  .guide-summary .metric-grid{grid-template-columns:repeat(2,1fr)}
+
+  .site{overflow:hidden;margin:8px 0;border:1px solid var(--guide-line);border-radius:13px;background:var(--guide-paper-soft)}
+  .site summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;cursor:pointer;color:var(--guide-ink);font-weight:750;list-style:none}
+  .site summary::-webkit-details-marker{display:none}
+  .site summary::before{content:"\203A";display:inline-block;color:var(--guide-plum);font-size:20px;line-height:1;transition:transform .15s}
+  .site[open] summary::before{transform:rotate(90deg)}
+  .host{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .count{flex:none;border-radius:999px;padding:2px 8px;background:var(--guide-mist);color:var(--guide-soft);font-size:11px}
+  .entries{border-top:1px solid var(--guide-line)}
+  .entry{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--guide-line)}
+  .entry:last-child{border-bottom:none}
+  .entry code{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--guide-soft);font:11.5px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
+  .entry button{flex:none;border:1px solid var(--guide-line-strong);border-radius:9px;background:var(--guide-paper);color:var(--guide-plum);padding:7px 11px;font:750 11.5px/1 var(--display);cursor:pointer}
+  .entry button:hover{border-color:var(--guide-plum);transform:translateY(-1px)}
+  .entry button:disabled{cursor:wait;opacity:.55;transform:none}
+  .empty{padding:52px 24px;text-align:center;color:var(--guide-faint)}
+  .empty strong{display:block;margin-bottom:5px;color:var(--guide-soft);font-size:16px}
+  @media(max-width:600px){
+    .entry{align-items:flex-start;flex-direction:column}
+    .entry button{align-self:flex-end}
+  }
+</style>
+</head>
+<body>
+<header class="guide-topbar">
+  <div class="guide-wrap guide-topbar-inner">
+    <a class="guide-brand" href="popup.html" aria-label="Back to WardenOne popup">
+      <span class="guide-brand-mark" aria-hidden="true"><img src="icons/icon128.png" alt=""></span>
+      <span><span class="guide-brand-name">WardenOne</span><span class="guide-brand-sub">Zapped elements</span></span>
+    </a>
+    <div class="guide-toplinks">
+      <nav class="guide-nav" aria-label="Zapped element sections">
+        <a class="is-active" href="#saved" aria-current="location">Saved rules</a>
+        <a href="history.html">Activity</a>
+        <a href="notifications.html">Notifications</a>
+      </nav>
+      <div class="guide-credit">Developer <strong>iri.dev</strong></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="guide-hero">
+    <div class="guide-wrap guide-hero-inner">
+      <div>
+        <div class="guide-eyebrow">Things you told WardenOne to hide</div>
+        <h1>The page, minus the parts you did not want.</h1>
+        <p class="guide-lead"><strong>Every element you have zapped, grouped by the site it belongs to.</strong> Each one is a rule saved on this device, and any of them can be put back on its own.</p>
+        <div class="guide-hero-actions">
+          <a class="guide-btn primary" href="#saved">See saved rules</a>
+          <a class="guide-btn" href="history.html">Activity centre</a>
+          <a class="guide-btn" href="https://github.com/iri-dev/WardenOne" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 19c-4 1.2-4-2-5.5-2.5M15 22v-3.8c0-1 .1-1.4-.5-2 2.8-.3 5.8-1.4 5.8-6.3 0-1.4-.5-2.6-1.3-3.5.1-.3.6-1.7-.1-3.5 0 0-1.1-.4-3.6 1.3a12.4 12.4 0 00-6.6 0C6.2 2.5 5.1 2.9 5.1 2.9c-.7 1.8-.2 3.2-.1 3.5a5 5 0 00-1.3 3.5c0 4.9 3 6 5.8 6.3-.4.4-.6.9-.6 1.8V22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>GitHub page</a>
+        </div>
+        <div class="guide-pills" aria-label="How zapped elements are stored">
+          <span>Stored on this device</span>
+          <span>Undo one at a time</span>
+          <span>Survives a reload</span>
+        </div>
+      </div>
+      <aside class="guide-summary" aria-label="Zapped element summary">
+        <div class="summary-label">What is hidden</div>
+        <div class="metric-grid">
+          <div class="metric"><div class="n" id="element-count">0</div><div class="l">Elements</div></div>
+          <div class="metric"><div class="n" id="site-count">0</div><div class="l">Sites</div></div>
+        </div>
+        <p class="summary-copy">Right-click anything on a page and choose <strong>WardenOne &rsaquo; Zap this element</strong> to add to this list.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="guide-section" id="saved">
+    <div class="guide-wrap">
+      <div class="guide-section-head">
+        <div><div class="guide-kicker">Saved rules</div><h2>Everything you have hidden.</h2></div>
+        <p>A rule is written the moment you zap something, so it is still gone after a reload. Undo removes the rule and brings the element back on any page already open.</p>
+      </div>
+
+      <section class="guide-panel" aria-label="Saved zapped elements">
+        <div class="panel-head">
+          <div><span class="panel-kicker">By site</span><h2>Zapped elements</h2></div>
+        </div>
+        <div class="toolbar">
+          <input class="search" id="zap-search" type="search" placeholder="Search sites or selectors" autocomplete="off" aria-label="Search zapped elements">
+          <button class="reset" id="zap-reset" type="button">Reset all</button>
+        </div>
+        <div class="status" id="zap-status" role="status" aria-live="polite"></div>
+        <div id="site-list"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<footer class="guide-footer">
+  <div class="guide-wrap guide-footer-inner">
+    <span><strong>Local only.</strong> These rules stay on this device.</span>
+    <span>Undo updates the saved rule and any matching open page.</span>
+  </div>
+</footer>
+<script src="hidden-elements.js"></script>
+</body>
+</html>

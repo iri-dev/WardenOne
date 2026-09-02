@@ -669,9 +669,24 @@
         apply: function (target, thisArg, args) {
           var out = Reflect.apply(target, thisArg, args);
           try {
-            if (masterEnabled() && out instanceof HTMLIFrameElement && out.src === "about:blank" && out.contentWindow) {
-              out.contentWindow.fetch = self.fetch;
-              out.contentWindow.Request = Request;
+            if (masterEnabled() && out instanceof HTMLIFrameElement && out.src === "about:blank") {
+              /* A sandboxed frame without allow-scripts cannot run scripts, so it
+                 has no use for a fetch -- and reaching into its contentWindow is
+                 what Chrome reports as "Blocked script execution in 'about:blank'
+                 because the document's frame is sandboxed". YouTube makes those
+                 frames routinely, so the console filled with a warning about a
+                 write that could never have helped. */
+              var sandboxAttr = null;
+              /* Only skip on positive evidence of a sandbox. If the attribute
+                 cannot be read at all, assume the frame is ordinary and hook it
+                 -- failing the other way would silently stop hooking every
+                 about:blank frame, which is the thing this proxy exists for. */
+              try { sandboxAttr = out.getAttribute ? out.getAttribute("sandbox") : null; } catch (_) { sandboxAttr = null; }
+              var scriptsBlocked = typeof sandboxAttr === "string" && !/(^|\s)allow-scripts(\s|$)/.test(sandboxAttr);
+              if (!scriptsBlocked && out.contentWindow) {
+                out.contentWindow.fetch = self.fetch;
+                out.contentWindow.Request = Request;
+              }
             }
           } catch (_) {}
           return out;

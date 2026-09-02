@@ -491,6 +491,34 @@ async function main() {
     ok("master off leaves player response ads intact", rawResponse.adPlacements && rawResponse.playerAds && rawResponse.adSlots);
   }
 
+  {
+    /* The appendChild proxy hands every about:blank iframe our fetch, so ad code
+       inside one still goes through the hooks. YouTube also makes SANDBOXED
+       about:blank frames, and reaching into the contentWindow of one that cannot
+       run scripts is what Chrome reports as "Blocked script execution in
+       'about:blank' because the document's frame is sandboxed" -- a console full
+       of warnings about a write that could never have helped.
+
+       Read out of the shipped guard rather than restated, so a rewrite of the
+       condition is what gets tested. */
+    const guard = /var scriptsBlocked = ([^;]+);/.exec(src);
+    ok("the sandbox guard is in the iframe proxy", !!guard);
+    if (guard) {
+      const skips = new Function("sandboxAttr", "return " + guard[1] + ";");
+      ok("an ordinary about:blank frame still gets our fetch", skips(null) === false);
+      ok("a frame allowed to run scripts still gets it", skips("allow-scripts") === false);
+      ok("and when allow-scripts is not first", skips("allow-popups allow-scripts") === false);
+      ok("a fully sandboxed frame is left alone", skips("") === true);
+      ok("so is one sandboxed without allow-scripts", skips("allow-forms allow-modals") === true);
+      /* Substring matching would read allow-scripts-extra as permission. */
+      ok("a lookalike token does not count as permission", skips("allow-scripts-extra") === true);
+      /* Unreadable attribute must fall toward hooking: failing the other way
+         silently stops hooking every about:blank frame, which is the thing this
+         proxy exists for. Two suite checks caught exactly that. */
+      ok("an unreadable sandbox attribute does not disable the hook", skips(undefined) === false);
+    }
+  }
+
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 }

@@ -11,11 +11,20 @@ const ROOT = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
 const css = read('theme.css');
 const source = read('theme.js');
-const pages = [
-  'popup.html', 'history.html', 'network.html', 'onboarding.html', 'permissions.html', 'extensions.html',
-  'api-keys.html', 'download-review.html', 'cert-error.html',
-  'safe-browsing-block.html', 'redirect-warning.html',
-];
+/* Read off disk rather than listed here. notifications.html shipped with a broken
+   dark mode for exactly as long as this was a hand-written list: the page was
+   never added to it, so nothing noticed that it never declared a page name, and
+   with no name none of theme.css's dark rules could reach it -- the rows stayed
+   pale while the text went light, and every setting label went white on white.
+   Any page that loads the shared theme is now covered the day it is created. */
+const pages = fs.readdirSync(ROOT)
+  .filter((file) => file.endsWith('.html'))
+  .filter((file) => /<link rel="stylesheet" href="theme\.css">/.test(read(file)))
+  .sort();
+assert(pages.length >= 12, 'the theme page scan found only ' + pages.length + ' pages');
+for (const expected of ['popup.html', 'history.html', 'notifications.html', 'onboarding.html']) {
+  assert(pages.includes(expected), 'the theme page scan stopped finding ' + expected);
+}
 
 for (const page of pages) {
   const html = read(page);
@@ -25,13 +34,76 @@ for (const page of pages) {
   assert(html.indexOf('theme.css') < html.indexOf('theme.js'), page + ' must load the palette before the controller');
 }
 
+
+/* ---- the shared guide shell ---------------------------------------------- *
+ * The DNS, permissions and API-key guides established what a WardenOne page
+ * looks like: a dark topbar with the brand and section links, a hero carrying an
+ * eyebrow, one headline, a lead and a summary card, then titled sections, then a
+ * footer. guide-shell.css is that layout extracted. Activity, the notification
+ * centre and the zapped-element manager each grew their own layout first and
+ * each looked like a dialog that had kept growing; they are on the shell now.
+ * Checked by reading which pages load it, so a fourth is covered automatically. */
+const shellCss = read('guide-shell.css');
+assert(/\.guide-hero::after\s*\{[\s\S]*?linear-gradient\(180deg, rgba\(236, 224, 247, 0\)/.test(shellCss),
+  'the hero ends at a hard edge instead of fading into the page');
+assert(/\.guide-brand::after\s*\{[\s\S]*?width: 1px/.test(shellCss),
+  'the topbar has no hairline between the brand and the links');
+/* Only the hero eyebrow carries the live dot; a kicker on every section head
+   would make the page look like it is reporting six separate things. */
+assert(/\.guide-eyebrow::before \{/.test(shellCss) && !/\.guide-kicker::before/.test(shellCss),
+  'the section kickers have been given the hero eyebrow dot');
+const shellPages = pages.filter((file) => /<link rel="stylesheet" href="guide-shell\.css">/.test(read(file)));
+assert(shellPages.length >= 3,
+  'only ' + shellPages.length + ' pages use the shared shell: ' + shellPages.join(', '));
+for (const expected of ['history.html', 'notifications.html', 'hidden-elements.html']) {
+  assert(shellPages.includes(expected), expected + ' no longer uses the shared guide shell');
+}
+
+for (const page of shellPages) {
+  const html = read(page);
+  const name = (html.match(/<html[^>]+data-wardenone-page="([^"]+)"/) || [])[1];
+  assert(name, page + ' declares no page name');
+  /* The shell styles itself through a page-name list. A page that loads the
+     sheet but is not in that list gets the markup and none of the layout. */
+  assert(shellCss.includes('data-wardenone-page="' + name + '"'),
+    page + ' loads guide-shell.css but the sheet has no rules scoped to "' + name + '"');
+  /* The landmarks. Missing any one of them means the page has drifted back to a
+     layout of its own rather than the one the guides established.
+
+     Matched as whole class tokens, not substrings: a substring test for
+     guide-topbar is satisfied by guide-topbar-inner, so renaming the topbar
+     away left this passing with no topbar on the page. */
+  const classTokens = new Set();
+  for (const m of html.matchAll(/class="([^"]*)"/g)) {
+    m[1].split(/\s+/).filter(Boolean).forEach((token) => classTokens.add(token));
+  }
+  for (const landmark of ['guide-topbar', 'guide-brand', 'guide-nav', 'guide-hero',
+    'guide-eyebrow', 'guide-lead', 'guide-section', 'guide-section-head', 'guide-footer']) {
+    assert(classTokens.has(landmark), page + ' is missing the shell landmark .' + landmark);
+  }
+  /* One headline per page, in the hero, the way every guide does it. */
+  assert((html.match(/<h1[\s>]/g) || []).length === 1,
+    page + ' should have exactly one <h1>, in its hero');
+  assert(/guide-credit">Developer <strong>iri\.dev<\/strong>/.test(html),
+    page + ' is missing the shared developer credit');
+  /* The pieces that were missing and made these read as a different product:
+     no buttons in the hero at all, and a hero that stopped at a hard line
+     instead of fading into the page. */
+  assert(html.includes('guide-hero-actions'), page + ' has no action buttons in its hero');
+  assert((html.match(/class="guide-btn primary"/g) || []).length === 1,
+    page + ' should offer exactly one primary hero action');
+}
+
 const popupHtml = read('popup.html');
 const popupSource = read('popup.js');
 const onboardingHtml = read('onboarding.html');
-const inlineStyle = (page) => {
-  const match = read(page).match(/<style>([\s\S]*?)<\/style>/);
-  assert(match, page + ' must keep its page-specific stylesheet');
-  return match[1];
+const pageStyle = (page) => {
+  const html = read(page);
+  const match = html.match(/<style>([\s\S]*?)<\/style>/);
+  if (match) return match[1];
+  const shared = /<link rel="stylesheet" href="guide-shell\.css">/.test(html);
+  assert(shared, page + ' must load its page-specific or shared guide stylesheet');
+  return read('guide-shell.css');
 };
 assert(!/data-wardenone-theme="system"/.test(popupHtml + onboardingHtml), 'theme controls must not offer System');
 assert((popupHtml.match(/data-wardenone-theme="light"/g) || []).length >= 2, 'popup must offer Light in the header and Interface section');
@@ -50,9 +122,14 @@ assert(/cover-frame::before[\s\S]*?rgba\(48,\s*32,\s*58,\s*0\)[\s\S]*?cover-fram
 
 const originalLightSignatures = {
   'history.html': [
-    /--panel:#fbf6fe;[\s\S]*?--panel-2:#f2def2;[\s\S]*?--panel-3:#dec5ed;/,
-    /linear-gradient\(135deg, rgba\(91,56,122,\.96\), rgba\(142,67,169,\.92\) 52%, rgba\(218,100,166,\.88\)\)/,
-    /\.row\{[\s\S]*?background:#f7f1fb;[\s\S]*?\.row:nth-child\(even\)\{[\s\S]*?background:#efe6f5;/,
+    /--guide-paper:\s*var\(--wo-surface-raised, #fff\);[\s\S]*?--guide-mist:\s*var\(--wo-surface-muted, #f2def2\);/,
+    /* The house topbar, as the DNS, permissions and API-key guides draw it. This
+       used to pin a flat 112deg dark gradient, which is what made these pages
+       look like a different product beside those three. */
+    /\.guide-topbar\s*\{[\s\S]*?linear-gradient\(135deg, rgba\(91, 56, 122, \.96\), rgba\(142, 67, 169, \.92\) 52%, rgba\(218, 100, 166, \.88\)\)/,
+    /\.guide-nav a::after\s*\{[\s\S]*?linear-gradient\(90deg, #b06fd6, #df6ca9\)/,
+    /\.guide-credit::before\s*\{[\s\S]*?background: #49c879/,
+    /\.activity-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1\.35fr\) minmax\(340px, \.65fr\)/,
   ],
   'network.html': [
     /--paper: #fff;[\s\S]*?--paper-soft: #fbf6fe;[\s\S]*?--mist: #f2def2;[\s\S]*?--mist-strong: #dec5ed;/,
@@ -91,14 +168,41 @@ const originalLightSignatures = {
   ],
 };
 for (const [page, signatures] of Object.entries(originalLightSignatures)) {
-  const styles = inlineStyle(page);
+  const styles = pageStyle(page);
   for (const signature of signatures) {
     assert(signature.test(styles), page + ' must retain the established light-mode colors and surfaces');
   }
 }
 
-const unscopedLightOverrides = /:root\[data-wardenone-page="(?:history|network|permissions|api-keys|download-review|cert-error|safe-browsing-block|redirect-warning)"\](?!\[data-wardenone-theme-resolved="dark"\])/g;
-assert(!unscopedLightOverrides.test(css), 'shared page-specific surface overrides must be scoped to dark mode');
+/* Also derived. A page added to theme.css but not to this list would be free to
+   ship a light-mode override that leaks into dark, which is the same failure the
+   page scan above exists to stop. popup is the one deliberate exception: it
+   carries three overrides that apply in both themes. */
+const themedPageNames = [...new Set([...css.matchAll(/data-wardenone-page="([^"]+)"/g)].map((m) => m[1]))];
+assert(themedPageNames.length >= 10, 'theme.css names only ' + themedPageNames.length + ' pages');
+assert(themedPageNames.includes('notifications'), 'theme.css has no rules for the notification centre');
+const lightLeakExempt = new Set(['popup']);
+for (const name of themedPageNames) {
+  if (lightLeakExempt.has(name)) continue;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+  const unscoped = new RegExp(
+    ':root\\[data-wardenone-page="' + escaped + '"\\](?!\\[data-wardenone-theme-resolved="dark"\\])', 'g');
+  assert(!unscoped.test(css),
+    name + ': page-specific surface overrides must be scoped to dark mode');
+}
+/* The exemption has to stay a real one. If popup's unscoped rules ever go away,
+   this list should shrink rather than sit here excusing nothing. */
+assert(/:root\[data-wardenone-page="popup"\](?!\[data-wardenone-theme-resolved="dark"\])/.test(css),
+  'popup no longer needs its light-leak exemption -- drop it from lightLeakExempt');
+
+/* The notification centre's rows come from the activity page's stylesheet, fills
+   and all, so its dark mode needs the same overrides history's does. */
+for (const selector of ['.row', '.row:nth-child(even)', '.rulehead', '.settings-nav', '.item', '.day']) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+  assert(new RegExp(':root\\[data-wardenone-page="notifications"\\]\\[data-wardenone-theme-resolved="dark"\\] '
+    + escaped + '\\s*\\{').test(css),
+    'the notification centre has no dark fill for ' + selector);
+}
 
 function darkBlockSource(stylesheet) {
   const match = stylesheet.match(/:root\[data-wardenone-theme-resolved="dark"\]\s*\{([\s\S]*?)\n\}/);

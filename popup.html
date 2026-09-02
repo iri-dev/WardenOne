@@ -386,6 +386,8 @@
   .nav-btn { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--plum); }
   .nav-btn svg { flex: none; opacity: 0.85; }
   .nav-btn:hover { color: #7d39b8; background: #ecdcf7; }
+  .notification-count { min-width:18px; height:18px; padding:0 5px; display:inline-grid; place-items:center; border-radius:999px; background:#bd4f83; color:#fff; font-size:9.5px; line-height:1; }
+  .notification-count[hidden] { display:none; }
   .ck { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink); padding:4px 0; cursor:pointer; }
   .ck.ck-2 { align-items:flex-start; }
   .ck .ck-t { display:block; line-height:1.35; }
@@ -1453,6 +1455,10 @@
       <div><div class="name">Silent mode</div><div class="desc">Full protection stays on, but WardenOne hides non-critical popups, badges, and notifications. The download bar still appears.</div></div>
       <label class="tg"><input type="checkbox" data-key="silentMode"><span class="track"></span><span class="knob"></span></label>
     </div>
+    <div class="row">
+      <div><div class="name">Element Zapper</div><div class="desc">Adds the page tool and right-click menu for hiding an element on a site. Zapped elements are saved locally, stay hidden after reload, and can be restored below.</div></div>
+      <label class="tg"><input type="checkbox" data-key="elementZapper"><span class="track"></span><span class="knob"></span></label>
+    </div>
     </div>
 
     <div class="card-group" style="margin-top:10px;">
@@ -1469,6 +1475,17 @@
         <div class="desc" style="margin-bottom:7px;">Checks public breach records for this domain so you know its track record.</div>
         <button class="btn" id="ss-sitebreach" style="width:100%;">Check breach history</button>
         <div id="ss-sitebreach-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+      </div>
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:3px;">Element Zapper for this page</div>
+        <div class="desc" style="margin-bottom:7px;">Point at one thing you do not want to see &mdash; a banner, a sidebar, a widget &mdash; and it is hidden and saved locally for this site. Selection pauses after that one item, and the confirmation stays until you press Done. Ctrl+Z can still undo the zap afterwards.</div>
+        <button class="btn" id="ss-pick" style="width:100%;">Start Element Zapper</button>
+        <div id="ss-pick-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
+        <details id="hidden-list-wrap" style="margin-top:9px;display:block;border:1px solid var(--wo-border);border-radius:10px;padding:7px 9px;">
+          <summary id="hidden-list-summary" style="cursor:pointer;font-size:11.5px;font-weight:700;color:var(--ink-soft);">Saved on this site</summary>
+          <div id="hidden-list" style="margin-top:7px;"></div>
+          <button class="btn" id="manage-hidden-elements" style="width:100%;margin-top:8px;padding:6px 10px;font-size:11px;">Manage all zapped elements</button>
+        </details>
       </div>
       <div class="row" style="display:block;">
         <div class="name" style="margin-bottom:3px;">Check password exposure</div>
@@ -1640,7 +1657,9 @@
   </div>
   <div class="note" id="note">Changes apply on the next page load. The master switch and per-site allowlist take effect on reload.</div>
 
-  <div style="padding:0 16px 6px;">
+  <!-- Space above, not just below: Verify & repair sat directly under the note
+       explaining the Save button, so it read as part of that sentence. -->
+  <div style="padding:14px 16px 6px;">
     <button class="btn" id="verify-repair" style="width:100%;">Verify &amp; repair</button>
     <div id="repair-result" style="font-size:11px;color:var(--ink-faint);line-height:1.5;margin-top:8px;display:none;"></div>
   </div>
@@ -1648,6 +1667,10 @@
     <button class="btn nav-btn" id="open-activity">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       Activity log
+    </button>
+    <button class="btn nav-btn" id="open-notifications">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><path d="M18 9a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 21h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Notification centre
     </button>
     <button class="btn nav-btn" id="open-network">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" stroke="currentColor" stroke-width="2"/></svg>
@@ -1680,6 +1703,7 @@
       <span class="wo-footer-copy"><strong>How to get your API keys</strong><small>Free, optional, for a deeper scan</small></span>
     </a>
   </div>
+<script src="notification-schema.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

@@ -25,6 +25,15 @@ const CONTENT = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 const SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const HISTORY = fs.readFileSync(path.join(ROOT, 'history.js'), 'utf8');
 
+/* The warning registry lives outside the sliced guard but the guard now calls it. */
+const WARN_START = SOURCE.indexOf('const __woWarn={');
+const NL = String.fromCharCode(10);
+const WARN_END = SOURCE.indexOf(NL + '  };', WARN_START);
+assert(WARN_START >= 0 && WARN_END > WARN_START, 'shipped warning-registry markers are missing');
+const WARN_REGISTRY_SOURCE = SOURCE.slice(WARN_START, WARN_END + 5);
+assert(/strip\(text\)\{/.test(WARN_REGISTRY_SOURCE),
+  'the warning registry no longer subtracts its own panels from the scanned page');
+
 const start = CONTENT.indexOf('if(WO.commandPasteGuard)try{');
 const end = CONTENT.indexOf('if(WO.fakeUpdateDetector&&WO_TOP)try{', start);
 assert(start >= 0 && end > start, 'shipped ClickFix guard markers are missing');
@@ -107,14 +116,21 @@ function run(options) {
       return 'native-exec';
     },
   };
-  const warnRegistry = {
-    seen: new Map(),
-    up(id) {
-      const node = this.seen.get(id);
-      return !!(node && node.isConnected);
-    },
-    mark(id, node) { this.seen.set(id, node); },
-  };
+  /* Built from the shipped registry rather than copied. The hand-written copy
+     that used to sit here had already drifted: the real one grew a strip() that
+     subtracts WardenOne's own panel text from anything reading the page, and this
+     stub had not, so the guard silently read an empty page and every instruction
+     phrase stopped being recognised. */
+  const warnRegistry = vm.runInNewContext(
+    WARN_REGISTRY_SOURCE + NL + '__woWarn;', { Map, String });
+  /* A WardenOne panel already on the page, registered the way the real one is,
+     so a test can ask what the guard reads back once its own warning is there. */
+  if (opts.ownPanelText) {
+    const own = makeNode('div');
+    own.textContent = String(opts.ownPanelText);
+    own.isConnected = true;
+    warnRegistry.mark('wo-cmd-warn', own);
+  }
   const navigator = {
     userActivation: { isActive: opts.userActivated === true },
     clipboard: {
@@ -145,6 +161,8 @@ function run(options) {
     Array,
     Date,
     __woWarn: warnRegistry,
+    /* Declared outside the slice; false unless a test asks for an assistant page. */
+    conversationHost: !!opts.conversationHost,
     log(type, detail) { logs.push({ type, detail }); },
     woOn(target, type, fn) { listeners[type] = fn; },
     woObserve(fn) { observers.push(fn); return { disconnect() {} }; },
@@ -156,6 +174,7 @@ function run(options) {
   if (opts.userActivated && listeners.pointerdown) listeners.pointerdown({ isTrusted: true });
   return {
     logs,
+    warnRegistry,
     writes,
     itemWrites,
     execCalls,
@@ -211,6 +230,83 @@ async function check(name, fn) {
       assert.strictEqual(activity.type, 'warned_clickfix_instruction', 'wrong type for: ' + body);
       assert.strictEqual(activity.detail.instruction, expected, 'wrong label for: ' + body);
     }
+  });
+
+  /* ---- the panel must not be its own evidence ---------------------------- *
+   * WardenOne appends its warning to the page it is warning about, and the guard
+   * reads document.body. The panel says "A real CAPTCHA never asks you to open
+   * DevTools, Console, PowerShell, Terminal, or the Run dialog and paste
+   * something", which matches its own verification-steps AND paste-guidance
+   * detectors. So the warning kept its own evidence alive and rebuilt itself the
+   * moment it was dismissed -- reported from the field on chatgpt.com. */
+  const OWN_PANEL = 'ClickFix warning - do not paste this'
+    + ' These verification steps look like a ClickFix scam'
+    + ' A real CAPTCHA never asks you to open DevTools, Console, PowerShell,'
+    + ' Terminal, or the Run dialog and paste something. This is a common'
+    + ' ClickFix trick used to run malware or steal account data.'
+    + " Got it, I won't paste it";
+
+  await check('WardenOne does not raise a warning about its own warning', () => {
+    const page = 'A quiet page about gardening. ' + OWN_PANEL;
+    const runtime = run({ body: page, ownPanelText: OWN_PANEL });
+    assert.strictEqual(runtime.activities().length, 0,
+      'the panel text was read back as evidence against the page');
+    assert.strictEqual(runtime.body.children.length, 0, 'a panel was raised over its own text');
+  });
+
+  await check('the same words from the page itself are still caught', () => {
+    /* The control for the check above. Identical text, not registered as
+       WardenOne's own UI, must still be found -- otherwise stripping the panel
+       would be indistinguishable from switching the detector off. */
+    const page = 'A quiet page about gardening. ' + OWN_PANEL;
+    const runtime = run({ body: page });
+    assert(runtime.activities().length > 0,
+      'stripping WardenOne panels also blinded the guard to the page');
+  });
+
+  await check('stripping only removes the panel, not the page around it', () => {
+    /* A real attack on a page that also happens to be carrying a WardenOne
+       panel must survive the subtraction. */
+    const attack = "Verify you're human. Press Win+R, then paste this into PowerShell.";
+    const runtime = run({ body: OWN_PANEL + ' ' + attack, ownPanelText: OWN_PANEL });
+    assert(runtime.activities().length > 0,
+      'a real attack was thrown away along with the panel text');
+  });
+
+  /* ---- an assistant surface is a conversation, not a page talking ---------- */
+  await check('an assistant page is not read as instructing you', () => {
+    const body = "Verify you're human. Press Win+R, then paste this into PowerShell to continue.";
+    const ordinary = run({ body });
+    assert(ordinary.activities().length > 0, 'the control page did not trigger at all');
+    const assistant = run({ body, conversationHost: true });
+    assert.strictEqual(assistant.activities().length, 0,
+      'asking an assistant how ClickFix works raised a ClickFix warning');
+    assert.strictEqual(assistant.body.children.length, 0,
+      'an assistant page was given a warning panel');
+  });
+
+  /* ---- dismissing means dismissed ---------------------------------------- *
+   * "Got it, I won't paste it" used to remove the node and set nothing, so the
+   * next scan built it straight back. Source-level, because the dismissal lives
+   * on a click handler the slice cannot fire without a DOM. */
+  await check('dismissing the warning is remembered', () => {
+    assert(/clickfixDismissedLevel=Math\.max\(clickfixDismissedLevel,\s*level\)/.test(SOURCE),
+      'the dismiss button records nothing, so the warning returns');
+    assert(/if\(level<=clickfixDismissedLevel\)return;/.test(SOURCE),
+      'a dismissed warning is not suppressed on the next scan');
+    assert((SOURCE.match(/clickfixDismissedLevel=0/g) || []).length >= 2,
+      'the dismissal is not cleared when the route changes');
+  });
+
+  await check('a worse signal still gets through a dismissal', () => {
+    /* Suppression is by level, not a flag: being told about a weak instruction
+       hint must not silence a later correlated command. */
+    const gate = SOURCE.slice(SOURCE.indexOf('showCommandPanel=('),
+      SOURCE.indexOf('showCommandPanel=(') + 900);
+    assert(/level<=clickfixDismissedLevel/.test(gate),
+      'the dismissal gate is not a level comparison');
+    assert(!/clickfixDismissed(?:Level)?\s*&&/.test(gate),
+      'the dismissal was reduced to a boolean, which silences worse findings too');
   });
 
   await check('instruction-only text stays a weak, unblocked signal', () => {

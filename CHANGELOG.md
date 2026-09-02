@@ -17,6 +17,26 @@ as the work happened.
 
 ### Added
 
+- Brought Notifications and Activity into the same page system as the DNS,
+  Permissions, and API-key guides, with the shared dark top bar, wide guide hero,
+  paper ledger panels, responsive navigation, and clearer local-storage summaries.
+- Restored the pre-centre reading-time fade as the shipped default for every toast
+  category, including migration of the five old persistent defaults. The content
+  runtime and Notification Centre now share the same defaults and type mapping, with
+  a regression test that fails if a real page notice falls into history-only system
+  messages or the two copies drift again.
+- Rebuilt the Notification Centre as a WardenOne page: Recent history with day groups
+  and expandable stacked events, plus Preferences for each notification type (Off /
+  History only / Toast / Persistent), duration presets, toast corner, history
+  retention, grouping, toolbar unread badge, and sound. Sounds stay off until opted
+  in; volume, sound mode, per-type sound and Preview live on the same page. A single
+  notification manager owns history, toasts, tray notices, badge and offscreen audio
+  so individual protections do not invent their own alert code. Existing Activity
+  history remains the complete audit trail.
+- Matched the Notification and Activity heroes to WardenOne's purple guide-page
+  treatment, removed the redundant unread pill from the hero, added clearer lilac
+  separation between preference rows, and made the pinned toolbar unread count an
+  opt-in setting. Existing installs migrate that toolbar count to off.
 - Added a fully local Extension Security Centre. Every installed extension now gets
   three separate, explainable signals: an exact-ID lookup against a bundled incident
   database, its current Chrome capability reach, and its version/permission change
@@ -316,6 +336,16 @@ as the work happened.
 
 ### Fixed
 
+- Fixed Element Zapper trapping clicks meant for its own Keep, Undo, Done and
+  Cancel controls. Zap now saves one selection, pauses further picking, reports
+  save failures honestly, and keeps its confirmation open until Done; oversized
+  selections have clear Hide anyway and Cancel choices. Saved elements are
+  replayed independently of AdShield, remain visible and reversible in the popup
+  even through parent-domain inheritance, and stay undoable with Ctrl+Z after
+  Done without taking Ctrl+Z away from text fields and editors. The Zapper is now
+  a searchable setting, its current-site list is a collapsed dropdown, and a new
+  local manager groups every saved zap by site with search and individual Undo
+  controls that update matching open pages. Its decorative emoji were removed.
 - Fixed shared hosting platforms being mistaken for one site. GitHub Pages,
   Netlify, Vercel, Cloudflare Pages, S3-style storage and other multi-tenant hosts
   now keep tenant identities separate across allowlists, trusted destinations,
