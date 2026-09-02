@@ -342,9 +342,19 @@ checkCommand('memory shield tests', ['tools/test-memory-shield.js']);
 checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--check']);
 /* The harness embeds a copy of the shipped toast block so it opens by double-click
    rather than needing a server. A copy can go stale, and nothing was checking this
-   one -- so a toast added to the engine could be missing from the page people use
-   to test toast timings, with nothing to say so. */
-checkCommand('toast harness matches the shipped toast block', ['tools/build-toast-harness.js', '--check']);
+   one -- so a toast added to the engine could be missing from the page used to test
+   toast timings, with nothing to say so.
+
+   Guarded on presence: both files are deliberately gitignored (see .gitignore),
+   because the page and its builder only make sense as a pair and neither is
+   shipped. CI has neither, so an unguarded check fails there for a file the repo
+   is not supposed to contain -- which is exactly what happened when this was
+   added without the guard. */
+if (exists('tools/build-toast-harness.js') && exists('tools/toast-harness.html')) {
+  checkCommand('toast harness matches the shipped toast block', ['tools/build-toast-harness.js', '--check']);
+} else {
+  console.log('[skip] toast harness is not present in this checkout');
+}
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
 checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
