@@ -340,6 +340,11 @@ checkContentBuild();
 checkCommand('security posture checks', ['tools/check-security-posture.js']);
 checkCommand('memory shield tests', ['tools/test-memory-shield.js']);
 checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--check']);
+/* The harness embeds a copy of the shipped toast block so it opens by double-click
+   rather than needing a server. A copy can go stale, and nothing was checking this
+   one -- so a toast added to the engine could be missing from the page people use
+   to test toast timings, with nothing to say so. */
+checkCommand('toast harness matches the shipped toast block', ['tools/build-toast-harness.js', '--check']);
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
 checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);

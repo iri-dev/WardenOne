@@ -382,12 +382,19 @@ function renderRules() {
          silent, is a control that does nothing. Disabled rather than hidden so
          the row does not change shape as you use it. */
       const sync = () => {
-        const off = mode.value === 'off' || mode.value === 'history';
-        dur.disabled = off || mode.value === 'persistent';
-        snd.disabled = off || !NC.settings.soundEnabled;
+        /* Only "Off" means nothing can ever appear, so only "Off" greys the rest
+           of the row out. "History only" used to as well, which meant the four
+           categories that ship that way -- trackers, list updates, experimental
+           warnings and system messages -- had no editable timing at all: to set
+           one you had to switch the category to Toast, set it, and switch it
+           back. A setting you cannot reach without turning the thing on first is
+           not a setting. Duration stays disabled on "Until dismissed" because
+           that mode has no duration by definition. */
+        const silent = mode.value === 'off';
+        dur.disabled = silent || mode.value === 'persistent';
+        snd.disabled = silent || !NC.settings.soundEnabled;
         hear.disabled = snd.disabled || snd.value === 'none';
-        /* Nothing to time on a category that never appears. */
-        timeIt.disabled = off;
+        timeIt.disabled = silent;
       };
       sync();
 

@@ -252,8 +252,28 @@ async function main() {
   assert(/function previewToast\(value, position, title\)/.test(pageJs)
     && /el\('div', 'tt', title \|\| /.test(pageJs),
     'the preview does not say which notice it is showing');
-  assert(/timeIt\.disabled = off/.test(pageJs),
-    'a category that never appears has nothing to time');
+  /* Only "Off" greys the row out. "History only" used to as well, which left the
+     four categories that ship that way with no editable timing: the only way to
+     set one was to switch the category to Toast, set it, and switch it back.
+     "Until dismissed" keeps its duration disabled because it has no duration. */
+  assert(/const silent = mode\.value === 'off';/.test(pageJs)
+    && /timeIt\.disabled = silent;/.test(pageJs),
+    'a history-only category cannot have its timing set');
+  assert(/dur\.disabled = silent \|\| mode\.value === 'persistent';/.test(pageJs),
+    'the duration control is not gated on the right modes');
+  {
+    /* Read the shipped defaults directly -- `context` is not built until later in
+       this file. Every category that can ever appear must have a timing that is
+       reachable without changing its mode first. */
+    const box = {};
+    new Function('box', read('notification-schema.js')
+      + ';box.rules = WARDEN_NOTIFICATION_RULES;')(box);
+    const unreachable = Object.entries(box.rules)
+      .filter(([, d]) => d.mode === 'off' || d.mode === 'persistent')
+      .map(([id]) => id);
+    assert(!unreachable.length,
+      'these ship in a mode whose timing cannot be edited: ' + unreachable.join(', '));
+  }
 
   assert(/\.guide-panel, \.panel, \.dashboard-panel\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*0/.test(guideCss),
     'guide panels are not sized by their content');
@@ -403,11 +423,18 @@ async function main() {
     const NEWLINE = String.fromCharCode(10);
     const contentSrc = read('src/content.js');
     const tableStart = contentSrc.indexOf('TOAST_INFO=');
-    const tableEnd = contentSrc.indexOf(NEWLINE + '      },', tableStart);
+    /* The table closes with "};" at six spaces. The end marker used to be "},"
+       at six spaces, which never matches that close -- so the scan ran straight
+       past TOAST_INFO into NOTIFICATION_RULE_DEFAULTS below it and counted 70
+       "toast types" when there are 56. The extra 14 were the notification
+       categories themselves, which is why they all looked mapped. */
+    const tableEnd = contentSrc.indexOf(NEWLINE + '      };', tableStart);
     assert(tableStart >= 0 && tableEnd > tableStart, 'the shipped toast table markers are missing');
     const toastTypes = [...contentSrc.slice(tableStart, tableEnd)
       .matchAll(/^\s{8}([a-z_][a-z0-9_]*):\s*\{/gm)].map((m) => m[1]);
-    assert(toastTypes.length >= 60, 'only ' + toastTypes.length + ' toast types found -- the scan broke');
+    assert(toastTypes.length >= 50, 'only ' + toastTypes.length + ' toast types found -- the scan broke');
+    assert(!contentSrc.slice(tableStart, tableEnd).includes('NOTIFICATION_RULE_DEFAULTS'),
+      'the toast-type scan is reading past TOAST_INFO into the defaults table below it');
 
     /* Plus the categories the worker asks for by name, read from the callers
        rather than listed here. */
