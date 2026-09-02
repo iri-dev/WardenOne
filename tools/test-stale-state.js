@@ -52,197 +52,121 @@ function sourceBetween(src, a, b) {
 }
 
 // ===========================================================================
-// M1: the badge recovers its count from Chrome after a worker suspension.
+// M1: the badge count survives a worker suspension.
+//
+// This used to drive a model that read the count back out of the toolbar with
+// chrome.action.getBadgeText and held in-flight tabs in a `badgeRecovering` map.
+// That model is gone: the counts are now mirrored into chrome.storage.session,
+// which survives a worker sleep and is cleared with the browser session -- the
+// same lifetime as the tab IDs the counts are keyed by. Parsing the visible text
+// was the thing worth removing, because a tab with no block override shows the
+// GLOBAL unread badge, so "7 unread" could come back as "8 blocked".
+//
+// The guarantees below are the ones that model owes, not the old one's markers:
+// nothing is lost while recovery is in flight, what was stored comes back, and
+// counts for tabs that no longer exist do not.
 // ===========================================================================
 function loadBadge(options) {
   const opts = options || {};
   const written = [];
+  const session = Object.assign({}, opts.session || {});
+  const reads = [];
   const sandbox = {
-    Number,
-    Object,
-    String,
-    parseInt,
-    console,
+    Number, Object, String, Math, JSON, console,
+    // Held rather than run: the 3s belt-and-braces finish must not pre-empt the
+    // storage read the test is deliberately holding open.
+    setTimeout: (fn) => { sandbox.__timers.push(fn); return sandbox.__timers.length; },
     counts: Object.create(null),
     chrome: {
       runtime: { lastError: null },
       action: {
-        setBadgeText: ({ tabId, text }) => { written.push({ tabId, text }); },
+        setBadgeText: (o) => { written.push(o); },
         setBadgeBackgroundColor() {},
-        getBadgeText: ({ tabId }, cb) => {
-          // Deferred, like the real async call, so concurrent blocks land in the gap.
-          const answer = Object.prototype.hasOwnProperty.call(opts.badges || {}, tabId)
-            ? opts.badges[tabId] : '';
-          (sandbox.__queue = sandbox.__queue || []).push(() => cb(answer));
+      },
+      storage: {
+        session: {
+          // Deferred, like the real async call, so operations land in the gap.
+          get: (key, cb) => { reads.push(() => cb({ [key]: session[key] })); },
+          set: (items, cb) => { Object.assign(session, items); if (cb) cb(); },
         },
+      },
+      tabs: {
+        query: (_q, cb) => cb((opts.openTabs || []).map((id) => ({ id }))),
       },
     },
   };
+  sandbox.__timers = [];
   vm.createContext(sandbox);
   vm.runInContext(
-    sourceBetween(BG, 'function setBadge(tabId) {', '// Tabs whose count we are recovering')
-    + sourceBetween(BG, '// Tabs whose count we are recovering', '\n\nfunction messageHostFromText')
-      .replace(/^[\s\S]*?const badgeRecovering/, 'const badgeRecovering'),
+    sourceBetween(BG, 'function setBadge(tabId) {', 'const TOKEN_EXFIL_HISTORY_COOLDOWN_MS'),
     sandbox, { filename: 'background.js:badge' });
   return {
     sandbox,
-    bump: (tabId) => vm.runInContext('bumpBadge(' + tabId + ')', sandbox),
-    drain: () => { const q = sandbox.__queue || []; sandbox.__queue = []; q.forEach((f) => f()); },
-    count: (tabId) => vm.runInContext('counts[' + tabId + ']', sandbox),
     written,
+    session,
+    begin: () => vm.runInContext('beginBadgeCountRecovery()', sandbox),
+    bump: (tabId) => vm.runInContext('bumpBadge(' + tabId + ')', sandbox),
+    remove: (tabId) => vm.runInContext('removeBadge(' + tabId + ')', sandbox),
+    // Let the held storage read answer, which is what finishes recovery.
+    settle: () => { const q = reads.splice(0); q.forEach((f) => f()); },
+    count: (tabId) => vm.runInContext('counts[' + tabId + ']', sandbox),
+    ready: () => vm.runInContext('badgeCountsReady', sandbox),
   };
 }
 
 {
-  // A tab we already know about: no round trip, straight increment.
-  const b = loadBadge({ badges: { 7: '47' } });
-  vm.runInContext('counts[7] = 3', b.sandbox);
+  // A block that lands before recovery has answered must not be dropped.
+  const b = loadBadge({ openTabs: [7] });
+  b.begin();
   b.bump(7);
-  check('a tab already counted increments without asking Chrome',
-    b.count(7) === 4 && (b.sandbox.__queue || []).length === 0, 'count=' + b.count(7));
+  check('a block during recovery is not counted yet', b.count(7) === undefined,
+    'counts[7]=' + b.count(7));
+  check('and nothing is painted from a half-known state', b.written.length === 0,
+    b.written.length + ' writes');
+  b.settle();
+  check('once recovery answers, the queued block is applied', b.count(7) === 1,
+    'counts[7]=' + b.count(7));
+  check('and the badge is painted', b.written.some((w) => w.tabId === 7 && w.text === '1'),
+    JSON.stringify(b.written));
 }
 
 {
-  // The finding's case: worker resumed, counts empty, Chrome still shows 47.
-  const b = loadBadge({ badges: { 7: '47' } });
+  // What storage.session held comes back, and later blocks add to it.
+  const b = loadBadge({ session: { __wardenone_badge_counts: { 7: 5 } }, openTabs: [7] });
+  b.begin();
+  b.settle();
+  check('a stored count is recovered', b.count(7) === 5, 'counts[7]=' + b.count(7));
   b.bump(7);
-  check('nothing is written before Chrome has answered',
-    b.written.length === 0, JSON.stringify(b.written));
-  b.drain();
-  check('the count continues from the badge instead of restarting at 1',
-    b.count(7) === 48, 'count=' + b.count(7));
-  check('...and the badge shows it',
-    b.written.length === 1 && b.written[0].text === '48', JSON.stringify(b.written));
+  check('and counting continues from it', b.count(7) === 6, 'counts[7]=' + b.count(7));
 }
 
 {
-  // Blocks arriving during the round trip must not be lost, and must not each recover.
-  const b = loadBadge({ badges: { 7: '10' } });
+  // Tab IDs are reused. A count for a tab that closed while the worker slept
+  // must not be handed to whatever tab inherits that ID.
+  const b = loadBadge({
+    session: { __wardenone_badge_counts: { 7: 5, 99: 3 } },
+    openTabs: [7],
+  });
+  b.begin();
+  b.settle();
+  check('a count for a tab that is still open survives', b.count(7) === 5);
+  check('a count for a tab that is gone is dropped', b.count(99) === undefined,
+    'counts[99]=' + b.count(99));
+}
+
+{
+  // Zero writes null, not '': an empty string is a tab-scoped blank that masks
+  // the global unread badge, which is exactly what this model exists to keep separate.
+  const b = loadBadge({ openTabs: [7] });
+  b.begin();
+  b.settle();
   b.bump(7);
-  b.bump(7);
-  b.bump(7);
-  check('concurrent blocks start only one recovery',
-    (b.sandbox.__queue || []).length === 1, 'queued=' + (b.sandbox.__queue || []).length);
-  b.drain();
-  check('every block during the gap is counted', b.count(7) === 13, 'count=' + b.count(7));
+  b.remove(7);
+  vm.runInContext('setBadge(7)', b.sandbox);
+  const last = b.written.filter((w) => w.tabId === 7).pop();
+  check('an emptied badge is cleared with null, not a blank string',
+    last && last.text === null, JSON.stringify(last));
 }
-
-{
-  // A genuinely new tab, and a navigation reset, must not inherit anything.
-  const b = loadBadge({ badges: {} });
-  b.bump(9);
-  b.drain();
-  check('a tab with no badge starts at 1', b.count(9) === 1, 'count=' + b.count(9));
-
-  const reset = loadBadge({ badges: { 9: '31' } });
-  vm.runInContext('counts[9] = 0', reset.sandbox);
-  reset.bump(9);
-  check('a navigation reset to 0 does not recover the old number',
-    reset.count(9) === 1 && (reset.sandbox.__queue || []).length === 0, 'count=' + reset.count(9));
-}
-
-{
-  // Per-tab isolation.
-  const b = loadBadge({ badges: { 1: '5', 2: '99' } });
-  b.bump(1);
-  b.bump(2);
-  b.drain();
-  check('tabs recover independently',
-    b.count(1) === 6 && b.count(2) === 100, b.count(1) + ' / ' + b.count(2));
-}
-
-{
-  // Junk badge text must not poison the count.
-  // '1e9' parses as 1 in base 10 -- parseInt stops at the 'e' -- which is the conservative answer
-  // and the one we want. We only ever write plain integers, so this is defence against a value
-  // that should not exist rather than a case to support.
-  for (const [text, expected] of [['', 1], ['abc', 1], ['-4', 1], ['1e9', 2], ['12x', 13]]) {
-    const b = loadBadge({ badges: { 3: text } });
-    b.bump(3);
-    b.drain();
-    check('badge text ' + JSON.stringify(text) + ' -> ' + expected,
-      b.count(3) === expected, 'got ' + b.count(3));
-  }
-}
-
-{
-  // A tab can close while getBadgeText is still in flight. onRemoved clears both maps, and the
-  // callback used to fall back to `|| 1` and put the entry straight back -- leaking a counter for
-  // a tab that no longer exists, for the rest of the worker's life.
-  const b = loadBadge({ badges: { 7: '20' } });
-  b.bump(7);
-  check('a recovery is in flight', (b.sandbox.__queue || []).length === 1);
-
-  // What chrome.tabs.onRemoved does.
-  vm.runInContext('delete counts[7]; delete badgeRecovering[7];', b.sandbox);
-  b.drain();
-
-  check('a tab closing mid-recovery does not resurrect its counter',
-    b.count(7) === undefined, 'counts[7]=' + JSON.stringify(b.count(7)));
-  check('...and no badge is written for the closed tab',
-    b.written.length === 0, JSON.stringify(b.written));
-}
-
-{
-  // The whole start-up ordering, not just the helper.
-  //
-  // Every check above lifts bumpBadge on its own, and that is why they all passed while the badge
-  // was still wrong in a real worker: at module evaluation the worker walked every tab and called
-  // setBadge while counts was empty, writing '' and destroying the number bumpBadge was about to
-  // recover from. The helper produced 48; the real ordering produced ["", "1"] and finished at 1.
-  //
-  // So this runs both pieces in the order the worker does.
-  const written = [];
-  const queue = [];
-  const sandbox = {
-    Number, Object, String, parseInt, console,
-    counts: Object.create(null),
-    chrome: {
-      runtime: { lastError: null },
-      tabs: { query: (_q, cb) => cb([{ id: 7 }]) },
-      action: {
-        setBadgeText: ({ tabId, text }) => { written.push({ tabId, text }); },
-        setBadgeBackgroundColor() {},
-        // Chrome's retained value for a tab that was showing 47 before the worker slept.
-        getBadgeText: ({ tabId }, cb) => queue.push(() => cb(tabId === 7 ? '47' : '')),
-      },
-    },
-  };
-  vm.createContext(sandbox);
-  vm.runInContext(
-    sourceBetween(BG, 'function setBadge(tabId) {', '// Tabs whose count we are recovering')
-    + sourceBetween(BG, '// Tabs whose count we are recovering', '\n\nfunction messageHostFromText')
-      .replace(/^[\s\S]*?const badgeRecovering/, 'const badgeRecovering')
-    // The seed block sits after messageHostFromText, so it needs its own end marker.
-    + '\n' + sourceBetween(BG, '// Seed the counters from what Chrome', '\n\nchrome.runtime.onMessage.addListener'),
-    sandbox, { filename: 'background.js:startup' });
-
-  // Start-up runs, then its badge reads come back.
-  const startup = queue.splice(0, queue.length);
-  startup.forEach((f) => f());
-
-  check('start-up writes nothing to the badge',
-    written.length === 0, JSON.stringify(written));
-  check('start-up seeds the counter from what Chrome was showing',
-    vm.runInContext('counts[7]', sandbox) === 47, 'counts[7]=' + vm.runInContext('counts[7]', sandbox));
-
-  // Now a block arrives on that tab.
-  vm.runInContext('bumpBadge(7)', sandbox);
-  queue.splice(0, queue.length).forEach((f) => f());
-
-  check('the next block continues from 47 rather than restarting',
-    vm.runInContext('counts[7]', sandbox) === 48,
-    'counts[7]=' + vm.runInContext('counts[7]', sandbox));
-  check('...and the badge never showed a blank or a 1',
-    written.length === 1 && written[0].text === '48', JSON.stringify(written));
-}
-
-check('all three increment sites go through the helper',
-  (BG.match(/bumpBadge\(/g) || []).length >= 4
-  && !/counts\[\w+(\.\w+)?\] = \(counts\[/.test(BG),
-  'bumpBadge uses=' + (BG.match(/bumpBadge\(/g) || []).length);
-check('an in-flight recovery is dropped when the tab closes',
-  /delete badgeRecovering\[tabId\];/.test(BG));
 
 // ===========================================================================
 // M5: the veto flags are computed, not latched.

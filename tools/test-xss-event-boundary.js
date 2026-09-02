@@ -20,7 +20,12 @@ const vm = require('vm');
 const background = fs.readFileSync('background.js', 'utf8');
 const bridge = fs.readFileSync('bridge.js', 'utf8');
 const start = background.indexOf("const UNSAFE_DETAIL_KEYS = new Set(");
-const end = background.indexOf('// Seed the counters from what Chrome is already showing', start);
+/* Anchored on CODE, not on a comment. The end marker used to be the line
+   "// Seed the counters from what Chrome is already showing", which described a
+   badge model that has since been replaced -- so rewording it took this whole
+   suite out. beginBadgeCountRecovery() is the call that actually follows the
+   region under test. */
+const end = background.indexOf(String.fromCharCode(10) + 'beginBadgeCountRecovery();', start);
 assert(start >= 0 && end > start, 'background Activity-boundary source markers are missing');
 
 const sandbox = {

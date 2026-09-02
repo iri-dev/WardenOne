@@ -49,6 +49,9 @@ function area() {
   return api;
 }
 
+/* Declared before the stub that reports them. */
+const DRIVEN_TAB_IDS = [7001, 7002, 7003];
+
 function loadBackground() {
   const badge = [];
   const chrome = {
@@ -63,7 +66,15 @@ function loadBackground() {
     },
     storage: { local: area(), session: area(), sync: area(), onChanged: ev() },
     tabs: {
-      query: (q, cb) => { if (cb) { setImmediate(() => cb([])); return undefined; } return Promise.resolve([]); },
+      /* The tabs this suite drives, because a real browser would report them.
+         Returning [] made the worker's badge-count recovery treat every count as
+         belonging to a closed tab and prune it, so the badge always read 0 and
+         the ceiling checks below could never pass. */
+      query: (q, cb) => {
+        const open = DRIVEN_TAB_IDS.map((id) => ({ id, url: 'https://ad-heavy.example/p' }));
+        if (cb) { setImmediate(() => cb(open)); return undefined; }
+        return Promise.resolve(open);
+      },
       get: (id) => Promise.resolve({ id, url: 'https://example.com/' }),
       update: () => Promise.resolve({}), remove: () => Promise.resolve(), discard: () => Promise.resolve({}),
       sendMessage: (id, m, cb) => { if (cb) setImmediate(() => cb(undefined)); return Promise.resolve(undefined); },
@@ -130,6 +141,8 @@ function loadBackground() {
 }
 
 let failures = 0;
+/* Checks that cannot run until the worker's badge-count recovery has settled. */
+const deferred = [];
 function check(name, cond, detail) {
   if (cond) { console.log('  [ok] ' + name); return; }
   failures++;
@@ -179,10 +192,15 @@ function badgeCountFor(tabId) {
 {
   const max = declaredMax('rg-block');
   const refusals = drive('rg-block', 7001, max + 100, { type: 'blocked_ad_request' });
-  const reached = badgeCountFor(7001);
-  check('rg-block reaches its declared ceiling of ' + max + ', not half of it',
-    reached === max, 'badge reached ' + reached);
   check('rg-block refuses exactly the overflow', refusals === 100, refusals + ' refusals');
+  /* The badge is no longer written in the same tick: counts are recovered from
+     storage.session first, and anything arriving during that read is queued and
+     replayed. So the count is asserted once recovery has settled. */
+  deferred.push(() => {
+    const reached = badgeCountFor(7001);
+    check('rg-block reaches its declared ceiling of ' + max + ', not half of it',
+      reached === max, 'badge reached ' + reached);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -192,8 +210,11 @@ function badgeCountFor(tabId) {
   const max = declaredMax('rg-block');
   drive('rg-block', 7002, max + 50, { type: 'blocked_ad_request' });
   const fresh = drive('rg-block', 7003, 10, { type: 'blocked_ad_request' });
-  check('a fresh tab is unaffected by another tab hitting its ceiling',
-    fresh === 0 && badgeCountFor(7003) === 10, 'refusals=' + fresh + ' badge=' + badgeCountFor(7003));
+  check('a fresh tab spends none of another tab budget', fresh === 0, fresh + ' refusals');
+  deferred.push(() => {
+    check('and a fresh tab counts its own blocks in full',
+      badgeCountFor(7003) === 10, 'badge=' + badgeCountFor(7003));
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +248,8 @@ function badgeCountFor(tabId) {
 }
 
 setTimeout(() => {
+  /* Everything that had to wait for the asynchronous badge recovery. */
+  deferred.forEach((fn) => fn());
   if (failures) {
     console.error('[fail] message rate limit tests: ' + failures + ' failure(s)');
     process.exit(1);
