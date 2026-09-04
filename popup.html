@@ -81,6 +81,36 @@
   .shield svg { width: 24px; height: 24px; }
   .title { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: 0.01em; color: var(--ink); }
   .sub { color: var(--ink-faint); font-size: 11px; font-weight: 600; margin-top: 1px; }
+  /* Advanced blocks. Closed by default: nobody needs filter syntax for WardenOne
+     to work, so it must not read as something left unfinished. */
+  .adv-tag { font-size: 9px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700;
+    color: var(--ink-faint); border: 1px solid var(--line); border-radius: 999px;
+    padding: 2px 7px; margin-left: 7px; vertical-align: middle; }
+  .adv-block { padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  .adv-block > summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+  .adv-block > summary::-webkit-details-marker { display: none; }
+  .adv-block > summary::after { content: '▸'; position: absolute; right: 16px; color: var(--ink-faint); }
+  .adv-block[open] > summary::after { content: '▾'; }
+  .adv-block > summary { position: relative; padding-right: 18px; }
+  .adv-body { margin-top: 9px; display: flex; flex-direction: column; gap: 8px; }
+  .adv-textarea, .adv-input {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--paper-soft, rgba(255,255,255,.5)); color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; line-height: 1.5; padding: 8px 10px; resize: vertical;
+  }
+  .adv-input { font-size: 11px; resize: none; }
+  .adv-actions { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .adv-actions .adv-input { flex: 1; min-width: 140px; }
+  .adv-status { font-size: 10.5px; color: var(--ink-faint); line-height: 1.45; }
+  .adv-errors { display: flex; flex-direction: column; gap: 4px; }
+  .adv-errors div { font-size: 10.5px; line-height: 1.45; color: var(--warn); }
+  .adv-list-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0;
+    border-top: 1px solid var(--line); }
+  .adv-list-row .name { font-size: 12px; }
+  .adv-list-row .desc { font-size: 10.5px; }
+  .adv-list-row .adv-row-actions { display: flex; gap: 5px; flex: none; }
+  .adv-list-row .btn { padding: 5px 9px; font-size: 10.5px; }
   .master {
     margin: 6px 16px 4px;
     padding: 14px 16px;
@@ -1378,6 +1408,49 @@
       <div><div class="name" id="list-status">Blocklist: built-in</div><div class="desc" id="list-updated">Updates automatically once a day</div></div>
       <button class="btn" id="update-now" style="flex:none;padding:8px 14px;">Update now</button>
     </div>
+    </div>
+
+<!-- Advanced. Two things a bundled list can never cover: a rule only this person
+     wants, and a list only this person subscribes to. Neither gets a shield
+     toggle -- a rule you wrote is on because you wrote it, and each list carries
+     its own switch. Nobody needs to come here for WardenOne to work, which is
+     why it sits behind a closed <details>. -->
+<h2>My filters <span class="adv-tag">Advanced</span></h2>
+    <div class="card-group">
+    <details class="adv-block" id="user-rules-block">
+      <summary><span class="name">My rules</span><span class="desc" id="user-rules-summary">Write your own blocking rules</span></summary>
+      <div class="adv-body">
+        <div class="desc">One rule per line. <code>||ads.example.com^</code> blocks requests to a host,
+          <code>@@||example.com^</code> stops blocking one, <code>example.com##.promo</code> hides an element
+          on one site, and <code>##.promo</code> hides it everywhere. Lines starting with <code>!</code> are notes.
+          Anything WardenOne cannot use is listed underneath rather than silently ignored.</div>
+        <textarea id="user-rules-text" class="adv-textarea" spellcheck="false" rows="8"
+          aria-label="My filter rules" placeholder="! one rule per line&#10;||ads.example.com^&#10;example.com##.newsletter-popup"></textarea>
+        <div class="adv-actions">
+          <button class="btn primary" id="user-rules-save" type="button">Save rules</button>
+          <button class="btn" id="user-rules-export" type="button">Export</button>
+          <button class="btn" id="user-rules-import" type="button">Import</button>
+          <input type="file" id="user-rules-file" accept=".txt,text/plain" hidden>
+        </div>
+        <div class="adv-status" id="user-rules-status" role="status" aria-live="polite"></div>
+        <div class="adv-errors" id="user-rules-errors"></div>
+      </div>
+    </details>
+    <details class="adv-block" id="custom-lists-block" style="border-bottom:none;">
+      <summary><span class="name">Custom lists</span><span class="desc" id="custom-lists-summary">Subscribe to a filter list</span></summary>
+      <div class="adv-body">
+        <div class="desc">Subscribe to a list someone else maintains &mdash; a country-specific annoyance list,
+          a niche tracker list, your own hosted one. It is fetched over https, kept on this device, and
+          re-checked when you ask. A list that fails to refresh keeps the copy it already had.</div>
+        <div class="adv-actions">
+          <input type="url" id="custom-list-url" class="adv-input" placeholder="https://example.com/my-filter-list.txt"
+            aria-label="Filter list address" spellcheck="false">
+          <button class="btn primary" id="custom-list-add" type="button">Subscribe</button>
+        </div>
+        <div class="adv-status" id="custom-lists-status" role="status" aria-live="polite"></div>
+        <div id="custom-lists-rows"></div>
+      </div>
+    </details>
     </div>
 <h2 id="eyeshield-title">EyeShield</h2>
     <section class="eyeshield-panel" id="eyeshield-panel" aria-labelledby="eyeshield-title">

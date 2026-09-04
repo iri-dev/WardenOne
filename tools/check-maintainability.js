@@ -210,6 +210,7 @@ function checkContentBuild() {
   'tools/test-learned-grabber-scope.js',
   'tools/test-manual-check-toast.js',
   'tools/test-blocked-site-list.js',
+  'tools/test-user-filters.js',
   'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
@@ -493,6 +494,7 @@ checkCommand('YouTube compatibility-pause tests', ['tools/test-youtube-compat.js
 checkCommand('learned grabber scope tests', ['tools/test-learned-grabber-scope.js']);
 checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);
 checkCommand('blocked site list tests', ['tools/test-blocked-site-list.js']);
+checkCommand('user filter rules and custom lists', ['tools/test-user-filters.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
