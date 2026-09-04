@@ -3864,6 +3864,255 @@ async function refreshCustomList(id) {
   return { ok: true, list: Object.assign({}, lists[idx], { text: undefined }) };
 }
 
+// ======================= Network / filtering logger =======================
+// The Activity Centre answers "a security event happened". This answers a
+// different question: "this exact request happened, WardenOne blocked or allowed
+// it, and THIS rule from THIS list is why."
+//
+// It exists because of the features next to it. Once someone can write their own
+// rules, subscribe to someone else's list and zap elements, they can also break a
+// site -- and without a way to see which rule did it, the only debugging move
+// left is turning things off at random.
+//
+// Two decisions shape everything below.
+//
+// 1. CAPTURE ONLY WHILE THE LOGGER IS OPEN. A webRequest listener over <all_urls>
+//    runs on every request on every page, and that is not hypothetical here: the
+//    YouTube scrub lag was a DNS-rebind listener doing exactly this, firing once
+//    per storyboard image. So the listeners are attached when a logger page
+//    connects and detached the moment the last one goes away. Ordinary browsing
+//    pays nothing.
+//
+// 2. NOTHING IS KEPT. The buffer is in memory, bounded, and dies with the worker.
+//    URLs are redacted of anything that looks like a secret BEFORE they are
+//    stored, so the log cannot become the leak. Nothing reaches disk unless the
+//    reader exports it deliberately.
+const LOG_MAX = 1000;
+const LOG_RING = [];
+const LOG_PENDING = new Map();     // requestId -> entry, while in flight
+const LOG_PORTS = new Set();
+let LOG_SEQ = 0;
+let LOG_ATTACHED = false;
+let LOG_FLUSH_TIMER = 0;
+let LOG_DIRTY = [];
+
+const LOG_STATIC_RULESETS = {
+  grabbers: 'IP-logger list',
+  adshield_easylist: 'AdShield / EasyList',
+  trackers: 'Tracker list',
+  easyprivacy: 'EasyPrivacy',
+};
+
+/* Which part of WardenOne owns a dynamic rule id. Built lazily so it does not
+   depend on where these constants sit in the file. Sorted high-to-low: the owner
+   is the first base at or below the id. */
+let __logRuleBases = null;
+function logRuleBases() {
+  if (__logRuleBases) return __logRuleBases;
+  const owners = [
+    [USER_RULE_BASE, 'My rules'],
+    [LEARNED_RULE_BASE, 'Blocked sites'],
+    [TRACKER_RULE_BASE, 'Tracker blocking'],
+    [GRABBER_FEED_RULE_BASE, 'IP-logger feed'],
+    [MINER_FEED_RULE_BASE, 'Cryptominer feed'],
+    [SAFE_SEARCH_RULE_BASE, 'SafeSearch'],
+    [NEVER_BLOCK_ALLOW_RULE_BASE, 'Never-block allowance'],
+    [ALLOWLIST_RULE_BASE, 'Your allowlist'],
+    [MEDIA_COMPAT_RULE_BASE, 'Media compatibility'],
+    [LOGIN_COMPAT_RULE_BASE, 'Login compatibility'],
+    [IP_LOOKUP_BLOCK_RULE_BASE, 'IP-lookup block'],
+    [SCRIPT_SHIELD_RULE_BASE, 'Script Shield'],
+    [FINGERPRINT_SCRIPT_RULE_BASE, 'Fingerprint-script block'],
+    [GOOGLE_SEARCH_ALLOW_RULE_BASE, 'Search compatibility'],
+    [REBIND_QUARANTINE_RULE_BASE, 'DNS-rebind quarantine'],
+    [INTRANET_NET_RULE_BASE, 'Intranet guard'],
+    [OPTION_RULE_BASE, 'A protection setting'],
+    [DYNAMIC_RULE_BASE, 'Blocklist'],
+  ].filter((p) => typeof p[0] === 'number');
+  owners.sort((a, b) => b[0] - a[0]);
+  __logRuleBases = owners;
+  return owners;
+}
+function logRuleSource(ruleId, rulesetId) {
+  if (rulesetId && rulesetId !== '_dynamic' && rulesetId !== '_session') {
+    return LOG_STATIC_RULESETS[rulesetId] || rulesetId;
+  }
+  const id = Number(ruleId);
+  if (!Number.isFinite(id)) return '';
+  for (const [base, name] of logRuleBases()) if (id >= base) return name;
+  return 'A network rule';
+}
+
+/* Anything that looks like a credential is replaced before the entry is stored,
+   not when it is displayed. A log that holds the token is a log that leaks it. */
+const LOG_SECRET_PARAM = /^(access_?token|id_?token|refresh_?token|token|auth|authorization|api_?key|apikey|key|secret|password|passwd|pwd|session|session_?id|sid|sig|signature|code|jwt|bearer|otp|pin|email|e_?mail|phone|ssn)$/i;
+function logRedactUrl(raw) {
+  const text = String(raw || '');
+  try {
+    const u = new URL(text);
+    let redacted = false;
+    for (const k of Array.from(u.searchParams.keys())) {
+      const v = String(u.searchParams.get(k) || '');
+      /* Long opaque values are tokens whatever they are called. */
+      if (LOG_SECRET_PARAM.test(k) || v.length > 64) { u.searchParams.set(k, '[removed]'); redacted = true; }
+    }
+    if (u.hash && u.hash.length > 12) { u.hash = '#[removed]'; redacted = true; }
+    let out = u.toString();
+    if (out.length > 512) { out = out.slice(0, 512) + '…'; redacted = true; }
+    return { url: out, redacted };
+  } catch (_) {
+    return { url: text.slice(0, 512), redacted: text.length > 512 };
+  }
+}
+
+function logHostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
+}
+function logParty(url, initiator) {
+  if (!initiator) return 'unknown';
+  const a = registrableDomainBg(logHostOf(url));
+  const b = registrableDomainBg(logHostOf(initiator));
+  if (!a || !b) return 'unknown';
+  return a === b ? 'first' : 'third';
+}
+
+function logPush(entry) {
+  LOG_RING.push(entry);
+  while (LOG_RING.length > LOG_MAX) {
+    const dropped = LOG_RING.shift();
+    if (dropped) LOG_PENDING.delete(dropped.rid);
+  }
+  logQueue(entry);
+}
+function logQueue(entry) {
+  if (!LOG_PORTS.size) return;
+  LOG_DIRTY.push(entry);
+  if (LOG_FLUSH_TIMER) return;
+  /* Batched: a busy page can fire hundreds of requests a second and posting each
+     one separately would make the logger itself the slow thing on the page. */
+  LOG_FLUSH_TIMER = setTimeout(() => {
+    LOG_FLUSH_TIMER = 0;
+    const batch = LOG_DIRTY;
+    LOG_DIRTY = [];
+    for (const port of LOG_PORTS) {
+      try { port.postMessage({ kind: 'entries', entries: batch }); } catch (_) {}
+    }
+  }, 160);
+}
+
+function logOnBeforeRequest(d) {
+  if (!d || !d.url || /^chrome-extension:/i.test(d.url)) return;
+  const red = logRedactUrl(d.url);
+  const entry = {
+    id: ++LOG_SEQ,
+    rid: d.requestId,
+    at: Date.now(),
+    method: d.method || 'GET',
+    url: red.url,
+    redacted: red.redacted,
+    host: logHostOf(d.url),
+    type: d.type || 'other',
+    party: d.type === 'main_frame' ? 'first' : logParty(d.url, d.initiator || d.documentUrl),
+    tabId: typeof d.tabId === 'number' ? d.tabId : -1,
+    page: logHostOf(d.initiator || d.documentUrl || ''),
+    action: 'pending',
+    rule: '',
+    source: '',
+  };
+  LOG_PENDING.set(d.requestId, entry);
+  logPush(entry);
+}
+function logSettle(d, action, extra) {
+  const entry = LOG_PENDING.get(d && d.requestId);
+  if (!entry) return;
+  LOG_PENDING.delete(d.requestId);
+  entry.action = action;
+  if (extra) Object.assign(entry, extra);
+  logQueue(entry);
+}
+function logOnCompleted(d) { logSettle(d, 'allowed', { status: d && d.statusCode }); }
+function logOnErrorOccurred(d) {
+  const err = String((d && d.error) || '');
+  /* ERR_BLOCKED_BY_CLIENT is what declarativeNetRequest produces. Anything else
+     is the network failing on its own and must not be reported as a block. */
+  const blocked = /BLOCKED_BY_CLIENT|BLOCKED_BY_ADMINISTRATOR/i.test(err);
+  logSettle(d, blocked ? 'blocked' : 'failed', { error: err.replace(/^net::/, '') });
+}
+/* The exact rule, when Chrome will tell us. onRuleMatchedDebug only fires for an
+   UNPACKED extension, so a store build gets the action but not the rule -- and
+   the page says so plainly rather than inventing an attribution. */
+function logOnRuleMatched(info) {
+  const req = info && info.request;
+  const rule = info && info.rule;
+  if (!req || !rule) return;
+  const entry = LOG_PENDING.get(req.requestId)
+    || LOG_RING.slice(-60).reverse().find((e) => e.rid === req.requestId);
+  if (!entry) return;
+  entry.rule = String(rule.ruleId == null ? '' : rule.ruleId);
+  entry.source = logRuleSource(rule.ruleId, rule.rulesetId);
+  logQueue(entry);
+}
+
+function logRuleFeedbackAvailable() {
+  try { return !!(chrome.declarativeNetRequest && chrome.declarativeNetRequest.onRuleMatchedDebug); }
+  catch (_) { return false; }
+}
+
+function logAttach() {
+  if (LOG_ATTACHED) return;
+  LOG_ATTACHED = true;
+  const filter = { urls: ['<all_urls>'] };
+  try { chrome.webRequest.onBeforeRequest.addListener(logOnBeforeRequest, filter); } catch (_) {}
+  try { chrome.webRequest.onCompleted.addListener(logOnCompleted, filter); } catch (_) {}
+  try { chrome.webRequest.onErrorOccurred.addListener(logOnErrorOccurred, filter); } catch (_) {}
+  if (logRuleFeedbackAvailable()) {
+    try { chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(logOnRuleMatched); } catch (_) {}
+  }
+}
+function logDetach() {
+  if (!LOG_ATTACHED) return;
+  LOG_ATTACHED = false;
+  try { chrome.webRequest.onBeforeRequest.removeListener(logOnBeforeRequest); } catch (_) {}
+  try { chrome.webRequest.onCompleted.removeListener(logOnCompleted); } catch (_) {}
+  try { chrome.webRequest.onErrorOccurred.removeListener(logOnErrorOccurred); } catch (_) {}
+  if (logRuleFeedbackAvailable()) {
+    try { chrome.declarativeNetRequest.onRuleMatchedDebug.removeListener(logOnRuleMatched); } catch (_) {}
+  }
+  LOG_PENDING.clear();
+}
+
+/* A port, not a message, because a port tells us when the page goes away. The
+   listeners come off the moment the last logger tab closes -- no page should pay
+   for a window somebody forgot they opened. */
+try {
+  chrome.runtime.onConnect.addListener((port) => {
+    if (!port || port.name !== 'wardenone-logger') return;
+    if (!messageSenderIsExtensionPage(port.sender)) { try { port.disconnect(); } catch (_) {} return; }
+    LOG_PORTS.add(port);
+    logAttach();
+    try {
+      port.postMessage({
+        kind: 'hello',
+        entries: LOG_RING.slice(-LOG_MAX),
+        exactRules: logRuleFeedbackAvailable(),
+        max: LOG_MAX,
+      });
+    } catch (_) {}
+    port.onMessage.addListener((msg) => {
+      if (!msg) return;
+      if (msg.kind === 'clear') {
+        LOG_RING.length = 0;
+        LOG_PENDING.clear();
+        try { port.postMessage({ kind: 'cleared' }); } catch (_) {}
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      LOG_PORTS.delete(port);
+      if (!LOG_PORTS.size) logDetach();
+    });
+  });
+} catch (_) {}
+
 // ---- Cryptojacking guard (toggle: blockCryptominers) ----
 // Drive-by mining is a network problem before it is a CPU problem: the miner has to
 // fetch its payload and then reach a pool, and both hops are blockable. Two buckets,

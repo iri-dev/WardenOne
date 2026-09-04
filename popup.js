@@ -1610,6 +1610,15 @@ function wireMyFilters() {
     });
   }
 
+  const logger = $('open-logger');
+  if (logger) {
+    logger.addEventListener('click', () => {
+      /* A tab, not a popup window: capture runs for as long as this page is open,
+         so it needs to survive the popup closing the moment you click away. */
+      chrome.tabs.create({ url: chrome.runtime.getURL('logger.html') });
+    });
+  }
+
   const add = $('custom-list-add');
   const url = $('custom-list-url');
   if (add && url) {

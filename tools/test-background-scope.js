@@ -173,8 +173,12 @@ function listenerBlocks() {
 const BLOCKS = listenerBlocks();
 check('the worker still registers listeners with inline callbacks', BLOCKS.length >= 2,
   'found ' + BLOCKS.length);
-const messageBlocks = BLOCKS.filter((b) => b.label.indexOf('onMessage') >= 0);
-check('both onMessage listeners are examined', messageBlocks.length === 2,
+/* runtime.onMessage, not any onMessage. A Port has an onMessage of its own --
+   the network logger uses one -- and that is a different API with a different
+   surface, so counting it here would fail this check for a listener it was never
+   about. What must stay examined is every chrome.runtime.onMessage listener. */
+const messageBlocks = BLOCKS.filter((b) => b.label.indexOf('runtime.onMessage') >= 0);
+check('both runtime.onMessage listeners are examined', messageBlocks.length === 2,
   'found ' + messageBlocks.length + ' — a helper misplaced in an unexamined one would not be caught');
 
 const DECL = /(?:^|[\s;}])(?:async\s+)?(function|const|let|var|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
