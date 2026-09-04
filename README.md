@@ -15,34 +15,17 @@ The all-in-one privacy, security &amp; anti-scam extension for Chromium browsers
 
 </div>
 
-> ## ⚠️ Someone is using WardenOne's name to hand out malware
+> ### ⚠️ WardenOne is a browser extension. It is never an `.exe`.
 >
-> **Please read this if you downloaded WardenOne from anywhere other than this repository.**
+> It is published **only** from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne).
+> It has never been offered as an installer or a setup program, and it never will be. If
+> something using this name asks you to run a program, it isn't mine.
 >
-> On 9 August 2026 I found a copy of this project republished under someone else's account, with
-> the download links pointed at their own website. The file that site gives you is **not
-> WardenOne**. It is not a browser extension at all — it is a Windows program
-> (`exbin.exe`) bundled with an obfuscated script hidden in a file named `certs.txt`,
-> started by a `.bat` file.
->
-> Antivirus vendors classify it as a **trojan loader and browser credential stealer** —
-> Kaspersky as `HEUR:Backdoor.Win32.StealC.gen`, ESET as `Lua/SmartLoader.C`, and VirusTotal
-> labels the family `matanbuchus`.
-> [VirusTotal report](https://www.virustotal.com/gui/file/9baa26a4acec14ecdbfd7e3af73106110012312d0710bc0ecf8093b92e216857).
-> The site distributing it is `ajpc6338.github.io`, and I have reported it to GitHub and
-> Google Safe Browsing.
->
-> **If you ran that file, please assume your browser data was taken.** Change the passwords for
-> anything you were signed into — email first — turn on two-factor authentication where you can,
-> sign out of all sessions on your important accounts so stolen cookies stop working, and run a
-> full scan with your antivirus.
->
-> **WardenOne is only ever published here, at
-> [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne).** It is a browser
-> extension. It has never been offered as an `.exe`, an installer, or a setup program, and it
-> never will be. If something using this name asks you to run a program, it isn't mine.
->
-> I'm sorry this happened to anyone. It's the exact opposite of what I built this for. 💜
+> In August 2026 someone republished this project under their own account with the download
+> links pointed at malware — a credential stealer, not an extension. That account and its site
+> have since been removed by GitHub. **If you downloaded WardenOne from anywhere other than the
+> link above, please read [what happened and what to do](https://iri-dev.github.io/WardenOne/stolen)** —
+> it has the file details, the antivirus verdicts, and the steps to take if you ran it.
 
 <p align="center">
   <img src="docs/onboarding.png" alt="Welcome to WardenOne" width="840">
@@ -315,8 +298,9 @@ person; those three links are the only places it comes from.
 
 WardenOne is published **only** from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne).
 Releases come from that repository and nowhere else. **It is a browser extension &mdash; it is never
-an `.exe`, an installer or a setup program.** See the notice at the top of this page: a copy of this
-project has been used to distribute malware under its name.
+an `.exe`, an installer or a setup program.** A copy of this project was once republished under
+someone else's name with the downloads pointed at malware -- [what happened
+](https://iri-dev.github.io/WardenOne/stolen).
 Releases come from that repository's [Releases](https://github.com/iri-dev/WardenOne/releases) page and nowhere
 else.
 
