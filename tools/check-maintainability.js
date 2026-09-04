@@ -205,8 +205,14 @@ function checkContentBuild() {
   'tools/test-warning-dialogs.js',
   'tools/test-phishing-false-positives.js',
   'tools/test-element-picker.js',
+  'tools/test-engine-mutation-cost.js',
+  'tools/test-youtube-compat.js',
+  'tools/test-learned-grabber-scope.js',
+  'tools/test-manual-check-toast.js',
+  'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
+  'tools/test-eyeshield-yt-player.js',
   'tools/test-protection-health.js',
   'tools/test-twitch-adblock.js',
   'tools/test-twitch-failopen.js',
@@ -297,6 +303,7 @@ function checkContentBuild() {
   'tools/test-guard-lifecycle.js',
   'tools/test-json-prune-stacking.js',
   'tools/test-owned-ui.js',
+  'tools/test-context-checks.js',
   'tools/test-stale-state.js',
   'tools/test-storage-prune-ladder.js',
   // Shipped root scripts. Several of these were only ever parsed incidentally, by whichever
@@ -474,11 +481,18 @@ checkCommand('supplemental list tests', ['tools/test-supplemental-lists.js']);
 checkCommand('list integrity enforcement tests', ['tools/test-list-integrity-enforcement.js']);
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
+checkCommand('EyeShield YouTube player tests', ['tools/test-eyeshield-yt-player.js']);
 checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']);
 checkCommand('phishing confidence tests', ['tools/test-phishing-confidence.js']);
 checkCommand('default agreement tests', ['tools/test-default-agreement.js']);
 checkCommand('pwned password check tests', ['tools/test-pwned-password-check.js']);
 checkCommand('element picker tests', ['tools/test-element-picker.js']);
+checkCommand('engine mutation cost tests', ['tools/test-engine-mutation-cost.js']);
+checkCommand('YouTube compatibility-pause tests', ['tools/test-youtube-compat.js']);
+checkCommand('learned grabber scope tests', ['tools/test-learned-grabber-scope.js']);
+checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);
+checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
+checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);

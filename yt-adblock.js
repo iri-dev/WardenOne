@@ -755,6 +755,17 @@
     };
     installSsapPushCapture = function () {
       if (!masterEnabled()) return;
+      // Array#push is one of the hottest methods on any page, and routing every
+      // call on YouTube through a Proxy costs 15.6ns -> 41.5ns each, measured.
+      // The capture can only ever collect something while this experiment flag
+      // is on, so when the page config has already loaded and says it is off,
+      // installing would slow down every push on the page for ten seconds to
+      // collect nothing. Before the config arrives we genuinely cannot tell, and
+      // catching the early pushes is the whole point, so that case is unchanged
+      // -- this only skips the installs we can prove are pointless, which
+      // includes every yt-navigate-start within a mix, where config is loaded.
+      var ssapFlags = window.yt && window.yt.config_ && window.yt.config_.EXPERIMENT_FLAGS;
+      if (ssapFlags && !ssapFlags.html5_enable_ssap_entity_id) return;
       if (Array.prototype.push !== realPush && Array.prototype.push !== ssapPushProxy) return;
       restoreSsapPushCapture();
       Array.prototype.push = ssapPushProxy;

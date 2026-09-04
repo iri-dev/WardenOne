@@ -437,6 +437,17 @@
       if (parked) { try { window.scrollTo(0, parked); } catch (_) {} }
     } catch (_) {}
   }
+  /* One pending sweep at a time. Both schedulers below fire from a
+     MutationObserver, and neither checked whether a sweep was already queued --
+     so a page whose DOM churns (dragging a video timeline churns it constantly)
+     queued a fresh timer per mutation batch, tens per second, each running the
+     whole sweep. Coalescing means the churn costs one sweep, not one per batch. */
+  let baitSweepTimer = 0;
+  function scheduleConfirmBaitSweep(delay) {
+    if (baitSweepTimer) return;
+    baitSweepTimer = woTimeout(() => { baitSweepTimer = 0; sweepConfirmBait(); }, delay);
+  }
+
   function sweepConfirmBait() {
     const nodes = Array.from(baitPending);
     baitPending.clear();
@@ -520,6 +531,9 @@
   // churns constantly the mutation path would otherwise run it several times a
   // second for nothing.
   let lastGridAt = 0;
+  const GRID_MIN_MS = 500;
+  const GRID_MAX_MS = 8000;
+  let gridInterval = GRID_MIN_MS;
   function boxesInTheWay() {
     const found = [];
     try {
@@ -527,7 +541,13 @@
       const h = window.innerHeight || 0;
       if (w < 150 || h < 120) return found;   // an ad frame is smaller than a page
       const now = Date.now();
-      if (now - lastGridAt < 500) return found;
+      /* Each point below is an elementFromPoint, and each forces layout. On a
+         page being actively dragged the layout is never clean, so all 25 flush
+         for real, twice a second, for a box that is almost never there. The
+         interval stretches while the grid keeps coming back empty and snaps
+         back the moment it finds something, so a real overlay is still caught
+         promptly and an ordinary page stops paying for the search. */
+      if (now - lastGridAt < gridInterval) return found;
       lastGridAt = now;
       const fractions = [0.15, 0.3, 0.5, 0.7, 0.85];
       for (let a = 0; a < fractions.length; a++) {
@@ -542,6 +562,9 @@
         }
       }
     } catch (_) {}
+    gridInterval = found.length
+      ? GRID_MIN_MS
+      : Math.min(GRID_MAX_MS, Math.round(gridInterval * 1.6));
     return found;
   }
 
@@ -572,7 +595,7 @@
     try {
       if (!doc || watchedFrameDocs.has(doc)) return;
       watchedFrameDocs.add(doc);
-      const observer = woObserver(() => { woTimeout(sweepConfirmBait, 30); });
+      const observer = woObserver(() => { scheduleConfirmBaitSweep(30); });
       observer.observe(doc.documentElement || doc, { childList: true, subtree: true });
     } catch (_) {}
   }
@@ -1668,7 +1691,7 @@
           if (node && node.nodeType === 1) { baitPending.add(node); queued = true; }
         }
       }
-      if (queued) woTimeout(sweepConfirmBait, 60);
+      if (queued) scheduleConfirmBaitSweep(60);
     });
     baitObserver.observe(document.documentElement || document, { childList: true, subtree: true });
     // The observer alone was not enough, for two reasons that both bite once.

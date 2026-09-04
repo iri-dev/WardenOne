@@ -48,7 +48,9 @@ function check(name, condition, extra) {
 }
 
 // Lift the real binding rather than restating the derivation rules, which would drift.
-const FROM = '    const WO={},';
+// The chain now begins with the named YouTube pause list, which the derivation
+// below reads -- slicing from `const WO={}` would leave it undefined.
+const FROM = '    const YT_COMPAT_PAUSED=[';
 const TO = '    WO_TOP=window===window.top,';
 const from = SRC.indexOf(FROM);
 const to = SRC.indexOf(TO);
@@ -90,7 +92,9 @@ function runEngine(storeSeed, pageGlobalSeed, hostname) {
   };
 }
 
-const REAL = { enabled: true, detectPhishing: true, paymentCardGuard: true, detectSkimmers: true, blockTokenExfil: true };
+// removeOverlays is carried so the YouTube pause below is observable: it is the
+// one key here that YT_COMPAT_PAUSED names.
+const REAL = { enabled: true, detectPhishing: true, paymentCardGuard: true, detectSkimmers: true, blockTokenExfil: true, removeOverlays: true };
 
 // ---------------------------------------------------------------------------
 // 1. A page that replaces the global and fires the event changes nothing.
@@ -138,11 +142,17 @@ const REAL = { enabled: true, detectPhishing: true, paymentCardGuard: true, dete
 // 3. The compatibility derivations still key off the real host, not a page-supplied one.
 // ---------------------------------------------------------------------------
 {
+  // The Amazon exit is gone; only YouTube pauses anything now, and only by name.
   const amazon = runEngine(REAL, null, 'www.amazon.co.uk');
-  check('the Amazon derivation still applies on a real storefront', amazon.WO.enabled === false);
+  check('a real Amazon storefront gets the ordinary config', amazon.WO.enabled === true);
 
-  const spoof = runEngine(REAL, null, 'amazon.com.evil.tld');
-  check('the Amazon derivation does not apply to a look-alike host', spoof.WO.enabled === true);
+  const yt = runEngine(REAL, null, 'www.youtube.com');
+  check('the YouTube derivation still keys off the real host',
+    yt.WO.enabled === true && yt.WO.removeOverlays === false);
+
+  const spoof = runEngine(REAL, null, 'youtube.com.evil.tld');
+  check('the YouTube derivation does not apply to a look-alike host',
+    spoof.WO.removeOverlays === true);
 }
 
 // ---------------------------------------------------------------------------

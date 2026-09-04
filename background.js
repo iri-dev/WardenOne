@@ -1813,12 +1813,30 @@ function sanitizeContentConfig(raw) {
   return out;
 }
 
+// The learned map is shipped to the page for exactly one purpose: the bridge
+// turns it into learnedGrabberDomains, which the engine merges into
+// grabberDomains and which raises "Known IP-logger detected -- this domain is a
+// known IP-grabber / logger service".
+//
+// It holds two unrelated kinds of entry. learnDomain() writes the grabber kind,
+// and it has a single caller, which always passes 'known IP-grabber behavior'.
+// The right-click "Block this site" writes the other kind, with userBlocked:true
+// and reason 'you blocked this site'. Shipping both meant blocking any site by
+// hand made the engine accuse it of being an IP logger: block twitch.tv, and a
+// page load would announce twitch.tv as a known IP-grabber service.
+//
+// So user blocks are dropped here. That is a claim about the site, and the user
+// deciding they do not want a site is not evidence of anything about it. A
+// domain that is both -- learned as a grabber and later blocked by hand -- is
+// dropped too, which costs nothing: it is blocked, so no page loads to warn on.
 function sanitizeLearnedForContent(raw) {
   const out = {};
   let count = 0;
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   for (const value of Object.keys(source)) {
     if (count >= 1000) break;
+    const entry = source[value];
+    if (entry && typeof entry === 'object' && entry.userBlocked === true) continue;
     const host = String(value || '').replace(/^www\./, '').toLowerCase();
     if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(host)) continue;
     out[host] = true;
@@ -3373,6 +3391,30 @@ let __initTrackerLearner = null;
 let __initLearned = null;
 let __initBlockedDomains = null;
 
+/* The same normalisation WITHOUT the never-block veto, for a site the reader named
+   themselves.
+
+   NEVER_BLOCK_DOMAINS holds youtube.com, google.com, twitch.tv, netflix.com,
+   github.com and the rest, and normalizeLearnedDomain returns '' for every one of
+   them. That guard is right for what it was written for: a false positive in the
+   28k-rule EasyList pack must not break a major site. It is wrong as a veto over
+   somebody deliberately choosing to block a site, and it did not merely refuse --
+   it refused SILENTLY, twice over. wardenSiteHostFromTab ran hostnames through it,
+   so "Block this site" reported "not a normal page" while sitting on YouTube; and
+   applyLearnedRules pruned every entry that normalised to '' and PERSISTED the
+   pruned map, so a block written any other way deleted itself on the next apply. */
+function normalizeUserBlockDomain(value) {
+  try {
+    const host = normalizeAllowlistHost(value);
+    if (!host || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return '';
+    /* Hosting-provider boundaries are lossy, exactly as below. */
+    if (/(?:^|\.)s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/i.test(host)) return host;
+    return registrableDomainBg(host) || host;
+  } catch (_) {
+    return '';
+  }
+}
+
 function normalizeLearnedDomain(value) {
   try {
     const host = normalizeAllowlistHost(value);
@@ -3436,9 +3478,15 @@ async function applyLearnedRules() {
     let changed = false;
     const normalizedLearned = {};
     Object.keys(LEARNED || {}).forEach((raw) => {
-      const d = normalizeLearnedDomain(raw);
-      if (!d || hostMatchesAllowlist(d, allowlist)) { changed = true; return; }
       const cur = LEARNED[raw] || {};
+      /* A block the reader chose keeps the never-block list out of it. An
+         automatic one still honours it -- that is what it is for. Without this
+         split the prune below deletes the reader's choice and writes the deletion
+         back to storage, which is why blocking YouTube never survived. */
+      const d = cur.userBlocked === true
+        ? normalizeUserBlockDomain(raw)
+        : normalizeLearnedDomain(raw);
+      if (!d || hostMatchesAllowlist(d, allowlist)) { changed = true; return; }
       const prev = normalizedLearned[d] || {};
       normalizedLearned[d] = Object.assign({}, cur, prev, {
         firstSeen: Math.min(Number(prev.firstSeen) || Number(cur.firstSeen) || Date.now(), Number(cur.firstSeen) || Number(prev.firstSeen) || Date.now()),
@@ -3455,12 +3503,68 @@ async function applyLearnedRules() {
       .slice(0, LEARNED_MAX);
     const addRules = domains.map((d, i) => ({
       id: LEARNED_RULE_BASE + i,
-      priority: 2000, // above normal block rules so it's decisive, below allowlist
+      /* A site YOU blocked outranks the compatibility allowances; one WardenOne
+         worked out for itself does not.
+
+         YouTube, youtu.be and the login flows each carry an allowAllRequests on
+         main_frame at 95000-96000 so that WardenOne's own blocking cannot break
+         playback or a sign-in. Those exist to stop US breaking a site -- they
+         were never meant to overrule the reader. At 2000 they did exactly that:
+         "Block this site" on YouTube saved the rule, said it had blocked it,
+         and the page then loaded normally, because a 95000 allow beat it.
+         An automatic block stays at 2000, where compatibility still wins. */
+      priority: (LEARNED[d] && LEARNED[d].userBlocked) ? 99000 : 2000,
       action: { type: 'block' },
       condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'] },
     }));
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
-  } catch (e) { console.warn('[WardenOne] learned rules failed', e); }
+    return { ok: true, count: addRules.length };
+  } catch (e) {
+    /* Still logged, but no longer only logged. Swallowing this is what let
+       "Block this site" report success while Chrome had refused the rule. */
+    console.warn('[WardenOne] learned rules failed', e);
+    return { ok: false, error: String((e && e.message) || e || 'unknown') };
+  }
+}
+
+/* A blocked site with a service worker never reaches Chrome's error page.
+
+   YouTube registers one, and an installed worker does not need re-fetching to run:
+   the navigation goes to the worker, the worker's own fetch is refused by the
+   block rule, and it serves its cached offline shell -- so a successfully blocked
+   YouTube renders "Connect to the Internet. You're offline." That reads as a
+   broken browser rather than a site you chose to block.
+
+   Dropping the worker and its cache storage sends the next navigation to the
+   network, where the rule refuses it and Chrome shows its own blocked page.
+   Cookies and localStorage are deliberately NOT touched: unblocking should leave
+   you signed in, and clearing them would look like WardenOne logged you out. */
+async function wardenDropSiteWorker(host) {
+  const clean = String(host || '').replace(/^www\./, '');
+  if (!clean) return false;
+  const origins = [];
+  for (const h of [clean, 'www.' + clean]) {
+    for (const scheme of ['https://', 'http://']) origins.push(scheme + h);
+  }
+  try {
+    await chrome.browsingData.remove({ origins }, { serviceWorkers: true, cacheStorage: true });
+    return true;
+  } catch (_) { return false; }
+}
+
+/* Read the rule back out of Chrome rather than trusting that writing it worked.
+   updateDynamicRules rejects for reasons that have nothing to do with this site
+   -- the rule budget, an id collision, a malformed neighbour -- and every one of
+   them used to surface as "Blocked." followed by the page loading normally. */
+async function wardenBlockRuleLive(host) {
+  try {
+    const rules = await chrome.declarativeNetRequest.getDynamicRules();
+    return (rules || []).some((r) => r && r.action && r.action.type === 'block'
+      && r.condition && Array.isArray(r.condition.requestDomains)
+      && r.condition.requestDomains.indexOf(host) >= 0
+      && Array.isArray(r.condition.resourceTypes)
+      && r.condition.resourceTypes.indexOf('main_frame') >= 0);
+  } catch (_) { return false; }
 }
 // ---- Feed-updatable IP-grabber list -------------------------------------------
 // The static grabber ruleset (rules.json) is frozen at ship time, but grabber operators
@@ -9061,6 +9165,21 @@ try {
     if (prevHost && registrableDomainBg(prevHost) !== registrableDomainBg(newHost)) {
       maybeForgetHost(prevHost, tabId).catch(() => {});
     }
+    /* The right-click menu's block/unblock title, refreshed from a listener that
+       already exists rather than from a second tabs.onUpdated of its own. That
+       event cannot be filtered in Chrome, so every extra listener is another
+       wake of this service worker -- and waking it parses three quarters of a
+       megabyte of script -- on every title, favicon and audible tick of a
+       playing tab. So it runs only on a real navigation: change.url for a new
+       address, and change.status === 'complete' for a reload of the SAME address
+       -- which is the case that matters most here, because blocking a site
+       reloads it to the identical URL and lands on Chrome's error page, and
+       without the status arm the entry would still read "Block" there. Both fire
+       a bounded number of times per navigation, never on the per-tick attribute
+       churn. Active tab only, because no other tab's menu can open. */
+    if (change && (change.url || change.status === 'complete') && tab && tab.active === true) {
+      void refreshWardenBlockMenuTitle(tab);
+    }
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
     // The heap answer first, because on a warm worker it is both correct and immediate. Only when
@@ -12053,6 +12172,11 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
      handlers could run, so engine repair and navigation attribution were inert. */
   'wo-engine-check',
   'wo-nav-signal',
+  /* The right-click report. It carries no data the worker acts on beyond "a menu
+     is opening in your tab" -- the host is taken from the sender's own tab, never
+     from the message -- so the worst a page can do with it is relabel its own
+     entry, which is what the entry is about anyway. */
+  'menu-opening',
 ]);
 const TAB_CONTEXT_RATE_LIMITS = {
   // Every tab-allowed kind needs an entry. rg-block is the highest-volume one --
@@ -12104,6 +12228,9 @@ const TAB_CONTEXT_RATE_LIMITS = {
      can be frequent on media pages, so its worker-side ceiling matches the bridge. */
   'wo-engine-check': { max: 8, windowMs: 60000 },
   'wo-nav-signal': { max: 180, windowMs: 60000 },
+  /* A right-click is a hand movement; a page firing more than one a second is
+     not reporting menus, so the ceiling is generous but real. */
+  'menu-opening': { max: 60, windowMs: 60000 },
 };
 const TAB_SAFE_BROWSING_CONTEXTS = new Set(['link', 'paste', 'form']);
 function messageSenderIsExtensionPage(sender) {
@@ -12538,9 +12665,24 @@ function forgetRebindTab(tabId) {
   refreshIntranetNetworkRules();
 }
 
+/* The types a DNS-rebind attack actually travels on: a channel that reaches or
+   reads an internal service (xhr/fetch-as-other/script/sub_frame/websocket) or
+   sets a tab's local context (main_frame). Images, media, fonts, stylesheets,
+   pings and beacons are left out on purpose -- a storyboard sprite or a video
+   segment loading from a rebound host is opaque and gives an attacker nothing
+   this quarantine is looking for, and the host is still seen the moment it is
+   reached on one of the kept channels. Dropping them is not a weakening: it stops
+   the listener firing on the flood of image/media requests a video timeline
+   scrub generates, where it was doing new URL() + an IP classify per storyboard
+   frame in the service worker for no security gain. */
+const REBIND_WATCH_TYPES = ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'];
 try {
-  chrome.webRequest?.onResponseStarted?.addListener(noteResolvedAddress, { urls: ['<all_urls>'] });
-} catch (_) {}
+  chrome.webRequest?.onResponseStarted?.addListener(noteResolvedAddress,
+    { urls: ['<all_urls>'], types: REBIND_WATCH_TYPES });
+} catch (_) {
+  /* Older enums reject an unknown type in the filter; fall back to watching all. */
+  try { chrome.webRequest?.onResponseStarted?.addListener(noteResolvedAddress, { urls: ['<all_urls>'] }); } catch (__) {}
+}
 
 
 async function fetchPublicStylesheetText(rawUrl) {
@@ -13579,6 +13721,46 @@ async function removeHiddenElement(hostname, selector) {
 // stacks another copy of every entry.
 const WO_MENU_ROOT = 'wardenone-root';
 const WO_MENU_ZAP = 'wardenone-zap';
+const WO_MENU_LINK = 'wardenone-check-link';
+const WO_MENU_SELECTION = 'wardenone-check-selection';
+const WO_MENU_FRAME = 'wardenone-frame';
+const WO_MENU_BLOCK = 'wardenone-block-site';
+const WO_MENU_MEDIA = 'wardenone-check-media';
+const WO_MENU_COPY_LINK = 'wardenone-copy-clean-link';
+const WO_COMMAND_COPY_CLEAN_ADDRESS = 'copy-clean-current-address';
+
+/* What a piece of text IS, so a single "check this" entry can route it to the
+   right lookup instead of asking the reader to know which kind of thing they
+   have highlighted. Order matters: a URL contains a domain, and a domain-looking
+   string can be a file name, so the most specific test wins. */
+function wardenIndicatorKind(raw) {
+  const text = String(raw || '').trim();
+  if (!text || text.length > 2048) return null;
+  if (/^[a-f0-9]{64}$/i.test(text)) return { kind: 'sha256', value: text.toLowerCase() };
+  if (/^[a-f0-9]{40}$/i.test(text)) return { kind: 'sha1', value: text.toLowerCase() };
+  if (/^[a-f0-9]{32}$/i.test(text)) return { kind: 'md5', value: text.toLowerCase() };
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const u = new URL(text);
+      if (u.hostname) return { kind: 'url', value: u.toString(), host: u.hostname };
+    } catch (_) {}
+    return null;
+  }
+  /* Dotted quads only, and every octet has to be in range -- 999.1.1.1 is not an
+     address, and treating it as one sends nonsense to a reputation provider. */
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(text)) {
+    const parts = text.split('.').map(Number);
+    if (parts.every((n) => n >= 0 && n <= 255)) return { kind: 'ip', value: text };
+    return null;
+  }
+  /* A bare hostname. Requires a dot and a plausible TLD so ordinary prose and
+     file names ("notes.txt", "v1.2") do not read as domains. */
+  if (/^(?=.{4,253}$)(?!-)[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,24}$/i.test(text)
+      && !/\.(txt|md|js|css|html?|json|png|jpe?g|gif|svg|pdf|zip|exe|dll|log)$/i.test(text)) {
+    return { kind: 'domain', value: text.toLowerCase().replace(/^www\./, '') };
+  }
+  return null;
+}
 
 async function installWardenContextMenu() {
   try {
@@ -13600,8 +13782,39 @@ async function installWardenContextMenu() {
       const add = (opts) => {
         try { chrome.contextMenus.create(opts, () => { void chrome.runtime.lastError; }); } catch (_) {}
       };
-      add({ id: WO_MENU_ROOT, title: 'WardenOne', contexts: page, documentUrlPatterns: pages });
-      add({ id: WO_MENU_ZAP, parentId: WO_MENU_ROOT, title: 'Zap this element', contexts: page, documentUrlPatterns: pages });
+      /* Every entry, every right-click. Scoping them to link/selection/frame
+         made the menu shorter but also made it unpredictable: the thing you
+         wanted was missing depending on the pixel you happened to be over, and
+         you cannot learn a menu whose contents move. They are all here, and each
+         one says plainly when there was nothing for it to work on. */
+      const everywhere = ['all'];
+      add({ id: WO_MENU_ROOT, title: 'WardenOne', contexts: everywhere, documentUrlPatterns: pages });
+
+      /* Ruled into groups rather than left as seven lines of text. They are not
+         seven of the same thing: two do something to what you clicked, four ask
+         a question about it, one decides about the site. A flat list makes the
+         reader sort that out every time they open it; the rules do it once. */
+      const item = (id, title) => add({ id, parentId: WO_MENU_ROOT, title, contexts: everywhere, documentUrlPatterns: pages });
+      const rule = (id) => add({ id, parentId: WO_MENU_ROOT, type: 'separator', contexts: everywhere, documentUrlPatterns: pages });
+
+      /* Do something with what you clicked. The second is here because the
+         browser draws its own "Copy link address", and that one never reaches
+         the page -- no copy event, no clipboard call -- so the engine's cleaner
+         cannot see it. This is the entry that can. */
+      item(WO_MENU_ZAP, 'Zap this element');
+      item(WO_MENU_COPY_LINK, 'Copy clean link');
+
+      rule('wardenone-sep-checks');
+      /* Ask about something, without going there. */
+      item(WO_MENU_LINK, 'Check this link');
+      item(WO_MENU_SELECTION, 'Check the selected text');
+      item(WO_MENU_MEDIA, 'Where is this image from?');
+      item(WO_MENU_FRAME, 'What is this frame?');
+
+      rule('wardenone-sep-site');
+      /* Decide about the site itself. Retitled from the real state before the
+         menu is drawn, so it always names what it is about to do. */
+      item(WO_MENU_BLOCK, 'Block this site');
     });
   } catch (_) {}
 }
@@ -13620,6 +13833,646 @@ try {
   });
 } catch (_) {}
 
+/* ---- checks the reader asks for ------------------------------------------ *
+ * Every lookup below already existed and was only reachable when WardenOne
+ * decided to run it -- on the page you were already on, about a link you had
+ * already clicked. This routes the same engines to a question you asked, about
+ * something you have not visited yet. That is the whole feature: no new
+ * intelligence, a new moment to use it.
+ *
+ * The answer always arrives, including "nothing known". A check that stays
+ * silent when it finds nothing is indistinguishable from one that did not run. */
+
+/* The answer goes where the reader already looks: WardenOne's own toast, on the
+   page they are on. A Chrome system notification was the first attempt and it is
+   the wrong channel -- on Windows those are routinely swallowed by focus assist
+   or by notification settings nobody remembers changing, so the check appeared to
+   do nothing at all. The toast goes through the same wo-event the engine uses for
+   every other notice, which means the Notification Centre governs its timing and
+   it lands in history like everything else.
+
+   The system notification stays as the fallback for the case the toast genuinely
+   cannot reach: a tab that refuses injection, or no tab at all. */
+async function wardenManualNotice(title, message, tab, id) {
+  const text = String(message || '').slice(0, 400);
+  const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
+  if (tabId !== null && /^https?:/i.test(String((tab && tab.url) || ''))) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        /* Dispatched in the isolated world, which is where the engine's toast
+           listener lives. Nothing is written into the page itself. */
+        func: (why, action) => {
+          try {
+            document.dispatchEvent(new CustomEvent('wo-event', {
+              detail: { type: 'detected_manual_check', detail: { why, action, severity: 'Notice' } },
+            }));
+          } catch (_) {}
+        },
+        args: [title ? title + ' — ' + text : text, 'You asked for this check from the right-click menu.'],
+      });
+      return true;
+    } catch (_) { /* fall through to the tray */ }
+  }
+  return showWardenSystemNotification(id || ('wo-check-' + Date.now()), {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: title || 'WardenOne check',
+    message: text,
+    priority: 1,
+  }, 'manual_check');
+}
+
+/* What WardenOne can say about a host, in the order that matters. Shared by the
+   link/selection check and the media check so both ask the same questions and
+   phrase the answers the same way -- two copies would drift the moment one of
+   them gained a provider. */
+async function wardenHostFindings(host, url, cfg) {
+  const lines = [];
+
+  /* Reputation first: it is the one that can say "do not open this". */
+  try {
+    const state = await urlReputationConfig();
+    if (state && state.enabled) {
+      const verdict = await urlReputationLookupUrl(normalizeSafeBrowsingUrl(url),
+        Object.assign({ context: 'manual' }, state));
+      if (verdict && verdict.hit) {
+        lines.push('Flagged by ' + ((verdict && verdict.provider) || 'URL reputation') + '.');
+      } else if (verdict && verdict.ok) {
+        lines.push('Not on any reputation list WardenOne can reach.');
+      }
+    } else {
+      lines.push('URL reputation is off, so only the checks below ran.');
+    }
+  } catch (_) { lines.push('The reputation lookup did not answer.'); }
+
+  /* Age is the cheap tell a blocklist cannot give you: a domain registered last
+     week that is asking for a password is the shape of phishing. */
+  try {
+    const age = await lookupDomainAge(host, cfg);
+    if (age && age.ok && Number.isFinite(Number(age.ageDays))) {
+      const days = Math.max(0, Math.floor(Number(age.ageDays)));
+      lines.push(days < 60
+        ? 'The domain is only ' + days + ' day' + (days === 1 ? '' : 's') + ' old.'
+        : 'The domain has existed for ' + Math.floor(days / 365) + ' year(s).');
+    }
+  } catch (_) {}
+
+  return lines;
+}
+
+async function runWardenManualCheck(rawText, tab) {
+  const found = wardenIndicatorKind(rawText);
+  if (!found) {
+    await wardenManualNotice('Nothing to check',
+      'That is not a link, domain, IP address or file hash. Select one of those and try again.', tab);
+    return;
+  }
+  try {
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
+
+    if (found.kind === 'url' || found.kind === 'domain') {
+      const host = found.kind === 'url' ? found.host : found.value;
+      const url = found.kind === 'url' ? found.value : 'https://' + found.value + '/';
+      const lines = await wardenHostFindings(host, url, cfg);
+      await wardenManualNotice(host, lines.join(' ') || 'Nothing known about ' + host + '.', tab);
+      return;
+    }
+
+    if (found.kind === 'ip') {
+      /* normalizeIpLiteral is the engine's own filter and it returns '' for every
+         private and reserved range -- RFC1918, loopback, link-local, CGNAT, the
+         TEST-NETs and multicast. A hand-written regex here missed four of those,
+         and sending one of them to a provider spends a request to be told what we
+         already knew. */
+      const ip = normalizeIpLiteral(found.value);
+      if (!ip) {
+        await wardenManualNotice(found.value,
+          'That is a private or reserved address, so it has no public reputation to look up.', tab);
+        return;
+      }
+
+      const verdict = await abuseIpDbLookupIp(ip);
+      if (!verdict || verdict.enabled === false) {
+        await wardenManualNotice(ip,
+          'A public address. Turn on AbuseIPDB and add a free key on the API keys page to look addresses up.', tab);
+        return;
+      }
+      if (!verdict.ok) {
+        await wardenManualNotice(ip,
+          'AbuseIPDB did not answer' + (verdict.error ? ': ' + String(verdict.error).slice(0, 120) : '.'), tab);
+        return;
+      }
+
+      /* abuseIpDbRiskText is what the engine says about a score everywhere else,
+         so the same address gets the same words here as in a page warning. */
+      const lines = [abuseIpDbRiskText(verdict) + '.'];
+      const reports = Number(verdict.totalReports || 0);
+      if (reports > 0) {
+        lines.push(reports + ' report' + (reports === 1 ? '' : 's') + ' in the last 90 days'
+          + (verdict.lastReportedAt ? ', most recently ' + String(verdict.lastReportedAt).slice(0, 10) : '') + '.');
+      } else {
+        lines.push('No abuse reports in the last 90 days.');
+      }
+      /* Who it belongs to, which is often the actually useful part: an address
+         that resolves to a hosting company is a different thing from one that
+         resolves to a home connection. */
+      const owner = [verdict.isp, verdict.usageType, verdict.countryCode].filter(Boolean).join(' · ');
+      if (owner) lines.push(owner + '.');
+      if (verdict.isTor) lines.push('It is a Tor exit node.');
+      if (verdict.isWhitelisted) lines.push('AbuseIPDB lists it as a known-good address.');
+      if (verdict.cached) lines.push('(from a cached answer)');
+
+      await wardenManualNotice(ip, lines.join(' '), tab);
+      return;
+    }
+
+    /* Hashes: the download grader already carries the bundled malware set, so a
+       hash somebody pasted is answerable with no network call at all. That set is
+       SHA-256 only, so any other length is told it cannot be answered rather than
+       being handed a clean-looking "not found" it did not earn. */
+    if (found.kind !== 'sha256') {
+      await wardenManualNotice(found.kind.toUpperCase() + ' hash',
+        'WardenOne only keeps SHA-256 hashes, so it cannot answer for this one.', tab);
+      return;
+    }
+    const known = typeof MALWARE_HASHES !== 'undefined' && MALWARE_HASHES.has(found.value);
+    await wardenManualNotice('SHA-256',
+      known
+        ? 'This hash is on WardenOne\'s known-malware list. Do not run that file.'
+        : 'Not on WardenOne\'s known-malware list. That is not proof it is safe.', tab);
+  } catch (e) {
+    await wardenManualNotice('The check did not finish', String((e && e.message) || e || 'Unknown error.'), tab);
+  }
+}
+
+/* The question a frame raises is simply "who is this?", because the answer is
+   often a domain the reader has never heard of sitting inside one they trust. */
+async function describeWardenFrame(info, tab) {
+  const frameUrl = String((info && info.frameUrl) || '');
+  const pageUrl = String((tab && tab.url) || (info && info.pageUrl) || '');
+  let frameHost = '';
+  let pageHost = '';
+  try { frameHost = new URL(frameUrl).hostname; } catch (_) {}
+  try { pageHost = new URL(pageUrl).hostname; } catch (_) {}
+  if (!frameHost) {
+    await wardenManualNotice('Embedded frame', 'This frame has no address WardenOne can read.', tab);
+    return;
+  }
+  if (frameHost === pageHost) {
+    await wardenManualNotice(frameHost, 'This frame belongs to the site you are on.', tab);
+    return;
+  }
+  await wardenManualNotice(frameHost,
+    'This content is embedded from ' + frameHost + ', not from ' + (pageHost || 'this page') + '.', tab);
+}
+
+/* ---- block or unblock the site you are on -------------------------------- *
+ * One entry rather than two. "Block this site" and "Unblock this site" side by
+ * side means one of them is always wrong for the page you are looking at, and
+ * neither says which -- so the title is rewritten from the real state each time
+ * the menu opens, and the single click does whichever the title promised.
+ *
+ * It writes to the same learned-block store the engine's own detections use, so
+ * a site blocked from here shows up in Activity beside them, is undone by the
+ * same Forget button, and is enforced by the same declarativeNetRequest rules.
+ * A parallel "sites the user blocked" list would be a second thing to keep in
+ * step and a second place to look. */
+
+/* Whether a block on this host would actually do anything.
+   applyLearnedRules drops a learned domain when the site is allowlisted, and
+   writes no rules at all when WardenOne is switched off -- silently, in both
+   cases. So the menu used to say "Blocked." and nothing was blocked, which is
+   the worst possible answer: it is wrong AND it stops you looking further. This
+   is checked before the claim is made, not after. */
+async function wardenBlockObstacle(host) {
+  try {
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
+    if (cfg.enabled === false) {
+      return 'WardenOne is switched off, so nothing is being blocked. Turn it on in the popup first.';
+    }
+    if (hostMatchesAllowlist(host, activeAllowlist(cfg))) {
+      return host + ' is on your allowlist, which beats a block. Remove it there first, in the popup.';
+    }
+  } catch (_) {}
+  return '';
+}
+
+function wardenSiteHostFromTab(tab, info) {
+  /* info.pageUrl first. The click info always carries the page's address, while
+     tab.url is absent whenever Chrome hands the listener no tab -- and when it
+     did, "Block this site" refused with "this is not an ordinary web page" while
+     sitting on an ordinary web page. Every other entry in this menu already
+     reads info.pageUrl; this one was the exception. */
+  const candidates = [
+    info && info.pageUrl,
+    info && info.frameUrl,
+    tab && tab.url,
+  ];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    try {
+      const u = new URL(String(raw));
+      if (!/^https?:$/i.test(u.protocol)) continue;
+      /* Not normalizeLearnedDomain: that returns '' for every never-block domain,
+         which is why this reported "not a normal page" on YouTube. */
+      const host = normalizeUserBlockDomain(u.hostname);
+      if (host) return host;
+    } catch (_) {}
+  }
+  return '';
+}
+
+/* Chrome fires this before the menu is drawn, so the entry can name what it is
+   actually about to do on THIS page. */
+/* What the menu entry last OFFERED, so the click can do what it said rather than
+   blind-toggling. If the worker was torn down since, this is empty and the click
+   falls back to blocking -- the safe direction, because "Block this site" is what
+   the entry reads when nothing has refreshed it. */
+let WARDEN_BLOCK_MENU_OFFER = { host: '', action: '' };
+const WARDEN_BLOCK_OFFER_KEY = 'wardenone_block_offer';
+/* The worker is evicted after seconds idle, and a blocked tab sits on Chrome's
+   error page doing nothing -- so by the time you right-click it to unblock, the
+   worker is cold and the in-memory offer above is gone. storage.session keeps it
+   for the life of the browser session without touching disk, so the click can
+   still tell what the (persistent) menu entry was offering. */
+async function wardenWriteBlockOffer(host, action) {
+  WARDEN_BLOCK_MENU_OFFER = { host: host || '', action: action || '' };
+  try { await chrome.storage.session.set({ [WARDEN_BLOCK_OFFER_KEY]: WARDEN_BLOCK_MENU_OFFER }); } catch (_) {}
+}
+async function wardenReadBlockOffer() {
+  try {
+    const got = await chrome.storage.session.get(WARDEN_BLOCK_OFFER_KEY);
+    const o = got && got[WARDEN_BLOCK_OFFER_KEY];
+    if (o && typeof o === 'object') return { host: o.host || '', action: o.action || '' };
+  } catch (_) {}
+  return WARDEN_BLOCK_MENU_OFFER;
+}
+
+async function refreshWardenBlockMenuTitle(tab, info) {
+  let host = wardenSiteHostFromTab(tab, info);
+  /* Ask Chrome directly rather than concluding "not a normal page" from a tab it
+     never actually gave us. chrome.tabs.get calls back with undefined whenever it
+     errors -- a sleeping worker is enough -- and that undefined was passed
+     straight through here, so the entry read "Block this site (not a normal
+     page)" on an ordinary page and stayed that way for the rest of the session. */
+  if (!host) {
+    try {
+      const active = await new Promise((resolve) => {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+          void chrome.runtime.lastError;
+          resolve((tabs && tabs[0]) || null);
+        });
+      });
+      if (active) host = wardenSiteHostFromTab(active);
+    } catch (_) {}
+  }
+  let title = 'Block this site';
+  if (!host) {
+    title = 'Block this site (not a normal page)';
+  } else {
+    try {
+      await securityStoresReady();
+      if (LEARNED[host]) {
+        title = 'Unblock ' + host;
+        await wardenWriteBlockOffer(host, 'unblock');
+      } else if (BLOCKED_DOMAINS.has(host)) {
+        title = host + ' is on a protection list';
+        await wardenWriteBlockOffer(host, 'listed');
+      } else {
+        /* Named honestly before it is chosen, not explained after. */
+        const obstacle = await wardenBlockObstacle(host);
+        title = obstacle ? 'Cannot block ' + host + ' yet' : 'Block ' + host;
+        await wardenWriteBlockOffer(host, 'block');
+      }
+    } catch (_) {}
+  }
+  try {
+    chrome.contextMenus.update(WO_MENU_BLOCK, { title }, () => { void chrome.runtime.lastError; });
+  } catch (_) {}
+}
+
+/* The rule only takes effect on the next request, so a page already on screen
+   carries on regardless. Reloading is the difference between the setting being
+   applied and the setting appearing to be ignored. Delayed a beat so the toast
+   is on screen and readable before the navigation starts. */
+function wardenReloadAfterSiteChange(tab) {
+  const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
+  if (tabId === null) return;
+  try {
+    setTimeout(() => {
+      /* bypassCache, not a plain reload. A plain reload can serve the document
+         straight from the HTTP or back-forward cache, so the main_frame request
+         never touches the network -- and the block lives in the network layer.
+         That is the "loads but not really" skeleton: the cached shell renders,
+         then its runtime data calls hit the network and are refused, leaving the
+         page half-built forever. Forcing past the cache makes the main_frame a
+         real network request, which the rule blocks outright -> Chrome's own
+         "can't reach this site" page. The service worker was already dropped
+         above, so nothing else can answer for the site either. Unblocking wants
+         the fresh copy too, so the same flag is right in both directions. */
+      try { chrome.tabs.reload(tabId, { bypassCache: true }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+    }, 1200);
+  } catch (_) {}
+}
+
+/* Clean one URL using the engine's own cleaner rather than a second copy of
+   the tracking-parameter lists, which would drift from it. The engine runs in
+   the MAIN world, so the handle it exposes is reachable there and nowhere else.
+   A page can overwrite that handle, so the answer is checked before it is
+   used: the host has to be the one the link already had, or one that was
+   spelled out inside it -- which is what unwrapping a redirector produces. */
+async function wardenCleanUrlViaPage(raw, tab) {
+  const original = String(raw || '');
+  if (!/^https?:\/\//i.test(original) || !tab || typeof tab.id !== 'number') return original;
+  let cleaned = '';
+  try {
+    const out = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [0] },
+      world: 'MAIN',
+      args: [original],
+      func: (url) => {
+        try {
+          const fn = window.__wardenOneCleanCopyUrl;
+          return typeof fn === 'function' ? String(fn(url) || '') : '';
+        } catch (_) { return ''; }
+      },
+    });
+    cleaned = (out && out[0] && typeof out[0].result === 'string') ? out[0].result : '';
+  } catch (_) { cleaned = ''; }
+  if (!cleaned || cleaned === original) return original;
+  try {
+    const before = new URL(original);
+    const after = new URL(cleaned);
+    if (!/^https?:$/i.test(after.protocol)) return original;
+    const sameHost = after.hostname.toLowerCase() === before.hostname.toLowerCase();
+    /* Unwrapping is allowed, inventing a destination is not. */
+    const wasSpeltOut = original.toLowerCase().indexOf(after.hostname.toLowerCase()) >= 0;
+    if (!sameHost && !wasSpeltOut) return original;
+    /* Cleaning removes; it never adds. */
+    const kept = [...after.searchParams.keys()];
+    const had = new Set([...before.searchParams.keys()]);
+    if (sameHost && kept.some((k) => !had.has(k))) return original;
+    return cleaned;
+  } catch (_) { return original; }
+}
+
+/* The clipboard needs a document, which a service worker does not have. The
+   page has one, and a menu click is a user gesture there. execCommand is the
+   fallback because the async clipboard refuses when the page is not focused. */
+async function wardenWriteClipboard(text, tab) {
+  if (!tab || typeof tab.id !== 'number') return false;
+  try {
+    const out = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [0] },
+      args: [String(text || '')],
+      func: async (value) => {
+        try {
+          await navigator.clipboard.writeText(value);
+          return true;
+        } catch (_) {}
+        try {
+          const box = document.createElement('textarea');
+          box.value = value;
+          box.setAttribute('readonly', '');
+          box.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+          document.body.appendChild(box);
+          box.select();
+          const ok = document.execCommand('copy');
+          box.remove();
+          return !!ok;
+        } catch (_) { return false; }
+      },
+    });
+    return !!(out && out[0] && out[0].result === true);
+  } catch (_) { return false; }
+}
+
+function wardenStrippedCount(before, after) {
+  try {
+    const a = new URL(before);
+    const b = new URL(after);
+    if (a.hostname.toLowerCase() !== b.hostname.toLowerCase()) return 0;
+    const kept = new Set([...b.searchParams.keys()]);
+    return [...a.searchParams.keys()].filter((k) => !kept.has(k)).length;
+  } catch (_) { return 0; }
+}
+
+async function copyWardenCleanLink(info, tab) {
+  /* A right-click that was not on a link still has a page worth copying. */
+  const raw = String((info && (info.linkUrl || info.srcUrl)) || (info && info.pageUrl) || (tab && tab.url) || '');
+  if (!/^https?:\/\//i.test(raw)) {
+    await wardenManualNotice('Nothing to copy', 'There is no web address here to clean.', tab);
+    return;
+  }
+  const cleaned = await wardenCleanUrlViaPage(raw, tab);
+  const wrote = await wardenWriteClipboard(cleaned, tab);
+  if (!wrote) {
+    await wardenManualNotice('Could not reach the clipboard',
+      'WardenOne cleaned the link but this page would not let it be copied. ' + cleaned, tab);
+    return;
+  }
+  if (cleaned === raw) {
+    await wardenManualNotice('Copied', 'That link had nothing to strip. It is on your clipboard as it was.', tab);
+    return;
+  }
+  const n = wardenStrippedCount(raw, cleaned);
+  const what = n === 1 ? 'one tracking parameter' : n > 1 ? n + ' tracking parameters' : 'the tracking wrapper';
+  await wardenManualNotice('Copied clean', 'Removed ' + what + '. On your clipboard: ' + cleaned, tab);
+}
+
+async function wardenCleanCurrentAddress() {
+  const tabs = await tabsQuery({ active: true, lastFocusedWindow: true });
+  const tab = tabs && tabs[0];
+  const raw = String((tab && (tab.url || tab.pendingUrl)) || '');
+  if (!tab || typeof tab.id !== 'number' || !/^https?:\/\//i.test(raw)) {
+    return { ok: false, error: 'Open a normal web page first.' };
+  }
+  const cleaned = await wardenCleanUrlViaPage(raw, tab);
+  return {
+    ok: true,
+    raw,
+    cleaned,
+    changed: cleaned !== raw,
+    removed: wardenStrippedCount(raw, cleaned),
+    tab,
+  };
+}
+
+async function copyWardenCleanCurrentAddress() {
+  const result = await wardenCleanCurrentAddress();
+  if (!result.ok) return result;
+  await copyWardenCleanLink({ pageUrl: result.raw }, result.tab);
+  return result;
+}
+
+async function toggleWardenSiteBlock(tab, info) {
+  const host = wardenSiteHostFromTab(tab, info);
+  if (!host) {
+    /* Say what it actually looked at. "Not an ordinary web page" while you are
+       plainly on one tells the reader nothing and cost a round of guessing. */
+    const saw = String((info && info.pageUrl) || (tab && tab.url) || '').slice(0, 80);
+    await wardenManualNotice('Nothing to block',
+      saw ? 'WardenOne could not read a site from this page. It saw: ' + saw
+          : 'Chrome gave WardenOne no address for this page, so there is no site to block.', tab);
+    return;
+  }
+  try {
+    await securityStoresReady();
+
+    /* A site already on a shipped blocklist is not ours to toggle: removing it
+       from LEARNED would do nothing and claiming otherwise would be a lie. */
+    if (BLOCKED_DOMAINS.has(host) && !LEARNED[host]) {
+      await wardenManualNotice(host,
+        'Already blocked by a protection list. Use the allowlist in the popup if you need to visit it.', tab);
+      return;
+    }
+
+    /* A blocked site unblocks UNLESS the entry the reader clicked explicitly said
+       "Block". That one guard is the whole anti-blind-toggle fix: a click on
+       "Block this site" must never quietly undo an existing block (the original
+       bug, where alternating clicks just flipped the state). Everything else
+       unblocks a blocked site -- including from Chrome's error page, where the
+       worker has been evicted and the in-memory offer is gone, so the durable
+       offer or, failing that, the live state is what decides. */
+    const offer = await wardenReadBlockOffer();
+    const labelSaidBlock = offer.host === host && offer.action === 'block';
+    if (LEARNED[host] && !labelSaidBlock) {
+      delete LEARNED[host];
+      await localSet({ wardenone_learned: LEARNED });
+      await applyLearnedRules();
+      refreshListMetaCounts();
+      await wardenWriteBlockOffer(host, 'block');
+      await wardenManualNotice(host, 'Unblocked. Reloading so it loads normally again.', tab);
+      wardenReloadAfterSiteChange(tab);
+      return;
+    }
+    /* Blocked, and the entry said "Block" -- so re-assert rather than undo, and
+       say which state they are in. */
+    if (LEARNED[host]) {
+      LEARNED[host] = Object.assign({}, LEARNED[host], { userBlocked: true });
+      await localSet({ wardenone_learned: LEARNED });
+      const reapplied = await applyLearnedRules();
+      const stillLive = await wardenBlockRuleLive(host);
+      if (stillLive) await wardenDropSiteWorker(host);
+      await wardenWriteBlockOffer(host, 'unblock');
+      await wardenManualNotice(host, stillLive
+        ? 'Already blocked. Reloading so you can see it. Use Unblock ' + host + ' to undo.'
+        : 'It is on your blocked list but Chrome is not applying the rule'
+          + ((reapplied && reapplied.error) ? ': ' + reapplied.error : '.'), tab);
+      if (stillLive) wardenReloadAfterSiteChange(tab);
+      return;
+    }
+
+    const obstacle = await wardenBlockObstacle(host);
+    if (obstacle) {
+      await wardenManualNotice(host, obstacle, tab);
+      return;
+    }
+
+    LEARNED[host] = {
+      firstSeen: Date.now(),
+      /* Named as yours, so Activity does not present your own decision as
+         something WardenOne worked out about the site. */
+      reason: 'you blocked this site',
+      hits: 1,
+      userBlocked: true,
+    };
+    await localSet({ wardenone_learned: LEARNED });
+    /* Awaited. It was fire-and-forget, and the reload below went out 1.2s later
+       regardless -- so the tab could come back before the rule existed, load
+       normally, and look exactly like a block that does nothing. */
+    const applied = await applyLearnedRules();
+    refreshListMetaCounts();
+    const live = await wardenBlockRuleLive(host);
+    if (!live) {
+      await wardenManualNotice('Could not block ' + host,
+        (applied && applied.error)
+          ? 'Chrome refused the rule: ' + applied.error + ' It is saved and will be retried, but it is NOT blocking yet.'
+          : 'The rule was written but Chrome is not applying it. It is saved and will be retried, but it is NOT blocking yet.',
+        tab);
+      return;
+    }
+    /* A blocked page you are already looking at keeps playing, because the rule
+       only applies to the next request -- which is exactly what "it does not
+       work" looks like from the sofa. The message goes out first so it is read
+       before the tab navigates away from under it. */
+    /* Before the reload, so the tab lands on Chrome's blocked page rather than the
+       site's own cached offline screen. */
+    await wardenDropSiteWorker(host);
+    /* Recorded as 'block', because that is what the entry still reads until the
+       reload refreshes it. It stops a rapid second click -- before the reload --
+       from toggling the block straight back off. Once the tab lands on the error
+       page, the load-complete refresh rewrites this to 'unblock' (durably, in
+       storage.session), so the error-page right-click unblocks even after the
+       worker is evicted; and if the offer is ever missing entirely, a blocked
+       site still unblocks, so the error page is never a dead end. */
+    await wardenWriteBlockOffer(host, 'block');
+    await wardenManualNotice(host,
+      'Blocked. Reloading now -- Chrome will say the site is blocked. Undo it in Activity under learned sites.', tab);
+    wardenReloadAfterSiteChange(tab);
+  } catch (e) {
+    await wardenManualNotice('That did not work', String((e && e.message) || e || 'Unknown error.'), tab);
+  }
+}
+
+/* ---- who is actually serving this picture? ------------------------------- *
+ * The question a page cannot answer for you. An image, video or audio element
+ * carries its own source, and on a modern page that is very often a domain you
+ * have never heard of sitting inside one you trust -- a CDN, an ad network, a
+ * tracking pixel wearing a logo. Chrome hands the real srcUrl to the menu, so
+ * this says whose it is and then asks the same questions the link check asks.
+ *
+ * The third-party line comes FIRST and is always present, because it is the part
+ * you cannot get any other way. Reputation may have nothing to say; "this is
+ * served from somewhere else" always does. */
+async function checkWardenMedia(info, tab) {
+  const src = String((info && info.srcUrl) || '');
+  const kind = String((info && info.mediaType) || 'image');
+  const noun = kind === 'video' ? 'video' : (kind === 'audio' ? 'audio' : 'image');
+
+  if (!src) {
+    await wardenManualNotice('Nothing to check',
+      'There was no image, video or audio under the pointer. Right-click directly on one.', tab);
+    return;
+  }
+  /* Built into the page rather than fetched, so there is no third party to name
+     and nothing to look up. Saying that is more use than a failed lookup. */
+  if (/^(data|blob):/i.test(src)) {
+    await wardenManualNotice('Embedded ' + noun,
+      'This ' + noun + ' is built into the page itself rather than loaded from somewhere, so there is no source to check.', tab);
+    return;
+  }
+
+  let host = '';
+  let pageHost = '';
+  try { host = new URL(src).hostname; } catch (_) {}
+  try { pageHost = new URL(String((tab && tab.url) || (info && info.pageUrl) || '')).hostname; } catch (_) {}
+  if (!host) {
+    await wardenManualNotice('Embedded ' + noun,
+      'This ' + noun + ' has no address WardenOne can read.', tab);
+    return;
+  }
+
+  const lines = [];
+  const sameSite = pageHost && (host === pageHost
+    || host.endsWith('.' + pageHost) || pageHost.endsWith('.' + host));
+  lines.push(sameSite
+    ? 'Served by the site you are on.'
+    : 'Served from ' + host + ', not by ' + (pageHost || 'this page') + '.');
+
+  try {
+    const store = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
+    const findings = await wardenHostFindings(host, src, cfg);
+    for (const line of findings) lines.push(line);
+  } catch (_) {}
+
+  await wardenManualNotice(host, lines.join(' '), tab);
+}
+
 function startElementTool(tab, frameId) {
   if (!tab || typeof tab.id !== 'number') return;
   /* chrome:// and the store refuse injection, and a silent failure there reads
@@ -13633,11 +14486,58 @@ function startElementTool(tab, frameId) {
   } catch (_) {}
 }
 
+/* Chrome has no "menu about to open" event, so the moment that matters is the
+   right-click itself: the content script reports it and the title is rewritten
+   before the menu paints. A tab switch refreshes it too, so the entry is right
+   for the page you are on even without the page's help.
+
+   There is deliberately no tabs.onUpdated listener here. It cannot be filtered
+   in Chrome, so it fires for every property the browser touches -- title,
+   favicon, audible, muted -- and a playing video tab changes those constantly.
+   Every one of those events wakes this service worker, and waking it means
+   parsing and re-initialising three quarters of a megabyte of background script
+   to answer an event we would have discarded. It bought a title refresh after a
+   same-tab navigation, which the right-click report already covers, and it cost
+   that on every tick of a playing tab. */
+try {
+  chrome.tabs.onActivated.addListener((info) => {
+    try {
+      chrome.tabs.get(info.tabId, (tab) => {
+        if (chrome.runtime.lastError || !tab) return;
+        void refreshWardenBlockMenuTitle(tab);
+      });
+    } catch (_) {}
+  });
+} catch (_) {}
+
 try {
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (!info) return;
     if (info.menuItemId === WO_MENU_ZAP) { startElementTool(tab, info.frameId); return; }
+    /* Always offered, so each falls back to the next most useful thing rather
+       than doing nothing: a right-click that was not on a link still has a page
+       worth checking. */
+    if (info.menuItemId === WO_MENU_LINK) {
+      void runWardenManualCheck(info.linkUrl || info.pageUrl || (tab && tab.url), tab);
+      return;
+    }
+    if (info.menuItemId === WO_MENU_SELECTION) {
+      void runWardenManualCheck(info.selectionText, tab);
+      return;
+    }
+    if (info.menuItemId === WO_MENU_COPY_LINK) { void copyWardenCleanLink(info, tab); return; }
+    if (info.menuItemId === WO_MENU_MEDIA) { void checkWardenMedia(info, tab); return; }
+    if (info.menuItemId === WO_MENU_FRAME) { void describeWardenFrame(info, tab); return; }
+    if (info.menuItemId === WO_MENU_BLOCK) { void toggleWardenSiteBlock(tab, info); return; }
   });
+} catch (_) {}
+
+try {
+  if (chrome.commands && chrome.commands.onCommand) {
+    chrome.commands.onCommand.addListener((command) => {
+      if (command === WO_COMMAND_COPY_CLEAN_ADDRESS) void copyWardenCleanCurrentAddress();
+    });
+  }
 } catch (_) {}
 
 // These live out here on purpose. Declared inside the onMessage listener
@@ -14087,6 +14987,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     respond(buildProtectionHealthSummary(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'clean-current-address') {
+    if (!messageSenderIsExtensionPath(sender, 'popup.html')) {
+      try { sendResponse({ ok: false, error: 'Not allowed from this page.' }); } catch (_) {}
+      return true;
+    }
+    respond((async () => {
+      const result = await wardenCleanCurrentAddress();
+      if (!result.ok) return result;
+      return {
+        ok: true,
+        raw: result.raw,
+        cleaned: result.cleaned,
+        changed: result.changed,
+        removed: result.removed,
+      };
+    })(), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'content-config-get' && messageSenderIsTab(sender)) {
@@ -15388,6 +16306,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'hidden-clear') {
     respond(clearHiddenElements(msg.hostname), sendResponse);
+    return true;
+  }
+  /* Chrome has no "menu about to open" event, so the page reports the right-click
+     and the title is rewritten before the menu paints. This is the moment the
+     title is read; every other refresh is a guess about when that will be. */
+  if (msg && msg.kind === 'menu-opening') {
+    void refreshWardenBlockMenuTitle(sender && sender.tab,
+      { pageUrl: (sender && sender.tab && sender.tab.url) || (msg && msg.pageUrl) || '' });
+    if (sendResponse) { try { sendResponse({ ok: true }); } catch (_) {} }
     return true;
   }
   if (msg && msg.kind === 'hidden-list' && msg.hostname) {

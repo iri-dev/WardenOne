@@ -362,6 +362,47 @@ async function main() {
     ok("captured SSAP segments remain actionable after restore", video.currentTime === 5);
   }
 
+  /* Array#push is one of the hottest methods on any page: routing every call
+     through the capture Proxy measured 15.6ns -> 41.5ns, and the capture is
+     installed for ten seconds after every load AND again on every
+     yt-navigate-start, which is once per track in a mix. It can only ever
+     collect anything while html5_enable_ssap_entity_id is on, so when the page
+     config is already loaded and says otherwise there is nothing to catch. */
+  console.log("16c) SSAP push capture is skipped when the flag says it cannot fire:");
+  {
+    const ctx = newCtx("{}");
+    const originalPush = ctx.Array.prototype.push;
+    ctx.window.yt = { config_: { EXPERIMENT_FLAGS: { html5_enable_ssap_entity_id: false } } };
+    ctx.MutationObserver = class { observe() {} };
+    vm.runInContext(src, ctx);
+    ok("push is left alone when the experiment flag is off",
+      ctx.Array.prototype.push === originalPush);
+  }
+
+  /* The negative control for the check above: before the page config arrives we
+     cannot tell, and catching the early pushes is the entire point, so an
+     unknown flag must still install. A skip here would silently stop the
+     capture working on exactly the loads it exists for. */
+  console.log("16d) ...but an unknown flag still installs the capture:");
+  {
+    const ctx = newCtx("{}");
+    const originalPush = ctx.Array.prototype.push;
+    ctx.window.yt = undefined;
+    ctx.MutationObserver = class { observe() {} };
+    vm.runInContext(src, ctx);
+    ok("push is still hooked when the config has not loaded yet",
+      ctx.Array.prototype.push !== originalPush);
+  }
+  {
+    const ctx = newCtx("{}");
+    const originalPush = ctx.Array.prototype.push;
+    ctx.window.yt = { config_: {} };
+    ctx.MutationObserver = class { observe() {} };
+    vm.runInContext(src, ctx);
+    ok("and when EXPERIMENT_FLAGS is not there yet",
+      ctx.Array.prototype.push !== originalPush);
+  }
+
   console.log("17) Player errors rotate through AdGuard recovery modes:");
   {
     let captured = null;

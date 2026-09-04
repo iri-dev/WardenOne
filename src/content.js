@@ -992,24 +992,95 @@
     if(__woRuntimeStarted)return;
     __woRuntimeStarted=!0;
     if(window.__wardenOneInstalled===__WO_RUNTIME_VERSION&&window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
-    if(__woAmazonHost.test(location.hostname)||/(^|\.)shopify\.com$/i.test(location.hostname)){
-      window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
-      window.__wardenOneReadyVersion=__WO_RUNTIME_VERSION;
-      return
-    }
     window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
     const __woMoConsumers=[];
     let __woMoStarted=!1;
+    /* A page that builds itself appends a container and then appends children
+       INTO it, and each of those arrives as its own mutation record. Every
+       consumer below scans each added node's subtree, so the container's scan
+       and each descendant's scan return overlapping sets -- the same elements
+       found again once per added ancestor. Measured on real pages, 86-97% of
+       added elements sit inside another element added in the SAME batch, and
+       scanning only the outermost ones costs 63-85% less while returning the
+       identical set: any node with an added ancestor is inside that ancestor's
+       subtree, so the ancestor's querySelectorAll already covered it.
+
+       Node-level guards still run on EVERY added node -- only the subtree scans
+       are narrowed. That distinction matters: several guards test a node in a
+       way its ancestor's selector would not repeat (the grabber check reads
+       src off any tag, not just img/script/iframe), so narrowing those too
+       would drop checks rather than duplicates.
+
+       Computed once per batch here rather than inside each consumer, so the
+       ancestor walk is paid once and shared by all of them. */
+    function __woBatchNodes(muts){
+      const added=[];
+      for(const mu of muts){
+        const a=mu.addedNodes;
+        for(let i=0;
+        i<a.length;
+        i++){
+          const n=a[i];
+          1===n.nodeType&&added.push(n)
+        }
+
+      }
+      if(added.length<2)return{
+        added:added,
+        roots:added
+      };
+      const inBatch=new Set(added),
+      /* An outermost node has to climb to the document root before it can be
+         sure nothing above it was added, and on a page delivering many small
+         batches that climb dominated the saving -- 4.2ms of a 4.7ms win on one
+         measured load. Every element passed on the way up is proof that the
+         chain above it holds no added node, so remembering them makes the
+         second climb through the same ancestors stop immediately. Scoped to
+         this batch, since it is only true relative to this batch's added set. */
+      clear=new Set,
+      chain=[],
+      roots=[];
+      for(let i=0;
+      i<added.length;
+      i++){
+        let p=added[i].parentElement,
+        nested=!1;
+        chain.length=0;
+        while(p){
+          if(inBatch.has(p)){
+            nested=!0;
+            break
+          }
+          if(clear.has(p))break;
+          chain.push(p),
+          p=p.parentElement
+        }
+        if(!nested){
+          roots.push(added[i]);
+          for(let c=0;
+          c<chain.length;
+          c++)clear.add(chain[c])
+        }
+
+      }
+      return{
+        added:added,
+        roots:roots
+      }
+    }
     function woObserve(cb){
       if(__woMoConsumers.push(cb),
       !__woMoStarted&&document.documentElement){
         __woMoStarted=!0;
         try{
           __woObserver(muts=>{
+            const batch=__woBatchNodes(muts);
             for(let i=0;
             i<__woMoConsumers.length;
             i++)try{
-              __woMoConsumers[i](muts)
+              __woMoConsumers[i](muts,
+              batch.added,
+              batch.roots)
             }
             catch(_){
 
@@ -1041,36 +1112,83 @@
        whether or not the config has arrived, so a plain snapshot taken at bind time would freeze
        the placeholder defaults on exactly the slow tabs least able to report it. That is why the
        obvious fix -- Object.assign({},cfg) -- would have been worse than the bug. */
-    const WO={},
+    /* The protections paused on YouTube, named.
+    This list used to be the opposite of a list: the YouTube branch below turned
+    EVERY boolean in the config off and switched two back on, which silently
+    paused 64 default-on protections -- detectPhishing, blockTrackers,
+    sessionShield, blockTokenExfil, detectSkimmers, paymentCardGuard,
+    intranetProtection, blockCameraMic and cleanCopyLinks among them -- on all of
+    youtube.com, while the popup went on showing every one of them as enabled.
+    It also set enabled:false, which defeated its own two exemptions: adShield
+    and scriptletEngine were restored on the line above and then killed by
+    scriptletRuntimeOn, which reads WO.enabled first.
+
+    Naming what is paused, rather than what survives, means a protection can only
+    be off here on purpose, and the popup can tell the reader which ones. Each
+    entry below is something that can genuinely break a video page: it rewrites
+    page furniture, intercepts the navigation a single-page app depends on, gates
+    the player, or hooks an API the player needs. Everything else now runs.
+
+    Anything added here must also be listed for the reader -- tools/test-youtube-
+    compat.js fails if the two fall out of step. */
+    const YT_COMPAT_PAUSED=[
+      /* Rewrites or hides page furniture. The overlay cleaner has hidden real
+      controls before -- it drops any sticky, elevated element whose text looks
+      like a notice, which is a fair description of the player chrome. */
+      "removeOverlays",
+      "autoRejectConsent",
+      /* Reaches the player or the media element. */
+      "blockAutoplay",
+      "blockAutoplayMedia",
+      "mediaShield",
+      "fullscreenGuard",
+      "lazyLoadMedia",
+      "throttleBackgroundTabs",
+      /* Intercepts navigation. YouTube pushes history constantly and opens its
+      own windows, so a guard that expects a click before a navigation reads
+      ordinary use as an attack. */
+      "blockGesturelessNav",
+      "blockForcedPopups",
+      "strictPopupShield",
+      "blockMetaRefresh",
+      "detectRedirectChains",
+      "backTrapGuard",
+      "oneOpenPerGesture",
+      /* Would put an interstitial in front of ordinary videos. */
+      "gateAdultSites",
+      "adultHeuristics",
+      /* Hooks storage and capability APIs the player itself depends on. */
+      "blockSupercookies",
+      "deviceAccessGuard",
+      "capabilityGuard",
+      "notificationAbuseGuard",
+      /* The embedded player is a legitimate frame. */
+      "antiClickjacking"
+    ],
+    WO={},
     __woSyncConfig=()=>{
       const cfg=__woConfigStore,
       host=String(location.hostname||"").replace(/^www\./,
       "").toLowerCase();
       let next=cfg;
-      if(__woAmazonHost.test(host)){
+      /* YouTube is the ONLY host that pauses anything, and it pauses only the
+      names in YT_COMPAT_PAUSED. Amazon and Shopify used to take a far larger
+      exit: __woStartRuntime returned before installing anything, and this
+      function turned every boolean off -- while both still stamped
+      __wardenOneInstalled, so the tab went on reporting itself protected to the
+      popup and to Repair. Removed; there is no site-wide off switch left. */
+      if(/(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(location.hostname)){
         const safe=Object.assign({
 
         },
         cfg);
-        for(const k of Object.keys(safe))"boolean"==typeof safe[k]&&(safe[k]=!1);
-        safe.enabled=!1,
-        safe.showBadge=!1,
-        safe.showToasts=!1,
-        safe.__amazonCompatibilityMode=!0,
-        next=safe
-      }
-      else if(/(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(location.hostname)){
-        const safe=Object.assign({
-
-        },
-        cfg);
-        for(const k of Object.keys(safe))"boolean"==typeof safe[k]&&(safe[k]=!1);
-        safe.adShield=!1!==cfg.adShield,
-        safe.scriptletEngine=!1!==cfg.scriptletEngine,
-        safe.enabled=!1,
-        safe.showBadge=!1,
-        safe.showToasts=!1,
-        safe.__youtubeRecoveryMode=!1,
+        for(let i=0;
+        i<YT_COMPAT_PAUSED.length;
+        i++){
+          const k=YT_COMPAT_PAUSED[i];
+          "boolean"==typeof safe[k]&&(safe[k]=!1)
+        }
+        safe.__youtubeCompatibilityMode=!0,
         next=safe
       }
       /* Keys the new config no longer carries are dropped, or a setting turned off upstream would
@@ -1108,6 +1226,52 @@
     conversationHost=/(^|\.)(chatgpt\.com|openai\.com|claude\.ai|anthropic\.com|gemini\.google\.com|bard\.google\.com|aistudio\.google\.com|perplexity\.ai|copilot\.microsoft\.com|poe\.com|grok\.com|deepseek\.com|mistral\.ai|huggingface\.co)$/i.test(location.hostname),
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
+    /* The first `cap` characters of the page's text, in document order.
+       This used to be document.body.textContent.slice(0,cap), which builds the
+       WHOLE page as one string and then throws away everything past the cap. On
+       a YouTube watch page that string is 1.23 MB and costs 2.58ms, and the
+       scanners that want it run about once a second for as long as the page is
+       open -- so it was 1.2 MB of garbage a second to read the first 20 KB.
+       Walking text nodes and stopping once the cap is reached returns a
+       byte-identical string: measured on that same page, 2.581ms -> 0.001ms. */
+    /* Run something when the browser has slack, but never later than `timeout`.
+       The periodic cosmetic sweeps are not urgent -- the stylesheet has already
+       hidden what they hide -- but a 0.7ms scan landing inside a frame is what
+       turns a churn burst into a dropped frame. Idle time is where they belong.
+       Falls back to a timer where requestIdleCallback is missing. */
+    __woIdle=(fn,timeout)=>{
+      try{
+        if("function"==typeof window.requestIdleCallback)return void window.requestIdleCallback(fn,{
+          timeout:timeout||250
+        })
+      }
+      catch(_){
+
+      }
+      setTimeout(fn,0)
+    },
+    bodyTextCapped=cap=>{
+      try{
+        if(!document.body)return"";
+        const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT),
+        parts=[];
+        let len=0,
+        node;
+        while(len<cap&&(node=walker.nextNode())){
+          const v=node.nodeValue;
+          if(v){
+            parts.push(v);
+            len+=v.length
+          }
+
+        }
+        return parts.join("").slice(0,cap)
+      }
+      catch(_){
+        return""
+      }
+
+    },
     SITE_BOUNDARY=(()=>{
       const normalize=host=>String(host||"").trim().replace(/^www\./,
       "").replace(/^\.+|\.+$/g,
@@ -1726,6 +1890,14 @@
         siteRe&&/^(www\.)?google\./i.test(host)&&/^\/(url|imgres)$/i.test(u.pathname)&&(siteRe=null);
         let changed=!1;
         for(const key of[...u.searchParams.keys()])(TRACKING_PARAMS.some(re=>re.test(key))||COPY_CLEAN_GLOBAL.test(key)||siteRe&&siteRe.test(key))&&(u.searchParams.delete(key),
+        changed=!0);
+        /* Chrome text fragments copy the selected sentence into the address
+           after :~:text=. It is not needed to reach the page and can expose a
+           large piece of what somebody was reading. Keep a real section anchor
+           that comes before the directive, but drop the text directive itself. */
+        const textDirective=String(u.hash||"").indexOf(":~:");
+        textDirective>=0&&(u.hash=textDirective>1?u.hash.slice(0,
+        textDirective):"",
         changed=!0);
         if(__woAmazonHost.test(host)&&/\/ref=[^/?#]*/i.test(u.pathname)){
           u.pathname=u.pathname.replace(/\/ref=[^/?#]*/gi,
@@ -2540,9 +2712,16 @@
     };
     document.documentElement&&sweepDomLinks(document);
     try{
-      woObserve(muts=>{
-        for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&scrubDomLink(n),
-        n&&n.querySelectorAll&&sweepDomLinks(n)
+      woObserve((muts,added,roots)=>{
+        /* sweepDomLinks already gated on exactly this; scrubDomLink is a no-op
+           without it too. Gating the loop skips the walk as well as the scan. */
+        if(!WO.unshimLinks&&!WO.stripTrackingParams)return;
+        for(let i=0;
+        i<added.length;
+        i++)scrubDomLink(added[i]);
+        for(let i=0;
+        i<roots.length;
+        i++)sweepDomLinks(roots[i])
       }),
       woOn(document,"wo-config-change",
       ()=>sweepDomLinks(document))
@@ -2551,6 +2730,14 @@
 
     }
     try{
+      /* The right-click "Copy link address" the browser draws itself never
+         reaches a page at all -- no copy event, no clipboard call -- so the
+         only way to clean that one is WardenOne's own menu entry, which asks
+         for this. Exposed the way the engine's other cross-world handles are.
+         The caller does not trust the answer: it checks the host came from the
+         link it started with, so a page swapping this out cannot put a
+         destination of its own on the clipboard. */
+      window.__wardenOneCleanCopyUrl=raw=>cleanCopyUrl(String(raw||""));
       let cleanCopyLogCount=0;
       const noteCleanCopy=()=>{
         ++cleanCopyLogCount<=20&&log("cleaned_copied_link",
@@ -2558,6 +2745,11 @@
 
         })
       };
+      /* Capture, on window. A page that handles copy itself and calls
+         stopPropagation -- paywalls, attribution appenders, share widgets --
+         reaches the bubble phase first and the cleaner never ran. Verified in
+         Chrome: with a page handler stopping propagation, a bubble listener on
+         window sees nothing and a capture one still sees the copy. */
       woOn(window,"copy",
       e=>{
         try{
@@ -2591,7 +2783,8 @@
 
         }
 
-      });
+      },
+      !0);
       if(navigator.clipboard&&navigator.clipboard.writeText){
         const realCleanWT=navigator.clipboard.writeText.bind(navigator.clipboard);
         navigator.clipboard.writeText=function(text){
@@ -3003,9 +3196,15 @@
 
       };
       sweepNodes(document),
-      woObserve(muts=>{
-        for(const m of muts)for(const n of m.addedNodes)if(1===n.nodeType){
-          const hit=n.getAttribute&&isGrabberURL(n.getAttribute("src"));
+      woObserve((muts,added,roots)=>{
+        /* The src test runs on every added node and reads src off ANY tag,
+           which sweepNodes' img/script/iframe selector would not repeat, so it
+           stays per-node. The subtree scan narrows to the roots. */
+        for(let i=0;
+        i<added.length;
+        i++){
+          const n=added[i],
+          hit=n.getAttribute&&isGrabberURL(n.getAttribute("src"));
           hit&&(n.removeAttribute("src"),
           n.setAttribute("data-wo-blocked",
           hit),
@@ -3013,10 +3212,11 @@
           {
             tag:n.tagName,
             matched:hit
-          })),
-          sweepNodes(n)
+          }))
         }
-
+        for(let i=0;
+        i<roots.length;
+        i++)sweepNodes(roots[i])
       })
     }
     {
@@ -3730,9 +3930,16 @@
 
       };
       document.documentElement&&sweepLocal(document),
-      woObserve(muts=>{
-        for(const mu of muts)for(const n of mu.addedNodes)n&&1===n.nodeType&&(guardLocalNode(n),
-        n.querySelectorAll&&sweepLocal(n))
+      woObserve((muts,added,roots)=>{
+        /* guardLocalNode must see every added node -- it has to neuter a script
+           pointing at a private address before it loads. Only the subtree scan
+           narrows to the roots that already cover the rest. */
+        for(let i=0;
+        i<added.length;
+        i++)guardLocalNode(added[i]);
+        for(let i=0;
+        i<roots.length;
+        i++)sweepLocal(roots[i])
       })
     }
     catch(e){
@@ -4010,9 +4217,13 @@
 
         };
         document.documentElement&&sweep(document),
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)n&&1===n.nodeType&&(guardNode(n),
-          n.querySelectorAll&&sweep(n))
+        woObserve((muts,added,roots)=>{
+          for(let i=0;
+          i<added.length;
+          i++)guardNode(added[i]);
+          for(let i=0;
+          i<roots.length;
+          i++)sweep(roots[i])
         }),
         riskyModeOn()&&log("risky_site_mode_active",
         {
@@ -6639,8 +6850,7 @@
       scamScan=()=>{
         if(scamShown||trustedMediaHost||conversationHost)return;
         try{
-          const t=(document.body&&document.body.textContent||"").slice(0,
-          2e4);
+          const t=bodyTextCapped(2e4);
           if(!t)return;
           const fear=FEAR.exec(t);
           if(!fear)return;
@@ -6667,7 +6877,8 @@
           scamShown||sPending||(sPending=!0,
           setTimeout(()=>{
             sPending=!1,
-            scamScan()
+            __woIdle(scamScan,
+            600)
           },
           700))
         })
@@ -7357,7 +7568,16 @@
             pending||(pending=!0,
             setTimeout(()=>{
               pending=!1,
-              scanPageForClickFix()
+              /* scanPageForClickFix reads body.innerText, which forces a
+                 synchronous layout. Every mutation batch re-arms the timer
+                 above, so while the page is being built and hydrated this
+                 fires over and over, stalling the pipeline mid-frame exactly
+                 when the page is busiest -- and it stops on its own once the
+                 churn dies down, which is why the jank disappears by itself.
+                 Idle time is when a layout read is free. Nothing is skipped:
+                 the timeout below guarantees it still runs. */
+              __woIdle(scanPageForClickFix,
+              600)
             },
             800))
           })
@@ -7395,8 +7615,7 @@
       },
       fakeUpdateScan=()=>{
         if(!fuWarned&&!FU_VENDOR.test(fuHere))try{
-          const bodyText=(document.body&&document.body.textContent||"").slice(0,
-          2e4);
+          const bodyText=bodyTextCapped(2e4);
           if(!bodyText||!FU_LURE.test(bodyText))return;
           const inst=document.querySelector(FU_INSTALLER);
           if(inst)return void warnFakeUpdate(inst.href||fuHere);
@@ -7433,7 +7652,8 @@
           fuWarned||fuPending||(fuPending=!0,
           setTimeout(()=>{
             fuPending=!1,
-            fakeUpdateScan()
+            __woIdle(fakeUpdateScan,
+            600)
           },
           800))
         })
@@ -8235,11 +8455,20 @@
       });
       try{
         let pending=!1;
-        woObserve(muts=>{
+        woObserve((muts,added,roots)=>{
           if(!trapWarned){
-            for(const m of muts)for(const node of m.addedNodes)1===node.nodeType&&(node.matches&&node.matches('input[type="password"]')?[node]:node.querySelectorAll?node.querySelectorAll('input[type="password"]'):[]).forEach(pw=>{
+            const notePw=pw=>{
               initialPw.has(pw)||injectedForms.add(pw)
-            });
+            };
+            for(let i=0;
+            i<added.length;
+            i++){
+              const node=added[i];
+              node.matches&&node.matches('input[type="password"]')&&notePw(node)
+            }
+            for(let i=0;
+            i<roots.length;
+            i++)roots[i].querySelectorAll('input[type="password"]').forEach(notePw);
             pending||(pending=!0,
             setTimeout(()=>{
               pending=!1,
@@ -9293,13 +9522,16 @@
                 collapsePending||(collapsePending=!0,
                 setTimeout(()=>{
                   collapsePending=!1;
-                  try{
-                    collapseLeftovers(document)
-                  }
-                  catch(_){
+                  __woIdle(()=>{
+                    try{
+                      collapseLeftovers(document)
+                    }
+                    catch(_){
 
-                  }
+                    }
 
+                  },
+                  300)
                 },
                 250))
               })
@@ -9376,9 +9608,33 @@
                 collapsePending=!1;
                 woObserve(()=>{
                   if(scriptletPlayerPage()){
+                    /* Coalesced, exactly as the ordinary-page branch below already
+                       does it. This called collapseLeftovers(document) directly on
+                       every mutation batch -- a whole-document nine-selector scan,
+                       unthrottled, on the one class of page that churns hardest.
+                       Measured on a live YouTube mix page (7832 elements): 0.71ms
+                       per batch, so ~21ms/s at 30 batches a second and ~71ms/s
+                       while a queue is rebuilding and the scrub tooltip is moving.
+                       The stylesheet injected above already hides these selectors;
+                       this pass only adds an inline style as belt and braces, so
+                       coalescing it to 250ms costs nothing visible. */
                     adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):styleEl&&(styleEl.textContent=""),
                     procRules=[],
-                    collapseLeftovers(document);
+                    collapsePending||(collapsePending=!0,
+                    setTimeout(()=>{
+                      collapsePending=!1;
+                      __woIdle(()=>{
+                        try{
+                          collapseLeftovers(document)
+                        }
+                        catch(_){
+
+                        }
+
+                      },
+                      300)
+                    },
+                    250));
                     return
                   }
                   if(styleEl&&!styleEl.isConnected)try{
@@ -9390,13 +9646,16 @@
                   collapsePending||(collapsePending=!0,
                   setTimeout(()=>{
                     collapsePending=!1;
-                    try{
-                      collapseLeftovers(document)
-                    }
-                    catch(_){
+                    __woIdle(()=>{
+                      try{
+                        collapseLeftovers(document)
+                      }
+                      catch(_){
 
-                    }
+                      }
 
+                    },
+                    300)
                   },
                   250)),
                   procRules.length&&!procPending&&(procPending=!0,
@@ -9477,6 +9736,11 @@
       GOOGLE_AI_TARGET_SEL="#m-x-content",
       GOOGLE_CLEANUP_TARGET_SEL=GOOGLE_AI_TARGET_SEL+",[data-wo-google-search-cleaned]",
       GOOGLE_AI_SHELL_SEL=":is(.MjjYud,div[data-hveid],div[jscontroller],div[jsname],g-section-with-header,section,aside):has("+GOOGLE_AI_TARGET_SEL+"):not(:has(#rso,#search,#res,#center_col,"+GOOGLE_PAA_SEL+"))",
+      /* Host only, deliberately: SEARCH_IS_GOOGLE below also tests the PATH and is
+         evaluated once at start-up, so it cannot be used to gate the feature --
+         Google is an SPA and the path changes under it. This decides only "could
+         this site ever be a search results page", which is what the sweep needs. */
+      SEARCH_CLEANUP_HOST=/(^|\.)google\.[a-z.]+$/i.test(location.hostname)||/^search\.brave\.com$/i.test(location.hostname),
       SEARCH_IS_GOOGLE="function"==typeof isGoogleSearchResults&&isGoogleSearchResults(),
       SEARCH_IS_BRAVE="function"==typeof isBraveSearchResults&&isBraveSearchResults(),
       SEARCH_AI_ON=!!(WO.blockSearchAiAnswers||WO.googleSearchResultCleanup),
@@ -9964,7 +10228,17 @@
       };
       let googleCleanupStarted=!1;
       const maybeStartGoogleCleanup=()=>{
-        if(googleCleanupStarted||!SEARCH_AI_ON&&!SEARCH_ADS_ON)return;
+        /* Nothing here can match anywhere but a Google or Brave results page --
+           the selectors are #tads, .commercial-unit-desktop-top and friends. It
+           was gated on the SETTINGS only, so with search cleanup switched on it
+           ran everywhere: googleCleanupSweep(document) is a whole-document scan
+           that fired every 250ms for its first 80 mutation batches on EVERY site,
+           then stopped for good. On a page that churns while it builds -- a
+           YouTube watch page -- that is a burst of pointless whole-document
+           scanning for the first several seconds after every load, which stops
+           on its own afterwards. Exactly the shape of "choppy right after a
+           reload, fine once it settles". */
+        if(googleCleanupStarted||!SEARCH_CLEANUP_HOST||!SEARCH_AI_ON&&!SEARCH_ADS_ON)return;
         googleCleanupStarted=!0,
         document.documentElement?startGoogleCleanup():woOn(document,"DOMContentLoaded",
         startGoogleCleanup,
@@ -11042,6 +11316,13 @@
       }
       const sweepMedia=root=>{
         try{
+          /* tameMedia returns on its first line once the reader has gestured, so
+             every node walked after that first click did nothing at all. On a
+             video page you gesture immediately and the page then keeps appending
+             nodes -- a mix queue appends them for as long as it plays -- so this
+             ran a four-selector subtree scan per added node, forever, for no
+             effect. Hoisted the way sweepDomLinks already gates itself. */
+          if(userGestured)return;
           (root||document).querySelectorAll("video[autoplay],audio[autoplay],video,audio").forEach(tameMedia)
         }
         catch(_){
@@ -11051,8 +11332,20 @@
       };
       document.documentElement&&sweepMedia(document);
       try{
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&/^(VIDEO|AUDIO)$/.test(n.tagName)?tameMedia(n):n&&n.querySelectorAll&&sweepMedia(n)
+        woObserve((muts,added,roots)=>{
+          /* Both branches of this loop bail on userGestured, so after the first
+             click the loop itself is the only thing left doing any work. Gating
+             here rather than inside them skips walking the added nodes at all. */
+          if(userGestured)return;
+          for(let i=0;
+          i<added.length;
+          i++){
+            const n=added[i];
+            /^(VIDEO|AUDIO)$/.test(n.tagName)&&tameMedia(n)
+          }
+          for(let i=0;
+          i<roots.length;
+          i++)sweepMedia(roots[i])
         })
       }
       catch(_){
@@ -11130,8 +11423,16 @@
       };
       document.documentElement&&sweepLazy(document);
       try{
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&/^(IMG|IFRAME)$/.test(n.tagName)?lazify(n):n&&n.querySelectorAll&&sweepLazy(n)
+        woObserve((muts,added,roots)=>{
+          for(let i=0;
+          i<added.length;
+          i++){
+            const n=added[i];
+            /^(IMG|IFRAME)$/.test(n.tagName)&&lazify(n)
+          }
+          for(let i=0;
+          i<roots.length;
+          i++)sweepLazy(roots[i])
         })
       }
       catch(_){
@@ -11298,6 +11599,10 @@
       },
       sweepSocialWidgets=root=>{
         try{
+          /* guardSocialNode tests this flag before it looks at anything else, so
+             with the guard off the thirteen-selector scan below could only ever
+             find work it was going to discard. */
+          if(!WO.socialWidgetGuard)return;
           (root||document).querySelectorAll("iframe[src],script[src],blockquote.twitter-tweet,blockquote.instagram-media,blockquote.tiktok-embed,.fb-post,.fb-video,.fb-page,.fb-like,.fb-share-button,.fb-comments,.twitter-tweet,.twitter-timeline,.tiktok-embed").forEach(guardSocialNode)
         }
         catch(_){
@@ -11307,9 +11612,16 @@
       };
       document.documentElement&&sweepSocialWidgets(document);
       try{
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)n&&n.tagName&&guardSocialNode(n),
-          n&&n.querySelectorAll&&sweepSocialWidgets(n)
+        woObserve((muts,added,roots)=>{
+          /* guardSocialNode and sweepSocialWidgets both test this first, so with
+             the guard off the loop below can only ever hand them work to drop. */
+          if(!WO.socialWidgetGuard)return;
+          for(let i=0;
+          i<added.length;
+          i++)guardSocialNode(added[i]);
+          for(let i=0;
+          i<roots.length;
+          i++)sweepSocialWidgets(roots[i])
         })
       }
       catch(_){
@@ -11354,8 +11666,16 @@
       };
       document.documentElement&&sweepLinks(document);
       try{
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)!n||"LINK"!==n.tagName&&"SCRIPT"!==n.tagName?n&&n.querySelectorAll&&sweepLinks(n):killLink(n)
+        woObserve((muts,added,roots)=>{
+          for(let i=0;
+          i<added.length;
+          i++){
+            const n=added[i];
+            "LINK"!==n.tagName&&"SCRIPT"!==n.tagName||killLink(n)
+          }
+          for(let i=0;
+          i<roots.length;
+          i++)sweepLinks(roots[i])
         })
       }
       catch(_){
@@ -11550,13 +11870,19 @@
       };
       document.body&&fixLinks(document);
       try{
-        woObserve(muts=>{
-          for(const mu of muts)for(const n of mu.addedNodes)if(n&&"A"===n.tagName){
+        woObserve((muts,added,roots)=>{
+          for(let i=0;
+          i<added.length;
+          i++){
+            const n=added[i];
+            if("A"!==n.tagName)continue;
             const fx=deAmpUrl(n.getAttribute&&n.getAttribute("href"));
             fx&&n.setAttribute("href",
             fx)
           }
-          else n&&n.querySelectorAll&&fixLinks(n)
+          for(let i=0;
+          i<roots.length;
+          i++)fixLinks(roots[i])
         })
       }
       catch(_){
@@ -15058,20 +15384,44 @@
 
       }
       try{
-        const wrapRect=r=>{
+        /* getBoundingClientRect is the hottest DOM read on a video page -- a
+           player recomputes the scrub position from it on every mousemove -- and
+           this wrapper sits in front of every one of them. Building a string key
+           and hashing it four separate times cost far more than the noise is
+           worth: four string concatenations, four walks over ~25 characters, and
+           four generator closures per call. Seeding once from the four numbers
+           and drawing four values from that one generator is the same guarantee
+           -- deterministic for a given geometry, unpredictable across sessions,
+           since the session seed still goes in -- without touching a string. */
+        const rectSeed=(a,b,c,d)=>{
+          let h=(_sk^2166136261)>>>0;
+          h=Math.imul(h^(0|a*8192),
+          16777619)>>>0,
+          h=Math.imul(h^(0|b*8192),
+          16777619)>>>0,
+          h=Math.imul(h^(0|c*8192),
+          16777619)>>>0,
+          h=Math.imul(h^(0|d*8192),
+          16777619)>>>0;
+          return h>>>0
+        },
+        wrapRect=r=>{
           try{
             if(!r)return r;
-            const k=(r.x||r.left||0)+","+(r.y||r.top||0)+","+(r.width||0)+"x"+(r.height||0),
-            x=seededTiny(k+"X",.04),
-            y=seededTiny(k+"Y",.04),
-            w=seededTiny(k+"W",.03),
-            h=seededTiny(k+"H",.03);
-            return new DOMRect((r.x||r.left||0)+x,
-            (r.y||r.top||0)+y,
+            const X=r.x||r.left||0,
+            Y=r.y||r.top||0,
+            W=r.width||0,
+            H=r.height||0,
+            draw=makeRnd(rectSeed(X,
+            Y,
+            W,
+            H));
+            return new DOMRect(X+(draw()-.5)*.04,
+            Y+(draw()-.5)*.04,
             Math.max(0,
-            (r.width||0)+w),
+            W+(draw()-.5)*.03),
             Math.max(0,
-            (r.height||0)+h))
+            H+(draw()-.5)*.03))
           }
           catch(_){
             return r
@@ -16891,8 +17241,13 @@
           once:!0
         });
         try{
-          woObserve(muts=>{
-            for(const m of muts)for(const n of m.addedNodes||[])scanMedia(n)
+          woObserve((muts,added,roots)=>{
+            /* scanMedia checks the node itself and then scans its subtree for
+               audio/video, so a root's own call already covers every node added
+               underneath it in the same batch. */
+            for(let i=0;
+            i<roots.length;
+            i++)scanMedia(roots[i])
           })
         }
         catch(_){
@@ -19714,6 +20069,12 @@
           title:"Suspicious script behaviour detected",
           why:"A script on this page read a decoy credential WardenOne planted in memory. Real site code has no reason to read a secret it didn't create  -  this is how credential-stealing scripts probe. Be cautious here."
         },
+        detected_manual_check:{
+          title:"WardenOne check",
+          why:"The result of a check you asked for.",
+          severity:"Notice",
+          action:"You asked for this check from the right-click menu."
+        },
         behavioral_risk:{
           title:"Suspicious site behavior",
           why:"This site isn't on any blocklist, but it's behaving like a tracker/scam page (e.g. phoning home on arrival from a brand-new, random domain). Be cautious."
@@ -19734,6 +20095,7 @@
         extension_changed:{mode:"toast",duration:"10000"},
         protection_failure:{mode:"toast",duration:"default"},
         experimental_warning:{mode:"history",duration:"default"},
+        manual_check:{mode:"toast",duration:"10000"},
         system_message:{mode:"history",duration:"default"}
       },
       notificationRuleId=type=>{
@@ -19743,6 +20105,7 @@
         if(/extension|permission_change/.test(value))return"extension_changed";
         if(/engine_disabled|protection_failure|degraded|repair_failed|component_error/.test(value))return"protection_failure";
         if(/list_integrity|protection_list_updated|list_updated|rules_updated/.test(value))return"protection_list_updated";
+        if(/manual_check|manual-check/.test(value))return"manual_check";
         if(/experimental/.test(value))return"experimental_warning";
         if(/clipboard|clickfix|command_paste|paste_protection/.test(value))return"clickfix_clipboard";
         if(/password|credential|token|skimmer|payment|honeytoken|insecure_login|new_domain_login|login_thirdparty/.test(value))return"password_exposure";
@@ -19875,12 +20238,27 @@
       }
       const showToast=(type,
       detail)=>{
-        if(!WO.enabled||!WO.showToasts||shouldQuietToast(type,
-        detail))return;
+        /* A manual check is the ANSWER to a question the reader asked from the
+        right-click menu a second ago, not an unsolicited notification. Every
+        gate in this function exists to stop WardenOne interrupting people who
+        did not ask, and none of them should apply to someone who did.
+
+        shouldQuietToast is the one that broke the feature: it remembers each
+        type per host for thirty minutes, so after the first check on a site
+        every later "Check this link", "Check the selected text", "Where is this
+        image from?" and "What is this frame?" was swallowed in silence. From
+        the outside that is a menu of four entries that do nothing. The mute
+        list, the notification preference and the per-page wording dedup below
+        would each have done the same thing on their own. */
+        const asked="detected_manual_check"===type;
+        if(!asked&&(!WO.enabled||!WO.showToasts||shouldQuietToast(type,
+        detail)))return;
         const info=TOAST_INFO[type];
         if(!info)return;
-        const preference=notificationPreference(type);
-        if("off"===preference.mode||"history"===preference.mode)return;
+        if(!asked){
+          const preference=notificationPreference(type);
+          if("off"===preference.mode||"history"===preference.mode)return
+        }
         const now=Date.now(),
         matched=detail&&detail.matched||"";
         /* What the card will actually SAY has to be decided before we can ask whether we have
@@ -19899,7 +20277,9 @@
         The wording IS in the key, so a guard that explains itself differently for a genuinely
         different situation still gets its own card. */
         const key=type+"|"+detailWhy+"|"+severity+"|"+action;
-        if(toastSeen.has(key))return;
+        /* Asking the same question twice is a reasonable thing to do, and the
+        answer is not less true the second time. */
+        if(!asked&&toastSeen.has(key))return;
         /* Nothing already on screen may be pushed off by a burst arriving in the same moment.
         Distinct warnings are staggered rather than dropped -- dropping one loses the only
         notice a person gets, and this queue cannot grow without bound because the set above
@@ -20248,6 +20628,9 @@
       },
       brightenBadge=()=>{
 
+      },
+      settleBadge=()=>{
+
       };
       const removeBadge=()=>{
         try{
@@ -20273,11 +20656,31 @@
         }
 
       },
+      /* The badge must not carry backdrop-filter.
+      It is position:fixed and mounted on EVERY page for the whole visit, so a
+      backdrop-filter makes the compositor capture whatever is painted behind it,
+      blur it and recomposite, once per frame, forever -- and over a playing
+      video it also drags the video off its GPU overlay path, because the blur
+      needs the video's own pixels. It cost this on a YouTube watch page, measured
+      through the long-animation-frame API while scrubbing:
+
+        frames of 55-66ms (about 17fps), with script time ~0, style+layout 0,
+        and blocking only 5-13ms -- the main thread sitting idle while frames
+        could not be produced. Interaction-to-next-paint 120ms, of which 55ms
+        was input delay and 58ms presentation delay, against 7ms of the page's
+        own handler.
+
+      That signature is the giveaway: no script and no layout means the cost is
+      not JavaScript, and every JS optimisation aimed at it changed nothing. The
+      resting badge sits at opacity .28, where a 14px blur is not perceptible
+      anyway, so the background alpha carries the frosted look instead. The panel
+      below keeps its blur: it is display:none until deliberately opened, and an
+      undisplayed element is never composited. */
       buildBadgeShadow=root=>{
         if(!root)return;
         clearNode(root);
         const style=document.createElement("style");
-        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b{position:fixed;bottom:16px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.38);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s,box-shadow .2s,background .3s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:52px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
+        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b{position:fixed;bottom:16px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s,box-shadow .2s,background .3s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:52px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
         const badge=document.createElement("div"),
         dot=document.createElement("span"),
         label=document.createElement("span"),
@@ -20386,16 +20789,23 @@
             bEl.addEventListener("click",
             ()=>pEl.classList.toggle("open")),
             alignBadge(),
-            fadeT=setTimeout(()=>{
-              bEl.classList.contains("hot")||bEl.classList.contains("damaged")||bEl.classList.remove("show")
+            /* One settle, shared by both timers.
+            "hot" is set the moment anything is blocked, and it used to be checked
+            here to keep the badge visible -- but nothing ever removed it, so the
+            first block on a page pinned the badge open for the rest of the visit
+            and the fade could never run again. It means "something happened just
+            now", so it decays along with the rest of the highlight. "damaged" is
+            a real fault and deliberately stays until the page is reloaded. */
+            settleBadge=()=>{
+              bEl.classList.contains("damaged")||(bEl.classList.remove("show"),
+              bEl.classList.remove("hot"))
             },
+            fadeT=setTimeout(settleBadge,
             BADGE_FADE_MS),
             brightenBadge=()=>{
               bEl.classList.add("show"),
               clearTimeout(fadeT),
-              fadeT=setTimeout(()=>{
-                bEl.classList.contains("hot")||bEl.classList.contains("damaged")||bEl.classList.remove("show")
-              },
+              fadeT=setTimeout(settleBadge,
               BADGE_FADE_MS)
             };
             const LABELS={
@@ -20481,7 +20891,10 @@
               "blocked_webrtc_candidate_listener",
               "blocked_hidden_media",
               "blocked_autoplay_media",
-              "blocked_token_exfil"]);
+              "blocked_token_exfil",
+              /* An answer to a question the reader asked is not something that was
+                 blocked, so it must not raise the counter that says how much was. */
+              "detected_manual_check"]);
               woOn(document,"wo-event",
               e=>{
                 const t=e.detail&&e.detail.type||"";
@@ -20588,7 +21001,7 @@
           __woAdPend=1;
           setTimeout(function(){
             __woAdPend=0;
-            __woSweepAds()
+            __woIdle(__woSweepAds,300)
           },
           400)
         };

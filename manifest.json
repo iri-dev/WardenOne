@@ -44,6 +44,15 @@
   "background": {
     "service_worker": "background.js"
   },
+  "commands": {
+    "copy-clean-current-address": {
+      "suggested_key": {
+        "default": "Alt+Shift+C",
+        "mac": "Alt+Shift+C"
+      },
+      "description": "Copy a clean version of the current page address"
+    }
+  },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
   },

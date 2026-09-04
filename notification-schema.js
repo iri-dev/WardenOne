@@ -115,6 +115,15 @@ var WARDEN_NOTIFICATION_RULES = {
     description: 'Important behaviour from features marked experimental',
     icon: 'flask', severity: 'warning', enabled: true, mode: 'history', duration: 'default', sound: 'warning',
   },
+  /* Results of a check the reader explicitly asked for. Kept a category like
+     everything else so it can be retimed or silenced, but it defaults to a toast
+     rather than history: somebody who right-clicks and asks a question is owed a
+     visible answer, including "nothing found". */
+  manual_check: {
+    section: 'wardenone', label: 'Result of a check you asked for',
+    description: 'Answers from Check this link, Check this text and Check this frame',
+    icon: 'search', severity: 'info', enabled: true, mode: 'toast', duration: '10000', sound: 'none',
+  },
   system_message: {
     section: 'wardenone', label: 'WardenOne system message',
     description: 'Startup checks, memory actions and routine maintenance',
@@ -227,6 +236,7 @@ function wardenNotificationRuleForType(type) {
      put "Protection failure or degraded state" on screen and left it there. */
   if (/engine_disabled|protection_failure|degraded|repair_failed|component_error/.test(value)) return 'protection_failure';
   if (/list_integrity|protection_list_updated|list_updated|rules_updated/.test(value)) return 'protection_list_updated';
+  if (/manual_check|manual-check/.test(value)) return 'manual_check';
   if (/experimental/.test(value)) return 'experimental_warning';
   if (/clipboard|clickfix|command_paste|paste_protection/.test(value)) return 'clickfix_clipboard';
   /* The additions below are not cosmetic. Anything that reaches the fallback is

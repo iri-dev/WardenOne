@@ -207,6 +207,18 @@
       });
     } catch (_) {}
   }
+  /* Tell the worker a menu is about to open, so "Block this site" can name the
+     site instead of guessing. Chrome fires no event when a context menu opens,
+     and refreshing on tab switches alone left the entry reading "(not a normal
+     page)" on ordinary pages. A right-click is rare and this listener does
+     nothing else, so it costs nothing between clicks. */
+  woOn(window, 'contextmenu', () => {
+    try {
+      chrome.runtime.sendMessage({ kind: 'menu-opening', pageUrl: location.href },
+        () => { void chrome.runtime.lastError; });
+    } catch (_) {}
+  }, true);
+
   bridgeLoadUserHidden();
   woOnMessage((msg) => {
     if (!msg || msg.kind !== 'hidden-rules-refresh') return;

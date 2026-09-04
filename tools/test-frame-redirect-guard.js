@@ -898,8 +898,30 @@ async function main() {
     /const fractions = \[[\d., ]+\];/.test(GUARD) && /fractions\[a\]/.test(GUARD) && /fractions\[b\]/.test(GUARD),
     'one axis of sample points cannot see a box that sits off that axis');
   check('and the grid is rate limited, because elementFromPoint forces layout',
-    /now - lastGridAt < 500/.test(GUARD),
+    /now - lastGridAt < gridInterval/.test(GUARD)
+      && /const GRID_MIN_MS = 500;/.test(GUARD),
     'a churning page would otherwise run it several times a second for nothing');
+  /* Each grid run is 25 elementFromPoint calls and every one forces layout. On a
+     page being actively dragged the layout is never clean, so they all flush for
+     real -- for a box that is almost never there. The interval stretches while
+     the grid keeps coming back empty and snaps back the instant it finds
+     something, so a real overlay is still caught promptly. */
+  check('and it backs off while the grid keeps finding nothing',
+    /gridInterval = found\.length\s*\?\s*GRID_MIN_MS\s*:\s*Math\.min\(GRID_MAX_MS, Math\.round\(gridInterval \* 1\.6\)\)/.test(GUARD),
+    'an ordinary page should stop paying for a search that never finds anything');
+  check('and snaps back to the floor the moment it finds one',
+    /found\.length\s*\?\s*GRID_MIN_MS/.test(GUARD));
+  /* Both schedulers fire from a MutationObserver. Neither checked for a sweep
+     already queued, so a churning page queued one timer per mutation batch and
+     ran the whole sweep on each. Measured on a YouTube watch page, 7.5s of
+     dragging the timeline: 61 sweeps and 200 hit tests before, 16 and 165 after. */
+  check('a sweep already queued is not queued again',
+    /function scheduleConfirmBaitSweep\(delay\) \{\s*if \(baitSweepTimer\) return;/.test(GUARD),
+    'one timer per mutation batch is tens of full sweeps a second');
+  check('and both schedulers go through it',
+    !/woTimeout\(sweepConfirmBait, \d+\)/.test(GUARD)
+      && (GUARD.match(/scheduleConfirmBaitSweep\(\d+\)/g) || []).length === 2,
+    'a caller that bypasses it puts the per-batch timer back');
 
   // -------------------------------------------------------------------------
   // Reading into the frames -- where the box turned out to actually be
