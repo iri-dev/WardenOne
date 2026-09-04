@@ -18,7 +18,7 @@
     <div class="guide-toplinks">
       <nav class="guide-nav" aria-label="Activity sections">
         <a class="is-active" href="#activity" aria-current="location">Recent</a>
-        <a href="#learned">Learned</a>
+        <a href="#learned">Blocked</a>
         <a href="#trusted">Trusted</a>
         <a href="notifications.html">Notifications</a>
       </nav>
@@ -33,7 +33,7 @@
       <div>
         <div class="guide-eyebrow">Local activity centre</div>
         <h1>What WardenOne did, in plain sight.</h1>
-        <p class="guide-lead"><strong>Review blocks, warnings, learned bad sites, and every exception you made.</strong> This is the complete local audit trail; it never leaves your browser.</p>
+        <p class="guide-lead"><strong>Review blocks, warnings, the sites that never load, and every exception you made.</strong> This is the complete local audit trail; it never leaves your browser.</p>
         <div class="guide-hero-actions">
           <a class="guide-btn primary" href="#activity">See recent events</a>
           <a class="guide-btn" href="notifications.html">Notification centre</a>
@@ -61,7 +61,7 @@
     <div class="guide-wrap">
       <div class="guide-section-head">
         <div><div class="guide-kicker">Local audit trail</div><h2>Recent decisions and exceptions.</h2></div>
-        <p>The timeline is the full record. Learned and trusted sites stay beside it so automatic decisions and your own exceptions are equally visible.</p>
+        <p>The timeline is the full record. Blocked and trusted sites stay beside it so automatic decisions and your own exceptions are equally visible.</p>
       </div>
       <div class="activity-grid" aria-label="Activity dashboard">
         <section class="panel dashboard-panel events-panel">
@@ -75,11 +75,16 @@
 
         <section class="panel dashboard-panel learned-panel" id="learned">
           <div class="panel-head">
-            <div><span class="panel-kicker">Auto-blocked</span><h2>Learned bad sites</h2></div>
+            <div><span class="panel-kicker">Never load</span><h2>Blocked sites</h2></div>
             <button class="btn" id="clear-learned">Forget all</button>
           </div>
-          <div class="panel-note">Sites WardenOne flagged by behavior that were not on a blocklist. These are blocked on future visits unless removed.</div>
-          <div class="list" id="learned-rows"><div class="empty">None yet - WardenOne learns these as you browse.</div></div>
+          <!-- Two kinds of entry live here and they are not the same thing: sites
+               WardenOne flagged by behaviour, and sites you blocked yourself from
+               the right-click menu. Each row says which it is, so your own
+               decision is not presented back to you as something WardenOne
+               worked out. -->
+          <div class="panel-note">Sites blocked on future visits: ones you blocked yourself from the right-click menu, and ones WardenOne flagged by behavior that were not on a blocklist. Each row says which. Remove one to let it load again.</div>
+          <div class="list" id="learned-rows"><div class="empty">None yet - block a site from the right-click menu, or WardenOne will add one it flags.</div></div>
         </section>
 
         <section class="panel dashboard-panel trusted-panel" id="trusted">
