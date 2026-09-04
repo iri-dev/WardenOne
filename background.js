@@ -16364,16 +16364,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // Learned bad domains: list / remove (for the Activity Log section).
+  // userBlocked travels with each row so the page can tell the two apart. A site
+  // the reader blocked from the right-click menu is not something WardenOne
+  // "learned by behaviour", and presenting it that way credits their own
+  // decision to the extension.
   if (msg && msg.kind === 'list-learned') {
-    const items = Object.keys(LEARNED).map((d) => ({ domain: d, firstSeen: LEARNED[d].firstSeen, reason: LEARNED[d].reason, hits: LEARNED[d].hits || 1 }))
-      .sort((a, b) => b.firstSeen - a.firstSeen);
+    const items = Object.keys(LEARNED).map((d) => ({
+      domain: d,
+      firstSeen: LEARNED[d].firstSeen,
+      reason: LEARNED[d].reason,
+      hits: LEARNED[d].hits || 1,
+      userBlocked: LEARNED[d].userBlocked === true,
+    })).sort((a, b) => b.firstSeen - a.firstSeen);
     sendResponse({ ok: true, items });
     return true;
   }
   if (msg && msg.kind === 'remove-learned' && msg.domain) {
     try {
-      const d = normalizeLearnedDomain(msg.domain);
-      if (d) delete LEARNED[d];
+      /* Remove the key that is actually in the map, before falling back to the
+         normaliser. normalizeLearnedDomain vetoes every never-block domain --
+         twitch.tv, youtube.com, google.com, github.com and thirty-odd more --
+         by returning '', which is right when deciding what may be BLOCKED and
+         wrong here: those are exactly the sites people block by hand, so the
+         row appeared in the list and its Remove button silently did nothing.
+         Removing a block can never be the unsafe direction. */
+      const raw = String(msg.domain || '').trim().toLowerCase().replace(/^www\./, '');
+      const key = Object.prototype.hasOwnProperty.call(LEARNED, raw)
+        ? raw
+        : normalizeLearnedDomain(msg.domain);
+      if (key && Object.prototype.hasOwnProperty.call(LEARNED, key)) delete LEARNED[key];
       localSet({ wardenone_learned: LEARNED }).then(() => { applyLearnedRules(); sendResponse({ ok: true }); }).catch((e) => sendResponse({ ok: false, error: String(e) }));
     } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     return true; // async

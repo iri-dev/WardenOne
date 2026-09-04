@@ -577,7 +577,7 @@ function loadLearned() {
     box.textContent = '';
     if (!res || !res.ok || !res.items || !res.items.length) {
       const e = document.createElement('div'); e.className = 'empty';
-      e.textContent = 'None yet - WardenOne learns these as you browse.';
+      e.textContent = 'None yet - block a site from the right-click menu, or WardenOne will add one it flags.';
       box.appendChild(e);
       return;
     }
@@ -587,13 +587,18 @@ function loadLearned() {
       const title = document.createElement('div'); title.className = 'rtitle';
       title.textContent = it.domain;
       const meta = document.createElement('div'); meta.className = 'rmeta';
-      meta.textContent = (it.reason || 'suspicious behavior') + ' - seen ' + (it.hits || 1) + 'x - ' + fmtWhen(it.firstSeen);
+      /* A site the reader blocked themselves says so, and says it in their own
+         terms: "seen 1x" reads like a detection count for something that was a
+         decision, not an observation. */
+      meta.textContent = it.userBlocked
+        ? 'You blocked this site - ' + fmtWhen(it.firstSeen)
+        : (it.reason || 'suspicious behavior') + ' - seen ' + (it.hits || 1) + 'x - ' + fmtWhen(it.firstSeen);
       left.appendChild(title); left.appendChild(meta);
       const btn = document.createElement('button'); btn.className = 'btn';
       btn.style.cssText = 'flex:none;padding:6px 12px;font-size:11px;';
-      btn.textContent = 'Remove';
+      btn.textContent = it.userBlocked ? 'Unblock' : 'Remove';
       btn.addEventListener('click', () => {
-        btn.disabled = true; btn.textContent = 'Removing...';
+        btn.disabled = true; btn.textContent = it.userBlocked ? 'Unblocking...' : 'Removing...';
         chrome.runtime.sendMessage({ kind: 'remove-learned', domain: it.domain }, () => { void chrome.runtime.lastError; loadLearned(); });
       });
       row.appendChild(left); row.appendChild(btn);
@@ -602,7 +607,7 @@ function loadLearned() {
   });
 }
 document.getElementById('clear-learned').addEventListener('click', () => {
-  if (confirm('Forget ALL learned bad sites? They will no longer be blocked on future visits unless re-detected.')) {
+  if (confirm('Forget every blocked site, including the ones you blocked yourself? They will all load normally again.')) {
     chrome.runtime.sendMessage({ kind: 'clear-learned' }, () => { void chrome.runtime.lastError; loadLearned(); });
   }
 });
