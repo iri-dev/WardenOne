@@ -77,6 +77,14 @@ The two things a bundled list can never cover: a rule only you want, and a list 
 - **Custom lists** — subscribe to a filter list someone else maintains: a country-specific annoyance list, a niche tracker list, your own hosted one. Each has its own on/off, an **Update now**, a rule count, and when it last changed. Fetched over https with the same guard as every other network read — no private addresses, no odd ports, no redirect onto one — and a list that fails to refresh keeps the copy it already had rather than leaving a gap.
 - Hiding rules you write ride the same channel as elements hidden with the Element Zapper, so allowlisting a site's ads never silently un-hides something you chose to remove.
 
+### Network logger (advanced)
+The Activity Centre tells you a security event happened. The logger tells you **which request it was, whether WardenOne blocked or allowed it, and which rule decided** &mdash; so when a site breaks, you can find the one rule responsible instead of switching protections off at random. It is the natural companion to My filters: the place you find out what your own rule actually did.
+- Every request with its outcome, type, first- or third-party, the page that asked for it, and the list the matching rule came from &mdash; My rules, a custom list, tracker blocking, the IP-grabber list, your allowlist.
+- Click a row to turn it into a rule: block just that host, block the whole domain above it, block that one path, or allow it back. All four write into **My rules**, so nothing the logger does to your filtering is hidden somewhere you would not think to look. Blocking `ads.example.com` and blocking all of `example.com` are offered as the two different things they are.
+- **It records only while the page is open.** Capture starts when you open it and stops when you close it, so ordinary browsing pays nothing for a window you forgot about &mdash; and the buffer is dropped when the last one closes, because a list of every URL you loaded should not outlive the window you opened to look at it.
+- Anything resembling a token, key, password or address is replaced with `[removed]` **before** the request is recorded, and the log is capped at the last 1000 requests. It is kept in memory and never written to disk unless you press Export.
+- Chrome reports the exact matched rule only for an unpacked build. On a packed one the logger says so plainly rather than guessing at an attribution it does not have.
+
 ### Anti-tracking &amp; privacy
 - Hard-block trackers and analytics (Google Analytics, DoubleClick, Facebook Pixel…).
 - **Do Not Track &amp; Global Privacy Control** opt-out signals.
