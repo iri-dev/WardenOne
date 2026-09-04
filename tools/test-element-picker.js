@@ -210,6 +210,42 @@ const looksGenerated = loadLooksGenerated();
     /const n = matchCount\(rule\)/.test(PICKER) && /matches ' \+ n \+ ' things/.test(PICKER));
   check('the confirmation warns when the rule is positional',
     /if \(isFragile\(rule\)\)/.test(PICKER));
+
+  /* ---- a rule has to survive the list reordering -------------------------- *
+   * Pinning to position fixed "hiding one avatar hides everyone's", and traded
+   * it for something worse on a feed: the rule points at the SLOT, so after the
+   * list reorders it comes back hiding whoever moved into it. Verified live --
+   * zapping bob and reordering left the rule matching alice. Anything that names
+   * itself is now preferred over anything positional. */
+  check('a stable ancestor is anchored to before position is considered',
+    /function anchoredSelector\(el\)/.test(PICKER)
+      && /const anchored = anchoredSelector\(el\);[\s\S]{0,80}if \(anchored\) return anchored;/.test(PICKER));
+  check('anchoring only accepts an ancestor that names itself',
+    /function identifies\(sel, tag\)/.test(PICKER)
+      && /sel\.indexOf\('#'\) === 0 \|\| sel\.indexOf\('\['\) >= 0/.test(PICKER));
+  /* href is the strongest identifier a list item has: it says WHICH thing the
+     card is about, and it survives reordering. */
+  check('a link is described by where it goes',
+    /function stableHref\(el\)/.test(PICKER) && /tag \+ '\[href="' \+ href \+ '"\]'/.test(PICKER));
+  check('and a javascript: or fragment href is not used',
+    /\^\(#\|javascript:\|data:\|blob:\)/.test(PICKER));
+  /* An allowlist of seven attribute names does not generalise; sites label list
+     items with data-who, data-channel, data-item and a hundred others. */
+  check('any stable-looking data attribute can anchor a rule',
+    /if \(name\.indexOf\('data-'\) !== 0\) continue;/.test(PICKER));
+  /* Built without a regex literal: the needle IS a regex literal, and writing
+     it inside another one is how this assertion got written wrong twice. */
+  check('but not a numeric one, which is nth-child in disguise',
+    PICKER.indexOf(String.fromCharCode(47) + '^' + String.fromCharCode(92) + 'd+$'
+      + String.fromCharCode(47) + '.test(v)') >= 0);
+  /* Our own marker is on the element only because we just hid it, so a rule
+     anchored to it would match nothing once the page reloads -- a rule that
+     is true exactly while it is unnecessary. */
+  check('and never our own marker',
+    PICKER.indexOf("if (name.indexOf('data-wardenone') === 0) continue;") >= 0);
+  check('a positional rule inside a list says it will follow the slot',
+    /function looksLikeListItem\(el\)/.test(PICKER)
+      && /hide whatever moves into that slot/.test(PICKER));
   check('Verify & Repair treats the injected picker as a core file',
     /CORE_FILES = \[[^\]]*'element-picker\.js'/.test(BG));
   check('Verify & Repair includes the full zap manager',
@@ -330,16 +366,36 @@ const looksGenerated = loadLooksGenerated();
      1200-element page: 2000 events cost 126.6ms doing the work per event, and
      1.6ms coalesced to one update per frame. Three separate causes, so three
      separate checks. */
-  /* Matched as a declaration -- with a duration -- not as the bare words, which
-     also appear in the comment above the rule explaining why they are gone. */
-  check('the highlight transitions only transform',
-    /transition:transform [\d.]+s linear/.test(PICKER) && !/transition:all [\d.]+s/.test(PICKER),
-    'transition:all animates left/top/width/height, which lays out on every move');
+  /* Nothing on the highlight is transitioned. It used to ease transform over
+     .06s while width and height snapped in one frame, so the outline trailed
+     the pointer by about four frames AND was briefly the new element's size at
+     the old element's position. Measured in Chrome with a hand-driven frame
+     clock: one frame after jumping between two elements, the old box was still
+     at the element it had left; the new one was already exactly on the target.
+     Matched as a declaration -- with a duration -- not as the bare word, which
+     also appears in the comment above the rule explaining why it is gone. */
+  check('nothing on the highlight is transitioned',
+    !/transition:[a-z-]+ [\d.]+s/.test(PICKER),
+    'a transition on transform makes the outline trail the cursor');
   check('the highlight is positioned by transform, not by layout properties',
     /box\.style\.transform = 'translate3d\(/.test(PICKER)
       && !/box\.style\.left =/.test(PICKER) && !/box\.style\.top =/.test(PICKER));
+  check('the box position is only written when it changes',
+    /if \(r\.left !== boxX \|\| r\.top !== boxY\)/.test(PICKER));
   check('the box size is only written when it changes',
     /if \(r\.width !== boxW\)/.test(PICKER) && /if \(r\.height !== boxH\)/.test(PICKER));
+  check('and showing or hiding it is not rewritten every frame',
+    /if \(boxOn\) \{ boxOn = false; box\.style\.display = 'none'; \}/.test(PICKER)
+      && /if \(!boxOn\) \{ boxOn = true; box\.style\.display = 'block'; \}/.test(PICKER));
+  /* A still pointer over a page that moves -- a scroll, a lazy image landing --
+     left the outline drawn over where the element used to be until you jogged
+     the mouse. Measured: scrolling 200px under a still pointer moved the box by
+     exactly 200px afterwards, and not at all before. */
+  check('the highlight follows the page when it moves under a still pointer',
+    /function onScroll\(\) \{/.test(PICKER)
+      && /window\.addEventListener\('scroll', onScroll, \{ capture: true, passive: true \}\);/.test(PICKER));
+  check('and that listener is removed with the rest',
+    /window\.removeEventListener\('scroll', onScroll, true\);/.test(PICKER));
   check('pointer tracking is coalesced to one update per frame',
     /if \(!moveRaf\) moveRaf = requestAnimationFrame\(trackPointer\)/.test(PICKER)
       && /function trackPointer\(\)/.test(PICKER),
@@ -347,17 +403,34 @@ const looksGenerated = loadLooksGenerated();
   check('the queued frame is cancelled when the tool closes',
     /if \(moveRaf\) \{ try \{ cancelAnimationFrame\(moveRaf\); \} catch \(_\) \{\} moveRaf = 0; \}/.test(PICKER));
 
-  /* The panel says what it is and that it is WardenOne. Something unexplained
-     that follows your cursor is alarming rather than helpful, and a plain dark
-     box on someone else's page could be anything. */
-  check('the zapper names itself', /panelHead\('Element Zapper'/.test(PICKER));
-  check('and says whose it is', /el\('span', 'brand', 'WardenOne'\)/.test(PICKER));
-  check('both states share one header',
-    (PICKER.match(/panelHead\(/g) || []).length >= 3);
-  check('the count only appears once there is one',
-    /if \(zapCount > 0\) head\.appendChild\(el\('span', 'tally'/.test(PICKER));
-  check('it carries the house edge rather than a plain box',
-    /\.bar::before\{[^']*linear-gradient\(90deg,#b06fd6,#df6ca9\)/.test(PICKER));
+  /* The panel appears on somebody else's page, exactly as a toast does, so it
+     wears the toast's clothes: pale lavender card, plum rail down the left,
+     Quicksand for the line that matters. It was a dark panel with an uppercase
+     two-part eyebrow and a green status dot -- the language of the extension's
+     OWN pages, which is the wrong register here, and the dot was reporting
+     nothing at all. */
+  check('the panel is the engine toast card, not a dark box',
+    /background:linear-gradient\(135deg,#faf2fe,#f4e9fb\)/.test(PICKER)
+      && /border-left:4px solid #9d54c9/.test(PICKER));
+  check('and uses the toast type colours',
+    /color:#3d2a52/.test(PICKER) && /color:#7a5f93/.test(PICKER));
+  check('the forced status dot is gone', !/\.dot\{/.test(PICKER) && !/#49c879/.test(PICKER));
+  check('so is the uppercase branded header',
+    !/panelHead/.test(PICKER) && !/letter-spacing:\.11em/.test(PICKER));
+  /* Whose it is, said once and quietly, on the same hairline footer the engine's
+     own toasts use for their small print. */
+  check('it still says whose it is', /el\('span', 'who', 'WardenOne'\)/.test(PICKER)
+    && /\.keys \.who\{margin-left:auto/.test(PICKER));
+  check('the footer is the toast hairline',
+    /border-top:1px solid rgba\(157,84,201,\.16\)/.test(PICKER));
+  /* The count is the heading now, which is where the thing that changes belongs. */
+  check('the count is the heading, not a pill',
+    /zapCount === 1 \? 'One thing hidden' : zapCount \+ ' things hidden'/.test(PICKER)
+      && !/'tally'/.test(PICKER));
+  /* A page with no hostname otherwise produced "remembered for ." mid-sentence. */
+  check('a page with no hostname is still named in a sentence',
+    /const HOST_LABEL = HOST \|\| 'this page';/.test(PICKER)
+      && !/' \+ HOST \+ '/.test(PICKER));
   check('the removed picker does not still name itself', !/Element Picker active/.test(PICKER));
   check('the in-page tool contains no emoji', !/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u.test(PICKER));
   /* A zap that vanishes on reload is one you have to do again on every visit,
@@ -398,6 +471,14 @@ const looksGenerated = loadLooksGenerated();
   check('post-Done Ctrl+Z leaves editors alone',
     /undoTargetIsEditable/.test(PICKER) && /input\|textarea\|select/.test(PICKER)
       && /contenteditable/.test(PICKER));
+  /* ...which is why the tool takes the caret when it opens. A site that keeps
+     the caret in a chat box -- Twitch does -- otherwise swallowed every undo
+     but the first: the first press landed while the body still had focus, and
+     every one after it went to the chat box. Measured in Chrome with the caret
+     in an input before the Zapper loaded: four zaps, four presses, none of them
+     undid anything; with the blur, all four did. */
+  check('the Zapper takes the caret off a text field when it opens',
+    /if \(undoTargetIsEditable\(document\.activeElement\)\) document\.activeElement\.blur\(\);/.test(PICKER));
   check('a failed save is reported instead of claiming persistence',
     /hidden only until this page reloads/.test(PICKER));
 }());

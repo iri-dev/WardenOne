@@ -41,7 +41,9 @@ function check(name, condition, extra) {
 
 // Lift the config binding itself rather than describing it here. A second copy of the derivation
 // rules would drift from the engine's, and then this suite would be testing its own opinion.
-const from = SRC.indexOf('    const WO={},');
+// The chain now begins with the named YouTube pause list, which the derivation
+// below reads -- slicing from `const WO={}` would leave it undefined.
+const from = SRC.indexOf('    const YT_COMPAT_PAUSED=[');
 const to = SRC.indexOf('    WO_TOP=window===window.top,');
 if (from < 0 || to <= from) throw new Error('engine config binding markers not found');
 const chain = SRC.slice(from, to).replace(/,\s*$/, ';');
@@ -144,22 +146,42 @@ function seed(t, config) {
 //    config changes -- the failure mode that trades one bug for another.
 // ---------------------------------------------------------------------------
 {
-  const full = { enabled: true, showBadge: true, showToasts: true, adShield: true, scriptletEngine: true, removeOverlays: true, __configReady: true };
+  // Carries one setting from each side of the YouTube carve-out: removeOverlays
+  // and blockAutoplay are paused there by name, the rest must come through.
+  const full = { enabled: true, showBadge: true, showToasts: true, adShield: true, scriptletEngine: true, removeOverlays: true, blockAutoplay: true, cleanCopyLinks: true, detectPhishing: true, sessionShield: true, __configReady: true };
 
+  // Amazon and Shopify used to take a whole-engine exit: the runtime returned
+  // before installing anything and this derivation turned every boolean off,
+  // while both still stamped __wardenOneInstalled so the tab reported itself
+  // protected. Removed -- YouTube is now the only host that pauses anything, and
+  // it pauses only the names in YT_COMPAT_PAUSED.
   const az = boot('www.amazon.co.uk');
   seed(az, full);
-  check('Amazon compatibility mode survives the rewrite',
-    az.WO.enabled === false && az.WO.__amazonCompatibilityMode === true && az.WO.removeOverlays === false);
+  check('Amazon gets the ordinary config like any other site',
+    az.WO.enabled === true && az.WO.removeOverlays === true
+      && az.WO.__amazonCompatibilityMode === undefined,
+    'a site-wide off switch is what this check exists to prevent coming back');
 
+  // The YouTube carve-out names what it pauses. It used to turn every boolean
+  // off and switch two back on, which paused 64 default-on protections while the
+  // popup still showed them as enabled -- and it set enabled:false, which killed
+  // through scriptletRuntimeOn the very adShield/scriptletEngine it had just
+  // restored. Both directions are pinned here: what stays on, and what stays off.
   const yt = boot('www.youtube.com');
   seed(yt, full);
   check('YouTube carve-outs survive the rewrite',
-    yt.WO.enabled === false && yt.WO.adShield === true && yt.WO.scriptletEngine === true);
+    yt.WO.enabled === true && yt.WO.adShield === true && yt.WO.scriptletEngine === true,
+    'enabled:false silently disabled the ad blocking this branch tries to keep');
+  check('the YouTube carve-out pauses only what it names',
+    yt.WO.removeOverlays === false && yt.WO.blockAutoplay === false
+      && yt.WO.cleanCopyLinks === true && yt.WO.detectPhishing === true
+      && yt.WO.sessionShield === true,
+    'see tools/test-youtube-compat.js for the full list and the reasoning');
 
   // Re-deriving is the point: a config change on a carve-out site must re-apply the carve-out.
   seed(yt, Object.assign({}, full, { adShield: false }));
   check('a carve-out site re-derives on every config change',
-    yt.WO.adShield === false && yt.WO.enabled === false,
+    yt.WO.adShield === false && yt.WO.removeOverlays === false,
     'derived config went stale');
 }
 

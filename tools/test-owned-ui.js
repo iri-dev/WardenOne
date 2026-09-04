@@ -513,9 +513,35 @@ function loadCookieEscape() {
   check('the panel still receives clicks',
     /\.panel\{[^}]*pointer-events:auto/.test(shadowCss), 'the panel would be unclickable');
 
+  // The badge is position:fixed and mounted on every page for the whole visit.
+  // A backdrop-filter on it makes the compositor capture what is painted behind
+  // it, blur it and recomposite once per frame forever -- and over a playing
+  // video it drags the video off its GPU overlay path, because the blur needs
+  // the video's own pixels. Measured on a YouTube watch page while scrubbing,
+  // through the long-animation-frame API: frames of 55-66ms (~17fps) with
+  // script time ~0, style+layout 0, and blocking of only 5-13ms. No script and
+  // no layout is the giveaway that the cost is not JavaScript at all, which is
+  // why every JS optimisation aimed at it changed nothing.
+  const badgeRule = (shadowCss.match(/\.b\{[^}]*\}/) || [''])[0];
+  check('the resting badge has no backdrop-filter', !!badgeRule
+    && !/backdrop-filter/.test(badgeRule),
+    'a per-frame blur behind an always-mounted fixed element costs ~40ms/frame on video pages');
+  check('and the badge still reads as frosted without it',
+    /background:rgba\(250,245,254,\.6[0-9]?\)/.test(badgeRule),
+    'the background alpha carries the look the blur used to');
+  // The panel may keep its blur: it is display:none until deliberately opened,
+  // and an undisplayed element is never composited. This pins that reasoning --
+  // if the panel ever became visible by default the blur would cost the same.
+  const panelRule = (shadowCss.match(/\.panel\{[^}]*\}/) || [''])[0];
+  check('the panel is not displayed until opened', /display:none/.test(panelRule),
+    'its backdrop-filter is only free while it is undisplayed');
+
   // Source-only fixes that never reach the build are invisible everywhere but here.
   check('the packaged engine carries the hardened host',
     MIN.includes('all:initial!important;position:fixed!important;top:0!important;left:0!important'));
+  check('the packaged engine has no badge blur',
+    !MIN.includes('backdrop-filter:blur(14px) saturate(1.4)'),
+    'the fix has to reach content.min.js, not just the source');
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +626,27 @@ function loadCookieEscape() {
     check('the packaged engine carries the same dwell',
       MIN.includes('BADGE_FADE_MS=' + ms) && (MIN.match(/BADGE_FADE_MS/g) || []).length >= 3);
   }
+
+  /* The badge stopped fading at all, and the fade timer was not the reason.
+     "hot" is added the moment anything is blocked and used to be checked inside
+     the timer to keep the badge visible -- but nothing ever removed it, so the
+     first block on a page pinned the badge open for the rest of the visit. It
+     means "something happened just now", so it has to decay with the highlight
+     it belongs to. */
+  check('the badge settles again after activity stops',
+    /settleBadge=\(\)=>\{[\s\S]{0,160}classList\.remove\("hot"\)/.test(ENGINE),
+    'a class the fade checks for is never cleared, so the fade can never run');
+  check('nothing keeps the badge up by testing for "hot" in the timer',
+    !/contains\("hot"\)\|\|/.test(ENGINE),
+    'the old guard is back and pins the badge open on the first block');
+  check('a damaged guard still stays visible',
+    /settleBadge=\(\)=>\{\s*bEl\.classList\.contains\("damaged"\)\s*\|\|/.test(ENGINE),
+    'a real fault would fade away with the ordinary highlight');
+  check('both timers share the one settle',
+    (ENGINE.match(/setTimeout\(settleBadge/g) || []).length >= 2);
+  /* An answer to a question the reader asked is not something that was blocked. */
+  check('a manual check result does not raise the blocked counter',
+    /"detected_manual_check"\]\)/.test(ENGINE));
 }
 
 if (failures) {

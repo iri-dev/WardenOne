@@ -104,7 +104,7 @@
       try { event.removeListener(fn); } catch (_) {}
     }
   };
-  window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust';
+  window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust+yt-native-player-controls+contrast-guard-skips-player-chrome';
 
   // Twitch EXTENSION overlay iframes (*.ext-twitch.tv) sit transparently ON TOP of the
   // stream <video>. They are NOT matched by isTwitchHost() (the "-twitch.tv" suffix), so
@@ -874,6 +874,32 @@
     }
     return false;
   }
+  /* A video player's chrome sits on the video, not on the page, and it is fully
+     specified by the site profiles. The guard must not touch it: its background
+     walk stops after 8 ancestors, and on a YouTube watch page the player's black
+     is found at the 8th -- the last one that fits. One more wrapper (chapters, a
+     live badge, a hover tooltip) and the walk returns nothing, the guard falls
+     back to the PAGE background, and white player text against an assumed white
+     page scores 1.00 -- so it repaints the clock near-black, inline and
+     important, which no stylesheet can outrank. That is the clock going white
+     and then black a moment later. */
+  const EW_PLAYER_CHROME = '#movie_player,.html5-video-player,.ytp-chrome-top,.ytp-chrome-bottom,'
+    + '.video-player,.persistent-player,[data-a-target="video-player"],[data-a-target="player-controls"]';
+  /* Resolved once per run rather than asked per element. `closest()` with this
+     list cost 8.4ms of every guard run on a YouTube watch page -- 5401 elements
+     interrogated to spare the 67 that are actually in the player. Against the
+     handful of roots `contains()` is a native tree test, and on a page with no
+     player at all the list is empty and the check costs nothing. */
+  function ewPlayerRoots() {
+    try { return Array.prototype.slice.call(document.querySelectorAll(EW_PLAYER_CHROME)); }
+    catch (_) { return []; }
+  }
+  function ewInPlayer(roots, el) {
+    for (let i = 0; i < roots.length; i++) {
+      try { if (roots[i].contains(el)) return true; } catch (_) {}
+    }
+    return false;
+  }
   function ewReadableTextCandidate(el) {
     if (!el || el.nodeType !== 1 || EW_CONTRAST_SKIP_TAGS.test(el.tagName || '')) return false;
     try { if (el.closest && el.closest('svg,canvas,video,audio,iframe,embed,object')) return false; } catch (_) {}
@@ -933,12 +959,16 @@
     const fallbackBg = /light/i.test(mode) ? { r: 255, g: 255, b: 255 } : { r: 20, g: 20, b: 22 };
     if (!document.body) return;
     const managed = isManagedThemeHost();
+    const playerRoots = ewPlayerRoots();
     let budget = managed ? 450 : 900;
     walkElements(document.body, managed ? 8000 : 14000, (el) => {
       if (budget <= 0) return false;
       if (el === document.body) return;
       if (isWardenOneOwnedNode(el)) return;
+      /* Cleared first, so a fix an older build left inside the player is undone
+         rather than stranded there for the life of the page. */
       if (el.hasAttribute('data-wo-contrast')) ewClearContrastFixNode(el);
+      if (playerRoots.length && ewInPlayer(playerRoots, el)) return;
       if (!ewReadableTextCandidate(el)) return;
       budget--;
       let cs; try { cs = getComputedStyle(el); } catch (_) { return; }
@@ -1679,12 +1709,52 @@
         : '');
   }
 
+  /* Anything painted by the channel swatch keeps its own colour. */
+  const NOT_SWATCH = ':not(.ytp-swatch-background-color)';
+
   function youtubePlayerCSS(text) {
-    return '#player,#player-container,#movie_player,.html5-video-player{background-color:#000000 !important;}'
+    /* The player is black in every mode -- YouTube builds its chrome for a black
+       surface, and the first rule here forces one -- so the colour on the shell
+       is white whatever the page theme is. Without it, anything inside that no
+       rule below claims inherits the PAGE's text colour, which in light mode is
+       near-black on a black player. */
+    return '#player,#player-container,#movie_player,.html5-video-player{background-color:#000000 !important;color:#ffffff !important;}'
       + '#movie_player .html5-video-container,#movie_player .html5-video-container *,#movie_player .video-stream,#movie_player video,#movie_player .ytp-player-content,#movie_player .ytp-player-content *,#movie_player .ytp-cued-thumbnail-overlay,#movie_player .ytp-cued-thumbnail-overlay-image,#movie_player .ytp-iv-video-content,#movie_player .ytp-ad-player-overlay,#movie_player .ytp-ad-overlay-container{background-color:transparent !important;border-color:transparent !important;box-shadow:none !important;}'
       + '#movie_player .ytp-chrome-top,#movie_player .ytp-chrome-bottom,#movie_player .ytp-gradient-top,#movie_player .ytp-gradient-bottom,#movie_player .ytp-caption-window-container,#movie_player .ytp-subtitles-player-content,#movie_player .ytp-ce-element{background-color:transparent !important;}'
-      + '#movie_player button,#movie_player [role="button"],#movie_player .ytp-button,#movie_player [class*="button" i]{background-color:transparent !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
-      + '#movie_player svg,#movie_player path,#movie_player yt-icon{background-color:transparent !important;}';
+      + '#movie_player button' + NOT_SWATCH + ',#movie_player [role="button"]' + NOT_SWATCH + ',#movie_player .ytp-button' + NOT_SWATCH + ',#movie_player [class*="button" i]' + NOT_SWATCH + '{background-color:transparent !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
+      + '#movie_player svg,#movie_player path,#movie_player yt-icon{background-color:transparent !important;}'
+      /* The clock, the seek bar and the volume slider are not buttons and carry
+         no "button" in their class, so nothing above claimed them and the page
+         remap painted them like ordinary page furniture -- the track and the
+         buffered span went black on a black player, and the clock went dark on
+         black in light mode. These are YouTube's own values, read off the site,
+         not theme ones: the player is black in every mode, so they do not
+         follow the page. */
+      + '#movie_player .ytp-chrome-controls,#movie_player .ytp-left-controls,#movie_player .ytp-right-controls,#movie_player .ytp-progress-bar-container,#movie_player .ytp-progress-bar,#movie_player .ytp-progress-bar-padding,#movie_player .ytp-scrubber-container,#movie_player .ytp-chapter-hover-container,#movie_player .ytp-volume-area,#movie_player .ytp-volume-panel,#movie_player .ytp-volume-slider{background-color:transparent !important;}'
+      /* And a net under all of it. Naming the parts one at a time leaves any
+         wrapper that was not named to the page remap, which paints it like a
+         card -- a pale box behind the controls. Nothing in the bottom chrome
+         has a surface of its own: it is an overlay on video. The four that do
+         carry paint are excluded here and given their own values below.
+         `:not()` takes the specificity of its argument, so this rule outranks
+         them; excluding them is what keeps their values. */
+      + '#movie_player .ytp-chrome-bottom :where(div,span):not(.ytp-swatch-background-color):not(.ytp-progress-list):not(.ytp-load-progress):not(.ytp-hover-progress):not(.ytp-volume-slider-handle):not(.ytp-time-wrapper){background-color:transparent !important;background-image:none !important;box-shadow:none !important;}'
+      + '#movie_player .ytp-progress-list{background-color:rgba(40,40,40,.6) !important;}'
+      + '#movie_player .ytp-load-progress{background-color:rgba(255,255,255,.4) !important;}'
+      + '#movie_player .ytp-hover-progress{background-color:rgba(0,0,0,.125) !important;}'
+      + '#movie_player .ytp-volume-slider-handle{background-color:#ffffff !important;}'
+      /* YouTube puts a faint dark pill behind the clock so it stays legible
+         over a bright frame. The net above was flattening it. */
+      + '#movie_player .ytp-time-wrapper{background-color:rgba(0,0,0,.3) !important;}'
+      + '#movie_player .ytp-time-display,#movie_player .ytp-time-display *,#movie_player .ytp-chapter-title-content,#movie_player .ytp-chapter-container,#movie_player .ytp-bound-time-left,#movie_player .ytp-bound-time-right{background-color:transparent !important;color:#eeeeee !important;-webkit-text-fill-color:#eeeeee !important;text-shadow:none !important;opacity:1 !important;}'
+      /* YouTube makes the elapsed time a shade brighter than the duration
+         beside it. Same specificity as the rule above, so it has to come
+         after it to win. */
+      + '#movie_player .ytp-time-current{color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;}'
+      /* The bar and the knob are painted by the channel's own swatch, which is
+         not always red -- it was yellow on the video this was reported from --
+         so nothing here sets a colour on them. They only need to be let alone. */
+      + '#movie_player .ytp-swatch-background-color{border-color:transparent !important;box-shadow:none !important;}';
   }
 
   function managedShadowCSS(mode) {

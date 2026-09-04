@@ -420,6 +420,7 @@ const TOAST_TITLES = {
   warned_fake_update: 'Fake update scam',
   warned_keystroke_pressure: 'Heavy text-input monitoring',
   warned_honeytoken_read: 'Suspicious script behaviour detected',
+  detected_manual_check: 'WardenOne check',
   behavioral_risk: 'Suspicious site behavior',
 };
 
@@ -2113,6 +2114,60 @@ function trustCurrentDownloadSite() {
   });
 }
 
+async function writePopupClipboard(value) {
+  const text = String(value || '');
+  if (!text) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {}
+  try {
+    const box = document.createElement('textarea');
+    box.value = text;
+    box.setAttribute('readonly', '');
+    box.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+    document.body.appendChild(box);
+    box.select();
+    const ok = document.execCommand('copy');
+    box.remove();
+    return !!ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function copyCleanCurrentAddressFromPopup() {
+  const button = $('copy-clean-current-address');
+  const status = $('copy-clean-current-address-result');
+  if (!button || !status) return;
+  button.disabled = true;
+  status.style.display = 'block';
+  status.style.color = 'var(--ink-faint)';
+  status.textContent = 'Cleaning the current address...';
+  chrome.runtime.sendMessage({ kind: 'clean-current-address' }, async (result) => {
+    const runtimeError = chrome.runtime.lastError;
+    if (runtimeError || !result || !result.ok) {
+      status.style.color = 'var(--wo-danger)';
+      status.textContent = (result && result.error) || 'Could not read the current page address.';
+      button.disabled = false;
+      return;
+    }
+    const wrote = await writePopupClipboard(result.cleaned);
+    if (!wrote) {
+      status.style.color = 'var(--wo-danger)';
+      status.textContent = 'Chrome refused clipboard access. Press Alt+Shift+C instead.';
+      button.disabled = false;
+      return;
+    }
+    status.style.color = 'var(--wo-success)';
+    if (!result.changed) status.textContent = 'Copied. This address had no known tracking junk.';
+    else if (result.removed === 1) status.textContent = 'Copied clean. Removed one tracking parameter.';
+    else if (result.removed > 1) status.textContent = 'Copied clean. Removed ' + result.removed + ' tracking parameters.';
+    else status.textContent = 'Copied clean. Removed the tracking wrapper.';
+    button.disabled = false;
+  });
+}
+
 $('enabled').addEventListener('change', () => {
   updateMasterState();
   reflectMasterDisable();
@@ -2164,6 +2219,7 @@ $('whoisxml-threat-test-key')?.addEventListener('click', () => setupReputationPr
 $('vt-scan-go')?.addEventListener('click', scanUrlWithVirusTotal);
 $('vt-scan-url')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') scanUrlWithVirusTotal(); });
 $('download-trust-add-current')?.addEventListener('click', trustCurrentDownloadSite);
+$('copy-clean-current-address')?.addEventListener('click', copyCleanCurrentAddressFromPopup);
 
 // Auto-save the moment ANY toggle flips, so settings persist without needing a
 // separate "Save" click (the #1 source of "my toggle didn't stay on"). The Save

@@ -381,6 +381,11 @@
   .btn.soft-danger:hover { background:#edc8df; }
   .shortcut-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:9px; }
   .shortcut-grid .btn { padding:8px 9px; border-radius:999px; font-size:11px; }
+  .row.clean-copy-row { align-items:flex-start; gap:10px; }
+  .clean-copy-body { flex:1; min-width:0; }
+  .clean-copy-row .desc { max-width:none; }
+  .clean-copy-action { width:100%; margin-top:8px; padding:8px 10px; font-size:11px; }
+  .clean-copy-result { display:none; margin-top:6px; color:var(--ink-faint); font-size:10.5px; line-height:1.35; }
   .tool-divider { height:1px; background:var(--line); margin:11px 0; }
   .inline-version { font-size:11px; font-weight:700; color:var(--ink-soft); white-space:nowrap; }
   .nav-btn { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--plum); }
@@ -1003,8 +1008,11 @@
       <div><div class="name">Clean tracking redirects on links</div><div class="desc">Rewrite outbound links that hide the real destination behind a tracker (Facebook l.php, Google /url, Reddit out, etc.) so a click goes straight there.</div></div>
       <label class="tg"><input type="checkbox" data-key="unshimLinks"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row">
-      <div><div class="name">Clean links on copy</div><div class="desc">Strips tracking junk (utm_, fbclid, YouTube si, Amazon ref and similar) from links whenever you copy them — selected text, page links, and site Copy-link buttons all land clean on your clipboard. On by default.</div></div>
+    <div class="row clean-copy-row">
+      <div class="clean-copy-body"><div class="name">Clean links copied inside pages</div><div class="desc">Auto-strips tracking (utm_, fbclid, YouTube si, Amazon ref and similar) as you copy, so pastes come out clean. Covers Ctrl+C on a link and site Share/Copy buttons. Chrome&rsquo;s own &ldquo;Copy link address&rdquo; and the address bar are browser-level, so no extension can catch them &mdash; for those use the right-click &ldquo;Copy clean link&rdquo;, or Alt+Shift+C for this page. On by default.</div>
+        <button class="btn clean-copy-action" id="copy-clean-current-address" type="button" aria-describedby="copy-clean-current-address-result">Copy clean current address</button>
+        <div class="clean-copy-result" id="copy-clean-current-address-result" role="status" aria-live="polite"></div>
+      </div>
       <label class="tg"><input type="checkbox" data-key="cleanCopyLinks"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">

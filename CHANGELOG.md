@@ -17,6 +17,12 @@ as the work happened.
 
 ### Added
 
+- Added a browser-level clean-copy route for the current page address. Chrome
+  does not expose ordinary Ctrl+C from its top address bar to extensions, so
+  WardenOne now provides Alt+Shift+C and a popup button that copy the active
+  page URL after removing known tracking parameters and copied text-fragment
+  payloads; the setting text now says exactly which page copies it can clean
+  automatically.
 - Brought Notifications and Activity into the same page system as the DNS,
   Permissions, and API-key guides, with the shared dark top bar, wide guide hero,
   paper ledger panels, responsive navigation, and clearer local-storage summaries.

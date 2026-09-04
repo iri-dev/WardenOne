@@ -31,6 +31,9 @@
   window.__wardenOnePickerActive = true;
 
   const HOST = location.hostname;
+  /* What to call this site in a sentence. A page with no hostname -- a local
+     file, an about: page -- otherwise produced "remembered for ." mid-sentence. */
+  const HOST_LABEL = HOST || 'this page';
   const MAX_DEPTH = 6;
   /* Above this share of the viewport, hiding it is indistinguishable from
      breaking the page, so it takes a second press. */
@@ -171,10 +174,56 @@
 
   /* Attributes that describe what a thing IS rather than how it was built.
      These outlive redesigns far more often than class names do. */
-  const MEANINGFUL_ATTRS = ['data-testid', 'data-test-id', 'data-qa', 'aria-label', 'role', 'name', 'data-ad-slot'];
+  const MEANINGFUL_ATTRS = ['data-testid', 'data-test-id', 'data-qa', 'data-a-target',
+    'aria-label', 'role', 'name', 'data-ad-slot', 'alt', 'title'];
+
+  /* href is the strongest identifier a list item has: it says WHICH thing this
+     card is about, and it survives the list being reordered, which nothing about
+     the element's position does. Kept separate from the list above because its
+     value needs its own bounds -- a URL is longer and has more punctuation than
+     a test id, and one carrying a character the worker's selector validator
+     rejects would produce a rule that is silently never saved. */
+  function stableHref(el) {
+    const raw = String(el.getAttribute('href') || '').trim();
+    if (!raw || raw.length > 120) return '';
+    if (/^(#|javascript:|data:|blob:)/i.test(raw)) return '';
+    if (/[{}<>;@\\"']/.test(raw)) return '';
+    return raw;
+  }
 
   function cssEscape(value) {
     try { return CSS.escape(value); } catch (_) { return String(value).replace(/[^\w-]/g, ''); }
+  }
+
+  /* Whether a selector actually names this element or merely describes its
+     shape. "div" and "img.avatar" describe a shape every card on the page
+     shares; "#nav" and "a[href=/alice]" name one thing. Only the second kind is
+     worth anchoring to. */
+  function identifies(sel, tag) {
+    return !!sel && sel !== tag && (sel.indexOf('#') === 0 || sel.indexOf('[') >= 0);
+  }
+
+  /* The fix for a list that reorders. Find the nearest ancestor that NAMES
+     itself, then describe the target inside it -- "[data-who=bob] .avatar"
+     rather than "div:nth-child(2) > img". Both are unique on the page as it
+     stands; only the first is still about the same thing after the page reorders
+     itself, which a Twitch sidebar does on every load. Position was the previous
+     answer here and it silently retargeted: a rule saved against slot two came
+     back after a restart hiding whoever was in slot two now. */
+  function anchoredSelector(el) {
+    const own = ownSelector(el);
+    let node = el.parentElement;
+    let depth = 0;
+    while (node && node !== document.body && node !== document.documentElement && depth < MAX_DEPTH) {
+      const anchor = ownSelector(node);
+      if (identifies(anchor, node.tagName.toLowerCase())) {
+        const candidate = anchor + ' ' + own;
+        if (matchCount(candidate) === 1) return candidate;
+      }
+      node = node.parentElement;
+      depth++;
+    }
+    return '';
   }
 
   function ownSelector(el) {
@@ -187,6 +236,30 @@
       if (v && v.length <= 60 && /^[\w\s-]+$/.test(v)) {
         return tag + '[' + attr + '="' + v.trim() + '"]';
       }
+    }
+
+    const href = stableHref(el);
+    if (href) return tag + '[href="' + href + '"]';
+
+    /* Any data-* attribute whose value looks like a name rather than a number or
+       a build hash. An allowlist of the seven attribute names we happened to
+       think of does not generalise -- sites label their list items with
+       data-who, data-user, data-channel, data-item and a hundred other things,
+       and every one of those is a better anchor than the element's position.
+       Numeric values are refused because data-index="2" is the same fragility as
+       nth-child wearing a different hat. */
+    const attrs = el.attributes;
+    for (let i = 0; attrs && i < attrs.length; i++) {
+      const name = String(attrs[i].name || '');
+      if (name.indexOf('data-') !== 0) continue;
+      /* Never anchor to our own marker: it is on the element only because we
+         just hid it, so a rule built from it would match nothing on reload. */
+      if (name.indexOf('data-wardenone') === 0) continue;
+      if (MEANINGFUL_ATTRS.indexOf(name) >= 0) continue;
+      const v = String(attrs[i].value || '').trim();
+      if (!v || v.length > 60 || /^\d+$/.test(v) || looksGenerated(v)) continue;
+      if (!/^[\w][\w\s.:-]*$/.test(v)) continue;
+      return tag + '[' + name + '="' + v + '"]';
     }
 
     const classes = stableClasses(el);
@@ -242,6 +315,10 @@
        went for a category tile or a stream title. A rule that hides more than
        the thing you pointed at is wrong however few extras it takes with it, so
        anything that is not already unique goes to position now. */
+    /* Anchored to something that names itself, before anything positional. */
+    const anchored = anchoredSelector(el);
+    if (anchored) return anchored;
+
     const positional = positionalSelector(el);
     if (positional && matchCount(positional) === 1) return positional;
     /* Neither is unique. Prefer whichever catches less. */
@@ -251,6 +328,24 @@
 
   function isFragile(sel) {
     return sel.indexOf(':nth-child(') >= 0 || /(^|\s|>)(div|span|li|section|p)$/.test(sel.trim());
+  }
+
+  /* A positional rule inside a list of near-identical siblings is a different and
+     worse problem from a positional rule in general. A fixed header at
+     :nth-child(2) stays where it is; the second card in a feed does not. When the
+     list reorders, the rule keeps pointing at the SLOT, so it comes back hiding
+     whoever moved into it -- which looks like the zap was forgotten, and is
+     actually the zap landing on somebody else. Worth saying in those words. */
+  function looksLikeListItem(el) {
+    try {
+      const parent = el.parentElement && el.parentElement.parentElement;
+      if (!parent || parent.children.length < 3) return false;
+      const shape = (node) => node.tagName + '|' + (node.getAttribute('class') || '');
+      const mine = shape(el.parentElement);
+      let alike = 0;
+      for (const sib of parent.children) if (shape(sib) === mine) alike++;
+      return alike >= 3;
+    } catch (_) { return false; }
   }
 
   /* ---- the overlay ------------------------------------------------------- */
@@ -263,39 +358,46 @@
 
   const style = document.createElement('style');
   style.textContent = [
-    /* Positioned by transform, not by left/top, and transitioning ONLY transform.
-       `transition:all` over left/top/width/height ran four layout-driven
-       transitions on every mouse move, which is why the highlight crawled. */
-    '.box{position:fixed;left:0;top:0;border:2px solid #9d54c9;background:rgba(157,84,201,.14);pointer-events:none;border-radius:4px;transition:transform .06s linear;will-change:transform;contain:strict;}',
-    '.box.zap{border-color:#e07aae;background:rgba(224,122,174,.16);}',
-    /* The panel is WardenOne appearing on somebody else's page, so it says so:
-       same violet-to-pink edge, same live dot, same rounded surface as the
-       extension's own pages. A plain dark box could be anything, and something
-       unexplained that follows your cursor is alarming rather than helpful. */
-    '.bar{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;pointer-events:auto;overflow:hidden;',
-    'background:linear-gradient(150deg,rgba(52,32,74,.97),rgba(37,22,52,.97));',
-    'border:1px solid rgba(255,255,255,.11);color:#f4ecfa;',
-    'font:13px/1.5 "Nunito",system-ui,-apple-system,sans-serif;',
-    '-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);',
-    'padding:15px 17px 14px;border-radius:16px;box-shadow:0 18px 48px rgba(18,7,30,.5);max-width:min(560px,92vw);}',
-    '.bar::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#b06fd6,#df6ca9);}',
-    '.head{display:flex;align-items:center;gap:8px;margin-bottom:9px;}',
-    '.dot{flex:none;width:7px;height:7px;border-radius:50%;background:#49c879;box-shadow:0 0 0 4px rgba(73,200,121,.16);}',
-    '.dot.warn{background:#f0b866;box-shadow:0 0 0 4px rgba(240,184,102,.16);}',
-    '.brand{font:800 10.5px "Quicksand",system-ui,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#f2dcfb;}',
-    '.sep{color:#6f5a86;}',
-    '.mode{font:800 10.5px "Quicksand",system-ui,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#cba6f0;}',
-    '.tally{margin-left:auto;flex:none;font:800 11px "Quicksand",system-ui,sans-serif;padding:3px 9px;border-radius:999px;background:rgba(224,122,174,.17);border:1px solid rgba(224,122,174,.32);color:#f6bdda;}',
-    '.t{font:800 14.5px "Quicksand",system-ui,sans-serif;color:#fff;margin-bottom:3px;}',
-    '.s{font:11px ui-monospace,SFMono-Regular,monospace;color:#cba6f0;word-break:break-all;margin:6px 0 2px;padding:6px 8px;border-radius:7px;background:rgba(176,111,214,.12);}',
-    '.n{font-size:11.5px;color:#c2aed4;}',
-    '.warn{color:#f0b866;}',
-    '.keys{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:9px;font-size:11px;color:#9c88b0;}',
-    '.keys b{color:#eadcf6;font:700 10.5px system-ui,sans-serif;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);border-radius:5px;padding:2px 6px;}',
-    '.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}',
-    'button{all:unset;cursor:pointer;font:800 12px "Quicksand",system-ui,sans-serif;padding:9px 14px;border-radius:10px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);color:#f4ecfa;}',
-    'button.keep{background:linear-gradient(135deg,#b861d6,#df6ca9);border-color:rgba(255,255,255,.2);box-shadow:0 8px 20px rgba(129,57,164,.3);}',
-    'button:hover{filter:brightness(1.12);}',
+    /* Positioned by transform, not by left/top: `transition:all` over
+       left/top/width/height ran four layout-driven transitions on every mouse
+       move, which is why the highlight crawled. Transitioning only transform
+       was still wrong -- the box slid into place over about four frames while
+       its width and height snapped in one, so it trailed the pointer AND was
+       briefly the new element's size at the old element's position. Nothing is
+       transitioned now: the outline is welded to whatever is under the cursor,
+       which is what an inspector highlight is for. */
+    '.box{position:fixed;left:0;top:0;border:2px solid #9d54c9;background:rgba(157,84,201,.14);pointer-events:none;border-radius:4px;will-change:transform;contain:strict;}',
+    '.box.zap{border-color:#df6ca9;background:rgba(223,108,169,.15);}',
+    /* The same card the engine's own toasts use: pale lavender, a plum rail down
+       the left, Quicksand for the line that matters. It was a dark panel with an
+       uppercase two-part eyebrow and a green status dot, which is the language of
+       the extension's OWN pages -- wrong here, because this appears on somebody
+       else's page exactly as a toast does, and the status dot in particular was
+       reporting nothing. Matching the toast means the reader has seen this shape
+       before and does not have to work out whose it is. */
+    '.bar{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;pointer-events:auto;',
+    'background:linear-gradient(135deg,#faf2fe,#f4e9fb);border-left:4px solid #9d54c9;',
+    'border-radius:14px;padding:13px 15px;box-shadow:0 8px 28px rgba(120,55,160,.26);',
+    'color:#3d2a52;font:13px/1.45 "Nunito",-apple-system,"Segoe UI",system-ui,sans-serif;',
+    'max-width:min(520px,92vw);}',
+    '.t{font:700 13.5px "Quicksand","Nunito",system-ui,sans-serif;color:#3d2a52;margin-bottom:2px;}',
+    '.t.warn{color:#a8305f;}',
+    '.n{font-size:12px;color:#7a5f93;line-height:1.45;}',
+    '.n.warn{color:#a8305f;}',
+    '.s{font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#6b4f85;word-break:break-all;',
+    'margin:6px 0 0;padding:5px 7px;border-radius:7px;background:rgba(157,84,201,.09);}',
+    /* The engine's own toast footer: a hairline, then small muted text. */
+    '.keys{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:9px;padding-top:7px;',
+    'border-top:1px solid rgba(157,84,201,.16);font-size:10px;color:#a08db3;}',
+    '.keys b{font:600 10px "Nunito",system-ui,sans-serif;color:#5d3f78;background:#f2e9f9;',
+    'border:1px solid #e0cff0;border-radius:6px;padding:1px 5px;}',
+    '.keys .who{margin-left:auto;color:#bda9cf;}',
+    '.row{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;}',
+    'button{all:unset;box-sizing:border-box;cursor:pointer;font:600 11.5px "Quicksand","Nunito",system-ui,sans-serif;',
+    'padding:6px 11px;border-radius:8px;color:#8f77a6;border:1px solid transparent;}',
+    'button:hover{color:#5d3f78;background:#f2e9f9;border-color:#e0cff0;}',
+    'button.keep{color:#5d3f78;background:#f2e9f9;border-color:#e0cff0;}',
+    'button.keep:hover{background:#eadcf6;border-color:#d7bfec;}',
   ].join('');
   root.appendChild(style);
 
@@ -317,15 +419,26 @@
   let zapCount = 0;
   let latestSeq = 0;
 
-  /* The last size written, so an unchanged box costs one transform write rather
-     than four style writes the browser has to lay out again. */
+  /* The last rectangle written. The pointer moves many times inside one element,
+     so most frames ask for a box that is already exactly where it needs to be --
+     those now cost a comparison rather than style writes the browser has to lay
+     out and raster again. */
+  let boxX = -1;
+  let boxY = -1;
   let boxW = -1;
   let boxH = -1;
+  let boxOn = false;
   function frame(el) {
-    if (!el) { box.style.display = 'none'; return; }
+    if (!el) {
+      if (boxOn) { boxOn = false; box.style.display = 'none'; }
+      return;
+    }
     const r = el.getBoundingClientRect();
-    box.style.display = 'block';
-    box.style.transform = 'translate3d(' + r.left + 'px,' + r.top + 'px,0)';
+    if (!boxOn) { boxOn = true; box.style.display = 'block'; }
+    if (r.left !== boxX || r.top !== boxY) {
+      boxX = r.left; boxY = r.top;
+      box.style.transform = 'translate3d(' + r.left + 'px,' + r.top + 'px,0)';
+    }
     if (r.width !== boxW) { boxW = r.width; box.style.width = r.width + 'px'; }
     if (r.height !== boxH) { boxH = r.height; box.style.height = r.height + 'px'; }
   }
@@ -350,32 +463,23 @@
   function keyHints() {
     const k = el('div', 'keys');
     k.appendChild(el('b', null, 'Esc'));
-    k.appendChild(document.createTextNode(' cancel  '));
+    k.appendChild(document.createTextNode('cancel'));
     k.appendChild(el('b', null, '↑↓'));
-    k.appendChild(document.createTextNode(' or scroll to widen  '));
+    k.appendChild(document.createTextNode('widen'));
     k.appendChild(el('b', null, 'Ctrl+Z'));
-    k.appendChild(document.createTextNode(' undo'));
+    k.appendChild(document.createTextNode('undo'));
+    /* Whose this is, said once and quietly, on the same hairline footer the
+       engine's toasts use for their own small print. A branded header block with
+       a status light was too loud for something that sits over a page you are
+       trying to read -- and the light reported nothing. */
+    k.appendChild(el('span', 'who', 'WardenOne'));
     return k;
-  }
-
-  /* One header for both states, so the panel reads as one thing changing rather
-     than two different boxes. The tally only appears once there is something to
-     count. */
-  function panelHead(mode, warn) {
-    const head = el('div', 'head');
-    head.appendChild(el('span', 'dot' + (warn ? ' warn' : '')));
-    head.appendChild(el('span', 'brand', 'WardenOne'));
-    head.appendChild(el('span', 'sep', '·'));
-    head.appendChild(el('span', 'mode', mode));
-    if (zapCount > 0) head.appendChild(el('span', 'tally', zapCount + ' hidden'));
-    return head;
   }
 
   function hintPanel() {
     const wrap = el('div');
-    wrap.appendChild(panelHead('Element Zapper'));
     wrap.appendChild(el('div', 't', 'Point at what you want gone.'));
-    wrap.appendChild(el('div', 'n', 'Click anything you do not want to see. Each one is hidden and remembered for ' + HOST + '. Keep going for as long as you like, then press Done.'));
+    wrap.appendChild(el('div', 'n', 'Click anything you do not want to see. Each one is hidden and remembered for ' + HOST_LABEL + '. Keep going for as long as you like, then press Done.'));
     wrap.appendChild(keyHints());
     /* A way out that does not require knowing about Esc. */
     const row = el('div', 'row');
@@ -410,6 +514,14 @@
     pointerY = e.clientY;
     if (!moveRaf) moveRaf = requestAnimationFrame(trackPointer);
   }
+  /* The pointer can hold still while the page moves under it -- a scroll, a lazy
+     image landing, a sticky bar arriving. Without this the outline sits where the
+     element used to be until you jog the mouse. Capture, because the scroll that
+     matters is often an inner container rather than the window; passive, because
+     this only ever reads. */
+  function onScroll() {
+    if (!moveRaf) moveRaf = requestAnimationFrame(trackPointer);
+  }
 
   /* `rule` is the selector that was written, when there is one. The review panel
      used to be a separate mode whose whole job was answering two questions --
@@ -418,7 +530,6 @@
      behind a second tool. */
   function zapPanel(message, failed, rule) {
     const wrap = el('div');
-    wrap.appendChild(panelHead('Element Zapper', failed));
     /* The heading is the count, because the count is the thing that changes
        while you keep going. */
     wrap.appendChild(el('div', 't' + (failed ? ' warn' : ''),
@@ -433,8 +544,9 @@
           'This rule matches ' + n + ' things on this page — that may be more than you meant.'));
       }
       if (isFragile(rule)) {
-        wrap.appendChild(el('div', 'n warn',
-          'It is described by its position, so it may stop working when the site changes.'));
+        wrap.appendChild(el('div', 'n warn', lastWasListItem
+          ? 'Nothing on this one identifies it, so the rule points at its POSITION in the list. If the list reorders, this will hide whatever moves into that slot instead.'
+          : 'It is described by its position, so it may stop working when the site changes.'));
       }
     }
     /* The tool is still live. Saying so is the whole difference between this and
@@ -457,7 +569,12 @@
     return wrap;
   }
 
+  /* Set as each rule is built, so the panel can say which kind of positional
+     rule it just wrote rather than giving the same warning for both. */
+  let lastWasListItem = false;
+
   function selectTarget(t) {
+    lastWasListItem = looksLikeListItem(t);
     zap(t);
     frame(null);
     current = null;
@@ -475,7 +592,7 @@
       say(zapPanel(message, failed, rule));
     };
 
-    show('Saving this for ' + HOST + '…', false, null);
+    show('Saving this for ' + HOST_LABEL + '…', false, null);
     let answered = false;
     try {
       chrome.runtime.sendMessage({ kind: 'hidden-add', hostname: HOST, selector: sel }, (res) => {
@@ -608,6 +725,7 @@
   function stop() {
     if (moveRaf) { try { cancelAnimationFrame(moveRaf); } catch (_) {} moveRaf = 0; }
     try { window.removeEventListener('mousemove', onMove, true); } catch (_) {}
+    try { window.removeEventListener('scroll', onScroll, true); } catch (_) {}
     try { window.removeEventListener('click', onClick, true); } catch (_) {}
     try { window.removeEventListener('keydown', onKey, true); } catch (_) {}
     try { window.removeEventListener('wheel', onWheel, true); } catch (_) {}
@@ -622,7 +740,18 @@
      the outermost node there is -- so a page that registered its own capture
      listener on document before the zapper was injected no longer gets the event
      first. On YouTube it did, which is why clicking a video played it. */
+  /* Take the caret off any text field the page had focused. Undo deliberately
+     stands aside for inputs so it cannot eat someone's half-typed message, and
+     on a site that keeps the caret in a chat box that guard swallowed every
+     Ctrl+Z: the first press landed while the body still had focus and worked,
+     and every one after it went to the chat box and did nothing. Nothing here
+     types, so the tool takes the caret for as long as it is open. */
+  try {
+    if (undoTargetIsEditable(document.activeElement)) document.activeElement.blur();
+  } catch (_) {}
+
   window.addEventListener('mousemove', onMove, true);
+  window.addEventListener('scroll', onScroll, { capture: true, passive: true });
   window.addEventListener('click', onClick, true);
   window.addEventListener('keydown', onKey, true);
   window.addEventListener('wheel', onWheel, { capture: true, passive: false });

@@ -26,7 +26,11 @@ if (START < 0 || END < START) {
   console.error('FATAL: clean-copy helper markers not found in content.min.js');
   process.exit(2);
 }
-const HOOK_START = MIN.indexOf('try{let cleanCopyLogCount=0;');
+/* Anchored on the counter and walked back to the try{ that opens the block.
+   Matching 'try{let cleanCopyLogCount' directly broke the moment a line was
+   added between them, and the slice then had a closing brace with no opener. */
+const HOOK_ANCHOR = MIN.indexOf('let cleanCopyLogCount=0;');
+const HOOK_START = HOOK_ANCHOR < 0 ? -1 : MIN.lastIndexOf('try{', HOOK_ANCHOR);
 const HOOK_END = MIN.indexOf('let lastGestureAt=0', HOOK_START);
 if (HOOK_START < 0 || HOOK_END < HOOK_START) {
   console.error('FATAL: clean-copy hook markers not found in content.min.js');
@@ -200,6 +204,17 @@ check('cleans URLs containing HTML ampersands', () => {
   assert.strictEqual(
     cleanCopyUrl('https://example.com/?id=1&amp;utm_source=news'),
     'https://example.com/?id=1'
+  );
+});
+
+check('removes copied highlight text but preserves a real section anchor', () => {
+  assert.strictEqual(
+    cleanCopyUrl('https://example.com/article?utm_source=share#privacy:~:text=this%20is%20the%20selected%20sentence'),
+    'https://example.com/article#privacy'
+  );
+  assert.strictEqual(
+    cleanCopyUrl('https://example.com/article#:~:text=this%20is%20the%20selected%20sentence'),
+    'https://example.com/article'
   );
 });
 

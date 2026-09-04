@@ -5,31 +5,35 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 /*
- * Who can claim a site-compatibility exit (C1).
+ * Who can claim Amazon-specific handling (C1).
  *
- * The engine takes a deliberate exit on Amazon: __woStartRuntime returns before installing
- * anything, and __woSyncConfig turns every boolean in the config off. Both exits also stamp
- * __wardenOneInstalled and __wardenOneReadyVersion, so a tab that took one goes on reporting
- * itself protected.
+ * The engine USED to take a whole-engine exit on Amazon and Shopify:
+ * __woStartRuntime returned before installing anything, and __woSyncConfig turned
+ * every boolean in the config off. Both exits still stamped __wardenOneInstalled
+ * and __wardenOneReadyVersion, so a tab that took one went on reporting itself
+ * protected to the popup and to Repair. Those exits are GONE -- YouTube is now
+ * the only host that pauses anything, and it pauses only the names in
+ * YT_COMPAT_PAUSED. Section 0 pins that, because a site-wide off switch is the
+ * most valuable thing an attacker could get back.
  *
- * That is fine while only Amazon can claim it. The test was /(^|\.)amazon\.[a-z.]+$/i, which
- * anchors the label but not the suffix: it accepted any run of letters and dots after a label
- * called "amazon", and the attacker chooses their own hostname. amazon.attacker.com matched, and
- * so did amazon.com.evil.tld -- the shape Amazon credential phishing actually uses. A page could
- * therefore switch off the phishing blocker, Payment Card Guard, skimmer detection, token-exfil
- * detection, the clipboard-swap guard and the scam lock by picking a subdomain, and the tab still
- * looked healthy to the popup and to Repair.
+ * __woAmazonHost itself survives, for Amazon-specific URL cleaning (/ref= and
+ * friends). The host test still has to be tight. It was /(^|\.)amazon\.[a-z.]+$/i,
+ * which anchors the label but not the suffix: it accepted any run of letters and
+ * dots after a label called "amazon", and the attacker chooses their own
+ * hostname. amazon.attacker.com matched, and so did amazon.com.evil.tld -- the
+ * shape Amazon credential phishing actually uses. That is less severe now that it
+ * only governs link rewriting rather than the whole engine, but a page still must
+ * not be able to claim it.
  *
- * The declarative network layer is no help on that host: a freshly registered phishing domain is
- * on no blocklist, which is the whole reason the in-page heuristic exists.
- *
- * This suite pins three things, because fixing any one alone leaves the hole open:
- *   1. real Amazon storefronts still take the exit (or the shim stops doing its job),
+ * This suite pins:
+ *   0. no host takes a whole-engine exit any more,
+ *   1. real Amazon storefronts still get their URL cleaning,
  *   2. attacker-controlled hosts do not,
- *   3. the loose pattern has not come back anywhere, and every call site shares one binding.
+ *   3. the loose pattern has not come back anywhere, and every call site shares
+ *      one binding.
  *
- * The regex is lifted from content.min.js -- the artifact the browser actually loads -- rather
- * than from src/content.js, so a source fix that never reached the build cannot pass this.
+ * The regex is lifted from content.min.js -- the artifact the browser actually loads --
+ * rather than from src/content.js, so a source fix that never reached the build cannot pass.
  *
  * Run: node tools/test-compat-host-scope.js
  */
@@ -65,11 +69,34 @@ try {
 }
 
 // ---------------------------------------------------------------------------
-// 1. The shim still covers the sites it exists for.
+// 0. No host gets a whole-engine exit.
 //
-// Amazon runs many country storefronts and the exit exists because the engine genuinely broke the
-// site. An over-tightened list re-breaks Amazon in those markets, which is why this half is
-// checked first and treated as equal in weight to the security half.
+// This is the check that matters most. Both old exits stamped the tab as
+// installed and ready while doing nothing, so the failure was invisible from
+// every surface a reader could check.
+// ---------------------------------------------------------------------------
+{
+  check('the runtime no longer returns early for any host',
+    !/__wardenOneReadyVersion=__WO_RUNTIME_VERSION;\s*return/.test(MIN),
+    'an exit that still stamps the tab as ready reports itself protected while doing nothing');
+  check('no config derivation turns every boolean off',
+    !/for\(const k of Object\.keys\(safe\)\)"boolean"==typeof safe\[k\]&&\(safe\[k\]=!1\)/.test(MIN),
+    'the blanket kill is a site-wide off switch');
+  check('the Amazon compatibility mode is gone', !/__amazonCompatibilityMode/.test(MIN));
+  check('YouTube is the only derived config left',
+    (MIN.match(/const safe=Object\.assign\(\{\},cfg\);/g) || []).length === 1,
+    'a second derived copy means another site is being quietly stripped');
+  check('and it pauses only the names it lists',
+    /const YT_COMPAT_PAUSED=\[/.test(MIN)
+      && /i<YT_COMPAT_PAUSED\.length/.test(MIN));
+}
+
+// ---------------------------------------------------------------------------
+// 1. The host test still covers the storefronts it exists for.
+//
+// Amazon runs many country storefronts. An over-tightened list silently stops cleaning their
+// URLs in those markets, which is why this half is treated as equal in weight to the security
+// half below.
 // ---------------------------------------------------------------------------
 {
   const real = [
@@ -81,7 +108,7 @@ try {
     'amazon.eg', 'amazon.com.tr', 'amazon.cn', 'amazon.co.za', 'amazon.ng',
   ];
   for (const host of real) {
-    check('compat exit still applies to ' + host, AMAZON_HOST.test(host));
+    check('Amazon URL cleaning still applies to ' + host, AMAZON_HOST.test(host));
   }
 }
 
@@ -106,7 +133,8 @@ try {
     'signin.amazon.account.tld',
   ];
   for (const host of hostile) {
-    check('compat exit refused to ' + host, !AMAZON_HOST.test(host), 'attacker can disable the engine');
+    check('Amazon URL cleaning refused to ' + host, !AMAZON_HOST.test(host),
+      'an attacker-chosen host must not claim Amazon-specific handling');
   }
 
   // Hosts that merely mention Amazon were never in scope and must stay out of it.
@@ -131,14 +159,21 @@ try {
   check('the unanchored amazon pattern is gone from the source', !LOOSE.test(inCode(SRC)));
   check('the unanchored amazon pattern is gone from the shipped build', !LOOSE.test(inCode(MIN)));
 
+  // One declaration and four call sites, all of them URL cleaning. It was seven
+  // before; the two that went were the whole-engine exit in __woStartRuntime and
+  // the config derivation that turned every boolean off.
   const srcUses = SRC.split('__woAmazonHost').length - 1;
   const minUses = MIN.split('__woAmazonHost').length - 1;
-  check('source has one declaration and six call sites', srcUses === 7, 'found ' + srcUses);
-  check('shipped build carries the same seven', minUses === 7, 'found ' + minUses);
-
-  // The Shopify half of the same condition was always anchored; keep it that way.
-  check('the shopify half stays anchored', /\(\^\|\\\.\)shopify\\\.com\$/.test(MIN));
+  check('source has one declaration and four call sites', srcUses === 5, 'found ' + srcUses);
+  check('shipped build carries the same five', minUses === 5, 'found ' + minUses);
+  check('no call site gates the engine on the host',
+    !MIN.includes('if(__woAmazonHost.test(location.hostname)'),
+    'that shape was the whole-engine exit');
+  // Shopify was the other half of that condition and has no call site left at all.
+  check('shopify no longer gates anything',
+    !MIN.includes('shopify\\.com$/i.test(location.hostname)'),
+    'the engine must start on Shopify like anywhere else');
 }
 
 if (failed) { console.error('\n' + failed + ' compat-host-scope check(s) failed'); process.exit(1); }
-console.log('\nsite-compatibility exits can only be claimed by the sites they are for');
+console.log('\nno host takes a whole-engine exit; Amazon URL cleaning is tightly scoped');

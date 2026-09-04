@@ -328,6 +328,37 @@ pending.push((async function tabContextIsForgottenWithTheTab() {
 }());
 // ---------------------------------------------------------------------------
 
+(function () {
+  /* The response listener watches the channels a rebind travels on, and NOT the
+     image/media flood a video-timeline scrub produces. It used to watch every
+     response type on <all_urls>, so it ran new URL() + an IP classify per
+     storyboard sprite and per video segment in the service worker -- pure cost,
+     since an opaque cross-origin image from a rebound host is not the threat.
+     Both directions are pinned: it must keep the detection channels, and it must
+     not creep back to watching images/media. */
+  const m = BG.match(/const REBIND_WATCH_TYPES = (\[[^\]]*\]);/);
+  check('the rebind listener declares an explicit type filter', !!m,
+    'watching all response types ran per storyboard image during a scrub');
+  const types = m ? JSON.parse(m[1].replace(/'/g, '"')) : [];
+  check('it registers that filter on the listener',
+    /onResponseStarted\?\.addListener\(noteResolvedAddress,\s*\{ urls: \['<all_urls>'\], types: REBIND_WATCH_TYPES \}\)/.test(BG));
+  /* Every type the detection actually uses must be kept. */
+  ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'].forEach((t) => {
+    check('keeps the ' + t + ' channel', types.indexOf(t) >= 0,
+      'a rebind reaching an internal service on ' + t + ' must still be seen');
+  });
+  /* The scrub flood must be gone. */
+  ['image', 'media', 'font', 'stylesheet', 'ping'].forEach((t) => {
+    check('drops the inert ' + t + ' channel', types.indexOf(t) < 0,
+      'an opaque ' + t + ' from a rebound host gives the attacker nothing');
+  });
+  /* main_frame is what sets a tab's local context; losing it would break the
+     developer-on-localhost quiet path. */
+  check('main_frame is still watched so tab context still resolves',
+    types.indexOf('main_frame') >= 0);
+}());
+// ---------------------------------------------------------------------------
+
 Promise.all(pending).then(() => {
   if (failures.length) {
     console.error('FAIL (' + failures.length + ')');
