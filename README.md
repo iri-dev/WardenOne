@@ -71,6 +71,12 @@ one switch, with fine-grained control over every piece.
 - **Mark answer-scraper results** (optional) — dims and labels results from sites that rank by republishing other people's answers, with a one-click **Show anyway**. It never removes them: ad blocking fails visibly, but a search filter that silently drops the one result you needed fails invisibly, and you'd never know it happened. The list auto-updates and can be extended without a new release.
 - **Google: plain web results only** (optional) — switches Google into its own "Web" mode: ten blue links, no AI overview, no enriched panels. It removes the clutter at the source rather than hiding it after paint, so nothing flashes in first and no selector can go stale when Google reshuffles its markup. Your Images, Videos and News tabs still work.
 
+### My filters (advanced)
+The two things a bundled list can never cover: a rule only you want, and a list only you subscribe to. Both live behind **Advanced** — WardenOne works fully without ever opening them.
+- **My rules** — write your own, one per line, in the same syntax the shipped lists use: `||ads.example.com^` blocks a host, `@@||example.com^` stops blocking one, `example.com##.promo` hides an element on one site, `##.promo` hides it everywhere. Import and export as a plain text file. Anything WardenOne cannot use is **listed back to you with its line number and the reason** rather than silently ignored — a rule that is stored but not working is worse than one that was refused, because you would believe you were covered.
+- **Custom lists** — subscribe to a filter list someone else maintains: a country-specific annoyance list, a niche tracker list, your own hosted one. Each has its own on/off, an **Update now**, a rule count, and when it last changed. Fetched over https with the same guard as every other network read — no private addresses, no odd ports, no redirect onto one — and a list that fails to refresh keeps the copy it already had rather than leaving a gap.
+- Hiding rules you write ride the same channel as elements hidden with the Element Zapper, so allowlisting a site's ads never silently un-hides something you chose to remove.
+
 ### Anti-tracking &amp; privacy
 - Hard-block trackers and analytics (Google Analytics, DoubleClick, Facebook Pixel…).
 - **Do Not Track &amp; Global Privacy Control** opt-out signals.

@@ -3617,6 +3617,253 @@ async function loadGrabberFeed() {
 }
 loadGrabberFeed();
 
+// ======================= User rules & custom filter lists =======================
+// The two things a bundled list can never cover: a rule only this person wants,
+// and a list only this person subscribes to. Everything below is user-authored
+// content rather than a protection, which is why neither gets a shield toggle --
+// a rule you wrote is on because you wrote it, and a list carries its own
+// enabled flag. Switches here would inflate the protection count with things
+// that protect nobody until somebody types into them.
+//
+// The syntax is the uBlock/AdGuard subset the build-time converter already
+// accepts (tools/build-adshield-dnr.js), so a rule that works in a shipped list
+// works here and means the same thing:
+//     ||ads.example.com^          block requests to a host
+//     @@||example.com^            stop blocking one
+//     example.com##.promo         hide an element on one site
+//     ##.promo                    hide it everywhere
+//     ! anything                  a comment
+const USER_RULE_BASE = 750000;
+const USER_RULE_MAX = 2000;          // dynamic-rule budget, shared with every other feed
+const USER_RULES_KEY = 'wardenone_user_rules';
+const CUSTOM_LISTS_KEY = 'wardenone_custom_lists';
+const CUSTOM_LIST_MAX = 20;          // subscriptions
+const CUSTOM_LIST_BYTES = 4000000;   // per list, matching the stylesheet fetcher
+const USER_RULE_TEXT_MAX = 400000;   // what one person can reasonably hand-write
+
+/* One line in, one of three things out: a network rule, a cosmetic rule, or a
+   reason it was refused. The reason matters -- a rule that silently does nothing
+   is worse than no rule, because the writer believes it is working. */
+function parseUserFilterLine(raw) {
+  const line = String(raw || '').trim();
+  if (!line) return { kind: 'blank' };
+  if (line.startsWith('!')) return { kind: 'comment' };
+  if (line.startsWith('[') && line.endsWith(']')) return { kind: 'comment' };
+
+  // Cosmetic: domain(s)##selector, or ##selector for every site.
+  const cos = line.indexOf('##');
+  if (cos >= 0) {
+    const selector = line.slice(cos + 2).trim();
+    if (!selector) return { kind: 'error', why: 'no selector after ##' };
+    /* Procedural and scriptlet syntax belongs to the shipped engine, which has a
+       parser for it. Refusing them here is honest: accepting the text and then
+       not acting on it is the silent failure this function exists to avoid. */
+    if (/^\+js\(/i.test(selector) || /:(has-text|matches-css|xpath|upward|watch-attr)\(/i.test(selector)) {
+      return { kind: 'error', why: 'procedural and scriptlet rules are not supported here yet' };
+    }
+    const domains = line.slice(0, cos).split(',').map((d) => normalizeAllowlistHost(d)).filter(Boolean);
+    if (cos > 0 && !domains.length) return { kind: 'error', why: 'the part before ## is not a domain' };
+    return { kind: 'cosmetic', selector, domains };
+  }
+  if (line.includes('#@#') || line.includes('#$#') || line.includes('#%#')) {
+    return { kind: 'error', why: 'that cosmetic form is not supported here yet' };
+  }
+
+  // Network. Same shape the shipped converter produces.
+  const exception = line.startsWith('@@');
+  let pattern = exception ? line.slice(2) : line;
+  const di = pattern.lastIndexOf('$');
+  if (di > 0 && di < pattern.length - 1) {
+    const tail = pattern.slice(di + 1);
+    if (/^~?[a-z][a-z0-9-]*(=[^$]*)?(,~?[a-z][a-z0-9-]*(=[^$]*)?)*$/i.test(tail)) {
+      return { kind: 'error', why: 'rule options ($script, $domain=...) are not supported here yet' };
+    }
+  }
+  if (pattern.length > 2 && pattern[0] === '/' && pattern[pattern.length - 1] === '/') {
+    return { kind: 'error', why: 'regular-expression rules are not supported' };
+  }
+  if (/[^\x00-\x7f]/.test(pattern)) return { kind: 'error', why: 'non-ASCII characters' };
+  const inner = pattern.slice(
+    pattern.startsWith('||') ? 2 : pattern.startsWith('|') ? 1 : 0,
+    pattern.endsWith('|') ? -1 : undefined,
+  );
+  if (inner.includes('|')) return { kind: 'error', why: '| is only meaningful at the ends' };
+  /* The same anchoring floor the shipped converter uses. Without it a stray "a"
+     blocks most of the web and the writer would have no idea why. */
+  const core = pattern.replace(/^\|{1,2}/, '').replace(/\|$/, '').replace(/[*^]/g, '');
+  if (core.length < 3) return { kind: 'error', why: 'too general -- needs at least 3 fixed characters' };
+  return { kind: 'network', pattern, exception };
+}
+
+/* Parse a whole list. Returns everything a caller could want to show or apply,
+   including the line number of each refusal so the editor can point at it. */
+function parseUserFilterText(text, startId) {
+  const lines = String(text || '').split(/\r?\n/);
+  const network = [];
+  const cosmeticByDomain = {};
+  const genericCosmetic = [];
+  const errors = [];
+  let id = Number(startId) || USER_RULE_BASE;
+  let counted = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const parsed = parseUserFilterLine(lines[i]);
+    if (parsed.kind === 'blank' || parsed.kind === 'comment') continue;
+    if (parsed.kind === 'error') {
+      if (errors.length < 100) errors.push({ line: i + 1, text: lines[i].trim().slice(0, 120), why: parsed.why });
+      continue;
+    }
+    counted++;
+    if (parsed.kind === 'cosmetic') {
+      if (!parsed.domains.length) genericCosmetic.push(parsed.selector);
+      else for (const d of parsed.domains) (cosmeticByDomain[d] = cosmeticByDomain[d] || []).push(parsed.selector);
+      continue;
+    }
+    if (network.length >= USER_RULE_MAX) continue;
+    /* Above the learned/user-block rules so an exception the reader wrote can
+       overrule an automatic block, and below the user allowlist so it can never
+       overrule "this site is off". */
+    network.push({
+      id: id++,
+      priority: parsed.exception ? 98000 : 97000,
+      action: { type: parsed.exception ? 'allow' : 'block' },
+      condition: { urlFilter: parsed.pattern },
+    });
+  }
+  return { network, cosmeticByDomain, genericCosmetic, errors, count: counted, nextId: id };
+}
+
+async function readUserRulesText() {
+  try {
+    const s = await localGet(USER_RULES_KEY);
+    const v = s && s[USER_RULES_KEY];
+    return typeof v === 'string' ? v : (v && typeof v.text === 'string' ? v.text : '');
+  } catch (_) { return ''; }
+}
+
+async function readCustomLists() {
+  try {
+    const s = await localGet(CUSTOM_LISTS_KEY);
+    const v = s && s[CUSTOM_LISTS_KEY];
+    return Array.isArray(v) ? v.slice(0, CUSTOM_LIST_MAX) : [];
+  } catch (_) { return []; }
+}
+
+/* Everything authored or subscribed to, as one parsed bundle. Cached because
+   the cosmetic path asks for it on every page load. */
+let __userFilterCache = null;
+async function userFilterBundle() {
+  if (__userFilterCache) return __userFilterCache;
+  const own = await readUserRulesText();
+  const lists = await readCustomLists();
+  let text = own;
+  for (const l of lists) {
+    if (!l || l.enabled === false || typeof l.text !== 'string') continue;
+    text += '\n' + l.text;
+  }
+  __userFilterCache = parseUserFilterText(text, USER_RULE_BASE);
+  return __userFilterCache;
+}
+function invalidateUserFilters() {
+  __userFilterCache = null;
+  try { __cosmeticHostCache.clear(); } catch (_) {}
+}
+
+async function applyUserFilterRules() {
+  let bundle;
+  try { bundle = await userFilterBundle(); }
+  catch (e) { return { ok: false, error: String(e).slice(0, 200) }; }
+  let oldIds = [];
+  try {
+    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    oldIds = existing
+      .filter((x) => x.id >= USER_RULE_BASE && x.id < USER_RULE_BASE + USER_RULE_MAX)
+      .map((x) => x.id);
+  } catch (_) {}
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: bundle.network });
+    return { ok: true, count: bundle.network.length };
+  } catch (e) {
+    /* Chrome rejects the whole batch over one bad rule, which would silently
+       drop every other rule the person wrote. Retry one at a time so the good
+       ones survive and the bad one can be named back to them. */
+    const rejected = [];
+    for (const rule of bundle.network) {
+      try { await chrome.declarativeNetRequest.updateDynamicRules({ addRules: [rule] }); }
+      catch (inner) {
+        rejected.push({ filter: rule.condition.urlFilter, error: String(inner).slice(0, 120) });
+      }
+    }
+    return { ok: true, count: bundle.network.length - rejected.length, rejected };
+  }
+}
+
+/* Fetch one subscription. Reuses the public-URL guard the stylesheet fetcher
+   uses, so a list URL cannot be pointed at a private address, a non-default
+   port, or walked through a redirect onto one. */
+async function fetchCustomListText(rawUrl) {
+  let url = normalizePublicHttpUrl(rawUrl);
+  if (!url || !isDefaultPortHttpUrl(url)) return { ok: false, error: 'That is not a public http(s) address.' };
+  for (let redirects = 0; redirects <= 4; redirects++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => { try { controller.abort(); } catch (_) {} }, 15000);
+    try {
+      const res = await fetch(url, { cache: 'no-store', credentials: 'omit', redirect: 'manual', signal: controller.signal });
+      if (res && res.status >= 300 && res.status < 400) {
+        const next = normalizePublicHttpUrl(res.headers && res.headers.get('location'), url);
+        if (!next || !isDefaultPortHttpUrl(next)) return { ok: false, error: 'The list redirected somewhere it should not.' };
+        url = next;
+        continue;
+      }
+      if (!res || !res.ok) return { ok: false, error: 'The server answered ' + (res ? res.status : '?') + '.' };
+      const len = Number(res.headers.get('content-length') || 0);
+      if (len && len > CUSTOM_LIST_BYTES) return { ok: false, error: 'That list is too large.' };
+      const text = await readResponseTextWithByteLimit(res, CUSTOM_LIST_BYTES);
+      return { ok: true, text, url };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e).slice(0, 160) };
+    } finally { clearTimeout(timer); }
+  }
+  return { ok: false, error: 'Too many redirects.' };
+}
+
+/* The title a list gives itself, so the row is not just a URL. */
+function customListTitleFrom(text, url) {
+  const head = String(text || '').slice(0, 4000).split(/\r?\n/);
+  for (const line of head) {
+    const m = /^!\s*Title:\s*(.+)$/i.exec(line.trim());
+    if (m) return m[1].trim().slice(0, 80);
+  }
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return 'Custom list'; }
+}
+
+async function refreshCustomList(id) {
+  const lists = await readCustomLists();
+  const idx = lists.findIndex((l) => l && l.id === id);
+  if (idx < 0) return { ok: false, error: 'That list is not subscribed.' };
+  const got = await fetchCustomListText(lists[idx].url);
+  const now = Date.now();
+  if (!got.ok) {
+    /* Keep the last good copy. A list that fails to refresh should go on
+       protecting with what it already had, and say that it is stale. */
+    lists[idx] = Object.assign({}, lists[idx], { error: got.error, checkedAt: now });
+  } else {
+    const parsed = parseUserFilterText(got.text, USER_RULE_BASE);
+    lists[idx] = Object.assign({}, lists[idx], {
+      text: got.text,
+      title: lists[idx].title || customListTitleFrom(got.text, lists[idx].url),
+      ruleCount: parsed.count,
+      skipped: parsed.errors.length,
+      updatedAt: now,
+      checkedAt: now,
+      error: '',
+    });
+  }
+  await localSet({ [CUSTOM_LISTS_KEY]: lists });
+  invalidateUserFilters();
+  await applyUserFilterRules();
+  return { ok: true, list: Object.assign({}, lists[idx], { text: undefined }) };
+}
+
 // ---- Cryptojacking guard (toggle: blockCryptominers) ----
 // Drive-by mining is a network problem before it is a CPU problem: the miner has to
 // fetch its payload and then reach a pool, and both hops are blockable. Two buckets,
@@ -10762,6 +11009,7 @@ function serializeSubsystem(name, task) {
 // (__scriptShieldRuleUpdate), and it is the pattern this generalises rather than a gap in it.
 const SERIALIZED_STATE_APPLIERS = [
   'applyLearnedRules',
+  'applyUserFilterRules',
   'applyGrabberFeedRules',
   'applyMinerFeedRules',
   'applyTrackerLearnerRules',
@@ -16288,10 +16536,141 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
            their own style element rather than one that gets emptied. */
         try { out.userSelectors = hiddenSelectorsForHost(await readHiddenElements(), msg.hostname); }
         catch (_) { out.userSelectors = []; }
+        /* Cosmetic rules the reader wrote, or subscribed to, ride the same
+           channel as the hand-hidden elements above and for the same reason:
+           both are the reader's own instruction, so neither may be cleared by
+           allowlisting a site's ads. Matching is host-or-parent, the way the
+           shipped cosmetic rules match. */
+        try {
+          const bundle = await userFilterBundle();
+          const host = normalizeAllowlistHost(msg.hostname);
+          const own = bundle.genericCosmetic.slice();
+          if (host) {
+            for (const d of Object.keys(bundle.cosmeticByDomain)) {
+              if (host === d || host.endsWith('.' + d)) own.push.apply(own, bundle.cosmeticByDomain[d]);
+            }
+          }
+          if (own.length) out.userSelectors = (out.userSelectors || []).concat(own).slice(0, 5000);
+        } catch (_) {}
         sendResponse(out);
       } catch (e) {
         sendResponse({ ok: false, error: String(e), selectors: [] });
       }
+    })();
+    return true;
+  }
+
+  // ---- My Rules ----
+  if (msg && msg.kind === 'user-rules-get') {
+    (async () => {
+      const text = await readUserRulesText();
+      const parsed = parseUserFilterText(text, USER_RULE_BASE);
+      sendResponse({
+        ok: true, text,
+        count: parsed.count,
+        network: parsed.network.length,
+        cosmetic: parsed.count - parsed.network.length,
+        errors: parsed.errors,
+      });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'user-rules-set') {
+    (async () => {
+      try {
+        const text = String(msg.text || '').slice(0, USER_RULE_TEXT_MAX);
+        /* Parse before storing, so the answer describes what was actually
+           understood rather than what was typed. */
+        const parsed = parseUserFilterText(text, USER_RULE_BASE);
+        await localSet({ [USER_RULES_KEY]: { text, updatedAt: Date.now() } });
+        invalidateUserFilters();
+        const applied = await applyUserFilterRules();
+        sendResponse({
+          ok: true,
+          count: parsed.count,
+          network: parsed.network.length,
+          cosmetic: parsed.count - parsed.network.length,
+          errors: parsed.errors,
+          applied: applied.count || 0,
+          rejected: applied.rejected || [],
+          error: applied.ok ? '' : applied.error,
+        });
+      } catch (e) { sendResponse({ ok: false, error: String(e).slice(0, 200) }); }
+    })();
+    return true;
+  }
+
+  // ---- Custom lists ----
+  if (msg && msg.kind === 'custom-lists-get') {
+    (async () => {
+      const lists = await readCustomLists();
+      /* The text itself is never sent to the page: it can be megabytes, and
+         nothing in the UI renders it. */
+      sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'custom-list-add' && msg.url) {
+    (async () => {
+      try {
+        const lists = await readCustomLists();
+        if (lists.length >= CUSTOM_LIST_MAX) { sendResponse({ ok: false, error: 'That is the maximum number of lists.' }); return; }
+        const url = normalizePublicHttpUrl(msg.url);
+        if (!url) { sendResponse({ ok: false, error: 'That is not a public http(s) address.' }); return; }
+        if (lists.some((l) => l && l.url === url)) { sendResponse({ ok: false, error: 'That list is already subscribed.' }); return; }
+        const got = await fetchCustomListText(url);
+        if (!got.ok) { sendResponse({ ok: false, error: got.error }); return; }
+        const parsed = parseUserFilterText(got.text, USER_RULE_BASE);
+        const now = Date.now();
+        lists.push({
+          id: 'cl_' + now.toString(36) + Math.floor(Math.random() * 1e6).toString(36),
+          url,
+          title: customListTitleFrom(got.text, url),
+          enabled: true,
+          text: got.text,
+          ruleCount: parsed.count,
+          skipped: parsed.errors.length,
+          addedAt: now,
+          updatedAt: now,
+          checkedAt: now,
+          error: '',
+        });
+        await localSet({ [CUSTOM_LISTS_KEY]: lists });
+        invalidateUserFilters();
+        await applyUserFilterRules();
+        sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+      } catch (e) { sendResponse({ ok: false, error: String(e).slice(0, 200) }); }
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'custom-list-update' && msg.id) {
+    (async () => {
+      const r = await refreshCustomList(msg.id);
+      const lists = await readCustomLists();
+      sendResponse(Object.assign({}, r, { lists: lists.map((l) => Object.assign({}, l, { text: undefined })) }));
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'custom-list-toggle' && msg.id) {
+    (async () => {
+      const lists = await readCustomLists();
+      const idx = lists.findIndex((l) => l && l.id === msg.id);
+      if (idx < 0) { sendResponse({ ok: false, error: 'That list is not subscribed.' }); return; }
+      lists[idx] = Object.assign({}, lists[idx], { enabled: msg.enabled !== false });
+      await localSet({ [CUSTOM_LISTS_KEY]: lists });
+      invalidateUserFilters();
+      await applyUserFilterRules();
+      sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'custom-list-remove' && msg.id) {
+    (async () => {
+      const lists = (await readCustomLists()).filter((l) => !l || l.id !== msg.id);
+      await localSet({ [CUSTOM_LISTS_KEY]: lists });
+      invalidateUserFilters();
+      await applyUserFilterRules();
+      sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
     })();
     return true;
   }

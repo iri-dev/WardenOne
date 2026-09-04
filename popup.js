@@ -840,6 +840,7 @@ function load() {
     // label out of its own row rather than keeping a second copy of the wording.
     wireSiteControls();
     paintSiteControls();
+    wireMyFilters();
     renderDownloadTrustList();
     renderTrackerLearner();
     loadExtensionAlerts();
@@ -1407,6 +1408,235 @@ function protectionLabel(key) {
   const name = row && row.querySelector ? row.querySelector('.name') : null;
   const text = name ? String(name.textContent || '').trim() : '';
   return text || key;
+}
+
+/* ---- My rules & custom lists (Advanced) ---------------------------------
+   User-authored content, not protections, so neither has a shield toggle: a
+   rule is on because it was written, and each list carries its own switch.
+   Everything here reports what was actually understood -- a rule that is stored
+   but not usable is worse than one that was refused, because the writer
+   believes it is working. */
+function fmtListWhen(ms) {
+  const n = Number(ms);
+  if (!n) return 'never';
+  const mins = Math.round((Date.now() - n) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + (hrs === 1 ? ' hour ago' : ' hours ago');
+  const days = Math.round(hrs / 24);
+  return days + (days === 1 ? ' day ago' : ' days ago');
+}
+
+function renderUserRuleErrors(errors) {
+  const box = $('user-rules-errors');
+  if (!box) return;
+  box.textContent = '';
+  (errors || []).slice(0, 20).forEach((e) => {
+    const row = document.createElement('div');
+    row.textContent = 'Line ' + e.line + ': ' + e.why + ' — ' + e.text;
+    box.appendChild(row);
+  });
+  if ((errors || []).length > 20) {
+    const more = document.createElement('div');
+    more.textContent = 'and ' + (errors.length - 20) + ' more.';
+    box.appendChild(more);
+  }
+}
+
+function describeRuleCounts(res) {
+  const net = Number(res.network || 0);
+  const cos = Number(res.cosmetic || 0);
+  if (!net && !cos) return 'No rules yet.';
+  const bits = [];
+  if (net) bits.push(net + (net === 1 ? ' blocking rule' : ' blocking rules'));
+  if (cos) bits.push(cos + (cos === 1 ? ' hiding rule' : ' hiding rules'));
+  return bits.join(' and ') + ' in use.';
+}
+
+function loadUserRules() {
+  const area = $('user-rules-text');
+  if (!area) return;
+  chrome.runtime.sendMessage({ kind: 'user-rules-get' }, (res) => {
+    void chrome.runtime.lastError;
+    if (!res || !res.ok) return;
+    area.value = res.text || '';
+    const sum = $('user-rules-summary');
+    if (sum) sum.textContent = describeRuleCounts(res);
+    const st = $('user-rules-status');
+    if (st) st.textContent = '';
+    renderUserRuleErrors(res.errors);
+  });
+}
+
+function saveUserRules() {
+  const area = $('user-rules-text');
+  const st = $('user-rules-status');
+  if (!area) return;
+  if (st) st.textContent = 'Saving...';
+  chrome.runtime.sendMessage({ kind: 'user-rules-set', text: area.value }, (res) => {
+    const err = chrome.runtime.lastError;
+    if (err || !res || !res.ok) {
+      if (st) st.textContent = 'Could not save: ' + ((res && res.error) || (err && err.message) || 'unknown error');
+      return;
+    }
+    const skipped = (res.errors || []).length;
+    let msg = 'Saved. ' + describeRuleCounts(res);
+    if (skipped) msg += ' ' + skipped + (skipped === 1 ? ' line was' : ' lines were') + ' skipped.';
+    if ((res.rejected || []).length) msg += ' ' + res.rejected.length + ' refused by the browser.';
+    if (st) st.textContent = msg;
+    const sum = $('user-rules-summary');
+    if (sum) sum.textContent = describeRuleCounts(res);
+    renderUserRuleErrors(res.errors);
+  });
+}
+
+function renderCustomLists(lists) {
+  const box = $('custom-lists-rows');
+  if (!box) return;
+  box.textContent = '';
+  const sum = $('custom-lists-summary');
+  const arr = Array.isArray(lists) ? lists : [];
+  if (sum) {
+    const on = arr.filter((l) => l && l.enabled !== false).length;
+    sum.textContent = !arr.length ? 'Subscribe to a filter list'
+      : arr.length + (arr.length === 1 ? ' list' : ' lists') + ', ' + on + ' on';
+  }
+  arr.forEach((l) => {
+    const row = document.createElement('div');
+    row.className = 'adv-list-row';
+    const left = document.createElement('div');
+    left.style.flex = '1';
+    left.style.minWidth = '0';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = l.title || l.url;
+    const meta = document.createElement('div');
+    meta.className = 'desc';
+    const bits = [Number(l.ruleCount || 0) + ' rules'];
+    bits.push('updated ' + fmtListWhen(l.updatedAt));
+    if (Number(l.skipped || 0)) bits.push(l.skipped + ' skipped');
+    if (l.enabled === false) bits.push('off');
+    meta.textContent = bits.join(' · ');
+    left.appendChild(name);
+    left.appendChild(meta);
+    if (l.error) {
+      const bad = document.createElement('div');
+      bad.className = 'desc';
+      bad.style.color = 'var(--warn)';
+      bad.textContent = 'Last check failed: ' + l.error + ' Still using the copy already downloaded.';
+      left.appendChild(bad);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'adv-row-actions';
+    const mk = (text, handler) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn';
+      b.textContent = text;
+      b.addEventListener('click', () => { b.disabled = true; handler(b); });
+      actions.appendChild(b);
+      return b;
+    };
+    mk(l.enabled === false ? 'Turn on' : 'Turn off', () => {
+      chrome.runtime.sendMessage({ kind: 'custom-list-toggle', id: l.id, enabled: l.enabled === false }, (res) => {
+        void chrome.runtime.lastError;
+        renderCustomLists(res && res.lists);
+      });
+    });
+    mk('Update', (b) => {
+      b.textContent = 'Updating...';
+      chrome.runtime.sendMessage({ kind: 'custom-list-update', id: l.id }, (res) => {
+        void chrome.runtime.lastError;
+        renderCustomLists(res && res.lists);
+      });
+    });
+    mk('Remove', () => {
+      chrome.runtime.sendMessage({ kind: 'custom-list-remove', id: l.id }, (res) => {
+        void chrome.runtime.lastError;
+        renderCustomLists(res && res.lists);
+      });
+    });
+    row.appendChild(left);
+    row.appendChild(actions);
+    box.appendChild(row);
+  });
+}
+
+function loadCustomLists() {
+  if (!$('custom-lists-rows')) return;
+  chrome.runtime.sendMessage({ kind: 'custom-lists-get' }, (res) => {
+    void chrome.runtime.lastError;
+    renderCustomLists(res && res.lists);
+  });
+}
+
+function wireMyFilters() {
+  const save = $('user-rules-save');
+  if (save) save.addEventListener('click', saveUserRules);
+
+  const exportBtn = $('user-rules-export');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const area = $('user-rules-text');
+      const blob = new Blob([(area && area.value) || ''], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'wardenone-my-rules.txt';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    });
+  }
+  const importBtn = $('user-rules-import');
+  const file = $('user-rules-file');
+  if (importBtn && file) {
+    importBtn.addEventListener('click', () => file.click());
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const area = $('user-rules-text');
+        if (!area) return;
+        /* Append rather than replace: an import that silently wiped rules
+           someone had written by hand would be unrecoverable. */
+        const incoming = String(reader.result || '');
+        area.value = area.value.trim() ? area.value.replace(/\s*$/, '') + '\n' + incoming : incoming;
+        const st = $('user-rules-status');
+        if (st) st.textContent = 'Added from ' + f.name + '. Review it, then Save rules.';
+      };
+      reader.readAsText(f);
+      file.value = '';
+    });
+  }
+
+  const add = $('custom-list-add');
+  const url = $('custom-list-url');
+  if (add && url) {
+    const subscribe = () => {
+      const st = $('custom-lists-status');
+      if (!url.value.trim()) { if (st) st.textContent = 'Paste the address of a filter list first.'; return; }
+      add.disabled = true;
+      if (st) st.textContent = 'Fetching...';
+      chrome.runtime.sendMessage({ kind: 'custom-list-add', url: url.value.trim() }, (res) => {
+        void chrome.runtime.lastError;
+        add.disabled = false;
+        if (!res || !res.ok) { if (st) st.textContent = 'Could not subscribe: ' + ((res && res.error) || 'unknown error'); return; }
+        if (st) st.textContent = 'Subscribed.';
+        url.value = '';
+        renderCustomLists(res.lists);
+      });
+    };
+    add.addEventListener('click', subscribe);
+    url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); subscribe(); } });
+  }
+
+  /* Loaded when the block is first opened rather than on popup open: nobody
+     should pay for a feature they never expand. */
+  const rulesBlock = $('user-rules-block');
+  if (rulesBlock) rulesBlock.addEventListener('toggle', () => { if (rulesBlock.open) loadUserRules(); }, { once: false });
+  const listsBlock = $('custom-lists-block');
+  if (listsBlock) listsBlock.addEventListener('toggle', () => { if (listsBlock.open) loadCustomLists(); }, { once: false });
 }
 
 function paintSiteControls() {

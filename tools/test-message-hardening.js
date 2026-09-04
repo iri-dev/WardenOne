@@ -103,7 +103,14 @@ const PRIVILEGED = ['clean-browser', 'clear-site-data', 'clear-learned', 'set-co
   'clear-imported-extension-reputation', 'open-installed-extension-details',
   // Grants a temporary exemption from a malware/phishing verdict. Only the block
   // screen may ask for it; a page being able to self-exempt would defeat the block.
-  'safe-browsing-allow-once'];
+  'safe-browsing-allow-once',
+  // User rules and custom lists. The setters are obvious -- a page that could
+  // write filter rules or subscribe you to a list controls what you block. The
+  // getters are here too: which lists someone subscribes to is a stable,
+  // distinctive trait, so answering that question to a page would hand out a
+  // fingerprint the rest of the extension exists to prevent.
+  'user-rules-get', 'user-rules-set', 'custom-lists-get',
+  'custom-list-add', 'custom-list-update', 'custom-list-toggle', 'custom-list-remove'];
 for (const kind of PRIVILEGED) {
   if (!kinds.includes(kind)) continue;
   check('privileged kind is not tab-reachable: ' + kind, !allowed.has(kind));
