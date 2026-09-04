@@ -61,24 +61,51 @@ jobs:
 
       - name: Write the notes
         run: |
-          # Quoted heredoc so the backticks stay literal markdown. The two
-          # placeholders are filled in below.
-          cat > notes.md <<'EOF'
-          **This is WardenOne's latest build: the current state of `main`, rebuilt after every passing change.**
+          # Release notes say what changed. The old version of this step said only
+          # how the build was produced -- the commit it came from and that the gate
+          # had passed -- which is the kind of thing nobody downloading a build
+          # wants to read. Commit subjects here are written as whole sentences
+          # about what changed, so they make the list directly.
+          #
+          # The window is "since the previous rolling build", which is exactly where
+          # the latest-build tag still points: this step runs BEFORE the tag moves.
+          PREV="$(git rev-parse -q --verify refs/tags/latest-build || true)"
+          if [ -n "$PREV" ] && [ "$PREV" != "$GITHUB_SHA" ]; then
+            git log --no-merges --format='- %s' "$PREV..HEAD" > changes.txt
+          else
+            # First build, or nothing moved: fall back to recent history rather
+            # than printing an empty section.
+            git log --no-merges --max-count=10 --format='- %s' > changes.txt
+          fi
+          # Cap it so a long gap does not produce a wall of text.
+          if [ "$(wc -l < changes.txt)" -gt 25 ]; then
+            EXTRA=$(( $(wc -l < changes.txt) - 25 ))
+            head -n 25 changes.txt > capped.txt
+            echo "- ...and $EXTRA more changes" >> capped.txt
+            mv capped.txt changes.txt
+          fi
+          [ -s changes.txt ] || echo '- Repackaged with no code changes' > changes.txt
 
-          GitHub marks this rolling release as **Latest** so the normal download never falls behind the
-          repository. Versioned releases remain available as milestone archives and do not need to move
-          for every commit.
-
-          Built from commit `__SHA__` — extension version `__VERSION__`. The full gate passed before it
-          was published, but this build has had no hands-on testing beyond that.
-
-          To install: unzip it, open `chrome://extensions`, turn on **Developer mode**, click
-          **Load unpacked** and pick the folder you just unzipped — the one with `manifest.json`
-          directly inside it.
-          EOF
-          sed -i "s/__SHA__/$(git rev-parse --short HEAD)/" notes.md
-          sed -i "s/__VERSION__/$(node -p "require('./manifest.json').version")/" notes.md
+          {
+            echo "## What's new"
+            echo
+            cat changes.txt
+            echo
+            echo "## Install"
+            echo
+            echo '1. Download **WardenOne-latest.zip** below and unzip it.'
+            echo '2. Open `chrome://extensions` and turn on **Developer mode**.'
+            echo '3. Click **Load unpacked** and pick the folder you unzipped — the one with'
+            echo '   `manifest.json` directly inside it.'
+            echo
+            echo '---'
+            echo
+            echo "This is WardenOne's rolling build: the current state of \`main\`, repackaged after every"
+            echo 'change that passes the gate, and marked **Latest** so the ordinary download never falls'
+            echo 'behind. Versioned releases stay where they are as milestone archives.'
+            echo
+            echo "Version \`$(node -p "require('./manifest.json').version")\` · commit \`$(git rev-parse --short HEAD)\`"
+          } > notes.md
 
       - name: Move the rolling tag to this commit
         run: |
