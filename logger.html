@@ -8,44 +8,44 @@
 <link rel="stylesheet" href="guide-shell.css">
 <script src="theme.js"></script>
 <style>
+  /* Colours come from the guide shell, never from names invented here: an
+     undefined custom property makes the whole declaration invalid, so a wrong
+     variable name does not fall back to a default -- it silently deletes the
+     border, and the pressed filter chip becomes indistinguishable from the rest. */
   .log-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
   .log-filters { display:flex; flex-wrap:wrap; gap:5px; }
-  .log-chip {
-    border:1px solid var(--wo-border); background:transparent; color:var(--wo-text-soft);
-    border-radius:999px; padding:5px 11px; font:inherit; font-size:12px; cursor:pointer;
-  }
-  .log-chip[aria-pressed="true"] { background:var(--wo-accent-soft); border-color:var(--wo-accent);
-    color:var(--wo-text); font-weight:700; }
-  .log-search { flex:1; min-width:180px; border:1px solid var(--wo-border); border-radius:10px;
-    background:var(--wo-surface); color:var(--wo-text); padding:8px 11px; font:inherit; font-size:13px; }
-  .log-count { font-size:12px; color:var(--wo-text-faint); font-variant-numeric:tabular-nums; }
+  .log-search { flex:1; min-width:180px; border:1px solid var(--guide-line); border-radius:10px;
+    background:var(--guide-paper); color:var(--guide-ink); padding:8px 11px; font:inherit; font-size:13px; }
+  .log-search:focus-visible { outline:2px solid var(--guide-violet); outline-offset:1px; }
+  .log-count { font-size:12px; color:var(--guide-faint); font-variant-numeric:tabular-nums; }
 
-  .log-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .log-table { width:100%; border-collapse:collapse; font-size:12.5px; color:var(--guide-ink); }
   .log-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em;
-    color:var(--wo-text-faint); font-weight:700; padding:6px 8px; border-bottom:1px solid var(--wo-border); }
-  .log-table td { padding:6px 8px; border-bottom:1px solid var(--wo-border-soft, var(--wo-border));
-    vertical-align:top; }
+    color:var(--guide-faint); font-weight:700; padding:8px; background:var(--guide-paper);
+    border-bottom:1px solid var(--guide-line-strong); position:sticky; top:0; z-index:1; }
+  .log-table td { padding:7px 8px; border-bottom:1px solid var(--guide-line); vertical-align:top; }
   .log-row { cursor:pointer; }
-  .log-row:hover { background:var(--wo-surface-muted); }
-  .log-row.is-open { background:var(--wo-surface-muted); }
+  .log-row:hover, .log-row.is-open { background:var(--guide-mist); }
+  .log-row:focus-visible { outline:2px solid var(--guide-violet); outline-offset:-2px; }
   .log-url { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11.5px;
     word-break:break-all; }
   .log-badge { display:inline-block; border-radius:999px; padding:2px 8px; font-size:10.5px;
     font-weight:700; white-space:nowrap; }
-  .log-blocked { background:var(--wo-danger-bg); color:var(--wo-danger); }
-  .log-allowed { background:var(--wo-success-bg); color:var(--wo-success); }
-  .log-failed  { background:var(--wo-warning-bg); color:var(--wo-warning); }
-  .log-pending { background:var(--wo-surface-muted); color:var(--wo-text-faint); }
-  .log-dim { color:var(--wo-text-faint); }
-  .log-detail td { background:var(--wo-surface-muted); }
+  .log-blocked { background:var(--wo-danger-bg, #f3dbe5); color:var(--guide-danger); }
+  .log-allowed { background:var(--wo-success-bg, #dcefe4); color:var(--guide-success); }
+  .log-failed  { background:var(--wo-warning-bg, #f4e4ce); color:var(--guide-warning); }
+  .log-pending { background:var(--guide-mist); color:var(--guide-faint); }
+  .log-dim { color:var(--guide-soft); }
+  .log-detail td { background:var(--guide-mist); border-bottom:1px solid var(--guide-line-strong); }
   .log-detail dl { display:grid; grid-template-columns:auto 1fr; gap:5px 14px; margin:0 0 10px; }
-  .log-detail dt { color:var(--wo-text-faint); font-size:11.5px; }
+  .log-detail dt { color:var(--guide-faint); font-size:11.5px; }
   .log-detail dd { margin:0; font-size:12px; word-break:break-all; }
   .log-actions { display:flex; flex-wrap:wrap; gap:6px; }
   .log-actions .btn { font-size:11.5px; padding:6px 10px; }
-  .log-empty { padding:26px 8px; text-align:center; color:var(--wo-text-faint); font-size:13px; }
-  .log-note { font-size:12px; color:var(--wo-text-faint); line-height:1.55; }
-  .log-scroll { max-height:60vh; overflow:auto; border:1px solid var(--wo-border); border-radius:12px; }
+  .log-empty { padding:26px 8px; text-align:center; color:var(--guide-faint); font-size:13px; }
+  .log-note { font-size:12px; color:var(--guide-soft); line-height:1.55; }
+  .log-scroll { max-height:60vh; overflow:auto; border:1px solid var(--guide-line);
+    border-radius:12px; background:var(--guide-paper); }
 </style>
 </head>
 <body>
@@ -107,10 +107,10 @@
            stops when it closes, so ordinary browsing carries no per-request cost. -->
       <div class="log-toolbar">
         <div class="log-filters" id="action-filters" role="group" aria-label="Filter by outcome">
-          <button class="log-chip" data-action="all" aria-pressed="true">All</button>
-          <button class="log-chip" data-action="blocked" aria-pressed="false">Blocked</button>
-          <button class="log-chip" data-action="allowed" aria-pressed="false">Allowed</button>
-          <button class="log-chip" data-action="failed" aria-pressed="false">Failed</button>
+          <button class="chip" data-action="all" aria-pressed="true">All</button>
+          <button class="chip" data-action="blocked" aria-pressed="false">Blocked</button>
+          <button class="chip" data-action="allowed" aria-pressed="false">Allowed</button>
+          <button class="chip" data-action="failed" aria-pressed="false">Failed</button>
         </div>
         <input class="log-search" id="search" type="search" placeholder="Search host, URL, rule or list…"
           aria-label="Search requests" spellcheck="false">
@@ -120,14 +120,14 @@
         <button class="btn" id="export" type="button">Export</button>
       </div>
       <div class="log-filters" id="type-filters" role="group" aria-label="Filter by request type" style="margin-bottom:12px;">
-        <button class="log-chip" data-type="all" aria-pressed="true">All types</button>
-        <button class="log-chip" data-type="script" aria-pressed="false">Script</button>
-        <button class="log-chip" data-type="xmlhttprequest" aria-pressed="false">XHR</button>
-        <button class="log-chip" data-type="sub_frame" aria-pressed="false">Frame</button>
-        <button class="log-chip" data-type="image" aria-pressed="false">Image</button>
-        <button class="log-chip" data-type="media" aria-pressed="false">Media</button>
-        <button class="log-chip" data-type="websocket" aria-pressed="false">WebSocket</button>
-        <button class="log-chip" data-type="other" aria-pressed="false">Other</button>
+        <button class="chip" data-type="all" aria-pressed="true">All types</button>
+        <button class="chip" data-type="script" aria-pressed="false">Script</button>
+        <button class="chip" data-type="xmlhttprequest" aria-pressed="false">XHR</button>
+        <button class="chip" data-type="sub_frame" aria-pressed="false">Frame</button>
+        <button class="chip" data-type="image" aria-pressed="false">Image</button>
+        <button class="chip" data-type="media" aria-pressed="false">Media</button>
+        <button class="chip" data-type="websocket" aria-pressed="false">WebSocket</button>
+        <button class="chip" data-type="other" aria-pressed="false">Other</button>
       </div>
 
       <div class="log-scroll">
