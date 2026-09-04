@@ -36,7 +36,9 @@ jobs:
 
   # Every push that passes the gate rebuilds the rolling `latest-build` release and
   # replaces the package attached to it, so the ordinary download always matches
-  # main. Versioned releases stay as milestone archives and do not move.
+  # main. It is the only release: the old versioned ones were removed on
+  # 2026-09-04 because nothing linked to them and a stale copy on the page is
+  # only ever something to download by mistake.
   rolling-build:
     name: publish-latest-build
     needs: gate
@@ -101,8 +103,7 @@ jobs:
             echo '---'
             echo
             echo "This is WardenOne's rolling build: the current state of \`main\`, repackaged after every"
-            echo 'change that passes the gate, and marked **Latest** so the ordinary download never falls'
-            echo 'behind. Versioned releases stay where they are as milestone archives.'
+            echo 'change that passes the gate, so the download here is never behind the code.'
             echo
             echo "Version \`$(node -p "require('./manifest.json').version")\` · commit \`$(git rev-parse --short HEAD)\`"
           } > notes.md
