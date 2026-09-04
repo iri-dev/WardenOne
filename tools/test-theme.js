@@ -67,6 +67,18 @@ for (const page of shellPages) {
      sheet but is not in that list gets the markup and none of the layout. */
   assert(shellCss.includes('data-wardenone-page="' + name + '"'),
     page + ' loads guide-shell.css but the sheet has no rules scoped to "' + name + '"');
+  /* And scoped to the right ELEMENT. The check above passes on a selector that
+     stops at the attribute -- which targets <html>, not what was meant -- and
+     that is precisely how history.html and hidden-elements.html shipped without
+     the body reset or the border-box reset: inset by the browser's default 8px
+     body margin, with padding growing every control past its drawn size. Nothing
+     caught it because the page name was still "mentioned" in the sheet. */
+  for (const [suffix, what] of [['*', 'the border-box reset'], ['body', 'the body reset']]) {
+    assert(shellCss.includes(':root[data-wardenone-page="' + name + '"] ' + suffix),
+      page + ' never receives ' + what + ': guide-shell.css has no'
+        + ' :root[data-wardenone-page="' + name + '"] ' + suffix + ' selector'
+        + ' (a selector ending at the attribute styles <html> instead)');
+  }
   /* The landmarks. Missing any one of them means the page has drifted back to a
      layout of its own rather than the one the guides established.
 
