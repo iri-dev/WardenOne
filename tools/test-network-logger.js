@@ -101,6 +101,14 @@ if (redactRegion) {
     'redacting only on display would still keep the secret in memory');
 }
 check('the buffer is bounded', /LOG_RING\.length > LOG_MAX/.test(BG) && /const LOG_MAX = \d+/.test(BG));
+/* Sliced to the function body, not matched with an open-ended [\s\S]*? -- that
+   version passed with the line deleted, because it ran on past the closing brace
+   and found the identical line in the 'clear' handler below. */
+const detachBody = region('function logDetach() {', NL + '}');
+check('logDetach is where the slice expects it', !!detachBody);
+check('the buffer is dropped when the last logger tab closes',
+  detachBody.includes('LOG_RING.length = 0;'),
+  'a list of every URL you loaded must not outlive the window opened to look at it');
 check('nothing about the log is written to storage',
   !/localSet\(\{[^}]*LOG_RING/.test(BG) && !/wardenone_log/.test(BG),
   'the buffer must die with the worker');
@@ -158,8 +166,32 @@ check('rules made from a request go into My rules',
   'a hidden store would make the logger able to change filtering invisibly');
 check('it refuses to add a rule twice',
   /already in My rules/.test(JS));
-check('the three rule actions are offered',
-  /Block this domain/.test(JS) && /Allow this domain/.test(JS) && /Block this path/.test(JS));
+check('the rule actions are offered',
+  /Block this host/.test(JS) && /Allow this host/.test(JS) && /Block this path/.test(JS));
+/* ||host^ covers the host and what is under it, never its parent or siblings.
+   Naming that "block this domain" reads as wider than it is. */
+check('host scope and domain scope are offered as separate actions',
+  /Block all of/.test(JS) && /e\.base && e\.base !== domain/.test(JS)
+    && !/Block this domain/.test(JS),
+  'one button cannot honestly mean both blast radii');
+check('the worker supplies the parent domain the page offers',
+  /base: registrableDomainBg\(logHostOf\(d\.url\)\)/.test(BG),
+  'the page has no public-suffix list of its own to derive it from');
+
+/* ---- 8. pause holds; it does not discard ------------------------------- */
+check('what arrives during a pause is held rather than dropped',
+  /if \(paused\) \{ hold\(msg\.entries \|\| \[\]\); return; \}/.test(JS)
+    && /if \(held\.length\) \{ ingest\(held\); held = \[\]; \}/.test(JS),
+  'the paused label promises capture continues, so losing those entries would make it a lie');
+check('the held backlog is bounded too', /const HELD_MAX = \d+/.test(JS) && /heldDropped/.test(JS));
+/* There are two ways the table empties -- the button, and a 'cleared' message
+   from the worker -- and BOTH have to drop the backlog, or Clear gets undone by
+   the next Resume. Counting is what makes this catch the one that was missed. */
+check('every path that empties the table also empties the backlog',
+  (JS.match(/BY_ID\.clear\(\)/g) || []).length > 0
+    && (JS.match(/BY_ID\.clear\(\)/g) || []).length
+       === (JS.match(/BY_ID\.clear\(\); held = \[\]/g) || []).length,
+  'a clear that leaves the backlog behind is undone by the next Resume');
 
 /* ---- 7. the page is reachable and shaped as an advanced tool ------------ */
 check('the popup opens it in a tab',

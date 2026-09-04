@@ -4011,6 +4011,10 @@ function logOnBeforeRequest(d) {
     url: red.url,
     redacted: red.redacted,
     host: logHostOf(d.url),
+    /* The parent the host sits under, so the page can offer "block just this
+       host" and "block the whole domain" as the different things they are
+       rather than labelling one of them as both. */
+    base: registrableDomainBg(logHostOf(d.url)) || '',
     type: d.type || 'other',
     party: d.type === 'main_frame' ? 'first' : logParty(d.url, d.initiator || d.documentUrl),
     tabId: typeof d.tabId === 'number' ? d.tabId : -1,
@@ -4079,6 +4083,12 @@ function logDetach() {
     try { chrome.declarativeNetRequest.onRuleMatchedDebug.removeListener(logOnRuleMatched); } catch (_) {}
   }
   LOG_PENDING.clear();
+  /* And the buffer goes with it. A list of every URL you loaded is exactly the
+     thing that should not outlive the window you opened to look at it -- the
+     page says "records only while open", so nothing may be waiting in memory
+     for the next person who opens it. */
+  LOG_RING.length = 0;
+  LOG_SEQ = 0;
 }
 
 /* A port, not a message, because a port tells us when the page goes away. The

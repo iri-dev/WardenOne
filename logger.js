@@ -23,6 +23,12 @@ let query = '';
 let paused = false;
 let openId = null;
 let renderTimer = 0;
+/* Pause holds the table still; it does not throw away what arrives meanwhile,
+   because the label promises capture continues. Bounded so that walking away
+   with the page paused cannot grow this without limit. */
+let held = [];
+let heldDropped = 0;
+const HELD_MAX = 1000;
 
 const TYPE_LABEL = {
   main_frame: 'page', sub_frame: 'frame', stylesheet: 'css', script: 'script',
@@ -47,8 +53,12 @@ port.onMessage.addListener((msg) => {
     ingest(msg.entries || []);
     return;
   }
-  if (msg.kind === 'entries') { if (!paused) ingest(msg.entries || []); return; }
-  if (msg.kind === 'cleared') { ENTRIES = []; BY_ID.clear(); openId = null; scheduleRender(); }
+  if (msg.kind === 'entries') {
+    if (paused) { hold(msg.entries || []); return; }
+    ingest(msg.entries || []);
+    return;
+  }
+  if (msg.kind === 'cleared') { ENTRIES = []; BY_ID.clear(); held = []; heldDropped = 0; openId = null; scheduleRender(); }
 });
 port.onDisconnect.addListener(() => {
   $('capture-state').textContent = 'Capture stopped. Reload this page to start again.';
@@ -63,6 +73,17 @@ function ingest(list) {
     else { BY_ID.set(e.id, e); ENTRIES.push(e); }
   }
   scheduleRender();
+}
+
+function hold(list) {
+  for (const e of list) held.push(e);
+  if (held.length > HELD_MAX) {
+    heldDropped += held.length - HELD_MAX;
+    held = held.slice(-HELD_MAX);
+  }
+  $('capture-state').textContent = 'Paused. ' + held.length + ' request'
+    + (held.length === 1 ? '' : 's') + ' waiting'
+    + (heldDropped ? ', ' + heldDropped + ' older ones dropped' : '') + '.';
 }
 
 function scheduleRender() {
@@ -174,8 +195,16 @@ function detailRow(e) {
     b.addEventListener('click', (ev) => { ev.stopPropagation(); addRule(rule, b); });
     actions.appendChild(b);
   };
-  mk('Block this domain', domain && '||' + domain + '^', 'Adds ||' + domain + '^ to My rules');
-  mk('Allow this domain', domain && '@@||' + domain + '^', 'Adds @@||' + domain + '^ to My rules');
+  /* ||host^ matches that host and anything under it -- but not its siblings and
+     not its parent. So "block this host" and "block the whole domain" are two
+     different blast radii, and offering only one of them under a name that reads
+     like the other is how someone blocks less than they think they have. */
+  mk('Block this host', domain && '||' + domain + '^', 'Adds ||' + domain + '^ to My rules');
+  if (e.base && e.base !== domain) {
+    mk('Block all of ' + e.base, '||' + e.base + '^',
+      'Adds ||' + e.base + '^ to My rules, covering every host under it');
+  }
+  mk('Allow this host', domain && '@@||' + domain + '^', 'Adds @@||' + domain + '^ to My rules');
   let pathRule = '';
   try {
     const u = new URL(e.url);
@@ -243,12 +272,18 @@ $('search').addEventListener('input', (ev) => { query = ev.target.value.trim().t
 $('pause').addEventListener('click', () => {
   paused = !paused;
   $('pause').textContent = paused ? 'Resume' : 'Pause';
-  $('capture-state').textContent = paused
-    ? 'Paused. Requests are still being captured, just not shown.'
-    : 'Recording. Capture stops when you close this tab.';
+  if (paused) {
+    $('capture-state').textContent = 'Paused. Requests are still being captured, just not shown.';
+    return;
+  }
+  /* Everything that arrived during the pause lands now, in order, rather than
+     being quietly lost -- which is what the paused label said would happen. */
+  if (held.length) { ingest(held); held = []; }
+  heldDropped = 0;
+  $('capture-state').textContent = 'Recording. Capture stops when you close this tab.';
 });
 $('clear').addEventListener('click', () => {
-  ENTRIES = []; BY_ID.clear(); openId = null;
+  ENTRIES = []; BY_ID.clear(); held = []; heldDropped = 0; openId = null;
   try { port.postMessage({ kind: 'clear' }); } catch (_) {}
   render();
 });
