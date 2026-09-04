@@ -196,9 +196,17 @@ The master switch and the site allowlist still turn all three off along with eve
 - **Memory Shield** — sleep inactive tabs (Gentle → Balanced → Aggressive → Emergency) with never-sleep rules for pinned / audio / form / login tabs; free RAM on demand, find duplicate or zombie tabs.
 - **Resource Saver** — block autoplay media, throttle background tabs, lazy-load images, and stop prefetch / preload.
 
+### Right-click tools
+Everything here sits under one **WardenOne** entry in the right-click menu, so nothing is buried in a settings page you have to go looking for.
+- **Zap this element** — point at anything on a page and remove it. Sticky bars, cookie leftovers, a video that follows you down the page. Ctrl+Z takes back as many zaps as you like.
+- **Copy clean link** — copies a link with the tracking stripped off. Links copied inside a page are cleaned automatically; this entry exists for Chrome's own *Copy link address*, which no extension can intercept. **Alt+Shift+C** does the same for the page you are on.
+- **Block this site** — a hard block for a site you would rather not land on again, applied at the network layer so the page never loads. The same entry unblocks it, and it works from the error page too.
+- **Check this link**, **Check the selected text**, **Where is this image from?** and **What is this frame?** — ask WardenOne what it knows about something before you click it: reputation, domain age, where a frame really comes from.
+
 ### Comfort &amp; extras
 - **EyeShield** — a per-site display tuner with Normal / Light / Dark / **Ultra (OLED-black)** modes, plus brightness, contrast, saturation, warmth, and grayscale sliders, remembered per site.
 - **Twitch Local Rewind** — scrub back through a live stream, or jump straight to the moment you joined.
+- **Notification Centre** — every notice WardenOne can show you, in one place: what each one means, how long it stays on screen, and which ones you would rather never see again.
 - **Update Guardian** — nudges you when your browser is behind on security patches.
 - **Light and dark themes** across every extension page, switchable from the popup header, the Interface section, or during onboarding. Light mode keeps the original WardenOne look; dark mode is a flat purple-plum that keeps warning, status and disabled-control contrast readable rather than dimming everything equally.
 
