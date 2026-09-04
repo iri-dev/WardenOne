@@ -38,14 +38,19 @@
   --rose-deep: var(--guide-danger);
 }
 
+/* Every one of these needs its own trailing ` *` / ` body`. Two entries here
+   used to end at the attribute, which selects <html> instead of what was meant,
+   so history.html and hidden-elements.html got neither the border-box reset nor
+   the body reset: they shipped inset by the browser's default 8px body margin,
+   with content-box sizing making every padded control larger than drawn. */
 :root[data-wardenone-page="notifications"] *,
-:root[data-wardenone-page="history"],
-:root[data-wardenone-page="hidden-elements"],
+:root[data-wardenone-page="history"] *,
+:root[data-wardenone-page="hidden-elements"] *,
 :root[data-wardenone-page="logger"] * { box-sizing: border-box; }
 
 :root[data-wardenone-page="notifications"] body,
-:root[data-wardenone-page="history"],
-:root[data-wardenone-page="hidden-elements"],
+:root[data-wardenone-page="history"] body,
+:root[data-wardenone-page="hidden-elements"] body,
 :root[data-wardenone-page="logger"] body {
   min-height: 100vh;
   margin: 0;
