@@ -211,6 +211,7 @@ function checkContentBuild() {
   'tools/test-manual-check-toast.js',
   'tools/test-blocked-site-list.js',
   'tools/test-user-filters.js',
+  'tools/test-network-logger.js',
   'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
@@ -319,6 +320,7 @@ function checkContentBuild() {
   'element-picker.js',
   'history.js',
   'hidden-elements.js',
+  'logger.js',
   'network.js',
   'oauth-guard.js',
   'permission-chain.js',
@@ -495,6 +497,7 @@ checkCommand('learned grabber scope tests', ['tools/test-learned-grabber-scope.j
 checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);
 checkCommand('blocked site list tests', ['tools/test-blocked-site-list.js']);
 checkCommand('user filter rules and custom lists', ['tools/test-user-filters.js']);
+checkCommand('network logger', ['tools/test-network-logger.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);

@@ -8,6 +8,7 @@
   "homepage_url": "https://iri-dev.github.io/WardenOne/",
   "permissions": [
     "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
     "storage",
     "activeTab",
     "scripting",

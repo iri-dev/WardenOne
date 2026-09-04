@@ -98,6 +98,19 @@
   .adv-errors div { font-size: 10.5px; line-height: 1.45; color: var(--warn); }
   .adv-list-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0;
     border-top: 1px solid var(--line); }
+  /* The syntax key: a scannable code -> meaning list, so the rules panel is not
+     a wall of prose. Each row is the token and what it does. */
+  .syntax-key { display: flex; flex-direction: column; gap: 5px; margin: 8px 0 4px; }
+  .syntax-key > div { display: grid; grid-template-columns: minmax(0, auto) 1fr; gap: 9px; align-items: baseline; }
+  .syntax-key code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px; color: var(--plum); background: var(--mist, rgba(157,84,201,.10));
+    border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px;
+    white-space: nowrap; justify-self: start;
+  }
+  .syntax-key span { color: var(--ink-soft); font-size: 11px; line-height: 1.4; }
+  .adv-note { font-size: 11px; color: var(--ink-faint); line-height: 1.5; }
+  .adv-note code { font-family: ui-monospace, monospace; font-size: 10px; color: var(--plum); }
   .adv-list-row .name { font-size: 12px; }
   .adv-list-row .desc { font-size: 10.5px; }
   .adv-list-row .adv-row-actions { display: flex; gap: 5px; flex: none; }
@@ -1412,10 +1425,15 @@
     <div class="row" style="display:block;">
       <div class="name" style="font-size:12px;">My rules</div>
       <div class="desc" id="user-rules-summary" style="margin-bottom:6px;">Write your own blocking rules</div>
-      <div class="desc">One rule per line. <code>||ads.example.com^</code> blocks requests to a host,
-        <code>@@||example.com^</code> stops blocking one, <code>example.com##.promo</code> hides an element
-        on one site, and <code>##.promo</code> hides it everywhere. Lines starting with <code>!</code> are notes.
-        Anything WardenOne cannot use is listed underneath rather than silently ignored.</div>
+      <div class="adv-note">Written in <strong>Adblock filter syntax</strong> &mdash; the same format uBlock Origin and AdGuard use. One rule per line:</div>
+      <div class="syntax-key" aria-label="Filter syntax reference">
+        <div><code>||ads.example.com^</code><span>block a host</span></div>
+        <div><code>@@||example.com^</code><span>allow one back</span></div>
+        <div><code>example.com##.promo</code><span>hide an element on that site</span></div>
+        <div><code>##.promo</code><span>hide it everywhere</span></div>
+        <div><code>! a note</code><span>a comment, ignored</span></div>
+      </div>
+      <div class="adv-note">Anything WardenOne can&rsquo;t use is listed below with the reason &mdash; never dropped in silence.</div>
       <textarea id="user-rules-text" class="adv-textarea" spellcheck="false" rows="8"
         aria-label="My filter rules" placeholder="! one rule per line&#10;||ads.example.com^&#10;example.com##.newsletter-popup"></textarea>
       <div class="adv-actions">
@@ -1440,6 +1458,16 @@
       </div>
       <div class="adv-status" id="custom-lists-status" role="status" aria-live="polite"></div>
       <div id="custom-lists-rows"></div>
+    </div>
+    <!-- The observability half of the same system. Once you can write rules and
+         subscribe to lists you can also break a site, and the logger is how you
+         find out which rule did it. -->
+    <div class="row" style="display:block;border-bottom:none;">
+      <div class="name" style="font-size:12px;">Network logger</div>
+      <div class="desc" style="margin-bottom:7px;">Every request, whether WardenOne blocked or allowed it,
+        and which rule decided. Records only while its tab is open, keeps nothing on disk, and strips
+        anything that looks like a secret. Open it when a site breaks and you need to know what stopped it.</div>
+      <button class="btn" id="open-logger" type="button" style="width:100%;">Open network logger</button>
     </div>
     </div>
     </details>

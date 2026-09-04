@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-wardenone-page="logger">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WardenOne - Network logger</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="guide-shell.css">
+<script src="theme.js"></script>
+<style>
+  .log-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+  .log-filters { display:flex; flex-wrap:wrap; gap:5px; }
+  .log-chip {
+    border:1px solid var(--wo-border); background:transparent; color:var(--wo-text-soft);
+    border-radius:999px; padding:5px 11px; font:inherit; font-size:12px; cursor:pointer;
+  }
+  .log-chip[aria-pressed="true"] { background:var(--wo-accent-soft); border-color:var(--wo-accent);
+    color:var(--wo-text); font-weight:700; }
+  .log-search { flex:1; min-width:180px; border:1px solid var(--wo-border); border-radius:10px;
+    background:var(--wo-surface); color:var(--wo-text); padding:8px 11px; font:inherit; font-size:13px; }
+  .log-count { font-size:12px; color:var(--wo-text-faint); font-variant-numeric:tabular-nums; }
+
+  .log-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .log-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--wo-text-faint); font-weight:700; padding:6px 8px; border-bottom:1px solid var(--wo-border); }
+  .log-table td { padding:6px 8px; border-bottom:1px solid var(--wo-border-soft, var(--wo-border));
+    vertical-align:top; }
+  .log-row { cursor:pointer; }
+  .log-row:hover { background:var(--wo-surface-muted); }
+  .log-row.is-open { background:var(--wo-surface-muted); }
+  .log-url { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11.5px;
+    word-break:break-all; }
+  .log-badge { display:inline-block; border-radius:999px; padding:2px 8px; font-size:10.5px;
+    font-weight:700; white-space:nowrap; }
+  .log-blocked { background:var(--wo-danger-bg); color:var(--wo-danger); }
+  .log-allowed { background:var(--wo-success-bg); color:var(--wo-success); }
+  .log-failed  { background:var(--wo-warning-bg); color:var(--wo-warning); }
+  .log-pending { background:var(--wo-surface-muted); color:var(--wo-text-faint); }
+  .log-dim { color:var(--wo-text-faint); }
+  .log-detail td { background:var(--wo-surface-muted); }
+  .log-detail dl { display:grid; grid-template-columns:auto 1fr; gap:5px 14px; margin:0 0 10px; }
+  .log-detail dt { color:var(--wo-text-faint); font-size:11.5px; }
+  .log-detail dd { margin:0; font-size:12px; word-break:break-all; }
+  .log-actions { display:flex; flex-wrap:wrap; gap:6px; }
+  .log-actions .btn { font-size:11.5px; padding:6px 10px; }
+  .log-empty { padding:26px 8px; text-align:center; color:var(--wo-text-faint); font-size:13px; }
+  .log-note { font-size:12px; color:var(--wo-text-faint); line-height:1.55; }
+  .log-scroll { max-height:60vh; overflow:auto; border:1px solid var(--wo-border); border-radius:12px; }
+</style>
+</head>
+<body>
+<header class="guide-topbar">
+  <div class="guide-wrap guide-topbar-inner">
+    <a class="guide-brand" href="popup.html" aria-label="Back to WardenOne popup">
+      <span class="guide-brand-mark" aria-hidden="true"><img src="icons/icon128.png" alt=""></span>
+      <span><span class="guide-brand-name">WardenOne</span><span class="guide-brand-sub">Network logger</span></span>
+    </a>
+    <div class="guide-toplinks">
+      <nav class="guide-nav" aria-label="Sections">
+        <a href="history.html">Activity</a>
+        <a href="notifications.html">Notifications</a>
+      </nav>
+      <div class="guide-credit">Developer <strong>iri.dev</strong></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="guide-hero">
+    <div class="guide-wrap guide-hero-inner">
+      <div>
+        <div class="guide-eyebrow">Advanced tool</div>
+        <h1>Every request, and the rule behind it.</h1>
+        <p class="guide-lead"><strong>The Activity Centre says a security event happened. This says
+          which request it was, whether WardenOne blocked or allowed it, and which rule decided.</strong>
+          Use it when a site breaks and you need to know what stopped it.</p>
+        <div class="guide-hero-actions">
+          <a class="guide-btn primary" href="#rows">See the requests</a>
+          <a class="guide-btn" href="history.html">Activity centre</a>
+        </div>
+        <div class="guide-pills" aria-label="How the logger behaves">
+          <span>Records only while open</span>
+          <span>Memory only</span>
+          <span>Secrets removed</span>
+        </div>
+      </div>
+      <aside class="guide-summary" aria-label="Capture summary">
+        <div class="summary-label">This session</div>
+        <div class="metric-grid">
+          <div class="metric"><div class="n" id="m-total">0</div><div class="l">Seen</div></div>
+          <div class="metric"><div class="n" id="m-blocked">0</div><div class="l">Blocked</div></div>
+          <div class="metric"><div class="n" id="m-allowed">0</div><div class="l">Allowed</div></div>
+        </div>
+        <p class="summary-copy" id="capture-state">Connecting…</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="guide-section">
+    <div class="guide-wrap">
+      <div class="guide-section-head">
+        <div><div class="guide-kicker">Live capture</div><h2>What each request did, and why.</h2></div>
+        <p>Click any row for the full detail and to turn it into a rule. Rules made here go into
+          <strong>My rules</strong> in the popup, so nothing this page does is hidden from you.</p>
+      </div>
+      <!-- Nothing here is written to disk. Capture starts when this page opens and
+           stops when it closes, so ordinary browsing carries no per-request cost. -->
+      <div class="log-toolbar">
+        <div class="log-filters" id="action-filters" role="group" aria-label="Filter by outcome">
+          <button class="log-chip" data-action="all" aria-pressed="true">All</button>
+          <button class="log-chip" data-action="blocked" aria-pressed="false">Blocked</button>
+          <button class="log-chip" data-action="allowed" aria-pressed="false">Allowed</button>
+          <button class="log-chip" data-action="failed" aria-pressed="false">Failed</button>
+        </div>
+        <input class="log-search" id="search" type="search" placeholder="Search host, URL, rule or list…"
+          aria-label="Search requests" spellcheck="false">
+        <span class="log-count" id="count"></span>
+        <button class="btn" id="pause" type="button">Pause</button>
+        <button class="btn" id="clear" type="button">Clear</button>
+        <button class="btn" id="export" type="button">Export</button>
+      </div>
+      <div class="log-filters" id="type-filters" role="group" aria-label="Filter by request type" style="margin-bottom:12px;">
+        <button class="log-chip" data-type="all" aria-pressed="true">All types</button>
+        <button class="log-chip" data-type="script" aria-pressed="false">Script</button>
+        <button class="log-chip" data-type="xmlhttprequest" aria-pressed="false">XHR</button>
+        <button class="log-chip" data-type="sub_frame" aria-pressed="false">Frame</button>
+        <button class="log-chip" data-type="image" aria-pressed="false">Image</button>
+        <button class="log-chip" data-type="media" aria-pressed="false">Media</button>
+        <button class="log-chip" data-type="websocket" aria-pressed="false">WebSocket</button>
+        <button class="log-chip" data-type="other" aria-pressed="false">Other</button>
+      </div>
+
+      <div class="log-scroll">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th style="width:76px;">Outcome</th>
+              <th style="width:88px;">Type</th>
+              <th style="width:66px;">Party</th>
+              <th>Request</th>
+              <th style="width:170px;">Rule / list</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="log-empty" id="empty">Nothing captured yet. Browse in another tab and requests will appear here.</div>
+      </div>
+
+      <p class="log-note" style="margin-top:14px;" id="exact-note"></p>
+      <p class="log-note">Anything that looks like a token, key, password or address is replaced with
+        <code>[removed]</code> before the request is stored, so this log can never become the leak.
+        Nothing is written to disk unless you press Export.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="guide-footer">
+  <div class="guide-wrap guide-footer-inner">
+    <span><strong>Recording only while this page is open.</strong> Kept in memory, never on disk.</span>
+    <span>Last <span id="cap">1000</span> requests.</span>
+  </div>
+</footer>
+<script src="logger.js"></script>
+</body>
+</html>

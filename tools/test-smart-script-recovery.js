@@ -975,8 +975,20 @@ function testRegistrationAndBridgeBounds() {
     Array.isArray(entry.js) && entry.js.includes('bridge.js'));
   assert(bridgeRegistration && bridgeRegistration.all_frames === true && bridgeRegistration.world === 'ISOLATED',
     'player context bridge is not isolated and all-frame');
-  assert(!(MANIFEST.permissions || []).includes('declarativeNetRequestFeedback'),
-    'recovery added a new feedback permission');
+  /* This began as a scope guard: the script-recovery work must not quietly take a
+     new permission. declarativeNetRequestFeedback is now carried deliberately,
+     for the network logger, which needs the matched rule id to say WHICH rule
+     blocked a request instead of guessing. The guard still stands, expressed
+     against its one legitimate consumer -- if the permission is present, the
+     logger must be what uses it, and recovery must not have reached for it. */
+  if ((MANIFEST.permissions || []).includes('declarativeNetRequestFeedback')) {
+    assert(BACKGROUND.includes('function logOnRuleMatched('),
+      'the feedback permission is present with no logger to justify it');
+    assert((BACKGROUND.match(/onRuleMatchedDebug/g) || []).length <= 4,
+      'onRuleMatchedDebug is used in more places than the logger attaching and detaching');
+    assert(!/SMART_SCRIPT[\s\S]{0,600}onRuleMatchedDebug/.test(BACKGROUND),
+      'script recovery is using the feedback permission');
+  }
   assert(BACKGROUND.includes("'smart-player-context': { max: 8, windowMs: 60000 }"),
     'background player signals are not rate-limited');
   assert(BACKGROUND.includes('SMART_SCRIPT_RECOVERY_MAX_TABS = 32'),

@@ -1,6 +1,7 @@
 :root[data-wardenone-page="notifications"],
 :root[data-wardenone-page="history"],
-:root[data-wardenone-page="hidden-elements"] {
+:root[data-wardenone-page="hidden-elements"],
+:root[data-wardenone-page="logger"] {
   --guide-bg: var(--wo-bg, #ece0f7);
   --guide-bg-2: var(--wo-bg-alt, #e7d9f4);
   --guide-paper: var(--wo-surface-raised, #fff);
@@ -39,11 +40,13 @@
 
 :root[data-wardenone-page="notifications"] *,
 :root[data-wardenone-page="history"],
-:root[data-wardenone-page="hidden-elements"] * { box-sizing: border-box; }
+:root[data-wardenone-page="hidden-elements"],
+:root[data-wardenone-page="logger"] * { box-sizing: border-box; }
 
 :root[data-wardenone-page="notifications"] body,
 :root[data-wardenone-page="history"],
-:root[data-wardenone-page="hidden-elements"] body {
+:root[data-wardenone-page="hidden-elements"],
+:root[data-wardenone-page="logger"] body {
   min-height: 100vh;
   margin: 0;
   padding: 0;
