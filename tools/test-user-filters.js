@@ -212,11 +212,22 @@ check('list text is never sent to the page',
 check('no shield toggle was added for either',
   !/data-key="userRules"/.test(POPUP_HTML) && !/data-key="customLists"/.test(POPUP_HTML),
   'they would inflate the protection count with things that protect nobody until used');
-check('both are marked Advanced', (POPUP_HTML.match(/class="adv-tag">Advanced</g) || []).length >= 1);
-check('and are collapsed by default',
-  /<details class="adv-block" id="user-rules-block">/.test(POPUP_HTML)
-    && !/<details class="adv-block" id="user-rules-block" open>/.test(POPUP_HTML),
-  'nobody needs filter syntax for WardenOne to work');
+/* Presented as a collapsed dropdown section, the same shape Twitch local rewind
+   uses, rather than a bespoke widget. Closed by default because nobody needs
+   filter syntax for WardenOne to work -- an open section full of empty fields
+   reads as something left unfinished. */
+check('the section is a rewind-drop like the rest of the popup',
+  /<details class="rewind-drop" id="my-filters-drop">/.test(POPUP_HTML));
+check('its summary reads as a section header and says it is advanced',
+  /<summary>My filters \(advanced\)<span class="rewind-caret"/.test(POPUP_HTML));
+check('and it is collapsed by default',
+  !/<details class="rewind-drop" id="my-filters-drop" open>/.test(POPUP_HTML));
+check('no bespoke collapsible styling was left behind',
+  !/\.adv-block/.test(POPUP_HTML) && !/adv-tag/.test(POPUP_HTML),
+  'the house pattern already does this');
+check('both panes load when the one section opens',
+  /const drop = \$\('my-filters-drop'\);/.test(POPUP_JS)
+    && /loadUserRules\(\);\s*loadCustomLists\(\);/.test(POPUP_JS));
 
 /* ---- the UI has to report, not just store ------------------------------- */
 check('the editor shows what was skipped', /function renderUserRuleErrors\(/.test(POPUP_JS));

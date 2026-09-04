@@ -1631,12 +1631,16 @@ function wireMyFilters() {
     url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); subscribe(); } });
   }
 
-  /* Loaded when the block is first opened rather than on popup open: nobody
+  /* Loaded when the section is first opened rather than on popup open: nobody
      should pay for a feature they never expand. */
-  const rulesBlock = $('user-rules-block');
-  if (rulesBlock) rulesBlock.addEventListener('toggle', () => { if (rulesBlock.open) loadUserRules(); }, { once: false });
-  const listsBlock = $('custom-lists-block');
-  if (listsBlock) listsBlock.addEventListener('toggle', () => { if (listsBlock.open) loadCustomLists(); }, { once: false });
+  const drop = $('my-filters-drop');
+  if (drop) {
+    drop.addEventListener('toggle', () => {
+      if (!drop.open) return;
+      loadUserRules();
+      loadCustomLists();
+    });
+  }
 }
 
 function paintSiteControls() {
