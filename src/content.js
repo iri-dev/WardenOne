@@ -17810,7 +17810,16 @@
     reach it. What is covered is everything the page itself raises. The wording of
     the notification is never stored -- only which shape it matched. */
     if(WO.notificationAbuseGuard&&!trustedMediaHost)try{
-      const NOTIF_COAX=/\b(?:click|press|tap|hit|select|choose)\s+(?:on\s+)?(?:the\s+)?["'\u201C\u2018]?allow["'\u201D\u2019]?\b|\ballow\s+(?:the\s+)?notifications?\s+(?:to|and|for)\b|\ballow\s+(?:us\s+)?to\s+continue\b|\ballow\b[^.\n]{0,40}\b(?:to\s+continue|to\s+watch|to\s+download|to\s+proceed|if\s+you\s+are\s+not\s+a\s+robot)\b/i,
+      /* "Allow" as an INSTRUCTION, not as ordinary English. This scans the whole page
+      body, so a loose pattern accuses a site of being scam-shaped over a sentence its
+      author wrote in good faith -- which is exactly what happened: a creator page
+      reading "Contributions allow me to continue developing" was flagged as
+      notification bait, and "your donations allow us to continue our work" would have
+      flagged nearly every charity on the web. "allow <someone> to <do something>" is
+      prose; the bait form is an imperative aimed at a button. So a person object is
+      excluded, and the "allow us to continue" variant is gone entirely -- it was
+      matching the charity phrasing far more often than any scam. */
+      const NOTIF_COAX=/\b(?:click|press|tap|hit|select|choose)\s+(?:on\s+)?(?:the\s+)?["'\u201C\u2018]?allow["'\u201D\u2019]?\b|\ballow\s+(?:the\s+)?notifications?\s+(?:to|and|for)\b|\ballow\s+to\s+continue\b|\ballow\b(?!\s+(?:me|us|you|him|her|them|it|my|our|your|their|people|users|readers|creators|supporters|subscribers|members|visitors|customers|anyone|everyone)\b)[^.\n]{0,40}\b(?:to\s+continue|to\s+watch|to\s+download|to\s+proceed|if\s+you\s+are\s+not\s+a\s+robot)\b/i,
       NOTIF_SCAM=[[/\b(?:virus|malware|trojan|spyware|ransomware)\b[^.\n]{0,60}\b(?:detect|found|infect|remove|clean|scan)/i,
       "fake malware alert"],
       [/\byour\s+(?:pc|computer|device|system|iphone|android|mac|windows)\b[^.\n]{0,40}\b(?:is|has been|was)\b[^.\n]{0,30}\b(?:infect|hack|compromis|at risk|damaged)/i,

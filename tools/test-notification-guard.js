@@ -136,6 +136,36 @@ const types = (r) => r.logs.map((l) => l.type);
   check('ordinary uses of the word "allow" are not bait', r.logs.length === 0, r.logs);
 }
 
+/* This check reads the WHOLE page body, so a loose pattern accuses a site of being
+   scam-shaped over a sentence its author wrote in good faith. Every line below is
+   ordinary English that was flagged as notification bait -- the first is real, off a
+   creator's own donation page. "allow <someone> to <do something>" is prose; the bait
+   form is an imperative aimed at a button. */
+{
+  for (const [wording, note] of [
+    ['Contributions allow me to continue developing and growing, building tools that prioritize people.',
+      'a creator describing what support pays for'],
+    ['Your donations allow us to continue our work.', 'nearly every charity on the web'],
+    ['This setting will allow you to continue where you left off.', 'ordinary product copy'],
+    ['We allow members to download their data at any time.', 'a terms page'],
+    ['Premium allows you to download every report.', 'a pricing page'],
+  ]) {
+    const r = run({ pageText: wording });
+    check('not bait: ' + note, r.logs.length === 0, { wording, logs: r.logs });
+  }
+}
+
+/* ...while none of that may cost the real detections. */
+{
+  for (const [wording, note] of [
+    ['Allow this site to continue', 'bare imperative at a site'],
+    ['Allow notifications to download the file', 'download bait without a click verb'],
+  ]) {
+    const r = run({ pageText: wording });
+    check('still caught: ' + note, types(r).includes('warned_notification_bait'), { wording, logs: r.logs });
+  }
+}
+
 {
   const r = run({ pageText: 'Click Allow to continue', top: false });
   check('a frame does not warn on the top page\'s behalf', r.logs.length === 0, r.logs);
