@@ -570,15 +570,77 @@ document.getElementById('clear').addEventListener('click', () => {
 });
 
 // ---- Learned bad sites ----
+/* A row for an entry the reader typed. Says what it will actually match and how long
+   it lasts, because "example.com" and "example.com/path/*" behave very differently and
+   a list that shows only what you typed makes you guess which one you got. */
+function manualBlockRow(it) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.manualRow = '1';
+  const left = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'rtitle';
+  title.textContent = it.pattern || it.value || '';
+  const scope = document.createElement('span');
+  scope.className = 'rscope';
+  scope.textContent = it.scope === 'session' ? 'this session'
+    : it.scope === 'tomorrow' ? 'until tomorrow' : 'permanent';
+  title.appendChild(scope);
+  const meta = document.createElement('div');
+  meta.className = 'rmeta';
+  const what = it.kind === 'url' ? 'Blocks that path only'
+    : it.kind === 'ip' ? 'Blocks that address'
+      : 'Blocks ' + (it.host || it.value) + ' and anything under it';
+  const when = Number(it.until) > 0 ? ' - lifts ' + new Date(Number(it.until)).toLocaleString() : '';
+  meta.textContent = 'You blocked this - ' + what + when;
+  left.appendChild(title);
+  left.appendChild(meta);
+  const btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.style.cssText = 'flex:none;padding:6px 12px;font-size:11px;';
+  btn.textContent = 'Unblock';
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    btn.textContent = 'Unblocking...';
+    chrome.runtime.sendMessage({ kind: 'blocklist-remove', id: it.id }, () => {
+      void chrome.runtime.lastError;
+      loadLearned();
+    });
+  });
+  row.appendChild(left);
+  row.appendChild(btn);
+  return row;
+}
+
 function loadLearned() {
+  /* The reader's own entries render first and separately. They are a decision, not
+     an observation, and mixing them into the learned rows was how a hand block
+     started reading like something WardenOne worked out. */
+  chrome.runtime.sendMessage({ kind: 'blocklist-get' }, (bl) => {
+    void chrome.runtime.lastError;
+    const box = document.getElementById('learned-rows');
+    if (!box) return;
+    box.dataset.manual = '';
+    const items = (bl && bl.ok && bl.items) || [];
+    box.textContent = '';
+    items.forEach((it) => box.appendChild(manualBlockRow(it)));
+    box.dataset.manual = String(items.length);
+  });
   chrome.runtime.sendMessage({ kind: 'list-learned' }, (res) => {
     const box = document.getElementById('learned-rows');
     if (!box) return;
-    box.textContent = '';
+    /* Keep whatever the blocklist call already put there; only the learned rows are
+       being replaced. Clearing the box here is what made the manual entries flicker
+       away whenever anything else refreshed the panel. */
+    Array.from(box.children).forEach((el) => { if (!el.dataset || !el.dataset.manualRow) el.remove(); });
     if (!res || !res.ok || !res.items || !res.items.length) {
-      const e = document.createElement('div'); e.className = 'empty';
-      e.textContent = 'None yet - block a site from the right-click menu, or WardenOne will add one it flags.';
-      box.appendChild(e);
+      /* Only empty if the reader's own list is empty too, or adding an entry would
+         be answered with "None yet" sitting directly underneath it. */
+      if (!box.querySelector('[data-manual-row]')) {
+        const e = document.createElement('div'); e.className = 'empty';
+        e.textContent = 'None yet - add one above, block a site from the right-click menu, or WardenOne will add one it flags.';
+        box.appendChild(e);
+      }
       return;
     }
     res.items.forEach((it) => {
@@ -606,9 +668,52 @@ function loadLearned() {
     });
   });
 }
+(() => {
+  const input = document.getElementById('block-input');
+  const scope = document.getElementById('block-scope');
+  const go = document.getElementById('block-add');
+  const err = document.getElementById('block-error');
+  if (!input || !go || !scope) return;
+  const say = (text) => {
+    if (!err) return;
+    err.textContent = text || '';
+    err.hidden = !text;
+  };
+  const submit = () => {
+    const pattern = input.value.trim();
+    if (!pattern) { say('Type a site, address or link to block.'); return; }
+    go.disabled = true;
+    const was = go.textContent;
+    go.textContent = 'Blocking...';
+    chrome.runtime.sendMessage({ kind: 'blocklist-add', pattern, scope: scope.value }, (res) => {
+      void chrome.runtime.lastError;
+      go.disabled = false;
+      go.textContent = was;
+      /* Only clear the field on success. Wiping what someone typed and then telling
+         them it was wrong leaves them nothing to correct. */
+      if (!res || !res.ok) { say((res && res.error) || 'That could not be blocked.'); return; }
+      say('');
+      input.value = '';
+      loadLearned();
+    });
+  };
+  go.addEventListener('click', submit);
+  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') submit(); });
+  input.addEventListener('input', () => say(''));
+})();
+
 document.getElementById('clear-learned').addEventListener('click', () => {
   if (confirm('Forget every blocked site, including the ones you blocked yourself? They will all load normally again.')) {
-    chrome.runtime.sendMessage({ kind: 'clear-learned' }, () => { void chrome.runtime.lastError; loadLearned(); });
+    /* Both lists. The wording promises "including the ones you blocked yourself",
+       and sending only clear-learned left every hand-typed entry in place -- a button
+       that says it cleared everything and did not. */
+    chrome.runtime.sendMessage({ kind: 'clear-learned' }, () => {
+      void chrome.runtime.lastError;
+      chrome.runtime.sendMessage({ kind: 'blocklist-clear' }, () => {
+        void chrome.runtime.lastError;
+        loadLearned();
+      });
+    });
   }
 });
 

@@ -219,6 +219,7 @@ function checkContentBuild() {
   'tools/test-mail-shield.js',
   'tools/test-firewall.js',
   'tools/test-extension-check.js',
+  'tools/test-user-blocklist.js',
   'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
@@ -510,6 +511,7 @@ checkCommand('file shield', ['tools/test-file-shield.js']);
 checkCommand('mail shield', ['tools/test-mail-shield.js']);
 checkCommand('site firewall', ['tools/test-firewall.js']);
 checkCommand('check an extension', ['tools/test-extension-check.js']);
+checkCommand('user blocklist', ['tools/test-user-blocklist.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);

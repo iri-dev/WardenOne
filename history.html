@@ -84,6 +84,25 @@
                decision is not presented back to you as something WardenOne
                worked out. -->
           <div class="panel-note">Sites blocked on future visits: ones you blocked yourself from the right-click menu, and ones WardenOne flagged by behavior that were not on a blocklist. Each row says which. Remove one to let it load again.</div>
+          <!-- Type-it-yourself blocking. Everything else in WardenOne decides for
+               you; this is the one list where you decide, and nothing overrules it
+               but your own allowlist. You do not have to be on the site to add it. -->
+          <div class="block-add">
+            <label class="block-add-label" for="block-input">Block a site yourself</label>
+            <div class="block-add-row">
+              <input class="search" id="block-input" type="text" spellcheck="false" autocomplete="off"
+                placeholder="example.com &nbsp;·&nbsp; *.example.com &nbsp;·&nbsp; 192.0.2.55 &nbsp;·&nbsp; example.com/path/*"
+                aria-label="Site, address or link to block">
+              <select class="search" id="block-scope" aria-label="How long to block it for">
+                <option value="forever">Permanently</option>
+                <option value="tomorrow">Until tomorrow</option>
+                <option value="session">This session</option>
+              </select>
+              <button class="btn small" id="block-add" type="button">Block</button>
+            </div>
+            <p class="block-add-note" id="block-error" hidden></p>
+            <p class="block-add-note">A site name covers everything under it, so <code>example.com</code> already blocks <code>news.example.com</code>. A link with a path blocks only that path. Blocking here overrides WardenOne's own compatibility exceptions &mdash; if you block YouTube, YouTube stops loading.</p>
+          </div>
           <div class="list" id="learned-rows"><div class="empty">None yet - block a site from the right-click menu, or WardenOne will add one it flags.</div></div>
         </section>
 
