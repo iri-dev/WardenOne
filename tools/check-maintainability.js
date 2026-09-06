@@ -586,6 +586,35 @@ const gateSource = read('tools/check-maintainability.js') || '';
   }
 }
 
+// Every tools/*.js must at least PARSE. Only the test suites were ever wired in, so both
+// filter-list builders sat with their shebang on line 7 -- a hard SyntaxError, since Node strips
+// one only at the very start of a file -- and no gate step ever ran them to find out. Compiled
+// through Node's own CommonJS wrapper, which is what `node --check` does, and read from the
+// directory so a tool added tomorrow is covered without anyone remembering to list it.
+{
+  const vm = require('vm');
+  const files = fs.readdirSync('tools').filter((f) => /\.js$/.test(f)).map((f) => 'tools/' + f);
+  const broken = [];
+  for (const file of files) {
+    const source = read(file);
+    if (source === null || source === undefined) {
+      broken.push(file + ': unreadable');
+      continue;
+    }
+    try {
+      new vm.Script('(function (exports, require, module, __filename, __dirname) {' +
+        String(source).replace(/^#![^\n]*/, '') + '\n})', { filename: file });
+    } catch (error) {
+      broken.push(file + ': ' + String((error && error.message) || error));
+    }
+  }
+  if (broken.length) {
+    fail('tools that do not parse: ' + broken.join('; '));
+  } else {
+    console.log('[ok] every tools/*.js parses (' + files.length + ' files)');
+  }
+}
+
 // Shipped root JavaScript that is never syntax-checked. content.min.js is generated and gets its
 // own provenance and build checks; everything else must be parsed here.
 {

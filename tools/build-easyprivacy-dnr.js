@@ -4,7 +4,6 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-#!/usr/bin/env node
 // Builds rules-easyprivacy.json -- a STATIC declarativeNetRequest ruleset of
 // third-party TRACKER HOSTS derived from EasyPrivacy, to back the "Block trackers"
 // toggle with real coverage (the hand-curated rules-trackers.json was only ~44 hosts).

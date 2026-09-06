@@ -4,7 +4,6 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-#!/usr/bin/env node
 // Builds rules-adshield.json -- a STATIC declarativeNetRequest ruleset compiled
 // from EasyList network filters. This is what gives "Adblock: General sites"
 // real uBlock-grade network blocking (path patterns, resource types, third-party
