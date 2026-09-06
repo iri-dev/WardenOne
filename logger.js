@@ -39,6 +39,36 @@ const TYPE_LABEL = {
    filters by. "Other" means everything not given its own chip. */
 const NAMED_TYPES = new Set(['script', 'xmlhttprequest', 'sub_frame', 'image', 'media', 'websocket']);
 
+/* Three different things this build can honestly say about a rule, and they are
+   not interchangeable. Exact: Chrome joined the rule to this request by id.
+   Near: Chrome named the rule but only by tab and time, so it is written on a row
+   only where one blocked request lines up and the rest are counted instead.
+   Neither: no attribution at all, and the page says that rather than inventing one. */
+let exactRules = false;
+let nearRules = false;
+let matchedLists = [];
+
+function paintExactNote() {
+  if (exactRules) {
+    $('exact-note').textContent =
+      'Rule attribution is exact: Chrome reports the matched rule id for this build.';
+    return;
+  }
+  if (!nearRules) {
+    $('exact-note').textContent =
+      'Chrome only reports the matched rule for an unpacked build, so rules are shown as '
+      + '"blocked by a network rule" here. Load WardenOne unpacked to see exactly which rule and list matched.';
+    return;
+  }
+  let note = 'A packaged build gets matched rules by tab and time rather than per request, '
+    + 'so a rule is named on a row only where it is the one match that fits it.';
+  if (matchedLists.length) {
+    note += ' Also matched while this window has been open, with no single request to pin them to: '
+      + matchedLists.map((l) => l.name + ' ×' + l.count).join(', ') + '.';
+  }
+  $('exact-note').textContent = note;
+}
+
 const port = chrome.runtime.connect({ name: 'wardenone-logger' });
 
 port.onMessage.addListener((msg) => {
@@ -46,10 +76,9 @@ port.onMessage.addListener((msg) => {
   if (msg.kind === 'hello') {
     $('cap').textContent = String(msg.max || 1000);
     $('capture-state').textContent = 'Recording. Capture stops when you close this tab.';
-    $('exact-note').textContent = msg.exactRules
-      ? 'Rule attribution is exact: Chrome reports the matched rule id for this build.'
-      : 'Chrome only reports the matched rule for an unpacked build, so rules are shown as '
-        + '"blocked by a network rule" here. Load WardenOne unpacked to see exactly which rule and list matched.';
+    exactRules = !!msg.exactRules;
+    nearRules = !!msg.nearRules;
+    paintExactNote();
     ingest(msg.entries || []);
     return;
   }
@@ -58,6 +87,7 @@ port.onMessage.addListener((msg) => {
     ingest(msg.entries || []);
     return;
   }
+  if (msg.kind === 'matched-lists') { matchedLists = msg.lists || []; paintExactNote(); return; }
   if (msg.kind === 'cleared') { ENTRIES = []; BY_ID.clear(); held = []; heldDropped = 0; openId = null; scheduleRender(); }
 });
 port.onDisconnect.addListener(() => {
@@ -177,7 +207,9 @@ function detailRow(e) {
   add('Page', e.page);
   add('URL', e.url + (e.redacted ? '   (secrets removed)' : ''));
   if (e.action === 'blocked') {
-    add('Rule', e.rule ? '#' + e.rule : 'not reported by Chrome in a packed build');
+    add('Rule', e.rule
+      ? '#' + e.rule + (e.near ? '   (matched by tab and time, not by request)' : '')
+      : 'not reported by Chrome for this request');
     add('From', e.source || 'a network rule');
   }
   add('At', new Date(e.at).toLocaleTimeString());
@@ -293,6 +325,8 @@ $('export').addEventListener('click', () => {
   const rows = ENTRIES.filter(matches).map((e) => ({
     at: new Date(e.at).toISOString(), action: e.action, method: e.method, type: e.type,
     party: e.party, page: e.page, url: e.url, rule: e.rule || '', source: e.source || '',
+    /* An export that drops this reads every rule as an exact match on that request. */
+    ruleMatch: e.rule ? (e.near ? 'tab-and-time' : 'exact') : 'none',
   }));
   const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');

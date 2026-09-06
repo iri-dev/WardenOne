@@ -125,16 +125,17 @@ check('a block is claimed only for ERR_BLOCKED_BY_CLIENT',
 const sourceRegion = region('let __logRuleBases = null;', '/* Anything that looks like a credential');
 check('the attribution map is liftable', !!sourceRegion);
 if (sourceRegion) {
-  const box2 = { Number, Object };
+  const box2 = { Number, Object, Set };
   vm.createContext(box2);
   /* The real constants, so the map is tested against the ids actually shipped. */
   const bases = {};
   for (const m of BG.matchAll(/const ([A-Z_]*RULE_BASE) = (\d+)/g)) bases[m[1]] = Number(m[2]);
   Object.assign(box2, bases);
   box2.LOG_STATIC_RULESETS = { adshield_easylist: 'AdShield / EasyList', easyprivacy: 'EasyPrivacy' };
-  vm.runInContext(sourceRegion + ';globalThis.src = logRuleSource;', box2,
-    { filename: 'background.js:logRuleSource' });
+  vm.runInContext(sourceRegion + ';globalThis.src = logRuleSource;globalThis.canBlock = logRuleCanBlock;',
+    box2, { filename: 'background.js:logRuleSource' });
   const src = box2.src;
+  const canBlock = box2.canBlock;
 
   check('a My Rules id names My Rules', src(bases.USER_RULE_BASE + 3, '_dynamic') === 'My rules');
   check('a blocked-site id names Blocked sites', src(bases.LEARNED_RULE_BASE + 1, '_dynamic') === 'Blocked sites');
@@ -145,7 +146,87 @@ if (sourceRegion) {
   /* Ranges must not overlap into the wrong owner. */
   check('an id just below a base belongs to the range beneath it',
     src(bases.USER_RULE_BASE - 1, '_dynamic') !== 'My rules');
+
+  /* Chrome's matched-rule feed names the rule but never says what it DID, so a rule
+     that lets requests through must never be offered as the reason one was blocked. */
+  check('a static block list may explain a block', canBlock(7, 'easyprivacy') === true);
+  check('a My Rules id may explain a block',
+    canBlock(bases.USER_RULE_BASE + 3, '_dynamic') === true);
+  check('an allowlist rule may not explain a block',
+    canBlock(bases.ALLOWLIST_RULE_BASE + 2, '_dynamic') === false,
+    'blocked by: your allowlist is a wrong answer wearing an exact answer clothes');
+  check('a login-compatibility allowance may not explain a block',
+    canBlock(bases.LOGIN_COMPAT_RULE_BASE + 1, '_dynamic') === false);
+  check('a never-block allowance may not explain a block',
+    canBlock(bases.NEVER_BLOCK_ALLOW_RULE_BASE + 1, '_dynamic') === false);
 }
+
+/* Chrome reports matched rules to a PACKAGED build too: getMatchedRules is gated on a
+   permission, not on being unpacked -- it is onRuleMatchedDebug that is dev-only. What
+   it will not give is a request id, so the poll may only claim a row it can prove. */
+check('a packaged build still asks Chrome which rules matched',
+  /chrome\.declarativeNetRequest\.getMatchedRules\(/.test(BG)
+    && /function logMatchedRulesAvailable\(\)/.test(BG),
+  'exact-or-nothing throws away attribution Chrome will give a store build');
+check('the poll runs only when the exact feed is missing',
+  /\} else if \(logMatchedRulesAvailable\(\)\) \{/.test(BG),
+  'polling alongside onRuleMatchedDebug spends quota to re-derive a worse answer');
+{
+  const poll = Number((/const LOG_MATCH_POLL_MS = (\d+)/.exec(BG) || [])[1]);
+  check('the poll interval stays inside the getMatchedRules quota', poll >= 30000,
+    'Chrome allows 20 calls per 10 minutes; under 30s trips it and attribution stops dead');
+}
+check('the poll timer is cleared when the last logger closes',
+  /clearInterval\(LOG_MATCH_TIMER\)/.test(BG));
+check('the poll asks whether the rule could block before naming a row',
+  /logRuleCanBlock\(rule\.ruleId, rule\.rulesetId\)[\s\S]{0,120}logSoleBlockedNear\(/
+    .test(region('async function logPollMatchedRules(', 'function logAttach()')),
+  'a correct blocking check that nothing calls is the same as not having one');
+check('the matched-list tally dies with the buffer',
+  /LOG_MATCH_TALLY\.clear\(\);/.test(region('function logDetach()', 'A port, not a message')),
+  'a record of which lists fired must not outlive the window that collected it');
+
+/* The join itself. Two blocked rows in one tab inside the window means neither can be
+   named -- picking one would be a coin flip presented as attribution. */
+const nearRegion = region('function logSoleBlockedNear(', 'function logSendMatchedLists(');
+check('the sole-candidate join is liftable', !!nearRegion);
+if (nearRegion) {
+  const box3 = { Number, Math, LOG_MATCH_WINDOW_MS: 1500, LOG_RING: [] };
+  vm.createContext(box3);
+  vm.runInContext(nearRegion + ';globalThis.sole = logSoleBlockedNear;', box3,
+    { filename: 'background.js:logSoleBlockedNear' });
+  const sole = box3.sole;
+  const at = 1000000;
+  const row = (over) => Object.assign({ at, action: 'blocked', rule: '', tabId: 7 }, over);
+  const ring = (...rows) => { box3.LOG_RING.length = 0; box3.LOG_RING.push(...rows); };
+
+  ring(row({}));
+  check('one blocked row in the window owns the match', sole(7, at) === box3.LOG_RING[0]);
+  ring(row({}), row({ at: at + 20 }));
+  check('two candidates means neither is named', sole(7, at) === null,
+    'picking one of two would be a coin flip presented as attribution');
+  ring(row({ tabId: 9 }));
+  check('a row in another tab is not a candidate', sole(7, at) === null);
+  ring(row({ action: 'allowed' }));
+  check('an allowed row is never given a blocking rule', sole(7, at) === null);
+  ring(row({ at: at - 9000 }));
+  check('a row older than the window is not a candidate', sole(7, at) === null);
+  /* The poll runs up to 40s behind, so rows NEWER than the match keep arriving. That
+     side of the window needs its own guard: the scan stops early on old rows only. */
+  ring(row({ at: at + 9000 }));
+  check('a row newer than the window is not a candidate', sole(7, at) === null);
+  ring(row({ rule: '42' }));
+  check('a row that already has a rule is not overwritten', sole(7, at) === null);
+}
+
+check('the page distinguishes an exact rule from a correlated one',
+  /nearRules/.test(JS) && /matched by tab and time/.test(JS),
+  'a near match shown like an exact one is the invented attribution this page exists to avoid');
+check('the packaged-build note is its own sentence, not the unpacked one',
+  /function paintExactNote\(\)/.test(JS) && /A packaged build gets matched rules/.test(JS));
+check('the export records how a rule was matched',
+  /ruleMatch: e\.rule \?/.test(JS),
+  'an export without it reads every rule as an exact match on that request');
 check('the page says plainly when Chrome will not report the rule',
   /unpacked build/.test(JS) && /exactRules/.test(JS),
   'inventing an attribution would be worse than admitting the limit');
