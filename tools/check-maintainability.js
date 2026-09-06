@@ -162,6 +162,7 @@ function checkContentBuild() {
   'twitch-vod-rewind.js',
   'cryptominer-detect.js',
   'search-junk.js',
+  'command-palette.js',
   'privacy-probe.js',
   'privacy-test.js',
   'mail-shield.js',
@@ -233,6 +234,7 @@ function checkContentBuild() {
   'tools/test-media-capability-fp.js',
   'tools/test-keyboard-shortcuts.js',
   'tools/test-privacy-test.js',
+  'tools/test-command-palette.js',
   'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
@@ -536,6 +538,7 @@ checkCommand('bounce purge', ['tools/test-bounce-purge.js']);
 checkCommand('media capability fingerprinting', ['tools/test-media-capability-fp.js']);
 checkCommand('keyboard shortcuts', ['tools/test-keyboard-shortcuts.js']);
 checkCommand('privacy self-test', ['tools/test-privacy-test.js']);
+checkCommand('command palette', ['tools/test-command-palette.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
