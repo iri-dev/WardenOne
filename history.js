@@ -40,6 +40,7 @@ const LABELS = {
   warned_redirect_param: 'Redirecting link',
   stripped_link_ping: 'Click-tracking beacon removed',
   cleaned_history_url: 'Tracking added to the address, removed',
+  purged_bounce_storage: 'Redirect tracker’s leftovers cleared',
   warned_logger_api: 'Possible tracker request',
   warned_abuseipdb_server: 'Suspicious IP server',
   warned_url_reputation: 'Suspicious URL reputation',
@@ -314,6 +315,16 @@ function detailText(e) {
     const host = d.hostOnly && d.urlCount ? 'URLhaus host URLs: ' + d.urlCount : '';
     const threats = Array.isArray(d.threatTypes) && d.threatTypes.length ? d.threatTypes.join(', ') : '';
     return [d.provider || 'URL reputation', score, age, registrar, host, threats, d.why, d.matched || d.host].filter(Boolean).join(' - ');
+  }
+  if (e.type === 'purged_bounce_storage') {
+    const doms = Array.isArray(d.domains) ? d.domains.filter(Boolean) : [];
+    return doms.length ? 'Cleared: ' + doms.join(', ') : '';
+  }
+  if (e.type === 'cleaned_history_url') {
+    /* The parameter NAMES, which is the part worth seeing: it says who was being
+       told, without repeating what they were told. */
+    const names = Array.isArray(d.params) ? d.params.filter(Boolean) : [];
+    return names.length ? 'Removed: ' + names.join(', ') : '';
   }
   if (d.risk && (d.action || d.why)) return d.risk + ': ' + [d.action, d.why].filter(Boolean).join(' - ');
   if (d.matched && d.brand) return d.matched + ' (looks like ' + d.brand + ')';

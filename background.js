@@ -1179,6 +1179,123 @@ function redirectChainShouldInterrupt(chain, finalUrl) {
   return !redirectChainContainsKnownAuth(chain, finalUrl);
 }
 
+// ---- Bounce-tracking storage purge -----------------------------------------
+//
+// A tracker gets one moment as a FIRST party during a redirect: site A sends you to
+// tracker.example, which sends you on to site B. The visit lasts a fraction of a second
+// and you never see it, but while it lasted the tracker could set its own cookies and
+// storage as a first party -- which is precisely the state third-party cookie blocking
+// does not touch. Next time it gets the same fraction of a second, it reads them back and
+// joins the two visits up.
+//
+// The redirect chain is already recorded here for other reasons, so the intermediary is
+// known. What is added is clearing what it left behind.
+//
+// THE ENTIRE DESIGN IS THE RESTRAINT. Wiping storage for every intermediary would break
+// exactly the flows that legitimately bounce you across domains -- SSO, OAuth callbacks,
+// 3-D Secure, checkout handoffs -- and it would break them in the least debuggable way
+// possible, by silently deleting the session halfway through. So a hop is purged only
+// when every one of these holds:
+//   - it was passed THROUGH: never the site asked for, never the site landed on, and
+//     never the last hop;
+//   - it is already on a blocklist. A domain WardenOne would refuse requests to is not
+//     one the reader has an account with;
+//   - nothing anywhere in the chain looks like login or payment plumbing. Not "this hop"
+//     -- the whole chain, because a checkout that routes through an ad network is still
+//     a checkout;
+//   - and it is not a never-block domain or on the reader's allowlist.
+// Anything that fails one of those is left completely alone. A tracker whose state
+// survives is the acceptable failure here; a sign-in destroyed mid-flight is not.
+
+/* Payment and 3-D Secure plumbing, on top of isLoginCompatibilityUrl (which covers
+   identity providers and CAPTCHA but, of payments, only PayPal). These bounce you across
+   domains by design, and some of them -- Stripe's device-fingerprinting host especially --
+   do appear on tracker blocklists, which is exactly the combination that would otherwise
+   qualify one for a purge in the middle of somebody's checkout. */
+const BOUNCE_PURGE_PAYMENT_DOMAINS = [
+  'stripe.com', 'stripe.network', 'stripecdn.com', 'adyen.com', 'adyenpayments.com',
+  'braintreegateway.com', 'braintree-api.com', 'paypal.com', 'paypalobjects.com',
+  'klarna.com', 'klarnacdn.net', 'checkout.com', 'squareup.com', 'squarecdn.com',
+  'worldpay.com', 'cybersource.com', 'sagepay.com', 'globalpay.com', 'mollie.com',
+  'razorpay.com', 'payu.com', 'affirm.com', 'afterpay.com', 'clearpay.co.uk',
+  'mastercard.com', 'visa.com', 'americanexpress.com', 'discover.com',
+  'cardinalcommerce.com', 'arcot.com', 'modirum.com', '3dsecure.io',
+  'amazonpay.com', 'apple.com', 'wise.com', 'revolut.com', 'gocardless.com',
+];
+function bouncePurgeExcludedDomain(domain, cfg) {
+  try {
+    const dom = String(domain || '').toLowerCase();
+    if (!dom) return true;
+    if (BOUNCE_PURGE_PAYMENT_DOMAINS.some((d) => dom === d || dom.endsWith('.' + d))) return true;
+    if (isNeverBlockDomain(dom)) return true;
+    if (hostMatchesAllowlist(dom, activeAllowlist(cfg || {}))) return true;
+    /* No isLoginCompatibilityUrl check here. redirectChainContainsKnownAuth already runs
+       that same predicate over every hop url in the chain and abandons the whole chain if
+       any of them matches, so a per-hop repeat of it could never fire -- and two copies of
+       one rule is how the weaker copy ends up being the one that is maintained. */
+    return false;
+  } catch (_) {
+    /* Refusing to purge is the safe answer to "I could not tell". */
+    return true;
+  }
+}
+
+/* The intermediaries in one chain that qualify. Returns [] far more often than not, and
+   that is the intended shape of this feature. */
+function trackingBounceDomains(chain, finalUrl, cfg) {
+  const out = [];
+  try {
+    const hops = (chain && Array.isArray(chain.hops)) ? chain.hops : [];
+    if (redirectChainContainsKnownAuth(chain, finalUrl)) return out;
+    /* domains[0] is the site the navigation STARTED on -- resetRedirectChain records it
+       from onBeforeNavigate before any hop exists. Purging that would be wiping the site
+       the reader was actually using. */
+    const startDom = String((chain.domains && chain.domains[0]) || '');
+    let landed = '';
+    try { landed = registrableDomainBg(new URL(String(finalUrl || '')).hostname) || ''; } catch (_) { landed = ''; }
+    const seen = new Set();
+    /* Stops one short of the end, which is what "passed through" means: the last hop is
+       where the reader ended up, not somewhere they were sent onward from. It is also
+       why a single-hop chain yields nothing -- A -> B has no middle, and the loop simply
+       does not run. There was an explicit hops.length < 2 guard above this; it was
+       removed because it could never fire, and a guard no test can reach is one that can
+       be deleted later without anything noticing. */
+    for (let i = 0; i < hops.length - 1; i++) {
+      const hop = hops[i] || {};
+      const host = String(hop.host || '');
+      if (!host) continue;
+      const dom = registrableDomainBg(host) || host;
+      if (!dom || dom === startDom || dom === landed || seen.has(dom)) continue;
+      const known = BLOCKED_DOMAINS.has(dom) || BLOCKED_DOMAINS.has(host)
+        || GRABBER_FEED_DOMAINS.has(dom) || GRABBER_FEED_DOMAINS.has(host);
+      if (!known) continue;
+      if (bouncePurgeExcludedDomain(dom, cfg)) continue;
+      seen.add(dom);
+      out.push(dom);
+      if (out.length >= 4) break;
+    }
+  } catch (_) {}
+  return out;
+}
+
+async function purgeTrackingBounces(chain, finalUrl, cfg) {
+  try {
+    const domains = trackingBounceDomains(chain, finalUrl, cfg);
+    if (!domains.length) return;
+    for (const domain of domains) {
+      /* history:false explicitly. This clears what a tracker stored on the way past; it
+         is not a licence to edit where the reader has been. */
+      try { await wipeSiteData(domain, { history: false }, []); } catch (_) {}
+    }
+    queueHistory({
+      type: 'purged_bounce_storage',
+      detail: { domains: domains.slice(0, 4) },
+      url: String(finalUrl || '').slice(0, 300),
+      at: Date.now(),
+    });
+  } catch (_) {}
+}
+
 // ---- Frame-driven top navigation -------------------------------------------
 // The hole yomi.to walked through. Two layers watched redirects and NEITHER could
 // see this one:
@@ -1498,6 +1615,11 @@ async function evaluateRedirectChain(details) {
   const finalUrl = (chain.hops[chain.hops.length - 1] && chain.hops[chain.hops.length - 1].to) || details.url || '';
   const confirmedThreat = !!(chain.blocklisted || chain.abuseTld || chain.fakeInstall);
   const authChain = redirectChainContainsKnownAuth(chain, finalUrl);
+  /* Before the log thresholds below, because whether a bounce is worth LOGGING and
+     whether its leftovers should be cleared are different questions -- a short, quiet
+     two-hop bounce through a tracker is the ordinary shape of this and would fall under
+     every threshold here. Not awaited: a wipe must never delay the interstitial. */
+  void purgeTrackingBounces(chain, finalUrl, cfg);
   // Landing somewhere other than the site actually asked for is worth recording
   // even when the chain is short and carries nothing known-bad. This is the case
   // that made a forced redirect impossible to diagnose at all: one 30x hop across
