@@ -164,9 +164,30 @@ function is(name, got, want, extra) {
     /if \(typeof clean\[key\] === 'boolean'\) clean\[key\] = false;/.test(BRIDGE),
     'assigning unknown keys would let stored state invent config');
 
-  const bgReads = (BACKGROUND.match(/cfg\.allowlist/g) || []).length;
-  check('the worker has no raw allowlist reads left outside its resolver', bgReads === 2,
-    bgReads + ' remaining; expected only the two inside activeAllowlist()');
+  /* Was a count of two, which is what the resolver needed when it was one function. The
+     pause map has two more operations now -- asking whether a site is paused, and
+     producing the map to store -- and they live beside activeAllowlist for exactly the
+     reason this check exists. A count would have to be edited every time one of them
+     gains a line, which turns the invariant into a number nobody reads; what actually
+     matters is WHERE the reads are, so that is what is asserted. */
+  const resolverFrom = BACKGROUND.indexOf('function activeAllowlist(cfg) {');
+  const resolverTo = BACKGROUND.indexOf('function hostMatchesAllowlist(', resolverFrom);
+  check('the resolver region is where it is expected', resolverFrom > 0 && resolverTo > resolverFrom);
+  const region = BACKGROUND.slice(resolverFrom, resolverTo);
+  /* Storing what withSitePause returned is the one sanctioned mention outside the region:
+     it is a write of a value the resolver produced, not a second reading of the map. It is
+     dropped before counting so it cannot be mistaken for one -- and if it is ever written
+     any other way, the strict form below stops matching and this fails. */
+  const SANCTIONED = /cfg\.allowlistUntil = withSitePause\(cfg, host, [^)]*\);/g;
+  const outside = (BACKGROUND.slice(0, resolverFrom) + BACKGROUND.slice(resolverTo))
+    .replace(SANCTIONED, '');
+  const strayReads = (outside.match(/cfg\.allowlist/g) || []).length;
+  check('the worker has no raw allowlist reads left outside its resolver',
+    strayReads === 0,
+    strayReads + ' read(s) outside activeAllowlist / sitePausedUntil / withSitePause');
+  check('and the sanctioned write is still the resolver handing back a map',
+    SANCTIONED.test(BACKGROUND),
+    'assembling the pause map at the call site is the second interpretation this forbids');
 }
 
 // ---------------------------------------------------------------------------

@@ -46,12 +46,39 @@
     "service_worker": "background.js"
   },
   "commands": {
+    "command-palette": {
+      "suggested_key": {
+        "default": "Alt+Shift+W",
+        "mac": "Alt+Shift+W"
+      },
+      "description": "Open the WardenOne command palette"
+    },
     "copy-clean-current-address": {
       "suggested_key": {
         "default": "Alt+Shift+C",
         "mac": "Alt+Shift+C"
       },
       "description": "Copy a clean version of the current page address"
+    },
+    "element-tool": {
+      "suggested_key": {
+        "default": "Alt+Shift+E",
+        "mac": "Alt+Shift+E"
+      },
+      "description": "Point at something on the page and hide it"
+    },
+    "open-network-logger": {
+      "suggested_key": {
+        "default": "Alt+Shift+L",
+        "mac": "Alt+Shift+L"
+      },
+      "description": "Open the network logger"
+    },
+    "pause-site": {
+      "description": "Pause or resume WardenOne on this site"
+    },
+    "scan-site": {
+      "description": "Check this site"
     }
   },
   "content_security_policy": {
