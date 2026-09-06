@@ -18379,17 +18379,42 @@
         on, so a page holding it is not playing notes, it is talking to the hardware --
         which puts it alongside raw HID rather than alongside Bluetooth. */
         midi:"Medium",
-        "midi-sysex":"High"
+        "midi-sysex":"High",
+        /* An immersive AR session is the room you are sitting in: the headset maps the
+        space and the page is handed the tracking. VR is the same machinery pointed at a
+        rendered world rather than yours, so it is a step down and not two. Inline is a
+        preview inside the page with no headset and no room, which is why it is Low. */
+        "xr-immersive-ar":"High",
+        "xr-immersive-vr":"Medium",
+        "xr-inline":"Low",
+        /* Answering "do you have a headset" needs no prompt and no session, so it is the
+        quiet half of XR -- the same shape as getDevices above. */
+        "xr-probe":"Low",
+        /* Writing can be permanent. An NDEF tag can be rewritten and some can be locked
+        read-only, which is not something a page should do to a physical object in your
+        pocket without you understanding why. Reading is a smaller thing. */
+        "nfc-read":"Medium",
+        "nfc-write":"High",
+        /* Not a threat, and using a controller is not suspicious. The entropy is the
+        model string, which is why the count is recorded and the names never are. */
+        gamepad:"Low"
       },
       devCounts=Object.create(null),
+      /* copy is optional. The four original surfaces all read as "connect to a <thing>
+      device", which is right for USB and wrong for an NFC tag or a headset -- so the
+      later surfaces pass their own sentence and everything else about the record stays
+      identical. One counter, one event kind, one shape in Activity: this is meant to be
+      one system that knows about eight APIs, not eight shields. */
       noteDevice=(kind,
       api,
       label,
-      count)=>{
+      count,
+      copy)=>{
         try{
           const key=kind+":"+api;
           if((devCounts[key]=(devCounts[key]||0)+1)>3)return;
           const silent="silent"===kind;
+          const custom=copy&&"object"==typeof copy?copy:null;
           log(silent?"warned_device_silent":"warned_device_request",
           {
             api:String(api).slice(0,
@@ -18398,8 +18423,8 @@
             Number(count)||0):0,
             severity:DEV_SEVERITY[api]||"Medium",
             confidence:silent?"Very high":"High",
-            why:silent?"This page read back a "+label+" device you allowed it to use on an earlier visit. That needs no prompt, so it can happen without you being asked again.":"This page asked to connect to a "+label+" device. Chrome will ask you to choose one; nothing is connected unless you pick it.",
-            action:silent?"If you did not expect this site to use your hardware, remove its device access in Chrome's site settings.":"Only choose a device if you came here to use it. Cancel if the request is unexpected.",
+            why:custom&&custom.why||(silent?"This page read back a "+label+" device you allowed it to use on an earlier visit. That needs no prompt, so it can happen without you being asked again.":"This page asked to connect to a "+label+" device. Chrome will ask you to choose one; nothing is connected unless you pick it."),
+            action:custom&&custom.action||(silent?"If you did not expect this site to use your hardware, remove its device access in Chrome's site settings.":"Only choose a device if you came here to use it. Cancel if the request is unexpected."),
             outcome:"Recorded only; the request was not blocked and no device details were read."
           })
         }
@@ -18646,6 +18671,188 @@
           return out
         },
         {__wardenoneFileGuard:!0}))
+      }
+      catch(_){
+
+      }
+      /* ---- WebXR ------------------------------------------------------------
+      The rest of this family is "a page wants to talk to a thing plugged into your
+      computer". XR is a page wanting the room. An immersive session is handed head and
+      controller pose continuously, and on AR the headset has already mapped the space
+      it is tracking against -- which is a more intimate reading than any of the USB
+      devices above, however ordinary the game asking for it is.
+      Nothing is blocked. Chrome puts its own consent in front of an immersive session
+      and headsets are a legitimate thing people own. What was missing was the line.
+      requestSession is the loud half. isSessionSupported is the quiet half: it needs no
+      prompt, no session and no hardware interaction, and it answers whether there is a
+      headset attached -- so a page can ask it purely to learn something about you. As
+      with getDevices, the ANSWER decides: a false is a page finding nothing and there is
+      no story in it. */
+      try{
+        const xr="undefined"!=typeof navigator&&navigator.xr;
+        if(xr){
+          const realSession=xr.requestSession;
+          "function"!=typeof realSession||realSession.__wardenoneDeviceGuard||(xr.requestSession=Object.assign(function(mode,
+          init){
+            try{
+              const m=String(mode||"inline"),
+              api="immersive-ar"===m?"xr-immersive-ar":"immersive-vr"===m?"xr-immersive-vr":"xr-inline",
+              /* Which features, not what they returned. "hand-tracking" and
+              "unbounded" are the ones worth seeing named, and none of them says
+              anything about the room itself. */
+              feats=[].concat(init&&init.requiredFeatures||[],
+              init&&init.optionalFeatures||[]).map(f=>String(f).slice(0,
+              24)).slice(0,
+              8),
+              spatial=feats.some(f=>/^(local-floor|bounded-floor|unbounded|hit-test|anchors|plane-detection|mesh-detection|hand-tracking)$/.test(f));
+              noteDevice("request",
+              api,
+              "immersive-ar"===m?"AR headset":"immersive-vr"===m?"VR headset":"XR",
+              0,
+              {
+                why:"This page asked to start "+("inline"===m?"an in-page XR view":"an immersive "+("immersive-ar"===m?"AR":"VR")+" session")+(spatial?", including spatial tracking of where you and your controllers are":"")+". Chrome asks before an immersive session starts; nothing begins unless you agree."+(feats.length?" Features requested: "+feats.join(", ")+".":""),
+                action:"immersive-ar"===m?"AR sessions track the space around you. Only agree if you came here for that.":"Only agree if you came here to use a headset. Cancel if the request is unexpected."
+              })
+            }
+            catch(_){
+
+            }
+            return realSession.apply(this,
+            arguments)
+          },
+          {__wardenoneDeviceGuard:!0}));
+          const realSupported=xr.isSessionSupported;
+          "function"!=typeof realSupported||realSupported.__wardenoneDeviceGuard||(xr.isSessionSupported=Object.assign(function(mode){
+            const out=realSupported.apply(this,
+            arguments);
+            try{
+              out&&"function"==typeof out.then&&out.then(yes=>{
+                try{
+                  const m=String(mode||"inline");
+                  yes&&"inline"!==m&&noteDevice("silent",
+                  "xr-probe",
+                  "XR",
+                  1,
+                  {
+                    why:"This page checked whether a VR or AR headset is attached to this computer, without starting a session. That needs no prompt and no interaction, and the answer is one more detail that helps identify you.",
+                    action:"Nothing has been shared beyond yes-or-no. If this site has no reason to use a headset, that is worth noticing."
+                  })
+                }
+                catch(_){
+
+                }
+
+              },
+              ()=>{
+
+              })
+            }
+            catch(_){
+
+            }
+            return out
+          },
+          {__wardenoneDeviceGuard:!0}))
+        }
+
+      }
+      catch(_){
+
+      }
+      /* ---- Web NFC ----------------------------------------------------------
+      Android only, and the tag has to be physically touched to the phone, so the reach
+      is small -- but it is a page reading and, more to the point, WRITING a physical
+      object you are carrying. A rewritten tag stays rewritten after the tab is closed,
+      and some tags can be locked read-only permanently, which is the one thing in this
+      whole family that cannot be undone by revoking a permission.
+      Wrapped on the prototype rather than the constructor: a page makes its own
+      NDEFReader, so there is no single instance to reach. */
+      try{
+        const ndef="undefined"!=typeof NDEFReader&&NDEFReader.prototype;
+        if(ndef){
+          const wrapNdef=(name,
+          api,
+          copy)=>{
+            try{
+              const real=ndef[name];
+              if("function"!=typeof real||real.__wardenoneDeviceGuard)return;
+              const wrapped=function(...args){
+                try{
+                  noteDevice("request",
+                  api,
+                  "NFC tag",
+                  0,
+                  copy)
+                }
+                catch(_){
+
+                }
+                return real.apply(this,
+                args)
+              };
+              wrapped.__wardenoneDeviceGuard=!0,
+              ndef[name]=wrapped
+            }
+            catch(_){
+
+            }
+
+          };
+          wrapNdef("scan",
+          "nfc-read",
+          {
+            why:"This page asked to read an NFC tag. Chrome asks first, and nothing is read unless you agree and hold a tag to the phone.",
+            action:"Only agree if you came here to scan something. Cancel if the request is unexpected."
+          }),
+          wrapNdef("write",
+          "nfc-write",
+          {
+            why:"This page asked to WRITE to an NFC tag. That changes a physical object and the change stays after you close the tab; some tags can also be locked read-only permanently.",
+            action:"Only agree if you meant to program a tag. There is no undo once a tag is written, and none at all once one is locked."
+          })
+        }
+
+      }
+      catch(_){
+
+      }
+      /* ---- Gamepads ---------------------------------------------------------
+      The odd one out, and deliberately the quietest. Using a controller is not
+      suspicious and this never treats it as such. What is worth a line is that
+      gamepad.id carries the controller's model string, so a page that reads the list
+      learns something about your hardware -- and Chrome hands that over after a single
+      button press, with no prompt anywhere.
+      The COUNT is recorded and the model names never are. Writing the fingerprint into
+      the log to warn about the fingerprint would be a strange thing to do.
+      Noted only when the list actually contains a controller: an empty list is Chrome
+      declining to answer yet, and there is nothing in it to learn. Every real game polls
+      this once a frame, so the shared counter above -- three per api, per page -- is what
+      keeps a running game to a single line instead of thousands. */
+      try{
+        const realPads="undefined"!=typeof navigator&&navigator.getGamepads;
+        "function"!=typeof realPads||realPads.__wardenoneDeviceGuard||(navigator.getGamepads=Object.assign(function(...args){
+          const out=realPads.apply(this,
+          args);
+          try{
+            let live=0;
+            if(out&&"number"==typeof out.length)for(let i=0;
+            i<out.length;
+            i++)out[i]&&live++;
+            live&&noteDevice("silent",
+            "gamepad",
+            "game controller",
+            live,
+            {
+              why:"This page read the list of game controllers attached to this computer. Each one reports its model, which is a detail that helps tell your browser apart from everyone else's. No prompt is involved once a button has been pressed.",
+              action:"Nothing to do if you are playing something. On a page with no game on it, this is worth noticing."
+            })
+          }
+          catch(_){
+
+          }
+          return out
+        },
+        {__wardenoneDeviceGuard:!0}))
       }
       catch(_){
 
