@@ -9,7 +9,7 @@ The all-in-one privacy, security &amp; anti-scam extension for Chromium browsers
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
 [![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip)
-![Protections](https://img.shields.io/badge/protections-104-8e44ad.svg)
+![Protections](https://img.shields.io/badge/protections-105-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
 
@@ -31,7 +31,7 @@ The all-in-one privacy, security &amp; anti-scam extension for Chromium browsers
   <img src="docs/onboarding.png" alt="Welcome to WardenOne" width="840">
 </p>
 
-> **One master switch. 104 protections. No account, no telemetry — everything runs on your device.**
+> **One master switch. 105 protections. No account, no telemetry — everything runs on your device.**
 
 WardenOne folds a whole stack of security tools into a single extension: ad and
 tracker blocking, anti-fingerprinting, phishing and scam defence, credential- and
@@ -76,6 +76,23 @@ The two things a bundled list can never cover: a rule only you want, and a list 
 - **My rules** — write your own, one per line, in the same syntax the shipped lists use: `||ads.example.com^` blocks a host, `@@||example.com^` stops blocking one, `example.com##.promo` hides an element on one site, `##.promo` hides it everywhere. Import and export as a plain text file. Anything WardenOne cannot use is **listed back to you with its line number and the reason** rather than silently ignored — a rule that is stored but not working is worse than one that was refused, because you would believe you were covered.
 - **Custom lists** — subscribe to a filter list someone else maintains: a country-specific annoyance list, a niche tracker list, your own hosted one. Each has its own on/off, an **Update now**, a rule count, and when it last changed. Fetched over https with the same guard as every other network read — no private addresses, no odd ports, no redirect onto one — and a list that fails to refresh keeps the copy it already had rather than leaving a gap.
 - Hiding rules you write ride the same channel as elements hidden with the Element Zapper, so allowlisting a site's ads never silently un-hides something you chose to remove.
+
+### File Shield &mdash; check a file before you open it
+**What it's for:** the file that did not come through your browser. Something sent on Discord, an email attachment, a USB stick, a file copied from another PC, or one that has been sitting in Downloads since before you installed anything. Download Shield can only grade files it watched arrive &mdash; and Chrome does not let an extension read a saved file at all, so even for those its fingerprint is of the *URL re-fetched*, which differs for anything signed, personalised or one-time. **You hand File Shield the actual file, so these are the real bytes.** It is the only part of WardenOne that can say anything about a file already on your computer.
+
+**What it does.** Reads the file and tells you what it *is*, as opposed to what it is called:
+- **The real format**, from the bytes rather than the extension &mdash; so `holiday-photo.jpg` that is actually a Windows program is named as one immediately. Double extensions, right-to-left overrides and padded names are flagged too.
+- **Programs:** whether anything signed it and which names are in the certificate; what it is equipped to do, taken from the functions it imports &mdash; reach the network, start other programs, write into another running program, install itself as a service; whether the code is packed so it cannot be read until it runs.
+- **Scripts** (`.bat`, `.ps1`, `.vbs`, `.js`, `.hta`): the whole file, shown as written, with the lines that matter called out &mdash; downloads something, decodes something hidden, sets itself to run again, turns off antivirus, destroys backups.
+- **Shortcuts** (`.lnk`): the actual command a double-click would run. A shortcut is a tiny program, and this is the thing worth seeing.
+- **Archives:** what is inside, read from the index &mdash; nothing is ever extracted. Executables, entries that would write outside the folder, password-protected entries, nested archives, macros, and archives that claim to expand enormously.
+- **Documents:** macros in Office files, and PDFs that can run scripts, launch programs or carry other files inside them.
+- **Its SHA-256**, checked against the known-malware list bundled with WardenOne &mdash; offline, no account, no key. A match means *this exact file*.
+- Optionally, one button sends **only that hash** to VirusTotal, using your own API key. Never the file, never its name.
+
+Pick several files at once, or drop a folder's worth in. Nothing is uploaded, opened or run, and the report can be copied out to send to whoever gave you the file.
+
+**What it deliberately is not.** It reads structure, not behaviour. It can tell you a file is disguised, carries code, or would write somewhere it should not. **It cannot tell you a file is safe, and it never says so** &mdash; a clean result says "nothing here is disguised", which is a statement about the checks, not about the file. It is not antivirus: it does not watch your filesystem, quarantine anything, or replace the protection already on your computer.
 
 ### Network logger (advanced)
 The Activity Centre tells you a security event happened. The logger tells you **which request it was, whether WardenOne blocked or allowed it, and which rule decided** &mdash; so when a site breaks, you can find the one rule responsible instead of switching protections off at random. It is the natural companion to My filters: the place you find out what your own rule actually did.
@@ -256,7 +273,7 @@ On first run, pick **Recommended** (the safe default) or **Maximum privacy** —
 also turns on the hardened set: active anti-fingerprinting, first-party tracker
 blocking, breach &amp; password checks, clipboard guard, and referrer / AMP trimming.
 Choose **Normal** notifications or **Silent mode**, where protection stays fully on
-but popups and badges stay hidden. **101 of the 104 protections have their own toggle**, and
+but popups and badges stay hidden. **102 of the 105 protections have their own toggle**, and
 any site can be allowlisted from the popup in one click. The other three have no toggle
 because they only ever observe and never block — those are the ones under **What WardenOne
 watches** above. The popup's own  panel counts the same 96, so the number here

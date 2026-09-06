@@ -17027,6 +17027,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // ---- File Shield ----
+  /* The known-malware hash set, answered for a REAL file. Download Shield can
+     only match this list against a URL re-fetch, which differs for anything
+     signed, authenticated or personalised; the scanner hands over the actual
+     bytes, so a match here means this exact file. No key, no network. */
+  if (msg && msg.kind === 'file-scan-known') {
+    (async () => {
+      const sha256 = String(msg.sha256 || '').trim().toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(sha256)) { sendResponse({ ok: false, error: 'That is not a SHA-256 hash.' }); return; }
+      sendResponse({ ok: true, hit: MALWARE_HASHES.has(sha256), listSize: MALWARE_HASHES.size });
+    })();
+    return true;
+  }
+
+  /* The one privileged thing the scanner needs. Every other check it makes is
+     local and needs nothing from here. Deliberately NOT in
+     TAB_CONTEXT_ALLOWED_MESSAGES: a page able to reach this could spend the
+     reader's VirusTotal quota and probe whether given files are known. */
+  if (msg && msg.kind === 'file-scan-vt') {
+    (async () => {
+      const sha256 = String(msg.sha256 || '').trim().toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(sha256)) { sendResponse({ ok: false, error: 'That is not a SHA-256 hash.' }); return; }
+      const store = await localGet('wardenone_config');
+      const cfg = (store && store.wardenone_config) || {};
+      const key = String(cfg.downloadVirusTotalKey || '').trim();
+      if (!key) { sendResponse({ ok: true, noKey: true }); return; }
+      const res = await checkVirusTotalFileHash(sha256, key);
+      if (!res) { sendResponse({ ok: false, error: 'VirusTotal could not be asked.' }); return; }
+      if (!res.ok) { sendResponse({ ok: false, error: 'VirusTotal replied with an error' + (res.status ? ' (HTTP ' + res.status + ')' : '') + '.' }); return; }
+      sendResponse({
+        ok: true,
+        notFound: !!res.notFound,
+        stats: res.stats || null,
+        typeDescription: res.typeDescription || '',
+        timesSubmitted: res.timesSubmitted || 0,
+      });
+    })();
+    return true;
+  }
   // ---- My Rules ----
   if (msg && msg.kind === 'user-rules-get') {
     (async () => {
