@@ -4241,9 +4241,18 @@
     if(WO.antiClickjacking)try{
       const warnedClick=new WeakSet,
       SENSITIVE_CLICK=/\b(log\s?in|sign\s?in|password|checkout|pay|buy|transfer|authorize|allow|approve|connect|wallet|seed|download|install|submit|continue|verify)\b/i,
+      /* textContent, never innerText. innerText is layout-dependent: reading it
+      forces a synchronous style and layout flush. This runs on EVERY click on
+      anything button-shaped, and it runs BEFORE the cheap SENSITIVE_CLICK test that
+      rejects almost all of them -- so the expensive half was paid first, every time,
+      to answer a question the next line usually discards. Measured on Spotify as part
+      of a 384ms interaction, 167ms of it inside handlers.
+      textContent needs no layout and carries the same words this pattern looks for.
+      It also sees text that innerText hides, which for a clickjacking check reads the
+      right way round: the covered control is the one worth noticing. */
       clickText=el=>{
         try{
-          return((el.innerText||el.textContent||"")+" "+(el.value||"")+" "+(el.getAttribute&&el.getAttribute("aria-label")||"")+" "+(el.id||"")+" "+(el.className||"")).replace(/\s+/g,
+          return((el.textContent||"")+" "+(el.value||"")+" "+(el.getAttribute&&el.getAttribute("aria-label")||"")+" "+(el.id||"")+" "+(el.className||"")).replace(/\s+/g,
           " ").slice(0,
           220)
         }
