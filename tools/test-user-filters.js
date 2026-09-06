@@ -62,6 +62,11 @@ const box = {
   String, Object, Number, Array, RegExp, Math, console, URL,
   normalizeIpLiteral: (h) => h,
   isLocalOrPrivateHost: (h) => /^(localhost|127\.|10\.|192\.168\.)/.test(h),
+  /* USER_RULE_MAX now takes its value from the budget band, which is declared
+     up with the other bands because TOTAL_DYNAMIC_BUDGET is evaluated before
+     this point in the file. Read it from source rather than pinning a number
+     here, so the two cannot drift apart. */
+  USER_RULES_BUDGET: Number((BG.match(/const USER_RULES_BUDGET = (\d+)/) || [])[1] || 0),
 };
 
 vm.createContext(box);

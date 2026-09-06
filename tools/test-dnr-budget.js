@@ -127,6 +127,28 @@ function runDynamic() {
   assert(bands.length >= 10,
     'TOTAL_DYNAMIC_BUDGET now sums only ' + bands.length + ' bands; the parser may be reading it wrong');
 
+  /* Every rule range must be represented in that sum. Reading the bands out of
+     the expression makes an ADDED band automatic, but it does nothing about a
+     range that was never put in the expression at all -- and such a range is
+     invisible here while still consuming Chrome's ceiling at runtime. My Rules
+     (2000) and the site firewall (2000 + 2000) were all three unbudgeted, so the
+     declared total read 29,109 while the real worst case was 35,109 against a
+     30,000 limit. The failure mode is not subtle: updateDynamicRules rejects and
+     the entire remote blocklist stops applying. */
+  const ranges = [...bg.matchAll(/const ([A-Z][A-Z0-9_]*)_RULE_BASE = \d+/g)].map((m) => m[1]);
+  /* Ranges that legitimately have no band of their own, with the band that already
+     covers them. Anything else must be declared. */
+  const COVERED_ELSEWHERE = { IP_LOOKUP_BLOCK: 'INTRANET_NETWORK_RULES_BUDGET', DYNAMIC: 'MAX_DYNAMIC' };
+  const unbudgeted = ranges.filter((prefix) => {
+    if (COVERED_ELSEWHERE[prefix]) return false;
+    return !bands.some((band) => band.startsWith(prefix));
+  });
+  assert(unbudgeted.length === 0,
+    'these rule ranges consume Chrome\'s dynamic-rule ceiling but are not in '
+    + 'TOTAL_DYNAMIC_BUDGET, so the headroom printed here is fiction: '
+    + unbudgeted.map((p) => p + '_RULE_BASE').join(', ')
+    + '. Add a band for each, sized to what is actually left.');
+
   let total = 0;
   for (const band of bands) {
     const value = numberConstant(bg, band);
