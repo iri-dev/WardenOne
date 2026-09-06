@@ -462,8 +462,23 @@ function createRuntime(options) {
   vm.runInContext('(' + WORKER_RUNTIME_SOURCE + ')("", __initialState, ' +
     JSON.stringify(RUNTIME_VERSION) + ');', sandbox, { filename: 'twitch-adblock.js:worker-runtime' });
 
+  // Whatever the worker decides, the player still has to be able to read the body it
+  // gets back. A path that inspects a response and then returns that same already-read
+  // object hands Twitch a Response that throws on .text(), which is a silent playback
+  // failure rather than the fail-open it looks like in the code. Every response every
+  // test takes goes past this, so no later route can reintroduce it unnoticed.
+  const workerFetch = workerGlobal.fetch;
+  async function checkedFetch(input, init) {
+    const response = await workerFetch(input, init);
+    if (response && response.bodyUsed) {
+      throw new Error('worker returned an unreadable response (body already consumed) for '
+        + (typeof input === 'string' ? input : String(input && input.url || input)));
+    }
+    return response;
+  }
+
   return {
-    fetch: workerGlobal.fetch,
+    fetch: checkedFetch,
     state: state,
     configure(enabled) {
       dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'config', enabled: enabled });
@@ -809,6 +824,56 @@ test('a clean backup hands its already-started edge segment to the player withou
   assert(warmCalls.length === 4,
     'the already-started response was replayed instead of remaining one-shot');
   runtime.configure(false);
+});
+
+test('a warm handoff dropped mid-claim refetches instead of returning the body it cancelled', async () => {
+  const cleanBackup = sequencedPlaylist({
+    sequence: 99100,
+    startMs: SEQUENCE_BASE_TIME,
+    title: 'live',
+    path: 'abandoned-edge',
+  });
+  const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: cleanBackup });
+  const warmCalls = [];
+  let releaseWarm;
+  const warmGate = new Promise((resolve) => { releaseWarm = resolve; });
+  const runtime = createRuntime({
+    fetchRoute(url, init, state) {
+      if (/\/abandoned-edge\/\d+\.ts(?:[?#]|$)/.test(url)) {
+        warmCalls.push({ url, init });
+        return warmGate.then(() => new Response(new Uint8Array([7, 8, 9]), {
+          status: 200,
+          headers: { 'content-type': 'video/mp2t' },
+        }));
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  await mapMaster(runtime);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+
+  const swapped = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(swapped.includes('/abandoned-edge/'), 'clean backup was not served ahead of its warm edge');
+  for (let turn = 0; turn < 8 && warmCalls.length < 2; turn++) await Promise.resolve();
+  assert(warmCalls.length === 2, 'the cold handoff did not start its two edge choices');
+
+  // The player is already waiting on a warmed segment when the shield is switched off.
+  // That path cancels the warmed body it decided not to use, so the response object it
+  // was holding can no longer be read. Handing that object back would look like a clean
+  // pass-through in the code and reach MSE as nothing at all.
+  const playerRequest = runtime.fetch(warmCalls[1].url);
+  await Promise.resolve();
+  assert(warmCalls.length === 2, 'the player duplicated the already-started edge request');
+  runtime.configure(false);
+  releaseWarm();
+  const playerResponse = await playerRequest;
+  equal(Array.from(new Uint8Array(await playerResponse.arrayBuffer())), [7, 8, 9],
+    'a warm handoff dropped mid-claim did not deliver readable segment bytes');
+  assert(warmCalls.length === 3,
+    'the abandoned warm claim was handed back instead of being refetched for the player');
 });
 
 test('a fragmented-MP4 handoff starts its init and media resources and cancels both on config-off', async () => {
