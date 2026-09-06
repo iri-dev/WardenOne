@@ -231,6 +231,7 @@ function runOverlayProbe(pageUrl, surface) {
     },
     innerWidth: 1280,
     innerHeight: 800,
+    trustedMediaHost: false,
     WO: {
       removeOverlays: true,
       autoSkipDownloadAds: false,

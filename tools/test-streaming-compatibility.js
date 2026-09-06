@@ -696,12 +696,22 @@ test('background-tab throttling leaves trusted media hosts untouched', () => {
     vm.runInContext(declaration + 'this.__trustedMediaHost=trustedMediaHost;', sandbox);
     return sandbox.__trustedMediaHost;
   };
-  for (const hostname of ['twitch.tv', 'www.twitch.tv', 'video-edge.ttvnw.net', 'youtube.com']) {
+  for (const hostname of [
+    'twitch.tv', 'www.twitch.tv', 'video-edge.ttvnw.net', 'youtube.com',
+    'open.spotify.com', 'cdn.spotifycdn.com', 'audio-fa.scdn.co',
+  ]) {
     assert.strictEqual(trusted(hostname), true,
       hostname + ' was not recognized as a trusted media host');
   }
   assert.strictEqual(trusted('example.com'), false,
     'ordinary sites were accidentally exempted from background throttling');
+  assert.strictEqual(trusted('evilspotify.com'), false,
+    'a hostname merely containing the Spotify name was accidentally trusted');
+});
+
+test('overlay cleanup does not monitor a trusted player DOM', () => {
+  assert(CONTENT.includes('if(WO.removeOverlays&&!trustedMediaHost&&'),
+    'the overlay cleaner can still repeatedly scan a trusted player DOM while its controls update');
 });
 
 test('overlay classifier never removes media, iframe or control nodes', () => {
