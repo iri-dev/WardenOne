@@ -14759,6 +14759,84 @@
         catch(_){
 
         }
+        /* Media capability enumeration.
+        Asking "can this device decode AV1 at 1080p" is an ordinary thing for a player to
+        do, and the answer is genuinely useful to it. Asking it forty times across every
+        codec, profile, resolution and framerate, in a burst, without ever playing
+        anything, is not a player -- it is building a vector out of the answers, because
+        which combinations a machine can decode smoothly says a good deal about its GPU
+        and its decode hardware.
+        So the SHAPE is what is measured, not the call. A burst is the signal: a real
+        player probes a handful and spreads them out, and this window is wide enough that
+        one never reaches the bar. Nothing is blocked and no answer is changed here --
+        normalising the answers is the noise block's job and its own switch. */
+        try{
+          const MEDIA_PROBE_BURST=12,
+          MEDIA_PROBE_WINDOW_MS=1e4;
+          let mediaProbeAt=[],
+          mediaProbeNoted=!1;
+          const noteMediaProbe=()=>{
+            try{
+              const now=Date.now();
+              mediaProbeAt.push(now),
+              mediaProbeAt=mediaProbeAt.filter(t=>now-t<=MEDIA_PROBE_WINDOW_MS),
+              /* Noted once. A script that fires fifty of these would otherwise spend the
+              whole fingerprint budget on one behaviour and crowd out every other kind. */
+              mediaProbeAt.length>=MEDIA_PROBE_BURST&&!mediaProbeNoted&&(mediaProbeNoted=!0,
+              noteFingerprint("Media codec capability enumeration"))
+            }
+            catch(_){
+
+            }
+
+          },
+          wrapMediaProbe=(owner,
+          name)=>{
+            try{
+              const real=owner&&owner[name];
+              if("function"!=typeof real||real.__wardenoneMediaProbe)return;
+              const wrapped=function(...args){
+                try{
+                  noteMediaProbe()
+                }
+                catch(_){
+
+                }
+                return real.apply(this,
+                args)
+              };
+              wrapped.__wardenoneMediaProbe=!0,
+              owner[name]=wrapped
+            }
+            catch(_){
+
+            }
+
+          };
+          navigator.mediaCapabilities&&(wrapMediaProbe(navigator.mediaCapabilities,
+          "decodingInfo"),
+          wrapMediaProbe(navigator.mediaCapabilities,
+          "encodingInfo"));
+          /* WebCodecs is counted but never altered. isConfigSupported answers exactly one
+          thing -- whether the configuration works -- and that is the single field nothing
+          here may fake: a page told a codec is available will send it, and the video then
+          does not play. Detection is all this surface can honestly offer. */
+          for(const ctor of["VideoDecoder",
+          "VideoEncoder",
+          "AudioDecoder",
+          "AudioEncoder"])try{
+            const c=window[ctor];
+            c&&wrapMediaProbe(c,
+            "isConfigSupported")
+          }
+          catch(_){
+
+          }
+
+        }
+        catch(_){
+
+        }
         try{
           if(navigator.geolocation){
             const geo=navigator.geolocation,
@@ -15994,6 +16072,78 @@
           },"requestAdapter")
         }
 
+      }
+      catch(_){
+
+      }
+      /* Media capability answers, flattened.
+      decodingInfo returns three things and they are not equally dangerous.
+        supported      -- can this device play it at all
+        smooth         -- will it keep up
+        powerEfficient -- is the hardware decoder doing it
+      The last two are a description of the machine: which codecs get hardware decode, and
+      at what resolutions it stops keeping up, maps closely onto a GPU generation. The
+      first is what the site needs to pick a format that will actually play.
+      So supported is passed through EXACTLY as the browser answered it, always. Faking it
+      is the one change here that can break playback outright: a page told AV1 is available
+      will send AV1, and then nothing plays. smooth and powerEfficient are reported as
+      false for everyone with this shield on.
+      False rather than true, deliberately, and it is the same choice as reporting the
+      spec-minimum WebGPU limits a few lines up: a fixed answer every user of the shield
+      shares, picked in the direction that can only ever cost quality and never
+      playability. Claiming smooth on a machine that is not invites a site to serve 4K AV1
+      to something that will stutter through it; claiming the opposite invites a smaller
+      rendition, which plays.
+      The cost is real and worth stating plainly: on a strong machine this can mean a site
+      offers a lower quality than it would have. That is why it rides the opt-in noise
+      shield rather than being on for everybody. */
+      try{
+        const mc=navigator.mediaCapabilities,
+        flattenMediaInfo=info=>{
+          try{
+            if(!info||"object"!=typeof info)return info;
+            /* A copy. The browser's own result object is handed to nothing else, but
+            mutating it would be editing something the page may already hold. */
+            return Object.assign({},
+            info,
+            {
+              smooth:!1,
+              powerEfficient:!1
+            })
+          }
+          catch(_){
+            return info
+          }
+
+        },
+        wrapMediaInfo=name=>{
+          try{
+            const real=mc&&mc[name];
+            if("function"!=typeof real||real.__wardenoneMediaFlat)return;
+            const wrapped=cloak(function(...args){
+              let out;
+              try{
+                out=real.apply(mc,
+                args)
+              }
+              catch(e){
+                throw e
+              }
+              /* The page's own rejection is left alone; only a fulfilled answer is
+              rewritten, and a non-promise return is handed back untouched. */
+              return out&&"function"==typeof out.then?out.then(flattenMediaInfo):out
+            },
+            name);
+            wrapped.__wardenoneMediaFlat=!0,
+            mc[name]=wrapped
+          }
+          catch(_){
+
+          }
+
+        };
+        mc&&(wrapMediaInfo("decodingInfo"),
+        wrapMediaInfo("encodingInfo"))
       }
       catch(_){
 
@@ -18544,137 +18694,6 @@
       catch(_){
 
       }
-
-    }
-    catch(_){
-
-    }
-    /* The File System Access API, which is the same story as the four above and was the
-    one thing in this family nothing watched. showDirectoryPicker hands a site read -- or
-    with mode readwrite, write -- over a whole folder tree on this machine, and the handle
-    survives: a site can keep it in IndexedDB and come back to it on a later visit. That is
-    a bigger reach than any of the device APIs already covered here, and "pick your
-    Downloads folder so we can scan it" is a shape scams already use.
-    Nothing is blocked, for the same reason nothing is blocked above: Chrome's own picker
-    is the real gate, and web editors, photo tools and IDEs use these properly every day.
-    Refusing them would break real work to prevent nothing Chrome was not already asking
-    about. What was missing was the line in the log.
-    Two things get one, and the second matters more. Asking is the loud case -- a picker
-    opens and you are looking at it. The quiet case is a site that already holds a granted
-    handle from an earlier visit: queryPermission answers "granted" and it can read or write
-    with no prompt at all, which is the only part of this that happens while you are not
-    looking. So the ANSWER decides there, not the call, exactly as with getDevices above.
-    The folder is never named. Which API, and read versus write, is the whole payload --
-    recording the path would put the thing being protected into the log. */
-    if(WO.deviceAccessGuard)try{
-      const FS_PICKERS=[["showDirectoryPicker",
-      "folder",
-      "High"],
-      ["showOpenFilePicker",
-      "file",
-      "Medium"],
-      ["showSaveFilePicker",
-      "file to write",
-      "Medium"]],
-      fsCounts=Object.create(null),
-      /* readwrite is the difference between a site reading your folder and changing it,
-      and it is the one word in the options worth keeping. */
-      fsMode=args=>{
-        try{
-          const o=args&&args[0];
-          return o&&"readwrite"===o.mode?"readwrite":"read"
-        }
-        catch(_){
-          return "read"
-        }
-
-      },
-      noteFile=(kind,
-      api,
-      label,
-      severity,
-      mode)=>{
-        try{
-          const key=kind+":"+api;
-          if((fsCounts[key]=(fsCounts[key]||0)+1)>3)return;
-          const silent="silent"===kind,
-          write="readwrite"===mode;
-          log(silent?"warned_file_silent":"warned_file_request",
-          {
-            api:String(api).slice(0,
-            24),
-            mode:mode,
-            severity:silent||write?"High":severity,
-            confidence:silent?"Very high":"High",
-            why:silent?"This page still has "+(write?"read and write":"read")+" access to a folder or file you granted it on an earlier visit. That needs no prompt, so it can be used without you being asked again.":"This page asked for "+(write?"read and write":"read")+" access to a "+label+" on your computer. Chrome will ask you to choose one; nothing is shared unless you pick it.",
-            action:silent?"If you did not expect this site to keep reaching your files, remove its file access in Chrome's site settings.":"Only choose a "+label+" if you came here to do that. Cancel if the request is unexpected, and never grant a whole folder to a page that offers to scan or clean it.",
-            outcome:"Recorded only; the request was not blocked and nothing about the file or folder was read."
-          })
-        }
-        catch(_){
-
-        }
-
-      };
-      FS_PICKERS.forEach(entry=>{
-        try{
-          const real=window[entry[0]];
-          if("function"!=typeof real||real.__wardenoneFileGuard)return;
-          const wrapped=function(...args){
-            noteFile("request",
-            entry[0],
-            entry[1],
-            entry[2],
-            fsMode(args));
-            return real.apply(this,
-            args)
-          };
-          wrapped.__wardenoneFileGuard=!0,
-          window[entry[0]]=wrapped
-        }
-        catch(_){
-
-        }
-
-      });
-      /* The quiet half. A handle kept from an earlier visit answers "granted" here and the
-      site can go straight to the file; nothing prompts. The page's own promise is handed
-      back untouched and the inspection runs on a derived one, with its own rejection
-      handler so nothing is left unhandled. */
-      try{
-        const proto=window.FileSystemHandle&&window.FileSystemHandle.prototype,
-        realQuery=proto&&proto.queryPermission;
-        "function"!=typeof realQuery||realQuery.__wardenoneFileGuard||(proto.queryPermission=Object.assign(function(...args){
-          const out=realQuery.apply(this,
-          args);
-          try{
-            out&&"function"==typeof out.then&&out.then(state=>{
-              try{
-                "granted"===state&&noteFile("silent",
-                "queryPermission",
-                "file",
-                "High",
-                fsMode(args))
-              }
-              catch(_){
-
-              }
-
-            },
-            ()=>{
-
-            })
-          }
-          catch(_){
-
-          }
-          return out
-        },
-        {__wardenoneFileGuard:!0}))
-      }
-      catch(_){
-
-      }
       /* ---- WebXR ------------------------------------------------------------
       The rest of this family is "a page wants to talk to a thing plugged into your
       computer". XR is a page wanting the room. An immersive session is handed head and
@@ -18853,6 +18872,137 @@
           return out
         },
         {__wardenoneDeviceGuard:!0}))
+      }
+      catch(_){
+
+      }
+
+    }
+    catch(_){
+
+    }
+    /* The File System Access API, which is the same story as the four above and was the
+    one thing in this family nothing watched. showDirectoryPicker hands a site read -- or
+    with mode readwrite, write -- over a whole folder tree on this machine, and the handle
+    survives: a site can keep it in IndexedDB and come back to it on a later visit. That is
+    a bigger reach than any of the device APIs already covered here, and "pick your
+    Downloads folder so we can scan it" is a shape scams already use.
+    Nothing is blocked, for the same reason nothing is blocked above: Chrome's own picker
+    is the real gate, and web editors, photo tools and IDEs use these properly every day.
+    Refusing them would break real work to prevent nothing Chrome was not already asking
+    about. What was missing was the line in the log.
+    Two things get one, and the second matters more. Asking is the loud case -- a picker
+    opens and you are looking at it. The quiet case is a site that already holds a granted
+    handle from an earlier visit: queryPermission answers "granted" and it can read or write
+    with no prompt at all, which is the only part of this that happens while you are not
+    looking. So the ANSWER decides there, not the call, exactly as with getDevices above.
+    The folder is never named. Which API, and read versus write, is the whole payload --
+    recording the path would put the thing being protected into the log. */
+    if(WO.deviceAccessGuard)try{
+      const FS_PICKERS=[["showDirectoryPicker",
+      "folder",
+      "High"],
+      ["showOpenFilePicker",
+      "file",
+      "Medium"],
+      ["showSaveFilePicker",
+      "file to write",
+      "Medium"]],
+      fsCounts=Object.create(null),
+      /* readwrite is the difference between a site reading your folder and changing it,
+      and it is the one word in the options worth keeping. */
+      fsMode=args=>{
+        try{
+          const o=args&&args[0];
+          return o&&"readwrite"===o.mode?"readwrite":"read"
+        }
+        catch(_){
+          return "read"
+        }
+
+      },
+      noteFile=(kind,
+      api,
+      label,
+      severity,
+      mode)=>{
+        try{
+          const key=kind+":"+api;
+          if((fsCounts[key]=(fsCounts[key]||0)+1)>3)return;
+          const silent="silent"===kind,
+          write="readwrite"===mode;
+          log(silent?"warned_file_silent":"warned_file_request",
+          {
+            api:String(api).slice(0,
+            24),
+            mode:mode,
+            severity:silent||write?"High":severity,
+            confidence:silent?"Very high":"High",
+            why:silent?"This page still has "+(write?"read and write":"read")+" access to a folder or file you granted it on an earlier visit. That needs no prompt, so it can be used without you being asked again.":"This page asked for "+(write?"read and write":"read")+" access to a "+label+" on your computer. Chrome will ask you to choose one; nothing is shared unless you pick it.",
+            action:silent?"If you did not expect this site to keep reaching your files, remove its file access in Chrome's site settings.":"Only choose a "+label+" if you came here to do that. Cancel if the request is unexpected, and never grant a whole folder to a page that offers to scan or clean it.",
+            outcome:"Recorded only; the request was not blocked and nothing about the file or folder was read."
+          })
+        }
+        catch(_){
+
+        }
+
+      };
+      FS_PICKERS.forEach(entry=>{
+        try{
+          const real=window[entry[0]];
+          if("function"!=typeof real||real.__wardenoneFileGuard)return;
+          const wrapped=function(...args){
+            noteFile("request",
+            entry[0],
+            entry[1],
+            entry[2],
+            fsMode(args));
+            return real.apply(this,
+            args)
+          };
+          wrapped.__wardenoneFileGuard=!0,
+          window[entry[0]]=wrapped
+        }
+        catch(_){
+
+        }
+
+      });
+      /* The quiet half. A handle kept from an earlier visit answers "granted" here and the
+      site can go straight to the file; nothing prompts. The page's own promise is handed
+      back untouched and the inspection runs on a derived one, with its own rejection
+      handler so nothing is left unhandled. */
+      try{
+        const proto=window.FileSystemHandle&&window.FileSystemHandle.prototype,
+        realQuery=proto&&proto.queryPermission;
+        "function"!=typeof realQuery||realQuery.__wardenoneFileGuard||(proto.queryPermission=Object.assign(function(...args){
+          const out=realQuery.apply(this,
+          args);
+          try{
+            out&&"function"==typeof out.then&&out.then(state=>{
+              try{
+                "granted"===state&&noteFile("silent",
+                "queryPermission",
+                "file",
+                "High",
+                fsMode(args))
+              }
+              catch(_){
+
+              }
+
+            },
+            ()=>{
+
+            })
+          }
+          catch(_){
+
+          }
+          return out
+        },
+        {__wardenoneFileGuard:!0}))
       }
       catch(_){
 

@@ -228,6 +228,7 @@ function checkContentBuild() {
   'tools/test-link-ping-strip.js',
   'tools/test-history-url-clean.js',
   'tools/test-bounce-purge.js',
+  'tools/test-media-capability-fp.js',
   'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
@@ -528,6 +529,7 @@ checkCommand('search-result warnings', ['tools/test-search-result-warnings.js'])
 checkCommand('link ping strip', ['tools/test-link-ping-strip.js']);
 checkCommand('history url clean', ['tools/test-history-url-clean.js']);
 checkCommand('bounce purge', ['tools/test-bounce-purge.js']);
+checkCommand('media capability fingerprinting', ['tools/test-media-capability-fp.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
