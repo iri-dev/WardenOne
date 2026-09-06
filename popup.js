@@ -2966,13 +2966,24 @@ function computeScore(data, cookies) {
       // missing Secure means it can travel in clear text. They are different
       // failures and a flat per-cookie number priced both too cheaply -- two
       // cookies with neither flag used to still earn a B.
-      let httpOnlyPenalty = 0;
-      let securePenalty = 0;
+      // Charged ONCE per missing flag, not once per cookie. The comment below
+      // already says a script-readable session is one failure however much
+      // evidence there is -- but the code charged 9 per cookie, so a site that
+      // sets six cookies its own JS can read paid 54 (capped 34) for the same
+      // single decision a site with one cookie paid 9 for. YouTube landed on F /
+      // High Risk that way, which is not a defensible thing to say about the most
+      // visited site on the web: its hygiene is mediocre, not dangerous.
+      //
+      // Flat penalties fix both ends. A site with one weak cookie no longer gets
+      // a B for having only one, and a site with many no longer gets an F for
+      // having many. What is being graded is the decision, and there is one.
       const missing = { httpOnly: 0, secure: 0 };
       ck.weak.forEach((c) => {
-        if (!c.httpOnly) { httpOnlyPenalty += 9; missing.httpOnly++; }
-        if (!c.secure) { securePenalty += 7; missing.secure++; }
+        if (!c.httpOnly) missing.httpOnly++;
+        if (!c.secure) missing.secure++;
       });
+      const httpOnlyPenalty = missing.httpOnly ? 16 : 0;
+      const securePenalty = missing.secure ? 12 : 0;
       // "A script on this origin can read the session" is ONE failure however many
       // places the evidence turns up. A session sitting in localStorage AND in a
       // non-HttpOnly cookie is usually the same token, so it was being charged
@@ -3370,6 +3381,14 @@ function renderSession(out, data, cookies) {
   t2.style.cssText = 'font-weight:700;font-size:11.5px;margin-top:2px;color:' + sc.riskColor + ';';
   t2.textContent = sc.risk;
   info.appendChild(t2);
+  /* What the letter is ABOUT. Without this it reads as a verdict on the site --
+     "Medium Risk" on YouTube sounds like a warning to leave, when the grade is
+     about how the site stores your sign-in and nothing else. Saying so costs one
+     line and removes the fright without removing a single fact. */
+  const t2b = document.createElement('div');
+  t2b.style.cssText = 'font-size:10.5px;margin-top:3px;color:var(--ink-faint);line-height:1.45;';
+  t2b.textContent = 'How this site stores your sign-in — not whether the site is safe to use.';
+  info.appendChild(t2b);
   // Say what the site did WELL, not only what it got wrong. A grade with no
   // explanation reads as an accusation; this is the difference between "D" and
   // "D, because your session token is in the address bar".
@@ -3399,7 +3418,13 @@ function renderSession(out, data, cookies) {
   addFact('Connection', data.onHttps ? 'HTTPS' : 'HTTP (insecure)', data.onHttps ? 'var(--wo-success)' : 'var(--wo-danger)');
   addFact('JWT found', jwtFound ? 'Yes' : 'No');
   addFact('Tokens stored in', storedIn);
-  addFact('Cookie security', cookieVerdict, (cookies && cookies.weak && cookies.weak.length) ? 'var(--wo-danger)' : (cookies && cookies.sessionLike ? 'var(--wo-success)' : null));
+  /* Coloured by the VERDICT, not by whether any finding exists at all. Painting
+     every weak cookie danger-red made a C look like an emergency: on YouTube the
+     panel showed a red row and a red seven-item list, which is a frightening way
+     to describe a site whose own scripts read its own session. Red is for the
+     grades that have earned it. */
+  const severeColor = /^[DF]$/.test(sc.grade) ? 'var(--wo-danger)' : 'var(--wo-warning)';
+  addFact('Cookie security', cookieVerdict, (cookies && cookies.weak && cookies.weak.length) ? severeColor : (cookies && cookies.sessionLike ? 'var(--wo-success)' : null));
   if (data.isSensitivePage) addFact('3rd-party scripts', String((data.thirdPartyScripts || []).length));
   addFact('Risk', sc.risk, sc.riskColor);
   out.appendChild(facts);
@@ -3407,13 +3432,23 @@ function renderSession(out, data, cookies) {
   // ---- detail section below the card ----
   out.appendChild(makeLine(data.readableCookieCount + ' cookie(s) readable by scripts. (HttpOnly cookies are correctly invisible to scripts — that\'s the safe state.)', 'var(--ink-soft)'));
   if (cookies && cookies.weak && cookies.weak.length) {
-    out.appendChild(makeLine('Session cookies missing protection:', 'var(--wo-danger)', true));
+    out.appendChild(makeLine('Flags these session cookies do not set:', severeColor, true));
     cookies.weak.forEach((w) => {
       const miss = [];
       if (!w.httpOnly) miss.push('not HttpOnly');
       if (!w.secure) miss.push('not Secure');
       out.appendChild(makeLine('• ' + w.name + ' — ' + miss.join(', '), 'var(--ink-soft)'));
     });
+    /* Proportion, on the grades that deserve it. A list of missing flags with no
+       context reads as "this site is unsafe", when for most of the web it means
+       "this site's own scripts read its own session" -- weaker than hiding them,
+       and not a sign that anything is wrong here. Withheld at D and F, where the
+       reader should stay worried. */
+    if (!/^[DF]$/.test(sc.grade)) {
+      out.appendChild(makeLine('A site\'s own scripts often need to read its session cookies. '
+        + 'That is a weaker design than hiding them from scripts entirely — it is not a sign that '
+        + 'anything is wrong with this site, or that your account is in danger.', 'var(--ink-faint)'));
+    }
   }
 
   // token findings

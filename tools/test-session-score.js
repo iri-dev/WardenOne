@@ -88,6 +88,76 @@ const inStore = computeScore({ onHttps: true, findings: [f('localStorage', 'high
 check('a token in the URL is judged worse than the same token in storage',
   inUrl.score < inStore.score, 'url=' + inUrl.score + ' store=' + inStore.score);
 
+/* ---- a missing flag is ONE decision, not one per cookie ----
+   The penalty used to be 9 per non-HttpOnly cookie, so a site whose own JS reads
+   six session cookies paid 54 (capped 34) for exactly the decision a site with
+   one cookie paid 9 for. YouTube came out F / High Risk on that arithmetic, which
+   is not a defensible thing to say about the most-visited site on the web: its
+   hygiene is mediocre, not dangerous. */
+const weakCookie = (httpOnly, secure) => ({ httpOnly, secure });
+const oneWeak = computeScore({ onHttps: true, findings: [] },
+  { total: 3, sessionLike: 1, sameSite: 3, weak: [weakCookie(false, false)] });
+const manyWeak = computeScore({ onHttps: true, findings: [] },
+  { total: 9, sessionLike: 7, sameSite: 9, weak: Array.from({ length: 6 }, () => weakCookie(false, false)) });
+check('six weak cookies are not charged six times over',
+  manyWeak.score === oneWeak.score,
+  'one=' + oneWeak.score + ' six=' + manyWeak.score + ' -- the decision is the same one');
+
+const youtubeShaped = computeScore(
+  { onHttps: true, findings: Array.from({ length: 5 }, () => f('sessionStorage', 'medium')) },
+  { total: 9,
+    sessionLike: 7,
+    sameSite: 2,
+    weak: [weakCookie(true, false), weakCookie(false, false), weakCookie(false, true),
+      weakCookie(false, true), weakCookie(false, true), weakCookie(false, false), weakCookie(false, false)] });
+check('a big site with script-readable session cookies is not called High Risk',
+  youtubeShaped.grade !== 'F' && youtubeShaped.score >= 60,
+  'got ' + youtubeShaped.grade + ' (' + youtubeShaped.score + ')');
+check('but it is not called clean either',
+  youtubeShaped.score < 78 && youtubeShaped.grade !== 'A' && youtubeShaped.grade !== 'B',
+  'got ' + youtubeShaped.grade + ' (' + youtubeShaped.score + ')');
+
+/* The recalibration must not let the genuinely bad cases off. */
+const httpWeak = computeScore({ onHttps: false, findings: [] },
+  { total: 3, sessionLike: 1, sameSite: 3, weak: [weakCookie(false, false)] });
+check('a session cookie with no flags over plain HTTP is still F',
+  httpWeak.grade === 'F', 'got ' + httpWeak.grade + ' (' + httpWeak.score + ')');
+check('one weak cookie is no longer excused for being only one',
+  oneWeak.grade !== 'A' && oneWeak.grade !== 'B',
+  'got ' + oneWeak.grade + ' (' + oneWeak.score + ') -- it used to earn a B');
+
+/* ---- a C must not be dressed as an emergency ----
+   The grade was right about YouTube and the panel around it was not: a red
+   Cookie-security row, a red seven-item heading, and a bare 'Medium Risk' with
+   nothing saying what was being graded. Every fact stayed; the framing had to
+   stop implying the site was unsafe to use. */
+/* Copy in popup.js is wrapped across string concatenations, so a sentence
+   matched literally fails the moment it crosses a `' + '` seam. Join the seams
+   for copy assertions; POPUP_JS stays raw for anything structural. */
+const POPUP_COPY = POPUP_JS.split(/'\s*\+\s*'/).join('');
+check('the panel says what the letter is about',
+  POPUP_JS.includes('not whether the site is safe to use'),
+  'a letter with no reference frame reads as a verdict on the site');
+/* Matched as literals: these assertions are about source that is itself full of
+   regex, and escaping a regex inside a regex is how the last three of these got
+   silently mangled into something that matched nothing. */
+check('alarm colour is chosen by the grade, not by any finding existing',
+  POPUP_JS.includes('const severeColor = /^[DF]$/.test(sc.grade)'),
+  'painting every weak cookie danger-red made a C look like an emergency');
+check('the cookie row and the heading both use it',
+  (POPUP_JS.match(/severeColor/g) || []).length >= 3);
+check('the alarming heading wording is gone',
+  !POPUP_JS.includes('Session cookies missing protection')
+    && POPUP_JS.includes('Flags these session cookies do not set'));
+check('proportion is offered on the grades that deserve it',
+  POPUP_COPY.includes('not a sign that anything is wrong with this site'));
+check('and withheld at D and F, where worry is the right response',
+  POPUP_JS.includes('if (!/^[DF]$/.test(sc.grade)) {'),
+  'reassurance on a site with a token in the URL would be the harmful direction');
+check('no fact was removed to achieve any of that',
+  POPUP_JS.includes('not HttpOnly') && POPUP_JS.includes('not Secure')
+    && POPUP_JS.includes('w.name'),
+  'the cookie names and the missing flags are still listed one by one');
 /* ---- sensitive pages weigh heavier ---- */
 const plain = computeScore({ onHttps: true, isSensitivePage: false, findings: [f('localStorage', 'high')] }, goodCookies);
 const signin = computeScore({ onHttps: true, isSensitivePage: true, findings: [f('localStorage', 'high')] }, goodCookies);
