@@ -4067,6 +4067,17 @@ let LOG_SEQ = 0;
 let LOG_ATTACHED = false;
 let LOG_FLUSH_TIMER = 0;
 let LOG_DIRTY = [];
+/* getMatchedRules DOES work in a packaged build -- it is onRuleMatchedDebug that is
+   unpacked-only -- but it answers a weaker question: which rules fired in which tab
+   and when, with no request id to join on. So it is polled, and a rule is written
+   onto a row only when that row is the single blocked candidate it can belong to.
+   The quota is 20 calls per 10 minutes; 40s leaves headroom for a session that
+   straddles two intervals. */
+const LOG_MATCH_POLL_MS = 40000;
+const LOG_MATCH_WINDOW_MS = 1500;
+const LOG_MATCH_TALLY = new Map();  // list name -> matches no single row could claim
+let LOG_MATCH_TIMER = 0;
+let LOG_MATCH_SINCE = 0;
 
 const LOG_STATIC_RULESETS = {
   grabbers: 'IP-logger list',
@@ -4113,6 +4124,32 @@ function logRuleSource(ruleId, rulesetId) {
   if (!Number.isFinite(id)) return '';
   for (const [base, name] of logRuleBases()) if (id >= base) return name;
   return 'A network rule';
+}
+
+/* Ranges that let a request through or rewrite it rather than block it. Built lazily
+   for the same reason logRuleBases is: naming these constants at load order would
+   throw before they exist and take the whole worker with it. */
+let __logAllowingBases = null;
+function logAllowingRuleBases() {
+  if (__logAllowingBases) return __logAllowingBases;
+  __logAllowingBases = new Set([
+    NEVER_BLOCK_ALLOW_RULE_BASE, ALLOWLIST_RULE_BASE, MEDIA_COMPAT_RULE_BASE,
+    LOGIN_COMPAT_RULE_BASE, GOOGLE_SEARCH_ALLOW_RULE_BASE, SAFE_SEARCH_RULE_BASE,
+  ].filter((base) => typeof base === 'number'));
+  return __logAllowingBases;
+}
+/* Chrome's matched-rule feed says WHICH rule matched, never what it did. So a match
+   sitting next to a blocked request may be an allowance that had nothing to do with
+   the block, and writing "blocked by: your allowlist" onto that row would be a wrong
+   answer wearing an exact answer's clothes. Only a rule that can block gets to claim
+   one. Static rulesets are block lists, so they all can. */
+function logRuleCanBlock(ruleId, rulesetId) {
+  if (rulesetId && rulesetId !== '_dynamic' && rulesetId !== '_session') return true;
+  const id = Number(ruleId);
+  if (!Number.isFinite(id)) return false;
+  const allowing = logAllowingRuleBases();
+  for (const [base] of logRuleBases()) if (id >= base) return !allowing.has(base);
+  return false;
 }
 
 /* Anything that looks like a credential is replaced before the entry is stored,
@@ -4233,6 +4270,75 @@ function logRuleFeedbackAvailable() {
   try { return !!(chrome.declarativeNetRequest && chrome.declarativeNetRequest.onRuleMatchedDebug); }
   catch (_) { return false; }
 }
+function logMatchedRulesAvailable() {
+  try { return !!(chrome.declarativeNetRequest && chrome.declarativeNetRequest.getMatchedRules); }
+  catch (_) { return false; }
+}
+
+/* The one blocked row a match can honestly belong to, or nothing. Two rows in the
+   same tab inside the window means neither can be named: a match written onto the
+   wrong request is exactly the invented attribution this page refuses to make. */
+function logSoleBlockedNear(tabId, at) {
+  const when = Number(at) || 0;
+  if (!when) return null;
+  let found = null;
+  for (let i = LOG_RING.length - 1; i >= 0; i--) {
+    const entry = LOG_RING[i];
+    if (entry.at < when - LOG_MATCH_WINDOW_MS) break;  // the ring is in time order
+    if (entry.action !== 'blocked' || entry.rule) continue;
+    if (entry.tabId !== tabId) continue;
+    if (Math.abs(entry.at - when) > LOG_MATCH_WINDOW_MS) continue;
+    if (found) return null;
+    found = entry;
+  }
+  return found;
+}
+
+function logSendMatchedLists() {
+  if (!LOG_PORTS.size) return;
+  const lists = Array.from(LOG_MATCH_TALLY.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({ name, count }));
+  for (const port of LOG_PORTS) {
+    try { port.postMessage({ kind: 'matched-lists', lists }); } catch (_) {}
+  }
+}
+
+async function logPollMatchedRules() {
+  if (!LOG_PORTS.size || !logMatchedRulesAvailable()) return;
+  const since = LOG_MATCH_SINCE;
+  LOG_MATCH_SINCE = Date.now();
+  let matched = [];
+  try {
+    const filter = since ? { minTimeStamp: since } : {};
+    const res = await chrome.declarativeNetRequest.getMatchedRules(filter);
+    matched = (res && res.rulesMatchedInfo) || [];
+  } catch (_) {
+    /* Over quota, or the permission is gone. Say nothing rather than guess. */
+    return;
+  }
+  let changed = false;
+  for (const info of matched) {
+    const rule = info && info.rule;
+    if (!rule) continue;
+    const source = logRuleSource(rule.ruleId, rule.rulesetId);
+    const owner = logRuleCanBlock(rule.ruleId, rule.rulesetId)
+      ? logSoleBlockedNear(typeof info.tabId === 'number' ? info.tabId : -1, info.timeStamp)
+      : null;
+    if (owner) {
+      owner.rule = String(rule.ruleId == null ? '' : rule.ruleId);
+      owner.source = source;
+      /* Correlated by tab and time, not joined by request id. The page says so. */
+      owner.near = true;
+      logQueue(owner);
+      continue;
+    }
+    if (!source) continue;
+    LOG_MATCH_TALLY.set(source, (LOG_MATCH_TALLY.get(source) || 0) + 1);
+    changed = true;
+  }
+  if (changed) logSendMatchedLists();
+}
 
 function logAttach() {
   if (LOG_ATTACHED) return;
@@ -4243,6 +4349,12 @@ function logAttach() {
   try { chrome.webRequest.onErrorOccurred.addListener(logOnErrorOccurred, filter); } catch (_) {}
   if (logRuleFeedbackAvailable()) {
     try { chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(logOnRuleMatched); } catch (_) {}
+  } else if (logMatchedRulesAvailable()) {
+    /* The first poll takes no minTimeStamp, so it picks up whatever Chrome still
+       holds from before this window opened -- five minutes of context for free. */
+    LOG_MATCH_SINCE = 0;
+    try { setTimeout(logPollMatchedRules, 1500); } catch (_) {}
+    try { LOG_MATCH_TIMER = setInterval(logPollMatchedRules, LOG_MATCH_POLL_MS); } catch (_) {}
   }
 }
 function logDetach() {
@@ -4254,6 +4366,10 @@ function logDetach() {
   if (logRuleFeedbackAvailable()) {
     try { chrome.declarativeNetRequest.onRuleMatchedDebug.removeListener(logOnRuleMatched); } catch (_) {}
   }
+  if (LOG_MATCH_TIMER) { try { clearInterval(LOG_MATCH_TIMER); } catch (_) {} }
+  LOG_MATCH_TIMER = 0;
+  LOG_MATCH_SINCE = 0;
+  LOG_MATCH_TALLY.clear();
   LOG_PENDING.clear();
   /* And the buffer goes with it. A list of every URL you loaded is exactly the
      thing that should not outlive the window you opened to look at it -- the
@@ -4277,6 +4393,7 @@ try {
         kind: 'hello',
         entries: LOG_RING.slice(-LOG_MAX),
         exactRules: logRuleFeedbackAvailable(),
+        nearRules: !logRuleFeedbackAvailable() && logMatchedRulesAvailable(),
         max: LOG_MAX,
       });
     } catch (_) {}

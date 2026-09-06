@@ -984,8 +984,12 @@ function testRegistrationAndBridgeBounds() {
   if ((MANIFEST.permissions || []).includes('declarativeNetRequestFeedback')) {
     assert(BACKGROUND.includes('function logOnRuleMatched('),
       'the feedback permission is present with no logger to justify it');
-    assert((BACKGROUND.match(/onRuleMatchedDebug/g) || []).length <= 4,
-      'onRuleMatchedDebug is used in more places than the logger attaching and detaching');
+    /* Count the API, not the word. The old cap counted prose too, so a comment
+       explaining the limit spent budget a real caller needed -- and, worse, a fifth
+       real use could have been paid for by deleting a comment. Three uses: asking
+       whether it exists, attaching, detaching. */
+    assert((BACKGROUND.match(/declarativeNetRequest\.onRuleMatchedDebug/g) || []).length <= 3,
+      'onRuleMatchedDebug is used in more places than the logger checking, attaching and detaching');
     assert(!/SMART_SCRIPT[\s\S]{0,600}onRuleMatchedDebug/.test(BACKGROUND),
       'script recovery is using the feedback permission');
   }
