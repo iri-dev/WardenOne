@@ -1622,6 +1622,11 @@ const DEFAULT_CONFIG = {
   googleWebResultsOnly: false,
   // Dims and labels scraper results. Opinionated about sources, so it is opt-in.
   flagSearchJunk: false,
+  /* Marks search results WardenOne already knows something bad about, before the click
+     rather than after the navigation. On by default: it only ever adds a warning, never
+     hides or reorders a result, and it answers from lists already on this machine -- so
+     leaving it on costs no request and no reordering of what the engine chose to show. */
+  warnSearchResults: true,
   warnRedirectParams: true,
   warnShorteners: true,
   monitorLoggerApi: true,
@@ -5113,10 +5118,24 @@ async function setTrackerLearnerSiteMode(url, domain, mode) {
 // download sources. Populated by updateRemoteLists and restored from storage on
 // service-worker startup.
 let BLOCKED_DOMAINS = new Set();
+/* The malware/scam half of BLOCKED_DOMAINS, kept apart because the merged set also holds
+   ad and tracker domains, and "this is an ad server" is not "this is dangerous". Nothing
+   that has to make that distinction can use the merged set: search-result warnings would
+   otherwise call an analytics host known malicious, which is the kind of wrong that gets
+   a warning feature switched off for good.
+   No second copy is stored. The persisted array is ordered security-first and the count of
+   leading security entries is saved beside it, so this costs one number. It also makes the
+   storage cap truncate the RIGHT end -- before this, an over-cap list dropped whatever
+   happened to be last, malware entries included. */
+let SECURITY_DOMAINS = new Set();
 try {
   __initBlockedDomains = new Promise((resolve) => {
-    chrome.storage.local.get('wardenone_blocked_domains', (r) => {
-      if (r && Array.isArray(r.wardenone_blocked_domains)) BLOCKED_DOMAINS = new Set(r.wardenone_blocked_domains);
+    chrome.storage.local.get(['wardenone_blocked_domains', 'wardenone_blocked_security_count'], (r) => {
+      if (r && Array.isArray(r.wardenone_blocked_domains)) {
+        BLOCKED_DOMAINS = new Set(r.wardenone_blocked_domains);
+        const n = Math.max(0, Math.min(r.wardenone_blocked_domains.length, Number(r.wardenone_blocked_security_count) || 0));
+        SECURITY_DOMAINS = new Set(r.wardenone_blocked_domains.slice(0, n));
+      }
       resolve();
     });
   });
@@ -5532,13 +5551,22 @@ async function pruneStorageIfNeeded(reason) {
     try {
       const store = await localGet([
         'wardenone_blocked_domains',
+        'wardenone_blocked_security_count',
         'wardenone_history',
         OPENPHISH_CACHE_KEY,
       ]);
 
       const blocked = store && store.wardenone_blocked_domains;
       if (Array.isArray(blocked) && blocked.length > BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) {
-        await localSet({ wardenone_blocked_domains: blocked.slice(0, BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX) });
+        /* The count has to be cut with the array. Left alone it would outrun what is
+           still stored, and since the list is security-first, an over-long count claims
+           ad and tracker domains are malware -- a warning nobody should ever be shown. */
+        const keptSecurity = Math.min(Number(store.wardenone_blocked_security_count) || 0,
+          BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX);
+        await localSet({
+          wardenone_blocked_domains: blocked.slice(0, BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX),
+          wardenone_blocked_security_count: keptSecurity,
+        });
         actions.push('blocked_domains:' + blocked.length + '->' + BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX);
       }
 
@@ -5566,8 +5594,13 @@ async function pruneStorageIfNeeded(reason) {
   return writeStorageTelemetry(reason, { pruned: actions.length > 0, actions, beforeBytes: before, afterBytes: after });
 }
 
-async function persistBlockedDomainsForStorage(domains) {
+async function persistBlockedDomainsForStorage(domains, securityCount) {
   const list = Array.isArray(domains) ? domains : Array.from(domains || []);
+  /* How many of the leading entries are malware/scam domains rather than ad or tracker
+     ones. Written with the list and never separately: two keys that can disagree about the
+     same array would eventually disagree, and the failure would be a wrong verdict rather
+     than a missing one. */
+  const security = Math.max(0, Math.min(list.length, Number(securityCount) || 0));
   const bytes = await storageGetBytesInUse(null);
   const caps = bytes >= STORAGE_SOFT_LIMIT_BYTES
     ? [BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX, 8000, 3000]
@@ -5576,7 +5609,10 @@ async function persistBlockedDomainsForStorage(domains) {
   for (const cap of caps) {
     try {
       const slice = list.slice(0, cap);
-      await localSet({ wardenone_blocked_domains: slice });
+      await localSet({
+        wardenone_blocked_domains: slice,
+        wardenone_blocked_security_count: Math.min(security, slice.length),
+      });
       await pruneStorageIfNeeded('blocked-domains');
       return { ok: true, storedCount: slice.length, cap };
     } catch (e) {
@@ -8704,6 +8740,7 @@ function refreshExtensionState() {
         // switch in the popup did nothing until something unrelated happened to change too.
         cfg.cryptominerCpuWatch === true ? 1 : 0,
         cfg.flagSearchJunk === true ? 1 : 0,
+        cfg.warnSearchResults !== false ? 1 : 0,
       ].join('|');
       if (stateKey === __refreshExtensionStateLastKey) return;
       // The key is a claim that this desired state has been applied. Committing it here, before
@@ -8965,7 +9002,12 @@ async function reconcileSearchJunkInjection(cfgArg) {
     try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
   }
   const merged = Object.assign({}, DEFAULT_CONFIG, cfg || {});
-  const want = merged.enabled !== false && merged.flagSearchJunk === true;
+  /* One script, two independent passes. Either toggle is reason enough to register it,
+     and the script itself decides which passes to run -- a second content script would
+     have meant a second copy of the engine table and the result-block walk, and the two
+     would have drifted the first time an engine changed its markup. */
+  const want = merged.enabled !== false
+    && (merged.flagSearchJunk === true || merged.warnSearchResults !== false);
   let have = false;
   try {
     const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [SEARCH_JUNK_SCRIPT_ID] });
@@ -13208,9 +13250,16 @@ async function updateRemoteListsCore(reason) {
       };
     }
     BLOCKED_DOMAINS = new Set(merged);
+    SECURITY_DOMAINS = new Set(domainBuckets.security);
+    /* Security first, then everything else. Same membership as before -- only the order
+       changes -- so BLOCKED_DOMAINS restores exactly as it always did, while the leading
+       run stays identifiable by count alone. */
+    const securityFirst = [...domainBuckets.security];
+    for (const d of merged) if (!domainBuckets.security.has(d)) securityFirst.push(d);
     let storedDomains = { ok: false, storedCount: 0 };
     try {
-      storedDomains = await persistBlockedDomainsForStorage([...merged]);
+      storedDomains = await persistBlockedDomainsForStorage(securityFirst,
+        Math.min(domainBuckets.security.size, securityFirst.length));
     } catch (e) {
       console.warn('[WardenOne] blocked-domain storage failed:', e);
     }
@@ -13301,6 +13350,17 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
      nobody had registered. */
   'mute-toast',
   'toast-shown',
+  /* Search-result warnings. The handler is fussy about who may ask -- it refuses any
+     sender that is not one of the five search engines -- but that check lives inside it
+     and this list is consulted first, so without an entry here every request was refused
+     as 'Not allowed from this context' and the feature reported nothing on any page. The
+     same shape as mute-toast above: a guard working exactly as designed, on a kind nobody
+     had registered. */
+  'search-result-check',
+  /* The palette's pick. On this list because the overlay lives in the page and so sends
+     from a tab; the real gate is the one-shot window in the handler, which a page cannot
+     open for itself. */
+  'palette-run',
   'consent-accepted',
   'redirect-warning',
   'safe-browsing-check',
@@ -13349,6 +13409,14 @@ const TAB_CONTEXT_RATE_LIMITS = {
      least-privilege snapshot. Keep enough room for frame-heavy applications while still
      preventing a compromised tab from turning configuration reads into a storage flood. */
   'content-config-get': { max: 500, windowMs: 60000 },
+  /* A results page asks once per batch of hosts it has not asked about, and remembers the
+     answers -- so a search plus several "more results" is a handful of calls, not one per
+     result. The ceiling is for the forged case: this reads blocklist membership, and
+     without a limit a page could walk a list through it a batch at a time. */
+  'search-result-check': { max: 40, windowMs: 60000 },
+  /* One per palette opening, and an opening is one keypress. Anything approaching this
+     ceiling is not a person choosing from a list. */
+  'palette-run': { max: 30, windowMs: 60000 },
   // Silencing a notice is something a person does by hand, a few times at most.
   // The ceiling is here for the forged-event case: a hostile page cannot mute a
   // warning about itself faster than a person could, and cannot use the channel
@@ -13888,7 +13956,7 @@ const HEALTH_SHIELD_KEYS = [
   'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'mediaShield',
   'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture',
   'blockGeolocation', 'blockAutoplayMedia', 'gateAdultSites', 'adultHeuristics', 'warnRedirectParams',
-  'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan',
+  'warnShorteners', 'warnSearchResults', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan',
   'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers',
   'autoUpdateLists', 'trackerLearner', 'unshimLinks', 'cleanCopyLinks', 'socialWidgetGuard',
   'blockSupercookies', 'watchExtensionPermissions', 'startupCheck', 'blockPopupTricks', 'antiFingerprintNoise',
@@ -15046,6 +15114,125 @@ async function wardenManualNotice(title, message, tab, id) {
    link/selection check and the media check so both ask the same questions and
    phrase the answers the same way -- two copies would drift the moment one of
    them gained a provider. */
+// ---- Search-result warnings --------------------------------------------------------
+//
+// What WardenOne already knows about a host, answered entirely from data already on this
+// machine. Nothing is looked up to produce these. Painting a badge beside ten results
+// would otherwise mean ten reputation queries per search, which hands a third party the
+// thing the reader typed -- and doing that in the name of privacy protection would be
+// absurd. The deliberate consequence is that a dangerous site nobody has listed yet gets
+// no badge. That is the right way round: the alternative buys coverage with the reader's
+// search history. Where they want a deeper answer about one link, right-click ->
+// Check this link is the place that is allowed to ask the network.
+//
+// THERE IS NO POSITIVE VERDICT, and there must never be one. "Not on a list" is not
+// "safe": these lists cover a rounding error of the web, and a green tick beside a result
+// nobody has examined spends trust the extension has not earned. Every level below says
+// "I know something bad about this", or says nothing at all.
+const SEARCH_WARN_MAX_HOSTS = 60;
+const SEARCH_WARN_NEW_DOMAIN_DAYS = 60;
+/* Only the engines search-junk.js can find a result block on. The handler refuses every
+   other page, because a page free to ask this could read the blocklist a domain at a
+   time -- and the answers are more useful to somebody testing whether their scam domain
+   has been listed yet than they are to anyone else. */
+const SEARCH_WARN_ENGINE_HOST = /^(?:[a-z0-9-]+\.)*(?:google\.(?:com|co\.uk|ca|com\.au|de|fr|es|it|nl|co\.in|com\.br|ie)|bing\.com|duckduckgo\.com|search\.brave\.com|search\.yahoo\.com)$/i;
+
+/* Reads nothing but memory and one cached object. Split out from the handler so the
+   ordering -- worst first, and only one verdict per result -- is testable on its own. */
+function searchResultVerdictForHost(host, ctx) {
+  const h = String(host || '').replace(/^www\./, '').toLowerCase();
+  if (!h || !/^[a-z0-9.-]+$/.test(h)) return null;
+  const rd = registrableDomainBg(h) || h;
+
+  /* A site the reader allowlisted is never warned about. They have already answered this
+     question, and re-asking it every search is how a warning becomes wallpaper. */
+  try { if (hostMatchesAllowlist(h, ctx.allowlist)) return null; } catch (_) {}
+
+  /* Malware and scam feeds only. BLOCKED_DOMAINS also holds ad and tracker hosts, and
+     calling an analytics domain malicious would be a lie that discredits the true ones. */
+  if (SECURITY_DOMAINS.has(h) || SECURITY_DOMAINS.has(rd)) {
+    return { level: 'malicious', label: 'On a malware and scam blocklist', detail: rd };
+  }
+  try {
+    if (GRABBER_FEED_DOMAINS.has(h) || GRABBER_FEED_DOMAINS.has(rd)) {
+      return { level: 'malicious', label: 'A known IP-logger link', detail: rd };
+    }
+  } catch (_) {}
+
+  /* WardenOne's own finding, from watching the site behave. Kept apart from the feeds
+     above because it is weaker evidence, and kept apart from the reader's own blocks
+     because presenting their decision as a WardenOne verdict credits the wrong party. */
+  const learned = ctx.learned && (ctx.learned[h] || ctx.learned[rd]);
+  if (learned && learned.userBlocked !== true) {
+    return { level: 'warn', label: 'WardenOne blocked this before', detail: String(learned.reason || '').slice(0, 60) };
+  }
+
+  /* A bare address instead of a name. Ordinary sites do not rank this way. */
+  try {
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(h) && normalizeIpLiteral(h)) {
+      return { level: 'warn', label: 'An IP address, not a site name', detail: h };
+    }
+  } catch (_) {}
+
+  /* Punycode, or a brand name worn by a domain that is not the brand's. */
+  try {
+    const brand = loginBrandRiskForHost(h, '');
+    if (brand && brand.brand) {
+      return { level: 'warn', label: 'Looks like ' + brand.brand + ', but is not ' + brand.brand, detail: rd };
+    }
+    if (/(^|\.)xn--/i.test(h)) {
+      return { level: 'warn', label: 'The name is written in a script that can imitate another', detail: rd };
+    }
+    if (looksLikeLookalikeHost(h)) {
+      return { level: 'warn', label: 'Spelled like a well-known site, but is not it', detail: rd };
+    }
+  } catch (_) {}
+
+  /* Age, but ONLY from an answer already cached. Nothing here asks a registry, so this
+     fires for a domain the reader (or the login check) happened to look up before and
+     stays quiet otherwise -- a badge that is sometimes absent, never invented. */
+  const aged = ctx.ages && (ctx.ages[rd] || ctx.ages[h]);
+  const days = aged && Number(aged.ageDays);
+  if (aged && Number.isFinite(days) && days >= 0 && days < SEARCH_WARN_NEW_DOMAIN_DAYS) {
+    const whole = Math.floor(days);
+    return {
+      level: 'warn',
+      label: 'Registered ' + (whole <= 1 ? 'in the last day' : whole + ' days ago'),
+      detail: rd,
+    };
+  }
+  return null;
+}
+
+/* Only hosts with something against them come back. A clean host is absent from the
+   answer rather than present with a good verdict, so there is no shape in the reply the
+   page could render as reassurance even if it wanted to. */
+async function searchResultVerdicts(hosts, cfg) {
+  const out = {};
+  const list = Array.isArray(hosts) ? hosts.slice(0, SEARCH_WARN_MAX_HOSTS) : [];
+  if (!list.length) return out;
+  let ages = {};
+  try {
+    const cached = await localGet(DOMAIN_AGE_CACHE_KEY);
+    const store = cached && cached[DOMAIN_AGE_CACHE_KEY];
+    if (store && typeof store === 'object') {
+      const now = Date.now();
+      for (const key of Object.keys(store)) {
+        const hit = store[key];
+        /* A stale cache entry is treated as no answer. An age is a fact about a moment,
+           and "registered 3 days ago" read off a year-old entry is simply false. */
+        if (hit && hit.cachedAt && (now - hit.cachedAt) < DOMAIN_AGE_CACHE_MS) ages[key] = hit;
+      }
+    }
+  } catch (_) { ages = {}; }
+  const ctx = { allowlist: activeAllowlist(cfg || {}), learned: LEARNED, ages };
+  for (const host of list) {
+    const verdict = searchResultVerdictForHost(host, ctx);
+    if (verdict) out[String(host).replace(/^www\./, '').toLowerCase()] = verdict;
+  }
+  return out;
+}
+
 async function wardenHostFindings(host, url, cfg) {
   const lines = [];
 

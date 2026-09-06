@@ -1105,6 +1105,13 @@
       <div><div class="name" style="font-size:12px;">Mark answer-scraper results</div><div class="desc">Dims and labels results from sites that rank by republishing other people's answers, with a one-click <em>Show anyway</em>. It never removes them — a search filter that silently drops the one result you needed fails invisibly, and you'd never know. Works on the Google, Bing, DuckDuckGo, Brave Search and Yahoo results pages.</div></div>
       <label class="tg"><input type="checkbox" data-key="flagSearchJunk"><span class="track"></span><span class="knob"></span></label>
     </div>
+    <!-- Warn before the click, not block after the navigation. The honesty rules for
+         this one are in the copy on purpose: no result is ever called safe, and no
+         result URL is sent anywhere to decide. -->
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Warn about dangerous search results</div><div class="desc">Marks results WardenOne already knows something bad about — on a malware or scam blocklist, a known IP-logger, a name spelled to look like a well-known site, or a bare IP address — so you see it <em>before</em> you click instead of being stopped afterwards. Nothing is hidden or reordered and the link still works. <strong>It never marks anything safe:</strong> a result with no warning is one nothing is known about, which is not the same as one that has been checked. Answers come from lists already on your device — no result is ever sent anywhere to paint a badge. For a deeper look at one link, right-click it and choose <em>Check this link</em>. Works on the Google, Bing, DuckDuckGo, Brave Search and Yahoo results pages.</div></div>
+      <label class="tg"><input type="checkbox" data-key="warnSearchResults"><span class="track"></span><span class="knob"></span></label>
+    </div>
     <div class="row">
 <div><div class="name" style="font-size:12px;">Hide sponsored search results</div><div class="desc">Removes sponsored Google/Brave search blocks and blocks their ad-click wrappers and advertiser destinations from that results page.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockSponsoredSearchResults"><span class="track"></span><span class="knob"></span></label>
