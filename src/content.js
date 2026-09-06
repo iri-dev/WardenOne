@@ -8334,10 +8334,109 @@
       },
       injectedForms=new WeakSet;
       let trapWarned=!1;
-      const scoreForm=pwField=>{
+      /* ---- the autofill trap ------------------------------------------------
+      A page can carry a username and password field the reader never sees, marked
+      so a password manager fills them in, and read the result out with script. The
+      reader never knew a password box existed.
+
+      A hidden credential field is NOT evidence on its own. Real logins use them
+      constantly -- a hidden username beside a visible password, a field held for a
+      second step, a framework's shadow input -- so a detector that fires on that
+      alone is a detector nobody can leave switched on. What is evidence is the
+      combination, and the weights below are set so that no part of it reaches
+      TRAP_THRESHOLD by itself:
+
+        invisible password box                     2
+        + marked for the password manager          3
+        + already filled without anyone typing     4
+        + and no login box on the page at all      7   <- warns
+
+      The last step is what separates a trap from an ordinary login: on a real sign-in
+      page there is a password box you can see, which is the one you filled. */
+      const trapTypedFields=new WeakSet,
+      credentialTrapHidden=el=>{
+        try{
+          if("hidden"===String(el.type||"").toLowerCase())return!0;
+          const cs=getComputedStyle(el);
+          if("none"===cs.display||"hidden"===cs.visibility||0===Number(cs.opacity))return!0;
+          const r=el.getBoundingClientRect();
+          if(r.width<=2||r.height<=2)return!0;
+          /* Parked off the edge: the oldest way to keep a field fillable but unseen.
+          A field merely below the fold is not this -- it has a real position and
+          scrolls into view, so only the far side of the page counts. */
+          if(r.right<=0||r.bottom<=0)return!0;
+          return r.left>=(window.innerWidth||0)+1500||r.top>=(window.innerHeight||0)+3000
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      /* Chrome marks what it filled, which answers this directly. Where it does not,
+      a field holding a value nobody typed into is the same fact the long way round. */
+      credentialTrapFilled=el=>{
+        for(const sel of[":autofill",":-webkit-autofill"]){
+          try{
+            if(el.matches&&el.matches(sel))return!0
+          }
+          catch(_){
+
+          }
+
+        }
+        try{
+          return!!String(el.value||"")&&!trapTypedFields.has(el)
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      credentialTrapBait=el=>{
+        try{
+          const a=String(el.getAttribute&&el.getAttribute("autocomplete")||"").toLowerCase();
+          return/(^|\s)(current-password|new-password|username|email)(\s|$)/.test(a)
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      /* Nothing on screen the reader could have filled in. Capped because a page with
+      forty password fields is not a login page and the answer will not change. */
+      credentialTrapNoVisibleLogin=()=>{
+        try{
+          const all=document.querySelectorAll('input[type="password"]');
+          for(let i=0;i<all.length&&i<40;i++)if(!credentialTrapHidden(all[i]))return!1;
+          return!0
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      scoreForm=pwField=>{
         const form=pwField.closest&&pwField.closest("form")||pwField.parentElement||pwField;
         let score=0;
         const reasons=[];
+        /* Scored first so that when this is what happened, it is what the reader is
+        told -- the panel shows reasons[0], and "there is a password box here you
+        cannot see" is a more useful sentence than any of the ones below it. */
+        if(credentialTrapHidden(pwField)){
+          score+=2,
+          reasons.push("there is a password box on this page you cannot see");
+          const bait=credentialTrapBait(pwField),
+          filled=credentialTrapFilled(pwField);
+          bait&&(score+=1,
+          reasons.push("it is marked so your password manager will fill it in"));
+          filled&&(score+=1,
+          reasons.push("something already filled it in without you typing anything"));
+          /* Only together. Autofill into a hidden field on a page that DOES have a
+          visible login is the ordinary case -- the manager filled both. Autofill into
+          a hidden field on a page with no login box at all is the trap. */
+          filled&&credentialTrapNoVisibleLogin()&&(score+=3,
+          reasons.push("and there is no login box on this page you could have used"));
+        }
         let actionHost="",
         actionProto="";
         try{
@@ -8473,6 +8572,26 @@
 
       },
       initialPw=new Set(document.querySelectorAll('input[type="password"]'));
+      /* What the reader actually typed into. Only trusted events count -- a script
+      dispatching its own keydown to look like a person is exactly the thing this is
+      here to see through. beforeinput covers paste and dictation, which are typing as
+      far as the reader is concerned. Both fire only while someone is entering text,
+      and do nothing but add to a WeakSet. */
+      for(const ev of["keydown","beforeinput"])woOn(document,
+      ev,
+      e=>{
+        try{
+          e&&!1!==e.isTrusted&&e.target&&trapTypedFields.add(e.target)
+        }
+        catch(_){
+
+        }
+
+      },
+      {
+        capture:!0,
+        passive:!0
+      });
       document.body?scanForms():woOn(document,"DOMContentLoaded",
       scanForms,
       {
