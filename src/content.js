@@ -17231,19 +17231,55 @@
           reason))),
           !0
         },
+        /* Signals that are true regardless of layout. These can be acted on the moment
+        the element is seen, because no measurement is involved. */
+        mediaHiddenDefinitely=el=>{
+          try{
+            const cs=getComputedStyle(el);
+            return!!(el.hidden||"none"===cs.display||"hidden"===cs.visibility||0===Number(cs.opacity))
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        /* A MutationObserver callback runs BEFORE layout, so an element that was just
+        inserted measures 0x0 however big it is about to be -- and the size test is what
+        decides "hidden" for anything without a controls attribute. Acting there condemns
+        media for the crime of being new.
+
+        It is not a harmless mistake: neutralizeMedia sets autoplay=false and muted=true
+        on the element permanently, and a site that REUSES one media element (YouTube
+        reuses a single hover-preview video for every thumbnail) stays broken for the
+        rest of the page's life after one mis-timed scan. Rare to trigger, then
+        persistent, which is exactly how it was reported -- grey thumbnails that never
+        recover until reload.
+
+        So a size-only verdict is re-measured once layout has actually happened. The
+        definitive signals above still act immediately. */
+        considerMedia=el=>{
+          const reason=playBlockReason(el);
+          if(!reason)return;
+          if(mediaHiddenDefinitely(el))return void neutralizeMedia(el,
+          reason);
+          setTimeout(()=>{
+            try{
+              const again=playBlockReason(el);
+              again&&neutralizeMedia(el,
+              again)
+            }
+            catch(_){
+
+            }
+
+          },
+          250)
+        },
         scanMedia=root=>{
           try{
             if(!root)return;
-            if(isMediaElement(root)){
-              const reason=playBlockReason(root);
-              reason&&neutralizeMedia(root,
-              reason)
-            }
-            root.querySelectorAll&&root.querySelectorAll("audio,video").forEach(el=>{
-              const reason=playBlockReason(el);
-              reason&&neutralizeMedia(el,
-              reason)
-            })
+            isMediaElement(root)&&considerMedia(root),
+            root.querySelectorAll&&root.querySelectorAll("audio,video").forEach(considerMedia)
           }
           catch(_){
 
