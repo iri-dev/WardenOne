@@ -264,9 +264,60 @@ The master switch and the site allowlist still turn all three off along with eve
 ### Right-click tools
 Everything here sits under one **WardenOne** entry in the right-click menu, so nothing is buried in a settings page you have to go looking for.
 - **Zap this element** — point at anything on a page and remove it. Sticky bars, cookie leftovers, a video that follows you down the page. Ctrl+Z takes back as many zaps as you like.
-- **Copy clean link** — copies a link with the tracking stripped off. Links copied inside a page are cleaned automatically; this entry exists for Chrome's own *Copy link address*, which no extension can intercept. **Alt+Shift+C** does the same for the page you are on.
+- **Copy clean link** — copies a link with the tracking stripped off. Links copied inside a page are cleaned automatically; this entry exists for Chrome's own *Copy link address*, which no extension can intercept. A keyboard shortcut does the same for the page you are on.
 - **Block this site** — a hard block for a site you would rather not land on again, applied at the network layer so the page never loads. The same entry unblocks it, and it works from the error page too.
 - **Check this link**, **Check the selected text**, **Where is this image from?** and **What is this frame?** — ask WardenOne what it knows about something before you click it: reputation, domain age, where a frame really comes from.
+
+### Privacy test — check it yourself
+Every extension in this category tells you what it protects. This one lets you measure it.
+
+**The trick is that nothing is read off the settings screen.** Each probe runs **twice on the same page**: once in the world where WardenOne's shields have patched the browser's APIs, and once in a world that shares the same document but has its own untouched copies of them. Then the two answers are compared. "Protected" means the value the page received is demonstrably not the value the browser would have given it. If a Chrome update ever quietly breaks a shield, the two readings start agreeing and the test says so — which a tick printed from a switch never would.
+
+It measures **the page in your other tab**, not the test page itself. WardenOne's content scripts don't run on extension pages, so a test that measured its own page would report every shield missing: truthfully, and uselessly. It also means the result reflects that *particular* site, including any pause or compatibility exception in force there.
+
+What it measures: canvas (both drawing and pixel readback), audio, WebGL and WebGPU identity, machine details, screen and monitor layout, high-entropy client hints, voices, keyboard layout, media codec capabilities, local network addresses via WebRTC, battery, connection type, font-API reachability, game controllers, hyperlink-auditing beacons, tracking parameters on links, and tracking parameters written straight into the address bar.
+
+**Five verdicts, because "failed" is the wrong word for most of what a browser exposes:** ✅ Protected · 🟢 Minimal exposure · 🟡 Partly protected · ℹ️ Allowed by design · 🔴 Exposed. A shield you switched off reads as a choice, not a failure — and the score counts only the checks with a right answer, so a setting you chose can never drag it down.
+
+**What it refuses to grade.** The referrer a third party receives, and whether a real tracker request is blocked, both need a server on the other end. WardenOne has none, and finding out whether a tracker is blocked *by contacting a tracker* would do the very thing it was checking for. Those are listed as **not testable here** rather than given a green tick nobody measured — a self-test that grades itself on things it never ran is worse than no self-test, because it is evidence pointing the wrong way.
+
+**Nothing leaves your device**, and the page is put back exactly as it was found — probe nodes removed, and the address bar restored even if a probe throws. The WebRTC check uses no STUN server: host candidates alone reveal the local addresses, which is the leak worth measuring and the one that needs no network to show.
+
+When a shield reports *on* but the page got the real value anyway, that's the combination worth investigating, and the page offers **Verify & repair** — which is the other half of this. The self-test finds a problem from the outside; Verify & repair looks inside and re-injects what's missing. Then run the test again.
+
+### Command palette
+Past a certain number of tools, *finding* one becomes the problem rather than lacking one. **Alt+Shift+W** opens a box on the page; type a few letters and press Enter.
+
+`log` → the network logger. `priv` → the privacy test. `zap` → the element tool. Matching is by subsequence, so `onl` finds *Open the network logger*, and a run of adjacent letters beats the same letters scattered.
+
+Eleven entries: check this site · run the privacy test · hide something on this page · copy this page's address cleaned · pause or resume here · network logger · site firewall · check a file · check an extension · activity centre · settings. ↑ ↓ to move, Enter to run, Esc to close.
+
+**It is display only, and that matters.** The overlay lives in the page, so the page could rewrite it — which means nothing it says can be trusted. The list of what each command *does* is held in the background, which dispatches through exactly the same path the keyboard shortcuts use and refuses any id that isn't on its own list. Rewriting the palette gets you nothing WardenOne wouldn't have offered anyway.
+
+Three gates sit behind it, because *"pause WardenOne on this site"* is precisely what a hostile script would reach for: the command has to be one the background knows, the palette has to have been **opened on that tab** — which only the shortcut can do — and that opening is **consumed**, so one press buys one action. A forged message can't open the palette, so it never gets inside the window.
+
+It's injected when you press the key and never before: a palette has no reason to sit in every page for the whole of its life, and this way a page can't even tell the feature exists until it's asked for. Closed shadow root, so the page can't read what you typed into it or restyle it into something misleading.
+
+**Element picker and element zapper are one entry**, not two — they were merged into a single tool for good reasons, and two palette rows would put that split back through a different door.
+
+### Keyboard shortcuts
+The things you do repeatedly, one keystroke away. These add no protection — every one is a faster route to something the popup or the right-click menu already does — but a security tool you have to go digging through menus for is one you use less.
+
+They run through Chrome's own extension shortcut system rather than a key listener injected into every page. That is not just tidier: a page cannot see these, cannot swallow them, and cannot be broken by them — and you can rebind or clear any of them at `chrome://extensions/shortcuts`, which an in-page listener could never offer.
+
+- **Command palette** — one box, type what you want. Described above; it is the entry point for everything below.
+- **Element tool** — point at something and hide it. Once it's open the whole thing can be driven from the keyboard: **↑ / ↓** walk up and down the tree (so does the scroll wheel), **Enter** takes whatever is framed, **Escape** leaves and keeps what you hid, and **Ctrl+Z** puts one back — and undo keeps working after the tool has closed. Enter goes through the same path as a click, so the *"that covers most of the page"* second press still applies; a confirmation the mouse gets and the keyboard skips would be a trapdoor rather than a shortcut.
+- **Network logger** — open the live log. For *"something just broke, what did WardenOne stop?"*
+- **Copy clean address** — the current page's URL with the tracking parameters removed.
+- **Pause on this site** and **Check this site** ship **unassigned**. Chrome allows four default keys and all four are now spoken for — palette, element tool, logger, copy-clean — so the rest are a click away from a binding of your choosing.
+
+The defaults avoid `Ctrl+Shift` on purpose — `Ctrl+Shift+P` is DevTools' command menu, `Ctrl+Shift+Z` is redo, and the element tool uses `Ctrl+Z` itself.
+
+**Pausing is per-site and temporary**: it pauses the site you're on for an hour, the same shortcut resumes it, and it never touches a site you allowlisted permanently — that's a separate decision you made elsewhere. It doesn't reload the page either; a keystroke that throws away a half-filled form is a worse surprise than one more keypress.
+
+There is one **element tool**, so it has one shortcut. There were two of these once — a picker and a zapper — and they were merged because both ended in the same saved rule and the only difference was whether the confirmation arrived before or after the thing disappeared. Two shortcuts would put that split back through the keyboard.
+
+The popup lists every command with **whatever key Chrome currently reports**, never a table written into the page — a shortcut printed next to an action it no longer runs is worse than no list at all.
 
 ### Comfort &amp; extras
 - **EyeShield** — a per-site display tuner with Normal / Light / Dark / **Ultra (OLED-black)** modes, plus brightness, contrast, saturation, warmth, and grayscale sliders, remembered per site.

@@ -1643,6 +1643,76 @@ function wireMyFilters() {
     });
   }
 
+  const palette = $('open-palette');
+  if (palette) {
+    palette.addEventListener('click', () => {
+      /* Goes through the same message the shortcut does, so the palette is opened by the
+         background and gets its one-shot claim exactly as it would from the keyboard.
+         Opening it from here without that would be a second way in, and the second way is
+         always the one that turns out to have skipped a gate. */
+      chrome.runtime.sendMessage({ kind: 'palette-open' }, () => {
+        try { void chrome.runtime.lastError; } catch (_) {}
+        window.close();
+      });
+    });
+  }
+
+  const privacyTest = $('open-privacy-test');
+  if (privacyTest) {
+    privacyTest.addEventListener('click', () => {
+      /* The tab id travels with it, for the same reason the firewall page takes one: the
+         test measures a real web page, and once this page IS the active tab that answer
+         is gone. Extension pages get no content scripts, so a test that measured itself
+         would report every shield missing -- truthfully, and uselessly. */
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = (tabs && tabs[0]) || null;
+        const url = chrome.runtime.getURL('privacy-test.html')
+          + '?tab=' + encodeURIComponent(tab && tab.id != null ? tab.id : '');
+        chrome.tabs.create({ url });
+      });
+    });
+  }
+
+  /* Straight from chrome.commands.getAll(), never from a table written here. The reader
+     can rebind or clear any of these in Chrome, and a hard-coded list would start lying
+     the moment they did -- which is worse than no list, because it would be a shortcut
+     printed next to an action it no longer runs. */
+  const shortcutList = $('shortcut-list');
+  if (shortcutList && chrome.commands && chrome.commands.getAll) {
+    chrome.commands.getAll((commands) => {
+      try { void chrome.runtime.lastError; } catch (_) {}
+      shortcutList.textContent = '';
+      const items = Array.isArray(commands) ? commands.filter((c) => c && c.name !== '_execute_action') : [];
+      if (!items.length) {
+        shortcutList.textContent = 'Chrome did not report any shortcuts.';
+        return;
+      }
+      for (const cmd of items) {
+        const row = document.createElement('div');
+        row.className = 'shortcut-row';
+        const label = document.createElement('span');
+        label.textContent = String(cmd.description || cmd.name);
+        const key = document.createElement('span');
+        /* "Not set" rather than an empty cell: an unassigned command is a deliberate
+           state here, not a missing value. */
+        key.className = 'k' + (cmd.shortcut ? '' : ' unset');
+        key.textContent = cmd.shortcut || 'Not set';
+        row.appendChild(label);
+        row.appendChild(key);
+        shortcutList.appendChild(row);
+      }
+    });
+  }
+  const shortcutsButton = $('open-shortcuts');
+  if (shortcutsButton) {
+    shortcutsButton.addEventListener('click', () => {
+      /* Chrome does not let an extension assign its own shortcuts, so this opens the
+         browser's page for it. Offering a keybinding UI here would be inventing one that
+         cannot take effect. */
+      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+    });
+  }
+
   const add = $('custom-list-add');
   const url = $('custom-list-url');
   if (add && url) {
