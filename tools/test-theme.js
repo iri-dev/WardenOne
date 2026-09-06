@@ -102,7 +102,12 @@ for (const page of shellPages) {
      no buttons in the hero at all, and a hero that stopped at a hard line
      instead of fading into the page. */
   assert(html.includes('guide-hero-actions'), page + ' has no action buttons in its hero');
-  assert((html.match(/class="guide-btn primary"/g) || []).length === 1,
+  /* Counted inside the hero, not across the page. The page-wide count read as
+     the same thing only because no page had a primary button anywhere else; the
+     moment one did (File Shield's "Choose a file") a correct page failed an
+     assertion whose own message says "hero". */
+  const heroActions = (html.match(/<div class="guide-hero-actions">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  assert((heroActions.match(/class="guide-btn primary"/g) || []).length === 1,
     page + ' should offer exactly one primary hero action');
 }
 

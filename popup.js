@@ -1610,6 +1610,14 @@ function wireMyFilters() {
     });
   }
 
+  const fileShield = $('open-file-shield');
+  if (fileShield) {
+    fileShield.addEventListener('click', () => {
+      /* A tab, so the file picker and a long scan are not cut off by the popup
+         closing the moment focus moves to the OS file dialog. */
+      chrome.tabs.create({ url: chrome.runtime.getURL('file-shield.html') });
+    });
+  }
   const logger = $('open-logger');
   if (logger) {
     logger.addEventListener('click', () => {

@@ -817,6 +817,18 @@
       <div><div class="name">Download Shield</div><div class="desc">No-account scanner. Grades downloads A-F from the URL, source, filename, file type, Chrome signals, trust list, and local blocklists. Known-bad sources are blocked outright; risky ones show a review you can cancel.</div></div>
       <label class="tg"><input type="checkbox" data-key="downloadReputation"><span class="track"></span><span class="knob"></span></label>
     </div>
+    <!-- The manual half of Download Shield. Download Shield only sees files that
+         arrive through the browser, and even then it cannot read the saved bytes --
+         it fingerprints the URL. This reads the real file, so it is where the
+         Discord/USB/email question gets answered. Not hidden behind Advanced: it is
+         the most ordinary security question anyone has. -->
+    <div class="row" style="display:block;">
+      <div class="name">File Shield &mdash; check a file yourself</div>
+      <div class="desc" style="margin-bottom:7px;">For anything that did not come through the browser: Discord, a USB
+        stick, an email attachment, another PC. WardenOne reads the real bytes &mdash; what the file actually is, whether
+        the name matches, what a shortcut would run, what is inside an archive. Nothing is uploaded, opened or run.</div>
+      <button class="btn" id="open-file-shield" type="button" style="width:100%;">Open File Shield</button>
+    </div>
     <div class="row">
       <div><div class="name">Check download domain age</div><div class="desc">Opt-in domain-age lookup for suspicious downloads. Uses RDAP by default, or WhoisXML enrichment when enabled. Sends only the source domain, never the file or full URL.</div></div>
       <label class="tg"><input type="checkbox" data-key="downloadDomainAge"><span class="track"></span><span class="knob"></span></label>
