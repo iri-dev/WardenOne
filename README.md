@@ -180,6 +180,18 @@ The master switch and the site allowlist still turn all three off along with eve
 - **Settings backup** — export every toggle to a file and import it back on a reinstall or a new machine. Nothing syncs to a server and there's no account, so this is the only way you don't rebuild 140-odd settings by hand. API keys are never written to the file, and an imported file can't inject one.
 - **On-demand site tools** — check a domain's age (RDAP), look it up against Have I Been Pwned, scan where a site stores login tokens, or open the full local extension reputation/access/change report.
 
+### Check an extension before you install it
+**What it's for:** the moment *before* you click Add to Chrome. The Extension Security Centre answers "what do I already have, and did it change" &mdash; this answers the question that comes first. Paste a Chrome Web Store link or a 32-character extension ID and you get an answer for something that is not installed, and never has to be.
+
+**What it does.** Looks the exact ID up in the same catalogue the Security Centre uses &mdash; 471 exact identities bundled with WardenOne: 4 documented incidents, 18 recognised publisher identities, 449 catalogued listings. Nothing is downloaded to answer this; it is a lookup in a file already on your machine.
+- **A documented incident sticks to the ID.** Renaming a copy does not shed its history, and no name is needed for this answer &mdash; which matters, because before installing you may have nothing but an ID.
+- **Recognition is withheld unless a name backs it up.** If the catalogue holds the ID but nothing corroborates that it is *this* extension, WardenOne says so rather than recognising it. A wrong ID has to fail as a missing reassurance, never a false one.
+- **One button asks the Web Store** for the name it is published under, which is what turns "I hold this ID" into "yes, this is that extension". It is a separate, deliberate press because it tells Google which extension you are thinking about. It sends only the ID, without cookies or your session.
+- **Whether the listing still exists.** If there is none, WardenOne says it was removed *or* never existed, and does not guess which &mdash; from outside those two look identical.
+- **If you already have it**, it says so, with the version and what it can access. The honest answer to "should I install this" is sometimes "you already did".
+
+**What it deliberately is not.** The catalogue is a few hundred exact identities against a store of hundreds of thousands, so *no record* is the ordinary answer &mdash; and it means **unexamined, not examined and cleared**. The panel never calls anything safe. It also cannot show you the permissions an extension would ask for until it is installed: Chrome does not expose them beforehand, to anyone. This is an exact-ID lookup and, if you ask for it, a listing check. It is not a review of the code.
+
 ### Cryptojacking
 - **Block drive-by mining** — mining-as-a-service scripts (the ones that quietly spend your CPU and battery on someone else's coins) are blocked outright, and pages are stopped from opening a stratum WebSocket to a mining pool.
 - Mining pools themselves stay reachable if *you* go there — they're only blocked as a third-party connection, so a site can't mine through one behind your back while your own pool dashboard keeps working.

@@ -272,6 +272,22 @@
     .card-top { display: block; }
     .verdict { display: inline-block; margin-top: 10px; }
   }
+  .check-panel { display:block; }
+  .check-row { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .check-row .search { flex:1; min-width:260px; }
+  .check-error { margin:8px 0 0; font-size:12.5px; color:var(--wo-danger); }
+  .check-result { margin-top:14px; }
+  .check-verdict { font:800 15px/1.3 var(--display,inherit); margin-bottom:4px; }
+  .check-verdict.is-incident { color:var(--wo-danger); }
+  .check-verdict.is-known { color:var(--wo-success); }
+  .check-verdict.is-unknown { color:var(--wo-text-soft); }
+  .check-reason { margin:0 0 10px; font-size:12.5px; line-height:1.6; color:var(--wo-text-soft); }
+  .check-facts { display:grid; grid-template-columns:auto minmax(0,1fr); gap:5px 14px; margin:0 0 12px; }
+  .check-facts dt { font-size:11.5px; color:var(--wo-text-faint); }
+  .check-facts dd { margin:0; font-size:12px; word-break:break-all; }
+  .check-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .check-store-note { font-size:11px; color:var(--wo-text-faint); flex:1; min-width:220px; line-height:1.45; }
+  .check-limits { margin:12px 0 0; font-size:11.5px; line-height:1.6; color:var(--wo-text-faint); }
 </style>
 </head>
 <body>
@@ -328,6 +344,30 @@
       <div class="local-badge">No extension IDs uploaded</div>
     </section>
 
+    <!-- The Security Centre answers 'what is installed and did it change'. This
+         answers the question that comes first: should I install this at all. -->
+    <section class="panel check-panel" aria-labelledby="check-title">
+      <h2 class="panel-title" id="check-title">Check an extension before you install it</h2>
+      <p class="panel-copy">Paste a Chrome Web Store link or a 32-letter extension ID. The catalogue is
+        checked on your computer &mdash; nothing is sent anywhere unless you press <strong>Ask the Web Store</strong>.</p>
+      <div class="check-row">
+        <input class="search" id="check-input" type="text" spellcheck="false" autocomplete="off"
+          placeholder="https://chromewebstore.google.com/detail/&hellip;  or  an extension ID"
+          aria-label="Chrome Web Store link or extension ID">
+        <button class="btn small" id="check-go" type="button">Check</button>
+      </div>
+      <p class="check-error" id="check-error" hidden></p>
+      <div class="check-result" id="check-result" hidden>
+        <div class="check-verdict" id="check-verdict"></div>
+        <p class="check-reason" id="check-reason"></p>
+        <dl class="check-facts" id="check-facts"></dl>
+        <div class="check-actions">
+          <button class="btn small" id="check-store" type="button">Ask the Web Store</button>
+          <span class="check-store-note" id="check-store-note">Sends only this extension ID to Google, to see whether the listing is still there and what it is called.</span>
+        </div>
+        <p class="check-limits" id="check-limits"></p>
+      </div>
+    </section>
     <section class="panel control-panel" aria-label="Search and filters">
       <div class="controls">
         <label>

@@ -612,3 +612,135 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 scanExtensions(false);
+
+/* ---- Check an extension before installing it ----------------------------
+   The catalogue holds 471 exact identities. Almost every extension anyone
+   pastes will not be one of them, so "no record" is the ordinary answer and the
+   whole panel is built around saying that without it reading as approval. */
+(() => {
+  const input = document.getElementById('check-input');
+  const go = document.getElementById('check-go');
+  const store = document.getElementById('check-store');
+  if (!input || !go) return;
+
+  let LAST = null;
+
+  const el = (id) => document.getElementById(id);
+  const setError = (text) => {
+    const box = el('check-error');
+    box.textContent = text || '';
+    box.hidden = !text;
+    if (text) el('check-result').hidden = true;
+  };
+
+  function row(dl, key, value) {
+    if (!value && value !== 0) return;
+    const dt = document.createElement('dt');
+    dt.textContent = key;
+    const dd = document.createElement('dd');
+    dd.textContent = String(value);
+    dl.append(dt, dd);
+  }
+
+  /* Three states, and only one of them is reassuring. The wording matters more
+     than the colour: "not in the catalogue" must never be read as "checked and
+     fine", because the catalogue is small and most of the store is not in it. */
+  function verdictOf(res) {
+    const status = (res.reputation && res.reputation.status) || 'no_record';
+    if (status === 'historical_incident') {
+      return { cls: 'is-incident', title: 'This exact identity has a documented incident' };
+    }
+    if (status === 'recognized_identity') {
+      return { cls: 'is-known', title: 'A publisher identity WardenOne recognises' };
+    }
+    if (status === 'catalogued_listing') {
+      return { cls: 'is-unknown', title: 'A known Web Store listing — that is all' };
+    }
+    if (res.cataloguedAs) {
+      return { cls: 'is-unknown', title: 'The catalogue holds this ID, but cannot confirm it is this extension' };
+    }
+    return { cls: 'is-unknown', title: 'Not in the catalogue' };
+  }
+
+  function reasonOf(res, verdict) {
+    const rep = res.reputation || {};
+    if (rep.status === 'historical_incident') return rep.reason;
+    if (rep.status === 'recognized_identity' || rep.status === 'catalogued_listing') return rep.reason;
+    if (res.cataloguedAs) {
+      return 'WardenOne holds a record for this exact ID, listed as "' + res.cataloguedAs + '". It has not '
+        + 'been matched to a name yet, so recognition is withheld on purpose — a wrong ID must fail as a '
+        + 'missing reassurance rather than a false one. Press Ask the Web Store to fetch the name it is '
+        + 'published under.';
+    }
+    return 'Nothing is recorded for this ID. The catalogue is a few hundred exact identities — documented '
+      + 'incidents and verified publishers — not a list of every safe extension. Most of the Web Store is '
+      + 'not in it, so this means unexamined, not examined and cleared.';
+  }
+
+  function render(res) {
+    LAST = res;
+    setError('');
+    el('check-result').hidden = false;
+    const verdict = verdictOf(res);
+    const head = el('check-verdict');
+    head.className = 'check-verdict ' + verdict.cls;
+    head.textContent = verdict.title;
+    el('check-reason').textContent = reasonOf(res, verdict);
+
+    const dl = el('check-facts');
+    dl.textContent = '';
+    row(dl, 'Extension ID', res.id);
+    if (res.name) row(dl, 'Name', res.name + (res.nameSource ? ' (from the ' + res.nameSource + ')' : ''));
+    if (res.listing) {
+      row(dl, 'On the Web Store', res.listing.listed ? 'Yes, still listed'
+        : 'No listing found — it has been removed, or this ID never existed. Those two look the same from outside.');
+    }
+    if (res.installed) {
+      row(dl, 'You already have it', res.installed.name + ' ' + res.installed.version
+        + (res.installed.enabled ? '' : ' (disabled)'));
+      const perms = (res.installed.permissions || []).concat(res.installed.hostPermissions || []);
+      if (perms.length) row(dl, 'What it can access', perms.slice(0, 14).join(', ')
+        + (perms.length > 14 ? ' and ' + (perms.length - 14) + ' more' : ''));
+    }
+    const cats = (res.reputation && res.reputation.categories) || [];
+    if (cats.length) row(dl, 'Recorded as', cats.join(', '));
+    if (res.reputation && res.reputation.reviewedAt) row(dl, 'Record reviewed', res.reputation.reviewedAt);
+    row(dl, 'Catalogue', res.entryCount + ' exact identities'
+      + (res.datasetVersion ? ', version ' + res.datasetVersion : ''));
+
+    /* What this answer cannot tell you, every time -- not only when it is bad. */
+    el('check-limits').textContent = res.installed
+      ? 'Permissions above are what this extension asks for on your machine right now. For anything not '
+        + 'installed, WardenOne cannot read the permissions it would request — Chrome does not expose them '
+        + 'until it is installed.'
+      : 'WardenOne cannot read the permissions an uninstalled extension would ask for; Chrome does not '
+        + 'expose them until it is installed. This check is an exact-ID lookup and, if you ask for it, '
+        + 'whether the listing still exists. It is not a review of the code.';
+    store.disabled = false;
+  }
+
+  function check(reference) {
+    setError('');
+    chrome.runtime.sendMessage({ kind: 'extension-check', reference }, (res) => {
+      void chrome.runtime.lastError;
+      if (!res || !res.ok) { setError((res && res.error) || 'That could not be checked.'); return; }
+      render(res);
+    });
+  }
+
+  go.addEventListener('click', () => check(input.value));
+  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') check(input.value); });
+
+  store.addEventListener('click', () => {
+    if (!LAST) return;
+    store.disabled = true;
+    store.textContent = 'Asking…';
+    chrome.runtime.sendMessage({ kind: 'extension-check-store', reference: LAST.id }, (res) => {
+      void chrome.runtime.lastError;
+      store.textContent = 'Ask the Web Store';
+      store.disabled = false;
+      if (!res || !res.ok) { setError((res && res.error) || 'The Web Store could not be asked.'); return; }
+      render(res);
+    });
+  });
+})();
