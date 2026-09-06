@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" data-wardenone-page="privacy-test">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WardenOne - Privacy test</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="guide-shell.css">
+<script src="theme.js"></script>
+<style>
+  /* --guide-* only. An undefined custom property invalidates the whole declaration, so a
+     wrong name deletes the border rather than erroring. */
+  .pt-bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+  .pt-target { font-size:12.5px; color:var(--guide-soft); }
+  .pt-target strong { color:var(--guide-ink); }
+  .pt-score { border:1px solid var(--guide-line); border-radius:14px; padding:16px 18px;
+    background:var(--guide-paper); margin-bottom:18px; }
+  .pt-score .n { font:800 30px var(--body); color:var(--guide-ink); line-height:1.1; }
+  .pt-score .l { font-size:12.5px; color:var(--guide-soft); margin-top:4px; line-height:1.6; }
+  .pt-list { display:flex; flex-direction:column; gap:8px; }
+  .pt-row { border:1px solid var(--guide-line); border-radius:12px; background:var(--guide-paper); }
+  .pt-head { display:flex; align-items:baseline; gap:10px; padding:11px 14px; cursor:pointer;
+    font:600 13px var(--body); color:var(--guide-ink); }
+  .pt-head:focus-visible { outline:2px solid var(--guide-violet); outline-offset:1px; }
+  .pt-mark { flex:none; font-size:13px; }
+  .pt-name { flex:1; }
+  .pt-verdict { flex:none; font-size:11.5px; font-weight:700; }
+  .v-protected .pt-verdict { color:var(--guide-success); }
+  .v-minimal .pt-verdict { color:var(--guide-success); }
+  .v-partial .pt-verdict { color:var(--guide-warning); }
+  .v-design .pt-verdict { color:var(--guide-faint); }
+  .v-exposed .pt-verdict { color:var(--guide-danger); }
+  .v-untested .pt-verdict { color:var(--guide-faint); }
+  .pt-body { padding:0 14px 13px; font-size:12.5px; line-height:1.65; color:var(--guide-soft); }
+  .pt-body p { margin:0 0 8px; }
+  .pt-values { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; margin-top:8px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11px;
+    color:var(--guide-faint); word-break:break-all; }
+  .pt-values dt { color:var(--guide-soft); }
+  .pt-note { font-size:12.5px; line-height:1.7; color:var(--guide-soft); }
+  .pt-empty { padding:30px 8px; text-align:center; color:var(--guide-faint); font-size:13px; }
+  .pt-fail { border:1px solid var(--guide-danger); border-radius:12px; padding:14px 16px;
+    margin-top:18px; background:var(--wo-danger-bg,#f3dbe5); }
+  .pt-fail h3 { margin:0 0 6px; font:800 13px var(--body); color:var(--guide-danger); }
+</style>
+</head>
+<body>
+<header class="guide-topbar">
+  <div class="guide-wrap guide-topbar-inner">
+    <a class="guide-brand" href="popup.html" aria-label="Back to WardenOne popup">
+      <span class="guide-brand-mark" aria-hidden="true"><img src="icons/icon128.png" alt=""></span>
+      <span><span class="guide-brand-name">WardenOne</span><span class="guide-brand-sub">Privacy test</span></span>
+    </a>
+    <div class="guide-toplinks">
+      <nav class="guide-nav" aria-label="Sections">
+        <a href="logger.html">Network logger</a>
+        <a href="history.html">Activity</a>
+      </nav>
+      <div class="guide-credit">Developer <strong>iri.dev</strong></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="guide-hero">
+    <div class="guide-wrap guide-hero-inner">
+      <div>
+        <div class="guide-eyebrow">Measured, not asserted</div>
+        <h1>What can this page actually learn about you?</h1>
+        <p class="guide-lead"><strong>Every result here comes from running the probe twice on the same page</strong> &mdash; once where WardenOne's shields are running, and once where they are not &mdash; and comparing what came back. Nothing is read off a settings screen.</p>
+        <p class="pt-note">That distinction is the point. A test that printed a tick because a switch was on would keep printing it after a browser update quietly broke the thing underneath. If a shield ever stops working, the two readings start agreeing and this page says so.</p>
+        <div class="guide-hero-actions">
+          <button class="guide-btn primary" id="run" type="button">Run the test</button>
+          <button class="guide-btn" id="toggle-advanced" type="button" aria-pressed="false">Show the raw readings</button>
+        </div>
+        <div class="pt-target" id="target">Choosing a page to test&hellip;</div>
+      </div>
+      <aside class="guide-summary" aria-label="Result summary">
+        <div class="summary-label">Result</div>
+        <div class="pt-score">
+          <div class="n" id="score">&mdash;</div>
+          <div class="l" id="score-note">Run the test to see what this page can read.</div>
+        </div>
+        <p class="summary-copy">Scores count only the checks that have a right answer. Things allowed on purpose, and things that cannot be measured from inside a page, are listed but never counted for or against.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="guide-section">
+    <div class="guide-wrap">
+      <div class="guide-section-head">
+        <div><div class="guide-kicker">Results</div><h2>One line per surface. Click one to see why.</h2></div>
+        <p>Protections are measured on the page in your other tab, not on this one &mdash; WardenOne's shields do not run on extension pages, so testing here would report every one of them missing, truthfully and uselessly.</p>
+      </div>
+      <div class="pt-list" id="results">
+        <div class="pt-empty">Nothing measured yet.</div>
+      </div>
+      <div id="repair-offer"></div>
+      <p class="pt-note" style="margin-top:18px;">
+        <strong>What is deliberately not here.</strong> The referrer a third party receives, whether a third-party cookie survives, and whether a real tracker request is refused all need a server on the other end to answer honestly. This page has no server, so those are absent rather than guessed at &mdash; a green tick nobody measured is exactly the thing this page exists to argue against.
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer class="guide-footer">
+  <div class="guide-wrap guide-footer-inner">
+    <span><strong>Nothing leaves your device.</strong> Every probe is answered inside the page.</span>
+    <span>The page is put back exactly as it was found, address bar included.</span>
+  </div>
+</footer>
+<script src="privacy-test.js"></script>
+</body>
+</html>

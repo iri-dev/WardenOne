@@ -3,6 +3,7 @@
 :root[data-wardenone-page="hidden-elements"],
 :root[data-wardenone-page="file-shield"],
 :root[data-wardenone-page="firewall"],
+:root[data-wardenone-page="privacy-test"],
 :root[data-wardenone-page="logger"] {
   --guide-bg: var(--wo-bg, #ece0f7);
   --guide-bg-2: var(--wo-bg-alt, #e7d9f4);
@@ -50,6 +51,7 @@
 :root[data-wardenone-page="hidden-elements"] *,
 :root[data-wardenone-page="file-shield"] *,
 :root[data-wardenone-page="firewall"] *,
+:root[data-wardenone-page="privacy-test"] *,
 :root[data-wardenone-page="logger"] * { box-sizing: border-box; }
 
 :root[data-wardenone-page="notifications"] body,
@@ -57,6 +59,7 @@
 :root[data-wardenone-page="hidden-elements"] body,
 :root[data-wardenone-page="file-shield"] body,
 :root[data-wardenone-page="firewall"] body,
+:root[data-wardenone-page="privacy-test"] body,
 :root[data-wardenone-page="logger"] body {
   min-height: 100vh;
   margin: 0;
