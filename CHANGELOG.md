@@ -17,6 +17,83 @@ as the work happened.
 
 ### Added
 
+- Search results you have not clicked yet are now marked when WardenOne already
+  knows something bad about where they lead. Every other defence here runs after
+  you have gone somewhere; this one runs before. Two things it will never do: call
+  a result safe, and hide one. There is no green tick, because "nothing known
+  against it" is not the same as "this is fine" and a tick would read as a promise
+  nobody can make. A result is marked only from lists already on your machine —
+  nothing about what you searched for, or what came back, is sent anywhere to
+  produce a badge. Off the local lists, off the network.
+- Click-tracking beacons are now removed from links. A link can carry a `ping`
+  attribute that quietly notifies a third party when you click it, separately from
+  where the link actually goes, and it works even when you open the link in a new
+  tab or copy it. WardenOne strips it from links already on the page and from any
+  added afterwards, and it is removed on the way through a click as well, so a
+  beacon written in at the last moment does not get its request either. This sits
+  in link cleanup with the redirect unwrapping rather than arriving as its own
+  switch, because it is the same job.
+- Tracking parameters that an app adds without loading a page are now cleaned too.
+  A single-page app can change what is in your address bar with no navigation at
+  all, which is how a campaign tag ends up in a URL you then copy and send to
+  someone. Only parameters WardenOne can positively identify as tracking are
+  removed. Anything it does not recognise is left exactly as it is: app state,
+  search filters and sign-in flows all live in the address bar too, and guessing
+  at an unfamiliar parameter breaks pages for no gain.
+- The leftovers a redirect tracker writes are now cleared. When site A sends you
+  to a tracker on the way to site B, that tracker gets a moment as a first party
+  and can write storage that follows you afterwards. WardenOne now clears what it
+  left, but only where all of the conditions for a bounce hold — this deliberately
+  does not fire for every intermediary in every redirect, because sign-in, payment
+  and single-sign-on flows pass through the middle of a redirect too, and clearing
+  storage under one of those breaks it.
+- Headsets, NFC and game controllers now count as device access. A page reaching
+  for a VR or AR session, a contactless tag, or the controllers you have plugged
+  in is asking about hardware the same way it does with USB, serial, HID and
+  Bluetooth, and it now appears alongside them instead of passing unrecorded.
+  Nothing new was added to the settings list for this — it belongs to the hardware
+  access you already control. Controller makes and models are never written down;
+  the interesting fact is that a page asked, not which pad you own.
+- Codec capability probes are now flattened, and never faked. Asking whether a
+  video format plays smoothly and efficiently on your machine is a precise
+  description of your hardware, and sites ask about many formats in a row to build
+  one. Under the fingerprinting shield the smooth and power-efficient answers stop
+  varying — but whether a format is supported at all is passed through exactly as
+  your browser answered, always. That is the one field a lie would break rather
+  than protect: tell a page a codec works when it does not and the video simply
+  fails to play.
+- Keyboard shortcuts for the things you do repeatedly. These add no protection —
+  every one is a faster route to something already there. They run through Chrome's
+  own shortcut system rather than a key listener injected into every page, so pages
+  cannot see them, cannot intercept them, and cannot tell the extension is present
+  by watching for them. Chrome allows four defaults, so four are set and the rest
+  ship unassigned for you to bind. The popup lists each one with whatever key
+  Chrome currently reports, rather than a table written into the page that would
+  be wrong the moment you rebind anything.
+- A privacy test that measures rather than asserts. Reading your own settings back
+  to you proves nothing; a switch can be on while the protection is not reaching
+  the page. So each probe runs twice on the same page — once where the shields have
+  patched things, once in a clean view of the same page — and the answer is the
+  difference between them. It measures the page in your other tab, not the test
+  page. Results come in five levels rather than pass and fail, because "failed" is
+  the wrong word for most of what a browser exposes normally. Where it cannot
+  measure something honestly it says so instead of grading it. Nothing leaves your
+  device, and the page is put back as it was found.
+- A command palette on Alt+Shift+W. Past a certain number of tools, finding one
+  becomes the problem rather than lacking one. Type a few letters, press Enter.
+  The overlay is display only: it draws a list and reports what you picked, and
+  every action behind it is checked by the extension itself — because "pause
+  WardenOne on this site" is exactly what a hostile page would reach for if the
+  overlay could ask for things on its own. It is injected when you press the key
+  and never before; a palette has no reason to sit inside every page you visit for
+  the whole of its life.
+- The network logger can now name the rule and the list in a packaged build, not
+  only an unpacked one. Chrome reports matched rules to a store build through a
+  different route than the one used before, so this no longer has to say "not
+  reported". That route tells you which rules fired in which tab rather than which
+  rule stopped a particular request, so a rule is written against a request only
+  where exactly one candidate fits; everything else is counted separately, and a
+  rule matched this way says so plainly rather than posing as an exact answer.
 - Added a browser-level clean-copy route for the current page address. Chrome
   does not expose ordinary Ctrl+C from its top address bar to extensions, so
   WardenOne now provides Alt+Shift+C and a popup button that copy the active
@@ -342,6 +419,13 @@ as the work happened.
 
 ### Fixed
 
+- Fixed the two filter-list builders refusing to run at all. Both carried a `#!`
+  line under their licence header, and that only works as the very first thing in
+  a file, so `node tools/build-adshield-dnr.js` stopped on a syntax error before
+  it did anything. This affected rebuilding the ad and tracker lists from source;
+  the shipped lists were never wrong. The repository gate only ever parsed the
+  test scripts, which is why it never noticed — it now parses every script in
+  that folder, so the next one cannot hide either.
 - Fixed Spotify's volume slider feeling choppy and continuing to catch up after
   the pointer stopped. Its hidden native range control reaches into the same
   bottom-right area as the Guard Active chip, while every drag update also used
