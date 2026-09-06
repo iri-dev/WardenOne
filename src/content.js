@@ -20750,7 +20750,7 @@
         if(!root)return;
         clearNode(root);
         const style=document.createElement("style");
-        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b{position:fixed;bottom:16px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s,box-shadow .2s,background .3s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:52px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
+        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b.inert{pointer-events:none}.b.away{display:none}.b{position:fixed;bottom:16px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:52px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
         const badge=document.createElement("div"),
         dot=document.createElement("span"),
         label=document.createElement("span"),
@@ -20807,6 +20807,155 @@
           badgeScrollbarWidth=0
         }
         return badgeScrollbarWidth
+      },
+      /* The badge transitions ONLY opacity and transform. Both are composited on the
+      GPU; box-shadow and background are not, so transitioning those repaints the badge
+      and everything under it for the whole duration. The corner the badge lives in is
+      the corner a player's volume slider lives in, so moving the pointer quickly across
+      it re-triggered overlapping 0.2s and 0.3s repaint-driving transitions, in exactly
+      the place something else was already repainting. Slow movement crosses it once and
+      is fine; fast movement is not. The hover still changes shadow and background --
+      instantly rather than eased, which at this size is not a difference anyone sees.
+
+      The badge is fixed to the bottom-right corner at the maximum z-index, which
+      is exactly where video players put their controls. In fullscreen it was
+      swallowing the hover and the click that reveal and press YouTube's exit button,
+      so getting back out of fullscreen became a fight with the extension.
+
+      An ambient status chip must never be the thing standing between someone and a
+      control they are trying to press. So when a real page control is underneath it,
+      the badge stops taking input entirely and the click lands where it was aimed.
+      It stays visible -- going invisible on every scroll past a button would flicker,
+      and the reader still wants to see that the guard is running.
+
+      Player shells count as controls, not just buttons: a player's seek bar, its
+      settings menu and its exit-fullscreen affordance are frequently divs with
+      listeners rather than anything a button selector would match. */
+      badgeYieldState={at:0,sig:""},
+      /* How long a hover-driven answer stays good while the viewport is unchanged. */
+      BADGE_YIELD_CACHE_MS=4000,
+      badgeCoversPageControl=()=>{
+        try{
+          if(!badgeButton||!badgeHost||!document.elementsFromPoint)return"";
+          const r=badgeButton.getBoundingClientRect();
+          if(!r||r.width<=0||r.height<=0)return"";
+          const controls='button,a[href],input,select,textarea,summary,[role="button"],[role="link"],[role="slider"],[role="menuitem"],[onclick],[tabindex]:not([tabindex="-1"])',
+          probes=[[r.left+r.width/2,
+          r.top+r.height/2],
+          [r.left+1,
+          r.top+1],
+          [r.right-1,
+          r.bottom-1]];
+          let found="";
+          for(let i=0;i<probes.length;i++){
+            const stack=document.elementsFromPoint(probes[i][0],
+            probes[i][1])||[];
+            for(let k=0;k<stack.length;k++){
+              const el=stack[k];
+              /* Shadow content retargets to the host, so identity covers the badge's
+              own internals as well as the host element itself. */
+              if(!el||el===badgeHost||badgeHost.contains&&badgeHost.contains(el))continue;
+              if(el===document.documentElement||el===document.body)break;
+              if(el.closest){
+                /* A player outranks a plain control and ends the search: it is the
+                case that has to hide rather than merely stop taking input. */
+                if(el.closest(PLAYER_SHELL_SELECTOR))return"player";
+                if(el.closest(controls))found="control"
+              }
+              break
+            }
+          }
+          return found
+        }
+        catch(_){
+          return""
+        }
+
+      },
+      /* Sitting NEXT TO a player control is as bad as sitting on one. The badge lives
+      in the bottom-right corner, which is where music players put the volume slider --
+      on Spotify the player bar spans the badge's whole band. Nothing is underneath the
+      badge there, so the hit test above stays quiet while the reader reaches past a
+      chip that lights up on hover and keeps stealing the pointer on the way to the
+      slider. Reported exactly that way: "it thinks i want to press it".
+      A margin rather than an overlap, because the problem is the approach, not the
+      collision. Only run from the same discrete events as everything else here. */
+      badgeNearMediaControl=()=>{
+        try{
+          if(!badgeButton)return!1;
+          const r=badgeButton.getBoundingClientRect();
+          if(!r||r.width<=0||r.height<=0)return!1;
+          /* Asymmetric on purpose. Horizontally the badge only has to clear the control
+          it sits beside; vertically it has to clear a whole player bar, which is 60-100px
+          tall and pins its controls anywhere inside that band. A 32px vertical reach found
+          Spotify's slider on one window size and missed it on another -- the badge stayed
+          sitting on the volume control. The scale of the thing being avoided is what sets
+          the margin, not a single number that looked fine once. */
+          padX=32,
+          padY=72,
+          top=r.top-padY,
+          bottom=r.bottom+padY,
+          left=r.left-padX,
+          right=r.right+padX,
+          nodes=document.querySelectorAll('input[type="range"],[role="slider"],'+PLAYER_SHELL_SELECTOR);
+          for(let i=0;i<nodes.length&&i<40;i++){
+            const b=nodes[i].getBoundingClientRect();
+            if(!b||b.width<=0||b.height<=0)continue;
+            if(b.left<right&&b.right>left&&b.top<bottom&&b.bottom>top)return!0
+          }
+          return!1
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      badgeInFullscreen=()=>{
+        try{
+          return!!(document.fullscreenElement||document.webkitFullscreenElement)
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      /* Throttled, because the hit test below is a real layout read. Callers are
+      events that can actually change the answer -- entering fullscreen, resizing,
+      or the pointer arriving in the badge's own corner -- never a timer. */
+      updateBadgeYield=force=>{
+        try{
+          if(!badgeButton)return;
+          const now=Date.now();
+          /* The answer depends only on layout, so asking it again while the layout is
+          unchanged pays for an answer already known. Each check costs three
+          elementsFromPoint plus up to forty getBoundingClientRect calls -- roughly
+          forty-odd forced layout reads -- and crossing the badge five times in a couple
+          of seconds asked five times. That accumulation is what turned repeated
+          crossings into a stall: smooth at first, worse the more it was triggered.
+          Keyed on viewport size, and every FORCED caller (resize, fullscreenchange, a
+          player starting, the load-time one-shots) recomputes regardless, so a player
+          bar that mounts late is still noticed. Only the hover path is cached. */
+          const sig=(window.innerWidth||0)+"x"+(window.innerHeight||0);
+          if(!force&&sig===badgeYieldState.sig&&now-badgeYieldState.at<BADGE_YIELD_CACHE_MS)return;
+          badgeYieldState.at=now,
+          badgeYieldState.sig=sig;
+          const fs=badgeInFullscreen(),
+          kind=badgeCoversPageControl(),
+          near=badgeNearMediaControl();
+          /* Over a player the badge is HIDDEN, not merely inert. It sits on the volume
+          slider and the seek bar, and letting the click through is no comfort when you
+          cannot see the thing you are dragging. Over an ordinary button it stays
+          visible and just stops taking input, because vanishing on every page with
+          something in that corner would be worse than the problem. */
+          badgeButton.classList.toggle("away",
+          fs||"player"===kind||near),
+          badgeButton.classList.toggle("inert",
+          fs||!!kind||near)
+        }
+        catch(_){
+
+        }
+
       },
       alignBadge=()=>{
         try{
@@ -20955,6 +21104,54 @@
               woOn(window,
               "resize",
               alignBadge);
+              woOn(window,
+              "resize",
+              ()=>updateBadgeYield(!0)),
+              woOn(document,
+              "fullscreenchange",
+              ()=>updateBadgeYield(!0)),
+              woOn(document,
+              "webkitfullscreenchange",
+              ()=>updateBadgeYield(!0)),
+              /* Deliberately NOT on pointermove. Watching the pointer meant running a
+              hit test while someone was dragging Spotify's volume slider, and
+              elementsFromPoint forces a synchronous layout -- so the check made the
+              very control it was trying to protect feel laggy, and reacted to the
+              pointer merely passing through the corner. What is underneath the badge
+              only changes when the page does, so this listens for that instead.
+              A player appearing is the case that matters and it is announced. */
+              woOn(document,
+              "play",
+              ()=>updateBadgeYield(!0),
+              {
+                capture:!0,
+                passive:!0
+              }),
+              /* The moment the pointer actually arrives at the badge, decide again.
+              This is pointerenter on the BADGE ITSELF -- one listener on one small
+              element, dispatched only when the pointer crosses into it, not a
+              per-move handler on the document. It costs nothing while the pointer is
+              anywhere else, and it is the exact instant the answer starts mattering.
+              Reported as "it's smooth up until it goes past that badge": a player bar
+              that mounts after the checks below had already run left the badge sitting
+              on the volume control with nothing scheduled to notice. */
+              badgeButton&&woOn(badgeButton,
+              "pointerenter",
+              ()=>updateBadgeYield(),
+              {
+                passive:!0
+              }),
+              /* Single-page apps mount their player after first paint, and Spotify
+              re-renders its player bar on navigation, so one late look is not enough.
+              Three cheap one-shots cover a bar that arrives seconds in without polling
+              for it. */
+              setTimeout(()=>updateBadgeYield(!0),
+              1500),
+              setTimeout(()=>updateBadgeYield(!0),
+              4000),
+              setTimeout(()=>updateBadgeYield(!0),
+              9000),
+              updateBadgeYield(!0);
               const NO_BADGE_TYPES=new Set(["blocked_tracker_request",
               "detected_thirdparty_tracker",
               "blocked_thirdparty_cookie",
