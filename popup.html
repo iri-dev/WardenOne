@@ -1048,6 +1048,10 @@
       <label class="tg"><input type="checkbox" data-key="removeConsentWalls"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name">Stop email tracking pixels</div><div class="desc">In Gmail, Outlook, Proton, Yahoo, Fastmail and Zoho. A marketing email hides a 1&times;1 image with your address in its URL; loading it tells the sender you opened it, when, and roughly from where. WardenOne swaps those for a blank pixel of the same size, so nothing looks broken. A pixel the client had not loaded yet is stopped before any request is made; one already loading is cancelled mid-flight, and either way the part that identifies you never goes. Gmail proxies remote images, but keeps the original address in the link, so the real tracker can still be recognised. Where a provider leaves no trace of the source, only the shape of the image is left to go on &mdash; and whether the provider fetched it on its own servers is outside what any extension can see. On by default.</div></div>
+      <label class="tg"><input type="checkbox" data-key="mailTrackingShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
       <div><div class="name">Clear a site's cookies after accepting</div><div class="desc">When you accept one yourself. The site's consent and tracking cookies, and the IDs it stored, are cleared once you leave. Sign-ins are left alone. Off by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="clearCookiesOnLeave"><span class="track"></span><span class="knob"></span></label>
     </div>

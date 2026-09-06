@@ -1647,6 +1647,11 @@ const DEFAULT_CONFIG = {
   trackerCacheProtection: false,
   autoRejectConsent: true,
   removeConsentWalls: false,
+  /* Webmail tracking pixels. On by default: the substitution is a transparent
+     image of the same declared size, so a wrong guess is invisible rather than
+     destructive, and an unread pixel is the difference between a sender knowing
+     you opened their mail and not. */
+  mailTrackingShield: true,
   trackerLearner: true,
   unshimLinks: true,
   socialWidgetGuard: true,
@@ -8532,6 +8537,7 @@ function refreshExtensionState() {
       run(reconcileEyeShieldInjection(cfg));
       run(reconcileConsentRejectInjection(cfg));
       run(reconcileConsentWallInjection(cfg));
+      run(reconcileMailShieldInjection(cfg));
       run(reconcileMinerDetectInjection(cfg));
       run(reconcileSearchJunkInjection(cfg));
       run(reconcileGoogleCleanupCssInjection(cfg));
@@ -8558,6 +8564,8 @@ function refreshExtensionState() {
       reconcileEyeShieldInjection();
       reconcileConsentRejectInjection();
       reconcileConsentWallInjection();
+    reconcileMailShieldInjection();
+      reconcileMailShieldInjection();
       reconcileMinerDetectInjection();
       reconcileSearchJunkInjection();
       reconcileGoogleCleanupCssInjection({ enabled: false });
@@ -8955,6 +8963,94 @@ async function reconcileConsentRejectInjection(cfgArg) {
 // page. It is off by default, so unlike consent-reject the usual state is unregistered and
 // the file is never parsed. It runs top-frame only: the sheet is always an element of the
 // top document, even when the sheet itself is an iframe.
+/* mail-shield.js neutralises email tracking pixels inside webmail. Unlike the
+   consent scripts it is NOT <all_urls>: it only has business in a mail client,
+   and a script that reads every <img> on the web to find the handful that are in
+   an inbox would be a cost paid on every page for nothing. */
+const MAIL_SHIELD_SCRIPT_ID = 'wo-mail-shield-dynamic';
+const MAIL_SHIELD_MATCHES = [
+  '*://mail.google.com/*',
+  '*://inbox.google.com/*',
+  '*://outlook.live.com/*',
+  '*://outlook.office.com/*',
+  '*://outlook.office365.com/*',
+  '*://mail.yahoo.com/*',
+  '*://mail.proton.me/*',
+  '*://mail.protonmail.com/*',
+  '*://app.fastmail.com/*',
+  '*://mail.zoho.com/*',
+  '*://mail.aol.com/*',
+  '*://webmail.gandi.net/*',
+  '*://*.roundcube.net/*',
+];
+function mailShieldActive(cfg) {
+  cfg = cfg || {};
+  return cfg.enabled !== false && cfg.mailTrackingShield !== false;
+}
+function injectMailShieldIntoOpenTabs() {
+  try {
+    chrome.tabs.query({}, (tabs) => {
+      for (const t of (tabs || [])) {
+        if (!t || t.id == null || !/^https?:/i.test(t.url || '')) continue;
+        if (!MAIL_SHIELD_MATCHES.some((m) => matchesPatternHost(m, t.url))) continue;
+        try {
+          chrome.scripting.executeScript(
+            { target: { tabId: t.id, allFrames: true }, world: 'ISOLATED', files: ['mail-shield.js'] },
+            () => { void chrome.runtime.lastError; },
+          );
+        } catch (_) {}
+      }
+    });
+  } catch (_) {}
+}
+/* A tiny host test for the injection path only; registerContentScripts does the
+   real matching for every later navigation. */
+function matchesPatternHost(pattern, url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    const want = pattern.slice(pattern.indexOf('//') + 2).replace('/*', '').toLowerCase();
+    if (want.startsWith('*.')) return host === want.slice(2) || host.endsWith('.' + want.slice(2));
+    return host === want;
+  } catch (_) { return false; }
+}
+async function reconcileMailShieldInjection(cfgArg) {
+  if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
+  let cfg = cfgArg;
+  if (!cfg) {
+    try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
+  }
+  const want = mailShieldActive(cfg);
+  let have = false;
+  try {
+    const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [MAIL_SHIELD_SCRIPT_ID] });
+    have = Array.isArray(reg) && reg.length > 0;
+  } catch (_) { have = false; }
+  const scriptDef = {
+    id: MAIL_SHIELD_SCRIPT_ID,
+    matches: MAIL_SHIELD_MATCHES,
+    js: ['mail-shield.js'],
+    runAt: 'document_start',
+    /* The reading pane is an iframe in several clients, so the message body is
+       not in the top frame. */
+    allFrames: true,
+    persistAcrossSessions: true,
+  };
+  try {
+    if (want && have && chrome.scripting.updateContentScripts) {
+      try { await chrome.scripting.updateContentScripts([scriptDef]); }
+      catch (_) {
+        try { await chrome.scripting.unregisterContentScripts({ ids: [MAIL_SHIELD_SCRIPT_ID] }); } catch (_) {}
+        await chrome.scripting.registerContentScripts([scriptDef]);
+        injectMailShieldIntoOpenTabs();
+      }
+    } else if (want && !have) {
+      await chrome.scripting.registerContentScripts([scriptDef]);
+      injectMailShieldIntoOpenTabs();
+    } else if (!want && have) {
+      await chrome.scripting.unregisterContentScripts({ ids: [MAIL_SHIELD_SCRIPT_ID] });
+    }
+  } catch (_) {}
+}
 const CONSENT_WALL_SCRIPT_ID = 'wo-consent-wall-dynamic';
 function consentWallActive(cfg) {
   cfg = cfg || {};
@@ -11608,6 +11704,7 @@ const SERIALIZED_STATE_APPLIERS = [
   'reconcileEyeShieldInjection',
   'reconcileConsentRejectInjection',
   'reconcileConsentWallInjection',
+  'reconcileMailShieldInjection',
   'applyFirewallRules',
   'applyPrivacyHeaderRule',
   'applyHeaderShieldRules',
@@ -13576,7 +13673,7 @@ const HEALTH_SHIELD_KEYS = [
   'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers',
   'autoUpdateLists', 'trackerLearner', 'unshimLinks', 'cleanCopyLinks', 'socialWidgetGuard',
   'blockSupercookies', 'watchExtensionPermissions', 'startupCheck', 'blockPopupTricks', 'antiFingerprintNoise',
-  'autoRejectConsent', 'removeConsentWalls', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'blockAllCookies', 'deAmp',
+  'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'blockAllCookies', 'deAmp',
   'breachCheck', 'keystrokePressure', 'honeytokenMode', 'cryptominerCpuWatch', 'safeSearch',
   'backTrapGuard',
 ];
@@ -17851,7 +17948,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'yt-adblock.js', 'twitch-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
 
       // 1. core files present & non-empty
       for (const f of CORE_FILES) {

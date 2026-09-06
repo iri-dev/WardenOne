@@ -162,6 +162,7 @@ function checkContentBuild() {
   'twitch-vod-rewind.js',
   'cryptominer-detect.js',
   'search-junk.js',
+  'mail-shield.js',
   'firewall.js',
   'content.min.js',
   'src/content.js',
@@ -215,6 +216,7 @@ function checkContentBuild() {
   'tools/test-user-filters.js',
   'tools/test-network-logger.js',
   'tools/test-file-shield.js',
+  'tools/test-mail-shield.js',
   'tools/test-firewall.js',
   'tools/test-extension-check.js',
   'tools/test-copy-clean-link.js',
@@ -505,6 +507,7 @@ checkCommand('blocked site list tests', ['tools/test-blocked-site-list.js']);
 checkCommand('user filter rules and custom lists', ['tools/test-user-filters.js']);
 checkCommand('network logger', ['tools/test-network-logger.js']);
 checkCommand('file shield', ['tools/test-file-shield.js']);
+checkCommand('mail shield', ['tools/test-mail-shield.js']);
 checkCommand('site firewall', ['tools/test-firewall.js']);
 checkCommand('check an extension', ['tools/test-extension-check.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
