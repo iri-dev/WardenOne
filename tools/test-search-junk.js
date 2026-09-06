@@ -93,8 +93,15 @@ check('the results container itself can never be marked',
 check('an unknown search engine marks nothing', /if \(!engine\) return;/.test(SCRIPT));
 check('an allowlisted search engine is skipped entirely',
   /cfg\.allowlist/.test(SCRIPT) && /host === a \|\| host\.endsWith\('\.' \+ a\)/.test(SCRIPT));
-check('it does nothing while the toggle is off',
-  /cfg\.flagSearchJunk !== true/.test(SCRIPT));
+/* The script now carries a second, independently-toggled pass (search-result warnings),
+   so it is registered whenever EITHER toggle is on and each pass gates itself. What has
+   to hold is that the scraper pass still does nothing on its own toggle -- an early
+   return would now also switch off the warnings. */
+check('the scraper pass does nothing while its own toggle is off',
+  /doJunk = cfg\.flagSearchJunk === true/.test(SCRIPT)
+  && /if \(!doJunk \|\| marked >= MAX_MARKS\) continue;/.test(SCRIPT));
+check('and an empty scraper list disables that pass rather than the whole script',
+  /if \(!Object\.keys\(hosts\)\.length\) doJunk = false;/.test(SCRIPT));
 check('it runs in the top frame only', /window\.top !== window/.test(SCRIPT));
 
 /* ---- wiring ---- */
@@ -108,8 +115,8 @@ check('it is not a static content script (would defeat lazy loading)',
 
 const reconcile = BG.slice(BG.indexOf('async function reconcileSearchJunkInjection'));
 const reconcileBody = reconcile.slice(0, reconcile.indexOf('\n}\n'));
-check('registered only when the toggle is explicitly on',
-  /flagSearchJunk === true/.test(reconcileBody));
+check('registered only when a toggle asks for it',
+  /merged\.flagSearchJunk === true \|\| merged\.warnSearchResults !== false/.test(reconcileBody));
 check('unregistered when the toggle goes off', /unregisterContentScripts/.test(reconcileBody));
 check('scoped to search engines, never <all_urls>',
   /SEARCH_JUNK_MATCHES/.test(reconcileBody)

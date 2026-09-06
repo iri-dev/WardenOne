@@ -9,7 +9,7 @@ The all-in-one privacy, security &amp; anti-scam extension for Chromium browsers
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
 [![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip)
-![Protections](https://img.shields.io/badge/protections-105-8e44ad.svg)
+![Protections](https://img.shields.io/badge/protections-106-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
 
@@ -31,7 +31,7 @@ The all-in-one privacy, security &amp; anti-scam extension for Chromium browsers
   <img src="docs/onboarding.png" alt="Welcome to WardenOne" width="840">
 </p>
 
-> **One master switch. 105 protections. No account, no telemetry — everything runs on your device.**
+> **One master switch. 106 protections. No account, no telemetry — everything runs on your device.**
 
 WardenOne folds a whole stack of security tools into a single extension: ad and
 tracker blocking, anti-fingerprinting, phishing and scam defence, credential- and
@@ -163,6 +163,24 @@ But the information is not gone, it moved: Gmail keeps the original address in t
 - **Notification bait &amp; scam alerts** — the page talking you into clicking Allow, and the fake alerts those farmed permissions exist to deliver. The bait warning only fires while the answer is still open. Nothing is suppressed, and the wording is never stored — only which shape it matched. One honest limit: a notification raised from a service worker's push event is created outside the page, where a content script cannot reach it.
 - **XSS Behavior Guard** — watches values arriving from the URL, `window.name`, `postMessage` and the referrer for ones that end up somewhere code actually runs, and records what it saw with a confidence and a severity. Local, never stores the matched value, and it does not claim to block XSS: page-originated findings are warning-only and can never create a blocking rule.
 
+### Search-result warnings &mdash; before the click, not after
+Every other defence in WardenOne runs after you have already gone somewhere: you click a result, the page starts loading, and something steps in. This one moves the warning one step earlier, to the results page, where avoiding the site is still free.
+
+Results WardenOne already knows something bad about get a line above them:
+- ⛔ **On a malware and scam blocklist** &mdash; the malware feeds only, never the ad and tracker lists. Calling an analytics domain malicious would be a lie that discredits the true warnings.
+- ⛔ **A known IP-logger link** &mdash; the kind of link whose only job is to record who opened it.
+- ⚠ **Looks like &lt;brand&gt;, but is not &lt;brand&gt;** &mdash; brand names worn by domains that are not the brand's, digit substitutions, and names written in a script that can imitate another.
+- ⚠ **An IP address, not a site name**, and ⚠ **WardenOne blocked this before**, from its own record of the site's behaviour.
+- ⚠ **Recently registered**, but only where the age was already looked up and cached &mdash; see below.
+
+**It never marks anything safe.** There is no green tick and no "checked" badge, and there never will be: these lists cover a rounding error of the web, so a result with no warning is one that nothing is known about, which is not remotely the same as one that has been examined. A reassuring mark on an unchecked result spends trust that was not earned, and the first time it is wrong it is worse than having said nothing.
+
+**Nothing is hidden or reordered.** The line is added above the result; the result and its link are left exactly as the engine returned them. Hiding a result fails invisibly &mdash; you never learn what you did not see &mdash; and a warning you can read and overrule is the honest version of the same information.
+
+**No result is ever sent anywhere to paint a badge.** Every verdict is answered from lists already on your device. Checking ten results against a reputation API would mean ten queries per search, telling a third party what you searched for, which would be an absurd way to run a privacy extension. The deliberate cost is that a dangerous site nobody has listed yet gets no warning &mdash; and the domain-age warning only appears for a domain whose age happens to already be cached, because asking a registry about every result would be the same mistake in a different coat. When you want a real answer about one link, right-click it and choose **Check this link**: that one is allowed to use the network, because you asked it to.
+
+Works on the Google, Bing, DuckDuckGo, Brave Search and Yahoo results pages, and shares its engine handling with the answer-scraper marker above.
+
 ### Family &amp; content safety
 - **Adult-site guard** — an optional "18+ — are you sure?" screen on unwanted adult-site arrivals, so a mistyped address or a sneaky redirect never drops you (or a kid on the family computer) straight onto explicit content.
 - **Catches the unlisted ones** — a heuristic flags adult sites that aren't on any blocklist yet, not just the known names.
@@ -284,7 +302,7 @@ On first run, pick **Recommended** (the safe default) or **Maximum privacy** —
 also turns on the hardened set: active anti-fingerprinting, first-party tracker
 blocking, breach &amp; password checks, clipboard guard, and referrer / AMP trimming.
 Choose **Normal** notifications or **Silent mode**, where protection stays fully on
-but popups and badges stay hidden. **102 of the 105 protections have their own toggle**, and
+but popups and badges stay hidden. **103 of the 106 protections have their own toggle**, and
 any site can be allowlisted from the popup in one click. The other three have no toggle
 because they only ever observe and never block — those are the ones under **What WardenOne
 watches** above. The popup's own  panel counts the same 96, so the number here
