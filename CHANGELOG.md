@@ -342,6 +342,13 @@ as the work happened.
 
 ### Fixed
 
+- Fixed Spotify's volume slider feeling choppy and continuing to catch up after
+  the pointer stopped. Its hidden native range control reaches into the same
+  bottom-right area as the Guard Active chip, while every drag update also used
+  to wake the consent-banner scanner for a full-page layout pass. The badge now
+  gets completely out of the way of nearby player controls and never hit-tests
+  from pointer-move events; the consent observer no longer watches per-frame
+  inline-style feedback and moves its remaining scans out of active frames.
 - Fixed Element Zapper trapping clicks meant for its own Keep, Undo, Done and
   Cancel controls. Zap now saves one selection, pauses further picking, reports
   save failures honestly, and keeps its confirmation open until Done; oversized
