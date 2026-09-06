@@ -1610,6 +1610,22 @@ function wireMyFilters() {
     });
   }
 
+  const firewall = $('open-firewall');
+  if (firewall) {
+    firewall.addEventListener('click', () => {
+      /* The matrix is about one site, so it needs to know which tab it was opened
+         for -- once it is itself the active tab, that answer is gone. */
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = (tabs && tabs[0]) || null;
+        let host = '';
+        try { host = tab && tab.url ? new URL(tab.url).hostname : ''; } catch (_) { host = ''; }
+        const url = chrome.runtime.getURL('firewall.html')
+          + '?tab=' + encodeURIComponent(tab && tab.id != null ? tab.id : '')
+          + '&site=' + encodeURIComponent(host);
+        chrome.tabs.create({ url });
+      });
+    });
+  }
   const fileShield = $('open-file-shield');
   if (fileShield) {
     fileShield.addEventListener('click', () => {

@@ -1490,6 +1490,16 @@
         anything that looks like a secret. Open it when a site breaks and you need to know what stopped it.</div>
       <button class="btn" id="open-logger" type="button" style="width:100%;">Open network logger</button>
     </div>
+    <!-- Dynamic filtering. Deliberately the last thing in Advanced: it is the only
+         tool here that can stop a site working outright. -->
+    <div class="row" style="display:block;border-bottom:none;">
+      <div class="name" style="font-size:12px;">Site firewall</div>
+      <div class="desc" style="margin-bottom:7px;">A matrix for the site you are on: every domain it loads, and
+        whether you let each one run scripts, make requests, load frames or media &mdash; or carry cookies. Your
+        decisions beat every list WardenOne ships, on that site only. This one can break a site outright, so undo
+        is always one click, per site and everywhere.</div>
+      <button class="btn" id="open-firewall" type="button" style="width:100%;">Open site firewall</button>
+    </div>
     </div>
     </details>
 <h2 id="eyeshield-title">EyeShield</h2>
