@@ -38,7 +38,10 @@ assert(start >= 0, 'the badge yield block is present in src/content.js');
 assert(end > start, 'the badge yield block ends at alignBadge');
 /* The slice is a fragment of a comma-separated declarator list and ends on a
    comma, so it becomes a valid declaration by closing it with one more binding. */
-const block = 'const ' + source.slice(start, end) + '__end=0;';
+/* Match the shipped IIFE. Without strict mode this test allowed undeclared geometry
+   bindings that throw in content.min.js, so the real nearby-control check failed
+   closed while the copied fragment appeared to work. */
+const block = '"use strict"; const ' + source.slice(start, end) + '__end=0;';
 
 const BADGE_RECT = { left: 1200, top: 900, right: 1320, bottom: 940, width: 120, height: 40 };
 
@@ -61,10 +64,14 @@ function run(options) {
   const body = { tag: 'body', closest: () => null };
   const badgeHost = { contains: (el) => !!(el && el.insideHost) };
   const toggled = {};
+  let isAway = false;
+  const awayCollapsesLayout = /\.b\.away\{display:none\}/.test(source);
   const calls = { hit: 0, query: 0 };
   const badgeButton = {
-    getBoundingClientRect: () => (opts.rect === undefined ? BADGE_RECT : opts.rect),
-    classList: { toggle(name, on) { toggled[name] = !!on; } },
+    getBoundingClientRect: () => (isAway && awayCollapsesLayout
+      ? { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }
+      : (opts.rect === undefined ? BADGE_RECT : opts.rect)),
+    classList: { toggle(name, on) { toggled[name] = !!on; if (name === 'away') isAway = !!on; } },
   };
   const sandbox = {
     Date, Math, String, Object, Array, Number,
@@ -178,7 +185,10 @@ assert.strictEqual(collapsed.result.kind, '', 'a collapsed badge tests nothing')
 /* The CSS the classes rely on has to exist, or every assertion above is theatre. */
 assert(/\.b\.inert\{pointer-events:none\}/.test(source),
   'the inert class must actually remove pointer events');
-assert(/\.b\.away\{display:none\}/.test(source), 'the away class must actually hide the badge');
+assert(/\.b\.away\{visibility:hidden;opacity:0;pointer-events:none\}/.test(source),
+  'the away class must hide without collapsing the geometry needed by the next check');
+assert(/\.b\.away\+\.panel\{display:none\}/.test(source),
+  'an open badge panel must leave with the badge');
 /* Specificity, not order: .b sets pointer-events:auto and .b.inert must win. */
 assert(/\.b\{[^}]*pointer-events:auto/.test(source),
   'the base rule still takes input when nothing is underneath');
@@ -195,6 +205,13 @@ assert(/\.b\{[^}]*pointer-events:auto/.test(source),
   assert.strictEqual(beside.toggled.away, true,
     'a control beside the badge must move the badge out of the way');
   assert.strictEqual(beside.toggled.inert, true, 'and stop it taking the pointer');
+
+  /* A scheduled forced recheck runs after the badge has hidden. display:none makes
+     getBoundingClientRect() return zero, which used to make that second check falsely
+     conclude the slider had gone and bring the badge straight back. */
+  beside.vm.runInContext('updateBadgeYield(true);', beside.sandbox, { filename: 'forced-hidden-recheck' });
+  assert.strictEqual(beside.toggled.away, true,
+    'a hidden badge must retain its layout rectangle and stay hidden while the slider remains');
 }
 {
   /* Far away: the badge must not disappear on every page that has a slider somewhere. */
@@ -240,4 +257,4 @@ for (const forbidden of ['pointermove', 'mousemove', 'pointerover', 'scroll', 's
 assert(wiring.includes('fullscreenchange'), 'entering fullscreen must still re-check');
 assert(/"play"/.test(wiring), 'a player starting must still re-check');
 
-console.log('badge yield tests passed (36 assertions)');
+console.log('badge yield tests passed (39 assertions)');
