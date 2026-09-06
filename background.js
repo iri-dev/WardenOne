@@ -4283,6 +4283,170 @@ async function fetchWebStoreListing(id) {
   }
 }
 
+// ---- Per-site firewall ----------------------------------------------------
+// A decision matrix for one site: for each third-party domain the page loads,
+// what it is allowed to do there. This is dynamic filtering in the uBlock-advanced
+// sense rather than another blocklist -- the rules come from the reader, apply to
+// one site only, and override everything WardenOne would otherwise decide.
+//
+// It is deliberately reachable only from Advanced, because a matrix that can turn
+// off a site's own CDN is a matrix that can break that site completely. Two things
+// make that survivable rather than merely warned about:
+//
+//   1. EVERY DECISION IS REVERSIBLE IN ONE CLICK, per site and globally, and the
+//      page keeps those buttons in front of the reader rather than in a menu.
+//   2. "ALLOW ONCE" IS A SESSION RULE. It disappears when the browser closes, so
+//      an experiment cannot quietly become permanent configuration.
+//
+// The rule ids sit in their own range so a rebuild of this matrix can never touch
+// a rule any other part of WardenOne owns.
+const FIREWALL_RULE_BASE = 950000;
+/* A human sets these one cell at a time; 250 decisions is far past what anyone
+   will make, and the rule ceiling is shared with every protection in the
+   extension. */
+const FIREWALL_RULE_MAX = FIREWALL_RULES_BUDGET;
+const FIREWALL_SESSION_RULE_BASE = 960000;
+const FIREWALL_SESSION_RULE_MAX = FIREWALL_SESSION_RULES_BUDGET;
+const FIREWALL_KEY = 'wardenone_firewall';
+// Above every blocklist, so "always allow here" genuinely wins, and above the
+// compatibility allows too: if someone explicitly blocks a domain on a site, the
+// answer is to do it and make undoing it easy, not to silently ignore them.
+const FIREWALL_PRIORITY = 97000;
+
+// The columns of the matrix, and the request types each one covers. "all" is the
+// one people reach for, and it is the only one that also covers stylesheets,
+// objects, pings and everything else with no column of its own.
+const FIREWALL_COLUMNS = {
+  script: ['script'],
+  xhr: ['xmlhttprequest', 'websocket'],
+  frame: ['sub_frame'],
+  media: ['media', 'image', 'font'],
+  all: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object',
+    'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'other'],
+};
+
+function firewallNormalizeHost(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/^www\./, '');
+  if (!raw || raw.length > 253) return '';
+  if (!/^[a-z0-9.-]+$/.test(raw) || raw.startsWith('.') || raw.endsWith('.')) return '';
+  if (!raw.includes('.')) return '';
+  return raw;
+}
+
+async function readFirewall() {
+  try {
+    const store = await localGet(FIREWALL_KEY);
+    const data = store && store[FIREWALL_KEY];
+    return (data && typeof data === 'object') ? data : {};
+  } catch (_) { return {}; }
+}
+
+// Rules are rebuilt wholesale from the stored matrix rather than patched, so the
+// live rule set can never drift from what the page shows.
+function firewallRulesFrom(matrix) {
+  const rules = [];
+  let id = FIREWALL_RULE_BASE;
+  for (const site of Object.keys(matrix || {})) {
+    const host = firewallNormalizeHost(site);
+    if (!host) continue;
+    const domains = matrix[site] || {};
+    for (const domain of Object.keys(domains)) {
+      const target = firewallNormalizeHost(domain);
+      if (!target) continue;
+      const decisions = domains[domain] || {};
+      for (const column of Object.keys(decisions)) {
+        if (id >= FIREWALL_RULE_BASE + FIREWALL_RULE_MAX) return rules;
+        const verdict = decisions[column];
+        if (column === 'cookie') {
+          // Not a block: the request still happens, it just stops carrying who
+          // you are. That is the useful middle setting for a domain a site
+          // genuinely needs but that does not need to recognise you.
+          if (verdict !== 'strip') continue;
+          rules.push({
+            id: id++,
+            priority: FIREWALL_PRIORITY,
+            action: {
+              type: 'modifyHeaders',
+              requestHeaders: [{ header: 'cookie', operation: 'remove' }],
+            },
+            condition: {
+              initiatorDomains: [host],
+              requestDomains: [target],
+              resourceTypes: FIREWALL_COLUMNS.all,
+            },
+          });
+          continue;
+        }
+        const types = FIREWALL_COLUMNS[column];
+        if (!types || (verdict !== 'block' && verdict !== 'allow')) continue;
+        rules.push({
+          id: id++,
+          priority: FIREWALL_PRIORITY,
+          action: { type: verdict === 'block' ? 'block' : 'allow' },
+          condition: {
+            initiatorDomains: [host],
+            requestDomains: [target],
+            resourceTypes: types,
+          },
+        });
+      }
+    }
+  }
+  return rules;
+}
+
+async function applyFirewallRules() {
+  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateDynamicRules) return 0;
+  const matrix = await readFirewall();
+  const rules = firewallRulesFrom(matrix);
+  try {
+    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const mine = (existing || [])
+      .filter((r) => r.id >= FIREWALL_RULE_BASE && r.id < FIREWALL_RULE_BASE + FIREWALL_RULE_MAX)
+      .map((r) => r.id);
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine, addRules: rules });
+  } catch (_) { return 0; }
+  return rules.length;
+}
+
+// "Allow once" lives in session rules so it dies with the browser. An experiment
+// that outlives the session is how a matrix quietly becomes a configuration
+// nobody remembers making.
+async function firewallAllowOnce(site, domain, column) {
+  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) return false;
+  const host = firewallNormalizeHost(site);
+  const target = firewallNormalizeHost(domain);
+  const types = FIREWALL_COLUMNS[column] || FIREWALL_COLUMNS.all;
+  if (!host || !target) return false;
+  try {
+    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const mine = (existing || [])
+      .filter((r) => r.id >= FIREWALL_SESSION_RULE_BASE && r.id < FIREWALL_SESSION_RULE_BASE + FIREWALL_SESSION_RULE_MAX);
+    const next = FIREWALL_SESSION_RULE_BASE + (mine.length % FIREWALL_SESSION_RULE_MAX);
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [next],
+      addRules: [{
+        id: next,
+        priority: FIREWALL_PRIORITY,
+        action: { type: 'allow' },
+        condition: { initiatorDomains: [host], requestDomains: [target], resourceTypes: types },
+      }],
+    });
+    return true;
+  } catch (_) { return false; }
+}
+
+async function firewallClearSession() {
+  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) return;
+  try {
+    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const mine = (existing || [])
+      .filter((r) => r.id >= FIREWALL_SESSION_RULE_BASE && r.id < FIREWALL_SESSION_RULE_BASE + FIREWALL_RULE_MAX)
+      .map((r) => r.id);
+    if (mine.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: mine, addRules: [] });
+  } catch (_) {}
+}
+
 // ---- Cryptojacking guard (toggle: blockCryptominers) ----
 // Drive-by mining is a network problem before it is a CPU problem: the miner has to
 // fetch its payload and then reach a pool, and both hops are blockable. Two buckets,
@@ -11444,6 +11608,7 @@ const SERIALIZED_STATE_APPLIERS = [
   'reconcileEyeShieldInjection',
   'reconcileConsentRejectInjection',
   'reconcileConsentWallInjection',
+  'applyFirewallRules',
   'applyPrivacyHeaderRule',
   'applyHeaderShieldRules',
   'applyLocationPrivacyHeaderRule',
@@ -17023,6 +17188,79 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          catalogue can corroborate, which a bare id can never do. */
       const described = await describeExtensionById(parsed.id, parsed.slugName, listing.name);
       sendResponse(Object.assign({}, described, { listing }));
+    })();
+    return true;
+  }
+
+  // ---- Per-site firewall ----
+  /* All privileged. A page able to reach these could quietly allow a tracker it
+     controls on every site the reader visits, which is the exact opposite of
+     what the matrix is for. None of them appear in TAB_CONTEXT_ALLOWED_MESSAGES. */
+  if (msg && msg.kind === 'firewall-get') {
+    (async () => {
+      const matrix = await readFirewall();
+      const site = firewallNormalizeHost(msg.site);
+      sendResponse({
+        ok: true,
+        site,
+        rules: site ? (matrix[site] || {}) : {},
+        sites: Object.keys(matrix).length,
+        columns: Object.keys(FIREWALL_COLUMNS),
+      });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'firewall-set') {
+    (async () => {
+      const site = firewallNormalizeHost(msg.site);
+      const domain = firewallNormalizeHost(msg.domain);
+      const column = String(msg.column || '');
+      const verdict = String(msg.verdict || '');
+      if (!site || !domain) { sendResponse({ ok: false, error: 'That is not a site and domain WardenOne can write a rule for.' }); return; }
+      if (column !== 'cookie' && !Object.prototype.hasOwnProperty.call(FIREWALL_COLUMNS, column)) {
+        sendResponse({ ok: false, error: 'Unknown column.' }); return;
+      }
+      if (!['allow', 'block', 'strip', 'default'].includes(verdict)) {
+        sendResponse({ ok: false, error: 'Unknown decision.' }); return;
+      }
+      const matrix = await readFirewall();
+      const forSite = matrix[site] || (matrix[site] = {});
+      const forDomain = forSite[domain] || (forSite[domain] = {});
+      if (verdict === 'default') delete forDomain[column];
+      else forDomain[column] = verdict;
+      /* Do not keep empty shells around: they would count towards the rule
+         budget in the UI and read as decisions nobody made. */
+      if (!Object.keys(forDomain).length) delete forSite[domain];
+      if (!Object.keys(forSite).length) delete matrix[site];
+      await localSet({ [FIREWALL_KEY]: matrix });
+      const applied = await applyFirewallRules();
+      sendResponse({ ok: true, rules: matrix[site] || {}, applied });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'firewall-allow-once') {
+    (async () => {
+      const ok = await firewallAllowOnce(msg.site, msg.domain, String(msg.column || 'all'));
+      sendResponse({ ok, session: true });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'firewall-reset') {
+    (async () => {
+      const site = firewallNormalizeHost(msg.site);
+      const matrix = await readFirewall();
+      if (msg.all === true) {
+        await localSet({ [FIREWALL_KEY]: {} });
+      } else if (site) {
+        delete matrix[site];
+        await localSet({ [FIREWALL_KEY]: matrix });
+      } else {
+        sendResponse({ ok: false, error: 'Nothing to reset.' });
+        return;
+      }
+      await firewallClearSession();
+      const applied = await applyFirewallRules();
+      sendResponse({ ok: true, applied });
     })();
     return true;
   }

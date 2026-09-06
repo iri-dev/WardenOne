@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-wardenone-page="firewall">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WardenOne - Site firewall</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="guide-shell.css">
+<script src="theme.js"></script>
+<style>
+  /* --guide-* only. An undefined custom property invalidates the whole
+     declaration, so a wrong name deletes the border rather than erroring. */
+  .fw-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; }
+  .fw-add { flex:1; min-width:220px; max-width:420px; border:1px solid var(--guide-line);
+    border-radius:9px; background:var(--guide-paper); color:var(--guide-ink); padding:7px 11px;
+    font:inherit; font-size:12.5px; }
+  .fw-add:focus-visible { outline:2px solid var(--guide-violet); outline-offset:1px; }
+  .fw-count { font-size:12.5px; color:var(--guide-faint); font-variant-numeric:tabular-nums; }
+  .fw-status { font-size:12.5px; color:var(--guide-soft); min-height:18px; margin:0 0 12px; }
+
+  .fw-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .fw-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--guide-faint); font-weight:700; padding:8px; background:var(--guide-paper);
+    border-bottom:1px solid var(--guide-line-strong); position:sticky; top:0; z-index:1; }
+  .fw-table th.fw-col { text-align:center; width:82px; }
+  .fw-table td { padding:6px 8px; border-bottom:1px solid var(--guide-line); vertical-align:middle; }
+  .fw-table tr.is-first-party td { background:var(--guide-mist); }
+  .fw-domain { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; word-break:break-all; }
+  .fw-note-sm { margin-top:2px; font-size:10.5px; color:var(--guide-faint); font-family:var(--body); }
+  .fw-cell { text-align:center; }
+  .fw-btn { width:72px; border:1px solid var(--guide-line); border-radius:8px; padding:5px 0;
+    background:var(--guide-paper); color:var(--guide-faint); font:700 11px var(--body); cursor:pointer; }
+  .fw-btn:hover { border-color:var(--guide-violet); }
+  .fw-btn:focus-visible { outline:2px solid var(--guide-violet); outline-offset:1px; }
+  .fw-btn.is-allow { background:var(--wo-success-bg,#dcefe4); color:var(--guide-success); border-color:var(--guide-success); }
+  .fw-btn.is-block { background:var(--wo-danger-bg,#f3dbe5); color:var(--guide-danger); border-color:var(--guide-danger); }
+  .fw-btn.is-strip { background:var(--wo-warning-bg,#f4e4ce); color:var(--guide-warning); border-color:var(--guide-warning); }
+  .fw-scroll { max-height:58vh; overflow:auto; border:1px solid var(--guide-line); border-radius:12px;
+    background:var(--guide-paper); }
+  .fw-empty { padding:26px 8px; text-align:center; color:var(--guide-faint); font-size:13px; }
+  .fw-note { font-size:12.5px; line-height:1.6; color:var(--guide-soft); }
+  .fw-danger { border:1px solid var(--guide-danger); border-radius:12px; padding:14px 16px; margin-top:20px;
+    background:var(--wo-danger-bg,#f3dbe5); }
+  .fw-danger h3 { margin:0 0 6px; font:800 13px var(--body); color:var(--guide-danger); }
+</style>
+</head>
+<body>
+<header class="guide-topbar">
+  <div class="guide-wrap guide-topbar-inner">
+    <a class="guide-brand" href="popup.html" aria-label="Back to WardenOne popup">
+      <span class="guide-brand-mark" aria-hidden="true"><img src="icons/icon128.png" alt=""></span>
+      <span><span class="guide-brand-name">WardenOne</span><span class="guide-brand-sub">Site firewall</span></span>
+    </a>
+    <div class="guide-toplinks">
+      <nav class="guide-nav" aria-label="Sections">
+        <a href="logger.html">Network logger</a>
+        <a href="history.html">Activity</a>
+      </nav>
+      <div class="guide-credit">Developer <strong>iri.dev</strong></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="guide-hero">
+    <div class="guide-wrap guide-hero-inner">
+      <div>
+        <div class="guide-eyebrow">Advanced tool</div>
+        <h1>Decide what each domain may do here.</h1>
+        <p class="guide-lead"><strong>Every domain this site loads, and what you allow it to do &mdash; on this site
+          only.</strong> Your decisions beat every list WardenOne ships. This is the tool that can break a site
+          completely, so undoing it is always one click away.</p>
+        <div class="guide-hero-actions">
+          <a class="guide-btn primary" href="#matrix">See the domains</a>
+          <a class="guide-btn" href="logger.html">Network logger</a>
+        </div>
+        <div class="guide-pills" aria-label="How the firewall behaves">
+          <span>This site only</span>
+          <span>Beats every list</span>
+          <span>One-click undo</span>
+        </div>
+      </div>
+      <aside class="guide-summary" aria-label="Firewall summary">
+        <div class="summary-label">Site</div>
+        <div class="metric-grid">
+          <div class="metric"><div class="n" id="site-name" style="font-size:15px;word-break:break-all;">&mdash;</div><div class="l">Current</div></div>
+        </div>
+        <p class="summary-copy" id="capture-state">Connecting&hellip;</p>
+        <p class="summary-copy" id="all-sites"></p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="guide-section" id="matrix">
+    <div class="guide-wrap">
+      <div class="guide-section-head">
+        <div><div class="guide-kicker">Dynamic filtering</div><h2>The domains this page loads.</h2></div>
+        <p>A row exists because a request actually happened. Click a cell to cycle it:
+          <strong>&mdash;</strong> leaves it to WardenOne, <strong>allow</strong> forces it through every
+          blocklist, <strong>block</strong> stops it here. <strong>Cookie</strong> is different: it lets the
+          request happen but strips the cookie, so the domain still works and still cannot recognise you.</p>
+      </div>
+
+      <div class="fw-bar">
+        <button class="btn" id="reload" type="button">Reload the site and watch</button>
+        <!-- The matrix only knows what it saw. A domain you already know you want
+             to rule on -- one that loads later, or only on another page of the
+             site -- needs a way in that does not depend on catching it. -->
+        <input class="fw-add" id="add-domain" type="text" spellcheck="false"
+          placeholder="Add a domain yourself, e.g. tracker.example.com"
+          aria-label="Add a domain to the matrix">
+        <button class="btn" id="add" type="button">Add</button>
+        <span class="fw-count" id="count"></span>
+        <span style="flex:1;"></span>
+        <button class="btn" id="reset-site" type="button">Undo my rules here</button>
+      </div>
+      <p class="fw-status" id="status"></p>
+
+      <div class="fw-scroll">
+        <table class="fw-table">
+          <thead>
+            <tr>
+              <th>Domain</th>
+              <th class="fw-col">Script</th>
+              <th class="fw-col">XHR</th>
+              <th class="fw-col">Frame</th>
+              <th class="fw-col">Media</th>
+              <th class="fw-col">Cookie</th>
+              <th class="fw-col">All</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="fw-empty" id="empty">Nothing seen yet. Press <strong>Reload the site and watch</strong> above
+          &mdash; the matrix fills with what the page actually requests.</div>
+      </div>
+
+      <p class="fw-note" style="margin-top:14px;">A cell showing <strong>&middot; loaded</strong> or
+        <strong>&middot; blocked</strong> is telling you what happened, not what you chose &mdash; and where
+        WardenOne blocked something, the row says which list decided. <strong>All</strong> covers everything,
+        including stylesheets and the request types with no column of their own.</p>
+
+      <div class="fw-danger">
+        <h3>This is the tool that can break a site</h3>
+        <p class="fw-note" style="margin:0;">Blocking a site's own CDN will stop it working, and nothing here
+          tries to stop you doing that &mdash; it is your browser. What it does instead is keep undo in front of
+          you. <strong>Undo my rules here</strong> clears this site; the button below clears every site at once.
+          Rules apply from the next load, so if something breaks, undo and reload.</p>
+        <div style="margin-top:12px;">
+          <button class="btn" id="reset-all" type="button">Remove every firewall rule on every site</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="guide-footer">
+  <div class="guide-wrap guide-footer-inner">
+    <span><strong>Your rules beat every list WardenOne ships.</strong> They apply to this site alone.</span>
+    <span>Nothing here leaves your computer.</span>
+  </div>
+</footer>
+<script src="firewall.js"></script>
+</body>
+</html>
