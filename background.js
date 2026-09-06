@@ -4288,6 +4288,198 @@ async function fetchWebStoreListing(id) {
   }
 }
 
+// ---- The reader's own blocklist -------------------------------------------
+// "Never let this domain open." Everything else here decides for you; this is the
+// one list where you decide, and nothing overrules it but your own allowlist.
+//
+// Deliberately NOT stored in the learned map. That map holds one entry per domain,
+// which cannot express a path or two different expiries for the same site, and it
+// is shipped to content scripts -- where a hand-blocked host once came back as an
+// accusation that the site was an IP logger. This list goes nowhere near the page.
+const USER_BLOCKLIST_RULE_BASE = 970000;
+const USER_BLOCKLIST_KEY = 'wardenone_blocklist';
+// Session entries live in storage.session, so they are gone when the browser
+// restarts without anything having to remember to delete them -- and they survive
+// the service worker being evicted mid-session, which a plain in-memory list would
+// not. "Until tomorrow" is a timestamp in the ordinary store.
+const USER_BLOCKLIST_SESSION_KEY = 'wardenone_blocklist_session';
+
+/* One pattern in, one decision out. Accepts what someone would actually type:
+     example.com                        a site
+     *.example.com                      the same thing, written the other way
+     news.example.com                   that host and anything under it
+     192.0.2.55                         an address
+     https://example.com/tracker/*      one path, not the whole site
+   Anything it cannot make sense of comes back with a reason, never a guess: a
+   blocklist that silently reinterprets what you typed is worse than one that
+   refuses it. */
+function parseBlockPattern(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return { ok: false, error: 'Type a site, address or link to block.' };
+  if (/\s/.test(text)) return { ok: false, error: 'One entry at a time, with no spaces.' };
+  if (/^(chrome|edge|brave|about|chrome-extension|moz-extension|file|data|javascript):/i.test(text)) {
+    return { ok: false, error: 'Browser and extension pages cannot be blocked this way.' };
+  }
+  let work = text.replace(/^\*\.(?=[^.])/, '');
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(work);
+  let host = '';
+  let path = '';
+  if (hasScheme) {
+    let u;
+    try { u = new URL(work); } catch (_) { return { ok: false, error: 'That is not a link WardenOne can read.' }; }
+    if (!/^https?:$/.test(u.protocol)) return { ok: false, error: 'Only http and https links can be blocked.' };
+    host = u.hostname;
+    path = u.pathname + (u.search || '');
+  } else {
+    const slash = work.indexOf('/');
+    host = slash < 0 ? work : work.slice(0, slash);
+    path = slash < 0 ? '' : work.slice(slash);
+  }
+  host = String(host || '').replace(/^\.+|\.+$/g, '').toLowerCase();
+  if (!host) return { ok: false, error: 'That has no site name in it.' };
+  const isIPv4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)
+    && host.split('.').every((n) => Number(n) >= 0 && Number(n) <= 255);
+  const isIPv6 = host.startsWith('[') && host.endsWith(']');
+  const looksHost = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(host) && !host.includes('..');
+  if (!isIPv4 && !isIPv6 && !looksHost) {
+    return { ok: false, error: 'That does not look like a site name or an address.' };
+  }
+  /* A trailing * is how people write "and everything under here"; it is already
+     what a path prefix means, so it is dropped rather than matched literally. */
+  const cleanPath = path.replace(/\*+$/, '');
+  if (cleanPath && cleanPath !== '/') {
+    return {
+      ok: true,
+      kind: 'url',
+      host,
+      value: (hasScheme ? work.split('://')[0].toLowerCase() + '://' : '') + host + cleanPath,
+      label: host + cleanPath,
+    };
+  }
+  return {
+    ok: true,
+    kind: isIPv4 || isIPv6 ? 'ip' : 'domain',
+    host,
+    value: host,
+    label: isIPv4 || isIPv6 ? host : host + ' and anything under it',
+  };
+}
+
+/* Everything the reader blocks gets the FULL transport inventory, for the same
+   reason a known-hostile host does: blocking a site on six of fifteen transports is
+   not blocking it. The old right-click block listed seven types and let media,
+   fonts, objects and WebTransport through. */
+const USER_BLOCKLIST_DOMAINS_PER_RULE = 100;
+
+function userBlockRulesFrom(entries) {
+  const rules = [];
+  const ceiling = USER_BLOCKLIST_RULE_BASE + USER_BLOCKLIST_RULES_BUDGET;
+  let id = USER_BLOCKLIST_RULE_BASE;
+  /* Whole-site entries are BATCHED. One requestDomains condition holds many domains,
+     so a hand-written list of a few hundred sites costs a handful of rules instead of
+     a few hundred -- and the dynamic-rule ceiling is 30,000 shared across every band
+     in this file. A rule per entry pushed the total 209 over that ceiling, at which
+     point Chrome rejects the whole update and nothing applies. Paths and addresses
+     need a urlFilter each, so those stay one apiece. */
+  const domains = [];
+  const singles = [];
+  for (const entry of entries || []) {
+    if (!entry || !entry.value) continue;
+    if (entry.kind === 'domain') domains.push(entry.value);
+    else singles.push(entry);
+  }
+  const mk = (condition) => ({
+    id: id++,
+    /* Above the compatibility allowances (95000-96000) that exist to stop WardenOne
+       breaking a site -- they were never meant to overrule the reader -- and below
+       the user allowlist at 100000, which is the reader too. */
+    priority: 99000,
+    action: { type: 'block' },
+    condition: Object.assign({ resourceTypes: ALL_DNR_RESOURCE_TYPES }, condition),
+  });
+  for (let i = 0; i < domains.length && id < ceiling; i += USER_BLOCKLIST_DOMAINS_PER_RULE) {
+    rules.push(mk({ requestDomains: domains.slice(i, i + USER_BLOCKLIST_DOMAINS_PER_RULE) }));
+  }
+  for (const entry of singles) {
+    if (id >= ceiling) break;
+    rules.push(mk({
+      urlFilter: entry.kind === 'ip'
+        ? '||' + entry.value + '^'
+        /* Anchored at the start so a path block cannot be dodged by putting the same
+           text in a query string somewhere else. */
+        : (entry.value.includes('://') ? '|' : '||') + entry.value,
+    }));
+  }
+  return rules;
+}
+
+/* What a list would actually cost, so an entry that would not fit is refused rather
+   than accepted and silently left unenforced. "Blocked." followed by the site loading
+   is the failure this project keeps having to fix. */
+function userBlockRuleCost(entries) {
+  let domains = 0;
+  let singles = 0;
+  for (const e of entries || []) {
+    if (!e || !e.value) continue;
+    if (e.kind === 'domain') domains++;
+    else singles++;
+  }
+  return Math.ceil(domains / USER_BLOCKLIST_DOMAINS_PER_RULE) + singles;
+}
+
+async function readUserBlocklist() {
+  const out = [];
+  try {
+    const store = await localGet(USER_BLOCKLIST_KEY);
+    const kept = (store && store[USER_BLOCKLIST_KEY]) || [];
+    if (Array.isArray(kept)) out.push(...kept);
+  } catch (_) { /* an unreadable list must not take the rest of the engine down */ }
+  try {
+    const session = await chrome.storage.session.get(USER_BLOCKLIST_SESSION_KEY);
+    const kept = (session && session[USER_BLOCKLIST_SESSION_KEY]) || [];
+    if (Array.isArray(kept)) out.push(...kept);
+  } catch (_) { }
+  return out;
+}
+
+/* Expiry is applied on the way out, not by a timer that has to fire. A worker that
+   was asleep when an entry lapsed would otherwise keep enforcing it. */
+function pruneExpiredBlocks(entries, now) {
+  const at = Number(now) || Date.now();
+  const live = [];
+  let dropped = 0;
+  for (const e of entries || []) {
+    if (e && Number(e.until) > 0 && Number(e.until) <= at) { dropped++; continue; }
+    if (e) live.push(e);
+  }
+  return { live, dropped };
+}
+
+async function applyUserBlocklistRules() {
+  try {
+    const now = Date.now();
+    const all = await readUserBlocklist();
+    const { live } = pruneExpiredBlocks(all, now);
+    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const oldIds = existing
+      .filter((r) => r.id >= USER_BLOCKLIST_RULE_BASE && r.id < USER_BLOCKLIST_RULE_BASE + USER_BLOCKLIST_RULES_BUDGET)
+      .map((r) => r.id);
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: oldIds,
+      addRules: userBlockRulesFrom(live),
+    });
+    /* Write the pruned list back only when something actually lapsed, so this is not
+       a storage write on every rule refresh. */
+    const stored = all.filter((e) => !e || e.scope !== 'session');
+    const keptStored = pruneExpiredBlocks(stored, now).live;
+    if (keptStored.length !== stored.length) await localSet({ [USER_BLOCKLIST_KEY]: keptStored });
+    return { ok: true, count: live.length };
+  } catch (e) {
+    console.warn('[WardenOne] user blocklist rules failed', e);
+    return { ok: false, error: String((e && e.message) || e || 'unknown') };
+  }
+}
+
 // ---- Per-site firewall ----------------------------------------------------
 // A decision matrix for one site: for each third-party domain the page loads,
 // what it is allowed to do there. This is dynamic filtering in the uBlock-advanced
@@ -11651,6 +11843,10 @@ async function applyNeverBlockAllowRules() {
   } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); }
 }
 applyNeverBlockAllowRules();
+/* At startup because storage.session is empty after a browser restart -- that is
+   what makes a session block end -- and because an entry may have lapsed while the
+   worker was not running. */
+applyUserBlocklistRules();
 
 function isMediaCompatFilter(pattern) {
   const p = String(pattern || '').toLowerCase();
@@ -11718,6 +11914,10 @@ const SERIALIZED_STATE_APPLIERS = [
   'applySearchParamRules',
   'applyGoogleSearchSponsoredAllowRules',
   'applyNeverBlockAllowRules',
+  /* Read-modify-write over the same dynamic-rule range, so it queues with the rest.
+     Two concurrent calls both read the old rule set and whichever settles last wins,
+     which is how a just-added block can vanish. */
+  'applyUserBlocklistRules',
 ];
 SERIALIZED_STATE_APPLIERS.forEach((name) => {
   const original = globalThis[name];
@@ -17289,6 +17489,99 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // ---- The reader's own blocklist ----
+  /* Privileged on purpose: a page that could add entries here could block a site's
+     competitors, or block the reader out of their own bank. None of these kinds
+     appear in TAB_CONTEXT_ALLOWED_MESSAGES. */
+  if (msg && msg.kind === 'blocklist-get') {
+    (async () => {
+      const all = await readUserBlocklist();
+      const { live } = pruneExpiredBlocks(all, Date.now());
+      sendResponse({ ok: true, items: live, max: USER_BLOCKLIST_RULES_BUDGET });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'blocklist-add') {
+    (async () => {
+      const parsed = parseBlockPattern(msg.pattern);
+      if (!parsed.ok) { sendResponse({ ok: false, error: parsed.error }); return; }
+      const scope = ['session', 'tomorrow', 'forever'].includes(msg.scope) ? msg.scope : 'forever';
+      /* "Until tomorrow" means tomorrow morning, not 24 hours from now. Someone
+         blocking a site at 11pm to get to sleep does not mean "until 11pm tomorrow". */
+      let until = 0;
+      if (scope === 'tomorrow') {
+        const d = new Date();
+        d.setHours(24, 0, 0, 0);
+        until = d.getTime();
+      }
+      const entry = {
+        id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        pattern: String(msg.pattern || '').trim().slice(0, 300),
+        kind: parsed.kind,
+        host: parsed.host,
+        value: parsed.value,
+        label: parsed.label,
+        scope,
+        until,
+        addedAt: Date.now(),
+      };
+      const all = await readUserBlocklist();
+      if (all.some((e) => e && e.value === entry.value && e.kind === entry.kind)) {
+        sendResponse({ ok: false, error: 'That is already on the list.' });
+        return;
+      }
+      /* Cost, not count: whole sites batch a hundred to a rule while a path or an
+         address needs one each, so 'how many entries' is not the limit -- 'how many
+         rules would this need' is. Refused up front rather than saved and left
+         unenforced. */
+      const live = pruneExpiredBlocks(all, Date.now()).live;
+      if (userBlockRuleCost(live.concat([entry])) > USER_BLOCKLIST_RULES_BUDGET) {
+        sendResponse({ ok: false, error: 'The blocklist is full. Remove an entry first.' });
+        return;
+      }
+      if (scope === 'session') {
+        const cur = await chrome.storage.session.get(USER_BLOCKLIST_SESSION_KEY);
+        const list = (cur && cur[USER_BLOCKLIST_SESSION_KEY]) || [];
+        await chrome.storage.session.set({ [USER_BLOCKLIST_SESSION_KEY]: list.concat([entry]) });
+      } else {
+        const store = await localGet(USER_BLOCKLIST_KEY);
+        const list = (store && store[USER_BLOCKLIST_KEY]) || [];
+        await localSet({ [USER_BLOCKLIST_KEY]: list.concat([entry]) });
+      }
+      const applied = await applyUserBlocklistRules();
+      /* Say whether the rule is actually live, never just that it was saved. A
+         write that Chrome refused used to surface as "Blocked." */
+      sendResponse({ ok: !!applied.ok, entry, error: applied.ok ? '' : applied.error });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'blocklist-remove') {
+    (async () => {
+      const id = String(msg.id || '');
+      const store = await localGet(USER_BLOCKLIST_KEY);
+      const list = (store && store[USER_BLOCKLIST_KEY]) || [];
+      const keptLocal = list.filter((e) => !e || e.id !== id);
+      if (keptLocal.length !== list.length) await localSet({ [USER_BLOCKLIST_KEY]: keptLocal });
+      const cur = await chrome.storage.session.get(USER_BLOCKLIST_SESSION_KEY);
+      const slist = (cur && cur[USER_BLOCKLIST_SESSION_KEY]) || [];
+      const keptSession = slist.filter((e) => !e || e.id !== id);
+      if (keptSession.length !== slist.length) {
+        await chrome.storage.session.set({ [USER_BLOCKLIST_SESSION_KEY]: keptSession });
+      }
+      const applied = await applyUserBlocklistRules();
+      sendResponse({ ok: !!applied.ok, error: applied.ok ? '' : applied.error });
+    })();
+    return true;
+  }
+  if (msg && msg.kind === 'blocklist-clear') {
+    (async () => {
+      await localSet({ [USER_BLOCKLIST_KEY]: [] });
+      try { await chrome.storage.session.set({ [USER_BLOCKLIST_SESSION_KEY]: [] }); } catch (_) { }
+      const applied = await applyUserBlocklistRules();
+      sendResponse({ ok: !!applied.ok, error: applied.ok ? '' : applied.error });
+    })();
+    return true;
+  }
   // ---- Per-site firewall ----
   /* All privileged. A page able to reach these could quietly allow a tracker it
      controls on every site the reader visits, which is the exact opposite of
