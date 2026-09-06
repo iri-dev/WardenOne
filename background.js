@@ -2791,12 +2791,25 @@ const REBIND_QUARANTINE_RULES_BUDGET = 128;
 // One block rule per private-address pattern, at the network layer, so the
 // guarantee holds in every JavaScript realm including workers.
 const INTRANET_NETWORK_RULES_BUDGET = 16; // headers, cookie stripping, HTTPS, IP lookup, etc.
+/* Declared here with the other bands, not beside the features that use them:
+   TOTAL_DYNAMIC_BUDGET is evaluated at this point in the file, so a band defined
+   further down is in the temporal dead zone and throws. */
+// Filter rules the reader writes, plus any custom lists they subscribe to.
+const USER_RULES_BUDGET = 500;
+// Per-site firewall decisions, and the session-only 'allow once' rules.
+const FIREWALL_RULES_BUDGET = 250;
+const FIREWALL_SESSION_RULES_BUDGET = 50;
+// Sites the reader blocked by hand. One rule per entry, so this is also the cap on
+// how many things the list can hold -- it is a hand-written list, not a feed.
+const USER_BLOCKLIST_RULES_BUDGET = 64;
 const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET
   + ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
   + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + SAFE_SEARCH_RULES_BUDGET
   + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET
-  + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET;
+  + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET
+  + USER_RULES_BUDGET + FIREWALL_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET
+  + USER_BLOCKLIST_RULES_BUDGET;
 // The ceiling is checked at BUILD time by tools/test-dnr-budget.js, which reads the
 // band names straight out of the expression above so a new band is covered without
 // anyone remembering to add it. A runtime console.error here could only ever repeat
@@ -3634,7 +3647,11 @@ loadGrabberFeed();
 //     ##.promo                    hide it everywhere
 //     ! anything                  a comment
 const USER_RULE_BASE = 750000;
-const USER_RULE_MAX = 2000;          // dynamic-rule budget, shared with every other feed
+/* Sized to the budget rather than to a round number. WardenOne sits at ~97% of
+   Chrome's 30,000 dynamic+session rule ceiling, and this band was never added to
+   TOTAL_DYNAMIC_BUDGET -- so 2000 was a number nobody had room for, and a large
+   custom list could have made updateDynamicRules fail for every other feature. */
+const USER_RULE_MAX = USER_RULES_BUDGET;  // one source of truth: the band declared with the budget
 const USER_RULES_KEY = 'wardenone_user_rules';
 const CUSTOM_LISTS_KEY = 'wardenone_custom_lists';
 const CUSTOM_LIST_MAX = 20;          // subscriptions
