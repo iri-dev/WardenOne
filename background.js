@@ -5406,6 +5406,39 @@ function activeAllowlist(cfg) {
   return out;
 }
 
+// The pause map's other two operations, kept here with activeAllowlist rather than beside
+// whatever needed them. Nothing else in the worker may read cfg.allowlistUntil: a second
+// reading of "is this site paused" is a second answer waiting to disagree with this one,
+// and the shape it would take is a site the reader thinks is protected and is not.
+function sitePausedUntil(cfg, host) {
+  const until = cfg && cfg.allowlistUntil;
+  if (!until || typeof until !== 'object') return 0;
+  const h = normalizeAllowlistHost(host);
+  if (!h) return 0;
+  const at = Number(until[h]);
+  return Number.isFinite(at) && at > Date.now() ? at : 0;
+}
+
+// Returns the map to store; never writes. Lapsed entries are dropped on the way past,
+// which is the write activeAllowlist deliberately does not do on a decision path.
+// A permanent allowlist entry is untouched by this -- that is a different decision the
+// reader made somewhere else, and a shortcut must not quietly undo it.
+function withSitePause(cfg, host, minutes) {
+  const raw = (cfg && cfg.allowlistUntil && typeof cfg.allowlistUntil === 'object')
+    ? cfg.allowlistUntil : {};
+  const now = Date.now();
+  const until = {};
+  for (const key of Object.keys(raw)) {
+    const at = Number(raw[key]);
+    if (Number.isFinite(at) && at > now) until[key] = at;
+  }
+  const h = normalizeAllowlistHost(host);
+  if (!h) return until;
+  if (Number(minutes) > 0) until[h] = now + Number(minutes) * 60000;
+  else delete until[h];
+  return until;
+}
+
 function hostMatchesAllowlist(host, allowlist) {
   const h = normalizeAllowlistHost(host);
   if (!h) return false;
@@ -15077,6 +15110,149 @@ const WO_MENU_BLOCK = 'wardenone-block-site';
 const WO_MENU_MEDIA = 'wardenone-check-media';
 const WO_MENU_COPY_LINK = 'wardenone-copy-clean-link';
 const WO_COMMAND_COPY_CLEAN_ADDRESS = 'copy-clean-current-address';
+/* Keyboard shortcuts, through Chrome's own commands API rather than a global key
+   listener in every page. That matters for more than tidiness: a page cannot see these,
+   cannot preventDefault them, and cannot be broken by them -- and the reader can rebind
+   or unbind any of them at chrome://extensions/shortcuts, which no in-page listener could
+   offer.
+   Only three carry a default key. Chrome allows four suggested keys in total and every
+   one is a chance to collide with something the reader already uses, so the rest ship
+   unassigned and are one click away from a binding. Alt+Shift rather than Ctrl+Shift
+   deliberately: Ctrl+Shift+P and Ctrl+Shift+Z are DevTools and redo, and the element tool
+   uses Ctrl+Z itself for undo. */
+const WO_COMMAND_PALETTE = 'command-palette';
+const WO_COMMAND_ELEMENT_TOOL = 'element-tool';
+const WO_COMMAND_NETWORK_LOGGER = 'open-network-logger';
+const WO_COMMAND_PAUSE_SITE = 'pause-site';
+const WO_COMMAND_SCAN_SITE = 'scan-site';
+/* How long a keyboard pause lasts. The popup offers 15, 60 and 480; a shortcut cannot ask,
+   so it takes the middle one -- long enough to finish diagnosing a broken site, short
+   enough that forgetting about it is not a permanent hole. */
+const WO_SHORTCUT_PAUSE_MINUTES = 60;
+
+/* ---- the command palette ---------------------------------------------------
+   The overlay is injected into the page, so everything about which commands exist and
+   what they do is kept HERE. The page half sends an id and nothing more; this list is
+   what turns an id into an action, and an id that is not on it reaches nothing.
+   That alone is not enough. A page cannot message an extension directly today, but a
+   compromised content-script world could, and "pause WardenOne on this site" is exactly
+   what a hostile page would reach for. So the palette also has to have been OPENED, by
+   the reader, on that tab, moments ago -- and opening it is something only the keyboard
+   shortcut can do. */
+const PALETTE_ALLOWED = new Set([
+  'scan-site', 'privacy-test', 'element-tool', 'copy-clean-current-address', 'pause-site',
+  'open-network-logger', 'open-firewall', 'open-file-shield', 'open-extension-check',
+  'open-activity', 'open-settings',
+]);
+const PALETTE_OPEN_AT = Object.create(null);
+/* Long enough to read eleven lines and type a few letters, short enough that a stolen
+   moment is not a standing invitation. */
+const PALETTE_WINDOW_MS = 120000;
+
+function openCommandPalette(tab) {
+  if (!tab || typeof tab.id !== 'number') return;
+  /* chrome:// and the store refuse injection, and a palette that silently fails there
+     reads as the feature being broken rather than the page refusing. */
+  if (!/^https?:/i.test(String(tab.url || ''))) return;
+  PALETTE_OPEN_AT[tab.id] = Date.now();
+  try {
+    chrome.scripting.executeScript(
+      { target: { tabId: tab.id, frameIds: [0] }, files: ['command-palette.js'] },
+      () => { void chrome.runtime.lastError; },
+    );
+  } catch (_) { /* the tab went away between the query and the injection */ }
+}
+
+/* One use per opening. Without consuming it, a single press would leave a two-minute
+   window in which a forged message could run anything on the list. */
+function paletteClaim(tabId) {
+  const at = PALETTE_OPEN_AT[tabId];
+  delete PALETTE_OPEN_AT[tabId];
+  return typeof at === 'number' && (Date.now() - at) < PALETTE_WINDOW_MS;
+}
+
+async function runPaletteCommand(command, tab) {
+  if (!PALETTE_ALLOWED.has(command)) return;
+  const pages = {
+    'privacy-test': 'privacy-test.html',
+    'open-firewall': 'firewall.html',
+    'open-file-shield': 'file-shield.html',
+    'open-extension-check': 'extensions.html',
+    'open-activity': 'history.html',
+    'open-settings': 'popup.html',
+  };
+  if (pages[command]) {
+    /* The two that are about one particular site are told which one, the same way the
+       popup tells them. The rest have nothing to say about a tab. */
+    let url = chrome.runtime.getURL(pages[command]);
+    if (command === 'privacy-test' || command === 'open-firewall') {
+      let host = '';
+      try { host = new URL(String(tab.url || '')).hostname; } catch (_) { host = ''; }
+      url += '?tab=' + encodeURIComponent(tab.id) + '&site=' + encodeURIComponent(host);
+    }
+    try { await chrome.tabs.create({ url: url }); } catch (_) { /* window closing */ }
+    return;
+  }
+  /* Everything else is a command that already exists. Routed through the same function
+     the keyboard shortcuts use rather than reimplemented: two ways to pause a site would
+     be two chances to get the allowlist wrong. */
+  await runWardenCommandOnActiveTab(command);
+}
+
+async function runWardenCommandOnActiveTab(command) {
+  try {
+    const tabs = await tabsQuery({ active: true, currentWindow: true });
+    const tab = (tabs && tabs[0]) || null;
+    if (!tab || typeof tab.id !== 'number') return;
+    const url = String(tab.url || '');
+
+    if (command === WO_COMMAND_PALETTE) { openCommandPalette(tab); return; }
+
+    if (command === WO_COMMAND_ELEMENT_TOOL) {
+      /* One tool, one shortcut. There were two of these once -- a picker and a zapper --
+         and element-picker.js records why they were merged: both ended in a saved rule
+         and the only difference was whether the confirmation came before or after. Two
+         shortcuts here would put that split back through the keyboard.
+         Its own keys are already built: Escape leaves, arrows widen and narrow the
+         selection, Ctrl+Z undoes and keeps working after the tool has closed. */
+      startElementTool(tab, 0);
+      return;
+    }
+
+    if (command === WO_COMMAND_NETWORK_LOGGER) {
+      /* Exactly what the popup's own button does, and for the same reason it gives: a
+         TAB rather than a window, because capture runs for as long as the page is open.
+         Not scoped to the tab it was pressed from -- the logger captures browser-wide and
+         has no per-tab filter, and a shortcut that claimed to focus one would be
+         describing a feature that does not exist. */
+      try { await chrome.tabs.create({ url: chrome.runtime.getURL('logger.html') }); } catch (_) {}
+      return;
+    }
+
+    if (!/^https?:/i.test(url)) return;
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) { host = ''; }
+    if (!host) return;
+
+    if (command === WO_COMMAND_SCAN_SITE) { await runWardenManualCheck(url, tab); return; }
+
+    if (command === WO_COMMAND_PAUSE_SITE) {
+      const store = await localGet('wardenone_config');
+      const cfg = (store && store.wardenone_config) || {};
+      /* Both through the resolver. Working the map out here would be a second reading of
+         "is this site paused", and the two would eventually disagree. */
+      const paused = sitePausedUntil(cfg, host) > 0;
+      cfg.allowlistUntil = withSitePause(cfg, host, paused ? 0 : WO_SHORTCUT_PAUSE_MINUTES);
+      await localSet({ wardenone_config: cfg });
+      /* Deliberately no reload. A keystroke that throws away a half-filled form is a
+         worse surprise than one more keypress, and the popup says the same thing. */
+      await wardenManualNotice(host, paused
+        ? 'Protection resumed on ' + host + '. Reload the page to apply it.'
+        : 'WardenOne paused on ' + host + ' for ' + WO_SHORTCUT_PAUSE_MINUTES
+          + ' minutes. Press the shortcut again to resume, and reload the page to apply it.', tab);
+    }
+  } catch (_) {}
+}
 
 /* What a piece of text IS, so a single "check this" entry can route it to the
    right lookup instead of asking the reader to know which kind of thing they
@@ -16004,6 +16180,11 @@ try {
   if (chrome.commands && chrome.commands.onCommand) {
     chrome.commands.onCommand.addListener((command) => {
       if (command === WO_COMMAND_COPY_CLEAN_ADDRESS) void copyWardenCleanCurrentAddress();
+      else if (command === WO_COMMAND_PALETTE) void runWardenCommandOnActiveTab(command);
+      else if (command === WO_COMMAND_ELEMENT_TOOL) void runWardenCommandOnActiveTab(command);
+      else if (command === WO_COMMAND_NETWORK_LOGGER) void runWardenCommandOnActiveTab(command);
+      else if (command === WO_COMMAND_PAUSE_SITE) void runWardenCommandOnActiveTab(command);
+      else if (command === WO_COMMAND_SCAN_SITE) void runWardenCommandOnActiveTab(command);
     });
   }
 } catch (_) {}

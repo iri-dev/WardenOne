@@ -714,6 +714,18 @@
     }
     if (e.key === 'ArrowUp') { widen(); e.preventDefault(); }
     if (e.key === 'ArrowDown') { narrow(); e.preventDefault(); }
+    if (e.key === 'Enter') {
+      /* Confirms whatever the arrows have framed, so the whole tool can be driven from
+         the keyboard: arrows to walk up and down the tree, Enter to take it. It goes
+         through the same path as a click rather than calling zap() directly, so the
+         "that covers most of the page" second press still applies -- a confirmation that
+         the mouse gets and the keyboard skips is a trapdoor, not a shortcut.
+         Nothing framed means nothing to confirm; Enter is not a way to hide the body. */
+      if (!current || current === document.body || current === document.documentElement) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      onClick({ clientX: 0, clientY: 0, target: current, preventDefault() {}, stopImmediatePropagation() {} });
+    }
   }
 
   function onWheel(e) {
