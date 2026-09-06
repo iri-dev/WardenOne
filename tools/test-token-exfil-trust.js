@@ -84,6 +84,14 @@ const familyDestinations = [
   ['twitter.com', 't.co'],
   ['discord.com', 'cdn.discordapp.net'],
   ['discordapp.com', 'discord.gg'],
+  /* The originally reported case, kept as a regression even though it is now
+     satisfied by the GLOBAL Spotify entry rather than by Discord's family. Observed
+     in the audit trail as "api.spotify.com - discord.com/channels/*": linking Spotify
+     makes the Discord page call Spotify's API with a Spotify token, and while that
+     was refused "Listening to Spotify" simply never appeared. */
+  ['discord.com', 'api.spotify.com'],
+  ['discord.com', 'open.spotify.com'],
+  ['discord.com', 'i.scdn.co'],
   ['app.slack.com', 'files.slack-edge.com'],
   ['www.figma.com', 's3-alpha.figmausercontent.com'],
   ['www.notion.so', 'static.notion-static.com'],
@@ -145,8 +153,42 @@ assert.strictEqual(
   false,
   'a spoofed page hostname must not activate a trusted family',
 );
+/* Spotify is a GLOBAL destination, not a per-app family entry: it is a public OAuth
+   API that third-party apps are built on, exactly like YouTube and Google. Scoping it
+   per-app fixed Discord and left every other Spotify app broken -- Exportify hung
+   forever after login because its playlist fetch was dropped. Asserted from an
+   unrelated page so the intent is explicit rather than incidental. */
+assert.strictEqual(
+  isTrustedDestination('exportify.net', 'api.spotify.com'),
+  true,
+  'any app built on the Spotify API may call it with the token it was granted',
+);
+assert.strictEqual(
+  isTrustedDestination('some-other-app.example', 'i.scdn.co'),
+  true,
+  'including the artwork CDN those apps render from',
+);
+/* The trust is one-directional and does not spread. */
+assert.strictEqual(
+  isTrustedDestination('open.spotify.com', 'discord.com'),
+  false,
+  'Spotify does not become a launchpad for tokens to unrelated hosts',
+);
+assert.strictEqual(
+  isTrustedDestination('discord.com', 'collector.evil.example'),
+  false,
+  'Discord must not receive a blanket foreign-destination exemption',
+);
+/* Spoof check retargeted at a FAMILY-only destination. Aiming it at Spotify stopped
+   testing anything the moment Spotify became global -- it would have passed on the
+   spelling of the page name rather than on the suffix matching being sound. */
+assert.strictEqual(
+  isTrustedDestination('discord.com.evil.example', 'cdn.discordapp.net'),
+  false,
+  'a spoofed Discord hostname must not activate the Discord family',
+);
 assert(!/\bsessionTrusted\b/.test(source), 'blanket sessionTrusted bypass has been removed');
 assert(!/\btrustedFamilyRe\b/.test(source), 'legacy partial family map has been removed');
 assert(!/\bGOOD_DEST\s*=/.test(source), 'brand-prefix destination regex has been removed');
 
-console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 6} assertions)`);
+console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 11} assertions)`);

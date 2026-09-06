@@ -535,7 +535,11 @@ function normalizeTabBlockMessage(msg, sender) {
 
   const detailObj = (detail && typeof detail === 'object') ? detail : { matched: String(detail || '') };
   const pageHost = messageHostFromText(sender && sender.tab && sender.tab.url);
-  const targetHost = messageHostFromText(detailObj.matched || detailObj.host || detailObj.domain || detailObj.url || detailObj.target);
+  /* 'dest' is the field the emitter actually sends (credentialFrameNoteBlock in
+     anti-redirect.js). It was missing from this list, so the one event whose whole
+     point is naming where a token was going recorded no destination at all -- and
+     the dedupe key below collapsed every distinct destination into 'page>target'. */
+  const targetHost = messageHostFromText(detailObj.dest || detailObj.matched || detailObj.host || detailObj.domain || detailObj.url || detailObj.target);
   const key = (pageHost || 'page') + '>' + (targetHost || 'target');
   const now = Date.now();
   const last = tokenExfilHistorySeen[key] || 0;

