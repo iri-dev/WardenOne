@@ -167,6 +167,7 @@ function checkContentBuild() {
   'tools/build-content.js',
   'tools/harden-static-dnr.js',
   'tools/check-security-posture.js',
+  'tools/check-feeds.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
   'tools/test-extension-change-watch.js',

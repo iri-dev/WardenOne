@@ -19,20 +19,6 @@
       "owner": "blocklistproject",
       "project": "Lists",
       "home": "https://github.com/blocklistproject/Lists",
-      "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt",
-      "purposes": [
-        "Supplemental domain lists"
-      ],
-      "toggle": "always",
-      "kind": "fetched",
-      "note": "adult-domains",
-      "licence": "",
-      "licenceVerified": false
-    },
-    {
-      "owner": "blocklistproject",
-      "project": "Lists",
-      "home": "https://github.com/blocklistproject/Lists",
       "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/scam.txt",
       "purposes": [
         "IP-logger and grabber domains"
@@ -245,13 +231,13 @@
       "owner": "hagezi",
       "project": "dns-blocklists",
       "home": "https://github.com/hagezi/dns-blocklists",
-      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/light.txt",
+      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
       "purposes": [
         "Network-level ad filtering"
       ],
       "toggle": "adShield",
       "kind": "fetched",
-      "note": "HaGeZi \"light\" -- ads + tracking, false-positive-conscious, hosts format",
+      "note": "HaGeZi \"light\" -- ads + tracking, false-positive-conscious",
       "licence": "",
       "licenceVerified": false
     },
@@ -259,7 +245,7 @@
       "owner": "hagezi",
       "project": "dns-blocklists",
       "home": "https://github.com/hagezi/dns-blocklists",
-      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/pro.txt",
+      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
       "purposes": [
         "Tracking and telemetry domains"
       ],
@@ -273,7 +259,7 @@
       "owner": "hagezi",
       "project": "dns-blocklists",
       "home": "https://github.com/hagezi/dns-blocklists",
-      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/tif.txt",
+      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt",
       "purposes": [
         "Malware and phishing domains"
       ],
@@ -315,7 +301,7 @@
       "owner": "malware-filter",
       "project": "malware-filter",
       "home": "https://gitlab.com/malware-filter",
-      "url": "https://malware-filter.gitlab.io/malware-filter/vn-badsite-filter-hosts.txt",
+      "url": "https://malware-filter.gitlab.io/vn-badsite-filter/vn-badsite-filter-hosts.txt",
       "purposes": [
         "Malware and phishing domains"
       ],
@@ -421,6 +407,20 @@
       "toggle": "always",
       "kind": "fetched",
       "note": "search-copycat-domains",
+      "licence": "",
+      "licenceVerified": false
+    },
+    {
+      "owner": "StevenBlack",
+      "project": "hosts",
+      "home": "https://github.com/StevenBlack/hosts",
+      "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
+      "purposes": [
+        "Supplemental domain lists"
+      ],
+      "toggle": "always",
+      "kind": "fetched",
+      "note": "adult-domains",
       "licence": "",
       "licenceVerified": false
     },
