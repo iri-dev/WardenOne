@@ -16656,8 +16656,142 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })(), sendResponse);
     return true;
   }
+  /* Privacy self-test. Runs privacy-probe.js twice in the SAME page -- once in the MAIN
+     world where the shields have patched the globals, once in the ISOLATED world which
+     shares the DOM but has its own untouched prototypes -- and hands both sets of
+     readings back. The comparison is what makes this a measurement rather than a
+     restatement of the settings: "protected" means the value the page received is
+     demonstrably not the value the browser would have given it.
+     It has to run on a real web page. This is an extension page asking about a tab,
+     because content scripts do not run on chrome-extension:// and a test that measured
+     THIS page would report every shield as absent -- truthfully, and uselessly. */
+  if (msg && msg.kind === 'privacy-test-run') {
+    if (!messageSenderIsExtensionPage(sender)) {
+      try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+      return true;
+    }
+    (async () => {
+      try {
+        const tabId = Number(msg.tabId);
+        let tab = null;
+        try { tab = await new Promise((r) => chrome.tabs.get(tabId, (t) => { void chrome.runtime.lastError; r(t || null); })); } catch (_) { tab = null; }
+        if (!tab || !/^https?:/i.test(String(tab.url || ''))) {
+          sendResponse({ ok: false, error: 'That tab is not an ordinary web page, so there is nothing to measure on it.' });
+          return;
+        }
+        const target = { tabId: tabId, frameIds: [0] };
+        const runIn = (world) => new Promise((resolve) => {
+          try {
+            chrome.scripting.executeScript({ target, files: ['privacy-probe.js'], world: world }, (res) => {
+              void chrome.runtime.lastError;
+              resolve((res && res[0] && res[0].result) || null);
+            });
+          } catch (_) { resolve(null); }
+        });
+        /* Sequential, not parallel. Both copies write a probe link into the same document
+           and one of them puts the address bar back; overlapping them would have each
+           measuring the other's leftovers. */
+        const shielded = await runIn('MAIN');
+        const bare = await runIn('ISOLATED');
+        const store = await localGet('wardenone_config');
+        const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
+        /* The settings travel with the readings but decide none of them. They are used
+           only to tell "you turned this off" apart from "this should have worked and did
+           not" -- two very different things that look identical in the numbers. */
+        sendResponse({
+          ok: true,
+          url: String(tab.url || '').slice(0, 300),
+          host: (() => { try { return new URL(tab.url).hostname; } catch (_) { return ''; } })(),
+          shielded: shielded,
+          bare: bare,
+          settings: {
+            enabled: cfg.enabled !== false,
+            antiFingerprintNoise: cfg.antiFingerprintNoise === true || cfg.antiFingerprint === true,
+            blockFingerprintScripts: cfg.blockFingerprintScripts !== false,
+            fingerprintProbeDetection: cfg.fingerprintProbeDetection !== false,
+            blockWebRTCLeak: cfg.blockWebRTCLeak !== false,
+            unshimLinks: cfg.unshimLinks !== false,
+            stripTrackingParams: cfg.stripTrackingParams !== false,
+            deviceAccessGuard: cfg.deviceAccessGuard !== false,
+            clientHintProtection: cfg.clientHintProtection !== false,
+            allowlisted: hostMatchesAllowlist(
+              (() => { try { return new URL(tab.url).hostname; } catch (_) { return ''; } })(),
+              activeAllowlist(cfg),
+            ),
+          },
+        });
+      } catch (e) { sendResponse({ ok: false, error: String(e) }); }
+    })();
+    return true;
+  }
   if (msg && msg.kind === 'content-config-get' && messageSenderIsTab(sender)) {
     respond(buildContentConfigSnapshot(), sendResponse);
+    return true;
+  }
+  /* Opening the palette from the popup, for the case Chrome creates every time this
+     extension updates: a command added after install arrives with NO key bound, because
+     suggested keys are only applied at install time. A palette that can only be opened by
+     a shortcut nobody has set yet is a discovery surface nobody discovers.
+     Extension pages only, and it goes through openCommandPalette so the one-shot claim is
+     recorded exactly as it is from the keyboard -- a second way in is always the one that
+     turns out to have skipped a gate. */
+  if (msg && msg.kind === 'palette-open') {
+    if (!messageSenderIsExtensionPage(sender)) {
+      try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+      return true;
+    }
+    (async () => {
+      try {
+        const tabs = await tabsQuery({ active: true, currentWindow: true });
+        const tab = (tabs && tabs[0]) || null;
+        if (!tab) { sendResponse({ ok: false }); return; }
+        openCommandPalette(tab);
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: String(e) }); }
+    })();
+    return true;
+  }
+  /* A palette pick. Three gates, and none of them trusts the page: the command must be on
+     PALETTE_ALLOWED, the palette must have been opened on THIS tab by the shortcut within
+     the last two minutes, and that opening is consumed so one press buys one action. A
+     forged message from a compromised content-script world has no way to open the palette
+     and so never gets inside the window. */
+  if (msg && msg.kind === 'palette-run' && messageSenderIsTab(sender)) {
+    (async () => {
+      try {
+        const tab = sender && sender.tab;
+        if (!tab || typeof tab.id !== 'number' || !/^https?:/i.test(String(tab.url || ''))) {
+          sendResponse({ ok: false }); return;
+        }
+        const command = String((msg && msg.command) || '');
+        if (!PALETTE_ALLOWED.has(command)) { sendResponse({ ok: false, error: 'Unknown command.' }); return; }
+        if (!paletteClaim(tab.id)) { sendResponse({ ok: false, error: 'The palette was not open.' }); return; }
+        await runPaletteCommand(command, tab);
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: String(e) }); }
+    })();
+    return true;
+  }
+  /* Search-result warnings. Answered from local lists only -- see searchResultVerdicts.
+     Restricted to the search engines the marker actually runs on: elsewhere this is a
+     blocklist-membership oracle, and the person most interested in one is whoever wants
+     to know whether their own domain has been listed yet. */
+  if (msg && msg.kind === 'search-result-check' && messageSenderIsTab(sender)) {
+    (async () => {
+      try {
+        let senderHost = '';
+        try { senderHost = new URL(sender.url || (sender.tab && sender.tab.url) || '').hostname; } catch (_) { senderHost = ''; }
+        if (!SEARCH_WARN_ENGINE_HOST.test(String(senderHost || ''))) { sendResponse({ ok: false }); return; }
+        const store = await localGet('wardenone_config');
+        const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
+        if (cfg.enabled === false || cfg.warnSearchResults === false) { sendResponse({ ok: false, off: true }); return; }
+        /* The lists are read from storage on worker start, and a search page asks the
+           moment its results exist. Without this the first search after every wake-up
+           scored every result against empty sets and quietly warned about nothing. */
+        await securityStoresReady();
+        sendResponse({ ok: true, verdicts: await searchResultVerdicts(msg.hosts, cfg) });
+      } catch (e) { sendResponse({ ok: false, error: String(e) }); }
+    })();
     return true;
   }
   if (msg && msg.kind === 'toast-shown' && messageSenderIsTab(sender)) {

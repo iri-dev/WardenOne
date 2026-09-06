@@ -1505,6 +1505,29 @@
         anything that looks like a secret. Open it when a site breaks and you need to know what stopped it.</div>
       <button class="btn" id="open-logger" type="button" style="width:100%;">Open network logger</button>
     </div>
+    <!-- The self-test answers a different question from Verify &amp; repair. That one asks
+         whether WardenOne's own parts are installed; this one asks what a page can
+         actually read with them running, which is the thing a reader can check for
+         themselves rather than take on trust. -->
+    <div class="row" style="display:block;border-bottom:none;">
+      <div class="name">Privacy test</div>
+      <div class="desc">Runs live probes against the page in your current tab and reports what it could actually read &mdash; canvas, GPU, audio, screen, local addresses, tracking parameters, hyperlink auditing and the rest. <strong>Nothing is read off this settings screen:</strong> each probe runs twice on the same page, once with WardenOne's shields and once without, and the two answers are compared. If a browser update ever quietly breaks a shield, the two start agreeing and the test says so.</div>
+      <button class="btn" id="open-privacy-test" type="button" style="width:100%;margin-top:8px;">Run the privacy test</button>
+    </div>
+    <!-- Keyboard shortcuts. Read from Chrome rather than restated here: the reader can
+         rebind any of these, and a hard-coded table would start lying the moment they
+         did. Chrome does not let an extension assign a shortcut itself, so the button
+         opens the browser's own page for it rather than pretending otherwise. -->
+    <div class="row" style="display:block;border-bottom:none;">
+      <div class="name">Keyboard shortcuts</div>
+      <div class="desc">Chrome owns this list, and the keys below are whatever it currently reports &mdash; change or clear any of them and this updates to match. <strong>A shortcut added by an update shows as <em>Not set</em> until you assign it:</strong> Chrome only applies a suggested key when an extension is first installed, so anything new arrives blank rather than taking a combination you might already be using.</div>
+      <div id="shortcut-list" class="shortcut-list">Loading&hellip;</div>
+      <button class="btn" id="open-shortcuts" type="button" style="width:100%;margin-top:8px;">Change these in Chrome</button>
+      <!-- So the palette is reachable whether or not its key is bound. It is the way the
+           rest of the tools are found, and a discovery surface that needs a shortcut
+           nobody has set yet is one nobody discovers. -->
+      <button class="btn" id="open-palette" type="button" style="width:100%;margin-top:6px;">Open the command palette on this page</button>
+    </div>
     <!-- Dynamic filtering. Deliberately the last thing in Advanced: it is the only
          tool here that can stop a site working outright. -->
     <div class="row" style="display:block;border-bottom:none;">
