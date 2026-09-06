@@ -28,6 +28,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
@@ -106,6 +107,8 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
 {
   const queueScan = code(consent.slice(consent.indexOf('function queueScan('),
     consent.indexOf('function startObserver')));
+  assert(/scanFinished/.test(queueScan),
+    'a completed reject/save must make later startup timers and mutation callbacks cheap no-ops');
   /* Mentioning the constant is not enough -- a disabled gate still mentions it. The
      gate itself has to be there and has to compare against it. */
   assert(/throttled\s*===\s*true/.test(queueScan),
@@ -117,6 +120,8 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     + 'inside the window is never acted on');
   const observer = code(consent.slice(consent.indexOf('function startObserver'),
     consent.indexOf('function start()')));
+  assert(/mutationsMayAffectConsent\(records\)/.test(observer),
+    'the consent observer must reject unrelated mutations before waking the full scanner');
   assert(/queueScan\(true\)/.test(observer),
     'the observer must ask for the throttle explicitly -- a MutationObserver passes its '
     + 'records array, which is truthy, so it cannot be inferred from the argument');
@@ -129,6 +134,38 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     + 'frame it moves, and banners that reveal that way are covered by the timed passes');
   assert(/['"]class['"]/.test(filter),
     'class must still be watched -- it is how banners actually toggle visible');
+}
+{
+  /* The 250ms throttle only caps how often a scan can happen; it does not make an
+     1800-node scan cheap. Run the real mutation filter so a range control changing
+     its state class and value label cannot wake that scan at all. */
+  const declarations = [
+    (consent.match(/const CONSENT_FRAME_HINT_RE = [^\n]+;/) || [''])[0],
+    consent.slice(consent.indexOf('const CONTAINER_SELECTOR = ['), consent.indexOf('const CONTROL_SELECTOR = [')),
+    (consent.match(/const STRONG_CONSENT_TEXT_RE = [^\n]+;/) || [''])[0],
+    (consent.match(/const WEAK_CONSENT_TEXT_RE = [^\n]+;/) || [''])[0],
+    (consent.match(/const CONSENT_ACTION_TEXT_RE = [^\n]+;/) || [''])[0],
+    consent.slice(consent.indexOf('function hasConsentLanguage('), consent.indexOf('function hasStrongConsentLanguage(')),
+    consent.slice(consent.indexOf('function mutationNodeMayAffectConsent('), consent.indexOf('function startObserver(')),
+  ].join('\n');
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(declarations + '\nthis.testMutations = mutationsMayAffectConsent;', sandbox);
+  const node = (values) => Object.assign({
+    nodeType: 1, id: '', className: '', textContent: '', parentElement: null,
+    getAttribute() { return null; }, matches() { return false; }, querySelector() { return null; },
+  }, values || {});
+  const slider = node({ className: 'volume-slider active', textContent: 'Volume 61' });
+  assert.strictEqual(sandbox.testMutations([
+    { type: 'attributes', target: slider, attributeName: 'class' },
+    { type: 'childList', target: slider, addedNodes: [{ nodeType: 3, nodeValue: '61' }] },
+  ]), false, 'volume feedback must not wake the document-wide consent scan');
+  assert.strictEqual(sandbox.testMutations([
+    { type: 'childList', addedNodes: [node({ id: 'onetrust-banner-sdk' })] },
+  ]), true, 'a known consent vendor inserted late must still wake the scanner');
+  assert.strictEqual(sandbox.testMutations([
+    { type: 'childList', addedNodes: [node({ textContent: 'We use cookies. Reject all or accept all.' })] },
+  ]), true, 'an obfuscated consent banner with no useful attributes must still wake the scanner');
 }
 {
   /* A page that has gone twenty seconds without a banner does not have one. Without
@@ -158,13 +195,36 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert(/timeout/.test(idleScan),
     'idle work needs a timeout or a permanently busy page starves the scan entirely');
   assert(/!everActed/.test(scanFn),
-    'the give-up must be conditional on nothing having been found -- a page WITH a '
-    + 'banner must keep being watched');
+    'the no-banner give-up must not stop an unfinished settings flow before its save button appears');
   const logAction = code(consent.slice(consent.indexOf('function logAction('),
     consent.indexOf('function scan()')));
   assert(logAction.indexOf('everActed = true') < logAction.indexOf('lastLogAt < 1200'),
     'everActed must be set before the log rate limit, or a coalesced log would leave a '
     + 'page that DOES have a banner looking like one that never found anything');
+}
+{
+  /* Rejecting or saving is terminal. Spotify removes its OneTrust banner immediately,
+     but then keeps changing classes as its player renders. Leaving the observer alive
+     converted that harmless churn into another full-document scan every 250ms for two
+     minutes, even though there was no consent UI left to find. */
+  const finish = code(consent.slice(consent.indexOf('function finishConsentWork()'),
+    consent.indexOf('function idleScan()')));
+  assert(/scanFinished\s*=\s*true/.test(finish),
+    'finishing consent work must gate every later scan source');
+  assert(/observer\.disconnect/.test(finish),
+    'finishing consent work must disconnect the document-wide observer');
+  assert(/clearTimeout\(scanDeferred\)/.test(finish),
+    'finishing consent work must cancel a mutation scan already waiting to run');
+  assert(/clearInterval\(slowTimer\)/.test(finish),
+    'finishing consent work must stop the fallback poll too');
+  const calls = (code(consent).match(/finishConsentWork\(\)/g) || []).length;
+  assert.strictEqual(calls, 5,
+    'all four terminal choices (Twitch reject, generic reject, banner reject, saved choices) '
+    + 'must finish scanning; the fifth occurrence is the function declaration');
+  const start = code(consent.slice(consent.indexOf('function start()'),
+    consent.indexOf('const refreshConfigState')));
+  assert(/scanFinished/.test(start),
+    'the 95ms startup poll must stop after a successful choice instead of running all 24 passes');
 }
 
 /* ---- the badge path -------------------------------------------------------- */
@@ -210,4 +270,4 @@ assert(/mediaHiddenDefinitely\(el\)/.test(consider),
 assert(/setTimeout\(/.test(consider),
   'a size verdict must be deferred until layout has actually happened');
 
-console.log('hot path layout tests passed (47 assertions)');
+console.log('hot path layout tests passed (57 assertions)');
