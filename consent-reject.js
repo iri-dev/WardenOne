@@ -243,7 +243,12 @@
   function elementText(el) {
     try {
       const bits = [
-        el.innerText,
+        // innerText is deliberately NOT read here. It forces a synchronous layout, it
+        // was read for every candidate on every scan, and textContent on the next line
+        // carries the same words into the same joined string -- the whitespace
+        // difference is erased by the normalise at the end. It was pure cost.
+        // controlLabel() still reads it, because that one takes the FIRST truthy bit
+        // rather than joining, so dropping it there would change which label wins.
         el.textContent,
         el.getAttribute && el.getAttribute('aria-label'),
         el.getAttribute && el.getAttribute('title'),
@@ -285,10 +290,17 @@
   function isVisible(el) {
     try {
       if (!el || !el.isConnected) return false;
-      const style = getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+      // Cheap test first. Both conditions have to hold, so the order does not change a
+      // single answer -- but getComputedStyle is the expensive half and this runs on up
+      // to 500 candidates per scan. Most of them are off-screen (anything in a scrolled
+      // list), and the rect rejects those outright, so style is now computed only for
+      // elements actually on screen. Measured as the top cost in the whole extension
+      // while dragging Spotify's volume slider.
       const rect = el.getBoundingClientRect();
-      return rect.width >= 8 && rect.height >= 8 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth;
+      if (!(rect.width >= 8 && rect.height >= 8 && rect.bottom > 0 && rect.right > 0
+        && rect.top < innerHeight && rect.left < innerWidth)) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0;
     } catch (_) {
       return false;
     }
@@ -806,6 +818,10 @@
   woOn(window, 'pagehide', sweepStorageOnLeave, true);
 
   function logAction(kind, label) {
+    // Set before the rate limit below, which is about log noise rather than whether
+    // anything happened. This is what tells scan() the page really does have a banner,
+    // so it must not be skipped by a coalesced log.
+    everActed = true;
     const now = Date.now();
     if (now - lastLogAt < 1200) return;
     lastLogAt = now;
@@ -824,6 +840,41 @@
   function scan() {
     scanQueued = false;
     if (!active || !document.documentElement) return;
+
+    // Consent banners appear early or not at all. Once a page has gone SCAN_GIVE_UP_MS
+    // without one, stop reacting to its DOM changes: otherwise every mutation for the
+    // rest of the 120s observer window buys another full-document scan -- an 1800-node
+    // walk and up to 500 visibility tests -- on a page that has already demonstrated it
+    // has nothing to dismiss. The timed passes in start() still run, so a genuinely
+    // late banner is not abandoned.
+    if (!firstScanAt) firstScanAt = Date.now();
+    if (!everActed && observer && Date.now() - firstScanAt > SCAN_GIVE_UP_MS) {
+      try { observer.disconnect(); } catch (_) {}
+      observer = null;
+      // Step DOWN to a slow poll rather than stopping. Coverage must not shrink: this
+      // still sees a banner that reveals late, and it also covers the one case the
+      // attributeFilter no longer watches (a reveal by inline style alone) -- which a
+      // MutationObserver on 'class' would have missed anyway. ~40 scans spread over the
+      // rest of the window instead of one per DOM change, so the cost is bounded
+      // without giving anything up. It ends with the same 120s deadline as the observer.
+      if (!slowTimer) {
+        slowTimer = woInterval(() => {
+          if (!active || everActed || Date.now() - firstScanAt > OBSERVER_LIFETIME_MS) {
+            clearInterval(slowTimer);
+            slowTimer = null;
+            return;
+          }
+          // Run it in IDLE time, not on the next frame. A full scan costs tens of
+          // milliseconds, and queueScan would put that inside a rAF callback -- i.e.
+          // right in the middle of frame production. Polling that way replaced a
+          // per-frame cost with a ~50ms hitch every few seconds, which during a drag is
+          // worse, not better. Idle work waits for a gap instead, so a reader who is
+          // dragging something never pays for it; the timeout keeps it from being
+          // starved forever on a genuinely busy page.
+          idleScan();
+        }, SLOW_SCAN_MS);
+      }
+    }
 
     if (tryTwitchReject()) return;
 
@@ -878,17 +929,77 @@
     }
   }
 
-  function queueScan() {
+  // One scan per animation frame is one full document walk per frame, and every walk
+  // calls getComputedStyle, getBoundingClientRect and innerText -- each of which forces
+  // layout. 'style' is in the attributeFilter below, and a slider rewrites its inline
+  // style on every frame it moves, so dragging one turned into a continuous full-page
+  // scan. Measured on Spotify: 26ms of a 32ms extension budget, three long tasks, and
+  // an input queue that kept draining after the mouse was released -- reported as "if i
+  // let go it keeps going because it has to catch up".
+  //
+  // Only the MUTATION path is throttled. The timed passes in start() are deliberate --
+  // a banner that CSS-fades in emits no mutations at all, which is why that burst
+  // exists -- so they still run at their own cadence. A mutation arriving inside the
+  // window is deferred rather than dropped, so a banner is still caught, at worst
+  // SCAN_MIN_GAP_MS late against passes that already run at 3s, 4.5s, 7s and 11s.
+  const SCAN_MIN_GAP_MS = 250;
+  // How long a page gets to produce a banner before mutation-driven scanning steps down
+  // to the slow poll below. Not a give-up: coverage is preserved, only the cost changes.
+  const SCAN_GIVE_UP_MS = 20000;
+  const SLOW_SCAN_MS = 2500;
+  // The same deadline the observer already had, so stepping down never outlives it.
+  const OBSERVER_LIFETIME_MS = 120000;
+  let lastScanAt = 0;
+  let scanDeferred = null;
+  let firstScanAt = 0;
+  let everActed = false;
+  let slowTimer = null;
+
+  // Scan during an idle gap rather than on the next frame. Used by the slow poll, where
+  // being a few hundred milliseconds late costs nothing and blocking a frame costs a
+  // visible stutter. requestIdleCallback is not universal, hence the fallback.
+  function idleScan() {
     if (scanQueued || !active) return;
     scanQueued = true;
+    const run = () => { try { scan(); } catch (_) { scanQueued = false; } };
+    try {
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 });
+      else woTimeout(run, 0);
+    } catch (_) { woTimeout(run, 0); }
+  }
+
+  function queueScan(throttled) {
+    if (scanQueued || !active) return;
+    if (throttled === true) {
+      const since = Date.now() - lastScanAt;
+      if (since < SCAN_MIN_GAP_MS) {
+        if (!scanDeferred) {
+          scanDeferred = woTimeout(() => { scanDeferred = null; queueScan(true); }, SCAN_MIN_GAP_MS - since);
+        }
+        return;
+      }
+    }
+    scanQueued = true;
+    lastScanAt = Date.now();
     try { requestAnimationFrame(scan); } catch (_) { woTimeout(scan, 40); }
   }
 
   function startObserver() {
     if (observer || !document.documentElement) return;
-    observer = woObserver(queueScan);
+    // Explicitly flagged as mutation-driven: a MutationObserver hands its callback
+    // (records, observer), and a records array is truthy, so the throttle has to be
+    // asked for by identity rather than inferred from the argument.
+    observer = woObserver(() => queueScan(true));
     try {
-      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'aria-hidden', 'inert', 'open'] });
+      // 'style' is deliberately NOT watched. Inline style is what animations and drag
+      // feedback rewrite -- a range slider rewrites it on every frame it moves -- so
+      // watching it meant a full-document consent scan per frame of any drag on any
+      // site. What it bought was banners that reveal via el.style rather than a class,
+      // and those are already covered: start() fires a 24-shot burst over the first
+      // 2.4s plus passes at 3s, 4.5s, 7s and 11s, which exists precisely because a
+      // CSS fade-in emits no mutations at all. Banners appear early; sliders move all
+      // day. class / aria-hidden / inert / open still cover the reveal cases.
+      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-hidden', 'inert', 'open'] });
     } catch (_) {}
     woTimeout(() => {
       try { observer.disconnect(); } catch (_) {}
