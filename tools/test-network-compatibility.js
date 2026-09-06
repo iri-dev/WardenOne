@@ -460,6 +460,46 @@ test('X compatibility does not globally exempt Twitter tracking infrastructure',
   }
 });
 
+test('a trusted app keeps its functional socket, not just its xhr', () => {
+  /* A downloaded rule that names no resourceTypes matches EVERY type. Allowing
+     xhr but not websocket on the same host lets the fetch through and drops the
+     socket, which does not read as a block -- it reads as a feature quietly not
+     working. Reported as: the Spotify web player plays fine but Discord never
+     shows what you are listening to, because the player publishes that state
+     over a socket. */
+  const fnStart = BACKGROUND.indexOf('async function applyNeverBlockAllowRules');
+  const fnEnd = BACKGROUND.indexOf('function isMediaCompatFilter');
+  assert(fnStart > 0 && fnEnd > fnStart, 'the never-block allow builder moved');
+  const typesMatch = BACKGROUND.slice(fnStart, fnEnd).match(/resourceTypes:\s*(\[[^\]]*\])/);
+  assert(typesMatch, 'the never-block allow rule no longer names its resource types');
+  const types = vm.runInNewContext(typesMatch[1]);
+  for (const type of ['script', 'stylesheet', 'font', 'xmlhttprequest', 'websocket', 'sub_frame']) {
+    assert(types.includes(type), type + ' is functional infrastructure and must survive a false positive');
+  }
+  /* And the property this rule has always had, which the fix must not trade away:
+     a pixel served from a trusted domain stays blockable. */
+  for (const type of ['image', 'ping']) {
+    assert(!types.includes(type), type + ' must stay blockable so tracking pixels are not exempted');
+  }
+});
+
+test('trusted infrastructure covers hosts that are not siblings of the apex', () => {
+  /* isNeverBlockDomain matches by suffix, so a host on a different registrable
+     domain is never covered by the app it belongs to. Each of these serves a
+     listed app and would not be protected by that app's entry. */
+  const start = BACKGROUND.indexOf('const NEVER_BLOCK_DOMAINS');
+  const end = BACKGROUND.indexOf('async function applyNeverBlockAllowRules');
+  assert(start > 0 && end > start, 'the never-block domain region moved');
+  const region = BACKGROUND.slice(start, end);
+  for (const [domain, why] of [
+    ['discord.gg', 'gateway.discord.gg carries every message and presence update'],
+    ['scdn.co', 'i.scdn.co is where Spotify artwork comes from'],
+    ['spotifycdn.com', 'Spotify player assets'],
+  ]) {
+    assert(region.includes("'" + domain + "'"), domain + ' is unprotected: ' + why);
+  }
+});
+
 void (async () => {
   let failures = 0;
   for (const item of tests) {
