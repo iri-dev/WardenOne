@@ -631,6 +631,11 @@
     }
     .wo-sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
       overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+  #list-failures { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+  .list-failure { display:flex; gap:8px; align-items:baseline; font-size:10.5px; line-height:1.35; }
+  .list-failure-url { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--ink-soft); word-break:break-all; flex:1; }
+  .list-failure-why { color:var(--wo-danger); white-space:nowrap; font-weight:700; }
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
@@ -1409,7 +1414,11 @@
       <label class="tg"><input type="checkbox" data-key="autoUpdateLists"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="border-bottom:none;">
-      <div><div class="name" id="list-status">Blocklist: built-in</div><div class="desc" id="list-updated">Updates automatically once a day</div></div>
+      <div><div class="name" id="list-status">Blocklist: built-in</div><div class="desc" id="list-updated">Updates automatically once a day</div>
+      <!-- Named, not counted. A feed that 404s needs a new URL and one that is
+           over its size cap needs a smaller edition of the same list; as a bare
+           number those look identical and neither gets fixed. -->
+      <div id="list-failures" hidden></div></div>
       <button class="btn" id="update-now" style="flex:none;padding:8px 14px;">Update now</button>
     </div>
     </div>

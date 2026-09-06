@@ -130,7 +130,7 @@ claim that a licence is absent or that any use is or is not permitted.
 | Project | Feeds | Files | Licence |
 | --- | --- | --- | --- |
 | [AdAway/adaway.github.io](https://github.com/AdAway/adaway.github.io) | Network-level ad filtering | 1 | _not yet verified_ |
-| [blocklistproject/Lists](https://github.com/blocklistproject/Lists) | Supplemental domain lists; IP-logger and grabber domains; Tracking and telemetry domains | 3 | _not yet verified_ |
+| [blocklistproject/Lists](https://github.com/blocklistproject/Lists) | IP-logger and grabber domains; Tracking and telemetry domains | 2 | _not yet verified_ |
 | [DandelionSprout/adfilt](https://github.com/DandelionSprout/adfilt) | Malware and phishing domains | 1 | _not yet verified_ |
 | [Discord-AntiScam/scam-links](https://github.com/Discord-AntiScam/scam-links) | Web3 wallet drainers and social scams | 1 | _not yet verified_ |
 | [durablenapkin/scamblocklist](https://github.com/durablenapkin/scamblocklist) | IP-logger and grabber domains | 1 | _not yet verified_ |
@@ -147,7 +147,7 @@ claim that a licence is absent or that any use is or is not permitted.
 | [phishdestroy/destroylist](https://github.com/phishdestroy/destroylist) | Web3 wallet drainers and social scams | 1 | _not yet verified_ |
 | [phishing.army/phishing.army](https://phishing.army/) | Malware and phishing domains | 1 | _not yet verified_ |
 | [quenhus/uBlock-Origin-dev-filter](https://github.com/quenhus/uBlock-Origin-dev-filter) | Supplemental domain lists | 1 | _not yet verified_ |
-| [StevenBlack/hosts](https://github.com/StevenBlack/hosts) | Network-level ad filtering | 1 | _not yet verified_ |
+| [StevenBlack/hosts](https://github.com/StevenBlack/hosts) | Supplemental domain lists; Network-level ad filtering | 2 | _not yet verified_ |
 | [TMAFE/anti-grabify](https://github.com/TMAFE/anti-grabify) | IP-logger and grabber domains; Supplemental domain lists | 1 | _not yet verified_ |
 | [ublockorigin/uAssets](https://github.com/ublockorigin/uAssets) | Malware and phishing domains; Network-level ad filtering; Cosmetic (element-hiding) filtering | 5 | _not yet verified_ |
 

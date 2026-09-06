@@ -117,6 +117,30 @@ check('and when it is reported, it says protection is intact',
 check('the old unconditional wording is gone',
   !/unreachable during the last update/.test(BG));
 
+/* ---- a count is not a diagnosis ---------------------------------------------------
+   The main updater used to answer a failed fetch with `failedSources++; continue;`,
+   throwing away the URL and the reason. The popup could then say "5 unreachable"
+   and nobody -- reader or maintainer -- could find out which five. Three feeds sat
+   refused behind that number for months, one of them a list whose bucket was
+   therefore permanently empty. */
+check('the main updater records WHICH source failed and why',
+  /sourceFailures\.push\(\{/.test(BG) && /url: String\(result\.url \|\| ''\)/.test(BG)
+    && /error: String\(result\.error \|\| 'failed'\)/.test(BG),
+  'a bare counter cannot be acted on');
+check('the failures reach the stored meta',
+  /failures: sourceFailures\.slice\(0, \d+\)/.test(BG));
+check('the list of failures is bounded',
+  /sourceFailures\.slice\(0, \d+\)/.test(BG),
+  'a permanently broken feed should not grow storage without limit');
+check('the popup names them rather than only counting them',
+  /id="list-failures"/.test(POPUP_HTML) && /list-failure-url/.test(POPUP_JS)
+    && /list-failure-why/.test(POPUP_JS));
+check('and shows the reason, not just the name',
+  /why\.textContent = f\.error/.test(POPUP_JS),
+  'a 404 needs a new URL and an over-cap list needs a smaller edition; as a count they look identical');
+check('nothing is shown when every feed worked',
+  /failEl\.hidden = failedList\.length === 0/.test(POPUP_JS));
+
 console.log('');
 if (failures) {
   console.log(failures + ' check(s) failed');

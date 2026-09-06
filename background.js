@@ -2095,9 +2095,9 @@ const MALWARE_LISTS = [
   // OpenPhish-derived community phishing feed
   'https://malware-filter.gitlab.io/malware-filter/phishing-filter-hosts.txt',
   // abuse.ch ThreatFox IOC domains (active C2 / malware infrastructure)
-  'https://malware-filter.gitlab.io/malware-filter/vn-badsite-filter-hosts.txt',
+  'https://malware-filter.gitlab.io/vn-badsite-filter/vn-badsite-filter-hosts.txt',
   // HaGeZi's "threat intelligence feeds" -- aggregated malware/phishing/scam
-  'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/tif.txt',
+  'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt',
   // dnss-blocklist malicious aggregate -- malware, spyware, phishing, etc.
   'https://raw.githubusercontent.com/flinteger/dnss-blocklists/release/blocklists/malicious.domains.txt',
 ];
@@ -2107,7 +2107,7 @@ const TRACKER_LISTS = [
   // The Blocklist Project -- tracking (covers many logging/beacon endpoints)
   'https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt',
   'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext',
-  'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/pro.txt',
+  'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt',
 ];
 
 // ---- AdShield: ad-blocking network lists (toggle: adShield, ON by default) ----
@@ -2120,8 +2120,14 @@ const TRACKER_LISTS = [
 const ADSHIELD_NET_LISTS = [
   // Peter Lowe's ad servers (also in trackers, but AdShield should stand alone)
   'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext',
-  // HaGeZi "light" -- ads + tracking, false-positive-conscious, hosts format
-  'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/light.txt',
+  /* All three HaGeZi feeds (light here, pro and tif above) moved from hosts/ to
+     adblock/ upstream; the old paths now 404 and did so silently -- the count in
+     the popup just got smaller. parseList() reads ||domain^ as well as hosts
+     format, so the adblock variant is a drop-in. The wildcard/ variant is NOT:
+     its *. prefixes are rejected as unparseable. `node tools/check-feeds.js`
+     catches this the next time it happens. */
+  // HaGeZi "light" -- ads + tracking, false-positive-conscious
+  'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt',
   // AdGuad/AdAway-style mobile + web ad hosts
   'https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt',
   // StevenBlack hosts (adware + malware)
@@ -2195,7 +2201,10 @@ const SUPPLEMENTAL_LIST_DRIFT = {
 };
 const SUPPLEMENTAL_LIST_SOURCES = [
   {
-    url: 'https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt',
+    /* blocklistproject's porn.txt is 24.9 MB against the 8 MB supplemental cap,
+       so it was refused on every update and this bucket was always empty. The
+       StevenBlack porn-only alternate is the same job at 1.9 MB. */
+    url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts',
     bucket: 'adultDomainsExtra',
     label: 'adult-domains',
   },
@@ -2847,10 +2856,20 @@ const RESOURCE_TYPES = [
   'main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket',
   'webtransport', 'webbundle', 'csp_report', 'other',
 ];
-const LIST_FETCH_TIMEOUT_MS = 12000;
+/* 12s was too tight for what these lists have grown into. Four fetch in parallel
+   and the largest batch is around 28 MB, which needs ~19 Mbps sustained to finish
+   inside 12 seconds -- below that the big lists time out, and until recently that
+   showed up only as an unexplained number in the popup. A background refresh
+   taking longer costs nothing; losing a threat feed on a slow connection does.
+   An in-flight fetch keeps the MV3 worker alive, so a longer wait is safe. */
+const LIST_FETCH_TIMEOUT_MS = 25000;
 const LIST_FETCH_CONCURRENCY = 4;
 const LIST_SOURCE_MAX_BYTES = 18 * 1024 * 1024;
-const LIST_COSMETIC_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
+/* Raised from 10 MB: AdGuard's tracking-protection list grew past it and was
+   being refused on every update with nothing said beyond 'N unreachable' in the
+   popup. Cosmetic lists are parsed into selectors rather than kept whole, so
+   the extra 2 MB of source text is a smaller cost than losing the list. */
+const LIST_COSMETIC_SOURCE_MAX_BYTES = 12 * 1024 * 1024;
 const LIST_AUTO_MIN_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const LIST_STALE_WARN_MS = 72 * 60 * 60 * 1000;
 const LIST_STALE_CRITICAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -12462,6 +12481,7 @@ async function updateRemoteListsCore(reason) {
   let succeededSources = 0;
   let failedSources = 0;
   let rejectedSources = 0;
+  const sourceFailures = [];
   for (let i = 0; i < sources.length; i += LIST_FETCH_CONCURRENCY) {
     const batch = sources.slice(i, i + LIST_FETCH_CONCURRENCY);
     const results = await Promise.all(batch.map((url) => fetchListSource(url, reason, integrity)));
@@ -12472,6 +12492,16 @@ async function updateRemoteListsCore(reason) {
           if (result.alert) integrityAlerts.push(result.alert);
         }
         failedSources++;
+        /* Keep WHICH one and WHY. This used to be a bare counter, so the popup
+           could say "5 unreachable" and neither the reader nor anyone debugging
+           it had any way to find out which five -- three feeds sat refused for
+           months behind that number, one of them a list whose bucket was
+           therefore always empty. A count is not a diagnosis. */
+        sourceFailures.push({
+          url: String(result.url || '').slice(0, 200),
+          error: String(result.error || 'failed').slice(0, 160),
+          rejected: !!result.integrityRejected,
+        });
         continue;
       }
       succeededSources++;
@@ -12502,7 +12532,7 @@ async function updateRemoteListsCore(reason) {
       integrityRejected: true,
       error: 'List integrity guard quarantined the update',
       meta: previousMeta,
-      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
+      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
     };
   }
 
@@ -12528,7 +12558,7 @@ async function updateRemoteListsCore(reason) {
       ok: false,
       error: 'List integrity guard rejected update: ' + totalDrift,
       meta: previousMeta,
-      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
+      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
     };
   }
 
@@ -12569,7 +12599,7 @@ async function updateRemoteListsCore(reason) {
         skipped: true,
         error: 'WardenOne is disabled',
         meta: previousMeta,
-        sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
+        sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
       };
     }
     BLOCKED_DOMAINS = new Set(merged);
@@ -12603,7 +12633,7 @@ async function updateRemoteListsCore(reason) {
       updated: Date.now(),
       reason,
       sourceSetId,
-      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
+      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
       storedDomainCount: storedDomains.storedCount || 0,
       integrity: {
         sourcePins: Object.keys((savedIntegrity && savedIntegrity.sources) || {}).length,

@@ -2600,6 +2600,31 @@ function renderListMeta() {
         line += ' - ' + s.succeeded + '/' + s.total + ' feeds';
         if (s.failed > 0) line += ' (' + s.failed + ' unreachable)';
       }
+      /* Name them. "5 unreachable" on its own is a number nobody can act on, and
+         three feeds sat refused behind that number for months -- one of them a
+         list whose bucket was therefore always empty. The reason matters as much
+         as the name: a 404 needs a new URL, "over its cap" needs a smaller
+         edition of the same list, and they look identical as a count. */
+      const failedList = (s && Array.isArray(s.failures)) ? s.failures : [];
+      const failEl = $('list-failures');
+      if (failEl) {
+        failEl.textContent = '';
+        failEl.hidden = failedList.length === 0;
+        for (const f of failedList) {
+          const row = document.createElement('div');
+          row.className = 'list-failure';
+          let host = String(f.url || '');
+          try { host = new URL(host).hostname + new URL(host).pathname; } catch (_) { /* keep the raw string */ }
+          const name = document.createElement('span');
+          name.className = 'list-failure-url';
+          name.textContent = host.length > 58 ? host.slice(0, 58) + '…' : host;
+          const why = document.createElement('span');
+          why.className = 'list-failure-why';
+          why.textContent = f.error || 'failed';
+          row.append(name, why);
+          failEl.appendChild(row);
+        }
+      }
       const age = meta.updated ? Date.now() - Number(meta.updated) : 0;
       if (age > 7 * 24 * 60 * 60 * 1000) {
         line += ' - stale';
