@@ -11771,8 +11771,15 @@ LOGIN_COMPAT_NEVER_BLOCK_DOMAINS.forEach((domain) => NEVER_BLOCK_DOMAINS.add(dom
   'twitch.tv', 'ttvnw.net', 'jtvnw.net', 'twitchcdn.net',
   'microsoft.com', 'office.com', 'office365.com', 'live.com',
   'discord.com', 'discordapp.com', 'slack.com', 'zoom.us',
+  // discord.gg is not a sibling of discord.com to a suffix matcher, and the gateway
+  // (gateway.discord.gg) is the socket every message and presence update rides on.
+  'discord.gg',
   'figma.com', 'canva.com', 'notion.so', 'dropbox.com',
   'netflix.com', 'spotify.com', 'paypal.com', 'stripe.com',
+  // Spotify serves album art and player assets from its own CDN, which shares no
+  // registrable domain with spotify.com -- i.scdn.co is where the artwork on a
+  // "listening to" card comes from.
+  'scdn.co', 'spotifycdn.com',
   'cloudflare.com', 'cloudflare.net',
 ].forEach((domain) => NEVER_BLOCK_DOMAINS.add(domain));
 
@@ -11803,12 +11810,20 @@ function isNeverBlockDomain(domain) {
 
 // High-priority DNR allow rules for the trusted-infrastructure (NEVER_BLOCK) domains, so a
 // false-positive in the 28k-rule EasyList/adshield pack -- or a learned/grabber rule -- cannot
-// break a FUNCTIONAL subresource (script/stylesheet/font/xhr/sub_frame) on a major SaaS app
-// (figma, notion, slack, dropbox, ...). Scoped to functional resource types ONLY: image / ping /
+// break a FUNCTIONAL subresource (script/stylesheet/font/xhr/websocket/sub_frame) on a major SaaS
+// app (figma, notion, slack, dropbox, ...). Scoped to functional resource types ONLY: image / ping /
 // beacon are deliberately NOT allowed, so tracking pixels served from these domains stay
 // blockable. Priority sits above our block rules (static 1, tracker/easyprivacy 1000, learned/
 // grabber 2000) but below the media-compat (90000) and user-allowlist (100000) rules. Per-URL
 // reputation / SafeBrowsing is a separate JS-side layer and is unaffected by these DNR allows.
+//
+// websocket belongs here and was missing. A downloaded rule that names no resourceTypes matches
+// EVERY type, so leaving websocket out allowed the xhr and blocked the socket on the same host --
+// which does not look like a block from the page, it looks like a feature quietly not working.
+// Reported as: the Spotify WEB PLAYER plays normally but Discord never shows what you are
+// listening to. Discord's servers poll Spotify for that, and the web player publishes its state
+// over wss://dealer.spotify.com; with the socket dropped there is nothing for Discord to read.
+// The desktop app is unaffected, which is why it looks like a Discord bug rather than ours.
 // NEVER_BLOCK domains that ALSO host their own first-party ad / conversion / telemetry SCRIPTS
 // (EasyList/our tracker list deliberately block paths like google.com/pagead/*, youtube.com/
 // pagead/*, google.com/ccm/collect). They must NOT get a blanket script/xhr allow or those ads
@@ -11836,7 +11851,7 @@ async function applyNeverBlockAllowRules() {
         id: NEVER_BLOCK_ALLOW_RULE_BASE + addRules.length,
         priority: 3000,
         action: { type: 'allow' },
-        condition: { requestDomains: domains.slice(i, i + BATCH), resourceTypes: ['script', 'stylesheet', 'font', 'xmlhttprequest', 'sub_frame'] },
+        condition: { requestDomains: domains.slice(i, i + BATCH), resourceTypes: ['script', 'stylesheet', 'font', 'xmlhttprequest', 'websocket', 'sub_frame'] },
       });
     }
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
