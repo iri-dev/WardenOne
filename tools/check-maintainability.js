@@ -213,6 +213,7 @@ function checkContentBuild() {
   'tools/test-blocked-site-list.js',
   'tools/test-user-filters.js',
   'tools/test-network-logger.js',
+  'tools/test-extension-check.js',
   'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
@@ -499,6 +500,7 @@ checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);
 checkCommand('blocked site list tests', ['tools/test-blocked-site-list.js']);
 checkCommand('user filter rules and custom lists', ['tools/test-user-filters.js']);
 checkCommand('network logger', ['tools/test-network-logger.js']);
+checkCommand('check an extension', ['tools/test-extension-check.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);

@@ -4159,6 +4159,130 @@ try {
   });
 } catch (_) {}
 
+// ---- Check an extension before installing it -------------------------------
+// Reads the same bundled exact-ID catalogue the Security Centre uses, for an
+// extension that is not installed. Nothing new is downloaded to answer the local
+// half; the store lookup below is a separate, explicit step.
+
+// A Chrome extension id is 32 characters from a-p. Anything else is not an id,
+// and guessing at a near-miss would be worse than refusing: a one-character slip
+// is a DIFFERENT extension, not a typo to be helpfully corrected.
+//
+// EXTENSION_ID_RE itself comes from background-extension-reputation.js, which is
+// importScripts'd into this same worker scope. Declaring a second copy here threw
+// "Identifier has already been declared" at load -- taking the whole service
+// worker down, not just this feature -- so there is deliberately one definition
+// of what an extension ID is.
+
+function parseExtensionReference(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return { id: '', error: 'Paste a Chrome Web Store link or an extension ID.' };
+  const bare = value.toLowerCase();
+  if (EXTENSION_ID_RE.test(bare)) return { id: bare, slugName: '' };
+  let url = null;
+  try { url = new URL(value); } catch (_) { url = null; }
+  if (!url) {
+    return { id: '', error: 'That is not a Chrome Web Store link, and not a 32-letter extension ID.' };
+  }
+  if (!/(^|\.)chrome\.google\.com$|(^|\.)chromewebstore\.google\.com$/i.test(url.hostname)) {
+    return { id: '', error: 'That link is not on the Chrome Web Store.' };
+  }
+  // Both shapes in use: /detail/<slug>/<id> and the older /detail/<id>.
+  const parts = url.pathname.split('/').filter(Boolean);
+  const id = parts.map((p) => p.toLowerCase()).find((p) => EXTENSION_ID_RE.test(p)) || '';
+  if (!id) return { id: '', error: 'That Chrome Web Store link has no extension ID in it.' };
+  const slug = parts.find((p) => p !== id && p !== 'detail' && p !== 'webstore' && !/^[a-z]{2}(-[A-Za-z]{2})?$/.test(p));
+  return { id, slugName: slug ? slug.replace(/[-_]+/g, ' ').trim() : '' };
+}
+
+// The installed inventory, when there is one. An extension the reader already has
+// is a different question -- and the honest answer to "should I install this" is
+// "you already did".
+async function installedExtensionById(id) {
+  if (!chrome.management || !chrome.management.getAll) return null;
+  try {
+    const all = await new Promise((resolve) => {
+      chrome.management.getAll((items) => { void chrome.runtime.lastError; resolve(items || []); });
+    });
+    const found = (all || []).find((x) => x && x.id === id);
+    if (!found) return null;
+    return {
+      name: String(found.name || '').slice(0, 160),
+      version: String(found.version || '').slice(0, 40),
+      enabled: found.enabled !== false,
+      installType: String(found.installType || ''),
+      permissions: (found.permissions || []).slice(0, 60),
+      hostPermissions: (found.hostPermissions || []).slice(0, 60),
+    };
+  } catch (_) { return null; }
+}
+
+async function describeExtensionById(id, slugName, providedName) {
+  const database = await loadCombinedExtensionReputation();
+  const installed = await installedExtensionById(id);
+  /* Best available name, in order of authority: what the store called it, what
+     the reader has installed, then the slug out of the link. A documented
+     incident applies on the id alone and needs none of this -- an attacker
+     renaming their copy must not shed its history -- but recognition is withheld
+     without a corroborating name, deliberately, so a wrong id fails closed. */
+  const name = String(providedName || (installed && installed.name) || slugName || '').slice(0, 160);
+  const reputation = lookupExtensionReputation({ id, name, version: installed && installed.version }, database);
+  const record = database && database.entries && database.entries[id];
+  return {
+    ok: true,
+    id,
+    name,
+    nameSource: providedName ? 'store' : (installed ? 'installed' : (slugName ? 'link' : '')),
+    installed,
+    reputation,
+    /* Say the catalogue holds this id even when recognition was withheld for
+       want of a name. "No record" and "a record we cannot confirm is yours" are
+       different answers and only one of them is fixed by pasting the store link. */
+    cataloguedAs: record && record.name ? String(record.name).slice(0, 160) : '',
+    catalogueStatus: record && record.status ? record.status : '',
+    datasetVersion: (database && database.datasetVersion) || '',
+    entryCount: database && database.entries ? Object.keys(database.entries).length : 0,
+  };
+}
+
+// The store lookup. Deliberately not automatic: it tells Google which extension
+// someone is thinking about installing.
+const WEB_STORE_FETCH_TIMEOUT_MS = 15000;
+const WEB_STORE_MAX_BYTES = 2 * 1024 * 1024;
+
+async function fetchWebStoreListing(id) {
+  if (!EXTENSION_ID_RE.test(String(id || ''))) return { ok: false, error: 'Not an extension ID.' };
+  const url = 'https://chromewebstore.google.com/detail/x/' + id;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WEB_STORE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { credentials: 'omit', cache: 'no-store', signal: controller.signal });
+    if (!res || !res.ok) return { ok: false, error: 'The Chrome Web Store answered HTTP ' + (res ? res.status : '?') + '.' };
+    /* Only the head of the document is needed and the page is ~700 KB, so stop
+       once the tags being read have gone by. */
+    const text = await readResponseTextWithByteLimit(res, WEB_STORE_MAX_BYTES);
+    /* A live listing titles itself "<name> - Chrome Web Store"; a removed one --
+       and an id that never existed -- both give the bare store title with no
+       install control. The two cannot be told apart from outside, and saying
+       which it is would be a guess. */
+    const title = (text.match(/property="og:title" content="([^"]*)"/i) || [])[1] || '';
+    const name = title.replace(/\s*-\s*Chrome Web Store\s*$/i, '').trim();
+    const listed = !!name && /Add to Chrome/i.test(text);
+    return {
+      ok: true,
+      listed,
+      name: listed ? name.slice(0, 160) : '',
+      checkedAt: Date.now(),
+    };
+  } catch (e) {
+    const why = e && e.name === 'AbortError' ? 'The Chrome Web Store did not answer in time.'
+      : 'The Chrome Web Store could not be reached.';
+    return { ok: false, error: why };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- Cryptojacking guard (toggle: blockCryptominers) ----
 // Drive-by mining is a network problem before it is a CPU problem: the miner has to
 // fetch its payload and then reach a pool, and both hops are blockable. Two buckets,
@@ -16862,6 +16986,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } catch (e) {
         sendResponse({ ok: false, error: String(e), selectors: [] });
       }
+    })();
+    return true;
+  }
+
+  // ---- Check an extension before installing it ----
+  /* The Security Centre answers "what is installed and did it change". This
+     answers the question that comes first: should I install this at all.
+     Everything the answer needs already exists -- the bundled exact-ID catalogue,
+     the version-aware lookup, and the installed inventory. What was missing was a
+     way in that does not require installing the thing first.
+
+     Both kinds are privileged. A page able to reach them could ask WardenOne
+     which extensions the reader has installed, one id at a time. */
+  if (msg && msg.kind === 'extension-check') {
+    (async () => {
+      const parsed = parseExtensionReference(msg.reference);
+      if (!parsed.id) {
+        sendResponse({ ok: false, error: parsed.error || 'That is not a Chrome Web Store link or an extension ID.' });
+        return;
+      }
+      sendResponse(await describeExtensionById(parsed.id, parsed.slugName, msg.name));
+    })();
+    return true;
+  }
+  /* The one step that leaves the machine, and only when asked. It buys two
+     things: whether the listing is still there, and the name the store gives it
+     -- which is what lets an exact-ID catalogue match be corroborated at all. */
+  if (msg && msg.kind === 'extension-check-store') {
+    (async () => {
+      const parsed = parseExtensionReference(msg.reference);
+      if (!parsed.id) { sendResponse({ ok: false, error: 'That is not an extension ID.' }); return; }
+      const listing = await fetchWebStoreListing(parsed.id);
+      if (!listing.ok) { sendResponse({ ok: false, error: listing.error }); return; }
+      /* Re-run the local lookup with the store's own name: with a real name the
+         catalogue can corroborate, which a bare id can never do. */
+      const described = await describeExtensionById(parsed.id, parsed.slugName, listing.name);
+      sendResponse(Object.assign({}, described, { listing }));
     })();
     return true;
   }
