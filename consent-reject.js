@@ -106,6 +106,7 @@
   let started = false;
   let openSettingsUntil = 0;
   let lastLogAt = 0;
+  let scanFinished = false;
 
   const clicked = new WeakSet();
   const opened = new WeakSet();
@@ -577,8 +578,7 @@
         woTimeout(releasePageLock, 250);
         woTimeout(releasePageLock, 900);
         logAction('reject', 'Twitch cookie banner: Reject');
-        woTimeout(queueScan, 250);
-        woTimeout(queueScan, 900);
+        finishConsentWork();
         return true;
       }
     } catch (_) {}
@@ -633,8 +633,7 @@
           woTimeout(releasePageLock, 250);
           woTimeout(releasePageLock, 900);
           logAction('reject', elementText(el));
-          woTimeout(queueScan, 250);
-          woTimeout(queueScan, 900);
+          finishConsentWork();
           return true;
         }
       }
@@ -839,14 +838,16 @@
 
   function scan() {
     scanQueued = false;
-    if (!active || !document.documentElement) return;
+    if (scanFinished || !active || !document.documentElement) return;
 
     // Consent banners appear early or not at all. Once a page has gone SCAN_GIVE_UP_MS
     // without one, stop reacting to its DOM changes: otherwise every mutation for the
     // rest of the 120s observer window buys another full-document scan -- an 1800-node
     // walk and up to 500 visibility tests -- on a page that has already demonstrated it
-    // has nothing to dismiss. The timed passes in start() still run, so a genuinely
-    // late banner is not abandoned.
+    // has nothing to dismiss. A completed reject/save exits above through scanFinished;
+    // everActed remains useful for the unfinished settings path, which must keep looking
+    // for the switches and final save button. The timed passes in start() still run, so
+    // a genuinely late banner is not abandoned.
     if (!firstScanAt) firstScanAt = Date.now();
     if (!everActed && observer && Date.now() - firstScanAt > SCAN_GIVE_UP_MS) {
       try { observer.disconnect(); } catch (_) {}
@@ -887,8 +888,7 @@
         woTimeout(releasePageLock, 250);
         woTimeout(releasePageLock, 900);
         logAction('reject', elementText(reject));
-        woTimeout(queueScan, 250);
-        woTimeout(queueScan, 900);
+        finishConsentWork();
         return;
       }
     }
@@ -904,8 +904,7 @@
         woTimeout(releasePageLock, 250);
         woTimeout(releasePageLock, 900);
         logAction('reject', 'disabled optional consent choices');
-        woTimeout(queueScan, 250);
-        woTimeout(queueScan, 900);
+        finishConsentWork();
         return;
       }
       woTimeout(queueScan, 220);
@@ -955,6 +954,30 @@
   let everActed = false;
   let slowTimer = null;
 
+  /* A reject button or a saved set of disabled choices is terminal. Keeping the
+     document-wide observer and the 95 ms startup poll alive after that point made a
+     successful Spotify rejection the expensive case: its ordinary class churn kept
+     buying another full consent scan while the reader dragged the volume slider.
+     Opening Settings is deliberately not terminal; that path still scans until it
+     reaches the save button above. */
+  function finishConsentWork() {
+    scanFinished = true;
+    scanQueued = false;
+    if (scanDeferred) {
+      try { clearTimeout(scanDeferred); } catch (_) {}
+      woPending.delete(scanDeferred);
+      scanDeferred = null;
+    }
+    if (observer) {
+      try { observer.disconnect(); } catch (_) {}
+      observer = null;
+    }
+    if (slowTimer) {
+      try { clearInterval(slowTimer); } catch (_) {}
+      slowTimer = null;
+    }
+  }
+
   // Scan during an idle gap rather than on the next frame. Used by the slow poll, where
   // being a few hundred milliseconds late costs nothing and blocking a frame costs a
   // visible stutter. requestIdleCallback is not universal, hence the fallback.
@@ -969,7 +992,7 @@
   }
 
   function queueScan(throttled) {
-    if (scanQueued || !active) return;
+    if (scanFinished || scanQueued || !active) return;
     if (throttled === true) {
       const since = Date.now() - lastScanAt;
       if (since < SCAN_MIN_GAP_MS) {
@@ -984,12 +1007,63 @@
     try { requestAnimationFrame(scan); } catch (_) { woTimeout(scan, 40); }
   }
 
+  // A document-wide observer should wake the document-wide scanner only when the
+  // changed node could plausibly be consent UI. Spotify changes a volume label and
+  // state class for every input step; treating those ordinary mutations as banner
+  // arrivals made each step buy an 1800-node tree walk. The cheap node-local test
+  // preserves late/obfuscated banners: vendor/class/role selectors, consent wording,
+  // and reject/settings controls next to consent wording all wake the full scanner.
+  function mutationNodeMayAffectConsent(node) {
+    try {
+      if (!node) return false;
+      if (node.nodeType === 3) return hasConsentLanguage(String(node.nodeValue || ''));
+      if (node.nodeType !== 1) return false;
+      const identity = [
+        node.id,
+        typeof node.className === 'string' ? node.className : '',
+        node.getAttribute && node.getAttribute('role'),
+        node.getAttribute && node.getAttribute('aria-label'),
+        node.getAttribute && node.getAttribute('data-testid'),
+        node.getAttribute && node.getAttribute('data-test'),
+      ].filter(Boolean).join(' ');
+      if (CONSENT_FRAME_HINT_RE.test(identity)) return true;
+      if (node.matches && node.matches(CONTAINER_SELECTOR)) return true;
+      const text = String(node.textContent || '').slice(0, 2400);
+      if (hasConsentLanguage(text)) return true;
+      if (CONSENT_ACTION_TEXT_RE.test(text)) {
+        const parentText = String(node.parentElement && node.parentElement.textContent || '').slice(0, 2400);
+        if (hasConsentLanguage(parentText)) return true;
+      }
+      return !!(node.querySelector && node.querySelector(CONTAINER_SELECTOR));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function mutationsMayAffectConsent(records) {
+    try {
+      for (const record of records || []) {
+        if (record.type === 'attributes') {
+          if (mutationNodeMayAffectConsent(record.target)) return true;
+          continue;
+        }
+        const added = record.addedNodes || [];
+        for (let i = 0; i < added.length; i++) {
+          if (mutationNodeMayAffectConsent(added[i])) return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function startObserver() {
-    if (observer || !document.documentElement) return;
+    if (scanFinished || observer || !document.documentElement) return;
     // Explicitly flagged as mutation-driven: a MutationObserver hands its callback
     // (records, observer), and a records array is truthy, so the throttle has to be
     // asked for by identity rather than inferred from the argument.
-    observer = woObserver(() => queueScan(true));
+    observer = woObserver((records) => {
+      if (mutationsMayAffectConsent(records)) queueScan(true);
+    });
     try {
       // 'style' is deliberately NOT watched. Inline style is what animations and drag
       // feedback rewrite -- a range slider rewrites it on every frame it moves -- so
@@ -1022,7 +1096,7 @@
       [0, 50, 140, 260].forEach((ms) => woTimeout(queueScan, ms));
       let fastPolls = 0;
       const fastTimer = woInterval(() => {
-        if (!active || fastPolls++ >= 24) { clearInterval(fastTimer); return; }
+        if (!active || scanFinished || fastPolls++ >= 24) { clearInterval(fastTimer); return; }
         queueScan();
       }, 95);
       [3000, 4500, 7000, 11000].forEach((ms) => woTimeout(queueScan, ms));
@@ -1034,6 +1108,11 @@
       const wasActive = active;
       updateActive();
       if (active) {
+        if (!wasActive) {
+          scanFinished = false;
+          everActed = false;
+          firstScanAt = 0;
+        }
         startObserver();
         queueScan();
       } else if (wasActive && observer) {

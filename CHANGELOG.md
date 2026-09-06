@@ -347,8 +347,13 @@ as the work happened.
   bottom-right area as the Guard Active chip, while every drag update also used
   to wake the consent-banner scanner for a full-page layout pass. The badge now
   gets completely out of the way of nearby player controls and never hit-tests
-  from pointer-move events; the consent observer no longer watches per-frame
-  inline-style feedback and moves its remaining scans out of active frames.
+  from pointer-move events; its nearby-control check no longer silently fails in
+  strict mode, and a hidden badge keeps enough geometry to remain hidden on later
+  checks. Spotify is now treated as a trusted player surface, so the overlay
+  cleaner no longer reclassifies hundreds of player nodes while its controls
+  update. The consent observer no longer watches per-frame inline-style feedback,
+  ignores mutations unrelated to consent UI, stops once a reject/save choice has
+  completed, and moves its remaining scans out of active frames.
 - Fixed Element Zapper trapping clicks meant for its own Keep, Undo, Done and
   Cancel controls. Zap now saves one selection, pauses further picking, reports
   save failures honestly, and keeps its confirmation open until Done; oversized
