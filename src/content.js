@@ -1214,7 +1214,7 @@
        declared several thousand lines further down, which put it in the temporal dead zone for
        anything earlier -- and the scam scan can run synchronously when body already exists. One
        definition, per the house rule, rather than a second copy of the same list. */
-    trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname),
+    trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|spotify\.com|spotifycdn\.com|scdn\.co|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname),
     /* Assistant surfaces, where the page text is a conversation the user is
        having rather than the page talking to them. Asking an assistant about
        tech-support scams or about ClickFix produces a page whose text contains
@@ -19059,7 +19059,7 @@
     catch(_){
 
     }
-    if(WO.removeOverlays&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
+    if(WO.removeOverlays&&!trustedMediaHost&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
       /* Mutable on purpose: start() sets it and the observer timeout clears it. It used to sit
          inside the const chain below, where the first assignment threw TypeError and aborted
          engine start-up on every ordinary page, because removeOverlays is on by default. */
