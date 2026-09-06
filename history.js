@@ -38,6 +38,7 @@ const LABELS = {
   youtube_ad_diag: 'YouTube ad diagnostic',
   warned_shortener: 'Shortened link',
   warned_redirect_param: 'Redirecting link',
+  stripped_link_ping: 'Click-tracking beacon removed',
   warned_logger_api: 'Possible tracker request',
   warned_abuseipdb_server: 'Suspicious IP server',
   warned_url_reputation: 'Suspicious URL reputation',

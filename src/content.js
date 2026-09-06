@@ -2676,10 +2676,46 @@
       }
       return out
     }
-    const scrubDomLink=el=>{
+    /* ---- hyperlink auditing --------------------------------------------------
+    <a ping="https://tracker.example/click"> makes the browser send a request to
+    that URL when the link is clicked. The link still goes where it says it goes;
+    the ping is a separate beacon nobody asked for, and there is no way to see it
+    happen from the page.
+
+    It is removed unconditionally, which is safe in a way almost nothing else here
+    is: ping carries no part of the navigation. The click is driven entirely by
+    href, no response is ever read, and the page cannot observe whether the beacon
+    fired. Removing it can therefore lose a site its click analytics and cannot
+    lose the reader anything.
+
+    Filtering it at the network layer was already possible and is already done --
+    resource type "ping" is in TRACKER_RESOURCE_TYPES and SECURITY_RESOURCE_TYPES,
+    so a ping AT A LISTED DESTINATION is dropped. That is the part a blocklist can
+    reach. This closes the rest: a ping to the site's own domain, or to any host no
+    list has ever heard of, which is most of them. */
+    let pingStripCount=0;
+    const stripPingAttr=el=>{
+      try{
+        if(!el||!el.hasAttribute||!el.hasAttribute("ping"))return!1;
+        el.removeAttribute("ping");
+        /* Capped like every other counted event here: the log is a record that this
+           happens on a site, not a tally of every link on it. */
+        return++pingStripCount<=20&&log("stripped_link_ping",
+        {
+
+        }),
+        !0
+      }
+      catch(_){
+        return!1
+      }
+
+    },
+    scrubDomLink=el=>{
       try{
         if(!WO.unshimLinks&&!WO.stripTrackingParams||!el||!el.tagName)return;
         if("A"===el.tagName||"AREA"===el.tagName){
+          stripPingAttr(el);
           const old=el.getAttribute("href");
           if(!old)return;
           const cleaned=stripTracking(old);
@@ -2703,7 +2739,9 @@
     sweepDomLinks=root=>{
       try{
         if(!WO.unshimLinks&&!WO.stripTrackingParams)return;
-        (root||document).querySelectorAll("a[href],area[href],form[action]").forEach(scrubDomLink)
+        /* a[ping] as well as a[href]: the attribute is legal without an href, and a
+           link with only a ping is a beacon wearing a link's clothes. */
+        (root||document).querySelectorAll("a[href],area[href],form[action],a[ping],area[ping]").forEach(scrubDomLink)
       }
       catch(_){
 
@@ -2725,6 +2763,44 @@
       }),
       woOn(document,"wo-config-change",
       ()=>sweepDomLinks(document))
+    }
+    catch(_){
+
+    }
+    /* The sweep above sees ping attributes that are in the markup. It cannot see one
+    ADDED to a link that already exists, because the shared observer watches childList
+    only -- and it has to stay that way: watching attributes across the document is
+    precisely what made dragging a volume slider cost a full scan every frame.
+
+    So the other half is caught at the click instead. Two listeners, because the last
+    one to run wins: a page that re-adds ping from its own mousedown handler runs after
+    the capture pass on mousedown, and click capture is the final point before Chrome
+    reads the attribute and sends the beacon.
+
+    Cheap on purpose. closest() is a walk up the tree with no measurement in it, and
+    these fire on real clicks rather than on movement -- this file already learned what
+    a forced layout on a pointer path costs. */
+    try{
+      const stripPingOnClick=e=>{
+        try{
+          if(!WO.unshimLinks&&!WO.stripTrackingParams)return;
+          const t=e&&e.target;
+          if(!t||!t.closest)return;
+          const a=t.closest("a[ping],area[ping]");
+          a&&stripPingAttr(a)
+        }
+        catch(_){
+
+        }
+
+      };
+      for(const ev of["mousedown","click"])woOn(document,
+      ev,
+      stripPingOnClick,
+      {
+        capture:!0,
+        passive:!0
+      })
     }
     catch(_){
 

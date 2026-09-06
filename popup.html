@@ -1060,11 +1060,11 @@
       <label class="tg"><input type="checkbox" data-key="clearServiceWorkersOnLeave"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Clean tracking redirects on links</div><div class="desc">Rewrite outbound links that hide the real destination behind a tracker (Facebook l.php, Google /url, Reddit out, etc.) so a click goes straight there.</div></div>
+      <div><div class="name">Clean tracking redirects on links</div><div class="desc">Rewrite outbound links that hide the real destination behind a tracker (Facebook l.php, Google /url, Reddit out, etc.) so a click goes straight there. Also removes <code>ping</code> attributes, which quietly notify a third address every time you click a perfectly normal-looking link. The link still goes exactly where it says &mdash; <code>ping</code> is a separate beacon and carries no part of the navigation, so nothing but the site's click analytics is lost.</div></div>
       <label class="tg"><input type="checkbox" data-key="unshimLinks"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row clean-copy-row">
-      <div class="clean-copy-body"><div class="name">Clean links copied inside pages</div><div class="desc">Auto-strips tracking (utm_, fbclid, YouTube si, Amazon ref and similar) as you copy, so pastes come out clean. Covers Ctrl+C on a link and site Share/Copy buttons. Chrome&rsquo;s own &ldquo;Copy link address&rdquo; and the address bar are browser-level, so no extension can catch them &mdash; for those use the right-click &ldquo;Copy clean link&rdquo;, or Alt+Shift+C for this page. On by default.</div>
+      <div class="clean-copy-body"><div class="name">Clean links copied inside pages</div><div class="desc">Auto-strips tracking (utm_, fbclid, YouTube si, Amazon ref and similar) as you copy, so pastes come out clean. Covers Ctrl+C on a link and site Share/Copy buttons. Chrome&rsquo;s own &ldquo;Copy link address&rdquo; and the address bar are browser-level, so no extension can catch them &mdash; for those use the right-click &ldquo;Copy clean link&rdquo;, or the keyboard shortcut for this page (listed under Keyboard shortcuts below). On by default.</div>
         <button class="btn clean-copy-action" id="copy-clean-current-address" type="button" aria-describedby="copy-clean-current-address-result">Copy clean current address</button>
         <div class="clean-copy-result" id="copy-clean-current-address-result" role="status" aria-live="polite"></div>
       </div>

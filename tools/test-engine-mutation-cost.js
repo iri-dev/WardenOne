@@ -138,8 +138,11 @@ check('the social consumer gates before walking added nodes',
 check('the dom-link consumer gates before walking added nodes',
   /if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\)return;\s*for\(let i=0;\s*i<added\.length;\s*i\+\+\)scrubDomLink\(added\[i\]\)/.test(SRC),
   'scrubDomLink and sweepDomLinks both test it first');
+/* Not anchored on `const`: scrubDomLink shares its declaration with the ping-attribute
+   scrubber that now sits above it, so the keyword is on that one. The bail condition is
+   what this check is about, and it is unchanged. */
 check('scrubDomLink really does bail on the same condition',
-  /const scrubDomLink=el=>\{\s*try\{\s*if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\|\|/.test(SRC),
+  /\bscrubDomLink=el=>\{\s*try\{\s*if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\|\|/.test(SRC),
   'the consumer gate is only behaviour-preserving while this holds');
 
 /* ---- 3. read only as much page text as you are going to look at --------- */
