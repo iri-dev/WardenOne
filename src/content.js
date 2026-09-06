@@ -4573,7 +4573,18 @@
         "recaptcha.net",
         "arkoselabs.com",
         "funcaptcha.com",
-        "gravatar.com"],
+        "gravatar.com",
+        /* Spotify is a public OAuth API that third-party apps are built on, exactly
+        like YouTube and Google above -- and leaving it out meant those apps were
+        singled out. A page holding a Spotify access token and calling Spotify with it
+        is the token going home, not leaving. Reported twice: Discord never showing
+        "Listening to Spotify", and Exportify hanging forever after login because the
+        playlist fetch was dropped, so there was never anything to build a CSV from.
+        A per-app family entry would have fixed one site and left every other Spotify
+        app broken, which is why this belongs here and not there. */
+        "spotify.com",
+        "scdn.co",
+        "spotifycdn.com"],
         families=[{
           pages:["spotify.com",
           "scdn.co",
@@ -4622,6 +4633,11 @@
           "t.co"]
         },
         {
+          /* Spotify is NOT repeated here. It is a globalDestination, which covers
+             Discord along with every other app built on Spotify's API -- and a
+             second copy in this family would be a security policy asserting the
+             same thing in two places, which is how one of them later gets removed
+             by someone who believes the other still covers it. */
           pages:["discord.com",
           "discordapp.com"],
           destinations:["discord.com",

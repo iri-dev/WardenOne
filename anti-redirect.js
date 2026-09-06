@@ -1754,6 +1754,12 @@
     try { return regHost(new URL(credentialFrameBaseUrl()).hostname); } catch (_) { return ''; }
   }
 
+  /* No first-party-frame exemption here, deliberately. It looks like this guard
+     only runs in child frames and so treats a site's own iframe more harshly than
+     its top frame -- but content.min.js (all_frames:false) owns the top frame and
+     this block (all_frames:true, !TOP_FRAME) owns the children. The two are
+     complementary, not asymmetric, and exempting first-party frames would leave
+     them with no token guard at all. */
   function credentialFrameTarget(rawTarget) {
     try {
       const base = credentialFrameBaseUrl();
