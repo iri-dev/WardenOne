@@ -118,6 +118,17 @@ The Activity Centre tells you a security event happened. The logger tells you **
   - **It offers none** → the consent-or-pay sheet that covers the page and freezes scrolling gets lifted off. Nothing is clicked, so nothing is consented to and no consent cookie is written. Opt-in, because it can't always work: on a few sites the article was never sent to your browser at all, so WardenOne measures what's behind the wall and puts the wall back rather than leave you a blank page. Publishers who keep the wall on a separate domain are out of reach entirely. Built from a 101-site live test.
   - **You accepted it yourself** → the site's consent and tracking cookies, and the tracking IDs it stored, are cleared once you leave. Sign-ins are left alone.
 
+### Email tracking pixels &mdash; Mail Shield
+A marketing email hides a 1&times;1 image with your address in its URL. Loading it tells the sender you opened the message, when, and roughly from where. **Ordinary tracker blocking misses these**, because Gmail proxies every remote image through `googleusercontent.com` &mdash; at the network layer there is no tracker domain left to match.
+
+But the information is not gone, it moved: Gmail keeps the original address in the *fragment* of the proxy link it writes into the page (`...=s0-d-e1-ft#https://click.example/o/abc`). A fragment is never sent to a server, which is exactly why a blocklist cannot see it &mdash; and why this has to be done in the page instead. Mail Shield recovers the real tracker from behind the proxy and neutralises it.
+
+- Works in Gmail, Outlook, Proton, Yahoo, Fastmail, Zoho, AOL and Gandi. It is registered for those sites only &mdash; it never reads images on the rest of the web.
+- **Neutralises rather than blocks.** The pixel is replaced with a transparent image of the same declared size, so nothing looks broken and a wrong guess is invisible &mdash; old HTML email uses 1&times;1 spacer GIFs for layout, and swapping one transparent pixel for another changes nothing.
+- Decides from the markup, never the rendered size: by the time an image has a measurable box it has already loaded and the tracker has already fired.
+- Catches lazily-parked URLs too (`data-src`), which is how webmail defers images.
+
+**Measured limits, stated plainly.** A pixel the client had not loaded yet is stopped before any request is made. One already loading is cancelled mid-flight &mdash; the part that identifies you never goes, but bytes may have reached the network. Where a provider rewrites an image and keeps no trace of its source, only the shape of the image is left to judge by. And whether the provider fetched the image on its own servers is outside what any browser extension can see. It does not claim to stop all email tracking.
 ### Anti-fingerprinting
 - Per-session randomised canvas / WebGL / WebGPU / audio / hardware-hint noise.
 - **One GPU identity across every surface.** WebGL and WebGPU are asked the same question by different APIs, and answering them differently is worse than answering neither: the contradiction is rarer than the truth, and it announces that something is rewriting one of them. Both come from a single per-session pick, and WebGPU adapter limits are reported as the spec-required minimums so every user of the shield looks alike rather than uniquely noisy.
