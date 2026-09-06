@@ -2805,6 +2805,94 @@
     catch(_){
 
     }
+    /* ---- tracking parameters that arrive without a page load -----------------
+    A single-page app changes the address bar with history.pushState and
+    replaceState, and no navigation happens at all. Nothing above this can see it:
+    the reader clicks nothing, no link is followed, and /article quietly becomes
+    /article?utm_source=foo&fbclid=bar while they are reading it.
+
+    Cleaned BEFORE the call goes through rather than after, so the tracking values
+    never enter session history at all -- there is no earlier entry left holding
+    them for the Back button to bring back.
+
+    ONLY parameters from the two global tracking lists, and nothing else about the
+    URL is touched. Both limits matter:
+      - the per-site rules (COPY_CLEAN_SITES) are deliberately not used here. They
+      exist to tidy a link somebody is about to PASTE, and several of them --
+      Amazon's qid/sr/keywords, YouTube's app/persist_app, Spotify's context --
+      are the running app's own state. Deleting those from the clipboard is right;
+      deleting them from the address the app is currently on is how a search page
+      loses its search.
+      - no path rewriting, no redirect following, no hash surgery. cleanCopyUrl
+      does all three, correctly, for a link on its way to the clipboard. None of
+      them belong in the address bar of a page that is still running.
+    A parameter this does not recognise is never removed. */
+    let historyCleanCount=0;
+    const cleanHistoryUrl=raw=>{
+      try{
+        const u=toURL(raw);
+        if(!u||!/^https?:$/i.test(u.protocol))return null;
+        const removed=[];
+        for(const key of[...u.searchParams.keys()])(TRACKING_PARAMS.some(re=>re.test(key))||COPY_CLEAN_GLOBAL.test(key))&&(u.searchParams.delete(key),
+        removed.push(key));
+        /* Null when there was nothing to do, so the page's own argument is passed
+        through untouched -- including a relative one, which is what most apps
+        actually pass. Rewriting every call to an absolute URL would be a change
+        with no cleaning in it. */
+        return removed.length?{
+          url:u.toString(),
+          removed:removed
+        }:null
+      }
+      catch(_){
+        return null
+      }
+
+    },
+    patchHistoryClean=name=>{
+      try{
+        const real=history&&history[name];
+        if("function"!=typeof real||real.__wardenoneUrlClean)return;
+        history[name]=Object.assign(function(state,
+        title,
+        url){
+          try{
+            /* Re-read the switch on every call rather than trusting the one that
+            installed this. Turning link cleaning off has to take effect on the
+            page that is already open, not on the next one. */
+            if(!1!==WO.enabled&&WO.stripTrackingParams&&arguments.length>=3&&null!=url){
+              const hit=cleanHistoryUrl(url);
+              if(hit)return++historyCleanCount<=20&&log("cleaned_history_url",
+              {
+                /* Names only. Which parameters a tracker uses is worth showing;
+                   what it put in them is the reader's business. */
+                params:hit.removed.slice(0,
+                8)
+              }),
+              real.call(this,
+              state,
+              title,
+              hit.url)
+            }
+
+          }
+          catch(_){
+
+          }
+          return real.apply(this,
+          arguments)
+        },
+        {
+          __wardenoneUrlClean:!0
+        })
+      }
+      catch(_){
+
+      }
+
+    };
+    !1!==WO.enabled&&WO.stripTrackingParams&&(patchHistoryClean("pushState"),
+    patchHistoryClean("replaceState"));
     try{
       /* The right-click "Copy link address" the browser draws itself never
          reaches a page at all -- no copy event, no clipboard call -- so the
