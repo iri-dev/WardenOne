@@ -72,12 +72,41 @@ function run(options) {
       return Promise.resolve({ __marker: 'midi-access' });
     };
   }
+  /* The three surfaces added later. Absent unless a test asks for them, which is also
+     how the real world looks: no headset, no NFC on desktop, no controller. */
+  if (o.xr) {
+    navigator.xr = {
+      requestSession(...args) {
+        calls.push('xr.requestSession');
+        return Promise.resolve({ __marker: 'xr-session' });
+      },
+      isSessionSupported(mode) {
+        calls.push('xr.isSessionSupported');
+        if (o.xrSupportedRejects) return Promise.reject(new Error('nope'));
+        return Promise.resolve(o.xrSupported !== false);
+      },
+    };
+  }
+  if (o.gamepads !== undefined) {
+    navigator.getGamepads = function () {
+      calls.push('getGamepads');
+      return o.gamepads;
+    };
+  }
   const sandbox = {
     WO: { deviceAccessGuard: o.enabled !== false },
     navigator,
     log(type, detail) { logs.push({ type, detail }); },
-    Object, Math, Number, String, Array, Promise, Date,
+    Object, Math, Number, String, Array, Promise, Date, RegExp,
   };
+  if (o.nfc) {
+    /* A real page constructs its own NDEFReader, so the wrapper has to reach the
+       prototype -- there is no instance to patch. */
+    function NDEFReader() {}
+    NDEFReader.prototype.scan = function (...args) { calls.push('ndef.scan'); return Promise.resolve('scanning'); };
+    NDEFReader.prototype.write = function (...args) { calls.push('ndef.write'); return Promise.resolve('written'); };
+    sandbox.NDEFReader = NDEFReader;
+  }
   vm.createContext(sandbox);
   vm.runInContext(GUARD, sandbox, { filename: 'device-guard-slice.js' });
   return { logs, calls, navigator, sandbox };
@@ -304,9 +333,141 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
       /warned_device_request:\{/.test(SOURCE) && /warned_device_silent:\{/.test(SOURCE));
     check('all four surfaces are covered',
       /"usb"/.test(GUARD) && /"serial"/.test(GUARD) && /"hid"/.test(GUARD) && /"bluetooth"/.test(GUARD));
+    check('and so are the later ones, in the same block rather than beside it',
+      /xr-immersive-vr/.test(GUARD) && /nfc-write/.test(GUARD) && /gamepad/.test(GUARD),
+      'these were asked for as completing one system, not as three more shields');
+    check('none of them brought a toggle with it',
+      !/data-key="[a-zA-Z]*(?:[Xx][Rr]|[Nn][Ff][Cc]|[Gg]amepad)[a-zA-Z]*"/.test(POPUP_HTML)
+      && !/xrGuard|nfcGuard|gamepadGuard/i.test(SOURCE));
+    check('and they report through the events that already existed',
+      !/warned_xr|warned_nfc|warned_gamepad/.test(SOURCE),
+      'a new event kind is a new panel by another name');
     check('nothing in the guard blocks or throws on the page\'s behalf',
       !/preventDefault|reject\(|throw /.test(GUARD),
       'the chooser is the gate; refusing here would break hardware wallets and flashers');
+  }
+
+  // -------------------------------------------------------------------------
+  // WebXR -- the room, rather than a thing plugged into the computer
+  // -------------------------------------------------------------------------
+  {
+    const r = run({ xr: true });
+    const out = await r.navigator.xr.requestSession('immersive-ar',
+      { requiredFeatures: ['local-floor', 'hit-test'], optionalFeatures: ['hand-tracking'] });
+    await settle();
+    check('an immersive AR session is recorded', r.logs.length === 1, r.logs);
+    const d = (r.logs[0] || {}).detail || {};
+    check('it is a request, not a silent read', (r.logs[0] || {}).type === 'warned_device_request');
+    check('AR is the highest of the XR modes', d.severity === 'High', d,
+      'the headset has mapped the room it is tracking against');
+    check('it says spatial tracking was asked for', /spatial tracking/i.test(d.why || ''), d.why);
+    check('and names the features requested', /hand-tracking/.test(d.why || ''), d.why);
+    check('the session promise is handed back untouched',
+      (await out).__marker === 'xr-session');
+  }
+  {
+    const r = run({ xr: true });
+    await r.navigator.xr.requestSession('immersive-vr', {});
+    await settle();
+    const d = (r.logs[0] || {}).detail || {};
+    check('VR is a step below AR, not equal to it', d.severity === 'Medium', d);
+    check('and does not claim spatial tracking that was not requested',
+      !/spatial tracking/i.test(d.why || ''), d.why);
+  }
+  {
+    const r = run({ xr: true });
+    await r.navigator.xr.requestSession('inline', {});
+    await settle();
+    check('an inline session is the lowest', ((r.logs[0] || {}).detail || {}).severity === 'Low',
+      'no headset and no room -- it is a preview inside the page');
+  }
+  {
+    const r = run({ xr: true, xrSupported: true });
+    const answer = await r.navigator.xr.isSessionSupported('immersive-vr');
+    await settle();
+    check('a headset probe that finds one is recorded', r.logs.length === 1, r.logs);
+    check('as a silent read, because it needs no prompt at all',
+      (r.logs[0] || {}).type === 'warned_device_silent');
+    check('and the page still gets its own answer', answer === true);
+  }
+  {
+    const r = run({ xr: true, xrSupported: false });
+    await r.navigator.xr.isSessionSupported('immersive-vr');
+    await settle();
+    check('a probe that finds nothing is not worth a line', r.logs.length === 0, r.logs,
+      'the answer decides, not the call -- there is no story in a false');
+  }
+  {
+    const r = run({ xr: true, xrSupportedRejects: true });
+    try { await r.navigator.xr.isSessionSupported('immersive-vr'); } catch (_) {}
+    await settle();
+    check('a rejected probe records nothing and is not swallowed', r.logs.length === 0);
+  }
+
+  // -------------------------------------------------------------------------
+  // Web NFC -- the only thing here that changes a physical object
+  // -------------------------------------------------------------------------
+  {
+    const r = run({ nfc: true });
+    const reader = new r.sandbox.NDEFReader();
+    const out = await reader.scan();
+    await settle();
+    check('reading a tag is recorded', r.logs.length === 1, r.logs);
+    check('at medium severity', ((r.logs[0] || {}).detail || {}).severity === 'Medium');
+    check('and the page gets its own result', out === 'scanning');
+  }
+  {
+    const r = run({ nfc: true });
+    const reader = new r.sandbox.NDEFReader();
+    await reader.write({ records: [] });
+    await settle();
+    const d = (r.logs[0] || {}).detail || {};
+    check('writing a tag is recorded', r.logs.length === 1, r.logs);
+    check('and rated above reading', d.severity === 'High', d,
+      'a written tag stays written after the tab closes, and a locked one is permanent');
+    check('the notice says there is no undo', /no undo|permanent/i.test(d.action || ''), d.action);
+  }
+
+  // -------------------------------------------------------------------------
+  // Gamepads -- fingerprint surface, never a suspicion
+  // -------------------------------------------------------------------------
+  {
+    const pads = [{ id: 'Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e)' }, null,
+      { id: 'DualSense Wireless Controller' }];
+    const r = run({ gamepads: pads });
+    const out = r.navigator.getGamepads();
+    await settle();
+    check('reading connected controllers is recorded', r.logs.length === 1, r.logs);
+    const d = (r.logs[0] || {}).detail || {};
+    check('as a silent read, since no prompt is involved', (r.logs[0] || {}).type === 'warned_device_silent');
+    check('at the lowest severity', d.severity === 'Low',
+      'using a controller is not suspicious and must never be recorded as if it were');
+    check('the count is kept', d.devices === 2, d, 'nulls are empty slots, not controllers');
+    check('and the model names are NEVER kept',
+      !JSON.stringify(d).includes('Xbox') && !JSON.stringify(d).includes('DualSense'),
+      'writing the fingerprint into the log to warn about the fingerprint would be absurd');
+    check('the page gets the real list back', out === pads);
+  }
+  {
+    const r = run({ gamepads: [null, null, null, null] });
+    r.navigator.getGamepads();
+    await settle();
+    check('an empty list is not worth a line', r.logs.length === 0,
+      'Chrome returns nothing until a button is pressed; there is nothing to learn from it');
+  }
+  {
+    /* Every game polls this once a frame. The shared counter is what has to hold. */
+    const r = run({ gamepads: [{ id: 'pad' }] });
+    for (let i = 0; i < 500; i++) r.navigator.getGamepads();
+    await settle();
+    check('a running game produces a line, not thousands', r.logs.length <= 3, r.logs.length);
+  }
+  {
+    const r = run({ enabled: false, gamepads: [{ id: 'pad' }], xr: true, nfc: true });
+    r.navigator.getGamepads();
+    await r.navigator.xr.requestSession('immersive-vr', {});
+    await settle();
+    check('all three stay silent while the guard is off', r.logs.length === 0, r.logs);
   }
 
   if (process.exitCode) console.error('\ndevice-access guard checks failed');
