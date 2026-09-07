@@ -54,11 +54,13 @@ const REGISTRY_SRC = (function () {
 const WATCHER_SRC = [
   REGISTRY_SRC,
   'const domWatchers = new Set();',
+  'const domElementWatchers = new Set();',
   'let domObserver = null;',
   'let domWatchPending = false;',
   lift('domWatchStart'),
   lift('domWatchStop'),
   lift('domWatch'),
+  lift('domRecordsHaveElementMutation'),
 ].join('\n');
 
 // A MutationObserver stand-in that records connect/disconnect and lets the test
@@ -121,6 +123,12 @@ function check(name, cond, detail) {
   check('one batch reaches all three', h.run('hits.join(",")') === '1,1,1', h.run('hits.join(",")'));
   check('observes the document element', h.log.targets[0] && h.log.targets[0].tag === 'HTML');
   check('with childList + subtree', h.log.options[0].childList === true && h.log.options[0].subtree === true);
+  check('with only input-type attributes added to the shared feed',
+    h.log.options[0].attributes === true
+      && Array.isArray(h.log.options[0].attributeFilter)
+      && h.log.options[0].attributeFilter.length === 1
+      && h.log.options[0].attributeFilter[0] === 'type',
+    'broad attribute observation would put ordinary UI state changes back on the hot path');
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +239,68 @@ function check(name, cond, detail) {
 }
 
 // ---------------------------------------------------------------------------
-// 9. Source-level guards against the three observers coming back.
+// 9. Selector-based subscribers ignore text-only player churn.
+// ---------------------------------------------------------------------------
+{
+  const h = makeSandbox();
+  h.run('globalThis.hasElementMutation = domRecordsHaveElementMutation;');
+  h.sandbox.textOnly = [{
+    addedNodes: [{ nodeType: 3, nodeValue: 'Volume 61' }],
+    removedNodes: [{ nodeType: 3, nodeValue: 'Volume 60' }],
+  }];
+  h.sandbox.elementAdded = [{ addedNodes: [{ nodeType: 1 }], removedNodes: [] }];
+  h.sandbox.elementRemoved = [{ addedNodes: [], removedNodes: [{ nodeType: 1 }] }];
+  h.sandbox.inputBecamePassword = [{
+    type: 'attributes', attributeName: 'type', target: { nodeType: 1, tagName: 'INPUT' },
+  }];
+  h.sandbox.nonInputTypeChange = [{
+    type: 'attributes', attributeName: 'type', target: { nodeType: 1, tagName: 'DIV' },
+  }];
+  check('text-only player churn is not structural', h.run('hasElementMutation(textOnly)') === false);
+  check('an added element is structural', h.run('hasElementMutation(elementAdded)') === true);
+  check('a removed element is structural', h.run('hasElementMutation(elementRemoved)') === true);
+  check('an existing input changing type is structural',
+    h.run('hasElementMutation(inputBecamePassword)') === true);
+  check('an unrelated element type attribute is not structural',
+    h.run('hasElementMutation(nonInputTypeChange)') === false);
+  const structural = makeSandbox();
+  structural.run('globalThis.general = 0; globalThis.elements = 0;');
+  structural.run('domWatch(() => general++); domWatch(() => elements++, true);');
+  structural.sandbox.__fire(structural.sandbox.textOnly = [{
+    addedNodes: [{ nodeType: 3 }], removedNodes: [{ nodeType: 3 }],
+  }]);
+  check('text-only churn skips element-only subscribers',
+    structural.run('general === 1 && elements === 0'));
+  structural.sandbox.__fire([{ addedNodes: [{ nodeType: 1 }], removedNodes: [] }]);
+  check('structural churn still reaches every subscriber',
+    structural.run('general === 2 && elements === 1'));
+  structural.sandbox.__fire([{
+    type: 'attributes', attributeName: 'type', target: { nodeType: 1, tagName: 'INPUT' },
+  }]);
+  check('an input type transition reaches the login-style subscriber',
+    structural.run('general === 3 && elements === 2'));
+  const onlyElements = makeSandbox();
+  onlyElements.run('globalThis.elements = 0; domWatch(() => elements++, true);');
+  onlyElements.sandbox.__fire([{
+    addedNodes: [{ nodeType: 3 }], removedNodes: [{ nodeType: 3 }],
+  }]);
+  check('an all-structural subscriber set returns before taking a callback snapshot',
+    onlyElements.run('elements') === 0);
+  const laStart = BRIDGE.indexOf('const laUnwatch = domWatch');
+  const laEnd = BRIDGE.indexOf('woTimeout(laUnwatch', laStart);
+  check('login-age registers as an element-only subscriber',
+    laStart >= 0 && /\}, true\);/.test(BRIDGE.slice(laStart, laEnd)));
+  const driftStart = BRIDGE.indexOf('const driftUnwatch = domWatch');
+  const driftEnd = BRIDGE.indexOf('woTimeout(driftUnwatch', driftStart);
+  const driftSrc = BRIDGE.slice(driftStart, driftEnd);
+  check('script-drift checks configuration only after finding an added script',
+    driftStart >= 0
+      && driftSrc.indexOf("=== 'SCRIPT'") >= 0
+      && driftSrc.indexOf('scriptDriftGuardOn()') > driftSrc.indexOf("=== 'SCRIPT'"));
+}
+
+// ---------------------------------------------------------------------------
+// 10. Source-level guards against the three observers coming back.
 // ---------------------------------------------------------------------------
 {
   const count = (BRIDGE.match(/new MutationObserver/g) || []).length;

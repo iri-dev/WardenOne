@@ -437,7 +437,11 @@ as the work happened.
   cleaner no longer reclassifies hundreds of player nodes while its controls
   update. The consent observer no longer watches per-frame inline-style feedback,
   ignores mutations unrelated to consent UI, stops once a reject/save choice has
-  completed, and moves its remaining scans out of active frames.
+  completed, and moves its remaining scans out of active frames. Meta-refresh,
+  selector-only ad cleanup, login-age, form and script-drift checks now ignore
+  unrelated slider-only DOM churn as well, while text-dependent ad rules stay
+  coalesced. After its four-second check, player recovery uses bounded, throttled
+  element-only follow-ups instead of measuring rendered text while a slider moves.
 - Fixed Element Zapper trapping clicks meant for its own Keep, Undo, Done and
   Cancel controls. Zap now saves one selection, pauses further picking, reports
   save failures honestly, and keeps its confirmation open until Done; oversized

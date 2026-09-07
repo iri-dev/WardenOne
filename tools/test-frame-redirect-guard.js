@@ -838,6 +838,41 @@ async function main() {
     !/if \(TOP_FRAME\) try \{\s*\n\s*const baitObserver/.test(GUARD),
     'the script already runs in every frame; only this check was refusing to');
 
+  const baitObserverStart = GUARD.indexOf('const baitObserver = woObserver');
+  const baitObserverEnd = GUARD.indexOf('baitObserver.observe', baitObserverStart);
+  assert(baitObserverStart >= 0 && baitObserverEnd > baitObserverStart,
+    'could not isolate the confirmation-bait observer');
+  const baitObserverSrc = GUARD.slice(baitObserverStart, baitObserverEnd);
+  const runBaitObserver = (records, enabled) => {
+    const sandbox = { records, enabled };
+    vm.runInNewContext(`
+      const BAIT_REMOVE_CAP = 80;
+      let baitRemoved = 0;
+      const baitPending = new Set();
+      let guardCalls = 0;
+      let scheduled = 0;
+      const confirmBaitEnabled = () => { guardCalls += 1; return enabled; };
+      const scheduleConfirmBaitSweep = () => { scheduled += 1; };
+      const woObserver = (callback) => callback;
+      ${baitObserverSrc}
+      baitObserver(records);
+      this.out = { guardCalls, scheduled, pending: baitPending.size };
+    `, sandbox);
+    return sandbox.out;
+  };
+  const textChurn = runBaitObserver([{ addedNodes: [{ nodeType: 3 }] }], true);
+  check('confirmation-bait observer ignores text-only player churn before reading configuration',
+    textChurn.guardCalls === 0 && textChurn.scheduled === 0 && textChurn.pending === 0,
+    JSON.stringify(textChurn));
+  const enabledElement = runBaitObserver([{ addedNodes: [{ nodeType: 1 }] }], true);
+  check('confirmation-bait observer still queues an added element when enabled',
+    enabledElement.guardCalls === 1 && enabledElement.scheduled === 1 && enabledElement.pending === 1,
+    JSON.stringify(enabledElement));
+  const disabledElement = runBaitObserver([{ addedNodes: [{ nodeType: 1 }] }], false);
+  check('confirmation-bait observer still respects its setting for an added element',
+    disabledElement.guardCalls === 1 && disabledElement.scheduled === 0 && disabledElement.pending === 0,
+    JSON.stringify(disabledElement));
+
   {
     /* Inside a frame the FRAME is what sits over the page, so the box in it has no
        reason to be positioned -- and requiring it to be was the other half of the

@@ -590,8 +590,8 @@ test('page runtime checks scriptletEngine before executing served scriptlets', (
 
 test('network-mutating scriptlets fail open on player pages', () => {
   const scriptlets = sourceBetween(CONTENT, 'const SCRIPTLET_RAN=', '\n      scSweepers=[];');
-  assert(/scriptletPlayerPage=\(\)=>/.test(scriptlets),
-    'scriptlet runtime has no bounded player-page detector');
+  assert(/scriptletPlayerPage=force=>playerPageDetected\(force\)/.test(scriptlets),
+    'scriptlet runtime has no cache-aware bounded player-page detector');
   assert(/scNoFetchIf=arg=>\{\s*if\(scriptletPlayerPage\(\)\)return/.test(scriptlets),
     'no-fetch-if still installs on a detected player page');
   assert(/scNoXhrIf=arg=>\{\s*if\(scriptletPlayerPage\(\)\)return/.test(scriptlets),

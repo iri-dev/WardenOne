@@ -401,6 +401,7 @@
   // (Smart Script Shield re-arms on popstate/hashchange, long after the others are
   // finished). Records are passed through because Script Drift reads addedNodes.
   const domWatchers = new Set();
+  const domElementWatchers = new Set();
   let domObserver = null;
   let domWatchPending = false;
 
@@ -421,14 +422,25 @@
     }
     try {
       domObserver = woObserver((records) => {
+        let structural = false;
+        if (domElementWatchers.size) {
+          structural = domRecordsHaveElementMutation(records);
+          if (!structural && domElementWatchers.size === domWatchers.size) return;
+        }
         // Snapshot the set: a subscriber may unsubscribe from inside its own
         // callback (the login-age watcher does), and one throwing must not stop the
         // rest from being told.
         for (const fn of Array.from(domWatchers)) {
+          if (!structural && domElementWatchers.has(fn)) continue;
           try { fn(records); } catch (_) {}
         }
       });
-      domObserver.observe(root, { childList: true, subtree: true });
+      domObserver.observe(root, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['type'],
+      });
     } catch (_) {
       domObserver = null;
     }
@@ -441,17 +453,41 @@
   }
 
   // Returns an unsubscribe function. Safe to call more than once.
-  function domWatch(fn) {
+  function domWatch(fn, elementsOnly) {
     if (typeof fn !== 'function') return function () {};
     domWatchers.add(fn);
+    if (elementsOnly) domElementWatchers.add(fn);
     domWatchStart();
     let released = false;
     return function () {
       if (released) return;
       released = true;
       domWatchers.delete(fn);
+      domElementWatchers.delete(fn);
       if (!domWatchers.size) domWatchStop();
     };
+  }
+
+  /* Login and other selector-based checks need a new or removed element, or an
+     existing input becoming a password field, not a text node changing from one
+     player counter value to the next. Removals count: warning durability may need
+     to put an owned element back. */
+  function domRecordsHaveElementMutation(records) {
+    for (const record of records || []) {
+      if (record && record.type === 'attributes' && record.attributeName === 'type'
+          && record.target && String(record.target.tagName || '').toUpperCase() === 'INPUT') {
+        return true;
+      }
+      const added = (record && record.addedNodes) || [];
+      for (let i = 0; i < added.length; i++) {
+        if (added[i] && added[i].nodeType === 1) return true;
+      }
+      const removed = (record && record.removedNodes) || [];
+      for (let i = 0; i < removed.length; i++) {
+        if (removed[i] && removed[i].nodeType === 1) return true;
+      }
+    }
+    return false;
   }
 
   // WardenOne's warnings, and its one privileged control, used to be ordinary elements in the
@@ -609,7 +645,7 @@
             try {
               if (!host.isConnected) place();
             } catch (_) {}
-          });
+          }, true);
         }
         return placed;
       },
@@ -788,7 +824,10 @@
   // the same circular dependency H13 describes, one level up. A timer does not ask the page's
   // permission to advance.
   const SMART_PLAYER_DEADLOCK_MS = 4000;
+  const SMART_PLAYER_LATE_SCAN_MS = 1500;
   let smartPlayerDeadlockDue = false;
+  let smartPlayerSettled = false;
+  let smartPlayerLateScanAt = 0;
   function smartPlayerDeadlock() {
     if (!smartPlayerDeadlockDue) return '';
     // A watch-shaped route, or a subframe, which is a player context in its own right.
@@ -802,14 +841,20 @@
     // It earns a look, not an allowance. Nothing here decides anything: background acts only where
     // webRequest independently observed a blocked third-party script in this exact frame, which no
     // page can manufacture, and recovery still refuses hosts known for tracking or fingerprinting.
-    // Blankness alone, on a page that blocked nothing, does nothing at all.
-    return smartPageIsBlank() ? 'page-blocked' : '';
+    // Blankness alone, on a page that blocked nothing, does nothing at all. Once an ordinary
+    // top-level page has rendered normally, switch the mutation-driven scans into a throttled,
+    // element-only follow-up mode. Text-changing controls no longer reach it, while a late player
+    // root or an application shell that becomes blank can still be noticed before final teardown.
+    if (smartPageIsBlank()) return 'page-blocked';
+    setSmartPlayerQuietWatch();
+    return '';
   }
   function sendSmartPlayerContext(force) {
     const now = Date.now();
     const evidence = smartPlayerStrongEvidence() || smartPlayerDeadlock();
     if (!evidence) return false;
     smartPlayerEvidence = evidence;
+    cancelSmartPlayerScan();
     if (!force && now - smartPlayerLastSignalAt < 45000) return true;
     if (!bridgeRateOk('smart-player-context', 4, 120000)) return true;
     smartPlayerLastSignalAt = now;
@@ -835,26 +880,87 @@
     }
     return true;
   }
-  function scheduleSmartPlayerScan(delay) {
-    if (smartPlayerEvidence || smartPlayerScanCount >= 48 || smartPlayerScanTimer) return;
+  function cancelSmartPlayerScan() {
+    if (!smartPlayerScanTimer) return;
+    try { clearTimeout(smartPlayerScanTimer); } catch (_) {}
+    try { woPending.delete(smartPlayerScanTimer); } catch (_) {}
+    smartPlayerScanTimer = null;
+  }
+  function smartPlayerMutationMayMatter(records) {
+    for (const record of records || []) {
+      let addedText = false;
+      let removedText = false;
+      let addedChars = 0;
+      let removedChars = 0;
+      for (const node of (record && record.addedNodes) || []) {
+        if (node && node.nodeType === 1) return true;
+        if (node && node.nodeType === 3) {
+          const value = String(node.nodeValue || '');
+          if (/\S/.test(value)) {
+            addedText = true;
+            addedChars += Math.min(value.length, 1000);
+          }
+        }
+      }
+      for (const node of (record && record.removedNodes) || []) {
+        if (node && node.nodeType === 1) return true;
+        if (node && node.nodeType === 3) {
+          const value = String(node.nodeValue || '');
+          if (/\S/.test(value)) {
+            removedText = true;
+            removedChars += Math.min(value.length, 1000);
+          }
+        }
+      }
+      if (removedText && !addedText) return true;
+      if (removedChars > addedChars) return true;
+    }
+    return false;
+  }
+  function setSmartPlayerQuietWatch() {
+    if (smartPlayerSettled) return;
+    smartPlayerSettled = true;
+    if (smartPlayerUnwatch) {
+      smartPlayerUnwatch();
+      smartPlayerUnwatch = null;
+    }
+    smartPlayerUnwatch = domWatch((records) => {
+      if (!smartPlayerMutationMayMatter(records)) return;
+      scheduleSmartPlayerScan(300, true);
+    });
+  }
+  function scheduleSmartPlayerScan(delay, late) {
+    if (smartPlayerEvidence || smartPlayerScanTimer || (!late && smartPlayerScanCount >= 48)) return;
+    if (smartPlayerSettled && !late) return;
+    let wait = Math.max(0, Number(delay) || 0);
+    if (late) {
+      const now = Date.now();
+      const remaining = SMART_PLAYER_LATE_SCAN_MS - (now - smartPlayerLateScanAt);
+      if (remaining > wait) wait = remaining;
+    }
     smartPlayerScanTimer = woTimeout(() => {
       smartPlayerScanTimer = null;
+      if (late) smartPlayerLateScanAt = Date.now();
       smartPlayerScanCount += 1;
       sendSmartPlayerContext(false);
-    }, Math.max(0, Number(delay) || 0));
+    }, wait);
   }
   function armSmartPlayerObservation() {
     if (!bridgeRateOk('smart-player-rearm', 16, 60000)) return false;
+    cancelSmartPlayerScan();
     smartPlayerEvidence = '';
     smartPlayerLastSignalAt = 0;
     smartPlayerScanCount = 0;
+    smartPlayerSettled = false;
+    smartPlayerLateScanAt = 0;
     scheduleSmartPlayerScan(0);
     if (smartPlayerUnwatch) {
       smartPlayerUnwatch();
       smartPlayerUnwatch = null;
     }
     const generation = ++smartPlayerObserverGeneration;
-    smartPlayerUnwatch = domWatch(() => scheduleSmartPlayerScan(120));
+    smartPlayerUnwatch = domWatch(() => scheduleSmartPlayerScan(
+      smartPlayerSettled ? 300 : 120, smartPlayerSettled), true);
     // The deadlock check has to drive itself. On the pages it exists for nothing else will call
     // sendSmartPlayerContext again -- there are no mutations to schedule a scan, because the
     // scripts that would cause them were blocked.
@@ -866,11 +972,17 @@
       sendSmartPlayerContext(true);
     }, SMART_PLAYER_DEADLOCK_MS);
     woTimeout(() => {
-      // The generation check keeps a stale timer from tearing down the subscription
-      // a later re-arm just created.
-      if (generation !== smartPlayerObserverGeneration || !smartPlayerUnwatch) return;
-      smartPlayerUnwatch();
-      smartPlayerUnwatch = null;
+      // The generation check keeps a stale timer from inspecting or tearing down
+      // a later re-arm. This final, mutation-independent check preserves recovery
+      // for an application shell that painted at four seconds but failed later.
+      if (generation !== smartPlayerObserverGeneration) return;
+      cancelSmartPlayerScan();
+      if (!smartPlayerEvidence) sendSmartPlayerContext(true);
+      if (smartPlayerUnwatch) {
+        smartPlayerUnwatch();
+        smartPlayerUnwatch = null;
+      }
+      smartPlayerSettled = true;
     }, 20000);
     return true;
   }
@@ -2168,18 +2280,18 @@
       woOn(document, 'wo-bridge-config-ready', () => scheduleScriptDriftScan(300), { once: true });
       try {
         const driftUnwatch = domWatch((muts) => {
-          if (!scriptDriftGuardOn()) return;
           for (const mut of muts || []) {
             const added = (mut && mut.addedNodes) || [];
             for (let i = 0; i < added.length; i++) {
               const n = added[i];
               if (n && n.nodeType === 1 && ((n.tagName || '').toUpperCase() === 'SCRIPT' || (n.querySelector && n.querySelector('script[src]')))) {
+                if (!scriptDriftGuardOn()) return;
                 scheduleScriptDriftScan(2500);
                 return;
               }
             }
           }
-        });
+        }, true);
         woTimeout(driftUnwatch, 60000);
       } catch (_) {}
     }
@@ -2435,7 +2547,7 @@
           if (laP) return;
           laP = true;
           woTimeout(() => { laP = false; laCheck(); }, 600);
-        });
+        }, true);
         woTimeout(laUnwatch, 60000);
       } catch (_) {}
     }

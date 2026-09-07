@@ -55,13 +55,23 @@ function check(what, ok, why) {
    `if(scriptletPlayerPage()){` in the file -- that one belongs to the
    rules-arrival path, which is a one-shot and may call the scan directly. */
 const playerBranch = (() => {
-  const m = /woObserve\(\(\)=>\{\s*if\(scriptletPlayerPage\(\)\)\{/.exec(SRC);
-  if (!m) return '';
-  const a = m.index;
-  const b = SRC.indexOf('return', a);
-  return b > a ? SRC.slice(a, b) : '';
+  const marker = SRC.indexOf('const routeChanged=observedCosmeticUrl!==location.href;');
+  const a = marker < 0 ? -1 : SRC.lastIndexOf('woObserve(', marker);
+  const b = SRC.indexOf('if(styleEl&&!styleEl.isConnected)', a);
+  return a >= 0 && b > a ? SRC.slice(a, b) : '';
 })();
 check('the video-platform branch is still there', !!playerBranch);
+check('text-only mutation batches cannot schedule the player cosmetic scan',
+  /if\(!structural&&!routeChanged\)return void scheduleProcedural\(\);/.test(playerBranch),
+  'changing a volume label cannot create an element matched by an ad selector');
+check('an SPA route change reaches player safe mode even with only text churn',
+  playerBranch.indexOf('routeChanged') < playerBranch.indexOf('scriptletPlayerPage(routeChanged')
+    && playerBranch.indexOf('scriptletPlayerPage(routeChanged') < playerBranch.indexOf('procRules=[]'),
+  'generic cosmetic CSS must be cleared when an ordinary SPA enters a player route');
+check('a player element added inside the 300ms cache window bypasses stale false',
+  /const playerAdded=structural&&adBatchAddsPlayer\(added,\s*roots\)/.test(playerBranch)
+    && /if\(playerAdded\|\|scriptletPlayerPage\(routeChanged\|\|structural&&!added\.length\)\)/.test(playerBranch),
+  'a newly added player must enter safe mode even when the document cache still says false');
 check('it no longer scans the whole document on every mutation batch',
   !/collapseLeftovers\(document\);/.test(playerBranch),
   'a direct call here is 0.71ms per batch on a mix page, unthrottled');
@@ -73,6 +83,43 @@ check('and at the same 250ms the other branch uses',
   /\},\s*250\)\)/.test(playerBranch),
   'a different interval here would be an accident, not a decision');
 
+(() => {
+  const vm = require('vm');
+  const detectorStart = SRC.indexOf('playerPageDetected=(()=>{');
+  const detectorEnd = SRC.indexOf(';\n    !function', detectorStart);
+  check('the cached player detector is where the test expects it',
+    detectorStart >= 0 && detectorEnd > detectorStart);
+  if (detectorStart < 0 || detectorEnd <= detectorStart) return;
+  const box = {
+    now: 1000,
+    hasPlayer: false,
+    location: { pathname: '/home' },
+    Date: { now: () => box.now },
+    document: { querySelector: () => (box.hasPlayer ? {} : null) },
+  };
+  vm.createContext(box);
+  vm.runInContext('const PLAYER_ROUTE_RE=/watch/;const PLAYER_PAGE_SELECTOR="video";const '
+    + SRC.slice(detectorStart, detectorEnd) + ';this.__detect=playerPageDetected;', box,
+  { filename: 'content.js:player-cache' });
+  check('the negative player scan is cached normally', box.__detect() === false);
+  box.hasPlayer = true;
+  box.now = 1100;
+  check('an ordinary read still sees the short-lived cached result', box.__detect() === false);
+  check('a structural player candidate forces a fresh read', box.__detect(true) === true);
+
+  const batchStart = SRC.indexOf('adBatchAddsPlayer=(added,');
+  const batchEnd = SRC.indexOf(',\n      pageMutationScriptletRuntimeOn=', batchStart);
+  check('the added-player detector is where the test expects it', batchStart >= 0 && batchEnd > batchStart);
+  if (batchStart < 0 || batchEnd <= batchStart) return;
+  vm.runInContext('const ' + SRC.slice(batchStart, batchEnd)
+    + ';this.__batchAddsPlayer=adBatchAddsPlayer;', box,
+  { filename: 'content.js:added-player' });
+  const nestedPlayer = { matches: () => false, querySelector: () => ({ tagName: 'VIDEO' }) };
+  box.nestedPlayer = nestedPlayer;
+  check('a player nested in a newly added subtree is detected',
+    vm.runInContext('__batchAddsPlayer([nestedPlayer], [nestedPlayer])', box) === true);
+})();
+
 /* The ordinary-page branch, unchanged. */
 check('the ordinary-page branch still coalesces too',
   (SRC.match(/collapsePending\|\|\(collapsePending=!0,/g) || []).length >= 2,
@@ -82,9 +129,83 @@ check('the ordinary-page branch still coalesces too',
    What must never come back is a direct call on the MUTATION path, so this pins
    the observer consumer rather than counting calls file-wide. */
 check('no woObserve consumer calls the whole-document collapse directly',
-  !/woObserve\(\(\)=>\{[\s\S]{0,900}?collapseLeftovers\(document\)[,;]/.test(
+  !/woObserve\((?:\(\)|muts)=>\{[\s\S]{0,900}?collapseLeftovers\(document\)[,;]/.test(
     SRC.replace(/collapsePending\|\|\(collapsePending=!0,[\s\S]*?250\)\)/g, 'COALESCED')),
   'a direct call on the mutation path is the 0.71ms-per-batch scan again');
+
+/* Meta Refresh is a security check, so it stays synchronous. What cannot stay is
+   its old shape: every child-list mutation queried the entire document for metas,
+   including a player replacing one numeric volume label. Run the actual callback
+   to pin both halves of the contract -- text churn is free, inserted metas are not
+   missed. */
+(() => {
+  const vm = require('vm');
+  const a = SRC.indexOf('const META_REFRESH_SELECTOR=');
+  const b = SRC.indexOf('killMeta(),', a);
+  check('the node-local meta-refresh scanner is where the test expects it', a >= 0 && b > a);
+  if (a < 0 || b <= a) return;
+  let documentQueries = 0;
+  const logs = [];
+  const box = {
+    WO: { __frozen: false },
+    location: { href: 'https://safe.example/' },
+    sameSite: () => false,
+    isFederatedAuthTarget: () => false,
+    isHighRiskNavigationTarget: () => true,
+    log: (type) => logs.push(type),
+    document: {
+      querySelectorAll() { documentQueries++; return []; },
+    },
+  };
+  vm.createContext(box);
+  vm.runInContext(SRC.slice(a, b)
+    + 'this.__killMeta=killMeta;this.__auditMetaAttributes=auditMetaAttributes;', box,
+    { filename: 'content.js:meta-refresh-mutation' });
+
+  for (let i = 0; i < 2000; i++) box.__killMeta([{
+    type: 'childList', addedNodes: [{ nodeType: 3, nodeValue: String(i % 101) }],
+  }], [], []);
+  check('text-only slider churn performs no document-wide meta queries', documentQueries === 0,
+    'a full query per volume update is the residual Spotify hot path');
+
+  const attrs = { 'http-equiv': 'refresh', content: '0; url=https://danger.example/' };
+  const meta = {
+    matches: (selector) => selector === 'meta[http-equiv="refresh" i]',
+    querySelectorAll: () => [],
+    getAttribute: (name) => attrs[name] || '',
+    setAttribute: (name, value) => { attrs[name] = value; },
+    removeAttribute: (name) => { delete attrs[name]; },
+  };
+  const root = {
+    matches: () => false,
+    querySelectorAll: () => [meta],
+  };
+  box.__killMeta([{ type: 'childList', addedNodes: [root] }], [root], [root]);
+  check('a refresh meta nested in an added subtree is still blocked',
+    attrs.content === undefined && attrs['data-wo-disabled'] === '0; url=https://danger.example/'
+      && logs.includes('blocked_meta_refresh'));
+
+  const changedAttrs = {
+    'http-equiv': 'refresh', content: '5; url=https://later-danger.example/',
+  };
+  const changedMeta = {
+    matches: (selector) => selector === 'meta[http-equiv="refresh" i]',
+    getAttribute: (name) => changedAttrs[name] || '',
+    setAttribute: (name, value) => { changedAttrs[name] = value; },
+    removeAttribute: (name) => { delete changedAttrs[name]; },
+  };
+  box.__auditMetaAttributes([{
+    type: 'attributes', attributeName: 'content', target: changedMeta,
+  }]);
+  check('activating an existing meta refresh through attributes is still blocked',
+    changedAttrs.content === undefined
+      && changedAttrs['data-wo-disabled'] === '5; url=https://later-danger.example/');
+  const metaObserver = SRC.slice(b, SRC.indexOf('if(WO.detectRedirectChains)', b));
+  check('meta attribute coverage is narrow enough to avoid ordinary UI state churn',
+    /attributeFilter:\["http-equiv",\s*"content"\]/.test(metaObserver)
+      && !/attributeFilter:[\s\S]*?(?:class|aria-|value)/.test(metaObserver),
+    'watching broad attributes would move player changes onto another observer');
+})();
 
 /* ---- 2. a flag that gates the work belongs above the traversal ----------- */
 
@@ -145,6 +266,148 @@ check('scrubDomLink really does bail on the same condition',
   /\bscrubDomLink=el=>\{\s*try\{\s*if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\|\|/.test(SRC),
   'the consumer gate is only behaviour-preserving while this holds');
 
+/* Range controls can only carry a bounded numeric UI value. Running password,
+   card-hint and Luhn classification on every seek/volume input cannot discover a
+   credential, but it does put those guards directly on the drag path. */
+const sensitiveFieldBody = (() => {
+  const a = SRC.indexOf('const isSensitiveField=');
+  const b = SRC.indexOf('skimmerPageSensitive=', a);
+  return a >= 0 && b > a ? SRC.slice(a, b) : '';
+})();
+const cardFieldBody = (() => {
+  const a = SRC.indexOf('fieldLooksCard=');
+  const b = SRC.indexOf('seenCards=', a);
+  return a >= 0 && b > a ? SRC.slice(a, b) : '';
+})();
+check('the skimmer input classifier rejects range controls before hint matching',
+  /"range"!==String\(el\.type\|\|""\)\.toLowerCase\(\)/.test(sensitiveFieldBody));
+check('the payment input classifier rejects range controls before hint and Luhn work',
+  /"range"===String\(el\.type\|\|""\)\.toLowerCase\(\)/.test(cardFieldBody));
+
+const formTrapObserver = (() => {
+  const a = SRC.indexOf('woObserve((muts,added,roots,structural)=>{', SRC.indexOf('TRAP_THRESHOLD='));
+  const b = SRC.indexOf('log("form_trap_detector_on"', a);
+  return a >= 0 && b > a ? SRC.slice(a, b) : '';
+})();
+const formTrapTextFilter = (() => {
+  const a = SRC.indexOf('passwordUiRoots=new WeakSet,');
+  const b = SRC.indexOf(',\n      scanForms=', a);
+  return a >= 0 && b > a ? SRC.slice(a, b) : '';
+})();
+check('form-trap skips only unrelated non-structural batches',
+  /if\(!structural&&!trapTextTouchesPasswordUi\(muts\)\)return;/.test(formTrapObserver),
+  'removing a visible password field can expose a hidden autofill trap and must rescan');
+check('a newly discovered password field is added to the local UI index',
+  /for\(const pw of pwFields\)\{\s*notePasswordUi\(pw\),\s*initialPw\.has\(pw\)\|\|injectedForms\.add\(pw\);/.test(SRC),
+  'an existing input can become type=password without being inserted as a new node');
+
+(() => {
+  const vm = require('vm');
+  check('the form-trap text filter is where the test expects it', !!formTrapTextFilter);
+  if (!formTrapTextFilter) return;
+  const box = {
+    WeakSet, WeakMap, Set, Array, String,
+    credentialTrapFilled: (pw) => !!(pw && pw.value),
+    document: { body: {}, documentElement: {} },
+  };
+  vm.createContext(box);
+  vm.runInContext('const ' + formTrapTextFilter
+    + ';this.__touches=trapTextTouchesPasswordUi;this.__note=notePasswordUi;', box,
+  { filename: 'content.js:form-trap-text-filter' });
+  const text = { nodeType: 3, nodeValue: 'Volume 61' };
+  const unrelated = {
+    addedNodes: [text],
+    target: {
+      textContent: 'Volume 61', closest: () => null, querySelector: () => null, parentElement: null,
+    },
+  };
+  check('ordinary text-only player churn is ignored', !box.__touches([unrelated]));
+  const loginText = { nodeType: 3, nodeValue: 'Sign in to Coinbase' };
+  const password = { type: 'password' };
+  const form = {
+    parentElement: box.document.body,
+    querySelector: () => (password.type === 'password' ? password : null),
+  };
+  password.closest = () => form;
+  password.parentElement = form;
+  box.__note(password);
+  const inForm = {
+    addedNodes: [loginText],
+    target: {
+      textContent: 'Sign in to Coinbase',
+      parentElement: form,
+    },
+  };
+  check('text inserted into an existing password form still rescans', box.__touches([inForm]));
+  const localPassword = { type: 'password', closest: () => null };
+  const localContainer = {
+    parentElement: box.document.body,
+    querySelector: () => (localPassword.type === 'password' ? localPassword : null),
+  };
+  localPassword.parentElement = localContainer;
+  box.__note(localPassword);
+  let innerContainer = localContainer;
+  for (let i = 0; i < 12; i++) {
+    innerContainer = { parentElement: innerContainer };
+  }
+  const formless = {
+    addedNodes: [loginText],
+    target: {
+      textContent: 'Sign in to Coinbase',
+      parentElement: innerContainer,
+    },
+  };
+  check('nested text inserted in a form-less password UI still rescans', box.__touches([formless]));
+  localPassword.type = 'text';
+  check('a reused UI root stops waking scans after losing its password field',
+    !box.__touches([formless]));
+  const broadPassword = {
+    type: 'password', value: '', isConnected: true,
+    closest: () => null, parentElement: box.document.body,
+  };
+  box.__note(broadPassword);
+  broadPassword.value = 'password-manager-fill';
+  check('a direct-body password fill is noticed without scanning every body mutation',
+    box.__touches([unrelated]));
+  check('an unchanged direct-body password does not keep waking scans',
+    !box.__touches([unrelated]));
+  const bodyBrandText = { nodeType: 3, nodeValue: 'Sign in to Google' };
+  check('brand text still wakes a direct-body form-less password UI', box.__touches([{
+    addedNodes: [bodyBrandText], removedNodes: [],
+    target: { childNodes: [bodyBrandText], parentElement: box.document.body },
+  }]));
+  const afterRemoval = {
+    addedNodes: [],
+    removedNodes: [{ nodeType: 3, nodeValue: 'securely ' }],
+    target: {
+      textContent: 'Sign in to Google',
+      parentElement: form,
+    },
+  };
+  check('removing text that reveals a login claim still rescans', box.__touches([afterRemoval]));
+  const fragmentTarget = {
+    textContent: 'Sign in to Google',
+    parentElement: form,
+  };
+  check('a fragmented login claim still rescans', box.__touches([{
+    addedNodes: [{ nodeType: 3, nodeValue: 'Google' }], target: fragmentTarget,
+  }]));
+})();
+
+check('text-only form-trap rescans stay within a local password UI',
+  /passwordUiRoots=new WeakSet/.test(formTrapTextFilter)
+    && /broadPasswordFields=new Set/.test(formTrapTextFilter)
+    && /broadPasswordFilled=new WeakMap/.test(formTrapTextFilter)
+    && /trapTextTouchesPasswordUi=muts=>\{/.test(formTrapTextFilter)
+    && !/textContent/.test(formTrapTextFilter)
+    && /for\(;scope;scope=scope\.parentElement\)/.test(formTrapTextFilter)
+    && /passwordUiRoots\.has\(scope\)[\s\S]{0,350}?scope\.querySelector/.test(formTrapTextFilter)
+    && /passwordUiRoots\.delete\(scope\)/.test(formTrapTextFilter)
+    && /pruneBroadPasswordFields\(\);[\s\S]{0,350}?filled!==previous/.test(formTrapTextFilter)
+    && /broadPasswordFields\.size&&trapMutationHasLoginText\(muts\)/.test(formTrapTextFilter)
+    && /scope===document\.body\|\|scope===document\.documentElement/.test(formTrapTextFilter),
+  'a player changing a text label must not serialize or scan a DOM subtree');
+
 /* ---- 3. read only as much page text as you are going to look at --------- */
 
 /* scamScan and fakeUpdateScan both wanted the first 20k characters of the page
@@ -203,6 +466,22 @@ check('every collapse timer hands the scan to idle',
 check('the ad sweep is idle-scheduled too',
   /__woIdle\(__woSweepAds,300\)/.test(SRC),
   'measured 0.66ms of whole-document scanning every 400ms');
+check('selector-only AdShield paths ignore text-only batches',
+  (SRC.match(/woObserve\(\(muts,added,roots,structural\)=>\{\s*if\(!structural\)return;/g) || []).length >= 1
+    && /woObserve\(\(muts,added,roots,structural\)=>\{\s*structural&&__woSchedAds\(\)/.test(SRC),
+  'selector-based ad cleanup only needs to run when the element structure changes');
+const textProceduralRules = (fs.readFileSync('cosmetic-rules.json', 'utf8')
+  .match(/:(?:has-text|contains|-abp-contains|min-text-length)\(/g) || []).length;
+check('the shipped cosmetic data actually contains text-sensitive procedural rules',
+  textProceduralRules > 0, 'without a real rule this regression check would be hypothetical');
+check('text-only batches still coalesce a procedural-rule scan',
+  /scheduleProcedural=\(\)=>\{[\s\S]{0,500}?runProcedural\(\)/.test(SRC)
+    && /if\(!structural&&!routeChanged\)return void scheduleProcedural\(\);/.test(SRC),
+  'pre-existing ad shells can become matches when only their text changes');
+check('the generic ad observer reuses the shared mutation dispatcher',
+  !/__woObserver\(muts=>\{\s*__woHasElementMutation/.test(SRC)
+    && /woObserve\(\(muts,added,roots,structural\)=>\{\s*structural&&__woSchedAds\(\)/.test(SRC),
+  'a second document observer adds another callback to every slider mutation');
 check('the shipped engine carries the idle scheduler',
   (MIN.match(/__woIdle\(/g) || []).length >= 4);
 
@@ -263,8 +542,11 @@ check('the shipped engine carries the gate', /SEARCH_CLEANUP_HOST/.test(MIN));
  * img/script/iframe -- so narrowing those would drop checks, not duplicates. */
 check('the batch splitter exists', /function __woBatchNodes\(muts\)\{/.test(SRC));
 check('the dispatcher computes it once and shares it with every consumer',
-  /const batch=__woBatchNodes\(muts\);for\(let i=0;i<__woMoConsumers\.length;i\+\+\)try\{__woMoConsumers\[i\]\(muts,batch\.added,batch\.roots\)\}/.test(MIN),
+  /const batch=__woBatchNodes\(muts\);for\(let i=0;i<__woMoConsumers\.length;i\+\+\)try\{__woMoConsumers\[i\]\(muts,batch\.added,batch\.roots,batch\.structural\)\}/.test(MIN),
   'computing it per consumer would pay the ancestor walk once per consumer');
+check('the shared observer narrowly includes input type transitions',
+  /childList:!0,subtree:!0,attributes:!0,attributeFilter:\["type"\]/.test(MIN),
+  'Form Trap must see an existing field become a password without observing noisy UI attributes');
 check('the intranet guard still sees every added node',
   /for\(let i=0;i<added\.length;i\+\+\)guardLocalNode\(added\[i\]\);for\(let i=0;i<roots\.length;i\+\+\)sweepLocal\(roots\[i\]\)/.test(MIN),
   'it has to neuter a script pointing at a private address before it loads');
@@ -313,9 +595,10 @@ check('no consumer still walks addedNodes itself',
   const text = { nodeType: 3, parentElement: null };
 
   const batch = [container, kid1, kid2, deep, belowGap, loner, text];
-  const out = split([{ addedNodes: batch }]);
+  const out = split([{ addedNodes: batch, removedNodes: [] }]);
 
   check('text nodes are dropped', out.added.indexOf(text) < 0 && out.added.length === 6);
+  check('added elements mark the shared batch as structural', out.structural === true);
   check('only the outermost added nodes are roots',
     out.roots.length === 2 && out.roots.indexOf(container) >= 0 && out.roots.indexOf(loner) >= 0,
     'got ' + out.roots.length + ' roots');
@@ -332,13 +615,32 @@ check('no consumer still walks addedNodes itself',
     'returning every node would pass the coverage check and save nothing');
 
   const flat = [el(), el(), el()];
-  const flatOut = split([{ addedNodes: flat }]);
+  const flatOut = split([{ addedNodes: flat, removedNodes: [] }]);
   check('an unnested batch keeps every node as a root', flatOut.roots.length === 3);
-  const one = split([{ addedNodes: [el()] }]);
+  const one = split([{ addedNodes: [el()], removedNodes: [] }]);
   check('a single-node batch skips the ancestor walk entirely',
     one.roots === one.added && one.roots.length === 1,
     'the common case must not allocate a Set');
-  check('an empty batch is empty', split([{ addedNodes: [] }]).roots.length === 0);
+  const textOnly = split([{
+    addedNodes: [{ nodeType: 3, nodeValue: 'Volume 61' }],
+    removedNodes: [{ nodeType: 3, nodeValue: 'Volume 60' }],
+  }]);
+  check('numeric text replacement is not structural', textOnly.structural === false);
+  const removedOnly = split([{ addedNodes: [], removedNodes: [el()] }]);
+  check('removed elements still wake stylesheet durability checks', removedOnly.structural === true);
+  const inputType = split([{
+    type: 'attributes', attributeName: 'type',
+    target: { nodeType: 1, tagName: 'INPUT' }, addedNodes: [], removedNodes: [],
+  }]);
+  check('an existing input changing type is structural', inputType.structural === true);
+  const unrelatedType = split([{
+    type: 'attributes', attributeName: 'type',
+    target: { nodeType: 1, tagName: 'DIV' }, addedNodes: [], removedNodes: [],
+  }]);
+  check('a non-input type attribute does not wake structural consumers', unrelatedType.structural === false);
+  check('an empty batch is empty and non-structural',
+    split([{ addedNodes: [], removedNodes: [] }]).roots.length === 0
+      && split([{ addedNodes: [], removedNodes: [] }]).structural === false);
 })();
 
 /* ---- 7. the rect noise sits in front of the hottest read on a video page - *
