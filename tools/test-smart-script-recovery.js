@@ -32,6 +32,19 @@ function sourceBetween(start, end) {
   return BACKGROUND.slice(from, to);
 }
 
+function bridgeFunction(name) {
+  const marker = 'function ' + name + '(';
+  const start = BRIDGE.indexOf(marker);
+  assert(start >= 0, 'missing bridge function: ' + name);
+  let depth = 0;
+  let opened = false;
+  for (let i = start; i < BRIDGE.length; i++) {
+    if (BRIDGE[i] === '{') { depth++; opened = true; }
+    if (BRIDGE[i] === '}' && opened && --depth === 0) return BRIDGE.slice(start, i + 1);
+  }
+  assert.fail('unterminated bridge function: ' + name);
+}
+
 function simpleHost(raw) {
   try {
     const value = String(raw || '').includes('://') ? new URL(String(raw)).hostname : String(raw || '');
@@ -863,40 +876,183 @@ async function testDeadlockReportGrantsNothingAlone() {
     // It must also send for itself: on a deadlocked page nothing else calls sendSmartPlayerContext.
     const armStart = BRIDGE.indexOf('function armSmartPlayerObservation');
     const armEnd = BRIDGE.indexOf('\n  }\n', BRIDGE.indexOf('SMART_PLAYER_DEADLOCK_MS', armStart));
-    assert(/sendSmartPlayerContext\(/.test(BRIDGE.slice(armStart, armEnd)),
+    const armSrc = BRIDGE.slice(armStart, armEnd + 4);
+    assert(/sendSmartPlayerContext\(/.test(armSrc),
       'the deadlock timer never reports, so reaching the deadline changes nothing');
+    assert(/smartPlayerSettled\s*=\s*false/.test(armSrc),
+      'SPA/player re-arming does not reset the healthy-page settled state');
+    const scheduleStart = BRIDGE.indexOf('function scheduleSmartPlayerScan');
+    const scheduleEnd = BRIDGE.indexOf('\n  }\n', scheduleStart);
+    const scheduleSrc = BRIDGE.slice(scheduleStart, scheduleEnd + 4);
+    assert(/SMART_PLAYER_LATE_SCAN_MS/.test(scheduleSrc)
+      && /smartPlayerSettled && !late/.test(scheduleSrc)
+      && /const remaining = SMART_PLAYER_LATE_SCAN_MS - \(now - smartPlayerLateScanAt\)/.test(scheduleSrc),
+    'healthy-page follow-up scans are not throttled separately from initial discovery');
+    assert(/domWatch\(\(\) => scheduleSmartPlayerScan\(\s*smartPlayerSettled \? 300 : 120, smartPlayerSettled\), true\)/.test(armSrc),
+      'the Smart Player watcher is not element-only or does not enter bounded late-check mode');
+    assert((armSrc.match(/sendSmartPlayerContext\(true\)/g) || []).length >= 2,
+      'the bounded final check disappeared, so a shell that becomes blank after four seconds is missed');
+    assert(/if \(generation !== smartPlayerObserverGeneration\) return;\s*cancelSmartPlayerScan\(\);\s*if \(!smartPlayerEvidence\) sendSmartPlayerContext\(true\);/.test(armSrc),
+      'the final check either inspects a stale generation or skips late blank-page recovery');
+    const finalTimer = armSrc.slice(armSrc.lastIndexOf('woTimeout(() => {'));
+    assert(/if \(smartPlayerUnwatch\) \{[\s\S]*?smartPlayerUnwatch\(\);[\s\S]*?smartPlayerUnwatch = null;/.test(finalTimer)
+      && !/if \([^\n]*smartPlayerEvidence[^\n]*\) return;/.test(finalTimer),
+    'rate-limited evidence can bypass the final teardown and leave the hot observer subscribed');
 
-    const mk = (due, href, isTop, blank) => {
-      const sandbox = { location: { href }, window: {}, URL, String };
+    const teardownBox = { timers: [], unwatchCalls: 0, sendCalls: 0 };
+    vm.createContext(teardownBox);
+    vm.runInContext(
+      "const SMART_PLAYER_DEADLOCK_MS = 4000;\n"
+        + "let smartPlayerEvidence = '', smartPlayerLastSignalAt = 0, smartPlayerScanCount = 0,"
+        + " smartPlayerSettled = false, smartPlayerLateScanAt = 0, smartPlayerUnwatch = null,"
+        + " smartPlayerScanTimer = null, smartPlayerObserverGeneration = 0, smartPlayerDeadlockDue = false;\n"
+        + 'const bridgeRateOk = () => true;\n'
+        + 'globalThis.cancelCalls = 0; const cancelSmartPlayerScan = () => { cancelCalls++; smartPlayerScanTimer = null; };\n'
+        + 'const scheduleSmartPlayerScan = () => {};\n'
+        + 'const domWatch = () => () => { unwatchCalls++; };\n'
+        + 'const woTimeout = (fn, delay) => { timers.push({ fn, delay }); return timers.length; };\n'
+        + 'const sendSmartPlayerContext = () => { sendCalls++; };\n'
+        + armSrc + '\n'
+        + "armSmartPlayerObservation(); smartPlayerEvidence = 'rate-limited-evidence';\n"
+        + 'timers.find((entry) => entry.delay === 20000).fn();',
+      teardownBox,
+      { filename: 'bridge.js:smart-player-final-teardown' },
+    );
+    assert.strictEqual(teardownBox.sendCalls, 0,
+      'the final timer resent evidence that was already recorded');
+    assert.strictEqual(teardownBox.unwatchCalls, 1,
+      'existing evidence bypassed the final observer teardown');
+    assert.strictEqual(teardownBox.cancelCalls, 2,
+      're-arm and final teardown did not each cancel a pending scan');
+
+    const relevantMutationSrc = bridgeFunction('smartPlayerMutationMayMatter');
+    const quietWatchSrc = bridgeFunction('setSmartPlayerQuietWatch');
+    const mutationBox = {};
+    vm.createContext(mutationBox);
+    vm.runInContext(relevantMutationSrc + ';this.__matters=smartPlayerMutationMayMatter;', mutationBox,
+      { filename: 'bridge.js:smart-player-quiet-filter' });
+    const oldVolume = { nodeType: 3, nodeValue: 'Volume 60' };
+    const newVolume = { nodeType: 3, nodeValue: 'Volume 61' };
+    assert.strictEqual(mutationBox.__matters([{
+      addedNodes: [newVolume], removedNodes: [oldVolume],
+    }]), false, 'a volume-label replacement escaped the quiet-mode filter');
+    assert.strictEqual(mutationBox.__matters([{
+      addedNodes: [{ nodeType: 3, nodeValue: 'Loading…' }],
+      removedNodes: [{ nodeType: 3, nodeValue: 'Rendered application '.repeat(20) }],
+    }]), true, 'replacing a rendered shell with short loading text is invisible to late recovery');
+    assert.strictEqual(mutationBox.__matters([{
+      addedNodes: [], removedNodes: [{ nodeType: 3, nodeValue: 'application content' }],
+    }]), true, 'clearing a page through textContent is invisible to late recovery');
+    assert.strictEqual(mutationBox.__matters([{
+      addedNodes: [], removedNodes: [{ nodeType: 1, tagName: 'MAIN' }],
+    }]), true, 'removing the rendered application root is invisible to late recovery');
+    assert(/domWatch\(\(records\) => \{\s*if \(!smartPlayerMutationMayMatter\(records\)\) return;/.test(quietWatchSrc)
+      && !/\}, true\);/.test(quietWatchSrc),
+    'quiet mode does not receive its narrowly filtered text-removal batches');
+
+    const throttleBox = { now: 5000, timers: [], sends: 0, Math, Number };
+    throttleBox.Date = { now: () => throttleBox.now };
+    vm.createContext(throttleBox);
+    vm.runInContext(
+      'const SMART_PLAYER_LATE_SCAN_MS = 1500;\n'
+        + "let smartPlayerEvidence = '', smartPlayerScanTimer = null, smartPlayerScanCount = 0,"
+        + ' smartPlayerSettled = true, smartPlayerLateScanAt = 4000;\n'
+        + 'const woTimeout = (fn, delay) => { const timer = { fn, delay }; timers.push(timer); return timer; };\n'
+        + 'const sendSmartPlayerContext = () => { sends++; };\n'
+        + scheduleSrc + '\n'
+        + 'scheduleSmartPlayerScan(300, true);',
+      throttleBox,
+      { filename: 'bridge.js:smart-player-late-throttle' },
+    );
+    assert.strictEqual(throttleBox.timers[0].delay, 500,
+      'a late mutation inside the cooldown was dropped instead of trailing-coalesced');
+    throttleBox.now = 5500;
+    throttleBox.timers[0].fn();
+    throttleBox.now = 5600;
+    vm.runInContext('scheduleSmartPlayerScan(300, true);', throttleBox);
+    assert.strictEqual(throttleBox.timers[1].delay, 1400,
+      'the late throttle is not measured from the previous scan completion');
+
+    const mk = (due, href, isTop, blank, becomeBlank) => {
+      const sandbox = {
+        location: { href }, window: {}, URL, String, blankState: blank, blankReads: 0,
+        blankChecks: 0,
+      };
       sandbox.window.top = isTop ? sandbox.window : {};
+      const body = {};
+      Object.defineProperty(body, 'innerText', {
+        get() {
+          sandbox.blankReads++;
+          return sandbox.blankState ? '' : 'x'.repeat(400);
+        },
+      });
       sandbox.document = {
         prerendering: false,
-        querySelector: () => (blank ? null : {}),          // a canvas/video counts as content
-        body: { innerText: blank ? '' : 'x'.repeat(400) },
+        querySelector: () => {
+          sandbox.blankChecks++;
+          return sandbox.blankState ? null : {};
+        }, // a canvas/video counts as content
+        body,
       };
       vm.createContext(sandbox);
       vm.runInContext(
         'const smartPlayerRoute = (raw) => /(?:^|\\/)(?:watch|episode|stream|video|play|player|embed)(?:\\/|$|[-_?])/i'
           + '.test(new URL(raw || location.href).pathname);\n'
+          + 'let smartPlayerUnwatch = () => { this.unwatchCalls = (this.unwatchCalls || 0) + 1; };\n'
+          + 'const setSmartPlayerQuietWatch = () => { smartPlayerSettled = true; };\n'
           + blankSrc + '\n'
-          + src + '\nsmartPlayerDeadlockDue = ' + String(due) + ';\nthis.out = smartPlayerDeadlock();',
+          + src + '\nsmartPlayerDeadlockDue = ' + String(due) + ';\nthis.out = smartPlayerDeadlock();'
+          + (becomeBlank ? '\nthis.blankState = true; this.again = smartPlayerDeadlock();' : '')
+          + '\nthis.settled = smartPlayerSettled;',
         sandbox,
       );
-      return sandbox.out;
+      return {
+        out: sandbox.out,
+        again: sandbox.again,
+        settled: sandbox.settled,
+        unwatchCalls: Number(sandbox.unwatchCalls) || 0,
+        blankReads: Number(sandbox.blankReads) || 0,
+        blankChecks: Number(sandbox.blankChecks) || 0,
+      };
     };
-    assert.strictEqual(mk(false, 'https://anime.example/watch/9', true, true), '',
+    const notDue = mk(false, 'https://anime.example/watch/9', true, true);
+    assert.strictEqual(notDue.out, '',
       'the deadlock was reported before the deadline elapsed');
-    assert.strictEqual(mk(true, 'https://anime.example/watch/9', true, true), 'route-blocked',
+    assert.strictEqual(notDue.settled, false, 'a pre-deadline page retired observation early');
+    assert.strictEqual(notDue.unwatchCalls, 0, 'a pre-deadline page unsubscribed early');
+    const route = mk(true, 'https://anime.example/watch/9', true, true);
+    assert.strictEqual(route.out, 'route-blocked',
       'a watch route still rendering nothing at the deadline reported nothing');
-    assert.strictEqual(mk(true, 'https://opaque.test/x7f2', false, false), 'route-blocked',
+    assert.strictEqual(route.settled, false, 'a blocked watch route retired before recovery');
+    assert.strictEqual(route.unwatchCalls, 0, 'a blocked watch route unsubscribed before recovery');
+    const subframe = mk(true, 'https://opaque.test/x7f2', false, false);
+    assert.strictEqual(subframe.out, 'route-blocked',
       'a subframe is a player context in its own right and should still report');
+    assert.strictEqual(subframe.settled, false, 'a blocked subframe retired before recovery');
+    assert.strictEqual(subframe.unwatchCalls, 0, 'a blocked subframe unsubscribed before recovery');
     // An ordinary top-level page that painted nothing is the shape a site takes when its own
     // application code is refused as third-party. It used to report nothing and stay blank.
-    assert.strictEqual(mk(true, 'https://plain.example/about', true, true), 'page-blocked',
+    const blankPage = mk(true, 'https://plain.example/about', true, true);
+    assert.strictEqual(blankPage.out, 'page-blocked',
       'a blank top-level page at the deadline reported nothing, so it had no recovery path');
-    // ...but a page that rendered fine is not a deadlock just because the timer elapsed.
-    assert.strictEqual(mk(true, 'https://plain.example/about', true, false), '',
+    assert.strictEqual(blankPage.settled, false, 'a blank page retired before recovery');
+    assert.strictEqual(blankPage.unwatchCalls, 0, 'a blank page unsubscribed before recovery');
+    // ...but a page that rendered fine is not a deadlock just because the timer elapsed. The
+    // mutation observer retires at that point, while the bounded final timer can still detect an
+    // application shell that later becomes blank without putting body reads on every UI change.
+    const healthy = mk(true, 'https://plain.example/about', true, false, true);
+    assert.strictEqual(healthy.out, '',
       'an ordinary page that rendered content reported a deadlock');
+    assert.strictEqual(healthy.settled, true,
+      'a healthy top-level non-player page did not settle its player recovery observer');
+    assert.strictEqual(healthy.again, 'page-blocked',
+      'the final bounded check missed a healthy shell that later became blank');
+    assert.strictEqual(healthy.unwatchCalls, 0,
+      'the deadlock classifier itself tore down the bounded late-recovery subscription');
+    assert.strictEqual(healthy.blankChecks, 2,
+      'the initial deadline and simulated final deadline did not each inspect blankness once');
+    assert.strictEqual(healthy.blankReads, 1,
+      'the healthy canvas fast path unexpectedly forced a body text read');
   }
 
   // 6. And the strings have to be ones the background actually accepts, or none of the above runs.

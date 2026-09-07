@@ -1012,22 +1012,38 @@
        would drop checks rather than duplicates.
 
        Computed once per batch here rather than inside each consumer, so the
-       ancestor walk is paid once and shared by all of them. */
+       ancestor walk is paid once and shared by all of them. The same pass also
+       records whether any element was added or removed, or an input changed type;
+       cosmetic consumers can then ignore slider-label text churn without each
+       walking the records again. */
     function __woBatchNodes(muts){
       const added=[];
+      let structural=!1;
       for(const mu of muts){
-        const a=mu.addedNodes;
+        "attributes"===mu.type&&"type"===mu.attributeName&&mu.target&&"INPUT"===String(mu.target.tagName||"").toUpperCase()&&(structural=!0);
+        const a=mu.addedNodes||[];
         for(let i=0;
         i<a.length;
         i++){
           const n=a[i];
-          1===n.nodeType&&added.push(n)
+          1===n.nodeType&&(structural=!0,
+          added.push(n))
+        }
+        if(!structural){
+          const removed=mu.removedNodes||[];
+          for(let i=0;
+          i<removed.length;
+          i++)if(1===removed[i].nodeType){
+            structural=!0;
+            break
+          }
         }
 
       }
       if(added.length<2)return{
         added:added,
-        roots:added
+        roots:added,
+        structural:structural
       };
       const inBatch=new Set(added),
       /* An outermost node has to climb to the document root before it can be
@@ -1065,7 +1081,8 @@
       }
       return{
         added:added,
-        roots:roots
+        roots:roots,
+        structural:structural
       }
     }
     function woObserve(cb){
@@ -1080,7 +1097,8 @@
             i++)try{
               __woMoConsumers[i](muts,
               batch.added,
-              batch.roots)
+              batch.roots,
+              batch.structural)
             }
             catch(_){
 
@@ -1089,7 +1107,9 @@
           }).observe(document.documentElement,
           {
             childList:!0,
-            subtree:!0
+            subtree:!0,
+            attributes:!0,
+            attributeFilter:["type"]
           })
         }
         catch(_){
@@ -1579,11 +1599,11 @@
     playerPageDetected=(()=>{
       let scannedAt=0,
       scanCached=!1;
-      return()=>{
+      return force=>{
         try{
           if(PLAYER_ROUTE_RE.test(location.pathname||""))return!0;
           const now=Date.now();
-          if(scannedAt&&now-scannedAt<300)return scanCached;
+          if(!force&&scannedAt&&now-scannedAt<300)return scanCached;
           scannedAt=now,
           scanCached=!!document.querySelector(PLAYER_PAGE_SELECTOR);
           return scanCached
@@ -3019,8 +3039,9 @@
     markGesture,
     !0));
     if(WO.blockMetaRefresh){
-      const killMeta=()=>{
-        document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(m=>{
+      const META_REFRESH_SELECTOR='meta[http-equiv="refresh" i]',
+      disableMetaRefresh=m=>{
+        try{
           const c=m.getAttribute("content")||"",
           match=/url\s*=\s*(.+)$/i.exec(c);
           if(match){
@@ -3037,10 +3058,57 @@
             }))
           }
 
-        })
+        }
+        catch(_){
+
+        }
+
+      },
+      killMeta=(muts,added,roots)=>{
+        /* The shared observer reports child-list changes. Re-querying the entire
+           document for a meta element after a player replaced one volume text node
+           made a fixed security check scale with unrelated UI churn. The first pass
+           still audits the document; later passes inspect only newly added outermost
+           subtrees, which contain every newly inserted refresh element exactly once. */
+        if(!muts)return void document.querySelectorAll(META_REFRESH_SELECTOR).forEach(disableMetaRefresh);
+        for(let i=0;i<roots.length;i++){
+          const root=roots[i];
+          root.matches&&root.matches(META_REFRESH_SELECTOR)&&disableMetaRefresh(root),
+          root.querySelectorAll(META_REFRESH_SELECTOR).forEach(disableMetaRefresh)
+        }
+
+      },
+      auditMetaAttributes=muts=>{
+        for(let i=0;i<muts.length;i++){
+          const target=muts[i]&&muts[i].target;
+          target&&target.matches&&target.matches(META_REFRESH_SELECTOR)&&disableMetaRefresh(target)
+        }
+
       };
       killMeta(),
-      woObserve(killMeta)
+      woObserve(killMeta);
+      try{
+        const watchMetaAttributes=()=>{
+          const root=document.documentElement;
+          if(!root)return;
+          __woObserver(auditMetaAttributes).observe(root,
+          {
+            attributes:!0,
+            subtree:!0,
+            attributeFilter:["http-equiv",
+            "content"]
+          })
+        };
+        document.documentElement?watchMetaAttributes():woOn(document,"DOMContentLoaded",
+        watchMetaAttributes,
+        {
+          once:!0
+        })
+      }
+      catch(_){
+
+      }
+
     }
     if(WO.detectRedirectChains){
       const ABUSE_TLDS=/\.(cfd|sbs|icu|top|xyz|click|link|rest|cyou|cam|monster|quest|host|store|online|site|shop|fit|makeup|skin|hair|lol|bond|autos|boats|christmas|beauty)$/i,
@@ -5334,7 +5402,7 @@
 
       }
       if(WO.detectSkimmers){
-        const isSensitiveField=el=>el&&"INPUT"===el.tagName&&("password"===el.type||/card|cvv|cvc|ccnum|cardnumber|creditcard|securitycode/i.test((el.name||"")+(el.autocomplete||"")+(el.id||""))||/cc-(number|csc)/i.test(el.autocomplete||"")),
+        const isSensitiveField=el=>el&&"INPUT"===el.tagName&&"range"!==String(el.type||"").toLowerCase()&&("password"===el.type||/card|cvv|cvc|ccnum|cardnumber|creditcard|securitycode/i.test((el.name||"")+(el.autocomplete||"")+(el.id||""))||/cc-(number|csc)/i.test(el.autocomplete||"")),
         skimmerPageSensitive=()=>{
           try{
             const pageText=(document.title+" "+location.pathname+" "+location.search).toLowerCase();
@@ -5666,7 +5734,7 @@
         },
         fieldLooksCard=el=>{
           try{
-            return!!(el&&"value"in el&&(fieldHasCardHint(el)||luhn(el.value)))
+            return!!(el&&"value"in el&&!("INPUT"===el.tagName&&"range"===String(el.type||"").toLowerCase())&&(fieldHasCardHint(el)||luhn(el.value)))
           }
           catch(_){
             return!1
@@ -8698,10 +8766,89 @@
 
       },
       TRAP_THRESHOLD=5,
+      passwordUiRoots=new WeakSet,
+      broadPasswordFields=new Set,
+      broadPasswordFilled=new WeakMap,
+      passwordUiRootFor=pw=>{
+        try{
+          return pw&&pw.closest&&pw.closest("form")||pw&&pw.parentElement||pw
+        }
+        catch(_){
+          return null
+        }
+
+      },
+      notePasswordUi=pw=>{
+        try{
+          const root=passwordUiRootFor(pw);
+          if(!root)return;
+          if(root===document.body||root===document.documentElement)return broadPasswordFields.add(pw),
+          void broadPasswordFilled.set(pw,
+          credentialTrapFilled(pw));
+          passwordUiRoots.add(root)
+        }
+        catch(_){
+
+        }
+
+      },
+      pruneBroadPasswordFields=()=>{
+        for(const pw of Array.from(broadPasswordFields)){
+          const root=passwordUiRootFor(pw);
+          if(!pw||!1===pw.isConnected||"password"!==String(pw.type||"").toLowerCase()||root!==document.body&&root!==document.documentElement)broadPasswordFields.delete(pw),
+          broadPasswordFilled.delete(pw)
+        }
+
+      },
+      trapMutationHasLoginText=muts=>{
+        for(let i=0;i<muts.length;i++){
+          const mu=muts[i],
+          lists=[mu.addedNodes||[],
+          mu.removedNodes||[],
+          mu.target&&mu.target.childNodes||[]];
+          let text="";
+          for(let l=0;l<lists.length&&text.length<1e3;l++)for(let n=0;n<lists[l].length&&text.length<1e3;n++)if(3===lists[l][n].nodeType)text+=" "+String(lists[l][n].nodeValue||"").slice(0,
+          1e3-text.length);
+          if(/\b(?:sign[ -]?in|log[ -]?in|login|continue to|account|welcome to)\b/i.test(text))return!0
+        }
+        return!1
+      },
+      trapTextTouchesPasswordUi=muts=>{
+        for(let i=0;i<muts.length;i++){
+          const mu=muts[i],
+          target=mu.target;
+          let scope=target;
+          for(;scope;scope=scope.parentElement){
+            if(passwordUiRoots.has(scope)){
+              try{
+                if(scope.matches&&scope.matches('input[type="password"]')||scope.querySelector&&scope.querySelector('input[type="password"]'))return!0
+              }
+              catch(_){
+
+              }
+              passwordUiRoots.delete(scope)
+            }
+            if(scope===document.body||scope===document.documentElement)break
+          }
+
+        }
+        pruneBroadPasswordFields();
+        for(const pw of broadPasswordFields){
+          const filled=credentialTrapFilled(pw),
+          previous=broadPasswordFilled.get(pw);
+          broadPasswordFilled.set(pw,
+          filled);
+          if(filled!==previous)return!0
+        }
+        return!!broadPasswordFields.size&&trapMutationHasLoginText(muts)
+      },
       scanForms=()=>{
         if(!trapWarned)try{
+          pruneBroadPasswordFields();
           const pwFields=document.querySelectorAll('input[type="password"]');
           for(const pw of pwFields){
+            notePasswordUi(pw),
+            initialPw.has(pw)||injectedForms.add(pw);
             const{
               score:score,
               reasons:reasons
@@ -8736,6 +8883,7 @@
 
       },
       initialPw=new Set(document.querySelectorAll('input[type="password"]'));
+      initialPw.forEach(notePasswordUi);
       /* What the reader actually typed into. Only trusted events count -- a script
       dispatching its own keydown to look like a person is exactly the thing this is
       here to see through. beforeinput covers paste and dictation, which are typing as
@@ -8763,9 +8911,16 @@
       });
       try{
         let pending=!1;
-        woObserve((muts,added,roots)=>{
+        woObserve((muts,added,roots,structural)=>{
           if(!trapWarned){
+            /* Pure text churn cannot create a form or password field. Preserve
+               the meaningful text-only case: instructions being inserted into
+               a form, or a local form-less credential UI, that already contains
+               a password input. Element removals remain structural because they
+               can expose a hidden credential trap by removing the visible field. */
+            if(!structural&&!trapTextTouchesPasswordUi(muts))return;
             const notePw=pw=>{
+              notePasswordUi(pw),
               initialPw.has(pw)||injectedForms.add(pw)
             };
             for(let i=0;
@@ -8871,7 +9026,18 @@
       let procRules=[];
       const SCRIPTLET_RAN=new Set,
       scriptletRuntimeOn=()=>!!(WO.enabled&&WO.adShield&&WO.scriptletEngine),
-      scriptletPlayerPage=()=>playerPageDetected(),
+      scriptletPlayerPage=force=>playerPageDetected(force),
+      adBatchAddsPlayer=(added,
+      roots)=>{
+        try{
+          for(let i=0;i<added.length;i++)if(added[i].matches&&added[i].matches(PLAYER_PAGE_SELECTOR))return!0;
+          for(let i=0;i<roots.length;i++)if(roots[i].querySelector&&roots[i].querySelector(PLAYER_PAGE_SELECTOR))return!0
+        }
+        catch(_){
+
+        }
+        return!1
+      },
       pageMutationScriptletRuntimeOn=()=>scriptletRuntimeOn()&&!scriptletPlayerPage(),
       networkScriptletRuntimeOn=()=>pageMutationScriptletRuntimeOn(),
       scSearchToRe=s=>{
@@ -9820,7 +9986,8 @@
             });
             try{
               let collapsePending=!1;
-              woObserve(()=>{
+              woObserve((muts,added,roots,structural)=>{
+                if(!structural)return;
                 if(styleEl&&!styleEl.isConnected)try{
                   (document.head||document.documentElement).appendChild(styleEl)
                 }
@@ -9913,9 +10080,29 @@
               }
               try{
                 let procPending=!1,
-                collapsePending=!1;
-                woObserve(()=>{
-                  if(scriptletPlayerPage()){
+                collapsePending=!1,
+                observedCosmeticUrl=location.href,
+                scheduleProcedural=()=>{
+                  procRules.length&&!procPending&&(procPending=!0,
+                  setTimeout(()=>{
+                    procPending=!1;
+                    try{
+                      runProcedural()
+                    }
+                    catch(_){
+
+                    }
+
+                  },
+                  500))
+                };
+                woObserve((muts,added,roots,structural)=>{
+                  const routeChanged=observedCosmeticUrl!==location.href;
+                  routeChanged&&(observedCosmeticUrl=location.href);
+                  const playerAdded=structural&&adBatchAddsPlayer(added,
+                  roots);
+                  if(!structural&&!routeChanged)return void scheduleProcedural();
+                  if(playerAdded||scriptletPlayerPage(routeChanged||structural&&!added.length)){
                     /* Coalesced, exactly as the ordinary-page branch below already
                        does it. This called collapseLeftovers(document) directly on
                        every mutation batch -- a whole-document nine-selector scan,
@@ -9966,18 +10153,7 @@
                     300)
                   },
                   250)),
-                  procRules.length&&!procPending&&(procPending=!0,
-                  setTimeout(()=>{
-                    procPending=!1;
-                    try{
-                      runProcedural()
-                    }
-                    catch(_){
-
-                    }
-
-                  },
-                  500))
+                  scheduleProcedural()
                 })
               }
               catch(_){
@@ -21916,10 +22092,8 @@
         woOn(document,"DOMContentLoaded",
         __woSweepAds);
         try{
-          __woObserver(__woSchedAds).observe(document.documentElement,
-          {
-            childList:!0,
-            subtree:!0
+          woObserve((muts,added,roots,structural)=>{
+            structural&&__woSchedAds()
           })
         }
         catch(e){

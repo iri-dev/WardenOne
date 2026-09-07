@@ -301,6 +301,19 @@ check('typing a card value does not warn by itself', () => {
   assert.strictEqual(s.__confirmCalls.length, 0);
 });
 
+check('a range slider bypasses card classification even when its metadata looks card-like', () => {
+  const slider = makeInput({
+    type: 'range',
+    name: 'card-volume',
+    autocomplete: 'cc-number',
+    value: validCard(),
+  });
+  const s = installGuard(makeSandbox({ inputs: [slider] }));
+  trigger(s, 'input', slider);
+  assert.strictEqual(s.__timers.length, 0);
+  assert.strictEqual(hasLog(s, 'warned_payment_card_entry'), false);
+});
+
 check('normal HTTPS checkout can submit to an unknown off-site processor quietly', () => {
   const field = makeInput({ autocomplete: 'cc-number', value: validCard() });
   const form = makeForm({ action: 'https://processor.example/charge', textContent: 'Pay now' });

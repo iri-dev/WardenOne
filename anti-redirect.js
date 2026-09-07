@@ -1682,13 +1682,17 @@
 
   try {
     const baitObserver = woObserver((records) => {
-      if (!confirmBaitEnabled() || baitRemoved >= BAIT_REMOVE_CAP) return;
+      if (baitRemoved >= BAIT_REMOVE_CAP) return;
       let queued = false;
       for (const rec of records) {
         const added = rec.addedNodes || [];
         for (let i = 0; i < added.length && baitPending.size < 40; i++) {
           const node = added[i];
-          if (node && node.nodeType === 1) { baitPending.add(node); queued = true; }
+          if (node && node.nodeType === 1) {
+            if (!queued && !confirmBaitEnabled()) return;
+            baitPending.add(node);
+            queued = true;
+          }
         }
       }
       if (queued) scheduleConfirmBaitSweep(60);
