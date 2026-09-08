@@ -419,6 +419,14 @@ as the work happened.
 
 ### Fixed
 
+- Fixed YouTube tabs intermittently showing every Google account as signed out
+  while a reload or fresh tab immediately restored them. The child-frame
+  credential guard trusted Google's identity hosts but not the YouTube service
+  family they refresh account state into, so it could reject a legitimate
+  token-bearing account refresh in the live page. Google and YouTube account,
+  image and video destinations now share the same established-family exemption
+  already used by the top-frame guard; unrelated and lookalike destinations are
+  still blocked.
 - Fixed the two filter-list builders refusing to run at all. Both carried a `#!`
   line under their licence header, and that only works as the very first thing in
   a file, so `node tools/build-adshield-dnr.js` stopped on a syntax error before
