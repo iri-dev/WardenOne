@@ -1719,6 +1719,14 @@
   const CREDENTIAL_FRAME_VALUE_LIMIT = 80;
   const CREDENTIAL_FRAME_TRUSTED_BASES = new Set([
     'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com',
+    /* Google account state crosses this service family while YouTube is open.
+       Leaving these out meant the frame guard could reject an account refresh
+       to YouTube even though the top-frame SessionShield already treats every
+       one of these as an established Google/YouTube destination. The cookies
+       remained intact, so a fresh tab looked signed in again while the live tab
+       temporarily rendered itself as signed out. */
+    'youtube.com', 'youtube-nocookie.com', 'youtu.be', 'googlevideo.com',
+    'ytimg.com', 'ggpht.com',
     'microsoft.com', 'microsoftonline.com', 'msauth.net', 'msftauth.net', 'live.com',
     'apple.com', 'icloud.com', 'cdn-apple.com', 'paypal.com', 'paypalobjects.com',
     'stripe.com', 'stripe.network', 'braintreegateway.com', 'braintreepayments.com',

