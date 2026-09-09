@@ -251,6 +251,15 @@ as the work happened.
 
 ### Changed
 
+- Rebuilt the GitHub README as a two-speed product page: installation, trust,
+  protection pillars and flagship tools now appear first, while deeper technical
+  explanations remain available without making the opening read like a manual.
+  SessionShield, Download Shield and File Shield, extension security, Protection
+  Health, Privacy Self-Test, Site Firewall and the Network Logger now reflect their
+  actual place in the product instead of being buried beneath AdShield. The page
+  also corrects the stale protection count explanation and qualifies local-first
+  claims around optional reputation lookups and list updates.
+
 - Remote network and supplemental feeds now keep a keyed semantic fingerprint as
   well as their SHA-256 hash and size/count baseline. A hash change with implausibly
   low content overlap quarantines the whole refresh, preserving the last known-good
