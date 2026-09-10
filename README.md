@@ -223,6 +223,13 @@ It does not and cannot read Chrome's own DevTools interface. The protection runs
 the clipboard actions the page initiates; it intervenes before the pasted command leaves that
 context.
 
+<p align="center">
+  <a href="docs/screenshots/14-clickfix-warning.webp">
+    <img src="docs/screenshots/14-clickfix-warning.webp" alt="WardenOne warns over a fake verification page that a real CAPTCHA never asks you to open the Run dialog and paste something" width="860">
+  </a>
+</p>
+<p align="center"><em>A local test page reproducing the ClickFix pattern, and the warning WardenOne puts in front of it. It names the trick rather than saying “blocked”.</em></p>
+
 ## Fake Update & Tech-support Scam Protection
 
 Real Chrome, Windows and browser updates do not arrive from an arbitrary web page. Fake Update
@@ -288,7 +295,7 @@ sign-in destroyed halfway through is not.
 
 ## SessionShield
 
-**PROTECTION SUITE · LOGIN & SESSION SECURITY**
+<sub><strong>PROTECTION SUITE · LOGIN & SESSION SECURITY</strong></sub>
 
 **What it does:** SessionShield protects the state that exists after a successful login: session tokens, cookies,
 password and card fields, OAuth grants, clipboard operations and the places a site stores identity.
@@ -397,20 +404,16 @@ If you think an account already has been compromised, Emergency Logout can clear
 site or sign out everywhere in one deliberate action. It is kept separate from ordinary privacy
 cleaning because its purpose is incident response, not housekeeping.
 
-<details>
-<summary><strong>See SessionShield's individual controls</strong></summary>
-
 <p align="center">
   <a href="docs/screenshots/12-session-shield.webp">
     <img src="docs/screenshots/12-session-shield.webp" alt="SessionShield controls for token exposure, form skimmers, payment cards, clipboard swapping and keystroke pressure" width="500">
   </a>
 </p>
-
-</details>
+<p align="center"><em>Every protection above is an individual switch, not a single opaque toggle.</em></p>
 
 ## Download Shield
 
-**AUTOMATIC PROTECTION · DOWNLOAD CONTEXT & REPUTATION**
+<sub><strong>AUTOMATIC PROTECTION · DOWNLOAD CONTEXT & REPUTATION</strong></sub>
 
 **What it does:** grades browser downloads from their origin, identity and behaviour before they finish.
 
@@ -473,7 +476,7 @@ WardenOne reputation backend.
 
 ## File Shield
 
-**LOCAL TOOL · FILE STRUCTURE & HASH ANALYSIS**
+<sub><strong>LOCAL TOOL · FILE STRUCTURE & HASH ANALYSIS</strong></sub>
 
 **What it does:** examines the real bytes of a file you choose without opening, running or uploading it.
 
@@ -481,13 +484,13 @@ The file tells you one thing. **Its bytes may tell you another.**
 
 ```mermaid
 flowchart TB
-    Download["Browser download"] --> DownloadShield["Download Shield"]
-    DownloadShield --> Context["Source · URL · filename · browser signals"]
-    Context ~~~ File
-    File["File you choose"] --> FileShield["File Shield"]
-    FileShield --> Bytes["Actual bytes · format · code · archive · hash"]
+    Pick["File you hand it"] --> Format["Identify the real format from its signature"]
+    Format --> Parse["Parse the structure — never open, extract or run"]
+    Parse --> Inspect["Inspect what is inside: program imports · script lines · archive index · document actions"]
+    Inspect --> Hash["Hash locally and compare with the bundled known-malware list"]
+    Hash --> Report["Evidence-based report — findings, not a verdict"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
-    class Download,DownloadShield,Context,File,FileShield,Bytes warden
+    class Pick,Format,Parse,Inspect,Hash,Report warden
     linkStyle default stroke:#c45ca7
 ```
 
@@ -540,7 +543,7 @@ replace the protection already on your computer.
 
 ## Network and device defence
 
-**PROTECTION SUITE · IP, PRIVATE NETWORK & DEVICE ACCESS**
+<sub><strong>PROTECTION SUITE · IP, PRIVATE NETWORK & DEVICE ACCESS</strong></sub>
 
 **What it does:** protects browser surfaces that sit beyond the visible page. Sites can ask about local addresses, reach towards private
 devices, open media streams, reuse old permissions and leave background components behind.
@@ -608,7 +611,7 @@ applies the setting.
 
 ### Watch-only Protections
 
-**WATCH-ONLY · LOCAL EVIDENCE, NO PAGE MODIFICATION**
+<sub><strong>WATCH-ONLY · LOCAL EVIDENCE, NO PAGE MODIFICATION</strong></sub>
 
 Not everything worth knowing about is worth blocking. Three systems only write a local Activity
 Centre entry; Chrome already supplies the permission decision where one is needed.
@@ -638,7 +641,7 @@ more of its authority.
 
 ## Extension Security Centre
 
-**INTERFACE · INSTALLED EXTENSION IDENTITY & CHANGE HISTORY**
+<sub><strong>INTERFACE · INSTALLED EXTENSION IDENTITY & CHANGE HISTORY</strong></sub>
 
 **What it does:** shows what every installed extension is, what it can access and what changed.
 
@@ -655,6 +658,13 @@ extension list.
 old reassurance. Broad access is explained rather than automatically called malicious, and an
 unknown ID is never called safe. Explicit buttons can disable an extension or ask Chrome to confirm
 its removal; WardenOne never removes one on its own.
+
+<p align="center">
+  <a href="docs/screenshots/06-extension-centre.webp">
+    <img src="docs/screenshots/06-extension-centre.webp" alt="WardenOne's local Extension Security Centre, inventory controls and local reputation database" width="900">
+  </a>
+</p>
+<p align="center"><em>The whole assessment on one page: what needs a decision, what changed, and what the local catalogue actually knows.</em></p>
 
 ### Extension Change Monitoring
 
@@ -684,21 +694,15 @@ from outside. If the catalogue has no record, it says **unexamined**, not cleare
 expose an uninstalled extension's future permissions or source code to another extension, so this
 is an identity and listing check—not a code review.
 
+<details>
+<summary><strong>See an example of checking an extension before installation</strong></summary>
+
 <p align="center">
   <a href="docs/screenshots/06-extension-check-result.webp">
     <img src="docs/screenshots/06-extension-check-result.webp" alt="The pre-install Extension Check distinguishes an exact local catalogue match from an identity confirmed by the Chrome Web Store" width="900">
   </a>
 </p>
 <p align="center"><em>An exact ID match is useful evidence; WardenOne still refuses to turn it into false identity reassurance.</em></p>
-
-<details>
-<summary><strong>See the complete Extension Security Centre</strong></summary>
-
-<p align="center">
-  <a href="docs/screenshots/06-extension-centre.webp">
-    <img src="docs/screenshots/06-extension-centre.webp" alt="WardenOne's local Extension Security Centre, inventory controls and local reputation database" width="900">
-  </a>
-</p>
 
 </details>
 
@@ -818,6 +822,20 @@ is precisely why a blocklist cannot see it and why Mail Shield works in the webm
 It recovers the real source where the markup preserves it and neutralises the likely pixel with a
 transparent image of the same declared size.
 
+```mermaid
+flowchart TB
+    Pixel["One-pixel image carrying your recipient ID"] --> Proxy["Gmail rewrites it through googleusercontent.com"]
+    Proxy --> Blind["At the network layer the tracker hostname is gone<br/>a blocklist has nothing left to match"]
+    Proxy --> Kept["But the original address survives in the link fragment<br/>a fragment is never sent to a server"]
+    Kept --> Recover["Mail Shield reads it inside the webmail page"]
+    Recover --> Neutralise["Pixel replaced with a transparent image of the same declared size"]
+    classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
+    classDef dead fill:#3a1a30,stroke:#7a3562,color:#e6c8dc
+    class Pixel,Proxy,Kept,Recover,Neutralise warden
+    class Blind dead
+    linkStyle default stroke:#c45ca7
+```
+
 Mail Shield is registered only on Gmail, Outlook, Proton, Yahoo, Fastmail, Zoho, AOL and Gandi. It
 does not inspect images on the rest of the web. Analysis stays inside the supported webmail page;
 no email content or pixel address is sent to WardenOne.
@@ -846,6 +864,19 @@ shared by everyone using the protection.
 Consistency matters more than theatrical randomness. WebGL and WebGPU receive one GPU identity;
 different answers to the same question would be rarer than the real machine and therefore a better
 fingerprint. WebGPU limits are reduced to specification minimums shared by the protected group.
+
+```mermaid
+flowchart LR
+    Ask["Page measures you<br/>canvas · audio · WebGL · fonts · screen · voices"] --> Shield["WardenOne answers"]
+    Shield --> Same["The same answer every time,<br/>shared with everyone using the shield"]
+    Shield -.->|never| Random["A different answer each time<br/>rarer than the real machine, so a better fingerprint"]
+    Same --> Crowd["You look like the group, not like you"]
+    classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
+    classDef dead fill:#3a1a30,stroke:#7a3562,color:#e6c8dc
+    class Ask,Shield,Same,Crowd warden
+    class Random dead
+    linkStyle default stroke:#c45ca7
+```
 
 Media capability checks keep the browser's truthful `supported` answer—lying there can make video
 fail—but flatten whether a supported codec is smooth or power-efficient, which describes the GPU
@@ -902,7 +933,7 @@ flowchart TB
 
 ## Activity Centre
 
-**INTERFACE · LOCAL SECURITY EVIDENCE**
+<sub><strong>INTERFACE · LOCAL SECURITY EVIDENCE</strong></sub>
 
 **What it does:** keeps the explanation after a protection blocks, warns, learns or allows.
 
@@ -933,7 +964,9 @@ ClickFix command should not reproduce the secret or harmful payload merely to pr
 
 ## Notification Centre
 
-**INTERFACE · NOTICE CONTROL**
+<sub><strong>INTERFACE · NOTICE CONTROL</strong></sub>
+
+**What it does:** lists every notice WardenOne can show, so you can silence the message without weakening the protection.
 
 Every notice WardenOne can show is listed with what it means, how long it remains visible and
 whether you would rather not see it again. Muting presentation never turns off the protection
@@ -948,7 +981,9 @@ behind the notice. Silent mode is therefore a user-interface choice, not a weake
 
 ## Protection Health
 
-**LOCAL CHECK · EXPECTED COMPONENTS & RULES**
+<sub><strong>LOCAL CHECK · EXPECTED COMPONENTS & RULES</strong></sub>
+
+**What it does:** checks that the protections you switched on are actually loaded and responding right now.
 
 Protection Health asks whether the expected engines, registrations, lists and page components are
 present and responding. It does not equate “setting saved” with “protection running”, and a failure
@@ -963,7 +998,9 @@ replaces the reassuring state instead of being hidden beneath it.
 
 ## Privacy Self-Test
 
-**VERIFICATION TOOL · MEASURED PAGE RESULTS**
+<sub><strong>VERIFICATION TOOL · MEASURED PAGE RESULTS</strong></sub>
+
+**What it does:** measures what a real page can still learn about you, by comparing protected and unprotected readings of the same document.
 
 The Self-Test measures the page in your active tab, not its own extension page. Each probe runs
 twice in the same document: once through WardenOne's protected browser APIs and once through clean,
@@ -1001,7 +1038,9 @@ the address bar is restored even if a probe fails.
 
 ## Verify and Repair
 
-**RECOVERY TOOL · LIVE PAGE COMPONENTS**
+<sub><strong>RECOVERY TOOL · LIVE PAGE COMPONENTS</strong></sub>
+
+**What it does:** finds which WardenOne components are missing from a tab and puts them back.
 
 When a switch says on but the Self-Test receives the native value, Verify & Repair looks from the
 inside: it checks the WardenOne components expected on that tab and re-injects what is missing. The
@@ -1040,7 +1079,9 @@ maintained policy.** They form one control system, not four unrelated advanced b
 
 ## Network Logger
 
-**INVESTIGATION TOOL · REQUEST, OUTCOME & MATCHING RULE**
+<sub><strong>INVESTIGATION TOOL · REQUEST, OUTCOME & MATCHING RULE</strong></sub>
+
+**What it does:** names the exact request behind an event, whether it was blocked or allowed, and which rule decided.
 
 The Activity Centre tells you a security event happened. The Network Logger tells you **which
 request it was, whether WardenOne blocked or allowed it, and which rule decided**. That is the place
@@ -1074,7 +1115,9 @@ and dropped when the last logger closes. Token-, key-, password- and address-lik
 
 ## Site Firewall
 
-**CONTROL SURFACE · PER-SITE NETWORK POLICY**
+<sub><strong>CONTROL SURFACE · PER-SITE NETWORK POLICY</strong></sub>
+
+**What it does:** lets you decide what each domain a page loads is allowed to do, on that site alone.
 
 The Site Firewall shows every domain the current page loads and lets you decide whether each may
 run scripts, make requests, load frames or media, or carry cookies **on this site only**. Your
@@ -1093,7 +1136,9 @@ visible before the decision is stored.
 
 ## My Rules
 
-**CONTROL SURFACE · PRECISE PERSONAL POLICY**
+<sub><strong>CONTROL SURFACE · PRECISE PERSONAL POLICY</strong></sub>
+
+**What it does:** gives you the exact filter syntax you already know, with your rules beating every list WardenOne ships.
 
 Personal rules use familiar Adblock syntax:
 
@@ -1181,6 +1226,13 @@ use the mouse or keyboard.
 Allowlisting a site's adverts does not silently restore an element you explicitly chose to remove.
 Those are two different decisions and remain so in storage.
 
+<p align="center">
+  <a href="docs/screenshots/13-element-zapper.webp">
+    <img src="docs/screenshots/13-element-zapper.webp" alt="The Element Zapper outlines whatever the pointer is over and explains that each removal is remembered for this site" width="900">
+  </a>
+</p>
+<p align="center"><em>Point, click, gone — and remembered for that site, with <code>Ctrl+Z</code> still available after the tool closes.</em></p>
+
 ## Cryptojacking protection
 
 Known mining-as-a-service scripts, third-party mining-pool traffic and stratum WebSockets are
@@ -1212,6 +1264,13 @@ address** command and the address bar are browser UI that a page script cannot i
 Press **Alt+Shift+W**, type a few letters and choose a WardenOne action: check the site, run the
 Self-Test, hide an element, clean the page address, pause here, open the Logger or Firewall, check a
 file or extension, inspect Activity, or open settings.
+
+<p align="center">
+  <a href="docs/screenshots/13-command-palette.webp">
+    <img src="docs/screenshots/13-command-palette.webp" alt="The WardenOne command palette open over a web page, listing every action with a short description of what it does" width="900">
+  </a>
+</p>
+<p align="center"><em>Every tool in WardenOne, one keystroke away — and nothing runs until you press Enter.</em></p>
 
 <details>
 <summary><strong>Why the in-page palette cannot grant itself authority</strong></summary>
@@ -1351,6 +1410,33 @@ surfaces that actually hold the evidence:
 - **Page and session layer** — deceptive interfaces, credential flows, privacy APIs, links and device-use signals.
 - **Extension worker** — local state and the browser APIs that join those layers together.
 - **Local interfaces** — Activity, Self-Test, Repair, Logger, Firewall and review tools that explain and control the result.
+
+```mermaid
+flowchart TB
+    Page["Web page"] --> PageLayer["Page and session layer<br/>deceptive interfaces · credential flows · privacy APIs · links"]
+    Net["Every request"] --> NetLayer["Browser network layer<br/>blocklists · trackers · redirects · private-network boundary"]
+    Dl["Download"] --> DlLayer["Download Shield<br/>origin · identity · behaviour"]
+
+    PageLayer --> Worker
+    NetLayer --> Worker
+    DlLayer --> Worker
+
+    Worker["Extension worker<br/>the only place the layers meet"] --> State["Local state and evidence<br/>never leaves this browser"]
+
+    State --> Explain["Activity · Notifications · Health<br/>what happened"]
+    State --> Prove["Self-Test · Verify and Repair<br/>whether it still works"]
+    State --> Control["Logger · Firewall · My Rules<br/>your decision beats every list"]
+
+    classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
+    classDef entry fill:#2b1226,stroke:#8d3f74,color:#f0d7e8
+    class PageLayer,NetLayer,DlLayer,Worker,State,Explain,Prove,Control warden
+    class Page,Net,Dl entry
+    linkStyle default stroke:#c45ca7
+```
+
+Everything converges on one worker and one local store, then fans back out into interfaces that
+explain, prove and control it. That convergence is what the **One** in WardenOne means: not a bundle
+of unrelated tools sharing an icon, but one place where every layer's evidence ends up.
 
 Some tools overlap in subject but not evidence. Download Shield sees browser context; File Shield
 sees bytes. Activity records the event; Logger names the request and rule. Self-Test measures from

@@ -57,3 +57,6 @@ THEFT-*.md
 # rather than failing, so CI stays green without them.
 tools/toast-harness.html
 tools/build-toast-harness.js
+
+# Screenshot masters: the README ships the .webp; PNGs stay local for re-encoding
+docs/screenshots/*.png
