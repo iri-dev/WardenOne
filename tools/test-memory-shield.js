@@ -20,6 +20,7 @@ function loadMemoryShield(options = {}) {
     config: Object.assign({}, options.config || {}),
     discarded: [],
     removed: [],
+    activated: [],
     alarmsCreated: [],
     alarmsCleared: [],
     liveReply: options.liveReply || (() => ({ formDirty: false, mediaActive: false })),
@@ -54,8 +55,31 @@ function loadMemoryShield(options = {}) {
         onUpdated: capture('onUpdated'),
         onCreated: capture('onCreated'),
         onRemoved: capture('onRemoved'),
-        query: async () => state.tabs.slice(),
-        discard: async (id) => { state.discarded.push(id); },
+        query: async (q) => {
+          const all = state.tabs.slice();
+          if (q && q.windowId != null) return all.filter((t) => t.windowId === q.windowId);
+          return all;
+        },
+        update: async (id, props) => {
+          state.activated.push(id);
+          if (props && props.active) state.tabs.forEach((t) => { t.active = (t.id === id); });
+          return state.tabs.find((t) => t.id === id) || null;
+        },
+        // Modelled on what Chromium 150 actually does, measured against the shipped
+        // extension: the discard succeeds even on the active on-screen tab, it returns
+        // the discarded tab, and that tab has a NEW id -- the one we asked about is gone
+        // from chrome.tabs.get by the time it resolves. Anything that confirms a sleep by
+        // re-reading the old id therefore reports a failure on every success, which is
+        // exactly the bug this stub exists to catch.
+        discard: async (id) => {
+          const tab = state.tabs.find((t) => t.id === id) || null;
+          if (tab && tab.__undiscardable) return undefined;
+          state.discarded.push(id);
+          if (!tab) return { id: id + 1000, discarded: true };
+          const reborn = Object.assign({}, tab, { id: id + 1000, discarded: true, status: 'unloaded' });
+          state.tabs.splice(state.tabs.indexOf(tab), 1, reborn);
+          return reborn;
+        },
         remove: async (id) => { state.removed.push(id); },
         sendMessage(tabId, _msg, callback) {
           const reply = state.liveReply(tabId);
@@ -80,6 +104,14 @@ function loadMemoryShield(options = {}) {
       notifications: { create() {} },
     },
     localGet: async () => ({ wardenone_config: state.config }),
+    localSet: async (obj) => {
+      const next = obj && obj.wardenone_config;
+      if (next && typeof next === 'object') state.config = next;
+    },
+    normalizeAllowlistHost(value) {
+      const raw = String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0];
+      return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(raw) ? raw.replace(/^www\./, '') : '';
+    },
     normalizeAllowlistHosts(list) {
       return Array.isArray(list) ? list.map((h) => String(h).toLowerCase()) : [];
     },
@@ -117,6 +149,10 @@ async function main() {
     'sleepIdleGroups',
     'throttleInactiveTabs',
     'memoryActOnTab',
+    'memoryNeverSleepList',
+    'memoryToggleNeverSleep',
+    'memorySleepTabByHand',
+    'memoryCloseTabByHand',
   ].forEach((name) => {
     assert.strictEqual(typeof sandbox[name], 'function', name + ' should be available to background.js');
   });
@@ -164,6 +200,8 @@ async function main() {
   await testRecencySurvivesRestart();
   await testUnknownLiveStateKeepsTheTab();
   await testSweepAlarmFollowsTheSetting();
+  await testNeverSleepIsExactAndHonoured();
+  await testTabActionsByHand();
 
   console.log('[ok] memory shield tests passed');
 }
@@ -360,6 +398,177 @@ async function testSweepAlarmFollowsTheSetting() {
   const background = fs.readFileSync('background.js', 'utf8');
   assert(/o\.memoryShield !== n\.memoryShield[\s\S]{0,160}reconcileMemorySweepAlarm\(\)/.test(background),
     'background.js does not reconcile the sweep alarm when the setting changes');
+}
+
+// ---------------------------------------------------------------------------
+// "Never sleep this site", from the right-click menu.
+//
+// The one host list in the extension that does NOT match subdomains, and the
+// reason is the menu rather than the sweep: the entry has to be able to say what
+// removing it does. With subdomain matching, a right-click on mail.example.test
+// could read "Never sleep mail.example.test" while it was already being kept
+// awake by an example.test entry, and taking that entry away would silently
+// change every other tab on the domain too.
+// ---------------------------------------------------------------------------
+async function testNeverSleepIsExactAndHonoured() {
+  const { memory } = loadMemoryShield();
+  const base = Object.assign({}, memory.MEMORY_DEFAULTS, {
+    _allowlist: [], _minutes: 30, _mode: 'balanced', _neverSleep: ['ordinary.example'],
+  });
+
+  assert.strictEqual(memory.tabKeepReason({ id: 1, url: 'https://ordinary.example/page' }, base),
+    'you set never sleep', 'a marked site was not kept');
+  assert.strictEqual(
+    memory.tabKeepReason({ id: 2, url: 'https://ordinary.example/page' },
+      Object.assign({}, base, { _neverSleep: [] })), null,
+    'the same tab must be sleepable with nothing on the list -- otherwise this proves nothing');
+  assert.strictEqual(memory.tabKeepReason({ id: 3, url: 'https://app.ordinary.example/page' }, base), null,
+    'a mark on one host spread to its subdomains, so removing it could not say what it undoes');
+  assert.strictEqual(memory.memoryNeverSleepHas([], 'ordinary.example'), false);
+
+  // Toggling round-trips through storage, both ways.
+  const store = loadMemoryShield({ config: { memoryShield: true } });
+  const on = await store.sandbox.memoryToggleNeverSleep('https://ordinary.example/some/page');
+  assert.strictEqual(on.ok, true);
+  assert.strictEqual(on.on, true);
+  assert.strictEqual(on.host, 'ordinary.example', 'the mark is stored as a host, not a URL');
+  assert.deepStrictEqual(Array.from(await store.sandbox.memoryNeverSleepList()), ['ordinary.example']);
+  const off = await store.sandbox.memoryToggleNeverSleep('ordinary.example');
+  assert.strictEqual(off.on, false, 'the same entry did not take the mark back off');
+  assert.deepStrictEqual(Array.from(await store.sandbox.memoryNeverSleepList()), []);
+
+  // And the sweep -- the thing the mark exists to stop -- actually honours it.
+  const marked = loadMemoryShield({
+    config: { memoryShield: true, memoryMode: 'balanced', memoryNeverSleepHosts: ['ordinary.example'] },
+    tabs: [sleepableTab(1, 120)],
+  });
+  const swept = await marked.sandbox.memorySweep('alarm');
+  assert.strictEqual(swept.slept, 0, 'a two-hour-idle tab on a marked site was slept anyway');
+  assert.deepStrictEqual(Array.from(marked.state.discarded), []);
+}
+
+// ---------------------------------------------------------------------------
+// Sleep / close the tab you are looking at.
+//
+// These do NOT use tabKeepReason, and that is the design rather than an omission.
+// Its reasons -- "active tab", "pinned", "allowlisted" -- are guesses about what
+// somebody would have wanted on a tab nobody is looking at. Applied here they
+// would refuse every click, because the tab you can right-click is by definition
+// the active one. What survives is the pair of guards that protect something
+// unrecoverable: unsaved typing, and a live camera or microphone.
+//
+// The two facts these lean on were measured against the shipped extension in
+// Chromium 150, not assumed, and the obvious guess is wrong about both: discard
+// works on the on-screen tab (it just leaves you looking at a blank one), and the
+// discarded tab always comes back under a new id.
+// ---------------------------------------------------------------------------
+function pageTab(id, extra) {
+  return Object.assign({
+    id, windowId: 1, index: id - 1, url: 'https://ordinary.example/page' + id, active: false,
+  }, extra || {});
+}
+
+async function testTabActionsByHand() {
+  // The active tab is slept, and focus moves to the neighbour first. Discard works on
+  // an on-screen tab -- it just leaves the reader staring at a blank one that comes back
+  // only when they click it, which is indistinguishable from having broken it.
+  //
+  // Reported as a success even though the discarded tab came back under a different id.
+  // That is the whole point of the harness's discard stub: confirming the sleep by
+  // re-reading the id we asked about would fail here, on a sleep that worked.
+  const two = loadMemoryShield({
+    config: { memoryShield: true },
+    tabs: [pageTab(1, { active: true }), pageTab(2)],
+  });
+  const slept = await two.sandbox.memorySleepTabByHand({ id: 1 });
+  assert.strictEqual(slept.ok, true, slept.error || '');
+  assert.deepStrictEqual(Array.from(two.state.activated), [2],
+    'focus was not moved off the tab before discarding it');
+  assert.deepStrictEqual(Array.from(two.state.discarded), [1]);
+  assert.strictEqual(await two.sandbox.tabsGet(1), null,
+    'the harness should model the id changing, or this proves nothing');
+
+  // With nowhere to move focus to it is still done: the browser is perfectly willing,
+  // and refusing would make the entry look broken on a single-tab window.
+  const alone = loadMemoryShield({ config: { memoryShield: true }, tabs: [pageTab(1, { active: true })] });
+  const lonely = await alone.sandbox.memorySleepTabByHand({ id: 1 });
+  assert.strictEqual(lonely.ok, true, lonely.error || '');
+  assert.deepStrictEqual(Array.from(alone.state.activated), [],
+    'there was no other tab to activate, so nothing should have been activated');
+  assert.deepStrictEqual(Array.from(alone.state.discarded), [1]);
+
+  // A definite "there is unsaved text here" stops both actions and names the reason.
+  const dirty = {
+    config: { memoryShield: true },
+    tabs: [pageTab(1, { active: true }), pageTab(2)],
+    liveReply: () => ({ formDirty: true, mediaActive: false }),
+  };
+  const dirtySleep = await loadMemoryShield(dirty).sandbox.memorySleepTabByHand({ id: 1 });
+  assert.strictEqual(dirtySleep.ok, false);
+  assert(/unsaved text/.test(dirtySleep.error), dirtySleep.error);
+  const closing = loadMemoryShield(dirty);
+  const dirtyClose = await closing.sandbox.memoryCloseTabByHand({ id: 1 });
+  assert.strictEqual(dirtyClose.ok, false);
+  assert(/Ctrl\+W still closes it/.test(dirtyClose.error),
+    'refusing to close has to leave the reader a way to close it: ' + dirtyClose.error);
+  assert.deepStrictEqual(Array.from(closing.state.removed), []);
+
+  // The form guard follows the reader's own switch; the camera one never does. There is
+  // no setting that means "close my video call for me".
+  const relaxed = { memoryShield: true, memoryNeverForms: false };
+  const typedOn = loadMemoryShield({
+    config: relaxed,
+    tabs: [pageTab(1, { active: true }), pageTab(2)],
+    liveReply: () => ({ formDirty: true, mediaActive: false }),
+  });
+  assert.strictEqual((await typedOn.sandbox.memoryCloseTabByHand({ id: 1 })).ok, true,
+    'the unsaved-form guard ignored the setting that governs it');
+  const onCamera = loadMemoryShield({
+    config: relaxed,
+    tabs: [pageTab(1, { active: true }), pageTab(2)],
+    liveReply: () => ({ formDirty: false, mediaActive: true }),
+  });
+  const filmed = await onCamera.sandbox.memoryCloseTabByHand({ id: 1 });
+  assert.strictEqual(filmed.ok, false);
+  assert(/camera or microphone/.test(filmed.error), filmed.error);
+
+  // No answer is not the same as a bad answer -- the opposite of the sweep's rule, and
+  // deliberately so. The bridge is unreachable on a paused site and on every page that
+  // predates the install; refusing there would break the entry far more often than it
+  // would save anything.
+  const mute = loadMemoryShield({
+    config: { memoryShield: true },
+    tabs: [pageTab(1, { active: true }), pageTab(2)],
+    liveReply: () => ({ __lastError: 'Receiving end does not exist.' }),
+  });
+  assert.strictEqual((await mute.sandbox.memorySleepTabByHand({ id: 1 })).ok, true,
+    'an unreachable bridge blocked a sleep the reader asked for by name');
+
+  // A tab already asleep says so rather than reporting a second success.
+  const asleep = loadMemoryShield({
+    config: { memoryShield: true },
+    tabs: [pageTab(1, { discarded: true }), pageTab(2, { active: true })],
+  });
+  const again = await asleep.sandbox.memorySleepTabByHand({ id: 1 });
+  assert.strictEqual(again.ok, false);
+  assert(/already asleep/.test(again.error), again.error);
+
+  // Chrome refusing the discard is reported, not swallowed.
+  const stubborn = loadMemoryShield({
+    config: { memoryShield: true },
+    tabs: [pageTab(1, { active: true, __undiscardable: true }), pageTab(2)],
+  });
+  const refused = await stubborn.sandbox.memorySleepTabByHand({ id: 1 });
+  assert.strictEqual(refused.ok, false);
+  assert(/refused to sleep/.test(refused.error), refused.error);
+
+  // And the ordinary close, with nothing in the way.
+  const plain = loadMemoryShield({
+    config: { memoryShield: true },
+    tabs: [pageTab(1, { active: true }), pageTab(2)],
+  });
+  assert.strictEqual((await plain.sandbox.memoryCloseTabByHand({ id: 1 })).ok, true);
+  assert.deepStrictEqual(Array.from(plain.state.removed), [1]);
 }
 
 main().catch((error) => {

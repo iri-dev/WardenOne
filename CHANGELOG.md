@@ -17,6 +17,16 @@ as the work happened.
 
 ### Added
 
+- The right-click menu can now do something about the tab itself: sleep it, close
+  it, or mark its site so it is never slept. Sleeping unloads the tab to give its
+  memory back — it stays in the tab strip and comes back when you click it — and you
+  land on the next tab along rather than staring at a blank one. Two things stop
+  either action and say so: text you have typed and not saved, and a camera or
+  microphone in use. The guard is on closing as well because closing a tab this way
+  skips the browser's own "leave site?" prompt, so Ctrl+W stays the way to close one
+  regardless. "Never sleep this site" is exact rather than site-wide — marking your
+  mail keeps your mail awake and says nothing about the rest of that domain — and the
+  same entry takes the mark off again.
 - Search results you have not clicked yet are now marked when WardenOne already
   knows something bad about where they lead. Every other defence here runs after
   you have gone somewhere; this one runs before. Two things it will never do: call

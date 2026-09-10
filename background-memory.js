@@ -31,6 +31,9 @@ const MEMORY_DEFAULTS = {
   memoryNeverAudio: true,
   memoryNeverForms: true,
   memoryNeverPayment: true,
+  // Sites the reader marked "never sleep this" themselves, from the right-click menu.
+  // Exact hosts only -- see MEMORY_NEVER_SLEEP_MAX for why it is not a wildcard.
+  memoryNeverSleepHosts: [],
   // Tab Limit: keep tab count under a user cap by sleeping (or, opt-in,
   // closing) the oldest inactive tab when a new tab crosses the limit.
   tabLimitGuard: false,
@@ -104,7 +107,62 @@ async function getMemoryConfig() {
   m._mode = mode;
   // share the allowlist already used by the rest of the extension
   m._allowlist = normalizeAllowlistHosts(cfg.allowlist || []);
+  m._neverSleep = normalizeAllowlistHosts(m.memoryNeverSleepHosts || [], MEMORY_NEVER_SLEEP_MAX);
   return m;
+}
+
+// ---- "Never sleep this site" ------------------------------------------------------
+//
+// The reader's own keep-awake list, added and removed from the right-click menu.
+//
+// EXACT hosts, deliberately -- this is the one host list in the extension that does not
+// match subdomains. Everywhere else a wildcard is a convenience; here it would make the
+// menu lie. The entry has to say what removing it does, and with subdomain matching a
+// right-click on mail.google.com could read "Never sleep mail.google.com" while it was
+// already being kept awake by a google.com entry, and taking that entry away would
+// silently change every other Google tab too. One host, one entry, one thing removed.
+//
+// Capped because it is written from a menu click, which is cheap to repeat, and this list
+// is consulted on every sweep of every tab.
+const MEMORY_NEVER_SLEEP_MAX = 300;
+
+function memoryNeverSleepHas(list, host) {
+  // The empty case first. This runs per tab on every sweep, and for nearly every reader
+  // the list is empty forever -- there is no reason to normalise a hostname to compare it
+  // against nothing.
+  if (!Array.isArray(list) || !list.length) return false;
+  const h = normalizeAllowlistHost(host);
+  return !!h && list.indexOf(h) >= 0;
+}
+
+// Read the stored list on its own, for the menu title -- the sweep reads it through
+// getMemoryConfig() like everything else.
+async function memoryNeverSleepList() {
+  try {
+    const store = await localGet('wardenone_config');
+    const cfg = (store && store.wardenone_config) || {};
+    return normalizeAllowlistHosts(cfg.memoryNeverSleepHosts || [], MEMORY_NEVER_SLEEP_MAX);
+  } catch (_) { return []; }
+}
+
+// Add or remove one host. Read-modify-write against storage rather than against a cached
+// copy, so a popup save that landed in between is not reverted by this one.
+async function memoryToggleNeverSleep(host) {
+  const h = normalizeAllowlistHost(host);
+  if (!h) return { ok: false, error: 'WardenOne could not read a site from this page.' };
+  try {
+    const store = await localGet('wardenone_config');
+    const cfg = (store && store.wardenone_config) || {};
+    const list = normalizeAllowlistHosts(cfg.memoryNeverSleepHosts || [], MEMORY_NEVER_SLEEP_MAX);
+    const on = list.indexOf(h) >= 0;
+    if (!on && list.length >= MEMORY_NEVER_SLEEP_MAX) {
+      return { ok: false, error: 'Your never-sleep list is full at ' + MEMORY_NEVER_SLEEP_MAX
+        + ' sites. Take one off it before adding another.' };
+    }
+    cfg.memoryNeverSleepHosts = on ? list.filter((d) => d !== h) : list.concat([h]);
+    await localSet({ wardenone_config: cfg });
+    return { ok: true, on: !on, host: h, shieldOn: cfg.memoryShield !== false };
+  } catch (e) { return { ok: false, error: String(e) }; }
 }
 
 // Is a tab safe to put to sleep? Returns null if safe, else a reason it was kept.
@@ -117,6 +175,9 @@ function tabKeepReason(tab, cfg) {
   if (!/^https?:\/\//i.test(url)) return 'browser/internal page'; // chrome://, about:, extension pages, new tab
   try {
     const host = new URL(url).hostname;
+    // Asked for by name, so it outranks every rule below it -- including the ones that
+    // would have slept the tab for a reason the reader has already overruled.
+    if (memoryNeverSleepHas(cfg._neverSleep, host)) return 'you set never sleep';
     if (isVideoPlatformHost(host)) return 'video/live playback site';
   } catch (_) {}
   // payment / banking / login pages -- never sleep mid-transaction
@@ -652,6 +713,127 @@ async function memoryActOnTab(tabId, action, opts) {
   }
 }
 
+// ---- Right-click actions on the tab you are looking at -----------------------------
+//
+// Sleep it, close it, or mark its site never-sleep. These are the same two verbs the
+// automatic shield uses, aimed by hand at one named tab.
+//
+// The safety rules are NOT the sweep's rules, and that difference is the whole design.
+// tabKeepReason exists because the sweep acts on tabs nobody is looking at: "active
+// tab", "pinned", "allowlisted" and the rest are all guesses about what the reader would
+// have wanted, and a sweep that guesses wrong should keep the tab. None of that applies
+// to a menu entry opened on the tab in front of them -- refusing to sleep the active tab
+// because it is the active tab would refuse every single click, since that is the only
+// tab you can right-click. So this path ignores tabKeepReason entirely and keeps exactly
+// the two guards that protect something unrecoverable: unsaved typing, and a live
+// camera or microphone.
+
+// Definite answers only.
+//
+// The sweep treats "could not ask" as a refusal, and must: an unanswered tab is not a
+// verified-clean one, and the cost of being wrong is a draft someone had forgotten
+// about. Here the same rule would break the entry far more often than it would save
+// anything -- the bridge is unreachable on a paused site, on a page loaded before the
+// extension was installed, and on every chrome:// and PDF page, none of which are
+// evidence of unsaved work. So a definite "there is something here" stops the action;
+// silence does not.
+async function tabWorkInProgressReason(tab, cfg) {
+  if (!tab || typeof tab.id !== 'number') return '';
+  // Nothing of ours runs outside http(s), so there is nobody to ask and nothing it
+  // could have seen.
+  if (!/^https?:\/\//i.test(String(tab.url || tab.pendingUrl || ''))) return '';
+  const live = await tabLiveState(tab.id);
+  if (!live.ok) return '';
+  // Unconditional: there is no switch that means "close my video call for me".
+  if (live.mediaActive) return 'this tab is using your camera or microphone';
+  // This one follows the reader's own setting, because that switch is exactly the
+  // question "should unsaved typing stop a tab being thrown away".
+  if (cfg && cfg.memoryNeverForms === false) return '';
+  if (live.formDirty) return 'this tab has unsaved text typed into it';
+  return '';
+}
+
+// The tab Chrome would have put you on anyway: the next one to the right, else the
+// nearest to the left. Jumping to the far end of the strip is disorienting.
+async function neighbourTabOf(tab) {
+  try {
+    const tabs = await chrome.tabs.query({ windowId: tab.windowId });
+    const others = (tabs || []).filter((t) => t && typeof t.id === 'number' && t.id !== tab.id);
+    if (!others.length) return null;
+    const index = Number(tab.index);
+    if (!Number.isFinite(index)) return others[0];
+    const right = others.filter((t) => t.index > index).sort((a, b) => a.index - b.index)[0];
+    if (right) return right;
+    return others.filter((t) => t.index < index).sort((a, b) => b.index - a.index)[0] || others[0];
+  } catch (_) { return null; }
+}
+
+async function memorySleepTabByHand(tabArg) {
+  const id = tabArg && typeof tabArg.id === 'number' ? tabArg.id : null;
+  if (id === null) return { ok: false, error: 'Chrome gave WardenOne no tab to sleep.' };
+  const tab = (await tabsGet(id)) || tabArg;
+  if (tab.discarded) return { ok: false, error: 'This tab is already asleep. Click it to wake it up.' };
+  const cfg = await getMemoryConfig();
+  const busy = await tabWorkInProgressReason(tab, cfg);
+  if (busy) {
+    return { ok: false, error: 'Not slept, because ' + busy
+      + '. Sleeping reloads the tab, so that would be gone.' };
+  }
+
+  // Move off it first, when there is somewhere to move to.
+  //
+  // Measured in Chromium 150 rather than assumed, because the obvious guess is wrong
+  // in both directions. chrome.tabs.discard DOES work on the tab you are looking at,
+  // and it stays unloaded afterwards -- what it does not do is look like anything. The
+  // page you were reading goes blank where it stands and comes back only when you click
+  // it, which is indistinguishable from having broken the tab. Activating the
+  // neighbour first turns that into the outcome people mean by "sleep this tab": you
+  // are on the next tab along, and the one you slept is greyed out in the strip behind
+  // you.
+  //
+  // With no neighbour to move to it is still done. It works there too -- refusing
+  // would be refusing something the browser is perfectly willing to do, and "it did
+  // nothing" is the worse answer.
+  if (tab.active) {
+    const neighbour = await neighbourTabOf(tab);
+    if (neighbour) { try { await chrome.tabs.update(neighbour.id, { active: true }); } catch (_) {} }
+  }
+
+  // The return value decides it, and it is also where the tab now lives.
+  //
+  // Measured alongside the above: a discarded tab comes back with a DIFFERENT id, every
+  // time, and the id we asked about is gone from chrome.tabs.get by the time discard
+  // resolves. Confirming the sleep by re-reading that id would therefore report a
+  // failure on every single success.
+  let discarded = null;
+  try { discarded = await chrome.tabs.discard(tab.id); } catch (_) { discarded = null; }
+  if (!discarded) return { ok: false, error: 'Chrome refused to sleep this tab.' };
+  // Read from the tab as it was before the discard, which is the copy already in hand.
+  const host = (() => { try { return new URL(tab.url).hostname.replace(/^www\./, ''); } catch (_) { return ''; } })();
+  // Its own row type, not the sweep's. The sweep's reads "Slept an inactive tab", which
+  // would be a plain lie about a tab the reader was looking at a second earlier -- and
+  // Activity must not present someone's own decision as something WardenOne worked out.
+  queueHistory({ type: 'memory_tab_slept_by_hand', detail: { host }, url: host, at: Date.now() });
+  return { ok: true, host };
+}
+
+async function memoryCloseTabByHand(tabArg) {
+  const id = tabArg && typeof tabArg.id === 'number' ? tabArg.id : null;
+  if (id === null) return { ok: false, error: 'Chrome gave WardenOne no tab to close.' };
+  const tab = (await tabsGet(id)) || tabArg;
+  const cfg = await getMemoryConfig();
+  const busy = await tabWorkInProgressReason(tab, cfg);
+  if (busy) {
+    // chrome.tabs.remove does not run the page's beforeunload, so this entry would close
+    // harder than Chrome's own close does -- no "Leave site?", no way back. That is the
+    // reason the guard is here at all, and the reason it points at Ctrl+W: the reader
+    // keeps the ability to close it, they just get the browser's warning with it.
+    return { ok: false, error: 'Not closed, because ' + busy + '. Ctrl+W still closes it.' };
+  }
+  try { await chrome.tabs.remove(tab.id); } catch (_) { return { ok: false, error: 'Chrome refused to close this tab.' }; }
+  return { ok: true };
+}
+
 // ---- Tab-group sleeping: discard all safe tabs in groups idle past threshold ----
 async function sleepIdleGroups(cfgArg) {
   try {
@@ -740,6 +922,10 @@ try {
     globalThis.__woMemoryTest = Object.freeze({
       MEMORY_DEFAULTS,
       MEMORY_MODES,
+      MEMORY_NEVER_SLEEP_MAX,
+      memoryNeverSleepHas,
+      tabWorkInProgressReason,
+      neighbourTabOf,
       tabKeepReason,
       tabMemoryPressure,
       mapLimited,
