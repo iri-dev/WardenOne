@@ -255,7 +255,10 @@ as the work happened.
   English. The local-first promise, installation, first-run choices and manual update
   path now lead the page; the shield mark and a layered feature navigator give the
   product a clearer visual identity while a complete direct-link index preserves its
-  full breadth; and
+  full breadth; the top now explains 106 total as 103 controllable plus three named
+  watch-only protections; the local, serverless trust model is stated without shorthand;
+  the architecture diagram no longer sits beneath GitHub's controls; the maintainer's
+  original first-person build note is restored; and
   major protections again have their own technical explanations, limits and privacy
   boundaries instead of being flattened into category summaries. Authentic product
   screenshots now break up the relevant chapters, the stale protection-count copy is
