@@ -108,6 +108,10 @@ const LABELS = {
   behavioral_risk: 'Site reputation warning',
   reload_loop_broken: 'Stopped a reload loop',
   memory_tab_slept: 'Slept an inactive tab (saved RAM)',
+  // Named as yours, like the blocked-site rows, so Activity does not present your own
+  // decision as something WardenOne worked out -- and because "inactive" would be a
+  // plain lie about a tab you were reading a second earlier.
+  memory_tab_slept_by_hand: 'You slept a tab',
   memory_free_ram: 'Freed RAM on demand',
   memory_dupes_closed: 'Closed duplicate tabs',
   memory_group_slept: 'Slept an idle tab group',
@@ -146,7 +150,7 @@ const CLICKFIX_ACTIVITY_TYPES = new Set([
 // category for the row icon: block (shield), warn (triangle), gate (eye)
 function iconCategory(type) {
   if (/^warned_/.test(type) || type === 'session_token_exposed' || type === 'login_thirdparty_scripts' || type === 'session_token_written' || type === 'skimmer_suspected' || type === 'download_reputation' || type === 'behavioral_risk' || type === 'extension_change') return 'warn';
-  if (/^gated_/.test(type) || type === 'download_guard' || type === 'detected_download_gate' || type === 'memory_tab_slept' || type === 'memory_free_ram' || type === 'memory_dupes_closed' || type === 'memory_group_slept' || type === 'tab_limit_slept' || type === 'tab_limit_closed' || type === 'forget_me_wiped' || type === 'reload_loop_broken') return 'gate';
+  if (/^gated_/.test(type) || type === 'download_guard' || type === 'detected_download_gate' || type === 'memory_tab_slept' || type === 'memory_tab_slept_by_hand' || type === 'memory_free_ram' || type === 'memory_dupes_closed' || type === 'memory_group_slept' || type === 'tab_limit_slept' || type === 'tab_limit_closed' || type === 'forget_me_wiped' || type === 'reload_loop_broken') return 'gate';
   return 'block';
 }
 const ICON_CATEGORIES = new Set(['block', 'warn', 'gate']);

@@ -46,7 +46,8 @@ check('every entry is offered on every right-click',
   /const everywhere = \['all'\]/.test(BG)
     /* One helper builds every item, so the contexts cannot differ between them. */
     && /const item = \(id, title\) => add\(\{ id, parentId: WO_MENU_ROOT, title, contexts: everywhere/.test(BG)
-    && ['WO_MENU_ZAP', 'WO_MENU_COPY_LINK', 'WO_MENU_LINK', 'WO_MENU_SELECTION', 'WO_MENU_MEDIA', 'WO_MENU_FRAME', 'WO_MENU_BLOCK']
+    && ['WO_MENU_ZAP', 'WO_MENU_COPY_LINK', 'WO_MENU_LINK', 'WO_MENU_SELECTION', 'WO_MENU_MEDIA', 'WO_MENU_FRAME',
+        'WO_MENU_SLEEP_TAB', 'WO_MENU_NEVER_SLEEP', 'WO_MENU_CLOSE_TAB', 'WO_MENU_BLOCK']
       .every((id) => new RegExp('item\\(' + id + ',').test(BG)),
   'an entry is still scoped to one kind of click');
 
@@ -56,12 +57,18 @@ check('every entry is offered on every right-click',
  * once. */
 check('the groups are separated by real menu rules',
   /const rule = \(id\) => add\(\{ id, parentId: WO_MENU_ROOT, type: 'separator'/.test(BG)
-    && (BG.match(/rule\('wardenone-sep-/g) || []).length === 2);
+    && (BG.match(/rule\('wardenone-sep-/g) || []).length === 3);
 check('the two actions are one group, above the questions',
   /item\(WO_MENU_ZAP, 'Zap this element'\);\s*item\(WO_MENU_COPY_LINK, 'Copy clean link'\);\s*rule\('wardenone-sep-checks'\)/.test(BG),
   'zapping and copying both do something; the four below only ask');
 check('the four checks are one group',
-  /rule\('wardenone-sep-checks'\)[\s\S]{0,600}item\(WO_MENU_LINK[\s\S]{0,400}item\(WO_MENU_FRAME[\s\S]{0,200}rule\('wardenone-sep-site'\)/.test(BG));
+  /rule\('wardenone-sep-checks'\)[\s\S]{0,600}item\(WO_MENU_LINK[\s\S]{0,400}item\(WO_MENU_FRAME[\s\S]{0,200}rule\('wardenone-sep-tab'\)/.test(BG));
+/* The tab actions are their own group because they are the only entries that change
+   what is on your screen, and because they are about ONE TAB where the entry below
+   is about the site everywhere. */
+check('the tab actions are one group, in order',
+  /rule\('wardenone-sep-tab'\)[\s\S]{0,900}item\(WO_MENU_SLEEP_TAB, 'Sleep this tab'\);\s*item\(WO_MENU_NEVER_SLEEP, 'Never sleep this site'\);\s*item\(WO_MENU_CLOSE_TAB, 'Close this tab'\);[\s\S]{0,80}rule\('wardenone-sep-site'\)/.test(BG),
+  'closing is the one that cannot be undone, so it sits last rather than under the pointer');
 check('and the site decision is last, on its own',
   /rule\('wardenone-sep-site'\)[\s\S]{0,300}item\(WO_MENU_BLOCK/.test(BG));
 check('no entry is scoped to a single context any more',
@@ -103,7 +110,16 @@ check('the tray is kept only as the fallback',
       else if (BG[i] === ')') { depth--; if (!depth) break; }
     }
     const args = BG.slice(open + 1, i).replace(/\s+/g, ' ').trim();
-    if (!/,\s*tab$/.test(args)) bad.push(args.slice(0, 60));
+    /* The last argument has to BE a tab, not the absence of one -- that is the whole
+       property, because a missing tab silently demotes the answer to a Windows tray
+       notification nobody reads.
+
+       `tab` is the usual answer. The three tab actions cannot use it: the tab they
+       were about is asleep, closed, or no longer the focused one by the time they
+       have anything to say, and a toast injected into a discarded tab dies with it.
+       They resolve whatever is on screen now instead. Both are a tab; neither is
+       the tray. */
+    if (!/,\s*(?:tab|noticeTab|await wardenTabActionNoticeTarget\(\))$/.test(args)) bad.push(args.slice(0, 60));
     at = BG.indexOf('await wardenManualNotice(', i);
   }
   check('every answer is given the tab it should appear on', !bad.length,
@@ -201,6 +217,56 @@ check('and the worker accepts and rate-limits that kind',
 check('the host comes from the sender tab, never from the message',
   /refreshWardenBlockMenuTitle\(sender && sender\.tab,/.test(BG),
   'a page must not be able to name a different site');
+
+/* ---- sleep / never sleep / close this tab -------------------------------- *
+ * Three entries about the tab the menu was opened on. They share the site
+ * entry's refresh and the same toast channel, and each one is a place the same
+ * mistakes could come back. */
+check('each tab action is wired to a handler',
+  /WO_MENU_SLEEP_TAB\) \{ void runWardenTabSleep\(tab\)/.test(BG)
+    && /WO_MENU_NEVER_SLEEP\) \{ void toggleWardenNeverSleep\(tab, info\)/.test(BG)
+    && /WO_MENU_CLOSE_TAB\) \{ void runWardenTabClose\(tab\)/.test(BG));
+/* Never-sleep is per HOST. wardenSiteHostFromTab answers with the registrable
+   domain, which is right for blocking a site and wrong here -- handing it to this
+   entry would widen "keep my mail awake" to every Google property at once. */
+check('the sleep entry reads the full hostname, not the registrable domain',
+  /function wardenTabHostname\(tab, info\)/.test(BG)
+    && /const host = normalizeAllowlistHost\(u\.hostname\);/.test(BG)
+    /* Both ends of the entry -- the label and the click -- read it from there. */
+    && /void refreshWardenNeverSleepMenuTitle\(wardenTabHostname\(/.test(BG)
+    && /const host = wardenTabHostname\(target, info\);/.test(BG)
+    && !/refreshWardenNeverSleepMenuTitle\(wardenSiteHostFromTab/.test(BG),
+  'wardenSiteHostFromTab collapses subdomains and must not feed this entry');
+check('its title is rewritten from the stored list',
+  /async function refreshWardenNeverSleepMenuTitle\(host\)/.test(BG)
+    && /memoryNeverSleepHas\(list, host\)[\s\S]{0,80}'Allow sleeping '[\s\S]{0,40}'Never sleep '/.test(BG)
+    && /chrome\.contextMenus\.update\(WO_MENU_NEVER_SLEEP, \{ title \}/.test(BG));
+/* tabs.onUpdated cannot be filtered in Chrome, and each listener wakes a 760KB
+   worker on every title, favicon and audible tick. The sleep title rides the site
+   entry's refresh rather than registering its own. */
+check('the sleep title brought no listeners of its own',
+  (BG.match(/chrome\.tabs\.onUpdated\.addListener/g) || []).length === 2
+    && /void refreshWardenNeverSleepMenuTitle\(wardenTabHostname\(source\.tab, source\.info\)\);/.test(BG));
+/* The tab this was about is asleep, closed, or no longer focused by the time
+   there is anything to say, so a toast aimed at it would be thrown away with it. */
+check('a message about a tab action is aimed at whatever is on screen now',
+  /async function wardenTabActionNoticeTarget\(\)/.test(BG)
+    && /const noticeTab = await wardenTabActionNoticeTarget\(\);/.test(BG)
+    && /await wardenTabActionNoticeTarget\(\)\);/.test(BG));
+/* You are looking at the tab. Announcing that it went grey is telling you what is
+   already in front of you; a refusal is the only outcome with something to add. */
+check('sleeping and closing say nothing when they work',
+  /const res = await memorySleepTabByHand\(target \|\| \{\}\);\s*if \(res && res\.ok\) return;/.test(BG)
+    && /const res = await memoryCloseTabByHand\(target \|\| \{\}\);\s*if \(res && res\.ok\) return;/.test(BG));
+/* Nothing on screen changes when a site is marked, so this one must speak. */
+check('marking a site never-sleep does say so, and relabels the entry at once',
+  /await refreshWardenNeverSleepMenuTitle\(host\);[\s\S]{0,400}await wardenManualNotice\(host, res\.on/.test(BG));
+check('and it admits when the shield that would have slept it is switched off',
+  /res\.shieldOn \? '' : ' Memory Shield is switched off/.test(BG),
+  'a setting with no current effect has to say so');
+/* onClicked can arrive at a worker the click itself woke, with no tab attached. */
+check('a click with no tab falls back to the tab you are looking at',
+  /async function wardenMenuTargetTab\(tab\)[\s\S]{0,200}return await wardenTabActionNoticeTarget\(\);/.test(BG));
 
 /* A site you blocked yourself has to actually be blocked.
 

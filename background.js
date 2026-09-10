@@ -1904,6 +1904,7 @@ const DEFAULT_CONFIG = {
   memoryNeverAudio: true,
   memoryNeverForms: true,
   memoryNeverPayment: true,
+  memoryNeverSleepHosts: [],
   tabLimitGuard: false,
   tabLimitMax: 20,
   tabLimitClose: false,
@@ -15226,6 +15227,9 @@ const WO_MENU_FRAME = 'wardenone-frame';
 const WO_MENU_BLOCK = 'wardenone-block-site';
 const WO_MENU_MEDIA = 'wardenone-check-media';
 const WO_MENU_COPY_LINK = 'wardenone-copy-clean-link';
+const WO_MENU_SLEEP_TAB = 'wardenone-sleep-tab';
+const WO_MENU_NEVER_SLEEP = 'wardenone-never-sleep-site';
+const WO_MENU_CLOSE_TAB = 'wardenone-close-tab';
 const WO_COMMAND_COPY_CLEAN_ADDRESS = 'copy-clean-current-address';
 /* Keyboard shortcuts, through Chrome's own commands API rather than a global key
    listener in every page. That matters for more than tidiness: a page cannot see these,
@@ -15452,6 +15456,20 @@ async function installWardenContextMenu() {
       item(WO_MENU_SELECTION, 'Check the selected text');
       item(WO_MENU_MEDIA, 'Where is this image from?');
       item(WO_MENU_FRAME, 'What is this frame?');
+
+      rule('wardenone-sep-tab');
+      /* Do something to the tab this menu was opened on. Grouped away from the
+         checks above because these are the only entries that change what is on
+         your screen, and away from the site decision below because they are
+         about one tab rather than about the site everywhere.
+
+         Closing is last in its own group, under the two reversible ones. A tab
+         you slept comes back when you click it and a never-sleep mark comes off
+         with the same entry that put it on; a closed tab does not, so it does
+         not sit directly under the pointer's resting place. */
+      item(WO_MENU_SLEEP_TAB, 'Sleep this tab');
+      item(WO_MENU_NEVER_SLEEP, 'Never sleep this site');
+      item(WO_MENU_CLOSE_TAB, 'Close this tab');
 
       rule('wardenone-sep-site');
       /* Decide about the site itself. Retitled from the real state before the
@@ -15872,8 +15890,60 @@ async function wardenReadBlockOffer() {
   return WARDEN_BLOCK_MENU_OFFER;
 }
 
+/* The FULL hostname of the page a menu was opened on, where wardenSiteHostFromTab
+   gives the registrable domain.
+
+   The two are deliberately different answers to different questions. Blocking is
+   about a site, so mail.google.com collapsing to google.com is correct there.
+   Never-sleep is about the tab in front of you -- somebody keeping their mail
+   awake has said nothing at all about maps or search -- so it keeps the host it
+   was given. Passing the block entry's answer to the sleep entry would silently
+   widen every mark to the whole registrable domain. */
+function wardenTabHostname(tab, info) {
+  const candidates = [info && info.pageUrl, tab && tab.url, tab && tab.pendingUrl];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    try {
+      const u = new URL(String(raw));
+      if (!/^https?:$/i.test(u.protocol)) continue;
+      const host = normalizeAllowlistHost(u.hostname);
+      if (host) return host;
+    } catch (_) {}
+  }
+  return '';
+}
+
+/* Rewritten from the stored list before the menu paints, so the entry names the
+   site and says which way it is about to go.
+
+   Unlike the block entry next to it, this one keeps no durable record of what it
+   last offered. It does not need one: the list in storage is the only state, the
+   click re-reads it and toggles from what it finds, and the message afterwards
+   names the result. The worst a stale title can do here is name the previous
+   tab's host -- the action still lands on the right one, because the click works
+   the host out from the page rather than from the label. */
+async function refreshWardenNeverSleepMenuTitle(host) {
+  let title = 'Never sleep this site';
+  if (!host) {
+    title = 'Never sleep this site (not a normal page)';
+  } else {
+    try {
+      const list = await memoryNeverSleepList();
+      title = memoryNeverSleepHas(list, host)
+        ? 'Allow sleeping ' + host
+        : 'Never sleep ' + host;
+    } catch (_) {}
+  }
+  try {
+    chrome.contextMenus.update(WO_MENU_NEVER_SLEEP, { title }, () => { void chrome.runtime.lastError; });
+  } catch (_) {}
+}
+
 async function refreshWardenBlockMenuTitle(tab, info) {
   let host = wardenSiteHostFromTab(tab, info);
+  /* What the host above was read from, so the sleep entry can re-read the same
+     page at full-hostname precision instead of guessing again. */
+  let source = { tab, info };
   /* Ask Chrome directly rather than concluding "not a normal page" from a tab it
      never actually gave us. chrome.tabs.get calls back with undefined whenever it
      errors -- a sleeping worker is enough -- and that undefined was passed
@@ -15887,7 +15957,7 @@ async function refreshWardenBlockMenuTitle(tab, info) {
           resolve((tabs && tabs[0]) || null);
         });
       });
-      if (active) host = wardenSiteHostFromTab(active);
+      if (active) { host = wardenSiteHostFromTab(active); source = { tab: active, info: null }; }
     } catch (_) {}
   }
   let title = 'Block this site';
@@ -15913,6 +15983,10 @@ async function refreshWardenBlockMenuTitle(tab, info) {
   try {
     chrome.contextMenus.update(WO_MENU_BLOCK, { title }, () => { void chrome.runtime.lastError; });
   } catch (_) {}
+  /* The sleep entry is about the same page and wants refreshing at exactly the
+     same moments, so it rides this one refresh. A listener of its own would be
+     another wake of a 760KB service worker on every tab switch, for a title. */
+  void refreshWardenNeverSleepMenuTitle(wardenTabHostname(source.tab, source.info));
 }
 
 /* The rule only takes effect on the next request, so a page already on screen
@@ -16067,6 +16141,79 @@ async function copyWardenCleanCurrentAddress() {
   if (!result.ok) return result;
   await copyWardenCleanLink({ pageUrl: result.raw }, result.tab);
   return result;
+}
+
+/* Where a message about a tab action belongs.
+   Never the tab it was about: by the time there is anything to say, that tab is
+   asleep, closed, or the one focus has just moved off -- and a toast injected
+   into a discarded tab is discarded along with it. Resolved AFTER the action,
+   for the same reason. */
+async function wardenTabActionNoticeTarget() {
+  try {
+    return await new Promise((resolve) => {
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+        void chrome.runtime.lastError;
+        resolve((tabs && tabs[0]) || null);
+      });
+    });
+  } catch (_) { return null; }
+}
+
+/* The tab a menu click was about. onClicked normally hands it over; when it does
+   not -- a worker woken by the click itself is enough -- the active tab is the
+   right answer, because the tab you are looking at is the only one you can open
+   this menu on. */
+async function wardenMenuTargetTab(tab) {
+  if (tab && typeof tab.id === 'number') return tab;
+  return await wardenTabActionNoticeTarget();
+}
+
+/* Success is deliberately silent, here and in the close below. The tab greys out
+   in the strip or disappears from it, in front of you, a fifth of a second after
+   you asked for it -- a toast saying so would be telling you what you are
+   already looking at. Only a refusal has something to add, and it always says
+   which of the two guards stopped it. */
+async function runWardenTabSleep(tab) {
+  const target = await wardenMenuTargetTab(tab);
+  const res = await memorySleepTabByHand(target || {});
+  if (res && res.ok) return;
+  await wardenManualNotice('Sleep this tab',
+    (res && res.error) || 'WardenOne could not sleep this tab.',
+    await wardenTabActionNoticeTarget());
+}
+
+async function runWardenTabClose(tab) {
+  const target = await wardenMenuTargetTab(tab);
+  const res = await memoryCloseTabByHand(target || {});
+  if (res && res.ok) return;
+  await wardenManualNotice('Close this tab',
+    (res && res.error) || 'WardenOne could not close this tab.',
+    await wardenTabActionNoticeTarget());
+}
+
+async function toggleWardenNeverSleep(tab, info) {
+  const target = await wardenMenuTargetTab(tab);
+  const host = wardenTabHostname(target, info);
+  const noticeTab = await wardenTabActionNoticeTarget();
+  if (!host) {
+    await wardenManualNotice('Never sleep this site',
+      'WardenOne could not read a site from this page, so there is nothing to mark.', noticeTab);
+    return;
+  }
+  const res = await memoryToggleNeverSleep(host);
+  if (!res || !res.ok) {
+    await wardenManualNotice(host, (res && res.error) || 'WardenOne could not save that.', noticeTab);
+    return;
+  }
+  /* Straight away, so a second right-click reads the state this click just put it
+     in rather than waiting for a navigation to refresh the label. */
+  await refreshWardenNeverSleepMenuTitle(host);
+  /* Said, not shown: unlike sleeping or closing, nothing on screen changes, so
+     without this the entry would look like it did nothing at all. */
+  await wardenManualNotice(host, res.on
+    ? 'WardenOne will not sleep ' + host + ' to save memory. The same entry undoes it.'
+      + (res.shieldOn ? '' : ' Memory Shield is switched off at the moment, so nothing was sleeping it anyway.')
+    : host + ' can be slept again once it has been idle for a while.', noticeTab);
 }
 
 async function toggleWardenSiteBlock(tab, info) {
@@ -16289,6 +16436,9 @@ try {
     if (info.menuItemId === WO_MENU_COPY_LINK) { void copyWardenCleanLink(info, tab); return; }
     if (info.menuItemId === WO_MENU_MEDIA) { void checkWardenMedia(info, tab); return; }
     if (info.menuItemId === WO_MENU_FRAME) { void describeWardenFrame(info, tab); return; }
+    if (info.menuItemId === WO_MENU_SLEEP_TAB) { void runWardenTabSleep(tab); return; }
+    if (info.menuItemId === WO_MENU_NEVER_SLEEP) { void toggleWardenNeverSleep(tab, info); return; }
+    if (info.menuItemId === WO_MENU_CLOSE_TAB) { void runWardenTabClose(tab); return; }
     if (info.menuItemId === WO_MENU_BLOCK) { void toggleWardenSiteBlock(tab, info); return; }
   });
 } catch (_) {}
