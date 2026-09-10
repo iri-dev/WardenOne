@@ -251,6 +251,14 @@ as the work happened.
 
 ### Changed
 
+- Replaced the README's provisional product images with a complete set captured from
+  the real WardenOne build. The main reading path now shows the master switch, first
+  run, a held download, File Shield evidence, pre-install extension checking, Activity
+  and Notification Centres, Protection Health, the measured Privacy Self-Test, Network
+  Logger, Site Firewall and the permission ledger beside the feature each image proves.
+  Secondary states and tall control views stay in expandable galleries, and every
+  optimised preview opens its full view, so the product is visible without turning the
+  README back into an exhausting screenshot wall.
 - Rebuilt the GitHub README as a readable, full-scale product showcase in British
   English. Major chapters now use first-level headings, genuine features use second-level
   headings and only a feature's internal parts sit beneath it, giving the long page a clear
