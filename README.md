@@ -4,7 +4,7 @@
 
 # WardenOne
 
-### One extension. Every defence.
+<p><strong>One extension. Every defence.</strong></p>
 
 **Local-first protection against scams, credential theft, malicious downloads, trackers,
 fingerprinting, pop-ups and forced redirects—plus security for browser extensions and the
@@ -24,52 +24,38 @@ network beneath them.**
 >
 > **No WardenOne backend · Entirely open source · Local-first by design**
 >
-> WardenOne does not track you, profile you or build a cloud history of the pages it protects.
-> Your browsing and security data stay on your device. WardenOne has no account system,
-> advertising identifier, analytics pipeline or developer-operated server receiving the pages
-> you visit. Optional third-party checks—such as VirusTotal, breach or domain-age lookups—run
-> only when you enable or invoke them, tell you what they send, and send only what that question
-> requires. Automatic list updates fetch the same public rule files for everyone; they do not
-> upload your browsing history or security events.
+> WardenOne has no account service, analytics pipeline or developer-operated browsing server.
+> Your browsing and security data stay on your device. Only when you choose a clearly labelled
+> external check does the minimum needed leave your device, and the check tells you exactly what it sends.
 
 > [!WARNING]
 > **Official builds only.** WardenOne is a browser extension, never an `.exe`, installer or setup program. Download it only from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne). If you received another copy, read the [impersonation incident notice](https://iri-dev.github.io/WardenOne/stolen).
 
-> ### One master switch. 106 protections.
+> ## One master switch. 106 protections.
 >
 > **103 individually controllable · 3 watch-only**
 >
-> The three watch-only protections—**Background Reports**, **Hardware & File Access**, and
-> **Browser Capabilities**—record important activity without blocking or modifying the page.
-> That is why they have no individual switch.
+> **Background Reports**, **Hardware & File Access** and **Browser Capabilities** are watch-only:
+> they record important activity without blocking or changing the page, so deliberately have no
+> individual switch.
 
-**Ten named shields. Dedicated tools for files, extensions, network investigation, privacy
-verification and recovery.**
-
-WardenOne protects across the browser, not just the page. It works at the network, page,
-session, download, storage and extension layers: blocking known threats, spotting deceptive
-behaviour, protecting credentials and files, reducing tracking, and showing you the evidence
-behind its decisions.
-
-WardenOne is deliberately broad. AdShield, SessionShield, Download Shield, File Shield, Mail Shield,
-Media Shield, Script Shield, Header Shield, Memory Shield and EyeShield are not names for ten
-toggles inside an ad blocker. They are connected parts of a browser security suite, backed by
-dedicated tools for extension review, activity history, privacy testing, network investigation,
-per-site firewall control and repair.
+WardenOne works across the network, page, session, download, storage and extension layers—and shows
+you the evidence behind the decisions it makes.
 
 **Inspect it for yourself:** [Privacy policy](PRIVACY.md) · [Permissions explained](permissions.html) · [Security policy](SECURITY.md) · [Source](https://github.com/iri-dev/WardenOne) · [Licence](LICENSE)
 
 <p align="center">
-  <img src="docs/onboarding.png" alt="Welcome to WardenOne" width="840">
+  <img src="docs/popup-overview.png" alt="WardenOne's main control surface with the master switch, protection health and protection search" width="620">
 </p>
+<p align="center"><em>One master switch, live protection health and a searchable route to every control.</em></p>
 
-## Quick install
+# Quick install
 
 1. Download [WardenOne-latest.zip](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip) and unzip it somewhere you intend to keep it.
 2. Open `chrome://extensions` and enable **Developer mode** in the top-right.
 3. Select **Load unpacked**, then choose the unzipped folder containing `manifest.json`.
 
-### First run
+## First run
 
 Choose **Recommended** for WardenOne's compatibility-conscious defaults, or **Maximum
 Privacy** for a more aggressive set that enables extra fingerprinting, first-party tracking,
@@ -79,6 +65,11 @@ behave; every included protection can be changed later.
 Choose **Normal** notifications or **Silent mode**. Silent mode keeps protection running but
 hides routine pop-ups and badges. The Notification Centre remains available when you want to
 review or change individual notices.
+
+<p align="center">
+  <img src="docs/onboarding.png" alt="WardenOne first-run choice between Recommended and Maximum Privacy protection" width="840">
+</p>
+<p align="center"><em>First run explains the trade-off before WardenOne changes anything.</em></p>
 
 <details>
 <summary><strong>Updating an unpacked installation</strong></summary>
@@ -99,7 +90,7 @@ unpacked path as a different extension, and its local settings will not automati
 **Compatibility:** Chrome, Brave, Edge, Opera and other Chromium-based browsers.
 <sub>Minimum supported Chromium version: 121.</sub>
 
-## Why WardenOne exists
+# Why WardenOne exists
 
 Staying safer online usually means bolting together an ad blocker, anti-tracker,
 fingerprinting tool, pop-up blocker, download scanner, script controller and tab manager—then
@@ -112,7 +103,7 @@ Three ideas shape the whole product:
 - **Visible failure.** Unsupported rules, missing components and uncertain verdicts are shown rather than silently ignored.
 - **Narrow recovery.** Pause one site, disable one protection there, undo one firewall decision or trace one rule before resorting to a global switch.
 
-### Unknown does not mean safe.
+## Unknown does not mean safe.
 
 WardenOne deliberately refuses to turn missing evidence into reassurance.
 
@@ -122,7 +113,7 @@ A privacy check that cannot actually be measured is marked untestable.
 
 **The safest answer WardenOne can give is sometimes “I don't know”.**
 
-## Why the name **WardenOne**?
+# Why the name **WardenOne**?
 
 **Warden** is the role: standing watch over the browser and stepping in when the evidence says
 something is wrong. It is meant to protect without pretending to know more than it does.
@@ -141,13 +132,13 @@ that.
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
 </p>
 
-## Security
+# Security
 
 **Scams do not all look like malware.** Some steal credentials. Some impersonate the browser.
 Some abuse permissions, redirects, clipboard access or the assumptions people already make.
 WardenOne covers those surfaces separately because they fail in different ways.
 
-### Threat Blocklist
+## Threat Blocklist
 
 Known malicious, phishing and scam destinations are stopped at the browser's network layer
 before their pages load. WardenOne ships built-in rules and can fetch fresh vetted feeds each
@@ -156,7 +147,7 @@ day; tens of thousands of domains are available locally and the upstream feeds c
 A failed update keeps the last working copy rather than creating a gap. The update request asks
 for a public list file; it does not contain your history or the page you are visiting.
 
-### Phishing & Look-Alike Protection
+## Phishing & Look-Alike Protection
 
 WardenOne blocks `g00gle`-style substitutions, wrong-TLD brand impersonation and international
 homographs that render like a familiar name. Brand text, password forms, destination ownership
@@ -169,14 +160,14 @@ RDAP when enabled, then caches the answer locally.
 
 **Find it:** WardenOne → Advanced detection.
 
-### Insecure Sign-in Guard
+## Insecure Sign-in Guard
 
 The warning appears when you focus a password field on an unencrypted page, before anything has
 been typed. It also catches the subtler version: a page itself uses HTTPS but its form posts the
 password to plain HTTP. Router and other deliberate local-network logins are left alone, and the
 warning offers the secure version when one exists.
 
-### Browser-in-the-Browser Protection
+## Browser-in-the-Browser Protection
 
 You click **Sign in with Microsoft**. A convincing Microsoft window appears, with a title bar,
 address bar and close button. Except no browser window ever opened—the site drew the entire thing
@@ -198,25 +189,27 @@ asking for a password has several signals at once.
 
 </details>
 
-### Full-screen Address Guard
+## Full-screen Address Guard
 
 Full screen removes the real address bar. A hostile page can then paint its own at the top and ask
 for a password while the one reliable identity signal is gone. WardenOne warns when a full-screen
 page draws a domain it does not own alongside sensitive input and offers to leave full screen.
 Video, games, slideshows and maps are deliberately exempt unless the spoofing evidence is present.
 
-### ClickFix & Command Paste Guard
+## ClickFix & Command Paste Guard
 
 ClickFix scams turn the victim into the malware launcher: “prove you are human”, press `Win+R`,
 paste a command, or open DevTools and type what the page prepared. WardenOne recognises the
 instruction sequence, blocks suspicious programmatic clipboard writes, warns on dangerous copied
 selections and raises the severity when the instruction and command evidence occur together.
 
+> **Fake instruction → prepared command → clipboard intervention → clear warning → redacted local event**
+
 It does not and cannot read Chrome's own DevTools interface. The protection runs on the page and
 the clipboard actions the page initiates; it intervenes before the pasted command leaves that
 context.
 
-### Fake Update & Tech-support Scam Protection
+## Fake Update & Tech-support Scam Protection
 
 Real Chrome, Windows and browser updates do not arrive from an arbitrary web page. Fake Update
 Detection looks for vendor impersonation combined with installer downloads or off-site action
@@ -224,14 +217,14 @@ buttons. Tech-support Scam Guard handles the other familiar performance: “your
 infected”, a telephone number and dialog spam intended to lock the browser. It neutralises the
 locker, frees navigation and explains that the page—not the computer—is producing the alert.
 
-### Notification Scam Protection
+## Notification Scam Protection
 
 Notification bait is caught while a page is coaching you to press **Allow** through fake CAPTCHAs,
 download steps or invented security warnings. The wording is classified locally and not retained;
 only the kind of event reaches the Activity Centre. A push notification created later by a service
 worker exists outside the page, which is an honest boundary for a content-script detector.
 
-### XSS Behaviour Guard
+## XSS Behaviour Guard
 
 The guard watches values arriving from the URL, `window.name`, `postMessage` or the referrer for a
 path into a place where code actually runs. It records the source, sink, confidence and severity
@@ -241,14 +234,14 @@ This is behaviour evidence, not a claim that WardenOne found or blocked every cr
 vulnerability. Page-originated findings remain warnings and cannot silently manufacture a blocking
 rule.
 
-### Anti-clickjacking
+## Anti-clickjacking
 
 Before a click that matters—sign in, password, checkout, payment, transfer, authorisation, allow or
 install—WardenOne checks whether the target is hidden, covered or materially different from what it
 appears to be. Ordinary visible buttons remain ordinary. The protection is about a sensitive click
 landing somewhere concealed, not about disliking layered page layouts.
 
-### Redirect, Pop-up & Back-trap Protection
+## Redirect, Pop-up & Back-trap Protection
 
 Forced popups and popunders, timer-opened ad tabs, gestureless redirects, CPA chains, meta-refresh
 bounces, download-ad gates, deceptive confirmation prompts and frames that spend your click on an
@@ -281,7 +274,9 @@ sign-in destroyed halfway through is not.
 
 ## SessionShield
 
-SessionShield protects the state that exists after a successful login: session tokens, cookies,
+**PROTECTION SUITE · LOGIN & SESSION SECURITY**
+
+**What it does:** SessionShield protects the state that exists after a successful login: session tokens, cookies,
 password and card fields, OAuth grants, clipboard operations and the places a site stores identity.
 It never records or displays a full token, password or card number.
 
@@ -301,6 +296,8 @@ frames.
 
 Known noisy services can be treated more calmly in the local log without weakening the actual
 protection. The token itself is never copied into the Activity Centre to explain that it was saved.
+
+> **Token appears → exact value is watched locally → unrelated destination is blocked → event is recorded without the token**
 
 ### Form Skimmer & Magecart Guard
 
@@ -388,8 +385,25 @@ cleaning because its purpose is incident response, not housekeeping.
 
 ## Download Shield
 
+**AUTOMATIC PROTECTION · DOWNLOAD CONTEXT & REPUTATION**
+
+**What it does:** grades browser downloads from their origin, identity and behaviour before they finish.
+
 **One tool sees the journey. The other sees the bytes.** WardenOne keeps both because neither kind
 of evidence can honestly stand in for the other.
+
+```mermaid
+flowchart LR
+    Start["Download begins"] --> Context["Chrome gives WardenOne context"]
+    Context --> Grade["Download Shield grades it"]
+    Grade -->|Known dangerous| Block["Block"]
+    Grade -->|Suspicious| Review["Hold for review"]
+    Review --> Evidence["You see the evidence"]
+    Grade -->|Normal| Continue["Continue"]
+    classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
+    class Start,Context,Grade,Block,Review,Evidence,Continue warden
+    linkStyle default stroke:#c45ca7
+```
 
 | | Download Shield | File Shield |
 | --- | --- | --- |
@@ -417,7 +431,22 @@ WardenOne reputation backend.
 
 ## File Shield
 
+**LOCAL TOOL · FILE STRUCTURE & HASH ANALYSIS**
+
+**What it does:** examines the real bytes of a file you choose without opening, running or uploading it.
+
 The file tells you one thing. **Its bytes may tell you another.**
+
+```mermaid
+flowchart LR
+    Download["Browser download"] --> DownloadShield["Download Shield"]
+    DownloadShield --> Context["Source · URL · filename · browser signals"]
+    File["File you choose"] --> FileShield["File Shield"]
+    FileShield --> Bytes["Actual bytes · format · code · archive · hash"]
+    classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
+    class Download,DownloadShield,Context,File,FileShield,Bytes warden
+    linkStyle default stroke:#c45ca7
+```
 
 Chrome does not give an extension arbitrary access to saved files. Even for a download it watched,
 re-fetching the URL can produce different bytes when the link is signed, personalised or one-time.
@@ -450,7 +479,9 @@ replace the protection already on your computer.
 
 ## Network and device defence
 
-The page is not the edge of the browser. Sites can ask about local addresses, reach towards private
+**PROTECTION SUITE · IP, PRIVATE NETWORK & DEVICE ACCESS**
+
+**What it does:** protects browser surfaces that sit beyond the visible page. Sites can ask about local addresses, reach towards private
 devices, open media streams, reuse old permissions and leave background components behind.
 
 ### WebRTC & IP-logger Protection
@@ -486,8 +517,8 @@ rebinding attack.
 
 Chromium exposes no reliable pre-request DNS answer to extensions, so the first request that
 reveals the trick has already happened. Direct private-network access is prevented; rebinding is
-detected from that first resolution onwards. The README says so because “blocked every attempt”
-would be a stronger claim than the browser permits.
+detected from that first resolution onwards. WardenOne does not claim to block the revealing first
+request because Chromium does not expose the evidence early enough to do that honestly.
 
 ### Media Shield
 
@@ -515,6 +546,8 @@ microphone, notifications and location to allow, block or ask. Chrome remains th
 applies the setting.
 
 ### Watch-only Protections
+
+**WATCH-ONLY · LOCAL EVIDENCE, NO PAGE MODIFICATION**
 
 Not everything worth knowing about is worth blocking. Three systems only write a local Activity
 Centre entry; Chrome already supplies the permission decision where one is needed.
@@ -544,6 +577,10 @@ more of its authority.
 
 ## Extension Security Centre
 
+**INTERFACE · INSTALLED EXTENSION IDENTITY & CHANGE HISTORY**
+
+**What it does:** shows what every installed extension is, what it can access and what changed.
+
 Extensions can change after installation, gain new access or arrive under a familiar name with an
 unfamiliar identity. WardenOne therefore treats exact IDs, current capabilities and change history
 as separate evidence.
@@ -562,6 +599,8 @@ its removal; WardenOne never removes one on its own.
 
 The change watcher keeps a local timeline of versions, permissions and enabled state. Harmless
 updates remain visible; newly powerful access is highlighted.
+
+> **Version or permissions change → new local snapshot → previous state compared → difference highlighted → you review it**
 
 ### Startup Security Check
 
@@ -597,13 +636,13 @@ comfort extra.
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
 </p>
 
-## Privacy & anti-tracking
+# Privacy & anti-tracking
 
 Privacy protection is not one blocklist. A tracker may live on a third-party host, hide behind the
 site's own domain, survive as first-party redirect storage, proxy an email image, fingerprint APIs
 without making a request, or decorate links that other people will open later.
 
-### Tracker protection
+## Tracker protection
 
 Known analytics and tracker infrastructure is blocked using built-in EasyPrivacy-style data and
 fresh supported feeds. Do Not Track and Global Privacy Control express the corresponding opt-out
@@ -613,14 +652,14 @@ there is no login or checkout there to preserve.
 The filtering happens locally. Pages you visit are matched against rules on your device; WardenOne
 does not send browsing events to a server to ask whether each request is acceptable.
 
-### First-party Tracker Protection
+## First-party Tracker Protection
 
 Analytics can be proxied through the same domain as the site, making a third-party hostname list
 blind to it. WardenOne detects those first-party routes and includes a local tracker learner for
 repeated on-device evidence. Learned decisions remain on your machine and do not become a crowdsourced
 record of your browsing.
 
-### Cookie and storage controls
+## Cookie and storage controls
 
 Third-party cookie blocking is joined by optional wipe-on-close and no-persistent-cookie modes.
 General coverage stays conservative around embedded frames and scripts because sign-ins depend on
@@ -631,7 +670,7 @@ trackers are refused and invisible or unprompted requests are flagged. A separat
 every cross-site storage request, deliberately left out of both Recommended and Maximum Privacy
 because it will break some embedded logins and checkouts.
 
-### Link hygiene
+## Link hygiene
 
 Copied links lose recognised tracking parameters and known redirect wrappers; hyperlink-auditing
 `ping` attributes are removed before they can report a click. WardenOne also intercepts tracking
@@ -655,27 +694,27 @@ as they were. Site-specific rules used when copying a link are not blindly appli
 address bar, because values such as Amazon search state or Spotify context can be part of the
 application itself.
 
-### Bounce-tracking Cleanup
+## Bounce-tracking Cleanup
 
 Verified tracker domains passed through during a redirect can have their first-party cookies and
 storage cleared after the chain completes. Requested, final, login, payment and ambiguous hops are
 excluded.
 
-### Service-worker Cleanup
+## Service-worker Cleanup
 
 A separate opt-in records sites that install service workers and can remove one after the final tab
 for that site closes. It is off by default because service workers also power legitimate offline
 reading and notifications; deleting one trades persistence protection for functionality until the
 next visit.
 
-### Header Shield
+## Header Shield
 
 Header Shield reduces third-party Client Hints, can remove cross-site referrers and offers ETag
 protection limited to known tracker infrastructure. First-party, sign-in, CAPTCHA and payment paths
 remain excluded. A universal header rewrite would produce impressive numbers and broken sites;
 narrow scope is the stronger defence.
 
-### Consent protection
+## Consent protection
 
 Cookie banners come in three different shapes, so WardenOne does not pretend one action fits all:
 
@@ -687,7 +726,7 @@ Login compatibility remains on by default because an identity hand-off can resem
 an IdP request can resemble exfiltration and a login modal can resemble an overlay. Those flows are
 excluded structurally instead of patched one site at a time.
 
-### Mail Shield
+## Mail Shield
 
 A marketing email hides a one-pixel image with a recipient identifier in its URL. Loading it tells
 the sender the message was opened, when and roughly from where. Ordinary network blocking can miss
@@ -719,7 +758,7 @@ any browser extension can observe. Mail Shield does not claim to stop all email 
 
 </details>
 
-### Anti-fingerprinting
+## Anti-fingerprinting
 
 The opt-in shield covers canvas, audio, WebGL, WebGPU, hardware hints, fonts, monitor layout,
 keyboard layout, voices and related measuring surfaces with per-session noise or fixed answers
@@ -744,7 +783,7 @@ session-consistent rather than claiming that more noise is always more private.
 
 </details>
 
-### Search-result protection
+## Search-result protection
 
 Google, Bing, DuckDuckGo, Brave Search and Yahoo results are annotated before the click when local
 evidence already identifies malware, scams, IP loggers, look-alikes, raw-IP destinations, a site
@@ -763,18 +802,30 @@ this link** yourself.
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
 </p>
 
-## Control and verification
+# Control and verification
 
 > **A green switch is configuration. It is not proof.**
 
 WardenOne gives you several ways to challenge what it claims: see the event, inspect the request,
 measure what the page received, check the internal components and repair what is missing.
 
-<p align="center">
-  <img src="docs/activity.png" alt="The local WardenOne Activity Centre" width="900">
-</p>
+```mermaid
+flowchart LR
+    Event["Something happens"] --> Protection["Protection acts"]
+    Protection --> Activity["Activity Centre"]
+    Activity --> Logger["Network Logger"]
+    Logger --> Firewall["Site Firewall / My Rules"]
+    Firewall --> Decision["Your decision"]
+    classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
+    class Event,Protection,Activity,Logger,Firewall,Decision warden
+    linkStyle default stroke:#c45ca7
+```
 
-### Activity Centre
+## Activity Centre
+
+**INTERFACE · LOCAL SECURITY EVIDENCE**
+
+**What it does:** keeps the explanation after a protection blocks, warns, learns or allows.
 
 The Activity Centre keeps the most recent security events on this device: what WardenOne blocked,
 warned about, learned or allowed, with enough context to understand the decision. It is not a remote
@@ -783,19 +834,30 @@ dashboard. There is no account and the history is not uploaded for analytics.
 Sensitive event types are deliberately redacted. A warning about a token, clipboard value or
 ClickFix command should not reproduce the secret or harmful payload merely to prove it saw one.
 
-### Notification Centre
+<p align="center">
+  <img src="docs/activity.png" alt="The local WardenOne Activity Centre" width="900">
+</p>
+<p align="center"><em>The event history stays on this device and preserves the reason without copying the secret.</em></p>
+
+## Notification Centre
+
+**INTERFACE · NOTICE CONTROL**
 
 Every notice WardenOne can show is listed with what it means, how long it remains visible and
 whether you would rather not see it again. Muting presentation never turns off the protection
 behind the notice. Silent mode is therefore a user-interface choice, not a weaker security profile.
 
-### Protection Health
+## Protection Health
+
+**LOCAL CHECK · EXPECTED COMPONENTS & RULES**
 
 Protection Health asks whether the expected engines, registrations, lists and page components are
 present and responding. It does not equate “setting saved” with “protection running”, and a failure
 replaces the reassuring state instead of being hidden beneath it.
 
-### Privacy Self-Test
+## Privacy Self-Test
+
+**VERIFICATION TOOL · MEASURED PAGE RESULTS**
 
 The Self-Test measures the page in your active tab, not its own extension page. Each probe runs
 twice in the same document: once through WardenOne's protected browser APIs and once through clean,
@@ -824,14 +886,28 @@ the address bar is restored even if a probe fails.
 
 </details>
 
-### Verify and Repair
+## Verify and Repair
+
+**RECOVERY TOOL · LIVE PAGE COMPONENTS**
 
 When a switch says on but the Self-Test receives the native value, Verify & Repair looks from the
 inside: it checks the WardenOne components expected on that tab and re-injects what is missing. The
 Self-Test can then be run again from the outside. The two tools answer different questions, which is
 why one cannot simply print the other's result.
 
-### Per-site control
+```text
+Protection enabled
+        ↓
+Protection Health
+        ↓
+Privacy Self-Test
+        ↓
+Verify & Repair
+        ↓
+Test again
+```
+
+## Per-site control
 
 **103 of the 106 protections have their own toggle**. The other three are watch-only systems: they
 record an event but never block or alter a page, so there is no individual blocking decision to
@@ -849,7 +925,9 @@ pauses do not force a reload and throw away a half-filled form.
 **Logger → evidence. Firewall → contextual decision. My Rules → precise policy. Custom Lists →
 maintained policy.** They form one control system, not four unrelated advanced buttons.
 
-### Network Logger
+## Network Logger
+
+**INVESTIGATION TOOL · REQUEST, OUTCOME & MATCHING RULE**
 
 The Activity Centre tells you a security event happened. The Network Logger tells you **which
 request it was, whether WardenOne blocked or allowed it, and which rule decided**. That is the place
@@ -863,7 +941,9 @@ Capture exists only while a logger page is open. The in-memory buffer is capped 
 and dropped when the last logger closes. Token-, key-, password- and address-like values become
 `[removed]` before the request is recorded. Nothing reaches disk until you press Export.
 
-### Site Firewall
+## Site Firewall
+
+**CONTROL SURFACE · PER-SITE NETWORK POLICY**
 
 The Site Firewall shows every domain the current page loads and lets you decide whether each may
 run scripts, make requests, load frames or media, or carry cookies **on this site only**. Your
@@ -873,7 +953,9 @@ This is powerful enough to break a page outright, so WardenOne does not disguise
 global switch. Undo is always one click for this site or everywhere, and the matrix makes the scope
 visible before the decision is stored.
 
-### My Rules
+## My Rules
+
+**CONTROL SURFACE · PRECISE PERSONAL POLICY**
 
 Personal rules use familiar Adblock syntax:
 
@@ -888,7 +970,7 @@ Import and export use plain text. Anything WardenOne cannot apply is listed with
 and the reason instead of being silently saved. A stored rule that does nothing is worse than a
 refused rule because it leaves you believing you are covered.
 
-### Custom Lists
+## Custom Lists
 
 Subscribe to a country-specific annoyance list, niche tracker list or one you maintain yourself.
 Each subscription has its own switch, last-update status, rule count and manual refresh.
@@ -897,7 +979,7 @@ Fetches require HTTPS and reject private addresses, strange ports and redirects 
 refresh keeps the last working copy. The list host learns that the public list was requested; it
 does not receive your browsing history or a report of which rules matched.
 
-### Script Shield
+## Script Shield
 
 Script Shield can block JavaScript and WebAssembly everywhere, block scripts on one site, allow only
 trusted third-party script hosts or filter known fingerprinting scripts. Lockdown and Smart modes
@@ -908,19 +990,19 @@ be limited” are materially different promises.
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
 </p>
 
-## Content blocking
+# Content blocking
 
 Ad blocking remains a substantial part of WardenOne. It simply is not allowed to define the whole
 product before the security systems appear.
 
-### AdShield
+## AdShield
 
 AdShield combines network filtering, cosmetic rules and anti-adblock scriptlets using the same
 formats and ideas familiar from EasyList, AdGuard and uBlock-style ecosystems. Shipped rules,
 personal cosmetic removals and custom list provenance remain distinguishable so one allow decision
 does not undo something unrelated.
 
-### YouTube AdShield
+## YouTube AdShield
 
 YouTube ad breaks are removed by pruning the ad schedule from player data rather than painting a
 black cover over the advert or racing a skip button after it appears. Pre-roll and mid-roll data,
@@ -930,7 +1012,7 @@ controls and slider interactions retain their normal paths.
 YouTube changes frequently. Compatibility checks and a site-specific pause exist because a video
 that will not play is a failed protection, not a successful block.
 
-### Twitch AdShield
+## Twitch AdShield
 
 Twitch stitches adverts into live streams, so ordinary request blocking can freeze the player or
 leave it looping. WardenOne asks Twitch for another local, Twitch-signed clean stream session and
@@ -941,7 +1023,7 @@ No third-party proxy handles the video. If Twitch offers no usable clean session
 open rather than freezing or looping behind a cover. That boundary is deliberate: keeping the
 stream usable matters more than claiming a block that left nothing watchable.
 
-### Search cleanup
+## Search cleanup
 
 Sponsored Google and Brave results and their ad-click wrappers can be removed. Google and Brave AI
 answer panels are optional. Google's native plain-Web mode requests ten blue links at the source,
@@ -951,7 +1033,7 @@ Answer-scraper results are dimmed and labelled with **Show anyway**, never silen
 blocking failure is visible; a search filter that hid the one useful result would fail invisibly,
 which is the more dangerous mistake.
 
-### Element Zapper
+## Element Zapper
 
 Point at a sticky bar, leftover consent box, sidebar or floating video and remove it. The result is
 saved locally for that site through the same cosmetic channel as personal rules. `Ctrl+Z` can undo
@@ -961,7 +1043,7 @@ use the mouse or keyboard.
 Allowlisting a site's adverts does not silently restore an element you explicitly chose to remove.
 Those are two different decisions and remain so in storage.
 
-### Cryptojacking protection
+## Cryptojacking protection
 
 Known mining-as-a-service scripts, third-party mining-pool traffic and stratum WebSockets are
 blocked while a mining pool remains reachable when you deliberately visit it. Optional deep
@@ -976,9 +1058,9 @@ can produce a miss.
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
 </p>
 
-## Tools, performance and comfort
+# Tools, performance and comfort
 
-### Right-click tools
+## Right-click tools
 
 One **WardenOne** context-menu entry contains Element Zapper, Copy clean link, Block this site,
 Check this link, Check selected text, Where is this image from? and What is this frame? These are
@@ -987,7 +1069,7 @@ routes to evidence or actions you may need before opening the main controls.
 Copy clean link exists separately from automatic in-page copying because Chrome's own **Copy link
 address** command and the address bar are browser UI that a page script cannot intercept.
 
-### Command Palette
+## Command Palette
 
 Press **Alt+Shift+W**, type a few letters and choose a WardenOne action: check the site, run the
 Self-Test, hide an element, clean the page address, pause here, open the Logger or Firewall, check a
@@ -1005,63 +1087,63 @@ what you type into it or restyle its internal controls into something misleading
 
 </details>
 
-### Keyboard Shortcuts
+## Keyboard Shortcuts
 
 Repeated actions use Chrome's native extension shortcut system rather than a key listener injected
 into every page. Pages cannot see or swallow those shortcuts, and you can rebind them at
 `chrome://extensions/shortcuts`. Chrome allows four defaults; later or additional commands appear
 as **Not set** until you choose a key.
 
-### Forget Me & Logins
+## Forget Me & Logins
 
 Forget Me & Logins clears a site's cookies and storage after its last tab closes, preserving
 allowlisted sites, and offers a one-click clear-now action.
 
-### Privacy Cleaner
+## Privacy Cleaner
 
 Privacy Cleaner separately selects cache, consent and tracking cookies, all sign-ins, history,
 download history, local storage, service workers, saved form data or camera, microphone and
 location permissions over a chosen time range.
 
-### Settings Backup
+## Settings Backup
 
 Settings backup exports every toggle to a file you keep. API keys are never included, and unknown
 fields in an imported file cannot inject one. With no account and no WardenOne cloud sync, this is
 the deliberate route for moving your configuration.
 
-### Memory Shield
+## Memory Shield
 
 Memory Shield sleeps inactive tabs using Gentle, Balanced, Aggressive or Emergency profiles. Pinned,
 audio, form, login and payment tabs can be protected from sleeping; duplicate and zombie tabs can
 be found, and memory can be freed on demand.
 
-### Resource Saver
+## Resource Saver
 
 Resource Saver controls autoplay media, background throttling, lazy image loading, prefetch and
 preload. These are performance choices, kept separate from security verdicts.
 
-### EyeShield
+## EyeShield
 
 EyeShield remembers per-site Normal, Light, Dark or OLED-black Ultra display modes with brightness,
 contrast, saturation, warmth and greyscale controls.
 
-### WardenOne Themes
+## WardenOne Themes
 
 Light and dark themes extend across WardenOne's own pages while preserving warning, status and
 disabled-control contrast.
 
-### Twitch Local Rewind
+## Twitch Local Rewind
 
 Twitch Local Rewind lets you scrub backwards through a live stream or jump to the moment you
 joined. VOD Rewind complements it for recorded content. These are comfort features, clearly apart
 from the ad and security engines.
 
-### Adult-site Arrival Screen
+## Adult-site Arrival Screen
 
 An optional adult-site arrival screen handles listed and heuristic matches so a mistyped address or
 gestureless redirect does not immediately reveal explicit material.
 
-### SafeSearch & Restricted Mode
+## SafeSearch & Restricted Mode
 
 SafeSearch enforcement for Google, Bing, DuckDuckGo, Brave Search and Yahoo, plus YouTube Restricted
 Mode, is separate and off by default because it changes what search and video services show.
@@ -1070,11 +1152,7 @@ Mode, is separate and off by default because it changes what search and video se
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
 </p>
 
-## About WardenOne
-
-The permissions, architecture, person and provenance behind the extension.
-
-### Privacy and permissions
+# Privacy, permissions & transparency
 
 WardenOne asks for broad browser access because it protects broad browser surfaces: requests,
 pages, downloads, cookies, sessions, site permissions and installed-extension changes. That reach
@@ -1098,21 +1176,15 @@ The promise repeated throughout this page is the same here:
 - **Files are not uploaded.** File Shield's VirusTotal button sends only SHA-256, only when pressed and only with your own key.
 - **Updates are not telemetry.** Rule updates download public list files and disclose no browsing history; failures retain the previous local copy.
 
-### How WardenOne works
+# How WardenOne works
 
-```mermaid
-flowchart TB
-    Page[Web page] --> Guards[Page and session guards]
-    Guards <--> Worker[Extension worker]
-    Worker <--> Network[Browser network rules]
-    Worker <--> Local[Local settings and evidence]
-    Local --> Tools["Activity · Self-Test · Repair<br/>Logger · Firewall · review tools"]
-```
+There is no WardenOne server in the middle of your browsing. The work is split across the browser
+surfaces that actually hold the evidence:
 
-The browser network layer handles declarative filtering, threats, redirects, downloads and
-private-network boundaries. The page layer sees deceptive interfaces, credential flows, privacy APIs,
-links and device-use signals. The extension worker holds state and crosses browser APIs. Local
-interfaces explain, test and control those decisions.
+- **Browser network layer** — filtering, known threats, redirects, downloads and private-network boundaries.
+- **Page and session layer** — deceptive interfaces, credential flows, privacy APIs, links and device-use signals.
+- **Extension worker** — local state and the browser APIs that join those layers together.
+- **Local interfaces** — Activity, Self-Test, Repair, Logger, Firewall and review tools that explain and control the result.
 
 Some tools overlap in subject but not evidence. Download Shield sees browser context; File Shield
 sees bytes. Activity records the event; Logger names the request and rule. Self-Test measures from
@@ -1120,7 +1192,7 @@ outside; Verify & Repair inspects from inside. Extension identity history and cu
 answer different questions. Keeping those distinctions is what stops one convenient score becoming
 a false promise.
 
-### How I work
+# How I build WardenOne
 
 My local copy is usually a good way ahead of what's pushed here.
 
@@ -1135,7 +1207,7 @@ Everything goes through `node tools/check-maintainability.js` first. And when so
 turns out to be wrong on a real site, I'd rather leave the revert sitting in the history
 than tidy it away.
 
-### Official source and authenticity
+# Official source & authenticity
 
 **Website:** [iri-dev.github.io/WardenOne](https://iri-dev.github.io/WardenOne/)
 
@@ -1151,7 +1223,7 @@ Because a browser security extension holds meaningful permissions, source authen
 build from another repository, file host or website was not produced by this project, even if the
 screenshots and description were copied exactly.
 
-### Feedback and security reporting
+# Feedback & security reporting
 
 Found a site WardenOne breaks, a false positive or an idea? Use the public
 [issue forms](https://github.com/iri-dev/WardenOne/issues/new/choose). The site URL and protection
@@ -1161,7 +1233,7 @@ Found a vulnerability in WardenOne itself? **Do not put exploit details, secrets
 payloads in a public issue.** Read [SECURITY.md](SECURITY.md) and use GitHub's
 [private vulnerability report](https://github.com/iri-dev/WardenOne/security/advisories/new).
 
-### Licence and credits
+# Licence & credits
 
 Copyright (C) 2026 iri. WardenOne is licensed under the **GNU General Public License v3 or later**;
 see [LICENSE](LICENSE), [NOTICE](NOTICE) and [CREDITS.md](CREDITS.md). Modified redistribution is

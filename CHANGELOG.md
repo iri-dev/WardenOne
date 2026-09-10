@@ -251,25 +251,24 @@ as the work happened.
 
 ### Changed
 
-- Rebuilt the GitHub README as a navigable, full-scale product showcase in British
-  English. The local-first promise, installation, first-run choices and manual update
-  path now lead the page. The real product names—including SessionShield, File Shield,
-  Mail Shield, Protection Health and Site Firewall—act as the visual landmarks instead
-  of being buried below generic taxonomy. Every genuine protection now has a proper
-  heading, space and a place in GitHub's built-in outline; distinct SessionShield,
-  network, extension-security and utility features are no longer compressed into bold
-  labels. The manual Explore directory, duplicate feature index and repeated return
-  links have gone. Slim icon-free purple rules derived from the maintainer's profile
-  design mark only genuine chapter changes. A full brand section explains both halves
-  of the WardenOne name. The top explains 106 total as 103 controllable plus three named
-  watch-only protections before its large product screenshot, while the narrow popup
-  image and over-prominent version requirement have been removed from the first-run
-  flow. The local, serverless trust model is stated without shorthand. The architecture
-  diagram no longer sits beneath GitHub's controls, the maintainer's original
-  first-person build note is restored, and major protections keep their own technical
-  explanations, limits and privacy boundaries rather than being flattened into category
-  summaries. Authentic product screenshots break up the relevant chapters, the stale
-  protection-count copy is corrected, and the security policy routes vulnerability
+- Rebuilt the GitHub README as a readable, full-scale product showcase in British
+  English. Major chapters now use first-level headings, genuine features use second-level
+  headings and only a feature's internal parts sit beneath it, giving the long page a clear
+  outline during a scroll. The opening keeps the no-account, no-telemetry, no-tracking and
+  no-server promise without delaying the product, and explains 106 total as 103
+  controllable plus three named watch-only protections. A purpose-cropped view of the real
+  popup now introduces WardenOne, while the full onboarding screen sits with First run.
+  Slim icon-free purple rules derived from the maintainer's profile design mark only
+  genuine chapter changes. The product-name section and original first-person build note
+  keep the maintainer's voice. SessionShield, Download Shield, File Shield, network defence,
+  Extension Security Centre and verification interfaces have clear protection, tool,
+  interface or watch-only identities without invented registry numbers. Three branded
+  diagrams explain download decisions, the Download Shield/File Shield boundary and the
+  path from an event to a personal rule; short flows make token, ClickFix, extension-update
+  and repair behaviour scannable. The obstructed architecture diagram and its generic
+  About wrapper have gone, but the underlying architecture, privacy boundaries, technical
+  limits and feature detail remain. The manual Explore directory, duplicate feature index
+  and repeated return links remain removed, and the security policy routes vulnerability
   reports through GitHub's private reporting flow.
 
 - Remote network and supplemental feeds now keep a keyed semantic fingerprint as
