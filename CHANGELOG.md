@@ -253,18 +253,20 @@ as the work happened.
 
 - Rebuilt the GitHub README as a navigable, full-scale product showcase in British
   English. The local-first promise, installation, first-run choices and manual update
-  path now lead the page. One stable hierarchy separates chapters, feature families and
-  individual protections; every long chapter has its own local map and return routes;
-  and the complete index now teaches that geography as well as linking into it. A full
-  brand section explains both halves of the WardenOne name. The top explains 106 total
-  as 103 controllable plus three named watch-only protections, and the local, serverless
-  trust model is stated without shorthand. The architecture diagram no longer sits
-  beneath GitHub's controls, the maintainer's original first-person build note is
-  restored, and major protections keep their own technical explanations, limits and
-  privacy boundaries rather than being flattened into category summaries. Authentic
-  product screenshots break up the relevant chapters, the stale protection-count copy
-  is corrected, and the security policy routes vulnerability reports through GitHub's
-  private reporting flow.
+  path now lead the page. The real product names—including SessionShield, File Shield,
+  Mail Shield, Protection Health and Site Firewall—act as the visual landmarks instead
+  of being buried below generic taxonomy. Their constituent protections use quieter
+  bold labels, the compact navigator advertises the same names, and slim purple shield
+  dividers derived from the maintainer's profile design mark only genuine chapter
+  changes. A full brand section explains both halves of the WardenOne name. The top
+  explains 106 total as 103 controllable plus three named watch-only protections, and
+  the local, serverless trust model is stated without shorthand. The architecture
+  diagram no longer sits beneath GitHub's controls, the maintainer's original
+  first-person build note is restored, and major protections keep their own technical
+  explanations, limits and privacy boundaries rather than being flattened into category
+  summaries. Authentic product screenshots break up the relevant chapters, the stale
+  protection-count copy is corrected, and the security policy routes vulnerability
+  reports through GitHub's private reporting flow.
 
 - Remote network and supplemental feeds now keep a keyed semantic fingerprint as
   well as their SHA-256 hash and size/count baseline. A hash change with implausibly
