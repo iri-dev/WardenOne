@@ -255,12 +255,16 @@ as the work happened.
   English. The local-first promise, installation, first-run choices and manual update
   path now lead the page. The real product names—including SessionShield, File Shield,
   Mail Shield, Protection Health and Site Firewall—act as the visual landmarks instead
-  of being buried below generic taxonomy. Their constituent protections use quieter
-  bold labels, the compact navigator advertises the same names, and slim purple shield
-  dividers derived from the maintainer's profile design mark only genuine chapter
-  changes. A full brand section explains both halves of the WardenOne name. The top
-  explains 106 total as 103 controllable plus three named watch-only protections, and
-  the local, serverless trust model is stated without shorthand. The architecture
+  of being buried below generic taxonomy. Every genuine protection now has a proper
+  heading, space and a place in GitHub's built-in outline; distinct SessionShield,
+  network, extension-security and utility features are no longer compressed into bold
+  labels. The manual Explore directory, duplicate feature index and repeated return
+  links have gone. Slim icon-free purple rules derived from the maintainer's profile
+  design mark only genuine chapter changes. A full brand section explains both halves
+  of the WardenOne name. The top explains 106 total as 103 controllable plus three named
+  watch-only protections before its large product screenshot, while the narrow popup
+  image and over-prominent version requirement have been removed from the first-run
+  flow. The local, serverless trust model is stated without shorthand. The architecture
   diagram no longer sits beneath GitHub's controls, the maintainer's original
   first-person build note is restored, and major protections keep their own technical
   explanations, limits and privacy boundaries rather than being flattened into category
