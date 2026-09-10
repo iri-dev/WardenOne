@@ -393,15 +393,14 @@ cleaning because its purpose is incident response, not housekeeping.
 of evidence can honestly stand in for the other.
 
 ```mermaid
-flowchart LR
+flowchart TB
     Start["Download begins"] --> Context["Chrome gives WardenOne context"]
     Context --> Grade["Download Shield grades it"]
     Grade -->|Known dangerous| Block["Block"]
-    Grade -->|Suspicious| Review["Hold for review"]
-    Review --> Evidence["You see the evidence"]
+    Grade -->|Suspicious| Review["Hold for review<br/>You see the evidence"]
     Grade -->|Normal| Continue["Continue"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
-    class Start,Context,Grade,Block,Review,Evidence,Continue warden
+    class Start,Context,Grade,Block,Review,Continue warden
     linkStyle default stroke:#c45ca7
 ```
 
@@ -438,9 +437,10 @@ WardenOne reputation backend.
 The file tells you one thing. **Its bytes may tell you another.**
 
 ```mermaid
-flowchart LR
+flowchart TB
     Download["Browser download"] --> DownloadShield["Download Shield"]
     DownloadShield --> Context["Source · URL · filename · browser signals"]
+    Context ~~~ File
     File["File you choose"] --> FileShield["File Shield"]
     FileShield --> Bytes["Actual bytes · format · code · archive · hash"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
@@ -810,7 +810,7 @@ WardenOne gives you several ways to challenge what it claims: see the event, ins
 measure what the page received, check the internal components and repair what is missing.
 
 ```mermaid
-flowchart LR
+flowchart TB
     Event["Something happens"] --> Protection["Protection acts"]
     Protection --> Activity["Activity Centre"]
     Activity --> Logger["Network Logger"]
