@@ -45,9 +45,11 @@ you the evidence behind the decisions it makes.
 **Inspect it for yourself:** [Privacy policy](PRIVACY.md) · [Permissions explained](permissions.html) · [Security policy](SECURITY.md) · [Source](https://github.com/iri-dev/WardenOne) · [Licence](LICENSE)
 
 <p align="center">
-  <img src="docs/popup-overview.png" alt="WardenOne's main control surface with the master switch, protection health and protection search" width="620">
+  <a href="docs/screenshots/01-popup-master-switch.webp">
+    <img src="docs/screenshots/01-popup-overview.webp" alt="WardenOne's main control surface with the master switch, protection health and protection search" width="620">
+  </a>
 </p>
-<p align="center"><em>One master switch, live protection health and a searchable route to every control.</em></p>
+<p align="center"><em>One master switch, live protection health and a searchable route to every control. Select any product image for its full view.</em></p>
 
 # Quick install
 
@@ -67,9 +69,21 @@ hides routine pop-ups and badges. The Notification Centre remains available when
 review or change individual notices.
 
 <p align="center">
-  <img src="docs/onboarding.png" alt="WardenOne first-run choice between Recommended and Maximum Privacy protection" width="840">
+  <a href="docs/screenshots/11-onboarding-protection.webp">
+    <img src="docs/screenshots/11-onboarding-protection.webp" alt="WardenOne onboarding explains its default protection and the available threat-intelligence feeds" width="900">
+  </a>
 </p>
-<p align="center"><em>First run explains the trade-off before WardenOne changes anything.</em></p>
+<p align="center"><em>First run introduces the protection, its privacy boundary and the choices you can change later.</em></p>
+
+<details>
+<summary><strong>See the complete first-run journey</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/11-onboarding-welcome.webp"><img src="docs/screenshots/11-onboarding-welcome.webp" alt="Welcome to WardenOne, with no account and no telemetry" width="440"></a>
+  <a href="docs/screenshots/11-onboarding-explore.webp"><img src="docs/screenshots/11-onboarding-explore.webp" alt="The final onboarding step linking WardenOne's controls, local activity, permissions and network guide" width="440"></a>
+</p>
+
+</details>
 
 <details>
 <summary><strong>Updating an unpacked installation</strong></summary>
@@ -383,6 +397,17 @@ If you think an account already has been compromised, Emergency Logout can clear
 site or sign out everywhere in one deliberate action. It is kept separate from ordinary privacy
 cleaning because its purpose is incident response, not housekeeping.
 
+<details>
+<summary><strong>See SessionShield's individual controls</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/12-session-shield.webp">
+    <img src="docs/screenshots/12-session-shield.webp" alt="SessionShield controls for token exposure, form skimmers, payment cards, clipboard swapping and keystroke pressure" width="500">
+  </a>
+</p>
+
+</details>
+
 ## Download Shield
 
 **AUTOMATIC PROTECTION · DOWNLOAD CONTEXT & REPUTATION**
@@ -425,6 +450,24 @@ publisher reassurance.
 Optional providers include domain age, Google Safe Browsing, VirusTotal, URLhaus, AbuseIPDB,
 OpenPhish, PhishTank and WhoisXML. Each has its own control and disclosure; there is no hidden
 WardenOne reputation backend.
+
+<p align="center">
+  <a href="docs/screenshots/04-download-review-suspicious.webp">
+    <img src="docs/screenshots/04-download-review-suspicious.webp" alt="WardenOne Download Guard pauses an intentionally suspicious local test download and explains every signal behind its grade" width="900">
+  </a>
+</p>
+<p align="center"><em>A deliberately suspicious local test is paused with its evidence and the final decision left to you.</em></p>
+
+<details>
+<summary><strong>See the Download Shield controls</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/04-download-shield.webp">
+    <img src="docs/screenshots/04-download-shield.webp" alt="Download Shield controls, File Shield entry point and optional reputation-provider settings" width="500">
+  </a>
+</p>
+
+</details>
 
 **Find it:** WardenOne → Download Shield.
 
@@ -474,6 +517,24 @@ imports a dangerous capability or matches a known hash. It cannot prove a file h
 never pretends otherwise. A clean result means **nothing here is disguised by the checks that ran**.
 It is not antivirus: it does not monitor the filesystem, emulate behaviour, quarantine anything or
 replace the protection already on your computer.
+
+<p align="center">
+  <a href="docs/screenshots/05-file-shield-after-scan.webp">
+    <img src="docs/screenshots/05-file-shield-result-preview.webp" alt="File Shield's local report identifies a ZIP archive, lists its contents and states exactly what was and was not found" width="900">
+  </a>
+</p>
+<p align="center"><em>File Shield reports what the bytes establish and keeps “nothing disguised” separate from “safe”.</em></p>
+
+<details>
+<summary><strong>See File Shield before a file is chosen</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/05-file-shield-before.webp">
+    <img src="docs/screenshots/05-file-shield-before.webp" alt="File Shield before a local file is selected, explaining that nothing is uploaded, opened or run" width="900">
+  </a>
+</p>
+
+</details>
 
 **Find it:** WardenOne → Download Shield → Open File Shield.
 
@@ -622,6 +683,24 @@ If no listing exists, WardenOne says **removed or never existed** because those 
 from outside. If the catalogue has no record, it says **unexamined**, not cleared. Chrome does not
 expose an uninstalled extension's future permissions or source code to another extension, so this
 is an identity and listing check—not a code review.
+
+<p align="center">
+  <a href="docs/screenshots/06-extension-check-result.webp">
+    <img src="docs/screenshots/06-extension-check-result.webp" alt="The pre-install Extension Check distinguishes an exact local catalogue match from an identity confirmed by the Chrome Web Store" width="900">
+  </a>
+</p>
+<p align="center"><em>An exact ID match is useful evidence; WardenOne still refuses to turn it into false identity reassurance.</em></p>
+
+<details>
+<summary><strong>See the complete Extension Security Centre</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/06-extension-centre.webp">
+    <img src="docs/screenshots/06-extension-centre.webp" alt="WardenOne's local Extension Security Centre, inventory controls and local reputation database" width="900">
+  </a>
+</p>
+
+</details>
 
 ### Update Guardian
 
@@ -835,9 +914,22 @@ Sensitive event types are deliberately redacted. A warning about a token, clipbo
 ClickFix command should not reproduce the secret or harmful payload merely to prove it saw one.
 
 <p align="center">
-  <img src="docs/activity.png" alt="The local WardenOne Activity Centre" width="900">
+  <a href="docs/screenshots/03-activity-centre.webp">
+    <img src="docs/screenshots/03-activity-centre.webp" alt="The local WardenOne Activity Centre with its protection record, recent events and blocked-site controls" width="900">
+  </a>
 </p>
 <p align="center"><em>The event history stays on this device and preserves the reason without copying the secret.</em></p>
+
+<details>
+<summary><strong>Inspect the local timeline and exception controls</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/03-activity-timeline.webp">
+    <img src="docs/screenshots/03-activity-timeline.webp" alt="Activity Centre timeline with recent protection decisions, blocked sites and trusted-site controls" width="900">
+  </a>
+</p>
+
+</details>
 
 ## Notification Centre
 
@@ -847,6 +939,13 @@ Every notice WardenOne can show is listed with what it means, how long it remain
 whether you would rather not see it again. Muting presentation never turns off the protection
 behind the notice. Silent mode is therefore a user-interface choice, not a weaker security profile.
 
+<p align="center">
+  <a href="docs/screenshots/12-notification-centre.webp">
+    <img src="docs/screenshots/12-notification-centre.webp" alt="WardenOne Notification Centre showing its local notice record and user-controlled preferences" width="900">
+  </a>
+</p>
+<p align="center"><em>Notice history stays available after a toast fades, and presentation remains separate from protection.</em></p>
+
 ## Protection Health
 
 **LOCAL CHECK · EXPECTED COMPONENTS & RULES**
@@ -854,6 +953,13 @@ behind the notice. Silent mode is therefore a user-interface choice, not a weake
 Protection Health asks whether the expected engines, registrations, lists and page components are
 present and responding. It does not equate “setting saved” with “protection running”, and a failure
 replaces the reassuring state instead of being hidden beneath it.
+
+<p align="center">
+  <a href="docs/screenshots/02-protection-health.webp">
+    <img src="docs/screenshots/02-protection-health.webp" alt="Protection Health expanded in the popup, showing 73 of 103 controllable shields active, recent blocks and list freshness" width="520">
+  </a>
+</p>
+<p align="center"><em>The popup reports controllable shields, recent blocks and list freshness without confusing 103 controls with 106 total protections.</em></p>
 
 ## Privacy Self-Test
 
@@ -885,6 +991,13 @@ Nothing leaves the device. The WebRTC probe uses no STUN service, temporary node
 the address bar is restored even if a probe fails.
 
 </details>
+
+<p align="center">
+  <a href="docs/screenshots/07-privacy-self-test.webp">
+    <img src="docs/screenshots/07-privacy-self-test-preview.webp" alt="Privacy Self-Test reports measured protection, minimal exposure, allowed-by-design and untestable browser surfaces separately" width="900">
+  </a>
+</p>
+<p align="center"><em>The result comes from what the page received. Select the image for the complete measurement ledger.</em></p>
 
 ## Verify and Repair
 
@@ -941,6 +1054,24 @@ Capture exists only while a logger page is open. The in-memory buffer is capped 
 and dropped when the last logger closes. Token-, key-, password- and address-like values become
 `[removed]` before the request is recorded. Nothing reaches disk until you press Export.
 
+<p align="center">
+  <a href="docs/screenshots/09-network-logger.webp">
+    <img src="docs/screenshots/09-network-logger.webp" alt="WardenOne Network Logger recording requests in memory and attributing each outcome to its deciding rule or list" width="900">
+  </a>
+</p>
+<p align="center"><em>Every request is joined to its outcome and deciding rule while the logger is open.</em></p>
+
+<details>
+<summary><strong>Inspect the request ledger</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/09-network-logger-requests.webp">
+    <img src="docs/screenshots/09-network-logger-requests.webp" alt="Network Logger request rows with outcome, type, party, redacted URL and exact rule attribution" width="900">
+  </a>
+</p>
+
+</details>
+
 ## Site Firewall
 
 **CONTROL SURFACE · PER-SITE NETWORK POLICY**
@@ -952,6 +1083,13 @@ decision beats the shipped lists in that context.
 This is powerful enough to break a page outright, so WardenOne does not disguise it as a friendly
 global switch. Undo is always one click for this site or everywhere, and the matrix makes the scope
 visible before the decision is stored.
+
+<p align="center">
+  <a href="docs/screenshots/08-site-firewall-with-rule.webp">
+    <img src="docs/screenshots/08-site-firewall-preview.webp" alt="Site Firewall shows the domains loaded by GitHub and a user rule that strips one domain's cookies on this site only" width="900">
+  </a>
+</p>
+<p align="center"><em>The matrix keeps the domain, request type, observed outcome and scope of your own rule visible together.</em></p>
 
 ## My Rules
 
@@ -1117,6 +1255,17 @@ Memory Shield sleeps inactive tabs using Gentle, Balanced, Aggressive or Emergen
 audio, form, login and payment tabs can be protected from sleeping; duplicate and zombie tabs can
 be found, and memory can be freed on demand.
 
+<details>
+<summary><strong>See Memory Shield's safeguards and profiles</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/12-memory-shield.webp">
+    <img src="docs/screenshots/12-memory-shield.webp" alt="Memory Shield controls for sleep profiles, protected tabs, tab limits and freeing RAM" width="500">
+  </a>
+</p>
+
+</details>
+
 ## Resource Saver
 
 Resource Saver controls autoplay media, background throttling, lazy image loading, prefetch and
@@ -1159,8 +1308,11 @@ pages, downloads, cookies, sessions, site permissions and installed-extension ch
 deserves a ledger, not a slogan.
 
 <p align="center">
-  <img src="docs/permissions.png" alt="WardenOne's plain-English permissions guide" width="840">
+  <a href="docs/screenshots/10-permissions-explained.webp">
+    <img src="docs/screenshots/10-permissions-explained.webp" alt="WardenOne's plain-English permission map explains each powerful browser permission and where its reach stops" width="900">
+  </a>
 </p>
+<p align="center"><em>Broad protection deserves a permission ledger: what each capability does, why it exists and where it stops.</em></p>
 
 The bundled [permissions guide](permissions.html) maps every permission to its job and where its
 reach stops. [PRIVACY.md](PRIVACY.md) documents stored data, network traffic and optional services
@@ -1175,6 +1327,20 @@ The promise repeated throughout this page is the same here:
 - **External checks are explicit.** A domain, URL, extension ID, hash or k-anonymous prefix leaves only for the specific optional question you enabled or asked.
 - **Files are not uploaded.** File Shield's VirusTotal button sends only SHA-256, only when pressed and only with your own key.
 - **Updates are not telemetry.** Rule updates download public list files and disclose no browsing history; failures retain the previous local copy.
+
+<details>
+<summary><strong>See how optional provider keys are explained</strong></summary>
+
+<p align="center">
+  <a href="docs/screenshots/10-optional-provider-keys.webp">
+    <img src="docs/screenshots/10-optional-provider-keys.webp" alt="WardenOne's API-key guide explains which optional threat-intelligence services are available, what each adds and what is sent" width="900">
+  </a>
+</p>
+
+Every provider is optional. WardenOne's local lists, heuristics and page protections work without
+a key; enabling a provider adds a clearly scoped lookup rather than turning on a hidden backend.
+
+</details>
 
 # How WardenOne works
 
