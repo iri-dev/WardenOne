@@ -251,14 +251,14 @@ as the work happened.
 
 ### Changed
 
-- Rebuilt the GitHub README as a two-speed product page: installation, trust,
-  protection pillars and flagship tools now appear first, while deeper technical
-  explanations remain available without making the opening read like a manual.
-  SessionShield, Download Shield and File Shield, extension security, Protection
-  Health, Privacy Self-Test, Site Firewall and the Network Logger now reflect their
-  actual place in the product instead of being buried beneath AdShield. The page
-  also corrects the stale protection count explanation and qualifies local-first
-  claims around optional reputation lookups and list updates.
+- Rebuilt the GitHub README as a navigable, full-scale product showcase in British
+  English. The local-first promise, installation, first-run choices and manual update
+  path now lead the page; a complete feature map exposes WardenOne's breadth; and
+  major protections again have their own technical explanations, limits and privacy
+  boundaries instead of being flattened into category summaries. Authentic product
+  screenshots now break up the relevant chapters, the stale protection-count copy is
+  corrected, and a new security policy routes vulnerability reports through GitHub's
+  private reporting flow.
 
 - Remote network and supplemental feeds now keep a keyed semantic fingerprint as
   well as their SHA-256 hash and size/count baseline. A hash change with implausibly
