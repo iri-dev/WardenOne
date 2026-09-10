@@ -1252,12 +1252,23 @@ can produce a miss.
 
 ## Right-click tools
 
-One **WardenOne** context-menu entry contains Element Zapper, Copy clean link, Block this site,
-Check this link, Check selected text, Where is this image from? and What is this frame? These are
-routes to evidence or actions you may need before opening the main controls.
+One **WardenOne** context-menu entry holds them all, ruled into groups that match what each one
+does. Element Zapper and Copy clean link act on whatever you clicked. Check this link, Check
+selected text, Where is this image from? and What is this frame? answer a question about it without
+going there. Sleep this tab, Never sleep this site and Close this tab act on the tab itself. Block
+this site decides about the site everywhere. These are routes to evidence or actions you may need
+before opening the main controls.
 
 Copy clean link exists separately from automatic in-page copying because Chrome's own **Copy link
 address** command and the address bar are browser UI that a page script cannot intercept.
+
+Sleep this tab unloads the tab to give its memory back and moves you to the next tab along, so you
+are not left looking at a blank page; the tab stays in the strip and reloads when you click it.
+Sleeping and closing both stop for text you have typed and not saved, and for a camera or
+microphone in use, and say which of the two it was. Closing is guarded because closing a tab this
+way skips the browser's own leave-site prompt, so `Ctrl+W` remains the way to close one regardless.
+Never sleep this site is per host rather than per domain — marking your mail keeps your mail awake
+and says nothing about the rest of that domain — and the same entry takes the mark off again.
 
 ## Command Palette
 
@@ -1313,6 +1324,10 @@ the deliberate route for moving your configuration.
 Memory Shield sleeps inactive tabs using Gentle, Balanced, Aggressive or Emergency profiles. Pinned,
 audio, form, login and payment tabs can be protected from sleeping; duplicate and zombie tabs can
 be found, and memory can be freed on demand.
+
+A tab can also be slept on demand, and a site marked never-sleep, from the right-click menu. That
+mark is yours rather than a judgement about the site, so it outranks every rule above — a tab on a
+marked host is never slept, whatever the profile would have decided.
 
 <details>
 <summary><strong>See Memory Shield's safeguards and profiles</strong></summary>
