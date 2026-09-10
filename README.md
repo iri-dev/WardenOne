@@ -6,7 +6,9 @@
 
 ### One extension. Every defence.
 
-**A local-first browser security suite for scams, credentials, downloads, privacy, browser extensions and the network beneath them.**
+**Local-first protection against scams, credential theft, malicious downloads, trackers,
+fingerprinting, pop-ups and forced redirects—plus security for browser extensions and the
+network beneath them.**
 
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
@@ -18,16 +20,17 @@
 
 </div>
 
-> ### No account. No telemetry. No remote browsing proxy. Open source.
+> ### No account. No telemetry. No WardenOne tracking. No remote browsing proxy.
 >
-> **Local-first · No WardenOne backend · Optional reputation checks are your choice**
+> **No WardenOne backend · Entirely open source · Local-first by design**
 >
+> WardenOne does not track you, profile you or build a cloud history of the pages it protects.
 > Your browsing and security data stay on your device. WardenOne has no account system,
-> advertising identifier, analytics or developer-operated service watching where you go.
-> Optional third-party checks—such as VirusTotal, breach or domain-age lookups—run only
-> when you enable or invoke them, are clearly identified, and send only what that question
-> requires. Automatic list updates fetch the same public rule files for everyone; they do
-> not upload your browsing history.
+> advertising identifier, analytics pipeline or developer-operated server receiving the pages
+> you visit. Optional third-party checks—such as VirusTotal, breach or domain-age lookups—run
+> only when you enable or invoke them, tell you what they send, and send only what that question
+> requires. Automatic list updates fetch the same public rule files for everyone; they do not
+> upload your browsing history or security events.
 
 > [!WARNING]
 > **Official builds only.** WardenOne is a browser extension, never an `.exe`, installer or setup program. Download it only from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne). If you received another copy, read the [impersonation incident notice](https://iri-dev.github.io/WardenOne/stolen).
@@ -36,14 +39,22 @@
   <img src="docs/onboarding.png" alt="Welcome to WardenOne" width="840">
 </p>
 
-> **One master switch. 106 protections. Everything is open source. Your data stay local unless you choose a clearly labelled external check.**
+> ### One master switch. 106 protections.
+>
+> **103 are individually controllable. 3 are watch-only:** **Background reports**, **Hardware
+> and file access**, and **Browser capabilities**. They record important activity in the local
+> Activity Centre without blocking or changing the page, so there is deliberately no individual
+> switch for them. The master switch and site allowlist still turn them off with everything else.
+
+**Ten named shields. Dedicated tools for files, extensions, network investigation, privacy
+verification and recovery.**
 
 WardenOne protects across the browser, not just the page. It works at the network, page,
 session, download, storage and extension layers: blocking known threats, spotting deceptive
 behaviour, protecting credentials and files, reducing tracking, and showing you the evidence
 behind its decisions.
 
-It is deliberately large. AdShield, SessionShield, Download Shield, File Shield, Mail Shield,
+WardenOne is deliberately broad. AdShield, SessionShield, Download Shield, File Shield, Mail Shield,
 Media Shield, Script Shield, Header Shield, Memory Shield and EyeShield are not names for ten
 toggles inside an ad blocker. They are connected parts of a browser security suite, backed by
 dedicated tools for extension review, activity history, privacy testing, network investigation,
@@ -76,7 +87,8 @@ review or change individual notices.
 </p>
 <p align="center"><em>The main controls are searchable; the dedicated tools open as their own interfaces.</em></p>
 
-### Updating an unpacked installation
+<details>
+<summary><strong>Updating an unpacked installation</strong></summary>
 
 The rolling ZIP is rebuilt after every passing update to `main`, but an unpacked extension
 does **not** update itself from GitHub.
@@ -89,6 +101,8 @@ does **not** update itself from GitHub.
 Keeping the folder path matters: without a fixed manifest key, Chromium may treat a different
 unpacked path as a different extension, and its local settings will not automatically follow.
 
+</details>
+
 ## Explore WardenOne
 
 Choose the layer you care about, or open the complete index to jump straight to one feature.
@@ -99,8 +113,8 @@ Every protection still has a proper explanation below—this navigator does not 
 | **🛡️ [Threats and scams](#threats-and-scams)**<br>Phishing, fake updates, ClickFix, notification bait, clickjacking and hostile redirects. | **🧩 [Extension security](#browser-extension-security)**<br>Installed-extension review, permission changes, startup checks and pre-install identity checks. |
 | **🔐 [Accounts and sessions](#accounts-and-session-security)**<br>Credentials, session tokens, checkout forms, OAuth, breach checks and emergency logout. | **🔎 [Evidence and verification](#control-and-verification)**<br>Activity, notifications, protection health, a measurable privacy test and repair. |
 | **📦 [Downloads and files](#downloads-and-files)**<br>Download context, real file formats, executable capabilities, archives, documents and hashes. | **⚙️ [Advanced control](#advanced-filtering-and-network-control)**<br>Request logging, a per-site firewall, personal rules, custom lists and Script Shield. |
-| **🌐 [Network and devices](#network-and-device-boundaries)**<br>IP leaks, HTTPS, certificates, intranets, DNS rebinding, media and hardware permissions. | **🚫 [Content blocking](#content-blocking)**<br>AdShield, YouTube, Twitch, search cleanup, Element Zapper and cryptojacking defence. |
-| **👁️ [Privacy and tracking](#privacy-and-anti-tracking)**<br>Trackers, cookies, links, bounce storage, consent, email pixels and fingerprinting. | **🧰 [Tools and performance](#tools-performance-and-comfort)**<br>Right-click tools, keyboard control, cleaning, tab memory, EyeShield and family safety. |
+| **🌐 [Network and devices](#network-and-device-boundaries)**<br>IP leaks, HTTPS, certificates, intranets, DNS rebinding, media and hardware permissions. | **🚫 [Content and family safety](#content-blocking)**<br>AdShield, search cleanup, Element Zapper, cryptojacking defence, adult guard and SafeSearch. |
+| **👁️ [Privacy and tracking](#privacy-and-anti-tracking)**<br>Trackers, cookies, links, bounce storage, consent, email pixels and fingerprinting. | **🧰 [Tools and performance](#tools-performance-and-comfort)**<br>Right-click tools, keyboard control, cleaning, tab memory, EyeShield and Twitch rewind. |
 
 <details>
 <summary><strong>Complete feature index</strong> — jump directly to any protection or tool</summary>
@@ -112,7 +126,9 @@ Every protection still has a proper explanation below—this navigator does not 
 - **Network and devices:** [WebRTC and IP protection](#webrtc-and-ip-logger-protection) · [HTTPS and certificates](#https-and-certificate-protection) · [Intranet Guard](#intranet-protection) · [DNS rebinding](#dns-rebinding-detection) · [Media Shield](#media-shield) · [Location Guard](#location-permission-chains-and-site-permissions) · [Permission Chain Guard](#location-permission-chains-and-site-permissions) · [Site Permission Scanner](#location-permission-chains-and-site-permissions) · [Watch-only signals](#watch-only-capability-signals)
 - **Browser extension security:** [Extension Security Centre](#extension-security-centre) · [Change monitoring](#extension-change-monitoring-and-startup-checks) · [Startup Security Check](#extension-change-monitoring-and-startup-checks) · [Pre-install checker](#check-an-extension-before-installing-it) · [Update Guardian](#update-guardian)
 - **Evidence and verification:** [Activity Centre](#activity-centre) · [Notification Centre](#notification-centre) · [Protection Health](#protection-health) · [Privacy Self-Test](#privacy-self-test) · [Verify & Repair](#verify-and-repair) · [Network Logger](#network-logger)
-- **Control, blocking and tools:** [Per-site controls](#per-site-control) · [Site Firewall](#site-firewall) · [My Rules](#my-rules) · [Custom Lists](#custom-lists) · [Script Shield](#script-shield) · [AdShield](#adshield) · [YouTube](#youtube-adshield) · [Twitch](#twitch-adshield) · [Search cleanup](#search-cleanup) · [Element Zapper](#element-zapper) · [Cryptojacking](#cryptojacking-protection) · [Command Palette](#command-palette-and-keyboard-shortcuts) · [Memory Shield](#memory-shield-and-resource-saver) · [EyeShield](#eyeshield-themes-and-twitch-rewind)
+- **Advanced control:** [Per-site controls](#per-site-control) · [Site Firewall](#site-firewall) · [My Rules](#my-rules) · [Custom Lists](#custom-lists) · [Script Shield](#script-shield)
+- **Content and family safety:** [AdShield](#adshield) · [YouTube](#youtube-adshield) · [Twitch](#twitch-adshield) · [Search cleanup](#search-cleanup) · [Element Zapper](#element-zapper) · [Cryptojacking](#cryptojacking-protection) · [Adult guard and SafeSearch](#family-and-content-safety)
+- **Tools and performance:** [Right-click tools](#right-click-tools) · [Command Palette](#command-palette-and-keyboard-shortcuts) · [Privacy Cleaner](#privacy-cleaner-forget-me-and-settings-backup) · [Memory Shield](#memory-shield-and-resource-saver) · [EyeShield and Twitch rewind](#eyeshield-themes-and-twitch-rewind)
 
 </details>
 
@@ -320,8 +336,9 @@ need to read the fields they own.
 
 ### Payment Card Guard
 
-Payment Card Guard warns before card details leave a scammy, very new, suspicious or reputation-
-flagged checkout. It blocks submission on insecure, look-alike, raw-IP and known-dangerous forms.
+Payment Card Guard warns before card details leave a scammy, very new, suspicious or
+reputation-flagged checkout. It blocks submission on insecure, look-alike, raw-IP and
+known-dangerous forms.
 Embedded frames receive a lightweight card-exfiltration guard; full checkout and reputation
 analysis stays with the top page, where the site identity is meaningful.
 
@@ -1047,16 +1064,16 @@ The promise repeated throughout this page is the same here:
 # How WardenOne works
 
 ```mermaid
-flowchart LR
+flowchart TB
     Page[Web page] --> Guards[Page and session guards]
     Guards <--> Worker[Extension worker]
     Worker <--> Network[Browser network rules]
     Worker <--> Local[Local settings and evidence]
-    Local --> Tools[Activity, Self-Test, Logger, Firewall and review tools]
+    Local --> Tools["Activity · Self-Test · Repair<br/>Logger · Firewall · review tools"]
 ```
 
-The browser network layer handles declarative filtering, threats, redirects, downloads and private-
-network boundaries. The page layer sees deceptive interfaces, credential flows, privacy APIs,
+The browser network layer handles declarative filtering, threats, redirects, downloads and
+private-network boundaries. The page layer sees deceptive interfaces, credential flows, privacy APIs,
 links and device-use signals. The extension worker holds state and crosses browser APIs. Local
 interfaces explain, test and control those decisions.
 
@@ -1066,18 +1083,20 @@ outside; Verify & Repair inspects from inside. Extension identity history and cu
 answer different questions. Keeping those distinctions is what stops one convenient score becoming
 a false promise.
 
-# How I build WardenOne
+# How I work
 
-WardenOne is written and maintained by one person. The public branch is the version I am confident
-enough to put in front of people; unfinished ideas, half-built features and experiments stay local
-until they survive real-site testing. A workshop being further ahead in raw code does not make it a
-better release.
+My local copy is usually a good way ahead of what's pushed here.
 
-Development is repetitive by design: edit, reload, hard-refresh, watch what the page actually does,
-then try to break the assumption again. Every change passes
-`node tools/check-maintainability.js`, which checks syntax, generated-file parity and the full test
-suite. When a real site proves an idea wrong, I would rather leave the revert visible in history
-than tidy the record into a story that never happened.
+I build in VS Code with the extension loaded, and I'll happily sit with one thing for
+hours — edit, reload, hard-refresh, watch what the page actually does, go again. Almost
+none of that is worth a commit on its own, so I push once something is finished and I'm
+actually sure about it. The history goes quiet and then several commits land at once,
+which is usually just one long session finally ending. Probably more of those at 2am
+than is strictly sensible.
+
+Everything goes through `node tools/check-maintainability.js` first. And when something
+turns out to be wrong on a real site, I'd rather leave the revert sitting in the history
+than tidy it away.
 
 ### The name
 
