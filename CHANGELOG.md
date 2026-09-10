@@ -253,16 +253,17 @@ as the work happened.
 
 - Rebuilt the GitHub README as a navigable, full-scale product showcase in British
   English. The local-first promise, installation, first-run choices and manual update
-  path now lead the page; the shield mark and a layered feature navigator give the
-  product a clearer visual identity while a complete direct-link index preserves its
-  full breadth; the top now explains 106 total as 103 controllable plus three named
-  watch-only protections; the local, serverless trust model is stated without shorthand;
-  the architecture diagram no longer sits beneath GitHub's controls; the maintainer's
-  original first-person build note is restored; and
-  major protections again have their own technical explanations, limits and privacy
-  boundaries instead of being flattened into category summaries. Authentic product
-  screenshots now break up the relevant chapters, the stale protection-count copy is
-  corrected, and a new security policy routes vulnerability reports through GitHub's
+  path now lead the page. One stable hierarchy separates chapters, feature families and
+  individual protections; every long chapter has its own local map and return routes;
+  and the complete index now teaches that geography as well as linking into it. A full
+  brand section explains both halves of the WardenOne name. The top explains 106 total
+  as 103 controllable plus three named watch-only protections, and the local, serverless
+  trust model is stated without shorthand. The architecture diagram no longer sits
+  beneath GitHub's controls, the maintainer's original first-person build note is
+  restored, and major protections keep their own technical explanations, limits and
+  privacy boundaries rather than being flattened into category summaries. Authentic
+  product screenshots break up the relevant chapters, the stale protection-count copy
+  is corrected, and the security policy routes vulnerability reports through GitHub's
   private reporting flow.
 
 - Remote network and supplemental feeds now keep a keyed semantic fingerprint as
