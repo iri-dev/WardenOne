@@ -253,7 +253,9 @@ as the work happened.
 
 - Rebuilt the GitHub README as a navigable, full-scale product showcase in British
   English. The local-first promise, installation, first-run choices and manual update
-  path now lead the page; a complete feature map exposes WardenOne's breadth; and
+  path now lead the page; the shield mark and a layered feature navigator give the
+  product a clearer visual identity while a complete direct-link index preserves its
+  full breadth; and
   major protections again have their own technical explanations, limits and privacy
   boundaries instead of being flattened into category summaries. Authentic product
   screenshots now break up the relevant chapters, the stale protection-count copy is

@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="icons/icon128.png" alt="WardenOne shield" width="112">
+
 # WardenOne
 
 ### One extension. Every defence.
@@ -89,40 +91,30 @@ unpacked path as a different extension, and its local settings will not automati
 
 ## Explore WardenOne
 
-This is the fast map. Every name links to a proper explanation below; nothing important has
-been compressed into a mysterious “and more”.
+Choose the layer you care about, or open the complete index to jump straight to one feature.
+Every protection still has a proper explanation below—this navigator does not replace them.
 
-### 🛡️ Threats and scams
+| Core protection | Control, visibility and tools |
+| --- | --- |
+| **🛡️ [Threats and scams](#threats-and-scams)**<br>Phishing, fake updates, ClickFix, notification bait, clickjacking and hostile redirects. | **🧩 [Extension security](#browser-extension-security)**<br>Installed-extension review, permission changes, startup checks and pre-install identity checks. |
+| **🔐 [Accounts and sessions](#accounts-and-session-security)**<br>Credentials, session tokens, checkout forms, OAuth, breach checks and emergency logout. | **🔎 [Evidence and verification](#control-and-verification)**<br>Activity, notifications, protection health, a measurable privacy test and repair. |
+| **📦 [Downloads and files](#downloads-and-files)**<br>Download context, real file formats, executable capabilities, archives, documents and hashes. | **⚙️ [Advanced control](#advanced-filtering-and-network-control)**<br>Request logging, a per-site firewall, personal rules, custom lists and Script Shield. |
+| **🌐 [Network and devices](#network-and-device-boundaries)**<br>IP leaks, HTTPS, certificates, intranets, DNS rebinding, media and hardware permissions. | **🚫 [Content blocking](#content-blocking)**<br>AdShield, YouTube, Twitch, search cleanup, Element Zapper and cryptojacking defence. |
+| **👁️ [Privacy and tracking](#privacy-and-anti-tracking)**<br>Trackers, cookies, links, bounce storage, consent, email pixels and fingerprinting. | **🧰 [Tools and performance](#tools-performance-and-comfort)**<br>Right-click tools, keyboard control, cleaning, tab memory, EyeShield and family safety. |
 
-[Threat Blocklist](#threat-blocklist) · [Phishing and look-alikes](#phishing-and-look-alike-protection) · [Insecure Sign-in Guard](#insecure-sign-in-guard) · [Browser-in-the-Browser](#browser-in-the-browser-protection) · [Full-screen Address Guard](#full-screen-address-guard) · [ClickFix](#clickfix-and-command-paste-guard) · [Fake updates](#fake-update-and-tech-support-scam-protection) · [Notification scams](#notification-scam-protection) · [XSS Behaviour Guard](#xss-behaviour-guard) · [Clickjacking](#anti-clickjacking) · [Redirects](#redirect-popup-and-back-trap-protection)
+<details>
+<summary><strong>Complete feature index</strong> — jump directly to any protection or tool</summary>
 
-### 🔐 Accounts and credentials
+- **Threats and scams:** [Threat Blocklist](#threat-blocklist) · [Phishing and look-alikes](#phishing-and-look-alike-protection) · [Insecure Sign-in Guard](#insecure-sign-in-guard) · [Browser-in-the-Browser](#browser-in-the-browser-protection) · [Full-screen Address Guard](#full-screen-address-guard) · [ClickFix](#clickfix-and-command-paste-guard) · [Fake updates](#fake-update-and-tech-support-scam-protection) · [Notification scams](#notification-scam-protection) · [XSS Behaviour Guard](#xss-behaviour-guard) · [Clickjacking](#anti-clickjacking) · [Redirects](#redirect-popup-and-back-trap-protection)
+- **Accounts and credentials:** [SessionShield](#sessionshield) · [Token Guard](#session-token-protection) · [Form Skimmer Guard](#form-skimmer-and-magecart-protection) · [Payment Card Guard](#payment-card-guard) · [Autofill Trap Guard](#autofill-trap-guard) · [Paste Protection](#paste-and-clipboard-protection) · [Clipboard Guard](#paste-and-clipboard-protection) · [OAuth Guard](#oauth-grant-guard) · [Honeytokens](#honeytokens-and-keystroke-pressure) · [Breach checks](#breach-and-password-checks) · [Emergency Logout](#session-grade-and-emergency-logout)
+- **Downloads and files:** [Download Shield](#download-shield) · [A–F grading](#when-a-download-begins) · [Download Review](#when-a-download-begins) · [File Shield](#file-shield) · [Real format detection](#what-file-shield-reads) · [PE capabilities](#what-file-shield-reads) · [Scripts and shortcuts](#what-file-shield-reads) · [Archives and documents](#what-file-shield-reads) · [SHA-256](#what-file-shield-reads)
+- **Privacy and tracking:** [Tracker blocking](#tracker-protection) · [First-party tracking](#first-party-tracker-protection) · [Cookie controls](#cookie-and-storage-controls) · [Link hygiene](#link-hygiene) · [Bounce cleanup](#bounce-tracking-and-service-worker-cleanup) · [Service-worker cleanup](#bounce-tracking-and-service-worker-cleanup) · [Header Shield](#header-shield) · [Consent protection](#consent-protection) · [Mail Shield](#mail-shield) · [Anti-fingerprinting](#anti-fingerprinting) · [Search warnings](#search-result-protection)
+- **Network and devices:** [WebRTC and IP protection](#webrtc-and-ip-logger-protection) · [HTTPS and certificates](#https-and-certificate-protection) · [Intranet Guard](#intranet-protection) · [DNS rebinding](#dns-rebinding-detection) · [Media Shield](#media-shield) · [Location Guard](#location-permission-chains-and-site-permissions) · [Permission Chain Guard](#location-permission-chains-and-site-permissions) · [Site Permission Scanner](#location-permission-chains-and-site-permissions) · [Watch-only signals](#watch-only-capability-signals)
+- **Browser extension security:** [Extension Security Centre](#extension-security-centre) · [Change monitoring](#extension-change-monitoring-and-startup-checks) · [Startup Security Check](#extension-change-monitoring-and-startup-checks) · [Pre-install checker](#check-an-extension-before-installing-it) · [Update Guardian](#update-guardian)
+- **Evidence and verification:** [Activity Centre](#activity-centre) · [Notification Centre](#notification-centre) · [Protection Health](#protection-health) · [Privacy Self-Test](#privacy-self-test) · [Verify & Repair](#verify-and-repair) · [Network Logger](#network-logger)
+- **Control, blocking and tools:** [Per-site controls](#per-site-control) · [Site Firewall](#site-firewall) · [My Rules](#my-rules) · [Custom Lists](#custom-lists) · [Script Shield](#script-shield) · [AdShield](#adshield) · [YouTube](#youtube-adshield) · [Twitch](#twitch-adshield) · [Search cleanup](#search-cleanup) · [Element Zapper](#element-zapper) · [Cryptojacking](#cryptojacking-protection) · [Command Palette](#command-palette-and-keyboard-shortcuts) · [Memory Shield](#memory-shield-and-resource-saver) · [EyeShield](#eyeshield-themes-and-twitch-rewind)
 
-[SessionShield](#sessionshield) · [Token Guard](#session-token-protection) · [Form Skimmer Guard](#form-skimmer-and-magecart-protection) · [Payment Card Guard](#payment-card-guard) · [Autofill Trap Guard](#autofill-trap-guard) · [Paste Protection](#paste-and-clipboard-protection) · [Clipboard Guard](#paste-and-clipboard-protection) · [OAuth Guard](#oauth-grant-guard) · [Honeytokens](#honeytokens-and-keystroke-pressure) · [Breach checks](#breach-and-password-checks) · [Emergency Logout](#session-grade-and-emergency-logout)
-
-### 📦 Downloads and files
-
-[Download Shield](#download-shield) · [A–F grading](#when-a-download-begins) · [Download Review](#when-a-download-begins) · [File Shield](#file-shield) · [Real format detection](#what-file-shield-reads) · [PE capabilities](#what-file-shield-reads) · [Scripts and shortcuts](#what-file-shield-reads) · [Archives and documents](#what-file-shield-reads) · [SHA-256](#what-file-shield-reads)
-
-### 👁️ Privacy and tracking
-
-[Tracker blocking](#tracker-protection) · [First-party tracking](#first-party-tracker-protection) · [Cookie controls](#cookie-and-storage-controls) · [Link hygiene](#link-hygiene) · [Bounce cleanup](#bounce-tracking-and-service-worker-cleanup) · [Service-worker cleanup](#bounce-tracking-and-service-worker-cleanup) · [Header Shield](#header-shield) · [Consent protection](#consent-protection) · [Mail Shield](#mail-shield) · [Anti-fingerprinting](#anti-fingerprinting) · [Search warnings](#search-result-protection)
-
-### 🌐 Network and devices
-
-[WebRTC and IP protection](#webrtc-and-ip-logger-protection) · [HTTPS and certificates](#https-and-certificate-protection) · [Intranet Guard](#intranet-protection) · [DNS rebinding](#dns-rebinding-detection) · [Media Shield](#media-shield) · [Location Guard](#location-permission-chains-and-site-permissions) · [Permission Chain Guard](#location-permission-chains-and-site-permissions) · [Site Permission Scanner](#location-permission-chains-and-site-permissions) · [Watch-only signals](#watch-only-capability-signals)
-
-### 🧩 Browser extension security
-
-[Extension Security Centre](#extension-security-centre) · [Change monitoring](#extension-change-monitoring-and-startup-checks) · [Startup Security Check](#extension-change-monitoring-and-startup-checks) · [Pre-install checker](#check-an-extension-before-installing-it) · [Update Guardian](#update-guardian)
-
-### 🔎 Evidence and verification
-
-[Activity Centre](#activity-centre) · [Notification Centre](#notification-centre) · [Protection Health](#protection-health) · [Privacy Self-Test](#privacy-self-test) · [Verify & Repair](#verify-and-repair) · [Network Logger](#network-logger)
-
-### ⚙️ Control, blocking and tools
-
-[Per-site controls](#per-site-control) · [Site Firewall](#site-firewall) · [My Rules](#my-rules) · [Custom Lists](#custom-lists) · [Script Shield](#script-shield) · [AdShield](#adshield) · [YouTube](#youtube-adshield) · [Twitch](#twitch-adshield) · [Search cleanup](#search-cleanup) · [Element Zapper](#element-zapper) · [Cryptojacking](#cryptojacking-protection) · [Command Palette](#command-palette-and-keyboard-shortcuts) · [Memory Shield](#memory-shield-and-resource-saver) · [EyeShield](#eyeshield-themes-and-twitch-rewind)
+</details>
 
 ## Why WardenOne
 
