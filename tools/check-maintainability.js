@@ -241,6 +241,7 @@ function checkContentBuild() {
   'tools/test-eyeshield-yt-player.js',
   'tools/test-protection-health.js',
   'tools/test-twitch-adblock.js',
+  'tools/test-spotify-adblock.js',
   'tools/test-twitch-failopen.js',
   'tools/test-twitch-playlist-compatibility.js',
   'tools/test-twitch-rewind.js',
@@ -351,6 +352,7 @@ function checkContentBuild() {
   'redirect-warning.js',
   'safe-browsing-block.js',
   'yt-adblock.js',
+  'spotify-adblock.js',
 ].forEach(checkSyntax);
 
 [
@@ -543,6 +545,7 @@ checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
+checkCommand('Spotify adblock tests', ['tools/test-spotify-adblock.js']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);
 checkCommand('Twitch playlist compatibility tests', ['tools/test-twitch-playlist-compatibility.js']);
 checkCommand('Twitch rewind tests', ['tools/test-twitch-rewind.js']);

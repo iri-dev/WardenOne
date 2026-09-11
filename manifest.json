@@ -126,6 +126,18 @@
   "content_scripts": [
     {
       "matches": [
+        "https://open.spotify.com/*"
+      ],
+      "js": [
+        "spotify-adblock.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
         "*://*.twitch.tv/*"
       ],
       "js": [
