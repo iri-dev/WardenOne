@@ -17,6 +17,11 @@ as the work happened.
 
 ### Added
 
+- Spotify Web Player audio ads are now replaced only when Spotify's own playback
+  response marks a track as an ad. The replacement is a short silent media item
+  rather than a failed request, so playlists keep moving into the next real song;
+  a current-player ad signal also mutes as a fail-safe, and ordinary tracks and
+  podcast media keep their original URLs.
 - The right-click menu can now do something about the tab itself: sleep it, close
   it, or mark its site so it is never slept. Sleeping unloads the tab to give its
   memory back — it stays in the tab strip and comes back when you click it — and you

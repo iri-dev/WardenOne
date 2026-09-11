@@ -34,6 +34,7 @@ const content = read('src/content.js');
 const runtime = read('content.min.js');
 const bridge = read('bridge.js');
 const yt = read('yt-adblock.js');
+const spotify = read('spotify-adblock.js');
 const consent = read('consent-reject.js');
 const antiRedirect = read('anti-redirect.js');
 const permissionChain = read('permission-chain.js');
@@ -63,6 +64,11 @@ assert(bridge.includes('window.__wardenOneBridgeReadyVersion = BRIDGE_VERSION'),
 assert(yt.includes('var YT_MODULE_VERSION = "' + version + '"'), 'YouTube module should use manifest-matched guard version');
 assert(yt.includes('window.__wardenOneYouTubeReadyVersion === YT_MODULE_VERSION'), 'YouTube module should no-op same-version reinjection after ready');
 assert(yt.includes('window.__wardenOneYouTubeReadyVersion = YT_MODULE_VERSION'), 'YouTube module should mark ready after setup');
+
+assert(spotify.includes("const VERSION = '" + version + "'"), 'Spotify module should use manifest-matched guard version');
+assert(spotify.includes('window.__wardenOneSpotifyAdblockReady === VERSION'), 'Spotify module should no-op same-version reinjection');
+assert(spotify.includes('window.__wardenOneSpotifyAdblockReady = VERSION'), 'Spotify module should publish its ready version');
+assert(spotify.includes('window.__wardenOneSpotifyAdblockDispose'), 'Spotify module should release hooks before replacement');
 
 assert(consent.includes("const CONSENT_REJECT_VERSION = '" + version + "'"), 'consent module should use manifest-matched guard version');
 assert(consent.includes('window.__wardenOneConsentRejectReadyVersion === CONSENT_REJECT_VERSION'), 'consent module should no-op same-version reinjection after ready');

@@ -3467,6 +3467,7 @@ function repairMainWorldFilesForUrl(rawUrl, frameId) {
       add('permission-chain.js');
     }
     add('anti-redirect.js');
+    if (isSpotifyFrameUrl(rawUrl)) add('spotify-adblock.js');
     if (isTwitchFrameUrl(rawUrl)) add('twitch-adblock.js');
     if (isYouTubeFrameUrl(rawUrl)) {
       add('permission-chain.js');
@@ -3475,6 +3476,14 @@ function repairMainWorldFilesForUrl(rawUrl, frameId) {
     return files;
   } catch (_) {
     return null;
+  }
+}
+
+function isSpotifyFrameUrl(rawUrl) {
+  try {
+    return new URL(String(rawUrl || '')).hostname.toLowerCase() === 'open.spotify.com';
+  } catch (_) {
+    return false;
   }
 }
 
@@ -19151,7 +19160,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
 
       // 1. core files present & non-empty
       for (const f of CORE_FILES) {
@@ -19308,6 +19317,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           { file: 'content.min.js', world: 'MAIN', flag: '__wardenOneReadyVersion' },
           { file: 'permission-chain.js', world: 'MAIN', flag: '__wardenOnePermissionChainInstalled' },
           { file: 'anti-redirect.js', world: 'MAIN', flag: '__wardenOneAntiRedirectHardener' },
+          { file: 'spotify-adblock.js', world: 'MAIN', flag: '__wardenOneSpotifyAdblockReady' },
           { file: 'twitch-adblock.js', world: 'MAIN', flag: '__wardenOneTwitchAdblockReady' },
           // Executed all along; its flag was never marked, so this guard returned every time.
           { file: 'yt-adblock.js', world: 'MAIN', flag: '__wardenOneYouTubeReadyVersion' },

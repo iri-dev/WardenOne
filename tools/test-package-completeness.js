@@ -128,12 +128,21 @@ for (const file of shippedHtml) {
   }
 }
 
-/* ---- what the release package actually contains --------------------------- */
-const archive = spawnSync('git', ['archive', '--format=tar', 'HEAD'], {
+/* ---- what the release package actually contains --------------------------- *
+ * Before a commit, inspect the staged candidate tree. On CI the index and HEAD are identical,
+ * while locally this lets the mandatory pre-commit gate validate a newly added runtime asset. */
+const tree = spawnSync('git', ['write-tree'], { cwd: ROOT, encoding: 'utf8' });
+if (tree.status !== 0 || !String(tree.stdout || '').trim()) {
+  console.error('  FAIL - could not inspect the staged release tree :: '
+    + String(tree.stderr || '').slice(0, 200));
+  process.exit(1);
+}
+const releaseTree = String(tree.stdout).trim();
+const archive = spawnSync('git', ['archive', '--format=tar', releaseTree], {
   cwd: ROOT, encoding: 'buffer', maxBuffer: 1024 * 1024 * 256,
 });
 if (archive.status !== 0) {
-  console.error('  FAIL - could not run `git archive HEAD` :: '
+  console.error('  FAIL - could not archive the staged release tree :: '
     + String(archive.stderr || '').slice(0, 200));
   process.exit(1);
 }
