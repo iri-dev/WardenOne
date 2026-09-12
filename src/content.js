@@ -1164,6 +1164,56 @@
   catch(_){
 
   }
+  /* notification ask observer: whether this page has asked for the notification permission,
+     noted from document_start so that an ask made at load -- before the config and the guard
+     that reads it have arrived -- still counts. Both ways a prompt can be raised are watched:
+     Notification.requestPermission, and a push subscription. Each is passed straight through;
+     permission-chain.js reports the prompt, this only remembers that it happened. */
+  let __woNotifAsked=!1,
+  __woNotifAskHook=null;
+  const __woNoteNotifAsk=()=>{
+    __woNotifAsked=!0;
+    try{
+      "function"==typeof __woNotifAskHook&&__woNotifAskHook()
+    }
+    catch(_){
+
+    }
+
+  };
+  try{
+    const N=window.Notification,
+    realAsk=N&&N.requestPermission;
+    if("function"==typeof realAsk&&!realAsk.__woNotifAsk){
+      const askWrapped=function(){
+        __woNoteNotifAsk();
+        return realAsk.apply(this,
+        arguments)
+      };
+      askWrapped.__woNotifAsk=!0,
+      N.requestPermission=askWrapped
+    }
+  }
+  catch(_){
+
+  }
+  try{
+    const pushProto=window.PushManager&&PushManager.prototype,
+    realSubscribe=pushProto&&pushProto.subscribe;
+    if("function"==typeof realSubscribe&&!realSubscribe.__woNotifAsk){
+      const subscribeWrapped=function(){
+        __woNoteNotifAsk();
+        return realSubscribe.apply(this,
+        arguments)
+      };
+      subscribeWrapped.__woNotifAsk=!0,
+      pushProto.subscribe=subscribeWrapped
+    }
+  }
+  catch(_){
+
+  }
+  /* end notification ask observer */
   let __woRuntimeStarted=!1;
   const __woStartRuntime=()=>{
     if(__woRuntimeStarted)return;
@@ -18694,7 +18744,20 @@
       "urgency bait"]],
       notifSeen=new Set;
       let notifLogged=0,
-      notifCoaxPending=0;
+      notifCoaxPending=0,
+      notifAsked=__woNotifAsked;
+      /* The page has asked for the permission -- through Notification.requestPermission or a
+      push subscription, the two ways a prompt can be raised, watched from document_start by
+      the ask observer above. Only then is "press Allow" an instruction aimed at a prompt
+      rather than a sentence about one. A security write-up, a help page, this project's own
+      README rendered on GitHub: all of them say "click Allow" and none of them ask, and every
+      one of them was being reported as bait. */
+      const notifAskedNow=()=>{
+        notifAsked=!0;
+        try{notifCheckCoax()}catch(_){ }
+        try{notifQueueCoax()}catch(_){ }
+      };
+      __woNotifAskHook=notifAskedNow;
       const notifNote=(type,
       detail)=>{
         if(!(++notifLogged>4))try{
@@ -18772,9 +18835,9 @@
             }
 
           }),
-          /* requestPermission is deliberately passed straight through.
-          permission-chain.js owns that wrapper; wrapping it here too would report
-          one prompt twice and stack two layers on the same method. */
+          /* requestPermission is deliberately passed straight through. permission-chain.js
+          owns that wrapper and reports the prompt, and the ask observer at document_start
+          already notes that the page asked; doing either here would say it twice. */
           ["requestPermission"].forEach(name=>{
             try{
               Wrapped[name]=function(...args){
@@ -18810,11 +18873,12 @@
       catch(_){
 
       }
-      /* The coaxing only matters while the answer is still open: once the site has
-      been allowed or blocked the wording is just wording. */
+      /* The coaxing only matters while the answer is still open and the page has asked:
+      once the site has been allowed or blocked the wording is just wording, and until it
+      asks, so is a page that only talks about the prompt. */
       const notifCheckCoax=()=>{
         try{
-          if(!WO_TOP)return;
+          if(!WO_TOP||!notifAsked)return;
           let state="";
           try{state=String(window.Notification&&Notification.permission||"")}catch(_){ }
           if("default"!==state)return;
