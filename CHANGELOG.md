@@ -471,6 +471,13 @@ as the work happened.
 
 ### Fixed
 
+- Stopped pages that merely talk about notification scams being reported as
+  notification bait. The check read the words alone, so a security write-up, a help
+  page or WardenOne's own GitHub page ("coaching you to press Allow") was flagged on
+  every visit. The warning now needs the page to have actually asked for the
+  permission -- through the notification prompt or a push subscription -- and it
+  comes the moment it asks, including an ask made at load before WardenOne's
+  settings have arrived.
 - Fixed YouTube tabs intermittently showing every Google account as signed out
   while a reload or fresh tab immediately restored them. The child-frame
   credential guard trusted Google's identity hosts but not the YouTube service

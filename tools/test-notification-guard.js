@@ -44,6 +44,14 @@ const to = CONTENT.indexOf(END, from + START.length);
 assert(from >= 0 && to > from, 'the shipped notification guard markers are missing');
 /* Whole block, header included, so the toggle and the media exemption are real. */
 const GUARD = CONTENT.slice(from, to).replace(/\s*$/, '');
+/* The ask is noted at document_start, outside the guard, so a page that asks before the
+   config arrives still counts. Lifted as the second slice. */
+const OBS_START = '/* notification ask observer:';
+const OBS_END = '/* end notification ask observer */';
+const obsFrom = CONTENT.indexOf(OBS_START);
+const obsTo = CONTENT.indexOf(OBS_END, obsFrom);
+assert(obsFrom >= 0 && obsTo > obsFrom, 'the ask observer markers are missing');
+const OBSERVER = CONTENT.slice(obsFrom, obsTo);
 
 function run(options) {
   const o = options || {};
@@ -66,6 +74,11 @@ function run(options) {
     shown.push([title, opts]);
     return Promise.resolve('native');
   };
+  function PushManager() {}
+  PushManager.prototype.subscribe = function () {
+    PushManager.__subscribed = (PushManager.__subscribed || 0) + 1;
+    return Promise.resolve({ endpoint: 'https://push.example/x' });
+  };
 
   const sandbox = {
     WO: { notificationAbuseGuard: o.enabled !== false },
@@ -73,6 +86,7 @@ function run(options) {
     trustedMediaHost: !!o.trustedMediaHost,
     Notification: RealNotification,
     ServiceWorkerRegistration,
+    PushManager,
     document: { body: { innerText: o.pageText || '' }, documentElement: {} },
     log(type, detail) { logs.push({ type, detail }); },
     __woObserver: () => ({ observe() {}, disconnect() {} }),
@@ -81,12 +95,16 @@ function run(options) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(OBSERVER, sandbox, { filename: 'notification-ask-observer-slice.js' });
+  /* A bait page asks at load, often before the config -- and so the guard -- has arrived. */
+  if (o.askedEarly) sandbox.Notification.requestPermission();
   vm.runInContext(GUARD, sandbox, { filename: 'notification-guard-slice.js' });
-  while (timers.length) {
-    const fn = timers.shift();
-    if (typeof fn === 'function') fn();
-  }
-  return { logs, sandbox, built, shown, RealNotification, ServiceWorkerRegistration };
+  /* The page asking for the permission is what turns coaching text into bait. */
+  if (o.asked) sandbox.Notification.requestPermission();
+  if (o.push) new sandbox.PushManager().subscribe();
+  const drain = () => { while (timers.length) { const fn = timers.shift(); if (typeof fn === 'function') fn(); } };
+  drain();
+  return { logs, sandbox, built, shown, RealNotification, ServiceWorkerRegistration, PushManager, drain };
 }
 
 let passed = 0;
@@ -107,33 +125,57 @@ const types = (r) => r.logs.map((l) => l.type);
     ['Tap ALLOW to download your file', 'download bait'],
     ['Allow notifications to continue', 'plain'],
   ]) {
-    const r = run({ pageText: wording });
+    const r = run({ pageText: wording, asked: true });
     check('coaxing is caught: ' + note, types(r).includes('warned_notification_bait'), { wording, logs: r.logs });
   }
 }
 
+/* The words alone are not the trick; the prompt is. A page that describes notification
+   scams -- a security write-up, a help page, this project's own README rendered on
+   GitHub ("coaching you to press Allow through fake CAPTCHAs") -- says the same words
+   and never asks, and every one of them was reported as bait. */
 {
-  const r = run({ pageText: 'Click Allow to continue' });
+  const prose = 'Notification bait is caught while a page is coaching you to press Allow through fake CAPTCHAs, download steps or invented security checks.';
+  const r = run({ pageText: prose });
+  check('a page that only talks about the prompt is not bait', r.logs.length === 0, r.logs);
+  const asked = run({ pageText: prose, asked: true });
+  check('the same words on a page that asks for the permission are', types(asked).includes('warned_notification_bait'), asked.logs);
+  const late = run({ pageText: 'Click Allow to continue' });
+  check('nothing is said while the page has not asked', late.logs.length === 0, late.logs);
+  late.sandbox.Notification.requestPermission();
+  check('and the warning comes the moment it asks, before any timer', types(late).includes('warned_notification_bait'), late.logs);
+  late.drain();
+  check('once, not again from the queued check', late.logs.filter((l) => l.type === 'warned_notification_bait').length === 1, late.logs);
+  const push = run({ pageText: 'Click Allow to continue', push: true });
+  check('a push subscription counts as asking', types(push).includes('warned_notification_bait') && push.PushManager.__subscribed === 1, push.logs);
+  check('and the subscription itself is passed through untouched', /return realSubscribe\.apply\(this,\s*arguments\)/.test(OBSERVER));
+  const early = run({ pageText: 'Click Allow to continue', askedEarly: true });
+  check('an ask made before the guard has started -- the cold-worker case -- still counts', types(early).includes('warned_notification_bait') && early.RealNotification.__requested === 1, early.logs);
+  check('the observer is installed at document_start, before the runtime starts', CONTENT.indexOf(OBS_START) < CONTENT.indexOf('const __woStartRuntime=') && CONTENT.indexOf(OBS_START) > CONTENT.indexOf('woOn(document,"wo-key",'));
+}
+
+{
+  const r = run({ pageText: 'Click Allow to continue', asked: true });
   const d = r.logs[0] && r.logs[0].detail;
   check('it tells you what to click instead', d && /Choose Block/i.test(d.action), d);
   check('it does not claim to have changed the prompt', d && /left alone/i.test(d.outcome), d);
 }
 
 {
-  const r = run({ pageText: 'Click Allow to continue', permission: 'granted' });
+  const r = run({ pageText: 'Click Allow to continue', permission: 'granted', asked: true });
   check('once the site is already allowed the wording is just wording',
     !types(r).includes('warned_notification_bait'), r.logs);
 }
 
 {
-  const r = run({ pageText: 'Click Allow to continue', permission: 'denied' });
+  const r = run({ pageText: 'Click Allow to continue', permission: 'denied', asked: true });
   check('and once blocked there is nothing left to warn about',
     !types(r).includes('warned_notification_bait'), r.logs);
 }
 
 {
-  const r = run({ pageText: 'We allow returns within 30 days. Cookies allow us to remember your basket.' });
-  check('ordinary uses of the word "allow" are not bait', r.logs.length === 0, r.logs);
+  const r = run({ pageText: 'We allow returns within 30 days. Cookies allow us to remember your basket.', asked: true });
+  check('ordinary uses of the word "allow" are not bait, even on a page that asks', r.logs.length === 0, r.logs);
 }
 
 /* This check reads the WHOLE page body, so a loose pattern accuses a site of being
@@ -150,8 +192,8 @@ const types = (r) => r.logs.map((l) => l.type);
     ['We allow members to download their data at any time.', 'a terms page'],
     ['Premium allows you to download every report.', 'a pricing page'],
   ]) {
-    const r = run({ pageText: wording });
-    check('not bait: ' + note, r.logs.length === 0, { wording, logs: r.logs });
+    const r = run({ pageText: wording, asked: true });
+    check('not bait, even when the page asks: ' + note, r.logs.length === 0, { wording, logs: r.logs });
   }
 }
 
@@ -161,13 +203,13 @@ const types = (r) => r.logs.map((l) => l.type);
     ['Allow this site to continue', 'bare imperative at a site'],
     ['Allow notifications to download the file', 'download bait without a click verb'],
   ]) {
-    const r = run({ pageText: wording });
+    const r = run({ pageText: wording, asked: true });
     check('still caught: ' + note, types(r).includes('warned_notification_bait'), { wording, logs: r.logs });
   }
 }
 
 {
-  const r = run({ pageText: 'Click Allow to continue', top: false });
+  const r = run({ pageText: 'Click Allow to continue', top: false, asked: true });
   check('a frame does not warn on the top page\'s behalf', r.logs.length === 0, r.logs);
 }
 
@@ -274,12 +316,12 @@ const types = (r) => r.logs.map((l) => l.type);
 }
 
 {
-  const r = run({ trustedMediaHost: true, pageText: 'Click Allow to continue', permission: 'default' });
+  const r = run({ trustedMediaHost: true, pageText: 'Click Allow to continue', permission: 'default', asked: true });
   check('the established media hosts are exempt', r.logs.length === 0, r.logs);
 }
 
 {
-  const r = run({ enabled: false, pageText: 'Click Allow to continue' });
+  const r = run({ enabled: false, pageText: 'Click Allow to continue', asked: true });
   new r.sandbox.Notification('Virus detected', {});
   check('turning the guard off silences it', r.logs.length === 0, r.logs);
 }
