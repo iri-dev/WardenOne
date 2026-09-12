@@ -40,9 +40,19 @@ function check(label, condition, extra) {
 }
 
 function pngSize(file) {
+  if (!fs.existsSync(file)) return null;
   const b = fs.readFileSync(file);
   if (b.length < 24 || b.toString('ascii', 1, 4) !== 'PNG') return null;
   return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+}
+/* The PNG captures are local sources -- .gitignore keeps them out of the repo and the README
+   ships their .webp twins -- so a checkout without them (the gate on GitHub) still has to be
+   able to hold every frame to a capture. A source counts as present when the PNG is here or
+   its tracked .webp twin is. */
+function localPath(source) { return path.join(ROOT, String(source || '').replace(/\//g, path.sep)); }
+function captureExists(source) {
+  const p = localPath(source);
+  return fs.existsSync(p) || fs.existsSync(p.replace(/\.png$/i, '.webp'));
 }
 
 /* ---- the folder and the manifest agree ------------------------------------------- */
@@ -72,7 +82,7 @@ for (const entry of MANIFEST.screenshots || []) {
   check(entry.file + ' is exactly ' + frame.width + 'x' + frame.height,
     size && size.width === frame.width && size.height === frame.height, size && (size.width + 'x' + size.height));
   check(entry.file + ' names the capture it came from', /^docs\/screenshots\/[^/]+\.png$/.test(String(entry.source || '')), entry.source);
-  check(entry.file + '\'s capture exists', fs.existsSync(path.join(ROOT, String(entry.source || '').replace(/\//g, path.sep))));
+  check(entry.file + '\'s capture exists, as the PNG or its tracked .webp twin', captureExists(entry.source));
   check(entry.file + ' has a caption', typeof entry.caption === 'string' && entry.caption.trim().length >= 12);
   if (entry.controlled) {
     check(entry.file + ' says on the image that it is a controlled example',
@@ -106,11 +116,17 @@ check('the popup is not a candidate while FEAT-02 and FEAT-05 are open',
 /* ---- the site shows the current build ------------------------------------------- */
 
 const sitePopup = pngSize(path.join(ROOT, 'docs', 'popup.png'));
-const capture = pngSize(path.join(ROOT, 'docs', 'screenshots', '01-popup-master-switch.png'));
-check('the site\'s popup image is the current capture, not the August one',
-  sitePopup && capture && sitePopup.width === capture.width && sitePopup.height === capture.height
-  && fs.readFileSync(path.join(ROOT, 'docs', 'popup.png')).equals(fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', '01-popup-master-switch.png'))),
-  'docs/popup.png is what the landing page serves');
+const captureFile = path.join(ROOT, 'docs', 'screenshots', '01-popup-master-switch.png');
+if (fs.existsSync(captureFile)) {
+  const capture = pngSize(captureFile);
+  check('the site\'s popup image is the current capture, not the August one',
+    sitePopup && capture && sitePopup.width === capture.width && sitePopup.height === capture.height
+    && fs.readFileSync(path.join(ROOT, 'docs', 'popup.png')).equals(fs.readFileSync(captureFile)),
+    'docs/popup.png is what the landing page serves');
+} else {
+  check('the site\'s popup image is a PNG with a tracked capture twin (the local PNG source is absent here)',
+    !!sitePopup && fs.existsSync(captureFile.replace(/\.png$/i, '.webp')));
+}
 const site = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
 check('and the page declares that image\'s real size',
   sitePopup && site.includes('width="' + sitePopup.width + '" height="' + sitePopup.height + '"'));
