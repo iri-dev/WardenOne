@@ -17,11 +17,20 @@ as the work happened.
 
 ### Added
 
-- Spotify Web Player audio ads are now replaced only when Spotify's own playback
-  response marks a track as an ad. The replacement is a short silent media item
-  rather than a failed request, so playlists keep moving into the next real song;
-  a current-player ad signal also mutes as a fail-safe, and ordinary tracks and
-  podcast media keep their original URLs.
+- Spotify Web Player ads no longer play: no ad audio, no countdown, no
+  "Advertisement" card, just a short gap between songs where the break would have
+  been. Spotify's playback state machine makes the ad the only way out of a song
+  and the player will not move on until the slot has been entered and finished, so
+  WardenOne enters it with a 132-millisecond silent clip in place of the ad's
+  audio, tells the player to move on the moment Spotify confirms the slot, and
+  keeps the now-playing bar blank until the next song's audio starts. Only tracks
+  Spotify itself marks as ads are touched; songs, episodes and podcast audio keep
+  their original files, and any ad audio that ever slips through plays muted.
+  Turning AdShield off, or allowlisting open.spotify.com, switches it off.
+  Further hardening reduces the initial ad-panel flash, re-arms completion for
+  consecutive or slow-loading clips, and discards late responses after disabling
+  protection. Shared-CDN music and previews no longer trigger fallback muting
+  unless their exact URL was explicitly identified as an ad by Spotify.
 - The right-click menu can now do something about the tab itself: sleep it, close
   it, or mark its site so it is never slept. Sleeping unloads the tab to give its
   memory back — it stays in the tab strip and comes back when you click it — and you

@@ -81,6 +81,14 @@ gratefully credit the upstream projects below.
   upstream rule was introduced in
   <https://github.com/uBlockOrigin/uAssets/commit/4464b7bdb7ab7a0b6272669e79c620a064abcd9f>.
 
+  The silent clip that stands in for a Spotify Web Player ad is uBlock Origin's
+  `noop-0.1s.mp3` redirect resource from
+  <https://github.com/gorhill/uBlock/blob/master/src/web_accessible_resources/noop-0.1s.mp3>.
+  The list of hosts Spotify's ad audio is served from -- used to mute an ad
+  the rewrite did not reach -- is the one uAssets redirects for
+  open.spotify.com (`||scdn.co/mp3-ad/` and its companions in
+  `filters/filters-2020.txt`).
+
   uBlock Origin uAssets is distributed under the **GNU General Public License
   v3**.
 

@@ -1229,6 +1229,23 @@ Those are two different decisions and remain so in storage.
 <p align="center">
   <a href="docs/screenshots/13-element-zapper.webp">
     <img src="docs/screenshots/13-element-zapper.webp" alt="The Element Zapper outlines whatever the pointer is over and explains that each removal is remembered for this site" width="900">
+## Spotify AdShield
+
+Spotify's web player is driven by a playback state machine from Spotify's servers, and when an ad
+is due that machine makes the ad the only way out of the current song: advancing, skipping
+forward and skipping back all lead into it, and the player will not move on until the ad slot has
+been entered and reported finished. Routing around the slot breaks the player, so WardenOne takes
+it and makes it as short and as invisible as the protocol allows. The ad's audio is replaced, in
+the state machine itself, with a 132-millisecond silent clip; the moment Spotify confirms the slot
+the player is told to move on; and from the clip loading until the next song's audio starts the
+now-playing bar is blank and every piece of ad chrome (countdown, companion card, the
+"Advertisement" label) is hidden. What is left is a short gap between songs.
+
+Only a track Spotify's own metadata marks as an ad is touched. Songs travel as encrypted media
+over a different path and are never classified by host or duration, and podcast episodes keep
+their original files. Any ad audio that ever slips through plays muted. Turning AdShield off, or
+allowlisting open.spotify.com, switches this off.
+
   </a>
 </p>
 <p align="center"><em>Point, click, gone — and remembered for that site, with <code>Ctrl+Z</code> still available after the tool closes.</em></p>
