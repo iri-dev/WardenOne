@@ -7588,6 +7588,43 @@
       clickfixEvidenceNear=(left,
       right,
       limit)=>!!(left&&right&&Math.abs((left.index||0)-(right.index||0))<=limit),
+      /* Prose that describes the trick is not the trick. A lure presents its parts as
+      interface: a short heading or label ("Verify you are human", "I'm not a robot") and
+      short steps ("1. Press Win+R"). A page that explains ClickFix -- a security write-up,
+      a help page, this project's own README rendered on GitHub -- carries the same phrases
+      inside long paragraphs, usually in quotation marks, and was reported as the scam it
+      describes. innerText keeps one line per block, so the line a hit sits on is the block
+      it came from: a text-only warning needs that line short and the phrase unquoted. What
+      the page puts on the clipboard is judged by reading the command and needs no shape. */
+      clickfixLineOf=(text,
+      index)=>{
+        const value=String(text||""),
+        at=Math.max(0,
+        Math.min(Number(index)||0,
+        value.length)),
+        start=value.lastIndexOf("\n",
+        Math.max(0,
+        at-1))+1;
+        let end=value.indexOf("\n",
+        at);
+        end<0&&(end=value.length);
+        return{
+          start:start,
+          text:value.slice(start,
+          end).replace(/\s+/g,
+          " ").trim(),
+          before:value.slice(start,
+          at)
+        }
+      },
+      clickfixLureShaped=(text,
+      hit)=>{
+        if(!hit)return!1;
+        const line=clickfixLineOf(text,
+        hit.index);
+        if(!line.text||line.text.length>200)return!1;
+        return(line.before.match(/"/g)||[]).length%2==0
+      },
       clickfixDocsMayCorrelate=signal=>!signal.trustedDocumentation||signal.fakeCaptcha||"Enable pasting"===signal.instruction,
       clickfixHighRiskCorrelation=(signal,
       sample)=>{
@@ -7655,14 +7692,20 @@
         1800)),
         commandSample=clickfixEvidenceNear(instructionHit,
         commandHit,
-        fakeCaptcha?2800:1600)?commandHit.sample:"";
+        fakeCaptcha?2800:1600)?commandHit.sample:"",
+        lureShaped=clickfixLureShaped(bodyText,
+        instructionHit);
         return{
           instruction:instruction,
           fakeCaptcha:fakeCaptcha,
           pasteGuidance:pasteGuidance,
           documentation:clickfixDocsContext(),
           trustedDocumentation:clickfixTrustedDocsContext(),
-          commandSample:commandSample
+          commandSample:commandSample,
+          /* For the text-only warnings: the instruction on a short, unquoted line of its
+          own -- a step, not a sentence about one. The verification wording may sit in a
+          paragraph; lures introduce themselves at length and then list the steps. */
+          lureShaped:lureShaped
         }
       };
       let clickfixHighestWarning=0,
@@ -8051,6 +8094,7 @@
           suspiciousClipboardWhere||"page instructions",
           found.commandSample,
           suspiciousClipboardBlocked);
+          else if(!found.lureShaped)return;
           else if(found.fakeCaptcha)warnClickfix("fakeCaptcha",
           safeSignal,
           "page instructions",

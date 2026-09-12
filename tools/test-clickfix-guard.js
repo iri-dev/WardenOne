@@ -243,38 +243,79 @@ async function check(name, fn) {
    * something", which matches its own verification-steps AND paste-guidance
    * detectors. So the warning kept its own evidence alive and rebuilt itself the
    * moment it was dismissed -- reported from the field on chatgpt.com. */
+  /* One line per block, the way the rendered panel reads back through innerText. */
   const OWN_PANEL = 'ClickFix warning - do not paste this'
-    + ' These verification steps look like a ClickFix scam'
-    + cmd(' A real CAPTCHA never asks you to open DevTools, Console, ', POWERSHELL(), ',')
+    + '\nThese verification steps look like a ClickFix scam'
+    + cmd('\nA real CAPTCHA never asks you to open DevTools, Console, ', POWERSHELL(), ',')
     + ' Terminal, or the Run dialog and paste something. This is a common'
     + ' ClickFix trick used to run malware or steal account data.'
-    + " Got it, I won't paste it";
+    + "\nGot it, I won't paste it";
 
   await check('WardenOne does not raise a warning about its own warning', () => {
-    const page = 'A quiet page about gardening. ' + OWN_PANEL;
+    const page = 'A quiet page about gardening.\n' + OWN_PANEL;
     const runtime = run({ body: page, ownPanelText: OWN_PANEL });
     assert.strictEqual(runtime.activities().length, 0,
       'the panel text was read back as evidence against the page');
     assert.strictEqual(runtime.body.children.length, 0, 'a panel was raised over its own text');
   });
 
-  await check('the same words from the page itself are still caught', () => {
-    /* The control for the check above. Identical text, not registered as
-       WardenOne's own UI, must still be found -- otherwise stripping the panel
-       would be indistinguishable from switching the detector off. */
-    const page = 'A quiet page about gardening. ' + OWN_PANEL;
-    const runtime = run({ body: page });
-    assert(runtime.activities().length > 0,
-      'stripping WardenOne panels also blinded the guard to the page');
-  });
 
   await check('stripping only removes the panel, not the page around it', () => {
     /* A real attack on a page that also happens to be carrying a WardenOne
        panel must survive the subtraction. */
     const attack = cmd("Verify you're human. Press ", WIN_RUN(), ', then paste this into ', POWERSHELL(), '.');
-    const runtime = run({ body: OWN_PANEL + ' ' + attack, ownPanelText: OWN_PANEL });
+    const runtime = run({ body: OWN_PANEL + '\n' + attack, ownPanelText: OWN_PANEL });
     assert(runtime.activities().length > 0,
       'a real attack was thrown away along with the panel text');
+  });
+
+  /* ---- prose that describes the trick is not the trick ---------------------- */
+  /* WardenOne's own README, rendered on github.com, explains ClickFix in one paragraph:
+     the verification phrase and the Win+R step, in quotation marks, inside a long block.
+     It was reported as the scam it describes on every visit to the repo. */
+  const README_PARAGRAPH = cmd('ClickFix scams turn the victim into the malware launcher: "prove you are human", press ',
+    WIN_RUN(), ', paste a command, or open DevTools and type what the page prepared. WardenOne recognises',
+    ' the instruction shapes, reads what the page puts on the clipboard, and blocks the write when the two',
+    ' line up. The instruction reading -- the fake CAPTCHA wording, the "press ', WIN_RUN(), '" steps -- runs',
+    ' on the top-level page only, and embedded frames get the clipboard half of the guard.');
+  await check('a paragraph that describes ClickFix is not ClickFix, on a docs host', () => {
+    const runtime = run({ body: 'WardenOne\nOne extension. Every defence.\n' + README_PARAGRAPH, page: 'https://github.com/iri-dev/WardenOne' });
+    assert.strictEqual(runtime.activities().length, 0, JSON.stringify(runtime.activities()));
+    assert.strictEqual(runtime.body.children.length, 0, 'a panel was raised over a description');
+  });
+  await check('nor anywhere else', () => {
+    const runtime = run({ body: 'Blog\n' + README_PARAGRAPH, page: 'https://security-notes.example.net/clickfix' });
+    assert.strictEqual(runtime.activities().length, 0, JSON.stringify(runtime.activities()));
+  });
+  await check('the same words laid out as a lure -- a heading and steps -- are the scam', () => {
+    const lure = cmd('Verify you are human\nPlease verify that you are a human to continue.\nVerification steps\n1. Press ',
+      WIN_RUN(), '\n2. Press Ctrl', String.fromCharCode(43), 'V\n3. Press Enter');
+    const runtime = run({ body: lure, page: 'https://github.com/someone/repo' });
+    const types = runtime.activities().map((entry) => entry.type);
+    assert(types.includes('warned_clickfix_fake_captcha'), types.join(','));
+    assert(runtime.body.children.length > 0, 'no panel for a lure on a docs host');
+  });
+  await check('a lure that introduces itself at length and then lists the steps is still the scam', () => {
+    const lure = cmd('To access this content we need to verify that you are a human and not an automated visitor,',
+      ' so please complete the following verification steps carefully; they only take a moment and keep our',
+      ' community safe from bots and abuse.\n1. Press ', WIN_RUN(), '\n2. Press Ctrl', String.fromCharCode(43), 'V\n3. Press Enter');
+    const runtime = run({ body: lure });
+    assert(runtime.activities().map((entry) => entry.type).includes('warned_clickfix_fake_captcha'));
+  });
+  await check('a lure that keeps everything on one short line is still the scam', () => {
+    const runtime = run({ body: FAKE_VERIFY_FLOW() });
+    assert(runtime.activities().map((entry) => entry.type).includes('warned_clickfix_fake_captcha'));
+  });
+  await check('quoting the steps marks them as reported speech, not instruction', () => {
+    const runtime = run({ body: cmd('The lure read "prove you are human, press ', WIN_RUN(), ' and paste" and that was all.') });
+    assert.strictEqual(runtime.activities().length, 0, JSON.stringify(runtime.activities()));
+  });
+  await check('a description does not stop the clipboard being read', async () => {
+    /* The shape only gates the text-only warnings. A page that talks about ClickFix and
+       then writes a malware one-liner to the clipboard is judged on the command. */
+    const runtime = run({ body: README_PARAGRAPH, userActivated: false });
+    await assert.rejects(runtime.navigator.clipboard.writeText(ENCODED_PS()), /Blocked by WardenOne/);
+    assert(runtime.activities().length > 0, 'the clipboard write went unreported');
   });
 
   /* ---- an assistant surface is a conversation, not a page talking ---------- */

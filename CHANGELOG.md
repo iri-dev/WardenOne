@@ -471,6 +471,14 @@ as the work happened.
 
 ### Fixed
 
+- Stopped pages that describe ClickFix being warned about as if they were one.
+  The instruction reading matched the words alone, so a security write-up or
+  WardenOne's own GitHub page -- which explains the trick in a paragraph -- got the
+  "verification steps look like a ClickFix scam" panel on every visit. A lure lays
+  its steps out as interface, one short line each; a description buries them in a
+  paragraph, usually in quotation marks. The text-only warning now needs the
+  lure's shape. What a page puts on the clipboard is still judged by reading the
+  command, whatever the page around it looks like, and is still blocked.
 - Stopped pages that merely talk about notification scams being reported as
   notification bait. The check read the words alone, so a security write-up, a help
   page or WardenOne's own GitHub page ("coaching you to press Allow") was flagged on
