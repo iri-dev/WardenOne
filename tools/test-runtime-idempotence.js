@@ -66,9 +66,11 @@ assert(yt.includes('window.__wardenOneYouTubeReadyVersion === YT_MODULE_VERSION'
 assert(yt.includes('window.__wardenOneYouTubeReadyVersion = YT_MODULE_VERSION'), 'YouTube module should mark ready after setup');
 
 assert(spotify.includes("const VERSION = '" + version + "'"), 'Spotify module should use manifest-matched guard version');
-assert(spotify.includes('window.__wardenOneSpotifyAdblockReady === VERSION'), 'Spotify module should no-op same-version reinjection');
+// A second copy returns whatever version is already there (SEC-03: nothing on the page can ask
+// for a replacement; the bridge reloads the tab instead), and there is no dispose on window.
+assert(spotify.includes('if (window.__wardenOneSpotifyAdblockReady) return;'), 'Spotify module should no-op any reinjection');
 assert(spotify.includes('window.__wardenOneSpotifyAdblockReady = VERSION'), 'Spotify module should publish its ready version');
-assert(spotify.includes('window.__wardenOneSpotifyAdblockDispose'), 'Spotify module should release hooks before replacement');
+assert(!spotify.includes('window.__wardenOneSpotifyAdblockDispose'), 'Spotify module should not publish a dispose on window');
 
 assert(consent.includes("const CONSENT_REJECT_VERSION = '" + version + "'"), 'consent module should use manifest-matched guard version');
 assert(consent.includes('window.__wardenOneConsentRejectReadyVersion === CONSENT_REJECT_VERSION'), 'consent module should no-op same-version reinjection after ready');
