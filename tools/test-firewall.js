@@ -173,8 +173,11 @@ check('session rules have their own id range',
 check('there is a per-site undo', /id="reset-site"/.test(HTML_RAW) && /kind: 'firewall-reset'/.test(JS));
 check('there is a remove-everything undo', /id="reset-all"/.test(HTML_RAW) && /all: all === true/.test(JS));
 check('resetting also drops the session rules',
-  /await firewallClearSession\(\);[\s\S]{0,120}applyFirewallRules\(\)/.test(BG),
+  /const session = await firewallClearSession\(\);[\s\S]{0,160}applyFirewallRulesFrom\(firewallRulesFrom\(next\)\)/.test(BG),
   'otherwise an allow-once survives the undo that was supposed to clear everything');
+check('and a reset that Chrome refused is not reported as done',
+  /if \(!session\.ok \|\| !result\.ok\) \{/.test(BG),
+  'H18: "removed" was printed over rules Chrome still held');
 check('undo is on the page, not behind a menu',
   HTML.indexOf('Undo my rules here') > 0 && HTML.indexOf('Remove every firewall rule') > 0);
 check('the page says plainly that it can break a site',

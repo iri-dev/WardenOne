@@ -121,9 +121,11 @@ const bridgeEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.
 assert(bridgeEntry, 'bridge content-script entry is missing');
 assert.deepStrictEqual(bridgeEntry.js.slice(-2), ['domain-utils.js', 'bridge.js']);
 
-const repair = grabFn(BACKGROUND, 'repairMainWorldFilesForUrl');
-assert(repair.indexOf("add('domain-utils.js')") < repair.indexOf("add('content.min.js')"));
-assert(repair.indexOf("add('domain-utils.js')") < repair.indexOf("add('anti-redirect.js')"));
+// Repair no longer injects files into live tabs (it reloads them, SEC-03), so the manifest is
+// the only place the shared identity helper's ordering is decided.
+const redirectEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('anti-redirect.js'));
+assert(redirectEntry && redirectEntry.js.indexOf('domain-utils.js') === 0, 'anti-redirect.js must load after domain-utils.js');
+assert(!/repairMainWorldFilesForUrl/.test(BACKGROUND), 'a repair file selector is back; the manifest is the one description');
 assert(!/TRUSTED_BASE_DOMAINS[\s\S]*?'amazonaws\.com'/.test(ANTI.slice(0, ANTI.indexOf('function cfg'))));
 assert(ANTI.includes('hostMatchesSite(host, base)'), 'top-frame trusted-host checks bypass shared identity');
 assert(ANTI.includes('hostMatchesSite(clean, base)'), 'credential-frame trusted-host checks bypass shared identity');

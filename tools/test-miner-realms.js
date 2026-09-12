@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const woAuth = require('./lib/wo-auth');
 
 const ROOT = path.resolve(__dirname, '..');
 const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
@@ -100,6 +101,10 @@ function loadBridgeReplay(world, options = {}) {
   const to = BRIDGE.indexOf('  // 1. Listen for the custom events the main-world trap dispatches on document,');
   if (from < 0 || to <= from) throw new Error('bridge replay source markers not found');
   const state = { replays: 0, posted: [] };
+  // The bridge hands the detector a key by a synchronous document event, and signs the config
+  // with it (SEC-01); the detector accepts nothing else. The replay re-delivers the key while
+  // the page cannot have run yet, which in this world is always.
+  const signer = new woAuth.Signer(woAuth.newKey());
   const sandbox = {
     window: world.isolatedWindow,
     document: world.document,
@@ -107,12 +112,14 @@ function loadBridgeReplay(world, options = {}) {
     TOKEN: options.token || 'tok-shared',
     bridgeConfigReady: options.configReady !== false,
     bridgeConfig: options.config || {},
+    deliverKey() {
+      world.document.dispatchEvent(new CustomEventShim('wo-key', { detail: { token: sandbox.TOKEN, key: signer.key } }));
+      return true;
+    },
     postToPage(msg) { state.posted.push(msg); world.isolatedWindow.postMessage(msg); },
     sendConfig(cfg) {
       state.posted.push({ kind: 'config' });
-      world.isolatedWindow.postMessage({
-        source: 'wardenone', kind: 'config', token: sandbox.TOKEN, overrides: cfg,
-      });
+      world.isolatedWindow.postMessage(woAuth.configMessage(signer, sandbox.TOKEN, cfg));
     },
     woOn(target, type, fn) { target.addEventListener(type, fn); },
     bridgeRateOk: options.rateOk || (() => true),

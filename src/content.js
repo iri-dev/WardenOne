@@ -2,7 +2,7 @@
 !function(){
   "use strict";
   const __WO_RUNTIME_VERSION="1.0.1";
-  if(window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
+  if("string"==typeof window.__wardenOneReadyVersion&&window.__wardenOneReadyVersion)return;
   /* Amazon's real storefronts, enumerated. This used to be /(^|\.)amazon\.[a-z.]+$/i, which anchors the
      label but not the suffix -- so it matched any host the attacker owned, as long as some label
      was called "amazon" and everything after it was letters and dots. amazon.attacker.com
@@ -82,12 +82,10 @@
      order can hand the page a half-restored API, which is worse than a spare wrapper.
      What it does release is the expensive, stateful part -- observers that fire on every
      mutation and intervals that wake forever. */
-  try{
-    if(typeof window.__wardenOneDispose==="function")window.__wardenOneDispose()
-  }
-  catch(_){
-
-  }
+  /* Nothing here calls a previous engine's teardown any more. There is no published one to
+     call (SEC-03), and there is no longer a path that injects a second engine into a live
+     document: the worker reloads the tab instead, and the guard above refuses to run beside
+     an engine of any version. */
   const __woKeep=[];
   const __woHold=(item)=>{
     try{
@@ -218,8 +216,12 @@
     }
 
   };
-  try{
-    window.__wardenOneDispose=()=>{
+  /* The teardown used to be published on window as __wardenOneDispose, callable by the page it was meant to
+     distrust: one call at document_start switched every listener and observer off for the life
+     of the document, and putting the ready markers back afterwards made the tab report itself
+     protected (SEC-03). It is reachable now only through a signed "dispose" message, which
+     only the holder of the key -- the isolated bridge -- can produce. */
+  const __woTeardown=()=>{
       try{
         __woAbort.abort()
       }
@@ -245,17 +247,14 @@
          the bypass has to be repeated rather than done once and left. */
       try{
         window.__wardenOneReadyVersion=void 0,
-        window.__wardenOneInstalled=void 0
+        window.__wardenOneInstalled=void 0,
+        window.__wardenOneProtectionActive=void 0
       }
       catch(_){
 
       }
 
-    }
-  }
-  catch(_){
-
-  }
+  };
   const GRABBER_DOMAINS=["02ip.ru",
   "2no.co",
   "2no.it",
@@ -667,8 +666,27 @@
     }),
     host=location.hostname.replace(/^www\./,
     "").toLowerCase(),
-    onAllowlist=["wootility.io",
-    "shopify.com"].concat(cfg.allowlist||[]).some(h=>hostMatchesSite(host,h)),
+    /* Only what the reader chose. Two hostnames used to be concatenated in front of this
+    list -- a keyboard configurator and a commerce platform, neither of them picked by the
+    reader, both matched by hostMatchesSite so every subdomain came with them. They fed
+    masterOn and therefore every gate() in this file, so on those sites the engine
+    installed itself and then did nothing: phishing blocking, ClickFix, XSS behaviour,
+    Media Shield, clipboard, form-trap, scam-lock, anti-fingerprint, all evaluating false.
+    Worse, the start path was not shortened, so the ready marker was still stamped and the
+    tab reported itself protected to the popup, to Repair and to Protection Health.
+
+    It was a compatibility shim that outlived its cleanup. The comment further down says
+    the earlier whole-host exits were removed and that no site-wide off switch is left --
+    true of the branch that was reviewed, and not of this line. Nothing in the repository
+    justified either host: no comment, no changelog entry, no issue. The guard the
+    configurator would plausibly have needed relief from, deviceAccessGuard on
+    navigator.hid, only logs and calls straight through, so it cannot have broken it.
+
+    A site that genuinely needs relief gets a named entry in the disclosed pause list,
+    naming the keys it pauses -- never a gate that takes the whole engine down. BUG-01.
+    The hostnames are deliberately not repeated here: this file ships, and a grep for them
+    should find nothing at all. */
+    onAllowlist=(cfg.allowlist||[]).some(h=>hostMatchesSite(host,h)),
     masterOn=!1!==cfg.enabled&&!onAllowlist,
     gate=v=>!!masterOn&&v,
     cleanHostList=(list,
@@ -821,17 +839,117 @@
   __woConfigStore.__configReady=!1,
   window.__WO_CONFIG__=Object.assign({},__woConfigStore);
   let __woToken=null;
+  /* The token above is a routing nonce and public; the key below is not (SEC-01). It arrives
+     once, in a synchronous "wo-key" event the isolated bridge dispatches at document_start,
+     before the parser has built anything and before any page script exists to listen, and it
+     is never sent again. Everything this engine must trust from the bridge -- config, a
+     reputation verdict, a background reply, the frame relay, dispose -- carries an HMAC over a
+     sequence number and its payload, checked here; and the engine proves it is alive by signing
+     "installed" and every challenge with the same key. A page can see and dispatch everything
+     on this bus; it can no longer make anything on it count. */
+  let __woKey=null,
+  __woLastSeq=0;
+  /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
+     asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
+     reference it needs is captured here, before the page runs, so a page that rewrites
+     TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
+     library: fixed 32-byte key (hex), text in, hex out. */
+  const __woAuth=(function(){
+    const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+    const U8=Uint8Array,U32=Uint32Array;
+    /* UTF-8 by hand rather than TextEncoder: a lifted fragment in a bare sandbox has no
+       TextEncoder, and the page cannot be handed a hook into this either way. */
+    function encode(text){
+      const s=String(text),out=new U8(3*s.length+3);
+      let n=0;
+      for(let i=0;i<s.length;i++){
+        let c=s.charCodeAt(i);
+        if(c>=0xd800&&c<0xdc00&&i+1<s.length){const d=s.charCodeAt(i+1);if(d>=0xdc00&&d<0xe000){c=0x10000+((c-0xd800)<<10)+(d-0xdc00),i++}}
+        if(c<0x80)out[n++]=c;
+        else if(c<0x800)out[n++]=0xc0|(c>>6),out[n++]=0x80|(c&63);
+        else if(c<0x10000)out[n++]=0xe0|(c>>12),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63);
+        else out[n++]=0xf0|(c>>18),out[n++]=0x80|((c>>12)&63),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63)
+      }
+      return out.subarray(0,n)
+    }
+    const rotr=(x,n)=>(x>>>n)|(x<<(32-n));
+    function sha256(msg){
+      const len=msg.length,padded=new U8(((len+9+63)>>6)<<6);
+      padded.set(msg),padded[len]=0x80;
+      const bits=len*8;
+      padded[padded.length-4]=(bits>>>24)&255,padded[padded.length-3]=(bits>>>16)&255,padded[padded.length-2]=(bits>>>8)&255,padded[padded.length-1]=bits&255;
+      const h=new U32([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]),w=new U32(64);
+      for(let off=0;off<padded.length;off+=64){
+        for(let i=0;i<16;i++)w[i]=(padded[off+4*i]<<24)|(padded[off+4*i+1]<<16)|(padded[off+4*i+2]<<8)|padded[off+4*i+3];
+        for(let i=16;i<64;i++){
+          const s0=rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3),s1=rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
+          w[i]=(w[i-16]+s0+w[i-7]+s1)|0
+        }
+        let a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],k=h[7];
+        for(let i=0;i<64;i++){
+          const S1=rotr(e,6)^rotr(e,11)^rotr(e,25),ch=(e&f)^(~e&g),t1=(k+S1+ch+K[i]+w[i])|0,S0=rotr(a,2)^rotr(a,13)^rotr(a,22),mj=(a&b)^(a&c)^(b&c),t2=(S0+mj)|0;
+          k=g,g=f,f=e,e=(d+t1)|0,d=c,c=b,b=a,a=(t1+t2)|0
+        }
+        h[0]=(h[0]+a)|0,h[1]=(h[1]+b)|0,h[2]=(h[2]+c)|0,h[3]=(h[3]+d)|0,h[4]=(h[4]+e)|0,h[5]=(h[5]+f)|0,h[6]=(h[6]+g)|0,h[7]=(h[7]+k)|0
+      }
+      const out=new U8(32);
+      for(let i=0;i<8;i++)out[4*i]=h[i]>>>24,out[4*i+1]=(h[i]>>>16)&255,out[4*i+2]=(h[i]>>>8)&255,out[4*i+3]=h[i]&255;
+      return out
+    }
+    function hexBytes(hex){
+      const s=String(hex||""),out=new U8(s.length>>1);
+      for(let i=0;i<out.length;i++)out[i]=parseInt(s.substr(2*i,2),16)||0;
+      return out
+    }
+    function hex(bytes){
+      let s="";
+      for(let i=0;i<bytes.length;i++)s+=(bytes[i]<256?(bytes[i]<16?"0":""):"")+bytes[i].toString(16);
+      return s
+    }
+    function hmac(keyHex,text){
+      const key=hexBytes(keyHex),block=new U8(64);
+      block.set(key.length>64?sha256(key):key);
+      const ipad=new U8(64),opad=new U8(64);
+      for(let i=0;i<64;i++)ipad[i]=block[i]^0x36,opad[i]=block[i]^0x5c;
+      const data=encode(String(text)),inner=new U8(64+data.length);
+      inner.set(ipad),inner.set(data,64);
+      const ih=sha256(inner),outer=new U8(96);
+      outer.set(opad),outer.set(ih,64);
+      return hex(sha256(outer))
+    }
+    /* Constant-time-enough equality for two short hex strings; a mismatch is not a secret. */
+    function same(a,b){
+      a=String(a||""),b=String(b||"");
+      if(a.length!==b.length||!a.length)return!1;
+      let diff=0;
+      for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);
+      return 0===diff
+    }
+    return{hmac:hmac,same:same}
+  })();
+
+  function __woVerify(kind,payload,m){
+    if(null===__woKey||!m)return!1;
+    const seq=Number(m.seq);
+    if(!Number.isInteger(seq)||seq<=__woLastSeq)return!1;
+    if(!__woAuth.same(m.mac,__woAuth.hmac(__woKey,seq+"\n"+kind+"\n"+String(payload))))return!1;
+    return __woLastSeq=seq,!0
+  }
   const __woEventQueue=[],
   __woRequestQueue=[],
   __woPendingRequests=new Map;
+  function __woSignedDetail(detail){
+    const d=Object.assign({
+      token:__woToken
+    },
+    detail);
+    return"installed"===d.type&&null!==__woKey&&(d.mac=__woAuth.hmac(__woKey,"installed\n"+__woToken)),d
+  }
   function __woEmit(detail){
     if(null!==__woToken)try{
       document.dispatchEvent(new CustomEvent("wo-event",
       {
-        detail:Object.assign({
-          token:__woToken
-        },
-        detail)
+        detail:__woSignedDetail(detail)
       }))
     }
     catch(_){
@@ -908,6 +1026,7 @@
     if(e.source!==window)return;
     const m=__woMessageData(e);
     if(!m||"wardenone-bg-response"!==m.source||m.token!==__woToken)return;
+    if(!__woVerify("bg-response",String(m.id||"")+"\n"+JSON.stringify(m.result),m))return;
     const pending=__woPendingRequests.get(String(m.id||""));
     if(pending){
       __woPendingRequests.delete(String(m.id||"")),
@@ -925,13 +1044,89 @@
     }
 
   });
+  /* SEC-06: a child frame refused a command-shaped clipboard write. It has no engine to warn
+     with, so the worker relays the fact to this top frame through bridge.js, token-carried
+     like config. The detail is parked here and the guard below is poked with an empty event:
+     a page can dispatch "wo-frame-clickfix" itself, but it cannot fill this slot. */
+  let __woFrameClickfix=null;
+  woOn(document,"wo-key",
+  e=>{
+    const d=e&&e.detail;
+    if(null!==__woKey||!d||"string"!=typeof d.token||!d.token||"string"!=typeof d.key||!d.key)return;
+    __woToken=d.token,
+    __woKey=d.key;
+    for(;
+    __woEventQueue.length;
+    ){
+      const q=__woEventQueue.shift();
+      try{
+        document.dispatchEvent(new CustomEvent("wo-event",
+        {
+          detail:__woSignedDetail(q)
+        }))
+      }
+      catch(_){
+
+      }
+
+    }
+    for(;
+    __woRequestQueue.length;
+    )__woDispatchRequest(__woRequestQueue.shift())
+  });
+  /* The bridge's liveness challenge (SEC-03): answered synchronously, inside its dispatch, and
+     only with the key. Disposing this engine aborts this listener with every other one, and a
+     page that put the markers back afterwards cannot answer for it. */
+  woOn(document,"wo-ping",
+  e=>{
+    const nonce=String(e&&e.detail&&e.detail.nonce||"");
+    if(!nonce||null===__woKey)return;
+    try{
+      document.dispatchEvent(new CustomEvent("wo-event",
+      {
+        detail:{
+          token:__woToken,
+          type:"pong",
+          nonce:nonce,
+          mac:__woAuth.hmac(__woKey,"pong\n"+nonce)
+        }
+
+      }))
+    }
+    catch(_){
+
+    }
+
+  });
   woOn(window,"message",
   e=>{
     if(e.source!==window)return;
     const m=__woMessageData(e);
-    if(m&&"object"==typeof m)if("wardenone-handshake"!==m.source||"string"!=typeof m.token){
+    if(m&&"object"==typeof m){
+      if("wardenone"===m.source&&"dispose"===m.kind){
+        if(null===__woToken||m.token!==__woToken||!__woVerify("dispose","",m))return;
+        return void __woTeardown()
+      }
+      if("wardenone"===m.source&&"frame-clickfix"===m.kind){
+        if(null===__woToken||m.token!==__woToken||!__woVerify("frame-clickfix",JSON.stringify(m.detail),m))return;
+        const d=m.detail&&"object"==typeof m.detail?m.detail:{};
+        __woFrameClickfix={
+          sample:String(d.sample||"").slice(0,
+          180),
+          frameHost:String(d.frameHost||"").slice(0,
+          120)
+        };
+        try{
+          document.dispatchEvent(new CustomEvent("wo-frame-clickfix"))
+        }
+        catch(_){
+
+        }
+        return
+      }
       if("wardenone"===m.source&&"config"===m.kind&&m.overrides){
-        if(null===__woToken||m.token!==__woToken)return void __woEmit({
+        if(null===__woKey)return;
+        if(m.token!==__woToken||!__woVerify("config",JSON.stringify(m.overrides),m))return void __woEmit({
           type:"blocked_config_spoof"
         });
         (overrides=>{
@@ -958,35 +1153,17 @@
       }
 
     }
-    else null===__woToken&&(__woToken=m.token,
-    function(){
-      if(null!==__woToken){
-        for(;
-        __woEventQueue.length;
-        ){
-          const d=__woEventQueue.shift();
-          try{
-            document.dispatchEvent(new CustomEvent("wo-event",
-            {
-              detail:Object.assign({
-                token:__woToken
-              },
-              d)
-            }))
-          }
-          catch(_){
-
-          }
-
-        }
-        for(;
-        __woRequestQueue.length;
-        )__woDispatchRequest(__woRequestQueue.shift())
-      }
-
-    }
-    ())
   });
+  /* If the bridge was injected before this engine -- the order of manifest entries is not
+     promised across worlds -- the key it handed over found no listener. Ask for it again now
+     that every listener exists. The bridge answers only while nothing but content scripts can
+     be running, so a page dispatching the same event gains nothing. */
+  try{
+    document.dispatchEvent(new CustomEvent("wo-bridge-replay"))
+  }
+  catch(_){
+
+  }
   let __woRuntimeStarted=!1;
   const __woStartRuntime=()=>{
     if(__woRuntimeStarted)return;
@@ -1215,7 +1392,15 @@
          survive here forever. The derived Amazon and YouTube copies are rebuilt on every sync for
          the same reason -- deriving once would leave them stale the moment the config changed. */
       for(const k of Object.keys(WO))k in next||delete WO[k];
-      Object.assign(WO,next)
+      Object.assign(WO,next),
+      /* __wardenOneReadyVersion means "the script ran". It is stamped unconditionally,
+      because the watchdog re-injects when it is missing and must not loop on a site that
+      is legitimately paused. So it cannot also answer "is protection on" -- that is this
+      marker, which carries masterOn and is what the reporting surfaces should read.
+      BUG-01. */
+      (()=>{
+        try{window.__wardenOneProtectionActive=!1!==WO.enabled}catch(_){ }
+      })()
     },
     __woConfigBound=(()=>{
       __woSyncConfig();
@@ -1433,8 +1618,9 @@
         const m=__woMessageData(e);
         if(e.source!==window||!m||"wardenone-safe-browsing"!==m.source)return;
         if(null===__woToken||m.token!==__woToken)return;
-        const id=String(m.id||""),
-        pending=safeBrowsingPending.get(id);
+        const id=String(m.id||"");
+        if(!__woVerify("safe-browsing",id+"\n"+JSON.stringify(m.result),m))return;
+        const pending=safeBrowsingPending.get(id);
         pending&&(safeBrowsingPending.delete(id),
         pending.resolve(m.result||{
           ok:!1,
@@ -7544,7 +7730,7 @@
           const title=document.createElement("div");
           title.setAttribute("style",
           "font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:14.5px!important;color:#2d1b40!important;margin:0 0 6px 0!important;"),
-          title.textContent="correlated"===kind?"Verification steps and a suspicious command were detected":"fakeCaptcha"===kind?"These verification steps look like a ClickFix scam":"clipboard"===kind?"This page tried to copy a suspicious command":"This page wants you to paste into developer tools",
+          title.textContent="correlated"===kind?"Verification steps and a suspicious command were detected":"fakeCaptcha"===kind?"These verification steps look like a ClickFix scam":"frame"===kind?"Something embedded in this page tried to copy a suspicious command":"clipboard"===kind?"This page tried to copy a suspicious command":"This page wants you to paste into developer tools",
           wrap.appendChild(title);
           const body=document.createElement("div");
           if(body.setAttribute("style",
@@ -7640,6 +7826,24 @@
         shouldBlock);
         return shouldBlock
       };
+      /* The frame's guard already refused the write and the worker already recorded it; this
+         is only the warning, at the level a correlated hit gets, so a reader who has dismissed
+         a weaker warning still sees it. */
+      woOn(document,
+      "wo-frame-clickfix",
+      ()=>{
+        const d=__woFrameClickfix;
+        __woFrameClickfix=null;
+        if(!d||!WO.commandPasteGuard)return;
+        showCommandPanel(String(d.sample||""),
+        {
+          instruction:"",
+          fakeCaptcha:!1,
+          pasteGuidance:!0
+        },
+        3,
+        "frame")
+      });
       ["pointerdown",
       "keydown",
       "click"].forEach(type=>woOn(document,
@@ -19209,10 +19413,14 @@
       embedded frame for a visible password field. */
       FW_IDP=/(^|\.)(google\.com|microsoftonline\.com|microsoft\.com|live\.com|office\.com|apple\.com|facebook\.com|github\.com|gitlab\.com|okta\.com|auth0\.com|discord\.com|x\.com|twitter\.com|linkedin\.com|amazon\.com|paypal\.com|steampowered\.com|battle\.net|roblox\.com)$/i,
       FW_HEADER_PX=72,
+      FW_SELECTOR="div,section,dialog,aside,form",
+      FW_TAG=/^(?:DIV|SECTION|DIALOG|ASIDE|FORM)$/,
       fwHost=regDomain(location.hostname),
       fwSeen=new Set;
       let fwPending=0,
-      fwRuns=0;
+      fwRuns=0,
+      fwRoots=new Set,
+      fwFullPass=!0;
       const fwOwnText=el=>{
         try{
           let out="";
@@ -19343,20 +19551,66 @@
         }
 
       },
-      fwScan=()=>{
+      /* A fake window has to contain either a password field or an embedded frame:
+      the decisive test below refuses to warn without one. Asking that FIRST costs a
+      selector match and no layout at all, and it lets the geometry reads skip nearly
+      every container on the page. Conservative by construction -- anything dropped
+      here could never have produced a warning, so detection is unchanged. */
+      fwCouldBeWindow=el=>{
+        try{
+          return!!el.querySelector('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"],iframe')
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      /* Candidates from one changed node, rather than from the whole document.
+      Walks UP as well as down: the node that changed is usually something inside
+      the window (a field, a logo), not the window container itself. */
+      fwCollect=(root,
+      out)=>{
+        try{
+          if(!root||1!==root.nodeType||out.size>=600)return;
+          for(let n=root,hops=0;n&&hops<12;n=n.parentElement,hops++){
+            if(FW_TAG.test(n.tagName||""))out.add(n)
+          }
+          const inner=root.querySelectorAll?root.querySelectorAll(FW_SELECTOR):[];
+          for(let i=0;i<inner.length&&out.size<600;i++)out.add(inner[i])
+        }
+        catch(_){
+
+        }
+
+      },
+      /* Read everything, then decide. The old pass interleaved getBoundingClientRect
+      with getComputedStyle and querySelectorAll, so each candidate could flush
+      pending style and layout again. */
+      fwScanList=list=>{
         try{
           if(++fwRuns>40)return;
           const vw=window.innerWidth||0,
           vh=window.innerHeight||0,
-          nodes=document.body?document.body.querySelectorAll("div,section,dialog,aside,form"):[];
-          let looked=0;
-          for(let i=0;i<nodes.length&&looked<500;i++){
-            const el=nodes[i];
-            let box;
-            try{box=el.getBoundingClientRect()}catch(_){continue}
+          shortlist=[];
+          for(const el of list){
+            if(shortlist.length>=500)break;
+            if(el.isConnected!==!1&&fwCouldBeWindow(el))shortlist.push(el)
+          }
+          if(!shortlist.length)return;
+          const boxes=shortlist.map(el=>{
+            try{return el.getBoundingClientRect()}
+            catch(_){return null}
+          }),
+          shaped=[];
+          for(let i=0;i<shortlist.length;i++){
+            const box=boxes[i];
             /* Window-shaped: big enough to be a sign-in window, not the page itself. */
             if(!box||box.width<300||box.height<180||box.width>.97*vw&&box.height>.97*vh)continue;
-            looked++;
+            shaped.push([shortlist[i],box])
+          }
+          for(const pair of shaped){
+            const el=pair[0],
+            box=pair[1];
             let position="";
             try{position=getComputedStyle(el).position}catch(_){ }
             if("fixed"!==position&&"absolute"!==position)continue;
@@ -19387,6 +19641,28 @@
         }
 
       },
+      /* One full pass, then only what changed. The observer used to discard mutation
+      locality entirely: any childList change anywhere queued a fresh scan of every
+      div, section, dialog, aside and form in the document, and the 500 cap counted
+      CANDIDATES rather than layout reads -- so a page with ten thousand divs paid
+      ten thousand getBoundingClientRect calls per pass, up to forty passes, exactly
+      while the page was hydrating. */
+      fwScan=()=>{
+        const roots=fwRoots;
+        fwRoots=new Set;
+        if(fwFullPass){
+          fwFullPass=!1;
+          const all=document.body?document.body.querySelectorAll(FW_SELECTOR):[];
+          const out=new Set;
+          for(let i=0;i<all.length&&out.size<600;i++)out.add(all[i]);
+          fwScanList(out);
+          return
+        }
+        if(!roots.size)return;
+        const out=new Set;
+        for(const root of roots)fwCollect(root,out);
+        if(out.size)fwScanList(out)
+      },
       fwQueue=()=>{
         fwPending||(fwPending=1,
         setTimeout(()=>{
@@ -19394,19 +19670,49 @@
           fwScan()
         },
         900))
+      },
+      /* A click can reveal a window that was already in the DOM, so it still queues a
+      pass -- but as a scan of the clicked subtree, not of the document. */
+      fwNote=node=>{
+        try{
+          if(node&&1===node.nodeType&&fwRoots.size<400)fwRoots.add(node)
+        }
+        catch(_){
+
+        }
+
       };
       setTimeout(fwScan,
       1200),
       woOn(document,
       "click",
-      fwQueue,
+      e=>{
+        fwNote(e&&e.target),
+        fwQueue()
+      },
       !0);
       try{
-        const observer=__woObserver(fwQueue);
+        const observer=__woObserver(muts=>{
+          for(const m of muts||[]){
+            /* Attribute changes are watched now, where before only childList was.
+            A container already in the page that is restyled into a positioned
+            window was previously found only by luck -- by whatever unrelated
+            mutation happened to trigger the next whole-document rescan. */
+            if("attributes"===m.type){
+              fwNote(m.target);
+              continue
+            }
+            const added=m.addedNodes||[];
+            for(let i=0;i<added.length;i++)fwNote(added[i])
+          }
+          fwQueue()
+        });
         observer.observe(document.documentElement||document.body,
         {
           childList:!0,
-          subtree:!0
+          subtree:!0,
+          attributes:!0,
+          attributeFilter:["style","class"]
         }),
         setTimeout(()=>{
           try{observer.disconnect()}catch(_){ }

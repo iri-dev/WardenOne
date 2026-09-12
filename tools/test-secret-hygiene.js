@@ -91,8 +91,9 @@ const importFn = popupJs.slice(popupJs.indexOf('function sanitizeImportedSetting
 check('import refuses to set any secret field',
   /SECRET_FIELD_RE\.test\(key\)/.test(importFn),
   'a hand-edited file could otherwise inject a provider key');
-check('import only accepts keys that exist in the shipped defaults',
-  /hasOwnProperty\.call\(DEFAULTS, key\)/.test(importFn));
+check('import only accepts keys that exist in the shipped schema (the popup table plus the worker-only keys, PI-04)',
+  /hasOwnProperty\.call\(IMPORT_SCHEMA, key\)/.test(importFn)
+  && /const IMPORT_SCHEMA = Object\.assign\(\{\}, IMPORT_ONLY_DEFAULTS, DEFAULTS\);/.test(popupJs));
 check('no exported settings payload is built in the background worker',
   !/kind === '(export|export-settings|backup)'/.test(background),
   'export lives in the popup, which already holds the config; a background message would be a new surface');

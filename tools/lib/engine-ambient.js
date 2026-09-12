@@ -27,7 +27,7 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..', '..');
 
 // The engine's ambient helpers live between the version guard and the first data table.
-const PREAMBLE_START = 'if(window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;';
+const PREAMBLE_START = 'if("string"==typeof window.__wardenOneReadyVersion&&window.__wardenOneReadyVersion)return;';
 const PREAMBLE_END = '  const GRABBER_DOMAINS=';
 
 function enginePreamble(src) {
@@ -75,6 +75,9 @@ const SHIMS = {
     + 'if(typeof setInterval==="undefined")return 0;'
     + 'return setInterval.apply(null,arguments);};',
   __woAbort: 'var __woAbort={signal:undefined,abort:function(){}};',
+  // The private teardown (SEC-03): reachable only through a signed dispose message, so a
+  // lifted fragment never calls it; the shim is an inert stand-in.
+  __woTeardown: 'var __woTeardown=function(){};',
   __woOpts: 'var __woOpts=function(o){return o;};',
   __woNativeMessageDataGetter: 'var __woNativeMessageDataGetter=(function(){try{'
     + 'if(typeof MessageEvent==="undefined")return null;'

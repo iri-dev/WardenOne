@@ -58,10 +58,14 @@ async function decide({ answer, throws, cfg, rulesetError }) {
     },
   };
   const __blocklistRulesetError = rulesetError || '';
+  // The reconciler's degraded marker (MV3-01) is read in the same block; it is stubbed absent
+  // here because this suite is about the ruleset decision. tools/test-reconcile-honesty.js
+  // drives the marker itself.
   // eslint-disable-next-line no-new-func
   const run = new Function('chrome', 'cfg', 'addIssue', '__blocklistRulesetError',
+    'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX',
     '"use strict";return (async()=>{' + BLOCK + '\nreturn true;})();');
-  await run(chrome, cfg, addIssue, __blocklistRulesetError);
+  await run(chrome, cfg, addIssue, __blocklistRulesetError, async () => null, {}, 6);
   return {
     issues,
     worst: issues.some((i) => i.severity === 'danger') ? 'danger'

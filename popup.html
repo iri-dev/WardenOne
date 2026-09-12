@@ -731,8 +731,12 @@
       <label class="tg" id="js-site-wrap"><input type="checkbox" id="js-site"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name" style="font-size:12px;">Limit fingerprinting JavaScript</div><div class="desc">Block known fingerprinting script files while normal JavaScript keeps working.</div></div>
+      <div><div class="name" style="font-size:12px;">Limit fingerprinting JavaScript</div><div class="desc">Block known fingerprinting libraries while normal JavaScript keeps working. Fraud and bot-check scripts are a separate switch below.</div></div>
       <label class="tg" id="js-privacy-wrap"><input type="checkbox" id="js-privacy-limits" data-key="blockFingerprintScripts"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name" style="font-size:12px;">Block fraud and bot-check scripts</div><div class="desc">Blocks the device-check scripts that banks and shops use to decide if you are a real person &mdash; ThreatMetrix, DataDome, PerimeterX, Forter and others. They do fingerprint you. But the site has handed them the decision about whether you get in, so with this on a sign-in can be refused or an order declined and the site will not tell you why. That is why it is off unless you turn it on.</div></div>
+      <label class="tg" id="js-fraud-wrap"><input type="checkbox" id="js-fraud-vendors" data-key="blockFraudVendorScripts"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
       <div><div class="name" style="font-size:12px;">Smart trusted-script shield</div><div class="desc">Block third-party script files unless their host is trusted below. Known player and CDN hosts stay allowed, but some video sites may still not play — trust the site below if one breaks.</div></div>
@@ -799,8 +803,15 @@
       <label class="tg"><input type="checkbox" data-key="warnGrabberDomains"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">IP privacy guard</div><div class="desc">Hide WebRTC IP leaks from page scripts and block common third-party IP lookup APIs. A VPN or proxy is still needed to hide your IP from sites you directly visit.</div></div>
+      <div><div class="name">IP lookup blocking</div><div class="desc">Blocks requests to common third-party IP lookup services, so a page cannot ask an outside service what your address is. Native WebRTC is left alone by this switch; the one below hardens it. A VPN or proxy is still needed to hide your IP from sites you directly visit.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockWebRTCLeak"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <!-- The second level of the same guard (FEAT-03). It used to be reachable only through the
+         Maximum-privacy onboarding bundle while the switch above promised "hide WebRTC IP leaks";
+         a promise the default state did not keep. Off by default because it breaks calls. -->
+    <div class="row">
+      <div><div class="name">Harden WebRTC (may break calls)</div><div class="desc">Strips the ICE servers from peer connections and refuses ones created without a recent click, so a page cannot harvest your local and public addresses through WebRTC itself. Off by default: video calls, screen sharing and some streaming can stop working with it on. Needs IP lookup blocking on.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockSuspiciousWebRTC"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
       <div><div class="name">Force HTTPS</div><div class="desc">Automatically upgrade insecure http:// pages to secure https:// before they load. Seamless on sites that support it.</div></div>
@@ -839,11 +850,24 @@
     </div>
     <details class="advanced-providers">
       <summary>Advanced reputation providers</summary>
+      <!-- Read at consent time, not after: a provider switched on here is asked on its own for
+           as long as it stays on, and the switch is the moment to know what it will be told. -->
+      <div class="row" style="display:block;" id="provider-disclosure">
+        <div class="name" style="font-size:12px;">Before you switch one on</div>
+        <div class="desc">A provider you enable is asked <strong>on its own</strong> &mdash; when you open a page,
+          follow a risky link, submit a sensitive form or start a download &mdash; for as long as it stays on.
+          It receives the address&rsquo;s <strong>scheme, host and path</strong>, never its query string,
+          <code>#fragment</code> or a user name in the address, together with your IP address and the key you
+          gave it. Answers are kept on this device under a fingerprint, not the address, for up to 12 hours.
+          PhishTank and WhoisXML are only asked about pages that look like sign-in, payment or redirect pages,
+          or an address you ask about yourself; AbuseIPDB only about bare IP addresses; OpenPhish is never
+          asked anything. Each is a separate company with its own privacy policy.</div>
+      </div>
       <div class="row" style="display:block;">
         <div class="tool-head" style="margin-bottom:4px;">
           <div>
             <div class="name" style="font-size:12px;">Google Safe Browsing URL checks</div>
-            <div class="desc">Optional URL reputation. Requires your own API key. Checks downloads, dangerous page visits, suspicious links, and sensitive form destinations only when enabled.</div>
+            <div class="desc">Optional URL reputation. Requires your own API key. Once on, every page you open, risky link, sensitive form destination and download is sent to Google as scheme, host and path.</div>
           </div>
           <label class="tg"><input type="checkbox" data-key="downloadSafeBrowsing"><span class="track"></span><span class="knob"></span></label>
         </div>
@@ -875,7 +899,7 @@
         <div class="tool-head" style="margin-bottom:4px;">
           <div>
             <div class="name" style="font-size:12px;">URLhaus</div>
-            <div class="desc">Malware URL intelligence from abuse.ch. Blocks known malware delivery URLs in page, link, form, paste, and download flows.</div>
+            <div class="desc">Malware URL intelligence from abuse.ch. Once on, every page you open, risky link, form, paste and download is sent to abuse.ch as scheme, host and path.</div>
           </div>
           <label class="tg"><input type="checkbox" data-key="urlHaus"><span class="track"></span><span class="knob"></span></label>
         </div>
@@ -917,7 +941,7 @@
         <div class="tool-head" style="margin-bottom:4px;">
           <div>
             <div class="name" style="font-size:12px;">PhishTank</div>
-            <div class="desc">Community phishing database checks. Blocks verified current phishing URLs in risky link, form, paste, page, and download flows.</div>
+            <div class="desc">Community phishing database checks. Sign-in-looking pages, risky links, forms, pastes and downloads are sent to PhishTank as scheme, host and path.</div>
           </div>
           <label class="tg"><input type="checkbox" data-key="phishTank"><span class="track"></span><span class="knob"></span></label>
         </div>
@@ -958,7 +982,7 @@
         <div class="tool-head" style="margin-bottom:4px;">
           <div>
             <div class="name" style="font-size:12px;">WhoisXML Threat Intelligence</div>
-            <div class="desc">Uses the WhoisXML key above for IoC matches against malicious domains, URLs, IPs, and threat types.</div>
+            <div class="desc">Uses the WhoisXML key above for IoC matches against malicious domains, URLs, IPs, and threat types. Sign-in-looking pages and downloads are sent as scheme, host and path.</div>
           </div>
           <label class="tg"><input type="checkbox" data-key="whoisXmlThreatIntel"><span class="track"></span><span class="knob"></span></label>
         </div>
@@ -1012,6 +1036,10 @@
       <label class="tg"><input type="checkbox" data-key="blockFingerprintScripts"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
+      <div><div class="name">Block fraud and bot-check scripts</div><div class="desc">Blocks the device-check scripts that banks and shops use to decide if you are a real person &mdash; ThreatMetrix, DataDome, PerimeterX, Forter and others. They do fingerprint you. But the site has handed them the decision about whether you get in, so with this on a sign-in can be refused or an order declined and the site will not tell you why. That is why it is off unless you turn it on.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockFraudVendorScripts"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
       <div><div class="name">Block third-party cookies</div><div class="desc">Strips Set-Cookie from third-party pixels and beacons so they cannot store new cross-site tracking cookies, and clears cookies and storage inside frames belonging to known trackers. It is deliberately not applied to frames, scripts and XHR in general: sign-in and federation set their cookies on exactly those, and stripping them signs you out. Cookies a site already saved can still be sent. First-party logins keep working.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockThirdPartyCookies"><span class="track"></span><span class="knob"></span></label>
     </div>
@@ -1028,8 +1056,21 @@
       <label class="tg"><input type="checkbox" data-key="blockFirstPartyTrackers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Local tracker learner</div><div class="desc">Learn third-party trackers locally after they appear across multiple sites. No browsing profile leaves this device.</div></div>
+      <div><div class="name">Local tracker learner</div><div class="desc">Notices third-party domains that behave like trackers across several of your sites, and asks you before blocking one everywhere. No browsing profile leaves this device.</div></div>
       <label class="tg"><input type="checkbox" data-key="trackerLearner"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <!-- What the learner noticed is a proposal until the reader decides (SEC-04): a page can
+         supply every input the learner sees, so it may suggest a block but never make one. -->
+    <div class="row" id="tracker-proposals-row" style="display:none;flex-direction:column;align-items:stretch;gap:6px;">
+      <div>
+        <div class="name" style="font-size:12px;">Trackers noticed across your sites</div>
+        <div class="desc" id="tracker-proposals-desc">Nothing is blocked until you say so. Block stops that domain&rsquo;s tracking requests on every site; Ignore forgets the suggestion.</div>
+      </div>
+      <div class="perm-list" id="tracker-learner-proposals"></div>
+      <div class="tracker-mode-buttons" id="tracker-proposals-all" style="max-width:none;justify-content:flex-start;display:none;">
+        <button type="button" class="btn tracker-mode-btn" id="tracker-proposals-block-all" title="Block every domain listed, everywhere">Block all</button>
+        <button type="button" class="btn tracker-mode-btn" id="tracker-proposals-ignore-all" title="Forget every suggestion listed">Ignore all</button>
+      </div>
     </div>
     <div class="row">
       <div><div class="name">Block tracker cache validators</div><div class="desc">Removes If-None-Match and ETag only on passive requests to WardenOne's known tracker hosts, preventing cache-tag respawning without disabling normal browser caching. Opt-in because repeated tracker responses can use more bandwidth.</div></div>
@@ -1394,7 +1435,7 @@
       <label class="tg"><input type="checkbox" data-key="honeytokenMode"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Command paste guard</div><div class="desc">Detects ClickFix and self-XSS instructions such as Win+R, F12, Ctrl+Shift+I, DevTools, Console, PowerShell, and “enable pasting,” including fake “verify you’re human” steps. Suspicious programmatic clipboard writes are blocked, risky copied selections trigger a warning, and instruction-plus-command matches receive a stronger warning. WardenOne does not access Chrome’s own DevTools interface. On by default.</div></div>
+      <div><div class="name">Command paste guard</div><div class="desc">Detects ClickFix and self-XSS instructions such as Win+R, F12, Ctrl+Shift+I, DevTools, Console, PowerShell, and “enable pasting,” including fake “verify you’re human” steps. Suspicious programmatic clipboard writes are blocked, risky copied selections trigger a warning, and instruction-plus-command matches receive a stronger warning. Instruction text is read on the top-level page; embedded frames get the clipboard check only, and text drawn as an image or inside a closed shadow tree is not read at all. WardenOne does not access Chrome’s own DevTools interface. On by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="commandPasteGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1809,12 +1850,13 @@
     <div class="row site-override-row">
       <div>
         <div class="name">Turn off one protection here</div>
-        <div class="desc">Keeps everything else running. For when a single guard misreads one site rather than being wrong everywhere.</div>
+        <div class="desc">Keeps everything else running. For when a single guard misreads one site rather than being wrong everywhere. Only protections that run in the page are listed; one marked <em>page part only</em> also has a network part that keeps working here.</div>
         <div class="site-override-actions">
           <select class="api-field" id="site-off-pick"></select>
           <button class="btn" id="site-off-add">Turn off</button>
         </div>
         <div id="site-off-list" class="site-override-list"></div>
+        <div id="site-off-stale" class="desc" hidden></div>
       </div>
     </div>
   </div>
@@ -1829,6 +1871,8 @@
   <!-- Space above, not just below: Verify & repair sat directly under the note
        explaining the Save button, so it read as part of that sentence. -->
   <div style="padding:14px 16px 6px;">
+    <div class="desc" style="margin-bottom:6px;">Checks the packaged files, the rules and every open tab&rsquo;s page engine. A tab whose engine
+      no longer answers is <strong>reloaded</strong> &mdash; a form you were filling in there is lost. Tabs that answer are not touched.</div>
     <button class="btn" id="verify-repair" style="width:100%;">Verify &amp; repair</button>
     <div id="repair-result" style="font-size:11px;color:var(--ink-faint);line-height:1.5;margin-top:8px;display:none;"></div>
   </div>

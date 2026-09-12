@@ -155,7 +155,7 @@ async function testConfigCache() {
 // 2. The cosmetic cache: same two additions, plus the per-host memo it feeds.
 // ---------------------------------------------------------------------------
 function loadCosmeticCache() {
-  const state = { reads: 0, pending: [], allow: ['old.example'] };
+  const state = { reads: 0, pending: [], cfg: { adShield: true, marker: 'old' } };
   const sandbox = {
     Promise, Object, Array, JSON, console, Map,
     normalizeAllowlistHosts: (l) => Array.from(l || []),
@@ -170,8 +170,7 @@ function loadCosmeticCache() {
         state.pending.push(gate);
         return gate.promise.then(() => ({
           wardenone_adshield_cosmetic: { generic: ['.ad'], specific: {}, exceptions: {}, genericHideExclusions: [] },
-          wardenone_config: {},
-          wardenone_adshield_allowlist: state.allow.slice(),
+          wardenone_config: Object.assign({}, state.cfg),
         }));
       },
     },
@@ -202,14 +201,14 @@ async function testCosmeticCache() {
     const s = loadCosmeticCache();
     const call = s.api.getCosmeticMem();
     await settle();
-    s.allow = ['new.example'];
-    s.api.invalidateCosmeticCache();          // what an allowlist edit does
+    s.cfg = { adShield: true, marker: 'new' };
+    s.api.invalidateCosmeticCache();          // what a config write does
     await s.releaseAll();
     await call;
     check('a load that started before an invalidation does not publish itself',
       s.api.mem() === null, 'the invalidation was undone');
     const fresh = await (async () => { const p = s.api.getCosmeticMem(); await settle(); await s.releaseAll(); return p; })();
-    check('the next request reads the new data', fresh.allow[0] === 'new.example');
+    check('the next request reads the new data', fresh.cfg.marker === 'new');
     check('and it did have to go back to storage', s.reads === 2);
   }
 
@@ -384,8 +383,11 @@ function testCoverage() {
     /Promise\.allSettled\(applied\)[\s\S]*__refreshExtensionStateLastKey = stateKey;/.test(refresh));
   check('a superseded refresh does not commit',
     /if \(generation !== __refreshExtensionStateGeneration\) return;/.test(refresh));
+  // A rejection was never going to arrive -- every applier catches its own Chrome error -- so
+  // a resolved false counts as a failure too, and the failed run records what failed (MV3-01).
   check('a failed refresh leaves the key alone so it is retried',
-    /results\.some\(\(r\) => r\.status === 'rejected'\)\) return;/.test(refresh));
+    /r\.status === 'rejected' \|\| r\.value === false/.test(refresh)
+      && /if \(failed\.length\) \{[\s\S]*noteReconcileDegraded\(failed, stateKey\);[\s\S]*return;/.test(refresh));
   check('the key is not committed anywhere before the work',
     (refresh.match(/__refreshExtensionStateLastKey = stateKey/g) || []).length === 1);
 }

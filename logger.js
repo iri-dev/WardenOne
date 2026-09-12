@@ -69,16 +69,77 @@ function paintExactNote() {
   $('exact-note').textContent = note;
 }
 
-const port = chrome.runtime.connect({ name: 'wardenone-logger' });
+/* The port is a session, not a permanent connection.
+ *
+ * Capture lives in the worker, and an MV3 worker is evicted after about thirty seconds
+ * idle. Holding a port open does not stop that -- since Chrome 114 only messages on the
+ * port reset the timer, and a Logger window watching a quiet browser sends none. So the
+ * worker goes away, the port disconnects, and this page used to write "Capture stopped.
+ * Reload this page to start again." and mean it: every later request went unrecorded
+ * while the page still showed a plausible table. Someone reading it to decide whether a
+ * rule fired would conclude nothing more had happened (MV3-05).
+ *
+ * The page outlives the worker, so the page owns the reconnect. Deliberately NOT a
+ * keepalive ping: pinging to hold a worker up is the thing MV3 is built to stop, and it
+ * would burn a service worker for the life of an open tab.
+ */
+let port = null;
+let reconnectTimer = 0;
+let reconnectAttempts = 0;
+let awaitingVisible = false;
+let pageClosing = false;
+let everConnected = false;
+let captureGaps = 0;
+let gapSince = 0;
 
-port.onMessage.addListener((msg) => {
+const RECONNECT_BASE_MS = 400;
+const RECONNECT_MAX_MS = 15000;
+/* Enough to ride out a browser busy enough to refuse connections, few enough that a
+   genuinely unloaded extension stops asking rather than spinning forever. */
+const RECONNECT_MAX_ATTEMPTS = 12;
+
+function captureStateText() {
+  if (paused) return null;                    /* hold() owns the label while paused */
+  if (!port) {
+    if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+      /* Never having connected and having lost a connection are different problems,
+         and they need different advice. */
+      return everConnected
+        ? 'Capture stopped and could not restart. Reload this page to try again.'
+        : 'Could not start capture. WardenOne may have been reloaded — reload this page.';
+    }
+    return everConnected
+      ? 'Reconnecting to capture… requests during this gap are not recorded.'
+      : 'Starting capture…';
+  }
+  if (captureGaps) {
+    return 'Recording. Capture restarted ' + captureGaps + ' time'
+      + (captureGaps === 1 ? '' : 's') + ' after the background worker restarted'
+      + ' — requests during those gaps were not recorded. Capture stops when you close this tab.';
+  }
+  return 'Recording. Capture stops when you close this tab.';
+}
+
+function paintCaptureState() {
+  const text = captureStateText();
+  if (text !== null) $('capture-state').textContent = text;
+}
+
+function onPortMessage(msg) {
   if (!msg) return;
   if (msg.kind === 'hello') {
     $('cap').textContent = String(msg.max || 1000);
-    $('capture-state').textContent = 'Recording. Capture stops when you close this tab.';
+    /* A reconnect means a cold worker, so its ring is empty and this hello carries
+       nothing. Rows already on the page are kept -- ingest only merges and appends --
+       because throwing away what was captured before the gap would lose exactly the
+       history someone opened this window to read. */
+    if (gapSince) { captureGaps++; gapSince = 0; }
+    everConnected = true;
+    reconnectAttempts = 0;
     exactRules = !!msg.exactRules;
     nearRules = !!msg.nearRules;
     paintExactNote();
+    paintCaptureState();
     ingest(msg.entries || []);
     return;
   }
@@ -89,10 +150,63 @@ port.onMessage.addListener((msg) => {
   }
   if (msg.kind === 'matched-lists') { matchedLists = msg.lists || []; paintExactNote(); return; }
   if (msg.kind === 'cleared') { ENTRIES = []; BY_ID.clear(); held = []; heldDropped = 0; openId = null; scheduleRender(); }
+}
+
+function scheduleReconnect() {
+  if (pageClosing || reconnectTimer || port) return;
+  if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) { paintCaptureState(); return; }
+  /* A hidden tab waits for attention rather than spending its attempts in the
+     background -- and comes back immediately when the reader does. */
+  if (document.visibilityState === 'hidden') { awaitingVisible = true; paintCaptureState(); return; }
+  const step = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, reconnectAttempts));
+  reconnectAttempts++;
+  /* Jitter, so several Logger tabs reopened together do not retry in lockstep. */
+  const delay = (step / 2) + Math.random() * (step / 2);
+  reconnectTimer = setTimeout(() => { reconnectTimer = 0; connectPort(); }, delay);
+  paintCaptureState();
+}
+
+function connectPort() {
+  if (pageClosing || port) return;
+  let next;
+  try {
+    next = chrome.runtime.connect({ name: 'wardenone-logger' });
+  } catch (_) {
+    /* Extension reloaded or disabled under us. */
+    scheduleReconnect();
+    return;
+  }
+  port = next;
+  next.onMessage.addListener(onPortMessage);
+  next.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError;
+    /* A superseded port losing its connection says nothing about the live one. */
+    if (next !== port) return;
+    port = null;
+    if (pageClosing) return;
+    if (!gapSince) gapSince = Date.now();
+    paintCaptureState();
+    scheduleReconnect();
+  });
+  paintCaptureState();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !awaitingVisible) return;
+  awaitingVisible = false;
+  /* Back in front of the reader: try at once rather than serving a stale table. */
+  reconnectAttempts = 0;
+  connectPort();
 });
-port.onDisconnect.addListener(() => {
-  $('capture-state').textContent = 'Capture stopped. Reload this page to start again.';
+
+/* Closing the page must not leave a timer trying to reconnect to a port nobody will
+   read, and must not fight the unload. */
+window.addEventListener('pagehide', () => {
+  pageClosing = true;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = 0; }
 });
+
+connectPort();
 
 /* Entries arrive twice -- once when the request starts, once when it settles --
    so merging by id in place is what stops a request appearing as two rows. */
@@ -312,11 +426,15 @@ $('pause').addEventListener('click', () => {
      being quietly lost -- which is what the paused label said would happen. */
   if (held.length) { ingest(held); held = []; }
   heldDropped = 0;
-  $('capture-state').textContent = 'Recording. Capture stops when you close this tab.';
+  /* Ask for the live text rather than restating it: while paused the capture may have
+     stopped and restarted, and resuming to a flat "Recording." would hide the gap. */
+  paintCaptureState();
 });
 $('clear').addEventListener('click', () => {
   ENTRIES = []; BY_ID.clear(); held = []; heldDropped = 0; openId = null;
-  try { port.postMessage({ kind: 'clear' }); } catch (_) {}
+  /* The worker keeps its own ring. If the port is down the page half still clears,
+     and the reconnect brings back an empty ring anyway. */
+  try { if (port) port.postMessage({ kind: 'clear' }); } catch (_) {}
   render();
 });
 $('export').addEventListener('click', () => {

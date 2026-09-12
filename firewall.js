@@ -124,11 +124,35 @@ function setCell(domain, column, verdict, cell) {
     void chrome.runtime.lastError;
     cell.disabled = false;
     if (!res || !res.ok) {
+      /* The worker answers a refusal with the rules that ARE in effect, so the cell
+         goes back to the truth instead of staying on the click (H18). */
+      if (res && res.rules) RULES = res.rules;
       $('status').textContent = (res && res.error) || 'That could not be saved.';
+      render();
       return;
     }
     RULES = res.rules || {};
     $('status').textContent = 'Saved. Reload ' + SITE + ' for it to take effect.';
+    render();
+  });
+}
+
+/* Session allowances active for this site, by domain -- reported by the worker
+   from the live session rules, so a reload of this page shows what is really
+   in effect rather than what was clicked. */
+let ONCE = new Set();
+function allowOnce(domain, button) {
+  button.disabled = true;
+  chrome.runtime.sendMessage({ kind: 'firewall-allow-once', site: SITE, domain, column: 'all' }, (res) => {
+    void chrome.runtime.lastError;
+    button.disabled = false;
+    if (!res || !res.ok) {
+      $('status').textContent = (res && res.error) || 'That allowance could not be made.';
+      return;
+    }
+    ONCE.add(domain);
+    $('status').textContent = (res.refreshed ? 'Renewed: ' : 'Allowed once: ') + domain + ' loads freely on ' + SITE
+      + ' until the browser closes. Nothing was stored. Reload the site.';
     render();
   });
 }
@@ -164,6 +188,23 @@ function render() {
     else if (row.requests) note.textContent = row.requests + ' request' + (row.requests === 1 ? '' : 's');
     else note.textContent = MANUAL.has(domain) ? 'added by you — not seen this visit' : 'no requests seen this visit';
     name.appendChild(note);
+    /* The temporary allowance (PI-02). Every cell decision is a stored rule; this one
+       is a session rule, gone when the browser closes, so an experiment cannot become
+       configuration. It reads differently from a stored decision on purpose. */
+    if (registrable(domain) !== base) {
+      const onceRow = el('div', 'fw-once-row');
+      if (ONCE.has(domain)) {
+        const tag = el('span', 'fw-once-tag', 'allowed until the browser closes');
+        tag.title = 'A temporary allowance: this domain loads freely on ' + SITE + ' for this browser session only.';
+        onceRow.appendChild(tag);
+      }
+      const onceBtn = el('button', 'fw-once', ONCE.has(domain) ? 'renew' : 'allow once');
+      onceBtn.type = 'button';
+      onceBtn.title = 'Let ' + domain + ' load freely on ' + SITE + ' until the browser closes. Nothing is stored.';
+      onceBtn.addEventListener('click', () => allowOnce(domain, onceBtn));
+      onceRow.appendChild(onceBtn);
+      name.appendChild(onceRow);
+    }
     tr.appendChild(name);
 
     for (const [column, label] of COLUMNS) {
@@ -228,6 +269,7 @@ function reset(all) {
     void chrome.runtime.lastError;
     if (!res || !res.ok) { $('status').textContent = (res && res.error) || 'Nothing was reset.'; return; }
     RULES = {};
+    ONCE = new Set();
     $('status').textContent = all
       ? 'Every firewall rule on every site has been removed.'
       : 'Your rules for ' + SITE + ' have been removed. Reload the site.';
@@ -240,6 +282,7 @@ $('reset-all').addEventListener('click', () => reset(true));
 /* ---- start -------------------------------------------------------------- */
 function load() {
   chrome.runtime.sendMessage({ kind: 'firewall-get', site: SITE }, (res) => {
+    ONCE = new Set(((res && res.once) || []).map((o) => String(o.domain || '')).filter(Boolean));
     void chrome.runtime.lastError;
     if (res && res.ok) {
       SITE = res.site || SITE;

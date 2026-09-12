@@ -311,7 +311,8 @@ async function main() {
      separate action. */
   {
     const afterNote = popup.slice(popup.indexOf('id="note"'));
-    const wrapper = afterNote.match(/<div style="padding:(\d+)px 16px 6px;">\s*<button class="btn" id="verify-repair"/);
+    /* The wrapper now opens with a line saying what Repair may do to a tab (SEC-03), then the button. */
+    const wrapper = afterNote.match(/<div style="padding:(\d+)px 16px 6px;">\s*<div class="desc"[^>]*>[\s\S]{0,400}?<\/div>\s*<button class="btn" id="verify-repair"/);
     assert(wrapper, 'the Verify & repair wrapper is not where its spacing can be checked');
     assert(Number(wrapper[1]) >= 12,
       'Verify & repair has only ' + wrapper[1] + 'px above it, so it runs into the note');

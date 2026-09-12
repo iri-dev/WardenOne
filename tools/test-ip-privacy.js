@@ -209,6 +209,21 @@ function makeSandbox() {
     s.__state.logs.some((l) => l.type === 'webrtc_transport_preserved') &&
     !s.__state.logs.some((l) => l.type === 'webrtc_leak_guard_installed'), s.__state.logs);
 
+  /* FEAT-03: the visible switch says what the default state does, and the WebRTC hardening it
+     used to imply is a visible switch of its own -- a second level of the same guard, not a
+     counted shield, and not something "Turn everything on" flips, because it breaks calls. */
+  const POPUP_HTML = fs.readFileSync(path.join(__dirname, '..', 'popup.html'), 'utf8');
+  const POPUP_JS = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8');
+  const BG = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
+  const README = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+  check('the visible switch no longer promises to hide WebRTC leaks', !/Hide WebRTC IP leaks/.test(POPUP_HTML) && /Native WebRTC is left alone by this switch/.test(POPUP_HTML));
+  check('WebRTC hardening has a visible switch of its own', /data-key="blockSuspiciousWebRTC"/.test(POPUP_HTML) && /Harden WebRTC \(may break calls\)/.test(POPUP_HTML));
+  check('the popup binds it', /'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard'/.test(POPUP_JS));
+  check('"Turn everything on" leaves it alone', /MANUAL_ONLY_TOGGLES = new Set\(\[[^\]]*'blockSuspiciousWebRTC'/.test(POPUP_JS));
+  check('it is a mode of the guard, not a second counted shield', !/'blockSuspiciousWebRTC'/.test(BG.slice(BG.indexOf('const HEALTH_SHIELD_KEYS = ['), BG.indexOf('];', BG.indexOf('const HEALTH_SHIELD_KEYS = [')))));
+  check('the engine still gates the native patch on both switches', /if\(WO\.blockWebRTCLeak&&!trustedMediaHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(MIN));
+  check('the README describes both levels', /\*\*IP lookup blocking\*\* \(on by default\)/.test(README) && /\*\*Harden WebRTC\*\* \(off by default\)/.test(README));
+
   console.log('');
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

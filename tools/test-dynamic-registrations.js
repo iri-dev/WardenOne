@@ -95,16 +95,17 @@ check('dynamic rule budget is tied to minimum_chrome_version',
 
 const repairStart = background.indexOf("if (msg && msg.kind === 'verify-repair')");
 const repairBody = repairStart >= 0 ? background.slice(repairStart, background.indexOf('sendResponse(report);', repairStart)) : '';
-check('verify-repair enumerates frames before injecting',
-  /getRepairFramesForTab\(t\)/.test(repairBody)
-    && /repairMainWorldFilesForUrl\(frameUrl,\s*frameId\)/.test(repairBody),
-  'repair path must be frame-aware');
-check('verify-repair no longer blindly injects into all frames',
-  !/allFrames:\s*true/.test(repairBody),
-  'repair path should use filtered frameIds');
-check('verify-repair keeps consent reject out of excluded frames',
-  /consentRejectExcludedUrl\(frameUrl\)/.test(repairBody),
-  'missing consent frame exclusion');
+// Repair reloads tabs now (SEC-03) instead of injecting per frame, so frame enumeration and
+// the consent-frame exclusion live only in the registrations themselves, which a reload re-runs.
+check('verify-repair injects nothing into live frames',
+  !/executeScript/.test(repairBody) && !/allFrames:\s*true/.test(repairBody),
+  'repair path executes scripts into a live tab again');
+check('verify-repair reloads only what fails the bridge challenge',
+  /\{ kind: 'wo-engine-status' \}/.test(repairBody) && /chrome\.tabs\.reload\(t\.id\)/.test(repairBody),
+  'repair must ask the bridge before reloading');
+check('verify-repair leaves excluded and sleeping tabs alone',
+  /engineExcludedByManifest\(url\)/.test(repairBody) && /t\.discarded/.test(repairBody),
+  'repair must not reload a page the engine does not run on');
 
 check('remote option rules respect never-block domains',
   /function networkRulePatternHost/.test(background)

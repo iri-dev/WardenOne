@@ -46,7 +46,12 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const source = fs.readFileSync('eyeshield.js', 'utf8');
+/* youtubePlayerCSS moved to eyeshield-sites.js with the rest of the per-site themes
+   (COST-03). Both files are read so the slice finds it wherever it lives. */
+const source = [
+  fs.readFileSync('eyeshield.js', 'utf8'),
+  fs.readFileSync('eyeshield-sites.js', 'utf8'),
+].join('\n');
 let failed = 0;
 
 function check(what, ok, why) {

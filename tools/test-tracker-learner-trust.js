@@ -119,7 +119,12 @@ async function forge(rig, site, domain, signal) {
 // naming analytics.victim-bank.com is stored, and would be blocked, as victim-bank.com. Look the
 // entry up the way the learner files it, or this suite asks about a key that never exists and
 // every 'not learned' assertion passes for free.
-const learned = (rig, d) => ((rig.state.learner.domains || {})[rig.norm(d)] || {}).state === 'learned';
+const stateOf = (rig, d) => ((rig.state.learner.domains || {})[rig.norm(d)] || {}).state;
+// Since SEC-04 the thresholds end in a PROPOSAL, never a rule: 'learned' exists only behind the
+// reader's approval (tools/test-tracker-learner-consent.js drives that). What this suite pins is
+// that forged evidence never reaches even the proposal early, and that no state reaches 'learned'.
+const learned = (rig, d) => stateOf(rig, d) === 'learned';
+const proposed = (rig, d) => stateOf(rig, d) === 'proposed';
 
 // Anti-vacuity guard. normalizeTrackerDomain returns '' on any internal error, and
 // isProtectedTrackerDomain reads '' as PROTECTED -- so a missing dependency makes every check in
@@ -175,9 +180,10 @@ const learned = (rig, d) => ((rig.state.learner.domains || {})[rig.norm(d)] || {
     for (const site of ['news.example', 'shop.example', 'forum.example']) {
       await forge(rig, site, 'telemetry.example.org');
     }
-    check('a real tracker seen across two sessions is still learned',
-      learned(rig, 'telemetry.example.org'),
-      'the learner stopped working entirely');
+    check('a real tracker seen across two sessions is proposed to the reader -- and not learned (SEC-04)',
+      proposed(rig, 'telemetry.example.org') && !learned(rig, 'telemetry.example.org'),
+      'state=' + stateOf(rig, 'telemetry.example.org'));
+    check('and the proposal applied no rule', rig.state.applied === 0, 'applied ' + rig.state.applied);
     // applyTrackerLearnerRules is called BY saveTrackerLearner, which this rig stubs, so the
     // observable here is the persist -- that is what carries the new state to the rule builder.
     check('and learning it persists the new state', rig.state.saved > 0);

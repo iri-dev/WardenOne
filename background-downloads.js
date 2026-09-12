@@ -741,8 +741,10 @@ function downloadHashSourceMeta(fetched, kind, extra) {
     verified: !!base.verified,
     caveat: String((extra && extra.caveat) || source.caveat || base.caveat || '').slice(0, 240),
     reason: String((extra && extra.reason) || source.reason || '').slice(0, 180),
-    requestedUrl: String(source.requestedUrl || '').slice(0, 500),
-    finalUrl: String(source.finalUrl || '').slice(0, 500),
+    /* The re-fetch addresses ride inside the review that is persisted, and nothing reads them
+       back as addresses -- the same display form as the review itself (PRIV-05). */
+    requestedUrl: downloadDisplayUrl(source.requestedUrl || ''),
+    finalUrl: downloadDisplayUrl(source.finalUrl || ''),
     redirects: Number(source.redirects || 0),
     contentType: String(source.contentType || '').slice(0, 120),
     contentLength: Number(source.contentLength || source.byteLength || source.bytes || 0),
@@ -1035,6 +1037,12 @@ async function rememberPendingDownload(review) {
     const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
     const store = (x && x[DOWNLOAD_PENDING_KEY] && typeof x[DOWNLOAD_PENDING_KEY] === 'object') ? x[DOWNLOAD_PENDING_KEY] : {};
     store[review.id] = review;
+    /* An expired review is dropped as this one is written, not left for the next sweep. */
+    const cutoff = Date.now() - DOWNLOAD_REVIEW_TTL_MS;
+    for (const id of Object.keys(store)) {
+      const r = store[id];
+      if (id !== review.id && (!r || !r.createdAt || r.createdAt < cutoff)) { delete store[id]; delete PENDING_DOWNLOADS[id]; }
+    }
     const entries = Object.entries(store).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
     while (entries.length > 25) {
       const old = entries.pop();
@@ -1310,13 +1318,29 @@ async function dismissDownloadReviewPanels(id) {
   } catch (_) {}
 }
 
+/* The address a review carries. A download URL from a CDN, a cloud drive or an authenticated
+   site routinely holds a signature, an account or document id, or an expiring bearer token in
+   its query -- and the review used to persist that in full, for up to two hours, in the
+   normal profile's durable storage (PRIV-05). Nothing needed it: decisions act on the Chrome
+   download id, the page shows the host, and the activity log sanitises what it is given. So
+   the review keeps the same form the activity log keeps: scheme, host, and a path with
+   token-shaped segments starred. The exact address lives in Chrome's own download item. */
+function downloadDisplayUrl(raw) {
+  const text = String(raw || '');
+  if (!text) return '';
+  const web = /^blob:https?:/i.test(text) ? text.slice(5) : text;
+  try { if (typeof safeUrlForLog === 'function') return safeUrlForLog(web); } catch (_) {}
+  try { const u = new URL(web); return u.protocol + '//' + u.host; } catch (_) { return ''; }
+}
+try { globalThis.downloadDisplayUrl = downloadDisplayUrl; } catch (_) {}
+
 function buildDownloadReview(item, rep, pauseResult) {
   const name = (item.filename || item.url || '').split(/[\\/]/).pop() || '(unknown file)';
   return {
     id: String(item.id),
     downloadId: item.id,
     file: name.slice(0, 120),
-    url: item.finalUrl || item.url || '',
+    url: downloadDisplayUrl(item.finalUrl || item.url || ''),
     source: rep.source,
     mime: item.mime || '',
     grade: rep.grade,
@@ -1947,10 +1971,10 @@ async function enrichDownloadWithExternalReputation(rep, url, cfg) {
   if (cfg && cfg.downloadVirusTotal === true && String(cfg.downloadVirusTotalKey || '').trim()) {
     // Never send a private-network address or a URL's query string to VirusTotal. The query is
     // where session tokens, signed-download parameters and one-time links live, and the host may be
-    // an intranet name that means nothing outside this network and everything inside it. Safe
-    // Browsing already goes through normalizePublicHttpUrl for exactly this reason; this did not,
-    // so switching the key on quietly shipped every download URL -- including files graded A that
-    // the user never even saw a panel for.
+    // an intranet name that means nothing outside this network and everything inside it. This
+    // client did not strip it, so switching the key on quietly shipped every download URL --
+    // including files graded A that the user never even saw a panel for. Every other provider
+    // strips the query at its own entry now (reputationQueryUrl, PRIV-03); this one does it here.
     const vtUrl = normalizePublicHttpUrl(url);
     if (vtUrl) {
       let vtSafeUrl = vtUrl;

@@ -28,6 +28,33 @@
  * tabs or delete anything (that stays your decision, or the Recovery actions).
  * ========================================================================== */
 var STARTUP_REPORT_KEY = 'wardenone_startup_report';
+/* The report names open tabs by host, so in a private window it is private activity. A
+   split-mode worker shares storage.local with the normal profile, and this key was not in
+   the worker's ephemeral registry, so a private window's flagged tabs -- host, reason and
+   80 characters of title -- were written to the durable normal profile and shown there
+   after the window had closed (PRIV-06). The private worker keeps its report in
+   storage.session now, the way the download reviewer does; the normal one in storage.local
+   as before. Titles are not kept at all: a host and a reason are what the popup needs,
+   and a title is where the search term, the document name or the message subject lives. */
+var STARTUP_REPORT_TTL_MS = 24 * 60 * 60 * 1000;
+function startupReportPrivate() {
+  try { return typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT; } catch (_) { return false; }
+}
+function startupReportGet() {
+  return (startupReportPrivate() ? chrome.storage.session.get(STARTUP_REPORT_KEY) : localGet(STARTUP_REPORT_KEY))
+    .then((s) => {
+      const rep = s && s[STARTUP_REPORT_KEY];
+      /* A report is a moment, not a record: older than a day, it is not shown again. */
+      if (!rep || typeof rep.when !== 'number' || (Date.now() - rep.when) > STARTUP_REPORT_TTL_MS) return null;
+      return rep;
+    });
+}
+function startupReportSet(report) {
+  return startupReportPrivate()
+    ? chrome.storage.session.set({ [STARTUP_REPORT_KEY]: report })
+    : localSet({ [STARTUP_REPORT_KEY]: report });
+}
+try { globalThis.startupReportGet = startupReportGet; globalThis.startupReportSet = startupReportSet; } catch (_) {}
 
 async function startupCheckEnabled() {
   try {
@@ -183,8 +210,7 @@ async function runStartupCheck(reason, opts = {}) {
   // if the worker was torn down and restarted between the two triggers.
   if (!opts.force && (reason || 'startup') === 'startup') {
     try {
-      const prev = await localGet(STARTUP_REPORT_KEY);
-      const rep = prev && prev[STARTUP_REPORT_KEY];
+      const rep = await startupReportGet();
       if (rep && typeof rep.when === 'number' && (Date.now() - rep.when) < 120000) return rep;
     } catch (_) {}
   }
@@ -201,7 +227,7 @@ async function runStartupCheck(reason, opts = {}) {
       const blocked = rd && (BLOCKED_DOMAINS.has(rd) || BLOCKED_DOMAINS.has(host));
       const lookalike = looksLikeLookalikeHost(host);
       if (blocked || lookalike) {
-        findings.tabs.push({ id: t.id, title: (t.title || '').slice(0, 80), host: rd, why: blocked ? 'on a known malware/scam blocklist' : 'a look-alike of a real brand domain' });
+        findings.tabs.push({ id: t.id, host: rd, why: blocked ? 'on a known malware/scam blocklist' : 'a look-alike of a real brand domain' });
       }
     }
   } catch (_) {}
@@ -228,7 +254,7 @@ async function runStartupCheck(reason, opts = {}) {
 
   const total = findings.tabs.length + findings.extensions.length;
   findings.total = total;
-  try { await localSet({ [STARTUP_REPORT_KEY]: findings }); } catch (_) {}
+  try { await startupReportSet(findings); } catch (_) {}
   const uiAllowed = await extensionUiAllowed();
   if (uiAllowed) {
     try { await refreshExtensionAttentionBadge(); } catch (_) {}

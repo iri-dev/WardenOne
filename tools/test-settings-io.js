@@ -49,12 +49,19 @@ function extractBlock(source, startMarker) {
 }
 
 const defaultsSrc = extractBlock(POPUP_JS, 'const DEFAULTS = {');
+// The import schema is DEFAULTS plus the worker-only keys the popup has no control for (PI-04),
+// and per-site overrides go through their own shaper on both sides (PI-03).
+const importOnlySrc = extractBlock(POPUP_JS, 'const IMPORT_ONLY_DEFAULTS = {');
+const overridesSrc = extractBlock(POPUP_JS, 'function sanitizeSiteOverrides');
 const sanitizeSrc = extractBlock(POPUP_JS, 'function sanitizeImportedSettings');
 const exportableSrc = extractBlock(POPUP_JS, 'function exportableSettings');
 
 const sandbox = new Function(
   defaultsSrc + ';\n'
+  + importOnlySrc + ';\n'
+  + 'const IMPORT_SCHEMA = Object.assign({}, IMPORT_ONLY_DEFAULTS, DEFAULTS);\n'
   + 'const SECRET_FIELD_RE = /Key$/;\n'
+  + overridesSrc + ';\n'
   + sanitizeSrc + ';\n'
   + exportableSrc + ';\n'
   + 'return { DEFAULTS, sanitizeImportedSettings, exportableSettings };'

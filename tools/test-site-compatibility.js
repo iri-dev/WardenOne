@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const woAuth = require('./lib/wo-auth');
 // Lifted engine fragments can reference the engine's shared helpers (woOn and the
 // observer/timer factories). A fragment only sees what its sandbox provides, so those are
 // installed as shims before the slice runs -- see tools/lib/engine-ambient.js.
@@ -171,11 +172,12 @@ function makeBrowserSandbox(rawPageUrl) {
   };
   sandbox.document = {
     activeElement: null,
-    addEventListener() {},
     dispatchEvent(event) { if (event && event.type === 'wo-event') state.emitted.push(event.detail); },
     getElementsByTagName() { return []; },
     querySelectorAll() { return []; },
   };
+  /* The key arrives on the document (SEC-01), so its listeners must be real. */
+  const dispatchDoc = woAuth.documentEvents(sandbox.document);
   sandbox.WO = {
     enabled: true,
     strictPopupShield: true,
@@ -224,7 +226,7 @@ function makeBrowserSandbox(rawPageUrl) {
     return event;
   }
 
-  return { sandbox, state, listeners, originals, innerWindow, fire };
+  return { sandbox, state, listeners, originals, innerWindow, fire, dispatchDoc };
 }
 
 function installContentNavigationHarness(pageUrl) {
@@ -271,10 +273,7 @@ function installContentNavigationHarness(pageUrl) {
 function installAntiRedirect(pageUrl) {
   const h = makeBrowserSandbox(pageUrl);
   vm.runInContext(ANTI_REDIRECT, h.sandbox, { filename: 'anti-redirect.js' });
-  h.fire('message', {
-    source: h.innerWindow,
-    data: { source: 'wardenone-handshake', token: 'compat-test-token' },
-  });
+  h.link = woAuth.handshake(h.dispatchDoc, (data) => h.fire('message', { source: h.innerWindow, data }), { token: 'compat-test-token' });
   return h;
 }
 

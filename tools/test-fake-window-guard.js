@@ -62,8 +62,13 @@ function node(options) {
     querySelectorAll() { return this._kids; },
     querySelector(selector) {
       const want = String(selector);
-      if (/password/.test(want)) return this._password ? { tagName: 'INPUT' } : null;
-      if (/iframe/.test(want)) return this._iframe ? { tagName: 'IFRAME' } : null;
+      /* Every alternative is tested, not just the first keyword that appears in the
+         string. The scan's structural prefilter asks for a password field OR an
+         embedded frame in one compound selector, and returning on the first match
+         attempt made an iframe-only window answer null -- which a real browser
+         never does. */
+      if (/password/.test(want) && this._password) return { tagName: 'INPUT' };
+      if (/iframe/.test(want) && this._iframe) return { tagName: 'IFRAME' };
       return null;
     },
   };
@@ -293,7 +298,8 @@ function check(name, condition, extra) {
     !/innerText|textContent\.slice|pageText/.test(GUARD.slice(0, GUARD.indexOf('fwWarn='))),
     'logging what the page rendered would put page content into history');
   check('the scan is bounded so a big page cannot be walked forever',
-    /looked<500/.test(GUARD) && /fwRuns>40/.test(GUARD));
+    /shortlist\.length>=500/.test(GUARD) && /fwRuns>40/.test(GUARD),
+    'the candidate bound moved into the prefilter when the scan stopped measuring every container');
   check('the observer is disconnected rather than left running',
     /observer\.disconnect\(\)/.test(GUARD));
 }

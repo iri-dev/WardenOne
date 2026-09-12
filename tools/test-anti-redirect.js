@@ -14,6 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const woAuth = require('./lib/wo-auth');
 /* This suite lifts a guard's source and runs it in a hand-built sandbox. The guards now use
  * AbortController to release their listeners on teardown, which a bare vm context does not have. */
 const { installPlatformGlobals } = require('./lib/engine-ambient.js');
@@ -139,7 +140,6 @@ function build(opts) {
   sandbox.location = loc;
   sandbox.document = {
     activeElement: null,
-    addEventListener() {},
     dispatchEvent(ev) { if (ev && ev.type === 'wo-event') state.emits.push(ev.detail); },
     getElementsByTagName(tag) {
       tag = String(tag || '').toLowerCase();
@@ -159,6 +159,8 @@ function build(opts) {
     },
   };
 
+  /* The key arrives on the document (SEC-01), so its listeners must be real. */
+  const dispatchDoc = woAuth.documentEvents(sandbox.document);
   installPlatformGlobals(sandbox);
   vm.createContext(sandbox);
   vm.runInContext(DOMAIN_UTILS, sandbox);
@@ -203,24 +205,20 @@ function build(opts) {
     submit(form) { sandbox.HTMLFormElement.prototype.submit.call(form); },
     lastEmit() { return state.emits[state.emits.length - 1] || null; },
     handshake(config) {
-      api.fire('message', { source: innerWindow, data: { source: 'wardenone-handshake', token: 'tok' } });
+      if (!api.link) api.link = woAuth.handshake(dispatchDoc, (data) => api.fire('message', { source: innerWindow, data }));
       if (config !== false) {
-        api.fire('message', {
-          source: innerWindow,
-          data: {
-            source: 'wardenone',
-            kind: 'config',
-            token: 'tok',
-            overrides: Object.assign({
-              enabled: true,
-              blockGesturelessNav: true,
-              blockForcedPopups: true,
-              strictPopupShield: true,
-              gestureWindowMs: 2400,
-            }, config || opts.config || {}),
-          },
-        });
+        api.link.sendConfig(Object.assign({
+          enabled: true,
+          blockGesturelessNav: true,
+          blockForcedPopups: true,
+          strictPopupShield: true,
+          gestureWindowMs: 2400,
+        }, config || opts.config || {}));
       }
+    },
+    /* A page's attempt: the same message without a valid signature. */
+    forgeConfig(overrides) {
+      api.fire('message', { source: innerWindow, data: { source: 'wardenone', kind: 'config', token: api.link ? api.link.token : 'tok', overrides, seq: 999, mac: 'f'.repeat(64) } });
     },
   };
   api.handshake();

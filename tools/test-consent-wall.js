@@ -592,8 +592,10 @@ check('the popup has a toggle for it', /data-key="removeConsentWalls"/.test(POPU
 check('registered only while on', /CONSENT_WALL_SCRIPT_ID/.test(BACKGROUND)
   && /reconcileConsentWallInjection/.test(BACKGROUND));
 check('reuses the sign-in and payment exclusions', /excludeMatches: CONSENT_REJECT_EXCLUDE_MATCHES,\n\s+js: \['consent-wall\.js'\]/.test(BACKGROUND));
-check('Repair reinstalls it and can evict a stale copy',
-  /consent-wall\.js', world: 'ISOLATED', flag: '__wardenOneConsentWallReadyVersion'/.test(BACKGROUND));
+// Repair reloads tabs now (SEC-03) rather than re-executing files into them, so the wall
+// comes back the way it arrived: through its registration, on the reloaded page.
+check('Repair reaches it by reloading the tab, not by re-executing the file',
+  !/consent-wall\.js', world: 'ISOLATED'/.test(BACKGROUND) && /chrome\.tabs\.reload\(t\.id\)/.test(BACKGROUND));
 check('packaged as a core file', /'consent-wall\.js'/.test(BACKGROUND.split('CORE_FILES')[1] || ''));
 
 // Nothing is clicked, and no consent is stored. That is the whole claim the copy makes.

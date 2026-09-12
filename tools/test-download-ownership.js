@@ -81,6 +81,8 @@ function loadStores(options = {}) {
     DOWNLOAD_PENDING_KEY: 'wardenone_pending_downloads',
     DOWNLOAD_HANDLED_KEY: 'wardenone_download_handled',
     DOWNLOAD_HANDLED_TTL_MS: 60 * 60 * 1000,
+    /* rememberPendingDownload drops expired reviews as it writes (PRIV-05) */
+    DOWNLOAD_REVIEW_TTL_MS: 2 * 60 * 60 * 1000,
     scheduleDownloadGuardScan: (id, item, reason) => { state.scans.push({ id, reason }); },
     downloadSearch: async () => state.items.slice(),
     localGet: async (key) => {

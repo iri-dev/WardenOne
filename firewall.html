@@ -35,6 +35,11 @@
   .fw-btn.is-allow { background:var(--wo-success-bg,#dcefe4); color:var(--guide-success); border-color:var(--guide-success); }
   .fw-btn.is-block { background:var(--wo-danger-bg,#f3dbe5); color:var(--guide-danger); border-color:var(--guide-danger); }
   .fw-btn.is-strip { background:var(--wo-warning-bg,#f4e4ce); color:var(--guide-warning); border-color:var(--guide-warning); }
+  .fw-once-row { display:flex; gap:6px; align-items:center; margin-top:4px; font-family:var(--body); }
+  .fw-once { border:1px dashed var(--guide-line); border-radius:6px; padding:2px 7px; background:transparent;
+    color:var(--guide-faint); font:700 10px var(--body); cursor:pointer; }
+  .fw-once:hover { border-color:var(--guide-violet); color:var(--guide-violet); }
+  .fw-once-tag { font-size:10px; color:var(--guide-success); font-weight:700; }
   .fw-scroll { max-height:58vh; overflow:auto; border:1px solid var(--guide-line); border-radius:12px;
     background:var(--guide-paper); }
   .fw-empty { padding:26px 8px; text-align:center; color:var(--guide-faint); font-size:13px; }
@@ -98,7 +103,9 @@
         <p>A row exists because a request actually happened. Click a cell to cycle it:
           <strong>&mdash;</strong> leaves it to WardenOne, <strong>allow</strong> forces it through every
           blocklist, <strong>block</strong> stops it here. <strong>Cookie</strong> is different: it lets the
-          request happen but strips the cookie, so the domain still works and still cannot recognise you.</p>
+          request happen but strips the cookie, so the domain still works and still cannot recognise you.
+          <strong>Allow once</strong>, under a domain, lets it load freely until the browser closes and stores
+          nothing &mdash; the way to test whether a domain is what broke a page without making a rule.</p>
       </div>
 
       <div class="fw-bar">
@@ -138,7 +145,9 @@
       <p class="fw-note" style="margin-top:14px;">A cell showing <strong>&middot; loaded</strong> or
         <strong>&middot; blocked</strong> is telling you what happened, not what you chose &mdash; and where
         WardenOne blocked something, the row says which list decided. <strong>All</strong> covers everything,
-        including stylesheets and the request types with no column of their own.</p>
+        including stylesheets and the request types with no column of their own. A specific column beats
+        <strong>All</strong>: allow everything and block scripts, and the scripts are blocked. <strong>Cookie</strong>
+        strip beats an allow in the same row. A temporary allowance beats every stored decision while it lasts.</p>
 
       <div class="fw-danger">
         <h3>This is the tool that can break a site</h3>
