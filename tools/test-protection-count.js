@@ -100,6 +100,20 @@ check('the README explains the split as ' + SWITCHABLE + ' of ' + TOTAL,
 check('the README no longer claims every feature is toggleable',
   !/Every feature is individually toggleable/.test(README));
 
+/* The public site is the other place a number is printed, and it said "80+" for a year after
+   the README had moved on (FEAT-08, CWS-04). It carries the same total, from the same list,
+   and none of the absolutes the README already gave up. */
+const SITE = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
+check('the public site says ' + TOTAL + ' protections', SITE.includes(TOTAL + ' protections</li>'),
+  (SITE.match(/\d+\+? protections<\/li>/) || ['(not found)'])[0]);
+check('the public site no longer says everything runs locally',
+  !/Everything runs locally/.test(SITE), 'opt-in checks contact named services; the privacy policy lists them');
+check('the public site no longer says every feature can be turned off individually',
+  !/Every feature can be turned off individually/.test(SITE), 'three watch-only recorders have no switch');
+check('the public site does not promise WebRTC leak protection from the visible switch',
+  !/WebRTC IP-leak protection/.test(SITE) && /hardened WebRTC candidates are a separate opt-in/.test(SITE),
+  'the visible switch blocks IP-lookup services; candidate hardening is the opt-in (FEAT-03)');
+
 /* The popup prints the same denominator from the same list, so there is nothing to assert
    about its number -- only that it still reads it from here rather than a copy. */
 check('the popup denominator still comes from this list',

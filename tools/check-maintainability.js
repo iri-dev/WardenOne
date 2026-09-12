@@ -157,6 +157,7 @@ function checkContentBuild() {
   'onboarding.js',
   'download-review.js',
   'eyeshield.js',
+  'eyeshield-sites.js',
   'twitch-adblock.js',
   'twitch-rewind.js',
   'twitch-vod-rewind.js',
@@ -401,6 +402,13 @@ checkCommand('message rate limit tests', ['tools/test-message-rate-limits.js']);
 checkCommand('secret hygiene tests', ['tools/test-secret-hygiene.js']);
 checkCommand('history privacy tests', ['tools/test-history-privacy.js']);
 checkCommand('Header Shield tests', ['tools/test-header-shield.js']);
+checkCommand('Fraud-vendor script tests', ['tools/test-fraud-vendor-scripts.js']);
+checkCommand('Fake Window scan-cost tests', ['tools/test-fake-window-scan-cost.js']);
+checkCommand('Eye Shield site-split tests', ['tools/test-eyeshield-site-split.js']);
+checkCommand('Engine allowlist honesty tests', ['tools/test-engine-allowlist-honesty.js']);
+checkCommand('Logger reconnect tests', ['tools/test-logger-reconnect.js']);
+checkCommand('Script Drift storage tests', ['tools/test-script-drift-storage.js']);
+checkCommand('Permission justification tests', ['tools/test-permission-justification.js']);
 checkCommand('XSS Behavior Guard tests', ['tools/test-xss-behavior-guard.js']);
 checkCommand('XSS event-boundary tests', ['tools/test-xss-event-boundary.js']);
 checkCommand('ClickFix guard tests', ['tools/test-clickfix-guard.js']);
@@ -482,7 +490,19 @@ checkCommand('shared-host site identity tests', ['tools/test-site-identity.js'])
 checkCommand('incognito isolation tests', ['tools/test-incognito-isolation.js']);
 checkCommand('download false-positive tests', ['tools/test-download-false-positives.js']);
 checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
+checkCommand('privacy cleaner wiring tests', ['tools/test-privacy-cleaner-wiring.js']);
+checkCommand('warning page secret tests', ['tools/test-warning-page-secrets.js']);
+checkCommand('reconcile honesty tests', ['tools/test-reconcile-honesty.js']);
+checkCommand('frame ClickFix tests', ['tools/test-frame-clickfix.js']);
 checkCommand('Store asset tests', ['tools/test-store-assets.js']);
+checkCommand('frame-aware init tests', ['tools/test-frame-aware-init.js']);
+checkCommand('user-rule honesty tests', ['tools/test-user-rules-honesty.js']);
+checkCommand('URL minimisation tests', ['tools/test-url-minimisation.js']);
+checkCommand('MAIN-world authority tests', ['tools/test-main-world-authority.js']);
+checkCommand('tracker learner consent tests', ['tools/test-tracker-learner-consent.js']);
+checkCommand('settings round-trip tests', ['tools/test-settings-roundtrip.js']);
+checkCommand('master switch tests', ['tools/test-master-switch.js']);
+checkCommand('site override scope tests', ['tools/test-site-override-scope.js']);
 checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
 checkCommand('device access guard tests', ['tools/test-device-access-guard.js']);
 checkCommand('notification guard tests', ['tools/test-notification-guard.js']);

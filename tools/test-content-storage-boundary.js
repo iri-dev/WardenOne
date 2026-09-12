@@ -90,7 +90,9 @@ check('the content configuration channel is tab-only, rate-limited, and handled'
   assert(BG.includes("'content-config-get',"), 'message is absent from the tab allowlist');
   assert(/'content-config-get': \{ max: \d+, windowMs: 60000 \}/.test(BG), 'message has no tab rate limit');
   assert(/msg\.kind === 'content-config-get' && messageSenderIsTab\(sender\)/.test(BG), 'handler does not require a tab sender');
-  assert(/respond\(buildContentConfigSnapshot\(\), sendResponse\)/.test(BG), 'handler does not use the sanitizer snapshot');
+  /* the snapshot takes the asking frame's host so the reader's hidden-element rules ride along
+     with the config instead of costing every frame a second channel (PERF-02) */
+  assert(/respond\(buildContentConfigSnapshot\(frameHost\), sendResponse\)/.test(BG), 'handler does not use the sanitizer snapshot');
 });
 
 check('all manifest isolated-world scripts remain free of direct storage access', () => {

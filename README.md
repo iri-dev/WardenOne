@@ -13,7 +13,7 @@ network beneath them.**
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
 [![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip)
-![Protections](https://img.shields.io/badge/protections-106-8e44ad.svg)
+![Protections](https://img.shields.io/badge/protections-107-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Open source](https://img.shields.io/badge/source-open-2ea44f.svg)](LICENSE)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
@@ -31,7 +31,7 @@ network beneath them.**
 > [!WARNING]
 > **Official builds only.** WardenOne is a browser extension, never an `.exe`, installer or setup program. Download it only from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne). If you received another copy, read the [impersonation incident notice](https://iri-dev.github.io/WardenOne/stolen).
 
-> ## One master switch. 106 protections.
+> ## One master switch. 107 protections.
 >
 > **103 individually controllable · 3 watch-only**
 >
@@ -222,6 +222,14 @@ selections and raises the severity when the instruction and command evidence occ
 It does not and cannot read Chrome's own DevTools interface. The protection runs on the page and
 the clipboard actions the page initiates; it intervenes before the pasted command leaves that
 context.
+
+**Where it looks, exactly.** The instruction reading — the fake CAPTCHA wording, the "press
+Win+R" steps — runs on the top-level page only. Embedded frames get the clipboard half: a frame
+that prepares a command-shaped string for copying has the write refused and the same warning
+shown over the page, without its text being read. Two surfaces are not inspected at all, and no
+warning means nothing about them: instructions rendered as an image or on a canvas, and
+anything inside a closed shadow tree, which no extension can read. A scam that puts its text in
+a screenshot is stopped only if it also tries to copy the command for you.
 
 <p align="center">
   <a href="docs/screenshots/14-clickfix-warning.webp">
@@ -550,10 +558,16 @@ devices, open media streams, reuse old permissions and leave background componen
 
 ### WebRTC & IP-logger Protection
 
-WebRTC can reveal local network addresses without a normal page request. WardenOne limits that
-surface and blocks known IP-grabber beacons and logger hosts such as Grabify-style links. The
-Privacy Self-Test checks host candidates without contacting a STUN server, because the local leak
-is the useful measurement and needs no external service to demonstrate it.
+WebRTC can reveal local network addresses without a normal page request. WardenOne blocks known
+IP-grabber beacons and logger hosts such as Grabify-style links, and the guard has two levels,
+each a visible switch. **IP lookup blocking** (on by default) refuses requests to the common
+third-party "what is my IP" services, so a page cannot ask an outside service for your address;
+it leaves native WebRTC alone. **Harden WebRTC** (off by default) strips the ICE servers from
+peer connections and refuses ones created without a recent click, which is what stops WebRTC
+itself from handing out your local and public addresses — and is also what breaks video calls,
+screen sharing and some streaming, which is why it is a separate choice. The Privacy Self-Test
+checks host candidates without contacting a STUN server, because the local leak is the useful
+measurement and needs no external service to demonstrate it.
 
 ### HTTPS & Certificate Protection
 
@@ -739,8 +753,11 @@ does not send browsing events to a server to ask whether each request is accepta
 
 Analytics can be proxied through the same domain as the site, making a third-party hostname list
 blind to it. WardenOne detects those first-party routes and includes a local tracker learner for
-repeated on-device evidence. Learned decisions remain on your machine and do not become a crowdsourced
-record of your browsing.
+repeated on-device evidence. The learner only ever **proposes**: when a third-party domain has
+behaved like a tracker on three of your sites across two browser sessions, it appears in the popup
+under *Trackers noticed across your sites*, and nothing is blocked until you press **Block**. Every
+input the learner sees comes from a page, so a page can make it suggest a block, but never make one.
+Decisions remain on your machine and do not become a crowdsourced record of your browsing.
 
 ## Cookie and storage controls
 
@@ -994,7 +1011,7 @@ replaces the reassuring state instead of being hidden beneath it.
     <img src="docs/screenshots/02-protection-health.webp" alt="Protection Health expanded in the popup, showing 73 of 103 controllable shields active, recent blocks and list freshness" width="520">
   </a>
 </p>
-<p align="center"><em>The popup reports controllable shields, recent blocks and list freshness without confusing 103 controls with 106 total protections.</em></p>
+<p align="center"><em>The popup reports controllable shields, recent blocks and list freshness without confusing 104 controls with 107 total protections.</em></p>
 
 ## Privacy Self-Test
 
@@ -1040,12 +1057,16 @@ the address bar is restored even if a probe fails.
 
 <sub><strong>RECOVERY TOOL · LIVE PAGE COMPONENTS</strong></sub>
 
-**What it does:** finds which WardenOne components are missing from a tab and puts them back.
+**What it does:** finds the tabs where WardenOne's page engine is not answering and restarts it.
 
 When a switch says on but the Self-Test receives the native value, Verify & Repair looks from the
-inside: it checks the WardenOne components expected on that tab and re-injects what is missing. The
-Self-Test can then be run again from the outside. The two tools answer different questions, which is
-why one cannot simply print the other's result.
+inside: it asks each open tab's isolated half whether the page engine still answers a signed
+challenge, and reloads the tabs where it does not. A reload rather than a re-injection, on purpose:
+the engine trusts only a key it is handed once, before the page can run, and there is no private
+way to hand a key into a page that has already run. Tabs that answer are left exactly as they are,
+and so are sleeping tabs, paused sites and the pages the engine is excluded from. The Self-Test can
+then be run again from the outside. The two tools answer different questions, which is why one
+cannot simply print the other's result.
 
 ```text
 Protection enabled
@@ -1061,14 +1082,16 @@ Test again
 
 ## Per-site control
 
-**103 of the 106 protections have their own toggle**. The other three are watch-only systems: they
+**104 of the 107 protections have their own toggle**. The other three are watch-only systems: they
 record an event but never block or alter a page, so there is no individual blocking decision to
 switch.
 
 When one protection misreads one site, the **This site** panel offers a ladder rather than a cliff:
 
 1. Pause WardenOne here for 15 minutes, one hour or eight hours.
-2. Turn off one protection on this site only.
+2. Turn off one protection on this site only. The list offers the protections that run in the page;
+   one marked *page part only* also has a network part (blocking rules, headers, download checks)
+   that keeps working on that site, and protections with no page part are not offered at all.
 3. Permanently allowlist the site only when the broader decision is intended.
 
 A site override can turn a protection off, never silently enable something globally. Temporary
@@ -1206,29 +1229,6 @@ No third-party proxy handles the video. If Twitch offers no usable clean session
 open rather than freezing or looping behind a cover. That boundary is deliberate: keeping the
 stream usable matters more than claiming a block that left nothing watchable.
 
-## Search cleanup
-
-Sponsored Google and Brave results and their ad-click wrappers can be removed. Google and Brave AI
-answer panels are optional. Google's native plain-Web mode requests ten blue links at the source,
-so there is no enriched panel to flash in before a selector hides it.
-
-Answer-scraper results are dimmed and labelled with **Show anyway**, never silently deleted. A
-blocking failure is visible; a search filter that hid the one useful result would fail invisibly,
-which is the more dangerous mistake.
-
-## Element Zapper
-
-Point at a sticky bar, leftover consent box, sidebar or floating video and remove it. The result is
-saved locally for that site through the same cosmetic channel as personal rules. `Ctrl+Z` can undo
-several removals even after the tool closes, and large selections require confirmation whether you
-use the mouse or keyboard.
-
-Allowlisting a site's adverts does not silently restore an element you explicitly chose to remove.
-Those are two different decisions and remain so in storage.
-
-<p align="center">
-  <a href="docs/screenshots/13-element-zapper.webp">
-    <img src="docs/screenshots/13-element-zapper.webp" alt="The Element Zapper outlines whatever the pointer is over and explains that each removal is remembered for this site" width="900">
 ## Spotify AdShield
 
 Spotify's web player is driven by a playback state machine from Spotify's servers, and when an ad
@@ -1246,6 +1246,26 @@ over a different path and are never classified by host or duration, and podcast 
 their original files. Any ad audio that ever slips through plays muted. Turning AdShield off, or
 allowlisting open.spotify.com, switches this off.
 
+## Search cleanup
+
+Sponsored Google and Brave results and their ad-click wrappers can be removed. Google and Brave AI
+answer panels are optional. Google's native plain-Web mode requests ten blue links at the source,
+so there is no enriched panel to flash in before a selector hides it.
+
+Answer-scraper results are dimmed and labelled with **Show anyway**, never silently deleted. A
+blocking failure is visible; a search filter that hid the one useful result would fail invisibly,
+which is the more dangerous mistake.
+
+## Element Zapper
+
+Point at a sticky bar, leftover consent box, sidebar or floating video and remove it. The result is
+saved locally for that site through the same cosmetic channel as personal rules. `Ctrl+Z` can undo
+several removals even after the tool closes, and large selections require confirmation whether you
+use the mouse or keyboard.
+
+<p align="center">
+  <a href="docs/screenshots/13-element-zapper.webp">
+    <img src="docs/screenshots/13-element-zapper.webp" alt="The Element Zapper outlines whatever the pointer is over and explains that each removal is remembered for this site" width="900">
   </a>
 </p>
 <p align="center"><em>Point, click, gone — and remembered for that site, with <code>Ctrl+Z</code> still available after the tool closes.</em></p>
@@ -1414,8 +1434,8 @@ The promise repeated throughout this page is the same here:
 - **No account and no telemetry.** There is no developer-operated browsing backend or analytics stream.
 - **Open source.** The extension code, interfaces, tests and bundled rule data are inspectable in this repository.
 - **Local protection.** Activity, settings, learnt tracker evidence, file analysis and extension-ID matching stay on your device.
-- **Secrets remain secrets.** Login tokens and passwords are never stored or transmitted by WardenOne.
-- **External checks are explicit.** A domain, URL, extension ID, hash or k-anonymous prefix leaves only for the specific optional question you enabled or asked.
+- **Secrets remain secrets.** No login token or password is ever stored, and none is ever sent to anyone but the site it came from. The one place a token moves at all is Twitch ad blocking, which re-sends the Twitch page's own `Authorization` header back to `gql.twitch.tv` so the playback request is accepted; it is read from the page, never written down, and never leaves Twitch.
+- **External checks are explicit.** A domain, URL, extension ID, hash or k-anonymous prefix leaves only for the specific optional question you enabled or asked. The one exception is the network filtering self-test, which by design loads a favicon from named adult and malware-test domains to see what your network blocks — it explains that on the page, and nothing starts it but your click.
 - **Files are not uploaded.** File Shield's VirusTotal button sends only SHA-256, only when pressed and only with your own key.
 - **Updates are not telemetry.** Rule updates download public list files and disclose no browsing history; failures retain the previous local copy.
 

@@ -33,7 +33,12 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
-const SOURCE = fs.readFileSync(path.join(ROOT, 'eyeshield.js'), 'utf8');
+/* The per-site themes moved to eyeshield-sites.js when they were taken out of every
+   frame (COST-03); this suite slices builders out of whichever file now holds them. */
+const SOURCE = [
+  fs.readFileSync(path.join(ROOT, 'eyeshield.js'), 'utf8'),
+  fs.readFileSync(path.join(ROOT, 'eyeshield-sites.js'), 'utf8'),
+].join('\n');
 
 let pass = 0;
 const failures = [];

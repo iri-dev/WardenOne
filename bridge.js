@@ -142,6 +142,160 @@
       return Array.from(a, (n) => n.toString(36)).join('');
     } catch (_) { return String(Math.random()) + Date.now().toString(36); }
   })();
+
+  // ---- The key beside the nonce (SEC-01, SEC-02, SEC-03) ----
+  //
+  // The nonce above is public by construction: it travels by postMessage, and a page script
+  // that registers a listener early enough reads it. Every consumer in the MAIN world then
+  // treated "carries the nonce" as "came from the bridge", so a page that had the nonce could
+  // post {kind:"config", overrides:{enabled:false}} and switch the engine off, answer a
+  // reputation request with a clean verdict before the worker did, or call the engine's own
+  // published dispose and put the ready markers back.
+  //
+  // KEY is different in one way that matters: it is handed over exactly once, as a SYNCHRONOUS
+  // DOM event, at document_start, before the parser has built anything and before any page
+  // script exists to listen. After that moment it is never sent again -- not by replay, not on
+  // request -- so the page has no way to obtain it. Everything the engine must trust from here
+  // is signed with it (an HMAC over a sequence number and the payload), and the engine proves
+  // it is alive by answering a challenge with the same key. The page still sees every message
+  // and can dispatch every event; it can no longer make any of them count.
+  //
+  // What this cannot do is deliver a key to a MAIN script injected after the page has run,
+  // because by then no channel into that world is private. The worker no longer injects into a
+  // live document for that reason: when the engine is missing or has been switched off, the
+  // tab is reloaded and the document_start hand-off happens again.
+  /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
+     asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
+     reference it needs is captured here, before the page runs, so a page that rewrites
+     TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
+     library: fixed 32-byte key (hex), text in, hex out. */
+  const __woAuth=(function(){
+    const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+    const U8=Uint8Array,U32=Uint32Array;
+    /* UTF-8 by hand rather than TextEncoder: a lifted fragment in a bare sandbox has no
+       TextEncoder, and the page cannot be handed a hook into this either way. */
+    function encode(text){
+      const s=String(text),out=new U8(3*s.length+3);
+      let n=0;
+      for(let i=0;i<s.length;i++){
+        let c=s.charCodeAt(i);
+        if(c>=0xd800&&c<0xdc00&&i+1<s.length){const d=s.charCodeAt(i+1);if(d>=0xdc00&&d<0xe000){c=0x10000+((c-0xd800)<<10)+(d-0xdc00),i++}}
+        if(c<0x80)out[n++]=c;
+        else if(c<0x800)out[n++]=0xc0|(c>>6),out[n++]=0x80|(c&63);
+        else if(c<0x10000)out[n++]=0xe0|(c>>12),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63);
+        else out[n++]=0xf0|(c>>18),out[n++]=0x80|((c>>12)&63),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63)
+      }
+      return out.subarray(0,n)
+    }
+    const rotr=(x,n)=>(x>>>n)|(x<<(32-n));
+    function sha256(msg){
+      const len=msg.length,padded=new U8(((len+9+63)>>6)<<6);
+      padded.set(msg),padded[len]=0x80;
+      const bits=len*8;
+      padded[padded.length-4]=(bits>>>24)&255,padded[padded.length-3]=(bits>>>16)&255,padded[padded.length-2]=(bits>>>8)&255,padded[padded.length-1]=bits&255;
+      const h=new U32([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]),w=new U32(64);
+      for(let off=0;off<padded.length;off+=64){
+        for(let i=0;i<16;i++)w[i]=(padded[off+4*i]<<24)|(padded[off+4*i+1]<<16)|(padded[off+4*i+2]<<8)|padded[off+4*i+3];
+        for(let i=16;i<64;i++){
+          const s0=rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3),s1=rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
+          w[i]=(w[i-16]+s0+w[i-7]+s1)|0
+        }
+        let a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],k=h[7];
+        for(let i=0;i<64;i++){
+          const S1=rotr(e,6)^rotr(e,11)^rotr(e,25),ch=(e&f)^(~e&g),t1=(k+S1+ch+K[i]+w[i])|0,S0=rotr(a,2)^rotr(a,13)^rotr(a,22),mj=(a&b)^(a&c)^(b&c),t2=(S0+mj)|0;
+          k=g,g=f,f=e,e=(d+t1)|0,d=c,c=b,b=a,a=(t1+t2)|0
+        }
+        h[0]=(h[0]+a)|0,h[1]=(h[1]+b)|0,h[2]=(h[2]+c)|0,h[3]=(h[3]+d)|0,h[4]=(h[4]+e)|0,h[5]=(h[5]+f)|0,h[6]=(h[6]+g)|0,h[7]=(h[7]+k)|0
+      }
+      const out=new U8(32);
+      for(let i=0;i<8;i++)out[4*i]=h[i]>>>24,out[4*i+1]=(h[i]>>>16)&255,out[4*i+2]=(h[i]>>>8)&255,out[4*i+3]=h[i]&255;
+      return out
+    }
+    function hexBytes(hex){
+      const s=String(hex||""),out=new U8(s.length>>1);
+      for(let i=0;i<out.length;i++)out[i]=parseInt(s.substr(2*i,2),16)||0;
+      return out
+    }
+    function hex(bytes){
+      let s="";
+      for(let i=0;i<bytes.length;i++)s+=(bytes[i]<256?(bytes[i]<16?"0":""):"")+bytes[i].toString(16);
+      return s
+    }
+    function hmac(keyHex,text){
+      const key=hexBytes(keyHex),block=new U8(64);
+      block.set(key.length>64?sha256(key):key);
+      const ipad=new U8(64),opad=new U8(64);
+      for(let i=0;i<64;i++)ipad[i]=block[i]^0x36,opad[i]=block[i]^0x5c;
+      const data=encode(String(text)),inner=new U8(64+data.length);
+      inner.set(ipad),inner.set(data,64);
+      const ih=sha256(inner),outer=new U8(96);
+      outer.set(opad),outer.set(ih,64);
+      return hex(sha256(outer))
+    }
+    /* Constant-time-enough equality for two short hex strings; a mismatch is not a secret. */
+    function same(a,b){
+      a=String(a||""),b=String(b||"");
+      if(a.length!==b.length||!a.length)return!1;
+      let diff=0;
+      for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);
+      return 0===diff
+    }
+    return{hmac:hmac,same:same}
+  })();
+
+  const KEY = (function () {
+    try {
+      const b = new Uint8Array(32); crypto.getRandomValues(b);
+      let out = '';
+      for (let i = 0; i < b.length; i++) out += (b[i] < 16 ? '0' : '') + b[i].toString(16);
+      return out;
+    } catch (_) { return ''; }
+  })();
+  // "The page could have run": a script of the page's own exists only once the parser has
+  // produced a <script>, a frame or plugin element, an element carrying an on* handler
+  // attribute, or the <body> -- or once the document has finished loading. At document_start
+  // none of that has been built. What may already sit under <html> is a <style> or two that
+  // this extension's own MAIN-world modules (Spotify, Twitch, YouTube) append before this
+  // bridge runs; those are inert. The first seal counted any element at all as "the page has
+  // run", so on exactly those sites the key never went out and every signed message that
+  // followed was refused.
+  const BRIDGE_INERT_TAG = /^(?:head|meta|title|link|style|base)$/;
+  const pageCouldHaveRun = () => {
+    try {
+      if (document.readyState !== 'loading' || document.body) return true;
+      const root = document.documentElement;
+      if (!root) return false;
+      const all = root.getElementsByTagName('*');
+      if (all.length > 64) return true;
+      for (let i = -1; i < all.length; i++) {
+        const el = i < 0 ? root : all[i];
+        if (i >= 0 && !BRIDGE_INERT_TAG.test(String(el.localName || '').toLowerCase())) return true;
+        const attrs = el.attributes;
+        for (let j = 0; attrs && j < attrs.length; j++) {
+          if (/^on/i.test(String(attrs[j].name || ''))) return true;
+        }
+      }
+      return false;
+    } catch (_) { return true; }
+  };
+  const BRIDGE_FRESH = !pageCouldHaveRun();
+  const deliverKey = () => {
+    if (!KEY || pageCouldHaveRun()) return false;
+    try {
+      document.dispatchEvent(new CustomEvent('wo-key', { detail: { token: TOKEN, key: KEY } }));
+      return true;
+    } catch (_) { return false; }
+  };
+  let authSeq = 0;
+  // Sign a message in place: one counter for every kind, so a replayed message -- even a
+  // genuine one from a minute ago -- fails on its sequence number.
+  const signed = (kind, payload, message) => {
+    authSeq += 1;
+    message.seq = authSeq;
+    message.mac = KEY ? __woAuth.hmac(KEY, authSeq + '\n' + kind + '\n' + String(payload)) : '';
+    return message;
+  };
+  const engineMac = (kind, text) => (KEY ? __woAuth.hmac(KEY, kind + '\n' + String(text)) : '');
   const BRIDGE_RATE = Object.create(null);
   function bridgeRateOk(bucket, max, windowMs) {
     const key = String(bucket || 'message');
@@ -169,41 +323,51 @@
     if (/^(html|body|:root|\*)$/i.test(selector)) return '';
     return selector;
   }
+  function bridgeApplyUserHidden(list) {
+    try {
+      const selectors = (Array.isArray(list) ? list : [])
+        .map(bridgeSafeUserSelector).filter(Boolean).slice(0, 100);
+      let style = document.querySelector('style[data-wardenone-user-hidden="true"]');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'wo-user-hidden';
+        style.setAttribute('data-wardenone-user-hidden', 'true');
+        (document.head || document.documentElement).appendChild(style);
+      }
+      style.textContent = selectors.map((selector) => selector + '{display:none!important;}').join('');
+
+      /* The in-page Zapper marks what it hid with an attribute as well as
+         relying on this stylesheet, and that attribute outlives the rule being
+         deleted -- so dropping a selector left the element gone until the page
+         was reloaded. That is exactly why undo in the popup used to reload the
+         tab after EVERY item, which on a site with a few saved rules looked
+         like a reload loop and tripped WardenOne's own detector. Clearing the
+         mark here makes undo take effect in place, so nothing has to reload. */
+      try {
+        const marked = document.querySelectorAll('[data-wardenone-zapped="true"]');
+        for (let i = 0; i < marked.length; i++) {
+          const node = marked[i];
+          let stillHidden = false;
+          for (let j = 0; j < selectors.length; j++) {
+            try { if (node.matches(selectors[j])) { stillHidden = true; break; } } catch (_) {}
+          }
+          if (!stillHidden) node.removeAttribute('data-wardenone-zapped');
+        }
+      } catch (_) {}
+    } catch (_) {}
+  }
+  /* The initial rules arrive with the config (content-config-get answers with a hidden list), so
+     this separate round trip is only for a refresh after the reader edits the list. Every
+     frame used to make it at document_start as well -- one of the two channels each child
+     frame opened before doing anything, which PERF-02's fixture put at about a millisecond
+     per frame. */
   function bridgeLoadUserHidden() {
     try {
       if (!/^https?:$/.test(location.protocol) || !location.hostname) return;
       chrome.runtime.sendMessage({ kind: 'hidden-list', hostname: location.hostname }, (res) => {
         void chrome.runtime.lastError;
         if (!res || !res.ok) return;
-        const selectors = (Array.isArray(res.inherited) ? res.inherited : [])
-          .map(bridgeSafeUserSelector).filter(Boolean).slice(0, 100);
-        let style = document.querySelector('style[data-wardenone-user-hidden="true"]');
-        if (!style) {
-          style = document.createElement('style');
-          style.id = 'wo-user-hidden';
-          style.setAttribute('data-wardenone-user-hidden', 'true');
-          (document.head || document.documentElement).appendChild(style);
-        }
-        style.textContent = selectors.map((selector) => selector + '{display:none!important;}').join('');
-
-        /* The in-page Zapper marks what it hid with an attribute as well as
-           relying on this stylesheet, and that attribute outlives the rule being
-           deleted -- so dropping a selector left the element gone until the page
-           was reloaded. That is exactly why undo in the popup used to reload the
-           tab after EVERY item, which on a site with a few saved rules looked
-           like a reload loop and tripped WardenOne's own detector. Clearing the
-           mark here makes undo take effect in place, so nothing has to reload. */
-        try {
-          const marked = document.querySelectorAll('[data-wardenone-zapped="true"]');
-          for (let i = 0; i < marked.length; i++) {
-            const node = marked[i];
-            let stillHidden = false;
-            for (let j = 0; j < selectors.length; j++) {
-              try { if (node.matches(selectors[j])) { stillHidden = true; break; } } catch (_) {}
-            }
-            if (!stillHidden) node.removeAttribute('data-wardenone-zapped');
-          }
-        } catch (_) {}
+        bridgeApplyUserHidden(res.inherited);
       });
     } catch (_) {}
   }
@@ -219,7 +383,6 @@
     } catch (_) {}
   }, true);
 
-  bridgeLoadUserHidden();
   woOnMessage((msg) => {
     if (!msg || msg.kind !== 'hidden-rules-refresh') return;
     bridgeLoadUserHidden();
@@ -1555,6 +1718,10 @@
     const siteOff = bridgeSiteOverridesFor(clean, location.hostname);
     for (const key of Object.keys(siteOff)) {
       if (typeof clean[key] === 'boolean') clean[key] = false;
+      // The bridge's own gates (permission chain, script drift, login age, search cleanup) read
+      // bridgeConfig, not the copy handed to the page; an override the page saw and the bridge
+      // did not was half an exception (FEAT-01).
+      if (typeof bridgeConfig[key] === 'boolean') bridgeConfig[key] = false;
     }
     clean.siteOverridesApplied = Object.keys(siteOff).filter((k) => typeof clean[k] === 'boolean');
     delete clean.siteOverrides;
@@ -1579,10 +1746,14 @@
       supplementalLists.trustedPaymentHostsExtra);
     if (paymentExtras.length) clean.trustedPaymentHostsExtra = paymentExtras;
     else delete clean.trustedPaymentHostsExtra;
-    postToPage({ source: 'wardenone', kind: 'config', token: TOKEN, overrides: clean });
+    postToPage(signed('config', JSON.stringify(clean), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: clean }));
     try { document.dispatchEvent(new CustomEvent('wo-bridge-config-ready')); } catch (_) {}
   };
   const bridgeReplay = () => {
+    // The key goes out again only while nothing but content scripts can be listening; a
+    // detector registered after this bridge asks at its own document_start and gets it, a page
+    // asking later gets the nonce and the config it has already seen.
+    deliverKey();
     postToPage({ source: 'wardenone-handshake', token: TOKEN });
     if (bridgeConfigReady) sendConfig(bridgeConfig);
   };
@@ -1601,8 +1772,12 @@
   // `document` IS shared, and is already how the main world talks to this one. A page can dispatch
   // this too, and gains nothing by it: a replay re-sends the same handshake and the same sanitized
   // config the page has already been posted. It is rate-limited so it cannot be used to spam.
+  //
+  // Every MAIN consumer (the engine, anti-redirect, permission-chain, the miner detector, the
+  // Spotify module) asks once at its own start, in case this bridge ran before it; the budget
+  // has to cover all of them in the same second and still leave a page nothing worth spamming.
   woOn(document, 'wo-bridge-replay', () => {
-    if (!bridgeRateOk('wo-bridge-replay', 8, 60000)) return;
+    if (!bridgeRateOk('wo-bridge-replay', 12, 60000)) return;
     try { bridgeReplay(); } catch (_) {}
   });
 
@@ -1623,24 +1798,49 @@
      is asked to look and put it back.
      A page can still spoof the marker to look installed. That is a much higher bar than
      one call, and it is the honest limit of what this can do. */
+  /* The engine has to PROVE it is there. "installed" counts only when it carries the key's
+     signature, and a live engine is one that answers a challenge with the key: the bridge
+     dispatches wo-ping with a fresh nonce and the engine, still inside that dispatch, emits a
+     signed pong. A page can dispatch wo-event all day; it cannot sign. So a disposed engine
+     with its markers put back looks, from here, exactly like no engine at all -- which is what
+     it is. The worker is told what this bridge saw and whether it was here at document_start,
+     and it reloads the tab rather than injecting into a document the page has already had. */
   let bridgeEngineSeen = false;
   let bridgeEngineChecks = 0;
+  let bridgePendingPong = null;
+  const engineAnswers = () => {
+    if (!KEY) return false;
+    let nonce = '';
+    try { const b = new Uint8Array(16); crypto.getRandomValues(b); for (let i = 0; i < b.length; i++) nonce += (b[i] < 16 ? '0' : '') + b[i].toString(16); } catch (_) { return false; }
+    let answered = false;
+    bridgePendingPong = { nonce, ok: () => { answered = true; } };
+    try { document.dispatchEvent(new CustomEvent('wo-ping', { detail: { nonce } })); } catch (_) {}
+    bridgePendingPong = null;
+    return answered;
+  };
   const bridgeCheckEngine = (why) => {
     if (bridgeEngineChecks++ > 4) return;   // never a loop, whatever the page does
     try {
-      chrome.runtime.sendMessage({ kind: 'wo-engine-check', why: String(why || '').slice(0, 40) },
+      chrome.runtime.sendMessage({ kind: 'wo-engine-check', why: String(why || '').slice(0, 40), fresh: BRIDGE_FRESH, seen: bridgeEngineSeen },
         () => { void chrome.runtime.lastError; });
     } catch (_) { /* worker asleep; the next trigger will try again */ }
+  };
+  const bridgeVerifyEngine = (whenAbsent) => {
+    if (!bridgeEngineSeen) { bridgeCheckEngine(whenAbsent); return; }
+    if (!engineAnswers()) bridgeCheckEngine('disposed');
   };
   try {
     if (window.top === window && /^https?:$/.test(location.protocol)) {
       /* Long enough that a slow page has finished installing, short enough to matter. */
-      woTimeout(() => { if (!bridgeEngineSeen) bridgeCheckEngine('never-announced'); }, 6000);
+      woTimeout(() => { bridgeVerifyEngine('never-announced'); }, 6000);
       /* Coming back to a tab is a free moment to re-check, and it is when a page that
          switched the engine off after load would otherwise keep the benefit. */
       woOn(document, 'visibilitychange', () => {
-        if (document.visibilityState === 'visible' && !bridgeEngineSeen) bridgeCheckEngine('still-absent');
+        if (document.visibilityState === 'visible') bridgeVerifyEngine('still-absent');
       });
+      /* And while the tab stays in front, a challenge now and then; a healthy engine answers
+         for free, and only a failed answer costs a message. */
+      woInterval(() => { if (document.visibilityState === 'visible' && bridgeEngineSeen) bridgeVerifyEngine('still-absent'); }, 45000);
     }
   } catch (_) {}
 
@@ -1650,7 +1850,14 @@
     // background learning and privileged actions are separately constrained.
     if (d.token !== TOKEN) return;
     const type = d.type || '';
-    if (type === 'installed') bridgeEngineSeen = true;
+    if (type === 'installed') {
+      if (__woAuth.same(d.mac, engineMac('installed', TOKEN))) bridgeEngineSeen = true;
+      return;
+    }
+    if (type === 'pong') {
+      if (bridgePendingPong && d.nonce === bridgePendingPong.nonce && __woAuth.same(d.mac, engineMac('pong', bridgePendingPong.nonce))) bridgePendingPong.ok();
+      return;
+    }
     const securitySignal = type === 'behavioral_risk'
       || /^warned_(?:potential_)?xss_|^warned_potential_(?:dom_xss|xss_)|^warned_clickfix_|^warned_command_paste$/.test(type);
     if (/^blocked_|^detected_|^gated_|^warned_/.test(type) || type === 'behavioral_risk') {
@@ -1695,6 +1902,7 @@
         if (chrome.runtime.lastError || !res || !res.ok) return;
         setLearnedGrabberDomains(res.learned);
         setSupplementalLists(res.supplemental);
+        if (Array.isArray(res.hidden) && res.hidden.length) bridgeApplyUserHidden(res.hidden);
         sendConfig(res.overrides || {});
       });
     } catch (_) {}
@@ -1706,7 +1914,23 @@
     const smartFrameReloadedUrls = new Set();
     woOnMessage((msg, _sender, sendResponse) => {
       if (msg && msg.kind === 'config-update' && msg.overrides) sendConfig(msg.overrides);
+      // Repair asks whether the engine answers the signed challenge; a page cannot answer for it.
+      if (msg && msg.kind === 'wo-engine-status' && window === window.top) {
+        let alive = false;
+        try { alive = bridgeEngineSeen && engineAnswers(); } catch (_) { alive = false; }
+        try { sendResponse({ ok: true, alive, seen: bridgeEngineSeen, fresh: BRIDGE_FRESH }); } catch (_) {}
+        return true;
+      }
       if (msg && msg.kind === 'content-config-refresh') requestContentConfig();
+      // A child frame refused a command-shaped clipboard write and has no engine to warn with;
+      // the worker addressed this to frame 0 so the top frame's engine can show the ClickFix
+      // panel over the whole page (SEC-06). Token-carried, like config, so the page cannot
+      // tell the engine this happened when it did not.
+      if (msg && msg.kind === 'frame-clickfix' && window === window.top) {
+        const d = msg.detail && typeof msg.detail === 'object' ? msg.detail : {};
+        const detail = { sample: String(d.sample || '').slice(0, 180), frameHost: String(d.frameHost || '').slice(0, 120) };
+        postToPage(signed('frame-clickfix', JSON.stringify(detail), { source: 'wardenone', kind: 'frame-clickfix', token: TOKEN, detail }));
+      }
       if (msg && msg.kind === 'smart-script-route-changed') {
         smartFrameReloadedUrls.clear();
         armSmartPlayerObservation();
@@ -1755,6 +1979,12 @@
   // Safe Browsing relay: MAIN-world guards ask for a URL reputation verdict, but
   // only the background worker can read the saved API key. Results are posted
   // back with the same per-load token used by config messages.
+  // A verdict is signed over its request id and its body, so the page -- which sees the id
+  // leave -- cannot answer first with a clean one (SEC-02). The engine keeps the request
+  // pending until a reply that verifies arrives.
+  const postSafeBrowsingReply = (id, result) => {
+    postToPage(signed('safe-browsing', id + '\n' + JSON.stringify(result), { source: 'wardenone-safe-browsing', token: TOKEN, id, result }));
+  };
   try {
     const SAFE_BROWSING_CONTEXTS = new Set(['link', 'paste', 'form']);
     woOn(document, 'wo-safe-browsing-check', (e) => {
@@ -1766,30 +1996,15 @@
       if (!id || !/^https?:\/\//i.test(url)) return;
       if (url.length > 2048 || !SAFE_BROWSING_CONTEXTS.has(context)) return;
       if (!safeBrowsingIntentAllowed(url, context)) {
-        postToPage({
-          source: 'wardenone-safe-browsing',
-          token: TOKEN,
-          id,
-          result: { ok: false, error: 'No recent user intent for this reputation check.' },
-        });
+        postSafeBrowsingReply(id, { ok: false, error: 'No recent user intent for this reputation check.' });
         return;
       }
       if (!bridgeRateOk('safe-browsing-check', 45, 60000)) {
-        postToPage({
-          source: 'wardenone-safe-browsing',
-          token: TOKEN,
-          id,
-          result: { ok: false, error: 'Rate limited by WardenOne.' },
-        });
+        postSafeBrowsingReply(id, { ok: false, error: 'Rate limited by WardenOne.' });
         return;
       }
       chrome.runtime.sendMessage({ kind: 'safe-browsing-check', url, context }, (res) => { void chrome.runtime.lastError;
-        postToPage({
-          source: 'wardenone-safe-browsing',
-          token: TOKEN,
-          id,
-          result: publicSafeBrowsingResult(res),
-        });
+        postSafeBrowsingReply(id, publicSafeBrowsingResult(res));
       });
     }, true);
   } catch (_) {}
@@ -1840,6 +2055,9 @@
       }
       return null;
     };
+    const postBackgroundReply = (id, result) => {
+      postToPage(signed('bg-response', id + '\n' + JSON.stringify(result), { source: 'wardenone-bg-response', token: TOKEN, id, result }));
+    };
     woOn(document, 'wo-background-message', (e) => {
       const d = (e && e.detail) || {};
       const id = String(d.id || '');
@@ -1847,21 +2065,11 @@
       const message = relayAllowedMessage(d.message);
       if (!message) return;
       if (!bridgeRateOk('background-relay-' + message.kind, 20, 60000)) {
-        postToPage({
-          source: 'wardenone-bg-response',
-          token: TOKEN,
-          id,
-          result: { ok: false, error: 'Rate limited by WardenOne.' },
-        });
+        postBackgroundReply(id, { ok: false, error: 'Rate limited by WardenOne.' });
         return;
       }
       chrome.runtime.sendMessage(message, (res) => { void chrome.runtime.lastError;
-        postToPage({
-          source: 'wardenone-bg-response',
-          token: TOKEN,
-          id,
-          result: res || { ok: false, error: 'No WardenOne response' },
-        });
+        postBackgroundReply(id, res || { ok: false, error: 'No WardenOne response' });
       });
     }, true);
   } catch (_) {}
@@ -2552,5 +2760,11 @@
       } catch (_) {}
     }
   } catch (_) {}
+  // The key is handed over last, once every listener above exists: the engine flushes its
+  // queued "installed" the moment it has the key, and the wo-event listener must be there to
+  // receive it. Nothing but content scripts can be running at this point of a document_start
+  // injection; if something has been built already, this bridge was injected late and the key
+  // stays here.
+  deliverKey();
   try { window.__wardenOneBridgeReadyVersion = BRIDGE_VERSION; } catch (_) {}
 })();

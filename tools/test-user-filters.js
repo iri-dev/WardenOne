@@ -124,6 +124,11 @@ const parse = box.parse;
     ['example.com##.a:has-text(promo)', 'procedural and scriptlet'],
     ['example.com#@#.a', 'not supported'],
     ['not a domain!!##.x', 'not a domain'],
+    /* Chrome's own constraints, checked here so they are named by line rather than
+       failing the whole atomic update and, with it, every other rule (H19). */
+    ['||*abc', 'cannot start with ||*'],
+    ['|||ads.example.com^', 'too many |'],
+    ['ads.example.com||', 'only belongs at the start'],
   ];
   for (const [text, expect] of cases) {
     const r = line(text);
@@ -186,9 +191,18 @@ check('rules are applied through the serialized applier list',
 check('the reserved id range is cleared before reapplying',
   /x\.id >= USER_RULE_BASE && x\.id < USER_RULE_BASE \+ USER_RULE_MAX/.test(BG),
   'stale rules would accumulate on every save');
-check('one rule Chrome refuses does not drop the rest',
-  /for \(const rule of bundle\.network\)/.test(BG),
-  'updateDynamicRules rejects the whole batch over one bad rule');
+/* updateDynamicRules is all-or-nothing, and when it rejects every OLD rule is still live.
+   The applier used to assume the opposite and add the new rules one at a time -- onto ids
+   the old rules still held, so every add collided too -- and then report ok:true while
+   the editor text had already been stored (H19). A refusal is a refusal now: old rules
+   stay, old text stays, the reason reaches the reader. */
+check('a refused batch is not retried as colliding single adds',
+  !/for \(const rule of bundle\.network\)/.test(BG) && /kept: oldIds\.length/.test(BG),
+  'the fallback assumed a failed atomic update had removed the old rules; Chrome guarantees it did not');
+check('every write applies to Chrome before it stores',
+  (BG.match(/await commitUserFilters\(/g) || []).length >= 5
+    && !/await localSet\(\{ \[USER_RULES_KEY\]: \{ text, updatedAt/.test(BG),
+  'storing first is how the stored text and the live rules came apart');
 check('editing rules invalidates the cosmetic host cache',
   /function invalidateUserFilters\(\)[\s\S]{0,200}__cosmeticHostCache\.clear\(\)/.test(BG),
   'a hide rule would not take effect until the cache aged out');

@@ -46,7 +46,7 @@ function syncConfigCheckboxes(key, checked) {
 
 const KEYS = [
   'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'blockPopupTricks', 'backTrapGuard', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'detectRedirectChains', 'blockMetaRefresh',
-  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
+  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
   'mediaShield', 'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
   'gateAdultSites', 'adultHeuristics', 'safeSearch',
   'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
@@ -61,7 +61,7 @@ const DEFAULTS = {
   enabled: true,
   blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, backTrapGuard: true, clearCookiesOnLeave: false, clearServiceWorkersOnLeave: false, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
-  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, openPhishKey: '', phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
+  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, openPhishKey: '', phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
   mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, notificationAbuseGuard: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
@@ -85,10 +85,72 @@ const DEFAULTS = {
   siteOverrides: {},
 };
 
+// Settings the worker has and the popup has no control for. The exporter writes the live config,
+// which is the worker's table; the importer used to check keys against DEFAULTS alone, so these
+// came back from WardenOne's own backup as "unrecognised" and kept the target machine's values
+// (PI-04). They are listed here, with their worker defaults, so the import schema is exactly the
+// export schema. tools/test-settings-roundtrip.js fails when the worker gains a key that is in
+// neither table.
+const IMPORT_ONLY_DEFAULTS = {
+  logThirdPartyBeacons: true,
+  downloadHardBlockCritical: true,
+  downloadHashCheck: true,
+  deviceAccessGuard: true,
+  capabilityGuard: true,
+  memoryNeverSleepHosts: [],
+};
+const IMPORT_SCHEMA = Object.assign({}, IMPORT_ONLY_DEFAULTS, DEFAULTS);
+
+// Which protections "Turn off one protection here" may offer, and what turning one off on a
+// site actually stops (FEAT-01). The picker used to be generated from every boolean in KEYS,
+// so it offered certificate checks, list updates, Download Shield and Memory Shield -- worker
+// and network features no per-site code ever reads -- and confirmed "turned off for shop.example"
+// while nothing changed. Only bridge.js resolves siteOverrides, so only what the page-side
+// scripts (the engine, the bridge, the MAIN guards) read can be scoped to one site.
+//
+//   page  -- the whole protection runs in the page and stops here completely.
+//   mixed -- the page half stops here; a network or worker half (DNR rules, header rules,
+//            download checks, the worker's own gates) keeps running, and the picker says so.
+//
+// Anything not listed has no page half and is not offered; a stored override for it is dropped
+// at load and reported once. tools/test-site-override-scope.js derives the split from the
+// sources that read each key and fails when this table and the code disagree.
+const SITE_OVERRIDE_SCOPE = {
+  page: [
+    'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'backTrapGuard', 'blockMetaRefresh',
+    'blockSuspiciousWebRTC', 'twitchAdBlock', 'twitchRewind', 'twitchVodRewind', 'blockFirstPartyTrackers',
+    'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'breachCheck', 'insecureLoginGuard',
+    'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard',
+    'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'riskySiteMode',
+    'antiClickjacking', 'storageAccessGuard', 'blockAllStorageAccess', 'mediaShield', 'fullscreenGuard',
+    'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture', 'blockAutoplayMedia',
+    'gateAdultSites', 'adultHeuristics', 'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi',
+    'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays',
+    'autoSkipDownloadAds', 'showToasts', 'showBadge', 'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch',
+    'lazyLoadMedia', 'deAmp', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies',
+  ],
+  mixed: [
+    'blockPopupTricks', 'clearCookiesOnLeave', 'detectRedirectChains', 'blockGrabberResources', 'warnGrabberDomains',
+    'blockWebRTCLeak', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers',
+    'blockSponsoredSearchResults', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'sendPrivacySignals',
+    'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockThirdPartyCookies',
+    'blockAllCookies', 'detectSkimmers', 'paymentCardGuard', 'forceHttps', 'loginAgeCheck', 'downloadReputation',
+    'downloadSafeBrowsing', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation',
+    'whoisXmlThreatIntel', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'intranetProtection',
+    'blockGeolocation', 'silentMode', 'capReferrer', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
+    'trackerLearner', 'unshimLinks',
+  ],
+};
+const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed));
+const SITE_OVERRIDE_MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
+
 // cryptominerCpuWatch is here because "Turn everything on" should not quietly
 // start benchmarking the CPU on every page you visit. It is opt-in on purpose.
-const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess']);
-const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'paymentCardGuard', 'blockGeolocation']);
+// blockSuspiciousWebRTC is here too: it breaks video calls, and a button called "Turn everything
+// on" should not be what ends someone's meeting (FEAT-03). The Maximum-privacy bundle in
+// onboarding still sets it, by name, for the reader who asked for that.
+const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess', 'blockSuspiciousWebRTC']);
+const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'paymentCardGuard', 'blockGeolocation']);
 
 const REPUTATION_PROVIDERS = [
   { key: 'urlHaus', keyField: 'urlHausKey', statusId: 'urlhaus-key-status', label: 'URLhaus', use: 'malware URL and download intelligence', emptyText: 'Paste a URLhaus Auth-Key to enable malware URL/download checks.', activeText: 'URLhaus malware URL checks are on. Known malware delivery URLs will be blocked.' },
@@ -843,6 +905,7 @@ function load() {
     wireMyFilters();
     renderDownloadTrustList();
     renderTrackerLearner();
+    renderTrackerProposals();
     loadExtensionAlerts();
     loadStartupReport();
     renderProtectionHealth();
@@ -915,11 +978,30 @@ function settingsIoStatus(text, isError) {
   el.style.color = isError ? 'var(--wo-danger)' : 'var(--ink-faint)';
 }
 
+// A per-site override map, in the only shape the popup ever writes: host -> { featureKey: false }.
+// Shared by export and import so what is written is exactly what can be read back (PI-03).
+function sanitizeSiteOverrides(raw) {
+  const out = {};
+  let dropped = 0;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { map: out, dropped: 1 };
+  Object.keys(raw).slice(0, 500).forEach((host) => {
+    const entry = raw[host];
+    if (typeof host !== 'string' || !host || host.length > 260 || !entry || typeof entry !== 'object' || Array.isArray(entry)) { dropped++; return; }
+    const kept = {};
+    Object.keys(entry).forEach((key) => {
+      if (entry[key] === false && Object.prototype.hasOwnProperty.call(DEFAULTS, key) && typeof DEFAULTS[key] === 'boolean') kept[key] = false;
+      else dropped++;
+    });
+    if (Object.keys(kept).length) out[host] = kept;
+  });
+  return { map: out, dropped };
+}
+
 function exportableSettings(cfg) {
   const out = {};
   Object.keys(cfg || {}).forEach((key) => {
     if (SECRET_FIELD_RE.test(key)) return;
-    out[key] = cfg[key];
+    out[key] = key === 'siteOverrides' ? sanitizeSiteOverrides(cfg[key]).map : cfg[key];
   });
   return out;
 }
@@ -953,10 +1035,20 @@ function sanitizeImportedSettings(raw) {
   const settings = {};
   let ignored = 0;
   Object.keys(raw || {}).forEach((key) => {
-    if (!Object.prototype.hasOwnProperty.call(DEFAULTS, key)) { ignored++; return; }
+    if (!Object.prototype.hasOwnProperty.call(IMPORT_SCHEMA, key)) { ignored++; return; }
     if (SECRET_FIELD_RE.test(key)) { ignored++; return; }
-    const def = DEFAULTS[key];
+    const def = IMPORT_SCHEMA[key];
     const val = raw[key];
+    // The one host -> object key. The generic map branch below keeps only scalar values, so this
+    // used to come back as {} and be applied over the reader's stored overrides (PI-03). An entry
+    // that holds nothing usable is ignored, never applied as an empty map.
+    if (key === 'siteOverrides') {
+      if (!val || typeof val !== 'object' || Array.isArray(val)) { ignored++; return; }
+      const result = sanitizeSiteOverrides(val);
+      if (Object.keys(val).length && !Object.keys(result.map).length) { ignored++; return; }
+      settings[key] = result.map;
+      return;
+    }
     if (key === 'notificationSettings') {
       if (!val || typeof val !== 'object' || Array.isArray(val)) { ignored++; return; }
       settings[key] = typeof sanitizeWardenNotificationSettings === 'function'
@@ -1387,6 +1479,19 @@ function pausedUntilFor(host) {
   return Number.isFinite(at) && at > Date.now() ? at : 0;
 }
 
+// Drop stored overrides for keys the registry does not carry, for one host, and persist if any
+// went. Returns the keys removed so the panel can say so once.
+function pruneUnsupportedSiteOverrides(host) {
+  const entry = host && config.siteOverrides ? config.siteOverrides[host] : null;
+  if (!entry || typeof entry !== 'object') return [];
+  const stale = Object.keys(entry).filter((key) => !SITE_OVERRIDE_KEYS.has(key));
+  if (!stale.length) return [];
+  stale.forEach((key) => { delete entry[key]; });
+  if (!Object.keys(entry).length) delete config.siteOverrides[host];
+  persistConfig(() => {}, () => {});
+  return stale;
+}
+
 function siteOverridesFor(host) {
   const entry = (config.siteOverrides || {})[host];
   return entry && typeof entry === 'object' ? entry : null;
@@ -1524,7 +1629,8 @@ function renderCustomLists(lists) {
       const bad = document.createElement('div');
       bad.className = 'desc';
       bad.style.color = 'var(--warn)';
-      bad.textContent = 'Last check failed: ' + l.error + ' Still using the copy already downloaded.';
+      /* An http:// subscription is not stale, it is off: the note says why and what to do. */
+      bad.textContent = l.insecure ? l.error : ('Last check failed: ' + l.error + ' Still using the copy already downloaded.');
       left.appendChild(bad);
     }
     const actions = document.createElement('div');
@@ -1538,12 +1644,14 @@ function renderCustomLists(lists) {
       actions.appendChild(b);
       return b;
     };
-    mk(l.enabled === false ? 'Turn on' : 'Turn off', () => {
+    const toggle = mk(l.enabled === false ? 'Turn on' : 'Turn off', (b) => {
       chrome.runtime.sendMessage({ kind: 'custom-list-toggle', id: l.id, enabled: l.enabled === false }, (res) => {
         void chrome.runtime.lastError;
+        if (res && !res.ok) { b.disabled = false; b.textContent = l.enabled === false ? 'Turn on' : 'Turn off'; }
         renderCustomLists(res && res.lists);
       });
     });
+    if (l.insecure) { toggle.disabled = true; toggle.title = 'Move this list to an https:// address first.'; }
     mk('Update', (b) => {
       b.textContent = 'Updating...';
       chrome.runtime.sendMessage({ kind: 'custom-list-update', id: l.id }, (res) => {
@@ -1770,8 +1878,8 @@ function paintSiteControls() {
 
     if (pick && !pick.dataset.filled) {
       const options = KEYS
-        .filter((key) => typeof DEFAULTS[key] === 'boolean')
-        .map((key) => ({ key, label: protectionLabel(key) }))
+        .filter((key) => typeof DEFAULTS[key] === 'boolean' && SITE_OVERRIDE_KEYS.has(key))
+        .map((key) => ({ key, label: protectionLabel(key) + (SITE_OVERRIDE_MIXED.has(key) ? ' (page part only)' : '') }))
         .sort((a, b) => a.label.localeCompare(b.label));
       pick.textContent = '';
       for (const option of options) {
@@ -1781,6 +1889,18 @@ function paintSiteControls() {
         pick.appendChild(el);
       }
       pick.dataset.filled = '1';
+    }
+    // Overrides stored by an earlier build for protections that never applied here (FEAT-01):
+    // dropped, and said once, rather than shown as an exception that is not one.
+    const stale = pruneUnsupportedSiteOverrides(host);
+    const staleNote = $('site-off-stale');
+    if (staleNote) {
+      staleNote.hidden = !stale.length;
+      if (stale.length) {
+        staleNote.textContent = 'Removed ' + stale.length + ' earlier setting' + (stale.length === 1 ? '' : 's') + ' here ('
+          + stale.map(protectionLabel).join(', ') + '): ' + (stale.length === 1 ? 'it runs' : 'they run')
+          + ' outside the page and could never be turned off for one site.';
+      }
     }
 
     if (list) {
@@ -1800,7 +1920,7 @@ function paintSiteControls() {
         const name = document.createElement('div');
         name.className = 'desc';
         name.style.cssText = 'flex:1;min-width:0;';
-        name.textContent = protectionLabel(key) + ' — off here';
+        name.textContent = protectionLabel(key) + (SITE_OVERRIDE_MIXED.has(key) ? ' — page part off here (network part still on)' : ' — off here');
         const undo = document.createElement('button');
         undo.className = 'btn';
         undo.style.cssText = 'flex:none;padding:5px 10px;font-size:11px;';
@@ -1858,6 +1978,10 @@ function resumeSite() {
 // ever turn a protection OFF, never switch one on that is off globally.
 function setSiteOverride(host, key, on) {
   if (!host || !key) return;
+  if (!on && !SITE_OVERRIDE_KEYS.has(key)) {
+    setNote($('note'), [{ t: protectionLabel(key) + ' runs outside the page and cannot be turned off for one site.' }]);
+    return;
+  }
   config.siteOverrides = config.siteOverrides || {};
   const before = JSON.stringify(config.siteOverrides[host] || null);
   const entry = config.siteOverrides[host] || {};
@@ -2437,6 +2561,74 @@ function renderTrackerLearner() {
   });
 }
 
+/* The learner's proposals (SEC-04). Each is a domain seen behaving like a tracker on several
+   of the reader's sites across more than one browser session. That is enough to ASK; it is
+   not enough to block, because every input the learner sees arrives from a page. So the
+   decision is made here, by the reader, and only "Block" writes a rule. */
+function renderTrackerProposals() {
+  const row = $('tracker-proposals-row');
+  const box = $('tracker-learner-proposals');
+  const all = $('tracker-proposals-all');
+  if (!row || !box || !all) return;
+  chrome.runtime.sendMessage({ kind: 'tracker-learner-proposals' }, (res) => {
+    void chrome.runtime.lastError;
+    const items = (res && res.ok && Array.isArray(res.items)) ? res.items : [];
+    box.textContent = '';
+    if (!items.length) { row.style.display = 'none'; return; }
+    row.style.display = 'flex';
+    all.style.display = items.length > 1 ? 'flex' : 'none';
+    const decide = (domain, decision, el) => {
+      if (el) el.classList.add('perm-row-saving');
+      chrome.runtime.sendMessage({ kind: 'tracker-learner-decide', domain, decision }, (r) => {
+        const err = chrome.runtime.lastError;
+        if (err || !r || !r.ok) setSavedTick((r && r.error) || 'Could not save that decision', true);
+        else setSavedTick(decision === 'block' ? 'Blocked ' + domain + ' everywhere' : 'Ignored ' + domain, false);
+        renderTrackerProposals();
+      });
+    };
+    items.forEach((item) => {
+      const line = document.createElement('div');
+      line.className = 'perm-row';
+      const label = document.createElement('div');
+      label.className = 'perm-row-label';
+      const sites = Number(item.sites || 0);
+      const sessions = Number(item.sessions || 0);
+      label.textContent = item.domain + ' \u2014 seen on ' + sites + ' site' + (sites === 1 ? '' : 's')
+        + (sessions > 1 ? ' across ' + sessions + ' sessions' : '')
+        + (item.legacy ? '. Learned automatically by an earlier version; approve it to keep blocking it.' : '');
+      label.title = String(item.reason || '');
+      const actions = document.createElement('div');
+      actions.className = 'tracker-mode-buttons';
+      [['block', 'Block', 'Block this domain\u2019s tracking requests on every site'], ['ignore', 'Ignore', 'Forget this suggestion']].forEach(([value, text, titleText]) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn tracker-mode-btn';
+        btn.textContent = text;
+        btn.title = titleText;
+        btn.addEventListener('click', () => decide(item.domain, value, line));
+        actions.appendChild(btn);
+      });
+      line.appendChild(label);
+      line.appendChild(actions);
+      box.appendChild(line);
+    });
+  });
+}
+['block', 'ignore'].forEach((decision) => {
+  const btn = $('tracker-proposals-' + decision + '-all');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    chrome.runtime.sendMessage({ kind: 'tracker-learner-decide-all', decision }, (r) => {
+      const err = chrome.runtime.lastError;
+      btn.disabled = false;
+      if (err || !r || !r.ok) setSavedTick('Could not save those decisions', true);
+      else setSavedTick((decision === 'block' ? 'Blocked ' : 'Ignored ') + Number(r.decided || 0) + ' domain' + (Number(r.decided || 0) === 1 ? '' : 's'), false);
+      renderTrackerProposals();
+    });
+  });
+});
+
 function trustCurrentDownloadSite() {
   activeTabHost((host) => {
     if (!host) { setDownloadTrustResult('Open a normal web page first.', 'var(--ink-faint)'); return; }
@@ -2808,7 +3000,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.wardenone_ext_alerts || changes.wardenone_ext_reviews
       || changes.wardenone_ext_reputation_custom)) loadExtensionAlerts();
   if (area === 'local' && changes.wardenone_startup_report) loadStartupReport();
-  if (area === 'local' && changes.wardenone_tracker_learner) renderTrackerLearner();
+  if (area === 'local' && changes.wardenone_tracker_learner) { renderTrackerLearner(); renderTrackerProposals(); }
   if (area === 'local' && changes.wardenone_notifications) renderNotificationUnread(changes.wardenone_notifications.newValue);
 });
 
@@ -3835,6 +4027,12 @@ $('ss-panic').addEventListener('click', () => {
 $('cl-run').addEventListener('click', () => {
   const types = {
     cache: $('cl-cache').checked,
+    // This line was missing, and with it the whole feature. The checkbox is cl-consent, the
+    // field the worker reads is consentCookies, and neither name appeared in the other's file,
+    // so nothing looked wrong in either place: the control was read by nobody and the sweep was
+    // gated on a field nobody sent. Ticking only this box produced "Pick at least one thing to
+    // clean", which reads as a UI quirk rather than as the feature being absent (PI-01).
+    consentCookies: $('cl-consent').checked,
     cookies: $('cl-cookies').checked,
     history: $('cl-history').checked,
     downloads: $('cl-downloads').checked,
@@ -4153,7 +4351,7 @@ function renderStartupReport(report) {
       listEl.appendChild(card);
     });
   };
-  section('Risky open tabs', tabs, (t) => (t.title || t.host || 'Tab') + ' — ' + t.host + ' (' + t.why + ')');
+  section('Risky open tabs', tabs, (t) => (t.host || 'Tab') + ' (' + t.why + ')');
   section('Extension changes', extensions, (e) => e.name + (e.change ? ' — ' + e.change : (e.risky ? ' — important access change' : '')) + (e.enabled ? '' : ' (disabled)'));
 }
 function loadStartupReport() {

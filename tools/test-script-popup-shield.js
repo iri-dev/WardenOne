@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const woAuth = require('./lib/wo-auth');
 /* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
  * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
  * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
@@ -274,7 +275,6 @@ function buildHarness(options) {
   const iframes = options.iframes || [];
   sandbox.document = {
     activeElement: null,
-    addEventListener() {},
     dispatchEvent(event) { if (event && event.type === 'wo-event') state.emitted.push(event.detail); },
     getElementsByTagName(tag) {
       tag = String(tag || '').toLowerCase();
@@ -295,6 +295,8 @@ function buildHarness(options) {
     querySelectorAll() { return []; },
   };
 
+  /* The key arrives on the document (SEC-01), so its listeners must be real. */
+  const dispatchDoc = woAuth.documentEvents(sandbox.document);
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(DOMAIN_UTILS, sandbox, { filename: 'domain-utils.js' });
@@ -325,20 +327,9 @@ function buildHarness(options) {
     submit(form) { return sandbox.HTMLFormElement.prototype.submit.call(form); },
     advanceTime(ms) { clockNow += Number(ms) || 0; },
   };
-  api.fire('message', {
-    source: innerWindow,
-    data: { source: 'wardenone-handshake', token: 'popup-shield-test-token' },
-  });
+  api.link = woAuth.handshake(dispatchDoc, (data) => api.fire('message', { source: innerWindow, data }), { token: 'popup-shield-test-token' });
   if (!options.config || options.config.__configReady !== false) {
-    api.fire('message', {
-      source: innerWindow,
-      data: {
-        source: 'wardenone',
-        kind: 'config',
-        token: 'popup-shield-test-token',
-        overrides: options.config || readyConfig(),
-      },
-    });
+    api.link.sendConfig(options.config || readyConfig());
   }
   return api;
 }

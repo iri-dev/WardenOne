@@ -82,6 +82,12 @@ function makeHarness(options = {}) {
     queueHistory(entry) { state.history.push(entry); },
     async tabsUpdate(tabId, props) { state.updates.push({ tabId, props }); },
     async tabsGet() { return state.tab; },
+    // The page URL now carries a handle to a session record rather than the address itself
+    // (PRIV-04). The record store is outside this guard; what this suite is about is whether
+    // the page is shown at all, so the hand-off is stubbed and the handle is what it returns.
+    async createWarningRecord(kind, fields) { state.records = (state.records || []).concat([{ kind, fields }]); return 'h'.repeat(32); },
+    warningTargetUrl: (u) => String(u || ''),
+    warningDisplayUrl: (u) => String(u || ''),
   };
   if (options.tabsGetThrows) sandbox.tabsGet = async () => { throw new Error('tab gone'); };
   vm.createContext(sandbox);

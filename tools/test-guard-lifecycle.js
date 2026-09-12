@@ -29,17 +29,26 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 
+// The three MAIN-world security guards follow a different contract since SEC-03: the page
+// shares their world, so a published disposer was a page-callable kill switch and a
+// version-compare guard was a way to install a second copy beside a live one. They refuse to
+// install beside ANY copy, call no previous disposer, and keep their teardown private (a
+// `const woDispose`, reachable only through a signed message from the isolated bridge). The
+// ISOLATED guards, and the Twitch ad blocker whose world only Twitch shares, keep the
+// version-coupled contract: a newer copy releases the older one and installs.
 const GUARDS = [
-  { file: 'anti-redirect.js', flag: '__wardenOneAntiRedirectHardener', dispose: '__wardenOneAntiRedirectDispose' },
-  { file: 'permission-chain.js', flag: '__wardenOnePermissionChainInstalled', dispose: '__wardenOnePermissionChainDispose' },
+  { file: 'anti-redirect.js', flag: '__wardenOneAntiRedirectHardener', dispose: '__wardenOneAntiRedirectDispose', main: true },
+  { file: 'permission-chain.js', flag: '__wardenOnePermissionChainInstalled', dispose: '__wardenOnePermissionChainDispose', main: true },
   { file: 'eyeshield.js', flag: '__wardenOneEyeShieldInstalled', dispose: '__wardenOneEyeShieldDispose', refreshes: true },
   { file: 'oauth-guard.js', flag: '__wardenOneOAuthGuardInstalled', dispose: '__wardenOneOAuthGuardDispose' },
   { file: 'twitch-adblock.js', flag: '__wardenOneTwitchAdblockReady', dispose: '__wardenOneTwitchAdblockDispose', versionExpr: 'VERSION', worker: 'function twitchWorkerRuntime' },
   { file: 'twitch-rewind.js', flag: '__wardenOneTwitchRewindReady', dispose: '__wardenOneTwitchRewindDispose', topFrameOnly: true },
   { file: 'twitch-vod-rewind.js', flag: '__wardenOneVodRewind', dispose: '__wardenOneVodRewindDispose' },
-  { file: 'cryptominer-detect.js', flag: '__wardenOneMinerWatch', dispose: '__wardenOneMinerWatchDispose' },
+  { file: 'cryptominer-detect.js', flag: '__wardenOneMinerWatch', dispose: '__wardenOneMinerWatchDispose', main: true },
   { file: 'search-junk.js', flag: '__wardenOneSearchJunk', dispose: '__wardenOneSearchJunkDispose' },
 ];
+
+for (const g of GUARDS) g.disposeDecl = g.main ? 'const woDispose = () => {' : 'window.' + g.dispose + ' = () => {';
 
 let failures = 0;
 function check(name, cond, detail) {
@@ -73,14 +82,23 @@ function workerRange(src, marker) {
 for (const g of GUARDS) {
   const src = sources.get(g.file);
   const v = g.versionExpr || 'WO_GUARD_VERSION';
-  check(g.file + ': guard compares a version',
-    src.includes('if (window.' + g.flag + ' === ' + v + ')'));
-  check(g.file + ': older copy is disposed before installing',
-    new RegExp('if \\(window\\.' + g.flag + '\\) \\{[\\s\\S]{0,160}window\\.' + g.dispose + '\\(\\)').test(src));
+  if (g.main) {
+    check(g.file + ': guard refuses to install beside any copy, of any version',
+      new RegExp('if \\(window\\.' + g.flag + '\\) return;').test(src));
+    check(g.file + ': no version-compare path installs a second copy',
+      !src.includes('if (window.' + g.flag + ' === ' + v + ')'));
+    check(g.file + ': calls no previous disposer at install',
+      !new RegExp('window\\.' + g.dispose + '\\(\\)').test(src));
+  } else {
+    check(g.file + ': guard compares a version',
+      src.includes('if (window.' + g.flag + ' === ' + v + ')'));
+    check(g.file + ': older copy is disposed before installing',
+      new RegExp('if \\(window\\.' + g.flag + '\\) \\{[\\s\\S]{0,160}window\\.' + g.dispose + '\\(\\)').test(src));
+    check(g.file + ': no bare-truthiness early return survives',
+      !new RegExp('if \\(window\\.' + g.flag + '\\) return;').test(src));
+  }
   check(g.file + ': flag is set to the version, not true',
     src.includes('window.' + g.flag + ' = ' + v + ';'));
-  check(g.file + ': no bare-truthiness early return survives',
-    !new RegExp('if \\(window\\.' + g.flag + '\\) return;').test(src));
 
   const decl = src.match(new RegExp('const ' + v + " = '([^']+)';"));
   check(g.file + ': version constant matches manifest (' + MANIFEST.version + ')',
@@ -92,7 +110,14 @@ for (const g of GUARDS) {
 // ---------------------------------------------------------------------------
 for (const g of GUARDS) {
   const src = sources.get(g.file);
-  check(g.file + ': publishes dispose on window', src.includes('window.' + g.dispose + ' = () => {'));
+  if (g.main) {
+    check(g.file + ': keeps its teardown private (SEC-03)',
+      src.includes(g.disposeDecl) && !src.includes('window.' + g.dispose));
+    check(g.file + ': the teardown is reachable only through a signed dispose message',
+      /kind === 'dispose'[\s\S]{0,120}woVerify\('dispose', '', /.test(src) && /woVerify\('dispose', '', [^)]*\)\) \{\s*woDispose\(\);/.test(src));
+  } else {
+    check(g.file + ': publishes dispose on window', src.includes('window.' + g.dispose + ' = () => {'));
+  }
   check(g.file + ': dispose aborts the listener signal', src.includes('woAbort.abort()'));
   check(g.file + ': dispose clears pending timeouts',
     /woPending\.forEach\(\(id\) => \{ try \{ clearTimeout\(id\); \} catch \(_\) \{\} \}\);/.test(src));
@@ -151,17 +176,21 @@ for (const g of GUARDS) {
 // Comparing whole blocks would either fail or push us into adding an unused helper to the eight
 // files that do not need one. So the core is what must be identical; the extension is checked on
 // its own terms by the cross-file sweep below.
-function sharedRegistryCore(src, dispose) {
+function sharedRegistryCore(src, g) {
+  const dispose = g.dispose;
   const from = src.indexOf('  /* Everything this copy holds');
-  const disposeAt = src.indexOf('window.' + dispose + ' = () => {');
+  const disposeAt = src.indexOf(g.disposeDecl);
   const to = src.indexOf('  };\n', disposeAt);
   assert(from >= 0 && to > from, 'could not find the registry block');
   let core = src.slice(from, to);
   const chromeAt = core.indexOf("  // Chrome's extension events are not DOM events");
   if (chromeAt >= 0) {
-    const resumeAt = core.indexOf('  window.' + dispose + ' = () => {', chromeAt);
+    const resumeAt = core.indexOf('  ' + g.disposeDecl, chromeAt);
     core = core.slice(0, chromeAt) + core.slice(resumeAt);
   }
+  // The MAIN guards declare the teardown privately and explain why above it; the registry they
+  // share with the others is everything but that declaration line and its comment.
+  core = core.replace(/  \/\* Reachable only through a signed "dispose" message from the isolated bridge\. \*\/\n  const woDispose = \(\) => \{/, '  window.' + dispose + ' = () => {');
   core = core.replace(/    const chromeHeld = woChromeListeners[\s\S]*?\n    \}\n/, '');
   // Same reasoning as the Chrome listeners above, for the same reason: the bridge is the only
   // guard that puts UI on the page, so it is the only one whose dispose has warnings to tear down.
@@ -171,7 +200,7 @@ function sharedRegistryCore(src, dispose) {
   return core.split(dispose).join('__DISPOSE__');
 }
 
-const registries = GUARDS.map((g) => sharedRegistryCore(sources.get(g.file), g.dispose));
+const registries = GUARDS.map((g) => sharedRegistryCore(sources.get(g.file), g));
 check('all nine registry blocks are byte-identical',
   registries.every((r) => r === registries[0]),
   registries.map((r, i) => GUARDS[i].file + '=' + r.length).join(' '));
@@ -198,7 +227,7 @@ check('all nine registry blocks are byte-identical',
 for (const g of GUARDS) {
   const src = sources.get(g.file);
   const from = src.indexOf('  const woAbort = new AbortController();');
-  const to = src.indexOf('  };\n', src.indexOf('window.' + g.dispose + ' = () => {')) + 5;
+  const to = src.indexOf('  };\n', src.indexOf(g.disposeDecl)) + 5;
   assert(from >= 0 && to > from, 'could not lift the registry from ' + g.file);
   const lifted = src.slice(from, to);
 
@@ -227,8 +256,11 @@ for (const g of GUARDS) {
   const held = vm.runInContext('woKeep.length', sandbox);
   const pending = vm.runInContext('woPending.size', sandbox);
 
-  assert(typeof win[g.dispose] === 'function', g.file + ' did not publish ' + g.dispose);
-  win[g.dispose]();
+  const dispose = g.main
+    ? () => vm.runInContext('woDispose()', sandbox)
+    : () => { assert(typeof win[g.dispose] === 'function', g.file + ' did not publish ' + g.dispose); win[g.dispose](); };
+  if (g.main) assert(typeof win[g.dispose] !== 'function', g.file + ' published ' + g.dispose + ' on window');
+  dispose();
   vm.runInContext('__t.dispatchEvent(new Event("ping"))', sandbox);
 
   const ok = liveHits === 1
@@ -245,7 +277,7 @@ for (const g of GUARDS) {
 
   // Calling it twice must not throw or double-clear.
   const before = cleared.length;
-  win[g.dispose]();
+  dispose();
   check(g.file + ': dispose is safe to call twice', cleared.length === before);
 }
 
@@ -286,84 +318,27 @@ for (const g of GUARDS) {
 }
 
 // ---------------------------------------------------------------------------
-// 8. Version-coupling alone only fixes the update path. Repair's own case is a SAME-version
-//    reload, where the orphan's flag still matches and every script would return on line one.
-//    Repair therefore marks the flags stale first, so each script takes its own replace path.
-//    This section ties that table to the guards: a new content script whose flag is missing
-//    from it would be silently un-repairable, which is the bug H1 was about.
+// 8. Repair no longer injects into live documents. It used to mark every guard's flag stale and
+//    re-execute the files, which depended on published disposers and on a version-compare
+//    install path -- both gone from the MAIN guards (SEC-03) -- and it read a MAIN-world marker
+//    back to decide it had worked. It now asks each tab's isolated bridge whether the engine
+//    answers a signed challenge and reloads the tabs that fail; a reload is a fresh
+//    document_start hand-off. This section pins that the old machinery stays gone.
 // ---------------------------------------------------------------------------
 {
   const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-  check('repair marks install flags stale',
-    bg.includes('const markWardenOneCopiesStale = async (target, world, files)'));
-
-  // Repair used to mark two hand-written flag arrays and separately execute a different set of
-  // files. Both halves are now derived from one table, so the assertions read that table rather
-  // than a second copy of the same knowledge kept here -- which is what let the two drift.
-  const compBlock = bg.match(/const REPAIR_COMPONENTS = \[([\s\S]*?)\n        \];/);
-  assert(compBlock, 'REPAIR_COMPONENTS not found in background.js');
-  const components = [...compBlock[1].matchAll(/file: '([^']+)', world: '([^']+)', flag: '([^']+)'/g)]
-    .map((m) => ({ file: m[1], world: m[2], flag: m[3] }));
-  check('the repair component table is populated', components.length >= 8,
-    'found ' + components.length);
-
-  // The pairing is the finding: a flag marked without its file executing corrupts a working guard
-  // and never reinstalls it, and a file executed without its flag marked is a guaranteed no-op.
-  check('marking is derived from the files the frame receives, not a world-wide array',
-    bg.includes('const flags = repairFlagsForFiles(world, files || [])')
-      && bg.includes("markWardenOneCopiesStale(target, 'MAIN', mainFiles || [])")
-      && bg.includes("markWardenOneCopiesStale(target, 'ISOLATED', isolatedFiles)"));
-
-  // Every component must actually be executable by Repair: MAIN files come from the URL planner,
-  // ISOLATED files from the always-list plus consent. A name in the table with no executor is the
-  // exact defect this replaced.
-  const planner = bg.slice(bg.indexOf('function repairMainWorldFilesForUrl'),
-    bg.indexOf('function isTwitchFrameUrl'));
-  /* Both halves run to the statement that ends them rather than a fixed character count. A
-     magic offset silently shortens as the block above it grows -- a guard added at the end of
-     the per-frame list fell outside a 300-char window and read as having no executor at all,
-     which is the same false alarm this check exists to prevent. */
-  const isoAlwaysAt = bg.indexOf('const isolatedAlwaysFiles = []');
-  const isoFilesAt = bg.indexOf('const isolatedFiles = isolatedAlwaysFiles.slice()');
-  assert(isoAlwaysAt >= 0 && isoFilesAt > isoAlwaysAt, 'the ISOLATED file build moved in background.js');
-  const isoBuild = bg.slice(isoAlwaysAt, bg.indexOf('const tabs = await chrome.tabs.query', isoAlwaysAt))
-    + bg.slice(isoFilesAt, bg.indexOf('await markWardenOneCopiesStale', isoFilesAt));
-  for (const c of components) {
-    const where = c.world === 'MAIN' ? planner : isoBuild;
-    check('repair executes ' + c.file + ' (' + c.world + '), not just marks it',
-      where.includes("'" + c.file + "'"));
-  }
-
-  // The two the finding named as executed-but-unmarked.
-  for (const flag of ['__wardenOneYouTubeReadyVersion', '__wardenOneConsentRejectReadyVersion']) {
-    check(flag + ' is in the table, so its guard no longer no-ops',
-      components.some((c) => c.flag === flag));
-  }
-  // The five the finding named as marked-but-never-executed. Present here would mean the harm is
-  // back: a working guard's flag corrupted with nothing reinstalling it.
-  for (const flag of ['__wardenOneTwitchRewindReady', '__wardenOneVodRewind',
-    '__wardenOneOAuthGuardInstalled', '__wardenOneMinerWatch', '__wardenOneSearchJunk']) {
-    check(flag + ' is NOT marked, because Repair does not re-execute it',
-      !components.some((c) => c.flag === flag));
-  }
-
-  // Order is the whole point: marking after injecting would achieve nothing.
-  const markAt = bg.indexOf("await markWardenOneCopiesStale(target, 'MAIN', mainFiles || [])");
-  const injectAt = bg.indexOf("world: 'MAIN', files: mainFiles", markAt > 0 ? markAt : 0);
-  check('flags are marked stale BEFORE the re-injection',
-    markAt > 0 && injectAt > markAt, 'mark at ' + markAt + ', inject at ' + injectAt);
-
-  const listed = new Set(components.map((c) => c.flag));
-  check('the engine and bridge flags are in the table too',
-    listed.has('__wardenOneReadyVersion') && listed.has('__wardenOneBridgeVersion'));
-
-  // A stale value must not equal any real version, or the guard would treat it as current.
-  check('the stale sentinel differs from the extension version',
-    bg.includes("const WO_STALE_SENTINEL = 'wo-stale'") && MANIFEST.version !== 'wo-stale');
-  // The sentinel is passed into the injected function rather than written as a literal there: the
-  // writer is serialised into the page and cannot see the constant the health check reads.
-  check('the sentinel reaches the page as an argument, not a second literal',
-    bg.includes('args: [flags, WO_STALE_SENTINEL]') && bg.includes('window[name] = sentinel'));
+  check('repair no longer marks install flags stale', !bg.includes('markWardenOneCopiesStale'));
+  check('repair no longer keeps a component table to re-execute', !bg.includes('REPAIR_COMPONENTS'));
+  check('repair no longer writes a stale sentinel into the page', !bg.includes('WO_STALE_SENTINEL'));
+  check('repair asks the bridge for a signed liveness answer', bg.includes("{ kind: 'wo-engine-status' }"));
+  check('repair reloads a tab whose engine did not answer', /if \(status && status\.alive\) \{ live\+\+; continue; \}\s*try \{ await chrome\.tabs\.reload\(t\.id\); reloaded\+\+; \}/.test(bg));
+  check('repair never executes a MAIN-world file into a live tab',
+    !/executeScript\(\{ target, world: 'MAIN', files/.test(bg));
+  check('repair leaves alone the tabs the engine is meant to skip',
+    /engineExcludedByManifest\(url\) \|\| isMainWorldRepairExcludedUrl\(url\)/.test(bg) && /t\.discarded/.test(bg));
+  const bridge = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
+  check('the bridge answers the status question with the challenge, top frame only',
+    /msg\.kind === 'wo-engine-status' && window === window\.top[\s\S]{0,200}alive = bridgeEngineSeen && engineAnswers\(\)/.test(bridge));
 }
 
 // ---------------------------------------------------------------------------
@@ -379,11 +354,18 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
   const decision = 'this.__ran = false; (function () {\n' + src.slice(from, to)
     + '\n  __ran = true;\n})();';
 
-  for (const [label, flagValue, expectRan, expectDisposed] of [
-    ['a matching flag still returns early', MANIFEST.version, false, false],
-    ['a stale flag reinstalls and disposes the old copy', 'wo-stale', true, true],
-    ['an unset flag installs cleanly', undefined, true, false],
-  ]) {
+  const cases = g.main
+    ? [
+      ['a matching flag returns early', MANIFEST.version, false, false],
+      ['a flag of another version returns early too, and disposes nothing (SEC-03)', 'wo-stale', false, false],
+      ['an unset flag installs cleanly', undefined, true, false],
+    ]
+    : [
+      ['a matching flag still returns early', MANIFEST.version, false, false],
+      ['a stale flag reinstalls and disposes the old copy', 'wo-stale', true, true],
+      ['an unset flag installs cleanly', undefined, true, false],
+    ];
+  for (const [label, flagValue, expectRan, expectDisposed] of cases) {
     const win = {};
     let disposed = false;
     if (flagValue !== undefined) win[g.flag] = flagValue;
@@ -454,7 +436,7 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
   const to = bridge.indexOf('  // Chrome\'s extension events are not DOM events');
   assert(from >= 0 && to > from, 'could not find the bridge registry');
   check('bridge: registry core is identical to the other nine',
-    sharedRegistryCore(bridge, '__wardenOneBridgeDispose') === registries[0]);
+    sharedRegistryCore(bridge, { dispose: '__wardenOneBridgeDispose', disposeDecl: 'window.__wardenOneBridgeDispose = () => {' }) === registries[0]);
 
   // Behaviour of the guard decision, which is where the defect was.
   const gFrom = bridge.indexOf("  const BRIDGE_VERSION = '");

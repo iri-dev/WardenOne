@@ -40,12 +40,10 @@
      tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
      older one, and it must release the old one's listeners, observers and timers first or both
      copies stay live and are charged for the same work. */
-  if (window.__wardenOneAntiRedirectHardener === WO_GUARD_VERSION) return;
-  if (window.__wardenOneAntiRedirectHardener) {
-    try {
-      if (typeof window.__wardenOneAntiRedirectDispose === 'function') window.__wardenOneAntiRedirectDispose();
-    } catch (_) {}
-  }
+  /* Any copy at all, of any version: nothing injects a second copy into a live document any more
+     (the worker reloads the tab instead), and a published disposer for the old copy to be released
+     through was a page-callable kill switch (SEC-03). */
+  if (window.__wardenOneAntiRedirectHardener) return;
   window.__wardenOneAntiRedirectHardener = WO_GUARD_VERSION;
 
   /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
@@ -75,7 +73,8 @@
     woPending.add(id);
     return id;
   };
-  window.__wardenOneAntiRedirectDispose = () => {
+  /* Reachable only through a signed "dispose" message from the isolated bridge. */
+  const woDispose = () => {
     try { woAbort.abort(); } catch (_) {}
     woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
     woPending.clear();
@@ -89,6 +88,100 @@
   };
 
   let token = null;
+  /* The routing token is public; the key is handed over once, in a synchronous wo-key event at
+     document_start, and never again (SEC-01). Config counts only when it is signed with it. */
+  let woKey = null;
+  let woLastSeq = 0;
+  /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
+     asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
+     reference it needs is captured here, before the page runs, so a page that rewrites
+     TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
+     library: fixed 32-byte key (hex), text in, hex out. */
+  const __woAuth=(function(){
+    const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+    const U8=Uint8Array,U32=Uint32Array;
+    /* UTF-8 by hand rather than TextEncoder: a lifted fragment in a bare sandbox has no
+       TextEncoder, and the page cannot be handed a hook into this either way. */
+    function encode(text){
+      const s=String(text),out=new U8(3*s.length+3);
+      let n=0;
+      for(let i=0;i<s.length;i++){
+        let c=s.charCodeAt(i);
+        if(c>=0xd800&&c<0xdc00&&i+1<s.length){const d=s.charCodeAt(i+1);if(d>=0xdc00&&d<0xe000){c=0x10000+((c-0xd800)<<10)+(d-0xdc00),i++}}
+        if(c<0x80)out[n++]=c;
+        else if(c<0x800)out[n++]=0xc0|(c>>6),out[n++]=0x80|(c&63);
+        else if(c<0x10000)out[n++]=0xe0|(c>>12),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63);
+        else out[n++]=0xf0|(c>>18),out[n++]=0x80|((c>>12)&63),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63)
+      }
+      return out.subarray(0,n)
+    }
+    const rotr=(x,n)=>(x>>>n)|(x<<(32-n));
+    function sha256(msg){
+      const len=msg.length,padded=new U8(((len+9+63)>>6)<<6);
+      padded.set(msg),padded[len]=0x80;
+      const bits=len*8;
+      padded[padded.length-4]=(bits>>>24)&255,padded[padded.length-3]=(bits>>>16)&255,padded[padded.length-2]=(bits>>>8)&255,padded[padded.length-1]=bits&255;
+      const h=new U32([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]),w=new U32(64);
+      for(let off=0;off<padded.length;off+=64){
+        for(let i=0;i<16;i++)w[i]=(padded[off+4*i]<<24)|(padded[off+4*i+1]<<16)|(padded[off+4*i+2]<<8)|padded[off+4*i+3];
+        for(let i=16;i<64;i++){
+          const s0=rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3),s1=rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
+          w[i]=(w[i-16]+s0+w[i-7]+s1)|0
+        }
+        let a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],k=h[7];
+        for(let i=0;i<64;i++){
+          const S1=rotr(e,6)^rotr(e,11)^rotr(e,25),ch=(e&f)^(~e&g),t1=(k+S1+ch+K[i]+w[i])|0,S0=rotr(a,2)^rotr(a,13)^rotr(a,22),mj=(a&b)^(a&c)^(b&c),t2=(S0+mj)|0;
+          k=g,g=f,f=e,e=(d+t1)|0,d=c,c=b,b=a,a=(t1+t2)|0
+        }
+        h[0]=(h[0]+a)|0,h[1]=(h[1]+b)|0,h[2]=(h[2]+c)|0,h[3]=(h[3]+d)|0,h[4]=(h[4]+e)|0,h[5]=(h[5]+f)|0,h[6]=(h[6]+g)|0,h[7]=(h[7]+k)|0
+      }
+      const out=new U8(32);
+      for(let i=0;i<8;i++)out[4*i]=h[i]>>>24,out[4*i+1]=(h[i]>>>16)&255,out[4*i+2]=(h[i]>>>8)&255,out[4*i+3]=h[i]&255;
+      return out
+    }
+    function hexBytes(hex){
+      const s=String(hex||""),out=new U8(s.length>>1);
+      for(let i=0;i<out.length;i++)out[i]=parseInt(s.substr(2*i,2),16)||0;
+      return out
+    }
+    function hex(bytes){
+      let s="";
+      for(let i=0;i<bytes.length;i++)s+=(bytes[i]<256?(bytes[i]<16?"0":""):"")+bytes[i].toString(16);
+      return s
+    }
+    function hmac(keyHex,text){
+      const key=hexBytes(keyHex),block=new U8(64);
+      block.set(key.length>64?sha256(key):key);
+      const ipad=new U8(64),opad=new U8(64);
+      for(let i=0;i<64;i++)ipad[i]=block[i]^0x36,opad[i]=block[i]^0x5c;
+      const data=encode(String(text)),inner=new U8(64+data.length);
+      inner.set(ipad),inner.set(data,64);
+      const ih=sha256(inner),outer=new U8(96);
+      outer.set(opad),outer.set(ih,64);
+      return hex(sha256(outer))
+    }
+    /* Constant-time-enough equality for two short hex strings; a mismatch is not a secret. */
+    function same(a,b){
+      a=String(a||""),b=String(b||"");
+      if(a.length!==b.length||!a.length)return!1;
+      let diff=0;
+      for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);
+      return 0===diff
+    }
+    return{hmac:hmac,same:same}
+  })();
+
+  /* Verify a signed message from the bridge: a sequence number that only moves forward and an
+     HMAC under the key over that number, the kind and the payload (SEC-01). */
+  const woVerify = (kind, payload, m) => {
+    if (!woKey || !m) return false;
+    const seq = Number(m.seq);
+    if (!Number.isInteger(seq) || seq <= woLastSeq) return false;
+    if (!__woAuth.same(m.mac, __woAuth.hmac(woKey, seq + '\n' + kind + '\n' + String(payload)))) return false;
+    woLastSeq = seq;
+    return true;
+  };
+
   let queuedEvents = [];
   let guardConfig = {
     __configReady: false,
@@ -1680,34 +1773,65 @@
     }, true);
   } catch (_) {}
 
-  try {
-    const baitObserver = woObserver((records) => {
-      if (baitRemoved >= BAIT_REMOVE_CAP) return;
-      let queued = false;
-      for (const rec of records) {
-        const added = rec.addedNodes || [];
-        for (let i = 0; i < added.length && baitPending.size < 40; i++) {
-          const node = added[i];
-          if (node && node.nodeType === 1) {
-            if (!queued && !confirmBaitEnabled()) return;
-            baitPending.add(node);
-            queued = true;
+  // ---- confirm-bait sweep: installed per document, but not in every frame at once ----
+  //
+  // This sweep -- an observer over the whole subtree plus seven scheduled passes, each
+  // sampling a grid of elementFromPoint calls -- exists to catch a fake dialog laid over a
+  // page. It used to install in every frame at document_start, including the 300x250 ad
+  // slot and the 1x1 pixel, where there is no room for a dialog and nothing for the grid
+  // to find, and each of those frames paid for the observer's bookkeeping during its own
+  // parse and for forced layout on every pass. PERF-02's browser fixture put that at about
+  // two milliseconds of main-thread time per child frame, a sixth of everything the
+  // extension costs a frame. A child frame gets the sweep once it is at least dialog-sized
+  // (BAIT_FRAME_MIN_W x BAIT_FRAME_MIN_H), and a resize listener arms it the moment a
+  // small frame grows into one -- the overlay-ad shape is a frame that starts tiny and
+  // expands, and that shape is still covered. The top frame installs unconditionally, as
+  // before. The grid's own small-viewport guard inside boxesInTheWay() is unchanged.
+  const BAIT_FRAME_MIN_W = 400;
+  const BAIT_FRAME_MIN_H = 300;
+  function baitFrameLargeEnough() {
+    try { return (window.innerWidth || 0) >= BAIT_FRAME_MIN_W && (window.innerHeight || 0) >= BAIT_FRAME_MIN_H; } catch (_) { return false; }
+  }
+  let baitInstalled = false;
+  function installConfirmBaitSweep() {
+    if (baitInstalled) return;
+    baitInstalled = true;
+    try {
+      const baitObserver = woObserver((records) => {
+        if (baitRemoved >= BAIT_REMOVE_CAP) return;
+        let queued = false;
+        for (const rec of records) {
+          const added = rec.addedNodes || [];
+          for (let i = 0; i < added.length && baitPending.size < 40; i++) {
+            const node = added[i];
+            if (node && node.nodeType === 1) {
+              if (!queued && !confirmBaitEnabled()) return;
+              baitPending.add(node);
+              queued = true;
+            }
           }
         }
+        if (queued) scheduleConfirmBaitSweep(60);
+      });
+      baitObserver.observe(document.documentElement || document, { childList: true, subtree: true });
+      // The observer alone was not enough, for two reasons that both bite once.
+      // The config arrives by message AFTER this script starts, and until it does
+      // masterEnabled() is false -- so a box inserted early was seen, refused, and
+      // never looked at again, because insertion only happens once. And a box that is
+      // hidden and re-shown adds no nodes at all. A short bounded schedule covers
+      // both without an interval running for the life of the page.
+      for (const delay of [120, 350, 800, 2000, 4000, 8000, 15000]) {
+        woTimeout(() => { baitPending.clear(); sweepConfirmBait(); }, delay);
       }
-      if (queued) scheduleConfirmBaitSweep(60);
-    });
-    baitObserver.observe(document.documentElement || document, { childList: true, subtree: true });
-    // The observer alone was not enough, for two reasons that both bite once.
-    // The config arrives by message AFTER this script starts, and until it does
-    // masterEnabled() is false -- so a box inserted early was seen, refused, and
-    // never looked at again, because insertion only happens once. And a box that is
-    // hidden and re-shown adds no nodes at all. A short bounded schedule covers
-    // both without an interval running for the life of the page.
-    for (const delay of [120, 350, 800, 2000, 4000, 8000, 15000]) {
-      woTimeout(() => { baitPending.clear(); sweepConfirmBait(); }, delay);
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
+  if (TOP_FRAME || baitFrameLargeEnough()) {
+    installConfirmBaitSweep();
+  } else {
+    try {
+      woOn(window, 'resize', () => { if (!baitInstalled && baitFrameLargeEnough()) installConfirmBaitSweep(); });
+    } catch (_) {}
+  }
 
   /* CREDENTIAL_FRAME_GUARD_START
      The full protection engine stays in the top frame: parsing all of it into every
@@ -2455,16 +2579,164 @@
   // wrappers fall straight through until it lands.
   installStorageAccessGuard();
 
+  // ---- ClickFix clipboard guard, for frames (SEC-06) ----
+  //
+  // The command-paste guard lives in the top-frame engine, and the top-frame engine does not
+  // run in frames: content.min.js is all_frames:false, and its size is the reason. So a fake
+  // CAPTCHA rendered inside a full-viewport iframe could copy "powershell -enc ..." to the
+  // clipboard with no detector anywhere near it, and the reader would see the same scam with
+  // no warning at all. This is the smallest piece of that guard that still defeats the
+  // attack: the same clipboard hooks, the same twelve command shapes, and no page-text
+  // scanning. A hit refuses the write, reports it through the ordinary event relay, and the
+  // worker then asks the top frame's engine to show the panel it would have shown for its own
+  // document. The top frame itself falls straight through -- the full guard owns it.
+  //
+  // FRAME_CMD_PATTERNS and FRAME_CLICKFIX_DOC_HOST are copies of CMD_PATTERNS and
+  // CLICKFIX_DOC_HOST in src/content.js; tools/test-frame-clickfix.js fails if they drift.
+  const FRAME_CMD_PATTERNS = [
+    /\b(?:powershell|pwsh)(?:\.exe)?\s+.{0,1200}?-(?:e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)\b/i,
+    /\b(iwr|irm|invoke-(webrequest|expression)|iex)\b[\s\S]{0,1200}?\|\s*iex\b/i,
+    /\b(?:iex|invoke-expression)\s*\(\s*(?:iwr|irm|invoke-webrequest)\b/i,
+    /\bcurl\b[\s\S]{0,1200}?\|\s*(bash|sh|zsh)\b/i,
+    /\bwget\b[\s\S]{0,1200}?\|\s*(bash|sh|zsh)\b/i,
+    /\b(?:curl|wget)\b[^\r\n]{0,800}(?:-o|--output)\b[^\r\n]{0,300}(?:&&|;|\n)\s*(?:chmod\s+\+x\s+)?(?:\.\/|bash\b|sh\b|zsh\b|cmd(?:\.exe)?\b|powershell(?:\.exe)?\b|pwsh(?:\.exe)?\b)/i,
+    /\bmshta\b\s+https?:/i,
+    /\bregsvr32\b.{0,1200}\/i:/i,
+    /\bcertutil\b.{0,1200}-urlcache/i,
+    /\bbitsadmin\b.{0,1200}\/transfer/i,
+    /\b(rundll32|msiexec)\b.{0,1200}https?:/i,
+    /\b(?:powershell|pwsh)(?:\.exe)?\s+.{0,1200}(downloadstring|downloadfile|webclient|invoke-webrequest)/i
+  ];
+  const FRAME_CLICKFIX_DOC_HOST = /(^|\.)(developer\.mozilla\.org|developers\.google\.com|web\.dev|stackoverflow\.com|stackexchange\.com|github\.com|githubusercontent\.com|gitlab\.com|bitbucket\.org|codeberg\.org|sr\.ht|codepen\.io|codesandbox\.io|learn\.microsoft\.com|docs\.microsoft\.com|npmjs\.com|pypi\.org|crates\.io|pkg\.go\.dev|rubygems\.org|packagist\.org|nuget\.org|docs\.docker\.com|kubernetes\.io|go\.dev|rust-lang\.org|python\.org|nodejs\.org)$/i;
+  function frameNormalizeClipboardText(text) {
+    let value = String(text || '');
+    try { value = value.normalize('NFKC'); } catch (_) {}
+    return value.replace(/[\u00AD\u180E\u200B-\u200D\u2060\uFEFF]/g, '')
+      .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+      .replace(/[\u2010-\u2015\u2212]/g, '-')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ');
+  }
+  function frameCommandSample(text) {
+    let t = frameNormalizeClipboardText(text);
+    if (t.length < 8) return '';
+    if (t.length > 65536) t = t.slice(0, 32768) + ' ' + t.slice(-32768);
+    for (const re of FRAME_CMD_PATTERNS) {
+      const m = t.match(re);
+      if (m) return String(m[0] || '').slice(0, 160);
+    }
+    return '';
+  }
+  function frameClipboardGuardOn() {
+    return !TOP_FRAME && masterEnabled() && cfg().commandPasteGuard !== false;
+  }
+  let frameClipboardReported = 0;
+  // Returns true when the write must be refused.
+  function frameClipboardHit(where, text) {
+    if (!frameClipboardGuardOn()) return false;
+    const sample = frameCommandSample(text);
+    if (!sample) return false;
+    // A documentation site embedded in a frame copying "curl ... | bash" is the one honest
+    // false positive; the top-frame guard makes the same exception, by the same list.
+    if (FRAME_CLICKFIX_DOC_HOST.test(location.hostname)) return false;
+    if (frameClipboardReported < 3) {
+      frameClipboardReported++;
+      emit('blocked_command_paste_frame', {
+        where: String(where || 'clipboard').slice(0, 40),
+        sample,
+        frameHost: String(location.hostname || '').slice(0, 120),
+      });
+    }
+    return true;
+  }
+  function installFrameClipboardGuard() {
+    if (TOP_FRAME) return;
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        const realWriteText = navigator.clipboard.writeText.bind(navigator.clipboard);
+        navigator.clipboard.writeText = function (text) {
+          const stable = String(text == null ? '' : text);
+          if (frameClipboardHit('clipboard', stable)) {
+            return Promise.reject(new DOMException('Blocked by WardenOne command-paste guard', 'NotAllowedError'));
+          }
+          return realWriteText(stable);
+        };
+      }
+      if (navigator.clipboard && typeof navigator.clipboard.write === 'function') {
+        const realWrite = navigator.clipboard.write.bind(navigator.clipboard);
+        navigator.clipboard.write = function (items) {
+          const list = Array.isArray(items) ? items : [];
+          const texts = [];
+          for (const item of list) {
+            try {
+              const types = item && Array.isArray(item.types) ? item.types : [];
+              for (const type of types) {
+                if (/^text\//i.test(String(type)) && typeof item.getType === 'function') texts.push(item.getType(type));
+              }
+            } catch (_) {}
+          }
+          if (!texts.length) return realWrite(items);
+          return Promise.all(texts.map((p) => Promise.resolve(p).then((blob) => (blob && typeof blob.text === 'function' ? blob.text() : ''), () => '')))
+            .then((values) => {
+              if (values.some((v) => frameClipboardHit('clipboard', v))) {
+                throw new DOMException('Blocked by WardenOne command-paste guard', 'NotAllowedError');
+              }
+              return realWrite(items);
+            });
+        };
+      }
+      if (typeof document.execCommand === 'function') {
+        const realExec = document.execCommand.bind(document);
+        document.execCommand = function (command) {
+          if (String(command || '').toLowerCase() === 'copy') {
+            let selected = '';
+            try { selected = String(window.getSelection ? window.getSelection() : ''); } catch (_) {}
+            try {
+              const active = document.activeElement;
+              if (active && typeof active.value === 'string' && typeof active.selectionStart === 'number') {
+                selected += ' ' + active.value.slice(active.selectionStart, active.selectionEnd);
+              }
+            } catch (_) {}
+            if (frameClipboardHit('clipboard (execCommand)', selected)) return false;
+          }
+          return realExec.apply(document, arguments);
+        };
+      }
+      // A page that writes the clipboard from its own copy handler goes through setData.
+      woOn(document, 'copy', (event) => {
+        const transfer = event && event.clipboardData;
+        if (!transfer || typeof transfer.setData !== 'function') return;
+        const realSetData = transfer.setData.bind(transfer);
+        transfer.setData = function (type, data) {
+          if (/text/i.test(String(type || '')) && frameClipboardHit('copy event', String(data == null ? '' : data))) {
+            try { event.preventDefault(); } catch (_) {}
+            return realSetData(type, 'Blocked by WardenOne: this frame tried to copy a command to your clipboard.');
+          }
+          return realSetData(type, data);
+        };
+      }, true);
+    } catch (_) {}
+  }
+  installFrameClipboardGuard();
+
+  woOn(document, 'wo-key', (e) => {
+    const d = e && e.detail;
+    if (woKey || !d || typeof d.token !== 'string' || !d.token || typeof d.key !== 'string' || !d.key) return;
+    token = d.token;
+    woKey = d.key;
+    flushEvents();
+  });
   woOn(window, 'message', (event) => {
     if (event.source !== window) return;
     const msg = event.data || {};
-    if (msg.source === 'wardenone-handshake' && typeof msg.token === 'string' && !token) {
-      token = msg.token;
-      flushEvents();
+    if (msg.source === 'wardenone' && msg.kind === 'dispose' && token && msg.token === token && woVerify('dispose', '', msg)) {
+      woDispose();
       return;
     }
     if (msg.source === 'wardenone' && msg.kind === 'config' && token && msg.token === token
-        && msg.overrides && typeof msg.overrides === 'object') {
+        && msg.overrides && typeof msg.overrides === 'object'
+        && woVerify('config', JSON.stringify(msg.overrides), msg)) {
       guardConfig = Object.assign({
         enabled: true,
         blockGesturelessNav: true,
@@ -2479,4 +2751,7 @@
       clearTrackerFrameStorage();
     }
   }, true);
+  /* In case the bridge ran first and its key found no listener here: ask once, now that the
+     listeners above exist. The bridge answers only while no page script can be running. */
+  try { document.dispatchEvent(new CustomEvent('wo-bridge-replay')); } catch (_) {}
 }());

@@ -7,7 +7,6 @@
 /* WardenOne activity log */
 
 const DOWNLOAD_TRUSTED_KEY = 'wardenone_download_trusted_sites';
-const ADSHIELD_ALLOWLIST_KEY = 'wardenone_adshield_allowlist';
 
 const LABELS = {
   blocked_popup: 'Popup blocked',
@@ -20,7 +19,8 @@ const LABELS = {
   detected_cryptominer: 'Cryptominer found (site allowlisted, left running)',
   detected_grabber_domain: 'IP-logger page',
   detected_thirdparty_tracker: 'Third-party tracker observed',
-  learned_tracker_domain: 'Tracker learned locally',
+  proposed_tracker_domain: 'Tracker noticed, waiting for your decision',
+  learned_tracker_domain: 'Tracker blocked everywhere, on your approval',
   blocked_grabber_fetch: 'IP-grabber request blocked',
   blocked_grabber_xhr: 'IP-grabber request blocked',
   blocked_grabber_beacon: 'IP-grabber beacon blocked',
@@ -755,15 +755,6 @@ function allowedItemsFromStore(store) {
       detail: 'Download Shield grades normal downloads from this source more gently.',
     });
   });
-  (Array.isArray(store && store[ADSHIELD_ALLOWLIST_KEY]) ? store[ADSHIELD_ALLOWLIST_KEY] : []).forEach((host) => {
-    items.push({
-      kind: 'adshield',
-      host,
-      title: host,
-      category: 'AdShield off',
-      detail: 'AdShield cosmetic/network hiding is disabled on this site.',
-    });
-  });
   return items.filter((item) => item.host).sort((a, b) => String(a.host).localeCompare(String(b.host)) || String(a.kind).localeCompare(String(b.kind)));
 }
 
@@ -781,13 +772,6 @@ function removeAllowedItem(item, done) {
     chrome.storage.local.get(DOWNLOAD_TRUSTED_KEY, (store) => {
       const list = (Array.isArray(store && store[DOWNLOAD_TRUSTED_KEY]) ? store[DOWNLOAD_TRUSTED_KEY] : []).filter((host) => host !== item.host);
       checkedLocalSet({ [DOWNLOAD_TRUSTED_KEY]: list }, () => { if (done) done(); });
-    });
-    return;
-  }
-  if (item.kind === 'adshield') {
-    chrome.storage.local.get(ADSHIELD_ALLOWLIST_KEY, (store) => {
-      const list = (Array.isArray(store && store[ADSHIELD_ALLOWLIST_KEY]) ? store[ADSHIELD_ALLOWLIST_KEY] : []).filter((host) => host !== item.host);
-      checkedLocalSet({ [ADSHIELD_ALLOWLIST_KEY]: list }, () => { if (done) done(); });
     });
     return;
   }
@@ -831,7 +815,7 @@ function renderAllowed(items) {
 }
 
 function loadAllowed() {
-  chrome.storage.local.get(['wardenone_config', DOWNLOAD_TRUSTED_KEY, ADSHIELD_ALLOWLIST_KEY], (store) => {
+  chrome.storage.local.get(['wardenone_config', DOWNLOAD_TRUSTED_KEY], (store) => {
     renderAllowed(allowedItemsFromStore(store || {}));
   });
 }
@@ -923,5 +907,5 @@ loadAllowed();
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.wardenone_history) load();
   if (area === 'local' && changes.wardenone_learned) loadLearned();
-  if (area === 'local' && (changes.wardenone_config || changes[DOWNLOAD_TRUSTED_KEY] || changes[ADSHIELD_ALLOWLIST_KEY])) loadAllowed();
+  if (area === 'local' && (changes.wardenone_config || changes[DOWNLOAD_TRUSTED_KEY])) loadAllowed();
 });

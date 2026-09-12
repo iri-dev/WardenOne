@@ -12,10 +12,14 @@
 // in one MAIN world -- each with its own observers and timers, both charged for every DOM
 // mutation, on exactly the long-lived tabs where it matters most.
 //
-// The engine now releases the previous instance's observers and timers before installing.
-// It deliberately does NOT restore the patched prototypes: unwinding those in the wrong
-// order can hand the page a half-restored API, which is worse than leaving a spare
-// wrapper in the chain. What it releases is the expensive, stateful part.
+// The engine holds a teardown that releases its observers and timers. Since SEC-03 it is no
+// longer window.__wardenOneDispose -- a published disposer was a page-callable kill switch --
+// and no longer runs at install: nothing injects a second engine into a live document any
+// more (the worker reloads the tab instead) and the guard refuses to run beside any copy.
+// The teardown is a private __woTeardown, reachable only through a signed "dispose"
+// message from the isolated bridge. It deliberately does NOT restore the patched prototypes:
+// unwinding those in the wrong order can hand the page a half-restored API, which is worse
+// than leaving a spare wrapper in the chain. What it releases is the expensive, stateful part.
 //
 // The release path itself needs a real browser to observe (the observer sites sit behind
 // config and lifecycle gates a fake page cannot cheaply reproduce). What this file pins is
@@ -92,34 +96,28 @@ check('the factories are actually used',
 // ---------------------------------------------------------------------------
 // 2. Dispose drains the registry and handles both kinds of held resource.
 // ---------------------------------------------------------------------------
-check('dispose is published on window', /window\.__wardenOneDispose=\(\)=>/.test(SRC));
+check('the teardown is private, not published on window (SEC-03)',
+  /const __woTeardown=\(\)=>\{/.test(SRC) && !/window\.__wardenOneDispose/.test(SRC));
+check('the teardown is reachable only through a signed dispose message',
+  /"dispose"===m\.kind\)\{\s*if\(null===__woToken\|\|m\.token!==__woToken\|\|!__woVerify\("dispose","",m\)\)return;\s*return void __woTeardown\(\)/.test(SRC));
 check('dispose drains the registry rather than iterating it in place',
   /__woKeep\.splice\(0,__woKeep\.length\)/.test(SRC));
 check('dispose clears intervals', /clearInterval\(item\)/.test(SRC));
 check('dispose disconnects observers', /item\.disconnect===\"function\"\)item\.disconnect\(\)/.test(SRC.replace(/\s+/g, '')) || /typeof item\.disconnect==="function"/.test(SRC));
 
 // ---------------------------------------------------------------------------
-// 3. The previous engine is disposed BEFORE this one installs anything, and before the
-//    factories exist -- otherwise the new engine would register into a registry it is
-//    about to hand to the old instance's dispose.
+// 3. No engine installs beside another. The old contract disposed the previous instance and
+//    installed over it; the page could drive that too. Now the guard on line one refuses to
+//    run when ANY ready version is present, and nothing calls a previous teardown.
 // ---------------------------------------------------------------------------
-const callAt = SRC.indexOf('window.__wardenOneDispose()');
-const keepAt = SRC.indexOf('const __woKeep=[]');
-const factoryAt = SRC.indexOf('const __woObserver=');
-check('the previous engine is disposed before the new registry is created',
-  callAt > 0 && keepAt > callAt, 'dispose call at ' + callAt + ', registry at ' + keepAt);
-check('...and before any factory exists', callAt > 0 && factoryAt > callAt,
-  'dispose call at ' + callAt + ', factories at ' + factoryAt);
-// A page can set window.__wardenOneDispose to anything, so the call must be typeof-checked
-// AND wrapped -- a hostile value must not stop the engine installing.
-check('the dispose call is typeof-guarded',
-  SRC.includes('if(typeof window.__wardenOneDispose==="function")window.__wardenOneDispose()'));
-check('...and wrapped in try/catch', /try\{\s*if\(typeof window\.__wardenOneDispose===/.test(SRC));
+check('the install guard refuses any engine already present',
+  SRC.includes('if("string"==typeof window.__wardenOneReadyVersion&&window.__wardenOneReadyVersion)return;'));
+check('nothing calls a previous engine\'s teardown at install', !/window\.__wardenOneDispose\(\)/.test(SRC));
 
 // ---------------------------------------------------------------------------
 // 4. It survived the build. content.min.js is what actually ships.
 // ---------------------------------------------------------------------------
-check('the shipped runtime carries the teardown', MIN.includes('__wardenOneDispose') && MIN.includes('__woHold'));
+check('the shipped runtime carries the teardown', MIN.includes('__woTeardown') && MIN.includes('__woHold') && !/window\.__wardenOneDispose/.test(MIN));
 check('the shipped runtime has no raw observer constructor',
   (MIN.split('new MutationObserver(').length - 1) === 1,
   (MIN.split('new MutationObserver(').length - 1) + ' occurrences (1 = the factory only)');
@@ -135,7 +133,7 @@ check('the shipped runtime has no raw observer constructor',
   const end = SRC.indexOf('  const GRABBER_DOMAINS=', start);
   assert(start > 0 && end > start, 'could not lift the teardown preamble');
   const preamble = SRC.slice(start, end);
-  assert(preamble.includes('window.__wardenOneDispose='), 'lifted preamble is missing the dispose assignment');
+  assert(preamble.includes('const __woTeardown=()=>{'), 'lifted preamble is missing the teardown');
 
   const win = {};
   const cleared = [];
@@ -188,7 +186,8 @@ check('the shipped runtime has no raw observer constructor',
   check('a woOn once listener still fires exactly once',
     vm.runInContext('__onceHits', ctx) === 1, 'hits=' + vm.runInContext('__onceHits', ctx));
 
-  win.__wardenOneDispose();
+  check('the preamble published no disposer on window', typeof win.__wardenOneDispose !== 'function');
+  vm.runInContext('__woTeardown()', ctx);
   check('dispose disconnected the observer', obs.gone === true);
   check('dispose cleared the interval', cleared.length === 1 && cleared[0] === 42, JSON.stringify(cleared));
   check('dispose empties the registry', vm.runInContext('__woKeep.length', ctx) === 0);
@@ -197,7 +196,7 @@ check('the shipped runtime has no raw observer constructor',
   check('dispose detached the woOn listener', vm.runInContext('__hits', ctx) === beforeDispose,
     'hits went ' + beforeDispose + ' -> ' + vm.runInContext('__hits', ctx));
 
-  win.__wardenOneDispose();
+  vm.runInContext('__woTeardown()', ctx);
   check('dispose is safe to call twice', cleared.length === 1, 'cleared ' + cleared.length + ' times');
 }
 

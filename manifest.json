@@ -24,8 +24,7 @@
     "downloads",
     "notifications",
     "offscreen",
-    "tabs",
-    "tabGroups"
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>",

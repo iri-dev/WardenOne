@@ -136,7 +136,7 @@ if (doc) {
     normalizeAllowlistHosts: (l) => Array.from(l || []),
     chrome: {
       runtime: { getURL: (p) => 'chrome-extension://x/' + p },
-      storage: { local: { get: () => Promise.resolve({ wardenone_adshield_cosmetic: STALE, wardenone_config: {}, wardenone_adshield_allowlist: [] }) } },
+      storage: { local: { get: () => Promise.resolve({ wardenone_adshield_cosmetic: STALE, wardenone_config: {} }) } },
     },
     fetch: () => Promise.resolve({ json: () => Promise.resolve(PACKAGED) }),
     __cosmeticMem: null,

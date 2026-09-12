@@ -177,23 +177,6 @@ function loadRemoteSourceKindHelper() {
   return sandbox.__strongestSourceKind;
 }
 
-function loadRepairFileSelector() {
-  const sandbox = {
-    URL,
-    String,
-    Number,
-    isYouTubeFrameUrl: () => false,
-    isMainWorldRepairExcludedUrl: () => false,
-  };
-  vm.createContext(sandbox);
-  installEngineAmbient(sandbox);
-  vm.runInContext(
-    sourceBetween(BACKGROUND, 'function repairMainWorldFilesForUrl', '\nfunction getRepairFramesForTab')
-      + '\nthis.__selectRepairFiles = repairMainWorldFilesForUrl;',
-    sandbox,
-  );
-  return sandbox.__selectRepairFiles;
-}
 
 async function observeTracker(detail) {
   const state = {
@@ -374,18 +357,16 @@ test('manifest keeps the full engine top-frame-only and anti-redirect all-frames
   }), 'full engine and all-frame redirect guard were coupled into one registration');
 });
 
-test('repair selects the full engine only for frame zero', () => {
-  const selectRepairFiles = loadRepairFileSelector();
-  const url = 'https://stream.example/embed/episode';
-  const topFiles = Array.from(selectRepairFiles(url, 0) || []);
-  const childFiles = Array.from(selectRepairFiles(url, 7) || []);
-  assert(topFiles.includes('content.min.js'), 'top-frame repair no longer restores the full engine');
-  assert.deepStrictEqual(childFiles, ['domain-utils.js', 'anti-redirect.js'],
-    'child-frame repair must contain only the shared identity helper and lightweight redirect guard');
-
-  const repair = sourceBetween(BACKGROUND, '// 5. re-inject', '\n      sendResponse(report);');
-  assert(/repairMainWorldFilesForUrl\(frameUrl,\s*frameId\)/.test(repair),
-    'repair loop does not pass the real frame id to its file selector');
+test('repair reloads whole tabs rather than selecting files per frame', () => {
+  // Repair used to choose, per frame, which MAIN-world files to execute into a live document,
+  // and the streaming frames depended on that choice being right. It reloads the tab now
+  // (SEC-03): every frame re-runs its manifest registration, which is the one description of
+  // what runs where, so there is no selector left to get wrong.
+  assert(!/repairMainWorldFilesForUrl/.test(BACKGROUND), 'a per-frame repair file selector is back');
+  assert(!/executeScript\(\{ target, world: 'MAIN', files/.test(BACKGROUND), 'repair executes MAIN-world files into a live tab again');
+  const repair = sourceBetween(BACKGROUND, '// 5. Put the page engine back where it is missing', '\n      sendResponse(report);');
+  assert(/chrome\.tabs\.reload\(t\.id\)/.test(repair), 'repair does not reload the tabs that fail the challenge');
+  assert(/\{ kind: 'wo-engine-status' \}/.test(repair), 'repair does not ask the bridge before reloading');
 });
 
 test('ambiguous learned tracker rules cannot block player frames or scripts', () => {
@@ -574,7 +555,7 @@ test('content requests carry player mode through to background cosmetic computat
   const handler = sourceBetween(
     BACKGROUND,
     "if (msg && msg.kind === 'adshield-cosmetic' && msg.hostname)",
-    '\n  // ---- AdShield: per-site allowlist',
+    '\n  // ---- Check an extension before installing it ----',
   );
   assert(/msg\.playerPage/.test(handler)
     && /computeCosmeticForHost\(\s*msg\.hostname\s*,\s*mem\s*,/.test(handler),

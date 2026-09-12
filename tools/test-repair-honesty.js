@@ -7,17 +7,18 @@
 'use strict';
 
 // Verify & Repair used to report "Re-armed full protection on N open tab(s)" for any tab
-// where chrome.scripting.executeScript merely RESOLVED. Every content script early-returns
-// when its re-injection guard matches, and that early return looks identical to a fresh
-// install from the background's side -- so a tab still holding an orphaned copy from before
-// an extension reload was counted as re-armed. For a recovery button on a security
-// extension, reporting success while doing nothing is the worst way to be wrong.
+// where chrome.scripting.executeScript merely RESOLVED, and then to read a MAIN-world version
+// marker back to decide it had worked -- a marker the page can write (SEC-03). For a recovery
+// button on a security extension, reporting success while doing nothing is the worst way to
+// be wrong.
 //
-// It now asks the tab. The MAIN-world engine publishes its version when it installs, and
-// the ISOLATED bridge answers a cheap message only while it belongs to the CURRENT
-// extension context -- an orphaned bridge's listener died with the context that registered
-// it. This drives verify-repair against three tabs that behave like the real cases and
-// checks what it says about each.
+// It now asks the tab's ISOLATED bridge, which holds the key the engine was handed at
+// document_start, whether the engine answers a signed challenge. A tab that answers is left
+// as it is. A tab that does not -- the engine is gone, or the bridge belongs to a previous
+// extension lifetime and cannot answer at all -- is reloaded, which is a fresh document_start
+// hand-off; nothing is injected into a live document any more, because no channel into one is
+// private. This drives verify-repair against tabs that behave like the real cases and checks
+// what it says about each.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -57,10 +58,15 @@ function area() {
 // meant every version bump broke this suite for no reason at all.
 const SHIPPED_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
 const TABS = [
-  { id: 1, url: 'https://healthy.example/', engine: SHIPPED_VERSION, bridgeAlive: true },   // freshly armed
-  { id: 2, url: 'https://orphan.example/', engine: SHIPPED_VERSION, bridgeAlive: false },   // guard blocked re-arm
-  { id: 3, url: 'https://gone.example/', engine: null, bridgeAlive: false },        // not scriptable
+  { id: 1, url: 'https://healthy.example/', bridgeAlive: true, alive: true },     // answers the challenge
+  { id: 2, url: 'https://orphan.example/', bridgeAlive: false },                  // bridge from a previous lifetime
+  { id: 3, url: 'https://gone.example/', bridgeAlive: false, reloadFails: true }, // closed between query and reload
+  { id: 4, url: 'https://disposed.example/', bridgeAlive: true, alive: false },   // the page switched the engine off
+  { id: 5, url: 'https://mail.google.com/mail/u/0/', bridgeAlive: false },       // the manifest excludes the engine here
+  { id: 6, url: 'https://sleeping.example/', bridgeAlive: false, discarded: true }, // reloads itself when shown
 ];
+const RELOADED = [];
+const INJECTED = [];
 
 function load() {
   const chrome = {
@@ -76,19 +82,26 @@ function load() {
     storage: { local: area(), session: area(), sync: area(), onChanged: ev() },
     tabs: {
       query: (q, cb) => {
-        const r = TABS.map((t) => ({ id: t.id, url: t.url }));
+        const r = TABS.map((t) => ({ id: t.id, url: t.url, discarded: !!t.discarded }));
         if (cb) { setImmediate(() => cb(r)); return undefined; }
         return Promise.resolve(r);
       },
       get: (id) => Promise.resolve(TABS.find((t) => t.id === id) || { id }),
-      // Only a bridge belonging to the current extension context answers.
+      // Only a bridge belonging to the current extension context answers, and it answers
+      // with the signed challenge's verdict.
       sendMessage: (tabId, msg, opts, cb) => {
         const fn = typeof opts === 'function' ? opts : cb;
         const t = TABS.find((x) => x.id === tabId);
-        const answer = (t && t.bridgeAlive && msg && msg.kind === 'memory-form-check')
-          ? { formDirty: false, mediaActive: false } : undefined;
+        const answer = (t && t.bridgeAlive && msg && msg.kind === 'wo-engine-status')
+          ? { ok: true, alive: !!t.alive, seen: !!t.alive, fresh: true } : undefined;
         if (fn) { setImmediate(() => fn(answer)); return undefined; }
         return Promise.resolve(answer);
+      },
+      reload: (tabId) => {
+        const t = TABS.find((x) => x.id === tabId);
+        if (!t || t.reloadFails) return Promise.reject(new Error('No tab with id'));
+        RELOADED.push(tabId);
+        return Promise.resolve();
       },
       update: () => Promise.resolve({}), remove: () => Promise.resolve(), discard: () => Promise.resolve({}),
       onUpdated: ev(), onRemoved: ev(), onCreated: ev(), onActivated: ev(), onReplaced: ev(),
@@ -120,17 +133,8 @@ function load() {
       registerContentScripts: () => Promise.resolve(), unregisterContentScripts: () => Promise.resolve(),
       updateContentScripts: () => Promise.resolve(), getRegisteredContentScripts: () => Promise.resolve([]),
       insertCSS: () => Promise.resolve(), removeCSS: () => Promise.resolve(),
-      executeScript: ({ target, func }) => {
-        const t = TABS.find((x) => x.id === target.tabId);
-        if (!t) return Promise.reject(new Error('no such tab'));
-        // A tab that cannot be scripted rejects, exactly as Chrome does.
-        if (t.engine === null) return Promise.reject(new Error('Cannot access contents'));
-        // The version probe reads what the tab is actually running.
-        if (typeof func === 'function') return Promise.resolve([{ result: t.engine }]);
-        // A file injection resolves whether or not the guard let it install -- the
-        // behaviour that made the old success count meaningless.
-        return Promise.resolve([{ result: null }]);
-      },
+      // Repair must not execute anything into a live tab any more; record it if it does.
+      executeScript: (args) => { INJECTED.push(args); return Promise.resolve([{ result: null }]); },
     },
     cookies: { getAll: () => Promise.resolve([]), remove: () => Promise.resolve(null), set: () => Promise.resolve(null), onChanged: ev() },
     browsingData: { remove: () => Promise.resolve(), removeCache: () => Promise.resolve() },
@@ -203,21 +207,23 @@ new Promise((resolve) => {
   if (!report) { process.exit(1); }
 
   const lines = (report.repaired || []).join(' | ');
-  const tabCheck = (report.checks || []).find((c) => /Open tabs re-armed/.test(c.name || ''));
+  const tabCheck = (report.checks || []).find((c) => /Open tabs verified/.test(c.name || ''));
 
-  check('the healthy tab is counted as re-armed', / 1 open tab\(s\)/.test(lines) && /Re-armed full protection on 1 /.test(lines), lines);
-  check('the orphaned tab is NOT counted as re-armed', !/Re-armed full protection on 2 /.test(lines) && !/Re-armed full protection on 3 /.test(lines), lines);
-  check('the orphaned tab is reported as needing a reload', /1 open tab\(s\) still run an older copy/.test(lines), lines);
-  check('the unscriptable tab is not reported either way', !/2 open tab\(s\) still run/.test(lines), lines);
-  check('the tab check names the reload count', !!tabCheck && /need a reload/.test(tabCheck.name), tabCheck && tabCheck.name);
-  check('the tab check does NOT pass while a tab still needs a reload', !!tabCheck && tabCheck.ok === false,
-    tabCheck && ('ok=' + tabCheck.ok));
+  check('the healthy tab is left exactly as it is', !RELOADED.includes(1) && /1 open tab\(s\) answered the engine check/.test(lines), lines);
+  check('the orphaned tab, whose bridge cannot answer, is reloaded', RELOADED.includes(2), JSON.stringify(RELOADED));
+  check('the tab whose engine stopped answering is reloaded', RELOADED.includes(4), JSON.stringify(RELOADED));
+  check('the page the manifest excludes the engine from is left alone', !RELOADED.includes(5), JSON.stringify(RELOADED));
+  check('the sleeping tab is left alone', !RELOADED.includes(6), JSON.stringify(RELOADED));
+  check('the report counts what was reloaded and what was left', /Reloaded 2 open tab\(s\) whose engine did not answer/.test(lines) && /Left 2 tab\(s\) alone/.test(lines), lines);
+  check('nothing was injected into any live tab', INJECTED.filter((a) => a && a.files).length === 0, JSON.stringify(INJECTED.map((a) => a && a.files)));
+  check('the tab check names live, reloaded and failed counts', !!tabCheck && /1 live, 2 reloaded, 1 could not be reloaded/.test(tabCheck.name), tabCheck && tabCheck.name);
+  check('the tab check does NOT pass while a tab could not be reloaded', !!tabCheck && tabCheck.ok === false, tabCheck && ('ok=' + tabCheck.ok));
 
   // Source guards against the old assume-success shape returning.
   const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-  check('success is no longer inferred from executeScript alone',
-    /__wardenOneReadyVersion/.test(bg) && /bridgeAnswers/.test(bg));
-  check('the bridge probe is side-effect free', /kind: 'memory-form-check' \}/.test(bg));
+  check('success is decided by the bridge\'s signed challenge, not a MAIN-world marker',
+    /\{ kind: 'wo-engine-status' \}/.test(bg) && !/engineVersionInTab/.test(bg) && !/markWardenOneCopiesStale/.test(bg));
+  check('the worker never executes a MAIN-world file into a live tab', !/executeScript\(\{ target, world: 'MAIN', files/.test(bg));
 
   if (failures) {
     console.error('[fail] repair honesty tests: ' + failures + ' failure(s)');

@@ -370,7 +370,7 @@ test('background no longer closes blank login popups or blocks client-cert promp
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
-    sourceBetween('function classifyTrustError', '\nfunction trustErrorPageUrl')
+    sourceBetween('function classifyTrustError', '\nasync function trustErrorPageUrl')
       + '\nthis.__classifyTrustError = classifyTrustError;',
     sandbox,
   );

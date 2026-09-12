@@ -30,6 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const woAuth = require('./lib/wo-auth');
 const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 const ROOT = path.join(__dirname, '..');
@@ -69,7 +70,8 @@ function build(opts) {
 
   const doc = Object.create(proto);
   doc.activeElement = null;
-  doc.addEventListener = () => {};
+  /* The key arrives on the document (SEC-01), so its listeners must be real. */
+  const dispatchDoc = woAuth.documentEvents(doc);
   doc.removeEventListener = () => {};
   doc.getElementsByTagName = () => [];
   doc.querySelector = () => null;
@@ -125,8 +127,8 @@ function build(opts) {
     sandbox, events, calls,
     doc,
     sendConfig(overrides) {
-      fire({ source: 'wardenone-handshake', token: 'tok' });
-      fire({ source: 'wardenone', kind: 'config', token: 'tok', overrides: Object.assign({ enabled: true }, overrides || {}) });
+      if (!this.link) this.link = woAuth.handshake(dispatchDoc, fire);
+      this.link.sendConfig(Object.assign({ enabled: true }, overrides || {}));
     },
     async request() {
       try { return { ok: true, value: await sandbox.document.requestStorageAccess() }; }
