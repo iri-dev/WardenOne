@@ -482,6 +482,7 @@ checkCommand('shared-host site identity tests', ['tools/test-site-identity.js'])
 checkCommand('incognito isolation tests', ['tools/test-incognito-isolation.js']);
 checkCommand('download false-positive tests', ['tools/test-download-false-positives.js']);
 checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
+checkCommand('Store asset tests', ['tools/test-store-assets.js']);
 checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
 checkCommand('device access guard tests', ['tools/test-device-access-guard.js']);
 checkCommand('notification guard tests', ['tools/test-notification-guard.js']);

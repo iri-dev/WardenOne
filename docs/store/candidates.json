@@ -1,0 +1,57 @@
+{
+  "note": "The Chrome Web Store screenshot candidates, and where each one came from. Every image in this folder except the promo tile is generated from these entries by tools/build-store-assets.py, which letterboxes a capture from docs/screenshots into a 1280x800 frame and draws the caption into it. Text inside a screenshot is a claim about the package, so a capture is only eligible here if nothing in it is contradicted by the build it will be submitted with; the excluded list says why the obvious ones are not here yet. tools/test-store-assets.js fails the gate if this folder and this file disagree.",
+  "frame": { "width": 1280, "height": 800 },
+  "captured": "2026-09-10",
+  "package": {
+    "version": "1.0.1",
+    "commit": "4081cbf",
+    "dirty": true,
+    "note": "Captured from a working tree ahead of this commit. Regenerate from the frozen release build before submission and set dirty to false."
+  },
+  "screenshots": [
+    {
+      "file": "01-activity-centre.png",
+      "source": "docs/screenshots/03-activity-centre.png",
+      "caption": "Activity Centre: every block, warning and exception, kept on your device.",
+      "controlled": false
+    },
+    {
+      "file": "02-download-review.png",
+      "source": "docs/screenshots/04-download-review-suspicious.png",
+      "caption": "Download Guard reviewing a suspicious file. Controlled example: a test file, not a real threat.",
+      "controlled": true
+    },
+    {
+      "file": "03-clickfix-warning.png",
+      "source": "docs/screenshots/14-clickfix-warning.png",
+      "caption": "ClickFix warning over a fake verification page. Controlled example: a local test page.",
+      "controlled": true
+    },
+    {
+      "file": "04-extension-check.png",
+      "source": "docs/screenshots/06-extension-check-result.png",
+      "caption": "Check an extension before you install it, from a list bundled with WardenOne.",
+      "controlled": false
+    },
+    {
+      "file": "05-command-palette.png",
+      "source": "docs/screenshots/13-command-palette.png",
+      "caption": "Alt+Shift+W opens the command palette for the current tab.",
+      "controlled": false
+    }
+  ],
+  "excluded": [
+    {
+      "source": "docs/screenshots/01-popup-master-switch.png",
+      "why": "Shows the 'Turn everything on' button while FEAT-05 is open: the button leaves five visible protections off, so the screenshot would repeat a claim the package does not meet."
+    },
+    {
+      "source": "docs/screenshots/02-protection-health.png",
+      "why": "Shows 'You're safe' while FEAT-02 is open: the health line does not yet verify the current tab's engine."
+    },
+    {
+      "source": "docs/screenshots/10-permissions-explained.png",
+      "why": "Captured while the page still said 16 browser permissions; the manifest declares 18. Recapture after the counter fix."
+    }
+  ]
+}

@@ -59,8 +59,8 @@ jobs:
           mkdir -p _pages/icons
           cp icons/icon128.png _pages/icons/
           cp docs/store/promo-440x280.png _pages/promo.png
-          # The unpadded original, not docs/store/popup.png -- that one is letterboxed
-          # to 1280x800 for the Web Store listing.
+          # The unpadded product capture. The Web Store candidates in docs/store are
+          # letterboxed 1280x800 frames built from docs/screenshots by tools/build-store-assets.py.
           cp docs/popup.png _pages/screenshot-popup.png
 
           cat > _pages/_config.yml <<'CONFIG'
