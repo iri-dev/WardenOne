@@ -81,9 +81,11 @@ gratefully credit the upstream projects below.
   upstream rule was introduced in
   <https://github.com/uBlockOrigin/uAssets/commit/4464b7bdb7ab7a0b6272669e79c620a064abcd9f>.
 
-  The silent clip that stands in for a Spotify Web Player ad is uBlock Origin's
+  The original silent clip used for Spotify Web Player ads was uBlock Origin's
   `noop-0.1s.mp3` redirect resource from
   <https://github.com/gorhill/uBlock/blob/master/src/web_accessible_resources/noop-0.1s.mp3>.
+  The current replacement is a locally generated 1 ms PCM WAV containing eight
+  zero-valued 16-bit mono samples at 8 kHz; the original attribution is retained.
   The list of hosts Spotify's ad audio is served from -- used to mute an ad
   the rewrite did not reach -- is the one uAssets redirects for
   open.spotify.com (`||scdn.co/mp3-ad/` and its companions in
@@ -91,6 +93,20 @@ gratefully credit the upstream projects below.
 
   uBlock Origin uAssets is distributed under the **GNU General Public License
   v3**.
+
+- **Spotify Web Ads Remover** (tomer8007) —
+  <https://github.com/tomer8007/spotify-web-ads-remover>
+
+  The technique of intercepting Spotify Web Player state-machine responses,
+  identifying the ad tracks in them and preparing the machine so playback can
+  move past those tracks was established by this extension (its
+  `injected/ads_removal.js`). WardenOne's narrower implementation only rewrites
+  responses the player already receives; it does not issue extra playback-state
+  requests or change the account's server-side state. The implementation in
+  `spotify-adblock.js` is WardenOne's own code; no source was copied.
+
+  Spotify Web Ads Remover is distributed under the **GNU General Public
+  License v3**.
 
 ## Trackers & privacy
 
