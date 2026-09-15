@@ -18,19 +18,24 @@ as the work happened.
 ### Added
 
 - Spotify Web Player ads no longer play: no ad audio, no countdown, no
-  "Advertisement" card, just a short gap between songs where the break would have
-  been. Spotify's playback state machine makes the ad the only way out of a song
-  and the player will not move on until the slot has been entered and finished, so
-  WardenOne enters it with a 132-millisecond silent clip in place of the ad's
-  audio, tells the player to move on the moment Spotify confirms the slot, and
-  keeps the now-playing bar blank until the next song's audio starts. Only tracks
-  Spotify itself marks as ads are touched; songs, episodes and podcast audio keep
-  their original files, and any ad audio that ever slips through plays muted.
-  Turning AdShield off, or allowlisting open.spotify.com, switches it off.
-  Further hardening reduces the initial ad-panel flash, re-arms completion for
-  consecutive or slow-loading clips, and discards late responses after disabling
-  protection. Shared-CDN music and previews no longer trigger fallback muting
-  unless their exact URL was explicitly identified as an ad by Spotify.
+  "Advertisement" card. WardenOne rewrites the playback state-machine responses
+  the player fetches and never touches the account's server-side state, so
+  nothing it does can be echoed back to the player as "you're on the ad now".
+  It does three things. The ad's audio is swapped for a 1-millisecond silent
+  clip, so nothing audible ever loads. Where Spotify schedules the ad for the
+  end of a song and offers the skip button's route to the next song beside it --
+  the common case -- the song's natural end is pointed at that route, so the
+  player advances straight to the next song with no ad and no gap. And where
+  every exit is the ad (Spotify does this once you skip a song yourself while an
+  ad is pending), the ad state is marked already at its end. Once Spotify confirms
+  that slot, WardenOne immediately re-signals the finished clip so the player
+  leaves it instead of getting stranded on the Advertisement screen. The
+  now-playing surfaces stay blank during that brief fallback. Only tracks Spotify
+  itself marks as ads are touched; songs, episodes and podcast audio keep their
+  original files, and any ad audio that ever slips through plays muted. The
+  state-machine technique is the one the open-source Spotify Web Ads Remover
+  established (see CREDITS.md). Turning AdShield off, or allowlisting
+  open.spotify.com, switches it off.
 - The right-click menu can now do something about the tab itself: sleep it, close
   it, or mark its site so it is never slept. Sleeping unloads the tab to give its
   memory back — it stays in the tab strip and comes back when you click it — and you
