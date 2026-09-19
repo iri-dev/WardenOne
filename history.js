@@ -553,13 +553,18 @@ function render(hist) {
   });
 }
 
+// The worker keeps the log for thirty days (background.js, HISTORY_RETENTION_MS) and prunes on
+// write, on start and daily; this page applies the same line when it reads, so an entry past it is
+// never shown in the gap before the worker's next prune.
+const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 function load() {
   chrome.storage.local.get('wardenone_history', (x) => {
     // A truthy non-array reached render() and threw on forEach, so one corrupt stored value took
     // the Activity Log down as well as the writer. Treated as empty rather than repaired here: this
     // page's job is to stay usable, and the writer rebuilds the array on its next flush.
     const raw = x && x.wardenone_history;
-    render(Array.isArray(raw) ? raw : []);
+    const live = (Array.isArray(raw) ? raw : []).filter((e) => Date.now() - Number(e && e.at) <= HISTORY_RETENTION_MS);
+    render(live);
   });
 }
 

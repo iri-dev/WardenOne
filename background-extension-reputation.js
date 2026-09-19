@@ -1275,7 +1275,8 @@ try {
     if (alarm && alarm.name === 'wardenone-extension-watch') scheduleExtensionSecurityReport('alarm');
   });
 } catch (_) {}
-try { setTimeout(() => scheduleExtensionSecurityReport('worker-start'), 1250); } catch (_) {}
+/* The worker-start report is owed by extensionScanOnWorkerStart in background-extension-watch.js,
+   once per browser session and after the one inventory it shares with it (PERF-05). */
 
 try {
   globalThis.__woExtensionReputationTest = {

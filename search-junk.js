@@ -104,10 +104,15 @@
 
   var MARK_ATTR = 'data-wo-junk';
   var WARN_ATTR = 'data-wo-risk';
+  var WARN_LABEL_ATTR = 'data-wo-risk-label';
+  var RETRY_NOT_READY_MS = 2500;
+  var MAX_NOT_READY_RETRIES = 12;
   var STYLE_ID = 'wo-search-junk-style';
   var MAX_MARKS = 60;          /* a results page has ~10; this is a runaway guard */
   var MAX_SCAN_LINKS = 400;    /* links looked at per pass, counted apart from either cap */
-  var RESCAN_DEBOUNCE_MS = 300;
+  /* Short: the scan is a walk over the result links, and 300 ms here was most of the wait
+     between results appearing and the line appearing. */
+  var RESCAN_DEBOUNCE_MS = 80;
 
   var hosts = Object.create(null);
   var marked = 0;
@@ -122,6 +127,27 @@
      against it. Null is a real entry on purpose: without it, a host with no verdict is
      asked about again on every rescan, and a results page rescans a lot. */
   var verdicts = Object.create(null);
+  var notReadyRetries = 0;
+  /* The packaged IP-logger list, from search-loggers.js -- generated from the ruleset
+     (block rules for whole domains, nothing else: the file also carries allow rules for
+     Google and the login hosts) and registered right in front of this script. The worker's
+     answer is the whole picture, but waking it takes most of a second, and a logger link is
+     the one result nobody should have to wait to be told about. There is no other way to
+     have the list in time: a content script cannot fetch a packaged file, and it is kept
+     out of extension storage -- the worker hands pages a bounded snapshot instead. */
+  var loggerHosts = Object.create(null);
+  var LOGGER_LABEL = 'IP logger \u2014 opening it reveals your address';
+  function addPackagedLoggers(list) {
+    for (var i = 0; i < (Array.isArray(list) ? list.length : 0); i++) {
+      var v = String(list[i] || '').trim().toLowerCase();
+      if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v)) loggerHosts[v] = true;
+    }
+  }
+  function packagedLogger(clean) {
+    if (loggerHosts[clean]) return true;
+    var reg = registrable(clean);
+    return !!(reg && loggerHosts[reg]);
+  }
   var asking = false;
 
   /* Engines we understand well enough to find a result block on. The container is
@@ -137,6 +163,8 @@
   ];
 
   var host = String(location.hostname || '').toLowerCase();
+  /* registrable() is a function declaration further down, so it is hoisted. */
+  var engineBase = registrable(host);
   var engine = null;
   for (var i = 0; i < ENGINES.length; i++) {
     if (ENGINES[i].test.test(host)) { engine = ENGINES[i]; break; }
@@ -179,23 +207,82 @@
          scraper result is: dimming is for "you probably do not want this", and a
          warning has to stay perfectly readable to be acted on. Nothing is hidden and
          the link still works -- the reader is told, not overruled. */
-      + '[' + WARN_ATTR + ']{border-inline-start:3px solid transparent;padding-inline-start:9px;}'
-      + '[' + WARN_ATTR + '="malicious"]{border-inline-start-color:#c0392b;}'
-      + '[' + WARN_ATTR + '="warn"]{border-inline-start-color:#c98a1b;}'
-      + '.wo-risk-tag{display:flex;align-items:baseline;gap:6px;margin:4px 0 6px;padding:3px 9px;'
-      + 'border-radius:8px;font:600 11.5px/1.55 system-ui,sans-serif;max-width:44em;}'
-      + '.wo-risk-tag .wo-risk-why{font-weight:400;opacity:.85;}'
-      + '.wo-risk-malicious{color:#8c1d13;background:rgba(192,57,43,.13);'
-      + 'border:1px solid rgba(192,57,43,.32);}'
-      + '.wo-risk-warn{color:#7a5310;background:rgba(201,138,27,.13);'
-      + 'border:1px solid rgba(201,138,27,.32);}'
-      + '@media (prefers-color-scheme:dark){'
-      + '.wo-risk-malicious{color:#ffb4a8;background:rgba(192,57,43,.2);}'
-      + '.wo-risk-warn{color:#f2cc84;background:rgba(201,138,27,.18);}}';
+      /* The line itself is generated content, read off an attribute on the result block,
+         rather than a node placed inside it. Bing sweeps foreign nodes out of its result
+         items within seconds -- the attribute stayed, the line went, and five marked
+         results showed nothing -- and a pseudo-element is not a node anything can remove.
+         attr() is text: a domain that reached a feed cannot put markup on the page. */
+      /* No box and no colour of its own: the symbol carries the warning, the words say what
+         it is, and the page's own text colour keeps it readable on a light page and a dark
+         one alike (the page's theme is not the OS theme, so nothing here may key on
+         prefers-color-scheme). */
+      + '[' + WARN_LABEL_ATTR + ']::before{content:attr(' + WARN_LABEL_ATTR + ');display:block;'
+      + 'margin:0 0 4px;padding:0;font:600 11.5px/1.5 system-ui,sans-serif;color:inherit;'
+      + 'opacity:.92;max-width:100%;white-space:normal;}';
     var el = document.createElement('style');
     el.id = STYLE_ID;
     el.textContent = css;
     (document.head || document.documentElement).appendChild(el);
+  }
+
+  /* Where the click actually lands. Bing, Yahoo and DuckDuckGo's HTML page hand out
+     links through their own redirector, and Google still does on some layouts, so the
+     anchor's host is the engine's and says nothing about the result. Only the engine's
+     own wrapper is unwrapped -- a result that happens to link to another site's
+     redirector is left as the host it names. */
+  function resultUrlOf(link) {
+    var href = String(link.href || '');
+    var url;
+    try { url = new URL(href); } catch (_) { return href; }
+    var h = url.hostname.toLowerCase();
+    var p = url.pathname;
+    try {
+      if (/(^|\.)bing\.com$/.test(h) && /^\/ck\/a/.test(p)) {
+        var u = url.searchParams.get('u') || '';
+        if (/^a1/.test(u)) {
+          var b64 = u.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+          while (b64.length % 4) b64 += '=';
+          var decoded = atob(b64);
+          if (/^https?:\/\//i.test(decoded)) return decoded;
+        }
+      } else if (/(^|\.)google\./.test(h) && p === '/url') {
+        var q = url.searchParams.get('q') || url.searchParams.get('url') || '';
+        if (/^https?:\/\//i.test(q)) return q;
+      } else if (/(^|\.)duckduckgo\.com$/.test(h) && /^\/l\//.test(p)) {
+        var d = url.searchParams.get('uddg') || '';
+        if (/^https?:\/\//i.test(d)) return d;
+      } else if (/(^|\.)yahoo\.com$/.test(h)) {
+        var m = /\/RU=([^/]+)\//.exec(p);
+        if (m) {
+          var y = decodeURIComponent(m[1]);
+          if (/^https?:\/\//i.test(y)) return y;
+        }
+      }
+    } catch (_) {}
+    return href;
+  }
+
+  /* Every results container the engine table names, in document order, minus any that
+     sits inside another. querySelector took the first element to match and stopped:
+     DuckDuckGo renders an empty [data-testid="mainline"] before the one its results
+     live in, so the first match had no links, nothing was ever asked about, and the
+     page looked clean. */
+  function resultRoots() {
+    var roots = [];
+    var sels = engine.container.split(',');
+    for (var i = 0; i < sels.length; i++) {
+      var found;
+      try { found = document.querySelectorAll(sels[i].trim()); } catch (_) { found = []; }
+      for (var k = 0; k < found.length; k++) {
+        if (roots.indexOf(found[k]) < 0) roots.push(found[k]);
+      }
+    }
+    return roots.filter(function (node) {
+      for (var i = 0; i < roots.length; i++) {
+        if (roots[i] !== node && roots[i].contains(node)) return false;
+      }
+      return true;
+    });
   }
 
   function findBlock(link, root) {
@@ -229,23 +316,13 @@
      accident on the way to the result. "Show anyway" would make no sense here either:
      nothing has been taken away to show. */
   function warnTag(block, verdict, hostname) {
-    var strip = document.createElement('div');
-    strip.className = 'wo-risk-tag ' + (verdict.level === 'malicious' ? 'wo-risk-malicious' : 'wo-risk-warn');
-    var mark = document.createElement('span');
-    mark.setAttribute('aria-hidden', 'true');
-    mark.textContent = verdict.level === 'malicious' ? '⛔' : '⚠';
-    strip.appendChild(mark);
-    var text = document.createElement('span');
-    /* textContent throughout: every one of these strings is built in the background from
-       list data, and building this line with innerHTML would let a domain that got onto
-       a feed put markup on a Google results page. */
-    text.textContent = String(verdict.label || 'WardenOne has a warning about this site');
-    strip.appendChild(text);
-    var why = document.createElement('span');
-    why.className = 'wo-risk-why';
-    why.textContent = '· ' + String(hostname);
-    strip.appendChild(why);
-    block.insertBefore(strip, block.firstChild);
+    /* Every one of these strings is built in the background from list data. They go into
+       an attribute the stylesheet reads back as text, never into markup. */
+    var label = (verdict.level === 'malicious' ? '\u26D4\uFE0F ' : '\u26A0\uFE0F ')
+      + String(verdict.label || 'WardenOne has a warning about this site')
+      + ' \u00B7 ' + String(hostname);
+    block.setAttribute(WARN_ATTR, verdict.level === 'malicious' ? 'malicious' : 'warn');
+    block.setAttribute(WARN_LABEL_ATTR, label);
   }
 
   /* Ask about the hosts on the page that have not been asked about yet. One message per
@@ -263,41 +340,72 @@
            had nothing against is stored as null -- that is what stops it being asked
            again -- and null is never rendered, so "no answer" can never become a mark. */
         var got = (reply && reply.ok && reply.verdicts) || {};
+        /* A worker still loading its lists -- woken from idle, or right after an install --
+           answers with what it has and says the rest is not in yet. What it has is drawn now;
+           a host it had nothing against is not recorded as clean, so the page asks about it
+           again in a moment. Caching that "nothing" would keep the page quiet for good. */
+        var partial = !!(reply && reply.ok && reply.ready === false);
         for (var i = 0; i < pending.length; i++) {
           var key = pending[i];
-          verdicts[key] = Object.prototype.hasOwnProperty.call(got, key) ? got[key] : null;
+          if (Object.prototype.hasOwnProperty.call(got, key)) verdicts[key] = got[key];
+          else if (!partial) verdicts[key] = null;
         }
-        if (reply && reply.ok) scheduleScan();
+        if (partial && notReadyRetries++ < MAX_NOT_READY_RETRIES) woTimeout(scan, RETRY_NOT_READY_MS);
+        /* Drawn on the answer itself. The page is already built -- that is what produced the
+           question -- so a debounce here was pure waiting. */
+        if (reply && reply.ok) scan(partial);
       });
     } catch (_) { asking = false; }
   }
 
-  function scan() {
-    var root = null;
-    var sels = engine.container.split(',');
-    for (var i = 0; i < sels.length && !root; i++) root = document.querySelector(sels[i].trim());
-    if (!root) return;
-
-    var links = root.querySelectorAll('a[href^="http"]');
+  /* drawOnly: draw what is known and ask nothing -- the pass made on a partial answer,
+     where asking again at once would only get the same partial answer again. */
+  function scan(drawOnly) {
+    var roots = resultRoots();
     var pending = [];
+    var looked = 0;
+    for (var r = 0; r < roots.length; r++) looked = scanRoot(roots[r], pending, looked);
+    if (pending.length && drawOnly !== true) requestVerdicts(pending);
+  }
+
+  function scanRoot(root, pending, looked) {
+    /* Every anchor, with the href resolved: a result that links through the engine's own
+       redirector is often a relative /url?q=... and would not match a scheme prefix. */
+    var links = root.querySelectorAll('a[href]');
     /* The link walk is bounded on its own rather than on either pass's counter. It used
        to stop at MAX_MARKS, which was fine while there was one pass and wrong the moment
        there were two: a page with sixty scraper results would have silenced every
        warning below them, and the missing warnings would have looked like an all-clear. */
-    for (var j = 0; j < links.length && j < MAX_SCAN_LINKS; j++) {
+    for (var j = 0; j < links.length && looked < MAX_SCAN_LINKS; j++) {
+      looked++;
       var link = links[j];
       var hostname = '';
-      try { hostname = new URL(link.href).hostname; } catch (_) { continue; }
+      /* A javascript:, mailto: or data: address has no host and is skipped below. */
+      try { hostname = new URL(resultUrlOf(link)).hostname; } catch (_) { continue; }
       var clean = String(hostname).replace(/^www\./, '').toLowerCase();
 
+      /* The engine's own links -- its tabs, its "people also search for", its video
+         carousel -- are not results, and the engine is never asked about itself. */
+      if (clean === host || host.endsWith('.' + clean) || clean.endsWith('.' + engineBase)) continue;
       if (doWarn && clean && warned < MAX_MARKS) {
+        if (!Object.prototype.hasOwnProperty.call(verdicts, clean) && packagedLogger(clean)) {
+          verdicts[clean] = { level: 'malicious', label: LOGGER_LABEL, detail: clean };
+        }
         if (!Object.prototype.hasOwnProperty.call(verdicts, clean)) {
           if (pending.indexOf(clean) < 0 && pending.length < MAX_MARKS) pending.push(clean);
         } else if (verdicts[clean]) {
           var riskBlock = findBlock(link, root);
-          if (riskBlock && !riskBlock.hasAttribute(WARN_ATTR)) {
+          /* One line per result. Google nests a block per sitelink inside the result's
+             block, each with its own data-hveid, so a result with six sitelinks would
+             carry seven lines: a block inside one already marked is left alone, and a
+             block marked after its inner ones takes them over. */
+          if (riskBlock && !riskBlock.hasAttribute(WARN_ATTR) && !riskBlock.parentElement.closest('[' + WARN_ATTR + ']')) {
             ensureStyle();
-            riskBlock.setAttribute(WARN_ATTR, verdicts[clean].level === 'malicious' ? 'malicious' : 'warn');
+            var inner = riskBlock.querySelectorAll('[' + WARN_ATTR + ']');
+            for (var k = 0; k < inner.length; k++) {
+              inner[k].removeAttribute(WARN_ATTR);
+              inner[k].removeAttribute(WARN_LABEL_ATTR);
+            }
             warnTag(riskBlock, verdicts[clean], clean);
             warned++;
           }
@@ -313,7 +421,7 @@
       tag(block, clean);
       marked++;
     }
-    if (pending.length) requestVerdicts(pending);
+    return looked;
   }
 
   function scheduleScan() {
@@ -331,35 +439,63 @@
     try { woOn(window, 'popstate', scheduleScan); } catch (_) {}
   }
 
-  chrome.runtime.sendMessage({ kind: 'content-config-get' }, function (response) {
-    try { void chrome.runtime.lastError; } catch (_) {}
-    if (chrome.runtime.lastError || !response || !response.ok) return;
-    var cfg = response.overrides || {};
-    if (cfg.enabled === false) return;
-    doJunk = cfg.flagSearchJunk === true;
-    doWarn = cfg.warnSearchResults !== false;
-    if (!doJunk && !doWarn) return;
-    /* An allowlisted search engine is left completely alone. */
+  var begun = false;
+  function begin() {
+    if (begun) return;
+    begun = true;
+    if (document.readyState === 'loading') {
+      woOn(document, 'DOMContentLoaded', start, { once: true });
+    } else {
+      start();
+    }
+  }
+
+  /* Every line drawn so far, taken back: the snapshot said this engine is paused or the
+     pass was switched off since the registration was made. */
+  function clearMarks() {
+    var marks = document.querySelectorAll('[' + WARN_ATTR + ']');
+    for (var i = 0; i < marks.length; i++) {
+      marks[i].removeAttribute(WARN_ATTR);
+      marks[i].removeAttribute(WARN_LABEL_ATTR);
+    }
+  }
+
+  function allowlisted(cfg) {
     var allow = Array.isArray(cfg.allowlist) ? cfg.allowlist : [];
     for (var i = 0; i < allow.length; i++) {
       var a = String(allow[i] || '').replace(/^www\./, '').toLowerCase();
-      if (a && (host === a || host.endsWith('.' + a))) return;
+      if (a && (host === a || host.endsWith('.' + a))) return true;
     }
+    return false;
+  }
 
-    var begin = function () {
-      if (document.readyState === 'loading') {
-        woOn(document, 'DOMContentLoaded', start, { once: true });
-      } else {
-        start();
-      }
-    };
+  /* The warning pass does not wait to be told it is wanted. Asking the worker meant a
+     round trip that, on a worker asleep after 30 s of idling, came AFTER the results were
+     on screen; and the page is kept out of extension storage. So the worker puts the answer
+     in the registration: it registers this script only while WardenOne is on and a pass is
+     wanted, and puts search-loggers.js in front of it only while the warning pass is on.
+     The list being here is the switch. Known loggers are named at once; the rest is asked. */
+  doWarn = typeof WO_SEARCH_LOGGERS !== 'undefined' && Array.isArray(WO_SEARCH_LOGGERS);
+  if (doWarn) {
+    addPackagedLoggers(WO_SEARCH_LOGGERS);
+    begin();
+  }
 
-    if (!doJunk) { begin(); return; }
-
+  /* The snapshot still comes, for the scraper pass -- its lists live only in the worker --
+     and it is the one reading of the allowlist. If it says this engine is paused, or that
+     the warning pass went off after the registration was made, the pass stops and takes
+     its lines back; it can only ever turn the pass off, never on. */
+  chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides', 'searchJunk'] }, function (response) {
+    try { void chrome.runtime.lastError; } catch (_) {}
+    if (chrome.runtime.lastError || !response || !response.ok) return;
+    var cfg = response.overrides && typeof response.overrides === 'object' ? response.overrides : {};
+    var off = cfg.enabled === false || allowlisted(cfg);
+    if (doWarn && (off || cfg.warnSearchResults === false)) { doWarn = false; clearMarks(); }
+    if (off || cfg.flagSearchJunk !== true) return;
+    doJunk = true;
     addHosts(response.searchJunkDomains);
     var aux = response.supplemental;
     addHosts(aux && aux.searchJunkDomainsExtra);
-
     fetch(chrome.runtime.getURL('search-junk-domains.json'), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (data) { addHosts(data && data.scraperHosts); })
@@ -367,9 +503,8 @@
       .then(function () {
         /* The scraper list being empty used to end the script. It cannot now: the
            warning pass has its own reason to run and does not use that list at all. */
-        if (!Object.keys(hosts).length) doJunk = false;
-        if (!doJunk && !doWarn) return;
-        begin();
+        if (!Object.keys(hosts).length) { doJunk = false; return; }
+        if (begun) scheduleScan(); else begin();
       });
   });
 })();

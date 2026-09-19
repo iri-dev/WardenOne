@@ -98,10 +98,10 @@ check('an allowlisted search engine is skipped entirely',
    to hold is that the scraper pass still does nothing on its own toggle -- an early
    return would now also switch off the warnings. */
 check('the scraper pass does nothing while its own toggle is off',
-  /doJunk = cfg\.flagSearchJunk === true/.test(SCRIPT)
+  /if \(off \|\| cfg\.flagSearchJunk !== true\) return;\s*doJunk = true;/.test(SCRIPT)
   && /if \(!doJunk \|\| marked >= MAX_MARKS\) continue;/.test(SCRIPT));
 check('and an empty scraper list disables that pass rather than the whole script',
-  /if \(!Object\.keys\(hosts\)\.length\) doJunk = false;/.test(SCRIPT));
+  /if \(!Object\.keys\(hosts\)\.length\) \{ doJunk = false; return; \}/.test(SCRIPT) && /if \(doWarn\) \{\s*addPackagedLoggers\(WO_SEARCH_LOGGERS\);\s*begin\(\);/.test(SCRIPT));
 check('it runs in the top frame only', /window\.top !== window/.test(SCRIPT));
 
 /* ---- wiring ---- */

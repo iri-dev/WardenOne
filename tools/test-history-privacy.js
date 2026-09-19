@@ -280,7 +280,8 @@ console.log('\nhistory privacy checks passed');
     const box = {
       __histTimer: null,
       __histWriting: false,
-      __histBuffer: [{ url: 'https://a.example/', t: 1 }, { url: 'https://b.example/', t: 2 }],
+      /* Stamped, as every real entry is: the writer now ages the store by `at` (PRIV-08). */
+      __histBuffer: [{ url: 'https://a.example/', t: 1, at: Date.now() }, { url: 'https://b.example/', t: 2, at: Date.now() }],
       __histPersistTimer: null,
       persistCalls: 0,
       sessionRemoved: 0,
@@ -288,7 +289,7 @@ console.log('\nhistory privacy checks passed');
       thrown: null,
     };
     const sandbox = {
-      Object, Array, Set, String, Number, Math, JSON,
+      Object, Array, Set, String, Number, Math, JSON, Date,
       INCOGNITO_CONTEXT: false,
       // M26 added a cold-start gate that flushHistory reads. These cases exercise the WRITE path,
       // not the cold start, so the gate stands open -- M26's own cases below drive it closed.
@@ -324,7 +325,12 @@ console.log('\nhistory privacy checks passed');
       __histPersistTimer: { get: () => box.__histPersistTimer, set: (v) => { box.__histPersistTimer = v; }, configurable: true },
     });
     vm.createContext(sandbox);
-    vm.runInContext(source.slice(writerFrom, writerTo) + '\nthis.__flush = flushHistory;', sandbox);
+    /* The writer prunes by time before it caps (PRIV-08); the pruner and its two constants sit
+       above the slice, so they come along. */
+    const pruneFrom = source.indexOf('const HISTORY_MAX = ');
+    const pruneTo = source.indexOf('async function pruneHistoryStore(', pruneFrom);
+    const pruner = pruneFrom >= 0 && pruneTo > pruneFrom ? source.slice(pruneFrom, pruneTo) : '';
+    vm.runInContext(pruner + '\n' + source.slice(writerFrom, writerTo) + '\nthis.__flush = flushHistory;', sandbox);
     try { sandbox.__flush(); } catch (e) { box.thrown = e; }
     return box;
   }
@@ -347,7 +353,7 @@ console.log('\nhistory privacy checks passed');
 
   // A healthy array still writes, newest first, and only then drops the write-ahead copy.
   {
-    const r = runWriter([{ url: 'https://old.example/', t: 0 }]);
+    const r = runWriter([{ url: 'https://old.example/', t: 0, at: Date.now() }]);
     check('M16 a valid array still writes', r.setCalls.length === 1);
     check('M16 the batch is written newest-first ahead of existing history',
       r.setCalls[0].length === 3 && r.setCalls[0][2].url === 'https://old.example/');

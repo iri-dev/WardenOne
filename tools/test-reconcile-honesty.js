@@ -55,7 +55,7 @@ function between(startMark, endMark, what) {
 
 const CONFIG_CACHE = between('let __cfgCache = null;', '\n/* These stores are derived from sites visited', 'the config cache');
 const ORCHESTRATOR = between('// ---- Reconciliation honesty (MV3-01) ----', '\nfunction searchAiCleanupActive', 'the reconciler');
-const HEALTH_BLOCK = between('  let enabledRulesets = null;', '  const activeShields = healthCountActiveShields(cfg);', 'the health block');
+const HEALTH_BLOCK = between('  let enabledRulesets = null;', '  // The tab the popup is open on, asked rather than assumed (FEAT-02).', 'the health block');
 
 /* the applier names the orchestrator runs, read from the source rather than restated */
 const RUN_CALLS = [...ORCHESTRATOR.matchAll(/run\('([A-Za-z]+)', ([A-Za-z]+)\(/g)].map((m) => ({ name: m[1], fn: m[2] }));
@@ -266,12 +266,12 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 40));
     const labels = (/const RECONCILE_COMPONENT_LABELS = \{([\s\S]*?)\n\};/.exec(BG) || [])[1] || '';
     // eslint-disable-next-line no-new-func
     const run = new Function('chrome', 'cfg', 'addIssue', '__blocklistRulesetError',
-      'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX',
+      'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX', 'LISTENERS_NOT_REGISTERED',
       '"use strict";return (async()=>{' + HEALTH_BLOCK + '\nreturn true;})();');
     await run({ declarativeNetRequest: { getEnabledRulesets: async () => ['grabbers', 'adshield_easylist', 'trackers'] } },
       Object.assign({ enabled: true }, cfg || {}),
       (severity, text, topLevel) => issues.push({ severity, text, topLevel: topLevel === true }),
-      '', async () => marker, new Function('return {' + labels + '\n};')(), 6);
+      '', async () => marker, new Function('return {' + labels + '\n};')(), 6, []);
     return issues;
   }
   {

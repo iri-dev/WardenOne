@@ -26,6 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -48,13 +49,33 @@ if (!listMatch) {
 }
 const SHIELDS = [...listMatch[1].matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]);
 
+/* The registry beside the shield list (FEAT-08): the watch-only guards, the second levels of a
+   counted protection, and every popup switch that is not a protection, by kind. Read from the
+   worker so the code, the gate and the copy cannot hold three different answers. On a source
+   without it the lists are empty and every switch outside the shield list is reported below. */
+function registryValue(name) {
+  const i = BG.indexOf('const ' + name + ' = ');
+  if (i < 0) return null;
+  let depth = 0;
+  let seen = false;
+  for (let j = BG.indexOf('=', i) + 1; j < BG.length; j++) {
+    const c = BG[j];
+    if (c === '[' || c === '{') { depth++; seen = true; } else if (c === ']' || c === '}') {
+      depth--;
+      if (seen && depth === 0) return vm.runInNewContext('(' + BG.slice(BG.indexOf('=', i) + 1, j + 1) + ')');
+    }
+  }
+  return null;
+}
 /* Guards that observe and never block. They have no toggle by design, so they are not part
-   of the switchable count -- but they ARE protections, so they are part of the total. */
-/* backTrapGuard was here until it stopped being watch-only. It now REFUSES a page's
+   of the switchable count -- but they ARE protections, so they are part of the total.
+   backTrapGuard was here until it stopped being watch-only. It now REFUSES a page's
    pushState and forward calls to keep Back working, which can affect a site, so by the same
    rule that took the toggles off these three it earns one back. Watch-only means blocks
    nothing and changes nothing on the page; that is the whole test. */
-const WATCH_ONLY = ['logThirdPartyBeacons', 'deviceAccessGuard', 'capabilityGuard'];
+const WATCH_ONLY = registryValue('WATCH_ONLY_GUARDS') || [];
+const SECOND_LEVEL = registryValue('SECOND_LEVEL_OF') || {};
+const KINDS = registryValue('CONTROL_KINDS') || {};
 
 const SWITCHABLE = SHIELDS.length;
 const TOTAL = SWITCHABLE + WATCH_ONLY.length;
@@ -66,7 +87,15 @@ console.log('  total             : ' + TOTAL + '\n');
 
 /* ---- the list itself is honest --------------------------------------------------- */
 
+check('the registry beside the list exists', WATCH_ONLY.length > 0 && Object.keys(KINDS).length > 0,
+  'WATCH_ONLY_GUARDS / SECOND_LEVEL_OF / CONTROL_KINDS are missing from background.js');
 check('no duplicates in the shield list', new Set(SHIELDS).size === SHIELDS.length);
+{
+  /* Every counted key is a real setting. */
+  const defaults = registryValue('DEFAULT_CONFIG') || {};
+  const unknown = SHIELDS.filter((k) => !Object.prototype.hasOwnProperty.call(defaults, k));
+  check('every counted shield is a key of DEFAULT_CONFIG', unknown.length === 0, unknown.join(', '));
+}
 {
   const noToggle = SHIELDS.filter((k) => !POPUP_HTML.includes('data-key="' + k + '"'));
   check('every counted shield can actually be switched off from the popup',
@@ -86,6 +115,37 @@ check('antiFingerprint is still only an alias of antiFingerprintNoise',
   /antiFingerprintNoise:gate\(cfg\.antiFingerprintNoise\|\|cfg\.antiFingerprint\)/.test(CONTENT));
 check('so it is not counted as a shield of its own', !SHIELDS.includes('antiFingerprint'));
 check('and not offered as a separate per-site override', !/'antiFingerprint'/.test(POPUP_JS));
+
+/* ---- two-way coverage: every switch is classified, every classification is a switch ----
+   The old test proved that each counted shield has a toggle and stopped there, so a real
+   protection could be added to the popup without touching the denominator, and the copy
+   could name a number nothing checked. Now every checkbox in the popup has to be exactly one
+   thing: a counted shield, a second level of one, or a control of a named non-protection
+   kind -- and every entry in the registry has to be a switch that exists. */
+const SWITCHES = [...POPUP_HTML.matchAll(/<input\b[^>]*>/g)].map((m) => m[0])
+  .filter((tag) => /type="checkbox"/.test(tag) && /data-key="/.test(tag))
+  .map((tag) => tag.match(/data-key="([A-Za-z0-9_]+)"/)[1]);
+const SWITCH_SET = new Set(SWITCHES);
+const CLASSIFIED = new Map();   // key -> kind
+for (const kind of Object.keys(KINDS)) for (const k of KINDS[kind]) CLASSIFIED.set(k, kind);
+for (const k of Object.keys(SECOND_LEVEL)) CLASSIFIED.set(k, 'second level of ' + SECOND_LEVEL[k]);
+{
+  const unclassified = [...SWITCH_SET].filter((k) => !SHIELDS.includes(k) && !CLASSIFIED.has(k));
+  check('every popup switch is a counted shield or classified as something else', unclassified.length === 0,
+    unclassified.length + ' unclassified: ' + unclassified.join(', '));
+  const both = [...CLASSIFIED.keys()].filter((k) => SHIELDS.includes(k));
+  check('nothing is both counted and classified as a non-protection', both.length === 0, both.join(', '));
+  const dead = [...CLASSIFIED.keys()].filter((k) => !SWITCH_SET.has(k));
+  check('every classified control is a switch that exists in the popup', dead.length === 0, dead.join(', '));
+  const dupes = Object.values(KINDS).flat().concat(Object.keys(SECOND_LEVEL)).filter((k, i, a) => a.indexOf(k) !== i);
+  check('no control is classified twice', dupes.length === 0, dupes.join(', '));
+  const orphanLevels = Object.keys(SECOND_LEVEL).filter((k) => !SHIELDS.includes(SECOND_LEVEL[k]));
+  check('every second level sits under a counted shield', orphanLevels.length === 0, orphanLevels.join(', '));
+  const watchSwitch = WATCH_ONLY.filter((k) => SWITCH_SET.has(k));
+  check('a watch-only guard has no switch, or it is not watch-only', watchSwitch.length === 0, watchSwitch.join(', '));
+  console.log('  classified          : ' + CLASSIFIED.size + ' (' + Object.keys(KINDS).map((k) => k + ' ' + KINDS[k].length).join(', ')
+    + ', second level ' + Object.keys(SECOND_LEVEL).length + ')');
+}
 
 /* ---- every place that prints a number agrees with it ------------------------------ */
 
@@ -118,6 +178,38 @@ check('the public site does not promise WebRTC leak protection from the visible 
    about its number -- only that it still reads it from here rather than a copy. */
 check('the popup denominator still comes from this list',
   /totalShields: HEALTH_SHIELD_KEYS\.length/.test(BG));
+
+/* ---- every number anyone printed, not only the sentences someone remembered to test -----
+   The README carried "103 individually controllable" two lines under a headline the test
+   checked, for as long as the split sentence a thousand lines further down said 104. So every
+   surface a reader sees is scanned for every count-shaped claim, and each has to equal the
+   figure it names. The CHANGELOG is history and is left out on purpose. */
+const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+const numberOf = (text) => (/^\d+$/.test(text) ? Number(text) : WORDS.indexOf(String(text).toLowerCase()));
+const SURFACES = ['README.md', 'site/index.html', 'popup.html', 'popup.js', 'onboarding.html', 'onboarding.js', 'PRIVACY.md', 'history.html', 'privacy-test.html'];
+{
+  const wrong = [];
+  for (const file of SURFACES) {
+    let text = '';
+    try { text = fs.readFileSync(path.join(ROOT, file), 'utf8'); } catch (_) { continue; }
+    for (const m of text.matchAll(/\b(\d{2,3})(\+?) protections\b/g)) {
+      if (m[2] || Number(m[1]) !== TOTAL) wrong.push(file + ': "' + m[0] + '"');
+    }
+    for (const m of text.matchAll(/\b(\d{2,3}) individually controllable\b/g)) {
+      if (Number(m[1]) !== SWITCHABLE) wrong.push(file + ': "' + m[0] + '"');
+    }
+    for (const m of text.matchAll(/\b(\d{1,3}|zero|one|two|three|four|five|six|seven|eight|nine) watch-only\b/gi)) {
+      if (numberOf(m[1]) !== WATCH_ONLY.length) wrong.push(file + ': "' + m[0] + '"');
+    }
+    for (const m of text.matchAll(/\b(\d{2,3}) of the (\d{2,3}) protections\b/g)) {
+      if (Number(m[1]) !== SWITCHABLE || Number(m[2]) !== TOTAL) wrong.push(file + ': "' + m[0] + '"');
+    }
+    for (const m of text.matchAll(/\bThe other (\w+) are watch-only\b/g)) {
+      if (numberOf(m[1]) !== WATCH_ONLY.length) wrong.push(file + ': "' + m[0] + '"');
+    }
+  }
+  check('every count printed on a reader-facing surface equals the registry', wrong.length === 0, wrong.join('; '));
+}
 
 /* ---- the note that used to sit under "You're safe" -------------------------------- */
 

@@ -698,11 +698,54 @@ try {
   });
 } catch (_) {}
 
-/* Defer the first comparison until background.js has finished initialising its storage helpers. */
-try { setTimeout(() => { reconcileExtensionChanges('worker-start'); }, 750); } catch (_) {}
+/* The scan a worker start owes, once per browser session (PERF-05).
+
+   A change to another extension while this worker is alive arrives as a management event, and
+   a change while it is asleep wakes it with that event -- so within one browser session no
+   change is ever missed by not scanning. The only changes a scan can find that no event
+   announced are the ones made while the BROWSER was closed, and one scan per browser session
+   finds those. Every worker start used to run the inventory (here, at 750 ms) and then the
+   security report (in the reputation module, at 1,250 ms), which reconciles the inventory
+   AGAIN inside itself: two enumerations of every installed extension and their storage
+   writes on every wake, and a worker wakes for any message, tab event or alarm. Now it is one
+   job: the inventory, then the report told not to repeat it, both behind a storage.session
+   marker that Chrome clears at browser start. The fifteen-minute alarm stays as the bounded
+   check that something a scan would catch is never missed for long, and every event trigger
+   is untouched. */
+var EXT_SCAN_SESSION_KEY = '__wardenone_ext_scan_done';
+function extensionScanDoneThisSession() {
+  return new Promise((resolve) => {
+    try {
+      const area = chrome.storage && chrome.storage.session;
+      if (!area || typeof area.get !== 'function') return resolve(false);
+      area.get(EXT_SCAN_SESSION_KEY, (x) => { void (chrome.runtime && chrome.runtime.lastError); resolve(!!(x && x[EXT_SCAN_SESSION_KEY])); });
+    } catch (_) { resolve(false); }
+  });
+}
+function markExtensionScanDoneThisSession() {
+  try {
+    const area = chrome.storage && chrome.storage.session;
+    if (area && typeof area.set === 'function') area.set({ [EXT_SCAN_SESSION_KEY]: Date.now() }, () => { void (chrome.runtime && chrome.runtime.lastError); });
+  } catch (_) {}
+}
+async function extensionScanOnWorkerStart() {
+  if (await extensionScanDoneThisSession()) return false;
+  markExtensionScanDoneThisSession();
+  await reconcileExtensionChanges('worker-start');
+  try {
+    if (typeof buildExtensionSecurityReport === 'function') {
+      await buildExtensionSecurityReport({ trigger: 'worker-start', includePermissionWarnings: false, reconcileWatch: false });
+    }
+  } catch (_) {}
+  return true;
+}
+/* Deferred so background.js has finished initialising its storage helpers. */
+try { setTimeout(() => { extensionScanOnWorkerStart().catch(() => {}); }, 750); } catch (_) {}
 
 try {
   globalThis.__woExtensionWatchTest = {
+    extensionScanOnWorkerStart,
+    EXT_SCAN_SESSION_KEY,
     EXT_BASELINE_KEY,
     EXT_ALERTS_KEY,
     EXT_WATCH_STATUS_KEY,

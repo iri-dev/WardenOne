@@ -1489,6 +1489,15 @@
     return bridgeConfigReady && bridgeConfig.silentMode === true;
   }
 
+  // The page's copy of the two presentation switches under Silent mode: both off while it
+  // is on, untouched otherwise. Writes only into the copy it is handed.
+  function gateSilentPresentation(cfg, silent) {
+    if (!cfg || typeof cfg !== 'object' || silent !== true) return cfg;
+    cfg.showToasts = false;
+    cfg.showBadge = false;
+    return cfg;
+  }
+
   function bridgeCleanHost(value) {
     return String(value || '').replace(/^www\./, '').replace(/^\.+|\.+$/g, '').toLowerCase();
   }
@@ -1725,6 +1734,17 @@
     }
     clean.siteOverridesApplied = Object.keys(siteOff).filter((k) => typeof clean[k] === 'boolean');
     delete clean.siteOverrides;
+    // Silent mode is a gate over presentation, not a rewrite of it. The engine reads
+    // showToasts and showBadge and nothing else, so Silent has to reach it as those two
+    // being off -- and this copy, the one the page gets, is where that happens, the same
+    // way a per-site override reaches it just above. The stored preferences underneath are
+    // never touched: the popup used to write them false while Silent was on and read the
+    // disabled switches back on the way out, so turning Silent off left both off until the
+    // reader found and re-enabled two separate switches. Whichever surface set silentMode
+    // (the popup's toggle or the onboarding choice), the page sees the same thing, and
+    // Normal gets back exactly what was chosen before. Read from the merged view, so a
+    // partial update while Silent is on cannot let a switch back through.
+    gateSilentPresentation(clean, bridgeConfig.silentMode === true);
     clean.forgetMeList = sanitizeBridgeHostList(clean.forgetMeList, 1000);
     // The stored `raw.*Extra` lists are user/remote supplied and still need the full
     // gate. learnedGrabberDomains and supplementalLists.* already came out of it at the
@@ -1880,15 +1900,31 @@
   // Navigation attribution signals. Deliberately NOT routed through the wo-event
   // path above: they are not findings, must never reach the history or the badge,
   // and are far too frequent for the security-event budget.
+  //
+  // And they are signed (SEC-13). Two of them -- 'gesture' and 'top-nav-authorized' -- tell
+  // the worker that a cross-site navigation was the reader's doing, which switches the
+  // forced-redirect interstitial off for that tab; a page holding only the public token used
+  // to be able to say that itself, every two seconds, for as long as it liked. A beacon now
+  // counts only when its HMAC under the key this bridge handed out at document_start
+  // verifies over a sequence number that has moved forward, the kind, and -- for an
+  // authorisation -- the host it is for. The page still sees every one of these events and
+  // can dispatch them; it cannot sign one, and it cannot replay one.
+  let navSignalSeqSeen = 0;
   woOn(document, 'wo-nav-signal', (e) => {
     const d = (e && e.detail) || {};
     if (d.token !== TOKEN) return;
     const kind = d.kind === 'player-gesture' || d.kind === 'top-nav-authorized' || d.kind === 'gesture'
       ? d.kind : '';
     if (!kind) return;
+    const host = kind === 'top-nav-authorized' ? String(d.host || '').toLowerCase() : '';
+    if (kind === 'top-nav-authorized' && !/^[a-z0-9.-]{1,253}$/.test(host)) return;
+    const seq = Number(d.seq);
+    if (!Number.isInteger(seq) || seq <= navSignalSeqSeen) return;
+    if (!KEY || !__woAuth.same(d.mac, engineMac('nav-signal', seq + '\n' + kind + '\n' + host))) return;
+    navSignalSeqSeen = seq;
     if (!bridgeRateOk('wo-nav-signal', 180, 60000)) return;
     try {
-      chrome.runtime.sendMessage({ kind: 'wo-nav-signal', signal: kind }, () => { void chrome.runtime.lastError; });
+      chrome.runtime.sendMessage({ kind: 'wo-nav-signal', signal: kind, host }, () => { void chrome.runtime.lastError; });
     } catch (_) {}
   });
 
@@ -1897,7 +1933,9 @@
   //    denied direct access to it even though this isolated world cannot be read by page JS.
   const requestContentConfig = () => {
     try {
-      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+      // The switches, the learned map, the engine's three list buckets and this frame's hidden
+      // rules -- not the search-copycat lists, which only the search marker reads (COST-01).
+      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides', 'learned', 'supplemental', 'hidden'] }, (res) => {
         void chrome.runtime.lastError;
         if (chrome.runtime.lastError || !res || !res.ok) return;
         setLearnedGrabberDomains(res.learned);

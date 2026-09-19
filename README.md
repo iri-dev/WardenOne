@@ -33,7 +33,7 @@ network beneath them.**
 
 > ## One master switch. 107 protections.
 >
-> **103 individually controllable · 3 watch-only**
+> **104 individually controllable · 3 watch-only**
 >
 > **Background Reports**, **Hardware & File Access** and **Browser Capabilities** are watch-only:
 > they record important activity without blocking or changing the page, so deliberately have no
@@ -1115,8 +1115,10 @@ source. A row can become a rule that blocks the exact host, whole domain or path
 all four write to My Rules so the decision is not hidden in another store.
 
 Capture exists only while a logger page is open. The in-memory buffer is capped at 1,000 requests
-and dropped when the last logger closes. Token-, key-, password- and address-like values become
-`[removed]` before the request is recorded. Nothing reaches disk until you press Export.
+and dropped when the last logger closes. Sign-in details, query values, the fragment and any part of a path that is not plain route vocabulary are removed
+before the request is recorded; what stays is the scheme, host, route and parameter names, plus a
+value only when it is a flag, a small number or a plain word. Nothing reaches disk until you press
+Export, and an export is still a list of the sites you visited.
 
 <p align="center">
   <a href="docs/screenshots/09-network-logger.webp">

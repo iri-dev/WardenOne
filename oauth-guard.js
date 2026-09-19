@@ -447,7 +447,7 @@
 
   function requestContentConfig(runScan) {
     try {
-      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, (res) => {
         void chrome.runtime.lastError;
         if (!chrome.runtime.lastError && res && res.ok) config = Object.assign({}, config, res.overrides || {});
         configLoaded = true;

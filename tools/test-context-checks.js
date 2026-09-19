@@ -42,13 +42,31 @@ function check(name, cond, detail) {
  * pixel you were over, and a menu whose contents move is one you cannot learn.
  * They are all present now, and each says plainly when it had nothing to work on. */
 check('there is one parent menu', /id: WO_MENU_ROOT, title: 'WardenOne'/.test(BG));
+/* The menu is a table now (PERF-05): the entries, in order, with separators as rows. Read
+   it as data -- the WO_MENU_* ids resolved from the same source -- so the checks below are
+   about what the menu IS rather than about how a loop was spelled. */
+const MENU_ITEMS = (() => {
+  const ids = {};
+  for (const m of BG.matchAll(/^const (WO_MENU_[A-Z_]+) = '([^']+)';/gm)) ids[m[1]] = m[2];
+  const table = BG.match(/const WO_MENU_ITEMS = \[([\s\S]*?)\n\];/);
+  if (!table) return null;
+  const items = [];
+  for (const row of table[1].matchAll(/\{ id: ([A-Za-z_'-]+), (?:title: '([^']*)'|separator: true) \}/g)) {
+    const id = row[1].startsWith("'") ? row[1].slice(1, -1) : ids[row[1]];
+    items.push({ id, title: row[2], separator: row[2] === undefined });
+  }
+  return items;
+})();
+const menuIndex = (id) => (MENU_ITEMS || []).findIndex((i) => i.id === id);
 check('every entry is offered on every right-click',
-  /const everywhere = \['all'\]/.test(BG)
-    /* One helper builds every item, so the contexts cannot differ between them. */
-    && /const item = \(id, title\) => add\(\{ id, parentId: WO_MENU_ROOT, title, contexts: everywhere/.test(BG)
-    && ['WO_MENU_ZAP', 'WO_MENU_COPY_LINK', 'WO_MENU_LINK', 'WO_MENU_SELECTION', 'WO_MENU_MEDIA', 'WO_MENU_FRAME',
-        'WO_MENU_SLEEP_TAB', 'WO_MENU_NEVER_SLEEP', 'WO_MENU_CLOSE_TAB', 'WO_MENU_BLOCK']
-      .every((id) => new RegExp('item\\(' + id + ',').test(BG)),
+  !!MENU_ITEMS && MENU_ITEMS.length === 13
+    /* One loop builds every item from the table with one contexts value, so they cannot differ. */
+    && /const everywhere = \['all'\]/.test(BG)
+    && /for \(const item of WO_MENU_ITEMS\) \{\s*if \(item\.separator\) add\(\{ id: item\.id, parentId: WO_MENU_ROOT, type: 'separator', contexts: everywhere/.test(BG)
+    && /else add\(\{ id: item\.id, parentId: WO_MENU_ROOT, title: item\.title, contexts: everywhere/.test(BG)
+    && ['wardenone-zap', 'wardenone-copy-clean-link', 'wardenone-check-link', 'wardenone-check-selection', 'wardenone-check-media', 'wardenone-frame',
+        'wardenone-sleep-tab', 'wardenone-never-sleep-site', 'wardenone-close-tab', 'wardenone-block-site']
+      .every((id) => menuIndex(id) >= 0),
   'an entry is still scoped to one kind of click');
 
 /* ---- the submenu is ruled into groups ----------------------------------- *
@@ -56,21 +74,22 @@ check('every entry is offered on every right-click',
  * an action, which was a question and which changed the site. The rules do that
  * once. */
 check('the groups are separated by real menu rules',
-  /const rule = \(id\) => add\(\{ id, parentId: WO_MENU_ROOT, type: 'separator'/.test(BG)
-    && (BG.match(/rule\('wardenone-sep-/g) || []).length === 3);
+  !!MENU_ITEMS && MENU_ITEMS.filter((i) => i.separator).map((i) => i.id).join(',') === 'wardenone-sep-checks,wardenone-sep-tab,wardenone-sep-site');
 check('the two actions are one group, above the questions',
-  /item\(WO_MENU_ZAP, 'Zap this element'\);\s*item\(WO_MENU_COPY_LINK, 'Copy clean link'\);\s*rule\('wardenone-sep-checks'\)/.test(BG),
+  !!MENU_ITEMS && MENU_ITEMS.slice(0, 3).map((i) => i.id).join(',') === 'wardenone-zap,wardenone-copy-clean-link,wardenone-sep-checks'
+    && MENU_ITEMS[0].title === 'Zap this element' && MENU_ITEMS[1].title === 'Copy clean link',
   'zapping and copying both do something; the four below only ask');
 check('the four checks are one group',
-  /rule\('wardenone-sep-checks'\)[\s\S]{0,600}item\(WO_MENU_LINK[\s\S]{0,400}item\(WO_MENU_FRAME[\s\S]{0,200}rule\('wardenone-sep-tab'\)/.test(BG));
+  !!MENU_ITEMS && MENU_ITEMS.slice(3, 8).map((i) => i.id).join(',') === 'wardenone-check-link,wardenone-check-selection,wardenone-check-media,wardenone-frame,wardenone-sep-tab');
 /* The tab actions are their own group because they are the only entries that change
    what is on your screen, and because they are about ONE TAB where the entry below
    is about the site everywhere. */
 check('the tab actions are one group, in order',
-  /rule\('wardenone-sep-tab'\)[\s\S]{0,900}item\(WO_MENU_SLEEP_TAB, 'Sleep this tab'\);\s*item\(WO_MENU_NEVER_SLEEP, 'Never sleep this site'\);\s*item\(WO_MENU_CLOSE_TAB, 'Close this tab'\);[\s\S]{0,80}rule\('wardenone-sep-site'\)/.test(BG),
+  !!MENU_ITEMS && MENU_ITEMS.slice(8, 12).map((i) => i.id + '=' + (i.title || '-')).join(',')
+    === 'wardenone-sleep-tab=Sleep this tab,wardenone-never-sleep-site=Never sleep this site,wardenone-close-tab=Close this tab,wardenone-sep-site=-',
   'closing is the one that cannot be undone, so it sits last rather than under the pointer');
 check('and the site decision is last, on its own',
-  /rule\('wardenone-sep-site'\)[\s\S]{0,300}item\(WO_MENU_BLOCK/.test(BG));
+  !!MENU_ITEMS && MENU_ITEMS[12].id === 'wardenone-block-site' && MENU_ITEMS[11].separator === true);
 check('no entry is scoped to a single context any more',
   !/contexts: linkOnly|contexts: selectionOnly|contexts: frameOnly/.test(BG));
 /* Offered everywhere, so the link check has to cope with a click that was not on
@@ -155,7 +174,7 @@ check('and a cached answer says so',
  * The question a page cannot answer for you. Media carries its own source, and
  * on a modern page that is very often a domain you have never heard of sitting
  * inside one you trust. Chrome hands the real srcUrl to the menu. */
-check('there is a media entry', /item\(WO_MENU_MEDIA, 'Where is this image from\?'\)/.test(BG)
+check('there is a media entry', !!MENU_ITEMS && MENU_ITEMS.some((i) => i.id === 'wardenone-check-media' && i.title === 'Where is this image from?')
   && /checkWardenMedia\(info, tab\)/.test(BG));
 check('it reads the real source, not the page',
   /const src = String\(\(info && info\.srcUrl\) \|\| ''\);/.test(BG));
@@ -181,7 +200,8 @@ check('the media and link checks share one findings helper',
  * One entry, not two. Two entries means one of them is always the wrong answer
  * for the page in front of you and neither says which, so the title is rewritten
  * from the real state before the menu is drawn. */
-check('there is a single block entry', /item\(WO_MENU_BLOCK, 'Block this site'\)/.test(BG)
+check('there is a single block entry', !!MENU_ITEMS && MENU_ITEMS.filter((i) => i.id === 'wardenone-block-site').length === 1
+  && MENU_ITEMS.find((i) => i.id === 'wardenone-block-site').title === 'Block this site'
   && !/Unblock this site'/.test(BG));
 check('its title is rewritten from the real state',
   /function refreshWardenBlockMenuTitle\(tab, info\)/.test(BG)
@@ -191,12 +211,14 @@ check('and refreshed on a tab switch',
 check('and on a navigation within the tab you are on',
   /if \(change && \(change\.url \|\| change\.status === 'complete'\) && tab && tab\.active === true\) \{\s*void refreshWardenBlockMenuTitle\(tab\);/.test(BG),
   'a same-URL reload into the error page changes no url, so status complete must also refresh it');
-/* tabs.onUpdated cannot be filtered in Chrome, so each listener is another wake
-   of a 760KB service worker on every title, favicon and audible tick of a
-   playing tab. The menu title rides an existing one instead of adding a third. */
+/* One tabs.onUpdated event wakes the worker once and reaches every listener, so a
+   listener of the menu title's own would have cost a callback per tick, not a wake;
+   it still rides the Forget-Me listener so the navigation filter lives in one place.
+   background.js carries exactly one registration (the census across the worker is
+   pinned in tools/test-listener-census.js). */
 check('the menu title did not bring its own tab-update listener',
-  (BG.match(/chrome\.tabs\.onUpdated\.addListener/g) || []).length === 2,
-  'reuse an existing listener rather than registering another');
+  (BG.match(/chrome\.tabs\.onUpdated\.addListener/g) || []).length === 1,
+  'reuse the existing listener rather than registering another');
 /* The entry read "Block this site (not a normal page)" on an ordinary page.
    chrome.tabs.get calls back with undefined whenever it errors -- a sleeping
    worker is enough -- and that undefined was handed straight to the refresh,
@@ -241,11 +263,11 @@ check('its title is rewritten from the stored list',
   /async function refreshWardenNeverSleepMenuTitle\(host\)/.test(BG)
     && /memoryNeverSleepHas\(list, host\)[\s\S]{0,80}'Allow sleeping '[\s\S]{0,40}'Never sleep '/.test(BG)
     && /chrome\.contextMenus\.update\(WO_MENU_NEVER_SLEEP, \{ title \}/.test(BG));
-/* tabs.onUpdated cannot be filtered in Chrome, and each listener wakes a 760KB
-   worker on every title, favicon and audible tick. The sleep title rides the site
-   entry's refresh rather than registering its own. */
+/* The sleep title rides the site entry's refresh rather than registering a
+   tabs.onUpdated listener of its own: one more callback on every tick, and a second
+   copy of the navigation filter, for nothing the existing refresh does not cover. */
 check('the sleep title brought no listeners of its own',
-  (BG.match(/chrome\.tabs\.onUpdated\.addListener/g) || []).length === 2
+  (BG.match(/chrome\.tabs\.onUpdated\.addListener/g) || []).length === 1
     && /void refreshWardenNeverSleepMenuTitle\(wardenTabHostname\(source\.tab, source\.info\)\);/.test(BG));
 /* The tab this was about is asleep, closed, or no longer focused by the time
    there is anything to say, so a toast aimed at it would be thrown away with it. */

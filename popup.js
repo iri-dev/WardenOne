@@ -599,16 +599,36 @@ function reflectMasterDisable() {
   document.querySelectorAll('.eyeshield-range').forEach((r) => { r.disabled = !on; });
 }
 
+// Silent is painted over the toast and badge switches, never into them. The two controls are
+// greyed while it is on and keep showing the preference underneath, which is what the page
+// gets back the moment Silent is off; the bridge gates the page's copy (gateSilentPresentation
+// in bridge.js), so nothing here needs to write them false. It used to: the switches were unchecked as well
+// as greyed, the generic change handler read them back through readFromUI on the very next
+// save, and turning Silent off left both stored off.
 function reflectSilentMode() {
   const silentOn = config.silentMode === true;
   ['showToasts', 'showBadge'].forEach((key) => {
     const el = document.querySelector(`input[data-key="${key}"]`);
     if (el) {
-      if (silentOn) el.checked = false;
       const tg = el.closest('.tg');
       if (tg) tg.classList.toggle('disabled', silentOn);
     }
   });
+}
+
+// The one-time repair for a profile the old popup already damaged. Every save it made while
+// Silent was on wrote both switches false, so a profile arriving here with Silent on and both
+// off is carrying Silent's writes, not a choice: the switches were disabled the whole time,
+// so nobody could have made one. When such a profile turns Silent off, Normal is put back
+// to what Normal means -- both on -- instead of a silence nobody asked for. It runs only on
+// that transition and only for that exact signature; a profile with Silent off is never
+// touched, and a reader who had turned off just one of the two keeps it off.
+function repairSilentModeRewrite(wasSilent) {
+  if (!wasSilent || config.silentMode === true) return false;
+  if (config.showToasts !== false || config.showBadge !== false) return false;
+  config.showToasts = true;
+  config.showBadge = true;
+  return true;
 }
 
 function syncJsShieldUI(res) {
@@ -731,6 +751,7 @@ function readFromUI() {
     phishTankKey: config.phishTankKey || '',
     whoisXmlKey: config.whoisXmlKey || '',
   };
+  const wasSilent = config.silentMode === true;
   config.enabled = $('enabled').checked;
   KEYS.forEach((k) => {
     const els = document.querySelectorAll(`input[data-key="${k}"]`);
@@ -738,11 +759,9 @@ function readFromUI() {
   });
   config.googleSearchResultCleanup = false;
   config.showDownloadBar = true;
-  // When silent mode is on, force notifications and badge off regardless of their checkbox state
-  if (config.silentMode) {
-    config.showToasts = false;
-    config.showBadge = false;
-  }
+  // Silent mode does not write showToasts/showBadge: the bridge gates what the page gets
+  // (gateSilentPresentation), and the switches here keep the preference for when Silent is off.
+  repairSilentModeRewrite(wasSilent);
   document.querySelectorAll('[data-config-text]').forEach((el) => {
     const key = el.getAttribute('data-config-text');
     config[key] = el.value.trim();
@@ -1533,7 +1552,11 @@ function fmtListWhen(ms) {
   return days + (days === 1 ? ' day ago' : ' days ago');
 }
 
-function renderUserRuleErrors(errors) {
+/* Two kinds of line that are not in use, listed together: the ones WardenOne could not read,
+   and the ones it read but had no room for. A rule past the limit is named by its line like a
+   refused one, because to the person who wrote it the effect is the same -- it does nothing --
+   and a rule that silently does nothing is the thing this box exists to prevent. */
+function renderUserRuleErrors(errors, overflowLines, limit) {
   const box = $('user-rules-errors');
   if (!box) return;
   box.textContent = '';
@@ -1547,16 +1570,36 @@ function renderUserRuleErrors(errors) {
     more.textContent = 'and ' + (errors.length - 20) + ' more.';
     box.appendChild(more);
   }
+  const over = Array.isArray(overflowLines) ? overflowLines : [];
+  over.slice(0, 20).forEach((e) => {
+    const row = document.createElement('div');
+    row.textContent = 'Line ' + e.line + ': past the ' + fmtCount(limit || 0) + '-rule limit, not in use — ' + e.text;
+    box.appendChild(row);
+  });
+  if (over.length > 20) {
+    const more = document.createElement('div');
+    more.textContent = 'and ' + (over.length - 20) + ' more past the limit.';
+    box.appendChild(more);
+  }
 }
 
+/* The numbers are the worker's own: blocking rules in use, hiding rules, and blocking rules
+   past the limit. Nothing here is derived by subtraction -- that is how 50 rules that did
+   nothing were once reported as 50 hiding rules. */
 function describeRuleCounts(res) {
   const net = Number(res.network || 0);
   const cos = Number(res.cosmetic || 0);
-  if (!net && !cos) return 'No rules yet.';
+  const over = Number(res.overflow || 0);
+  if (!net && !cos && !over) return 'No rules yet.';
   const bits = [];
   if (net) bits.push(net + (net === 1 ? ' blocking rule' : ' blocking rules'));
   if (cos) bits.push(cos + (cos === 1 ? ' hiding rule' : ' hiding rules'));
-  return bits.join(' and ') + ' in use.';
+  let text = bits.length ? bits.join(' and ') + ' in use.' : 'No rules in use.';
+  if (over) {
+    text += ' ' + over + ' more blocking rule' + (over === 1 ? ' is' : 's are') + ' past the '
+      + fmtCount(res.limit || 0) + '-rule limit and not in use; the limit is shared with your subscribed lists.';
+  }
+  return text;
 }
 
 function loadUserRules() {
@@ -1570,7 +1613,7 @@ function loadUserRules() {
     if (sum) sum.textContent = describeRuleCounts(res);
     const st = $('user-rules-status');
     if (st) st.textContent = '';
-    renderUserRuleErrors(res.errors);
+    renderUserRuleErrors(res.errors, res.overflowLines, res.limit);
   });
 }
 
@@ -1586,13 +1629,14 @@ function saveUserRules() {
       return;
     }
     const skipped = (res.errors || []).length;
-    let msg = 'Saved. ' + describeRuleCounts(res);
+    /* "Saved" is never said on its own over rules that are not in use. */
+    let msg = (Number(res.overflow || 0) ? 'Saved, but not all of it is in use. ' : 'Saved. ') + describeRuleCounts(res);
     if (skipped) msg += ' ' + skipped + (skipped === 1 ? ' line was' : ' lines were') + ' skipped.';
     if ((res.rejected || []).length) msg += ' ' + res.rejected.length + ' refused by the browser.';
     if (st) st.textContent = msg;
     const sum = $('user-rules-summary');
     if (sum) sum.textContent = describeRuleCounts(res);
-    renderUserRuleErrors(res.errors);
+    renderUserRuleErrors(res.errors, res.overflowLines, res.limit);
   });
 }
 
@@ -1618,11 +1662,32 @@ function renderCustomLists(lists) {
     name.textContent = l.title || l.url;
     const meta = document.createElement('div');
     meta.className = 'desc';
-    const bits = [Number(l.ruleCount || 0) + ' rules'];
+    /* The worker attaches each list's share of the one blocking-rule band, allotted after
+       the reader's own rules and the lists ahead of it; a list that parses to 700 blocking
+       rules and gets 120 of them says so, rather than "700 rules". */
+    const bits = [];
+    if (typeof l.applied === 'number' && typeof l.network === 'number') {
+      const net = Number(l.network || 0);
+      const applied = Number(l.applied || 0);
+      const cos = Number(l.cosmetic || 0);
+      if (l.enabled !== false && l.off !== true && applied < net) bits.push(applied + ' of ' + net + ' blocking rules in use');
+      else if (net) bits.push(net + ' blocking rule' + (net === 1 ? '' : 's'));
+      if (cos) bits.push(cos + ' hiding rule' + (cos === 1 ? '' : 's'));
+      if (!net && !cos) bits.push('no rules');
+    } else {
+      bits.push(Number(l.ruleCount || 0) + ' rules');
+    }
     bits.push('updated ' + fmtListWhen(l.updatedAt));
     if (Number(l.skipped || 0)) bits.push(l.skipped + ' skipped');
     if (l.enabled === false) bits.push('off');
     meta.textContent = bits.join(' · ');
+    if (l.enabled !== false && l.off !== true && Number(l.overflow || 0)) {
+      const over = document.createElement('div');
+      over.className = 'desc';
+      over.style.color = 'var(--warn)';
+      over.textContent = l.overflow + ' of this list\'s blocking rules are past the shared limit and not in use. Your own rules and the lists above it are served first.';
+      left.appendChild(over);
+    }
     left.appendChild(name);
     left.appendChild(meta);
     if (l.error) {
@@ -2812,11 +2877,15 @@ function renderProtectionHealth() {
   const blocked = $('health-blocked-count');
   const lists = $('health-list-updated');
   const issues = $('health-issues');
+  const tabLine = $('health-tab-line');
   const setLevel = (level) => {
     panel.classList.toggle('is-warning', level === 'warning');
     panel.classList.toggle('is-danger', level === 'danger');
   };
-  chrome.runtime.sendMessage({ kind: 'protection-health' }, (res) => {
+  // The worker is told which tab this popup is open on, so the summary can ask that page's
+  // bridge whether the engine is actually there, rather than counting switches and calling
+  // the count "active". The tab id is the only thing sent; the worker reads the tab itself.
+  const ask = (tabId) => chrome.runtime.sendMessage({ kind: 'protection-health', tabId }, (res) => {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
     if (err || !res || !res.ok) {
       setLevel('warning');
@@ -2826,16 +2895,33 @@ function renderProtectionHealth() {
       if (active) active.textContent = '-';
       if (blocked) blocked.textContent = '-';
       if (lists) lists.textContent = '-';
+      if (tabLine) tabLine.textContent = '';
       if (issues) { issues.textContent = ''; issues.classList.add('is-visible'); issues.appendChild(healthNote('Could not read local protection health: ' + (err || 'unknown error'), 'danger')); }
       return;
     }
     const level = res.level === 'danger' ? 'danger' : res.level === 'warning' ? 'warning' : 'ok';
     const items = Array.isArray(res.needsAttention) ? res.needsAttention : [];
     setLevel(level);
-    if (title) title.textContent = res.status || 'Protected';
-    if (detail) detail.textContent = res.detail || 'Core shields are active.';
+    if (title) title.textContent = res.status || 'Protections on';
+    if (detail) detail.textContent = res.detail || 'No issue found in what could be checked.';
     if (chip) chip.textContent = level === 'danger' ? 'Review' : level === 'warning' ? 'Check' : (items.length ? 'Notes' : 'Open');
-    if (active) active.textContent = fmtCount(res.activeShields || 0) + '/' + fmtCount(res.totalShields || 0);
+    if (active) {
+      active.textContent = fmtCount(res.configuredShields || 0) + '/' + fmtCount(res.totalShields || 0);
+      active.title = 'Switched on in settings. Whether the engine is running on this page is the line below the numbers.';
+    }
+    if (tabLine) {
+      const tab = res.tab || {};
+      const state = String(tab.state || 'unknown');
+      tabLine.textContent = (state === 'verified' ? 'This page: engine verified. '
+        : state === 'failed' ? 'This page: engine missing. '
+          : state === 'paused' ? 'This page: paused. '
+            : state === 'excluded' ? 'This page: not injected here. '
+              : state === 'restricted' ? 'This page: cannot be checked. '
+                : state === 'off' ? 'This page: WardenOne is off. '
+                  : state === 'sleeping' ? 'This page: asleep. '
+                    : 'This page: not confirmed yet. ') + String(tab.text || '');
+      tabLine.className = 'health-tab' + (state === 'failed' ? ' is-warn' : state === 'verified' ? ' is-ok' : '');
+    }
     if (blocked) blocked.textContent = fmtCount(res.blocked24h || 0);
     if (lists) {
       const list = res.list || {};
@@ -2853,6 +2939,13 @@ function renderProtectionHealth() {
       });
     }
   });
+  try {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      void chrome.runtime.lastError;
+      const tab = tabs && tabs[0];
+      ask(tab && typeof tab.id === 'number' ? tab.id : -1);
+    });
+  } catch (_) { ask(-1); }
 }
 function listMetaCount(meta) {
   return Number((meta && (meta.totalCount || meta.count)) || 0);

@@ -23,6 +23,11 @@ function loadMemoryShield(options = {}) {
     activated: [],
     alarmsCreated: [],
     alarmsCleared: [],
+    // Chrome's alarm store, as far as this code can tell: a named create CANCELS the alarm of
+    // that name and schedules a new one a full period out, get() reads what is held, and the
+    // clock is the harness's so a sequence of worker starts can be replayed against it.
+    clock: Date.now(),
+    alarms: new Map((options.alarms || []).map((a) => [a.name, Object.assign({}, a)])),
     liveReply: options.liveReply || (() => ({ formDirty: false, mediaActive: false })),
     history: [],
     // Captured rather than discarded: what counts as "activity" is a listener decision, and a
@@ -46,8 +51,14 @@ function loadMemoryShield(options = {}) {
     globalThis: null,
     chrome: {
       alarms: {
-        create(name, info) { state.alarmsCreated.push({ name, info }); },
-        async clear(name) { state.alarmsCleared.push(name); return true; },
+        create(name, info) {
+          state.alarmsCreated.push({ name, info });
+          const period = info && info.periodInMinutes;
+          const delay = info && info.delayInMinutes != null ? info.delayInMinutes : period;
+          state.alarms.set(name, { name, periodInMinutes: period, scheduledTime: state.clock + delay * 60000 });
+        },
+        async clear(name) { state.alarmsCleared.push(name); return state.alarms.delete(name); },
+        async get(name) { return state.alarms.get(name); },
       },
       runtime: { lastError: null },
       tabs: {
@@ -200,6 +211,7 @@ async function main() {
   await testRecencySurvivesRestart();
   await testUnknownLiveStateKeepsTheTab();
   await testSweepAlarmFollowsTheSetting();
+  await testColdStartsKeepTheSweepDeadline();
   await testNeverSleepIsExactAndHonoured();
   await testTabActionsByHand();
 
@@ -367,10 +379,13 @@ async function testUnknownLiveStateKeepsTheTab() {
 // ---------------------------------------------------------------------------
 async function testSweepAlarmFollowsTheSetting() {
   const on = loadMemoryShield({ config: { memoryShield: true } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(on.state.alarms.has(on.memory.MEMORY_SWEEP_ALARM),
+    'starting up with Memory Shield on did not install the sweep alarm');
   on.state.alarmsCreated.length = 0;
   assert.strictEqual(await on.memory.reconcileMemorySweepAlarm(), true);
-  assert(on.state.alarmsCreated.some((a) => a.name === on.memory.MEMORY_SWEEP_ALARM),
-    'the sweep alarm was not created while Memory Shield is on');
+  assert(on.state.alarms.has(on.memory.MEMORY_SWEEP_ALARM) && on.state.alarmsCreated.length === 0,
+    'a reconcile over an installed sweep alarm created it again');
 
   const off = loadMemoryShield({ config: { memoryShield: false } });
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -398,6 +413,72 @@ async function testSweepAlarmFollowsTheSetting() {
   const background = fs.readFileSync('background.js', 'utf8');
   assert(/o\.memoryShield !== n\.memoryShield[\s\S]{0,160}reconcileMemorySweepAlarm\(\)/.test(background),
     'background.js does not reconcile the sweep alarm when the setting changes');
+}
+
+// ---------------------------------------------------------------------------
+// A cold worker keeps the sweep deadline it finds.
+//
+// Chrome cancels and replaces a named alarm on create, with the first firing a full period
+// away. Every worker start reconciles, and a busy session is what keeps starting workers, so an
+// unconditional create moved the sweep five minutes forward each time and could postpone it for
+// as long as the browsing lasted. The alarm Chrome holds is read first and kept.
+// ---------------------------------------------------------------------------
+async function testColdStartsKeepTheSweepDeadline() {
+  const MINUTE_MS = 60000;
+  const period = 5;
+  const name = 'wardenone-memory-sweep';
+  const t0 = Date.now();
+  const deadline = t0 + 4 * MINUTE_MS;
+  // Worker A scheduled the sweep four minutes from now and died. Worker B starts.
+  const b = loadMemoryShield({ config: { memoryShield: true }, alarms: [{ name, periodInMinutes: period, scheduledTime: deadline }] });
+  b.state.clock = t0;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.strictEqual(b.state.alarmsCreated.length, 0, 'a cold start replaced an existing sweep alarm');
+  assert.strictEqual(b.state.alarms.get(name).scheduledTime, deadline, 'a cold start moved the sweep deadline');
+  assert.strictEqual(b.state.alarms.get(name).periodInMinutes, period, 'the existing period was changed');
+
+  // Ten more worker starts, one a minute: the deadline must not slide once.
+  for (let i = 1; i <= 10; i++) {
+    b.state.clock = t0 + i * MINUTE_MS;
+    assert.strictEqual(await b.memory.reconcileMemorySweepAlarm(), true);
+    assert.strictEqual(b.state.alarms.get(name).scheduledTime, deadline,
+      'worker start ' + i + ' moved the sweep deadline to ' + (b.state.alarms.get(name).scheduledTime - t0) / MINUTE_MS + ' min');
+  }
+  assert.strictEqual(b.state.alarmsCreated.length, 0, 'repeated starts re-created the sweep alarm');
+
+  // What the old shape did, replayed through the same store, so the store itself is known to
+  // show the slide: a create at minute 10 lands the first firing at minute 15, not minute 4.
+  b.sandbox.chrome.alarms.create(name, { periodInMinutes: period });
+  assert.strictEqual(b.state.alarms.get(name).scheduledTime, t0 + 15 * MINUTE_MS, 'the store does not model replacement');
+
+  // An alarm with a stale period is the one case a cold start does replace.
+  const stale = loadMemoryShield({ config: { memoryShield: true }, alarms: [{ name, periodInMinutes: period + 1, scheduledTime: deadline }] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.strictEqual(stale.state.alarmsCreated.length, 1, 'a misconfigured sweep alarm was kept');
+  assert.strictEqual(stale.state.alarms.get(name).periodInMinutes, period);
+
+  // Absent is created; off is cleared at once even when one exists.
+  const absent = loadMemoryShield({ config: { memoryShield: true } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.strictEqual(absent.state.alarmsCreated.length, 1, 'no sweep alarm was created for a fresh install');
+  const off = loadMemoryShield({ config: { memoryShield: false }, alarms: [{ name, periodInMinutes: period, scheduledTime: deadline }] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(!off.state.alarms.has(name), 'turning Memory Shield off left the sweep alarm scheduled');
+  assert.strictEqual(off.state.alarmsCreated.length, 0);
+
+  // A Chrome without alarms.get gets the create it always did rather than nothing.
+  const old = loadMemoryShield({ config: { memoryShield: true } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  delete old.sandbox.chrome.alarms.get;
+  old.state.alarmsCreated.length = 0;
+  assert.strictEqual(await old.memory.reconcileMemorySweepAlarm(), true);
+  assert.strictEqual(old.state.alarmsCreated.length, 1, 'without alarms.get the sweep alarm was not created');
+
+  // The handler still re-reads the setting on every firing, which is what makes keeping an
+  // existing alarm safe: a kept alarm never sweeps for a feature that has since been turned off.
+  const background = fs.readFileSync('background.js', 'utf8');
+  assert(/alarm\.name === 'wardenone-memory-sweep'[\s\S]{0,400}if \(!cfg \|\| !cfg\.memoryShield\) return;/.test(background),
+    'the sweep handler no longer re-checks the setting before sweeping');
 }
 
 // ---------------------------------------------------------------------------

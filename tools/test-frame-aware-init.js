@@ -157,12 +157,14 @@ check('the refresh path and the config path share one applier',
 check('the config handler names the asking frame\'s host from sender.url',
   /new URL\(String\(\(sender && sender\.url\) \|\| ''\)\)\.hostname/.test(between(BG, "kind === 'content-config-get'", 'return true;', 'the config-get handler')));
 {
-  const SNAP = between(BG, 'async function buildContentConfigSnapshot(frameHost) {', '\nlet __contentConfigRefreshTimer', 'the snapshot builder');
+  /* The builder sits behind the shared memo now (COST-01); the slice starts at its input keys. */
+  const SNAP = between(BG, 'function contentConfigInputKeys() {', '\nlet __contentConfigRefreshTimer', 'the snapshot builder');
   const calls = [];
   const ctx = {
-    console: { warn() {} }, Array, Object, String, Promise,
+    console: { warn() {} }, Array, Object, String, Promise, Set,
     localGet: async () => ({ wardenone_config: { enabled: true } }),
     SUPPLEMENTAL_LIST_STORAGE_KEY: 'sup',
+    emptySupplementalLists: () => ({ adultDomainsExtra: [], grabberDomainsExtra: [], trustedPaymentHostsExtra: [], searchJunkDomainsExtra: [] }),
     sanitizeContentConfig: (c) => c, sanitizeLearnedForContent: () => [], sanitizeSupplementalLists: () => ({}), sanitizeSearchJunkForContent: () => [],
     readHiddenElements: async () => { calls.push('read'); return { 'shop.example': ['#promo', '.cookie-bar'] }; },
     hiddenSelectorsForHost: (all, host) => (host === 'shop.example' || host.endsWith('.shop.example')) ? all['shop.example'] : [],

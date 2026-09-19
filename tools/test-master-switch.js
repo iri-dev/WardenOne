@@ -92,7 +92,9 @@ function rig(options) {
   vm.createContext(ctx);
   vm.runInContext(BAND_CONSTS + '\nvar __allowlistRulesKey = null; const ALLOWLIST_RULE_BASE = 800000;\n'
     + ['masterSwitchOn', 'isWardenOneDynamicRuleId', 'removeWardenOneDynamicRules', 'applyUserFilterRulesFrom', 'applyUserFilterRules',
-      'applyFirewallRulesFrom', 'applyFirewallRules', 'applyUserBlocklistRules', 'applyAllowlistRules'].map(lift).join('\n')
+      'applyFirewallRulesFrom', 'applyFirewallRules', 'applyUserBlocklistRules', 'applyAllowlistRules',
+      /* the compare-before-write the blocklist applier now does (PERF-05) */
+      'dnrValueMatches', 'dnrBandUnchanged'].map(lift).join('\n')
     + '\nglobalThis.api = { isMine: isWardenOneDynamicRuleId, removeAll: removeWardenOneDynamicRules, userFilters: applyUserFilterRules,'
     + ' userFiltersFrom: applyUserFilterRulesFrom, firewall: applyFirewallRules, firewallFrom: applyFirewallRulesFrom, blocklist: applyUserBlocklistRules, allowlist: applyAllowlistRules };', ctx);
   return { api: ctx.api, state, band: (base, max) => state.dnr.filter((r) => r.id >= base && r.id < base + max).length };

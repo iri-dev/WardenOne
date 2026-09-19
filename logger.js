@@ -319,7 +319,9 @@ function detailRow(e) {
   add('Type', TYPE_LABEL[e.type] || e.type);
   add('Party', e.party === 'third' ? 'Third-party' : e.party === 'first' ? 'First-party' : 'Unknown');
   add('Page', e.page);
-  add('URL', e.url + (e.redacted ? '   (secrets removed)' : ''));
+  /* Most rows carry the mark now: anything not plainly harmless is withheld, not only what
+     was recognised as a secret, so the label says what happened rather than what was found. */
+  add('URL', e.url + (e.redacted ? '   (parts withheld)' : ''));
   if (e.action === 'blocked') {
     add('Rule', e.rule
       ? '#' + e.rule + (e.near ? '   (matched by tab and time, not by request)' : '')
@@ -356,7 +358,9 @@ function detailRow(e) {
     const u = new URL(e.url);
     if (u.pathname && u.pathname !== '/') pathRule = '||' + u.hostname.replace(/^www\./, '') + u.pathname;
   } catch (_) {}
-  mk('Block this path', pathRule, 'Adds ' + pathRule + ' to My rules');
+  /* A path with a redacted part is a wildcard rule: it blocks that route family, not one file. */
+  mk('Block this path', pathRule, 'Adds ' + pathRule + ' to My rules'
+    + (pathRule.indexOf('*') >= 0 ? '; a redacted part of the path is a wildcard, so this covers the whole route' : ''));
 
   const copy = document.createElement('button');
   copy.className = 'btn'; copy.type = 'button'; copy.textContent = 'Copy URL';

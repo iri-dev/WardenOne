@@ -2446,6 +2446,9 @@ async function recoverStrandedPausedDownloads() {
   }
 }
 
+// One try per namespace, so a registration that throws cannot take an unrelated one with it
+// (LIFE-04): the session-boundary stamp and the review-tab cleanup have nothing in common but
+// the line they used to share.
 try {
   setTimeout(() => cleanupDownloadReviews(true), 1000);
   setTimeout(() => { recoverStrandedPausedDownloads().catch(() => {}); }, 1500);
@@ -2456,6 +2459,8 @@ try {
     markBrowserSessionStart();
     setTimeout(() => { quiesceDownloadReviewsForNewSession(); cleanupDownloadReviews(true); }, 800);
   });
+} catch (_) {}
+try {
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && reviewIdFromUrl(tab && (tab.url || tab.pendingUrl))) {
       cleanupDownloadReviews(true);

@@ -52,6 +52,11 @@ let SITE = String(params.get('site') || '').toLowerCase().replace(/^www\./, '');
 /* domain -> { seen: Set(column), blocked: Set(column), sources: Set(string), requests: n } */
 const OBSERVED = new Map();
 let RULES = {};
+/* Decisions of this site's that are stored but got no rule: the firewall holds a fixed
+   number across every site, and a matrix from before that was enforced at the write can
+   hold more. The worker names them; they are drawn as not in effect, never as working. */
+let OMITTED = new Set();
+const omittedFrom = (res) => new Set(((res && res.omitted) || []).map((o) => String(o.domain || '') + '|' + String(o.column || '')));
 let renderTimer = 0;
 
 function el(tag, cls, text) {
@@ -127,11 +132,13 @@ function setCell(domain, column, verdict, cell) {
       /* The worker answers a refusal with the rules that ARE in effect, so the cell
          goes back to the truth instead of staying on the click (H18). */
       if (res && res.rules) RULES = res.rules;
+      if (res && res.omitted) OMITTED = omittedFrom(res);
       $('status').textContent = (res && res.error) || 'That could not be saved.';
       render();
       return;
     }
     RULES = res.rules || {};
+    OMITTED = omittedFrom(res);
     $('status').textContent = 'Saved. Reload ' + SITE + ' for it to take effect.';
     render();
   });
@@ -176,6 +183,7 @@ function render() {
   const body = $('rows');
   body.textContent = '';
   let decided = 0;
+  let omitted = 0;
   for (const domain of domains) {
     const row = OBSERVED.get(domain) || { seen: new Set(), blocked: new Set(), sources: new Set(), requests: 0 };
     const tr = el('tr', registrable(domain) === base ? 'is-first-party' : '');
@@ -210,8 +218,10 @@ function render() {
     for (const [column, label] of COLUMNS) {
       const td = el('td', 'fw-cell');
       const verdict = decisionOf(domain, column);
+      const inert = verdict !== 'default' && OMITTED.has(domain + '|' + column);
       if (verdict !== 'default') decided++;
-      const button = el('button', 'fw-btn is-' + verdict);
+      if (inert) omitted++;
+      const button = el('button', 'fw-btn is-' + verdict + (inert ? ' is-inert' : ''));
       button.type = 'button';
       button.textContent = verdict === 'allow' ? 'allow'
         : verdict === 'block' ? 'block'
@@ -219,9 +229,11 @@ function render() {
             : (column !== 'cookie' && row.blocked.has(column)) ? '· blocked'
               : (column !== 'cookie' && row.seen.has(column)) ? '· loaded'
                 : '—';
-      button.title = verdict === 'default'
-        ? label + ': whatever WardenOne decides. Click to set your own rule.'
-        : label + ': ' + verdict + ', because you said so here.';
+      button.title = inert
+        ? label + ': ' + verdict + ' is stored but NOT in effect -- the firewall is over its rule limit. Set it back to Default, or reset a site you no longer need, to make room.'
+        : verdict === 'default'
+          ? label + ': whatever WardenOne decides. Click to set your own rule.'
+          : label + ': ' + verdict + ', because you said so here.';
       button.addEventListener('click', () => setCell(domain, column, cycle(column, verdict), button));
       td.appendChild(button);
       tr.appendChild(td);
@@ -231,7 +243,8 @@ function render() {
 
   $('empty').hidden = domains.length > 0;
   $('count').textContent = domains.length + ' domain' + (domains.length === 1 ? '' : 's')
-    + (decided ? ', ' + decided + ' rule' + (decided === 1 ? '' : 's') + ' of yours' : ', none of your rules yet');
+    + (decided ? ', ' + decided + ' rule' + (decided === 1 ? '' : 's') + ' of yours' : ', none of your rules yet')
+    + (omitted ? ' — ' + omitted + ' of them stored but not in effect (over the rule limit)' : '');
   $('reset-site').disabled = decided === 0;
 }
 
@@ -287,6 +300,7 @@ function load() {
     if (res && res.ok) {
       SITE = res.site || SITE;
       RULES = res.rules || {};
+      OMITTED = omittedFrom(res);
       $('all-sites').textContent = res.sites
         ? 'You have rules on ' + res.sites + ' site' + (res.sites === 1 ? '' : 's') + '.'
         : 'No firewall rules anywhere yet.';

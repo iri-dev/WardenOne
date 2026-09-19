@@ -229,7 +229,7 @@
 
   function loadConfig(done) {
     try {
-      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, (res) => {
         void chrome.runtime.lastError;
         config = Object.assign({}, DEFAULTS, (!chrome.runtime.lastError && res && res.ok && res.overrides) || {});
         updateActive();

@@ -9,8 +9,8 @@
  *
  * Camera, microphone and location grants pile up the way consent cookies do, so the Privacy
  * cleaner offers to hand them all back to "ask". contentSettings cannot enumerate which sites hold
- * a grant -- that is a Chrome limitation the list-site-permissions handler already records -- but
- * it can clear a type, and that is the useful half.
+ * a grant -- a Chrome limitation, which is why there is a sweep and no listing -- but it can clear
+ * a type, and that is the useful half.
  *
  * This suite exists because the first version of that sweep PARSED PERFECTLY and failed on every
  * click. It was declared inside the message listener and read two consts declared further down the
