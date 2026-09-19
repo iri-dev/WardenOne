@@ -1231,20 +1231,40 @@ stream usable matters more than claiming a block that left nothing watchable.
 
 ## Spotify AdShield
 
-Spotify's web player is driven by a playback state machine from Spotify's servers, and when an ad
-is due that machine makes the ad the only way out of the current song: advancing, skipping
-forward and skipping back all lead into it, and the player will not move on until the ad slot has
-been entered and reported finished. Routing around the slot breaks the player, so WardenOne takes
-it and makes it as short and as invisible as the protocol allows. The ad's audio is replaced, in
-the state machine itself, with a 132-millisecond silent clip; the moment Spotify confirms the slot
-the player is told to move on; and from the clip loading until the next song's audio starts the
-now-playing bar is blank and every piece of ad chrome (countdown, companion card, the
-"Advertisement" label) is hidden. What is left is a short gap between songs.
+Spotify's web player receives a playback state machine from Spotify's servers. WardenOne leaves
+that machine, the responses that carry it and your account-side playback state alone, and works
+in three layers, all on your side of the wire.
 
-Only a track Spotify's own metadata marks as an ad is touched. Songs travel as encrypted media
-over a different path and are never classified by host or duration, and podcast episodes keep
-their original files. Any ad audio that ever slips through plays muted. Turning AdShield off, or
-allowlisting open.spotify.com, switches this off.
+The first is the player's own track loader. Every track the player resolves passes through one
+callback carrying the media URL it is about to load; anything Spotify itself labels an ad has
+that URL replaced there with a one-second silent clip. Nothing about the ad is fetched, the clip
+ends on its own, and the player moves to the next song exactly as it would after a real ad.
+This is the technique AdGuard's filter uses on open.spotify.com, and it does not depend on
+which host the ad would have come from; WardenOne's version also covers Spotify's
+manifest-delivered ads. The second is the network: uBlock Origin's list of Spotify ad-media
+hosts is redirected to the same packaged clip, for media requests only, so songs (which travel
+over fetch) are never touched. Media the web player loads is also let through the ad and
+tracker packs, because a podcast whose audio arrives through an analytics prefix must play,
+not stall. The third is a fallback for an ad that reached the media element unchanged: it is
+recognized from Spotify's own metadata, muted before playback, and sought near its end only
+after Spotify confirms the ad is current. Each confirmed ad is sought at most once, so
+speculative preloads and retries cannot start a skip cascade; without confirmation, the ad stays
+muted and plays through. The short replacement clip is never sought. Ad chrome is hidden during
+the slot. None of this is a promise of an instant transition when Spotify changes its ad
+delivery.
+
+A separate rapid-skip failure can happen when Spotify itself returns HTTP 429 for an
+audio-license request: the player may then auto-skip several songs. WardenOne briefly holds
+that rejected response (up to ten seconds) to give an in-flight successful license a chance
+to keep playback stable. It never makes an extra license request, and a manual skip is not
+rate-limited; successful licenses pass straight through. A live retest kept one selected song
+playing through a 429, but a later burst of rejected licenses still made Spotify move to a
+different playable song. This is a partial recovery attempt, not a way to override a license
+that Spotify refuses to issue.
+
+Ordinary songs, previews and podcast episodes are not muted or sought. Turning AdShield off, or allowlisting
+open.spotify.com, switches this off. This is a web-player workaround, not Premium: Spotify can
+change its player, and a short transition may still be noticeable.
 
 ## Search cleanup
 

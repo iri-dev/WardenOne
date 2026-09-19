@@ -81,29 +81,49 @@ gratefully credit the upstream projects below.
   upstream rule was introduced in
   <https://github.com/uBlockOrigin/uAssets/commit/4464b7bdb7ab7a0b6272669e79c620a064abcd9f>.
 
-  The original silent clip used for Spotify Web Player ads was uBlock Origin's
-  `noop-0.1s.mp3` redirect resource from
-  <https://github.com/gorhill/uBlock/blob/master/src/web_accessible_resources/noop-0.1s.mp3>.
-  The current replacement is a locally generated 1 ms PCM WAV containing eight
-  zero-valued 16-bit mono samples at 8 kHz; the original attribution is retained.
-  The list of hosts Spotify's ad audio is served from -- used to mute an ad
-  the rewrite did not reach -- is the one uAssets redirects for
-  open.spotify.com (`||scdn.co/mp3-ad/` and its companions in
-  `filters/filters-2020.txt`).
+  Spotify's dedicated ad-media redirects adapt the `open.spotify.com` media
+  rules in <https://github.com/uBlockOrigin/uAssets/blob/master/filters/filters-2020.txt>.
+  `spotify-silent-1s.mp4` is an unmodified copy of uBlock Origin's
+  [`noop-1s.mp4`](https://github.com/gorhill/uBlock/blob/master/src/web_accessible_resources/noop-1s.mp4),
+  SHA-256 `a27edba0e34b2648a90a800ae94fdef3e39016d1b9bd6e54a31ede1f1cddfed0`.
+  `tools/build-spotify-media.js --build` regenerates the tracked asset from the
+  pinned upstream bytes, and the same bytes are inlined as a `data:` URL in
+  `spotify-adblock.js` for the player-side swap below. WardenOne does not use
+  the old `noop-0.1s.mp3` asset. uBlock Origin's list also carries media
+  exceptions for podcast hosts that its other lists had blocked on the web
+  player; WardenOne's single media allow for open.spotify.com is the same
+  correction, applied by request type instead of host by host.
 
-  uBlock Origin uAssets is distributed under the **GNU General Public License
-  v3**.
+  uBlock Origin and uAssets are distributed under the **GNU General Public
+  License v3**.
+
+- **AdGuard Base filter** (AdGuard Team) —
+  <https://github.com/AdguardTeam/AdguardFilters>
+
+  The technique of handing Spotify's player a silent clip from inside the
+  player -- recognising the loader's completion callback by the method it
+  names, and replacing the media URL of any content object whose URI is
+  `spotify:ad:` before that callback runs -- is the `open.spotify.com#%#`
+  script rule in `BaseFilter/sections/specific.txt`. The same section
+  established that ad audio must be matched by the `media` request type and
+  never by XMLHttpRequest, because songs travel over fetch from the same CDN
+  paths. WardenOne's `spotify-adblock.js` reimplements the idea in its own
+  code (caching the recognition per callback, reading source through a
+  captured `Function.prototype.toString`, and extending the swap to Spotify's
+  manifest-delivered ads); no source was copied.
+
+  AdGuard filters are distributed under the **GNU General Public License v3**.
 
 - **Spotify Web Ads Remover** (tomer8007) —
   <https://github.com/tomer8007/spotify-web-ads-remover>
 
-  The technique of intercepting Spotify Web Player state-machine responses,
-  identifying the ad tracks in them and preparing the machine so playback can
-  move past those tracks was established by this extension (its
-  `injected/ads_removal.js`). WardenOne's narrower implementation only rewrites
-  responses the player already receives; it does not issue extra playback-state
-  requests or change the account's server-side state. The implementation in
-  `spotify-adblock.js` is WardenOne's own code; no source was copied.
+  The technique of observing Spotify Web Player state-machine responses to
+  identify ad tracks was established by this extension (its
+  `injected/ads_removal.js`). WardenOne uses that observation only to identify
+  media to mute and seek; it does not rewrite responses, issue extra
+  playback-state requests or change the account's server-side state. The
+  implementation in `spotify-adblock.js` is WardenOne's own code; no source was
+  copied.
 
   Spotify Web Ads Remover is distributed under the **GNU General Public
   License v3**.

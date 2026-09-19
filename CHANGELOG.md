@@ -17,25 +17,51 @@ as the work happened.
 
 ### Added
 
-- Spotify Web Player ads no longer play: no ad audio, no countdown, no
-  "Advertisement" card. WardenOne rewrites the playback state-machine responses
-  the player fetches and never touches the account's server-side state, so
-  nothing it does can be echoed back to the player as "you're on the ad now".
-  It does three things. The ad's audio is swapped for a 1-millisecond silent
-  clip, so nothing audible ever loads. Where Spotify schedules the ad for the
-  end of a song and offers the skip button's route to the next song beside it --
-  the common case -- the song's natural end is pointed at that route, so the
-  player advances straight to the next song with no ad and no gap. And where
-  every exit is the ad (Spotify does this once you skip a song yourself while an
-  ad is pending), the ad state is marked already at its end. Once Spotify confirms
-  that slot, WardenOne immediately re-signals the finished clip so the player
-  leaves it instead of getting stranded on the Advertisement screen. The
-  now-playing surfaces stay blank during that brief fallback. Only tracks Spotify
-  itself marks as ads are touched; songs, episodes and podcast audio keep their
-  original files, and any ad audio that ever slips through plays muted. The
-  state-machine technique is the one the open-source Spotify Web Ads Remover
-  established (see CREDITS.md). Turning AdShield off, or allowlisting
-  open.spotify.com, switches it off.
+- Spotify Web Player ads are handled the way the established blockers handle them,
+  in three layers that all stay on your side of the wire. First, the player's own
+  track loader: every track Spotify's player resolves passes through one callback
+  carrying the media URL it is about to load, and anything Spotify itself labels an
+  ad has that URL replaced there with a one-second silent clip -- nothing about the
+  ad is fetched, the clip ends on its own, and the player moves to the next song
+  exactly as it would after a real ad. This is the AdGuard technique for
+  open.spotify.com, and it does not care which host the ad would have come from;
+  it also covers Spotify's manifest-delivered ads, which the AdGuard rule does not
+  reach. Second, the network: uBlock Origin's list of Spotify ad-media hosts is
+  redirected to the same packaged clip, media type only, so songs (which travel
+  over fetch) are never touched. Third, the existing fallback for an ad that
+  reached the media element unchanged: recognised from Spotify's own state
+  responses, muted before playback, and sought near its end once Spotify confirms
+  it is current. The AdShield toggle, or allowlisting open.spotify.com, switches
+  all of it off; the short replacement clip is never sought.
+- Podcasts on the web player can no longer be cut off by a tracker list. Media the
+  web player loads is allowed through the ad and tracker packs (a podcast's audio
+  often arrives through an analytics prefix such as chtbl.com, which the EasyPrivacy
+  pack blocks for every request type, and a blocked audio request leaves the player
+  stuck rather than silent). The exception is scoped to media requests from
+  open.spotify.com, sits below the ad-media redirects and the malware blocks, so an
+  ad is still silenced and a malicious host is still refused. uBlock Origin carries
+  the same exceptions host by host after podcast breakage reports.
+- Spotify Web Player ad handling now keeps Spotify's complete playback graph and
+  original media URLs untouched. A live repeated-skip trace showed that the
+  previous 132 ms silent replacement ended but left Spotify in an empty,
+  unskippable Advertisement state. WardenOne instead identifies ad media from
+  Spotify's own state responses, mutes it before playback, then seeks the real
+  media near its end so the player's native end transition can resume the next
+  song. A skip-into-ad regression exposed a second edge: a future ad candidate
+  must not be sought before Spotify confirms it is current, and the same ad
+  must not be sought again by retry timers. Both are now guarded; without a
+  current-ad confirmation, it stays muted and plays through rather than forcing
+  a skip cascade. Late ad responses from before the next song started cannot re-arm
+  that finished ad. Songs, episodes and podcasts are not sought or muted; the extension
+  makes no account-side playback request.
+- A live skip burst also exposed a separate failure: Spotify's audio-license endpoint
+  sometimes returns HTTP 429, after which the web player can rapidly abandon songs.
+  WardenOne now holds only that failed license response for at most ten seconds,
+  giving an in-flight successful license a chance to keep the selected song playing
+  without manufacturing a license, retrying the DRM request or delaying successful
+  playback. A live retest recovered one 429 without the error toast, but a later burst
+  of 429s still advanced to another playable track. Aborting the request, disabling
+  AdShield or repairing the content script releases the hold immediately.
 - The right-click menu can now do something about the tab itself: sleep it, close
   it, or mark its site so it is never slept. Sleeping unloads the tab to give its
   memory back — it stays in the tab strip and comes back when you click it — and you

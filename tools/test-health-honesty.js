@@ -74,7 +74,7 @@ async function decide({ answer, throws, cfg, rulesetError }) {
 }
 
 const ON = { enabled: true, blockMalwareSites: true, adShield: true, blockTrackers: true };
-const ALL = ['grabbers', 'adshield_easylist', 'trackers', 'easyprivacy'];
+const ALL = ['grabbers', 'adshield_easylist', 'spotify_media', 'trackers', 'easyprivacy'];
 
 (async () => {
   // -------------------------------------------------------------------------
