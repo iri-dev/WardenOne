@@ -362,6 +362,7 @@ function checkContentBuild() {
   'rules-trackers.json',
   'rules-easyprivacy.json',
   'rules-adshield.json',
+  'rules-spotify-media.json',
   'malware-hashes.json',
   'grabber-extra.json',
   'cryptominer-domains.json',
@@ -567,6 +568,8 @@ checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Spotify adblock tests', ['tools/test-spotify-adblock.js']);
+checkCommand('Spotify media redirect tests', ['tools/test-spotify-media-dnr.js']);
+checkCommand('Spotify silent media asset', ['tools/build-spotify-media.js', '--check']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);
 checkCommand('Twitch playlist compatibility tests', ['tools/test-twitch-playlist-compatibility.js']);
 checkCommand('Twitch rewind tests', ['tools/test-twitch-rewind.js']);

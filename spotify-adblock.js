@@ -7,34 +7,35 @@
 /*
  * WardenOne Spotify Web Player ad blocker.
  *
- * How the web player takes an ad, measured on the live player (2026-09-12): the server's
- * playback state machine puts the ad between two songs, and the player will not leave a
- * song until the server confirms what follows it. There are two shapes: usually only the
- * song's natural end leads to the ad and the skip button leads to the next song; after a
- * manual skip while an ad is pending, every exit is the ad.
+ * The state machine Spotify sends is server-authoritative. Repointing one of its transitions
+ * or changing an ad state's position can look seamless for a few skips, but eventually the
+ * server and player disagree and the web player falls into an empty Advertisement state that
+ * only a reload repairs. WardenOne therefore leaves every state, transition, reference and
+ * playback position exactly as Spotify sent it.
  *
- * WardenOne never touches the account's server-side playback state (an earlier version that
- * did was echoed back to the player over Spotify's dealer socket -- which runs in a Web
- * Worker no page hook can reach -- as "you are on the ad now", which showed as "can't play
- * this" and a self-firing skip button). Instead it rewrites the state-machine responses the
- * player fetches, three ways, and leaves the server alone:
- *   1. The ad's audio is swapped for a 1 ms silent clip, so nothing audible ever loads. (The
- *      player validates the URL with a regular expression, hence the narrow
- *      RegExp.prototype.test shim below.)
- *   2. Where the machine offers the skip button's route to the next song beside the ad, the
- *      song's natural end is pointed at that route -- so the player advances straight to the
- *      next song with no ad and no gap. This is the common case.
- *   3. Any ad state still reachable (every-exit-is-the-ad, after a manual skip) is marked
- *      already at its end. The 1 ms clip can finish before Spotify confirms the state; as soon
- *      as that confirmation arrives, its guarded ended signal is replayed so the player moves
- *      on immediately instead of getting stranded on an Advertisement screen.
- * Only a track whose own metadata says it is an ad is touched; ordinary tracks, episodes and
- * podcast media keep their files, and any ad audio that ever slips through plays muted. The
- * ad chrome Spotify renders (countdown, companion card, the "Advertisement" label) is hidden
- * by stylesheet. The state-machine technique is the one the open-source Spotify Web Ads
- * Remover established (CREDITS.md); the code here is WardenOne's own. Songs travel as
- * encrypted MP4 over fetch and a MediaSource on a detached VIDEO element -- which is also why
- * the old fail-safe that searched the document for audio elements could never find the player.
+ * Three layers, all on the reader's side of the wire, in the order they get their chance:
+ *
+ * 1. The player's own loader. Spotify's player resolves every track into a content object
+ *    whose `_uri` is the track's Spotify URI and whose `_url` (or, for a manifest-delivered
+ *    ad, `_playableContentSorted[].url`) is the media it will hand the media element. Right
+ *    before the loader's completion callback runs, an object whose URI is `spotify:ad:` has
+ *    that URL replaced by a one-second silent clip. Nothing about the ad is fetched; the clip
+ *    plays out, ends on its own, and the player moves on exactly as it would after a real ad.
+ *    This is the AdGuard Base technique for open.spotify.com, and it does not care which host
+ *    Spotify serves the ad from.
+ * 2. The network. A declarativeNetRequest ruleset redirects media requests to the known ad
+ *    hosts (uBlock Origin's open.spotify.com list) to the same packaged clip, and lets media
+ *    through on the web player where a tracker list would otherwise cut a podcast off.
+ * 3. This module's fallback for an ad that reached the media element unchanged: recognized
+ *    from Spotify's own state machine, muted before play(), then sought near its end once
+ *    Spotify confirms it is current. Short replacement media is never sought; seeking it
+ *    can race Spotify's transition.
+ *
+ * Playback responses and media URLs are observed, never edited. Ordinary tracks, episodes
+ * and podcast media keep their files. The ad chrome Spotify renders is hidden by stylesheet.
+ * No request is made on the account's behalf. Songs travel as encrypted MP4 over fetch and
+ * a MediaSource on a detached VIDEO element, which is why a document query cannot find the
+ * real player.
  */
 (function wardenOneSpotifyAdblock() {
   'use strict';
@@ -44,17 +45,24 @@
   if (window.__wardenOneSpotifyAdblockReady) return;
   window.__wardenOneSpotifyAdblockReady = VERSION;
 
-  /* Generated PCM WAV: eight zero-valued 16-bit mono samples at 8 kHz (1 ms).
-     A valid, non-empty file gives the browser genuine metadata and a native ending,
-     without spending 132 ms playing the previous MPEG replacement. */
-  const SILENT_MEDIA = 'data:audio/wav;base64,UklGRjQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YRAAAAAAAAAAAAAAAAAAAAAAAAAA';
   const TRACK_PLAYBACK_RE = /^\/track-playback\//i;
+  const AUDIO_LICENSE_PATH = '/widevine-license/v1/audio/license';
+  const AUDIO_LICENSE_429_HOLD_MS = 10000;
   const AD_URI_RE = /^spotify:ad:/i;
+  /* The one-second silent MP4 the network layer serves (spotify-silent-1s.mp4, uBlock
+     Origin's noop-1s.mp4), inlined so the player can be handed it as a plain URL with no
+     extension id in it. tools/test-spotify-adblock.js holds this to the packaged bytes. */
+  const SILENT_CLIP = 'data:video/mp4;base64,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';
+  /* The player's loader finishes every track through one Promise callback whose source names
+     this method; it is the only place the resolved content object passes by before the media
+     element sees its URL. */
+  const PLAYER_LOADER_MARK = '_getCacheKey';
   /* Rendered by the player only while an ad is current (element ids read off the live
      player). Hidden outright whenever an ad is current. */
   const AD_ELEMENT_SELECTOR = [
     '#leaderboard-ad-element',
     'a[data-context-item-type="ad"]',
+    'a[href^="https://adclick.g.doubleclick.net/"]',
     'div[aria-label="Advertisement"]',
     '[data-testid="ad"]',
     '[data-testid^="ad-"]',
@@ -65,7 +73,7 @@
     '[data-testid="ads-video-player-npv"]',
     '[data-testid="canvas-ad-player"]',
   ].join(',');
-  /* Blank the now-playing surfaces from the instant the silent clip loads until normal media
+  /* Blank the now-playing surfaces from the instant the muted ad loads until normal media
      resumes. The :has branch also catches Spotify's first ad render before play() reaches us. */
   const SLOT_ATTRIBUTE = 'data-wo-spotify-ad';
   const SLOT_ELEMENT_SELECTOR = [
@@ -78,16 +86,10 @@
     '#Desktop_PanelContainer_Id',
   ].map((sel) => 'html[' + SLOT_ATTRIBUTE + '] ' + sel +
     ',html:has([data-testid="now-playing-bar"] [data-testid="ad-controls"]) ' + sel).join(',');
-  /* The first retry lands just after the confirming response has been consumed. Later retries
-     cover a slow player without extending the visible slot; all stop when normal media starts. */
-  const NUDGE_SCHEDULE = [20, 60, 140, 260, 450, 750, 1150, 1750];
   const SLOT_TIMEOUT_MS = 5000;
+  const AD_SEEK_MARGIN = 0.7;
 
   const nativeFetch = window.fetch;
-  const nativeRegExpTest = RegExp.prototype.test;
-  const NativeHeaders = window.Headers;
-  const NativeResponse = window.Response;
-  const NativeEvent = window.Event;
   const NativeURL = window.URL;
   const NativeWorker = window.Worker;
   const NativeSharedWorker = window.SharedWorker;
@@ -96,15 +98,22 @@
   const nativeRevokeObjectURL = window.URL && window.URL.revokeObjectURL;
   const mediaPrototype = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
   const nativeMediaPlay = mediaPrototype && mediaPrototype.play;
+  const promisePrototype = typeof Promise === 'function' ? Promise.prototype : null;
+  const nativePromiseThen = promisePrototype && promisePrototype.then;
+  const nativeFunctionToString = Function.prototype.toString;
+  const NativeWeakMap = typeof WeakMap === 'function' ? WeakMap : null;
+  const WORKER_AD_NOTICE = '__wo_spotify_ad_urls_1__';
+  const WORKER_AD_CURRENT_NOTICE = '__wo_spotify_ad_current_1__';
 
   let enabled = true;
   let disposed = false;
   let configEpoch = 0;
-  let playbackEpoch = 0;
-  let lastNormalSrc = '';
+  let normalMediaEpoch = 0;
   const listeners = [];
   const timers = new Set();
   const knownAdUrls = new Set();
+  const confirmedAdUrls = new Set();
+  const pendingLicenseHolds = new Set();
 
   function on(target, type, listener, options) {
     try {
@@ -254,6 +263,43 @@
         (!stateOnly || /^\/track-playback\/v1\/devices\/[^/]+\/state(_conflict)?\/?$/i.test(url.pathname));
     } catch (_) { return false; }
   }
+  function isAudioLicenseRequest(input, init) {
+    try {
+      const url = new NativeURL(requestUrl(input), location.href);
+      const method = String(init && init.method || input && input.method || 'GET').toUpperCase();
+      return method === 'POST' && url.protocol === 'https:' &&
+        /(^|\.)spotify\.com$/i.test(url.hostname) && url.pathname === AUDIO_LICENSE_PATH;
+    } catch (_) { return false; }
+  }
+  /* A rejected license makes Spotify auto-advance through otherwise playable songs, which
+     produces still more license requests. Briefly hold only the original 429 Response so
+     Spotify can settle; never retry a DRM challenge or change a successful response. A
+     manual skip that aborts the request releases it immediately. */
+  function holdRejectedLicense(response, input, init) {
+    return new Promise((resolve) => {
+      let timer = 0;
+      let signal = null;
+      let released = false;
+      try { signal = init && init.signal || input && input.signal || null; } catch (_) {}
+      const release = () => {
+        if (released) return;
+        released = true;
+        pendingLicenseHolds.delete(release);
+        if (timer) clearTimeout(timer);
+        try { if (signal) signal.removeEventListener('abort', release); } catch (_) {}
+        resolve(response);
+      };
+      try {
+        if (signal && signal.aborted) return release();
+        pendingLicenseHolds.add(release);
+        if (signal) signal.addEventListener('abort', release, { once: true });
+        timer = setTimeout(release, AUDIO_LICENSE_429_HOLD_MS);
+      } catch (_) { release(); }
+    });
+  }
+  function releaseLicenseHolds() {
+    for (const release of Array.from(pendingLicenseHolds)) release();
+  }
   function isObject(value) {
     return value !== null && typeof value === 'object';
   }
@@ -270,301 +316,378 @@
       return false;
     }
   }
-  /* Every URL candidate of an ad track becomes the clip; file_id 1 is the value the player
-     accepts for a URL it did not resolve itself. */
-  function silenceAdTrack(track) {
-    if (!isAdTrack(track)) return false;
-    let changed = false;
+  /* Learn only candidates Spotify labels as ad media. The response itself remains untouched. */
+  function adUrls(track) {
+    const urls = [];
+    if (!isAdTrack(track)) return urls;
     try {
       const manifest = track.manifest;
-      if (!isObject(manifest)) return false;
+      if (!isObject(manifest)) return urls;
       for (const key of Object.keys(manifest)) {
         if (!/^file_urls_/.test(key) || !Array.isArray(manifest[key])) continue;
         for (const candidate of manifest[key]) {
           if (!isObject(candidate)) continue;
-          if (typeof candidate.file_url === 'string' && candidate.file_url !== SILENT_MEDIA) {
-            knownAdUrls.add(candidate.file_url);
-            if (knownAdUrls.size > 128) knownAdUrls.delete(knownAdUrls.values().next().value);
-          }
-          if (candidate.file_id !== 1) { candidate.file_id = 1; changed = true; }
-          if (candidate.file_url !== SILENT_MEDIA) { candidate.file_url = SILENT_MEDIA; changed = true; }
+          const url = candidate.file_url;
+          if (typeof url !== 'string' || url.length > 4096 || !/^https?:\/\//i.test(url)) continue;
+          urls.push(url);
         }
       }
     } catch (_) {}
-    return changed;
+    return urls;
   }
-  /* The first shape: the ad sits on advance alone, and skip_next -- a state the server itself
-     put in this machine, reached by the button beside the song -- leads to the next song.
-     Advance is pointed there, so the song's natural end is reported as a skip taken at its
-     last millisecond. Only advance is ever rewritten, only to this machine's own skip_next
-     target, and only when that target is not an ad: updated_state_ref, the skip and show
-     transitions and the states themselves are never touched. In the second shape skip_next
-     is an ad too and nothing here changes; shortenAdState handles that ad instead. */
-  function rerouteAdvance(machine) {
-    let changed = false;
-    try {
-      const states = isObject(machine) && Array.isArray(machine.states) ? machine.states : [];
-      const tracks = isObject(machine) ? machine.tracks : null;
-      const targetIsAd = (target) => {
-        if (!isObject(target) || !Number.isInteger(target.state_index)) return null;
-        const state = states[target.state_index];
-        if (!isObject(state)) return null;
-        return isAdTrack(tracks && tracks[state.track]);
-      };
-      for (const state of states) {
-        const transitions = isObject(state) && state.transitions;
-        if (!isObject(transitions)) continue;
-        if (targetIsAd(transitions.advance) !== true || targetIsAd(transitions.skip_next) !== false) continue;
-        transitions.advance = { state_index: transitions.skip_next.state_index, paused: transitions.skip_next.paused === true };
-        changed = true;
-      }
-    } catch (_) {}
-    return changed;
-  }
-  /* Mark an ad state as already at its end, so the server treats it as played and advances
-     out of it at once instead of holding the player there for the ad's duration. Combined
-     with the silenced audio, the ad becomes an inaudible instant. */
-  function shortenAdState(state, track) {
-    if (!isObject(state)) return false;
-    const duration = Number(track && track.metadata && track.metadata.duration) || 1;
-    let changed = false;
-    if (state.disallow_seeking !== false) { state.disallow_seeking = false; changed = true; }
-    if (state.restrictions && Object.keys(state.restrictions).length) { state.restrictions = {}; changed = true; }
-    if (state.initial_playback_position !== duration) { state.initial_playback_position = duration; changed = true; }
-    if (state.position_offset !== duration) { state.position_offset = duration; changed = true; }
-    return changed;
-  }
-  /* Everything done to a state machine before the player sees it, whichever request or
-     command carried it: the ad audio silenced, every ad state marked already-complete, and a
-     song's natural end pointed at the machine's own skip target where that skips the ad. The
-     server's state is never touched -- only the response the player reads. */
-  function prepareMachine(machine) {
-    if (!isObject(machine)) return false;
-    let changed = false;
-    for (const track of trackValues(machine.tracks)) changed = silenceAdTrack(track) || changed;
-    const states = Array.isArray(machine.states) ? machine.states : [];
-    const tracks = machine.tracks;
-    for (const state of states) {
-      if (isObject(state) && isAdTrack(tracks && tracks[state.track])) changed = shortenAdState(state, tracks[state.track]) || changed;
+  function rememberAdTrack(track) {
+    for (const url of adUrls(track)) {
+      knownAdUrls.add(url);
+      if (knownAdUrls.size > 128) knownAdUrls.delete(knownAdUrls.values().next().value);
     }
-    changed = rerouteAdvance(machine) || changed;
-    return changed;
   }
-  /* A rejected-state answer carries replacement machines in its commands. */
-  function prepareConflict(payload) {
-    let changed = false;
+  function confirmCurrentAd(urls) {
+    confirmedAdUrls.clear();
+    for (const url of urls) confirmedAdUrls.add(url);
+    if (slot) {
+      slot.confirmed = confirmedAdUrls.has(slot.src);
+      if (slot.confirmed) scheduleSeek(slot);
+    }
+  }
+  function observeCurrentState(payload) {
+    try {
+      const machine = payload.state_machine;
+      const ref = payload.updated_state_ref;
+      if (!isObject(machine) || !isObject(ref) || !Array.isArray(machine.states)) return;
+      const state = machine.states[ref.state_index];
+      if (!isObject(state)) return;
+      confirmCurrentAd(adUrls(machine.tracks && machine.tracks[state.track]));
+    } catch (_) {}
+  }
+  function rememberMachine(machine) {
+    if (!isObject(machine)) return;
+    for (const track of trackValues(machine.tracks)) rememberAdTrack(track);
+  }
+  function rememberPayload(payload, allowCurrent) {
+    if (!isObject(payload)) return;
+    rememberMachine(payload.state_machine);
+    if (allowCurrent) observeCurrentState(payload);
     const commands = payload && payload.commands;
     const list = Array.isArray(commands) ? commands : isObject(commands) ? Object.keys(commands).map((k) => commands[k]) : [];
-    for (const command of list) {
-      if (isObject(command) && command.type === 'replace_state') changed = prepareMachine(command.state_machine) || changed;
-    }
-    return changed;
-  }
-  /* The server confirmation is the gate the player waits for before it will leave an ad. */
-  function currentStateIsAd(payload) {
-    try {
-      const machine = payload && payload.state_machine;
-      const ref = payload && payload.updated_state_ref;
-      if (!isObject(machine) || !isObject(ref)) return false;
-      const state = machine.states && machine.states[ref.state_index];
-      return isAdTrack(state && machine.tracks && machine.tracks[state.track]);
-    } catch (_) {
-      return false;
+    for (const command of list) if (isObject(command)) {
+      rememberMachine(command.state_machine);
+      if (allowCurrent) observeCurrentState(command);
     }
   }
   /* A request and its body can both finish after disable/repair; an old response must not act
      once protection is off. Epoch-guarded on both sides of the await. */
-  function rewriteResponse(response, epoch, playback) {
+  function observeResponse(response, epoch, mediaEpoch) {
     if (!enabled || disposed || epoch !== configEpoch || !response || typeof response.clone !== 'function') return Promise.resolve(response);
     /* The player waits on its state responses to confirm a pause, a skip, a track change, so
        whatever this does is on the latency path of every control. The overwhelming majority
        of those responses carry no ad at all; read the body as text (a decode, no parse) and,
-       unless it actually names an ad, hand back the very Response the server sent -- no parse,
-       no rewrite, no rebuilt Response. Only a response that mentions an ad pays the full cost. */
+       unless it actually names an ad, hand back the very Response the server sent. */
     return response.clone().text().then((text) => {
       if (!enabled || disposed || epoch !== configEpoch) return response;
-      if (text.indexOf(':ad:') < 0 && text.indexOf('"AD"') < 0) return response;
+      if (text.indexOf(':ad:') < 0 && text.indexOf('"AD"') < 0 && !confirmedAdUrls.size) return response;
       let payload;
       try { payload = JSON.parse(text); } catch (_) { return response; }
-      if (!isObject(payload)) return response;
-      let changed = prepareMachine(payload.state_machine);
-      if (payload.commands) changed = prepareConflict(payload) || changed;
-      /* Ignore a late response from a slot that normal media has already superseded. */
-      if (playback === playbackEpoch && currentStateIsAd(payload)) adConfirmed();
-      if (!changed) return response;
-      const headers = new NativeHeaders(response.headers || undefined);
-      headers.delete('content-length');
-      headers.delete('content-encoding');
-      return new NativeResponse(JSON.stringify(payload), { status: response.status, statusText: response.statusText, headers: headers });
+      /* A response requested before the next song started may arrive afterward. It can still
+         reveal ad URLs, but it must not re-arm a finished ad as the current one. */
+      rememberPayload(payload, mediaEpoch === normalMediaEpoch);
+      return response;
     }).catch(() => response);
   }
   function spotifyFetch(input) {
     const promise = Reflect.apply(nativeFetch, this, arguments);
-    if (!enabled || disposed || !isPlaybackRequest(input)) return promise;
+    if (!enabled || disposed) return promise;
+    if (isAudioLicenseRequest(input, arguments[1])) {
+      const epoch = configEpoch;
+      const init = arguments[1];
+      return Promise.resolve(promise).then((response) =>
+        enabled && !disposed && epoch === configEpoch && response && response.status === 429
+          ? holdRejectedLicense(response, input, init) : response);
+    }
+    if (!isPlaybackRequest(input)) return promise;
     const epoch = configEpoch;
-    const playback = playbackEpoch;
-    return Promise.resolve(promise).then((response) => rewriteResponse(response, epoch, playback));
-  }
-  /* The player checks a candidate URL against a pattern before it will load it, and a data:
-     URL would fail that check. Only the exact clip is ever answered for; every other test on
-     the page is the native one. */
-  function spotifyRegExpTest() {
-    const args = Array.from(arguments);
-    if (enabled && args[0] === SILENT_MEDIA) args[0] = 'https://';
-    return Reflect.apply(nativeRegExpTest, this, args);
+    const mediaEpoch = normalMediaEpoch;
+    return Promise.resolve(promise).then((response) => observeResponse(response, epoch, mediaEpoch));
   }
 
-  /* ---- the forced-ad slot and audio fail-safe ------------------------------------------- */
+  /* ---- the ad slot and media clock ------------------------------------------------------- */
   function mediaSrc(media) {
     try { return String(media.src || media.currentSrc || ''); } catch (_) { return ''; }
-  }
-  function isClip(media) {
-    return mediaSrc(media) === SILENT_MEDIA;
   }
   /* Shared /audio/ and /mp3/ CDNs also serve previews and normal music. Trust explicit ad
      metadata for those URLs; the host-only fallback is limited to dedicated ad media. */
   const AD_MEDIA_RE = /^https?:\/\/(?:[^/?#]*\.)?(?:(?:2mdn\.net|amillionads\.com|adxcel\.com|adstudio-assets\.scdn\.co)(?:[/?#]|$)|scdn\.co\/mp3-ad\/)/i;
   const mutedMedia = [];
-  function restoreMuted() {
+  function restoreMuted(activeMedia) {
+    const keep = [];
     for (const entry of mutedMedia.splice(0, mutedMedia.length)) {
-      try { if (entry.media.muted === true) entry.media.muted = entry.was; } catch (_) {}
+      try {
+        if (activeMedia && entry.media !== activeMedia && !entry.media.paused && !entry.media.ended) {
+          keep.push(entry);
+        } else if (entry.media.muted === true) {
+          entry.media.muted = entry.was;
+        }
+      } catch (_) {}
     }
+    mutedMedia.push(...keep);
   }
   let slot = null;
-  function detachSlotElement(current) {
-    try {
-      if (current.element && current.onEnded) current.element.removeEventListener('ended', current.onEnded);
-    } catch (_) {}
-    current.onEnded = null;
-  }
   function endSlot() {
     const current = slot;
     slot = null;
     if (!current) return;
-    detachSlotElement(current);
+    try {
+      current.element.removeEventListener('loadedmetadata', current.onMetadata);
+      current.element.removeEventListener('durationchange', current.onMetadata);
+    } catch (_) {}
     cancel(current.timeout);
-    current.nudges.forEach(cancel);
+    current.seekTimers.forEach(cancel);
     try { document.documentElement.removeAttribute(SLOT_ATTRIBUTE); } catch (_) {}
   }
-  function beginSlot(element) {
-    if (disposed || !enabled) return;
-    if (!slot) {
-      slot = { element: null, onEnded: null, confirmed: false, advanced: false, nudges: [], timeout: 0 };
-      slot.timeout = later(endSlot, SLOT_TIMEOUT_MS);
-      try { document.documentElement.setAttribute(SLOT_ATTRIBUTE, ''); } catch (_) {}
-    }
-    if (element && slot.element !== element) {
-      detachSlotElement(slot);
-      slot.element = element;
-      slot.advanced = false;
-      const current = slot;
-      current.onEnded = (event) => {
-        if (event.isTrusted === true && slot === current && current.confirmed) scheduleNudges(true);
-      };
-      try { element.addEventListener('ended', current.onEnded); } catch (_) {}
-    }
-  }
-  function adConfirmed() {
-    beginSlot(null);
-    if (!slot) return;
-    slot.confirmed = true;
-    scheduleNudges(true);
-  }
-  function scheduleNudges(restart) {
-    if (!slot) return;
-    if (slot.nudges.length) {
-      if (!restart) return;
-      slot.nudges.splice(0, slot.nudges.length).forEach(cancel);
-    }
-    const current = slot;
-    for (const ms of NUDGE_SCHEDULE) current.nudges.push(later(() => nudge(current), ms));
-  }
-  /* The signal is replayed only for our exact clip, after server confirmation, while it is
-     genuinely ended and non-looping. It can therefore never end or seek a real song. */
-  function nudge(current) {
-    if (current !== slot || !current || !enabled || current.advanced) return;
+  /* A candidate in a song's future graph is not permission to finish the ad now. Only the
+     server's current-ad state may arm one native seek; repeated seeks can advance real songs. */
+  function seekAdTail(current) {
+    if (current !== slot || !enabled || disposed || !current.confirmed || current.seeked) return;
     const media = current.element;
-    if (!media) return;
     try {
-      if (!isClip(media)) { current.advanced = true; return; }
-      if (media.ended && !media.loop && !media.error) media.dispatchEvent(new NativeEvent('ended'));
+      if (mediaSrc(media) !== current.src || media.readyState < 1) return;
+      const duration = Number(media.duration);
+      if (!Number.isFinite(duration) || duration < 3) return;
+      const target = Math.max(0, duration - AD_SEEK_MARGIN);
+      if (media.currentTime >= target - 0.2) return;
+      current.seeked = true;
+      try { media.currentTime = target; } catch (_) { current.seeked = false; }
     } catch (_) {}
   }
-  /* An ad whose audio the rewrite did not reach plays muted. The state-machine rewrite is the
-     real defence; this only spares the ears if a raw ad file is ever played directly. */
+  function scheduleSeek(current) {
+    if (!current.confirmed || current.seeked || current.seekTimers.length) return;
+    for (const delay of [120, 350, 800, 1500]) {
+      current.seekTimers.push(later(() => seekAdTail(current), delay));
+    }
+  }
+  function beginSlot(media, src) {
+    if (disposed || !enabled) return;
+    if (slot && slot.element === media && slot.src === src) return;
+    endSlot();
+    const current = { element: media, src: src, confirmed: confirmedAdUrls.has(src), seeked: false, onMetadata: null, seekTimers: [], timeout: 0 };
+    slot = current;
+    current.onMetadata = () => { seekAdTail(current); scheduleSeek(current); };
+    try {
+      media.addEventListener('loadedmetadata', current.onMetadata);
+      media.addEventListener('durationchange', current.onMetadata);
+      document.documentElement.setAttribute(SLOT_ATTRIBUTE, '');
+    } catch (_) {}
+    current.timeout = later(endSlot, SLOT_TIMEOUT_MS);
+    if (media.readyState >= 1) scheduleSeek(current);
+  }
   function spotifyMediaPlay() {
-    const result = Reflect.apply(nativeMediaPlay, this, arguments);
     if (!disposed && enabled) {
       try {
         const src = mediaSrc(this);
-        if (isClip(this)) {
-          beginSlot(this);
-          if (slot && slot.confirmed) scheduleNudges(true);
+        if (src === SILENT_CLIP) {
+          /* The loader was handed the clip in place of an ad: nothing to mute, nothing to
+             seek (it is a second long and ends on its own), only the now-playing surfaces to
+             keep blank until the next real track starts. */
+          beginSlot(this, src);
         } else if (src && (knownAdUrls.has(src) || AD_MEDIA_RE.test(src))) {
-          beginSlot(null);
-          if (!mutedMedia.some((entry) => entry.media === this)) mutedMedia.push({ media: this, was: this.muted === true });
+          if (!mutedMedia.some((entry) => entry.media === this)) {
+            mutedMedia.push({ media: this, was: this.muted === true });
+          }
           this.muted = true;
+          beginSlot(this, src);
         } else if (src) {
-          if (slot || src !== lastNormalSrc) playbackEpoch++;
-          lastNormalSrc = src;
-          if (slot) slot.advanced = true;
+          normalMediaEpoch++;
+          confirmedAdUrls.clear();
           endSlot();
-          restoreMuted();
+          restoreMuted(this);
         }
       } catch (_) {}
     }
-    return result;
+    return Reflect.apply(nativeMediaPlay, this, arguments);
   }
 
-  /* ---- injecting the ad rewriter into Spotify's worker ---------------------------------- */
-  /* This function's SOURCE is what runs inside the worker (it is only ever stringified here,
-     never called on the page). It installs, in the worker's own global scope and before the
-     worker's real code loads, the same read-only rewrite the page does: an ad track's audio
-     becomes the silent clip, a song's natural end is pointed past the ad at the machine's own
-     skip target, and any ad state is marked already-complete. It hooks both the worker's
-     WebSocket (where the dealer frames arrive) and its fetch. Then it loads the real worker. */
-  function woWorkerShim(SILENT) {
+  /* ---- the player's loader --------------------------------------------------------------- */
+  /* Spotify's player finishes loading every track through `promise.then(o => {...})`, where
+     `o` is the content object about to be handed to the media element and the callback's
+     source names `_getCacheKey`. Promise.prototype.then is replaced by a function that
+     recognizes that one callback by its source and, before it runs, swaps the URL of any
+     content whose URI Spotify itself marks as an ad. Every other `.then` is the native call
+     with the same arguments. The recognition is cached per callback function, and the
+     source text is read through the Function.prototype.toString captured at load, so a page
+     that later redefines it cannot hide the loader. */
+  const loaderCallbacks = typeof NativeWeakMap === 'function' ? new NativeWeakMap() : null;
+  function isPlayerLoader(fn) {
+    if (typeof fn !== 'function') return false;
+    let known = loaderCallbacks ? loaderCallbacks.get(fn) : undefined;
+    if (known === undefined) {
+      try { known = nativeFunctionToString.call(fn).indexOf(PLAYER_LOADER_MARK) >= 0; } catch (_) { known = false; }
+      if (loaderCallbacks) { try { loaderCallbacks.set(fn, known); } catch (_) {} }
+    }
+    return known;
+  }
+  /* Only Spotify's own label counts: a content object whose `_uri` is `spotify:ad:`. Its
+     direct URL (`_url`, a file_urls_mp3 ad or a storage-resolved file_ids_mp3 ad) and the
+     candidates of a manifest-delivered ad (`_playableContentSorted[].url`, plus the choice
+     already made in `_adURL`) all become the silent clip. Songs, episodes and podcasts carry
+     other URIs and are never looked at further. */
+  function silenceAdContent(content) {
+    if (!enabled || disposed) return false;
+    try {
+      if (!isObject(content) || typeof content._uri !== 'string' || !AD_URI_RE.test(content._uri)) return false;
+      let swapped = false;
+      if (typeof content._url === 'string' && content._url && content._url !== SILENT_CLIP) {
+        content._url = SILENT_CLIP;
+        swapped = true;
+      }
+      if (Array.isArray(content._playableContentSorted)) {
+        for (const candidate of content._playableContentSorted) {
+          if (isObject(candidate) && typeof candidate.url === 'string' && candidate.url && candidate.url !== SILENT_CLIP) {
+            candidate.url = SILENT_CLIP;
+            swapped = true;
+          }
+        }
+      }
+      if (typeof content._adURL === 'string' && content._adURL && content._adURL !== SILENT_CLIP) {
+        content._adURL = SILENT_CLIP;
+        swapped = true;
+      }
+      return swapped;
+    } catch (_) {
+      return false;
+    }
+  }
+  function wrapPlayerLoader(fn) {
+    return function woSpotifyLoader(content) {
+      silenceAdContent(content);
+      return Reflect.apply(fn, this, arguments);
+    };
+  }
+  function spotifyPromiseThen(onFulfilled, onRejected) {
+    if (!disposed && enabled && isPlayerLoader(onFulfilled)) {
+      return Reflect.apply(nativePromiseThen, this, [wrapPlayerLoader(onFulfilled), onRejected]);
+    }
+    return Reflect.apply(nativePromiseThen, this, arguments);
+  }
+  function installLoaderHook() {
+    if (typeof nativePromiseThen !== 'function' || !promisePrototype) return;
+    try { promisePrototype.then = spotifyPromiseThen; } catch (_) {}
+  }
+
+  /* ---- observing ad media URLs in Spotify's worker -------------------------------------- */
+  /* This function's SOURCE runs inside a same-origin Spotify worker before the real code. It
+     only observes ad media URLs; original responses and dealer frames reach Spotify intact. */
+  function woWorkerShim(NOTICE, CURRENT) {
     'use strict';
     try {
       var AD = /^spotify:ad:/i;
       function isObj(v) { return v !== null && typeof v === 'object'; }
-      function isAd(t) { try { if (!isObj(t)) return false; if (t.content_type === 'AD') return true; return isObj(t.metadata) && AD.test(String(t.metadata.uri || '')); } catch (_) { return false; } }
-      function tv(tr) { if (Array.isArray(tr)) return tr; return isObj(tr) ? Object.keys(tr).map(function (k) { return tr[k]; }) : []; }
-      function silence(track) { if (!isAd(track)) return false; var ch = false; try { var m = track.manifest; if (!isObj(m)) return false; for (var k in m) { if (!/^file_urls_/.test(k) || !Array.isArray(m[k])) continue; for (var i = 0; i < m[k].length; i++) { var c = m[k][i]; if (!isObj(c)) continue; if (c.file_id !== 1) { c.file_id = 1; ch = true; } if (c.file_url !== SILENT) { c.file_url = SILENT; ch = true; } } } } catch (_) {} return ch; }
-      function shorten(state, track) { if (!isObj(state)) return false; var d = Number(track && track.metadata && track.metadata.duration) || 1; var ch = false; if (state.disallow_seeking !== false) { state.disallow_seeking = false; ch = true; } if (state.restrictions && Object.keys(state.restrictions).length) { state.restrictions = {}; ch = true; } if (state.initial_playback_position !== d) { state.initial_playback_position = d; ch = true; } if (state.position_offset !== d) { state.position_offset = d; ch = true; } return ch; }
-      function reroute(m) { var ch = false; try { var st = isObj(m) && Array.isArray(m.states) ? m.states : []; var tk = isObj(m) ? m.tracks : null; var ta = function (t) { if (!isObj(t) || !Number.isInteger(t.state_index)) return null; var stt = st[t.state_index]; if (!isObj(stt)) return null; return isAd(tk && tk[stt.track]); }; for (var i = 0; i < st.length; i++) { var tr = isObj(st[i]) && st[i].transitions; if (!isObj(tr)) continue; if (ta(tr.advance) !== true || ta(tr.skip_next) !== false) continue; tr.advance = { state_index: tr.skip_next.state_index, paused: tr.skip_next.paused === true }; ch = true; } } catch (_) {} return ch; }
-      function prep(m) { if (!isObj(m)) return false; var ch = false; var a = tv(m.tracks); for (var i = 0; i < a.length; i++) ch = silence(a[i]) || ch; var st = Array.isArray(m.states) ? m.states : []; for (var j = 0; j < st.length; j++) { var stt = st[j]; if (isObj(stt) && isAd(m.tracks && m.tracks[stt.track])) ch = shorten(stt, m.tracks[stt.track]) || ch; } ch = reroute(m) || ch; return ch; }
-      function rewrite(text) { try { if (typeof text !== 'string') return null; if (text.indexOf(':ad:') < 0 && text.indexOf('"AD"') < 0) return null; var d = JSON.parse(text); var ch = false; if (isObj(d)) { if (d.state_machine) ch = prep(d.state_machine) || ch; if (Array.isArray(d.payloads)) { for (var i = 0; i < d.payloads.length; i++) { var pl = d.payloads[i]; if (isObj(pl) && pl.state_machine) ch = prep(pl.state_machine) || ch; } } if (d.commands) { var cs = Array.isArray(d.commands) ? d.commands : Object.keys(d.commands).map(function (k) { return d.commands[k]; }); for (var c = 0; c < cs.length; c++) { if (isObj(cs[c]) && cs[c].state_machine) ch = prep(cs[c].state_machine) || ch; } } } return ch ? JSON.stringify(d) : null; } catch (_) { return null; } }
-      self.__WO_REWRITE__ = rewrite;
+      function isAd(t) { try { return isObj(t) && (t.content_type === 'AD' || isObj(t.metadata) && AD.test(String(t.metadata.uri || ''))); } catch (_) { return false; } }
+      function tracks(v) { return Array.isArray(v) ? v : isObj(v) ? Object.keys(v).map(function (k) { return v[k]; }) : []; }
+      var noticePorts = [];
+      function collectTrack(t, urls) {
+        var m = t && t.manifest;
+        if (!isAd(t) || !isObj(m)) return;
+        for (var k in m) {
+          if (!/^file_urls_/.test(k) || !Array.isArray(m[k])) continue;
+          for (var j = 0; j < m[k].length; j++) {
+            var u = m[k][j] && m[k][j].file_url;
+            if (typeof u === 'string' && u.length <= 4096 && /^https?:\/\//i.test(u)) urls.push(u);
+          }
+        }
+      }
+      function collect(machine, urls) {
+        if (!isObj(machine)) return;
+        var ts = tracks(machine.tracks);
+        for (var i = 0; i < ts.length; i++) collectTrack(ts[i], urls);
+      }
+      function observe(text) {
+        try {
+          if (typeof text !== 'string' || text.indexOf(':ad:') < 0 && text.indexOf('"AD"') < 0) return;
+          var data = JSON.parse(text), urls = [], current = [];
+          function payload(p) {
+            if (!isObj(p)) return;
+            collect(p.state_machine, urls);
+            var m = p.state_machine, ref = p.updated_state_ref;
+            if (isObj(m) && Array.isArray(m.states) && isObj(ref)) {
+              var state = m.states[ref.state_index];
+              if (isObj(state)) collectTrack(m.tracks && m.tracks[state.track], current);
+            }
+            var cs = p.commands;
+            if (Array.isArray(cs)) for (var i = 0; i < cs.length; i++) payload(cs[i]);
+            else if (isObj(cs)) for (var k in cs) payload(cs[k]);
+          }
+          payload(data);
+          if (Array.isArray(data.payloads)) for (var i = 0; i < data.payloads.length; i++) payload(data.payloads[i]);
+          if (!urls.length && !current.length) return;
+          var message = {}; message[NOTICE] = urls;
+          if (current.length) message[CURRENT] = current;
+          if (typeof self.postMessage === 'function') self.postMessage(message);
+          else for (var n = 0; n < noticePorts.length; n++) noticePorts[n].postMessage(message);
+        } catch (_) {}
+      }
+      self.__WO_OBSERVE__ = observe;
+      try {
+        if (typeof self.postMessage !== 'function' && typeof self.addEventListener === 'function') {
+          self.addEventListener('connect', function (ev) { var port = ev && ev.ports && ev.ports[0]; if (port) noticePorts.push(port); });
+        }
+      } catch (_) {}
       var WS = self.WebSocket;
       if (WS && WS.prototype) {
         var proto = WS.prototype;
-        var wrap = function (fn) {
-          return function (ev) {
-            try { var t = rewrite(ev && ev.data); if (t !== null) { var ne = null; try { ne = new MessageEvent('message', { data: t, origin: ev.origin, lastEventId: ev.lastEventId }); } catch (_) { ne = null; } if (ne) return fn.call(this, ne); } } catch (_) {}
-            return fn.call(this, ev);
+        var wrap = function (fn) { return function (ev) { try { observe(ev && ev.data); } catch (_) {} return fn.call(this, ev); }; };
+        try {
+          var oAdd = proto.addEventListener;
+          proto.addEventListener = function (type, fn, opts) {
+            if (type === 'message' && typeof fn === 'function') return oAdd.call(this, type, wrap(fn), opts);
+            return oAdd.apply(this, arguments);
           };
-        };
-        try { var oAdd = proto.addEventListener; proto.addEventListener = function (type, fn, opts) { if (type === 'message' && typeof fn === 'function') return oAdd.call(this, type, wrap(fn), opts); return oAdd.apply(this, arguments); }; } catch (_) {}
-        try { var d0 = Object.getOwnPropertyDescriptor(proto, 'onmessage'); if (d0 && d0.set) { Object.defineProperty(proto, 'onmessage', { configurable: true, get: d0.get, set: function (fn) { d0.set.call(this, typeof fn === 'function' ? wrap(fn) : fn); } }); } } catch (_) {}
+        } catch (_) {}
+        try {
+          var desc = Object.getOwnPropertyDescriptor(proto, 'onmessage');
+          if (desc && desc.set) Object.defineProperty(proto, 'onmessage', {
+            configurable: true, get: desc.get,
+            set: function (fn) { desc.set.call(this, typeof fn === 'function' ? wrap(fn) : fn); }
+          });
+        } catch (_) {}
       }
-      var of = self.fetch;
-      if (typeof of === 'function' && typeof self.Response === 'function') {
-        self.fetch = function (input, init) {
-          var pr = of.apply(this, arguments);
+      var nativeFetch = self.fetch;
+      if (typeof nativeFetch === 'function') {
+        self.fetch = function (input) {
+          var promise = nativeFetch.apply(this, arguments);
           try {
-            var u = typeof input === 'string' ? input : (input && input.url) || '';
-            if (!/track-playback\/v1\/devices\/[^/]+\/state/i.test(u)) return pr;
-            return Promise.resolve(pr).then(function (res) {
-              if (!res || typeof res.clone !== 'function') return res;
-              return res.clone().text().then(function (t) { var nt = rewrite(t); if (nt === null) return res; var h; try { h = new Headers(res.headers); h.delete('content-length'); h.delete('content-encoding'); } catch (_) { h = undefined; } try { return new Response(nt, { status: res.status, statusText: res.statusText, headers: h }); } catch (_) { return res; } }).catch(function () { return res; });
+            var url = typeof input === 'string' ? input : input && input.url || '';
+            if (!/track-playback\/v1\/devices\/[^/]+\/state/i.test(url)) return promise;
+            return Promise.resolve(promise).then(function (response) {
+              if (!response || typeof response.clone !== 'function') return response;
+              return response.clone().text().then(function (body) { observe(body); return response; }).catch(function () { return response; });
             });
-          } catch (_) { return pr; }
+          } catch (_) { return promise; }
         };
       }
     } catch (_) {}
   }
-  function workerShimHead() { return '(' + woWorkerShim.toString() + ')(' + JSON.stringify(SILENT_MEDIA) + ');\n'; }
+  function workerShimHead() { return '(' + woWorkerShim.toString() + ')(' + JSON.stringify(WORKER_AD_NOTICE) + ',' + JSON.stringify(WORKER_AD_CURRENT_NOTICE) + ');\n'; }
+  function attachWorkerNotice(worker) {
+    try {
+      const target = worker && (worker.port || worker);
+      if (!target || typeof target.addEventListener !== 'function') return worker;
+      target.addEventListener('message', (event) => {
+        const data = event && event.data;
+        if (!isObject(data) || !Array.isArray(data[WORKER_AD_NOTICE])) return;
+        try { if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation(); } catch (_) {}
+        if (!enabled || disposed) return;
+        for (const url of data[WORKER_AD_NOTICE]) {
+          if (typeof url !== 'string' || url.length > 4096 || !/^https?:\/\//i.test(url)) continue;
+          knownAdUrls.add(url);
+          if (knownAdUrls.size > 128) knownAdUrls.delete(knownAdUrls.values().next().value);
+        }
+        if (slot && Array.isArray(data[WORKER_AD_CURRENT_NOTICE])) {
+          const urls = data[WORKER_AD_CURRENT_NOTICE].filter((url) => typeof url === 'string' && url.length <= 4096 && /^https?:\/\//i.test(url));
+          if (urls.includes(slot.src)) confirmCurrentAd(urls);
+        }
+      });
+    } catch (_) {}
+    return worker;
+  }
   /* Build the real worker behind a shim blob. The shim installs the hooks, then loads the
      original: importScripts for a classic worker, dynamic import() for a module worker (its
      relative imports resolve against the original URL, not the blob). Any failure -- a blob
@@ -598,7 +721,7 @@
         var W = function (url, opts) {
           if (disposed || !enabled) return opts === undefined ? new NativeWorker(url) : new NativeWorker(url, opts);
           var w = shimWorker(NativeWorker, url, opts);
-          return w || (opts === undefined ? new NativeWorker(url) : new NativeWorker(url, opts));
+          return w ? attachWorkerNotice(w) : (opts === undefined ? new NativeWorker(url) : new NativeWorker(url, opts));
         };
         W.prototype = NativeWorker.prototype;
         try { window.Worker = W; } catch (_) {}
@@ -609,7 +732,7 @@
         var S = function (url, opts) {
           if (disposed || !enabled) return opts === undefined ? new NativeSharedWorker(url) : new NativeSharedWorker(url, opts);
           var w = shimWorker(NativeSharedWorker, url, opts);
-          return w || (opts === undefined ? new NativeSharedWorker(url) : new NativeSharedWorker(url, opts));
+          return w ? attachWorkerNotice(w) : (opts === undefined ? new NativeSharedWorker(url) : new NativeSharedWorker(url, opts));
         };
         S.prototype = NativeSharedWorker.prototype;
         try { window.SharedWorker = S; } catch (_) {}
@@ -623,7 +746,7 @@
     if (enabled !== value) configEpoch++;
     enabled = value;
     style.disabled = !enabled;
-    if (!enabled) { endSlot(); restoreMuted(); knownAdUrls.clear(); }
+    if (!enabled) { releaseLicenseHolds(); endSlot(); restoreMuted(); knownAdUrls.clear(); confirmedAdUrls.clear(); }
     else mountStyle();
   }
   function woDispose() {
@@ -631,7 +754,9 @@
     disposed = true;
     enabled = false;
     configEpoch++;
+    releaseLicenseHolds();
     knownAdUrls.clear();
+    confirmedAdUrls.clear();
     endSlot();
     restoreMuted();
     for (const id of Array.from(timers)) cancel(id);
@@ -643,14 +768,14 @@
     try { if (window.Worker && window.Worker.prototype === NativeWorker.prototype && window.Worker !== NativeWorker) window.Worker = NativeWorker; } catch (_) {}
     try { if (NativeSharedWorker && window.SharedWorker && window.SharedWorker !== NativeSharedWorker && window.SharedWorker.prototype === NativeSharedWorker.prototype) window.SharedWorker = NativeSharedWorker; } catch (_) {}
     try { if (mediaPrototype && mediaPrototype.play === spotifyMediaPlay) mediaPrototype.play = nativeMediaPlay; } catch (_) {}
-    try { if (RegExp.prototype.test === spotifyRegExpTest) RegExp.prototype.test = nativeRegExpTest; } catch (_) {}
+    try { if (promisePrototype && promisePrototype.then === spotifyPromiseThen) promisePrototype.then = nativePromiseThen; } catch (_) {}
     try { delete window.__wardenOneSpotifyAdblockReady; } catch (_) {}
   }
 
   window.fetch = spotifyFetch;
-  RegExp.prototype.test = spotifyRegExpTest;
   installWorkerHook();
-  if (typeof nativeMediaPlay === 'function' && typeof NativeEvent === 'function') {
+  installLoaderHook();
+  if (typeof nativeMediaPlay === 'function') {
     try { mediaPrototype.play = spotifyMediaPlay; } catch (_) {}
   }
   mountStyle();

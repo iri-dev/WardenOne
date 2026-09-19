@@ -111,6 +111,11 @@
         "path": "rules-adshield.json"
       },
       {
+        "id": "spotify_media",
+        "enabled": true,
+        "path": "rules-spotify-media.json"
+      },
+      {
         "id": "trackers",
         "enabled": true,
         "path": "rules-trackers.json"
@@ -122,6 +127,12 @@
       }
     ]
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["spotify-silent-1s.mp4"],
+      "matches": ["https://open.spotify.com/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": [

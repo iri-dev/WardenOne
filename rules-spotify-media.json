@@ -1,0 +1,13 @@
+[
+  {"id":1,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||akamaized.net/audio/","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":2,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||scdn.co/audio/","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":3,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||scdn.co/mp3-ad/","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":4,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||scdn.co/mp3/","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":5,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||spotifycdn.com/audio/","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":6,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||amillionads.com^","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":7,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||2mdn.net^","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":8,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||adxcel.com^","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":9,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||adstudio-assets.scdn.co^","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":10,"priority":1100,"action":{"type":"redirect","redirect":{"extensionPath":"/spotify-silent-1s.mp4"}},"condition":{"urlFilter":"||spotify.com/ad-logic/","initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}},
+  {"id":11,"priority":1050,"action":{"type":"allow"},"condition":{"initiatorDomains":["open.spotify.com"],"resourceTypes":["media"]}}
+]

@@ -3030,6 +3030,7 @@ const STATIC_RULE_COUNT = 130;
 // Static rules have their OWN 30k guaranteed budget; they do NOT eat into
 // TOTAL_DYNAMIC_BUDGET below. Count must match the builder's output.
 const ADSHIELD_STATIC_RULESET_ID = 'adshield_easylist';
+const SPOTIFY_MEDIA_RULESET_ID = 'spotify_media';
 const ADSHIELD_STATIC_RULE_COUNT = 28024;
 let ADSHIELD_STATIC_ACTIVE = true; // tracked by refreshBlocklistRuleset for the stats display
 const TRACKERS_STATIC_RULESET_ID = 'trackers';
@@ -4254,6 +4255,7 @@ let LOG_MATCH_SINCE = 0;
 const LOG_STATIC_RULESETS = {
   grabbers: 'IP-logger list',
   adshield_easylist: 'AdShield / EasyList',
+  spotify_media: 'Spotify web player media',
   trackers: 'Tracker list',
   easyprivacy: 'EasyPrivacy',
 };
@@ -9279,6 +9281,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
     const disableRulesetIds = [];
     (on ? enableRulesetIds : disableRulesetIds).push('grabbers');
     (adshieldOn ? enableRulesetIds : disableRulesetIds).push(ADSHIELD_STATIC_RULESET_ID);
+    (adshieldOn ? enableRulesetIds : disableRulesetIds).push(SPOTIFY_MEDIA_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(TRACKERS_STATIC_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(EASYPRIVACY_STATIC_RULESET_ID);
     await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds, disableRulesetIds });
@@ -15180,6 +15183,7 @@ async function buildProtectionHealthSummary() {
     } else {
       if (cfg.blockMalwareSites !== false && !enabledRulesets.includes('grabbers')) addIssue('danger', 'Core malicious-domain ruleset is not enabled.');
       if (cfg.adShield !== false && !enabledRulesets.includes('adshield_easylist')) addIssue('warn', 'AdShield network ruleset is not enabled.', true);
+      if (cfg.adShield !== false && !enabledRulesets.includes('spotify_media')) addIssue('warn', 'Spotify ad-media ruleset is not enabled.', true);
       if (cfg.blockTrackers !== false && !enabledRulesets.includes('trackers')) addIssue('warn', 'Tracker ruleset is not enabled.', true);
     }
   }
@@ -20042,6 +20046,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
           const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'manifest.json'];
+          CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4');
 
       // 1. core files present & non-empty
       for (const f of CORE_FILES) {
