@@ -121,11 +121,12 @@ check('ordinary warnings still pass through every gate',
   'the old unconditional form must be gone, not duplicated');
 
 /* ---- 4. the chain from the menu to the toast ---------------------------- */
+/* The menu is a table (WO_MENU_ITEMS); the entries are rows of it. */
 check('the four menu entries exist',
-  /item\(WO_MENU_LINK, 'Check this link'\);/.test(BG)
-    && /item\(WO_MENU_SELECTION, 'Check the selected text'\);/.test(BG)
-    && /item\(WO_MENU_MEDIA, 'Where is this image from\?'\);/.test(BG)
-    && /item\(WO_MENU_FRAME, 'What is this frame\?'\);/.test(BG));
+  /\{ id: WO_MENU_LINK, title: 'Check this link' \}/.test(BG)
+    && /\{ id: WO_MENU_SELECTION, title: 'Check the selected text' \}/.test(BG)
+    && /\{ id: WO_MENU_MEDIA, title: 'Where is this image from\?' \}/.test(BG)
+    && /\{ id: WO_MENU_FRAME, title: 'What is this frame\?' \}/.test(BG));
 check('each is wired to a handler',
   /info\.menuItemId === WO_MENU_LINK/.test(BG)
     && /info\.menuItemId === WO_MENU_SELECTION/.test(BG)

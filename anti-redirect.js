@@ -757,8 +757,18 @@
   }
 
   let lastGestureBeacon = 0;
+  let navSignalSeq = 0;
+  // A navigation signal is what stands between the worker's forced-redirect interstitial and
+  // a navigation the reader actually asked for -- so it must not be something a page can
+  // say. The token alone is public (SEC-01), and a page that dispatched
+  // {kind:'top-nav-authorized'} every two seconds held the interstitial off for its own tab
+  // for as long as it liked (SEC-13). Each beacon now carries a sequence number and an HMAC
+  // under the bridge's key -- which this world received once, at document_start, before any
+  // page script existed -- over the number, the kind and the destination host. The bridge
+  // relays nothing that fails the signature or repeats a number, so a page can dispatch the
+  // event all day and never make one count.
   function signal(kind, extra) {
-    if (!token) return;
+    if (!token || !woKey) return;
     // The gesture beacon fires on every click and keypress. The worker only needs
     // to know one happened recently, so twice a second is plenty and keeps this
     // well inside the bridge budget.
@@ -767,10 +777,14 @@
       if (now - lastGestureBeacon < 500) return;
       lastGestureBeacon = now;
     }
+    const host = extra && typeof extra.host === 'string' ? extra.host : '';
+    navSignalSeq += 1;
+    const detail = Object.assign({ token, kind }, extra || {}, {
+      seq: navSignalSeq,
+      mac: __woAuth.hmac(woKey, 'nav-signal\n' + navSignalSeq + '\n' + kind + '\n' + host),
+    });
     try {
-      document.dispatchEvent(new CustomEvent('wo-nav-signal', {
-        detail: Object.assign({ token, kind }, extra || {}),
-      }));
+      document.dispatchEvent(new CustomEvent('wo-nav-signal', { detail }));
     } catch (_) {}
   }
 
@@ -1316,13 +1330,15 @@
     // Reaching this function at all means the TOP frame drove the navigation, so
     // every path that lets one through has to say so -- otherwise the worker sees
     // a top-frame navigation it cannot attribute and treats ours as a hijack.
+    // An authorisation names the host it is for. The worker honours it for a navigation to
+    // that host only, so a decoy navigation cannot arm it for a different one (SEC-13).
     if (!navigationEnabled()) {
-      if (!sameSiteTarget(rawTarget)) signal('top-nav-authorized');
+      if (!sameSiteTarget(rawTarget)) signal('top-nav-authorized', { host: hostOf(rawTarget) });
       return false;
     }
     if (sameSiteTarget(rawTarget)) return false;
     if (navigationTargetAllowed(rawTarget)) {
-      signal('top-nav-authorized');
+      signal('top-nav-authorized', { host: hostOf(rawTarget) });
       return false;
     }
     markHostile();

@@ -89,6 +89,10 @@ try {
   });
   chrome.tabs.onCreated.addListener((tab) => markTabActive(tab.id));
   chrome.tabs.onRemoved.addListener((tabId) => { delete tabActivity[tabId]; });
+} catch (_) {}
+// Its own try: a windows registration that throws must not cost the four tabs listeners above
+// their registration, or the other way round (LIFE-04).
+try {
   // when a window gains focus, its active tab is "active"
   chrome.windows?.onFocusChanged.addListener((winId) => {
     if (winId === chrome.windows.WINDOW_ID_NONE) return;
@@ -405,7 +409,24 @@ async function memoryScore() {
 //
 // An unreadable config keeps the alarm rather than dropping it: failing to read storage should not
 // quietly uninstall a feature the user turned on.
+//
+// Chrome replaces a named alarm on create: the one that was there is cancelled and the new one
+// fires a full period from now. Reconciling at every worker start with an unconditional create
+// therefore moved the deadline five minutes forward each time the worker woke -- and a busy
+// session is exactly what keeps waking it (a navigation, a message), so the sweep most wanted
+// during sustained tab activity was the one that activity kept postponing. The alarm Chrome
+// holds is read first and kept when it is the alarm this code would create; a create happens
+// only when there is none, or when its period no longer matches. Switching the feature off still
+// clears it at once. background-extension-watch.js has used this shape all along.
 const MEMORY_SWEEP_ALARM = 'wardenone-memory-sweep';
+const MEMORY_SWEEP_PERIOD_MINUTES = 5;
+async function existingMemorySweepAlarm() {
+  try {
+    if (!chrome.alarms || typeof chrome.alarms.get !== 'function') return null;
+    const alarm = await chrome.alarms.get(MEMORY_SWEEP_ALARM);
+    return alarm && alarm.name === MEMORY_SWEEP_ALARM ? alarm : null;
+  } catch (_) { return null; }
+}
 async function reconcileMemorySweepAlarm(cfgArg) {
   let wanted = true;
   try {
@@ -413,8 +434,13 @@ async function reconcileMemorySweepAlarm(cfgArg) {
     wanted = !!(cfg && cfg.memoryShield);
   } catch (_) {}
   try {
-    if (wanted) chrome.alarms.create(MEMORY_SWEEP_ALARM, { periodInMinutes: 5 });
-    else await chrome.alarms.clear(MEMORY_SWEEP_ALARM);
+    if (!wanted) {
+      await chrome.alarms.clear(MEMORY_SWEEP_ALARM);
+      return wanted;
+    }
+    const existing = await existingMemorySweepAlarm();
+    if (existing && existing.periodInMinutes === MEMORY_SWEEP_PERIOD_MINUTES) return wanted;
+    chrome.alarms.create(MEMORY_SWEEP_ALARM, { periodInMinutes: MEMORY_SWEEP_PERIOD_MINUTES });
   } catch (_) {}
   return wanted;
 }
@@ -936,6 +962,7 @@ try {
       tabLiveState,
       reconcileMemorySweepAlarm,
       MEMORY_SWEEP_ALARM,
+      MEMORY_SWEEP_PERIOD_MINUTES,
       MEMORY_LIVE_CHECK_TIMEOUT_MS,
     });
   }

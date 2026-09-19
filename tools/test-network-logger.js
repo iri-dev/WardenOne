@@ -76,9 +76,11 @@ check('the logger never registers a webRequest listener at module scope',
 const redactRegion = region('const LOG_SECRET_PARAM', 'function logHostOf(');
 check('the redactor is where the slice expects it', !!redactRegion);
 if (redactRegion) {
-  const box = { URL, String, Number };
+  /* The redactor reuses the Activity Centre's path sanitiser since M49, so that comes along. */
+  const pathRegion = region('const LOG_URL_MAX', 'function safeUrlForLog(');
+  const box = { URL, String, Number, RegExp, decodeURIComponent };
   vm.createContext(box);
-  vm.runInContext(redactRegion + ';globalThis.r = logRedactUrl;', box,
+  vm.runInContext(pathRegion + NL + redactRegion + ';globalThis.r = logRedactUrl;', box,
     { filename: 'background.js:logRedactUrl' });
   const r = box.r;
 
@@ -92,9 +94,10 @@ if (redactRegion) {
   const frag = r('https://x.example/p#access_token=abcdefghijklmnop');
   check('redacts a long fragment', !/abcdefghijklmnop/.test(frag.url), frag.url);
   const plain = r('https://x.example/path?page=2');
-  check('leaves an ordinary URL alone', plain.url === 'https://x.example/path?page=2' && !plain.redacted);
-  check('an unparseable URL is still truncated, not thrown away',
-    typeof r('not a url at all').url === 'string');
+  check('leaves an ordinary URL alone', plain.url === 'https://x.example/path?page=2' && !plain.redacted, plain.url);
+  /* Fail closed: the old fallback stored the raw text, which is the one thing this must never do. */
+  check('an unparseable URL is withheld rather than stored raw',
+    r('not a url at all').url === '[removed]');
   /* The point of redacting at write time rather than at render time. */
   check('redaction runs before the entry is stored',
     /const red = logRedactUrl\(d\.url\);[\s\S]{0,400}url: red\.url,/.test(BG),
@@ -106,8 +109,11 @@ check('the buffer is bounded', /LOG_RING\.length > LOG_MAX/.test(BG) && /const L
    and found the identical line in the 'clear' handler below. */
 const detachBody = region('function logDetach() {', NL + '}');
 check('logDetach is where the slice expects it', !!detachBody);
+/* The drop goes through logReset since L29, which takes the waiting batch and its timer with the
+   ring; the reset itself is what has to empty the ring. */
+const resetBody = region('function logReset() {', NL + '}');
 check('the buffer is dropped when the last logger tab closes',
-  detachBody.includes('LOG_RING.length = 0;'),
+  detachBody.includes('logReset();') && resetBody.includes('LOG_RING.length = 0;'),
   'a list of every URL you loaded must not outlive the window opened to look at it');
 check('nothing about the log is written to storage',
   !/localSet\(\{[^}]*LOG_RING/.test(BG) && !/wardenone_log/.test(BG),
@@ -122,7 +128,7 @@ check('a block is claimed only for ERR_BLOCKED_BY_CLIENT',
   'a DNS failure reported as "WardenOne blocked this" would send people hunting a rule that does not exist');
 
 /* ---- 4. rule attribution is exact, and honest when it cannot be --------- */
-const sourceRegion = region('let __logRuleBases = null;', '/* Anything that looks like a credential');
+const sourceRegion = region('let __logRuleBases = null;', '/* Anything that could be a credential');
 check('the attribution map is liftable', !!sourceRegion);
 if (sourceRegion) {
   const box2 = { Number, Object, Set };

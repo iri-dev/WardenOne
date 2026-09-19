@@ -258,9 +258,11 @@
   /* Off unless the toggle says otherwise, asked once. A mail client is the last
      place to act on a stale assumption about what the reader wanted. */
   try {
-    chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+    chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, (res) => {
       void chrome.runtime.lastError;
-      const cfg = (res && res.config) || {};
+      // The switches arrive as `overrides`; this read `config`, a field the worker never sends,
+      // so the gate below compared against {} and never held.
+      const cfg = (res && res.overrides) || {};
       if (cfg.enabled === false || cfg.mailTrackingShield === false) return;
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', start, { once: true });

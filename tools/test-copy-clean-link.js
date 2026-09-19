@@ -190,7 +190,7 @@ const TAB = { id: 1, url: 'https://example.com/page' };
     hs >= 0 && he > hs && /\},!0\);\s*$/.test(MIN.slice(hs, he).trim()),
     'a page calling stopPropagation on copy reaches the bubble phase first');
   check('the menu entry is registered',
-    /item\(WO_MENU_COPY_LINK, 'Copy clean link'\);/.test(BG)
+    /\{ id: WO_MENU_COPY_LINK, title: 'Copy clean link' \}/.test(BG)
       && /info\.menuItemId === WO_MENU_COPY_LINK/.test(BG));
   const command = MANIFEST.commands && MANIFEST.commands['copy-clean-current-address'];
   check('the browser-level current-address command is declared',

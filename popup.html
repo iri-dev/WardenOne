@@ -252,6 +252,20 @@
     text-transform: uppercase;
     letter-spacing: .05em;
   }
+  .health-tab {
+    margin-top: 9px;
+    padding: 7px 10px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.42);
+    border: 1px solid var(--line-2);
+    color: var(--ink-soft);
+    font-size: 10.6px;
+    line-height: 1.4;
+    font-weight: 600;
+  }
+  .health-tab:empty { display: none; }
+  .health-tab.is-ok { border-color: rgba(142, 57, 191, 0.28); }
+  .health-tab.is-warn { border-color: var(--warn); }
   .health-issues {
     display: none;
     margin-top: 11px;
@@ -690,10 +704,11 @@
     </summary>
     <div class="health-body">
       <div class="health-grid">
-        <div class="health-stat"><strong id="health-active-count">-</strong><span>Active shields</span></div>
+        <div class="health-stat"><strong id="health-active-count">-</strong><span>Switched on</span></div>
         <div class="health-stat"><strong id="health-blocked-count">-</strong><span>Blocked 24h</span></div>
         <div class="health-stat"><strong id="health-list-updated">-</strong><span>Lists</span></div>
       </div>
+      <div class="health-tab" id="health-tab-line" aria-live="polite"></div>
       <div class="health-issues" id="health-issues"></div>
     </div>
   </details>
@@ -1662,7 +1677,7 @@
       <label class="tg"><input type="checkbox" data-key="showBadge"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Silent mode</div><div class="desc">Full protection stays on, but WardenOne hides non-critical popups, badges, and notifications. The download bar still appears.</div></div>
+      <div><div class="name">Silent mode</div><div class="desc">Full protection stays on, but WardenOne hides non-critical popups, badges, and notifications. The download bar still appears, and your toast and badge choices above come back the moment Silent is off.</div></div>
       <label class="tg"><input type="checkbox" data-key="silentMode"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">

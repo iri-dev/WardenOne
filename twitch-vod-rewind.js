@@ -486,7 +486,7 @@
 
   function requestContentConfig() {
     try {
-      chrome.runtime.sendMessage({ kind: 'content-config-get' }, function (result) {
+      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, function (result) {
         void chrome.runtime.lastError;
         if (!chrome.runtime.lastError && result && result.ok) applyConfig(result.overrides || {});
       });

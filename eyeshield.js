@@ -1355,13 +1355,13 @@
   // Same-origin sheets are read straight from `cssRules`; cross-origin (CDN-hosted)
   // sheets throw on `cssRules` and were previously skipped, so their colours were
   // never remapped — that is the "dark page with white patches / unreadable text on
-  // dark" breakage on many sites. We fetch the sheet TEXT through the background
-  // service worker (its host_permissions bypass CORS), parse it into a constructable
-  // stylesheet we CAN read, and run it through the SAME transform pipeline. This only
-  // ADDS coverage: every existing readable-CSS / inline / repair path is untouched,
-  // and any failure here just falls back to today's behaviour. We emit ONLY the
-  // recoloured declarations (selectorText + transformed colour props), so a sheet's
-  // relative url() backgrounds are never re-hosted/broken.
+  // dark" breakage on many sites. We fetch the sheet TEXT ourselves, from the page's
+  // own context and on the page's own terms (see fetchForeignSheet), parse it into a
+  // constructable stylesheet we CAN read, and run it through the SAME transform
+  // pipeline. This only ADDS coverage: every existing readable-CSS / inline / repair
+  // path is untouched, and any failure here just falls back to today's behaviour. We
+  // emit ONLY the recoloured declarations (selectorText + transformed colour props),
+  // so a sheet's relative url() backgrounds are never re-hosted/broken.
   let foreignCache = new Map();   // href -> css text ('' = fetch failed/none)
   let foreignXform = new Map();    // href + '|' + mode -> transformed css (memo; raw text is immutable)
   let foreignPending = new Set(); // href -> fetch in flight
@@ -1445,11 +1445,75 @@
       foreignEls.push(st);
     } catch (e) {}
   }
+  // The sheet text is fetched HERE, from the page's context, and not by the service
+  // worker. It used to be the worker, fetching with the extension's own permissions --
+  // which reach addresses no page may: a router, a NAS, a service on the reader's own
+  // network. The only thing standing between a page and that reach was a check of the
+  // hostname STRING, and a string cannot see what a public-looking name RESOLVES to.
+  // A page that listed a stylesheet on such a name could have the extension fetch from
+  // inside the reader's network and hand the response back into the page's own DOM
+  // (SEC-11). Chrome cannot tell an extension where a name will resolve before the
+  // request is made, so there was no version of that proxy that could be made safe.
+  //
+  // This fetch is made as the page itself would make it: mode 'cors', no credentials.
+  // So it is subject to everything the page's own requests are -- CORS, and Chrome's
+  // private-network rules -- and a page gains nothing from it that it did not already
+  // have. A host that lets pages read its stylesheets (every CDN that serves web fonts
+  // does) is recoloured; a host that does not simply keeps its own colours, which is
+  // what the computed-background fallback below is for. Nothing privileged is asked
+  // for any more, so there is nothing for a page to steer.
+  const FOREIGN_CSS_MAX_BYTES = 4000000;
+  const FOREIGN_CSS_TIMEOUT_MS = 8000;
+  function isStylesheetContentType(value) {
+    const ct = String(value || '').split(';')[0].trim().toLowerCase();
+    if (!ct) return false;
+    return ct === 'text/css' || ct === 'application/x-css' || ct === 'text/x-css' || ct.endsWith('+css');
+  }
+  async function readBoundedText(res, maxBytes) {
+    if (!res.body || typeof res.body.getReader !== 'function' || typeof TextDecoder === 'undefined') {
+      const text = await res.text();
+      return text.length > maxBytes ? '' : text;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let bytes = 0;
+    let text = '';
+    for (;;) {
+      const chunk = await reader.read();
+      if (!chunk || chunk.done) break;
+      if (!chunk.value) continue;
+      bytes += chunk.value.byteLength || 0;
+      if (bytes > maxBytes) { try { reader.cancel(); } catch (e) {} return ''; }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    return text + decoder.decode();
+  }
+  function fetchForeignSheet(href, done) {
+    let settled = false;
+    const finish = (css) => {
+      if (settled) return;
+      settled = true;
+      try { done(typeof css === 'string' ? css : ''); } catch (e) {}
+    };
+    let controller = null;
+    try { controller = typeof AbortController === 'function' ? new AbortController() : null; } catch (e) { controller = null; }
+    const timer = woTimeout(() => { try { if (controller) controller.abort(); } catch (e) {} finish(''); }, FOREIGN_CSS_TIMEOUT_MS);
+    let request;
+    try {
+      request = fetch(href, { mode: 'cors', credentials: 'omit', cache: 'force-cache', redirect: 'follow', signal: controller ? controller.signal : undefined });
+    } catch (e) { clearTimeout(timer); finish(''); return; }
+    Promise.resolve(request).then((res) => {
+      if (!res || !res.ok) return '';
+      if (!isStylesheetContentType(res.headers && res.headers.get('content-type'))) return '';
+      const declared = Number((res.headers && res.headers.get('content-length')) || 0);
+      if (declared && declared > FOREIGN_CSS_MAX_BYTES) return '';
+      return readBoundedText(res, FOREIGN_CSS_MAX_BYTES);
+    }).then((css) => { clearTimeout(timer); finish(css); }, () => { clearTimeout(timer); finish(''); });
+  }
   function applyForeignCSS(mode, roots) {
     try {
       if (isManagedThemeHost()) return; // managed hosts use bespoke CSS, not the generic remap
-      if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) return;
-      if (typeof CSSStyleSheet === 'undefined') return;
+      if (typeof fetch !== 'function' || typeof CSSStyleSheet === 'undefined') return;
       const hrefs = collectForeignHrefs(roots || rootsList());
       if (!hrefs.length) return;
       const token = ++foreignToken;
@@ -1460,10 +1524,9 @@
         if (foreignPending.has(href)) continue;
         foreignPending.add(href);
         try {
-          chrome.runtime.sendMessage({ kind: 'eyeshield-fetch-css', url: href }, (resp) => {
-            try { void chrome.runtime.lastError; } catch (e) {}
+          fetchForeignSheet(href, (css) => {
             foreignPending.delete(href);
-            foreignCache.set(href, (resp && resp.ok && typeof resp.css === 'string') ? resp.css : '');
+            foreignCache.set(href, css);
             if (token === foreignToken && activeRemap === mode) injectForeignCSS(mode);
           });
         } catch (e) { foreignPending.delete(href); foreignCache.set(href, ''); }
@@ -2297,7 +2360,7 @@
 
   function loadConfig() {
     try {
-      chrome.runtime.sendMessage({ kind: 'content-config-get' }, (res) => {
+      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, (res) => {
         void chrome.runtime.lastError;
         if (!chrome.runtime.lastError && res && res.ok) setConfig(res.overrides || {});
       });

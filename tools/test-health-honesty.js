@@ -42,14 +42,14 @@ function check(name, condition, extra) {
 
 // Lift the ruleset branch verbatim: from the tri-state declaration to the end of its else-block.
 const FROM = '  let enabledRulesets = null;';
-const TO = '  const activeShields = healthCountActiveShields(cfg);';
+const TO = '  // The tab the popup is open on, asked rather than assumed (FEAT-02).';
 const from = BG.indexOf(FROM);
 const to = BG.indexOf(TO, from);
 if (from < 0 || to <= from) throw new Error('ruleset decision block not found in background.js');
 const BLOCK = BG.slice(from, to);
 
 // Drive the real branch with a stubbed chrome and a recording addIssue.
-async function decide({ answer, throws, cfg, rulesetError }) {
+async function decide({ answer, throws, cfg, rulesetError, unregistered }) {
   const issues = [];
   const addIssue = (severity, text, topLevel) => issues.push({ severity, text, topLevel: topLevel === true });
   const chrome = {
@@ -62,10 +62,11 @@ async function decide({ answer, throws, cfg, rulesetError }) {
   // here because this suite is about the ruleset decision. tools/test-reconcile-honesty.js
   // drives the marker itself.
   // eslint-disable-next-line no-new-func
+  // Listeners that did not register this worker life (LIFE-04) are read in the same block.
   const run = new Function('chrome', 'cfg', 'addIssue', '__blocklistRulesetError',
-    'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX',
+    'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX', 'LISTENERS_NOT_REGISTERED',
     '"use strict";return (async()=>{' + BLOCK + '\nreturn true;})();');
-  await run(chrome, cfg, addIssue, __blocklistRulesetError, async () => null, {}, 6);
+  await run(chrome, cfg, addIssue, __blocklistRulesetError, async () => null, {}, 6, unregistered || []);
   return {
     issues,
     worst: issues.some((i) => i.severity === 'danger') ? 'danger'
@@ -130,6 +131,15 @@ const ALL = ['grabbers', 'adshield_easylist', 'spotify_media', 'trackers', 'easy
   // -------------------------------------------------------------------------
   // 6. A failed updateEnabledRulesets is remembered, not only logged to the console.
   // -------------------------------------------------------------------------
+  {
+    /* A listener that could not register is a guard that is off whatever its switch says (LIFE-04). */
+    const r = await decide({ answer: ALL, cfg: ON, unregistered: ['redirect-hop recording', 'forced-redirect guard'] });
+    const named = r.issues.find((i) => /Could not start in this browser session: redirect-hop recording, forced-redirect guard/.test(i.text));
+    check('a listener that did not register is a top-level danger, named', !!named && named.severity === 'danger' && named.topLevel === true,
+      JSON.stringify(r.issues.map((i) => i.text)));
+    const clean = await decide({ answer: ALL, cfg: ON, unregistered: [] });
+    check('and nothing is said when every listener registered', !clean.issues.some((i) => /Could not start in this browser session/.test(i.text)));
+  }
   {
     const r = await decide({ answer: ALL, cfg: ON, rulesetError: 'quota exceeded' });
     check('a ruleset apply failure reaches the user', r.worst === 'danger',

@@ -163,6 +163,7 @@ function checkContentBuild() {
   'twitch-vod-rewind.js',
   'cryptominer-detect.js',
   'search-junk.js',
+  'search-loggers.js',
   'command-palette.js',
   'privacy-probe.js',
   'privacy-test.js',
@@ -293,6 +294,22 @@ function checkContentBuild() {
   'tools/test-history-privacy.js',
   'tools/test-static-dnr-compatibility.js',
   'tools/test-dnr-budget.js',
+  'tools/test-dnr-atomic-replace.js',
+  'tools/test-listener-census.js',
+  'tools/test-silent-mode-roundtrip.js',
+  'tools/test-health-tab-evidence.js',
+  'tools/test-rule-cap-honesty.js',
+  'tools/test-cold-wake-writes.js',
+  'tools/test-redirect-chain-mirror.js',
+  'tools/test-feed-load-safety.js',
+  'tools/test-nav-signal-forgery.js',
+  'tools/test-content-config-memo.js',
+  'tools/test-logger-redaction.js',
+  'tools/test-message-reachability.js',
+  'tools/test-list-fetch-broker.js',
+  'tools/test-history-retention.js',
+  'tools/test-listener-registration.js',
+  'tools/test-logger-batch-reset.js',
   'tools/test-x-compatibility.js',
   'tools/test-behavioral-false-positives.js',
   // Suites that existed but were never referenced here. They cover engine test-shim isolation,
@@ -396,6 +413,22 @@ if (exists('tools/build-toast-harness.js') && exists('tools/toast-harness.html')
 }
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
 checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
+checkCommand('DNR atomic rule replacement tests', ['tools/test-dnr-atomic-replace.js']);
+checkCommand('tabs.onUpdated listener census', ['tools/test-listener-census.js']);
+checkCommand('Silent mode round-trip tests', ['tools/test-silent-mode-roundtrip.js']);
+checkCommand('protection health tab-evidence tests', ['tools/test-health-tab-evidence.js']);
+checkCommand('rule cap honesty tests', ['tools/test-rule-cap-honesty.js']);
+checkCommand('cold-wake write tests', ['tools/test-cold-wake-writes.js']);
+checkCommand('redirect-chain mirror tests', ['tools/test-redirect-chain-mirror.js']);
+checkCommand('feed load safety tests', ['tools/test-feed-load-safety.js']);
+checkCommand('navigation signal forgery tests', ['tools/test-nav-signal-forgery.js']);
+checkCommand('content config memo tests', ['tools/test-content-config-memo.js']);
+checkCommand('logger redaction tests', ['tools/test-logger-redaction.js']);
+checkCommand('message reachability tests', ['tools/test-message-reachability.js']);
+checkCommand('list fetch broker tests', ['tools/test-list-fetch-broker.js']);
+checkCommand('history retention tests', ['tools/test-history-retention.js']);
+checkCommand('listener registration tests', ['tools/test-listener-registration.js']);
+checkCommand('logger batch reset tests', ['tools/test-logger-batch-reset.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
 checkCommand('bridge host list tests', ['tools/test-bridge-host-lists.js']);
 checkCommand('hostile message hardening tests', ['tools/test-message-hardening.js']);
@@ -433,6 +466,7 @@ checkCommand('source inventory tests', ['tools/test-source-inventory.js']);
 checkCommand('blocker teardown tests', ['tools/test-blocker-teardown.js']);
 checkCommand('SafeSearch enforcement tests', ['tools/test-safe-search.js']);
 checkCommand('search-junk marker tests', ['tools/test-search-junk.js']);
+checkCommand('search-loggers.js is current against rules.json', ['tools/build-search-loggers.js', '--check']);
 checkCommand('session security scoring tests', ['tools/test-session-score.js']);
 checkCommand('insecure sign-in guard tests', ['tools/test-insecure-login.js']);
 checkCommand('settings export/import tests', ['tools/test-settings-io.js']);

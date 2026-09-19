@@ -99,7 +99,7 @@ function harness(options) {
 
   vm.createContext(sandbox);
   vm.runInContext(
-    between('const REBIND_QUARANTINE_RULE_BASE', '\nasync function fetchPublicStylesheetText')
+    between('const REBIND_QUARANTINE_RULE_BASE', '\nconst HEALTH_SHIELD_KEYS = [')
       + '\nthis.__api = { noteResolvedAddress, classifyResolvedIp, forgetRebindTab, REBIND_QUARANTINED };',
     sandbox,
     { filename: 'background.js' }

@@ -147,9 +147,10 @@
       </div>
 
       <p class="log-note" style="margin-top:14px;" id="exact-note"></p>
-      <p class="log-note">Anything that looks like a token, key, password or address is replaced with
-        <code>[removed]</code> before the request is stored, so this log can never become the leak.
-        Nothing is written to disk unless you press Export.</p>
+      <p class="log-note">Sign-in details, query values, the fragment and any part of a path that is not plain route vocabulary are removed
+        before the request is stored, so this log can never become the leak. What stays is the scheme, the host, the route
+        and the parameter names, plus a value only when it is a flag, a small number or a plain word.
+        Nothing is written to disk unless you press Export &mdash; and an export is still a list of the sites you visited.</p>
     </div>
   </section>
 </main>

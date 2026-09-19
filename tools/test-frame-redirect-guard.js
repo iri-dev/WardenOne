@@ -40,7 +40,11 @@ const END = 'async function evaluateRedirectChain(details) {';
 const from = BG.indexOf(START);
 const to = BG.indexOf(END, from + START.length);
 assert(from >= 0 && to > from, 'the frame-redirect guard moved in background.js');
-const SLICE = BG.slice(from, to);
+/* noteNavSignal validates an authorisation's host with the worker's own cleaner (SEC-13). */
+const cleanFrom = BG.indexOf('function messageCleanHost(');
+const cleanTo = BG.indexOf('\n}\n', cleanFrom);
+assert(cleanFrom >= 0 && cleanTo > cleanFrom, 'messageCleanHost moved in background.js');
+const SLICE = BG.slice(cleanFrom, cleanTo + 2) + '\n' + BG.slice(from, to);
 
 let passed = 0;
 let failed = 0;
@@ -89,7 +93,8 @@ function world(options) {
     updates,
     sandbox,
     state,
-    signal(tabId, kind) { sandbox.noteNavSignal(tabId, kind); },
+    /* An authorisation names the host it is for; the suites pass the one they then navigate to. */
+    signal(tabId, kind, host) { sandbox.noteNavSignal(tabId, kind, host); },
     committed(tabId, url) { state.LAST_TOP_URL[tabId] = url; },
     age(tabId, ms) {
       if (state.PLAYER_GESTURE_AT[tabId]) state.PLAYER_GESTURE_AT[tabId] -= ms;
@@ -153,7 +158,7 @@ async function main() {
     const w = world();
     w.committed(1, 'https://yomi.to/watch/x');
     w.signal(1, 'player-gesture');
-    w.signal(1, 'top-nav-authorized');
+    w.signal(1, 'top-nav-authorized', 'elsewhere.example');
     await w.navigate(1, 'https://elsewhere.example/');
     check('a navigation our own top-frame hooks let through is not a hijack',
       w.updates.length === 0 && w.history.length === 0, w.updates);
@@ -325,11 +330,12 @@ async function main() {
      worker sees an unattributed navigation and blames a frame for our own. */
   const nav = GUARD.slice(GUARD.indexOf('function blockNavigation('),
     GUARD.indexOf('function corePopupPolicy('));
-  const announces = (nav.match(/signal\('top-nav-authorized'\)/g) || []).length;
-  check('every path that allows a cross-site navigation announces it', announces === 2,
+  /* Each announcement names the host it is for (SEC-13). */
+  const announces = (nav.match(/signal\('top-nav-authorized', \{ host: hostOf\(rawTarget\) \}\)/g) || []).length;
+  check('every path that allows a cross-site navigation announces it, naming the host', announces === 2,
     announces + ' announcement(s); the disabled path and the allowed path both need one');
   check('the disabled path announces before returning',
-    /if \(!navigationEnabled\(\)\) \{\s*if \(!sameSiteTarget\(rawTarget\)\) signal\('top-nav-authorized'\);/.test(nav),
+    /if \(!navigationEnabled\(\)\) \{\s*if \(!sameSiteTarget\(rawTarget\)\) signal\('top-nav-authorized', \{ host: hostOf\(rawTarget\) \}\);/.test(nav),
     'with the guard off, our own redirects would otherwise look frame-driven');
 
   // -------------------------------------------------------------------------
@@ -504,7 +510,7 @@ async function main() {
   {
     const w = world();
     w.committed(1, 'https://shop.example/cart');
-    w.signal(1, 'top-nav-authorized');
+    w.signal(1, 'top-nav-authorized', 'payments.example');
     await w.forced(1, 'https://payments.example/checkout');
     check('a navigation our own hooks allowed is not forced', w.updates.length === 0, w.updates);
   }

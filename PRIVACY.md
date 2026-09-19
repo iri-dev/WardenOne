@@ -45,9 +45,13 @@ account by WardenOne, and is **not** uploaded to us:
 
 - Your settings and which protections are enabled.
 - A local activity log of what WardenOne blocked or flagged (for the popup and the
-  Activity/History page). Addresses in it are kept as site and path only — never the query
-  string, and with anything in the path that looks like a token blanked out — because the
-  query is where sign-in codes and reset links carry their secrets.
+  Activity/History page). It records security events WardenOne itself acted on, not the pages
+  you visited. Addresses in it are kept as site and path only — never the query string, and
+  with anything in the path that is not a plain route word blanked out: tokens, identifiers,
+  account and order numbers — because the query is where sign-in codes and reset links carry
+  their secrets and the path is where account and order numbers travel. The log keeps at most
+  the last 200 events and nothing older than 30 days (the same period as the notification
+  copy of those events); **Clear history** on the Activity page removes it at once.
 - **Warning-page hand-off records, held in memory for as long as they are needed.** When
   WardenOne stops a navigation — a forced redirect, a blocked page, a certificate failure —
   the warning page has to know the exact address so it can show you where you were going
@@ -134,12 +138,15 @@ nothing about the request is sent anywhere else, and the hashing and comparison 
 your device. Re-checks are rate-limited and capped per page, and allowlisted sites are
 skipped. Turn it off with **Script drift guard** in the popup.
 
-**EyeShield** (off by default) makes the same kind of request for a different reason: to
-recolour a page it needs the text of stylesheets the page loaded from other hosts, which a
-content script cannot read across origins, so the worker re-requests them without
-credentials — again only from a host the page itself just used, never from a private
-network address, and the stylesheet text goes nowhere but that tab. Earlier versions of
-this policy did not mention it.
+**EyeShield** (off by default) used to make the same kind of request for a different
+reason: to recolour a page it needs the text of stylesheets the page loaded from other
+hosts, which a content script cannot read across origins, so the worker re-requested them.
+It no longer does. EyeShield now asks for that text from inside the page itself, the way
+the page's own scripts would — without credentials, and subject to the same cross-origin
+and private-network rules the browser applies to the page — so WardenOne's own permissions
+are never used to fetch an address a page chose, and a host that does not let pages read
+its stylesheets simply keeps its own colours. The stylesheet text goes nowhere but that
+tab. Earlier versions of this policy did not mention the request at all.
 
 **What it keeps, exactly.** For each third-party script it has checked, WardenOne stores a
 record describing *the script* — its content hash, its size in bytes, the behaviour

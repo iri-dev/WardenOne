@@ -223,8 +223,12 @@ check('a redirect is re-checked rather than followed blindly',
 check('the body is size-capped', /readResponseTextWithByteLimit\(res, CUSTOM_LIST_BYTES\)/.test(BG));
 check('a failed refresh keeps the copy it already had',
   /Keep the last good copy/.test(BG));
+/* Every list response is built by customListRowsFor, which strips the text and attaches
+   each list's share of the rule band (M46); no handler ships a raw list any more. */
 check('list text is never sent to the page',
-  (BG.match(/Object\.assign\(\{\}, l, \{ text: undefined \}\)/g) || []).length >= 4,
+  (BG.match(/lists: customListRowsFor\(/g) || []).length >= 6
+    && /return \(lists \|\| \[\]\)\.map\(\(l\) => Object\.assign\(\{\}, l, \{ text: undefined \}, allocation\.lists\[l && l\.id\] \|\| \{\}\)\);/.test(BG)
+    && !/lists: lists\.map\(\(l\) => Object\.assign\(\{\}, l, \{ text: undefined \}\)\)/.test(BG),
   'the text can be megabytes and nothing renders it');
 
 /* ---- these are not protections, and must not be counted as any ---------- */

@@ -502,6 +502,194 @@ as the work happened.
 
 ### Fixed
 
+- The Network Logger's Clear clears everything, and closing its last window
+  keeps nothing. Requests are handed to the page in small batches a fraction of
+  a second apart, and a batch already waiting when you pressed Clear could
+  arrive afterwards and reappear in the cleared list -- or, if you closed the
+  last logger window and opened a new one within that moment, show up in the
+  new window despite the promise that nothing outlives the last close. The
+  waiting batch now goes with the rest.
+- Protection Health now says so if a navigation guard could not start. Five of
+  the worker's listeners -- redirect-hop recording, redirect-chain warnings,
+  popup tracking, tab-close cleanup and the forced-redirect guard -- were set up
+  in one block, so if the first had ever failed to register the other four would
+  have quietly stayed off for that browser session while every switch still
+  read as on. Each is set up on its own now, and one that cannot start is named
+  in the popup's health panel instead of hidden.
+- The Activity Centre forgets on a clock. Its log of what WardenOne blocked or
+  flagged kept the last 200 events for as long as the profile lived; it now
+  keeps them for 30 days at most -- the same period the notification copy of
+  those events already had -- pruned on every write, at browser start and daily,
+  and Clear history still removes everything at once. The addresses it keeps
+  are also trimmed harder: an order, account or phone number in a path, or a
+  short token mixing letters and digits, is blanked along with the tokens it
+  already blanked. Site, route and reason stay. The privacy policy and the
+  Activity page now say exactly what is kept and for how long.
+- The daily list refresh downloads each source once. Three lists -- EasyList,
+  AdGuard's tracking filter and the Anti-Grabify list -- were fetched twice per
+  refresh because two parts of WardenOne read them, and the ten cosmetic-filter
+  downloads ran all at once on top of the four blocklist downloads already in
+  flight, so up to fourteen multi-megabyte files could be arriving together. One
+  download now serves every part that needs it, four downloads run at a time
+  across the whole refresh, and the cosmetic lists are fetched after the
+  blocklists rather than beside them. Same lists, same checks on them, less
+  network and memory while it runs.
+- The README's protection counts agree with each other again. One line said 103
+  protections have their own switch and another said 104; the code says 104, and
+  the build now checks every number printed about protections -- in the README,
+  on the site, in the popup and in onboarding -- against the one list they come
+  from, and refuses a popup switch that nobody has said what it is.
+- The Network Logger no longer keeps anything that could be a secret. It used to
+  remove query values only when it recognised the parameter's name, so a
+  password in the address itself, a reset token in the path, a card number under
+  an unfamiliar name or a sign-in fragment all stayed in the log and in an
+  export -- while the page promised they were removed. It now removes sign-in
+  details, the fragment, every query value that is not a flag, a small number or
+  a plain word, and every part of a path that does not read as an ordinary
+  route; a redacted filename keeps its extension so you can still see what kind
+  of resource it was. What stays is what you need to write a rule: the site, the
+  route and the parameter names. The page and README now say exactly that, and
+  that an export is still a list of the sites you visited.
+- Page loads cost the background worker far less. Every frame of every page asks
+  the worker for its settings and lists as it starts, and the worker rebuilt that
+  answer from scratch each time -- reading storage and re-checking every entry of
+  four lists that hold thousands of them -- then sent the whole thing, including
+  a 5,000-entry list only the search-results marker can use, to every frame. An
+  ad-heavy article with thirty frames paid that thirty times over. The answer is
+  now built once and reused until a setting or a list actually changes, and each
+  script receives only the parts it uses, so a child frame that just needs its
+  switches gets a few hundred bytes instead of a quarter of a megabyte.
+- Mail Shield now reads its own switch when it starts. It looked for the setting
+  under a name the worker never sends, so the check always passed.
+- A page can no longer switch the forced-redirect warning off for its own tab.
+  When a page throws the whole tab to another site by itself, WardenOne steps in
+  with a warning -- unless something in the tab explains the jump, such as your
+  click a moment earlier or the in-page guard having allowed that navigation.
+  Those explanations reach the background worker as small signals from the
+  page, and the check on them was a routing token that page scripts can read,
+  so a hostile page could send the "this was allowed" signal itself every couple
+  of seconds and keep the warning off indefinitely. The signals are now signed
+  with a key handed over before any page script exists, each one counts once,
+  and an "allowed" signal names the site it was for, so it cannot be used to
+  excuse a jump somewhere else.
+- The IP-grabber and cryptominer block lists can no longer be emptied by a read
+  that failed. Both are rebuilt every time Chrome starts the background worker,
+  from a packaged file plus the copy the daily update keeps in storage, and the
+  rebuild used to write whatever it had managed to read -- so if the packaged
+  file could not be fetched (which happens while Chrome is updating an
+  extension) or storage could not be read, the matching blocking rules were
+  deleted, silently, with the popup still showing both protections as on. A
+  rebuild now replaces the rules only once every source has been read; if one
+  could not be, the rules Chrome is already enforcing are left exactly as they
+  are, a warning is logged, and the read is retried a few times over the next
+  couple of minutes. Turning either protection off still clears its rules
+  straight away.
+- EyeShield no longer uses WardenOne's own permissions to fetch stylesheets a page
+  chose. To recolour a site's CDN-hosted stylesheets it needs their text, which a
+  page cannot read across origins, so it used to ask the background worker to
+  fetch them -- and the worker's permissions reach addresses no page may, such
+  as a router or a NAS on your own network. A hostname check stood in the way,
+  but a hostname cannot tell you where a public-looking name will actually point,
+  and Chrome gives an extension no way to find out first. So the request now
+  comes from inside the page itself, on the page's own terms: the same
+  cross-origin and private-network rules the browser applies to the page apply
+  to it, and a page gains nothing it did not already have. Stylesheets on hosts
+  that let pages read them (every CDN that serves web fonts does) are recoloured
+  as before; a host that does not keeps its own colours, which EyeShield's
+  computed-background fallback already covers for.
+- Download Shield keeps the redirect chain a download came through, even when
+  Chrome put the background worker to sleep in between. The ten-minute record of
+  recent redirects is saved to session storage so it survives that, but a worker
+  that woke without reading it back would overwrite the saved copy with only what
+  it had seen itself -- so the first redirect anywhere in the browser after a
+  wake (a link shortener, a login bounce) erased the chain you had just followed,
+  and the download that followed was graded without it. The saved copy is now
+  read back before it is written, so both halves are kept. Entries still expire
+  after ten minutes and the record still holds a digest of each address, not the
+  address.
+- WardenOne's background worker stops redoing work every time Chrome wakes it.
+  Chrome starts the worker for any message, tab event or alarm, and every start
+  used to remove and re-add four sets of blocking rules in full (one of them up
+  to a thousand rules), tear down and recreate the right-click menu, and list
+  every installed extension twice -- whether or not anything had changed. The
+  rules are now compared with what the browser already holds and written only
+  when they differ, the menu is rebuilt only when its definition or the switch
+  that controls it changed (and always after an install or a browser start), and
+  the extension check runs once per browser session, with changes still caught
+  the moment they happen. Nothing is skipped that could have changed: a rule set
+  the browser lost, or a switch that moved, is put right on the next wake.
+- My Rules and Custom Lists say which rules are actually in use. The blocking-rule
+  band holds 500 across your own rules and every subscribed list; anything past
+  that used to be counted anyway and shown as "hiding rules", so 550 blocking lines
+  read as 500 blocking and 50 hiding, and the 50 that did nothing were reported as
+  doing something else. Overflow is now its own number, each overflowing line is
+  named beside the refused ones, the save says "Saved, but not all of it is in use"
+  when that is true, and every list row shows its share of the band -- your own
+  rules are served first, then the lists in the order you added them.
+- The per-site firewall no longer keeps decisions it is not enforcing. It holds 250
+  rules across every site; a decision past that used to be stored and drawn as
+  yours while never becoming a rule, and which ones ran depended on the order they
+  were made in. A decision that would not fit is now refused with the count and
+  nothing is stored, and any cell stored before this that has no rule behind it is
+  drawn struck through and counted as not in effect.
+- Protection Health no longer calls a count of switches "Active shields", and no
+  longer says "You're safe" without checking the page in front of you. The
+  number is labelled "Switched on" -- that is what it is. The panel now asks the
+  tab the popup is open on whether the in-page engine answers its signed check,
+  the same question Verify & Repair asks, and shows the answer on its own line:
+  engine verified, engine missing, paused on this site, not injected here, cannot
+  be checked (a browser page), or not confirmed yet. "You're safe" is said only
+  when that page verified and nothing else is wrong; otherwise the headline is
+  "Protections on" and the detail says what could be checked and why the page
+  itself could not. A page that has not answered yet, or that Chrome keeps
+  extensions out of, lowers nothing -- only an engine the page's own bridge
+  reports missing does.
+- Turning Silent mode off brings your toasts and badge back. Silent used to be
+  written into those two switches -- the popup unchecked them while Silent was on
+  and saved them that way -- so turning it off left both off until you found and
+  re-enabled them yourself, and Silent chosen during onboarding, which wrote only
+  the one setting, silenced nothing. Silent is now a gate over what the page shows,
+  applied to the copy of your settings the page receives; the switches underneath
+  keep your choices and are greyed while Silent is on. A profile the old popup
+  had already left with both switches off gets Normal back the next time Silent
+  is turned off.
+- Memory Shield's five-minute sweep could be postponed for as long as you kept
+  browsing. Every time Chrome started the extension's worker -- which a navigation
+  or a message does, many times an hour -- the sweep alarm was created again, and
+  Chrome treats that as cancel-and-replace, so the sweep moved another five minutes
+  away each time and on a busy session never came round. The alarm Chrome already
+  holds is read first now and kept; it is created only when there is none, or when
+  its period has changed. Turning Memory Shield off still clears it at once.
+- Four network protections could switch themselves off without anyone asking. The
+  DNT/GPC request headers, location-header minimisation, tracking-cookie stripping
+  and Force HTTPS were each refreshed by clearing their rule with one call and
+  installing the replacement with a second; Chrome ends a service worker whenever
+  it likes, and a worker that died between the two left the setting saying "on"
+  with no rule behind it until the next browser start. Each rule is now replaced in
+  a single call carrying both the removal and the addition, which Chrome applies as
+  one transaction, and Force HTTPS refreshes its persistent copy first and its
+  session copy second so neither store is ever empty while the setting is on. A
+  new suite reads every rule update in the worker for the two-call shape and models
+  a worker death after each call.
+- Search-result warnings now actually appear. Three things had silenced them
+  everywhere: DuckDuckGo puts an empty results container before the one its
+  results live in, and only the first was ever read; Bing and Yahoo hand out
+  every result through their own redirect link, so each result looked like the
+  search engine itself; and Bing quietly deletes anything added inside a result,
+  so the line vanished within seconds of being drawn. Every results container is
+  read now, the destination is read out of the engine's redirect, and the line is
+  drawn by the stylesheet on the result itself, where nothing can remove it. A
+  search made while WardenOne is still downloading its lists after install is
+  asked again once they are in, instead of being remembered as clean. The line is
+  a symbol and a sentence in the page's own text above the result, not a red bar,
+  one per result even when Google nests a block per sitelink, and it says what
+  the site is: an IP logger is called an IP logger, not "malware and scam", even
+  when it is on those lists too. The search engine's own links are never marked.
+  The line also arrives with the results now instead of most of a second after
+  them: the packaged IP-logger list travels with the page's own script, so a
+  known logger is named before the background worker is even asked, the worker
+  answers with what it already holds rather than waiting for its lists to reload,
+  and the page draws that answer the moment it lands.
 - Stopped pages that describe ClickFix being warned about as if they were one.
   The instruction reading matched the words alone, so a security write-up or
   WardenOne's own GitHub page -- which explains the trick in a paragraph -- got the

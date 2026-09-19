@@ -730,28 +730,31 @@ function persistHistBuffer() {
 // diagnostic detail; getting it wrong the other way costs someone their account.
 const LOG_URL_MAX = 300;
 const LOG_SEGMENT_MAX = 24;
+// What a route word may be made of: lowercase words, small numbers, or a word with a small number
+// on the end (v2, oauth2, h264), joined by the separators routes use. Two shapes this used to keep
+// are identifiers as often as they are routes -- a run of digits of any length (an account, order
+// or phone number) and a short run mixing letters and digits (x7k2p9, ord7f3k2) -- and this log
+// is durable and exportable, so they go (PRIV-08). A plain lowercase word cannot be told from a
+// name and stays; the host and the event category are the context this log exists to keep.
+const LOG_ROUTE_PART = '(?:[a-z]+|\\d{1,4}|[a-z]{1,6}\\d{1,3})';
+const LOG_ROUTE_WORD = new RegExp('^' + LOG_ROUTE_PART + '(?:[._~-]' + LOG_ROUTE_PART + ')*$');
 function safeLogSegment(segment) {
   if (!segment) return segment;
   let decoded = segment;
   // Percent-encoding would otherwise hide both the length and the shape of a secret.
   try { decoded = decodeURIComponent(segment); } catch (_) {}
   if (decoded.length > LOG_SEGMENT_MAX) return '*';
-  // An email address in a path is personal data even when it is short and wordlike.
-  if (decoded.includes('@')) return '*';
-  // Route vocabulary: letters, digits, and the separators routes actually use. A segment that is
-  // all digits is an ordinary record id and stays; one that mixes cases and digits is far more
-  // likely to be a token than a word, so it goes.
-  if (!/^[A-Za-z0-9._~-]+$/.test(decoded)) return '*';
-  if (/^\d+$/.test(decoded)) return decoded;
-  // Any uppercase at all is enough to redact. Route names are lowercase by overwhelming
-  // convention, while tokens are routinely upper or mixed case -- and requiring BOTH cases plus a
-  // digit let SECRET123, this finding's own repro, straight through on the first attempt. Losing
-  // the occasional camelCase route from a diagnostic line is a much cheaper mistake.
-  if (/[A-Z]/.test(decoded)) return '*';
+  // A record id of up to eight digits is an ordinary route element and stays. Nine or more is a
+  // phone, card or account number far more often than it is a route.
+  if (/^\d+$/.test(decoded)) return decoded.length <= 8 ? decoded : '*';
   // Long unbroken alphanumeric runs are what hex, base64 and JWT fragments look like; real route
   // words are broken up by hyphens, dots or underscores well before this length.
-  if (/[A-Za-z0-9]{16,}/.test(decoded)) return '*';
-  return decoded;
+  if (/[a-z0-9]{16,}/i.test(decoded)) return '*';
+  // Everything else -- an address, any upper case (route names are lowercase by overwhelming
+  // convention, tokens are not), a token mixing letters and digits, anything outside the
+  // separators routes use -- is blanked. Getting this wrong costs a diagnostic detail; getting it
+  // wrong the other way keeps somebody's identifier for thirty days.
+  return LOG_ROUTE_WORD.test(decoded) ? decoded : '*';
 }
 function safeLogPath(pathname) {
   const path = String(pathname || '');
@@ -795,6 +798,39 @@ function sanitizeHistoryDetail(value, depth) {
   return out;
 }
 
+// The history keeps its last HISTORY_MAX events and, since PRIV-08, only for HISTORY_RETENTION_MS:
+// the same thirty days the notification copy of the same events has always had, so the two
+// copies expire together rather than one outliving the other for as long as the profile did.
+// Applied on every write, on browser start and on the daily alarm; the Activity Centre page also
+// ignores an entry past it, so nothing expired is shown even before the worker has pruned.
+const HISTORY_MAX = 200;
+const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+function pruneHistoryEntries(hist, now) {
+  const cutoff = (Number(now) || Date.now()) - HISTORY_RETENTION_MS;
+  const kept = (Array.isArray(hist) ? hist : []).filter((e) => {
+    // An entry with no readable time cannot be aged and would otherwise stay forever.
+    const at = Number(e && e.at);
+    return Number.isFinite(at) && at >= cutoff;
+  });
+  if (kept.length > HISTORY_MAX) kept.length = HISTORY_MAX;
+  return kept;
+}
+async function pruneHistoryStore(reason) {
+  if (INCOGNITO_CONTEXT) return false;
+  try {
+    const store = await localGet('wardenone_history');
+    const raw = store && store.wardenone_history;
+    if (!Array.isArray(raw)) return false;
+    const kept = pruneHistoryEntries(raw, Date.now());
+    if (kept.length === raw.length) return false;
+    await localSet({ wardenone_history: kept });
+    return true;
+  } catch (e) {
+    console.warn('[WardenOne] history prune failed (' + reason + ')', e);
+    return false;
+  }
+}
+
 function queueHistory(entry) {
   if (INCOGNITO_CONTEXT) return;
   // Sanitised here, at the one choke point every history write already passes
@@ -804,6 +840,9 @@ function queueHistory(entry) {
   if (safe.detail !== undefined && safe.detail !== null) {
     safe.detail = sanitizeHistoryDetail(safe.detail, 0);
   }
+  // Every entry carries the time it is aged by; a caller that forgot is stamped here rather than
+  // dropped at the next prune.
+  if (!Number.isFinite(Number(safe.at))) safe.at = Date.now();
   try { recordWardenNotification(safe); } catch (_) {}
   __histBuffer.push(safe);
   persistHistBuffer();
@@ -906,8 +945,9 @@ function flushHistory() {
         const hist = Array.isArray(raw) ? raw.slice() : [];
         // pending is oldest-first; unshift in reverse so newest ends up at index 0
         for (let i = pending.length - 1; i >= 0; i--) hist.unshift(pending[i]);
-        if (hist.length > 200) hist.length = 200;
-        chrome.storage.local.set({ wardenone_history: hist }, () => {
+        // By time first, then by count (PRIV-08).
+        const kept = pruneHistoryEntries(hist, Date.now());
+        chrome.storage.local.set({ wardenone_history: kept }, () => {
           try {
             const err = chrome.runtime.lastError;
             if (err) {
@@ -1005,7 +1045,7 @@ function sessionArea() {
 function sessionMirror(key, snapshot, restore) {
   let ready = null;
   let timer = null;
-  return {
+  const mirror = {
     ready() {
       if (ready) return ready;
       ready = new Promise((resolve) => {
@@ -1027,10 +1067,20 @@ function sessionMirror(key, snapshot, restore) {
       // Coalesced: a redirect chain or a permission burst would otherwise write once per event.
       timer = setTimeout(() => {
         timer = null;
-        try { area.set({ [key]: snapshot() }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+        // Restore before the snapshot is taken. A worker that has not read the stored copy yet
+        // holds only what it has seen since it woke, and writing that replaced the whole window
+        // with it: the first redirect hop anywhere in the browser after a suspension erased the
+        // chain recorded before it, well inside its ten-minute TTL, so the download that
+        // followed had nothing to be matched against (LIFE-03). The restore merges and never
+        // rejects, so after it the snapshot is both halves -- and it is one read per worker
+        // lifetime, shared with the readers, not one per write.
+        mirror.ready().then(() => {
+          try { area.set({ [key]: snapshot() }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+        });
       }, 250);
     },
   };
+  return mirror;
 }
 
 const REDIRECT_CHAINS = Object.create(null);
@@ -1388,17 +1438,34 @@ async function purgeTrackingBounces(chain, finalUrl, cfg) {
 // Interstitial, never a silent cancel: a wrong call here must stay recoverable.
 const PLAYER_GESTURE_AT = Object.create(null);
 const TOP_NAV_OWNED_AT = Object.create(null);
+const TOP_NAV_OWNED_HOST = Object.create(null);
 const LAST_TOP_URL = Object.create(null);
 const LAST_GESTURE_AT = Object.create(null);
 const FRAME_REDIRECT_WINDOW_MS = 1500;
 const FORCED_NAV_GESTURE_MS = 5000;
 
-function noteNavSignal(tabId, signal) {
+// These arrive from the isolated bridge, which relays only beacons signed with the key it
+// handed the page's MAIN world at document_start -- a page holding the public token cannot
+// produce one (SEC-13). An authorisation is bound to the host the in-page guard let the
+// navigation go to: it explains a navigation to that host and no other, so a page cannot arm
+// it with a decoy and spend it on a jump somewhere else. Without a host it is not recorded.
+function noteNavSignal(tabId, signal, host) {
   if (tabId == null || tabId < 0) return { ok: true };
   if (signal === 'player-gesture') PLAYER_GESTURE_AT[tabId] = Date.now();
-  else if (signal === 'top-nav-authorized') TOP_NAV_OWNED_AT[tabId] = Date.now();
+  else if (signal === 'top-nav-authorized') {
+    const clean = messageCleanHost(host);
+    if (!clean) return { ok: false };
+    TOP_NAV_OWNED_AT[tabId] = Date.now();
+    TOP_NAV_OWNED_HOST[tabId] = registrableDomainBg(clean) || clean;
+  }
   else if (signal === 'gesture') LAST_GESTURE_AT[tabId] = Date.now();
   return { ok: true };
+}
+// Whether our own top-frame hooks announced a navigation to THIS host within the window.
+function topNavOwnedFor(tabId, toHost, now, windowMs) {
+  const at = TOP_NAV_OWNED_AT[tabId];
+  if (!at || now - at >= windowMs) return false;
+  return !!toHost && TOP_NAV_OWNED_HOST[tabId] === toHost;
 }
 
 // Ad-auction click trackers. These parameters are the machinery of a real-time
@@ -1472,7 +1539,7 @@ async function maybeBlockForcedTopRedirect(details) {
   if (!fromHost || !toHost || fromHost === toHost) return;
   const now = Date.now();
   if (now - (LAST_GESTURE_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS) return;
-  if (now - (TOP_NAV_OWNED_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS) return;
+  if (topNavOwnedFor(tabId, toHost, now, FORCED_NAV_GESTURE_MS)) return;
   try {
     if (isLoginCompatibilityUrl(details.url) || isLoginCompatibilityUrl(fromUrl)) return;
   } catch (_) {}
@@ -1519,6 +1586,7 @@ async function maybeBlockForcedTopRedirect(details) {
 function forgetNavSignals(tabId) {
   delete PLAYER_GESTURE_AT[tabId];
   delete TOP_NAV_OWNED_AT[tabId];
+  delete TOP_NAV_OWNED_HOST[tabId];
   delete LAST_GESTURE_AT[tabId];
 }
 
@@ -1681,10 +1749,6 @@ async function maybeFlagFrameDrivenRedirect(details) {
   if (!gestureAt) return;
   const now = Date.now();
   if (now - gestureAt > FRAME_REDIRECT_WINDOW_MS) return;
-  // Our own top-frame hooks announce everything they let through, so if one just
-  // did, the page navigated itself and the click layer has already judged it.
-  const ownedAt = TOP_NAV_OWNED_AT[tabId];
-  if (ownedAt && now - ownedAt <= FRAME_REDIRECT_WINDOW_MS) return;
   const fromUrl = LAST_TOP_URL[tabId] || '';
   if (!fromUrl) return;
   let fromHost = '';
@@ -1692,6 +1756,10 @@ async function maybeFlagFrameDrivenRedirect(details) {
   try { fromHost = registrableDomain(new URL(fromUrl).hostname); } catch (_) { return; }
   try { toHost = registrableDomain(new URL(String(details.url || '')).hostname); } catch (_) { return; }
   if (!fromHost || !toHost || fromHost === toHost) return;
+  // Our own top-frame hooks announce everything they let through, so if one just
+  // did -- to this host -- the page navigated itself and the click layer has already
+  // judged it.
+  if (topNavOwnedFor(tabId, toHost, now, FRAME_REDIRECT_WINDOW_MS + 1)) return;
   let cfg = {};
   try { const st = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {}); } catch (_) {}
   if (cfg.enabled === false || cfg.blockPopupTricks === false) return;
@@ -1787,12 +1855,39 @@ async function evaluateRedirectChain(details) {
     } catch (_) {}
   }
 }
-try {
+// ---- Listener registration, one at a time ----------------------------------------------------
+// A registration that throws must not take the ones after it down with it. The five listeners
+// below -- the redirect-hop recorder, the redirect-chain evaluator, the popup tracker, the
+// tab-close cleanups and the forced-redirect guard, across three Chrome namespaces -- used to
+// share one try, so a throw in the first (an invalid filter, an API unavailable at call time, a
+// future API change) would have silently dropped the other four for the worker's lifetime while
+// every setting reported them on (LIFE-04). Each goes through this helper now: it catches on its
+// own and records the name of what could not register, so Protection Health can say so rather
+// than "You're safe". The list is worker memory on purpose: the next wake registers afresh, and
+// what it holds is exactly what is missing from this lifetime.
+const LISTENERS_NOT_REGISTERED = [];
+function registerListener(name, register) {
+  try {
+    register();
+    return true;
+  } catch (e) {
+    LISTENERS_NOT_REGISTERED.push(String(name));
+    console.warn('[WardenOne] listener did not register: ' + name, e);
+    return false;
+  }
+}
+registerListener('redirect-hop recording', () => {
   chrome.webRequest?.onBeforeRedirect?.addListener(noteRedirectHop, { urls: ['<all_urls>'], types: ['main_frame'] });
+});
+registerListener('redirect-chain warnings', () => {
   chrome.webNavigation?.onCompleted?.addListener(evaluateRedirectChain);
+});
+registerListener('popup tracking', () => {
   chrome.webNavigation?.onCreatedNavigationTarget?.addListener((details) => {
     if (details && details.sourceTabId != null && details.sourceTabId >= 0) POPUP_OPENED_AT[details.sourceTabId] = Date.now();
   });
+});
+registerListener('tab-close cleanup', () => {
   chrome.tabs.onRemoved.addListener((tabId) => {
     const left = domainOfTab(tabId);
     delete REDIRECT_CHAINS[tabId];
@@ -1804,8 +1899,10 @@ try {
     if (left) maybeClearOnLeave(left);
     if (left) maybeClearServiceWorkersOnLeave(left);
   });
-  // A committed page is a clean slate: the previous page's click must not be able
-  // to explain the next page's navigation.
+});
+// A committed page is a clean slate: the previous page's click must not be able
+// to explain the next page's navigation.
+registerListener('forced-redirect guard', () => {
   chrome.webNavigation?.onCommitted?.addListener((details) => {
     if (details.frameId !== 0) return;
     // Before LAST_TOP_URL moves on: the guard needs the page being left, and
@@ -1818,18 +1915,13 @@ try {
     forgetNavSignals(details.tabId);
     if (left && left !== domainOfTab(details.tabId)) maybeClearOnLeave(left);
   });
-} catch (_) {}
-
-// Fallback reset via tabs.onUpdated (in case webNavigation perm isn't present).
-// GUARD: Skip internal extension pages to prevent spurious badge resets and
-// avoid any risk of update-driven loops if this listener ever grows more logic.
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (!changeInfo.url || changeInfo.url.startsWith(chrome.runtime.getURL(""))) return;
-  if (changeInfo.status === 'loading') {
-    counts[tabId] = 0;
-    setBadge(tabId);
-  }
 });
+
+// There is no tabs.onUpdated fallback for that reset. One used to sit here "in case the
+// webNavigation permission isn't present", but webNavigation is a required permission in
+// the manifest, so onBeforeNavigate above always runs first and the fallback only ever
+// reset a count that was already zero. The census of tabs.onUpdated listeners, and why
+// their number is what it is, is at the Forget-Me listener further down.
 
 // Clean up when a tab closes.
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -2121,25 +2213,82 @@ function sanitizeSearchJunkForContent(raw) {
   return sanitizeSupplementalBucket(source, 'searchJunkDomainsExtra');
 }
 
-async function buildContentConfigSnapshot(frameHost) {
-  const store = await localGet([
-    'wardenone_config',
-    'wardenone_learned',
-    SUPPLEMENTAL_LIST_STORAGE_KEY,
-    'wardenone_search_junk_domains',
-  ]);
+// The snapshot every content script asks for is a pure function of four storage keys, and it
+// changes at most a few times a day. It used to be rebuilt for every request: the four-key read,
+// then the sanitisers over 173 fields, up to a thousand learned hosts and four list buckets at
+// their caps, each entry through a URL construction -- tens of milliseconds and a couple of
+// hundred kilobytes per frame, thirty times over on an ad-heavy page, for an answer identical to
+// the last one (COST-01). It is built once here and served frozen to every caller until one of
+// its inputs is written: storage.onChanged clears it for those four keys (the same branch that
+// already tells the pages to refresh), and localSet clears it before that event can arrive, so
+// the worker's own writes are never served stale. The sanitisers stay exactly where they were:
+// this changes how often they run, not what they let through. The memo is worker memory, so a
+// split-incognito worker holds its own and neither can serve the other's.
+// A function rather than a constant: SUPPLEMENTAL_LIST_STORAGE_KEY is declared further down the
+// file, and this is read only at call time.
+function contentConfigInputKeys() {
+  return ['wardenone_config', 'wardenone_learned', SUPPLEMENTAL_LIST_STORAGE_KEY, 'wardenone_search_junk_domains'];
+}
+let __contentConfigMemo = null;
+function invalidateContentConfigMemo() {
+  __contentConfigMemo = null;
+}
+// Shared with every caller, so nothing a caller does to its answer can reach the next one. The
+// message boundary clones it on the way to a content script; this is for anything in the worker.
+function deepFreezeSnapshot(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const key of Object.keys(value)) deepFreezeSnapshot(value[key]);
+  return Object.freeze(value);
+}
+function sharedContentConfigSnapshot() {
+  if (__contentConfigMemo) return __contentConfigMemo;
+  const build = (async () => {
+    const store = await localGet(contentConfigInputKeys());
+    return deepFreezeSnapshot({
+      overrides: sanitizeContentConfig(store && store.wardenone_config),
+      learned: sanitizeLearnedForContent(store && store.wardenone_learned),
+      supplemental: sanitizeSupplementalLists(store && store[SUPPLEMENTAL_LIST_STORAGE_KEY]),
+      searchJunkDomains: sanitizeSearchJunkForContent(store && store.wardenone_search_junk_domains),
+    });
+  })();
+  __contentConfigMemo = build;
+  // A failed read is not a snapshot: the next caller reads again rather than being served it.
+  build.catch(() => { if (__contentConfigMemo === build) __contentConfigMemo = null; });
+  return build;
+}
+// What a caller may ask for. 'supplemental' is the three buckets the engine reads; 'searchJunk' is
+// the search-copycat list and its supplemental bucket, which only the top-frame search marker
+// can use -- every child frame used to receive both. A request that names nothing gets the
+// whole answer, as before.
+const CONTENT_CONFIG_NEEDS = new Set(['overrides', 'learned', 'supplemental', 'searchJunk', 'hidden']);
+function contentConfigNeeds(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = new Set();
+  for (const need of raw) if (CONTENT_CONFIG_NEEDS.has(need)) out.add(need);
+  return out.size ? out : null;
+}
+async function buildContentConfigSnapshot(frameHost, needs) {
+  const shared = await sharedContentConfigSnapshot();
+  const want = (part) => !needs || needs.has(part);
   // Hidden-element rules for the asking frame, when it named a host (see content-config-get).
   let hidden = [];
-  if (frameHost) {
+  if (want('hidden') && frameHost) {
     try { hidden = hiddenSelectorsForHost(await readHiddenElements(), frameHost).slice(0, 100); } catch (_) { hidden = []; }
   }
+  const supplemental = emptySupplementalLists();
+  if (want('supplemental')) {
+    supplemental.adultDomainsExtra = shared.supplemental.adultDomainsExtra;
+    supplemental.grabberDomainsExtra = shared.supplemental.grabberDomainsExtra;
+    supplemental.trustedPaymentHostsExtra = shared.supplemental.trustedPaymentHostsExtra;
+  }
+  if (want('searchJunk')) supplemental.searchJunkDomainsExtra = shared.supplemental.searchJunkDomainsExtra;
   return {
     ok: true,
     hidden,
-    overrides: sanitizeContentConfig(store && store.wardenone_config),
-    learned: sanitizeLearnedForContent(store && store.wardenone_learned),
-    supplemental: sanitizeSupplementalLists(store && store[SUPPLEMENTAL_LIST_STORAGE_KEY]),
-    searchJunkDomains: sanitizeSearchJunkForContent(store && store.wardenone_search_junk_domains),
+    overrides: want('overrides') ? shared.overrides : {},
+    learned: want('learned') ? shared.learned : {},
+    supplemental,
+    searchJunkDomains: want('searchJunk') ? shared.searchJunkDomains : [],
   };
 }
 
@@ -2284,6 +2433,7 @@ chrome.runtime.onStartup?.addListener(() => {
   clearRebindQuarantine();
   scheduleUpdates();
   pruneStorageIfNeeded('startup').catch(() => {});
+  pruneHistoryStore('startup').catch(() => {});
   updateRemoteListsWithRetry('startup');
   applyScriptShieldRules();
   refreshExtensionState();
@@ -2768,12 +2918,12 @@ function parseCosmeticFilters(text) {
 // Fetch + parse the cosmetic lists, store the result. Errors are non-fatal: a
 // cosmetic-list outage must never break the extension.
 async function updateAdShieldCosmetics() {
+  LIST_BROKER.retain();
   try {
-    // Fetch every source in parallel. Each source still fails independently (one
-    // list outage must never block the others), and successful texts are joined
-    // in list order so behaviour is unchanged. Parallel fetch collapses ~10
-    // sequential network round-trips into one batch, so a single slow CDN no
-    // longer stalls the entire cosmetic refresh.
+    // Every source is requested at once; the broker puts them on the wire four at a time behind
+    // whatever the network batch still has out, so this no longer adds ten bodies beside it. Each
+    // source still fails independently (one list outage must never block the others), and
+    // successful texts are joined in list order so behaviour is unchanged.
     const texts = await Promise.all(ADSHIELD_COSMETIC_LISTS.map(async (url) => {
       try {
         const fetched = await fetchValidatedRemoteListText(url, true, LIST_FETCH_TIMEOUT_MS);
@@ -2820,6 +2970,8 @@ async function updateAdShieldCosmetics() {
     await pruneStorageIfNeeded('adshield-cosmetic');
   } catch (e) {
     console.warn('[WardenOne] AdShield cosmetic update failed', e);
+  } finally {
+    LIST_BROKER.release();
   }
 }
 
@@ -3221,6 +3373,70 @@ function validateRemoteListSource(url, includeCosmetic) {
   }
 }
 
+// ---- One request per source per refresh ----------------------------------------------------------
+// Three pipelines read the remote lists -- the network sets, the cosmetic set and the supplemental
+// buckets -- and each owned its own fetches, so a default refresh made 40 requests for 37 addresses:
+// EasyList and AdGuard's tracking filter were downloaded once for the network rules and again for
+// the cosmetic rules, Anti-Grabify once for the grabber rules and again for the page-side grabber
+// list; and the ten cosmetic downloads ran all at once beside the four-wide network batch, so up to
+// fourteen multi-megabyte bodies were in flight together (PERF-07). This broker sits under all
+// three. One request per address: a second reader of an address in flight waits for the same
+// response. A body that more than one pipeline has PLANNED to read is kept until the last of them
+// has taken it, and released the moment it has -- nothing is held for a reader that was never
+// coming, and everything is dropped when the last pipeline lets go of the broker. Every fetch from
+// every pipeline waits in one queue of LIST_FETCH_CONCURRENCY, so the cap is a cap on the refresh
+// and not on each of its parts. Nothing about what a pipeline may read changed: each validates the
+// address against its own policy before it asks (below), and the byte cap is a property of the
+// address, so a shared body is under the strictest cap that applies to it. A failed fetch is
+// handed to whoever was waiting and not kept; the next reader tries again.
+const LIST_BROKER = (() => {
+  const inflight = new Map();   // url -> the request out for it
+  const bodies = new Map();     // url -> a result kept for readers still planned
+  const wanted = new Map();     // url -> planned readers who have not taken it yet
+  const queue = [];
+  let active = 0;
+  let holders = 0;
+  const next = () => {
+    while (active < LIST_FETCH_CONCURRENCY && queue.length) { active++; queue.shift()(); }
+  };
+  const run = (job, url) => new Promise((resolve) => {
+    queue.push(() => {
+      Promise.resolve().then(job).then(resolve, (e) => resolve({ ok: false, url, error: String(e) }))
+        .finally(() => { active--; next(); });
+    });
+    next();
+  });
+  return {
+    plan(urls) { for (const url of urls || []) if (url) wanted.set(url, (wanted.get(url) || 0) + 1); },
+    retain() { holders++; },
+    release() {
+      holders = Math.max(0, holders - 1);
+      if (!holders) { bodies.clear(); wanted.clear(); }
+    },
+    async take(policy, timeoutMs) {
+      const url = policy.url;
+      const left = wanted.get(url) || 0;
+      if (left > 0) wanted.set(url, left - 1);
+      let result = bodies.get(url);
+      if (!result) {
+        let pending = inflight.get(url);
+        if (!pending) {
+          pending = run(() => fetchRemoteListTextRaw(policy, timeoutMs), url).then((r) => {
+            inflight.delete(url);
+            if (r && r.ok && (wanted.get(url) || 0) > 0) bodies.set(url, r);
+            return r;
+          });
+          inflight.set(url, pending);
+        }
+        result = await pending;
+      }
+      if ((wanted.get(url) || 0) <= 0) bodies.delete(url);
+      return result;
+    },
+    stats() { return { active, queued: queue.length, bodies: bodies.size, holders }; },
+  };
+})();
+
 async function fetchValidatedRemoteListText(url, includeCosmetic, timeoutMs) {
   const policy = validateRemoteListSource(url, !!includeCosmetic);
   if (!policy.ok) {
@@ -3232,6 +3448,10 @@ async function fetchValidatedRemoteListText(url, includeCosmetic, timeoutMs) {
       policy,
     };
   }
+  return LIST_BROKER.take(policy, timeoutMs);
+}
+
+async function fetchRemoteListTextRaw(policy, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs || LIST_FETCH_TIMEOUT_MS);
   try {
@@ -3345,6 +3565,46 @@ const ALLOWLIST_RULE_BASE = 800000;
 // adshield/learned/grabber false-positive can't break a FUNCTIONAL subresource on a major SaaS app.
 const NEVER_BLOCK_ALLOW_RULE_BASE = 745000;
 const NEVER_BLOCK_ALLOW_MAX = 200;
+
+// Compare before writing (PERF-05). Four bands -- never-block allows, the reader's blocklist,
+// the grabber feed and the miner feed -- are rebuilt from their sources on every worker start,
+// and a worker starts on any message, tab event or alarm. Each rebuild used to be a remove of
+// every rule in the band and an add of every rule again, up to a thousand at a time, whether
+// or not a single one had changed. Chrome serialises that in the browser process on every
+// wake. The desired set is still built and the installed set is still READ -- external loss of
+// the band is detected and repaired on the next wake, which is the self-healing the worker
+// must keep -- but the write happens only when the two differ. The installed rule may carry
+// fields Chrome adds that this code never set; a desired rule matches when every field it
+// sets is present with the same value, whatever else is there.
+function dnrValueMatches(desired, installed) {
+  if (desired === installed) return true;
+  if (Array.isArray(desired)) {
+    if (!Array.isArray(installed) || installed.length !== desired.length) return false;
+    for (let i = 0; i < desired.length; i++) if (!dnrValueMatches(desired[i], installed[i])) return false;
+    return true;
+  }
+  if (desired && typeof desired === 'object') {
+    if (!installed || typeof installed !== 'object' || Array.isArray(installed)) return false;
+    for (const key of Object.keys(desired)) {
+      if (desired[key] === undefined) continue;
+      if (!Object.prototype.hasOwnProperty.call(installed, key)) return false;
+      if (!dnrValueMatches(desired[key], installed[key])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+function dnrBandUnchanged(installed, desired) {
+  if (!Array.isArray(installed) || !Array.isArray(desired) || installed.length !== desired.length) return false;
+  const byId = new Map();
+  for (const rule of installed) if (rule && typeof rule.id === 'number') byId.set(rule.id, rule);
+  if (byId.size !== installed.length) return false;
+  for (const rule of desired) {
+    const have = byId.get(rule && rule.id);
+    if (!have || !dnrValueMatches(rule, have)) return false;
+  }
+  return true;
+}
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
 // Blocklist-refresh chatter is opt-in; it fired on every update in the service
@@ -3829,45 +4089,147 @@ async function wardenBlockRuleLive(host) {
 const GRABBER_FEED_RULE_BASE = 740000;
 const GRABBER_FEED_MAX = 1000;
 const GRABBER_FEED_DOMAINS = new Set();
-function addGrabberFeedDomains(arr) {
+/* The packaged IP-logger list, as a set the worker can ask. rules.json is a DNR ruleset --
+   Chrome reads it, the worker never did -- so a logger that was also on a malware feed was
+   described by the feed. Read once, at start.
+   Only a rule that blocks a whole domain outright names a logger. The same file carries
+   ALLOW rules -- google.com, googleapis.com, accounts.google.com, login.microsoftonline.com
+   and the rest of the login-compat set -- and reading every rule's domains labelled Google's
+   own tabs on a Google results page as IP loggers. */
+const GRABBER_PACKAGED_DOMAINS = new Set();
+function packagedGrabberDomainsFrom(rules) {
+  const out = new Set();
+  for (const rule of (Array.isArray(rules) ? rules : [])) {
+    const cond = rule && rule.condition;
+    if (!rule || !rule.action || rule.action.type !== 'block' || !cond) continue;
+    if (cond.urlFilter || cond.regexFilter) continue;
+    if (!Array.isArray(cond.resourceTypes) || !cond.resourceTypes.includes('main_frame')) continue;
+    for (const d of (Array.isArray(cond.requestDomains) ? cond.requestDomains : [])) {
+      const v = String(d || '').trim().toLowerCase();
+      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v)) continue;
+      const rd = registrableDomainBg(v) || v;
+      if (isNeverBlockDomain(rd)) continue;
+      out.add(v);
+    }
+  }
+  return out;
+}
+/* The search-results page holds the same names, generated into search-loggers.js by
+   tools/build-search-loggers.js and registered in front of it (reconcileSearchJunkInjection);
+   the suite holds the two readings to one answer. */
+let __grabberPackagedLoad = null;
+function loadPackagedGrabberDomains() {
+  if (__grabberPackagedLoad) return __grabberPackagedLoad;
+  __grabberPackagedLoad = (async () => {
+    try {
+      const res = await fetch(chrome.runtime.getURL('rules.json'), { cache: 'no-store' });
+      const rules = res && res.ok ? await res.json() : [];
+      for (const v of packagedGrabberDomainsFrom(rules)) GRABBER_PACKAGED_DOMAINS.add(v);
+    } catch (_) {}
+  })();
+  return __grabberPackagedLoad;
+}
+loadPackagedGrabberDomains();
+/* A feed load that could not read one of its sources must not become a write. The two feeds
+   (this one and the cryptominer feed) are assembled from a packaged file plus a storage key the
+   daily update maintains, and the loaders used to empty their in-memory set first, read what they
+   could inside try/catch, and hand the applier whatever was left -- so a packaged fetch that
+   failed (an extension update replaces the files under a running worker) or a storage read that
+   failed deleted the matching rules from Chrome, on a cold start nothing had asked for, with
+   nothing logged and no retry before the next cold start (LIFE-02). A loader now builds into a
+   local set and replaces the live one only when EVERY source read completed -- a read that
+   completed with nothing stored is an answer; a read that failed is not -- and an incomplete load
+   leaves the set and the band exactly as they are and tries again on a short, bounded schedule.
+   The next worker start is itself a retry, so nothing here needs to outlive this one. */
+const FEED_LOAD_RETRY_MS = [5000, 30000, 120000];
+const __feedLoadRetries = new Map();
+function scheduleFeedLoadRetry(name, load) {
+  const state = __feedLoadRetries.get(name) || { attempt: 0, timer: null };
+  __feedLoadRetries.set(name, state);
+  if (state.timer || state.attempt >= FEED_LOAD_RETRY_MS.length) return false;
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    state.attempt++;
+    Promise.resolve().then(load).catch(() => {});
+  }, FEED_LOAD_RETRY_MS[state.attempt]);
+  return true;
+}
+function clearFeedLoadRetry(name) {
+  const state = __feedLoadRetries.get(name);
+  if (state && state.timer) clearTimeout(state.timer);
+  __feedLoadRetries.delete(name);
+}
+/* In place: readers hold the Set itself, and they keep answering from the last complete load. */
+function replaceFeedSet(target, next) {
+  target.clear();
+  for (const v of next) target.add(v);
+}
+async function readFeedConfig() {
+  try {
+    const s = await localGet('wardenone_config');
+    return Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {});
+  } catch (_) { return Object.assign({}, DEFAULT_CONFIG); }
+}
+/* The one case where an empty band is the right answer. */
+function grabberFeedDisabled(cfg) {
+  return cfg.enabled === false
+    || (cfg.blockGrabberResources === false && cfg.warnGrabberDomains === false && cfg.blockMalwareSites === false);
+}
+function addGrabberFeedDomains(arr, target) {
+  const into = target || GRABBER_FEED_DOMAINS;
   for (const d of (Array.isArray(arr) ? arr : [])) {
     const v = String(d || '').trim().toLowerCase().replace(/^\*?\.?/, '').replace(/\/.*$/, '');
     if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) || v.includes('..')) continue;
     const rd = registrableDomainBg(v) || v;
-    if (rd && !isNeverBlockDomain(rd)) GRABBER_FEED_DOMAINS.add(v);
+    if (rd && !isNeverBlockDomain(rd)) into.add(v);
   }
 }
 async function applyGrabberFeedRules() {
   try {
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const oldIds = existing.filter((x) => x.id >= GRABBER_FEED_RULE_BASE && x.id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX).map((x) => x.id);
-    let cfg = {};
-    try { const s = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); } catch (_) {}
-    const grabberOff = cfg.blockGrabberResources === false && cfg.warnGrabberDomains === false && cfg.blockMalwareSites === false;
-    const domains = (cfg.enabled === false || grabberOff) ? [] : Array.from(GRABBER_FEED_DOMAINS).slice(0, GRABBER_FEED_MAX);
+    const mine = existing.filter((x) => x.id >= GRABBER_FEED_RULE_BASE && x.id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX);
+    const cfg = await readFeedConfig();
+    const domains = grabberFeedDisabled(cfg) ? [] : Array.from(GRABBER_FEED_DOMAINS).slice(0, GRABBER_FEED_MAX);
     const addRules = domains.map((d, i) => ({
       id: GRABBER_FEED_RULE_BASE + i,
       priority: 2000,
       action: { type: 'block' },
       condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'media', 'object', 'other'] },
     }));
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+    // The largest band there is, rebuilt on every worker start: skipped when nothing changed.
+    if (dnrBandUnchanged(mine, addRules)) return;
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
   } catch (e) { console.warn('[WardenOne] grabber feed rules failed', e); }
 }
 async function loadGrabberFeed() {
-  GRABBER_FEED_DOMAINS.clear();
+  const next = new Set();
+  const failed = [];
   try {
     const res = await fetch(chrome.runtime.getURL('grabber-extra.json'), { cache: 'no-store' });
-    if (res && res.ok) { const data = await res.json(); addGrabberFeedDomains(Array.isArray(data) ? data : (data && data.domains)); }
-  } catch (_) {}
+    if (!res || !res.ok) throw new Error('http ' + (res ? res.status : '?'));
+    const data = await res.json();
+    addGrabberFeedDomains(Array.isArray(data) ? data : (data && data.domains), next);
+  } catch (_) { failed.push('packaged'); }
   try {
-    const x = await localGet(['wardenone_grabber_domains', SUPPLEMENTAL_LIST_STORAGE_KEY]);
+    const x = await localGetStrict(['wardenone_grabber_domains', SUPPLEMENTAL_LIST_STORAGE_KEY]);
     const stored = x && x.wardenone_grabber_domains;
-    addGrabberFeedDomains(Array.isArray(stored) ? stored : (stored && stored.domains));
+    addGrabberFeedDomains(Array.isArray(stored) ? stored : (stored && stored.domains), next);
     const supplemental = x && x[SUPPLEMENTAL_LIST_STORAGE_KEY];
-    addGrabberFeedDomains(supplemental && supplemental.grabberDomainsExtra);
-  } catch (_) {}
-  await applyGrabberFeedRules();
+    addGrabberFeedDomains(supplemental && supplemental.grabberDomainsExtra, next);
+  } catch (_) { failed.push('stored'); }
+  const complete = failed.length === 0;
+  if (complete) {
+    replaceFeedSet(GRABBER_FEED_DOMAINS, next);
+    clearFeedLoadRetry('grabber');
+  } else {
+    console.warn('[WardenOne] grabber feed load incomplete (' + failed.join(', ') + '); keeping the current rules');
+    scheduleFeedLoadRetry('grabber', loadGrabberFeed);
+  }
+  // The band follows a complete load, and it follows the switch even after an incomplete one --
+  // an empty band is right when the feature is off. What an incomplete load must never do is
+  // hand a partial set to the applier while the feature is on.
+  if (complete || grabberFeedDisabled(await readFeedConfig())) await applyGrabberFeedRules();
+  return { ok: complete, failed };
 }
 loadGrabberFeed();
 
@@ -3980,14 +4342,23 @@ function parseUserFilterLine(raw) {
 
 /* Parse a whole list. Returns everything a caller could want to show or apply,
    including the line number of each refusal so the editor can point at it. */
+/* The parse says what is IN USE and what is not, separately (M46). The network band holds
+   USER_RULE_MAX rules; a network line past that is `overflow`, named by line, and never a
+   rule. `count` is what is in use -- the rules emitted plus the cosmetic rules -- and
+   `cosmetic` is its own number, because the old answer carried only a running total that
+   went on counting past the cap, and the UI derived "hiding rules" as total minus network:
+   550 blocking lines read as 500 blocking and 50 hiding, and the 50 that did nothing were
+   reported as doing something else. */
 function parseUserFilterText(text, startId) {
   const lines = String(text || '').split(/\r?\n/);
   const network = [];
   const cosmeticByDomain = {};
   const genericCosmetic = [];
   const errors = [];
+  const overflowLines = [];
   let id = Number(startId) || USER_RULE_BASE;
-  let counted = 0;
+  let cosmetic = 0;
+  let overflow = 0;
   for (let i = 0; i < lines.length; i++) {
     const parsed = parseUserFilterLine(lines[i]);
     if (parsed.kind === 'blank' || parsed.kind === 'comment') continue;
@@ -3995,13 +4366,17 @@ function parseUserFilterText(text, startId) {
       if (errors.length < 100) errors.push({ line: i + 1, text: lines[i].trim().slice(0, 120), why: parsed.why });
       continue;
     }
-    counted++;
     if (parsed.kind === 'cosmetic') {
+      cosmetic++;
       if (!parsed.domains.length) genericCosmetic.push(parsed.selector);
       else for (const d of parsed.domains) (cosmeticByDomain[d] = cosmeticByDomain[d] || []).push(parsed.selector);
       continue;
     }
-    if (network.length >= USER_RULE_MAX) continue;
+    if (network.length >= USER_RULE_MAX) {
+      overflow++;
+      if (overflowLines.length < 100) overflowLines.push({ line: i + 1, text: lines[i].trim().slice(0, 120) });
+      continue;
+    }
     /* Above the learned/user-block rules so an exception the reader wrote can
        overrule an automatic block, and below the user allowlist so it can never
        overrule "this site is off". */
@@ -4012,7 +4387,43 @@ function parseUserFilterText(text, startId) {
       condition: { urlFilter: parsed.pattern },
     });
   }
-  return { network, cosmeticByDomain, genericCosmetic, errors, count: counted, nextId: id };
+  return { network, cosmeticByDomain, genericCosmetic, errors, cosmetic, overflow, overflowLines, count: network.length + cosmetic, nextId: id };
+}
+
+/* How the one network band is shared out, source by source, in the order the bundle is
+   built: the reader's own text first, then each enabled list in its stored order. That order
+   is the precedence -- a hand-written rule is never displaced by a subscription -- and it is
+   rebuilt from the same stored text on every start and every list refresh, so the admitted
+   set is the same after a restart as before it. Each source is parsed on its own to learn
+   how many network rules it brings; the band is then handed out down the line, so a list's
+   `applied` is what it gets AFTER the sources ahead of it, not what it would get alone. */
+function userFilterAllocation(own, lists) {
+  let left = USER_RULE_MAX;
+  const share = (text) => {
+    const parsed = parseUserFilterText(String(text || ''), USER_RULE_BASE);
+    const wanted = parsed.network.length + parsed.overflow;
+    const applied = Math.min(wanted, left);
+    left -= applied;
+    return { network: wanted, applied, overflow: wanted - applied, cosmetic: parsed.cosmetic, skipped: parsed.errors.length };
+  };
+  const out = { own: share(own), lists: {} };
+  for (const l of (lists || [])) {
+    if (!l || !l.id) continue;
+    if (l.enabled === false || typeof l.text !== 'string' || !customListTransportOk(l)) {
+      const parsed = parseUserFilterText(String(l.text || ''), USER_RULE_BASE);
+      out.lists[l.id] = { network: parsed.network.length + parsed.overflow, applied: 0, overflow: 0, cosmetic: parsed.cosmetic, skipped: parsed.errors.length, off: true };
+      continue;
+    }
+    out.lists[l.id] = share(l.text);
+  }
+  out.limit = USER_RULE_MAX;
+  out.used = USER_RULE_MAX - left;
+  return out;
+}
+/* The list rows as the page shows them: no text, and each with its share of the band. */
+function customListRowsFor(lists, own) {
+  const allocation = userFilterAllocation(own, lists);
+  return (lists || []).map((l) => Object.assign({}, l, { text: undefined }, allocation.lists[l && l.id] || {}));
 }
 
 async function readUserRulesText() {
@@ -4117,9 +4528,9 @@ async function commitUserFilters(candidate) {
   return { ok: true, bundle, applied: result.count };
 }
 
-/* Fetch one subscription. Reuses the public-URL guard the stylesheet fetcher
-   uses, so a list URL cannot be pointed at a private address, a non-default
-   port, or walked through a redirect onto one. */
+/* Fetch one subscription. The public-URL guard means a list URL cannot be
+   pointed at a private address, a non-default port, or walked through a
+   redirect onto one. */
 // HTTPS only, at the start and through every redirect (H20). The page and the README
 // promised it; the fetch accepted http:// and followed https->http redirects, and a list
 // carries @@ exceptions at priority 98000 -- so anyone on the network could have written
@@ -4326,25 +4737,88 @@ function logRuleCanBlock(ruleId, rulesetId) {
   return false;
 }
 
-/* Anything that looks like a credential is replaced before the entry is stored,
-   not when it is displayed. A log that holds the token is a log that leaks it. */
+/* Anything that could be a credential is replaced before the entry is stored, not when it is
+   displayed. A log that holds the token is a log that leaks it.
+
+   This used to be a denylist -- a fixed list of parameter names, plus "any value over 64
+   characters" and "any fragment over 12" -- and a denylist has to know every secret's name and
+   shape in advance. It left https://alice:secret@site/ whole, kept a password-reset token that
+   travelled in the PATH, and kept ?card=4111111111111111 because "card" was not on the list and
+   sixteen digits are not long (M49, PRIV-09). The direction is reversed now, the way the
+   Activity Centre's own URL sanitiser (safeLogSegment) already works: everything goes unless it
+   is recognisably harmless. Sign-in details always go. The fragment goes whole -- that is where
+   OAuth implicit-flow tokens travel. A path segment stays only when it reads as route vocabulary
+   (lowercase words, a short number), with a known file extension kept on a redacted filename so
+   the row still says what kind of resource it was. Parameter NAMES stay, because "which
+   parameters were present" is what a rule needs; a parameter VALUE stays only when it is a flag,
+   a small number or lowercase words, and never under a name that says it is a secret. Getting
+   this wrong in one direction costs a diagnostic detail; in the other it costs someone their
+   account, so the harmless list is short and the rest is replaced. */
 const LOG_SECRET_PARAM = /^(access_?token|id_?token|refresh_?token|token|auth|authorization|api_?key|apikey|key|secret|password|passwd|pwd|session|session_?id|sid|sig|signature|code|jwt|bearer|otp|pin|email|e_?mail|phone|ssn)$/i;
+const LOG_HARMLESS_VALUE = /^(?:true|false|yes|no|on|off|null|undefined|\d{1,6}|[a-z]+(?:[._-][a-z0-9]{1,12})*)$/;
+const LOG_VALUE_MAX = 24;
+const LOG_KEEP_EXTENSION = /^(?:js|mjs|css|map|png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|eot|json|xml|txt|html?|pdf|mp4|webm|m4s|m3u8|mpd|ts|mp3|m4a|ogg|wav|wasm|zip|gz|csv)$/i;
+function logRedactSegment(segment) {
+  if (!segment) return segment;
+  let decoded = segment;
+  try { decoded = decodeURIComponent(segment); } catch (_) {}
+  // Nine or more digits in a row is a phone, card or account number far more often than a route.
+  // The history sanitiser keeps any all-digit segment as a record id; here that is a precision
+  // not worth the risk, because this log can be exported.
+  if (/^\d{9,}$/.test(decoded)) return '*';
+  const m = /^(.+)\.([A-Za-z0-9]{1,5})$/.exec(decoded);
+  if (m && LOG_KEEP_EXTENSION.test(m[2])) {
+    const base = safeLogSegment(m[1]);
+    return (base === '*' || /^\d{9,}$/.test(base) ? '*' : base) + '.' + m[2].toLowerCase();
+  }
+  return safeLogSegment(decoded);
+}
+function logRedactPath(pathname) {
+  const path = String(pathname || '');
+  if (!path || path === '/') return path;
+  return path.split('/').map((seg, i) => (i === 0 ? seg : logRedactSegment(seg))).join('/');
+}
+// A parameter name that is itself a token -- long, or an unbroken run of letters and digits --
+// is replaced too; the name is kept only because names are how parameters are recognised.
+function logRedactKey(key) {
+  const k = String(key || '');
+  if (!k) return k;
+  if (k.length > 40 || !/^[A-Za-z0-9_.\[\]-]+$/.test(k) || /[A-Za-z0-9]{16,}/.test(k)) return '[removed]';
+  return k;
+}
 function logRedactUrl(raw) {
   const text = String(raw || '');
   try {
     const u = new URL(text);
     let redacted = false;
-    for (const k of Array.from(u.searchParams.keys())) {
-      const v = String(u.searchParams.get(k) || '');
-      /* Long opaque values are tokens whatever they are called. */
-      if (LOG_SECRET_PARAM.test(k) || v.length > 64) { u.searchParams.set(k, '[removed]'); redacted = true; }
+    if (!/^(?:https?|wss?|file):$/.test(u.protocol)) {
+      // data:, blob: and the rest carry their content in the URL itself.
+      return { url: u.protocol + '[removed]', redacted: true };
     }
-    if (u.hash && u.hash.length > 12) { u.hash = '#[removed]'; redacted = true; }
-    let out = u.toString();
+    if (u.username || u.password) redacted = true;
+    const path = logRedactPath(u.pathname);
+    if (path !== u.pathname) redacted = true;
+    let query = '';
+    if (u.search) {
+      const parts = [];
+      for (const [k, v] of u.searchParams) {
+        const key = logRedactKey(k);
+        if (key !== k) redacted = true;
+        const keep = v === '' || (!LOG_SECRET_PARAM.test(k) && v.length <= LOG_VALUE_MAX && LOG_HARMLESS_VALUE.test(v));
+        if (!keep) redacted = true;
+        parts.push(key + '=' + (keep ? v : '[removed]'));
+      }
+      query = '?' + parts.join('&');
+    }
+    let hash = '';
+    if (u.hash) { hash = '#[removed]'; redacted = true; }
+    let out = u.protocol + '//' + u.host + path + query + hash;
     if (out.length > 512) { out = out.slice(0, 512) + '…'; redacted = true; }
     return { url: out, redacted };
   } catch (_) {
-    return { url: text.slice(0, 512), redacted: text.length > 512 };
+    // Fail closed. This used to hand back the raw text, so any error above -- a URL that would not
+    // parse, a bug in a helper -- stored exactly the thing this function exists to withhold.
+    return { url: '[removed]', redacted: true };
   }
 }
 
@@ -4367,13 +4841,31 @@ function logPush(entry) {
   }
   logQueue(entry);
 }
+/* Everything the logger holds in memory, dropped together. A request sits in three places between
+   capture and the page -- the ring, the in-flight joins, and the batch waiting its 160 ms -- and
+   Clear and the last close used to empty the first two and forget the third: a batch queued just
+   before Clear arrived after "cleared" and repopulated the page, and one queued just before the
+   last logger closed was delivered to the next logger to open, against the page's own promise that
+   the buffer goes with the last close (L29). One reset now, from both, with the timer cancelled and
+   a generation stamped so a callback from an earlier session cannot post into a later one. */
+let LOG_GENERATION = 0;
+function logReset() {
+  LOG_GENERATION++;
+  if (LOG_FLUSH_TIMER) { try { clearTimeout(LOG_FLUSH_TIMER); } catch (_) {} }
+  LOG_FLUSH_TIMER = 0;
+  LOG_DIRTY = [];
+  LOG_RING.length = 0;
+  LOG_PENDING.clear();
+}
 function logQueue(entry) {
   if (!LOG_PORTS.size) return;
   LOG_DIRTY.push(entry);
   if (LOG_FLUSH_TIMER) return;
   /* Batched: a busy page can fire hundreds of requests a second and posting each
      one separately would make the logger itself the slow thing on the page. */
+  const generation = LOG_GENERATION;
   LOG_FLUSH_TIMER = setTimeout(() => {
+    if (generation !== LOG_GENERATION) return;   // Clear or the last close happened first
     LOG_FLUSH_TIMER = 0;
     const batch = LOG_DIRTY;
     LOG_DIRTY = [];
@@ -4544,12 +5036,11 @@ function logDetach() {
   LOG_MATCH_TIMER = 0;
   LOG_MATCH_SINCE = 0;
   LOG_MATCH_TALLY.clear();
-  LOG_PENDING.clear();
-  /* And the buffer goes with it. A list of every URL you loaded is exactly the
-     thing that should not outlive the window you opened to look at it -- the
-     page says "records only while open", so nothing may be waiting in memory
-     for the next person who opens it. */
-  LOG_RING.length = 0;
+  /* And the buffers go with it -- all of them, the batch still waiting included. A list of
+     every URL you loaded is exactly the thing that should not outlive the window you opened
+     to look at it -- the page says "records only while open", so nothing may be waiting in
+     memory for the next person who opens it. */
+  logReset();
   LOG_SEQ = 0;
 }
 
@@ -4574,8 +5065,7 @@ try {
     port.onMessage.addListener((msg) => {
       if (!msg) return;
       if (msg.kind === 'clear') {
-        LOG_RING.length = 0;
-        LOG_PENDING.clear();
+        logReset();
         try { port.postMessage({ kind: 'cleared' }); } catch (_) {}
       }
     });
@@ -4884,13 +5374,15 @@ async function applyUserBlocklistRules() {
     const { live } = pruneExpiredBlocks(all, now);
     const on = await masterSwitchOn();
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const oldIds = existing
-      .filter((r) => r.id >= USER_BLOCKLIST_RULE_BASE && r.id < USER_BLOCKLIST_RULE_BASE + USER_BLOCKLIST_RULES_BUDGET)
-      .map((r) => r.id);
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: oldIds,
-      addRules: on ? userBlockRulesFrom(live) : [],
-    });
+    const mine = existing
+      .filter((r) => r.id >= USER_BLOCKLIST_RULE_BASE && r.id < USER_BLOCKLIST_RULE_BASE + USER_BLOCKLIST_RULES_BUDGET);
+    const addRules = on ? userBlockRulesFrom(live) : [];
+    if (!dnrBandUnchanged(mine, addRules)) {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: mine.map((r) => r.id),
+        addRules,
+      });
+    }
     /* Write the pruned list back only when something actually lapsed, so this is not
        a storage write on every rule refresh. */
     const stored = all.filter((e) => !e || e.scope !== 'session');
@@ -4975,9 +5467,20 @@ async function readFirewall() {
 
 // Rules are rebuilt wholesale from the stored matrix rather than patched, so the
 // live rule set can never drift from what the page shows.
-function firewallRulesFrom(matrix) {
+//
+// The compile says what it left out (M46). The band holds FIREWALL_RULE_MAX rules; a
+// decision past that used to fall off the end of a bare `return rules` -- stored, drawn on
+// the page as a decision of yours, and never a rule -- and which decisions ran depended on
+// the order sites and domains had been written into the matrix. Now every cell that would
+// have made a rule and got no id is named in `omitted`, so the write handler can refuse the
+// decision that would not fit and the page can mark the ones that already do not. The order
+// is the stored order of the matrix, which is the order decisions were made in and the
+// order storage gives back after a restart, so the admitted set is the same across restarts.
+function firewallCompile(matrix) {
   const rules = [];
+  const omitted = [];
   let id = FIREWALL_RULE_BASE;
+  const limit = FIREWALL_RULE_BASE + FIREWALL_RULE_MAX;
   for (const site of Object.keys(matrix || {})) {
     const host = firewallNormalizeHost(site);
     if (!host) continue;
@@ -4987,15 +5490,14 @@ function firewallRulesFrom(matrix) {
       if (!target) continue;
       const decisions = domains[domain] || {};
       for (const column of Object.keys(decisions)) {
-        if (id >= FIREWALL_RULE_BASE + FIREWALL_RULE_MAX) return rules;
         const verdict = decisions[column];
+        let rule = null;
         if (column === 'cookie') {
           // Not a block: the request still happens, it just stops carrying who
           // you are. That is the useful middle setting for a domain a site
           // genuinely needs but that does not need to recognise you.
           if (verdict !== 'strip') continue;
-          rules.push({
-            id: id++,
+          rule = {
             priority: FIREWALL_PRIORITY_COOKIE,
             action: {
               type: 'modifyHeaders',
@@ -5006,25 +5508,50 @@ function firewallRulesFrom(matrix) {
               requestDomains: [target],
               resourceTypes: FIREWALL_COLUMNS.all,
             },
-          });
+          };
+        } else {
+          const types = FIREWALL_COLUMNS[column];
+          if (!types || (verdict !== 'block' && verdict !== 'allow')) continue;
+          rule = {
+            priority: column === 'all' ? FIREWALL_PRIORITY : FIREWALL_PRIORITY_COLUMN,
+            action: { type: verdict === 'block' ? 'block' : 'allow' },
+            condition: {
+              initiatorDomains: [host],
+              requestDomains: [target],
+              resourceTypes: types,
+            },
+          };
+        }
+        if (id >= limit) {
+          omitted.push({ site: host, domain: target, column });
           continue;
         }
-        const types = FIREWALL_COLUMNS[column];
-        if (!types || (verdict !== 'block' && verdict !== 'allow')) continue;
-        rules.push({
-          id: id++,
-          priority: column === 'all' ? FIREWALL_PRIORITY : FIREWALL_PRIORITY_COLUMN,
-          action: { type: verdict === 'block' ? 'block' : 'allow' },
-          condition: {
-            initiatorDomains: [host],
-            requestDomains: [target],
-            resourceTypes: types,
-          },
-        });
+        rule.id = id++;
+        rules.push(rule);
       }
     }
   }
-  return rules;
+  return { rules, omitted, limit: FIREWALL_RULE_MAX };
+}
+function firewallRulesFrom(matrix) {
+  return firewallCompile(matrix).rules;
+}
+// Why a decision cannot be taken, or '' when it can. A change to a cell that already has a
+// rule, or a cell going back to Default, never needs a new id; only a NEW decision does. The
+// question is asked of the two compiles, before and after: if the change leaves more cells
+// without a rule than there were, it does not fit and is refused with the count. Judged that
+// way rather than by looking for the new cell among the omitted, because a new column on a
+// domain written early in the matrix takes an id in the middle and bumps the LAST decision
+// off the end -- the new cell would look fine and an old one would silently stop working.
+function firewallRefusalFor(before, after) {
+  const was = ((before && before.omitted) || []).length;
+  const now = ((after && after.omitted) || []).length;
+  if (now <= was) return '';
+  const wanted = ((after && after.rules) || []).length + now;
+  return 'That would be decision ' + wanted + ' of a firewall that holds ' + after.limit + ' rules across every site. Nothing was saved. Set a cell back to Default, or reset a site you no longer need, to make room.';
+}
+function firewallOmittedFor(compiled, site) {
+  return ((compiled && compiled.omitted) || []).filter((o) => o.site === site).map((o) => ({ domain: o.domain, column: o.column }));
 }
 
 // The applier says what happened (H18). It used to return 0 for both "the matrix is
@@ -5203,13 +5730,14 @@ function addMinerDomains(arr, target) {
     if (rd && !isNeverBlockDomain(rd)) target.add(v);
   }
 }
+function minerFeedDisabled(cfg) {
+  return cfg.enabled === false || cfg.blockCryptominers === false;
+}
 async function applyMinerFeedRules() {
   try {
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const oldIds = existing.filter((x) => x.id >= MINER_FEED_RULE_BASE && x.id < MINER_FEED_RULE_BASE + MINER_FEED_MAX).map((x) => x.id);
-    let cfg = {};
-    try { const s = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); } catch (_) {}
-    const off = cfg.enabled === false || cfg.blockCryptominers === false;
+    const mine = existing.filter((x) => x.id >= MINER_FEED_RULE_BASE && x.id < MINER_FEED_RULE_BASE + MINER_FEED_MAX);
+    const off = minerFeedDisabled(await readFeedConfig());
     const miners = off ? [] : Array.from(MINER_HOSTS).slice(0, MINER_POOL_RULE_OFFSET);
     const pools = off ? [] : Array.from(MINER_POOL_HOSTS).slice(0, MINER_FEED_MAX - MINER_POOL_RULE_OFFSET);
     const addRules = miners.map((d, i) => ({
@@ -5223,27 +5751,40 @@ async function applyMinerFeedRules() {
       action: { type: 'block' },
       condition: { requestDomains: [d], domainType: 'thirdParty', resourceTypes: MINER_POOL_RESOURCE_TYPES },
     })));
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+    if (dnrBandUnchanged(mine, addRules)) return;
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
   } catch (e) { console.warn('[WardenOne] cryptominer feed rules failed', e); }
 }
+// Same shape as loadGrabberFeed, for the same reason (LIFE-02): assembled aside, swapped in
+// only when every source read completed, retried when one did not.
 async function loadMinerFeed() {
-  MINER_HOSTS.clear();
-  MINER_POOL_HOSTS.clear();
+  const miners = new Set();
+  const pools = new Set();
+  const failed = [];
   try {
     const res = await fetch(chrome.runtime.getURL('cryptominer-domains.json'), { cache: 'no-store' });
-    if (res && res.ok) {
-      const data = await res.json();
-      addMinerDomains(data && data.minerHosts, MINER_HOSTS);
-      addMinerDomains(data && data.poolHosts, MINER_POOL_HOSTS);
-    }
-  } catch (_) {}
+    if (!res || !res.ok) throw new Error('http ' + (res ? res.status : '?'));
+    const data = await res.json();
+    addMinerDomains(data && data.minerHosts, miners);
+    addMinerDomains(data && data.poolHosts, pools);
+  } catch (_) { failed.push('packaged'); }
   try {
-    const x = await localGet(['wardenone_cryptominer_domains']);
+    const x = await localGetStrict(['wardenone_cryptominer_domains']);
     const stored = x && x.wardenone_cryptominer_domains;
-    addMinerDomains(stored && stored.minerHosts, MINER_HOSTS);
-    addMinerDomains(stored && stored.poolHosts, MINER_POOL_HOSTS);
-  } catch (_) {}
-  await applyMinerFeedRules();
+    addMinerDomains(stored && stored.minerHosts, miners);
+    addMinerDomains(stored && stored.poolHosts, pools);
+  } catch (_) { failed.push('stored'); }
+  const complete = failed.length === 0;
+  if (complete) {
+    replaceFeedSet(MINER_HOSTS, miners);
+    replaceFeedSet(MINER_POOL_HOSTS, pools);
+    clearFeedLoadRetry('miner');
+  } else {
+    console.warn('[WardenOne] cryptominer feed load incomplete (' + failed.join(', ') + '); keeping the current rules');
+    scheduleFeedLoadRetry('miner', loadMinerFeed);
+  }
+  if (complete || minerFeedDisabled(await readFeedConfig())) await applyMinerFeedRules();
+  return { ok: complete, failed };
 }
 loadMinerFeed();
 
@@ -5991,6 +6532,21 @@ function localGet(key) {
   }
   return new Promise((resolve) => chrome.storage.local.get(key, resolve));
 }
+/* The same read, with a failure reported as one. localGet answers a failed storage read with
+   whatever Chrome handed the callback -- nothing -- so a caller that treats "nothing stored" as
+   an answer cannot tell it from "could not read". The feed loaders cannot afford that ambiguity:
+   an empty answer there used to become a destructive write (LIFE-02). */
+function localGetStrict(keys) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.local.get(keys, (res) => {
+        const err = chrome.runtime.lastError;
+        if (err) { reject(new Error(err.message || String(err))); return; }
+        resolve(res || {});
+      });
+    } catch (e) { reject(e); }
+  });
+}
 
 /* These stores are derived from sites visited or explicitly inspected. In split
  * incognito mode storage.local still belongs to the lasting extension profile, so
@@ -6036,6 +6592,9 @@ function persistentLocalPayload(obj) {
 function localSet(obj) {
   const payload = persistentLocalPayload(obj);
   if (!payload || !Object.keys(payload).length) return Promise.resolve();
+  // The content snapshot is built from four of these keys; a write to one of them must not
+  // leave a stale copy to be served in the gap before storage.onChanged arrives (COST-01).
+  if (Object.keys(payload).some((key) => contentConfigInputKeys().includes(key))) invalidateContentConfigMemo();
   return new Promise((resolve, reject) => {
     try {
       chrome.storage.local.set(payload, () => {
@@ -10004,22 +10563,35 @@ async function reconcileSearchJunkInjection(cfgArg) {
      would have drifted the first time an engine changed its markup. */
   const want = merged.enabled !== false
     && (merged.flagSearchJunk === true || merged.warnSearchResults !== false);
-  let have = false;
+  /* The warning pass must not wait to be told it is wanted: the page is kept out of
+     extension storage, and asking this worker means waking it -- most of a second,
+     measured, on a search made after a pause -- so the switch rides in the registration.
+     search-loggers.js (generated from rules.json) goes in front of the script only while
+     the pass is on; the page reads the list from it and takes its being there as the
+     answer. The scraper pass still asks for its lists, which only the worker holds. */
+  const warn = merged.warnSearchResults !== false;
+  const files = warn ? ['search-loggers.js', 'search-junk.js'] : ['search-junk.js'];
+  let have = null;
   try {
     const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [SEARCH_JUNK_SCRIPT_ID] });
-    have = Array.isArray(reg) && reg.length > 0;
-  } catch (_) { have = false; }
+    have = Array.isArray(reg) && reg.length > 0 ? reg[0] : null;
+  } catch (_) { have = null; }
+  const haveFiles = have && Array.isArray(have.js) ? have.js.map((f) => String(f).replace(/^\//, '')) : [];
   try {
     if (want && !have) {
       await chrome.scripting.registerContentScripts([{
         id: SEARCH_JUNK_SCRIPT_ID,
         matches: SEARCH_JUNK_MATCHES,
-        js: ['search-junk.js'],
+        js: files,
         runAt: 'document_start',
         allFrames: false,
         persistAcrossSessions: true,
-        // ISOLATED (default): it only needs the DOM plus chrome.storage.
+        // ISOLATED (default): it needs the DOM and the runtime channel, nothing more.
       }]);
+    } else if (want && have && haveFiles.join(',') !== files.join(',')) {
+      /* The toggle moved while a registration from before it stood: swap the files in
+         place, so the next search page runs the passes the switches now say. */
+      await chrome.scripting.updateContentScripts([{ id: SEARCH_JUNK_SCRIPT_ID, js: files }]);
     } else if (!want && have) {
       await chrome.scripting.unregisterContentScripts({ ids: [SEARCH_JUNK_SCRIPT_ID] });
     }
@@ -10495,19 +11067,22 @@ function applyHeaderShieldRules(options) {
 
 // Add or remove the rule that appends "DNT: 1" and "Sec-GPC: 1" request headers
 // to outgoing requests, matching the navigator.* signals set in content.min.js.
+//
+// Replacing a rule is ONE call carrying both removeRuleIds and addRules. Chrome applies
+// that as a single transaction, so the store never passes through a moment with no rule
+// in it. The old shape -- a remove-only call, an await, then an add-only call -- left a
+// gap a worker can die in (Chrome ends a service worker whenever it likes, an update or
+// reload does too), and a worker that died there left the setting saying "on" with no
+// rule behind it until the next startup refresh. Removing an id that is not installed is
+// not an error, so the same call serves first install, refresh and switch-off alike.
 let __privacyHeaderRuleEnabled = null;
 async function applyPrivacyHeaderRule(enabled) {
   try {
     enabled = !!enabled;
     if (__privacyHeaderRuleEnabled === enabled) return;
-    // always clear first so toggling off truly removes it
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [PRIVACY_HEADER_RULE_ID] });
-    if (!enabled) {
-      __privacyHeaderRuleEnabled = enabled;
-      return;
-    }
     await chrome.declarativeNetRequest.updateSessionRules({
-      addRules: [{
+      removeRuleIds: [PRIVACY_HEADER_RULE_ID],
+      addRules: !enabled ? [] : [{
         id: PRIVACY_HEADER_RULE_ID,
         priority: 1,
         action: {
@@ -10532,13 +11107,9 @@ async function applyLocationPrivacyHeaderRule(enabled) {
   try {
     enabled = !!enabled;
     if (__locationPrivacyHeaderRuleEnabled === enabled) return;
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [LOCATION_PRIVACY_HEADER_RULE_ID] });
-    if (!enabled) {
-      __locationPrivacyHeaderRuleEnabled = enabled;
-      return;
-    }
     await chrome.declarativeNetRequest.updateSessionRules({
-      addRules: [{
+      removeRuleIds: [LOCATION_PRIVACY_HEADER_RULE_ID],
+      addRules: !enabled ? [] : [{
         id: LOCATION_PRIVACY_HEADER_RULE_ID,
         priority: 2,
         action: {
@@ -10597,13 +11168,9 @@ async function applyThirdPartyCookieRule(enabled) {
   try {
     enabled = !!enabled;
     if (__thirdPartyCookieRuleEnabled === enabled) return;
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [THIRD_PARTY_COOKIE_RULE_ID] });
-    if (!enabled) {
-      __thirdPartyCookieRuleEnabled = enabled;
-      return;
-    }
     await chrome.declarativeNetRequest.updateSessionRules({
-      addRules: [{
+      removeRuleIds: [THIRD_PARTY_COOKIE_RULE_ID],
+      addRules: !enabled ? [] : [{
         id: THIRD_PARTY_COOKIE_RULE_ID,
         priority: 1,
         action: { type: 'modifyHeaders', responseHeaders: [{ header: 'set-cookie', operation: 'remove' }] },
@@ -10730,31 +11297,40 @@ function httpsUpgradeRule(id) {
     },
   };
 }
+// The rule lives in two stores: the dynamic copy survives a browser restart, the session
+// copy is the one whose failure counts (it is the store that reliably takes a rule within
+// a session). Each store is replaced in ONE call carrying both removeRuleIds and addRules,
+// the persistent copy first: at no await boundary is either store empty while the setting
+// says on, so a worker dying mid-way leaves the upgrade in force instead of silently off.
+// The old shape cleared both stores before adding to either, which was the widest such
+// gap the worker had.
 let __httpsUpgradeRuleEnabled = null;
 async function applyHttpsUpgradeRule(enabled) {
   enabled = !!enabled;
   if (__httpsUpgradeRuleEnabled === enabled) return;
   let sessionOk = false;
-  try { await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [HTTPS_UPGRADE_RULE_ID] }); } catch (_) {}
-  try { await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [HTTPS_UPGRADE_DYNAMIC_RULE_ID] }); } catch (_) {}
-  if (!enabled) {
-    __httpsUpgradeRuleEnabled = enabled;
-    return;
+  let dynamicOk = false;
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [HTTPS_UPGRADE_DYNAMIC_RULE_ID],
+      addRules: enabled ? [httpsUpgradeRule(HTTPS_UPGRADE_DYNAMIC_RULE_ID)] : [],
+    });
+    dynamicOk = true;
+  } catch (e) {
+    if (enabled) console.warn('[WardenOne] persistent https upgrade rule failed', e);
   }
   try {
     await chrome.declarativeNetRequest.updateSessionRules({
-      addRules: [httpsUpgradeRule(HTTPS_UPGRADE_RULE_ID)],
+      removeRuleIds: [HTTPS_UPGRADE_RULE_ID],
+      addRules: enabled ? [httpsUpgradeRule(HTTPS_UPGRADE_RULE_ID)] : [],
     });
     sessionOk = true;
   } catch (e) {
-    console.warn('[WardenOne] https session upgrade rule failed', e);
+    if (enabled) console.warn(dynamicOk ? '[WardenOne] https session upgrade rule failed' : '[WardenOne] https upgrade rule failed', e);
   }
-  try {
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      addRules: [httpsUpgradeRule(HTTPS_UPGRADE_DYNAMIC_RULE_ID)],
-    });
-  } catch (e) {
-    console.warn(sessionOk ? '[WardenOne] persistent https upgrade rule failed' : '[WardenOne] https upgrade rule failed', e);
+  if (!enabled) {
+    __httpsUpgradeRuleEnabled = enabled;
+    return;
   }
   if (sessionOk) __httpsUpgradeRuleEnabled = enabled;
   if (!sessionOk) return false;
@@ -10960,6 +11536,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       || changes.wardenone_learned
       || changes[SUPPLEMENTAL_LIST_STORAGE_KEY]
       || changes.wardenone_search_junk_domains)) {
+    invalidateContentConfigMemo();
     scheduleContentConfigRefresh();
   }
   // A feed (or manual edit) that updates the local known-malware hash set -> reload it.
@@ -11081,7 +11658,7 @@ async function updateRemoteListsWithRetry(reason) {
 }
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
-  if (alarm && alarm.name === 'wardenone-list-update') updateRemoteListsWithRetry('alarm');
+  if (alarm && alarm.name === 'wardenone-list-update') { updateRemoteListsWithRetry('alarm'); pruneHistoryStore('alarm').catch(() => {}); }
   if (alarm && alarm.name === LIST_RETRY_ALARM) updateRemoteListsWithRetry('retry');
   if (alarm && alarm.name === 'wardenone-startup-check') runStartupCheck('startup');
   if (alarm && alarm.name === 'wardenone-memory-sweep') {
@@ -11339,6 +11916,32 @@ function forgetTabHostsReady() {
   return __forgetTabHostsReady;
 }
 
+/* The tabs.onUpdated census, and the worker lifetime it decides.
+
+   tabs.onUpdated cannot be filtered: Chrome fires it for every property it touches on
+   any tab -- title, favicon, audible, muted, status, url -- and a tab playing media
+   changes those all the time. There are three listeners for it in this worker: this
+   one, Memory Shield's activity marker (background-memory.js, which needs `audible`,
+   a signal no other event carries) and Download Guard's review-page cleanup
+   (background-downloads.js). tools/test-listener-census.js pins that number, so a
+   fourth is a decision and not a drift.
+
+   How Chrome dispatches, because a comment here once got it wrong and a design choice
+   was made against the wrong model: one event wakes a stopped worker ONCE and is then
+   delivered to every listener registered for it. The wake, and the parse of three
+   quarters of a megabyte of script that comes with it, is paid by the first listener;
+   the second and third add a callback each, not a wake. Folding a consumer into an
+   existing listener therefore saves a function call, never a worker start, and
+   splitting one out costs the same. The only thing that would stop the wakes is
+   registering no tabs.onUpdated listener at all, and Memory Shield's `audible` need
+   rules that out while it is on (its default).
+
+   So the lifetime is decided, not incidental: while any tab is loading or playing
+   media this worker stays resident, because every tick of that tab resets its idle
+   timer; after thirty quiet seconds it stops as usual. Both regimes are real and the
+   cold-start paths still earn their keep. Every listener discards, on its first line,
+   any event that carries nothing it reads, so the resident worker does no work on the
+   ticks it cannot avoid receiving. */
 try {
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     const newHost = forgetHostFromUrl((tab && tab.url) || change.url || '');
@@ -11350,18 +11953,16 @@ try {
     if (prevHost && registrableDomainBg(prevHost) !== registrableDomainBg(newHost)) {
       maybeForgetHost(prevHost, tabId).catch(() => {});
     }
-    /* The right-click menu's block/unblock title, refreshed from a listener that
-       already exists rather than from a second tabs.onUpdated of its own. That
-       event cannot be filtered in Chrome, so every extra listener is another
-       wake of this service worker -- and waking it parses three quarters of a
-       megabyte of script -- on every title, favicon and audible tick of a
-       playing tab. So it runs only on a real navigation: change.url for a new
-       address, and change.status === 'complete' for a reload of the SAME address
-       -- which is the case that matters most here, because blocking a site
-       reloads it to the identical URL and lands on Chrome's error page, and
-       without the status arm the entry would still read "Block" there. Both fire
-       a bounded number of times per navigation, never on the per-tick attribute
-       churn. Active tab only, because no other tab's menu can open. */
+    /* The right-click menu's block/unblock title rides this listener rather than one
+       of its own: a second registration would be one more callback on every tick, not
+       one more wake (see above), and one place is one place to get the navigation
+       filter right. It runs only on a real navigation: change.url for a new address,
+       and change.status === 'complete' for a reload of the SAME address -- which is
+       the case that matters most here, because blocking a site reloads it to the
+       identical URL and lands on Chrome's error page, and without the status arm the
+       entry would still read "Block" there. Both fire a bounded number of times per
+       navigation, never on the per-tick attribute churn. Active tab only, because no
+       other tab's menu can open. */
     if (change && (change.url || change.status === 'complete') && tab && tab.active === true) {
       void refreshWardenBlockMenuTitle(tab);
     }
@@ -12965,7 +13566,7 @@ async function applyNeverBlockAllowRules() {
       if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) && !h.includes('..') && !seen.has(h)) { seen.add(h); domains.push(h); }
     }
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const oldIds = existing.filter((x) => x.id >= NEVER_BLOCK_ALLOW_RULE_BASE && x.id < NEVER_BLOCK_ALLOW_RULE_BASE + NEVER_BLOCK_ALLOW_MAX).map((x) => x.id);
+    const mine = existing.filter((x) => x.id >= NEVER_BLOCK_ALLOW_RULE_BASE && x.id < NEVER_BLOCK_ALLOW_RULE_BASE + NEVER_BLOCK_ALLOW_MAX);
     const addRules = [];
     const BATCH = 100;
     for (let i = 0; i < domains.length && addRules.length < NEVER_BLOCK_ALLOW_MAX; i += BATCH) {
@@ -12976,7 +13577,8 @@ async function applyNeverBlockAllowRules() {
         condition: { requestDomains: domains.slice(i, i + BATCH), resourceTypes: ['script', 'stylesheet', 'font', 'xmlhttprequest', 'websocket', 'sub_frame'] },
       });
     }
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+    if (dnrBandUnchanged(mine, addRules)) return;
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
   } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); }
 }
 applyNeverBlockAllowRules();
@@ -14194,9 +14796,13 @@ async function updateRemoteListsCore(reason) {
   }
   const sourceSetId = await sha256TextHex(sources.join('\n'));
 
-  // AdShield cosmetic filters update alongside the network lists (fire-and-forget;
-  // it stores its own result and never blocks the network-list update).
-  if (cfg.adShield !== false) { updateAdShieldCosmetics(); }
+  // Tell the broker who will read what, so a source two pipelines share is downloaded once and
+  // kept exactly until the second has it (PERF-07): the network sources here, the cosmetic set if
+  // that pass will run, and the supplemental sources the pass after this one reads.
+  const planned = sources.slice();
+  if (cfg.adShield !== false) planned.push(...ADSHIELD_COSMETIC_LISTS);
+  planned.push(...SUPPLEMENTAL_LIST_SOURCES.map((s) => s.url));
+  LIST_BROKER.plan(planned);
 
   const merged = new Set();
   const domainBuckets = { security: new Set(), tracker: new Set(), adshield: new Set() };
@@ -14250,6 +14856,11 @@ async function updateRemoteListsCore(reason) {
       }
     }
   }
+
+  // AdShield cosmetic filters refresh once the network batch is in: fire-and-forget, it stores its
+  // own result and never blocks the network-list update -- but it no longer runs beside the batch,
+  // so its parse is not competing with this one and its downloads share the one queue (PERF-07).
+  if (cfg.adShield !== false) { updateAdShieldCosmetics(); }
 
   if (rejectedSources) {
     await saveListIntegrity(integrity, {}, integrityAlerts, reason);
@@ -14401,11 +15012,15 @@ async function updateRemoteLists(reason) {
       return { ok: false, error: String(e), coalesced: true, requestedReason, queuedFollowup: !!__remoteListUpdateQueuedReason };
     }
   }
+  // Held for the whole refresh -- network batch and supplemental pass -- so a body one of them
+  // downloaded is still there for the other; the cosmetic pass holds it for itself.
+  LIST_BROKER.retain();
   const run = updateRemoteListsCore(reason).then((result) => attachSupplementalListUpdate(result, reason));
   __remoteListUpdateInFlight = run;
   try {
     return await run;
   } finally {
+    LIST_BROKER.release();
     if (__remoteListUpdateInFlight === run) {
       __remoteListUpdateInFlight = null;
       const queuedReason = __remoteListUpdateQueuedReason;
@@ -14465,7 +15080,6 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'hidden-remove',
   'hidden-list',
   'domain-age',
-  'eyeshield-fetch-css',
   /* The isolated bridge owns both watchdogs. Keeping them out of this table meant
      the generic sender gate rejected them before their deliberately tab-scoped
      handlers could run, so engine repair and navigation attribution were inert. */
@@ -14530,7 +15144,6 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'hidden-remove': { max: 30, windowMs: 60000 },
   'hidden-list': { max: 60, windowMs: 60000 },
   'set-site-permission': { max: 3, windowMs: 60000 },
-  'eyeshield-fetch-css': { max: 150, windowMs: 60000 },
   /* The bridge sends at most five engine checks per document. Navigation signals
      can be frequent on media pages, so its worker-side ceiling matches the bridge. */
   'wo-engine-check': { max: 8, windowMs: 60000 },
@@ -14637,20 +15250,11 @@ async function activeTabMatchesOrigin(rawOrigin) {
   return '';
 }
 
-// Only what a stylesheet actually is. This used to return true for a MISSING Content-Type and
-// to accept text/plain, which between them covered most of what a small embedded HTTP server
-// answers with -- so the page-directed fetch below could reach a great deal more than CSS. A
-// real CDN always labels its stylesheets; an unlabelled response is not one we need to theme.
-function isStylesheetLikeContentType(value) {
-  const ct = String(value || '').split(';')[0].trim().toLowerCase();
-  if (!ct) return false;
-  return ct === 'text/css' || ct === 'application/x-css' || ct === 'text/x-css' || ct.endsWith('+css');
-}
-
-// A CDN serves stylesheets on 80/443. A service on some other port is, in practice, something on
+// A public list host serves on 80/443. A service on some other port is, in practice, something on
 // the user's own network -- and isLocalOrPrivateHost only inspects the hostname STRING, so a
 // public name that resolves to 192.168.x.x already walks past it. Refusing non-default ports
-// removes most of that reach without costing a single real CDN.
+// removes most of that reach at no cost to a real host. Used by the custom-list fetch, whose
+// address the reader typed; the worker no longer fetches any address a PAGE chose (SEC-11).
 function isDefaultPortHttpUrl(raw) {
   try {
     return new URL(String(raw || '')).port === '';
@@ -14993,35 +15597,12 @@ try {
 }
 
 
-async function fetchPublicStylesheetText(rawUrl) {
-  let url = normalizePublicHttpUrl(rawUrl);
-  if (!url || !isDefaultPortHttpUrl(url)) return { ok: false, error: 'bad url' };
-  for (let redirects = 0; redirects <= 4; redirects++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => { try { controller.abort(); } catch (_) {} }, 8000);
-    try {
-      const res = await fetch(url, { cache: 'force-cache', credentials: 'omit', redirect: 'manual', signal: controller.signal });
-      if (res && res.status >= 300 && res.status < 400) {
-        const next = normalizePublicHttpUrl(res.headers && res.headers.get('location'), url);
-        if (!next || !isDefaultPortHttpUrl(next)) return { ok: false, error: 'blocked redirect' };
-        url = next;
-        continue;
-      }
-      if (!res || !res.ok) return { ok: false, error: 'http ' + (res ? res.status : '?') };
-      if (!normalizePublicHttpUrl(res.url || url)) return { ok: false, error: 'blocked redirect' };
-      if (!isStylesheetLikeContentType(res.headers && res.headers.get('content-type'))) return { ok: false, error: 'not css' };
-      const len = Number(res.headers.get('content-length') || 0);
-      if (len && len > 4000000) return { ok: false, error: 'too large' };
-      const css = await readResponseTextWithByteLimit(res, 4000000);
-      return { ok: true, css };
-    } catch (e) {
-      return { ok: false, error: String((e && e.message) || e) };
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return { ok: false, error: 'too many redirects' };
-}
+// There is no stylesheet fetch in the worker any more. EyeShield used to ask for cross-origin
+// stylesheet text here, fetched with the extension's own permissions and handed back into the
+// page's DOM, and the only thing standing between a page and the reader's own network was a
+// check of the hostname string -- which cannot see what a public-looking name resolves to, and
+// Chrome gives an extension no way to find out before the request is made. The content script
+// now fetches the text itself, from the page's context and on the page's own terms (SEC-11).
 
 const HEALTH_SHIELD_KEYS = [
   'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'detectRedirectChains', 'blockMetaRefresh',
@@ -15046,6 +15627,38 @@ const HEALTH_SHIELD_KEYS = [
   'backTrapGuard',
 ];
 
+// Every switch the popup offers is one of four things, and the gate (tools/test-protection-count.js)
+// refuses a switch that is none of them (FEAT-08): a counted protection (HEALTH_SHIELD_KEYS above);
+// a watch-only guard (counted, and without a switch because it records and never blocks or changes
+// a page); a second level of a counted protection (switchable on its own, counted once, under the
+// first); or a control that is not a protection at all, of a named kind. The kinds: presentation is
+// how WardenOne shows itself; a tool does nothing until the reader uses it; comfort makes a page
+// cleaner, lighter or quieter, not safer; compatibility is an exemption that keeps sites working.
+// Every published total -- the README, the site, the popup's denominator -- is derived from these
+// lists and checked against them, both ways: a switch nobody has classified fails the build, and so
+// does a number that stopped matching. The README said 103 in one paragraph and 104 in another for
+// as long as only one of them was checked.
+const WATCH_ONLY_GUARDS = ['logThirdPartyBeacons', 'deviceAccessGuard', 'capabilityGuard'];
+const SECOND_LEVEL_OF = {
+  // A mode of the IP-privacy guard, not a new protection (FEAT-03): the 107 does not move for it.
+  blockSuspiciousWebRTC: 'blockWebRTCLeak',
+};
+const CONTROL_KINDS = {
+  presentation: ['showBadge', 'showToasts', 'silentMode'],
+  tool: ['elementZapper', 'twitchRewind', 'twitchVodRewind'],
+  comfort: [
+    'blockAutoplay', 'killPrefetch', 'lazyLoadMedia',
+    'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk',
+    'memoryShield', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverPinned', 'throttleBackgroundTabs',
+  ],
+  compatibility: ['loginCompatibility'],
+};
+
+// How many of the switches are ON. That is all this is: a count of settings, and the popup
+// labels it that way ("Switched on"). It is not a measure of anything running -- a switch is
+// on in storage whether or not the engine it names reached the page -- and the summary below
+// keeps the two apart: this count on one side, what the current tab actually answered on the
+// other, with the safety line reserved for the second.
 function healthCountActiveShields(cfg) {
   if (!cfg || cfg.enabled === false) return 0;
   let active = 0;
@@ -15054,6 +15667,62 @@ function healthCountActiveShields(cfg) {
     if (merged[key] !== false) active++;
   }
   return active;
+}
+
+// What can be said about WardenOne on ONE tab from evidence, not from settings. The bridge in
+// a page holds the key the engine was handed at document_start and can challenge the engine
+// over it; Repair has always asked that question (wo-engine-status) before deciding which
+// tabs to reload. The health summary now asks it too, read-only, for the tab the popup is
+// open on -- and reports the answer as one of eight states rather than folding them into a
+// number. `unknown` is kept apart from `failed` on purpose: a page that has not answered yet,
+// or one that loaded before this copy of the extension did, is not a page the engine is
+// missing from, and calling it one would make the panel cry wolf on every slow load.
+const TAB_EVIDENCE_TIMEOUT_MS = 700;
+function tabEngineStatus(tabId) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (value) => { if (!done) { done = true; resolve(value); } };
+    const timer = setTimeout(() => finish('timeout'), TAB_EVIDENCE_TIMEOUT_MS);
+    try {
+      chrome.tabs.sendMessage(tabId, { kind: 'wo-engine-status' }, { frameId: 0 }, (res) => {
+        void chrome.runtime.lastError;
+        clearTimeout(timer);
+        finish(res && res.ok ? res : null);
+      });
+    } catch (_) { clearTimeout(timer); finish(null); }
+  });
+}
+async function tabProtectionEvidence(tab, cfg) {
+  if (!tab || typeof tab.id !== 'number') return { state: 'unknown', text: 'No open page to check.' };
+  const url = String(tab.url || tab.pendingUrl || '');
+  if (!/^https?:/i.test(url)) {
+    return { state: 'restricted', text: 'This page cannot be checked: Chrome does not run extensions here. The network shields still apply to what it loads.' };
+  }
+  if (cfg && cfg.enabled === false) return { state: 'off', text: 'WardenOne is switched off.' };
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) { host = ''; }
+  try {
+    const allow = activeAllowlist(cfg) || [];
+    if (host && allow.some((h) => registrableDomainBg(String(h)) === registrableDomainBg(host))) {
+      return { state: 'paused', host, text: 'Paused on ' + host + ' by your allowlist, so nothing is checked here.' };
+    }
+  } catch (_) {}
+  if (engineExcludedByManifest(url) || isMainWorldRepairExcludedUrl(url)) {
+    return { state: 'excluded', host, text: 'The in-page engine does not run on ' + host + ' (a compatibility exclusion). The network shields still apply.' };
+  }
+  if (tab.discarded) return { state: 'sleeping', host, text: 'This tab is asleep; it is checked when it wakes.' };
+  if (ENGINE_GAVE_UP[tab.id]) {
+    return { state: 'failed', host, text: 'This page switches the in-page engine off on every load, and WardenOne has stopped reloading it. The network shields still apply.' };
+  }
+  const answer = await tabEngineStatus(tab.id);
+  if (answer === 'timeout' || !answer) {
+    return { state: 'unknown', host, text: 'The page has not answered the engine check yet. Open the popup again once it has finished loading, or run Verify & Repair.' };
+  }
+  if (answer.alive) return { state: 'verified', host, text: 'The in-page engine answered its signed check on ' + host + '.' };
+  if (answer.fresh === false) {
+    return { state: 'unknown', host, text: 'This page loaded before this copy of WardenOne did, so its engine cannot vouch for itself. Reload the page to check it.' };
+  }
+  return { state: 'failed', host, text: 'The in-page engine is not running on ' + host + '. Verify & Repair reloads the tab to put it back.' };
 }
 
 function healthListCounts(meta, auxMeta) {
@@ -15073,7 +15742,7 @@ function healthListCounts(meta, auxMeta) {
   };
 }
 
-async function buildProtectionHealthSummary() {
+async function buildProtectionHealthSummary(tab) {
   const now = Date.now();
   const store = await localGet([
     'wardenone_config',
@@ -15171,6 +15840,12 @@ async function buildProtectionHealthSummary() {
         ? ' Automatic retries are used up; change any setting or run Repair to try again.'
         : ' WardenOne will retry.'), true);
   }
+  // A listener that did not register in this worker lifetime is a guard that is off whatever its
+  // switch says, so it is reported the way a failed applier is (LIFE-04).
+  if (LISTENERS_NOT_REGISTERED.length) {
+    addIssue('danger', 'Could not start in this browser session: ' + LISTENERS_NOT_REGISTERED.slice(0, 6).join(', ')
+      + '. Those protections are on but not running; restarting the browser usually clears this.', true);
+  }
   if (!enabledRulesets) {
     // Reachable on a cold start: the popup wakes the worker and asks immediately. Saying so is
     // the honest answer -- claiming health on the strength of a check that did not run is not.
@@ -15188,28 +15863,46 @@ async function buildProtectionHealthSummary() {
     }
   }
 
-  const activeShields = healthCountActiveShields(cfg);
+  // The tab the popup is open on, asked rather than assumed (FEAT-02). An engine that is
+  // switched on in settings and missing from the page is the one state this summary exists
+  // to catch, and until now it had no way to see it: the count above is settings, the ruleset
+  // check is the network, and neither reaches a document. Only `failed` becomes an issue --
+  // a page Chrome keeps extensions out of, a paused site, an excluded one, a sleeping tab or
+  // one that has not answered yet is reported as what it is, and lowers nothing.
+  const tabEvidence = await tabProtectionEvidence(tab, cfg);
+  if (tabEvidence.state === 'failed') addIssue('warn', tabEvidence.text, true);
+
+  // ---- what this adds up to ------------------------------------------------------------
+  // "You're safe" is said only when the page in front of the reader answered the engine's
+  // signed check AND nothing above found a problem. Every other clean outcome is "Protections
+  // on" with the reason the page itself could not be vouched for, in the reader's terms. A
+  // count of switches is never, on its own, grounds for the safety line.
+  const configuredShields = healthCountActiveShields(cfg);
   const criticalIssue = issues.find((i) => i.severity === 'danger');
   const setupIssue = issues.find((i) => i.severity === 'warn' && i.topLevel);
   const highest = criticalIssue ? 'danger' : setupIssue ? 'warning' : 'ok';
-  const status = cfg.enabled === false ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : "You're safe";
+  const verified = tabEvidence.state === 'verified';
+  const status = cfg.enabled === false ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : verified ? "You're safe" : 'Protections on';
   const detail = cfg.enabled === false
     ? 'Turn the master switch back on to re-enable WardenOne.'
     : criticalIssue
       ? criticalIssue.text
       : setupIssue
         ? setupIssue.text
-        : issues.length
-          ? 'Core shields are active. A few notes are tucked below.'
-          : 'Core shields are active and watching quietly.';
+        : verified
+          ? (issues.length
+            ? 'Core shields are running on this page. A few notes are tucked below.'
+            : 'Core shields are running on this page and watching quietly.')
+          : 'No issue found in what could be checked. ' + tabEvidence.text;
 
   return {
     ok: true,
     status,
     level: highest,
     detail,
-    activeShields,
+    configuredShields,
     totalShields: HEALTH_SHIELD_KEYS.length,
+    tab: tabEvidence,
     blocked24h,
     blockedTotal,
     list,
@@ -16285,9 +16978,68 @@ function wardenIndicatorKind(raw) {
   return null;
 }
 
-async function installWardenContextMenu() {
+/* The menu, as data. Every entry, every right-click: scoping them to link/selection/frame
+   made the menu shorter but also made it unpredictable -- the thing you wanted was missing
+   depending on the pixel you happened to be over, and you cannot learn a menu whose contents
+   move. They are all here, and each one says plainly when there was nothing for it to work on.
+
+   Ruled into groups rather than left as seven lines of text. They are not seven of the same
+   thing: two do something to what you clicked, four ask a question about it, three act on the
+   tab, one decides about the site. A flat list makes the reader sort that out every time
+   they open it; the rules do it once. The tab group is away from the checks above it because
+   those are the only entries that change what is on your screen, and away from the site
+   decision below because they are about one tab rather than the site everywhere. Closing is
+   last in its own group, under the two reversible ones: a tab you slept comes back when you
+   click it and a never-sleep mark comes off with the same entry that put it on; a closed tab
+   does not, so it does not sit directly under the pointer's resting place. "Copy clean link"
+   is here because the browser draws its own "Copy link address", and that one never reaches
+   the page -- no copy event, no clipboard call -- so the engine's cleaner cannot see it. */
+const WO_MENU_ITEMS = [
+  { id: WO_MENU_ZAP, title: 'Zap this element' },
+  { id: WO_MENU_COPY_LINK, title: 'Copy clean link' },
+  { id: 'wardenone-sep-checks', separator: true },
+  { id: WO_MENU_LINK, title: 'Check this link' },
+  { id: WO_MENU_SELECTION, title: 'Check the selected text' },
+  { id: WO_MENU_MEDIA, title: 'Where is this image from?' },
+  { id: WO_MENU_FRAME, title: 'What is this frame?' },
+  { id: 'wardenone-sep-tab', separator: true },
+  { id: WO_MENU_SLEEP_TAB, title: 'Sleep this tab' },
+  { id: WO_MENU_NEVER_SLEEP, title: 'Never sleep this site' },
+  { id: WO_MENU_CLOSE_TAB, title: 'Close this tab' },
+  { id: 'wardenone-sep-site', separator: true },
+  { id: WO_MENU_BLOCK, title: 'Block this site' },
+];
+/* Built only when the definition changed (PERF-05). Chrome keeps an extension's context menu
+   across worker restarts, so tearing it down and creating a dozen entries on every wake -- a
+   worker wakes for any message, tab event or alarm -- rewrote a menu that was already exactly
+   right. The fingerprint of what was last built (the item table, the switch, the version) is
+   kept in storage.session, which Chrome clears at browser start; a wake that finds its own
+   fingerprint there leaves the menu alone. Install, update and browser start always rebuild,
+   as they did, and a settings save rebuilds only when the switch it reads actually moved. */
+const WO_MENU_BUILT_KEY = '__wardenone_menu_built';
+function wardenMenuFingerprint(on) {
+  let version = '';
+  try { version = String((chrome.runtime.getManifest() || {}).version || ''); } catch (_) { version = ''; }
+  return version + '|' + (on ? 'on' : 'off') + '|' + WO_MENU_ITEMS.map((item) => item.id + '=' + (item.separator ? '-' : item.title)).join(';');
+}
+function wardenMenuBuiltRead() {
+  return new Promise((resolve) => {
+    try {
+      const area = chrome.storage && chrome.storage.session;
+      if (!area || typeof area.get !== 'function') return resolve('');
+      area.get(WO_MENU_BUILT_KEY, (x) => { void chrome.runtime.lastError; resolve(String((x && x[WO_MENU_BUILT_KEY]) || '')); });
+    } catch (_) { resolve(''); }
+  });
+}
+function wardenMenuBuiltWrite(fingerprint) {
   try {
-    if (!chrome.contextMenus) return;
+    const area = chrome.storage && chrome.storage.session;
+    if (area && typeof area.set === 'function') area.set({ [WO_MENU_BUILT_KEY]: fingerprint }, () => { void chrome.runtime.lastError; });
+  } catch (_) {}
+}
+async function installWardenContextMenu(reason) {
+  try {
+    if (!chrome.contextMenus) return false;
     /* A toggle that only decides whether the entries exist. Nothing else about
        the tools is conditional, because nothing else about them runs until one
        of the entries is clicked. */
@@ -16297,76 +17049,45 @@ async function installWardenContextMenu() {
       const cfg = (store && store.wardenone_config) || {};
       on = cfg.elementZapper !== false && cfg.enabled !== false;
     } catch (_) { on = true; }
-    chrome.contextMenus.removeAll(() => {
-      void chrome.runtime.lastError;
-      if (!on) return;
-      const page = ['page', 'frame', 'image', 'video'];
-      const pages = ['http://*/*', 'https://*/*'];
-      const add = (opts) => {
-        try { chrome.contextMenus.create(opts, () => { void chrome.runtime.lastError; }); } catch (_) {}
-      };
-      /* Every entry, every right-click. Scoping them to link/selection/frame
-         made the menu shorter but also made it unpredictable: the thing you
-         wanted was missing depending on the pixel you happened to be over, and
-         you cannot learn a menu whose contents move. They are all here, and each
-         one says plainly when there was nothing for it to work on. */
-      const everywhere = ['all'];
-      add({ id: WO_MENU_ROOT, title: 'WardenOne', contexts: everywhere, documentUrlPatterns: pages });
-
-      /* Ruled into groups rather than left as seven lines of text. They are not
-         seven of the same thing: two do something to what you clicked, four ask
-         a question about it, one decides about the site. A flat list makes the
-         reader sort that out every time they open it; the rules do it once. */
-      const item = (id, title) => add({ id, parentId: WO_MENU_ROOT, title, contexts: everywhere, documentUrlPatterns: pages });
-      const rule = (id) => add({ id, parentId: WO_MENU_ROOT, type: 'separator', contexts: everywhere, documentUrlPatterns: pages });
-
-      /* Do something with what you clicked. The second is here because the
-         browser draws its own "Copy link address", and that one never reaches
-         the page -- no copy event, no clipboard call -- so the engine's cleaner
-         cannot see it. This is the entry that can. */
-      item(WO_MENU_ZAP, 'Zap this element');
-      item(WO_MENU_COPY_LINK, 'Copy clean link');
-
-      rule('wardenone-sep-checks');
-      /* Ask about something, without going there. */
-      item(WO_MENU_LINK, 'Check this link');
-      item(WO_MENU_SELECTION, 'Check the selected text');
-      item(WO_MENU_MEDIA, 'Where is this image from?');
-      item(WO_MENU_FRAME, 'What is this frame?');
-
-      rule('wardenone-sep-tab');
-      /* Do something to the tab this menu was opened on. Grouped away from the
-         checks above because these are the only entries that change what is on
-         your screen, and away from the site decision below because they are
-         about one tab rather than about the site everywhere.
-
-         Closing is last in its own group, under the two reversible ones. A tab
-         you slept comes back when you click it and a never-sleep mark comes off
-         with the same entry that put it on; a closed tab does not, so it does
-         not sit directly under the pointer's resting place. */
-      item(WO_MENU_SLEEP_TAB, 'Sleep this tab');
-      item(WO_MENU_NEVER_SLEEP, 'Never sleep this site');
-      item(WO_MENU_CLOSE_TAB, 'Close this tab');
-
-      rule('wardenone-sep-site');
-      /* Decide about the site itself. Retitled from the real state before the
-         menu is drawn, so it always names what it is about to do. */
-      item(WO_MENU_BLOCK, 'Block this site');
+    const fingerprint = wardenMenuFingerprint(on);
+    const forced = reason === 'installed' || reason === 'startup';
+    if (!forced && (await wardenMenuBuiltRead()) === fingerprint) return false;
+    await new Promise((resolve) => {
+      chrome.contextMenus.removeAll(() => {
+        void chrome.runtime.lastError;
+        if (on) {
+          const pages = ['http://*/*', 'https://*/*'];
+          const everywhere = ['all'];
+          const add = (opts) => {
+            try { chrome.contextMenus.create(opts, () => { void chrome.runtime.lastError; }); } catch (_) {}
+          };
+          add({ id: WO_MENU_ROOT, title: 'WardenOne', contexts: everywhere, documentUrlPatterns: pages });
+          for (const item of WO_MENU_ITEMS) {
+            if (item.separator) add({ id: item.id, parentId: WO_MENU_ROOT, type: 'separator', contexts: everywhere, documentUrlPatterns: pages });
+            else add({ id: item.id, parentId: WO_MENU_ROOT, title: item.title, contexts: everywhere, documentUrlPatterns: pages });
+          }
+        }
+        wardenMenuBuiltWrite(fingerprint);
+        resolve();
+      });
     });
-  } catch (_) {}
+    return true;
+  } catch (_) { return false; }
 }
 
 try {
-  chrome.runtime.onInstalled.addListener(installWardenContextMenu);
-  chrome.runtime.onStartup.addListener(installWardenContextMenu);
+  chrome.runtime.onInstalled.addListener(() => { installWardenContextMenu('installed'); });
+  chrome.runtime.onStartup.addListener(() => { installWardenContextMenu('startup'); });
 } catch (_) {}
-/* And once now, for a worker woken by anything that is neither of those. */
-installWardenContextMenu();
+/* And once now, for a worker woken by anything that is neither of those -- which finds the
+   menu it built earlier this session and leaves it. */
+installWardenContextMenu('wake');
 /* The switch has to take effect without a restart, or turning it off looks
-   broken until the next browser start. */
+   broken until the next browser start. A save that did not move the switch
+   changes the fingerprint by nothing and rebuilds nothing. */
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes && changes.wardenone_config) installWardenContextMenu();
+    if (area === 'local' && changes && changes.wardenone_config) installWardenContextMenu('config');
   });
 } catch (_) {}
 
@@ -16458,16 +17179,20 @@ function searchResultVerdictForHost(host, ctx) {
      question, and re-asking it every search is how a warning becomes wallpaper. */
   try { if (hostMatchesAllowlist(h, ctx.allowlist)) return null; } catch (_) {}
 
+  /* What the site IS comes before which list it is on. An IP logger sits on the malware
+     feeds too, and "malware and scam" is true of the list and wrong about the site: it
+     reveals your address to whoever made the link, which is its own thing. */
+  try {
+    if (GRABBER_PACKAGED_DOMAINS.has(h) || GRABBER_PACKAGED_DOMAINS.has(rd)
+        || GRABBER_FEED_DOMAINS.has(h) || GRABBER_FEED_DOMAINS.has(rd)) {
+      return { level: 'malicious', label: 'IP logger \u2014 opening it reveals your address', detail: rd };
+    }
+  } catch (_) {}
   /* Malware and scam feeds only. BLOCKED_DOMAINS also holds ad and tracker hosts, and
      calling an analytics domain malicious would be a lie that discredits the true ones. */
   if (SECURITY_DOMAINS.has(h) || SECURITY_DOMAINS.has(rd)) {
     return { level: 'malicious', label: 'On a malware and scam blocklist', detail: rd };
   }
-  try {
-    if (GRABBER_FEED_DOMAINS.has(h) || GRABBER_FEED_DOMAINS.has(rd)) {
-      return { level: 'malicious', label: 'A known IP-logger link', detail: rd };
-    }
-  } catch (_) {}
 
   /* WardenOne's own finding, from watching the site behave. Kept apart from the feeds
      above because it is weaker evidence, and kept apart from the reader's own blocks
@@ -16521,6 +17246,21 @@ async function searchResultVerdicts(hosts, cfg) {
   const out = {};
   const list = Array.isArray(hosts) ? hosts.slice(0, SEARCH_WARN_MAX_HOSTS) : [];
   if (!list.length) return out;
+  const ages = await searchResultAges();
+  const ctx = { allowlist: activeAllowlist(cfg || {}), learned: LEARNED, ages };
+  for (const host of list) {
+    const verdict = searchResultVerdictForHost(host, ctx);
+    if (verdict) out[String(host).replace(/^www\./, '').toLowerCase()] = verdict;
+  }
+  return out;
+}
+
+/* The domain-age cache, read from storage at most once a minute: every search asked for it
+   afresh, and a storage read is the slow part of an otherwise in-memory answer. */
+let __searchAges = { at: 0, ages: {} };
+const SEARCH_AGES_TTL_MS = 60000;
+async function searchResultAges() {
+  if (Date.now() - __searchAges.at < SEARCH_AGES_TTL_MS) return __searchAges.ages;
   let ages = {};
   try {
     const cached = await localGet(DOMAIN_AGE_CACHE_KEY);
@@ -16535,14 +17275,9 @@ async function searchResultVerdicts(hosts, cfg) {
       }
     }
   } catch (_) { ages = {}; }
-  const ctx = { allowlist: activeAllowlist(cfg || {}), learned: LEARNED, ages };
-  for (const host of list) {
-    const verdict = searchResultVerdictForHost(host, ctx);
-    if (verdict) out[String(host).replace(/^www\./, '').toLowerCase()] = verdict;
-  }
-  return out;
+  __searchAges = { at: Date.now(), ages };
+  return ages;
 }
-
 async function wardenHostFindings(host, url, cfg) {
   const lines = [];
 
@@ -17280,14 +18015,13 @@ function startElementTool(tab, frameId) {
    before the menu paints. A tab switch refreshes it too, so the entry is right
    for the page you are on even without the page's help.
 
-   There is deliberately no tabs.onUpdated listener here. It cannot be filtered
-   in Chrome, so it fires for every property the browser touches -- title,
-   favicon, audible, muted -- and a playing video tab changes those constantly.
-   Every one of those events wakes this service worker, and waking it means
-   parsing and re-initialising three quarters of a megabyte of background script
-   to answer an event we would have discarded. It bought a title refresh after a
-   same-tab navigation, which the right-click report already covers, and it cost
-   that on every tick of a playing tab. */
+   There is deliberately no tabs.onUpdated listener here. The refresh after a
+   same-tab navigation rides the Forget-Me listener instead (see the census note
+   there), which already receives every tick of every tab and discards the ones
+   that are not a navigation. A listener of its own would not have cost a worker
+   wake -- one event wakes the worker once for all its listeners -- but it would
+   have been a second copy of the navigation filter to keep right, for a refresh
+   the right-click report already covers. */
 try {
   chrome.tabs.onActivated.addListener((info) => {
     try {
@@ -17783,7 +18517,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
       return true;
     }
-    respond(buildProtectionHealthSummary(), sendResponse);
+    // The popup names the tab it is open on; the tab itself is read back from Chrome, so
+    // the message decides only WHICH tab is checked, never what is said about it.
+    respond((async () => {
+      let tab = null;
+      const tabId = Number(msg.tabId);
+      if (Number.isInteger(tabId) && tabId >= 0) {
+        try { tab = await new Promise((resolve) => chrome.tabs.get(tabId, (t) => { void chrome.runtime.lastError; resolve(t || null); })); } catch (_) { tab = null; }
+      }
+      return buildProtectionHealthSummary(tab);
+    })(), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'clean-current-address') {
@@ -17881,7 +18624,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // so a cross-origin frame gets its own rules and not the top page's.
     let frameHost = '';
     try { frameHost = new URL(String((sender && sender.url) || '')).hostname; } catch (_) {}
-    respond(buildContentConfigSnapshot(frameHost), sendResponse);
+    respond(buildContentConfigSnapshot(frameHost, contentConfigNeeds(msg.need)), sendResponse);
     return true;
   }
   /* Opening the palette from the popup, for the case Chrome creates every time this
@@ -17941,11 +18684,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const store = await localGet('wardenone_config');
         const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
         if (cfg.enabled === false || cfg.warnSearchResults === false) { sendResponse({ ok: false, off: true }); return; }
-        /* The lists are read from storage on worker start, and a search page asks the
-           moment its results exist. Without this the first search after every wake-up
-           scored every result against empty sets and quietly warned about nothing. */
-        await securityStoresReady();
-        sendResponse({ ok: true, verdicts: await searchResultVerdicts(msg.hosts, cfg) });
+        /* Answer with what is in memory now and say whether the feed lists are in yet. A
+           worker woken from idle spends ~400-600 ms restoring them, and a search page asks
+           the moment its results exist; waiting here made every warning late by that much.
+           The packaged IP-logger list is tiny and read at once, so a logger is named on the
+           first answer; a feed verdict that is not ready yet comes on the page's second ask.
+           (On a fresh install the feeds are still downloading, so `ready` stays false until
+           they land -- and an empty answer is never cached by the page as "nothing known".) */
+        await loadPackagedGrabberDomains();
+        const ready = SECURITY_DOMAINS.size > 0;
+        sendResponse({ ok: true, ready, verdicts: await searchResultVerdicts(msg.hosts, cfg) });
       } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     })();
     return true;
@@ -17982,7 +18730,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'wo-nav-signal' && messageSenderIsTab(sender)) {
-    respond(noteNavSignal(sender && sender.tab && sender.tab.id, msg.signal), sendResponse);
+    respond(noteNavSignal(sender && sender.tab && sender.tab.id, msg.signal, msg.host), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'redirect-warning' && messageSenderIsTab(sender)) {
@@ -18037,15 +18785,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { refreshExtensionState(); } catch (_) {}
       return { ok: true };
     })(), sendResponse);
-    return true;
-  }
-  if (msg && msg.kind === 'eyeshield-fetch-css') {
-    // EyeShield (content script) can't read cross-origin stylesheet text (CORS).
-    // We fetch it here with the extension's host_permissions so EyeShield can
-    // recolour CDN-hosted CSS. Credential-less + size/time/type capped; local
-    // networks and uninspectable redirects are refused so pages can't use the
-    // extension as a private-network stylesheet reader.
-    respond(fetchPublicStylesheetText((msg && msg.url) || ''), sendResponse);
     return true;
   }
 
@@ -18283,18 +19022,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Reputation is an exact-ID lookup in a bundled local database. Access risk and
   // inventory changes are separate facts: broad permissions are not a malware
   // verdict, while a missing database record is never presented as proof of safety.
-  if (msg && msg.kind === 'list-extensions') {
-    (async () => {
-      try {
-        const report = await buildExtensionSecurityReport({ trigger: 'legacy-list' });
-        sendResponse({ ok: true, extensions: report.extensions, database: report.database, summary: report.summary });
-      } catch (e) {
-        sendResponse({ ok: false, error: String(e) });
-      }
-    })();
-    return true;
-  }
-
+  //
+  // One entry point. list-extensions and get-extension-alerts used to sit beside this one,
+  // answering with subsets of the same report -- the inventory without the assessments, the
+  // change alerts without the inventory -- and nothing had sent either for several rewrites of
+  // the Security Centre. The report folds the alerts into each extension's assessment, and
+  // tools/test-message-reachability.js now refuses a handler nothing sends (PI-07).
   if (msg && msg.kind === 'extension-security-report') {
     (async () => {
       try {
@@ -18367,23 +19100,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // surface the latest permission-change alerts for the popup
-  if (msg && msg.kind === 'get-extension-alerts') {
-    (async () => {
-      try {
-        await reconcileExtensionChanges('popup');
-        const store = await localGet([EXT_ALERTS_KEY, EXT_WATCH_STATUS_KEY]);
-        sendResponse({
-          ok: true,
-          alerts: (store && store[EXT_ALERTS_KEY]) || [],
-          status: (store && store[EXT_WATCH_STATUS_KEY]) || null,
-        });
-      } catch (e) {
-        sendResponse({ ok: false, error: String(e) });
-      }
-    })();
-    return true;
-  }
   if (msg && msg.kind === 'clear-extension-alerts') {
     (async () => {
       try {
@@ -19040,21 +19756,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // (kept) jump-to-settings handler name for the per-type buttons still works via
-  // the popup opening chrome://settings/content/<type> directly.
-  if (msg && msg.kind === 'reset-all-site-permissions') {
-    if (!messageSenderIsExtensionPage(sender)) {
-      try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
-      return true;
-    }
-    respond(resetSensitiveSitePermissionsGlobally().then((r) => Object.assign({ ok: true }, r)), sendResponse);
-    return true;
-  }
-
-  if (msg && msg.kind === 'list-site-permissions') {
-    sendResponse({ ok: true, note: 'Use the per-site scan; full enumeration isn\'t available to extensions.' });
-    return true;
-  }
+  // The site-permission sweep is reached through the Privacy cleaner (clean-browser with
+  // sitePermissions), and the per-site view through scan-site-permissions. Two older names for
+  // the same jobs -- reset-all-site-permissions and list-site-permissions, the second of which
+  // only ever answered with a note that Chrome cannot enumerate grants -- had no sender left and
+  // are gone (PI-07). The per-type "open settings" buttons never came here: the popup opens
+  // chrome://settings/content/<type> itself.
 
   // ---- Memory Shield: popup actions ----
   if (msg && msg.kind === 'memory-score') {
@@ -19063,10 +19770,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'memory-free-ram') {
     respond(freeRamNow(), sendResponse);
-    return true;
-  }
-  if (msg && msg.kind === 'memory-sweep-now') {
-    respond(memorySweep('manual'), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'memory-duplicates') {
@@ -19089,10 +19792,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(listZombieTabs(msg.hours), sendResponse);
     return true;
   }
-  if (msg && msg.kind === 'memory-sleep-groups') {
-    respond(sleepIdleGroups(), sendResponse);
-    return true;
-  }
+  // No manual entry point for the group sleeper or the threshold sweep: both run from the Memory
+  // Shield alarm (sleepIdleGroups(cfg), memorySweep('alarm', cfg)), and the popup's one button is
+  // Free RAM now, which sleeps every safe inactive tab regardless of the threshold. The
+  // memory-sweep-now and memory-sleep-groups handlers had no sender and are gone (PI-07).
   if (msg && msg.kind === 'memory-sleep-tab' && msg.tabId != null) {
     respond(memoryActOnTab(msg.tabId, 'sleep'), sendResponse);
     return true;
@@ -19175,37 +19878,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           } catch (_) {}
         }
         sendResponse(result);
-      } catch (e) { sendResponse({ ok: false, error: String(e) }); }
-    })();
-    return true;
-  }
-
-  // AdShield: status (rule counts + last cosmetic update) for the popup.
-  if (msg && msg.kind === 'adshield-status') {
-    (async () => {
-      try {
-        const store = await chrome.storage.local.get(['wardenone_adshield_cosmetic', 'wardenone_adshield_cosmetic_at', 'wardenone_config']);
-        const data = store.wardenone_adshield_cosmetic;
-        let selectorCount = 0;
-        let proceduralCount = 0;
-        let scriptletCount = 0;
-        if (data) {
-          selectorCount = (data.generic ? data.generic.length : 0);
-          const sp = data.specific || {};
-          for (const k in sp) selectorCount += sp[k].length;
-          const pr = data.procedural || {};
-          for (const k in pr) proceduralCount += pr[k].length;
-          const sc = data.scriptlets || {};
-          for (const k in sc) scriptletCount += sc[k].length;
-        }
-        sendResponse({
-          ok: true,
-          enabled: (store.wardenone_config || {}).adShield !== false,
-          selectorCount,
-          proceduralCount,
-          scriptletCount,
-          updatedAt: store.wardenone_adshield_cosmetic_at || 0,
-        });
       } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     })();
     return true;
@@ -19393,10 +20065,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const matrix = await readFirewall();
       const site = firewallNormalizeHost(msg.site);
+      const compiled = firewallCompile(matrix);
       sendResponse({
         ok: true,
         site,
         rules: site ? (matrix[site] || {}) : {},
+        // Decisions of this site's that are stored but got no rule (a matrix from before the
+        // limit was enforced at the write): the page draws them as not in effect.
+        omitted: site ? firewallOmittedFor(compiled, site) : [],
+        held: compiled.rules.length,
+        limit: compiled.limit,
         once: site ? await firewallSessionAllowances(site) : [],
         sites: Object.keys(matrix).length,
         columns: Object.keys(FIREWALL_COLUMNS),
@@ -19419,20 +20097,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       const matrix = await readFirewall();
       const next = firewallMatrixWith(matrix, site, domain, column, verdict);
-      // Chrome first. If it refuses, nothing is stored and the page is told why, with the
+      // The band first. A decision the compile would have to leave out is refused here, with
+      // the count, and nothing is stored (M46): a stored decision is a decision in effect.
+      const before = firewallCompile(matrix);
+      const after = firewallCompile(next);
+      const refusal = firewallRefusalFor(before, after);
+      if (refusal) {
+        sendResponse({ ok: false, error: refusal, rules: matrix[site] || {}, omitted: firewallOmittedFor(before, site), held: before.rules.length, limit: before.limit });
+        return;
+      }
+      // Chrome next. If it refuses, nothing is stored and the page is told why, with the
       // rules that ARE in effect so it can redraw honestly (H18).
-      const result = await applyFirewallRulesFrom(firewallRulesFrom(next));
+      const result = await applyFirewallRulesFrom(after.rules);
       if (!result.ok) {
-        sendResponse({ ok: false, error: 'The browser refused that rule change: ' + result.error + ' Nothing was saved.', rules: matrix[site] || {} });
+        sendResponse({ ok: false, error: 'The browser refused that rule change: ' + result.error + ' Nothing was saved.', rules: matrix[site] || {}, omitted: firewallOmittedFor(before, site) });
         return;
       }
       try {
         await localSet({ [FIREWALL_KEY]: next });
       } catch (e) {
-        sendResponse({ ok: false, error: 'The rule is in effect now but could not be saved, so it will not survive a restart: ' + firewallErrorText(e), rules: next[site] || {} });
+        sendResponse({ ok: false, error: 'The rule is in effect now but could not be saved, so it will not survive a restart: ' + firewallErrorText(e), rules: next[site] || {}, omitted: firewallOmittedFor(after, site) });
         return;
       }
-      sendResponse({ ok: true, rules: next[site] || {}, applied: result.applied });
+      sendResponse({ ok: true, rules: next[site] || {}, omitted: firewallOmittedFor(after, site), held: after.rules.length, limit: after.limit, applied: result.applied });
     })();
     return true;
   }
@@ -19510,12 +20197,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'user-rules-get') {
     (async () => {
       const text = await readUserRulesText();
+      /* The reader's own text is first in line for the band, so what it parses to alone is
+         what it gets; the subscriptions take what is left (userFilterAllocation). */
       const parsed = parseUserFilterText(text, USER_RULE_BASE);
       sendResponse({
         ok: true, text,
         count: parsed.count,
         network: parsed.network.length,
-        cosmetic: parsed.count - parsed.network.length,
+        cosmetic: parsed.cosmetic,
+        overflow: parsed.overflow,
+        overflowLines: parsed.overflowLines,
+        limit: USER_RULE_MAX,
         errors: parsed.errors,
       });
     })();
@@ -19542,7 +20234,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ok: true,
           count: parsed.count,
           network: parsed.network.length,
-          cosmetic: parsed.count - parsed.network.length,
+          cosmetic: parsed.cosmetic,
+          overflow: parsed.overflow,
+          overflowLines: parsed.overflowLines,
+          limit: USER_RULE_MAX,
           errors: parsed.errors,
           applied: commit.applied,
           rejected: [],
@@ -19559,7 +20254,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const lists = await readCustomLists();
       /* The text itself is never sent to the page: it can be megabytes, and
          nothing in the UI renders it. */
-      sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+      sendResponse({ ok: true, lists: customListRowsFor(lists, await readUserRulesText()) });
     })();
     return true;
   }
@@ -19591,7 +20286,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
         const commit = await commitUserFilters({ own: await readUserRulesText(), lists, storeLists: true });
         if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused that list\'s rules (' + commit.error + '). It was not added.' }); return; }
-        sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+        sendResponse({ ok: true, lists: customListRowsFor(lists, await readUserRulesText()) });
       } catch (e) { sendResponse({ ok: false, error: String(e).slice(0, 200) }); }
     })();
     return true;
@@ -19600,7 +20295,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const r = await refreshCustomList(msg.id);
       const lists = await readCustomLists();
-      sendResponse(Object.assign({}, r, { lists: lists.map((l) => Object.assign({}, l, { text: undefined })) }));
+      sendResponse(Object.assign({}, r, { lists: customListRowsFor(lists, await readUserRulesText()) }));
     })();
     return true;
   }
@@ -19610,13 +20305,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const idx = lists.findIndex((l) => l && l.id === msg.id);
       if (idx < 0) { sendResponse({ ok: false, error: 'That list is not subscribed.' }); return; }
       if (msg.enabled !== false && !customListTransportOk(lists[idx])) {
-        sendResponse({ ok: false, error: CUSTOM_LIST_INSECURE_NOTE, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+        sendResponse({ ok: false, error: CUSTOM_LIST_INSECURE_NOTE, lists: customListRowsFor(lists, await readUserRulesText()) });
         return;
       }
       lists[idx] = Object.assign({}, lists[idx], { enabled: msg.enabled !== false });
       const commit = await commitUserFilters({ own: await readUserRulesText(), lists, storeLists: true });
-      if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused the change (' + commit.error + '). The list was left as it was.', lists: (await readCustomLists()).map((l) => Object.assign({}, l, { text: undefined })) }); return; }
-      sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+      if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused the change (' + commit.error + '). The list was left as it was.', lists: customListRowsFor(await readCustomLists(), await readUserRulesText()) }); return; }
+      sendResponse({ ok: true, lists: customListRowsFor(lists, await readUserRulesText()) });
     })();
     return true;
   }
@@ -19624,8 +20319,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const lists = (await readCustomLists()).filter((l) => !l || l.id !== msg.id);
       const commit = await commitUserFilters({ own: await readUserRulesText(), lists, storeLists: true });
-      if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused the change (' + commit.error + '). The list is still subscribed.', lists: (await readCustomLists()).map((l) => Object.assign({}, l, { text: undefined })) }); return; }
-      sendResponse({ ok: true, lists: lists.map((l) => Object.assign({}, l, { text: undefined })) });
+      if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused the change (' + commit.error + '). The list is still subscribed.', lists: customListRowsFor(await readCustomLists(), await readUserRulesText()) }); return; }
+      sendResponse({ ok: true, lists: customListRowsFor(lists, await readUserRulesText()) });
     })();
     return true;
   }
