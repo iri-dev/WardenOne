@@ -5,18 +5,26 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 /*
- * The badge must never be the thing standing between someone and a control.
+ * The badge must never be the thing standing between someone and a control -- and it
+ * must not be dead on every page that has a link in its corner.
  *
- * It is fixed to the bottom-right corner at the maximum z-index, which is exactly
- * where video and music players put their controls. Reported on YouTube: in
- * fullscreen the badge swallowed the hover and the click that reveal and press the
- * exit button, so getting back out was a fight with the extension.
+ * It is fixed to the bottom-right corner at the maximum z-index, which is exactly where
+ * video and music players put their controls. Reported on YouTube: in fullscreen the badge
+ * swallowed the hover and the click that reveal and press the exit button. Then reported
+ * the other way round: "on most pages we cannot press the button". The first fix yielded
+ * to ANY control under the badge, and on a page with links everywhere something is under
+ * it nearly all the time -- so the badge went inert at load and, taking no pointer events,
+ * never received the hover that would have re-checked. Dead until a resize.
  *
- * Two outcomes, deliberately different:
- *   player  -> HIDDEN. It sits on a volume slider or a seek bar, and passing the
- *              click through is no comfort when you cannot see what you are dragging.
- *   control -> INERT but visible. Vanishing on every page with something in that
- *              corner would be worse than the problem it solves.
+ * Three outcomes now, deliberately different:
+ *   player, slider beside, fullscreen -> HIDDEN. Passing the click through is no comfort
+ *              when you cannot see what you are dragging.
+ *   anchored control (fixed, sticky, inside the fullscreen element, or in the flow of a
+ *              document that cannot scroll, with no scrolling pane in between) -> the badge
+ *              MOVES UP, clear of the control or of its whole block; only when nothing fits
+ *              does it stay put and go inert.
+ *   anything that scrolls away -> the badge is left alone. It is a floating widget like any
+ *              other, and a flick of the wheel reaches whatever was under it.
  *
  * This evaluates the shipped functions out of src/content.js rather than a copy.
  *
@@ -38,223 +46,444 @@ assert(start >= 0, 'the badge yield block is present in src/content.js');
 assert(end > start, 'the badge yield block ends at alignBadge');
 /* The slice is a fragment of a comma-separated declarator list and ends on a
    comma, so it becomes a valid declaration by closing it with one more binding. */
-/* Match the shipped IIFE. Without strict mode this test allowed undeclared geometry
-   bindings that throw in content.min.js, so the real nearby-control check failed
-   closed while the copied fragment appeared to work. */
 const block = '"use strict"; const ' + source.slice(start, end) + '__end=0;';
 
-const BADGE_RECT = { left: 1200, top: 900, right: 1320, bottom: 940, width: 120, height: 40 };
+/* Viewport 1920x1080. The badge's home corner: bottom 1064 (16px up), 120x40. */
+const VIEW = { w: 1920, h: 1080 };
+const BADGE_RECT = { left: 1784, top: 1024, right: 1904, bottom: 1064, width: 120, height: 40 };
+const rect = (left, top, right, bottom) => ({ left, top, right, bottom, width: right - left, height: bottom - top });
 
-function makeElement(tag, role) {
-  return {
-    tag,
-    role: role || '',
-    closest(selector) {
+/* A small element model. `closest`/`matches` understand the selector tokens the shipped
+   code uses: a tag name, [attr], [attr="v"], [attr="v" i], [attr^=...] etc. reduced to
+   presence, and :not([tabindex="-1"]). Ancestry carries position/overflow for the
+   anchoring walk, and a rect for hit-testing. */
+let seq = 0;
+function el(tag, opts) {
+  const o = opts || {};
+  const node = {
+    id: ++seq,
+    nodeType: 1,
+    tag: String(tag).toLowerCase(),
+    attrs: Object.assign({}, o.attrs || {}),
+    style: Object.assign({ position: 'static', overflowY: 'visible' }, o.style || {}),
+    scrollHeight: o.scrollHeight || 0,
+    clientHeight: o.clientHeight || 0,
+    rect: o.rect || rect(0, 0, 0, 0),
+    parentElement: null,
+    insideHost: !!o.insideHost,
+    children: [],
+    getBoundingClientRect() { return this.rect; },
+    matches(selector) {
       return String(selector || '').split(',').some((part) => {
-        const token = part.trim();
-        return token === this.tag || (this.role && token === '[role="' + this.role + '"]');
-      }) ? this : null;
+        const t = part.trim();
+        if (!t) return false;
+        const m = /^([a-z-]*)((?:\[[^\]]+\])*)(:not\(\[tabindex="-1"\]\))?$/i.exec(t);
+        if (!m) return false;
+        if (m[1] && m[1].toLowerCase() !== this.tag) return false;
+        const attrs = m[2].match(/\[[^\]]+\]/g) || [];
+        for (const a of attrs) {
+          const am = /^\[([a-z-]+)(?:[\^$*~]?=\s*"([^"]*)"(?:\s+i)?)?\]$/i.exec(a);
+          if (!am) return false;
+          const have = this.attrs[am[1]];
+          if (have === undefined) return false;
+          if (am[2] !== undefined && String(have).toLowerCase() !== am[2].toLowerCase()) return false;
+        }
+        if (m[3] && this.attrs.tabindex === '-1') return false;
+        return true;
+      });
+    },
+    closest(selector) {
+      for (let n = this; n; n = n.parentElement) if (n.matches && n.matches(selector)) return n;
+      return null;
     },
   };
+  return node;
 }
+function under(child, parent) { child.parentElement = parent; parent.children.push(child); return child; }
 
 function run(options) {
   const opts = options || {};
-  const documentElement = { tag: 'html', closest: () => null };
-  const body = { tag: 'body', closest: () => null };
-  const badgeHost = { contains: (el) => !!(el && el.insideHost) };
+  const html = el('html', { style: { overflowY: opts.htmlOverflow || 'visible' } });
+  const body = under(el('body', { style: { overflowY: opts.bodyOverflow || 'visible' } }), html);
+  const badgeHost = { contains: (node) => !!(node && node.insideHost), style: { setProperty(k, v) { lifts.push([k, v]); } } };
+  const lifts = [];
   const toggled = {};
   let isAway = false;
-  const awayCollapsesLayout = /\.b\.away\{display:none\}/.test(source);
-  const calls = { hit: 0, query: 0 };
+  const calls = { hit: 0, query: 0, style: 0 };
+  /* The real badge moves up by the lift (its `bottom` rides --rg-lift), so the fake's box
+     does too -- home is then recovered by adding the lift back, as the engine does. */
+  let sandbox = null;
   const badgeButton = {
-    getBoundingClientRect: () => (isAway && awayCollapsesLayout
-      ? { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }
-      : (opts.rect === undefined ? BADGE_RECT : opts.rect)),
+    getBoundingClientRect: () => {
+      const base = opts.rect === undefined ? BADGE_RECT : opts.rect;
+      const up = sandbox ? (sandbox.badgeLift || 0) : 0;
+      return rect(base.left, base.top - up, base.right, base.bottom - up);
+    },
     classList: { toggle(name, on) { toggled[name] = !!on; if (name === 'away') isAway = !!on; } },
   };
-  const sandbox = {
-    Date, Math, String, Object, Array, Number,
-    /* The yield check keys its cache on viewport size, so the sandbox needs one.
-       opts.viewport lets a test change it and prove the cache is invalidated. */
-    window: { innerWidth: (opts.viewport || 1920), innerHeight: 1080 },
+  /* Everything the page has in it, topmost first. Hit-testing returns the ones containing
+     the point; the near-check returns the ones matching the slider/shell query. */
+  const elements = (opts.build ? opts.build(body) : []) || [];
+  const now = { t: 1e6 };
+  sandbox = {
+    Math, String, Object, Array, Number, isFinite,
+    Date: { now: () => now.t },
+    window: { innerWidth: opts.viewport || VIEW.w, innerHeight: VIEW.h },
+    getComputedStyle: (node) => { calls.style++; return node.style || {}; },
     PLAYER_SHELL_SELECTOR: '[data-player],[data-video],[id="player" i],[class~="player" i]',
     badgeHost,
     badgeButton,
+    /* Declared in the engine's `let` chain, outside the slice: the current lift in px. */
+    badgeLift: 0,
     document: {
-      documentElement,
+      documentElement: html,
       body,
-      fullscreenElement: opts.fullscreen ? {} : null,
-      elementsFromPoint: opts.noApi ? undefined : (() => { calls.hit++; return opts.stack || []; }),
-      /* Controls sitting NEAR the badge rather than under it. Spotify's volume slider
-         is beside the badge, not beneath it, so nothing shows up in elementsFromPoint. */
-      querySelectorAll: () => { calls.query++; return (opts.nearby || []).map((rect) => ({
-        getBoundingClientRect: () => rect,
-      })); },
+      scrollingElement: { scrollHeight: opts.docHeight === undefined ? 5000 : opts.docHeight },
+      fullscreenElement: opts.fullscreen || null,
+      elementsFromPoint: opts.noApi ? undefined : ((x, y) => {
+        calls.hit++;
+        return elements.filter((n) => n.rect.left <= x && x <= n.rect.right && n.rect.top <= y && y <= n.rect.bottom);
+      }),
+      querySelectorAll: (sel) => { calls.query++; return elements.filter((n) => n.matches(sel)); },
     },
   };
   vm.createContext(sandbox);
   vm.runInContext(block, sandbox, { filename: 'src/content.js:badge-yield' });
-  vm.runInContext('globalThis.__r={kind:badgeCoversPageControl(),fs:badgeInFullscreen()};'
-    + 'updateBadgeYield(true);', sandbox, { filename: 'probe' });
-  return { result: sandbox.__r, toggled, calls, sandbox, vm };
+  const api = {
+    sandbox, toggled, calls, lifts, now, elements, body,
+    kind: () => vm.runInContext('badgeCoversPageControl()', sandbox),
+    anchor: (node) => { sandbox.__n = node; return vm.runInContext('badgeAnchorOf(__n)', sandbox); },
+    update: (force) => vm.runInContext('updateBadgeYield(' + (force ? 'true' : '') + ')', sandbox),
+    lift: () => { const last = lifts.filter((l) => l[0] === '--rg-lift').pop(); return last ? parseInt(last[1], 10) : null; },
+    fs: () => vm.runInContext('badgeInFullscreen()', sandbox),
+  };
+  api.update(true);
+  return api;
 }
 
-/* The reported case: a player's own control sitting under the badge. */
-const shell = run({ stack: [makeElement('[data-player]')] });
-assert.strictEqual(shell.result.kind, 'player', 'a player shell under the badge is a player');
-assert.strictEqual(shell.toggled.away, true,
-  'and the badge gets out of the way entirely -- inert is not enough over a slider');
-assert.strictEqual(shell.toggled.inert, true, 'and takes no input on the way out');
-
-/* An ordinary button: inert, but still visible. */
-const button = run({ stack: [makeElement('button')] });
-assert.strictEqual(button.result.kind, 'control', 'a plain button under the badge is a control');
-assert.strictEqual(button.toggled.inert, true, 'so the click lands where it was aimed');
-assert.strictEqual(button.toggled.away, false,
-  'but the badge stays visible -- the reader still wants to see the guard is running');
-
-const roled = run({ stack: [makeElement('div', 'button')] });
-assert.strictEqual(roled.result.kind, 'control',
-  'a div with role=button counts -- players rarely use real buttons');
-
-/* Ordinary page content must NOT disable the badge, or it would be permanently
-   inert on any page whose bottom-right corner happens to be occupied. */
-const plain = run({ stack: [makeElement('div')] });
-assert.strictEqual(plain.result.kind, '', 'inert page content leaves the badge usable');
-assert.strictEqual(plain.toggled.inert, false, 'so the badge keeps taking input');
-assert.strictEqual(plain.toggled.away, false, 'and stays where it is');
-
-/* Only the topmost page element decides. A button buried under an opaque div is
-   not reachable anyway, and yielding to it would disable the badge for nothing. */
-const buried = run({ stack: [makeElement('div'), makeElement('button')] });
-assert.strictEqual(buried.result.kind, '',
-  'a control behind an opaque element is not the thing the reader is aiming at');
-
-/* The badge's own host is skipped rather than ending the scan -- shadow content
-   retargets to the host, so it is always the first hit over the badge itself. */
-const ownHost = run({
-  stack: [{ insideHost: true, tag: 'span', closest: () => null }, makeElement('button')],
-});
-assert.strictEqual(ownHost.result.kind, 'control',
-  "the badge's own element must not mask the control underneath it");
-
-/* Fullscreen: the page owns the whole screen and the badge cannot be dismissed. */
-const fs1 = run({ fullscreen: true, stack: [makeElement('div')] });
-assert.strictEqual(fs1.result.fs, true, 'fullscreen is detected');
-assert.strictEqual(fs1.toggled.away, true, 'and the badge is hidden outright');
-assert.strictEqual(fs1.toggled.inert, true, 'and inert, so nothing is intercepted either');
-
-/* Degrade quietly rather than throwing into the engine. */
-const noApi = run({ noApi: true, stack: [makeElement('button')] });
-assert.strictEqual(noApi.result.kind, '', 'no elementsFromPoint means no opinion');
-const collapsed = run({ rect: { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 } });
-assert.strictEqual(collapsed.result.kind, '', 'a collapsed badge tests nothing');
-
-/* THE ACCUMULATION BUG. Each check costs three elementsFromPoint plus up to forty
-   getBoundingClientRect calls. The hover re-check was added with force=true, which
-   bypasses the throttle entirely, so crossing the badge five times ran the whole thing
-   five times. Reported as: smooth at first, then worse the more it was triggered.
-   The answer depends only on layout, so while the viewport is unchanged it is reused. */
+/* ---- the reported case: a player's own control under the badge --------------------------- */
 {
-  const r = run({ nearby: [{ left: 100, right: 200, top: 100, bottom: 120, width: 100, height: 20 }] });
+  const r = run({ build: (body) => [under(el('div', { attrs: { 'data-player': '' }, rect: rect(1500, 900, 1920, 1080) }), body)] });
+  assert.strictEqual(r.kind(), 'player', 'a player shell under the badge is a player');
+  assert.strictEqual(r.toggled.away, true, 'and the badge gets out of the way entirely -- inert is not enough over a slider');
+  assert.strictEqual(r.toggled.inert, true, 'and takes no input on the way out');
+}
+
+/* ---- THE SECOND REPORT: ordinary content must not disable the badge ------------------------ */
+{
+  /* A long page; a link in its flow has scrolled under the badge. */
+  const r = run({ build: (body) => [under(el('a', { attrs: { href: '/x' }, rect: rect(1700, 1000, 1920, 1080) }), body)] });
+  assert.strictEqual(r.kind(), '', 'a link that scrolls away is not something the badge yields to');
+  assert.strictEqual(r.toggled.inert, false, 'so the badge keeps taking input');
+  assert.strictEqual(r.toggled.away, false, 'and stays where it is');
+  assert.strictEqual(r.lift(), 0, 'and does not move');
+}
+{
+  const r = run({ build: (body) => [under(el('button', { rect: rect(1700, 1000, 1920, 1080) }), body)] });
+  assert.strictEqual(r.kind(), '', 'a button in the page flow likewise');
+  assert.strictEqual(r.toggled.inert, false);
+}
+{
+  /* An app shell: the document does not scroll, but the link sits in a pane that does. */
+  const r = run({
+    docHeight: 1080, htmlOverflow: 'hidden',
+    build: (body) => {
+      const shell = under(el('div', { rect: rect(0, 0, 1920, 1080) }), body);
+      const pane = under(el('div', { style: { overflowY: 'auto' }, scrollHeight: 9000, clientHeight: 900, rect: rect(300, 100, 1920, 1080) }), shell);
+      const message = under(el('div', { rect: rect(1600, 1000, 1920, 1080) }), pane);
+      return [under(el('a', { attrs: { href: '/m' }, rect: rect(1700, 1010, 1900, 1070) }), message)];
+    },
+  });
+  assert.strictEqual(r.kind(), '', 'a link inside a scrolling pane of a fixed-height app is scrolling content');
+  assert.strictEqual(r.toggled.inert, false, 'the badge stays usable over a chat pane');
+}
+
+/* ---- anchored controls: the badge moves up instead of going dead --------------------------- */
+{
+  /* A consent bar: fixed, 200px tall along the bottom, with a link and a button under the badge. */
+  const r = run({
+    build: (body) => {
+      const bar = under(el('div', { style: { position: 'fixed' }, rect: rect(0, 880, 1920, 1080) }), body);
+      const text = under(el('p', { rect: rect(40, 900, 1500, 1060) }), bar);
+      const accept = under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), bar);
+      return [accept, text, bar];
+    },
+  });
+  assert.strictEqual(r.kind(), 'control', 'a button in a fixed bar is an anchored control');
+  assert.strictEqual(r.toggled.inert, false, 'the badge is NOT made inert for it');
+  assert.strictEqual(r.toggled.away, false, 'nor hidden');
+  const lift = r.lift();
+  /* clear of the button: 1064 - 1030 + 8 = 42 */
+  assert.strictEqual(lift, 42, 'it moves up just clear of the control (' + lift + ')');
+}
+{
+  /* A chat bubble: a fixed 60x60 button in the corner. */
+  const r = run({
+    build: (body) => [under(el('button', { style: { position: 'fixed' }, rect: rect(1840, 1000, 1900, 1060) }), body)],
+  });
+  assert.strictEqual(r.toggled.inert, false);
+  assert.strictEqual(r.lift(), 1064 - 1000 + 8, 'it clears a chat bubble by the gap');
+}
+{
+  /* A fixed chat iframe counts as a control too: the reader needs to click into it. */
+  const r = run({
+    build: (body) => [under(el('iframe', { style: { position: 'fixed' }, rect: rect(1800, 980, 1904, 1064) }), body)],
+  });
+  assert.strictEqual(r.kind(), 'control', 'a fixed iframe in the corner is a control');
+  assert.strictEqual(r.toggled.inert, false);
+  assert(r.lift() > 0, 'and the badge moves above it');
+}
+{
+  /* When the spot above the control is itself occupied by another anchored control, the
+     badge clears the whole block instead. */
+  const r = run({
+    build: (body) => {
+      const bar = under(el('div', { style: { position: 'fixed' }, rect: rect(0, 900, 1920, 1080) }), body);
+      const accept = under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), bar);
+      const policy = under(el('a', { attrs: { href: '/p' }, rect: rect(1700, 950, 1904, 1025) }), bar);
+      return [accept, policy, bar];
+    },
+  });
+  assert.strictEqual(r.toggled.inert, false, 'still not inert');
+  assert.strictEqual(r.lift(), 1064 - 900 + 8, 'it clears the bar (' + r.lift() + ')');
+}
+{
+  /* A fixed sidebar the full height of the window: nothing fits, so it falls back to inert. */
+  const r = run({
+    build: (body) => {
+      const side = under(el('nav', { style: { position: 'fixed' }, rect: rect(1600, 0, 1920, 1080) }), body);
+      return [under(el('a', { attrs: { href: '/n' }, rect: rect(1620, 0, 1900, 1080) }), side), side];
+    },
+  });
+  assert.strictEqual(r.kind(), 'control');
+  assert.strictEqual(r.toggled.inert, true, 'with nowhere to go it stays put and stops taking input, as before');
+  assert.strictEqual(r.toggled.away, false, 'but stays visible');
+  assert.strictEqual(r.lift(), 0);
+}
+{
+  /* The cap: a block that would push the badge past 45% of the screen is not cleared. */
+  const r = run({
+    build: (body) => {
+      const panel = under(el('div', { style: { position: 'fixed' }, rect: rect(1500, 500, 1920, 1080) }), body);
+      return [under(el('button', { rect: rect(1520, 520, 1900, 1070) }), panel), panel];
+    },
+  });
+  assert.strictEqual(r.toggled.inert, true, 'a tall fixed panel is not cleared -- the badge would float mid-screen');
+  assert.strictEqual(r.lift(), 0);
+}
+{
+  /* Sticky counts as anchored. */
+  const r = run({
+    build: (body) => {
+      const bar = under(el('footer', { style: { position: 'sticky' }, rect: rect(0, 1000, 1920, 1080) }), body);
+      return [under(el('button', { rect: rect(1780, 1020, 1900, 1070) }), bar), bar];
+    },
+  });
+  assert.strictEqual(r.kind(), 'control', 'a sticky bar is anchored');
+  assert(r.lift() > 0);
+}
+{
+  /* A document that cannot scroll: a short page's footer button stays where it is too. */
+  const r = run({
+    docHeight: 1080,
+    build: (body) => [under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), body)],
+  });
+  assert.strictEqual(r.kind(), 'control', 'in a document that does not scroll, a control in flow is anchored');
+  assert.strictEqual(r.lift(), 42, 'and the badge clears it');
+  assert.strictEqual(r.toggled.inert, false);
+}
+{
+  /* The same button on a long page is scrolling content. */
+  const r = run({ docHeight: 6000, build: (body) => [under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), body)] });
+  assert.strictEqual(r.kind(), '', 'on a page that scrolls, the same button is left to the wheel');
+}
+{
+  /* html{overflow:hidden} pins the document even when its content is tall. */
+  const r = run({ docHeight: 6000, htmlOverflow: 'hidden', build: (body) => [under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), body)] });
+  assert.strictEqual(r.kind(), 'control', 'overflow:hidden on the root means the page never scrolls');
+}
+{
+  /* Inside the fullscreen element everything is anchored (and fullscreen hides anyway). */
+  const r = run({ build: () => [] });
+  const fsEl = el('div', { rect: rect(0, 0, 1920, 1080) });
+  under(fsEl, r.body);
+  const btn = under(el('button', { rect: rect(1800, 1000, 1900, 1060) }), fsEl);
+  r.sandbox.document.fullscreenElement = fsEl;
+  assert(r.anchor(btn) && r.anchor(btn).top === 0, 'a control inside the fullscreen element is anchored to it');
+}
+
+/* ---- only the topmost element decides; the badge\'s own host is skipped ------------------------ */
+{
+  const r = run({
+    build: (body) => {
+      const bar = under(el('div', { style: { position: 'fixed' }, rect: rect(0, 900, 1920, 1080) }), body);
+      const btn = under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), bar);
+      const cover = under(el('div', { rect: rect(1500, 900, 1920, 1080) }), body);
+      return [cover, btn, bar];
+    },
+  });
+  assert.strictEqual(r.kind(), '', 'a control behind an opaque element is not the thing the reader is aiming at');
+}
+{
+  const r = run({
+    build: (body) => {
+      const own = el('span', { insideHost: true, rect: rect(1784, 1024, 1904, 1064) });
+      const btn = under(el('button', { style: { position: 'fixed' }, rect: rect(1760, 1030, 1900, 1070) }), body);
+      return [own, btn];
+    },
+  });
+  assert.strictEqual(r.kind(), 'control', "the badge's own element must not mask the control underneath it");
+}
+
+/* ---- fullscreen, no API, collapsed ------------------------------------------------------------ */
+{
+  const r = run({ fullscreen: {}, build: (body) => [under(el('div', { rect: rect(0, 0, 1920, 1080) }), body)] });
+  assert.strictEqual(r.fs(), true, 'fullscreen is detected');
+  assert.strictEqual(r.toggled.away, true, 'and the badge is hidden outright');
+  assert.strictEqual(r.toggled.inert, true, 'and inert, so nothing is intercepted either');
+}
+{
+  const r = run({ noApi: true, build: (body) => [under(el('button', { style: { position: 'fixed' }, rect: rect(1760, 1030, 1900, 1070) }), body)] });
+  assert.strictEqual(r.kind(), '', 'no elementsFromPoint means no opinion');
+  assert.strictEqual(r.toggled.inert, false);
+}
+{
+  const r = run({ rect: rect(0, 0, 0, 0), build: () => [] });
+  assert.strictEqual(r.kind(), '', 'a collapsed badge tests nothing');
+}
+
+/* ---- sitting NEXT TO a control: hidden, but only for anchored sliders and any player -------- */
+{
+  /* Spotify: the app does not scroll; the volume slider sits beside the badge's band. */
+  const r = run({
+    docHeight: 1080, htmlOverflow: 'hidden',
+    build: (body) => {
+      const bar = under(el('footer', { rect: rect(0, 990, 1920, 1080) }), body);
+      return [under(el('input', { attrs: { type: 'range' }, rect: rect(1650, 1030, 1760, 1046) }), bar)];
+    },
+  });
+  assert.strictEqual(r.toggled.away, true, 'a volume slider beside the badge in a pinned app hides it');
+  assert.strictEqual(r.toggled.inert, true, 'and stops it taking the pointer');
+  /* A scheduled forced recheck runs after the badge has hidden and must not bring it back. */
+  r.update(true);
+  assert.strictEqual(r.toggled.away, true, 'a hidden badge stays hidden while the slider remains');
+}
+{
+  /* A range input in a form that has scrolled into the corner is not a volume control. */
+  const r = run({ docHeight: 6000, build: (body) => [under(el('input', { attrs: { type: 'range' }, rect: rect(1650, 1030, 1760, 1046) }), body)] });
+  assert.strictEqual(r.toggled.away, false, 'a slider in scrolling content does not banish the badge');
+  assert.strictEqual(r.toggled.inert, false);
+}
+{
+  /* A player shell beside the badge counts wherever it is -- an inline player is still a player. */
+  const r = run({ docHeight: 6000, build: (body) => [under(el('div', { attrs: { 'data-player': '' }, rect: rect(1300, 700, 1760, 1010) }), body)] });
+  assert.strictEqual(r.toggled.away, true, 'a player beside the badge hides it, anchored or not');
+}
+{
+  /* The reach is asymmetric on purpose: 72px vertically, 32px horizontally. */
+  const below = run({ docHeight: 1080, build: (body) => [under(el('input', { attrs: { type: 'range' }, rect: rect(1800, 1070, 1850, 1078) }), body)] });
+  assert.strictEqual(below.toggled.away, true, 'a slider just below the badge is inside the same bar');
+  const sideways = run({ docHeight: 1080, build: (body) => [under(el('input', { attrs: { type: 'range' }, rect: rect(1700, 1030, 1740, 1046) }), body)] });
+  assert.strictEqual(sideways.toggled.away, false, 'a slider 44px to the side is a different part of the page');
+}
+{
+  const r = run({ docHeight: 1080, build: (body) => [under(el('input', { attrs: { type: 'range' }, rect: rect(1800, 1030, 1800, 1030) }), body)] });
+  assert.strictEqual(r.toggled.away, false, 'a zero-sized element must not banish the badge');
+}
+{
+  /* A lift candidate that lands beside a slider is refused. */
+  const r = run({
+    build: (body) => {
+      const bar = under(el('div', { style: { position: 'fixed' }, rect: rect(0, 700, 1920, 1080) }), body);
+      const btn = under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), bar);
+      const slider = under(el('input', { attrs: { type: 'range' }, rect: rect(1650, 1000, 1760, 1016) }), bar);
+      return [btn, slider, bar];
+    },
+  });
+  assert.strictEqual(r.toggled.away, true, 'a slider beside the home corner hides the badge before any lift is considered');
+}
+
+/* ---- the hover path never drops a lifted badge onto the pointer ---------------------------- */
+{
+  const bar = { node: null, btn: null };
+  const r = run({
+    build: (body) => {
+      bar.node = under(el('div', { style: { position: 'fixed' }, rect: rect(0, 880, 1920, 1080) }), body);
+      bar.btn = under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), bar.node);
+      return [bar.btn, bar.node];
+    },
+  });
+  assert.strictEqual(r.lift(), 42, 'lifted above the bar');
+  /* The bar is dismissed; the pointer then arrives at the (lifted) badge. */
+  r.elements.length = 0;
+  r.now.t += 10000;
+  r.update(false);
+  assert.strictEqual(r.lift(), 42, 'the hover re-check leaves the badge where the pointer is heading');
+  assert.strictEqual(r.toggled.inert, false);
+  /* A forced check -- resize, fullscreen, a player -- brings it home. */
+  r.update(true);
+  assert.strictEqual(r.lift(), 0, 'a forced check brings it home');
+}
+{
+  /* Hover path, home still blocked, current spot still free: keep the spot, stay usable. */
+  const r = run({
+    build: (body) => {
+      const bar = under(el('div', { style: { position: 'fixed' }, rect: rect(0, 880, 1920, 1080) }), body);
+      return [under(el('button', { rect: rect(1760, 1030, 1900, 1070) }), bar), bar];
+    },
+  });
+  assert.strictEqual(r.lift(), 42);
+  r.now.t += 10000;
+  r.update(false);
+  assert.strictEqual(r.lift(), 42);
+  assert.strictEqual(r.toggled.inert, false);
+}
+
+/* ---- THE ACCUMULATION BUG: the hover path is cached ------------------------------------------ */
+{
+  const r = run({ docHeight: 6000, build: (body) => [under(el('input', { attrs: { type: 'range' }, rect: rect(100, 100, 200, 120) }), body)] });
   const afterFirst = r.calls.hit + r.calls.query;
   assert(afterFirst > 0, 'the first check actually measures something');
-
-  /* Five hover crossings in a row, none forced. */
-  for (let i = 0; i < 5; i++) r.vm.runInContext('updateBadgeYield();', r.sandbox, { filename: 'hover' });
+  for (let i = 0; i < 5; i++) r.update(false);
   assert.strictEqual(r.calls.hit + r.calls.query, afterFirst,
-    'repeated hovers must reuse the answer -- this is the accumulation that made '
-    + 'crossing the badge repeatedly degrade');
-
-  /* A forced caller -- resize, fullscreen, a player starting, the load-time one-shots --
-     must still recompute, or a player bar mounting late would never be noticed. */
-  r.vm.runInContext('updateBadgeYield(true);', r.sandbox, { filename: 'forced' });
-  assert(r.calls.hit + r.calls.query > afterFirst,
-    'a forced check must always recompute');
-
-  /* And a viewport change invalidates the cache, because layout is what the answer
-     depends on. */
+    'repeated hovers must reuse the answer -- this is the accumulation that made crossing the badge repeatedly degrade');
+  r.update(true);
+  assert(r.calls.hit + r.calls.query > afterFirst, 'a forced check must always recompute');
   const after = r.calls.hit + r.calls.query;
   r.sandbox.window.innerWidth = 1280;
-  r.vm.runInContext('updateBadgeYield();', r.sandbox, { filename: 'resized' });
-  assert(r.calls.hit + r.calls.query > after,
-    'a changed viewport must invalidate the cached answer');
+  r.update(false);
+  assert(r.calls.hit + r.calls.query > after, 'a changed viewport must invalidate the cached answer');
 }
 
-/* The CSS the classes rely on has to exist, or every assertion above is theatre. */
-assert(/\.b\.inert\{pointer-events:none\}/.test(source),
-  'the inert class must actually remove pointer events');
+/* ---- the CSS the classes and the lift rely on ------------------------------------------------- */
+assert(/\.b\.inert\{pointer-events:none\}/.test(source), 'the inert class must actually remove pointer events');
 assert(/\.b\.away\{visibility:hidden;opacity:0;pointer-events:none\}/.test(source),
   'the away class must hide without collapsing the geometry needed by the next check');
-assert(/\.b\.away\+\.panel\{display:none\}/.test(source),
-  'an open badge panel must leave with the badge');
-/* Specificity, not order: .b sets pointer-events:auto and .b.inert must win. */
-assert(/\.b\{[^}]*pointer-events:auto/.test(source),
-  'the base rule still takes input when nothing is underneath');
-
-/* SITTING NEXT TO a control, which is the case the hit test above cannot see.
-   The badge is bottom-right; that is where music players put the volume slider. On
-   Spotify the player bar spans the badge's whole band, so nothing is ever underneath
-   it while the reader is still reaching past a chip that lights up on hover and takes
-   the pointer on the way to the slider. */
+assert(/\.b\.away\+\.panel\{display:none\}/.test(source), 'an open badge panel must leave with the badge');
+assert(/\.b\{[^}]*pointer-events:auto/.test(source), 'the base rule still takes input when nothing is underneath');
+assert(/\.b\{position:fixed;bottom:calc\(16px \+ var\(--rg-lift,0px\)\)/.test(source), 'the badge rides the lift');
+assert(/\.panel\{position:fixed;bottom:calc\(52px \+ var\(--rg-lift,0px\)\)/.test(source), 'and so does its panel');
 {
-  /* Badge occupies 1200..1320 x 900..940. This slider sits just below and left of it:
-     no overlap at all, but well inside the 32px approach margin. */
-  const beside = run({ nearby: [{ left: 1100, right: 1190, top: 950, bottom: 966, width: 90, height: 16 }] });
-  assert.strictEqual(beside.toggled.away, true,
-    'a control beside the badge must move the badge out of the way');
-  assert.strictEqual(beside.toggled.inert, true, 'and stop it taking the pointer');
-
-  /* A scheduled forced recheck runs after the badge has hidden. display:none makes
-     getBoundingClientRect() return zero, which used to make that second check falsely
-     conclude the slider had gone and bring the badge straight back. */
-  beside.vm.runInContext('updateBadgeYield(true);', beside.sandbox, { filename: 'forced-hidden-recheck' });
-  assert.strictEqual(beside.toggled.away, true,
-    'a hidden badge must retain its layout rectangle and stay hidden while the slider remains');
-}
-{
-  /* Far away: the badge must not disappear on every page that has a slider somewhere. */
-  const far = run({ nearby: [{ left: 100, right: 200, top: 100, bottom: 120, width: 100, height: 20 }] });
-  assert.strictEqual(far.toggled.away, false,
-    'a control elsewhere on the page is none of the badge\'s business');
-  assert.strictEqual(far.toggled.inert, false, 'and must leave the badge usable');
-}
-{
-  /* The reach is asymmetric on purpose: vertically the badge has to clear a whole
-     player bar (60-100px tall), horizontally only the control beside it. A single 32px
-     margin found Spotify's slider on one window size and missed it on another. */
-  const below = run({ nearby: [{ left: 1250, right: 1300, top: 1000, bottom: 1016, width: 50, height: 16 }] });
-  assert.strictEqual(below.toggled.away, true,
-    'a control 60px BELOW the badge is inside the same player bar and must move it');
-  const sideways = run({ nearby: [{ left: 1380, right: 1450, top: 905, bottom: 935, width: 70, height: 30 }] });
-  assert.strictEqual(sideways.toggled.away, false,
-    'but a control 60px to the SIDE is a different part of the page -- the horizontal '
-    + 'reach must stay tight or the badge vanishes on ordinary pages');
-}
-{
-  /* Zero-sized nodes are not controls the reader can reach for. */
-  const collapsedNear = run({ nearby: [{ left: 1200, right: 1200, top: 900, bottom: 900, width: 0, height: 0 }] });
-  assert.strictEqual(collapsedNear.toggled.away, false,
-    'a zero-sized element must not banish the badge');
+  /* The lift changes `bottom`, which is not transitioned: an instant move at a discrete
+     event, not a repaint-driving animation in a player's corner. */
+  const badgeCss = (source.match(/\.b\{[^}]*\}/) || [''])[0];
+  const transition = (badgeCss.match(/transition:[^;}]*/) || [''])[0];
+  assert(!/bottom|all/.test(transition), 'the lift must not be animated');
 }
 
-/* THE PERFORMANCE REGRESSION, guarded. elementsFromPoint forces a synchronous
-   layout. Driving it from pointer or scroll events meant the check ran while
-   someone was dragging Spotify's volume slider, and made that slider feel laggy --
-   the check degrading the very control it exists to protect. What sits under the
-   badge changes when the PAGE changes, so only page-shaped events may drive it. */
+/* ---- THE PERFORMANCE REGRESSION, guarded ------------------------------------------------------- */
 const wiringStart = source.indexOf('!badgeEventsBound){');
 const wiringEnd = source.indexOf('const NO_BADGE_TYPES=', wiringStart);
 assert(wiringStart > 0 && wiringEnd > wiringStart, 'the badge event wiring moved');
-/* Comments stripped first: the code says in prose that it deliberately avoids
-   pointermove, and matching that sentence would fail the check it is explaining. */
 const wiring = source.slice(wiringStart, wiringEnd).replace(/\/\*[\s\S]*?\*\//g, '');
 for (const forbidden of ['pointermove', 'mousemove', 'pointerover', 'scroll', 'setInterval']) {
-  assert(!wiring.includes('"' + forbidden + '"'),
-    'the badge must not hit-test from ' + forbidden + ' -- it forces layout on every call');
+  assert(!wiring.includes('"' + forbidden + '"'), 'the badge must not hit-test from ' + forbidden + ' -- it forces layout on every call');
 }
 assert(wiring.includes('fullscreenchange'), 'entering fullscreen must still re-check');
 assert(/"play"/.test(wiring), 'a player starting must still re-check');
+/* The yield block itself adds no observer or timer of its own. */
+const yieldCode = source.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '');
+assert(!/MutationObserver|setInterval|setTimeout|requestAnimationFrame|addEventListener|woOn\(/.test(yieldCode),
+  'the yield logic is driven only by the discrete events already wired');
 
-console.log('badge yield tests passed (39 assertions)');
+console.log('badge yield tests passed');

@@ -227,18 +227,25 @@
     active = config.enabled !== false && rejectOn && !hostAllowed();
   }
 
-  function loadConfig(done) {
+  /* The settings snapshot, asked for through the bridge when it has run here (MV3-04). The
+     isolated bridge owns acquisition: it retries when the worker dies mid-reply and answers from
+     the snapshot it already holds when only the switches are needed, so this makes a one-shot
+     request of its own only when no bridge is present in this frame. */
+  function askContentConfig(need, cb) {
     try {
-      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, (res) => {
-        void chrome.runtime.lastError;
-        config = Object.assign({}, DEFAULTS, (!chrome.runtime.lastError && res && res.ok && res.overrides) || {});
-        updateActive();
-        if (typeof done === 'function') done();
-      });
-    } catch (_) {
+      const viaBridge = window.__wardenOneContentConfigRequest;
+      if (typeof viaBridge === 'function') { viaBridge(need, cb); return; }
+    } catch (_) {}
+    try { chrome.runtime.sendMessage({ kind: 'content-config-get', need: need }, cb); } catch (_) { try { cb(null); } catch (__) {} }
+  }
+
+  function loadConfig(done) {
+    askContentConfig(['overrides'], (res) => {
+      void chrome.runtime.lastError;
+      config = Object.assign({}, DEFAULTS, (!chrome.runtime.lastError && res && res.ok && res.overrides) || {});
       updateActive();
       if (typeof done === 'function') done();
-    }
+    });
   }
 
   function elementText(el) {

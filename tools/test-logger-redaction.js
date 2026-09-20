@@ -94,6 +94,7 @@ function realm() {
     decodeURIComponent, encodeURIComponent,
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
     registrableDomainBg: (h) => String(h || '').split('.').slice(-2).join('.'),
+    siteIdentityBg: (h) => String(h || '').split('.').slice(-2).join('.'),
   };
   sandbox.__posted = posted;
   const ctx = vm.createContext(sandbox);

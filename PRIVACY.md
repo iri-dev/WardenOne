@@ -72,18 +72,38 @@ account by WardenOne, and is **not** uploaded to us:
 - The startup safety check's report: for each open tab it flagged, the host and the reason —
   never the page title — for 24 hours. In a private window the report is kept in memory only
   and is gone when the window closes; it never reaches the normal profile.
+- Two notes the optional "clear it when I leave" controls need, kept for the browser session
+  only: which sites you accepted a cookie banner on, and which sites registered a service
+  worker while you were there, each as a site name and a time, at most 200 of each, dropped
+  after a day and gone when the browser closes. They exist so that the clean-up still runs
+  when you close the tab after Chrome has put WardenOne's background worker to sleep, which
+  it does inside most visits; an earlier build kept them only in that worker's memory, so
+  the clean-up quietly did not happen after a sleep. They are never written to lasting
+  storage and are not kept at all while both controls are off.
 - A short-lived reputation cache and "learned" risky-domain list, so repeat checks are
   faster and work offline.
-- **Two records that describe where you have been, and it is fairer to call them that.**
+- **Two records that touch where you have been, kept as small as their job allows.**
   The tracker learner notices a third-party domain following you around, and to decide
   whether to *suggest* blocking it — it never blocks one on its own; you approve each
-  suggestion in the popup — it has to remember which of your sites it appeared on — up to
-  80 sites per tracker, with a count and a last-seen time. The Script Drift check keeps a record per third-party
-  script it has examined, filed under a hash of the script's address rather than the
-  address itself. Neither is sent anywhere and neither is readable by a website. But a
-  list of "this tracker was seen on these sites of yours" is browsing history in
-  everything but name, so it is listed here as one. You can clear both with **Clean
-  browsing data**, and Script Drift records expire on their own after 30 days.
+  suggestion in the popup — it needs to know that the domain appeared on three different
+  sites of yours in two different browser sessions. That is all it keeps: per tracker
+  domain, a count of sites (never their names) and a 32-bit sketch keyed to your install
+  that can only answer "was this site already counted?" — held while the domain is still
+  gathering its three sites and dropped the moment it is proposed or decided — plus a count
+  of sessions, a count of requests, and first- and last-seen dates to the day. Observations
+  expire after 30 days unseen; the decisions you make (block, ignore, allow or block on one
+  site) are settings and stay. Which trackers appeared on the site you are looking at, with
+  a count, is kept only for the current browser session and goes when the browser closes.
+  An earlier build kept up to 80 named sites per tracker with hit counts and exact times;
+  the first start of this build folds that into the counts above and the names are gone.
+  The Script Drift check keeps a record per third-party script it has examined, filed under
+  a hash of the script's address rather than the address itself, and those records expire
+  on their own after 30 days. Neither record is sent anywhere or readable by a website. The
+  install key is stored with the learner, so someone holding a copy of your whole profile
+  could test a site name they already suspect against the sketch; what they cannot do is
+  read a list of your sites out of it. **Clean browsing data** with *Browsing history*
+  ticked clears the learner's observations (your decisions stay) and the Script Drift
+  records; turning the learner off stops new observations.
 - The installed-extension inventory, change timeline, exact-version review snapshots,
   and any exact-ID reputation records you deliberately import. The bundled extension
   reputation database is read from WardenOne's own package; installed extension IDs

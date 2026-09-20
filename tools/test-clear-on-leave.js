@@ -57,8 +57,15 @@ function world(options) {
     DEFAULT_CONFIG: { enabled: true, clearCookiesOnLeave: false },
     localGet: () => Promise.resolve({ wardenone_config: o.config || {} }),
     registrableDomainBg: (h) => String(h || '').replace(/^www\./, '').split('.').slice(-2).join('.'),
+    siteIdentityBg: (h) => String(h || '').replace(/^www\./, '').split('.').slice(-2).join('.'),
     queueHistory: (e) => history.push(e),
     LAST_TOP_URL: o.tabUrls || {},
+    /* The records ride a sessionMirror since LIFE-01; this rig has no storage.session, so the
+       mirror is a stand-in that restores nothing and persists nowhere. The boundary itself is
+       tools/test-on-leave-durability.js's subject. */
+    sessionMirror: () => ({ ready: async () => {}, persist() {} }),
+    FORGET_TAB_HOSTS: {}, FORGET_TAB_HOSTS_KEY: 'wardenone_forget_tab_hosts', FORGET_TAB_HOSTS_TTL_MS: 86400000,
+    forgetSessionArea: () => null,
     CONSENT_COOKIE_EXACT: new Set(['euconsent-v2', 'cookieconsent_status']),
     TRACKING_COOKIE_EXACT: new Set(['_ga', '_fbp']),
     CONSENT_COOKIE_PREFIX: ['cookie_notice'],

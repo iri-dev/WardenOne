@@ -1258,6 +1258,7 @@ function reloadAllHttpTabs() {
 }
 
 function injectEyeShieldActiveTab() {
+  if (featureOmitted('eyeShield')) return;
   try {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs && tabs[0];
@@ -2573,7 +2574,15 @@ function renderTrackerLearner() {
       }
       const learnedCount = Number(res.learnedCount || 0);
       const site = res.site ? ' for ' + res.site : '';
-      status.textContent = (res.enabled === false ? 'Paused' : 'Active') + site + '. ' + learnedCount + ' tracker domain' + (learnedCount === 1 ? '' : 's') + ' learned locally.';
+      // Size and age, in one line: what the learner holds, and that it is counts with an expiry,
+      // not a list of sites (PRIV-01).
+      const watchingCount = Number(res.watchingCount || 0);
+      const ttlDays = Number(res.ttlDays || 0);
+      const oldestDays = Number(res.oldestDays || 0);
+      const held = watchingCount
+        ? ' Watching ' + watchingCount + ' more as counts only' + (oldestDays ? ', oldest ' + oldestDays + ' day' + (oldestDays === 1 ? '' : 's') : '') + (ttlDays ? ', kept ' + ttlDays + ' days' : '') + '.'
+        : '';
+      status.textContent = (res.enabled === false ? 'Paused' : 'Active') + site + '. ' + learnedCount + ' tracker domain' + (learnedCount === 1 ? '' : 's') + ' learned locally.' + held;
       if (!items.length) {
         const row = document.createElement('div');
         row.className = 'perm-row';
@@ -2590,7 +2599,8 @@ function renderTrackerLearner() {
         const title = document.createElement('div');
         title.className = 'perm-row-label';
         const siteHits = Number(item.siteHits || 0);
-        const siteText = siteHits ? siteHits + ' hit' + (siteHits === 1 ? '' : 's') + ' here' : 'manual rule';
+        // This browser session's count: the worker keeps no per-site record past it (PRIV-01).
+        const siteText = siteHits ? siteHits + ' hit' + (siteHits === 1 ? '' : 's') + ' here this session' : 'manual rule';
         title.textContent = item.domain + ' - ' + trackerModeLabel(item) + ' - ' + siteText;
         const actions = document.createElement('div');
         actions.className = 'tracker-mode-buttons';
@@ -2919,7 +2929,8 @@ function renderProtectionHealth() {
               : state === 'restricted' ? 'This page: cannot be checked. '
                 : state === 'off' ? 'This page: WardenOne is off. '
                   : state === 'sleeping' ? 'This page: asleep. '
-                    : 'This page: not confirmed yet. ') + String(tab.text || '');
+                    : state === 'unconfigured' ? 'This page: engine running, settings pending. '
+                      : 'This page: not confirmed yet. ') + String(tab.text || '');
       tabLine.className = 'health-tab' + (state === 'failed' ? ' is-warn' : state === 'verified' ? ' is-ok' : '');
     }
     if (blocked) blocked.textContent = fmtCount(res.blocked24h || 0);
@@ -4773,7 +4784,29 @@ function renderPermResults(out, hostname, res) {
 })();
 
 // ----- Memory Shield UI -----
+/* The build profile (CWS-03). The Store package leaves out EyeShield, Memory Shield, Tab Limit and
+   Twitch Rewind; every element marked data-feature for one of them is removed here before the popup
+   paints, a heading with a fallback label is relabelled for what remains under it, and nothing
+   below asks the worker for a feature this package does not carry. In the full build the omitted
+   list is empty and this does nothing. */
+function applyBuildProfile() {
+  let omitted = [];
+  try { omitted = (typeof WARDENONE_BUILD === 'object' && WARDENONE_BUILD && Array.isArray(WARDENONE_BUILD.omitted)) ? WARDENONE_BUILD.omitted : []; } catch (_) { omitted = []; }
+  if (!omitted.length) return omitted;
+  document.querySelectorAll('[data-feature]').forEach((el) => {
+    const id = el.getAttribute('data-feature');
+    if (omitted.indexOf(id) === -1) return;
+    const fallback = el.getAttribute('data-feature-fallback');
+    if (fallback) { el.textContent = fallback; el.removeAttribute('data-feature'); return; }
+    el.remove();
+  });
+  return omitted;
+}
+const OMITTED_FEATURES = applyBuildProfile();
+function featureOmitted(id) { return OMITTED_FEATURES.indexOf(id) !== -1; }
+
 (function initMemoryShield() {
+  if (featureOmitted('memoryShield')) return;
   const modeWrap = $('mem-modes');
   if (!modeWrap) return;
   const paintModes = paintMemoryModes; // hoisted; also called by applyToUI on load

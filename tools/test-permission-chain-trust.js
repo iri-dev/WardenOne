@@ -61,6 +61,7 @@ function runSignal(options) {
     prunePermissionChainState() {},
     messageCleanHost: (u) => { try { return new URL(u).hostname; } catch (_) { return ''; } },
     registrableDomain: (h) => String(h || '').split('.').slice(-2).join('.'),
+    siteIdentityBg: (h) => String(h || '').split('.').slice(-2).join('.'),
     hostMatchesAllowlist: () => false,
     // The worker resolves the permanent list plus any unlapsed pause before it
     // asks whether a host is allowlisted; this slice only needs the resolution to

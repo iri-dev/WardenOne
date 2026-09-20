@@ -550,6 +550,9 @@
   let supplementalLists = { adultDomainsExtra: [], grabberDomainsExtra: [], trustedPaymentHostsExtra: [] };
   let bridgeConfig = {};
   let bridgeConfigReady = false;
+  // This frame's own site as the worker computed it from the complete suffix list, '' until the
+  // config answer names it. The guard's same-party test reads it from the signed config (SEC-07).
+  let bridgeFrameSite = '';
 
   // ---- Shared DOM watcher ----
   // Smart Script Shield, Script Drift and the Login Page Age check each ran their
@@ -1553,6 +1556,61 @@
     return bridgeHostMatchesList(location.hostname, bridgeActiveAllowlist(bridgeConfig));
   }
 
+  // ---- fingerprint noise in this frame (SEC-05) --------------------------------------------
+  // The page's hosts, seen from any frame. ancestorOrigins lists every ancestor's origin, top
+  // last, cross-origin ones included; an opaque ancestor reads "null". A window with no host in
+  // its URL still has an origin worth reading: about:blank inherits its creator's, blob: carries
+  // its creator's.
+  function bridgeHostOfOrigin(origin) {
+    try {
+      const o = String(origin || '');
+      if (!o || o === 'null') return '';
+      return bridgeCleanHost(new URL(o).hostname);
+    } catch (_) { return ''; }
+  }
+  function bridgeOwnHost() {
+    let h = '';
+    try { h = bridgeCleanHost(location.hostname); } catch (_) { h = ''; }
+    if (h) return h;
+    try { return bridgeHostOfOrigin(location.origin); } catch (_) { return ''; }
+  }
+  function bridgeTopHost() {
+    try {
+      if (window === window.top) return bridgeOwnHost();
+      const list = location.ancestorOrigins;
+      if (!list || !list.length) return '';
+      return bridgeHostOfOrigin(list[list.length - 1]);
+    } catch (_) { return ''; }
+  }
+  // Whether the anti-fingerprinting noise runs in this frame. fingerprint-realm.js runs the
+  // engine's noise in the frames the engine never reaches, but it cannot read a switch off the
+  // page and must not trust one a page posts, so the verdict is decided here -- where the
+  // allowlist and the per-site switches are already resolved -- and travels inside the signed
+  // config. Same decision the engine takes for the top frame (enabled, the switch or its alias,
+  // not paused for the host), taken twice: once for this frame's own host and once for the
+  // page's top host. "Pause on this site" and "noise off here" are choices about the page, and
+  // an embedded frame is part of the page; a payment or captcha frame that broke under the noise
+  // is fixed by the same pause that fixes the page around it. The per-site switches for this
+  // frame's own host were already applied to `clean` above; the top host's are consulted here.
+  function bridgeFrameNoiseAllowed(clean) {
+    try {
+      if (!clean || clean.enabled === false) return false;
+      let noise = clean.antiFingerprintNoise === true;
+      let alias = clean.antiFingerprint === true;
+      if (!noise && !alias) return false;
+      const own = bridgeOwnHost();
+      if (own && bridgeHostMatchesList(own, clean.allowlist)) return false;
+      const top = bridgeTopHost();
+      if (top && top !== own) {
+        if (bridgeHostMatchesList(top, clean.allowlist)) return false;
+        const topOff = bridgeSiteOverridesFor(clean, top);
+        if (topOff.antiFingerprintNoise === false) noise = false;
+        if (topOff.antiFingerprint === false) alias = false;
+      }
+      return noise || alias;
+    } catch (_) { return false; }
+  }
+
   const SEARCH_AI_PREPAINT_CSS = [
     ':is(.MjjYud,div[data-hveid],div[jscontroller],div[jsname],g-section-with-header,section,aside):has(#m-x-content):not(:has(#rso,#search,#res,#center_col,.related-question-pair))',
     ':is(#m-x-content):not(:has(#rso,#search,#res,#center_col))',
@@ -1733,6 +1791,9 @@
       if (typeof bridgeConfig[key] === 'boolean') bridgeConfig[key] = false;
     }
     clean.siteOverridesApplied = Object.keys(siteOff).filter((k) => typeof clean[k] === 'boolean');
+    // Decided while siteOverrides is still here to consult for the top host (SEC-05). The engine
+    // in the top frame ignores this field and decides for itself, as it always has.
+    clean.frameNoise = bridgeFrameNoiseAllowed(clean);
     delete clean.siteOverrides;
     // Silent mode is a gate over presentation, not a rewrite of it. The engine reads
     // showToasts and showBadge and nothing else, so Silent has to reach it as those two
@@ -1766,6 +1827,10 @@
       supplementalLists.trustedPaymentHostsExtra);
     if (paymentExtras.length) clean.trustedPaymentHostsExtra = paymentExtras;
     else delete clean.trustedPaymentHostsExtra;
+    // This frame's own site, from the bridge's own state only: an options-page config-update
+    // carries no site, and a value that arrived inside overrides would be a second opinion on
+    // who this frame is. Inside the signed copy, so the page cannot supply one either (SEC-07).
+    clean.frameSite = bridgeFrameSite;
     postToPage(signed('config', JSON.stringify(clean), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: clean }));
     try { document.dispatchEvent(new CustomEvent('wo-bridge-config-ready')); } catch (_) {}
   };
@@ -1931,21 +1996,131 @@
   // 2. Request the bounded content-script snapshot from the trusted worker. storage.local also
   //    holds provider credentials and private activity, so content scripts are deliberately
   //    denied direct access to it even though this isolated world cannot be read by page JS.
+  //
+  //    Asked until answered, not once (MV3-04). The first request of a new document is what
+  //    wakes a cold worker, and a worker that dies mid-reply -- reload, update, crash, a
+  //    message port closed before the response -- hands the callback runtime.lastError and
+  //    nothing else. This used to return there, so the engine started on compiled defaults
+  //    at 1.5 s and every isolated script that asked once ran without its settings for the
+  //    life of the document: a paused or customised page got default protections, an enabled
+  //    one could miss them, and nothing short of a settings change repaired it. Now a failed
+  //    or malformed answer is retried on a bounded exponential schedule, a document brought
+  //    back from the cache or made visible asks again if it was never answered, and every
+  //    answer carries the worker's revision so a late reply from an earlier request cannot
+  //    undo a newer one.
+  //
+  //    The same machinery is offered to the other isolated scripts in this frame (consent,
+  //    Eye Shield, Mail Shield, OAuth Guard, the search marker, the Twitch tools) through the
+  //    isolated window, so they stop making one-shot requests of their own and, when they only
+  //    need the switches, do not make a second round trip at all.
+  const CONTENT_CONFIG_NEED = ['overrides', 'learned', 'supplemental', 'hidden'];
+  const CONFIG_RETRY_BASE_MS = 300;
+  const CONFIG_RETRY_MAX_MS = 5000;
+  const CONFIG_RETRY_ATTEMPTS = 8;
+  // The last snapshot applied here, and its revision. `rev` is the worker's build time for
+  // the shared snapshot: a newer configuration is a newer build.
+  let bridgeSnapshot = null;
+  let bridgeConfigRev = 0;
+  // A retrying request: `cb(res)` once with a usable answer, or `cb(null)` once the budget is
+  // spent. Failures retry at 300 ms doubling to 5 s, eight attempts (~30 s), so a worker that
+  // is briefly gone is asked again while a worker that is really gone is not asked forever.
+  const bridgeFetchContentConfig = (need, cb, budget) => {
+    const wanted = Array.isArray(need) && need.length ? need.slice(0, 8) : CONTENT_CONFIG_NEED.slice();
+    const maxAttempts = Number(budget) > 0 ? Math.min(CONFIG_RETRY_ATTEMPTS, Number(budget)) : CONFIG_RETRY_ATTEMPTS;
+    let attempts = 0;
+    let settled = false;
+    const finish = (res) => {
+      if (settled) return;
+      settled = true;
+      try { cb(res); } catch (_) {}
+    };
+    const attempt = () => {
+      if (settled) return;
+      attempts += 1;
+      let called = false;
+      // A reply that never comes at all is treated like a failed one: nothing in this
+      // world can tell a dead worker from a slow one except waiting.
+      const deadline = woTimeout(() => { if (!called) { called = true; retry(); } }, 8000);
+      const onReply = (res) => {
+        if (called) return;
+        called = true;
+        clearTimeout(deadline);
+        woPending.delete(deadline);
+        const err = chrome.runtime.lastError;
+        void err;
+        if (err || !res || !res.ok) { retry(); return; }
+        finish(res);
+      };
+      try {
+        chrome.runtime.sendMessage({ kind: 'content-config-get', need: wanted }, onReply);
+      } catch (_) {
+        if (!called) { called = true; clearTimeout(deadline); woPending.delete(deadline); retry(); }
+      }
+    };
+    const retry = () => {
+      if (settled) return;
+      if (attempts >= maxAttempts) { finish(null); return; }
+      const delay = Math.min(CONFIG_RETRY_MAX_MS, CONFIG_RETRY_BASE_MS * Math.pow(2, attempts - 1));
+      woTimeout(attempt, delay);
+    };
+    attempt();
+  };
+  // Apply an answer to this frame. A revision older than the one already applied is a late
+  // reply from an earlier request -- the worker has since rebuilt its snapshot -- and is dropped;
+  // the same revision is applied again harmlessly (a refresh that changed nothing).
+  const applyContentSnapshot = (res) => {
+    if (!res || !res.ok) return false;
+    const rev = Number(res.rev) || 0;
+    if (rev && bridgeConfigRev && rev < bridgeConfigRev) return false;
+    if (rev) bridgeConfigRev = rev;
+    bridgeSnapshot = res;
+    setLearnedGrabberDomains(res.learned);
+    setSupplementalLists(res.supplemental);
+    if (Array.isArray(res.hidden) && res.hidden.length) bridgeApplyUserHidden(res.hidden);
+    bridgeFrameSite = normalizeBridgeHost(res.site) || '';
+    sendConfig(res.overrides || {});
+    return true;
+  };
+  // Only one acquisition runs at a time; a new one (a refresh, a page shown again) supersedes
+  // whatever an older one was still waiting for.
+  let configAcquisition = 0;
   const requestContentConfig = () => {
-    try {
-      // The switches, the learned map, the engine's three list buckets and this frame's hidden
-      // rules -- not the search-copycat lists, which only the search marker reads (COST-01).
-      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides', 'learned', 'supplemental', 'hidden'] }, (res) => {
-        void chrome.runtime.lastError;
-        if (chrome.runtime.lastError || !res || !res.ok) return;
-        setLearnedGrabberDomains(res.learned);
-        setSupplementalLists(res.supplemental);
-        if (Array.isArray(res.hidden) && res.hidden.length) bridgeApplyUserHidden(res.hidden);
-        sendConfig(res.overrides || {});
-      });
-    } catch (_) {}
+    const mine = ++configAcquisition;
+    bridgeFetchContentConfig(CONTENT_CONFIG_NEED, (res) => {
+      if (mine !== configAcquisition) return;
+      applyContentSnapshot(res);
+    });
   };
   requestContentConfig();
+  // A document restored from the back/forward cache asks again -- the worker may have changed
+  // while it slept and could not reach a frozen page -- and a document that was never answered
+  // asks again when it becomes visible, in case its budget ran out while the worker was away.
+  woOn(window, 'pageshow', (event) => {
+    if ((event && event.persisted) || !bridgeConfigReady) requestContentConfig();
+  });
+  woOn(document, 'visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !bridgeConfigReady) requestContentConfig();
+  });
+  // For the other isolated scripts in this frame. `window` here is the isolated world's, which
+  // the page can never see, so nothing crosses to MAIN through this. A caller that needs only
+  // what this bridge already fetched is answered from the applied snapshot without a round
+  // trip; any other need is a retrying request of its own, on a shorter budget (four attempts,
+  // about five seconds): those scripts fall back to their defaults when unanswered, and a
+  // default-on protection should not wait half a minute to start on a worker that is gone.
+  const SIBLING_CONFIG_ATTEMPTS = 4;
+  try {
+    window.__wardenOneContentConfig = () => bridgeSnapshot;
+    window.__wardenOneContentConfigRequest = (need, cb) => {
+      const wanted = Array.isArray(need) && need.length ? need : CONTENT_CONFIG_NEED;
+      const covered = wanted.every((n) => CONTENT_CONFIG_NEED.indexOf(n) >= 0);
+      if (covered && bridgeSnapshot) {
+        const snap = bridgeSnapshot;
+        woTimeout(() => { try { cb(snap); } catch (_) {} }, 0);
+        return;
+      }
+      bridgeFetchContentConfig(wanted, cb, SIBLING_CONFIG_ATTEMPTS);
+    };
+  } catch (_) {}
 
   // Relay live config changes (from the options/popup page) into the page.
   try {
@@ -1956,7 +2131,9 @@
       if (msg && msg.kind === 'wo-engine-status' && window === window.top) {
         let alive = false;
         try { alive = bridgeEngineSeen && engineAnswers(); } catch (_) { alive = false; }
-        try { sendResponse({ ok: true, alive, seen: bridgeEngineSeen, fresh: BRIDGE_FRESH }); } catch (_) {}
+        // `configured`: whether this document has received its settings yet (MV3-04). An engine
+        // that answers but is still on compiled defaults is running, not confirmed.
+        try { sendResponse({ ok: true, alive, seen: bridgeEngineSeen, fresh: BRIDGE_FRESH, configured: bridgeConfigReady }); } catch (_) {}
         return true;
       }
       if (msg && msg.kind === 'content-config-refresh') requestContentConfig();

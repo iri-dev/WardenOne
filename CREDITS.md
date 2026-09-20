@@ -40,6 +40,14 @@ gratefully credit the upstream projects below.
   request preservation, and no-proxy policy; it does not use the upstream empty
   segment, React, reload, or recovery-loop paths.
 
+  The September 19 stability audit also consulted commit
+  [`a145302`](https://github.com/scamorza/TwitchAdBlock/tree/a1453021869b43870e30fac4c384d09b60bef435).
+  Its broadcast `EXT-X-TWITCH-LIVE-SEQUENCE` alignment informed WardenOne's
+  preference for broadcast positions over timestamps from different sessions,
+  including ending an inferred live sequence at a discontinuity. WardenOne
+  implements this within its existing playlist adapter; it does not copy the
+  upstream merged segment ledger or synthetic clock.
+
   TwitchAdBlock is distributed under the **MIT License**:
   copyright © 2020–present TwitchAdSolutions Contributors; copyright ©
   2026–present TwitchAdBlock Contributors.
@@ -159,6 +167,22 @@ gratefully credit the upstream projects below.
   Nothing from this list is blocked. Matching results are dimmed and labelled in
   place, and always keep a one-click way to view them.
 
+## Site identity
+
+- **Public Suffix List** (Mozilla Foundation) — <https://publicsuffix.org/> ·
+  <https://github.com/publicsuffix/list>
+
+  The private section of the list — the shared-hosting and platform suffixes
+  (github.io, webflow.io, `*.compute.amazonaws.com` and some 3,300 more) — is
+  generated into `psl-private.js` by `tools/build-psl.js` and read by the
+  service worker to decide which hosts belong to one owner. Two tenants of one
+  platform are never one site for the token-exfiltration blocker, the
+  forced-navigation warnings, the logger's party column or the Forget-Me wipe.
+  The file records the list version it was built from, and the generator prints
+  every added or removed suffix for review before an update ships.
+
+  The Public Suffix List is distributed under the **Mozilla Public License 2.0**.
+
 ## Upstream source inventory
 
 <!-- BEGIN GENERATED SOURCE INVENTORY -->
@@ -202,6 +226,7 @@ Rulesets compiled from the above and **redistributed inside the package**:
 | `rules-adshield.json` | `tools/build-adshield-dnr.js` | `ADSHIELD_NET_LISTS` |
 | `rules-easyprivacy.json` | `tools/build-easyprivacy-dnr.js` | `ADSHIELD_NET_LISTS` |
 | `cosmetic-rules.json` | `tools/build-cosmetics.js` | `ADSHIELD_COSMETIC_LISTS` |
+| `psl-private.js` | `tools/build-psl.js` | `Public Suffix List (publicsuffix.org), private section` |
 
 <!-- END GENERATED SOURCE INVENTORY -->
 

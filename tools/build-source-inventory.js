@@ -47,6 +47,9 @@ const GENERATED = [
   { file: 'rules-adshield.json', builtBy: 'tools/build-adshield-dnr.js', from: 'ADSHIELD_NET_LISTS' },
   { file: 'rules-easyprivacy.json', builtBy: 'tools/build-easyprivacy-dnr.js', from: 'ADSHIELD_NET_LISTS' },
   { file: 'cosmetic-rules.json', builtBy: 'tools/build-cosmetics.js', from: 'ADSHIELD_COSMETIC_LISTS' },
+  // Not a filter list: the Public Suffix List's private section, which decides site identity
+  // (SEC-07). Fetched by the build tool only, never at runtime; the file carries its list version.
+  { file: 'psl-private.js', builtBy: 'tools/build-psl.js', from: 'Public Suffix List (publicsuffix.org), private section' },
 ];
 
 function arrayEntries(name) {

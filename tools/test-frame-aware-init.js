@@ -133,7 +133,7 @@ check('bridge no longer fetches hidden rules at start-up',
 check('it still refreshes them when the reader edits the list',
   /if \(!msg \|\| msg\.kind !== 'hidden-rules-refresh'\) return;\n    bridgeLoadUserHidden\(\);/.test(BRIDGE));
 check('and applies the rules that arrive with the config',
-  /if \(Array\.isArray\(res\.hidden\) && res\.hidden\.length\) bridgeApplyUserHidden\(res\.hidden\);\n\s*sendConfig\(res\.overrides \|\| \{\}\);/.test(BRIDGE));
+  /if \(Array\.isArray\(res\.hidden\) && res\.hidden\.length\) bridgeApplyUserHidden\(res\.hidden\);\n\s*(?:bridgeFrameSite = [^\n]*\n\s*)?sendConfig\(res\.overrides \|\| \{\}\);/.test(BRIDGE));
 check('the refresh path and the config path share one applier',
   /bridgeApplyUserHidden\(res\.inherited\);/.test(BRIDGE) && /function bridgeApplyUserHidden\(list\)/.test(BRIDGE));
 
@@ -154,8 +154,9 @@ check('the refresh path and the config path share one applier',
 
 /* ---- 3. the worker answers both in one message ----------------------------------- */
 
-check('the config handler names the asking frame\'s host from sender.url',
-  /new URL\(String\(\(sender && sender\.url\) \|\| ''\)\)\.hostname/.test(between(BG, "kind === 'content-config-get'", 'return true;', 'the config-get handler')));
+check('the config handler names the asking frame\'s host from sender.url (its inherited origin for an about:blank child)',
+  /contentConfigFrameHost\(sender\)/.test(between(BG, "kind === 'content-config-get'", 'return true;', 'the config-get handler'))
+  && /function contentConfigFrameHost\(sender\) \{[\s\S]{0,400}?\[sender && sender\.url, sender && sender\.origin\]/.test(BG));
 {
   /* The builder sits behind the shared memo now (COST-01); the slice starts at its input keys. */
   const SNAP = between(BG, 'function contentConfigInputKeys() {', '\nlet __contentConfigRefreshTimer', 'the snapshot builder');
@@ -168,6 +169,10 @@ check('the config handler names the asking frame\'s host from sender.url',
     sanitizeContentConfig: (c) => c, sanitizeLearnedForContent: () => [], sanitizeSupplementalLists: () => ({}), sanitizeSearchJunkForContent: () => [],
     readHiddenElements: async () => { calls.push('read'); return { 'shop.example': ['#promo', '.cookie-bar'] }; },
     hiddenSelectorsForHost: (all, host) => (host === 'shop.example' || host.endsWith('.shop.example')) ? all['shop.example'] : [],
+    siteIdentityBg: (h) => String(h || ''),
+    /* The packaged scraper seed is read by the worker since BUG-10; nothing to add here. */
+    searchJunkSeed: async () => ({ hosts: [], ok: true, error: '' }),
+    searchJunkStoredHosts: (raw) => (Array.isArray(raw) ? raw : []),
   };
   ctx.globalThis = ctx; vm.createContext(ctx);
   vm.runInContext(SNAP + '\nglobalThis.build = buildContentConfigSnapshot;', ctx);

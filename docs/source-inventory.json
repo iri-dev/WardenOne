@@ -549,6 +549,14 @@
       "kind": "redistributed",
       "licence": "",
       "licenceVerified": false
+    },
+    {
+      "file": "psl-private.js",
+      "builtBy": "tools/build-psl.js",
+      "derivedFrom": "Public Suffix List (publicsuffix.org), private section",
+      "kind": "redistributed",
+      "licence": "",
+      "licenceVerified": false
     }
   ]
 }

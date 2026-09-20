@@ -1526,13 +1526,22 @@
     const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
     if (!path.includes(controlsRoot)) setPopoverOpen(false);
   }, true);
-  const requestContentConfig = () => {
+  /* The settings snapshot, asked for through the bridge when it has run here (MV3-04). The
+     isolated bridge owns acquisition: it retries when the worker dies mid-reply and answers from
+     the snapshot it already holds when only the switches are needed, so this makes a one-shot
+     request of its own only when no bridge is present in this frame. */
+  function askContentConfig(need, cb) {
     try {
-      chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, (result) => {
-        void chrome.runtime.lastError;
-        if (!chrome.runtime.lastError && result && result.ok) applyConfig(result.overrides || {});
-      });
+      const viaBridge = window.__wardenOneContentConfigRequest;
+      if (typeof viaBridge === 'function') { viaBridge(need, cb); return; }
     } catch (_) {}
+    try { chrome.runtime.sendMessage({ kind: 'content-config-get', need: need }, cb); } catch (_) { try { cb(null); } catch (__) {} }
+  }
+  const requestContentConfig = () => {
+    askContentConfig(['overrides'], (result) => {
+      void chrome.runtime.lastError;
+      if (!chrome.runtime.lastError && result && result.ok) applyConfig(result.overrides || {});
+    });
   };
   requestContentConfig();
   woOnMessage((msg) => {

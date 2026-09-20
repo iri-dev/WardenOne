@@ -17,6 +17,18 @@ as the work happened.
 
 ### Added
 
+- A Store package, and a build that knows which package it is. Chrome's Web
+  Store allows an extension one narrow purpose; EyeShield, Memory Shield, Tab
+  Limit and Twitch Rewind are separate goals from protection, so
+  `node tools/build-store-package.js` builds a package without them -- the
+  files, the manifest entries and the settings, not just the description --
+  from a commit, reproducibly. The worker and the popup read `build-profile.js`
+  to run cleanly without what was left out: no tab-sleep menu entries, "not in
+  this build" for the memory tools, no EyeShield registration, no sections in
+  the popup for what is not there. The GitHub build is unchanged and carries
+  everything. The decision, and every popup section's place under the one
+  purpose, is recorded in `docs/store-single-purpose.md`, and the gate checks
+  the record against the code.
 - Spotify Web Player ads are handled the way the established blockers handle them,
   in three layers that all stay on your side of the wire. First, the player's own
   track loader: every track Spotify's player resolves passes through one callback
@@ -502,6 +514,171 @@ as the work happened.
 
 ### Fixed
 
+- A command picked from the palette runs even when WardenOne's background worker
+  went to sleep while the palette was open. The one-use permission the shortcut
+  grants lived only in the worker's memory, and Chrome routinely puts the worker
+  to sleep within the two minutes a palette stays valid -- so Enter woke a fresh
+  worker that knew nothing of the opening, refused, and the palette simply
+  closed. Opening now hands the palette a random one-use grant; its hash, tab and
+  time are kept in session storage, which outlives the worker's sleep and dies
+  with the browser. Nothing was loosened: a pick without the grant, from another
+  tab, after two minutes or a second time is still refused.
+- A page whose settings request reached a worker that died before answering
+  now gets its settings anyway. Every page asked once, at load -- the request
+  that wakes a sleeping worker -- and if the worker was reloaded, updated or
+  interrupted before it replied, the page ran on WardenOne's compiled defaults
+  for as long as it stayed open: a paused or customised site got default
+  protections, an enabled one could miss them, and the consent tools, Eye
+  Shield, Mail Shield, OAuth Guard and the search marker each either ran on
+  defaults or never started. The page's bridge now keeps asking on a short,
+  doubling schedule until it is answered, asks again when a page is brought
+  back from the cache or made visible, and drops an old reply that arrives
+  after a newer one. The other in-page tools ask the bridge instead of the
+  worker, so they inherit the retry and usually skip the round trip. Protection
+  Health tells "engine running, settings pending" from "verified".
+- The corner badge can be pressed again on ordinary pages. It had learned to
+  step aside for a control underneath it -- a fullscreen player's exit button,
+  a music player's volume slider -- but it stepped aside for ANY link or button
+  under it, and on a page with links everywhere something is under it nearly
+  all the time. Worse, a badge that has stopped taking input never sees the
+  hover that would have made it look again, so on most pages it went dead at
+  load and stayed dead until the window was resized. It now yields only to
+  things that stay put -- a fixed or sticky bar, a chat bubble, a fullscreen
+  player's controls, the flow of a page that does not scroll -- and to those it
+  moves up out of the way instead of going dead, hiding only over a player or
+  beside a volume slider, as before. Content that scrolls past underneath is
+  left to the wheel, as it is under every floating widget. Still driven by the
+  same few page events, never by pointer movement or scrolling.
+- Scrolling past a Mix or a playlist on YouTube no longer counts a block on the
+  badge. The fake-confirm-box guard judges an overlay on its shape, and one of
+  its rails was "the affirmative control has no link of its own". A Mix
+  thumbnail carries a hover overlay that is exactly that shape -- an
+  absolutely positioned, thumbnail-sized box whose only text is "Play all" --
+  and the words have no link of their own because the whole card is the link.
+  So the overlay was removed on sight and recorded as a block, once per Mix on
+  screen, quietly. A control that sits inside a real link now counts as going
+  somewhere, which is what it does; a "Play all" box that goes nowhere is
+  still removed.
+- Anti-fingerprinting noise now covers every frame of a page, not just the page
+  itself. The noise rewrites the realm it runs in, and it ran only in the top
+  frame -- so a hidden same-origin iframe handed a page a clean canvas, WebGL or
+  audio method that worked on the page's own elements, and a third-party frame
+  simply measured the real machine and passed the answer up. Child frames now run
+  the same noise: a same-origin frame (including about:blank, srcdoc and an
+  about:blank window the page opens) inherits the page's verdict and seed the
+  moment it is created, before the page can borrow anything from it, so its
+  canvas answers exactly as the page's does; a cross-origin frame decides from
+  the same switch, the same pause and the same per-site choices as the page
+  around it. Captcha frames are left alone, as the sign-in and captcha hosts
+  already were. Web workers remain uncovered, and the switch now says so.
+- Pages that keep changing no longer keep the three text detectors busy for the
+  life of the tab. Scam Lock, ClickFix and Fake Update each re-read the whole
+  page after every burst of changes -- about three page-wide passes a second on
+  a busy site, indefinitely, with ClickFix forcing a layout each time -- whether
+  or not the change contained anything they could act on. They now share one
+  scheduler: a change is read for the detectors' own patterns first and buys no
+  pass unless it contains one; a page that has not changed is not read twice;
+  repeated empty passes space themselves out, up to thirty seconds, and snap
+  back to the normal pace the moment a new kind of message, a new route or a
+  return to the tab arrives; a hidden tab waits until it is looked at. Nothing
+  about what the detectors look for changed, and the clipboard checks stay
+  immediate.
+- "Flag scraper and content-farm results" works from a fresh install. Its list
+  of scraper sites ships inside WardenOne, but the search-page script fetched
+  that file itself, and Chrome refuses a content script access to a packaged
+  file that is not exposed to web pages -- so the list never arrived, the pass
+  quietly switched itself off, and the switch went on reading "on". The worker
+  reads the file now and sends the list with the rest of the page's settings;
+  nothing is exposed to pages. If the file ever cannot be read, Protection
+  Health says so while the switch is on and the Activity Centre gets one entry,
+  instead of silence.
+- "Clear a site's cookies after accepting" and "Remove a site's service worker
+  when you leave" now work after WardenOne's background worker has been put to
+  sleep -- which Chrome does inside most visits, about thirty seconds after a
+  page finishes loading. Both remembered the acceptance, the registration and
+  which site each tab was on only in that worker's memory, so closing the tab
+  later woke a fresh worker that knew nothing and did nothing, and logged nothing
+  either. The two notes now live for the browser session, bounded and dated, and
+  the closing tab's site is read the way Forget Me already reads it. Nothing is
+  cleared until the last tab for the site goes, exactly as before; the only
+  change is that it happens.
+- Pausing WardenOne on a site lets that site ask for your location again. Block
+  location requests holds a block in Chrome's own location setting for every
+  site, and pausing WardenOne on a map or store-finder site -- or switching the
+  block off for that one site -- only paused the page engine; the browser-level
+  block stayed, the site was still denied, and the only way to make one trusted
+  site work was to weaken Location Privacy everywhere. The block now steps aside
+  for exactly the sites you have excused: they get Chrome's own location prompt,
+  never an automatic grant, and the exception ends when the pause does (a timed
+  pause is now noticed the moment it lapses, which also ends its request-level
+  pass on time). Turning the block off now removes every location rule WardenOne
+  wrote instead of writing a remembered value over your own per-site choices.
+- Twitch playback keeps a healthy alternate stream beyond the old two-minute
+  cutoff, avoiding repeated token renewal and stream swaps during an ad break.
+  Returning to the native stream now retains its known playlist numbering across
+  missing timestamps, network gaps, and temporary playback recovery, and avoids
+  blocking requests for translated segment numbers. Repeated intervention-linked
+  failures use a bounded cooldown; a brief `playing` event without actual video
+  progress no longer re-enables blocking early.
+- Twitch ad-service warnings now prepare an alternate without replacing an
+  otherwise clean stream. Alternate alignment prefers Twitch's shared broadcast
+  sequence when available, avoiding incorrect offsets between session clocks.
+  Shortened alternate playlists retain the correct numbers after skipped entries,
+  and active native/alternate refreshes overlap instead of spending the fallback
+  wait budget on two sequential CDN requests.
+- Twitch's worker-owned `MediaSourceHandle` player is now recognized as the
+  primary stream. Its empty `currentSrc` previously bypassed intervention-linked
+  stall and decode recovery entirely. Recovery remains tied to the exact media
+  attachment, so a replacement player does not inherit an old failure.
+- The tracker learner no longer keeps a map of your browsing. To decide whether
+  to suggest blocking a third-party domain it needs to know that the domain
+  turned up on three of your sites in two browser sessions -- but it was
+  remembering up to 80 named sites per tracker, with hit counts and exact
+  times, and the ids of the browser sessions that saw it, indefinitely. That
+  is browsing history under another name, and PRIVACY.md said as much. It now
+  keeps a count of sites and a small keyed sketch that can only answer "already
+  counted this one?" (dropped once the domain is proposed or decided), a count
+  of sessions instead of their ids, dates to the day, and it forgets
+  observations not seen for 30 days; your decisions stay. The popup's "seen on
+  this site" list now covers the current browser session. Suggestions still
+  arrive after the same three sites and two sessions; a coincidence in the
+  sketch can cost one extra sighting, never a wrong name. The first start of
+  this build folds the old records into counts and the names are gone. And
+  Clean browsing data with Browsing history ticked now clears the learner's
+  observations and the Script Drift records, which PRIVACY.md had promised and
+  the button had never done.
+- Calls, recorders and scanners work again with Block camera & microphone on.
+  The switch refused every camera and microphone request on any site outside
+  a short built-in list -- with a made-up denial, before Chrome could ask you
+  -- so Teams, Discord, Zoom in the browser, voice recorders and document
+  scanners failed on ordinary sites and blamed your OS permission. It now does
+  what its own description promised: a request made while you are actually
+  using the page goes to Chrome's own prompt, where you decide; a site you have
+  already allowed in Chrome is not second-guessed; and a request a page makes
+  with nobody there -- no click or keypress in the last few seconds and no
+  standing permission -- is refused as before. Screen capture is never
+  pre-authorised: after your click Chrome's picker decides, every time, and
+  with nobody there it is refused. Speech recognition follows the same rule.
+  The blocked notice now says what happened and what to press. A page that
+  asks for the camera the moment it loads -- a pre-join screen after you
+  pressed Join on the previous page -- is refused once; its own camera button
+  then works.
+- Two sites on the same hosting platform are no longer treated as one site.
+  WardenOne decided "same owner" from a short built-in list of shared-hosting
+  services, so on any platform not on it -- Webflow was the case found -- a
+  page on one customer's site and a page on another customer's site counted as
+  the same party. That verdict sat in front of the token, card and skimmer
+  blockers: a script on one site could send a form's contents to a sibling site
+  on the same platform and nothing looked at the request. The same collapse let
+  a page force the tab onto a platform sibling with no warning, filed the
+  sibling's scripts and requests as first party in the Network Logger and Smart
+  Script, and made Forget Me for one site wipe every site the reader was signed
+  in to on that platform. WardenOne now carries the private half of the Public
+  Suffix List -- the 3,400 shared-hosting and platform suffixes browsers
+  themselves use -- generated from the list with its version recorded, and
+  every page is told its own site from it. Sites on ordinary domains, and the
+  platforms already on the old list, behave exactly as before; the new
+  knowledge can only separate what should never have been joined.
 - The Network Logger's Clear clears everything, and closing its last window
   keeps nothing. Requests are handed to the page in small batches a fraction of
   a second apart, and a batch already waiting when you pressed Clear could
