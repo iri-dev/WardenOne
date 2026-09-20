@@ -16,8 +16,14 @@
  *
  * Three gates, and none of them trusts the sender:
  *   1. the command must be one the background knows;
- *   2. the palette must have been OPENED on that tab, which only the shortcut can do;
- *   3. that opening is consumed, so one press buys one action.
+ *   2. the pick must carry the nonce the shortcut handed THIS tab's palette -- opening is
+ *      something only the shortcut can do, and the nonce lives on the isolated world's window;
+ *   3. that grant is consumed, so one press buys one action.
+ *
+ * The grant lives in storage.session, not worker memory (MV3-06): the two minutes a palette
+ * stays valid are two minutes in which Chrome routinely tears the worker down, and the pick
+ * used to wake a new worker with an empty map, which refused it. The gate is driven here
+ * with two worker realms sharing one mocked session store.
  *
  * The other half is that a message kind sent from a tab has to be on
  * TAB_CONTEXT_ALLOWED_MESSAGES or it never reaches its handler at all -- the bug that
@@ -32,8 +38,9 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
-const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-const PALETTE = fs.readFileSync(path.join(ROOT, 'command-palette.js'), 'utf8');
+/* Control: point WARDENONE_BACKGROUND / WARDENONE_PALETTE at pre-fix copies. */
+const BG = fs.readFileSync(process.env.WARDENONE_BACKGROUND || path.join(ROOT, 'background.js'), 'utf8');
+const PALETTE = fs.readFileSync(process.env.WARDENONE_PALETTE || path.join(ROOT, 'command-palette.js'), 'utf8');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 
 let failed = 0;
@@ -49,62 +56,143 @@ const end = BG.indexOf('async function runPaletteCommand(', start);
 const sliceable = start > 0 && end > start;
 check('the gate is where the slice expects it', sliceable);
 if (!sliceable) { console.error('command palette: ' + failed + ' failed'); process.exit(1); }
+/* The worker's own hash helper, lifted rather than re-implemented, so the claim hashes the
+   nonce exactly as the opening did. */
+const shaAt = BG.indexOf('async function sha256TextHex(text) {');
+const shaSrc = BG.slice(shaAt, BG.indexOf('\n}\n', shaAt) + 3);
+check('the hash helper lifts', shaAt > 0 && /crypto\.subtle\.digest/.test(shaSrc));
 
-function makeGate() {
+/* One mocked storage.session, shareable between two "workers". */
+function sessionStore() {
+  const data = {};
+  return {
+    data,
+    get(key, cb) { cb({ [key]: data[key] }); },
+    set(obj, cb) { Object.assign(data, obj); if (cb) cb(); },
+    remove(key, cb) { delete data[key]; if (cb) cb(); },
+  };
+}
+/* A worker realm: its own RAM, the shared store, and a scripting API that records what it
+   injects -- the nonce handed to the isolated window, then the file. */
+function makeGate(store) {
   const injected = [];
   const sandbox = {
-    Set, Object, Date, Number, String, console,
+    Set, Object, Date, Number, String, Array, Promise, Uint8Array, TextEncoder, console,
+    crypto: globalThis.crypto,
     chrome: {
-      scripting: { executeScript: (opts, cb) => { injected.push(opts.files[0]); if (cb) cb(); } },
+      scripting: {
+        executeScript: (opts, cb) => {
+          if (opts.files) injected.push(opts.files[0]);
+          else if (opts.func) injected.push('nonce:' + (opts.args && opts.args[0]));
+          if (cb) cb();
+        },
+      },
       runtime: { lastError: null },
+      storage: { session: store },
     },
   };
+  sandbox.sessionArea = () => sandbox.chrome.storage.session;
   vm.createContext(sandbox);
-  vm.runInContext(BG.slice(start, end)
+  vm.runInContext(shaSrc + BG.slice(start, end)
     + ';globalThis.__open = openCommandPalette;globalThis.__claim = paletteClaim;'
-    + 'globalThis.__allowed = PALETTE_ALLOWED;globalThis.__at = PALETTE_OPEN_AT;',
+    + 'globalThis.__allowed = PALETTE_ALLOWED;globalThis.__key = typeof PALETTE_GRANT_KEY === "string" ? PALETTE_GRANT_KEY : "wardenone_palette_grant";',
     sandbox, { filename: 'background.js:palette' });
-  return { open: sandbox.__open, claim: sandbox.__claim, allowed: sandbox.__allowed,
-    at: sandbox.__at, injected: injected };
+  return {
+    open: sandbox.__open, claim: sandbox.__claim, allowed: sandbox.__allowed, key: sandbox.__key,
+    injected, store, sandbox,
+    nonce: () => { const n = injected.find((x) => x.indexOf('nonce:') === 0); return n ? n.slice(6) : ''; },
+  };
 }
 
-{
-  const g = makeGate();
-  check('nothing is claimable before the palette is opened', g.claim(7) === false,
-    'this is the gate that a forged message has to get past, and it cannot open the palette');
-}
-{
-  const g = makeGate();
-  g.open({ id: 7, url: 'https://shop.example/' });
-  check('the overlay is injected on open', g.injected.join(',') === 'command-palette.js');
-  check('and one action becomes claimable', g.claim(7) === true);
-  check('but only one', g.claim(7) === false,
-    'without consuming it, a single press would leave a window in which a forged '
-    + 'message could run anything on the list');
-}
-{
-  const g = makeGate();
-  g.open({ id: 7, url: 'https://shop.example/' });
-  check('a different tab cannot spend this tab\'s opening', g.claim(8) === false);
-  check('and the real tab still can', g.claim(7) === true);
-}
-{
-  const g = makeGate();
-  g.open({ id: 7, url: 'https://shop.example/' });
-  g.at[7] = Date.now() - 200000;
-  check('an old opening has lapsed', g.claim(7) === false,
-    'a stolen moment must not become a standing invitation');
-}
-for (const url of ['chrome://settings', 'about:blank', 'file:///c:/x.html']) {
-  const g = makeGate();
-  g.open({ id: 7, url: url });
-  check('nothing is injected or claimable on ' + url,
-    g.injected.length === 0 && g.claim(7) === false);
-}
+const gateTests = (async () => {
+  {
+    const g = makeGate(sessionStore());
+    check('nothing is claimable before the palette is opened', (await g.claim(7, 'anything')) === false,
+      'this is the gate that a forged message has to get past, and it cannot open the palette');
+  }
+  {
+    const g = makeGate(sessionStore());
+    await g.open({ id: 7, url: 'https://shop.example/' });
+    check('the nonce is set on the isolated window first, then the overlay is injected',
+      g.injected.length === 2 && g.injected[0].indexOf('nonce:') === 0 && g.injected[1] === 'command-palette.js', g.injected.join(','));
+    const nonce = g.nonce();
+    check('the nonce is 32 random bytes', /^[0-9a-f]{64}$/.test(nonce));
+    const stored = g.store.data[g.key];
+    check('the grant is in storage.session: hash, tab and time, never the nonce itself',
+      stored && stored.tabId === 7 && /^[0-9a-f]{64}$/.test(stored.hash) && stored.hash !== nonce && typeof stored.at === 'number',
+      JSON.stringify(stored));
+    check('and one action becomes claimable with the nonce', (await g.claim(7, nonce)) === true);
+    check('the grant is removed on the claim', g.store.data[g.key] === undefined);
+    check('but only one', (await g.claim(7, nonce)) === false,
+      'without consuming it, a single press would leave a window in which a forged '
+      + 'message could run anything on the list');
+  }
+  {
+    const g = makeGate(sessionStore());
+    await g.open({ id: 7, url: 'https://shop.example/' });
+    check('a pick without the nonce is refused -- a requirement the old gate did not have',
+      (await g.claim(7, '')) === false && (await g.claim(7, undefined)) === false);
+    check('a wrong nonce is refused', (await g.claim(7, 'f'.repeat(64))) === false);
+    check('and does not spend the grant: a forged pick cannot cancel the reader\'s', (await g.claim(7, g.nonce())) === true);
+  }
+  {
+    const g = makeGate(sessionStore());
+    await g.open({ id: 7, url: 'https://shop.example/' });
+    check('a different tab cannot spend this tab\'s opening', (await g.claim(8, g.nonce())) === false);
+    check('and the real tab still can', (await g.claim(7, g.nonce())) === true);
+  }
+  {
+    const g = makeGate(sessionStore());
+    await g.open({ id: 7, url: 'https://shop.example/' });
+    if (g.store.data[g.key]) g.store.data[g.key].at = Date.now() - 200000;
+    check('an old opening has lapsed', (await g.claim(7, g.nonce())) === false,
+      'a stolen moment must not become a standing invitation');
+    check('and a lapsed grant is dropped', g.store.data[g.key] === undefined);
+  }
+  for (const url of ['chrome://settings', 'about:blank', 'file:///c:/x.html']) {
+    const g = makeGate(sessionStore());
+    await g.open({ id: 7, url: url });
+    check('nothing is injected or claimable on ' + url,
+      g.injected.length === 0 && g.store.data[g.key] === undefined && (await g.claim(7, g.nonce())) === false);
+  }
+  {
+    /* THE CARD: the worker that opened the palette is gone when the pick arrives. */
+    const store = sessionStore();
+    const opener = makeGate(store);
+    await opener.open({ id: 7, url: 'https://shop.example/' });
+    const nonce = opener.nonce();
+    const successor = makeGate(store);        // a new worker: empty memory, same session store
+    check('a new worker honours a grant it did not make', (await successor.claim(7, nonce)) === true,
+      'the pick used to wake an empty worker, which refused a palette that was visibly open');
+    check('and the old worker cannot spend it again', (await opener.claim(7, nonce)) === false,
+      'the grant was consumed in the store both workers read');
+    check('the store is empty afterwards', store.data[opener.key] === undefined);
+  }
+  {
+    /* Two picks racing inside one worker spend one grant once. */
+    const g = makeGate(sessionStore());
+    await g.open({ id: 7, url: 'https://shop.example/' });
+    const nonce = g.nonce();
+    const results = await Promise.all([g.claim(7, nonce), g.claim(7, nonce), g.claim(7, nonce)]);
+    check('three simultaneous picks yield exactly one action', results.filter(Boolean).length === 1, JSON.stringify(results));
+  }
+  {
+    /* A second press replaces the grant; the open palette reads the nonce at pick time. */
+    const g = makeGate(sessionStore());
+    await g.open({ id: 7, url: 'https://shop.example/' });
+    const first = g.nonce();
+    g.injected.length = 0;
+    await g.open({ id: 7, url: 'https://shop.example/' });
+    const second = g.nonce();
+    check('a second press mints a new nonce', second && second !== first);
+    check('the first is no longer good', (await g.claim(7, first)) === false);
+    check('the second is', (await g.claim(7, second)) === true);
+  }
+})();
 
 /* ---- what the palette may ask for ------------------------------------------ */
 {
-  const g = makeGate();
+  const g = makeGate(sessionStore());
   for (const forged of ['blocklist-clear', 'firewall-set', 'file-scan-vt', 'privacy-test-run',
     'eval', '__proto__', 'toString', '']) {
     check('the palette cannot ask for "' + forged + '"', !g.allowed.has(forged),
@@ -116,7 +204,7 @@ for (const url of ['chrome://settings', 'about:blank', 'file:///c:/x.html']) {
 {
   /* Both halves have to agree, or an entry is drawn and does nothing. */
   const shown = [...PALETTE.matchAll(/\{ id: '([a-z-]+)'/g)].map((m) => m[1]);
-  const g = makeGate();
+  const g = makeGate(sessionStore());
   check('every entry the overlay draws is one the background will accept',
     shown.every((id) => g.allowed.has(id)),
     shown.filter((id) => !g.allowed.has(id)).join(',') + ' would be drawn and do nothing');
@@ -131,7 +219,7 @@ for (const url of ['chrome://settings', 'about:blank', 'file:///c:/x.html']) {
   check('the handler exists', at > 0);
   const handler = BG.slice(at, at + 1200);
   check('it checks the command is on the list', /PALETTE_ALLOWED\.has\(command\)/.test(handler));
-  check('it claims the opening', /paletteClaim\(tab\.id\)/.test(handler));
+  check('it claims the grant with the pick\'s nonce, and waits for the answer', /await paletteClaim\(tab\.id, msg\.grant\)/.test(handler));
   check('it takes the tab from the SENDER, never from the message',
     /const tab = sender && sender\.tab;/.test(handler) && !/msg\.tabId/.test(handler),
     'a tab id in the message body would let a page act on a different tab');
@@ -193,8 +281,18 @@ check('it is built with textContent, never innerHTML', !/innerHTML/.test(PALETTE
 check('Escape closes it even on a page that eats keys',
   /window\.addEventListener\('keydown', onKey, true\)/.test(PALETTE)
   && /e\.key === 'Escape'[\s\S]{0,120}close\(\)/.test(PALETTE));
-check('it sends the id and nothing else',
-  /sendMessage\(\{ kind: 'palette-run', command: item\.id \}/.test(PALETTE));
+check('it sends the id and the grant, nothing else',
+  /sendMessage\(\{ kind: 'palette-run', command: item\.id, grant: grant \}/.test(PALETTE));
+check('the grant is read from the isolated window at the moment of the pick, not at load',
+  /function run\(\) \{[\s\S]*?window\.__wardenOnePaletteGrant[\s\S]*?sendMessage/.test(PALETTE)
+  && PALETTE.indexOf('window.__wardenOnePaletteGrant') > PALETTE.indexOf('function run() {'),
+  'a second press mints a new grant while the palette is still open; the pick has to spend the one that exists');
+check('the nonce is set through a func injection into the same isolated world, before the file',
+  /executeScript\(\s*\{ target, func: \(grant\) => \{ window\.__wardenOnePaletteGrant = grant; \}, args: \[nonce\] \}/.test(BG)
+  && BG.indexOf('func: (grant) =>') < BG.indexOf("files: ['command-palette.js']", BG.indexOf('func: (grant) =>')));
+check('the grant is kept in storage.session, as a hash', /PALETTE_GRANT_KEY = 'wardenone_palette_grant'/.test(BG)
+  && /await paletteRemember\(\{ tabId: tab\.id, hash, at: Date\.now\(\) \}\)/.test(BG)
+  && !/PALETTE_OPEN_AT/.test(BG), 'the worker-RAM map is what died with the worker');
 /* Anchored to the DEFINITION, not to the word "run" -- which also appears in the mousedown
    handler a few lines above, so a looser pattern matched a different call site and a
    removed close() went unnoticed. */
@@ -324,8 +422,7 @@ check('and Chrome will accept the number of defaults',
   Object.values(MANIFEST.commands).filter((c) => c.suggested_key).length <= 4,
   'Chrome takes four suggested keys and silently drops the rest');
 
-if (failed) {
-  console.error('command palette: ' + failed + ' failed');
-  process.exit(1);
-}
-console.log('command palette: all checks passed');
+gateTests.then(() => {
+  if (failed) { console.error('command palette: ' + failed + ' failed'); process.exit(1); }
+  console.log('command palette: all checks passed');
+}, (e) => { console.error('command palette: gate tests threw: ' + (e && e.stack || e)); process.exit(1); });

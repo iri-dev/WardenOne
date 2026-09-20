@@ -480,8 +480,8 @@ function createRuntime(options) {
   return {
     fetch: checkedFetch,
     state: state,
-    configure(enabled) {
-      dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'config', enabled: enabled });
+    configure(enabled, recovery) {
+      dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'config', enabled: enabled, recovery: recovery === true });
     },
     updateClientState(next) {
       dispatchMessage({ [FLAG]: RUNTIME_VERSION, type: 'client-state', state: next });
@@ -3331,6 +3331,138 @@ test('native fail-open preserves blocking LL-HLS cursors and signed query state'
 
 const SEQUENCE_BASE_TIME = Date.parse('2026-07-23T00:01:00.000Z');
 
+function liveSequencePlaylist(options) {
+  const body = sequencedPlaylist(options);
+  const tag = '#EXT-X-TWITCH-LIVE-SEQUENCE:' + options.liveSequence + '\n';
+  return options.tagAfterDuration ? body.replace(/(#EXTINF:[^\n]*\n)/, '$1' + tag)
+    : body.replace('#EXTINF:', tag + '#EXTINF:');
+}
+
+test('ad-service warnings prepare an alternate without replacing clean native media', async () => {
+  const clean = sequencedPlaylist({ sequence: 100, startMs: SEQUENCE_BASE_TIME, path: 'warning-clean' });
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute: standardFetchRoute({ originalMedia: clean,
+      backupMedia: sequencedPlaylist({ sequence: 9000, startMs: SEQUENCE_BASE_TIME + 2000,
+        path: 'warning-unnecessary-swap' }) }),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  runtime.announceAdImminent(CHANNEL);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  equal(body, clean, 'a warning without ad media switched an already-clean stream');
+  runtime.configure(false);
+});
+
+test('broadcast live sequence aligns alternate sessions despite different wall clocks', async () => {
+  for (const skew of [-6000, 8000]) {
+    let poll = 0;
+    const runtime = createRuntime({
+      initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+      fetchRoute: standardFetchRoute({
+        originalMedia: () => poll === 1 ? sequencedPlaylist({ sequence: 101,
+          startMs: SEQUENCE_BASE_TIME + 2000, title: 'advertisement', path: 'clock-ad',
+          marker: '#EXT-X-DATERANGE:ID="stitched-ad-clock",CLASS="twitch-stitched-ad",DURATION=2.0' })
+          : liveSequencePlaylist({ sequence: 100 + poll, liveSequence: 1000 + poll,
+            tagAfterDuration: skew > 0,
+            startMs: SEQUENCE_BASE_TIME + poll * 2000, path: 'clock-native' }),
+        backupMedia: () => liveSequencePlaylist({ sequence: 9000 + poll, liveSequence: 1000 + poll,
+          tagAfterDuration: skew > 0,
+          startMs: SEQUENCE_BASE_TIME + poll * 2000 + skew, path: 'clock-backup' }),
+      }),
+      gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+    });
+    await mapMaster(runtime);
+    const bodies = [];
+    for (poll = 0; poll < 6; poll++) {
+      bodies.push(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text());
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert(bodies[1].includes('/clock-backup/'), 'clock skew rejected the advancing clean alternate: ' + skew);
+    assert(bodies[5].includes('/clock-native/'), 'clock skew prevented return to native media: ' + skew);
+    bodies.forEach((body, index) => {
+      assert(servedSequence(body) === 100 + index,
+        'session clock moved broadcast content to the wrong media number at poll ' + index + ': ' + skew);
+    });
+    runtime.configure(false);
+  }
+});
+
+test('an alternate cannot borrow a broadcast anchor across a discontinuity or malformed live tag', async () => {
+  for (const marker of ['#EXT-X-TWITCH-LIVE-SEQUENCE:1001\n#EXT-X-DISCONTINUITY',
+    '#EXT-X-TWITCH-LIVE-SEQUENCE:', '#EXT-X-TWITCH-LIVE-SEQUENCE:1e3']) {
+    let ad = false;
+    const nativeClean = liveSequencePlaylist({ sequence: 100, liveSequence: 1000,
+      startMs: SEQUENCE_BASE_TIME, path: 'anchor-native' });
+    const nativeAd = sequencedPlaylist({ sequence: 101, startMs: SEQUENCE_BASE_TIME + 2000,
+      title: 'advertisement', path: 'anchor-ad', marker: '#EXT-X-CUE-OUT:30' });
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({ originalMedia: () => ad ? nativeAd : nativeClean,
+        backupMedia: sequencedPlaylist({ sequence: 9001, startMs: SEQUENCE_BASE_TIME + 2000,
+          path: 'unproven-anchor', marker }) }),
+      gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+    });
+    await mapMaster(runtime);
+    await runtime.fetch(ORIGINAL_MEDIA_URL);
+    ad = true;
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    equal(body, nativeAd, 'unproven broadcast anchor switched the decoder: ' + marker);
+    runtime.configure(false);
+  }
+});
+
+test('a shortened alternate playlist retains the sequence numbers of its listed segments', async () => {
+  let poll = 0;
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({ originalMedia: STITCHED_AD,
+      backupMedia: () => {
+        const body = sequencedPlaylist({ sequence: 9000 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+          path: 'shortened-backup' });
+        return poll ? body.replace('#EXT-X-MEDIA-SEQUENCE:9001',
+          '#EXT-X-MEDIA-SEQUENCE:8997\n#EXT-X-SKIP:SKIPPED-SEGMENTS=4') : body;
+      } }),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  poll = 1;
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body.includes('/shortened-backup/9001.ts'), 'shortened alternate was discarded as retrograde');
+  assert(servedSequence(body) === 9001 && !body.includes('#EXT-X-SKIP:'),
+    'stripping SKIP renumbered the listed alternate segments');
+  runtime.configure(false);
+});
+
+test('an active alternate refresh overlaps a slow native playlist instead of losing its entire budget', async () => {
+  let phase = 0;
+  const delay = (body, ms) => new Promise((resolve) => setTimeout(() => resolve(body), ms));
+  const nativeBody = () => sequencedPlaylist({ sequence: 100 + phase,
+    startMs: SEQUENCE_BASE_TIME + phase * 2000, title: phase ? 'advertisement' : 'live',
+    marker: phase ? '#EXT-X-DATERANGE:ID="stitched-ad-slow",CLASS="twitch-stitched-ad",DURATION=30.0' : '',
+    path: 'slow-native' });
+  const backupBody = () => sequencedPlaylist({ sequence: 9000 + phase,
+    startMs: SEQUENCE_BASE_TIME + phase * 2000, path: 'slow-backup' });
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia: () => phase === 2 ? delay(nativeBody(), 1000) : nativeBody(),
+      backupMedia: () => phase === 2 ? delay(backupBody(), 500) : backupBody(),
+    }),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  phase = 1;
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  phase = 2;
+  const started = performance.now();
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body.includes('/slow-backup/9002.ts'),
+    'native response latency consumed the healthy alternate refresh budget');
+  assert(performance.now() - started < 1400, 'native and alternate media legs ran in sequence');
+  runtime.configure(false);
+});
+
 function sequencedPlaylist(options) {
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:2',
     '#EXT-X-MEDIA-SEQUENCE:' + options.sequence];
@@ -3531,15 +3663,15 @@ test('backup acquisition refuses ENDLIST and playlists without a usable sequence
   }
 });
 
-test('cached backups have an immutable two-minute acquisition lifetime', async () => {
-  let nativePoll = 0;
-  let backupPoll = 0;
+test('healthy cached backups survive two minutes while idle candidates still expire', async () => {
+  let poll = 0;
+  let tokensAllowed = true;
   const runtime = createRuntime({
     fakeClock: true,
     now: 1000000,
     fetchRoute: standardFetchRoute({
       originalMedia() {
-        const index = nativePoll++;
+        const index = poll;
         return sequencedPlaylist({
           sequence: 400 + index,
           startMs: SEQUENCE_BASE_TIME + index * 2000,
@@ -3550,7 +3682,7 @@ test('cached backups have an immutable two-minute acquisition lifetime', async (
         });
       },
       backupMedia() {
-        const index = backupPoll++;
+        const index = poll;
         return sequencedPlaylist({
           sequence: 9400 + index,
           startMs: SEQUENCE_BASE_TIME + index * 2000,
@@ -3560,6 +3692,7 @@ test('cached backups have an immutable two-minute acquisition lifetime', async (
       },
     }),
     gqlRoute(message) {
+      if (!tokensAllowed) return jsonResponse({ data: { streamPlaybackAccessToken: null } });
       return jsonResponse(nestedToken(message.body.variables.playerType));
     },
   });
@@ -3569,16 +3702,133 @@ test('cached backups have an immutable two-minute acquisition lifetime', async (
   const initialTokenRequests = runtime.state.gqlRequests.length;
   assert(initialTokenRequests > 0, 'cache-lifetime fixture never acquired its first backup');
 
-  runtime.advance(60000);
+  tokensAllowed = false;
+  for (poll = 1; poll <= 90; poll++) {
+    runtime.advance(2000);
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(body.includes('/cache-life-clean-backup/'),
+      'healthy route was retired at ' + (poll * 2) + ' seconds');
+    assert(servedSequence(body) === 9400 + poll, 'healthy route stopped advancing');
+  }
+  assert(runtime.state.gqlRequests.length === initialTokenRequests,
+    'healthy polling needlessly reacquired the alternate session');
+  runtime.advance(120001);
   await runtime.fetch(ORIGINAL_MEDIA_URL);
-  runtime.advance(59000);
-  await runtime.fetch(ORIGINAL_MEDIA_URL);
-  runtime.advance(2000);
-  const refreshed = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
-  assert(refreshed.includes('/cache-life-clean-backup/'),
-    'expired cache could not be replaced by a fresh clean session');
   assert(runtime.state.gqlRequests.length > initialTokenRequests,
-    'successful cache polls refreshed the original acquisition timestamp indefinitely');
+    'an idle candidate was retained beyond its cache lifetime');
+  runtime.configure(false);
+});
+
+test('native fallback retains its numbering after a long gap or a missing PDT', async () => {
+  for (const scenario of ['gap', 'missing-pdt', 'initial-missing-pdt']) {
+    const missingPdt = scenario !== 'gap';
+    let poll = 0;
+    let backupsAvailable = true;
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({
+        originalMedia() {
+          const body = sequencedPlaylist({
+            sequence: 400 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+            marker: '#EXT-X-DATERANGE:ID="stitched-ad-native-gap",CLASS="twitch-stitched-ad",DURATION=60.0',
+            title: 'advertisement', path: 'native-gap-ad',
+          });
+          return missingPdt && (poll || scenario === 'initial-missing-pdt')
+            ? body.replace(/^#EXT-X-PROGRAM-DATE-TIME:.*\n/gm, '') : body;
+        },
+        backupMedia() {
+          if (!backupsAvailable) throw new Error('fixture route unavailable');
+          return sequencedPlaylist({ sequence: 9400, startMs: SEQUENCE_BASE_TIME, path: 'native-gap-backup' });
+        },
+      }),
+      gqlRoute(message) {
+        return backupsAvailable ? jsonResponse(nestedToken(message.body.variables.playerType))
+          : jsonResponse({ data: { streamPlaybackAccessToken: null } });
+      },
+    });
+    await mapMaster(runtime);
+    const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(servedSequence(first) === 9400 && first.includes('/native-gap-backup/'),
+      'fixture did not establish its alternate timeline');
+    backupsAvailable = false;
+    poll = missingPdt ? 1 : 15;
+    const fallback = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(fallback.includes('/native-gap-ad/') && servedSequence(fallback) === 9400 + poll,
+      'fallback reset the player timeline: ' + servedSequence(fallback));
+    poll++;
+    const next = await (await runtime.fetch(ORIGINAL_MEDIA_URL + '&_HLS_msn=' + (9400 + poll) + '&_HLS_part=2')).text();
+    assert(servedSequence(next) === 9400 + poll,
+      'fallback forgot its fixed native mapping on the next poll');
+    const nativeCalls = runtime.state.calls.filter((call) =>
+      new URL(call.url).pathname === new URL(ORIGINAL_MEDIA_URL).pathname);
+    assert(nativeCalls.at(-1).url === ORIGINAL_MEDIA_URL,
+      'native fallback sent a translated blocking cursor to the CDN');
+    runtime.configure(false);
+  }
+});
+
+test('temporary playback recovery preserves numbering and removes translated blocking cursors', async () => {
+  let poll = 0;
+  const nativeBody = () => sequencedPlaylist({
+    sequence: 400 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+    marker: '#EXT-X-DATERANGE:ID="stitched-ad-recovery",CLASS="twitch-stitched-ad",DURATION=60.0',
+    title: 'advertisement', path: 'recovery-native-ad',
+  });
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia: nativeBody,
+      backupMedia: () => sequencedPlaylist({ sequence: 9400, startMs: SEQUENCE_BASE_TIME, path: 'recovery-backup' }),
+    }),
+    gqlRoute(message) { return jsonResponse(nestedToken(message.body.variables.playerType)); },
+  });
+  await mapMaster(runtime);
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(servedSequence(first) === 9400, 'fixture did not enter the backup timeline');
+  const tokenCount = runtime.state.gqlRequests.length;
+  runtime.configure(false, true);
+  for (poll = 1; poll <= 2; poll++) {
+    const url = ORIGINAL_MEDIA_URL + '&_HLS_msn=' + (9400 + poll) + '&_HLS_part=2&_HLS_skip=YES';
+    const body = await (await runtime.fetch(url)).text();
+    assert(body.includes('/recovery-native-ad/') && servedSequence(body) === 9400 + poll,
+      'temporary recovery discarded the established numbering');
+    const call = runtime.state.calls.at(-1);
+    assert(call.url === ORIGINAL_MEDIA_URL, 'recovery asked native CDN for a synthetic blocking cursor');
+  }
+  assert(runtime.state.gqlRequests.length === tokenCount, 'recovery launched ad-blocking work');
+  runtime.configure(false);
+  const disabled = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(disabled === nativeBody(), 'explicit user disable no longer restores exact native media');
+});
+
+test('in-flight playlists keep their timeline when recovery starts or finishes, but respect user disable', async () => {
+  for (const transition of ['start', 'finish', 'disable']) {
+    let hold = false;
+    let release;
+    const native = (sequence) => sequencedPlaylist({ sequence,
+      startMs: SEQUENCE_BASE_TIME + (sequence - 400) * 2000,
+      marker: '#EXT-X-DATERANGE:ID="stitched-ad-recovery-race",CLASS="twitch-stitched-ad",DURATION=60.0',
+      title: 'advertisement', path: 'recovery-race-native',
+    });
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({
+        originalMedia: () => hold ? new Promise((resolve) => { release = resolve; }) : native(400),
+        backupMedia: () => sequencedPlaylist({ sequence: 9400, startMs: SEQUENCE_BASE_TIME, path: 'recovery-race-backup' }),
+      }),
+      gqlRoute(message) { return jsonResponse(nestedToken(message.body.variables.playerType)); },
+    });
+    await mapMaster(runtime);
+    await runtime.fetch(ORIGINAL_MEDIA_URL);
+    if (transition !== 'start') runtime.configure(false, true);
+    hold = true;
+    const pending = runtime.fetch(ORIGINAL_MEDIA_URL);
+    assert(typeof release === 'function', 'fixture did not hold native request');
+    if (transition === 'start') runtime.configure(false, true);
+    else runtime.configure(transition === 'finish');
+    release(native(401));
+    const body = await (await pending).text();
+    assert(body.includes('/recovery-race-native/') && servedSequence(body) === (transition === 'disable' ? 401 : 9401),
+      transition + ' transition returned the wrong timeline: ' + servedSequence(body));
+    runtime.configure(false);
+  }
 });
 
 test('cached backup polls reject backward and long-stale live windows', async () => {

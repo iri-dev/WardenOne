@@ -28,6 +28,71 @@
      twitch-adblock.js (a separate MAIN-world script) and anything debugging can still read it,
      but writing to that copy no longer reaches the engine. */
   const __woConfigStore={};
+  /* SEC-05: what this realm decided about fingerprint noise, for the realms a page can reach
+     from here. A same-origin child frame -- about:blank, srcdoc, a real URL -- is a fresh
+     realm with untouched prototypes, and the page can borrow them: a hidden iframe's
+     toDataURL applied to a top-frame canvas gives the clean fingerprint. The frame module
+     (fingerprint-realm.js) runs in every child frame at its own document_start and, when it
+     is same-origin with this window, reads this record synchronously -- so the child is
+     patched, with the same shared seed, before the page's appendChild has even returned.
+     Defined here rather than when the config lands, because the accessor has to exist before
+     the first page script: a page that gets there first can pin the name with a var of its
+     own, and then a later definition of ours would fail. Non-configurable, so nothing after
+     this line can redefine or delete it; the getter reads a closure variable the page cannot
+     write. The record itself is frozen. It carries the noise verdict and the shared
+     canvas-class seed (see __woFingerprintNoise for why the other seed stays private). A page
+     can read it -- everything here is page-readable by construction -- but it cannot forge a
+     "noise off" for the frames it creates. */
+  let __woRealmRecord=null;
+  try{
+    Object.defineProperty(window,
+    "__wardenOneRealm",
+    {
+      get:function(){
+        return __woRealmRecord
+      },
+      configurable:!1,
+      enumerable:!1
+    })
+  }
+  catch(_){
+
+  }
+  /* Told to this document, so a same-origin child that arrived before the config did and
+     found no record can adopt it now instead of deciding alone. A page can dispatch this
+     event itself; a child that hears it only re-reads the record above. */
+  const __woRealmSettled=()=>{
+    try{
+      document.dispatchEvent(new CustomEvent("wo-realm-settled"))
+    }
+    catch(_){
+
+    }
+
+  };
+  /* The window that opened this one, captured now rather than when the noise gate runs: `opener`
+     is replaceable, and a same-origin opener could point it at an object of its own choosing in
+     the meantime. A popup a page opens onto its own site is a second top-level realm the page
+     can compare with the first, so the popup borrows the opener's SEED -- only the seed, only
+     when the opener has noise on, and only the same-origin opener can be read at all. The
+     verdict stays this page's own (WO), whatever the opener says. */
+  let __woOpenerAtStart=null;
+  try{
+    __woOpenerAtStart=window.opener||null
+  }
+  catch(_){
+
+  }
+  const __woInheritedRealm=()=>{
+    try{
+      const r=__woOpenerAtStart&&__woOpenerAtStart.__wardenOneRealm;
+      return r&&"object"==typeof r&&1===r.v&&!0===r.noise&&Number.isInteger(r.seed)?r:null
+    }
+    catch(_){
+      return null
+    }
+
+  };
   /* The high-stakes in-page warnings used to ask the page whether they were already showing,
      with document.getElementById(<our id>). A page that shipped <div id="wo-cmd-warn" hidden>
      in its own markup answered yes, so the warning silently never rendered -- and the ClickFix
@@ -854,6 +919,8 @@
      reference it needs is captured here, before the page runs, so a page that rewrites
      TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
      library: fixed 32-byte key (hex), text in, hex out. */
+  /* AUTH-BEGIN: copied verbatim into fingerprint-realm.js by tools/build-content.js, so the frame
+     module verifies the bridge's signature with the engine's own code (SEC-05). Self-contained. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
     const U8=Uint8Array,U32=Uint32Array;
@@ -927,6 +994,7 @@
     }
     return{hmac:hmac,same:same}
   })();
+  /* AUTH-END */
 
   function __woVerify(kind,payload,m){
     if(null===__woKey||!m)return!1;
@@ -1527,6 +1595,166 @@
       }
 
     },
+    /* One scheduler for the three page-text detectors -- Scam Lock, ClickFix and Fake Update
+       (PERF-03). Each used to turn every mutation batch into a page-wide pass of its own: debounced,
+       then forced through idle with a timeout, for the life of the document, with no notion of
+       whether the batch carried anything worth reading. A continuously changing page paid about
+       three whole-page passes a second indefinitely, and ClickFix's pass reads body.innerText, which
+       forces layout. Four rules now stand between a mutation and a pass. Relevance: the text a batch
+       actually added -- each added element's text, and the enclosing block of each added text node,
+       capped -- is tested against the detector's own cheap patterns, and a batch that adds nothing
+       the detector could act on schedules nothing. Change: a pass that finds nothing remembers a
+       signature of the page snapshot and of the text that triggered it, and the same signature is
+       not read twice. Backoff: repeated negative passes on the same kind of token double their
+       spacing, up to thirty seconds; a new kind of token, a route change or the tab becoming visible
+       again brings the base cadence straight back. Presence: a hidden tab defers its passes until it
+       is looked at. The clipboard and user-action paths do not come through here and stay immediate,
+       as they must. Each detector's load-time pass still runs at once, through the same bookkeeping,
+       so the first mutation after load does not repeat it. */
+    __woTextScan=(()=>{
+      const consumers=[],
+      SNAPSHOT_CAP=2e4,
+      ADDED_CAP=4096,
+      BACKOFF_MAX_MS=3e4;
+      let started=!1,
+      lastHref="",
+      snapshot=null;
+      const snapshotText=()=>(null===snapshot&&(snapshot=bodyTextCapped(SNAPSHOT_CAP)),
+      snapshot),
+      digest=s=>{
+        let h=2166136261;
+        for(let i=0;
+        i<s.length;
+        i++)h=Math.imul(h^s.charCodeAt(i),
+        16777619)>>>0;
+        return s.length+":"+h
+      },
+      addedTextOf=(muts,
+      roots)=>{
+        let out="";
+        try{
+          for(let i=0;
+          i<roots.length&&out.length<ADDED_CAP;
+          i++)out+=" "+String(roots[i].textContent||"").slice(0,
+          ADDED_CAP-out.length);
+          for(let i=0;
+          i<muts.length&&out.length<ADDED_CAP;
+          i++){
+            const a=muts[i].addedNodes||[];
+            for(let j=0;
+            j<a.length&&out.length<ADDED_CAP;
+            j++)if(3===a[j].nodeType){
+              /* The node's own block, so a sentence assembled from several nodes is read whole. */
+              const parent=a[j].parentElement;
+              out+=" "+String(parent?parent.textContent:a[j].nodeValue||"").slice(0,
+              ADDED_CAP-out.length)
+            }
+          }
+        }
+        catch(_){
+
+        }
+        return out
+      },
+      backoff=c=>Math.min(BACKOFF_MAX_MS,
+      c.delay*Math.pow(2,
+      c.negatives)),
+      pass=(c,
+      trigger)=>{
+        try{
+          if(c.done())return;
+          const text=snapshotText(),
+          sig=digest(text)+"|"+digest(trigger||"");
+          if(sig===c.lastNegative)return;
+          if(!0===c.run(text))return void(c.negatives=0,
+          c.lastNegative="");
+          c.negatives=Math.min(c.negatives+1,
+          8),
+          c.lastNegative=sig
+        }
+        catch(_){
+
+        }
+
+      },
+      fire=c=>{
+        c.timer=0;
+        if(c.done())return;
+        if(document.hidden)return void(c.deferred=!0);
+        /* The snapshot is not reset here: every mutation batch resets it (observer callbacks are
+           microtasks and land before any timer), so two detectors due in the same tick share
+           one walk of the page. */
+        __woIdle(()=>{
+          const trigger=c.trigger;
+          c.trigger="",
+          pass(c,
+          trigger)
+        },
+        600)
+      },
+      arm=(c,
+      delay)=>{
+        c.timer||(c.timer=setTimeout(()=>fire(c),
+        delay))
+      },
+      resetAll=()=>{
+        for(const c of consumers)c.negatives=0,
+        c.lastNegative="",
+        c.token=""
+      },
+      onBatch=(muts,
+      added,
+      roots)=>{
+        snapshot=null;
+        const href=location.href;
+        href!==lastHref&&(lastHref=href,
+        resetAll());
+        let text=null;
+        for(const c of consumers){
+          if(c.done()||c.timer)continue;
+          if(null===text&&!(text=addedTextOf(muts,
+          roots)))return;
+          const token=c.relevant(text);
+          if(!token)continue;
+          token!==c.token&&(c.token=token,
+          c.negatives=0),
+          c.trigger=text,
+          arm(c,
+          backoff(c))
+        }
+      },
+      onVisible=()=>{
+        if(document.hidden)return;
+        for(const c of consumers)c.deferred&&(c.deferred=!1,
+        c.negatives=0,
+        arm(c,
+        c.delay))
+      };
+      return{
+        add(spec){
+          const c=Object.assign({
+            timer:0,
+            negatives:0,
+            lastNegative:"",
+            token:"",
+            trigger:"",
+            deferred:!1
+          },
+          spec);
+          consumers.push(c),
+          started||(started=!0,
+          lastHref=location.href,
+          woObserve(onBatch),
+          woOn(document,"visibilitychange",onVisible));
+          return{
+            now(){
+              pass(c,
+              "")
+            }
+          }
+        }
+      }
+    })(),
     SITE_BOUNDARY=(()=>{
       const normalize=host=>String(host||"").trim().replace(/^www\./,
       "").replace(/^\.+|\.+$/g,
@@ -3261,6 +3489,12 @@
     }
     function freshGesture(){
       return Date.now()-lastGestureAt<gestureWindowMs()&&!gestureSpent
+    }
+    /* Presence rather than a gesture to spend: was the reader at this page in the last ms? The
+       navigation guards consume a gesture so one click cannot open two windows; a prompt the
+       browser itself puts up is not that kind of thing, so this one is never spent. */
+    function recentPresence(ms){
+      return Date.now()-lastGestureAt<ms
     }
     function spendGesture(){
       gestureSpent=!0
@@ -7340,13 +7574,13 @@
          even a proximity match is somebody talking rather than the page attacking. Those hosts are
          skipped, using the established trustedMediaHost list rather than a new one. */
       const SCAM_NEAR=600,
-      scamScan=()=>{
-        if(scamShown||trustedMediaHost||conversationHost)return;
+      scamScan=snapshot=>{
+        if(scamShown||trustedMediaHost||conversationHost)return!1;
         try{
-          const t=bodyTextCapped(2e4);
-          if(!t)return;
+          const t=snapshot||bodyTextCapped(2e4);
+          if(!t)return!1;
           const fear=FEAR.exec(t);
-          if(!fear)return;
+          if(!fear)return!1;
           const from=Math.max(0,
           fear.index-SCAM_NEAR),
           to=Math.min(t.length,
@@ -7357,28 +7591,25 @@
         catch(_){
 
         }
-
-      };
-      document.body?scamScan():woOn(document,"DOMContentLoaded",
-      scamScan,
+        return scamShown
+      },
+      scamGuard=__woTextScan.add({
+        id:"scam-lock",
+        delay:700,
+        done:()=>scamShown||trustedMediaHost||conversationHost,
+        /* Either half of the pair counts: the fear line may already be on the page when the
+           number to call arrives, and the other way round. */
+        relevant:text=>{
+          const m=FEAR.exec(text)||CALL.exec(text);
+          return m?m[0].toLowerCase():""
+        },
+        run:scamScan
+      });
+      document.body?scamGuard.now():woOn(document,"DOMContentLoaded",
+      scamGuard.now,
       {
         once:!0
       });
-      try{
-        let sPending=!1;
-        woObserve(()=>{
-          scamShown||sPending||(sPending=!0,
-          setTimeout(()=>{
-            sPending=!1,
-            __woIdle(scamScan,
-            600)
-          },
-          700))
-        })
-      }
-      catch(_){
-
-      }
       log("scam_lock_guard_active",
       {
 
@@ -8075,11 +8306,12 @@
       },
       !0);
       const scanPageForClickFix=()=>{
-        if(!WO.commandPasteGuard)return;
+        if(!WO.commandPasteGuard)return!1;
+        let warned=!1;
         try{
           refreshClickfixRouteState();
           const found=inspectClickfixPage();
-          if(!found.instruction)return;
+          if(!found.instruction)return!1;
           const safeSignal={
             instruction:found.instruction,
             fakeCaptcha:found.fakeCaptcha,
@@ -8087,20 +8319,23 @@
           },
           recentClipboard=suspiciousClipboardSeen&&Date.now()-suspiciousClipboardAt<3e4,
           signature=found.instruction+"|"+(found.fakeCaptcha?"captcha":"plain")+"|"+(found.commandSample?"command":"none")+"|"+(recentClipboard?"clipboard":"none");
-          if(signature===clickfixLastPageSignature&&(clickfixHighestWarning<2||__woWarn.up("wo-cmd-warn")))return;
+          if(signature===clickfixLastPageSignature&&(clickfixHighestWarning<2||__woWarn.up("wo-cmd-warn")))return!1;
           clickfixLastPageSignature=signature;
-          if(clickfixDocsMayCorrelate(found)&&(recentClipboard||found.commandSample&&clickfixHighRiskPage(found)))warnClickfix("correlated",
+          if(clickfixDocsMayCorrelate(found)&&(recentClipboard||found.commandSample&&clickfixHighRiskPage(found)))warned=!0,
+          warnClickfix("correlated",
           safeSignal,
           suspiciousClipboardWhere||"page instructions",
           found.commandSample,
           suspiciousClipboardBlocked);
-          else if(!found.lureShaped)return;
-          else if(found.fakeCaptcha)warnClickfix("fakeCaptcha",
+          else if(!found.lureShaped)return!1;
+          else if(found.fakeCaptcha)warned=!0,
+          warnClickfix("fakeCaptcha",
           safeSignal,
           "page instructions",
           "",
           !1);
-          else if(!found.documentation&&"Paste with Ctrl+V"!==found.instruction)warnClickfix("instruction",
+          else if(!found.documentation&&"Paste with Ctrl+V"!==found.instruction)warned=!0,
+          warnClickfix("instruction",
           safeSignal,
           "page instructions",
           "",
@@ -8109,38 +8344,32 @@
         catch(_){
 
         }
-
+        return warned
       };
       if(WO_TOP){
-        document.body?scanPageForClickFix():woOn(document,"DOMContentLoaded",
-        scanPageForClickFix,
+        /* The cheap token stage the page read is gated on (PERF-03): an instruction pattern in
+           the text a batch added. Every warning the scan can raise needs an instruction match,
+           so a batch without one cannot change the answer -- and body.innerText, a forced
+           layout, is read only once instruction-shaped text has actually arrived. The clipboard
+           hooks above read the page directly and are not gated. */
+        const clickfixGuard=__woTextScan.add({
+          id:"clickfix",
+          delay:800,
+          done:()=>!WO.commandPasteGuard,
+          relevant:text=>{
+            const value=normalizeClickfixText(text);
+            for(let i=0;
+            i<CLICKFIX_INSTRUCTIONS.length;
+            i++)if(CLICKFIX_INSTRUCTIONS[i][0].test(value))return CLICKFIX_INSTRUCTIONS[i][1];
+            return""
+          },
+          run:()=>scanPageForClickFix()
+        });
+        document.body?clickfixGuard.now():woOn(document,"DOMContentLoaded",
+        clickfixGuard.now,
         {
           once:!0
-        });
-        try{
-        let pending=!1;
-        woObserve(()=>{
-            pending||(pending=!0,
-            setTimeout(()=>{
-              pending=!1,
-              /* scanPageForClickFix reads body.innerText, which forces a
-                 synchronous layout. Every mutation batch re-arms the timer
-                 above, so while the page is being built and hydrated this
-                 fires over and over, stalling the pipeline mid-frame exactly
-                 when the page is busiest -- and it stops on its own once the
-                 churn dies down, which is why the jank disappears by itself.
-                 Idle time is when a layout read is free. Nothing is skipped:
-                 the timeout below guarantees it still runs. */
-              __woIdle(scanPageForClickFix,
-              600)
-            },
-            800))
-          })
-        }
-        catch(_){
-
-        }
-
+        })
       }
       log("command_paste_guard_on",
       {
@@ -8168,13 +8397,14 @@
           100)
         }))
       },
-      fakeUpdateScan=()=>{
+      fakeUpdateScan=snapshot=>{
         if(!fuWarned&&!FU_VENDOR.test(fuHere))try{
-          const bodyText=bodyTextCapped(2e4);
-          if(!bodyText||!FU_LURE.test(bodyText))return;
+          const bodyText=snapshot||bodyTextCapped(2e4);
+          if(!bodyText||!FU_LURE.test(bodyText))return!1;
           const inst=document.querySelector(FU_INSTALLER);
-          if(inst)return void warnFakeUpdate(inst.href||fuHere);
-          if(!FU_CTA.test(bodyText))return;
+          if(inst)return warnFakeUpdate(inst.href||fuHere),
+          !0;
+          if(!FU_CTA.test(bodyText))return!1;
           const els=document.querySelectorAll("a[href]");
           for(const a of els){
             const label=(a.textContent||"").trim().toLowerCase();
@@ -8187,35 +8417,31 @@
             catch(_){
               continue
             }
-            if(linkHost&&linkHost!==fuHere&&!FU_VENDOR.test(linkHost))return void warnFakeUpdate(a.href)
+            if(linkHost&&linkHost!==fuHere&&!FU_VENDOR.test(linkHost))return warnFakeUpdate(a.href),
+            !0
           }
 
         }
         catch(_){
 
         }
-
-      };
-      document.body?fakeUpdateScan():woOn(document,"DOMContentLoaded",
-      fakeUpdateScan,
+        return fuWarned
+      },
+      fakeUpdateGuard=__woTextScan.add({
+        id:"fake-update",
+        delay:800,
+        done:()=>fuWarned||FU_VENDOR.test(fuHere),
+        relevant:text=>{
+          const m=FU_LURE.exec(text)||FU_CTA.exec(text);
+          return m?m[0].toLowerCase():""
+        },
+        run:fakeUpdateScan
+      });
+      document.body?fakeUpdateGuard.now():woOn(document,"DOMContentLoaded",
+      fakeUpdateGuard.now,
       {
         once:!0
       });
-      try{
-        let fuPending=!1;
-        woObserve(()=>{
-          fuWarned||fuPending||(fuPending=!0,
-          setTimeout(()=>{
-            fuPending=!1,
-            __woIdle(fakeUpdateScan,
-            600)
-          },
-          800))
-        })
-      }
-      catch(_){
-
-      }
 
     }
     catch(e){
@@ -16104,8 +16330,37 @@
         error:String(e)
       })
     }
+    /* The noise itself is __woFingerprintNoise below: one function, declared once, hoisted
+       to here. tools/build-content.js copies that function byte for byte into
+       fingerprint-realm.js, the module that runs it in child frames (SEC-05), so the two
+       realms cannot drift apart -- the same wrappers, the same cloak, the same profile draw.
+       Whatever the verdict, the realm record is published and the document told, so a
+       same-origin child created before the config landed can catch up. */
     if(WO.antiFingerprintNoise||WO.antiFingerprint)try{
-      let _s=(()=>{
+      __woRealmRecord=__woFingerprintNoise(__woInheritedRealm()),
+      log("antifingerprint_active",
+      {
+
+      })
+    }
+    catch(e){
+      log("antifingerprint_failed",
+      {
+        error:String(e)
+      })
+    }
+    __woRealmRecord||(__woRealmRecord=Object.freeze({
+      v:1,
+      noise:!1
+    })),
+    __woRealmSettled();
+    /* FINGERPRINT-NOISE-BEGIN
+       Everything between this marker and FINGERPRINT-NOISE-END is copied verbatim into
+       fingerprint-realm.js by tools/build-content.js. It must stay self-contained: bare
+       globals only (they resolve to whichever realm runs it), no engine helpers, no WO, no
+       log. `inherited` is the realm record of a same-origin parent, or null. */
+    function __woFingerprintNoise(inherited){
+      const woSeed=()=>{
         try{
           const a=new Uint32Array(2);
           return crypto.getRandomValues(a),
@@ -16115,7 +16370,19 @@
           return 4294967296*Math.random()>>>0
         }
 
-      })();
+      };
+      let _s=woSeed();
+      /* Two seeds, on purpose. _sc is the canvas-class seed: it keys the pixel noise
+         (hashBytes) and the hardware-profile draw (woPick), and it is the one the realm record
+         carries, so a same-origin child frame produces the identical canvas hash, the same
+         core count and the same GPU as the page around it -- in a real browser those agree
+         across realms, and two realms that disagreed would be the cleaner tell. It is safe to
+         share because the noise it keys is a function of the CLEAN pixels, which a page does
+         not have. _sk stays private to this realm: it keys the text-metric and geometry noise
+         (seededTiny, rectSeed), whose inputs -- a font and a string, a rectangle -- the page
+         knows exactly, so a page that could read that seed could compute the noise and
+         subtract it. A realm that knows _sc still cannot recover a width. */
+      const _sc=inherited&&"object"==typeof inherited&&Number.isInteger(inherited.seed)&&inherited.seed>=0&&inherited.seed<=4294967295?inherited.seed>>>0:woSeed();
       const __woCloak=new WeakMap;
       try{const _oFTS=Function.prototype.toString,_cFTS=function toString(){const n=__woCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)};__woCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
       const _sk=_s>>>0,
@@ -16123,8 +16390,9 @@
       _s/4294967296),
       tinyNoise=(scale=0.01)=>(rnd()-.5)*scale,
       mixSeed=str=>{let h=(_sk^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
+      mixShared=str=>{let h=(_sc^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
       makeRnd=seed=>{let s=(seed>>>0)||1;return()=>(s=1664525*s+1013904223>>>0,s/4294967296)},
-      hashBytes=data=>{let h=(_sk^2166136261)>>>0,step=Math.max(1,data.length>>12);for(let i=0;i<data.length;i+=step)h=Math.imul(h^data[i],16777619)>>>0;return(h^data.length)>>>0},
+      hashBytes=data=>{let h=(_sc^2166136261)>>>0,step=Math.max(1,data.length>>12);for(let i=0;i<data.length;i+=step)h=Math.imul(h^data[i],16777619)>>>0;return(h^data.length)>>>0},
       seededTiny=(key,scale=0.01)=>(makeRnd(mixSeed(key))()-.5)*scale,
       cloak=(fn,name)=>{try{__woCloak.set(fn,name)}catch(_){}return fn},
       noisify=canvas=>{
@@ -16336,7 +16604,7 @@
 
       }
       /* Per-session plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WardenOne tell. Seeded from the same per-load key as the canvas noise: cores, RAM and GPU vendor+renderer agree within a page but differ each load and across users. */
-      const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixSeed(key))()*arr.length)%arr.length];
+      const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixShared(key))()*arr.length)%arr.length];
       const woCores=woPick([4,8,8,12,16],"hwc"),
       woMem=woPick([4,8,8],"devmem"),
       woGpu=woPick([
@@ -17064,17 +17332,13 @@
       catch(_){
 
       }
-      log("antifingerprint_active",
-      {
-
+      return Object.freeze({
+        v:1,
+        noise:!0,
+        seed:_sc
       })
     }
-    catch(e){
-      log("antifingerprint_failed",
-      {
-        error:String(e)
-      })
-    }
+    /* FINGERPRINT-NOISE-END */
     if(WO.blockWebRTCLeak)try{
       const IP_LOOKUP_HOST_RE=/(^|\.)(api\.ipify\.org|api64\.ipify\.org|ipify\.org|ipinfo\.io|ifconfig\.me|icanhazip\.com|ident\.me|checkip\.amazonaws\.com|ip-api\.com|ipapi\.co|ipwho\.is|myexternalip\.com|wtfismyip\.com|ipecho\.net|jsonip\.com|seeip\.org|ip2location\.io|ipdata\.co|db-ip\.com)$/i,
       ipLookupUrl=input=>{
@@ -17812,9 +18076,58 @@
         error:String(e)
       })
     }
+    /* Media Shield's one decision for every route to the camera and microphone (COMPAT-01).
+       It used to be a hostname test: on any site not on the four-host media list, every
+       getUserMedia call was refused with a made-up NotAllowedError before Chrome's own prompt
+       could appear, so Teams, Discord, Zoom in the browser, voice recorders and document
+       scanners all failed, and blamed the OS permission. The switch's own copy promised
+       something else -- "a site that wants the microphone has to ask when you are actually
+       there" -- and this makes that true. Present (any trusted click or key in the last ten
+       seconds, generous because a call connects before it asks): the browser decides, with its
+       prompt, its indicator and its own denial. Nobody at the page: only a site the reader has
+       already allowed in Chrome may proceed, read through the permissions reference taken at
+       document_start so a page rewriting navigator.permissions.query cannot answer for the
+       browser; anything else is refused as before. Screen capture keeps its own, stricter rule
+       below: Chrome holds no standing grant for it, so presence is the whole test. */
+    const MEDIA_PRESENCE_MS=1e4,
+    __woRealPermissionQuery=(()=>{
+      try{
+        const p=navigator.permissions;
+        return p&&"function"==typeof p.query?p.query.bind(p):null
+      }
+      catch(_){
+        return null
+      }
+
+    })();
+    function mediaPresence(){
+      return recentPresence(MEDIA_PRESENCE_MS)
+    }
+    function capturePermissionState(name){
+      try{
+        if(!__woRealPermissionQuery)return Promise.resolve("prompt");
+        return Promise.resolve(__woRealPermissionQuery({
+          name:name
+        })).then(status=>status&&"string"==typeof status.state?status.state:"prompt",
+        ()=>"prompt")
+      }
+      catch(_){
+        return Promise.resolve("prompt")
+      }
+
+    }
+    function captureGranted(kinds){
+      const names=[];
+      kinds&&kinds.audio&&names.push("microphone");
+      kinds&&kinds.video&&names.push("camera");
+      return names.length?Promise.all(names.map(capturePermissionState)).then(states=>states.every(state=>"granted"===state)):Promise.resolve(!1)
+    }
+    function captureDecidedNow(present){
+      return!1===WO.blockCameraMic||trustedMediaHost||!0===present
+    }
     if(WO.mediaShield)try{
       let mediaEventCount=0;
-      const recentMediaGesture=()=>freshGesture(),
+      const recentMediaGesture=()=>mediaPresence(),
       mediaRisk={
         autoplay:"Low",
         webrtc:"High",
@@ -17972,17 +18285,16 @@
       "getUserMedia",
       real=>function(constraints){
         const kinds=mediaKinds(constraints),
+        present=recentMediaGesture(),
         detail={
           action:captureAction(kinds),
           audio:kinds.audio,
           video:kinds.video,
           risk:mediaRisk.capture,
           why:gestureDetail()
-        };
-        if((kinds.audio||kinds.video)&&!1!==WO.blockCameraMic&&!trustedMediaHost)return blockedPromise("blocked_media_capture",
-        detail,
-        "Camera/microphone access blocked by WardenOne");
-        noteMedia(recentMediaGesture()?"warned_media_capture":"warned_hidden_media_capture",
+        },
+        run=()=>{
+        noteMedia(present?"warned_media_capture":"warned_hidden_media_capture",
         detail);
         try{
           const ret=real(constraints);
@@ -18035,17 +18347,27 @@
           return real(constraints)
         }
 
+        };
+        /* Present, off, or an exempt host: the browser decides, now, in the same task as the
+           page's call. Only a request made with nobody at the page waits on Chrome's record. */
+        if(!kinds.audio&&!kinds.video||captureDecidedNow(present))return run();
+        return captureGranted(kinds).then(granted=>granted?run():blockedPromise("blocked_media_capture",
+        detail,
+        "Camera/microphone access blocked by WardenOne"))
       }),
       md&&md.getDisplayMedia&&patchMethod(md,
       "getDisplayMedia",
       real=>function(constraints){
-        const detail={
+        const present=recentMediaGesture(),
+        detail={
           action:"Screen capture",
           video:!0,
           risk:mediaRisk.screen,
           why:gestureDetail()
         };
-        return!1===WO.blockScreenCapture||trustedMediaHost?(noteMedia(recentMediaGesture()?"warned_screen_capture":"warned_hidden_screen_capture",
+        /* Never pre-authorised: Chrome keeps no standing grant for the screen and puts its
+           picker up every time, so presence is the whole test. Nobody at the page, no picker. */
+        return!1===WO.blockScreenCapture||trustedMediaHost||present?(noteMedia(present?"warned_screen_capture":"warned_hidden_screen_capture",
         detail),
         real(constraints)):blockedPromise("blocked_screen_capture",
         detail,
@@ -18061,6 +18383,7 @@
         onSuccess,
         onError){
           const kinds=mediaKinds(constraints),
+          present=recentMediaGesture(),
           detail={
             action:captureAction(kinds),
             audio:kinds.audio,
@@ -18068,23 +18391,29 @@
             risk:mediaRisk.capture,
             why:gestureDetail(),
             legacy:!0
-          };
-          if(!kinds.audio&&!kinds.video||!1===WO.blockCameraMic||trustedMediaHost)return noteMedia(recentMediaGesture()?"warned_media_capture":"warned_hidden_media_capture",
+          },
+          run=()=>(noteMedia(present?"warned_media_capture":"warned_hidden_media_capture",
           detail),
           real(constraints,
           onSuccess,
-          onError);
-          noteMedia("blocked_media_capture",
-          detail);
-          try{
-            "function"==typeof onError&&setTimeout(()=>onError(new DOMException("Camera/microphone access blocked by WardenOne",
-            "NotAllowedError")),
-            0)
-          }
-          catch(_){
+          onError)),
+          refuse=()=>{
+            noteMedia("blocked_media_capture",
+            detail);
+            try{
+              "function"==typeof onError&&setTimeout(()=>onError(new DOMException("Camera/microphone access blocked by WardenOne",
+              "NotAllowedError")),
+              0)
+            }
+            catch(_){
 
-          }
+            }
 
+          };
+          if(!kinds.audio&&!kinds.video||captureDecidedNow(present))return run();
+          captureGranted(kinds).then(granted=>{
+            granted?run():refuse()
+          })
         })
       }),
       !1!==WO.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement){
@@ -18340,19 +18669,38 @@
           realStart=proto&&proto.start;
           if("function"!=typeof realStart||realStart.__wardenoneSpeechGuard)return;
           proto.start=Object.assign(function(...args){
-            const blocked=!1!==WO.blockCameraMic&&!trustedMediaHost;
-            srNote(blocked?"blocked_speech_capture":"warned_speech_capture",
-            {
-              api:name,
-              severity:"High",
-              confidence:"Very high",
-              why:blocked?"This page tried to start speech recognition, which listens through your microphone. It does not go through the camera and microphone permission the rest of Media Shield watches, and Chrome sends the audio away to be transcribed rather than doing it on your machine.":"This page started speech recognition, which listens through your microphone and sends the audio away to be transcribed. Blocking camera and microphone access is turned off, so it was allowed.",
-              action:blocked?"Nothing to do. If you came here to dictate or use voice search, allow camera and microphone for this site.":"If you did not start this yourself, leave the page -- it is listening.",
-              outcome:blocked?"Refused the same way the browser refuses it, so the page sees an ordinary permission denial.":"Recorded only; listening was not blocked."
-            });
-            if(blocked)return void srDeny(this);
-            return realStart.apply(this,
-            args)
+            const present=mediaPresence(),
+            self=this,
+            decide=blocked=>{
+              srNote(blocked?"blocked_speech_capture":"warned_speech_capture",
+              {
+                api:name,
+                severity:"High",
+                confidence:"Very high",
+                why:blocked?"This page tried to start speech recognition with no click or keypress from you and no standing microphone permission here. It listens through your microphone by a route that does not go through the camera and microphone permission the rest of Media Shield watches, and Chrome sends the audio away to be transcribed rather than doing it on your machine.":present?"This page started speech recognition, which listens through your microphone and sends the audio away to be transcribed. You had just used the page, so the browser decided.":"This page started speech recognition, which listens through your microphone and sends the audio away to be transcribed, without a recent click. Either you have already allowed the microphone here in Chrome, or blocking camera and microphone access is turned off.",
+                action:blocked?"If you came here to dictate or use voice search, press the page's own button and it will ask again through Chrome. To stop this here for good, turn Block camera & microphone off for this site in the popup.":"If you did not start this yourself, leave the page -- it is listening.",
+                outcome:blocked?"Refused the same way the browser refuses it, so the page sees an ordinary permission denial.":"Recorded only; listening was not blocked."
+              });
+              if(blocked)return void srDeny(self);
+              return realStart.apply(self,
+              args)
+            };
+            if(captureDecidedNow(present))return decide(!1);
+            /* Nobody at the page: a microphone the reader already allowed here in Chrome may
+               start, on the next turn, exactly as the browser would have let it. The page's own
+               error has no caller left to reach on this path, so it is swallowed here only. */
+            captureGranted({
+              audio:!0,
+              video:!1
+            }).then(granted=>{
+              try{
+                decide(!granted)
+              }
+              catch(_){
+
+              }
+
+            })
           },
           {__wardenoneSpeechGuard:!0})
         }
@@ -21282,8 +21630,8 @@
         },
         blocked_media_capture:{
           title:"Camera or mic blocked",
-          why:"This site tried to access your camera or microphone. Media Shield stopped it.",
-          dwell:7967
+          why:"This site tried to use your camera or microphone with no click or keypress from you and no standing permission here. Media Shield refused it.",
+          action:"Expecting it? Press the site's own button and Chrome will ask you. To allow it here for good, turn Block camera & microphone off for this site in the popup."
         },
         blocked_screen_capture:{
           title:"Screen capture blocked",
@@ -21912,6 +22260,8 @@
       badgeHost=null,
       badgeButton=null,
       badgePanel=null,
+      /* How far the badge currently sits above its home corner (px), see updateBadgeYield. */
+      badgeLift=0,
       fadeT=null,
       badgeScrollbarWidth=null,
       /* How long the badge stays legible before it settles back to a hint. It
@@ -21980,7 +22330,7 @@
         if(!root)return;
         clearNode(root);
         const style=document.createElement("style");
-        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b.inert{pointer-events:none}.b.away{visibility:hidden;opacity:0;pointer-events:none}.b.away+.panel{display:none}.b{position:fixed;bottom:16px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:52px;right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
+        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b.inert{pointer-events:none}.b.away{visibility:hidden;opacity:0;pointer-events:none}.b.away+.panel{display:none}.b{position:fixed;bottom:calc(16px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:calc(52px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
         const badge=document.createElement("div"),
         dot=document.createElement("span"),
         label=document.createElement("span"),
@@ -22064,44 +22414,160 @@
       badgeYieldState={at:0,sig:""},
       /* How long a hover-driven answer stays good while the viewport is unchanged. */
       BADGE_YIELD_CACHE_MS=4000,
-      badgeCoversPageControl=()=>{
+      /* How far up the badge may move to clear something before it gives up and goes
+      inert instead: a bar or a bubble is cleared in well under half the screen, and a
+      badge floating mid-screen would be stranger than one that is momentarily dead. */
+      BADGE_LIFT_MAX_RATIO=.45,
+      BADGE_LIFT_GAP=8,
+      /* The corner the badge lives in when nothing is in the way: its current box moved
+      back down by whatever lift it carries. Every check below measures HOME, so a lifted
+      badge keeps asking "is the corner free again?" rather than "is this spot free?" --
+      otherwise a badge lifted above a bar would find its new spot empty and drop straight
+      back onto the bar. Kept at its layout size while hidden (visibility, not display),
+      so a forced re-check over a player still measures something. */
+      badgeHomeRect=()=>{
         try{
-          if(!badgeButton||!badgeHost||!document.elementsFromPoint)return"";
+          if(!badgeButton)return null;
           const r=badgeButton.getBoundingClientRect();
-          if(!r||r.width<=0||r.height<=0)return"";
-          const controls='button,a[href],input,select,textarea,summary,[role="button"],[role="link"],[role="slider"],[role="menuitem"],[onclick],[tabindex]:not([tabindex="-1"])',
-          probes=[[r.left+r.width/2,
-          r.top+r.height/2],
-          [r.left+1,
-          r.top+1],
-          [r.right-1,
-          r.bottom-1]];
-          let found="";
+          if(!r||r.width<=0||r.height<=0)return null;
+          return{
+            left:r.left,
+            right:r.right,
+            width:r.width,
+            height:r.height,
+            top:r.top+badgeLift,
+            bottom:r.bottom+badgeLift
+          }
+        }
+        catch(_){
+          return null
+        }
+
+      },
+      badgeShiftRect=(r,up)=>({
+        left:r.left,
+        right:r.right,
+        width:r.width,
+        height:r.height,
+        top:r.top-up,
+        bottom:r.bottom-up
+      }),
+      /* Whether the document itself can be scrolled. A control in the normal flow of a
+      document that cannot scroll -- a full-height app shell like Spotify's, whose panes
+      scroll inside it while the page never moves, or simply a short page -- stays where
+      it is exactly as a fixed one does. */
+      badgeDocumentPinned=()=>{
+        try{
+          const se=document.scrollingElement||document.documentElement,
+          h=window.innerHeight||0;
+          if(!se||se.scrollHeight<=h+1)return!0;
+          const hidden=v=>"hidden"===v||"clip"===v;
+          return hidden(getComputedStyle(document.documentElement).overflowY)||!!document.body&&hidden(getComputedStyle(document.body).overflowY)
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      /* Whether an element stays put while the reader scrolls, and if so the box that
+      keeps it there. The badge used to yield to ANY control under it, and on a page
+      with links everywhere something is under it nearly all the time -- so on most
+      pages the badge went inert at load and, taking no pointer events, never got the
+      hover that would have re-checked. It was dead until the window was resized.
+      What the reader is actually reaching for in that corner is the page's own fixed
+      furniture: a player bar, a consent bar, a chat bubble, a fullscreen player's
+      controls. Those are anchored -- fixed or sticky themselves or through an ancestor,
+      inside the fullscreen element, or in the flow of a document that does not scroll
+      -- with no scrolling pane between them and the anchor. A link in ordinary flow
+      scrolls away with a flick of the wheel, as it does under every floating widget on
+      the web; a link in the scrolling pane of a fixed app shell does too, which is why
+      the walk stops at the first scroller it meets rather than at the first fixed
+      ancestor. Returns the anchor's rect, or null. */
+      badgeAnchorOf=el=>{
+        try{
+          const fsEl=document.fullscreenElement||document.webkitFullscreenElement||null;
+          for(let node=el,depth=0;
+          node&&1===node.nodeType&&depth<48;
+          node=node.parentElement,
+          depth++){
+            if(node===document.body||node===document.documentElement)return badgeDocumentPinned()?{
+              top:0,
+              left:0,
+              right:window.innerWidth||0,
+              bottom:window.innerHeight||0,
+              width:window.innerWidth||0,
+              height:window.innerHeight||0
+            }:null;
+            if(fsEl&&node===fsEl)return node.getBoundingClientRect();
+            const cs=getComputedStyle(node),
+            pos=cs.position;
+            if("fixed"===pos||"sticky"===pos)return node.getBoundingClientRect();
+            const ov=cs.overflowY;
+            if(("auto"===ov||"scroll"===ov||"overlay"===ov)&&node.scrollHeight>node.clientHeight+1)return null
+          }
+
+        }
+        catch(_){
+
+        }
+        return null
+      },
+      /* What sits under a rectangle of the page. A player outranks a plain control and
+      ends the search: it is the case that has to hide rather than merely move. A plain
+      control counts only when it is anchored (above); the control's own box and its
+      anchor's box come back so the badge can decide how far to move.
+      Only the topmost page element at each probe is judged -- a control buried under an
+      opaque div is not what the reader is aiming at. The badge's own host is skipped
+      rather than ending the scan: shadow content retargets to the host, so it is always
+      the first hit over the badge itself. */
+      badgeProbe=rect=>{
+        const out={
+          kind:"",
+          control:null,
+          anchor:null
+        };
+        try{
+          if(!rect||!badgeHost||!document.elementsFromPoint)return out;
+          const controls='button,a[href],input,select,textarea,summary,iframe,[role="button"],[role="link"],[role="slider"],[role="menuitem"],[onclick],[tabindex]:not([tabindex="-1"])',
+          probes=[[rect.left+rect.width/2,
+          rect.top+rect.height/2],
+          [rect.left+1,
+          rect.top+1],
+          [rect.right-1,
+          rect.bottom-1]];
           for(let i=0;i<probes.length;i++){
             const stack=document.elementsFromPoint(probes[i][0],
             probes[i][1])||[];
             for(let k=0;k<stack.length;k++){
               const el=stack[k];
-              /* Shadow content retargets to the host, so identity covers the badge's
-              own internals as well as the host element itself. */
               if(!el||el===badgeHost||badgeHost.contains&&badgeHost.contains(el))continue;
               if(el===document.documentElement||el===document.body)break;
               if(el.closest){
-                /* A player outranks a plain control and ends the search: it is the
-                case that has to hide rather than merely stop taking input. */
-                if(el.closest(PLAYER_SHELL_SELECTOR))return"player";
-                if(el.closest(controls))found="control"
+                if(el.closest(PLAYER_SHELL_SELECTOR))return{
+                  kind:"player",
+                  control:null,
+                  anchor:null
+                };
+                const control=out.kind?null:el.closest(controls);
+                if(control){
+                  const anchor=badgeAnchorOf(control);
+                  anchor&&(out.kind="control",
+                  out.control=control.getBoundingClientRect(),
+                  out.anchor=anchor)
+                }
+
               }
               break
             }
           }
-          return found
+          return out
         }
         catch(_){
-          return""
+          return out
         }
 
       },
+      badgeCoversPageControl=()=>badgeProbe(badgeHomeRect()).kind,
       /* Sitting NEXT TO a player control is as bad as sitting on one. The badge lives
       in the bottom-right corner, which is where music players put the volume slider --
       on Spotify the player bar spans the badge's whole band. Nothing is underneath the
@@ -22109,12 +22575,14 @@
       chip that lights up on hover and keeps stealing the pointer on the way to the
       slider. Reported exactly that way: "it thinks i want to press it".
       A margin rather than an overlap, because the problem is the approach, not the
-      collision. Only run from the same discrete events as everything else here. */
-      badgeNearMediaControl=()=>{
+      collision. A player shell counts wherever it is; a bare slider counts only when it
+      is anchored -- a range input in a form that has scrolled into the corner is not a
+      volume control the reader is reaching past the badge for. Only run from the same
+      discrete events as everything else here. */
+      badgeNearMediaControl=rect=>{
         try{
-          if(!badgeButton)return!1;
-          const r=badgeButton.getBoundingClientRect();
-          if(!r||r.width<=0||r.height<=0)return!1;
+          const r=rect||badgeHomeRect();
+          if(!r)return!1;
           /* Asymmetric on purpose. Horizontally the badge only has to clear the control
           it sits beside; vertically it has to clear a whole player bar, which is 60-100px
           tall and pins its controls anywhere inside that band. A 32px vertical reach found
@@ -22131,7 +22599,9 @@
           for(let i=0;i<nodes.length&&i<40;i++){
             const b=nodes[i].getBoundingClientRect();
             if(!b||b.width<=0||b.height<=0)continue;
-            if(b.left<right&&b.right>left&&b.top<bottom&&b.bottom>top)return!0
+            if(!(b.left<right&&b.right>left&&b.top<bottom&&b.bottom>top))continue;
+            const shell=!!(nodes[i].matches&&nodes[i].matches(PLAYER_SHELL_SELECTOR));
+            if(shell||badgeAnchorOf(nodes[i]))return!0
           }
           return!1
         }
@@ -22154,7 +22624,7 @@
       or the pointer arriving in the badge's own corner -- never a timer. */
       updateBadgeYield=force=>{
         try{
-          if(!badgeButton)return;
+          if(!badgeButton||!badgeHost)return;
           const now=Date.now();
           /* The answer depends only on layout, so asking it again while the layout is
           unchanged pays for an answer already known. Each check costs three
@@ -22169,18 +22639,63 @@
           if(!force&&sig===badgeYieldState.sig&&now-badgeYieldState.at<BADGE_YIELD_CACHE_MS)return;
           badgeYieldState.at=now,
           badgeYieldState.sig=sig;
+          /* All the reading first, then one write. Every measurement is of the badge's
+          HOME corner, whatever it is doing right now. */
           const fs=badgeInFullscreen(),
-          kind=badgeCoversPageControl(),
-          near=badgeNearMediaControl();
+          home=badgeHomeRect(),
+          under=fs||!home?null:badgeProbe(home),
+          near=!fs&&home?badgeNearMediaControl(home):!1;
+          let away=!1,
+          inert=!1,
+          lift=0;
+          if(fs||!home)away=inert=!0;
+          else if("player"===under.kind||near)away=inert=!0;
+          else if("control"===under.kind){
+            /* Out of the way rather than dead. The spot it already holds first, when the
+            pointer may be on its way there; then just clear of the control itself -- a
+            chat bubble, a "back to top" button; then clear of the whole anchored block it
+            sits in, for a bar with more than one thing in it. A spot counts only if
+            nothing anchored is under it and no slider is beside it; when nothing fits
+            under the cap the badge stays put and stops taking input, as before. */
+            const limit=(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,
+            ups=[];
+            !force&&badgeLift>0&&ups.push(badgeLift),
+            [under.control&&under.control.top,
+            under.anchor&&under.anchor.top].forEach(t=>{
+              "number"==typeof t&&isFinite(t)&&ups.push(Math.ceil(home.bottom-t+BADGE_LIFT_GAP))
+            }),
+            inert=!0;
+            for(let i=0;i<ups.length;i++){
+              const up=ups[i];
+              if(up<=0||up>limit)continue;
+              const there=badgeShiftRect(home,
+              up);
+              if(there.top<0)continue;
+              if(badgeProbe(there).kind||badgeNearMediaControl(there))continue;
+              lift=up,
+              inert=!1;
+              break
+            }
+
+          }
+          /* The hover path never brings a lifted badge back DOWN: the pointer has just
+          arrived where the badge is, and dropping it eighty pixels at that moment is
+          how a click misses. It comes home on the next forced check -- resize,
+          fullscreen, a player starting -- when nobody is aiming at it. */
+          !force&&!away&&lift<badgeLift&&(lift=badgeLift);
+          badgeLift=lift,
+          badgeHost.style.setProperty("--rg-lift",
+          lift+"px"),
           /* Over a player the badge is HIDDEN, not merely inert. It sits on the volume
           slider and the seek bar, and letting the click through is no comfort when you
-          cannot see the thing you are dragging. Over an ordinary button it stays
-          visible and just stops taking input, because vanishing on every page with
-          something in that corner would be worse than the problem. */
+          cannot see the thing you are dragging. Over an ordinary anchored control it
+          moves up; only when it cannot does it stay visible and stop taking input,
+          because vanishing on every page with something in that corner would be worse
+          than the problem. */
           badgeButton.classList.toggle("away",
-          fs||"player"===kind||near),
+          away),
           badgeButton.classList.toggle("inert",
-          fs||!!kind||near)
+          inert)
         }
         catch(_){
 

@@ -429,12 +429,14 @@ check('and it still returns exactly cap characters, in document order',
   'SHOW_TEXT in document order is what makes it byte-identical to textContent');
 
 /* Neither hot scanner may go back to serialising the whole body. */
+/* Since PERF-03 both passes take the scheduler's shared snapshot and fall back to the bounded
+   reader only when called without one. */
 const scamBody = (() => {
-  const a = SRC.indexOf('scamScan=()=>{');
+  const a = SRC.indexOf('scamScan=snapshot=>{');
   return a < 0 ? '' : SRC.slice(a, a + 600);
 })();
 const fakeBody = (() => {
-  const a = SRC.indexOf('fakeUpdateScan=()=>{');
+  const a = SRC.indexOf('fakeUpdateScan=snapshot=>{');
   return a < 0 ? '' : SRC.slice(a, a + 600);
 })();
 check('scamScan uses the bounded reader', /bodyTextCapped\(2e4\)/.test(scamBody)
@@ -492,14 +494,25 @@ check('the shipped engine carries the idle scheduler',
  * dirty vs 0.15ms clean -- and during page build it is always dirty. Deferring
  * to idle changes WHEN the layout is forced, not whether the page is scanned;
  * the timeout keeps the protection on the same cadence. */
-[['scanPageForClickFix', 'forces a layout via body.innerText'],
- ['fakeUpdateScan', 'reads the page text on every batch'],
- ['scamScan', 'same shape, on every other busy site']].forEach(([fn, why]) => {
-  check(fn + ' runs in idle time', SRC.indexOf('__woIdle(' + fn + ',') >= 0, why);
+/* Since PERF-03 the three passes reach idle time through one shared scheduler rather than three
+   observers of their own: each registers with __woTextScan, which arms a timer only for a batch
+   whose added text matches the detector's own patterns, and then runs the pass in idle time with
+   the same 600 ms timeout the three used to carry separately. */
+const scheduler = (() => {
+  const a = SRC.indexOf('__woTextScan=(()=>{');
+  const b = SRC.indexOf('SITE_BOUNDARY=(()=>{', a);
+  return a < 0 || b < 0 ? '' : SRC.slice(a, b);
+})();
+[['clickfix', 'scanPageForClickFix', 'forces a layout via body.innerText'],
+ ['fake-update', 'fakeUpdateScan', 'reads the page text on every batch'],
+ ['scam-lock', 'scamScan', 'same shape, on every other busy site']].forEach(([id, fn, why]) => {
+  check(fn + ' runs through the shared scheduler, in idle time', SRC.indexOf('__woTextScan.add({\n        id:"' + id + '"') >= 0 || SRC.indexOf('__woTextScan.add({\n          id:"' + id + '"') >= 0, why);
 });
-check('and each keeps a timeout so it still runs',
-  (SRC.match(/__woIdle\((?:scanPageForClickFix|fakeUpdateScan|scamScan),\s*600\)/g) || []).length === 3,
+check('and the scheduler keeps the timeout so a pass still runs on a page that never idles',
+  /__woIdle\(\(\)=>\{[\s\S]{0,200}pass\(c,\s*trigger\)\s*\},\s*600\)/.test(scheduler),
   'without a timeout a page that never idles would never be scanned');
+check('and no pass watches mutations on its own any more',
+  !/__woIdle\((?:scanPageForClickFix|fakeUpdateScan|scamScan),/.test(SRC));
 
 /* ---- 5. a search-page feature must not run off search pages -------------- *
  * googleCleanupSweep(document) hunts for #tads, .commercial-unit-desktop-top and

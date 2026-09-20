@@ -66,6 +66,7 @@ assert.strictEqual(domain.hostMatchesSite('login.example.com', 'example.com'), t
 const partySandbox = { URL, Set, Object, String, Array };
 vm.createContext(partySandbox);
 vm.runInContext(DOMAIN + '\n' + grabFn(ANTI, 'regHost') + '\n' + grabFn(ANTI, 'baseDomain') + '\n'
+  + grabFn(ANTI, 'ownSite') + '\nfunction cfg() { return {}; }\n'
   + grabFn(ANTI, 'sameParty') + '\nthis.sameParty=sameParty;', partySandbox);
 assert.strictEqual(partySandbox.sameParty('app.example.com', 'login.example.com'), true);
 assert.strictEqual(partySandbox.sameParty('docs.alice.github.io', 'auth.alice.github.io'), true);
@@ -77,6 +78,7 @@ vm.createContext(patternSandbox);
 vm.runInContext(
   DOMAIN
     + '\nfunction registrableDomainBg(host){return registrableDomain(host);}\n'
+    + '\nfunction siteIdentityBg(host){return siteIdentity(host);}\n'
     + grabFn(BACKGROUND, 'siteContentSettingPatterns') + '\n'
     + grabFn(BACKGROUND, 'cookieContentSettingPatterns')
     + '\nthis.api={siteContentSettingPatterns,cookieContentSettingPatterns};',

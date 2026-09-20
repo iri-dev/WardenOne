@@ -153,6 +153,10 @@ function createHarness(options = {}) {
       const parts = simpleHost(host).split('.');
       return parts.length >= 2 ? parts.slice(-2).join('.') : '';
     },
+    siteIdentityBg(host) {
+      const parts = simpleHost(host).split('.');
+      return parts.length >= 2 ? parts.slice(-2).join('.') : '';
+    },
     async localGet(key) {
       if (key === 'wardenone_script_shield_mode') {
         const gate = state.modeReadGate;

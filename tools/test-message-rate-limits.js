@@ -121,7 +121,13 @@ function loadBackground() {
   }
 
   const sandbox = {
-    chrome, console, setTimeout, clearTimeout, setInterval, clearInterval, setImmediate,
+    chrome, console,
+    /* Worker maintenance timers must not keep this Node harness alive after its
+       assertions finish. The host's deferred assertion timer remains referenced. */
+    setTimeout: (...args) => setTimeout(...args).unref(),
+    clearTimeout,
+    setInterval: (...args) => setInterval(...args).unref(),
+    clearInterval, setImmediate,
     URL, URLSearchParams, TextEncoder, TextDecoder, AbortController, Blob,
     crypto: require('crypto').webcrypto, performance, structuredClone,
     Response: global.Response, Request: global.Request, Headers: global.Headers,

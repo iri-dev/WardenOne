@@ -485,7 +485,18 @@
      and it is the one reading of the allowlist. If it says this engine is paused, or that
      the warning pass went off after the registration was made, the pass stops and takes
      its lines back; it can only ever turn the pass off, never on. */
-  chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides', 'searchJunk'] }, function (response) {
+  /* The settings snapshot, asked for through the bridge when it has run here (MV3-04). The
+     isolated bridge owns acquisition: it retries when the worker dies mid-reply and answers from
+     the snapshot it already holds when only the switches are needed, so this makes a one-shot
+     request of its own only when no bridge is present in this frame. */
+  function askContentConfig(need, cb) {
+    try {
+      var viaBridge = window.__wardenOneContentConfigRequest;
+      if (typeof viaBridge === 'function') { viaBridge(need, cb); return; }
+    } catch (_) {}
+    try { chrome.runtime.sendMessage({ kind: 'content-config-get', need: need }, cb); } catch (_) { try { cb(null); } catch (__) {} }
+  }
+  askContentConfig(['overrides', 'searchJunk'], function (response) {
     try { void chrome.runtime.lastError; } catch (_) {}
     if (chrome.runtime.lastError || !response || !response.ok) return;
     var cfg = response.overrides && typeof response.overrides === 'object' ? response.overrides : {};
@@ -493,18 +504,18 @@
     if (doWarn && (off || cfg.warnSearchResults === false)) { doWarn = false; clearMarks(); }
     if (off || cfg.flagSearchJunk !== true) return;
     doJunk = true;
+    /* The packaged seed list arrives inside this answer, read by the worker (BUG-10). This script
+       used to fetch it itself by its own package URL, which a content script cannot do for a
+       file that is not web-accessible -- the fetch was refused, the failure swallowed, and
+       the pass switched itself off while the toggle read "on". The worker reads the file where it
+       can be read, and reports a list it could not read; nothing is fetched here. */
     addHosts(response.searchJunkDomains);
     var aux = response.supplemental;
     addHosts(aux && aux.searchJunkDomainsExtra);
-    fetch(chrome.runtime.getURL('search-junk-domains.json'), { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (data) { addHosts(data && data.scraperHosts); })
-      .catch(function () {})
-      .then(function () {
-        /* The scraper list being empty used to end the script. It cannot now: the
-           warning pass has its own reason to run and does not use that list at all. */
-        if (!Object.keys(hosts).length) { doJunk = false; return; }
-        if (begun) scheduleScan(); else begin();
-      });
+    /* The scraper list being empty used to end the script. It cannot now: the warning pass has
+       its own reason to run and does not use that list at all. Empty here means the worker had
+       nothing to send, and the worker is the one that says so. */
+    if (!Object.keys(hosts).length) { doJunk = false; return; }
+    if (begun) scheduleScan(); else begin();
   });
 })();

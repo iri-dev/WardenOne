@@ -165,11 +165,14 @@ function bridgeHarness(merged) {
   const posted = [];
   const sandbox = {
     JSON, Object, Array, String, console,
-    bridgeConfig: Object.assign({}, merged || {}), bridgeConfigReady: false,
+    bridgeConfig: Object.assign({}, merged || {}), bridgeConfigReady: false, bridgeFrameSite: '',
     sanitizeBridgeHostList: (list) => (Array.isArray(list) ? list : []),
     bridgeSyncGoogleCleanupCss() {},
     bridgeActiveAllowlist: (cfg) => (Array.isArray(cfg.allowlist) ? cfg.allowlist : []),
     bridgeSiteOverridesFor: () => ({}),
+    /* The frame-noise verdict (SEC-05) is decided in sendConfig too; its own suite is
+       tools/test-fingerprint-realm.js. Silent mode has nothing to do with it. */
+    bridgeFrameNoiseAllowed: () => false,
     mergeNormalizedHostLists: () => [],
     learnedGrabberDomains: [], supplementalLists: {},
     postToPage: (m) => posted.push(m),
@@ -225,7 +228,7 @@ function bridgeHarness(merged) {
     /showToasts:cfg\.showToasts/.test(fs.readFileSync(path.join(ROOT, 'src/content.js'), 'utf8'))
       && !/silentMode/.test(fs.readFileSync(path.join(ROOT, 'src/content.js'), 'utf8')));
   check('the page copy is gated in sendConfig after the per-site overrides and before it is posted',
-    /delete clean\.siteOverrides;[\s\S]{0,1400}gateSilentPresentation\(clean, bridgeConfig\.silentMode === true\);[\s\S]{0,1600}postToPage\(signed\('config'/.test(BRIDGE));
+    /delete clean\.siteOverrides;[\s\S]{0,1400}gateSilentPresentation\(clean, bridgeConfig\.silentMode === true\);[\s\S]{0,2200}postToPage\(signed\('config'/.test(BRIDGE));
   check('no worker file touches the two switches -- they are page-resolved keys',
     !/(?:cfg|config|out|clean)\.(?:showToasts|showBadge)\s*=/.test(BG));
   check('the popup says the choices come back', /come back the moment Silent is off/.test(fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8')));

@@ -55,7 +55,9 @@ function lift(name) {
   throw new Error(name + ' is unterminated');
 }
 const PIECES = ['normalizeTrackerDomain', 'registrableDomainBg', 'trackerStoreShape', 'trackerDistinctSiteCount',
-  'trackerDistinctSessionCount', 'trackerLearnerSessionId', 'isProtectedTrackerDomain', 'looksLikeKnownTrackerHost',
+  'trackerDistinctSessionCount', 'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt', 'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd',
+  'trackerSessionState', 'noteTrackerSessionSeen', 'noteTrackerSiteView', 'trackerSiteViewFor', 'resetTrackerSessionState', 'trackerControlledDomains',
+  'isProtectedTrackerDomain', 'looksLikeKnownTrackerHost',
   'ownProviderDomains', 'noteTrackerObservation', 'pruneTrackerLearnerStore', 'saveTrackerLearner',
   'applyTrackerLearnerRules', 'trackerLearnerProposals', 'decideTrackerProposal', 'decideAllTrackerProposals',
   'trackerLearnerStatus'];
@@ -63,9 +65,19 @@ const CONSTS = BG.slice(BG.indexOf('const TRACKER_LEARNER_KEY ='), BG.indexOf('\
 
 function rig(options) {
   const o = options || {};
-  const state = { history: [], written: [], dnr: [], updates: [], session: o.session || 'session-A', learner: null };
+  const state = { history: [], written: [], dnr: [], updates: [], session: o.session || 'session-A', learner: null, sessionStore: {} };
   const sandbox = {
-    console: { warn() {}, log() {} }, Math, Date, Object, Array, Set, Map, Number, String, URL, JSON, isNaN, Promise,
+    console: { warn() {}, log() {} }, Math, Date, Object, Array, Set, Map, Number, String, URL, JSON, isNaN, Promise, Uint8Array,
+    /* Deterministic keys for the site sketch: a fresh random key puts a third fixture site on
+       already-set bits about once in sixty runs (the documented extra observation), which a
+       fixed-count check reads as a failure. First key per realm is fixed; later ones differ. */
+    crypto: { getRandomValues: (bytes) => { state.salts = (state.salts || 0) + 1; for (let i = 0; i < bytes.length; i++) bytes[i] = ((i * 0x11) + state.salts - 1) & 0xff; return bytes; } },
+    /* The session half of the learner (PRIV-01) lives in storage.session through this mirror; the
+       fake writes at once into a store a browser restart empties. */
+    sessionMirror: (key, snapshot, restore) => ({
+      ready: async () => { restore(state.sessionStore[key] ? JSON.parse(JSON.stringify(state.sessionStore[key])) : null); },
+      persist: () => { state.sessionStore[key] = JSON.parse(JSON.stringify(snapshot())); },
+    }),
     TRACKER_RULES_BUDGET: 300,
     TRACKER_PROTECTED_DOMAINS: new Set(['stripe.com', 'okta.com']),
     LOGIN_COMPAT_NEVER_BLOCK_DOMAINS: [],
@@ -87,13 +99,16 @@ function rig(options) {
   };
   vm.createContext(sandbox);
   /* trackerStoreShape must run before TRACKER_LEARNER is assigned, so declare the pieces first. */
-  vm.runInContext(DOMAIN_UTILS + '\nvar __trackerSessionId="";var __ownProviderDomains=null;\n' + CONSTS + '\n' + PIECES.map(lift).join('\n')
+  vm.runInContext(DOMAIN_UTILS + '\nvar __trackerSession=null;var __ownProviderDomains=null;\n' + CONSTS + '\n' + PIECES.map(lift).join('\n')
     + '\nvar TRACKER_LEARNER = trackerStoreShape(' + JSON.stringify(o.store || {}) + ');'
     + '\nvar loadTrackerLearner = async () => TRACKER_LEARNER;'
     + '\nglobalThis.api = { note: noteTrackerObservation, shape: trackerStoreShape, proposals: trackerLearnerProposals,'
     + ' decide: decideTrackerProposal, decideAll: decideAllTrackerProposals, apply: applyTrackerLearnerRules,'
     + ' status: trackerLearnerStatus, norm: normalizeTrackerDomain, learner: () => TRACKER_LEARNER,'
-    + ' newSession: () => { __trackerSessionId = ""; } };', sandbox);
+    + ' releaseSession: () => { __trackerSession = null; } };', sandbox);
+  /* A browser restart: the worker's session state is released and storage.session is gone. The
+     session used to be an id the rig handed out; now it is the record's own lifetime. */
+  sandbox.api.newSession = () => { sandbox.api.releaseSession(); state.sessionStore = {}; };
   return { api: sandbox.api, state, entry: (d) => (sandbox.api.learner().domains || {})[sandbox.api.norm(d)] || {} };
 }
 /* A hostile page forging the event, exactly as bridge.js would relay it. */
@@ -178,19 +193,22 @@ const rulesFor = (r, domain) => r.state.dnr.filter((x) => x.condition && (x.cond
 
   /* ---- 5. what an earlier build left behind --------------------------------------- */
   {
+    /* Recent times: observations now expire after 30 days (PRIV-01), and an epoch-old fixture
+       would be swept before these checks could see it. */
+    const recent = Date.now() - 3600000;
     const store = { domains: {
-      'old-auto.net': { state: 'learned', hits: 9, firstSeen: 1, lastSeen: 2, sites: { 'x.example': { hits: 3 }, 'y.example': { hits: 3 }, 'z.example': { hits: 3 } }, sessions: ['s1', 's2'] },
-      'approved.net': { state: 'learned', approvedAt: 1700000000000, hits: 4, firstSeen: 1, lastSeen: 2, sites: { 'x.example': { hits: 4 } } },
-      'declined.net': { state: 'dismissed', dismissedAt: 1700000000000, hits: 4, firstSeen: 1, lastSeen: 2, sites: { 'x.example': { hits: 4 } } },
-      'watching.net': { state: 'candidate', hits: 2, firstSeen: 1, lastSeen: 2, sites: { 'x.example': { hits: 2 } }, sessions: ['s1'] },
+      'old-auto.net': { state: 'learned', hits: 9, firstSeen: recent, lastSeen: recent, sites: { 'x.example': { hits: 3 }, 'y.example': { hits: 3 }, 'z.example': { hits: 3 } }, sessions: ['s1', 's2'] },
+      'approved.net': { state: 'learned', approvedAt: 1700000000000, hits: 4, firstSeen: recent, lastSeen: recent, sites: { 'x.example': { hits: 4 } } },
+      'declined.net': { state: 'dismissed', dismissedAt: 1700000000000, hits: 4, firstSeen: recent, lastSeen: recent, sites: { 'x.example': { hits: 4 } } },
+      'watching.net': { state: 'candidate', hits: 2, firstSeen: recent, lastSeen: recent, sites: { 'x.example': { hits: 2 } }, sessions: ['s1'] },
     } };
     const r = rig({ store });
     check('a learned entry with no approval behind it comes back as a proposal, marked legacy',
       r.entry('old-auto.net').state === 'proposed' && r.entry('old-auto.net').legacy === true && r.entry('old-auto.net').proposedAt > 0, r.entry('old-auto.net'));
-    check('an approved entry stays learned', r.entry('approved.net').state === 'learned' && r.entry('approved.net').approvedAt === 1700000000000);
+    check('an approved entry stays learned, its approval kept to the day', r.entry('approved.net').state === 'learned' && r.entry('approved.net').approvedAt === 1699920000000);
     check('a dismissed entry stays dismissed', r.entry('declined.net').state === 'dismissed');
-    check('a candidate keeps the sessions it has seen -- the shape used to drop them, so a second session could never be counted after a worker restart',
-      JSON.stringify(r.entry('watching.net').sessions) === JSON.stringify(['s1']) && JSON.stringify(r.entry('old-auto.net').sessions) === JSON.stringify(['s1', 's2']));
+    check('a candidate keeps how many sessions it has seen -- as a count now, never the ids (PRIV-01)',
+      r.entry('watching.net').sessions === 1 && r.entry('old-auto.net').sessions === 2 && r.entry('watching.net').sites === 1 && r.entry('old-auto.net').sites === 3);
     await r.api.apply();
     check('after the migration only the approved entry has a rule', r.state.dnr.length === 1 && rulesFor(r, 'approved.net').length === 1, r.state.dnr);
     const listed = r.api.proposals();
@@ -206,7 +224,7 @@ const rulesFor = (r, domain) => r.state.dnr.filter((x) => x.condition && (x.cond
   check('the worker answers the popup\'s three questions', ["msg.kind === 'tracker-learner-proposals'", "msg.kind === 'tracker-learner-decide'", "msg.kind === 'tracker-learner-decide-all'"].every((k) => BG.indexOf(k) !== -1));
   const tabAllowed = BG.slice(BG.indexOf('const TAB_CONTEXT_ALLOWED_MESSAGES = new Set(['), BG.indexOf(']);', BG.indexOf('const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([')));
   check('none of them can be sent by a page', !/tracker-learner/.test(tabAllowed));
-  check('the learner no longer promotes to learned on its own', !/entry\.state = 'learned';\s*entry\.reason = strongHost/.test(BG) && /entry\.state = 'proposed';\s*entry\.proposedAt = now;/.test(BG));
+  check('the learner no longer promotes to learned on its own', !/entry\.state = 'learned';\s*entry\.reason = strongHost/.test(BG) && /entry\.state = 'proposed';\s*entry\.proposedAt = day;/.test(BG));
   check('an observation never applies rules', /\/\/ A proposal changes no rule, so nothing is applied here; only a decision does that\.\s*await saveTrackerLearner\(false\);/.test(BG));
   check('the rule builder still keys on learned alone', /\.filter\(\(domain\) => TRACKER_LEARNER\.domains\[domain\] && TRACKER_LEARNER\.domains\[domain\]\.state === 'learned'\)/.test(BG));
   check('the popup shows the proposals with a decision beside each',

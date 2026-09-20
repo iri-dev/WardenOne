@@ -66,6 +66,12 @@ function world(options) {
     WO: { mediaShield: o.mediaShield !== false, blockCameraMic: o.blockCameraMic !== false },
     trustedMediaHost: !!o.trusted,
     log(type, detail) { logs.push({ type, detail }); },
+    /* The shared Media Shield decision sits outside this slice (COMPAT-01); these stand-ins
+       give the guard the states this suite is about -- nobody at the page, no standing
+       permission -- and tools/test-media-shield-presence.js drives the real functions. */
+    mediaPresence: () => false,
+    captureDecidedNow: (present) => o.blockCameraMic === false || !!o.trusted || present === true,
+    captureGranted: () => Promise.resolve(false),
     SpeechRecognition,
     webkitSpeechRecognition: SpeechRecognition,
     Event: function Event(type) { this.type = type; },
@@ -77,7 +83,9 @@ function world(options) {
   return { logs, started, sandbox, SpeechRecognition };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 0));
+/* The refusal with nobody at the page lands one turn later than it used to (Chrome's own record
+   is read first, COMPAT-01), so settling has to outlast a timer created after this one. */
+const settle = () => new Promise((r) => setTimeout(r, 15));
 
 console.log('\nspeech recognition guard\n');
 
@@ -101,7 +109,7 @@ console.log('\nspeech recognition guard\n');
     check('and that the audio leaves the machine',
       !!d && /transcrib/i.test(d.why), d && d.why);
     check('it tells someone who actually wanted to dictate what to do',
-      !!d && /allow camera and microphone/i.test(d.action), d && d.action);
+      !!d && /page's own button/i.test(d.action) && /turn Block camera & microphone off/i.test(d.action), d && d.action);
   }
 
   {
@@ -194,8 +202,8 @@ console.log('\nspeech recognition guard\n');
     /blocked_speech_capture: '/.test(HISTORY) && /warned_speech_capture: '/.test(HISTORY));
   check('the in-page notices explain themselves',
     /blocked_speech_capture:\{/.test(SOURCE) && /warned_speech_capture:\{/.test(SOURCE));
-  check('it answers the same switch as the rest of the microphone guard, so the switch is now true',
-    /!1!==WO\.blockCameraMic&&!trustedMediaHost/.test(GUARD));
+  check('it answers the same decision as the rest of the microphone guard, so the switch is now true',
+    /captureDecidedNow\(present\)/.test(GUARD) && /captureGranted\(\{audio:!0,video:!1\}\)/.test(GUARD));
   check('refusal never throws into the page, because start() returns nothing either way',
     !/throw /.test(GUARD));
 

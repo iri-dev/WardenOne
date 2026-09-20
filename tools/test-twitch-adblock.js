@@ -2527,6 +2527,59 @@ test('only intervention-linked network/decode errors enter a short recovery wind
     'circuit breaker expiry overrode the user-disabled configuration');
 });
 
+test('worker-owned MediaSourceHandle playback enters recovery on an intervention-linked stall', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  harness.window.MediaSourceHandle = class MediaSourceHandle {};
+  const primary = harness.createVideo({ currentSrc: '', inPlayer: true, paused: false, currentTime: 100 });
+  primary.srcObject = new harness.window.MediaSourceHandle();
+  primary.setAttribute('aria-label', 'Twitch video player');
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/handle-worker');
+  const send = (type, state) => worker.dispatchEvent({ type: 'message',
+    data: { __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type, state, channel: 'fixturechannel' }, stopImmediatePropagation() {} });
+  send('ready');
+  send('ad-state', 'blocked-clean');
+  harness.document.dispatchEvent({ type: 'waiting', target: primary });
+  harness.advance(4000);
+  const configs = () => worker.messages.filter((message) => message && message.type === 'config');
+  assert(configs().at(-1).enabled === false && configs().at(-1).recovery === true,
+    'worker-owned playback bypassed the stall circuit breaker because currentSrc is empty');
+  primary.playTo(102, 106);
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  primary.playTo(104, 108);
+  harness.advance(1200);
+  assert(configs().at(-1).enabled === true, 'advancing worker-owned playback could not finish recovery');
+  send('ad-state', 'blocked-clean');
+  primary.srcObject = new harness.window.MediaSourceHandle();
+  primary.error = { code: 3 };
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  assert(configs().at(-1).enabled === true, 'the previous handle attributed an error to a replacement player');
+  send('ad-state', 'blocked-clean');
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  assert(configs().at(-1).enabled === false,
+    'a fresh intervention on the replacement handle did not enter decode recovery');
+  assert(primary.pauseCalls === 0 && primary.playCalls === 0 && primary.seeks.length === 0,
+    'recognizing a worker-owned MediaSource manipulated playback controls');
+});
+
+test('a worker-owned primary is not mistaken for an independent display-ad video', () => {
+  const harness = createPageHarness();
+  harness.window.MediaSourceHandle = class MediaSourceHandle {};
+  const creative = harness.createVideo({ currentSrc: 'blob:https://www.twitch.tv/handle-creative',
+    inPlayer: true, label: 'Video advertisement', volume: 1 });
+  const primary = harness.createVideo({ currentSrc: '', inPlayer: true,
+    label: 'Twitch video player', volume: 0.7 });
+  primary.srcObject = new harness.window.MediaSourceHandle();
+  const initial = videoPresentation(primary);
+  harness.setStreamDisplayAdSignal(true);
+  harness.fireMedia('playing', primary);
+  harness.fireMedia('playing', creative);
+  equal(videoPresentation(primary), initial, 'the worker-owned live stream was hidden or muted as an ad');
+  assertGuarded(creative, 'display ad alongside a worker-owned primary');
+  assert(primary.pauseCalls === 0 && primary.playCalls === 0 && primary.seeks.length === 0,
+    'ad classification manipulated the primary player');
+});
+
 test('stable native playback ends intervention recovery early', () => {
   const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
   const worker = new harness.window.Worker('blob:https://www.twitch.tv/early-resume-worker');
@@ -2557,6 +2610,7 @@ test('stable native playback ends intervention recovery early', () => {
   harness.document.dispatchEvent({ type: 'playing', target: primary });
   harness.advance(1199);
   assert(configs().at(-1).enabled === false, 'recovery ended before playback settled');
+  primary.playTo(1.2, 5);
   harness.advance(1);
   assert(configs().at(-1).enabled === true, 'stable native playback did not resume ad interception early');
   assert(harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
@@ -2649,9 +2703,82 @@ test('persistent intervention-linked waiting enters bounded native fail-open wit
     'stall fail-open paused, restarted, or sought the live video');
 
   harness.document.dispatchEvent({ type: 'playing', target: primary });
+  primary.playTo(101.2, 105);
   harness.advance(1200);
   assert(configs().at(-1).enabled === true,
     'stable native playback did not re-enable interception after stall recovery');
+});
+
+test('a playing event without playhead progress cannot end recovery early', () => {
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
+  const primary = harness.createVideo({ currentSrc: 'blob:https://www.twitch.tv/no-progress', inPlayer: true });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/no-progress-worker');
+  worker.dispatchEvent({ type: 'message', data: {
+    __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+    type: 'ad-state', state: 'blocked-clean',
+  }, stopImmediatePropagation() {} });
+  primary.error = { code: 3 };
+  harness.document.dispatchEvent({ type: 'error', target: primary });
+  primary.error = null;
+  harness.document.dispatchEvent({ type: 'playing', target: primary });
+  harness.advance(1200);
+  const configs = () => worker.messages.filter((message) => message.type === 'config');
+  assert(configs().at(-1).enabled === false && configs().at(-1).recovery === true,
+    'a frozen playhead ended native recovery based only on an event');
+  harness.advance(6800);
+  assert(configs().at(-1).enabled === true, 'first recovery lost its bounded deadline');
+});
+
+test('repeated channel failures back off and their cooldown survives a page reload', () => {
+  const sessionValues = new Map();
+  const harness = createPageHarness(null, { fakeClock: true, now: 1000, sessionValues });
+  const primary = harness.createVideo({ currentSrc: 'blob:https://www.twitch.tv/repeated-failure', inPlayer: true });
+  const worker = new harness.window.Worker('blob:https://www.twitch.tv/repeated-failure-worker');
+  const configs = () => worker.messages.filter((message) => message.type === 'config');
+  const fail = () => {
+    worker.dispatchEvent({ type: 'message', data: {
+      __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady,
+      type: 'ad-state', state: 'blocked-clean',
+    }, stopImmediatePropagation() {} });
+    primary.error = { code: 3 };
+    harness.document.dispatchEvent({ type: 'error', target: primary });
+    primary.error = null;
+  };
+  const play = () => {
+    harness.document.dispatchEvent({ type: 'playing', target: primary });
+    primary.playTo(primary.currentTime + 1.2, primary.currentTime + 5);
+    harness.advance(1200);
+  };
+  fail();
+  play();
+  assert(configs().at(-1).enabled === true, 'first recovery should still allow a quick successful retry');
+  fail();
+  const secondDeadline = Number(sessionValues.get('__woTwitchFailOpenUntil'));
+  assert(secondDeadline - harness.state.now === 30000, 'second channel failure did not back off for 30 seconds');
+  play();
+  assert(configs().at(-1).enabled === false, 'brief playback bypassed the repeated-failure cooldown');
+  const reloaded = createPageHarness(null, { fakeClock: true, now: harness.state.now, sessionValues });
+  reloaded.advance(28799);
+  assert(reloaded.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'recovery',
+    'reload shortened the repeated-failure cooldown');
+  reloaded.advance(1);
+  assert(reloaded.document.documentElement.getAttribute('data-wo-twitch-fail-open') === null,
+    'reloaded cooldown did not retain its original deadline');
+  harness.advance(28800);
+  fail();
+  assert(Number(sessionValues.get('__woTwitchFailOpenUntil')) - harness.state.now === 60000,
+    'third channel failure did not back off for 60 seconds');
+  harness.advance(60000);
+  harness.window.location.pathname = '/anotherchannel';
+  fail();
+  assert(Number(sessionValues.get('__woTwitchFailOpenUntil')) - harness.state.now === 8000,
+    'a different channel inherited the failing channel cooldown');
+  harness.advance(8000);
+  harness.window.location.pathname = '/fixturechannel';
+  harness.advance(300000);
+  fail();
+  assert(Number(sessionValues.get('__woTwitchFailOpenUntil')) - harness.state.now === 8000,
+    'old failures never aged out after stable playback');
 });
 
 test('brief or unrelated waiting never disables Twitch interception', () => {
@@ -2914,6 +3041,7 @@ test('a queued blocked state cannot repopulate provenance during native fail-ope
 
   primary.error = null;
   harness.document.dispatchEvent({ type: 'playing', target: primary });
+  primary.playTo(11.2, 15);
   harness.advance(1200);
   harness.document.dispatchEvent({ type: 'waiting', target: primary });
   harness.advance(4000);

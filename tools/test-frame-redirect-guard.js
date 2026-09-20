@@ -72,6 +72,7 @@ function world(options) {
        nothing and every behavioural check passed for the wrong reason. */
     registrableDomain: (host) => String(host || '').split('.').slice(-2).join('.'),
     registrableDomainBg: (host) => String(host || '').split('.').slice(-2).join('.'),
+    siteIdentityBg: (host) => String(host || '').split('.').slice(-2).join('.'),
     queueHistory: (entry) => history.push(entry),
     redirectWarningPageUrl: (info) => 'chrome-extension://x/redirect-warning.html?to=' +
       encodeURIComponent(info.targetUrl) + '&why=' + encodeURIComponent(info.why),

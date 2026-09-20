@@ -70,15 +70,25 @@ function lift(name, kind) {
 
 const PIECES = ['noteTrackerObservation', 'isProtectedTrackerDomain', 'looksLikeKnownTrackerHost',
   'trackerDistinctSiteCount', 'trackerDistinctSessionCount', 'ownProviderDomains',
-  'trackerLearnerSessionId', 'normalizeTrackerDomain', 'registrableDomainBg'];
+  'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt', 'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd',
+  'trackerSessionState', 'noteTrackerSessionSeen', 'noteTrackerSiteView', 'trackerSiteViewFor', 'resetTrackerSessionState', 'trackerControlledDomains',
+  'normalizeTrackerDomain', 'registrableDomainBg'];
 
 const missing = PIECES.filter((p) => !lift(p) && !lift(p, 'async function '));
 check('every piece of the learner is present', missing.length === 0, 'missing: ' + missing.join(', '));
 
 function build(sessionId) {
-  const state = { learner: { domains: {} }, saved: 0, applied: 0, session: sessionId };
+  const state = { learner: { domains: {} }, saved: 0, applied: 0, session: sessionId, sessionStore: {} };
   const sandbox = {
-    console, Math, Date, Object, Array, Set, Map, Number, String, URL, JSON, isNaN,
+    console, Math, Date, Object, Array, Set, Map, Number, String, URL, JSON, isNaN, Promise, Uint8Array,
+    /* Deterministic keys for the site sketch: a fresh random key puts a third fixture site on
+       already-set bits about once in sixty runs (the documented extra observation), which a
+       fixed-count check reads as a failure. First key per realm is fixed; later ones differ. */
+    crypto: { getRandomValues: (bytes) => { state.salts = (state.salts || 0) + 1; for (let i = 0; i < bytes.length; i++) bytes[i] = ((i * 0x11) + state.salts - 1) & 0xff; return bytes; } },
+    sessionMirror: (key, snapshot, restore) => ({
+      ready: async () => { restore(state.sessionStore[key] ? JSON.parse(JSON.stringify(state.sessionStore[key])) : null); },
+      persist: () => { state.sessionStore[key] = JSON.parse(JSON.stringify(snapshot())); },
+    }),
     TRACKER_PROTECTED_DOMAINS: new Set(['stripe.com', 'okta.com']),
     TRACKER_LEARNER: state.learner,
     DEFAULT_CONFIG: { enabled: true, trackerLearner: true },
@@ -98,16 +108,19 @@ function build(sessionId) {
   // undeclared, and the failure is silent rather than loud: trackerLearnerSessionId swallows the
   // ReferenceError in its own try/catch and returns '', so no session is ever recorded and the
   // learner simply stops learning -- which looks exactly like the fix having broken the feature.
-  const src = DOMAIN_UTILS + '\nvar __trackerSessionId="";var __ownProviderDomains=null;\n'
+  const src = DOMAIN_UTILS + '\nvar __trackerSession=null;var __ownProviderDomains=null;\n'
     + BG.slice(BG.indexOf('const TRACKER_LEARN_MIN_SITES'),
-      BG.indexOf('\n', BG.indexOf('const TRACKER_LEARN_MIN_HITS')))
+      BG.indexOf('\n', BG.indexOf('const TRACKER_SITE_VIEW_MAX_DOMAINS')))
     + '\n' + PIECES.map((p) => lift(p) || lift(p, 'async function ')).filter(Boolean).join('\n')
     + '\nglobalThis.__note=noteTrackerObservation;'
     + 'globalThis.__prot=isProtectedTrackerDomain;globalThis.__norm=normalizeTrackerDomain;'
     // A browser restart, from the inside: __trackerSessionId is a lexical binding in the lifted
     // source, so it can only be cleared by code that shares that scope.
-    + 'globalThis.__newSession=function(){__trackerSessionId="";};';
+    + 'globalThis.__releaseSession=function(){__trackerSession=null;};';
   vm.runInContext(src, sandbox);
+  /* A browser restart: the worker's session state released and storage.session gone (PRIV-01:
+     the session is the record's own lifetime now, not an id). */
+  sandbox.__newSession = () => { sandbox.__releaseSession(); state.sessionStore = {}; };
   return { sandbox, state, note: sandbox.__note, protectedFn: sandbox.__prot, norm: sandbox.__norm };
 }
 
