@@ -1039,7 +1039,7 @@
       <label class="tg"><input type="checkbox" data-key="clientHintProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional randomization for canvas, WebGL vendor strings, audio buffers, and coarse hardware hints. It can break canvas-heavy sites and may make rare setups more unique, so it stays opt-in.</div></div>
+      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional randomization for canvas, WebGL vendor strings, audio buffers, and coarse hardware hints. Runs in the page and in every frame it embeds, with one shared answer, so a frame cannot be used to read the real values; web workers are not covered and still see the real machine. It can break canvas-heavy sites and may make rare setups more unique, so it stays opt-in.</div></div>
       <label class="tg"><input type="checkbox" data-key="antiFingerprintNoise"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1177,7 +1177,7 @@
       <label class="tg"><input type="checkbox" data-key="blockSponsoredSearchResults"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
-<details class="rewind-drop">
+<details class="rewind-drop" data-feature="twitchRewind">
       <summary>Twitch local rewind<span class="rewind-caret" aria-hidden="true">&#9662;</span></summary>
     <div class="card-group">
     <div class="row">
@@ -1194,13 +1194,13 @@
     </div>
     </div>
     </details>
-<h2>Memory Shield</h2>
+<h2 data-feature="memoryShield" data-feature-fallback="Resource Saver">Memory Shield</h2>
     <div class="card-group">
-    <div class="row">
+    <div data-feature="memoryShield" class="row">
       <div><div class="name">Sleep inactive tabs</div><div class="desc">Saves RAM by putting unused tabs to sleep (keeps them in the tab bar; they reload on click). Nothing is closed.</div></div>
       <label class="tg"><input type="checkbox" data-key="memoryShield"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row" style="display:block;">
+    <div data-feature="memoryShield" class="row" style="display:block;">
       <div class="name" style="margin-bottom:7px;">Mode</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;" id="mem-modes">
         <button class="btn mem-mode" data-mode="gentle" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Gentle<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">2 hours</span></button>
@@ -1209,43 +1209,43 @@
         <button class="btn mem-mode" data-mode="emergency" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Emergency<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">~1 min</span></button>
       </div>
     </div>
-    <div class="row">
+    <div data-feature="memoryShield" class="row">
       <div><div class="name" style="font-size:12px;">Never sleep pinned tabs</div></div>
       <label class="tg"><input type="checkbox" data-key="memoryNeverPinned"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row">
+    <div data-feature="memoryShield" class="row">
       <div><div class="name" style="font-size:12px;">Never sleep tabs playing audio</div></div>
       <label class="tg"><input type="checkbox" data-key="memoryNeverAudio"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row">
+    <div data-feature="memoryShield" class="row">
       <div><div class="name" style="font-size:12px;">Never sleep tabs with unsaved forms</div></div>
       <label class="tg"><input type="checkbox" data-key="memoryNeverForms"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row">
+    <div data-feature="memoryShield" class="row">
       <div><div class="name" style="font-size:12px;">Never sleep login / payment pages</div></div>
       <label class="tg"><input type="checkbox" data-key="memoryNeverPayment"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row">
+    <div data-feature="tabLimit" class="row">
       <div><div class="name" style="font-size:12px;">Tab Limit</div><div class="desc">Over your limit, sleeps (or closes) the oldest unused tab. Skips active, pinned, audio, form, login, and allowlisted tabs.</div></div>
       <label class="tg"><input type="checkbox" id="tl-guard"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row">
+    <div data-feature="tabLimit" class="row">
       <div><div class="name" style="font-size:12px;">Maximum tabs</div><div class="desc">Acts when a new tab pushes the window past this count.</div></div>
       <input class="api-field" type="number" id="tl-max" min="2" max="200" step="1" style="width:66px;flex:none;text-align:center;">
     </div>
-    <div class="row">
+    <div data-feature="tabLimit" class="row">
       <div><div class="name" style="font-size:12px;">Minimum inactive time</div><div class="desc">Minutes a tab must be idle before it's put to sleep (sleep mode only). Close mode is a hard cap — it always closes your least-recently-used tabs to stay under the limit. Active, pinned, audio, and unsaved-form tabs are never touched.</div></div>
       <input class="api-field" type="number" id="tl-idle" min="0" max="1440" step="5" style="width:66px;flex:none;text-align:center;">
     </div>
-    <div class="row">
+    <div data-feature="tabLimit" class="row">
       <div><div class="name" style="font-size:12px;">Close instead of sleeping (aggressive)</div><div class="desc">Off = sleep the oldest tab (reversible — it reloads on click). On = actually close it.</div></div>
       <label class="tg"><input type="checkbox" id="tl-close"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row">
+    <div data-feature="tabLimit" class="row">
       <div><div class="name" style="font-size:12px;">Notify me when a tab is closed</div><div class="desc">A heads-up so a closed tab is never a surprise.</div></div>
       <label class="tg"><input type="checkbox" id="tl-warn"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div class="row" style="display:block;">
+    <div data-feature="memoryShield" class="row" style="display:block;">
       <div id="mem-score" style="font-size:12px;color:var(--ink-soft,#534064);line-height:1.6;margin-bottom:9px;">Checking memory usage…</div>
       <button class="btn" id="mem-free" style="width:100%;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Free RAM now</button>
       <div id="mem-free-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
@@ -1257,7 +1257,7 @@
       <button class="btn" id="mem-zombies" style="width:100%;margin-top:7px;">Find zombie tabs (idle 6h+)</button>
       <div id="mem-zombies-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
     </div>
-    <div class="row" style="display:block;padding-bottom:4px;">
+    <div data-feature="memoryShield" class="row" style="display:block;padding-bottom:4px;">
       <div class="name" style="margin-bottom:2px;">Resource Saver</div>
       <div class="desc" style="margin-bottom:4px;">Cut CPU, battery, and data on the pages you visit. All off by default — turn on what you want.</div>
     </div>
@@ -1313,15 +1313,15 @@
       <label class="tg"><input type="checkbox" data-key="notificationAbuseGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block camera &amp; microphone</div><div class="desc">Stops sites opening camera or microphone prompts, and blocks capture started without you doing anything at all. That includes speech recognition, which reaches the microphone by a different route and would otherwise listen with nothing here noticing &mdash; and which Chrome sends away to be transcribed rather than doing on your machine. YouTube, Twitch and X are exempt so calls and uploads still work; anywhere else, a site that wants the microphone has to ask when you are actually there.</div></div>
+      <div><div class="name">Block camera &amp; microphone</div><div class="desc">Blocks camera and microphone access a site starts on its own &mdash; no click or keypress from you in the last few seconds, and no standing permission in Chrome. When you are actually using the page, the request goes to Chrome&rsquo;s own prompt and you decide there, with the browser&rsquo;s recording indicator; a site you have already allowed in Chrome is not second-guessed. Speech recognition, which reaches the microphone by a different route and which Chrome sends away to be transcribed, follows the same rule. YouTube, Twitch, Spotify and X are exempt.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockCameraMic"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block screen capture</div><div class="desc">Stops a page asking to record your screen or a window. On by default because a screen-share prompt you did not go looking for is almost always a scam walking you into one. YouTube, Twitch and X are exempt so ordinary players and calls still work.</div></div>
+      <div><div class="name">Block screen capture</div><div class="desc">Blocks screen-share requests a page makes on its own. On by default because a screen-share prompt you did not go looking for is almost always a scam walking you into one. After a click of yours, Chrome&rsquo;s own picker appears and nothing is shared until you choose a screen or window; there is no &ldquo;always&rdquo; for screen capture &mdash; the picker comes up every time. YouTube, Twitch, Spotify and X are exempt.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockScreenCapture"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block location requests</div><div class="desc">Deny browser location prompts, kill location watches, mask page timezone/language hints, and ask Chrome to block location access globally. A VPN is still needed to hide IP-based location.</div></div>
+      <div><div class="name">Block location requests</div><div class="desc">Deny browser location prompts, kill location watches, mask page timezone/language hints, and ask Chrome to block location access globally. Pausing WardenOne on a site, or switching this off for one site, hands that site back to Chrome&rsquo;s own location prompt &mdash; it never grants location by itself. A VPN is still needed to hide IP-based location.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockGeolocation"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1596,8 +1596,8 @@
     </div>
     </div>
     </details>
-<h2 id="eyeshield-title">EyeShield</h2>
-    <section class="eyeshield-panel" id="eyeshield-panel" aria-labelledby="eyeshield-title">
+<h2 id="eyeshield-title" data-feature="eyeShield">EyeShield</h2>
+    <section class="eyeshield-panel" id="eyeshield-panel" aria-labelledby="eyeshield-title" data-feature="eyeShield">
       <div class="eyeshield-modes" id="eyeshield-modes" role="group" aria-label="EyeShield mode">
         <button type="button" class="eyeshield-mode" data-eyeshield-mode="off" aria-pressed="true">Normal</button>
         <button type="button" class="eyeshield-mode" data-eyeshield-mode="light" aria-pressed="false">Light</button>
@@ -1763,7 +1763,7 @@
         <label class="ck"><input type="checkbox" id="cl-cache" checked> Cache</label>
         <label class="ck ck-2"><input type="checkbox" id="cl-consent" checked><span class="ck-t"><span class="ck-n">Consent banners &amp; tracking cookies</span><span class="ck-s keep">Keeps you signed in</span></span></label>
         <label class="ck ck-2"><input type="checkbox" id="cl-cookies"><span class="ck-t"><span class="ck-n">All cookies &amp; sign-ins</span><span class="ck-s out">Signs you out of every site</span></span></label>
-        <label class="ck"><input type="checkbox" id="cl-history"> Browsing history</label>
+        <label class="ck"><input type="checkbox" id="cl-history"> Browsing history &mdash; and WardenOne&rsquo;s own where-you-have-been records (tracker learner observations, Script Drift baselines)</label>
         <label class="ck"><input type="checkbox" id="cl-downloads"> Download history</label>
         <label class="ck"><input type="checkbox" id="cl-storage"> Local storage &amp; IndexedDB</label>
         <label class="ck"><input type="checkbox" id="cl-sw"> Service workers</label>
@@ -1850,7 +1850,7 @@
     <div class="row site-pause-row">
       <div>
         <div class="name">Pause everything here</div>
-        <div class="desc" id="site-pause-desc">Turns WardenOne off on this site for a while, then turns it back on by itself. Use this instead of the allowlist when something is in your way right now.</div>
+        <div class="desc" id="site-pause-desc">Turns WardenOne off on this site for a while, then turns it back on by itself. Use this instead of the allowlist when something is in your way right now. The browser-level blocks WardenOne holds for you step back too: location goes back to Chrome&rsquo;s own prompt, never to automatic access.</div>
       </div>
       <div class="site-pause-actions">
         <button class="btn" id="site-pause-15">15m</button>
@@ -1931,6 +1931,7 @@
       <span class="wo-footer-copy"><strong>How to get your API keys</strong><small>Free, optional, for a deeper scan</small></span>
     </a>
   </div>
+<script src="build-profile.js"></script>
 <script src="notification-schema.js"></script>
 <script src="popup.js"></script>
 </body>

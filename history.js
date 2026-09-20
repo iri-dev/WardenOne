@@ -77,6 +77,7 @@ const LABELS = {
   detected_beacon: 'Data sent in the background',
   cleaned_site_cookies: 'Cookies cleared after you left',
   cleaned_site_service_worker: 'Service worker removed after you left',
+  search_junk_seed_unavailable: 'Scraper list could not be read',
   cleaned_site_storage: 'Tracking IDs cleared as you left',
   warned_confirm_bait: 'Fake confirm box',
   warned_back_trap: 'Back button trapped',

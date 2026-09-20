@@ -170,6 +170,11 @@ function run(options) {
     log(type, detail) { logs.push({ type, detail }); },
     woOn(target, type, fn) { listeners[type] = fn; },
     woObserve(fn) { observers.push(fn); return { disconnect() {} }; },
+    /* The shared text-scan scheduler (PERF-03) sits outside this slice. The guard registers its
+       page scan with it and runs the load-time pass through the handle; this stand-in runs that
+       pass directly, so every test here still reads the page the way it did. The scheduler itself
+       is tools/test-text-scan-scheduler.js's subject. */
+    __woTextScan: { add(spec) { return { now() { return spec.run(); } }; } },
     setTimeout(fn) { timers.push(fn); return timers.length; },
     clearTimeout() {},
   };

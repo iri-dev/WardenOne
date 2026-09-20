@@ -10,6 +10,8 @@ key.pem
 # packages every tracked file, so a checked-in zip ends up inside the next
 # release — doubling the download for no reason.
 WardenOne-v*.zip
+# The Store package (tools/build-store-package.js): built from a commit on demand, never tracked.
+WardenOne-store.zip
 
 # Machine-local tool settings.
 .*/settings.local.json

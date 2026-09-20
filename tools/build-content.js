@@ -10,6 +10,13 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const SRC = path.join(ROOT, 'src', 'content.js');
 const OUT = path.join(ROOT, 'content.min.js');
+// The frame module (SEC-05): a hand-written bootstrap plus two regions copied out of
+// src/content.js, so the noise a child frame installs is byte for byte the engine's own.
+const REALM_SRC = path.join(ROOT, 'src', 'fingerprint-realm.js');
+const REALM_OUT = path.join(ROOT, 'fingerprint-realm.js');
+// Each region is delimited in src/content.js by a block comment opening with NAME-BEGIN and one
+// reading exactly NAME-END; the bootstrap names it in an @wardenone-include line.
+const REALM_REGIONS = ['AUTH', 'FINGERPRINT-NOISE'];
 
 function read(file) {
   return fs.readFileSync(file, 'utf8');
@@ -263,6 +270,37 @@ function formatRuntime(source) {
   return out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trimStart() + '\n';
 }
 
+// The source text of one marked region of src/content.js, from the opening of its BEGIN comment
+// through its END comment. Exactly one of each, in order, or the build refuses: a region that
+// silently came out empty or doubled would ship a frame module that patches nothing, or twice.
+function region(source, name) {
+  const begin = '/* ' + name + '-BEGIN';
+  const end = '/* ' + name + '-END */';
+  const input = String(source || '');
+  const a = input.indexOf(begin);
+  const b = input.indexOf(end);
+  if (a < 0 || input.indexOf(begin, a + 1) >= 0) throw new Error('src/content.js must contain exactly one ' + begin + ' marker');
+  if (b < 0 || input.indexOf(end, b + 1) >= 0) throw new Error('src/content.js must contain exactly one ' + end + ' marker');
+  if (b < a) throw new Error(name + '-END comes before ' + name + '-BEGIN in src/content.js');
+  return input.slice(a, b + end.length);
+}
+
+// fingerprint-realm.js: the bootstrap with each include line replaced by the region it names,
+// built the same way content.min.js is (newlines and indentation stripped), so the spliced text is
+// a substring of content.min.js and a byte-for-byte comparison between the two is meaningful.
+function buildRealm(contentSource, realmSource) {
+  let out = String(realmSource || '');
+  for (const name of REALM_REGIONS) {
+    const placeholder = new RegExp('^[ \\t]*/\\* @wardenone-include ' + name + ' \\*/[ \\t]*$', 'm');
+    const hits = out.match(new RegExp(placeholder.source, 'mg')) || [];
+    if (hits.length !== 1) throw new Error('src/fingerprint-realm.js must include ' + name + ' exactly once (found ' + hits.length + ')');
+    out = out.replace(placeholder, () => '  ' + buildFromSource(region(contentSource, name)));
+  }
+  const left = out.match(/@wardenone-include [A-Z-]+/);
+  if (left) throw new Error('src/fingerprint-realm.js names a region the build does not know: ' + left[0]);
+  return out;
+}
+
 function check() {
   const source = read(SRC);
   assertNoLineComments(source);
@@ -274,6 +312,20 @@ function check() {
     process.exit(1);
   }
   console.log('[ok] src/content.js rebuilds content.min.js exactly');
+  let realm;
+  try {
+    realm = buildRealm(source, read(REALM_SRC));
+  } catch (e) {
+    console.error('[fail] ' + e.message);
+    process.exit(1);
+  }
+  const shipped = fs.existsSync(REALM_OUT) ? read(REALM_OUT) : '';
+  if (realm !== shipped) {
+    console.error('[fail] src/fingerprint-realm.js + src/content.js do not rebuild to fingerprint-realm.js');
+    console.error('[info] built bytes=' + Buffer.byteLength(realm) + ' shipped bytes=' + Buffer.byteLength(shipped));
+    process.exit(1);
+  }
+  console.log('[ok] fingerprint-realm.js rebuilds exactly from its bootstrap and the engine regions');
 }
 
 const arg = process.argv[2] || '--build';
@@ -287,6 +339,13 @@ if (arg === '--format-from-runtime') {
   assertNoLineComments(source);
   write(OUT, buildFromSource(source));
   console.log('[ok] rebuilt content.min.js from src/content.js');
+  try {
+    write(REALM_OUT, buildRealm(source, read(REALM_SRC)));
+  } catch (e) {
+    console.error('[fail] ' + e.message);
+    process.exit(1);
+  }
+  console.log('[ok] rebuilt fingerprint-realm.js from src/fingerprint-realm.js and the engine regions');
 } else {
   console.error('usage: node tools/build-content.js [--build|--check|--format-from-runtime]');
   process.exit(2);

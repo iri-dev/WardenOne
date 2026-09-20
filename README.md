@@ -600,16 +600,24 @@ request because Chromium does not expose the evidence early enough to do that ho
 
 ### Media Shield
 
-Media Shield can refuse camera, microphone, screen capture and hidden background media. The
-microphone protection includes speech recognition, which reaches audio through a route that a
-`getUserMedia`-only guard would miss and which Chrome may send away for transcription. Refusal uses
-the browser's ordinary denied-permission path so sites that handle a user pressing **Block** can
-handle WardenOne too.
+Media Shield can refuse camera, microphone, screen capture and hidden background media. Camera and
+microphone requests are judged by presence, not by hostname: a request made while you are actually
+using the page -- a click or a keypress in the last few seconds -- goes to Chrome's own prompt, and a
+site you have already allowed in Chrome is not second-guessed; a request made with nobody at the page
+is refused unless Chrome already holds a grant for it. Screen capture is never pre-authorised: after a
+click, Chrome's picker decides, every time. The microphone protection includes speech recognition,
+which reaches audio through a route that a `getUserMedia`-only guard would miss and which Chrome may
+send away for transcription; it follows the same rule. Refusal uses the browser's ordinary
+denied-permission path so sites that handle a user pressing **Block** can handle WardenOne too.
 
 ### Location Guard
 
 Location blocking is individually controlled, so a site can be refused geolocation without
-changing the rest of WardenOne's device and permission protection.
+changing the rest of WardenOne's device and permission protection. It holds the block in Chrome's
+own location setting, and it steps aside per site: pausing WardenOne on a site, or switching the
+block off for that one site, hands the site back to Chrome's own location prompt -- never to
+automatic access -- and the exception lapses with the pause. Turning the block off removes every
+location rule WardenOne wrote, leaving Chrome's default and your own per-site choices as they were.
 
 ### Permission Chain Guard
 
@@ -757,7 +765,11 @@ repeated on-device evidence. The learner only ever **proposes**: when a third-pa
 behaved like a tracker on three of your sites across two browser sessions, it appears in the popup
 under *Trackers noticed across your sites*, and nothing is blocked until you press **Block**. Every
 input the learner sees comes from a page, so a page can make it suggest a block, but never make one.
-Decisions remain on your machine and do not become a crowdsourced record of your browsing.
+Decisions remain on your machine and do not become a crowdsourced record of your browsing. Nor a
+local one: the learner keeps counts (sites, sessions, requests) and a keyed sketch that can only
+answer "already counted this site?", never the names of the sites a tracker was seen on, and its
+observations expire after 30 days. Which trackers the site in front of you has used is shown for the
+current browser session only.
 
 ## Cookie and storage controls
 
@@ -899,6 +911,17 @@ Media capability checks keep the browser's truthful `supported` answer—lying t
 fail—but flatten whether a supported codec is smooth or power-efficient, which describes the GPU
 generation. WebCodecs support is observed rather than altered. A burst of capability probes is
 recorded separately from the shield so detection and modification are not confused.
+
+**Where it runs.** The noise rewrites the realm it runs in, and a page has more than one realm: every
+frame it embeds is a fresh one. So the same noise runs in every frame as well as the page—same-origin
+frames (including `about:blank` and `srcdoc`, and an `about:blank` window the page opens) inherit the
+page's verdict and seed the moment they are created, before the page can borrow anything from them,
+so a hidden frame's canvas gives the same answer as the page's; cross-origin frames decide from the
+same switch, the same pause and the same per-site choices as the page around them. Captcha frames are
+left alone, like the sign-in and captcha hosts the shield already skips. Not covered: web workers. A
+worker's realm cannot be reached from an extension without re-serving the worker's code, which breaks
+module workers and scripts that resolve paths from their own location, so an `OffscreenCanvas` inside a
+worker still answers with the real machine.
 
 <details>
 <summary><strong>Why anti-fingerprinting is opt-in</strong></summary>
@@ -1346,8 +1369,12 @@ file or extension, inspect Activity, or open settings.
 <summary><strong>Why the in-page palette cannot grant itself authority</strong></summary>
 
 The overlay is display only. The background owns the command list, rejects unknown IDs and requires
-the palette to have been opened on that exact tab through a trusted route. The opening is consumed,
-so one invocation buys one action. A forged page message cannot create that authority.
+the pick to carry the one-use grant the shortcut handed that exact tab's palette—a random nonce set
+on the extension's own isolated world, which the page cannot read. Its hash is kept in
+`storage.session`, so the grant survives the background worker going to sleep (which Chrome does
+within the two minutes a palette stays valid) yet dies with the browser. The grant is consumed the
+moment it is spent, so one invocation buys one action. A forged page message cannot create that
+authority.
 
 The palette is injected only when called and lives in a closed shadow root. The page cannot read
 what you type into it or restyle its internal controls into something misleading.
@@ -1532,6 +1559,18 @@ than is strictly sensible.
 Everything goes through `node tools/check-maintainability.js` first. And when something
 turns out to be wrong on a real site, I'd rather leave the revert sitting in the history
 than tidy it away.
+
+## The Store package
+
+The GitHub build is the whole of WardenOne. Chrome's Web Store allows an extension one narrow
+purpose, and four features here -- EyeShield, Memory Shield, Tab Limit and Twitch Rewind -- are
+separate goals from protection, so a Store package would leave them out: the files, the manifest
+entries and the settings, not just the description. `node tools/build-store-package.js` builds
+that package from a commit, byte-for-byte reproducibly, and the worker and popup read
+`build-profile.js` to run cleanly without what was left out. The decision and every popup
+section's place under the one purpose are written down in
+[docs/store-single-purpose.md](docs/store-single-purpose.md). Nothing has been submitted; the
+tool exists so that if it ever is, what is submitted is exactly what the record says.
 
 # Official source & authenticity
 

@@ -145,23 +145,28 @@
   const recentStreamInterventions = new Map();
   const independentAdVideos = new Map();
   let primaryLiveVideo = null;
+  const mediaSourceHandleKeys = new WeakMap();
+  let mediaSourceHandleSerial = 0;
   let independentAdObserver = null;
   let independentAdPruneTimer = 0;
-  // Recovery is deliberately short and intervention-scoped. A blanket 30-second
-  // pass-through made a decoder/network error look fixed by simply allowing the
-  // rest of the current ad pod to play. Only failures immediately following one
-  // of our playlist interventions enter recovery, and native playback can end the
-  // window early once it is playing again.
+  /* Recovery is intervention-scoped. One failure gets a short retry window;
+     repeated failures on the same channel back off so a brief recovery cannot
+     immediately send the player into the same failing handoff again. */
   const PLAYBACK_FAIL_OPEN_MS = 8 * 1000;
+  const PLAYBACK_FAIL_OPEN_MAX_MS = 60 * 1000;
+  const PLAYBACK_FAILURE_WINDOW_MS = 5 * 60 * 1000;
   const PLAYBACK_FAIL_OPEN_SETTLE_MS = 1200;
   const PLAYBACK_INTERVENTION_ERROR_WINDOW_MS = 15 * 1000;
   const PLAYBACK_STALL_FAIL_OPEN_DELAY_MS = 4 * 1000;
   const PLAYBACK_FAIL_OPEN_STORAGE_KEY = '__woTwitchFailOpenUntil';
   let playbackFailOpenUntil = loadPlaybackFailOpenUntil();
+  let playbackFailOpenCanResumeEarly = playbackFailOpenUntil === 0;
+  const playbackFailures = new Map();
   let playbackFailOpenTimer = 0;
   let playbackFailOpenResumeTimer = 0;
   let playbackFailOpenResumeVideo = null;
   let playbackFailOpenResumeSource = '';
+  let playbackFailOpenResumeTime = 0;
   let playbackStallFailOpenTimer = 0;
   let playbackStallFailOpenVideo = null;
   let playbackStallFailOpenSource = '';
@@ -335,7 +340,25 @@
   }
 
   function videoMediaSource(video) {
+    /* Modern Twitch attaches worker-owned MSE via srcObject; currentSrc stays
+       empty. Give each genuine handle a private identity so intervention scopes
+       recognize it and cannot leak across replacement players. */
+    try {
+      const handle = video && video.srcObject;
+      if (handle && typeof window.MediaSourceHandle === 'function' && handle instanceof window.MediaSourceHandle) {
+        let key = mediaSourceHandleKeys.get(handle);
+        if (!key) {
+          key = 'wo-mse-handle:' + (++mediaSourceHandleSerial);
+          mediaSourceHandleKeys.set(handle, key);
+        }
+        return key;
+      }
+    } catch (_) {}
     return String(video && (video.currentSrc || video.getAttribute('src')) || '');
+  }
+
+  function liveMediaSource(source) {
+    return !!source && (source.startsWith('blob:') || source.startsWith('wo-mse-handle:'));
   }
 
   function primaryPlayerVideo() {
@@ -345,7 +368,7 @@
       // them before DOM order: current SDA/vertical creatives can also be blob
       // videos and may be inserted before the live player in the tree.
       for (const video of allVideos) {
-        if (!(video instanceof HTMLVideoElement) || !video.isConnected || !videoMediaSource(video).startsWith('blob:')) continue;
+        if (!(video instanceof HTMLVideoElement) || !video.isConnected || !liveMediaSource(videoMediaSource(video))) continue;
         const label = String(video.getAttribute('aria-label') || '').trim().toLowerCase();
         const parentTarget = String(video.parentElement && video.parentElement.getAttribute('data-a-target') || '').toLowerCase();
         if (label === 'twitch video player' || parentTarget === 'video-ref') {
@@ -354,19 +377,19 @@
         }
       }
       if (primaryLiveVideo instanceof HTMLVideoElement && primaryLiveVideo.isConnected &&
-          videoMediaSource(primaryLiveVideo).startsWith('blob:') && !independentAdVideos.has(primaryLiveVideo)) {
+          liveMediaSource(videoMediaSource(primaryLiveVideo)) && !independentAdVideos.has(primaryLiveVideo)) {
         return primaryLiveVideo;
       }
       primaryLiveVideo = null;
       const players = document.querySelectorAll('[data-a-target="video-player"] video, .video-player video');
       for (const video of players) {
-        if (video instanceof HTMLVideoElement && video.isConnected && videoMediaSource(video).startsWith('blob:')) {
+        if (video instanceof HTMLVideoElement && video.isConnected && liveMediaSource(videoMediaSource(video))) {
           primaryLiveVideo = video;
           return video;
         }
       }
       for (const video of allVideos) {
-        if (video instanceof HTMLVideoElement && video.isConnected && videoMediaSource(video).startsWith('blob:')) {
+        if (video instanceof HTMLVideoElement && video.isConnected && liveMediaSource(videoMediaSource(video))) {
           primaryLiveVideo = video;
           return video;
         }
@@ -595,7 +618,7 @@
       if (Number.isFinite(stored) && stored > Date.now()) {
         // Page storage is forgeable from Twitch's MAIN world. Clamp it so a stale
         // or hostile value cannot silently disable interception for the session.
-        return Math.min(stored, Date.now() + PLAYBACK_FAIL_OPEN_MS);
+        return Math.min(stored, Date.now() + PLAYBACK_FAIL_OPEN_MAX_MS);
       }
       sessionStorage.removeItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY);
     } catch (_) {}
@@ -616,7 +639,8 @@
     const workerEnabled = streamInterceptionEnabled();
     for (const worker of workers) {
       try {
-        worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: workerEnabled });
+        worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: workerEnabled,
+          recovery: enabled && !workerEnabled });
       } catch (_) {}
     }
   }
@@ -626,6 +650,7 @@
     playbackFailOpenResumeTimer = 0;
     playbackFailOpenResumeVideo = null;
     playbackFailOpenResumeSource = '';
+    playbackFailOpenResumeTime = 0;
   }
 
   function clearPlaybackStallFailOpenTimer() {
@@ -641,7 +666,7 @@
   }
 
   function rememberStreamIntervention(scope) {
-    if (!scope || !scope.source || !scope.source.startsWith('blob:')) return;
+    if (!scope || !liveMediaSource(scope.source)) return;
     const key = streamInterventionKey(scope.channel, scope.source);
     recentStreamInterventions.delete(key);
     recentStreamInterventions.set(key, {
@@ -656,7 +681,7 @@
 
   function bindWorkerInterventionScope(scope, video, source, now) {
     if (!scope || !(video instanceof HTMLVideoElement) ||
-        !source || !source.startsWith('blob:')) return false;
+        !liveMediaSource(source)) return false;
     if (scope.source && (scope.video !== video || scope.source !== source)) return false;
     const currentChannel = pageChannelName();
     if (!scope.channel || !currentChannel || scope.channel !== currentChannel) return false;
@@ -717,12 +742,21 @@
   function beginPlaybackFailOpen(reason) {
     const now = Date.now();
     if (!enabled || playbackFailOpenUntil > now) return false;
-    playbackFailOpenUntil = now + PLAYBACK_FAIL_OPEN_MS;
+    const channel = pageChannelName();
+    const previous = playbackFailures.get(channel);
+    const count = previous && now - previous.at < PLAYBACK_FAILURE_WINDOW_MS
+      ? Math.min(3, previous.count + 1) : 1;
+    playbackFailures.delete(channel);
+    playbackFailures.set(channel, { count: count, at: now });
+    while (playbackFailures.size > 8) playbackFailures.delete(playbackFailures.keys().next().value);
+    const duration = count === 1 ? PLAYBACK_FAIL_OPEN_MS : count === 2 ? 30000 : PLAYBACK_FAIL_OPEN_MAX_MS;
+    playbackFailOpenCanResumeEarly = count === 1;
+    playbackFailOpenUntil = now + duration;
     persistPlaybackFailOpenUntil();
     if (playbackFailOpenTimer) woClearTimeout(playbackFailOpenTimer);
     clearPlaybackFailOpenResumeTimer();
     clearStreamInterventionProvenance();
-    playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, PLAYBACK_FAIL_OPEN_MS);
+    playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, duration);
     try { document.documentElement.setAttribute('data-wo-twitch-fail-open', reason || 'media'); } catch (_) {}
     try { document.documentElement.removeAttribute('data-wo-twitch-adblock'); } catch (_) {}
     broadcastStreamConfig();
@@ -733,7 +767,7 @@
     if (!enabled || !(video instanceof HTMLVideoElement) || !video.isConnected || video.paused || video.ended) return;
     if (independentAdVideos.has(video) || video.getAttribute('data-wo-twitch-independent-ad') === 'true') return;
     const source = videoMediaSource(video);
-    if (!source.startsWith('blob:') || primaryPlayerVideo() !== video) return;
+    if (!liveMediaSource(source) || primaryPlayerVideo() !== video) return;
     const now = Date.now();
     if (!streamInterventionLinked(video, source, now)) return;
     if (playbackFailOpenUntil > now) return;
@@ -768,7 +802,7 @@
     const errorCode = Number(video.error && video.error.code || 0);
     if (errorCode !== 2 && errorCode !== 3) return;
     const source = videoMediaSource(video);
-    if (!source.startsWith('blob:') || primaryPlayerVideo() !== video) return;
+    if (!liveMediaSource(source) || primaryPlayerVideo() !== video) return;
 
     // Do not blame arbitrary CDN/offline/player failures on the blocker. Turning
     // interception off for unrelated errors exposes prerolls and midrolls while
@@ -790,22 +824,27 @@
     if (video === playbackStallFailOpenVideo) clearPlaybackStallFailOpenTimer();
     if (!(video instanceof HTMLVideoElement) || !video.isConnected) return;
     const source = videoMediaSource(video);
-    if (!source.startsWith('blob:') || primaryPlayerVideo() !== video) return;
+    if (!liveMediaSource(source) || primaryPlayerVideo() !== video) return;
     if (video.error || video.paused === true || Number(video.readyState || 0) < 2) return;
-    if (!enabled || playbackFailOpenUntil <= Date.now() || playbackFailOpenResumeTimer) return;
+    if (!enabled || !playbackFailOpenCanResumeEarly ||
+        playbackFailOpenUntil <= Date.now() || playbackFailOpenResumeTimer) return;
     // Give Twitch's untouched MediaSource a brief stable-playback window, then
     // resume blocking instead of leaving the rest of an ad pod unfiltered.
     playbackFailOpenResumeVideo = video;
     playbackFailOpenResumeSource = videoMediaSource(video);
+    playbackFailOpenResumeTime = Number(video.currentTime || 0);
     playbackFailOpenResumeTimer = woTimeout(() => {
       playbackFailOpenResumeTimer = 0;
       const expectedVideo = playbackFailOpenResumeVideo;
       const expectedSource = playbackFailOpenResumeSource;
+      const expectedTime = playbackFailOpenResumeTime;
       playbackFailOpenResumeVideo = null;
       playbackFailOpenResumeSource = '';
+      playbackFailOpenResumeTime = 0;
       if (!enabled || playbackFailOpenUntil <= Date.now() || expectedVideo !== video ||
           !video.isConnected || videoMediaSource(video) !== expectedSource || primaryPlayerVideo() !== video ||
-          video.error || video.paused === true || Number(video.readyState || 0) < 2) return;
+          video.error || video.paused === true || Number(video.readyState || 0) < 2 ||
+          Number(video.currentTime || 0) <= expectedTime + 0.25) return;
       resumeStreamInterception();
     }, PLAYBACK_FAIL_OPEN_SETTLE_MS);
   }
@@ -1713,7 +1752,7 @@
       if (channel && currentChannel && channel === currentChannel) {
         const video = primaryPlayerVideo();
         const source = video && videoMediaSource(video);
-        if (video && source && source.startsWith('blob:')) {
+        if (video && liveMediaSource(source)) {
           bindWorkerInterventionScope(scope, video, source, now);
         }
       }
@@ -1772,6 +1811,9 @@
     const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
     const GQL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
     const MEDIA_TTL = 5 * 60 * 1000;
+    /* Expire idle candidates, not a healthy session currently feeding the player.
+       Reacquiring a token on the playback path every two minutes causes a cold
+       handoff even when the existing route is still advancing. */
     const BACKUP_TTL = 2 * 60 * 1000;
     const BACKUP_STALE_MS = 8 * 1000;
     // A warning-time playlist refresh can finish just before the native ad poll.
@@ -1817,6 +1859,7 @@
     // waiting for its asynchronous ready/config handshake leaves a race where its
     // first playlist request can repeat the transform that just failed.
     let active = initiallyEnabled !== false;
+    let nativeRecovery = false;
     let client = Object.assign({}, EMPTY_STATE, initialState || {});
     const realFetch = self.fetch.bind(self);
     const media = new Map();
@@ -1977,10 +2020,10 @@
     }
 
     function nativeMediaInput(input, url, info) {
-      // Cursor removal is needed only while this channel/session is returning an
-      // ordinary alternate playlist that cannot satisfy the native part cursor.
+      /* An alternate playlist, or a native one with translated numbering, cannot
+         satisfy a blocking request in the player's synthetic sequence namespace. */
       const state = sequenceStateFor(info);
-      if (!state || !state.backupActive) return input;
+      if (!state || (!state.backupActive && !state.seqOffset)) return input;
       const ordinaryUrl = withoutLowLatencyQuery(url);
       if (!ordinaryUrl || ordinaryUrl === url) return input;
       if (typeof input === 'string') return ordinaryUrl;
@@ -2444,6 +2487,7 @@
           seqBackupOffset: 0,
           seqHeads: Object.create(null),
           seqSnapshots: Object.create(null),
+          nativeOffsets: Object.create(null),
           nativeObserved: Object.create(null),
           seqServedHead: null,
           seqInBreak: false,
@@ -2492,13 +2536,26 @@
     function sequenceSegments(text) {
       const segments = [];
       let pdt = null;
+      let live = null;
+      let duration = null;
       for (const line of String(text || '').replace(/\r/g, '').split('\n')) {
         if (line.indexOf('#EXT-X-PROGRAM-DATE-TIME:') === 0) {
           pdt = Date.parse(line.slice(25));
+        } else if (line.indexOf('#EXT-X-TWITCH-LIVE-SEQUENCE:') === 0) {
+          const raw = line.slice('#EXT-X-TWITCH-LIVE-SEQUENCE:'.length).trim();
+          const value = /^\d+$/.test(raw) ? Number(raw) : NaN;
+          live = Number.isSafeInteger(value) && value >= 0 ? value : null;
+        } else if (line === '#EXT-X-DISCONTINUITY') {
+          /* An ad discontinuity ends the broadcast sequence run. A subsequent
+             explicit live tag is required before numbering stream content again. */
+          live = null;
         } else if (line.indexOf('#EXTINF:') === 0) {
-          const duration = parseFloat(line.slice(8)) || 0;
-          segments.push({ pdt: Number.isFinite(pdt) ? pdt : null, duration: duration });
+          duration = parseFloat(line.slice(8)) || 0;
+        } else if (line && line.charAt(0) !== '#' && duration !== null) {
+          segments.push({ pdt: Number.isFinite(pdt) ? pdt : null, duration: duration, live: live });
           if (Number.isFinite(pdt) && duration > 0) pdt += duration * 1000;
+          if (live !== null) live++;
+          duration = null;
         }
       }
       return segments;
@@ -2538,7 +2595,8 @@
         pdt: last.pdt,
         sequence: sequence,
         count: count,
-        duration: last.duration || 2
+        duration: last.duration || 2,
+        live: last.live
       };
     }
 
@@ -2590,14 +2648,50 @@
       const served = sequenceServe(state, url, text, sequenceRead(text), 'seqOffset');
       if (served === null) return null;
       sequenceRecordServed(state, url, text, served);
+      if (state && sequenceRead(text) !== null) state.nativeOffsets[canonical(url)] = state.seqOffset;
       return served;
     }
 
+    function sequenceLiveOffset(state, text) {
+      if (!state || !Number.isFinite(state.seqLiveOffset)) return false;
+      const head = sequenceRead(text);
+      const skipped = sequenceSkippedSegments(text);
+      if (head === null || skipped === null) return null;
+      let proposed = null;
+      const segments = sequenceSegments(text);
+      for (let index = 0; index < segments.length; index++) {
+        const live = segments[index].live;
+        if (!Number.isSafeInteger(live)) continue;
+        const offset = live + state.seqLiveOffset - head - skipped - index;
+        if (proposed !== null && proposed !== offset) return null;
+        proposed = offset;
+      }
+      return proposed;
+    }
+
     function sequenceProposedOffset(state, text) {
+      /* Twitch's broadcast position is shared by the two sessions. Their wall
+         clocks are not: matching PDT can skip or repeat real content even when
+         the resulting MEDIA-SEQUENCE looks monotonic. Keep legacy PDT alignment
+         only when no broadcast anchor has been observed for this player. */
+      const liveOffset = sequenceLiveOffset(state, text);
+      if (liveOffset !== false) return liveOffset;
       if (!state || state.seqServedPdt === undefined || state.seqServedNumber === undefined) return false;
       const here = sequenceNumberAt(text, state.seqServedPdt);
       if (here === null) return null;
       return Math.round(state.seqServedNumber - here);
+    }
+
+    function sequenceNativeOffset(state, url, text) {
+      const liveOffset = sequenceLiveOffset(state, text);
+      if (Number.isFinite(liveOffset)) return liveOffset;
+      const known = state && state.nativeOffsets[canonical(url)];
+      const proposed = sequenceProposedOffset(state, text);
+      if (proposed !== null && proposed !== false) return proposed;
+      /* The native session keeps advancing while its alternate is being served.
+         Preserve its last proven mapping across a missing PDT or a network gap
+         longer than the sliding window; neither resets the player's timeline. */
+      return Number.isFinite(known) ? known : proposed;
     }
 
     function sequenceRecordServed(state, url, sourceText, servedText) {
@@ -2606,6 +2700,10 @@
       if (tail && state.seqServedHead !== null && state.seqServedHead !== undefined) {
         state.seqServedPdt = tail.pdt;
         state.seqServedNumber = state.seqServedHead + tail.count - 1;
+        state.seqServedLive = tail.live;
+        if (Number.isSafeInteger(tail.live) && !Number.isFinite(state.seqLiveOffset)) {
+          state.seqLiveOffset = state.seqServedNumber - tail.live;
+        }
       }
       state.seqSnapshots[canonical(url)] = servedText;
     }
@@ -2640,9 +2738,12 @@
       state.seqBackupOffset = 0;
       state.seqHeads = Object.create(null);
       state.seqSnapshots = Object.create(null);
+      state.nativeOffsets = Object.create(null);
       state.seqServedHead = null;
       state.seqServedPdt = undefined;
       state.seqServedNumber = undefined;
+      state.seqServedLive = undefined;
+      state.seqLiveOffset = undefined;
       state.seqInBreak = false;
       state.seqSource = null;
       state.backupActive = false;
@@ -2700,7 +2801,7 @@
       const previousSource = state.seqSource;
       const previousBreak = state.seqInBreak;
       if (state.seqInBreak && state.seqSource !== 'native') {
-        const proposed = sequenceProposedOffset(state, text);
+        const proposed = sequenceNativeOffset(state, url, text);
         if (proposed === null || proposed === false) return null;
         state.seqOffset = proposed;
       }
@@ -2721,16 +2822,18 @@
         const previous = state.seqOffset;
         let proposed = previous;
         if (state.seqSource !== 'native') {
-          proposed = sequenceProposedOffset(state, text);
+          proposed = sequenceNativeOffset(state, url, text);
           if (proposed === null || proposed === false) return null;
         }
         const head = sequenceRead(text);
         const tail = sequenceTail(text);
-        if (head === null || !tail || state.seqServedNumber === undefined ||
-            state.seqServedPdt === undefined) return null;
-        const expected = (tail.pdt - state.seqServedPdt) / ((tail.duration || 2) * 1000);
-        const actual = head + proposed + tail.count - 1 - state.seqServedNumber;
-        if (Math.abs(actual - expected) > SEQUENCE_STEP_TOLERANCE) return null;
+        if (head === null) return null;
+        if (!Number.isFinite(sequenceLiveOffset(state, text)) &&
+            tail && state.seqServedNumber !== undefined && state.seqServedPdt !== undefined) {
+          const expected = (tail.pdt - state.seqServedPdt) / ((tail.duration || 2) * 1000);
+          const actual = head + proposed + tail.count - 1 - state.seqServedNumber;
+          if (Math.abs(actual - expected) > SEQUENCE_STEP_TOLERANCE) return null;
+        }
         state.seqOffset = proposed;
         state.seqInBreak = false;
         state.seqSource = 'native';
@@ -2749,6 +2852,7 @@
       if (!state) return cleanText;
       const backup = sequenceTail(cleanText);
       if (!backup) return null;
+      const firstTimeline = state.seqServedHead === null || state.seqServedHead === undefined;
       /* Cache acquisition time cannot prove playback progress: a frozen route can
          be reacquired as a new candidate carrying the same already-consumed edge.
          Keep the last edge per exact playback profile outside the candidate cache.
@@ -2759,15 +2863,19 @@
       const progress = state.backupProgress[progressKey];
       const previousProgressPdt = Number(progress && progress.pdt);
       const hasPreviousProgress = Number.isFinite(previousProgressPdt);
-      const backupAdvanced = !hasPreviousProgress || backup.pdt > previousProgressPdt;
-      if (hasPreviousProgress && backup.pdt < previousProgressPdt) return null;
+      const liveProgress = Number.isSafeInteger(backup.live) && Number.isSafeInteger(progress && progress.live);
+      const backupAdvanced = liveProgress ? backup.live > progress.live :
+        !hasPreviousProgress || backup.pdt > previousProgressPdt;
+      if (liveProgress ? backup.live < progress.live : hasPreviousProgress && backup.pdt < previousProgressPdt) return null;
       if (hasPreviousProgress && !backupAdvanced &&
           now - Number(progress && progress.at || 0) >= BACKUP_STALE_MS) return null;
       const sourceName = 'backup:' + String(source || '?');
       const previousOffset = state.seqBackupOffset;
       const previousSource = state.seqSource;
       const previousBreak = state.seqInBreak;
-      if (!state.seqInBreak && state.seqServedPdt !== undefined && backup.pdt <= state.seqServedPdt) {
+      const broadcastProgress = Number.isSafeInteger(backup.live) && Number.isSafeInteger(state.seqServedLive);
+      if (!state.seqInBreak && (broadcastProgress ? backup.live <= state.seqServedLive :
+          state.seqServedPdt !== undefined && backup.pdt <= state.seqServedPdt)) {
         return null;
       }
       if (state.seqInBreak && state.seqSource !== sourceName) {
@@ -2799,8 +2907,17 @@
         return null;
       }
       sequenceRecordServed(state, url, cleanText, served);
+      const nativeOffset = sequenceProposedOffset(state, nativeText);
+      if (nativeOffset !== null && nativeOffset !== false) {
+        state.nativeOffsets[canonical(url)] = nativeOffset;
+      } else if (firstTimeline && sequenceRead(nativeText) !== null) {
+        /* A preroll may have no PDT at all. Before any playlist has been served,
+           establish a fixed numbering baseline for that native session. Never
+           invent a new baseline for a player that already has buffered media. */
+        state.nativeOffsets[canonical(url)] = state.seqServedHead - sequenceRead(nativeText);
+      }
       if (backupAdvanced) {
-        state.backupProgress[progressKey] = { pdt: backup.pdt, at: now };
+        state.backupProgress[progressKey] = { pdt: backup.pdt, live: backup.live, at: now };
         const progressKeys = Object.keys(state.backupProgress);
         if (progressKeys.length > 8) {
           progressKeys.sort((left, right) => Number(state.backupProgress[left].at || 0) -
@@ -2897,7 +3014,18 @@
     }
 
     function ordinaryMediaPlaylist(text) {
-      const stripped = stripLowLatency(text);
+      const skipped = sequenceSkippedSegments(text);
+      if (skipped === null) return '';
+      let stripped = stripLowLatency(text);
+      if (skipped) {
+        /* The listed segments follow SKIPPED-SEGMENTS omitted entries. Removing
+           the delta tag without advancing the head labels those bytes with old
+           numbers, making a healthy alternate look frozen or retrograde. */
+        const head = sequenceRead(text);
+        if (head === null || !Number.isSafeInteger(head + skipped)) return '';
+        stripped = sequenceWrite(stripped, head + skipped);
+        if (!stripped) return '';
+      }
       const lines = stripped.replace(/\r/g, '').split('\n');
       const first = lines.find((line) => String(line || '').trim());
       if (String(first || '').trim().replace(/^\uFEFF/, '') !== '#EXTM3U') return '';
@@ -3519,7 +3647,7 @@
     function pollCachedBackup(cached) {
       const url = String(cached && cached.url || '');
       if (!url) return Promise.resolve(null);
-      if (Date.now() - Number(cached.createdAt || cached.ts || 0) >= BACKUP_TTL) return Promise.resolve(null);
+      if (Date.now() - Number(cached.ts || 0) >= BACKUP_TTL) return Promise.resolve(null);
       if (pendingBackupPolls.has(url)) return pendingBackupPolls.get(url);
       const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), BACKUP_POLL_TIMEOUT_MS)
         .then((current) => {
@@ -3538,6 +3666,11 @@
                      BACKUP_STALE_MS) {
             return null;
           }
+          /* Only a validated, still-live poll renews the idle lifetime. Keep the
+             latest body too: a later handoff must not reuse acquisition-time media. */
+          cached.ts = Date.now();
+          cached.text = normalized;
+          cached.edgeWall = evidence.edgeWall;
           return { text: normalized, container: mediaContainer(normalized), edgeWall: evidence.edgeWall,
             tail: tail };
         }, () => null)
@@ -3761,8 +3894,13 @@
         try {
           let current = takeRecentPrimedBackup(cached);
           if (!current) {
-            const pendingPoll = pollCachedBackup(cached);
-            if (Number.isFinite(deadlineAt)) {
+            const early = cached.earlyPoll;
+            cached.earlyPoll = null;
+            const usableEarly = early && Date.now() - early.at <= BACKUP_POLL_TIMEOUT_MS + BACKUP_PRIME_MS;
+            if (usableEarly && early.current) current = early.current;
+            const pendingPoll = current ? Promise.resolve(current) :
+              usableEarly ? early.promise : pollCachedBackup(cached);
+            if (!current && Number.isFinite(deadlineAt)) {
               const outcome = await settleBeforeDeadline(pendingPoll, deadlineAt);
               if (!outcome.settled) {
                 if (waitState) waitState.pending = true;
@@ -3782,7 +3920,7 @@
                 return null;
               }
               current = outcome.value;
-            } else {
+            } else if (!current) {
               current = await pendingPoll;
             }
             if (cached.primed === current) {
@@ -3865,6 +4003,31 @@
       return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
     }
 
+    async function alignRecoveryMedia(response, info, state, url) {
+      const current = () => (active || nativeRecovery) && state && sequenceStateFor(info) === state &&
+        Number(info && info.masterGeneration) === activeMasterGeneration;
+      if (!current() || !response.ok) return response;
+      let text;
+      try { text = await response.clone().text(); } catch (_) { return response; }
+      if (!current() || !mediaPlaylistEnvelope(text) ||
+          sequenceSkippedSegments(text) === null) return response;
+      const observation = sequenceObserveNative(state, url, text);
+      if (observation.stale) return response;
+      const aligned = sequenceNativeBreak(state, url, text);
+      if (aligned === null) return response;
+      state.backupActive = false;
+      return aligned !== text ? responseWithText(response, aligned, 'application/vnd.apple.mpegurl') : response;
+    }
+
+    async function handleRecoveryMedia(input, init, url) {
+      /* Only a previously mapped rendition can carry this player's offset. Do
+         not borrow another channel's timeline for an unknown URL during recovery. */
+      const info = media.get(url) || media.get(canonical(url));
+      const state = sequenceStateFor(info);
+      const result = await fetchNativeMedia(input, init, url, info);
+      return alignRecoveryMedia(result.response, info, state, url);
+    }
+
     async function handleMaster(input, init, url) {
       // The player's own master request is compatibility-critical. In particular,
       // embed sessions use parent_domains as part of their authorization context.
@@ -3934,6 +4097,27 @@
 
     function startEarlyCleanBackup(info) {
       if (!info) return;
+      const sequenceState = sequenceStateFor(info);
+      const key = backupFlightKey(info);
+      const cached = backups.get(key);
+      if (sequenceState && sequenceState.backupActive) {
+        const epoch = backupEpoch;
+        if (cached && !cached.failed) {
+          /* Refresh both sessions together. Starting this only after the native
+             response makes two CDN legs serial and can consume the entire swap
+             budget before the clean route even gets a chance to answer. */
+          const early = { at: Date.now(), current: null, promise: null };
+          early.promise = pollCachedBackup(cached).then((current) => {
+            if (!interventionCurrent(info, epoch) || backups.get(key) !== cached || !current ||
+                (info.mediaContainer && current.container !== info.mediaContainer)) return null;
+            early.current = current;
+            return current;
+          }, () => null);
+          cached.earlyPoll = early;
+        }
+      } else if (cached) {
+        cached.earlyPoll = null;
+      }
       const imminent = adWarningActive(info.channel);
       const firstPollWarm = !info.servedClean && !!client.tokenTemplate;
       if (!imminent && !firstPollWarm) return;
@@ -3951,11 +4135,12 @@
       // pre-break timeline. Do not let its later response consume the one-shot
       // warning prime intended for the first request that actually sees the break.
       const warningActiveAtRequestStart = adWarningActive(info && info.channel || activeChannel);
-      startEarlyCleanBackup(info);
       // Once an intervention is active, do not issue blocking reloads for a native
       // LL-HLS sequence/part that the returned ordinary/backup playlist cannot
       // satisfy. The linked Request signal is preserved for Request inputs.
-      const nativeResult = await fetchNativeMedia(input, init, url, info);
+      const nativePending = fetchNativeMedia(input, init, url, info);
+      startEarlyCleanBackup(info);
+      const nativeResult = await nativePending;
       let response = nativeResult.response;
       if (!response.ok) return response;
       if (nativeResult.retriedExact) return response;
@@ -4074,7 +4259,8 @@
       }
       if (!evidence.confirmed) {
         const warningActive = adWarningActive(info && info.channel);
-        if (info && warningActive && warningActiveAtRequestStart) {
+        if (info && warningActive && warningActiveAtRequestStart &&
+            (evidence.hasMarker || evidence.strongMetadata)) {
           try {
             const early = await cleanBackupResponse(info, response, false, text, url, nativeObservation,
               requestStartedAt);
@@ -4246,6 +4432,7 @@
       try { if (event.stopImmediatePropagation) event.stopImmediatePropagation(); } catch (_) {}
       if (message.type === 'config') {
         const nextActive = message.enabled !== false;
+        nativeRecovery = !nextActive && message.recovery === true;
         if (nextActive !== active) {
           lastAdStateSent = '';
           lastAdStateChannel = '';
@@ -4254,7 +4441,9 @@
         if (!nextActive) {
           genericAdImminentUntil = 0;
           adImminentByChannel.clear();
-          invalidateBackupWork(true);
+          /* Recovery cancels ad work but retains the numbering already shown to
+             this player. A user disable still restores exact native pass-through. */
+          invalidateBackupWork(!nativeRecovery);
         }
       } else if (message.type === 'client-state' && message.state) {
         client = Object.assign({}, client, message.state);
@@ -4292,8 +4481,15 @@
     });
 
     self.fetch = async function twitchWorkerFetch(input, init) {
-      if (!active) return realFetch(input, init);
       const url = urlOf(input);
+      if (!active) {
+        if (nativeRecovery && masterPlaylistUrl(url)) return handleMaster(input, init, url);
+        if (nativeRecovery && playlistUrl(url) && !masterPlaylistUrl(url) &&
+            (twitchMediaUrl(url) || media.has(url) || media.has(canonical(url)))) {
+          return handleRecoveryMedia(input, init, url);
+        }
+        return realFetch(input, init);
+      }
       if (warmedBackupResources.has(url)) {
         const warmed = await takeWarmedBackupResource(input, init, url);
         if (warmed) return warmed;
@@ -4304,7 +4500,15 @@
       if (playlistUrl(url)) {
         if (masterPlaylistUrl(url)) return handleMaster(input, init, url);
         if (twitchMediaUrl(url) || media.has(url) || media.has(canonical(url))) {
-          return handleMedia(input, init, url);
+          const generation = activeMasterGeneration;
+          const response = await handleMedia(input, init, url);
+          /* A stall can open recovery while this native request is in flight.
+             Cancellation must not leak its unaligned numbering to the player. */
+          if (nativeRecovery && generation === activeMasterGeneration) {
+            const info = media.get(url) || media.get(canonical(url));
+            return alignRecoveryMedia(response, info, sequenceStateFor(info), url);
+          }
+          return response;
         }
       }
       return realFetch(input, init);

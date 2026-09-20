@@ -94,9 +94,14 @@ const LIFTED = [
   /* The fix's own pieces; on the pre-fix source the stand-ins are the old behaviour. */
   orElse('invalidateContentConfigMemo', 'function invalidateContentConfigMemo() {}'),
   orElse('contentConfigNeeds', 'function contentConfigNeeds() { return null; }'),
+  /* The packaged seed list is read by the worker since BUG-10 and merged into the snapshot; the
+     stand-in has nothing to add, so the counts below are the stored list's alone. */
+  'function searchJunkSeed() { return Promise.resolve({ hosts: [], ok: true, error: "" }); }',
+  orElse('searchJunkStoredHosts', 'function searchJunkStoredHosts(raw) { return Array.isArray(raw) ? raw : (raw && Array.isArray(raw.scraperHosts) ? raw.scraperHosts : []); }'),
   orElse('sharedContentConfigSnapshot', 'function sharedContentConfigSnapshot() { return Promise.resolve(null); }'),
   has('deepFreezeSnapshot') ? grabFn(BG, 'deepFreezeSnapshot') : 'function deepFreezeSnapshot(v) { return v; }',
   BG.includes('let __contentConfigMemo = null;') ? 'let __contentConfigMemo = null;' : '',
+  'function siteIdentityBg(h) { return String(h || ""); }',
   grabFn(BG, 'buildContentConfigSnapshot'),
 ].join('\n');
 
@@ -270,7 +275,14 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
   for (const file of REQUESTERS) {
     const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
     const asks = src.match(/kind: 'content-config-get'[^}]*\}/g) || [];
-    check(file + ' says what it needs', asks.length >= 1 && asks.every((a) => /need: \[/.test(a)), asks.join(' | ').slice(0, 160));
+    /* Since MV3-04 the isolated scripts ask through one helper that forwards `need` to the
+       bridge (or, without a bridge, to the worker); the list is then named at every call site. */
+    const forwards = /\{ kind: 'content-config-get', need: (?:need|wanted) \}/.test(src);
+    const sites = (src.match(/(?<!function )askContentConfig\(./g) || []);
+    const named = forwards
+      ? asks.length >= 1 && (file === 'bridge.js' || (sites.length >= 1 && sites.every((s) => /\[$/.test(s))))
+      : asks.length >= 1 && asks.every((a) => /need: \[/.test(a));
+    check(file + ' says what it needs', named, asks.join(' | ').slice(0, 160));
   }
   {
     const mail = fs.readFileSync(path.join(ROOT, 'mail-shield.js'), 'utf8');

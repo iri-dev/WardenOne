@@ -255,21 +255,31 @@
     }
   }
 
-  /* Off unless the toggle says otherwise, asked once. A mail client is the last
-     place to act on a stale assumption about what the reader wanted. */
-  try {
-    chrome.runtime.sendMessage({ kind: 'content-config-get', need: ['overrides'] }, (res) => {
-      void chrome.runtime.lastError;
-      // The switches arrive as `overrides`; this read `config`, a field the worker never sends,
-      // so the gate below compared against {} and never held.
-      const cfg = (res && res.overrides) || {};
-      if (cfg.enabled === false || cfg.mailTrackingShield === false) return;
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', start, { once: true });
-        start();
-      } else start();
-    });
-  } catch (_) {}
+  /* The settings snapshot, asked for through the bridge when it has run here (MV3-04). The
+     isolated bridge owns acquisition: it retries when the worker dies mid-reply and answers from
+     the snapshot it already holds when only the switches are needed, so this makes a one-shot
+     request of its own only when no bridge is present in this frame. */
+  function askContentConfig(need, cb) {
+    try {
+      const viaBridge = window.__wardenOneContentConfigRequest;
+      if (typeof viaBridge === 'function') { viaBridge(need, cb); return; }
+    } catch (_) {}
+    try { chrome.runtime.sendMessage({ kind: 'content-config-get', need: need }, cb); } catch (_) { try { cb(null); } catch (__) {} }
+  }
+
+  /* Off unless the toggle says otherwise, asked until answered (MV3-04). A mail client is the
+     last place to act on a stale assumption about what the reader wanted. */
+  askContentConfig(['overrides'], (res) => {
+    void chrome.runtime.lastError;
+    // The switches arrive as `overrides`; this read `config`, a field the worker never sends,
+    // so the gate below compared against {} and never held.
+    const cfg = (res && res.overrides) || {};
+    if (cfg.enabled === false || cfg.mailTrackingShield === false) return;
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start, { once: true });
+      start();
+    } else start();
+  });
 
   /* For the tests, and for anyone reading the page in a console. */
   window.__wardenOneMailShieldApi = { classify, originalUrl, declaredTiny, declaredHidden, count: () => removed };

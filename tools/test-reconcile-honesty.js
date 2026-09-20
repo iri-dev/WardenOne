@@ -107,6 +107,9 @@ function worker({ session, config, configUnreadable, behaviour }) {
     },
     sessionArea: () => session,
     activeAllowlist: (cfg) => (cfg && cfg.allowlist) || [],
+    /* The location exceptions are part of the desired state (COMPAT-02); stand-ins here. */
+    locationExemptHosts: (cfg) => (cfg && cfg.allowlist) || [],
+    scheduleSitePauseExpiry: () => {},
     eyeShieldThemingActive: () => false,
     consentRejectActive: () => false,
     searchSponsoredCleanupActive: () => false,

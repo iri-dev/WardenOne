@@ -138,6 +138,7 @@ function workerRealm(options) {
     activeAllowlist: (cfg) => (cfg && cfg.allowlist) || [],
     registrableDomain: (host) => String(host || '').split('.').slice(-2).join('.'),
     registrableDomainBg: (host) => String(host || '').split('.').slice(-2).join('.'),
+    siteIdentityBg: (host) => String(host || '').split('.').slice(-2).join('.'),
     queueHistory: (entry) => history.push(entry),
     redirectWarningPageUrl: (info) => 'chrome-extension://x/redirect-warning.html?to=' + encodeURIComponent(info.targetUrl),
     chrome: { tabs: { update: (id, props) => { updates.push({ id, props }); return Promise.resolve(); } } },

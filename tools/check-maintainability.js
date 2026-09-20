@@ -186,6 +186,7 @@ function checkContentBuild() {
   'tools/test-engine-watchdog.js',
   'tools/test-file-access-guard.js',
   'tools/test-speech-guard.js',
+  'tools/test-media-shield-presence.js',
   'tools/test-tracker-frame-guard.js',
   'tools/test-transport-shield.js',
   'tools/test-dns-rebind-guard.js',
@@ -270,6 +271,8 @@ function checkContentBuild() {
   'tools/test-source-inventory.js',
   'tools/test-blocker-teardown.js',
   'tools/build-source-inventory.js',
+  'tools/build-psl.js',
+  'tools/build-store-package.js',
   'tools/test-safe-search.js',
   'tools/test-search-junk.js',
   'tools/test-insecure-login.js',
@@ -324,6 +327,16 @@ function checkContentBuild() {
   'tools/test-frame-scope-disclosure.js',
   'tools/test-frame-credential-guard.js',
   'tools/test-site-identity.js',
+  'tools/test-tenant-isolation.js',
+  'tools/test-tracker-learner-minimisation.js',
+  'tools/test-store-profile.js',
+  'tools/test-location-site-exceptions.js',
+  'tools/test-on-leave-durability.js',
+  'tools/test-search-junk-seed.js',
+  'tools/test-text-scan-scheduler.js',
+  'tools/test-fingerprint-realm.js',
+  'tools/test-confirm-bait-linked-overlay.js',
+  'tools/test-config-handshake-recovery.js',
   'tools/test-incognito-isolation.js',
   'tools/test-download-false-positives.js',
   'tools/test-cookie-cleaner.js',
@@ -355,10 +368,13 @@ function checkContentBuild() {
   // behavioural test happened to read them -- and a test that regex-reads a file has not parsed it.
   // A syntax error in any of them shipped without the gate noticing.
   'anti-redirect.js',
+  'fingerprint-realm.js',
   'cert-error.js',
   'consent-reject.js',
   'consent-wall.js',
   'domain-utils.js',
+  'psl-private.js',
+  'build-profile.js',
   'element-picker.js',
   'history.js',
   'hidden-elements.js',
@@ -490,6 +506,7 @@ checkCommand('protection count tests', ['tools/test-protection-count.js']);
 checkCommand('engine watchdog tests', ['tools/test-engine-watchdog.js']);
 checkCommand('file access guard tests', ['tools/test-file-access-guard.js']);
 checkCommand('speech guard tests', ['tools/test-speech-guard.js']);
+checkCommand('Media Shield presence tests', ['tools/test-media-shield-presence.js']);
 checkCommand('tracker frame guard tests', ['tools/test-tracker-frame-guard.js']);
 checkCommand('transport shield tests', ['tools/test-transport-shield.js']);
 checkCommand('DNS rebind guard tests', ['tools/test-dns-rebind-guard.js']);
@@ -522,6 +539,15 @@ checkCommand('tracker learner trust tests', ['tools/test-tracker-learner-trust.j
 checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure.js']);
 checkCommand('frame credential guard tests', ['tools/test-frame-credential-guard.js']);
 checkCommand('shared-host site identity tests', ['tools/test-site-identity.js']);
+checkCommand('psl-private.js is well-formed and current', ['tools/build-psl.js', '--check']);
+checkCommand('tenant isolation tests', ['tools/test-tenant-isolation.js']);
+checkCommand('tracker learner minimisation tests', ['tools/test-tracker-learner-minimisation.js']);
+checkCommand('the Store package profile, guards and record agree', ['tools/build-store-package.js', '--check']);
+checkCommand('Store profile tests', ['tools/test-store-profile.js']);
+checkCommand('location site exception tests', ['tools/test-location-site-exceptions.js']);
+checkCommand('on-leave durability tests', ['tools/test-on-leave-durability.js']);
+checkCommand('search-junk seed tests', ['tools/test-search-junk-seed.js']);
+checkCommand('text-scan scheduler tests', ['tools/test-text-scan-scheduler.js']);
 checkCommand('incognito isolation tests', ['tools/test-incognito-isolation.js']);
 checkCommand('download false-positive tests', ['tools/test-download-false-positives.js']);
 checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
@@ -529,6 +555,9 @@ checkCommand('privacy cleaner wiring tests', ['tools/test-privacy-cleaner-wiring
 checkCommand('warning page secret tests', ['tools/test-warning-page-secrets.js']);
 checkCommand('reconcile honesty tests', ['tools/test-reconcile-honesty.js']);
 checkCommand('frame ClickFix tests', ['tools/test-frame-clickfix.js']);
+checkCommand('fingerprint realm tests', ['tools/test-fingerprint-realm.js']);
+checkCommand('confirm-bait linked overlay tests', ['tools/test-confirm-bait-linked-overlay.js']);
+checkCommand('config handshake recovery tests', ['tools/test-config-handshake-recovery.js']);
 checkCommand('Store asset tests', ['tools/test-store-assets.js']);
 checkCommand('frame-aware init tests', ['tools/test-frame-aware-init.js']);
 checkCommand('user-rule honesty tests', ['tools/test-user-rules-honesty.js']);

@@ -333,12 +333,32 @@
     '\\bversion\\b', '\\bupdate\\s+to\\b',
   ].join('|'), 'i');
 
+  // Whether a control sits inside a link that names a destination. The rail below asks whether
+  // an affirmative control "goes somewhere", and it used to look at the control's own href only.
+  // A YouTube Mix or playlist thumbnail carries a hover overlay -- an absolutely positioned,
+  // thumbnail-sized box whose only text is "Play all" -- that is a descendant of the lockup's
+  // own <a href="/watch?v=...&list=..."> (the whole card is the link). The leaf that says
+  // "Play all" has no href, so the box read as bait: it was removed on sight and counted as a
+  // block, once per Mix on screen, with nothing shown, because the event is a quiet one. The
+  // click on that box goes exactly where the link says; a control inside a real link is not a
+  // click collector. Same leniency as the control's own href on purpose: any non-empty href
+  // counts, because a bait that wraps itself in <a href="#"> could already give the control that
+  // href, so this adds no evasion that did not exist.
+  function insideLink(node) {
+    try {
+      for (let el = node, depth = 0; el && el.nodeType === 1 && depth < 40; el = el.parentElement, depth++) {
+        if (String(el.tagName || '').toLowerCase() === 'a' && el.getAttribute && el.getAttribute('href')) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function overlayControls(el) {
     const out = [];
     const push = (node) => {
       const text = String((node && node.innerText) || (node && node.value) || '').replace(/\s+/g, ' ').trim();
       if (text && text.length <= 24) {
-        out.push({ text: text, href: node.getAttribute ? node.getAttribute('href') : null });
+        out.push({ text: text, href: node.getAttribute ? node.getAttribute('href') : null, linked: insideLink(node) });
       }
     };
     try {
@@ -429,8 +449,9 @@
       if (!controls.length || controls.length > 4) return false;
       const affirmative = controls.filter((c) => BAIT_CONTROL.test(c.text));
       if (!affirmative.length) return false;
-      // A control that genuinely goes somewhere says where. These never do.
-      return !affirmative.some((c) => c.href);
+      // A control that genuinely goes somewhere says where -- on itself, or on the link it sits
+      // inside (see insideLink). These never do.
+      return !affirmative.some((c) => c.href || c.linked);
     } catch (_) {
       return false;
     }
@@ -972,14 +993,32 @@
     try { return registrableDomain(host); } catch (_) { return regHost(host); }
   }
 
+  /* This frame's own site as the worker computed it from the complete Public Suffix List, ''
+     until the signed config arrives. The copy of domain-utils.js in this frame knows the 26
+     platforms somebody wrote down; the worker knows the 3,400 on the list. */
+  function ownSite() {
+    const site = cfg().frameSite;
+    return typeof site === 'string' ? site : '';
+  }
+
   function sameParty(a, b) {
     a = regHost(a);
     b = regHost(b);
-    return !!(a && b && (
-      hostMatchesSite(a, b)
+    if (!a || !b) return false;
+    const own = ownSite();
+    if (own) {
+      const aOwn = a === own || a.endsWith('.' + own);
+      const bOwn = b === own || b.endsWith('.' + own);
+      /* One side inside this frame's site: same party means the other side is too. A sibling
+         tenant on a platform the local table never heard of is exactly the host that fails here
+         (victim.webflow.io -> attacker.webflow.io, SEC-07); the platform apex fails the same way
+         github.io already did. A pair that does not touch this site keeps the local verdict, so
+         a site the worker names can withdraw same-party status and never grant it. */
+      if (aOwn || bOwn) return aOwn && bOwn;
+    }
+    return hostMatchesSite(a, b)
       || hostMatchesSite(b, a)
-      || sameSiteDomain(a, b)
-    ));
+      || sameSiteDomain(a, b);
   }
 
   function decodedUrlishText(value) {

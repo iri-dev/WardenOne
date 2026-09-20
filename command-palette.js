@@ -230,7 +230,14 @@
     /* The id, and nothing else. The background looks it up in its own list and dispatches
        through the same path the keyboard shortcuts use; a command name invented here
        reaches nothing. */
-    try { chrome.runtime.sendMessage({ kind: 'palette-run', command: item.id }, () => { void chrome.runtime.lastError; }); } catch (_) { /* worker asleep */ }
+    /* And the grant for this opening: the nonce the background set on this isolated window
+       just before it injected this file (MV3-06). Read now rather than at load, because a
+       second press of the shortcut mints a new grant and sets a new nonce while this palette is
+       still on screen; the pick has to spend the grant that exists. The page world cannot read
+       this window, so it cannot hold the nonce. */
+    let grant = '';
+    try { grant = String(window.__wardenOnePaletteGrant || ''); } catch (_) { grant = ''; }
+    try { chrome.runtime.sendMessage({ kind: 'palette-run', command: item.id, grant: grant }, () => { void chrome.runtime.lastError; }); } catch (_) { /* worker asleep */ }
     close();
   }
 

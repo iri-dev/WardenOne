@@ -111,6 +111,16 @@ SHIMS.__woLastOverlay = 'var __woLastOverlay=null;';
 // default the engine did not hand out.
 SHIMS.__woConfigStore = 'var __woConfigStore={};';
 
+// The realm record (SEC-05): what this realm decided about fingerprint noise, published for the
+// same-origin frames a page creates. Null until the noise gate runs, which is the engine's own
+// starting value; settling it is a document event nobody in a lifted fragment listens for.
+SHIMS.__woRealmRecord = 'var __woRealmRecord=null;';
+SHIMS.__woRealmSettled = 'var __woRealmSettled=function(){};';
+// The opener captured at document_start, and the seed a same-origin opener with noise on lends
+// this page. A lifted fragment has no opener, which is what a fresh tab has too.
+SHIMS.__woOpenerAtStart = 'var __woOpenerAtStart=null;';
+SHIMS.__woInheritedRealm = 'var __woInheritedRealm=function(){return null};';
+
 // __woAmazonHost is data, not behaviour, so its shim is the engine's own value rather than a
 // stand-in. Lifted from source for the reason this module exists: a hand-copied regex here would
 // drift from the engine's, and then a suite exercising Amazon URL handling would be asserting

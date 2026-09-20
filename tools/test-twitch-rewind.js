@@ -55,7 +55,7 @@ assert(/function applyBufferConfig/.test(rewind) && /config\.twitchRewindMinutes
 assert(/MAX_BUFFER_SECONDS_CAP/.test(rewind) && /bufferBytes = Math\.min\(MAX_BUFFER_BYTES_CAP/.test(rewind), 'a custom buffer must be clamped by a hard time and RAM ceiling');
 assert(/twitchRewindMinutes:\s*5/.test(popup) && /twitchRewindMinutes:\s*5/.test(background), 'the default buffer length should ship as five minutes');
 // Moved out of AdShield into its own section, with a buffer-length control that discloses cost.
-assert(/<details class="rewind-drop">/.test(popupHtml) && /<summary>Twitch local rewind/.test(popupHtml), 'rewind should be its own collapsible section, not under AdShield');
+assert(/<details class="rewind-drop"[^>]*>/.test(popupHtml) && /<summary>Twitch local rewind/.test(popupHtml), 'rewind should be its own collapsible section, not under AdShield');
 assert(/id="tr-minutes"/.test(popupHtml), 'the popup should expose a custom buffer-length control');
 assert(/more RAM and CPU/.test(popupHtml), 'the popup should disclose that the feature uses more RAM and CPU');
 assert(/MediaRecorder/.test(rewind) && /captureStream/.test(rewind), 'runtime should create the local replay buffer');
