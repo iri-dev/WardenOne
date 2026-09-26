@@ -263,6 +263,41 @@ if (BLOCK) {
     check('answered directly', junk && Array.isArray(junk.searchJunkDomains));
   });
 
+  /* A settings change: the worker tells every tab to refresh, the bridge re-fetches, and Eye
+     Shield -- told the same thing -- asks the bridge while that re-fetch is still in flight. It
+     used to be answered at once from the snapshot being replaced, put the previous mode back, and
+     was never told again; measured on a live GitHub tab, a switch to Light was still Ultra 1.2 s
+     later. It now waits for the refresh. */
+  section('a sibling asking during a refresh gets the refreshed snapshot', () => {
+    const w = world();
+    w.reply(0, ok(1));
+    w.request();
+    check('the refresh is a real request', w.outbox.length === 2);
+    let got = 'unset';
+    w.ask(['overrides'], (res) => { got = res; });
+    w.advance(0);
+    check('the sibling is not answered from the old snapshot while the refresh is in flight', got === 'unset');
+    check('and makes no request of its own', w.outbox.length === 2);
+    w.reply(1, ok(2));
+    w.advance(0);
+    check('it is answered with the refreshed snapshot', got && got.rev === 2, JSON.stringify(got));
+    let after = 'unset';
+    w.ask(['overrides'], (res) => { after = res; });
+    w.advance(0);
+    check('with nothing in flight, the held snapshot answers at once', after && after.rev === 2);
+  });
+  section('a refresh that never lands does not strand the sibling', () => {
+    const w = world();
+    w.reply(0, ok(1));
+    w.request();
+    let got = 'unset';
+    w.ask(['overrides'], (res) => { got = res; });
+    w.advance(7999);
+    check('it waits for the refresh', got === 'unset');
+    w.advance(1);
+    check('then is answered from what the bridge holds', got && got.rev === 1, JSON.stringify(got));
+  });
+
   section('a sibling\'s budget is short', () => {
     const w = world();
     w.reply(0, ok(1));           // the bridge itself is answered, so only the sibling's requests remain
@@ -280,7 +315,12 @@ if (BLOCK) {
 
 /* ---- the worker's half ----------------------------------------------------------------------- */
 section('worker', () => {
-  check('the shared snapshot carries its build time as the revision', /rev: Date\.now\(\),\s*\n\s*overrides: sanitizeContentConfig/.test(BG));
+  check('the shared snapshot carries its build time as the revision', /rev,\s*\n\s*overrides: sanitizeContentConfig/.test(BG));
+  /* Stamped when the inputs were read, before the read: stamped after it, a build that read the old
+     settings just before a save and finished just after the popup's push carried a revision newer
+     than the push, and Eye Shield would have taken it and put the previous mode back. */
+  check('and that time is taken before the settings are read, not after',
+    /const rev = Date\.now\(\);\s*\n\s*const store = await localGet\(contentConfigInputKeys\(\)\);/.test(BG));
   check('and every answer carries it', /ok: true,\s*\n\s*rev: shared\.rev,/.test(BG));
   check('the memo is dropped when an input key changes, so a newer configuration is a newer build',
     /if \(Object\.keys\(payload\)\.some\(\(key\) => contentConfigInputKeys\(\)\.includes\(key\)\)\) invalidateContentConfigMemo\(\);/.test(BG));

@@ -66,6 +66,7 @@ const NOT_A_DESTINATION = {
   'www.tiktok.com': 'the same, for TikTok embeds',
   'www.twitch.tv': 'a Turbo link inside a blocked-ad overlay, and the page WardenOne is already on',
   'm.media-amazon.com': 'matched inside a CSS :has() selector that hides Twitch ad video, never requested',
+  'adclick.g.doubleclick.net': 'an href prefix in the selector that hides Spotify\'s ad links, never requested',
   'www.w3.org': 'the SVG XML namespace, which is an identifier and not an address',
 };
 
@@ -257,21 +258,100 @@ check('the short version does not present reputation lookups as key-gated only',
   !/opt-in\*\* reputation look-ups that you must\s*\n?\s*switch on and supply your own api key for/.test(policy),
   'OpenPhish needs no key, and the key is not what decides whether your addresses are sent');
 
-/* 6. Local storage that is browsing history in functional terms. PRIV-01 is about whether
-      the learner should keep this at all; this is only about saying that it does. */
+/* 6. Local storage that is browsing history in functional terms. This used to pin the learner
+      keeping up to 80 named first-party sites per tracker, and the policy saying so. PRIV-01
+      then stopped the learner keeping names at all -- and nobody saw these checks go red,
+      because the gate never ran this file (see check-maintainability.js). The contract is now
+      the reverse: the store holds a count, and the policy says it is a count. */
 const BGJS = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-check('the tracker learner still records first-party sites per tracker',
-  /Object\.keys\(rawSites\)\.slice\(0, 80\)/.test(BGJS),
-  'if the cap moved, the number in the policy is now wrong');
-check('the policy says the learner stores which of your sites a tracker appeared on',
-  /which of your sites it appeared on/.test(policy) && /80 sites per tracker/.test(policy));
-check('and calls that what it is rather than burying it',
-  /browsing history in\s*\n?\s*everything but name/.test(policy));
+const learnerShape = (BGJS.match(/function trackerStoreShape\(raw\) \{[\s\S]*?\n\}\n/) || [''])[0];
+check('the tracker learner stores a count of sites, not their names',
+  /\n\s*sites: siteCount,\n/.test(learnerShape) && !/Object\.keys\(rawSites\)\.slice\(0, 80\)/.test(BGJS),
+  'if names are stored again, the policy below is wrong and so is PRIV-01');
+check('the policy says the learner keeps a count of sites and never their names',
+  /a count of sites \(never their names\)/.test(policy));
+check('and says what happened to the names an earlier build kept',
+  /80 named sites per tracker/.test(policy) && /the names are gone/.test(policy));
 
 /* 7. The summary at the top counted five ways data leaves and there were seven. */
 check('the short version accounts for the button-pressed checks',
   /network filtering\s*\n?\s*self-test/.test(policy) && /\(7\)/.test(policy),
   'a summary that stops at (5) is where a reader forms their view');
+
+/* 8. The Permissions page inside the extension has its own "What can leave the browser" list,
+      and it is the one a reader actually opens from the popup. It listed only the opt-in
+      reputation providers, under a banner calling everything there "opt-in checks" -- while
+      the daily filter-list downloads, Script Drift's re-fetches and the Twitch requests, all
+      of them on by default, went unmentioned, as did the Web Store lookup and the network
+      self-test. An external audit caught it; nothing here compared the page to anything.
+      Now it is held to the same host set as the policy: every destination discovered in the
+      code, every list host in the generated inventory and every self-test probe must be named
+      in a host line on that page, and the traffic that runs on its own must be filed as
+      automatic rather than under the opt-in banner. */
+const PERMS_HTML = fs.readFileSync(path.join(ROOT, 'permissions.html'), 'utf8');
+const servicesAt = PERMS_HTML.indexOf('id="services"');
+const servicesSection = servicesAt >= 0 ? PERMS_HTML.slice(servicesAt, PERMS_HTML.indexOf('</section>', servicesAt)) : '';
+check('the Permissions page still has its "What can leave the browser" section',
+  /What can leave the browser/.test(servicesSection));
+const HOST_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
+function hostlineHosts(html) {
+  const out = new Set();
+  for (const m of html.matchAll(/<div class="hostline">([\s\S]*?)<\/div>/g)) {
+    for (const item of m[1].split(',')) {
+      const host = item.trim().toLowerCase().split('/')[0];
+      if (HOST_RE.test(host)) out.add(host);
+    }
+  }
+  return out;
+}
+const pageHosts = hostlineHosts(servicesSection);
+const mustBeOnPage = [...new Set([...hosts, ...feedHosts, ...probeHosts])].sort();
+const offPage = mustBeOnPage.filter((h) => !pageHosts.has(h));
+check('the Permissions page names every destination the code reaches', offPage.length === 0,
+  offPage.join(', ') + ' -- reached by shipped code and missing from the page\'s host lines');
+const unexplained = [...pageHosts].filter((h) => !mustBeOnPage.includes(h)).sort();
+check('and names nothing the code does not reach', unexplained.length === 0,
+  unexplained.join(', ') + ' -- a host line for a request that no longer exists');
+
+const optInAt = servicesSection.indexOf('<span>Opt-in checks</span>');
+const automatic = optInAt >= 0 ? servicesSection.slice(0, optInAt) : '';
+check('the page separates automatic traffic from opt-in checks',
+  optInAt > 0 && /<span>Automatic<\/span>/.test(automatic),
+  'everything listed under one "opt-in" banner is how the default-on requests went unmentioned');
+const automaticHosts = hostlineHosts(automatic);
+const listHostsNotAutomatic = feedHosts.filter((h) => !automaticHosts.has(h));
+check('every filter-list host is filed as automatic', listHostsNotAutomatic.length === 0,
+  listHostsNotAutomatic.join(', ') + ' -- the lists download daily without a click');
+check('the Twitch endpoint is filed as automatic', automaticHosts.has('gql.twitch.tv'),
+  'ad blocking and rewind are on by default on Twitch');
+const DEFAULTS = (BGJS.match(/const DEFAULT_CONFIG = \{[\s\S]*?\n\};/) || [''])[0];
+check('Script Drift is still on by default and still re-fetches scripts',
+  /\n\s*scriptDriftGuard: true,/.test(DEFAULTS) && /async function fetchScriptForDrift\(/.test(BGJS),
+  'if either changed, the page\'s "automatic" row has to change with it');
+check('and the page lists it with the automatic traffic, by the name the popup uses',
+  /Script Drift Guard/.test(automatic) && /<strong>Script drift guard<\/strong>/.test(automatic));
+
+/* 9. A published document may only link to something published beside it. SUPPORT.md linked
+      to README.md and PRIVACY.md to docs/source-inventory.json, both relative -- fine on
+      GitHub's repository view, but GitHub Pages publishes only what pages.yml copies, and it
+      copies neither target, so both links were dead on the live pages (the privacy policy is
+      the page the store listing points at). The release zip carried SUPPORT.md the same way
+      until .gitattributes excluded it. Relative links are checked against what is actually
+      staged; everything else has to be an absolute URL. */
+const PAGES_YML = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'pages.yml'), 'utf8');
+const staged = new Set([...PAGES_YML.matchAll(/^\s*cp\s+(\S+)\s+_pages\/(\S*)\s*$/gm)]
+  .map((m) => (m[2] && !m[2].endsWith('/') ? m[2] : m[2] + path.posix.basename(m[1]))));
+const stagedDocs = [...staged].filter((f) => /\.md$/.test(f)).sort();
+check('the Pages workflow was read and publishes the policy', stagedDocs.includes('PRIVACY.md'),
+  'staged: ' + [...staged].join(', '));
+for (const doc of stagedDocs) {
+  const text = fs.readFileSync(path.join(ROOT, doc), 'utf8');
+  const dead = [...text.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1])
+    .filter((t) => !/^([a-z][a-z0-9+.-]*:|#|\/)/i.test(t))
+    .filter((t) => !staged.has(t.split('#')[0]));
+  check(doc + ' links only to what Pages publishes beside it', dead.length === 0,
+    dead.join(', ') + ' -- relative link to a file pages.yml never copies; use an absolute URL');
+}
 
 // The Limited Use affirmation has to live on the hosted privacy page, because that is the page
 // the dashboard points at. PRIVACY.md IS that page -- Pages serves it from main.

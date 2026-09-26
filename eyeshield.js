@@ -104,7 +104,7 @@
       try { event.removeListener(fn); } catch (_) {}
     }
   };
-  window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust+yt-native-player-controls+contrast-guard-skips-player-chrome';
+  window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust+yt-native-player-controls+contrast-guard-skips-player-chrome+yt-player-keeps-own-pills+ytmusic-own-profile+github-native-theme+chatgpt-keeps-own-buttons+github-loads-theme-sheet+chatgpt-native-theme+ytmusic-native-light+chatgpt-flips-every-scope+chatgpt-pins-color-scheme+chatgpt-data-theme+chatgpt-dark-surfaces+native-theme-fallback';
 
   // Twitch EXTENSION overlay iframes (*.ext-twitch.tv) sit transparently ON TOP of the
   // stream <video>. They are NOT matched by isTwitchHost() (the "-twitch.tv" suffix), so
@@ -122,7 +122,8 @@
   const SCRIM_ID = 'wardenone-eyeshield-scrim';
   const ADJUST_ID = 'wardenone-eyeshield-adjust';
   const PRELOAD_ID = 'wardenone-eyeshield-preload';
-  const MODE_CACHE_KEY = '__woEyeShieldMode';
+  /* The site-storage key earlier builds cached the mode under; only ever removed now (PRIV-12). */
+  const LEGACY_MODE_CACHE_KEY = '__woEyeShieldMode';
   const DEFAULTS = {
     enabled: true,
     eyeShieldMode: 'off',
@@ -140,6 +141,9 @@
 
   const BASE_BG = { dark: '#16181a', ultra: '#000000', light: '#f7f8fb' };
   const YOUTUBE_HOST_RE = /(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i;
+  /* A different app on a YouTube host: ytmusic-* elements and --ytmusic-* variables, none of
+     which the YouTube theme names. It is matched before YouTube so that theme never reaches it. */
+  const YOUTUBE_MUSIC_HOST_RE = /^music\.youtube\.com$/i;
   const TWITCH_HOST_RE = /(^|\.)twitch\.tv$/i;
   const CHATGPT_HOST_RE = /(^|\.)chatgpt\.com$|(^|\.)chat\.openai\.com$/i;
   const GOOGLE_HOST_RE = /(^|\.)google\.[a-z.]+$/i;
@@ -152,6 +156,10 @@
 
   function isYouTubeHost() {
     return YOUTUBE_HOST_RE.test(String(location.hostname || '').toLowerCase());
+  }
+
+  function isYouTubeMusicHost() {
+    return YOUTUBE_MUSIC_HOST_RE.test(String(location.hostname || '').toLowerCase());
   }
 
   function isTwitchHost() {
@@ -178,6 +186,17 @@
 
   function isGitHubHost() {
     return GITHUB_HOST_RE.test(String(location.hostname || '').toLowerCase());
+  }
+
+  /* GitHub's own pages carry data-color-mode on <html> and are themed by switching it (see
+     applyGitHubNativeTheme). A page on a GitHub host without it is not one of those pages, so it
+     gets the generic remap like any other site rather than a profile written for pages it does
+     not resemble. The attribute is parsed with the <html> tag, before this script can ask. */
+  function isGitHubThemedPage() {
+    try {
+      return isGitHubHost() && !!document.documentElement
+        && document.documentElement.hasAttribute('data-color-mode');
+    } catch (_) { return false; }
   }
 
   function isStackOverflowHost() {
@@ -213,11 +232,20 @@
     return false;
   }
 
+  /* Set when a site whose OWN theme is switched (GitHub, ChatGPT, YouTube Music) was asked for
+     a mode and visibly did not switch -- the site renamed the attribute, the class or the
+     stylesheets the switch relies on. The page is then themed by the general engine, as any
+     unprofiled site is, rather than left as it was (see scheduleNativeThemeCheck). For this
+     page only; the next load tries the site's own theme again. */
+  let nativeThemeFallback = false;
+
   function managedThemeHostName() {
+    if (nativeThemeFallback) return '';
+    if (isYouTubeMusicHost()) return 'youtubemusic';
     if (isYouTubeHost()) return 'youtube';
     if (isTwitchHost()) return 'twitch';
     if (isGoogleHost()) return 'google';
-    if (isGitHubHost()) return 'github';
+    if (isGitHubThemedPage()) return 'github';
     if (isStackOverflowHost()) return 'stackoverflow';
     if (isHackerNewsHost()) return 'hackernews';
     if (isWikipediaHost()) return 'wikipedia';
@@ -231,9 +259,23 @@
     return !!managedThemeHostName();
   }
 
+  /* YouTube Music in light: its shared YouTube colours switch natively (the `dark` attribute),
+     but its own stylesheets hard-code white text and icons for a dark app. Those -- and only
+     those -- are rewritten from its own sheets, so it needs the var-role scan and the watch for
+     late stylesheets that the generic remap has. */
+  function managedRemapsOwnText(mode) {
+    return mode === 'light' && managedThemeHostName() === 'youtubemusic';
+  }
+
   function needsManagedObserverHost() {
     const host = managedThemeHostName();
-    return host === 'youtube' || host === 'google';
+    return host === 'youtube' || host === 'google' || managedRemapsOwnText(activeRemap);
+  }
+
+  /* Sites switched to their OWN light or dark theme paint their own page, so the core header
+     leaves the page background to them instead of laying a flat colour of its own under them. */
+  function ownsPageBackground() {
+    return managedThemeHostName() === 'chatgpt';
   }
 
   function themeRootsForCurrentHost() {
@@ -242,24 +284,29 @@
 
   // Anti-flash: the trusted config snapshot is async, so at document_start the page would
   // paint in its native colours (white flash on YouTube etc.) before our theme
-  // lands. We cache the last mode in the page's localStorage (synchronous) and
-  // paint a dark/light backdrop immediately. Replaced by the real theme once
-  // config loads, and removed if the mode turns out to be off.
+  // lands. The mode is known synchronously anyway: while a mode is on, the worker
+  // registers the one-line eyeshield-preload-<mode>.js AHEAD of this file in the same
+  // registration, and it sets a property in this isolated world that the page cannot
+  // see. A dark/light backdrop is painted from it immediately, replaced by the real
+  // theme once config loads, and removed if the mode turns out to be off. The mode
+  // used to be cached in each site's own localStorage instead -- readable by the site,
+  // and left behind on uninstall (PRIV-12) -- so that key is removed wherever it is
+  // still found, and never written again.
   try {
-    const cached = window.localStorage.getItem(MODE_CACHE_KEY);
+    const hinted = window.__wardenOneEyeShieldPreloadMode;
     // Discord themes itself via <html> classes (its own light/dark themes) — skip the
     // backdrop preload there so we don't briefly paint over its native theme.
     if (!/(^|\.)discord\.com$|(^|\.)spotify\.com$/i.test(String(location.hostname || '')) &&
-        (cached === 'dark' || cached === 'ultra' || cached === 'light')) {
+        (hinted === 'dark' || hinted === 'ultra' || hinted === 'light')) {
       const pre = document.createElement('style');
       pre.id = PRELOAD_ID;
-      pre.textContent = 'html{background-color:' + BASE_BG[cached] + ' !important;color-scheme:'
-        + (cached === 'light' ? 'light' : 'dark') + ' !important;}';
+      pre.textContent = 'html{background-color:' + BASE_BG[hinted] + ' !important;color-scheme:'
+        + (hinted === 'light' ? 'light' : 'dark') + ' !important;}';
       (document.head || document.documentElement).appendChild(pre);
     }
   } catch (e) {}
+  try { window.localStorage.removeItem(LEGACY_MODE_CACHE_KEY); } catch (e) {}
   function removePreload() { const p = document.getElementById(PRELOAD_ID); if (p) p.remove(); }
-  function cacheMode(m) { try { window.localStorage.setItem(MODE_CACHE_KEY, m); } catch (e) {} }
 
   // Color properties grouped by role.
   const FG = new Set(['color', '-webkit-text-fill-color', 'caret-color', 'text-decoration-color', 'fill', 'stroke', 'stop-color', 'flood-color']);
@@ -456,7 +503,19 @@
     }
     return value.length;
   }
+  /* role 'tint': a translucent white wash -- how a dark app lifts a chip or a hover off its
+     page -- becomes the faint dark wash a light theme uses for the same job. Every other colour
+     is left exactly as written. */
+  function tintToken(c) {
+    const a = c[3] == null ? 1 : c[3];
+    if (a >= 0.5 || c[0] < 235 || c[1] < 235 || c[2] < 235) return null;
+    return 'rgba(0, 0, 0, ' + (+(a * 0.6).toFixed(3)) + ')';
+  }
   function transformColorTokens(value, mode, role) {
+    if (role === 'tint') {
+      const out = value.replace(FUNC, (m) => { const c = clean(parseFunc(m)); return (c && tintToken(c)) || m; });
+      return out.replace(HEX, (m) => { const c = clean(hexToRgb(m)); return (c && tintToken(c)) || m; });
+    }
     let out = value.replace(FUNC, (m) => { const c = clean(parseFunc(m)); return c ? transform(c, mode, role) : m; });
     out = out.replace(HEX, (m) => { const c = clean(hexToRgb(m)); return c ? transform(c, mode, role) : m; });
     return out.replace(NAMEDRE, (m) => { const c = clean(hexToRgb(NAMED[m.toLowerCase()])); return c ? transform(c, mode, role) : m; });
@@ -659,18 +718,31 @@
     return 'fg';
   }
 
-  function transformDecl(style, mode) {
+  /* A variable that only ever colours text or icons. The text-only remap (below) touches no
+     variable that is also used as a surface or a border anywhere: sites use one token for both
+     the text and an inverted chip behind it, and darkening that token would darken the chip. */
+  function varIsTextOnly(name) {
+    const e = varRoles.get(name);
+    return !!(e && e.fg > 0 && e.bg === 0 && e.border === 0);
+  }
+  /* textOnly: rewrite only the colours of text and icons, leaving every surface to the site --
+     except translucent white washes on backgrounds, which become faint dark ones (role 'tint').
+     Used where a site's own theme is switched natively and only what it hard-codes for a dark
+     page is wrong for the new theme (YouTube Music in light: its white text, and chips lifted
+     with rgba(255,255,255,.1) that vanish on a white page). */
+  function transformDecl(style, mode, textOnly) {
     let css = '';
     const seen = new Set();
     for (let i = 0; i < style.length; i++) {
       const prop = style[i];
       if (prop.charCodeAt(0) === 45 && prop.charCodeAt(1) === 45) { // --custom
+        seen.add(prop);
+        if (textOnly && !varIsTextOnly(prop)) continue;
         const v = style.getPropertyValue(prop);
         if (v) {
-          const nv = replaceColors(v, mode, roleForVar(prop, v, mode));
+          const nv = replaceColors(v, mode, textOnly ? 'fg' : roleForVar(prop, v, mode));
           if (nv !== v) css += prop + ':' + nv + ' !important;';
         }
-        seen.add(prop);
       }
     }
     // When a background is clipped to text (gradient headings:
@@ -691,10 +763,11 @@
       && (/transparent/i.test(fillVal) || /transparent/i.test(colorVal) || (!fillVal && !colorVal));
     for (let i = 0; i < COLOR_PROPS.length; i++) {
       const prop = COLOR_PROPS[i];
-      if (seen.has(prop)) continue;
+      if (seen.has(prop) || (textOnly && !FG.has(prop) && prop !== 'background' && prop !== 'background-color')) continue;
       const v = style.getPropertyValue(prop);
       if (!v) continue;
       let role = roleForProp(prop);
+      if (textOnly && role === 'bg') role = 'tint';
       if (textClip && (prop === 'background' || prop === 'background-image')) role = 'fg';
       const nv = mode === 'light' && prop === '-webkit-text-fill-color' && !/transparent/i.test(v)
         ? 'currentColor'
@@ -720,7 +793,7 @@
     }
   }
 
-  function buildThemeCSS(mode, sheets) {
+  function buildThemeCSS(mode, sheets, textOnly) {
     let css = '';
     for (let i = 0; i < sheets.length; i++) {
       const sheet = sheets[i];
@@ -730,7 +803,7 @@
       if (!rules) continue;
       eachStyleRule(rules, '', (rule, cond) => {
         try {
-          const d = transformDecl(rule.style, mode);
+          const d = transformDecl(rule.style, mode, textOnly);
           if (!d) return;
           const body = rule.selectorText + '{' + d + '}';
           css += cond ? '@media ' + cond + '{' + body + '}\n' : body + '\n';
@@ -789,7 +862,10 @@
       const root = roots[r];
       if (root !== document) observeRoot(root); // watch shadow roots for new children
       let body;
-      try { body = isManagedThemeHost() ? '' : buildThemeCSS(mode, sheetsOfRoot(root)); } catch (e) { body = ''; }
+      try {
+        body = !isManagedThemeHost() ? buildThemeCSS(mode, sheetsOfRoot(root))
+          : (root === document && managedRemapsOwnText(mode) ? buildThemeCSS(mode, sheetsOfRoot(root), true) : '');
+      } catch (e) { body = ''; }
       const repair = isManagedThemeHost() ? (root !== document ? managedShadowCSS(mode) : '') : genericRepairCSS(mode, root !== document);
       const css = (root === document ? themeHeader(mode) : '') + body + repair + (root === document ? themeFooter(mode) : selectionCSS(mode));
       if (!css) continue;
@@ -801,8 +877,12 @@
       st.textContent = css;
       themeEls.push(st);
     }
+    themeBuiltWithoutSites = isManagedThemeHost() && !eyeSites();
     scheduleContrastGuard(mode);
   }
+  /* A profiled site themed before its per-site file was in the frame: rebuilt once the file is
+     there, even when the mode has not changed (see apply). */
+  let themeBuiltWithoutSites = false;
 
   // ---------- post-remap contrast guard ----------
   // The absolute role remap (fg -> bright, bg -> dark) can occasionally land text and its
@@ -1330,7 +1410,7 @@
         lastFullTheme = Date.now();
         pendingSheet = false; pendingNodes = [];
         const roots = themeRootsForCurrentHost();
-        if (!isManagedThemeHost()) buildVarRoles(roots);
+        if (!isManagedThemeHost() || managedRemapsOwnText(activeRemap)) buildVarRoles(roots);
         applyTheme(activeRemap, roots);
         if (isGoogleHost() && activeRemap === 'light') applyGoogleLightInline();
         else if (!isManagedThemeHost()) { applyInline(activeRemap); applyComputedBgFix(activeRemap); }
@@ -1951,7 +2031,8 @@
   }
   function themeHeader(remap) {
     return 'html{color-scheme:' + (remap === 'light' ? 'light' : 'dark') + ' !important;}'
-      + 'html,body{background-color:' + BASE_BG[remap] + ' !important;' + (remap === 'light' ? 'color:#202124 !important;' : '') + '}'
+      + (ownsPageBackground() ? ''
+        : 'html,body{background-color:' + BASE_BG[remap] + ' !important;' + (remap === 'light' ? 'color:#202124 !important;' : '') + '}')
       + 'img,picture,video,canvas,svg,iframe,embed,object{filter:none !important;}'
       + '@media print{#' + SCRIM_ID + '{display:none !important;}}';
   }
@@ -1962,8 +2043,12 @@
      intended behaviour there and also the safe failure if the file is ever missing. */
   var __eyeSitesResolved = false;
   var __eyeSites = null;
+  /* Only a found file is remembered. A miss used to be cached for the life of the page, so a
+     tab where the core ran before the sites file arrived -- one refreshed by the popup, or
+     caught up after theming was turned on -- stayed generic even once the file was there. */
   function eyeSites() {
     if (__eyeSitesResolved) return __eyeSites;
+    try { if (!(globalThis.__woEyeSites && typeof globalThis.__woEyeSites.factory === 'function')) return null; } catch (_) { return null; }
     __eyeSitesResolved = true;
     try {
       var reg = globalThis.__woEyeSites;
@@ -1971,6 +2056,7 @@
         __eyeSites = reg.factory({
           paletteFor: paletteFor,
           isYouTubeHost: isYouTubeHost,
+          isYouTubeMusicHost: isYouTubeMusicHost,
           youtubePalette: youtubePalette,
           TWITCH_NOT_CHAT_NAME: TWITCH_NOT_CHAT_NAME,
           youtubeSubscribePalette: youtubeSubscribePalette,
@@ -2021,6 +2107,9 @@
         break;
       case 'youtube':
         siteCSS = remap === 'light' ? siteCSSOf('youtubeLightCSS') : siteCSSOf('youtubeDarkCSS', remap);
+        break;
+      case 'youtubemusic':
+        siteCSS = siteCSSOf('youtubeMusicCSS', remap);
         break;
       case 'twitch':
         siteCSS = remap === 'light' ? siteCSSOf('twitchLightCSS') : siteCSSOf('twitchDarkCSS', remap);
@@ -2259,11 +2348,373 @@
     for (var i = 0; i < els.length; i++) discordFixEl(els[i], want);
   }
 
+  /* GitHub: drive its NATIVE theme. GitHub ships complete light and dark themes -- every
+     surface, input, link and icon tuned together -- and picks one with data-color-mode on
+     <html>. The site profile used to paint its own colours over whichever the reader had, and
+     that fought GitHub's components: the search box draws the typed text on a layer BEHIND a
+     transparent <input>, so painting inputs opaque hid what was being typed; forcing every link
+     to one pale blue flattened file names, commit messages and real links into one colour; and
+     a stroke added to every SVG made the octicons heavy. Switching the attribute uses GitHub's
+     own design instead; Ultra only takes its canvas to black on top (githubCSS).
+
+     A page carries only the theme stylesheets it needs, as ordinary links named after the theme
+     (.../assets/dark-<hash>.css): light AND dark for a reader on "sync with system", but only
+     the chosen one for a reader who picked light or dark -- every other theme is parked as a
+     link[data-color-theme] placeholder with data-href instead of href. Switching the attribute
+     to a theme that is not loaded leaves GitHub's light colours in force under the new mode --
+     dark text on a black page, white buttons, invisible icons -- which is what a signed-in
+     reader on GitHub light saw. So the mode is switched only once its stylesheet is on the
+     page, loading it first where needed exactly as GitHub's own theme picker does (by giving
+     the placeholder its href). Until then, and if it cannot load, GitHub stays as it is.
+
+     The reader's own variant (dimmed, high contrast, colour-blind) is used when it can be had,
+     and plain light or dark otherwise.
+
+     The page's own values are kept on the isolated-world window rather than in this copy, so a
+     copy that replaces this one after an update restores what the PAGE had, not what this copy
+     set. */
+  const GITHUB_THEME_ATTRS = ['data-color-mode', 'data-light-theme', 'data-dark-theme'];
+  let githubWant = null;
+  let githubVariant = null;
+  let githubObserver = null;
+  let githubToken = 0;
+  /* A theme stylesheet still on its way: the switch has not had its chance yet. */
+  let githubLoading = false;
+  function githubSheetLoaded(name) {
+    try {
+      const links = document.querySelectorAll('link[href]');
+      for (let i = 0; i < links.length; i++) {
+        const href = links[i].getAttribute('href') || '';
+        if (href.indexOf('/' + name + '-') >= 0 && /\.css(\?|#|$)/.test(href) && links[i].sheet) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+  function githubLoadSheet(name, done) {
+    let ph = null;
+    try { ph = document.querySelector('link[data-color-theme="' + CSS.escape(name) + '"][data-href]'); } catch (_) {}
+    if (!ph) { done(false); return; }
+    let settled = false;
+    const finish = (ok) => { if (!settled) { settled = true; done(ok); } };
+    woOn(ph, 'load', () => finish(true), { once: true });
+    woOn(ph, 'error', () => finish(false), { once: true });
+    woTimeout(() => finish(!!ph.sheet), 6000);
+    if (!ph.getAttribute('href')) ph.setAttribute('href', ph.getAttribute('data-href'));
+    else if (ph.sheet) finish(true);
+  }
+  function githubAssertTheme() {
+    const h = document.documentElement;
+    if (!h || !githubWant || !githubVariant) return;
+    if (h.getAttribute('data-color-mode') !== githubWant) h.setAttribute('data-color-mode', githubWant);
+    const variantAttr = githubWant === 'light' ? 'data-light-theme' : 'data-dark-theme';
+    if (h.getAttribute(variantAttr) !== githubVariant) h.setAttribute(variantAttr, githubVariant);
+  }
+  function applyGitHubNativeTheme(mode) {
+    const h = document.documentElement;
+    if (!h) return;
+    if (!window.__wardenOneGitHubThemeOrig) {
+      const orig = {};
+      GITHUB_THEME_ATTRS.forEach((a) => { orig[a] = h.getAttribute(a); });
+      window.__wardenOneGitHubThemeOrig = orig;
+    }
+    const want = mode === 'light' ? 'light' : 'dark';
+    const chosen = window.__wardenOneGitHubThemeOrig[want === 'light' ? 'data-light-theme' : 'data-dark-theme'] || want;
+    const candidates = chosen === want ? [want] : [chosen, want];
+    const token = ++githubToken;
+    const hold = (variant) => {
+      if (token !== githubToken) return;
+      githubWant = want;
+      githubVariant = variant;
+      githubAssertTheme();
+      /* GitHub rewrites these when the reader changes theme or a page swaps in; hold the mode.
+         The assert only writes on a difference, so its own writes settle after one callback. */
+      try {
+        if (!githubObserver) githubObserver = woObserver(() => { githubAssertTheme(); });
+        githubObserver.observe(h, { attributes: true, attributeFilter: GITHUB_THEME_ATTRS });
+      } catch (_) {}
+      /* Anything the readability guard judged against the old theme is judged again. */
+      scheduleContrastGuard(mode);
+    };
+    for (let i = 0; i < candidates.length; i++) {
+      if (githubSheetLoaded(candidates[i])) { githubLoading = false; hold(candidates[i]); return; }
+    }
+    githubLoading = true;
+    (function tryLoad(i) {
+      if (i >= candidates.length) { if (token === githubToken) githubLoading = false; return; }
+      githubLoadSheet(candidates[i], (ok) => {
+        if (token !== githubToken) return;
+        if (ok) { githubLoading = false; hold(candidates[i]); } else tryLoad(i + 1);
+      });
+    })(0);
+  }
+  function restoreGitHubNativeTheme() {
+    githubToken++;
+    githubWant = null;
+    githubVariant = null;
+    if (githubObserver) { try { githubObserver.disconnect(); } catch (_) {} }
+    const orig = window.__wardenOneGitHubThemeOrig;
+    if (!orig) return;
+    window.__wardenOneGitHubThemeOrig = null;
+    const h = document.documentElement;
+    if (!h) return;
+    GITHUB_THEME_ATTRS.forEach((a) => {
+      try { if (orig[a] == null) h.removeAttribute(a); else h.setAttribute(a, orig[a]); } catch (_) {}
+    });
+  }
+
+  /* ChatGPT: drive its NATIVE theme too. Its builds switch theme with a `dark`/`light` class on
+     <html> or with a `data-theme` attribute (the signed-in app -- see below), plus an inline
+     color-scheme, and ship complete colour sets for both, so switching those is all it takes.
+     The site profile used to paint over it instead, with selectors
+     written for an older app: in Light the composer stayed dark and the sidebar's conversations
+     were left near-white on a light sidebar; in the dark modes every button's glyph was forced
+     white, blanking ChatGPT's white send and voice discs. The signed-out home page is a separate
+     build that only follows the system theme; its switch is pinned from the stylesheet
+     (chatGPTCSS). Original values are kept on the window, as for GitHub.
+
+     The class is a SCOPE, not a page switch: ChatGPT's tokens are declared on `.dark` and on
+     `.light` (and `.dark .light`), so any element inside the page carrying `dark` re-darkens
+     everything under it. Flipping only <html> left a signed-in page in Light with its dark
+     backgrounds, while everything drawn through light-dark() went light -- dark text on dark.
+     So every scope is flipped, and scopes React renders or restores later are flipped as they
+     appear (the same shape as the Discord driver above). Off puts each one back. */
+  let chatgptWant = null;
+  let chatgptObserver = null;
+  let chatgptRescanTimer = 0;
+  /* The signed-in app does not theme itself with the class at all: it uses a `data-theme`
+     attribute ("dark"/"light") on <html>, and every colour it draws -- a grey ramp, the surface
+     tokens, lightningcss's light-dark() switch and color-scheme -- hangs off that attribute.
+     Measured on a signed-in page: with the class flipped and the switch variables pinned, the
+     page stayed rgb(0,0,0) with rgb(237,237,237) text; with data-theme="light" it was
+     rgb(252,252,252) with rgb(13,13,13) text, sidebar included. So both are switched: the class
+     for the builds that use it, the attribute for the one that does. */
+  const chatgptFlipped = new Map(); // inner element -> { cls, attr }: what it had before
+  function chatgptOther() { return chatgptWant === 'light' ? 'dark' : 'light'; }
+  function chatgptScopeSelector(which) { return '.' + which + ',[data-theme="' + which + '"]'; }
+  function chatgptAssertRoot() {
+    const h = document.documentElement;
+    if (!h || !chatgptWant) return;
+    const other = chatgptOther();
+    if (h.classList.contains(other)) h.classList.remove(other);
+    if (!h.classList.contains(chatgptWant)) h.classList.add(chatgptWant);
+    if (h.getAttribute('data-theme') !== chatgptWant) h.setAttribute('data-theme', chatgptWant);
+    if (h.style.colorScheme !== chatgptWant) h.style.colorScheme = chatgptWant;
+  }
+  function chatgptRescan() {
+    if (!chatgptWant) return;
+    const h = document.documentElement;
+    const other = chatgptOther();
+    chatgptFlipped.forEach((_, el) => { if (!el.isConnected) chatgptFlipped.delete(el); });
+    let nodes;
+    try { nodes = document.querySelectorAll(chatgptScopeSelector(other)); } catch (_) { return; }
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      if (el === h) continue;
+      let had = chatgptFlipped.get(el);
+      if (!had) { had = { cls: null, attr: null }; chatgptFlipped.set(el, had); }
+      if (el.classList.contains(other)) {
+        if (had.cls == null) had.cls = other;
+        el.classList.remove(other);
+        el.classList.add(chatgptWant);
+      }
+      if (el.getAttribute('data-theme') === other) {
+        if (had.attr == null) had.attr = other;
+        el.setAttribute('data-theme', chatgptWant);
+      }
+    }
+  }
+  function chatgptAssertTheme() {
+    chatgptAssertRoot();
+    chatgptRescan();
+  }
+  function chatgptScheduleRescan() {
+    if (chatgptRescanTimer) return;
+    chatgptRescanTimer = woTimeout(() => { chatgptRescanTimer = 0; chatgptRescan(); }, 50);
+  }
+  function applyChatGPTNativeTheme(mode) {
+    const h = document.documentElement;
+    if (!h) return;
+    if (!window.__wardenOneChatGPTThemeOrig) {
+      window.__wardenOneChatGPTThemeOrig = {
+        dark: h.classList.contains('dark'), light: h.classList.contains('light'),
+        theme: h.getAttribute('data-theme'), scheme: h.style.colorScheme || '',
+      };
+    }
+    chatgptWant = mode === 'light' ? 'light' : 'dark';
+    chatgptAssertTheme();
+    /* ChatGPT re-applies its own choice when the system theme changes, and React restores a
+       scope's class or theme when it re-renders it; hold ours. The root is held at once; inner
+       scopes are collected into one rescan. Every write is on a difference only, so it settles. */
+    try {
+      if (!chatgptObserver) {
+        chatgptObserver = woObserver((muts) => {
+          if (!chatgptWant) return;
+          const root = document.documentElement;
+          const other = chatgptOther();
+          const scoped = (n) => (n.classList && n.classList.contains(other))
+            || (n.getAttribute && n.getAttribute('data-theme') === other);
+          let rescan = false;
+          for (let i = 0; i < muts.length; i++) {
+            const m = muts[i];
+            if (m.type === 'attributes') {
+              if (m.target === root) chatgptAssertRoot();
+              else if (m.target.nodeType === 1 && scoped(m.target)) rescan = true;
+              continue;
+            }
+            const added = m.addedNodes;
+            for (let j = 0; j < added.length && !rescan; j++) {
+              const n = added[j];
+              if (n.nodeType !== 1) continue;
+              if (scoped(n) || (n.querySelector && n.querySelector(chatgptScopeSelector(other)))) rescan = true;
+            }
+          }
+          if (rescan) chatgptScheduleRescan();
+        });
+      }
+      chatgptObserver.observe(h, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+    } catch (_) {}
+  }
+  function restoreChatGPTNativeTheme() {
+    chatgptWant = null;
+    if (chatgptObserver) { try { chatgptObserver.disconnect(); } catch (_) {} }
+    if (chatgptRescanTimer) { try { clearTimeout(chatgptRescanTimer); } catch (_) {} chatgptRescanTimer = 0; }
+    chatgptFlipped.forEach((had, el) => {
+      try {
+        if (had.cls) {
+          el.classList.remove(had.cls === 'dark' ? 'light' : 'dark');
+          el.classList.add(had.cls);
+        }
+        if (had.attr) el.setAttribute('data-theme', had.attr);
+      } catch (_) {}
+    });
+    chatgptFlipped.clear();
+    const orig = window.__wardenOneChatGPTThemeOrig;
+    if (!orig) return;
+    window.__wardenOneChatGPTThemeOrig = null;
+    const h = document.documentElement;
+    if (!h) return;
+    try {
+      h.classList.toggle('dark', !!orig.dark);
+      h.classList.toggle('light', !!orig.light);
+      if (orig.theme == null) h.removeAttribute('data-theme'); else h.setAttribute('data-theme', orig.theme);
+      h.style.colorScheme = orig.scheme;
+    } catch (_) {}
+  }
+
+  /* YouTube Music: the colours it shares with YouTube (--yt-sys-color-baseline--*) come in light
+     and dark sets, and the dark set applies while <html> carries a `dark` attribute. YouTube
+     Music always sets it; in light it is removed so YouTube's own light colours apply -- chips,
+     menus, buttons and the inverted "Sign in" pill included. What the app hard-codes for a dark
+     page is handled by the text-only remap (managedRemapsOwnText). */
+  let ytmLight = false;
+  let ytmObserver = null;
+  function ytmAssertLight() {
+    const h = document.documentElement;
+    if (ytmLight && h && h.hasAttribute('dark')) h.removeAttribute('dark');
+  }
+  function restoreYouTubeMusicNativeTheme() {
+    ytmLight = false;
+    if (ytmObserver) { try { ytmObserver.disconnect(); } catch (_) {} }
+    const orig = window.__wardenOneYouTubeMusicDarkOrig;
+    if (!orig) return;
+    window.__wardenOneYouTubeMusicDarkOrig = null;
+    const h = document.documentElement;
+    if (h && orig.value != null && !h.hasAttribute('dark')) {
+      try { h.setAttribute('dark', orig.value); } catch (_) {}
+    }
+  }
+  function applyYouTubeMusicNativeTheme(mode) {
+    if (mode !== 'light') { restoreYouTubeMusicNativeTheme(); return; }
+    const h = document.documentElement;
+    if (!h) return;
+    if (!window.__wardenOneYouTubeMusicDarkOrig) window.__wardenOneYouTubeMusicDarkOrig = { value: h.getAttribute('dark') };
+    ytmLight = true;
+    ytmAssertLight();
+    try {
+      if (!ytmObserver) ytmObserver = woObserver(() => { ytmAssertLight(); });
+      ytmObserver.observe(h, { attributes: true, attributeFilter: ['dark'] });
+    } catch (_) {}
+  }
+
+  /* One entry for the sites whose own themes are switched, and one to put them all back. */
+  function applyNativeTheme(mode) {
+    switch (managedThemeHostName()) {
+      case 'github': applyGitHubNativeTheme(mode); break;
+      case 'chatgpt': applyChatGPTNativeTheme(mode); break;
+      case 'youtubemusic': applyYouTubeMusicNativeTheme(mode); break;
+      default: break;
+    }
+  }
+  function restoreNativeThemes() {
+    githubLoading = false;
+    restoreGitHubNativeTheme();
+    restoreChatGPTNativeTheme();
+    restoreYouTubeMusicNativeTheme();
+  }
+
+  /* Did the site's own theme take? These three switch the site's OWN theme -- an attribute, a
+     class, a stylesheet the site ships -- and each of those is a name the site can change.
+     When one does, the switch stops working and the page just stays as it was: Light over a
+     dark page, Dark over a light one, with nothing to say so. So a moment after switching, the
+     page's background is measured. Clearly the wrong side for the mode, twice, 2.5 s apart (and
+     never while GitHub is still fetching a theme stylesheet), and the page is handed to the
+     general engine that themes every other site. A page that paints no background colour of
+     its own, or one in between, is left alone: only a clear miss counts. */
+  const NATIVE_THEME_HOSTS = ['github', 'chatgpt', 'youtubemusic'];
+  let nativeCheckTimer = 0;
+  function pageBackgroundLuminance() {
+    const solid = (el) => {
+      if (!el) return null;
+      const c = ewParseRgb(getComputedStyle(el).backgroundColor);
+      return c && c.a >= 0.5 ? c : null;
+    };
+    let c = solid(document.body) || solid(document.documentElement);
+    if (!c && typeof document.elementFromPoint === 'function') {
+      let el = document.elementFromPoint(Math.round(innerWidth / 2), Math.round(innerHeight / 2));
+      for (let i = 0; el && i < 25 && !c; i++, el = el.parentElement) {
+        if (!isWardenOneOwnedNode(el)) c = solid(el);
+      }
+    }
+    return c ? ewLum(c) : null;
+  }
+  function nativeThemeVerdict(mode) {
+    let lum = null;
+    try { lum = pageBackgroundLuminance(); } catch (_) { lum = null; }
+    if (lum == null) return 'unknown';
+    if (mode === 'light') return lum >= 0.5 ? 'ok' : (lum < 0.2 ? 'failed' : 'unknown');
+    return lum <= 0.2 ? 'ok' : (lum > 0.45 ? 'failed' : 'unknown');
+  }
+  function fallBackFromNativeTheme() {
+    nativeThemeFallback = true;
+    restoreNativeThemes();
+    removeThemeEls();
+    lastAppliedMode = null;
+    apply();
+  }
+  function scheduleNativeThemeCheck(mode) {
+    if (nativeCheckTimer) { try { clearTimeout(nativeCheckTimer); } catch (_) {} nativeCheckTimer = 0; }
+    const host = managedThemeHostName();
+    if (nativeThemeFallback || NATIVE_THEME_HOSTS.indexOf(host) < 0) return;
+    let misses = 0;
+    const run = () => {
+      nativeCheckTimer = 0;
+      if (nativeThemeFallback || cfg.enabled === false || normalizeMode(cfg.eyeShieldMode) !== mode
+          || managedThemeHostName() !== host) return;
+      if (document.readyState === 'loading' || (host === 'github' && githubLoading)) {
+        nativeCheckTimer = woTimeout(run, 1000);
+        return;
+      }
+      if (nativeThemeVerdict(mode) !== 'failed') return;
+      if (++misses < 2) { nativeCheckTimer = woTimeout(run, 2500); return; }
+      fallBackFromNativeTheme();
+    };
+    nativeCheckTimer = woTimeout(run, 1500);
+  }
+
   function apply() {
     const enabled = cfg.enabled !== false;
     const mode = normalizeMode(cfg.eyeShieldMode);
     const brightness = getBrightness();
-    cacheMode(enabled ? mode : 'off');
 
     // Discord: native-theme path (no remap). Handles every case and returns.
     if (isDiscordHost()) {
@@ -2311,6 +2762,7 @@
     if (!enabled) {
       restoreInline(); removeThemeEls(); activeRemap = null; lastAppliedMode = null;
       removeScrim(); removeAdjustFilter(); disconnectObserver(); removePreload();
+      restoreNativeThemes();
       return;
     }
 
@@ -2322,6 +2774,7 @@
     if (mode === 'off') {
       restoreInline(); removeThemeEls(); activeRemap = null; lastAppliedMode = 'off';
       disconnectObserver(); removePreload();
+      restoreNativeThemes();
       return;
     }
 
@@ -2330,7 +2783,7 @@
     // mode, so we skip the expensive remove+rebuild that was flashing the page on
     // every drag step. The remap is absolute by role, so re-running it is a no-op
     // for an unchanged mode anyway.
-    if (mode !== lastAppliedMode || !themeEls.length) {
+    if (mode !== lastAppliedMode || !themeEls.length || (themeBuiltWithoutSites && eyeSites())) {
       restoreInline();
       removeThemeEls();
       activeRemap = mode;
@@ -2338,13 +2791,15 @@
       if (!isManagedThemeHost() || needsManagedObserverHost()) connectObserver(); // before applyTheme, so each shadow root gets observed as it's themed
       else disconnectObserver();
       const roots = themeRootsForCurrentHost();
-      if (!isManagedThemeHost()) buildVarRoles(roots);
+      if (!isManagedThemeHost() || managedRemapsOwnText(mode)) buildVarRoles(roots);
       applyTheme(mode, roots);
       if (isGoogleHost() && mode === 'light') applyGoogleLightInline();
       else if (!isManagedThemeHost()) { applyInline(mode); applyComputedBgFix(mode); }
       applyForeignCSS(mode, roots); // recolour cross-origin (CDN) sheets we can't read directly
       lastAppliedMode = mode;
     }
+    applyNativeTheme(mode);
+    scheduleNativeThemeCheck(mode);
     removePreload(); // real theme is in place now
   }
 
@@ -2370,10 +2825,20 @@
     try { chrome.runtime.sendMessage({ kind: 'content-config-get', need: need }, cb); } catch (_) { try { cb(null); } catch (__) {} }
   }
 
+  /* When the popup last pushed settings straight to this tab. A change reaches a tab two ways:
+     pushed ('config-update'), and then pulled again when the popup re-runs this script to
+     refresh it. The pull is answered from a snapshot, and one built before the push is older
+     than what the push already applied -- taking it put the previous mode back, so a new mode
+     "would not apply" until Save was pressed again. A snapshot carries its build time (`rev`);
+     one older than the last push is set aside. */
+  let lastPushAt = 0;
   function loadConfig() {
     askContentConfig(['overrides'], (res) => {
       void chrome.runtime.lastError;
-      if (!chrome.runtime.lastError && res && res.ok) setConfig(res.overrides || {});
+      if (chrome.runtime.lastError || !res || !res.ok) return;
+      const rev = Number(res.rev) || 0;
+      if (lastPushAt && rev && rev < lastPushAt) return;
+      setConfig(res.overrides || {});
     });
   }
 
@@ -2394,8 +2859,10 @@
   try {
     woOnMessage((msg) => {
       if (!msg) return;
-      if (msg.kind === 'config-update') setConfig(msg.overrides || {});
-      if (msg.kind === 'content-config-refresh') loadConfig();
+      if (msg.kind === 'config-update') { lastPushAt = Date.now(); setConfig(msg.overrides || {}); }
+      /* A tick later, so the bridge -- told the same thing in the same dispatch -- has started
+         its own re-fetch first, and this request waits for that instead of taking the old one. */
+      if (msg.kind === 'content-config-refresh') woTimeout(loadConfig, 0);
     });
   } catch (e) {}
 }());

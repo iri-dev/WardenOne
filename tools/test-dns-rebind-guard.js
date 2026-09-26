@@ -99,7 +99,9 @@ function harness(options) {
 
   vm.createContext(sandbox);
   vm.runInContext(
-    between('const REBIND_QUARANTINE_RULE_BASE', '\nconst HEALTH_SHIELD_KEYS = [')
+    /* The shared IPv6 classifier the rebinding check now calls (tools/test-ip-classifier-agreement.js). */
+    between('function ipv4FromMappedIpv6(', '\nfunction normalizeIpLiteral(')
+      + between('const REBIND_QUARANTINE_RULE_BASE', '\nconst HEALTH_SHIELD_KEYS = [')
       + '\nthis.__api = { noteResolvedAddress, classifyResolvedIp, forgetRebindTab, REBIND_QUARANTINED };',
     sandbox,
     { filename: 'background.js' }

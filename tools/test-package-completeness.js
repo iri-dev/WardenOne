@@ -185,6 +185,31 @@ check('the scan covers a realistic surface', required.size >= 30, required.size 
   check('every referenced asset exists on disk', absent.length === 0, absent.join(', '));
 }
 
+/* ---- every document in the package is there on purpose (REL-03) ------------- *
+ * CHANGELOG.md, SECURITY.md and SUPPORT.md shipped in the release zip -- 98 KiB, the changelog the
+ * largest non-runtime file in the package -- not because a rule kept them but because no rule
+ * removed them, while the comment above the rules said PRIVACY.md was "intentionally kept" and a
+ * rule fourteen lines down excluded it. The intent is now written once, in .gitattributes, and
+ * checked here against the archive itself: the licence files travel with the work because the GPL
+ * requires it, CREDITS.md carries the upstream attribution, and no other document is in the zip.
+ * Every excluded document is excluded by a rule with its name on it, and the comments name nothing
+ * as kept that a rule removes. */
+{
+  const INTENDED_DOCS = ['LICENSE', 'NOTICE', 'CREDITS.md'];
+  for (const doc of INTENDED_DOCS) check(doc + ' travels with the package', packaged.has(doc));
+  const strayDocs = [...packaged].filter((f) => !f.includes('/') && /\.(md|txt|markdown)$/i.test(f) && !INTENDED_DOCS.includes(f)).sort();
+  check('no other document is in the package', strayDocs.length === 0, strayDocs.join(', ') + ' -- ships because nothing excludes it');
+  const attributes = fs.readFileSync(path.join(ROOT, '.gitattributes'), 'utf8');
+  const ignored = new Set([...attributes.matchAll(/^([^\s#]+)\s+export-ignore/gm)].map((m) => m[1]));
+  for (const doc of ['CHANGELOG.md', 'SECURITY.md', 'SUPPORT.md', 'PRIVACY.md', 'README.md']) {
+    check(doc + ' is excluded by a rule, not by default', ignored.has(doc));
+  }
+  const keptClaims = attributes.split('\n').filter((l) => /^#/.test(l) && /\bkept\b/i.test(l) && !/\bkept out\b/i.test(l)).join(' ');
+  const claimedKept = [...keptClaims.matchAll(/\b([A-Z][A-Za-z-]*(?:\.md)?)\b/g)].map((m) => m[1]).filter((n) => ignored.has(n));
+  check('the .gitattributes comment names nothing as kept that a rule excludes', claimedKept.length === 0,
+    claimedKept.join(', ') + ' -- two comments disagreeing is how the three files got in');
+}
+
 /* ---- the package has to be loadable, not merely complete ------------------- *
  * Shipping every file is not enough if the folder shape defeats "Load unpacked".
  *

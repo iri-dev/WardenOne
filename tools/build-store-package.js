@@ -41,15 +41,18 @@ const DOC = path.join(ROOT, 'docs', 'store-single-purpose.md');
 const DOC_BEGIN = '<!-- BEGIN GENERATED FEATURE TABLE -->';
 const DOC_END = '<!-- END GENERATED FEATURE TABLE -->';
 /* Not part of the product: sources, tooling, the website and the workflow. The GitHub archive
-   carries them because it is the repository; the Store package is the extension. */
-const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^CHANGELOG\.md$/, /^CREDITS\.md$/, /^README\.md$/];
+   carries them because it is the repository; the Store package is the extension. The security
+   policy and the support note are for people reading the repository, where GitHub shows them
+   (REL-03); LICENSE, NOTICE and PRIVACY.md stay -- the licence travels with the work, and a
+   reviewer opening the package finds the policy the listing links to. */
+const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^CHANGELOG\.md$/, /^CREDITS\.md$/, /^README\.md$/, /^SECURITY\.md$/, /^SUPPORT\.md$/];
 /* The only places the package may still name an omitted file: loaders that check the profile first.
    Each entry here has a guard in the --check list below; a name anywhere else is a build failure. */
 const GUARDED_REFERENCES = {
   // The guarded module loader, the guarded EyeShield registration, and the integrity list, which
   // drops omitted names at run time through woOmittedFiles().
-  'background.js': ['background-memory.js', 'eyeshield.js', 'eyeshield-sites.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'],
-  'popup.js': ['eyeshield.js'],
+  'background.js': ['background-memory.js', 'eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'],
+  'popup.js': ['eyeshield.js', 'eyeshield-sites.js'],
 };
 function guardedReference(file, target) {
   return Array.isArray(GUARDED_REFERENCES[file]) && GUARDED_REFERENCES[file].includes(target);
@@ -266,10 +269,12 @@ function check() {
   if (build.profile !== 'full' || build.omitted.length) problems.push('the repository copy of ' + PROFILE_FILE + ' must say profile full and omit nothing; it says ' + build.profile + ' / ' + JSON.stringify(build.omitted));
   if (!/\/\/ BUILD-PROFILE-BEGIN[\s\S]*\/\/ BUILD-PROFILE-END/.test(text)) problems.push(PROFILE_FILE + ' has lost its BUILD-PROFILE markers');
   const keys = defaultConfigKeys();
-  const tracked = new Set(git(['ls-tree', '-r', '--name-only', 'HEAD']).split('\n').filter(Boolean));
+  // The staged tree, the same one the dry run below builds from, so a file added together with
+  // the profile entry that names it passes with it rather than only once both are committed.
+  const tracked = new Set(git(['ls-files', '--cached']).split('\n').filter(Boolean));
   for (const id of Object.keys(build.features)) {
     const f = build.features[id];
-    f.files.forEach((file) => { if (!tracked.has(file)) problems.push(id + ' names a file HEAD does not track: ' + file); });
+    f.files.forEach((file) => { if (!tracked.has(file)) problems.push(id + ' names a file the tree does not track: ' + file); });
     f.keys.forEach((k) => { if (!keys.has(k)) problems.push(id + ' names a setting DEFAULT_CONFIG does not have: ' + k); });
   }
   const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');

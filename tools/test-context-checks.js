@@ -107,8 +107,11 @@ check('each entry is wired to a handler',
  * check appeared to do nothing at all. The answer is WardenOne's own toast now,
  * raised through the same wo-event every other notice uses -- which also means
  * the Notification Centre governs its timing and it lands in history. */
+/* Handed to the bridge, which signs it: the engine's toast believes only signed events, because
+   a page can dispatch on the same bus (tools/test-main-world-key-isolation.js). */
 check('the answer is raised as a WardenOne toast',
-  /new CustomEvent\('wo-event'/.test(BG) && /type: 'detected_manual_check'/.test(BG));
+  /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(BG)
+    && /new CustomEvent\('wo-event'/.test(fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8')));
 check('the toast type exists in the engine, or showToast drops it',
   /detected_manual_check:\{/.test(fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8')));
 check('the tray is kept only as the fallback',
@@ -440,7 +443,8 @@ function runtime() {
       scripting: {
         executeScript: async (opts) => {
           notices.push({ via: 'toast', message: String((opts.args || [])[0] || ''), type: 'manual_check' });
-          return [];
+          /* What the injected script returns when the bridge signed and raised the notice. */
+          return [{ result: true }];
         },
       },
     },

@@ -62,3 +62,6 @@ tools/build-toast-harness.js
 
 # Screenshot masters: the README ships the .webp; PNGs stay local for re-encoding
 docs/screenshots/*.png
+
+# Raw DevTools traces from tools/perf-profile.js --trace: tens of MB each; the profile JSON beside them is what is kept.
+docs/perf/traces/

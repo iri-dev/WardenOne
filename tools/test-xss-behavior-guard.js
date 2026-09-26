@@ -532,8 +532,17 @@ function run(options) {
     sinkError,
     evalResult,
     functionWrapped: !!(sandbox.Function && sandbox.Function.__wardenoneXssBehaviorGuard),
+    /* for the benchmark: the live realm, so a sink can be called and timed directly */
+    sandbox,
+    Element,
+    clock,
   };
 }
+
+/* The harness is also what tools/bench-xss-sinks.js drives (PERF-11), so the checks below run
+   only when this file is the entry point. */
+module.exports = { run, HELPERS, SCANNER };
+if (require.main === module) {
 
 const payload = '<img src=x onerror=alert(1)>';
 const encoded = encodeURIComponent(payload);
@@ -1997,3 +2006,5 @@ console.log('ok - script URLs score on who serves the script, not on appended pa
 }
 
 console.log('\n98 XSS Behavior Guard checks passed.');
+
+}

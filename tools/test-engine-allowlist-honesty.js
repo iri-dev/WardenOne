@@ -121,14 +121,18 @@ check('and the engine no longer carries a seed the bridge lacks',
 
 /* ---- 3. "ran" and "protecting" are different questions -------------------------- */
 
-check('the engine publishes whether protection is actually on',
-  /window\.__wardenOneProtectionActive=!1!==WO\.enabled/.test(MIN),
-  'without this the only signal is the ready marker, which means the script ran');
+/* The engine used to publish window.__wardenOneProtectionActive beside the ready marker so
+   "ran" and "protecting" could be told apart (BUG-01). Nothing read it once the bridge's signed
+   challenge became the health authority (SEC-03), and a page-visible boolean nothing consults
+   is only a detection handle (SEC-12), so it is gone; the ready marker keeps its one job. */
+check('the engine publishes no "protection is on" marker to the page',
+  !/__wardenOneProtectionActive/.test(MIN),
+  'a page-writable marker nothing reads is a detection handle and nothing else');
 check('the ready marker is still stamped unconditionally',
   /window\.__wardenOneReadyVersion=__WO_RUNTIME_VERSION/.test(MIN),
   'making it conditional would make the watchdog re-inject forever on a paused site');
-check('disposal clears the active marker too',
-  /window\.__wardenOneProtectionActive=void 0/.test(MIN));
+check('disposal clears the ready and installed markers',
+  /window\.__wardenOneReadyVersion=void 0,\s*window\.__wardenOneInstalled=void 0/.test(MIN));
 
 {
   /* The watchdog used to read both markers in one MAIN-world probe and key re-injection on

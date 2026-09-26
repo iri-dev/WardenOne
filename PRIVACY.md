@@ -140,7 +140,7 @@ Those downloads reach eight hosts, and this is all of them:
 `pgl.yoyo.org` and `ublockorigin.github.io`. An earlier version of this policy named four
 of them behind a "for example", which is not a disclosure. Every individual list, its
 maintainer and its exact URL are published in
-[`docs/source-inventory.json`](docs/source-inventory.json), which is **generated from the
+[`docs/source-inventory.json`](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json), which is **generated from the
 list constants in the code** rather than written by hand, so it cannot quietly fall behind
 what WardenOne actually fetches.
 
@@ -256,7 +256,9 @@ Most of those require you to supply your own API key. **OpenPhish is the excepti
 used through its free public community feed, which needs no key, and it is fetched as a
 whole list from `raw.githubusercontent.com` rather than by asking about your URL — so no
 address of yours is sent to it. An earlier version of this policy said every provider
-required a key, which was not true of OpenPhish.
+required a key, which was not true of OpenPhish. Earlier builds also offered an optional
+OpenPhish token field; nothing ever read that token, the field no longer exists, and a
+token saved by an earlier build is deleted from your settings when WardenOne updates.
 
 **Be clear about what switching one on means.** These are not buttons you press per site.
 Once a provider is enabled, WardenOne asks it about pages **as you navigate to them**, on
@@ -288,6 +290,11 @@ impression. Precisely:
   that IP.
 - **VirusTotal** is only used by File Shield's button, and receives a SHA-256 file hash,
   never the file.
+- No request introduces WardenOne. Beyond the address and your own key, a provider receives
+  nothing that names the extension or its version — with one exception it demands: Safe
+  Browsing's API requires a client name and version in every request, and gets `wardenone`
+  and the installed version. PhishTank lookups used to carry an `X-WardenOne-Client` header
+  with the exact version, which PhishTank never asked for; it no longer does.
 - **OpenPhish** receives nothing, as described above.
 
 Answers are cached on your device so the same address is not sent twice — under a

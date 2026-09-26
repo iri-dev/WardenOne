@@ -7,37 +7,38 @@
 /*
  * YouTube's player chrome must survive EyeShield.
  *
- * The player is black in every mode -- YouTube builds its controls for a black
- * surface and EyeShield forces one -- so nothing down there follows the page
- * theme. What went wrong is that only buttons and icons were ever claimed: the
- * clock, the seek bar and the volume slider are plain divs with no "button" in
- * their class, so the page remap painted them like ordinary furniture.
+ * The player is black in every mode, so its controls never follow the page theme.
+ * The one thing EyeShield has to supply is a text colour -- white -- so the page's
+ * own text colour (near-black in light mode) cannot leak into the player. Every
+ * surface in the controls belongs to YouTube.
  *
- * Measured in Chrome against the shipped rules, with the remap standing in as a
- * flat repaint of everything unclaimed:
+ * That last part is what went wrong. YouTube's player redesign draws each control
+ * on a translucent dark pill, and those pills are the only thing between a white
+ * icon and a white frame. Measured on a live watch page (ytp-delhi-modern):
  *
- *   before, dark   every seek-bar part -> rgb(15,15,15) on a black player
- *   before, light  the clock -> rgb(15,15,15), contrast 1.10 against the player
- *   after,  both   every part matches the value measured on youtube.com --
- *                  the clock included, at #eee for the duration and #fff for
- *                  the elapsed time, which is the shade difference YouTube
- *                  itself draws (18.10 and 21.00 against the black player)
+ *   play, prev, next, the volume group, the clock, the chapter title and the
+ *   right-hand group     background rgba(0,0,0,0.3)
+ *   the autoplay knob    background rgb(255,255,255)
  *
- * The expected values below are YouTube's own, read off a live watch page, not
- * numbers chosen here.
+ * The earlier rules forced every button, and every div and span in the bottom
+ * chrome, transparent -- a guard against a page remap that does not run on
+ * YouTube -- and restated a handful of YouTube's old values by hand. With the
+ * same video paused on a white frame, measured in Chrome:
+ *
+ *   old rules   every pill -> rgba(0,0,0,0), the autoplay knob -> rgba(0,0,0,0);
+ *               the controls were white on white, which is the report
+ *   new rules   every pill and the knob identical to the page with no theme
+ *
+ * So the invariant is structural: inside the player, only the shell (black) and
+ * the video surfaces (transparent, so the black shows round the picture) may be
+ * given a background. Anything else is YouTube's to paint.
  *
  * The stylesheet is only half of it. The readability guard writes INLINE
  * !important paint, which no stylesheet can outrank, and its background walk
- * gives up after 8 ancestors. Measured on a live watch page: the clock sits
- * exactly 8 levels under the player's black -- the last level that fits. Add one
- * wrapper (chapters, a live badge, a hover tooltip) and the walk returns null,
- * the guard assumes the PAGE background, scores white-on-white at 1.00 and
- * repaints the clock rgb(18,19,24). That is the clock going white and then black
- * a moment later, and in light mode every time. The guard now skips player
- * chrome entirely; measured with a chain one level too deep, before and after:
- *
- *   without the skip   .ytp-time-current -> rgb(18, 19, 24), inline !important
- *   with the skip      .ytp-time-current -> rgb(255, 255, 255), no inline paint
+ * gives up after 8 ancestors -- the clock sits exactly 8 levels under the
+ * player's black. Past that the guard assumed the PAGE background, scored
+ * white-on-white at 1.00 and repainted the clock near-black. The guard skips
+ * player chrome entirely, and the checks below keep it that way.
  *
  * Run: node tools/test-eyeshield-yt-player.js
  */
@@ -75,48 +76,52 @@ vm.createContext(sandbox);
 vm.runInContext(source.slice(start, end), sandbox, { filename: 'eyeshield.js:youtubePlayerCSS' });
 const CSS = sandbox.youtubePlayerCSS('#f1f1f1');
 
+/* Split into rules so each check can see which selectors share a body. The player
+   stylesheet has no nesting, so a flat split is exact. */
+const RULES = [];
+CSS.replace(/([^{}]+)\{([^{}]*)\}/g, (_, sel, body) => {
+  RULES.push({ selectors: sel.split(',').map((s) => s.trim()), body });
+  return '';
+});
+check('the player stylesheet parses into rules', RULES.length >= 4, RULES.length + ' rules');
+
 /* The shell carries the colour, so anything no rule claims still inherits white
    rather than the page's text colour -- which in light mode is near-black. */
 check('the player shell sets its own text colour',
   /#player,#player-container,#movie_player,\.html5-video-player\{background-color:#000000 !important;color:#ffffff !important;\}/.test(CSS),
   'without it, uncovered controls inherit near-black text onto a black player');
 
-/* YouTube's own paint, measured on a live watch page. */
-const NATIVE = [
-  ['.ytp-progress-list', 'rgba(40,40,40,.6)'],
-  ['.ytp-load-progress', 'rgba(255,255,255,.4)'],
-  ['.ytp-hover-progress', 'rgba(0,0,0,.125)'],
-  ['.ytp-volume-slider-handle', '#ffffff'],
-];
-NATIVE.forEach(([sel, value]) => {
-  check('the seek bar keeps YouTube\'s own ' + sel,
-    CSS.indexOf('#movie_player ' + sel + '{background-color:' + value + ' !important;}') >= 0,
-    'the remap painted it flat, so it went black on a black player');
+/* The invariant. A selector may carry paint only if it is the shell or a video
+   surface; the controls, their wrappers and their pills are YouTube's. */
+const SHELL = new Set(['#player', '#player-container', '#movie_player', '.html5-video-player']);
+const VIDEO_SURFACE = /^#movie_player (\.html5-video-container( \*)?|\.video-stream|video|\.ytp-cued-thumbnail-overlay(-image)?|\.ytp-iv-video-content)$/;
+const PAINT = /(^|;)\s*(background(-color|-image)?|box-shadow)\s*:/;
+RULES.forEach((rule) => {
+  if (!PAINT.test(rule.body)) return;
+  rule.selectors.forEach((sel) => {
+    check('only the shell and the video surfaces are painted: ' + sel,
+      SHELL.has(sel) || VIDEO_SURFACE.test(sel),
+      'the player draws its controls on its own pills; a background here erases them');
+  });
 });
-
-/* The parts that are transparent on YouTube must stay transparent, or the remap
-   draws a block where there was nothing. */
-['.ytp-chrome-controls', '.ytp-left-controls', '.ytp-right-controls', '.ytp-progress-bar-container',
-  '.ytp-progress-bar', '.ytp-scrubber-container', '.ytp-volume-slider', '.ytp-volume-panel',
-].forEach((sel) => {
-  check(sel + ' is held transparent', CSS.indexOf('#movie_player ' + sel + ',') >= 0
-    || CSS.indexOf('#movie_player ' + sel + '{') >= 0);
+/* The shapes that did the erasing, named so a returning one fails by name. */
+check('no net clears the bottom chrome', !/\.ytp-chrome-bottom :where\(/.test(CSS),
+  'it flattened every pill in the redesigned player');
+const buttonRules = RULES.filter((r) => r.selectors.indexOf('#movie_player .ytp-button' + NOT_SWATCH) >= 0);
+check('the button rule sets a colour and nothing else',
+  buttonRules.length === 1 && /color:#f1f1f1 !important/.test(buttonRules[0].body)
+    && !PAINT.test(buttonRules[0].body) && !/border-color/.test(buttonRules[0].body),
+  'play, next and the chapter title are buttons, and each sits on a pill');
+['.ytp-right-controls', '.ytp-volume-area', '.ytp-time-wrapper', '.ytp-chapter-title',
+  '.ytp-autonav-toggle-button', '.ytp-progress-list', '.ytp-load-progress', '.ytp-bound-time-left',
+].forEach((part) => {
+  check('YouTube\'s own ' + part + ' is not restated or cleared',
+    !RULES.some((r) => PAINT.test(r.body) && r.selectors.some((s) => s.indexOf(part) >= 0)),
+    'hand-copied values go stale the next time the player is redesigned');
 });
-
-/* Naming the parts one at a time leaves whatever was not named to the remap,
-   which paints it like a card -- the pale box behind the controls. Verified in
-   Chrome with a wrapper this file invented: without the net it is painted, with
-   it it comes out clear, and all six genuinely painted parts keep their values. */
-const NET = '#movie_player .ytp-chrome-bottom :where(div,span)';
-check('every unnamed wrapper in the bottom chrome is cleared', CSS.indexOf(NET) >= 0,
-  'a wrapper nobody named is the one that shows up as a box');
-const netAt = CSS.indexOf(NET);
-const netSelector = netAt < 0 ? '' : CSS.slice(netAt, CSS.indexOf('{', netAt));
-['.ytp-swatch-background-color', '.ytp-progress-list', '.ytp-load-progress',
-  '.ytp-hover-progress', '.ytp-volume-slider-handle'].forEach((sel) => {
-  check('the net spares ' + sel, netSelector.indexOf(':not(' + sel + ')') >= 0,
-    'a :not() carries its argument specificity, so the net outranks the rule painting this');
-});
+check('the whole in-video overlay layer is not cleared',
+  CSS.indexOf('.ytp-player-content *') < 0,
+  'it holds pill-backed overlays of its own');
 
 /* The guard is the other half: a stylesheet cannot beat what it writes inline. */
 const chromeLine = source.match(/^ *const EW_PLAYER_CHROME = ([\s\S]*?);$/m);
@@ -148,13 +153,8 @@ check('the guard still runs outside the player',
   /walkElements\(document\.body, managed \? 8000 : 14000/.test(source));
 check('the version records it', /contrast-guard-skips-player-chrome/.test(source));
 
-/* YouTube's faint pill behind the clock, which the net was flattening. */
-check('the clock keeps the dark pill YouTube puts behind it',
-  CSS.indexOf('#movie_player .ytp-time-wrapper{background-color:rgba(0,0,0,.3) !important;}') >= 0);
-check('and the net spares it', netSelector.indexOf(':not(.ytp-time-wrapper)') >= 0);
-
-/* The clock is the thing that was reported. It gets YouTube's own white, not a
-   whiter one of our own: #eee across the display, #fff on the elapsed time. */
+/* The clock is where this started. It gets YouTube's own white, not a whiter one
+   of our own: #eee across the display, #fff on the elapsed time. */
 check('the clock is painted the white YouTube itself uses',
   /#movie_player \.ytp-time-display,#movie_player \.ytp-time-display \*/.test(CSS)
     && /color:#eeeeee !important;-webkit-text-fill-color:#eeeeee !important/.test(CSS),
@@ -164,19 +164,16 @@ check('and the elapsed time keeps the brighter shade YouTube gives it',
   'same specificity as the rule above, so it has to come after it');
 check('and it does come after it',
   CSS.indexOf('.ytp-time-current{color:#ffffff') > CSS.indexOf('.ytp-time-display *'));
-check('and its children are named too, not just the wrapper',
-  CSS.indexOf('.ytp-time-display *') >= 0,
-  'the current time and duration are separate spans inside it');
 
 /* The bar and the knob are the channel's colour -- yellow on the video this was
-   reported from, not red -- so nothing may assign them one. */
-check('nothing assigns the swatch a background',
-  !/\.ytp-swatch-background-color\{[^}]*background-color:(?!transparent)/.test(CSS),
+   first reported from, not red -- so nothing may paint them at all. */
+check('nothing paints the swatch',
+  !RULES.some((r) => r.selectors.some((s) => /ytp-swatch-background-color$/.test(s))),
   'the play progress and scrubber knob carry the channel colour');
-check('and the button rule no longer erases the scrubber knob',
+check('and the button rule still steps round the scrubber knob',
   NOT_SWATCH === ':not(.ytp-swatch-background-color)'
     && CSS.indexOf('[class*="button" i]' + NOT_SWATCH) >= 0,
-  'ytp-scrubber-button matched [class*="button"] and was forced transparent');
+  'ytp-scrubber-button matches [class*="button"]');
 
 /* Both callers still exist: the player is black in light mode too, so the light
    theme passes white rather than its own near-black text. */
@@ -185,7 +182,7 @@ check('the light theme still paints the player white',
 check('the dark theme still passes its text colour',
   /youtubePlayerCSS\(p\.text\)/.test(source));
 check('the version records the change',
-  /yt-native-player-controls/.test(source));
+  /yt-native-player-controls/.test(source) && /yt-player-keeps-own-pills/.test(source));
 
 if (failed) {
   console.error('eyeshield youtube player: ' + failed + ' failed');

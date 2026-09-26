@@ -99,9 +99,16 @@
      library: fixed 32-byte key (hex), text in, hex out. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
-    const U8=Uint8Array,U32=Uint32Array;
-    /* UTF-8 by hand rather than TextEncoder: a lifted fragment in a bare sandbox has no
-       TextEncoder, and the page cannot be handed a hook into this either way. */
+    const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
+    /* This code runs in the page's own world, where the page can replace any built-in method after
+       load. So nothing that touches the key calls one. The key becomes its two HMAC pad blocks ONCE,
+       in key(), at the document_start hand-off before any page script exists; after that a
+       signature is index reads and arithmetic on typed arrays -- no .set, .subarray, .length,
+       substr, parseInt or toString -- each of which a page could replace to be handed the key: a
+       patched String.prototype.substr, Uint8Array.prototype.set or typed-array length getter each
+       recovered the whole key from one signature (tools/test-main-world-key-isolation.js). The
+       message text is not secret; a page that tampers with how it is read only spoils its own
+       signature, which it could already do by stopping the event. */
     function encode(text){
       const s=String(text),out=new U8(3*s.length+3);
       let n=0;
@@ -113,16 +120,18 @@
         else if(c<0x10000)out[n++]=0xe0|(c>>12),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63);
         else out[n++]=0xf0|(c>>18),out[n++]=0x80|((c>>12)&63),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63)
       }
-      return out.subarray(0,n)
+      return{b:out,n:n}
     }
     const rotr=(x,n)=>(x>>>n)|(x<<(32-n));
-    function sha256(msg){
-      const len=msg.length,padded=new U8(((len+9+63)>>6)<<6);
-      padded.set(msg),padded[len]=0x80;
+    function sha256(msg,len){
+      const total=((len+9+63)>>6)<<6,padded=new U8(total);
+      for(let i=0;i<len;i++)padded[i]=msg[i];
+      padded[len]=0x80;
       const bits=len*8;
-      padded[padded.length-4]=(bits>>>24)&255,padded[padded.length-3]=(bits>>>16)&255,padded[padded.length-2]=(bits>>>8)&255,padded[padded.length-1]=bits&255;
-      const h=new U32([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]),w=new U32(64);
-      for(let off=0;off<padded.length;off+=64){
+      padded[total-4]=(bits>>>24)&255,padded[total-3]=(bits>>>16)&255,padded[total-2]=(bits>>>8)&255,padded[total-1]=bits&255;
+      const h=new U32(8),w=new U32(64);
+      h[0]=0x6a09e667,h[1]=0xbb67ae85,h[2]=0x3c6ef372,h[3]=0xa54ff53a,h[4]=0x510e527f,h[5]=0x9b05688c,h[6]=0x1f83d9ab,h[7]=0x5be0cd19;
+      for(let off=0;off<total;off+=64){
         for(let i=0;i<16;i++)w[i]=(padded[off+4*i]<<24)|(padded[off+4*i+1]<<16)|(padded[off+4*i+2]<<8)|padded[off+4*i+3];
         for(let i=16;i<64;i++){
           const s0=rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3),s1=rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
@@ -139,26 +148,30 @@
       for(let i=0;i<8;i++)out[4*i]=h[i]>>>24,out[4*i+1]=(h[i]>>>16)&255,out[4*i+2]=(h[i]>>>8)&255,out[4*i+3]=h[i]&255;
       return out
     }
-    function hexBytes(hex){
-      const s=String(hex||""),out=new U8(s.length>>1);
-      for(let i=0;i<out.length;i++)out[i]=parseInt(s.substr(2*i,2),16)||0;
-      return out
-    }
     function hex(bytes){
       let s="";
-      for(let i=0;i<bytes.length;i++)s+=(bytes[i]<256?(bytes[i]<16?"0":""):"")+bytes[i].toString(16);
+      for(let i=0;i<32;i++)s+=D[bytes[i]>>4]+D[bytes[i]&15];
       return s
     }
-    function hmac(keyHex,text){
-      const key=hexBytes(keyHex),block=new U8(64);
-      block.set(key.length>64?sha256(key):key);
-      const ipad=new U8(64),opad=new U8(64);
-      for(let i=0;i<64;i++)ipad[i]=block[i]^0x36,opad[i]=block[i]^0x5c;
-      const data=encode(String(text)),inner=new U8(64+data.length);
-      inner.set(ipad),inner.set(data,64);
-      const ih=sha256(inner),outer=new U8(96);
-      outer.set(opad),outer.set(ih,64);
-      return hex(sha256(outer))
+    /* The key's two pad blocks, made once. Call it only where the page cannot have run yet (the
+       wo-key hand-off at document_start) or cannot reach (the bridge's own world). */
+    function key(keyHex){
+      const s=String(keyHex||""),n=s.length>>1,raw=new U8(n);
+      for(let i=0;i<n;i++)raw[i]=parseInt(s.substr(2*i,2),16)||0;
+      const k=n>64?sha256(raw,n):raw,kl=n>64?32:n,ipad=new U8(64),opad=new U8(64);
+      for(let i=0;i<64;i++){
+        const b=i<kl?k[i]:0;
+        ipad[i]=b^0x36,opad[i]=b^0x5c
+      }
+      return{i:ipad,o:opad}
+    }
+    function hmac(k,text){
+      const pads="string"==typeof k?key(k):k,e=encode(text),n=e.n,data=e.b,inner=new U8(64+n),outer=new U8(96);
+      for(let i=0;i<64;i++)inner[i]=pads.i[i],outer[i]=pads.o[i];
+      for(let i=0;i<n;i++)inner[64+i]=data[i];
+      const ih=sha256(inner,64+n);
+      for(let i=0;i<32;i++)outer[64+i]=ih[i];
+      return hex(sha256(outer,96))
     }
     /* Constant-time-enough equality for two short hex strings; a mismatch is not a secret. */
     function same(a,b){
@@ -168,7 +181,32 @@
       for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);
       return 0===diff
     }
-    return{hmac:hmac,same:same}
+    /* A signed event's text: who sent it, its number, its type and a canonical form of its detail
+       -- keys sorted, every value typed, every string length-prefixed -- so the page's world and
+       the bridge's, which each hold their own copy of the detail, compute the same text from it. */
+    function canon(v,depth){
+      if(void 0===v)return"u";
+      if(null===v)return"n";
+      const t=typeof v;
+      if("string"===t)return"s"+v.length+":"+v;
+      if("number"===t)return"d"+String(v);
+      if("boolean"===t)return v?"T":"F";
+      if("object"!==t||depth>8)return"x";
+      let s;
+      if(Array.isArray(v)){
+        s="[";
+        for(let i=0;i<v.length&&i<256;i++)s+=canon(v[i],depth+1)+",";
+        return s+"]"
+      }
+      const keys=Object.keys(v).sort();
+      s="{";
+      for(let i=0;i<keys.length&&i<256;i++)s+=keys[i].length+":"+keys[i]+"="+canon(v[keys[i]],depth+1)+",";
+      return s+"}"
+    }
+    function eventText(src,seq,type,detail){
+      return"event\n"+String(src)+"\n"+String(seq)+"\n"+String(type)+"\n"+canon(detail,0)
+    }
+    return{hmac:hmac,same:same,key:key,canon:canon,eventText:eventText}
   })();
 
   /* Verify a signed message from the bridge: a sequence number that only moves forward and an
@@ -220,6 +258,21 @@
   const HOSTILE_TTL_MS = 3000;
   const TOP_FRAME = (function () {
     try { return window.top === window.self; } catch (_) { return false; }
+  }());
+  // The media apps whose pages are their own framework-rendered UI -- the hosts the main engine
+  // exempts as trustedMediaHost in src/content.js, copied here because this is a separate script
+  // (tools/test-confirm-bait-linked-overlay.js keeps the two identical). The confirm-bait sweep
+  // REMOVES what it judges, and a node React still owns is not the page's to lose: Twitch's
+  // Stream Rewind callout, which Turbo and subscriber viewers get when they pause, was taken out
+  // on sight, counted as "1 blocked", and the player's next render left a blank page. YouTube's
+  // Play-all overlay was the same sweep on the same kind of page. Bait on these sites arrives in
+  // somebody else's frame, whose own host is not on this list, so the sweep still runs there.
+  const MEDIA_APP_HOST = (function () {
+    try {
+      return /(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|spotify\.com|spotifycdn\.com|scdn\.co|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname);
+    } catch (_) {
+      return false;
+    }
   }());
   const TRUSTED_BASE_DOMAINS = new Set([
     'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'recaptcha.net',
@@ -365,6 +418,15 @@
       const nodes = el.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]');
       for (let i = 0; i < nodes.length && out.length < 8; i++) push(nodes[i]);
       if (out.length) return out;
+      // Something in there DOES call itself a control; it just has no words -- an icon. The page
+      // has said which parts are its controls, and the short text around them is its message.
+      // Reading that text as buttons made a title into one: Twitch's Stream Rewind callout (a New
+      // pill, the title, a sentence, a dismiss icon) had "Stream Rewind" taken for a button, and
+      // so did the player overlay around it, with LIVE and the title for "controls" -- removed as
+      // bait, and the player's next render left a blank page. Reading the icons' labels instead
+      // is no better: a player's "Play" button then becomes the affirmative control. The fallback
+      // below is for boxes with no controls at all.
+      if (nodes.length) return out;
       // Nothing in there calls itself a button. That is not unusual and it is not
       // an accident -- there is no reason for this markup to be honest, and a
       // dialog built out of plain divs and spans was reaching this function and
@@ -464,6 +526,7 @@
   // the box actually is. This script already runs in every frame; only this check
   // was refusing to.
   function confirmBaitEnabled() {
+    if (MEDIA_APP_HOST) return false;
     const c = cfg();
     // Deliberately NOT gated on configReady(), unlike everything else here. The
     // config arrives by message, and in a third-party frame that message may never
@@ -1271,7 +1334,8 @@
       // through top-nav-authorized, so nothing legitimate depends on this beacon.
       const overlay = intentWasExplicit ? null : gestureOnOverlay(target);
       if (!overlay) signal('gesture');
-      else if (confirmBaitOverlay(overlay)) {
+      // Not on a media app, where the box under a click is the site's own player (MEDIA_APP_HOST).
+      else if (!MEDIA_APP_HOST && confirmBaitOverlay(overlay)) {
         emit('warned_confirm_bait', {
           matched: String(lastIntentText || '').slice(0, 40),
           silent: true,
@@ -1344,6 +1408,31 @@
     return !intentWasExplicit && !pageHostile() && intentTextAllows();
   }
 
+  // The interstitial is the one thing a wo-event can make the worker DO: navigate the tab to
+  // WardenOne's own warning page, with a Continue button pointing at the event's url. The token
+  // that routes these events is public (SEC-01), so a page that dispatched
+  // {type:'blocked_gestureless_nav', detail:{url, why, silent:false}} put a destination of its
+  // own behind that button, on a real chrome-extension:// page, eight times a minute -- and
+  // taught the reader to click through the warning a real hijack would raise (SEC-15). A request
+  // for the interstitial is therefore signed the way the navigation signals are (SEC-13): under
+  // the bridge's key, which this world received once at document_start before any page script
+  // existed, over a number that only moves forward and the destination, the reason and the kind
+  // the warning page will show. The bridge relays an interstitial request for nothing that fails
+  // the signature, repeats a number or was altered in flight. The badge count for the same event
+  // is unchanged and unsigned: the block is real either way, the Continue offer is what needs
+  // authority. Silent blocks and gestureless jumps never raise the interstitial, so they are not
+  // signed. Without a key there is nothing to sign with, and the offer is withheld, not forged.
+  let interstitialSeq = 0;
+  function signInterstitial(detail) {
+    if (!woKey || !detail || detail.silent === true || !detail.url || detail.why === 'no recent user gesture') return detail;
+    interstitialSeq += 1;
+    return Object.assign({}, detail, {
+      seq: interstitialSeq,
+      mac: __woAuth.hmac(woKey, 'redirect-warning\n' + interstitialSeq + '\n' + String(detail.url) + '\n' + String(detail.why || '') + '\n' + String(detail.kind || '')),
+    });
+  }
+
+  let hardenerEventSeq = 0;
   function emit(type, detail) {
     const payload = { type, detail: detail || {}, at: Date.now() };
     if (!token) {
@@ -1351,10 +1440,19 @@
       if (queuedEvents.length > 8) queuedEvents.shift();
       return;
     }
+    // Signed here, at dispatch, so an event queued before the handshake is signed when it goes out.
+    if (type === 'blocked_gestureless_nav') payload.detail = signInterstitial(payload.detail);
+    /* And the event itself, as the 'hardener' sender (bridge.js eventSigned): the token routes it,
+       the signature is what makes the bridge and the engine believe it. */
+    const signedEvent = Object.assign({ token }, payload);
+    if (woKey) {
+      hardenerEventSeq += 1;
+      signedEvent.src = 'hardener';
+      signedEvent.eseq = hardenerEventSeq;
+      signedEvent.emac = __woAuth.hmac(woKey, __woAuth.eventText('hardener', hardenerEventSeq, type, payload.detail));
+    }
     try {
-      document.dispatchEvent(new CustomEvent('wo-event', {
-        detail: Object.assign({ token }, payload),
-      }));
+      document.dispatchEvent(new CustomEvent('wo-event', { detail: signedEvent }));
     } catch (_) {}
   }
 
@@ -1849,7 +1947,9 @@
   }
   let baitInstalled = false;
   function installConfirmBaitSweep() {
-    if (baitInstalled) return;
+    // Not installed at all on a media app: its chat and player churn would drive the sweep every
+    // few frames for a guard that is switched off there (see MEDIA_APP_HOST).
+    if (baitInstalled || MEDIA_APP_HOST) return;
     baitInstalled = true;
     try {
       const baitObserver = woObserver((records) => {
@@ -2147,6 +2247,303 @@
     return false;
   }
 
+  /* LINKS A SERVER HANDED OUT.
+     A streaming player cannot give each playlist and segment to the <video> element the
+     way a plain src can: hls.js, dash.js and Shaka load them with fetch/XHR, and video
+     hosts sign those links -- master.m3u8?token=..., ?sig=..., content hashes in the path.
+     Refusing them stopped JW Player at its first file ("This video file cannot be played",
+     error 232011, anichi.to). What makes such a link safe is not what it looks like -- a
+     script can name its collector anything.m3u8 -- but where it came from: a server sent
+     it to this frame, token and all, in a response (the player's source list, a playlist,
+     a DASH manifest). A token a script holds only in memory was never handed out inside
+     a link to somebody else's server, so it is still refused, whatever the link is named.
+
+     So the links in the text responses this frame reads are remembered -- exactly, or as a
+     pattern for a DASH segment template -- and a request whose only token signal is its
+     URL goes through when a server handed out that URL. The path must match and every
+     token-like value in the query must be in the link that was handed out, so a parameter
+     bolted onto a handed-out link cannot carry anything out. Only http(s) responses count
+     (a data: or blob: "response" is the script talking to itself), and a same-site
+     response that only echoes what its request sent hands nothing out -- an echo endpoint
+     would otherwise launder a token into a "handed-out" link. */
+  const CREDENTIAL_FRAME_ISSUED_LIMIT = 3000;
+  const CREDENTIAL_FRAME_SCAN_MAX = 2097152;
+  const credentialFrameIssued = new Map();
+  const credentialFrameIssuedPatterns = [];
+
+  /* A token in a URL. The query and fragment are judged as a body is (any token shape, a
+     sensitive key with a secret-looking value, a value this frame holds). The PATH is where
+     content IDs live -- /anime/55d46c87...b4b/32e9d07d...dbf/seg-1.jpg, a CDN's
+     /202607165d0d20b2a3191de94ec5b97c~tplv-.../ -- and counting every long hex run there
+     refused a video site's segments and the reachability check its player runs before
+     choosing a server, which then gave up on that server altogether. In the path, a run
+     counts when it looks like a secret rather than an ID: 40 or more characters mixing
+     upper case, lower case and digits, as generated tokens do; and a JWT or a value this
+     frame holds counts wherever it is. */
+  function credentialFrameUrlHasToken(rawUrl, base) {
+    const text = String(rawUrl || '');
+    if (text.length < 16) return false;
+    let parsed;
+    try { parsed = new URL(text, base || undefined); } catch (_) { return credentialFrameHasToken(text); }
+    if (/(?:^|[^A-Za-z0-9_-])ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(parsed.href)) return true;
+    const tail = String(parsed.search || '') + String(parsed.hash || '');
+    if (tail.length >= 16 && credentialFrameHasToken(tail)) return true;
+    const runs = String(parsed.pathname || '').match(/[A-Za-z0-9_-]{40,}/g) || [];
+    for (const run of runs) {
+      if (/[A-Z]/.test(run) && /[a-z]/.test(run) && /[0-9]/.test(run)) return true;
+    }
+    for (const [value, kind] of credentialFrameValues) {
+      if (kind === 'token' && value.length >= 16
+          && (parsed.href.indexOf(value) >= 0 || parsed.href.indexOf(encodeURIComponent(value)) >= 0)) return true;
+    }
+    return false;
+  }
+
+  /* Every value in a link that could be a token: token shapes anywhere in it, the values
+     of sensitive keys, and anything this frame holds as a credential. */
+  function credentialFrameLinkParts(parsed, wholeLink) {
+    const parts = [];
+    const text = wholeLink ? parsed.href : String(parsed.search || '') + String(parsed.hash || '');
+    const shapes = text.match(/ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Fa-f0-9]{32,}|[A-Za-z0-9_-]{40,}/g) || [];
+    for (let i = 0; i < shapes.length && parts.length < 24; i++) parts.push(shapes[i]);
+    for (const piece of [parsed.search, parsed.hash]) {
+      try {
+        for (const [key, value] of new URLSearchParams(String(piece || '').replace(/^[?#]/, ''))) {
+          if (parts.length < 24 && credentialFrameSensitiveKey(key) && String(value || '').length >= 8) parts.push(String(value));
+        }
+      } catch (_) {}
+    }
+    for (const [value, kind] of credentialFrameValues) {
+      if (kind === 'token' && value.length >= 8
+          && (parsed.href.indexOf(value) >= 0 || parsed.href.indexOf(encodeURIComponent(value)) >= 0)) parts.push(value);
+    }
+    return parts;
+  }
+
+  /* The one exception to "handed out". Some players are sent their source list encrypted and
+     decrypt the playlist link themselves -- anichi.to's player gets {"enc":"..."}, with only
+     the subtitles in the clear -- so no response ever holds that link. The PLAYLIST alone
+     (.m3u8 / .mpd), fetched by a plain GET from a page that is actually showing a <video> or
+     <audio>, is let through on that account, unless it carries a credential this frame holds.
+     Everything a playlist leads to -- variants, segments, keys -- is listed in the playlist
+     itself, and subtitles in the source list, so those still have to have been handed out. */
+  const CREDENTIAL_FRAME_PLAYLIST_PATH = /\.(?:m3u8|m3u|mpd)$/i;
+  function credentialFramePlaylistFallback(target, data, method, rawTarget) {
+    try {
+      if (data != null && data !== '') return false;
+      if (method && !/^(?:GET|HEAD)$/i.test(String(method))) return false;
+      if (!CREDENTIAL_FRAME_PLAYLIST_PATH.test(target.url.pathname)) return false;
+      if (typeof document.getElementsByTagName !== 'function'
+          || !(document.getElementsByTagName('video').length || document.getElementsByTagName('audio').length)) return false;
+      const href = String(rawTarget || '');
+      for (const [value, kind] of credentialFrameValues) {
+        if (kind === 'token' && value.length >= 8
+            && (href.indexOf(value) >= 0 || href.indexOf(encodeURIComponent(value)) >= 0)) return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function credentialFrameIssuedMatch(parsed) {
+    try {
+      const href = parsed.href.split('#')[0];
+      const list = credentialFrameIssued.get(parsed.origin + parsed.pathname);
+      if (list) {
+        const parts = credentialFrameLinkParts(parsed, false);
+        for (const issued of list) {
+          if (parts.every((part) => issued.indexOf(part) >= 0 || issued.indexOf(encodeURIComponent(part)) >= 0)) return true;
+        }
+      }
+      for (const pattern of credentialFrameIssuedPatterns) if (pattern.test(href)) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  function credentialFrameRememberIssued(raw, base, echo) {
+    try {
+      const parsed = new URL(String(raw || '').trim(), base);
+      if (!/^https?:$/.test(parsed.protocol)) return;
+      const href = parsed.href.split('#')[0];
+      if (!credentialFrameUrlHasToken(href)) return;
+      if (echo) {
+        for (const part of credentialFrameLinkParts(parsed, true)) if (echo.indexOf(part) >= 0) return;
+      }
+      const key = parsed.origin + parsed.pathname;
+      let list = credentialFrameIssued.get(key);
+      if (list) credentialFrameIssued.delete(key); else list = [];
+      credentialFrameIssued.set(key, list);
+      if (list.indexOf(href) < 0) {
+        list.push(href);
+        if (list.length > 8) list.shift();
+      }
+      while (credentialFrameIssued.size > CREDENTIAL_FRAME_ISSUED_LIMIT) {
+        credentialFrameIssued.delete(credentialFrameIssued.keys().next().value);
+      }
+    } catch (_) {}
+  }
+
+  /* A DASH SegmentTemplate names every segment at once ($Number$, $Time$, ...); what was
+     handed out is the template, so it is kept as an anchored pattern of itself. */
+  function credentialFrameRememberTemplate(template, base) {
+    try {
+      const filled = String(template || '').replace(/\$\$/g, 'w0dollarx').replace(/\$[A-Za-z]+(?:%0\d+d)?\$/g, 'w0slotx');
+      const href = new URL(filled, base).href.split('#')[0];
+      if (href.indexOf('w0slotx') < 0) { credentialFrameRememberIssued(href.replace(/w0dollarx/g, '$'), base, ''); return; }
+      if (!/^https?:/i.test(href)) return;
+      const source = '^' + href.split('w0slotx').map((piece) => piece.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^/?#&]*')
+        .replace(/w0dollarx/g, '\\$') + '$';
+      if (credentialFrameIssuedPatterns.length >= 200) credentialFrameIssuedPatterns.shift();
+      credentialFrameIssuedPatterns.push(new RegExp(source));
+    } catch (_) {}
+  }
+
+  function credentialFrameNoteIssued(text, responseUrl, request) {
+    try {
+      if (typeof text !== 'string' || !text || text.length > CREDENTIAL_FRAME_SCAN_MAX) return;
+      let base;
+      try { base = new URL(String(responseUrl || '')); } catch (_) { return; }
+      if (!/^https?:$/.test(base.protocol)) return;
+      const echo = request && request.sameParty ? String(request.url || '') + '\n' + String(request.body || '') : '';
+      const head = text.slice(0, 4096);
+      let found = 0;
+      if (/^\s*#EXTM3U/.test(head)) {
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length && found < 6000; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          if (line.charAt(0) !== '#') { found++; credentialFrameRememberIssued(line, base, echo); continue; }
+          const uri = /URI="([^"]+)"/.exec(line);
+          if (uri) { found++; credentialFrameRememberIssued(uri[1], base, echo); }
+        }
+      } else if (/<MPD[\s>]/.test(head)) {
+        const unxml = (value) => String(value || '').replace(/&amp;/g, '&');
+        const bases = [];
+        const baseRe = /<BaseURL[^>]*>\s*([^<\s]+)\s*<\/BaseURL>/gi;
+        let m;
+        while ((m = baseRe.exec(text)) && bases.length < 20) {
+          try { bases.push(new URL(unxml(m[1]), bases.length ? bases[bases.length - 1] : base)); } catch (_) {}
+          try { bases.push(new URL(unxml(m[1]), base)); } catch (_) {}
+        }
+        if (!bases.length) bases.push(base);
+        const attrRe = /\b(?:media|initialization|sourceURL)="([^"]+)"/g;
+        while ((m = attrRe.exec(text)) && found < 2000) {
+          found++;
+          const value = unxml(m[1]);
+          for (const b of bases) {
+            if (value.indexOf('$') >= 0) credentialFrameRememberTemplate(value, b);
+            else credentialFrameRememberIssued(value, b, echo);
+          }
+        }
+      }
+      if (text.indexOf('http') < 0) return;
+      let flat = text;
+      if (flat.indexOf('\\/') >= 0) flat = flat.replace(/\\\//g, '/');
+      if (/\\u0026/i.test(flat)) flat = flat.replace(/\\u0026/gi, '&');
+      if (flat.indexOf('&amp;') >= 0) flat = flat.replace(/&amp;/g, '&');
+      /* Only links that could carry a token are looked at closely: a 1 MB feed of ordinary
+         links costs a regex pass, not a URL parse per link. */
+      const linkRe = /https?:\/\/[^\s"'<>`\\()[\]{}|^]+/g;
+      const maybeToken = /[?#&;=][A-Za-z0-9_.%~-]{16,}|[A-Za-z0-9_-]{40,}|ey[A-Za-z0-9_-]{8,}\./;
+      let link;
+      let looked = 0;
+      while ((link = linkRe.exec(flat)) && looked < 1000) {
+        if (!maybeToken.test(link[0])) continue;
+        looked++;
+        credentialFrameRememberIssued(link[0], base, echo);
+      }
+    } catch (_) {}
+  }
+
+  function credentialFrameJsonText(value) {
+    const out = [];
+    let seen = 0;
+    const walk = (v, depth) => {
+      if (++seen > 20000 || depth > 12 || out.length > 2000) return;
+      if (typeof v === 'string') { if (v.indexOf('://') >= 0 || v.indexOf('#EXTM3U') >= 0) out.push(v); return; }
+      if (!v || typeof v !== 'object') return;
+      if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) walk(v[i], depth + 1); return; }
+      for (const key in v) if (Object.prototype.hasOwnProperty.call(v, key)) walk(v[key], depth + 1);
+    };
+    try { walk(value, 0); } catch (_) {}
+    return out.join('\n');
+  }
+
+  function credentialFrameTextualType(type) {
+    return /mpegurl|dash\+xml|xml|json|javascript|text\/|vtt/i.test(String(type || ''));
+  }
+
+  function credentialFrameBufferText(buffer) {
+    try {
+      if (!buffer || (buffer.byteLength || 0) > CREDENTIAL_FRAME_SCAN_MAX || typeof TextDecoder === 'undefined') return '';
+      return new TextDecoder('utf-8').decode(buffer);
+    } catch (_) { return ''; }
+  }
+
+  /* A frame on a trusted service (a YouTube or Google embed) reads large JSON full of links,
+     and every request it sends to its own family is trusted anyway; it keeps no record. */
+  function credentialFrameRecords() {
+    return credentialFrameEnabled('blockTokenExfil') && !credentialFrameTrustedHost(credentialFrameSourceHost());
+  }
+
+  function credentialFrameRequestOf(url, body) {
+    if (credentialFrameTarget(url)) return { sameParty: false };
+    return { sameParty: true, url: String(url || ''), body: credentialFrameDataText(body).slice(0, 65536) };
+  }
+
+  /* The frame's own reads are watched, not re-read: the response's text()/json() (and
+     arrayBuffer() for a textual type, the way Shaka reads a manifest) note what they
+     return before the page gets it, so a link is known before the page can act on it
+     and nothing is decoded twice. Event streams and media bodies are left alone. */
+  function credentialFrameWatchResponse(response, url, body) {
+    try {
+      if (!response || typeof response.text !== 'function' || !/^https?:/i.test(String(response.url || ''))) return;
+      const type = String((response.headers && response.headers.get && response.headers.get('content-type')) || '').toLowerCase();
+      if (/event-stream|ndjson|^(?:image|video|audio|font)\//.test(type)) return;
+      const request = credentialFrameRequestOf(url, body);
+      const note = (text) => credentialFrameNoteIssued(text, response.url, request);
+      const realText = response.text;
+      const realJson = response.json;
+      const realBuffer = response.arrayBuffer;
+      const realClone = response.clone;
+      response.text = function () { return realText.apply(this, arguments).then((text) => { note(text); return text; }); };
+      /* json() is text() then a parse, as the browser's own is, so the scan reads the text it
+         already has instead of walking the parsed object. */
+      if (typeof realJson === 'function') {
+        response.json = function () { return realText.apply(this, arguments).then((text) => { note(text); return JSON.parse(text); }); };
+      }
+      if (typeof realBuffer === 'function' && credentialFrameTextualType(type)) {
+        response.arrayBuffer = function () { return realBuffer.apply(this, arguments).then((buffer) => { note(credentialFrameBufferText(buffer)); return buffer; }); };
+      }
+      if (typeof realClone === 'function') {
+        response.clone = function () { const copy = realClone.apply(this, arguments); credentialFrameWatchResponse(copy, url, body); return copy; };
+      }
+    } catch (_) {}
+  }
+
+  /* XHR: a capturing listener on the request itself runs before the page's own
+     onreadystatechange/onload, so the links are known before the page's handler asks for
+     the next file. */
+  function credentialFrameXhrDone() {
+    try {
+      if (this.readyState !== 4) return;
+      /* Done -- loaded, failed or aborted, all end here -- so the listener goes with the
+         request instead of outliving it; open() adds it again if the object is reused. */
+      try { this.removeEventListener('readystatechange', credentialFrameXhrDone, true); } catch (_) {}
+      if (!(this.status >= 200 && this.status < 400)) return;
+      if (!credentialFrameRecords()) return;
+      const state = credentialFrameXhrs.get(this) || {};
+      const type = this.responseType;
+      let text = '';
+      if (type === '' || type === 'text') text = this.responseText;
+      else if (type === 'json') text = credentialFrameJsonText(this.response);
+      else if (type === 'arraybuffer' && credentialFrameTextualType(this.getResponseHeader && this.getResponseHeader('content-type'))) text = credentialFrameBufferText(this.response);
+      else return;
+      credentialFrameNoteIssued(text, this.responseURL, credentialFrameRequestOf(state.url, state.body));
+    } catch (_) {}
+  }
+
   function credentialFrameHasRemembered(text, wantedKind) {
     const haystack = String(text || '');
     if (!haystack) return false;
@@ -2195,15 +2592,23 @@
     });
   }
 
-  function credentialFrameBlocks(rawTarget, data, headers, channel) {
+  function credentialFrameBlocks(rawTarget, data, headers, channel, method) {
     const target = credentialFrameTarget(rawTarget);
     if (!target) return false;
     credentialFrameScanFields(document, false);
     credentialFrameSeedTokens();
-    const text = String(rawTarget || '') + '\n' + credentialFrameDataText(data)
-      + '\n' + credentialFrameHeadersText(headers);
+    const bodyText = credentialFrameDataText(data);
+    const headerText = credentialFrameHeadersText(headers);
+    const text = String(rawTarget || '') + '\n' + bodyText + '\n' + headerText;
     const trusted = credentialFrameTrustedHost(target.host);
-    if (credentialFrameEnabled('blockTokenExfil') && !trusted && credentialFrameHasToken(text)) {
+    /* A token in what is SENT (body, headers) always counts. One in the URL counts unless
+       a server handed out that very link (see credentialFrameNoteIssued), or it is the
+       playing page's own first playlist (credentialFramePlaylistFallback). */
+    const tokenLeaves = credentialFrameHasToken(bodyText + '\n' + headerText)
+      || (credentialFrameUrlHasToken(rawTarget, credentialFrameBaseUrl())
+        && !credentialFrameIssuedMatch(target.url)
+        && !credentialFramePlaylistFallback(target, data, method, rawTarget));
+    if (credentialFrameEnabled('blockTokenExfil') && !trusted && tokenLeaves) {
       credentialFrameNoteBlock('blocked_token_exfil', target, channel);
       return true;
     }
@@ -2265,15 +2670,24 @@
       if (typeof window.fetch === 'function') {
         const realFetch = window.fetch;
         window.fetch = function credentialFrameFetch(input, init) {
+          let url = '';
+          let body;
           try {
-            const url = typeof input === 'string' || input instanceof URL ? String(input) : input && input.url;
-            const body = init && init.body !== undefined ? init.body : input && input.body;
+            url = typeof input === 'string' || input instanceof URL ? String(input) : input && input.url;
+            body = init && init.body !== undefined ? init.body : input && input.body;
             const headers = [input && input.headers, init && init.headers];
-            if (credentialFrameBlocks(url, body, headers, 'fetch')) {
+            const method = (init && init.method) || (input && typeof input === 'object' && input.method) || 'GET';
+            if (credentialFrameBlocks(url, body, headers, 'fetch', method)) {
               return Promise.reject(new DOMException('Blocked by WardenOne credential guard', 'SecurityError'));
             }
           } catch (_) {}
-          return realFetch.apply(this, arguments);
+          const pending = realFetch.apply(this, arguments);
+          try {
+            if (credentialFrameRecords() && pending && typeof pending.then === 'function') {
+              pending.then((response) => credentialFrameWatchResponse(response, url, body), () => {});
+            }
+          } catch (_) {}
+          return pending;
         };
       }
     } catch (_) {}
@@ -2282,7 +2696,7 @@
       if (navigator && typeof navigator.sendBeacon === 'function') {
         const realBeacon = navigator.sendBeacon.bind(navigator);
         navigator.sendBeacon = function credentialFrameBeacon(url, data) {
-          if (credentialFrameBlocks(url, data, null, 'beacon')) return false;
+          if (credentialFrameBlocks(url, data, null, 'beacon', 'POST')) return false;
           return realBeacon(url, data);
         };
       }
@@ -2294,7 +2708,10 @@
         const realSetHeader = XMLHttpRequest.prototype.setRequestHeader;
         const realSend = XMLHttpRequest.prototype.send;
         XMLHttpRequest.prototype.open = function credentialFrameXhrOpen(method, url) {
-          credentialFrameXhrs.set(this, { url, headers: [] });
+          credentialFrameXhrs.set(this, { url, method, headers: [] });
+          try {
+            if (typeof this.addEventListener === 'function') this.addEventListener('readystatechange', credentialFrameXhrDone, true);
+          } catch (_) {}
           return realOpen.apply(this, arguments);
         };
         if (typeof realSetHeader === 'function') {
@@ -2308,7 +2725,8 @@
         }
         XMLHttpRequest.prototype.send = function credentialFrameXhrSend(body) {
           const state = credentialFrameXhrs.get(this) || { url: '', headers: [] };
-          if (credentialFrameBlocks(state.url, body, state.headers, 'xhr')) {
+          state.body = body;
+          if (credentialFrameBlocks(state.url, body, state.headers, 'xhr', state.method)) {
             credentialFrameFailXhr(this);
             return undefined;
           }
@@ -2321,7 +2739,7 @@
       if (window.WebSocket && WebSocket.prototype && typeof WebSocket.prototype.send === 'function') {
         const realWebSocketSend = WebSocket.prototype.send;
         WebSocket.prototype.send = function credentialFrameWebSocketSend(data) {
-          if (credentialFrameBlocks(this && this.url, data, null, 'websocket')) return undefined;
+          if (credentialFrameBlocks(this && this.url, data, null, 'websocket', 'SEND')) return undefined;
           return realWebSocketSend.apply(this, arguments);
         };
       }
@@ -2779,7 +3197,7 @@
     const d = e && e.detail;
     if (woKey || !d || typeof d.token !== 'string' || !d.token || typeof d.key !== 'string' || !d.key) return;
     token = d.token;
-    woKey = d.key;
+    woKey = __woAuth.key(d.key);
     flushEvents();
   });
   woOn(window, 'message', (event) => {

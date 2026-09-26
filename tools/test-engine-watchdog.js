@@ -207,12 +207,14 @@ console.log('\nengine watchdog\n');
   check('the engine answers wo-ping with a signed pong',
     /woOn\(document,"wo-ping",e=>\{[\s\S]{0,400}type:"pong",nonce:nonce,mac:__woAuth\.hmac\(__woKey,"pong\\n"\+nonce\)/.test(CONTENT));
   check('and signs installed with the same key',
-    /"installed"===d\.type&&null!==__woKey&&\(d\.mac=__woAuth\.hmac\(__woKey,"installed\\n"\+__woToken\)\)/.test(CONTENT));
+    /if\(null===__woKey\)return d;\s*if\("installed"===d\.type\)return d\.mac=__woAuth\.hmac\(__woKey,"installed\\n"\+__woToken\),d;/.test(CONTENT));
   check('disposing still clears the ready markers it claims to',
     /window\.__wardenOneReadyVersion=void 0,window\.__wardenOneInstalled=void 0/.test(CONTENT));
-  check('and clears the protection-active marker with them',
-    /window\.__wardenOneProtectionActive=void 0/.test(CONTENT),
-    'a stale active marker would tell the popup a disposed engine is still protecting');
+  /* The protection-active marker is gone (SEC-12): nothing read it once the bridge's challenge
+     became the authority, so there is nothing for a disposed engine to leave stale. */
+  check('and there is no protection-active marker left to go stale',
+    !/__wardenOneProtectionActive/.test(CONTENT),
+    'a page-visible marker nothing reads is a detection handle and nothing else');
 
   console.log('');
   if (failures) { console.log(failures + ' check(s) failed'); process.exit(1); }

@@ -18,8 +18,12 @@
 # Dev-only paths kept out of the packaged Release zip (`git archive`). They stay
 # in the repo but don't bloat the download people load unpacked: unminified
 # source (the manifest loads content.min.js), the test/build tooling, README
-# screenshots, issue templates, and repo-meta / store docs. LICENSE, CREDITS.md
-# and PRIVACY.md are intentionally kept in the zip.
+# screenshots, issue templates, and repo-meta / store docs. Every file in the
+# zip is there on purpose: LICENSE and NOTICE travel with the work because the
+# GPL requires it, and CREDITS.md carries the upstream filter-list attribution.
+# Every other document is excluded below, each with its reason; nothing ships
+# because no rule happened to remove it (tools/test-package-completeness.js
+# checks the archive's document set against this intent).
 docs/ export-ignore
 # The public website. Belongs on GitHub Pages, not inside the extension package.
 site/ export-ignore
@@ -34,5 +38,11 @@ MAINTAINABILITY.md export-ignore
 # The store wants a privacy-policy URL, and the live page is the one that matters.
 # Shipping a copy inside the package only gives it somewhere to drift out of date.
 PRIVACY.md export-ignore
+# Repository documents nothing in the extension reads. The changelog alone was the
+# largest non-runtime file in the package (95 KiB); the security policy and the
+# support note are for people reading the repository, where GitHub shows them.
+CHANGELOG.md export-ignore
+SECURITY.md export-ignore
+SUPPORT.md export-ignore
 .gitignore export-ignore
 .gitattributes export-ignore

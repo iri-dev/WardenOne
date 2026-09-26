@@ -116,7 +116,17 @@ check('common non-adult lookalike hosts stay out of the static list', () => {
 // this measures the shipped decision rather than a restatement of it.
 const SRC = fs.readFileSync('src/content.js', 'utf8');
 
-function decide(hostname, title) {
+/* Which hosts count as a results page is declared once, near the top of the runtime, and the
+   page-text detectors read the same list. Lifted from the source like the scoring block, so the
+   list tested is the list shipped. */
+const SEARCH_RESULTS_HOST = (() => {
+  const at = SRC.indexOf('searchResultsHost=/');
+  const end = SRC.indexOf('.test(location.hostname)', at);
+  if (at < 0 || end <= at) throw new Error('search-results host list not found');
+  return vm.runInNewContext(SRC.slice(at + 'searchResultsHost='.length, end));
+})();
+
+function decide(hostname, title, onResults) {
   const from = SRC.indexOf('      if(WO.adultHeuristics&&!onList){');
   const to = SRC.indexOf('\n      let adultReaskForceHeuristic', from);
   if (from < 0 || to <= from) throw new Error('adult heuristic source markers not found');
@@ -128,6 +138,7 @@ function decide(hostname, title) {
     heuristicHit: false,
     heuristicReasons: [],
     location: { hostname },
+    searchResultsHost: onResults === undefined ? SEARCH_RESULTS_HOST.test(hostname) : !!onResults,
     document: { title },
     maybeGateAdult() { sandbox.heuristicHit = true; },   // the deferred path gates too
     woOn(_target, _type, fn) { sandbox.__deferred = fn; },
@@ -156,8 +167,17 @@ check('a results page stays exempt even when its own domain scores', () => {
   // Constructed to reach the exemption rather than to describe a real deployment: the TLD rule
   // scores any host ending in .cam, so a search engine on such a TLD would otherwise clear the
   // bar with an explicit query in its title. This is the case that makes the exemption
-  // load-bearing rather than a second way of saying "the title cannot decide alone".
-  assert(!decide('google.cam', 'porn - Google Search'), 'a results page must never be gated');
+  // load-bearing rather than a second way of saying "the title cannot decide alone". The list
+  // holds exact engine hosts now, and google.cam is not one, so the exemption is handed in.
+  assert(decide('google.cam', 'porn - Google Search', false), 'the control did not score, so the exemption is not exercised');
+  assert(!decide('google.cam', 'porn - Google Search', true), 'a results page must never be gated');
+});
+
+check('a host that only starts with an engine\'s name is not a results page', () => {
+  // The gate's old copy of the list matched google\.[a-z.]+, so an adult site at google.<anything>
+  // skipped the heuristic entirely.
+  assert(decide('www.google.porn', 'home'), 'www.google.porn skipped the gate as a search engine');
+  assert(decide('google.freeporn.example', 'home'), 'google.freeporn.example skipped the gate as a search engine');
 });
 
 check('an ordinary page is not gated just for its title', () => {

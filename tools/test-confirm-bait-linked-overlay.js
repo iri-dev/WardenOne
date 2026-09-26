@@ -22,6 +22,16 @@
  * lockup and classic renderer), the same shapes with the link taken away (still bait), and the
  * dialogs the guard exists for (still bait).
  *
+ * Twitch, later: pausing a stream and resuming it left a blank page and a badge reading "1
+ * blocked". Turbo and subscriber viewers get a Stream Rewind callout when they pause -- a New
+ * pill, the title, one sentence and a dismiss button labelled Close (Twitch's own
+ * DVROnboardingCallout) -- and the only button had no visible text, so the controls list came
+ * back empty, the leaf fallback took the title for the button, and "Stream Rewind" matched the
+ * affirmative list -- as it did for the player overlay around it, whose icon buttons left "LIVE"
+ * and the title to stand in for controls. The sweep removed a node React still owned. Two changes,
+ * both checked here: a box whose controls are icons is not read through the leaf fallback, and
+ * the sweep does not run on the media apps the main engine already treats as trustedMediaHost.
+ *
  * Run: node tools/test-confirm-bait-linked-overlay.js
  * Control: WARDENONE_ANTI_REDIRECT=<pre-fix anti-redirect.js> -- the two YouTube cases fail there.
  */
@@ -164,7 +174,68 @@ if (isBaitBox) {
   const wrapped = div('modal', [div('t', [], 'Please confirm to continue'), el('button', {}, [], 'Continue')]);
   el('a', { href: 'https://ads.example/go' }, [wrapped]);
   check('a dialog inside a real link is judged a link, not bait', isBaitBox(wrapped) === false);
+
+  /* ---- Twitch's Stream Rewind callout, from its DVROnboardingCallout component ----------------- */
+  // Layout(relative, .dvrOnboardingCallout) > Layout(absolute, bottom-right, maxWidth 400) >
+  //   Callout: graphic <img alt="MIDI Controller">, New pill, title, description, dismiss button.
+  const rewindCallout = (description, closeAttrs) => {
+    const close = el('button', closeAttrs, [el('svg', {}, [el('path', {}, [])])]);
+    const callout = div('callout', [
+      div('graphic', [el('img', { alt: 'MIDI Controller', src: 'savvy-onboarding-callout.png' }, [])]),
+      div('content', [div('pill', [], 'New'), el('p', {}, [], 'Stream Rewind'), el('p', {}, [], description)]),
+      close]);
+    const box = div('absolute', [callout]);
+    el('body', {}, [div('dvrOnboardingCallout--wqPzY', [box])]);
+    return box;
+  };
+  const SUB = 'As a channel subscriber, you can pause and rewind this stream to catch up on any missed moments.';
+  const TURBO = 'As a Turbo subscriber, you can pause and rewind this stream to catch up on any missed moments.';
+  check('Twitch\'s Stream Rewind callout is not bait', isBaitBox(rewindCallout(SUB, { 'aria-label': 'Close' })) === false,
+    'its only control is the dismiss icon; the title is not a button');
+  check('nor is the Turbo wording of it', isBaitBox(rewindCallout(TURBO, { 'aria-label': 'Close' })) === false);
+  check('nor with an unlabelled dismiss icon: an icon is still a control, and the title still is not',
+    isBaitBox(rewindCallout(SUB, {})) === false);
+  /* The player overlay the callout sits in: every control an icon, the only words LIVE and the
+     callout's. This box was bait too, and it is the one whose removal takes the controls with it. */
+  const icon = (label) => el('button', { 'aria-label': label }, [el('svg', {}, [])]);
+  const playerOverlay = div('player-overlay', [rewindCallout(SUB, { 'aria-label': 'Close' }),
+    div('controls', [icon('Play (space/k)'), icon('Mute (m)'), div('live', [], 'LIVE')])]);
+  el('body', {}, [div('video-player', [playerOverlay])]);
+  check('the player overlay around it is not bait either', isBaitBox(playerOverlay) === false,
+    'a player whose buttons are icons has told us its controls; LIVE and a title are not among them');
+  /* The fallback is unchanged where it was needed: a box with no controls at all. */
+  const divBait = div('modal', [div('t', [], 'Attention'), div('msg', [], 'Please confirm to continue'), div('btn', [], 'Continue')]);
+  el('body', {}, [divBait]);
+  check('a dialog built only of divs is still read through its leaves, and is still bait', isBaitBox(divBait) === true);
+  /* The trade, recorded so it is visible: a box whose only button is an icon is no longer judged
+     on the words beside it, so a div saying "Continue" next to an icon button reads as a message. */
+  const iconBesideDiv = div('modal', [div('t', [], 'Attention'), div('btn', [], 'Continue'), icon('Close')]);
+  el('body', {}, [iconBesideDiv]);
+  check('an icon button beside a "Continue" div: the icon is the control, so the div is not', isBaitBox(iconBesideDiv) === false);
 }
+
+/* ---- the sweep stays off the media apps ------------------------------------------------------- */
+const CONTENT_SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
+const engineList = (CONTENT_SRC.match(/trustedMediaHost=(\/.+?\/i)\.test\(location\.hostname\)/) || [])[1] || '';
+const guardList = (GUARD.match(/return (\/.+?\/i)\.test\(location\.hostname\);\s*\} catch \(_\) \{\s*return false;\s*\}\s*\}\(\)\);/) || [])[1] || '';
+check('the media-app list is read from both files', !!engineList && !!guardList);
+check('it is the same list the main engine exempts as trustedMediaHost', engineList === guardList,
+  'anti-redirect.js cannot reach the engine\'s copy, so the two must be kept identical');
+const mediaDecl = (GUARD.match(/const MEDIA_APP_HOST = \(function \(\) \{[\s\S]*?\}\(\)\);/) || [])[0] || '';
+const mediaApp = (hostname) => vm.runInNewContext(mediaDecl + '\nMEDIA_APP_HOST', { location: { hostname } });
+if (mediaDecl) {
+  for (const host of ['www.twitch.tv', 'player.twitch.tv', 'm.twitch.tv', 'www.youtube.com', 'open.spotify.com', 'x.com']) {
+    check(host + ' is a media app', mediaApp(host) === true);
+  }
+  /* Twitch Extensions and ad frames run on their own hosts, so the sweep still runs inside them. */
+  for (const host of ['supervisor.ext-twitch.tv', 'abc123.ext-twitch.tv', 'example.com', 'twitch.tv.evil.example', 'nottwitch.tv']) {
+    check(host + ' is not', mediaApp(host) === false);
+  }
+}
+check('the bait test is switched off there', /function confirmBaitEnabled\(\) \{\s*if \(MEDIA_APP_HOST\) return false;/.test(GUARD));
+check('and the sweep is never installed there', /function installConfirmBaitSweep\(\) \{[\s\S]{0,300}?if \(baitInstalled \|\| MEDIA_APP_HOST\) return;/.test(GUARD));
+check('nor is a click there warned about as a fake confirm box',
+  /if \(!overlay\) signal\('gesture'\);[\s\S]{0,160}?else if \(!MEDIA_APP_HOST && confirmBaitOverlay\(overlay\)\) \{/.test(GUARD));
 
 /* ---- the shape of the fix, pinned in the source ---------------------------------------------- */
 check('the guard records whether each control sits inside a link',

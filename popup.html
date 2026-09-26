@@ -297,6 +297,62 @@
     line-height: 1.4;
     font-weight: 600;
   }
+  /* A note that opens into what it is about (the extension changes). */
+  .health-note.health-drop { display: block; padding: 0; }
+  .health-drop-summary {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    list-style: none;
+    border-radius: 11px;
+  }
+  .health-drop-summary::-webkit-details-marker { display: none; }
+  .health-drop-summary:hover { background: rgba(142, 57, 191, 0.06); }
+  .health-drop-summary:focus-visible { outline: 2px solid var(--plum); outline-offset: -2px; }
+  .health-drop .health-drop-text { flex: 1; min-width: 0; }
+  .health-drop .health-drop-chev {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    margin: 4px 3px 0 0;
+    border: solid var(--plum);
+    border-width: 0 1.8px 1.8px 0;
+    transform: rotate(45deg);
+    transition: transform .15s ease;
+  }
+  .health-drop[open] .health-drop-chev { transform: rotate(-135deg); margin-top: 7px; }
+  .health-drop-body { display: grid; gap: 5px; padding: 0 9px 9px; }
+  .health-drop-card {
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--wo-line);
+    border-left: 3px solid var(--wo-warning);
+    background: var(--wo-surface);
+  }
+  .health-drop-card.is-danger { border-left-color: var(--wo-danger); }
+  .health-drop-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .health-drop .health-drop-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--wo-text);
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+  .health-drop .health-drop-badge {
+    flex: none;
+    color: var(--wo-warning);
+    font-size: 9.5px;
+    font-weight: 700;
+  }
+  .health-drop-card.is-danger .health-drop-badge { color: var(--wo-danger); }
+  .health-drop-line { margin-top: 3px; color: var(--wo-text); font-size: 10.6px; font-weight: 600; line-height: 1.35; }
+  .health-drop-line.is-soft { color: var(--wo-text-soft); font-weight: 500; }
+  .health-drop-actions { display: flex; gap: 6px; margin-top: 2px; }
+  .health-drop-actions .btn { padding: 7px 8px; border-radius: 10px; font-size: 10.8px; }
   .top-quick {
     margin: 8px 16px 2px;
     display: grid;
@@ -668,6 +724,9 @@
       <button type="button" class="wo-theme-option" data-wardenone-theme="dark" aria-pressed="false" aria-label="Use dark theme" title="Dark theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"></path></svg>
       </button>
+      <button type="button" class="wo-theme-option" data-wardenone-theme="system" aria-pressed="false" aria-label="Follow the system theme" title="System theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"></path></svg>
+      </button>
     </div>
     <div class="shield">
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -942,12 +1001,11 @@
         <div class="tool-head" style="margin-bottom:4px;">
           <div>
             <div class="name" style="font-size:12px;">OpenPhish</div>
-            <div class="desc">Phishing intelligence feed. Uses the official keyless Community feed; optional token field is reserved for premium feed support.</div>
+            <div class="desc">Phishing intelligence feed. Uses the official keyless Community feed, downloaded to your device and matched locally; there is no key or token to paste.</div>
           </div>
           <label class="tg"><input type="checkbox" data-key="openPhish"><span class="track"></span><span class="knob"></span></label>
         </div>
         <div class="api-config">
-          <input class="api-field" type="password" autocomplete="off" spellcheck="false" placeholder="Optional OpenPhish token" aria-label="Optional OpenPhish token" data-config-text="openPhishKey">
           <button class="btn" id="openphish-test-key" style="width:100%;padding:8px 10px;font-size:11px;">Test OpenPhish feed</button>
           <div class="api-status" id="openphish-key-status"></div>
         </div>
@@ -1656,6 +1714,7 @@
       <div class="wo-theme-options wo-interface-theme-options" role="group" aria-labelledby="wo-theme-title">
         <button type="button" class="wo-theme-option" data-wardenone-theme="light" aria-pressed="true">Light</button>
         <button type="button" class="wo-theme-option" data-wardenone-theme="dark" aria-pressed="false">Dark</button>
+        <button type="button" class="wo-theme-option" data-wardenone-theme="system" aria-pressed="false">System</button>
       </div>
     </div>
     <div class="row">

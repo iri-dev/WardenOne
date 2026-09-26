@@ -160,7 +160,7 @@ const BANDS = { 'My rules + custom lists': [750000, 500], 'Per-site firewall': [
   {
     const orchestrator = BG.slice(BG.indexOf('function refreshExtensionState()'), BG.indexOf('\n}\n', BG.indexOf('function refreshExtensionState()')));
     check('refreshExtensionState runs the three bands as named steps',
-      /run\('userFilters', userFilterBandStep\(\)\);/.test(orchestrator) && /run\('firewall', firewallBandStep\(\)\);/.test(orchestrator) && /run\('userBlocklist', userBlocklistBandStep\(\)\);/.test(orchestrator));
+      /run\('userFilters', \(\) => userFilterBandStep\(\)\);/.test(orchestrator) && /run\('firewall', \(\) => firewallBandStep\(\)\);/.test(orchestrator) && /run\('userBlocklist', \(\) => userBlocklistBandStep\(\)\);/.test(orchestrator));
     check('only when the switch has moved or on the first reconcile', /if \(__userBandsAppliedFor !== on\) \{/.test(orchestrator) && /__userBandsAppliedFor = on;/.test(orchestrator));
     check('a step that failed does not mark the state applied', /if \(oks\.every\(\(x\) => x !== false\)\) __userBandsAppliedFor = on;/.test(orchestrator));
     check('the health surface has a name for each', /userFilters: 'My Rules and subscribed lists'/.test(BG) && /firewall: 'per-site firewall rules'/.test(BG) && /userBlocklist: 'blocked-site list rules'/.test(BG));
