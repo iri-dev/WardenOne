@@ -31,6 +31,10 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
+const TEST_KEY = require('crypto').randomBytes(32).toString('hex');
+/* The engine's request for the reload-loop panel, signed as it signs it (__woSignedNotice). */
+const signedReloadLoop = (sandbox) => ({ source: 'wardenone-reload-loop', token: 'tok-123', seq: 1,
+  mac: sandbox.__woAuth.hmac(TEST_KEY, 'reload-loop\n1\n') });
 const ENGINE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const MIN = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 
@@ -233,9 +237,14 @@ function loadCookieEscape() {
   const escape = sourceBetween(BRIDGE,
     '  // Cookie reload-loop escape.',
     '  // ---- Memory Shield: form-dirty + active-media tracking ----');
+  // The request for the panel must be signed under the bridge's key (pageNoticeSigned): the
+  // routing token alone let any page raise WardenOne's own panel over itself.
+  const auth = sourceBetween(BRIDGE, '  const __woAuth=(function(){', '  const KEY = (function () {');
+  const checkers = sourceBetween(BRIDGE, '  const KEY_PADS = KEY ?', '  const BRIDGE_RATE');
   // One script, so the registry's const bindings are in scope for the rest.
-  vm.runInContext(registry + '\n' + helper + '\n' + escape, sandbox,
-    { filename: 'bridge.js:cookie-escape' });
+  vm.runInContext(registry + '\n' + auth + '\nconst KEY = ' + JSON.stringify(TEST_KEY) + ';\nfunction boundedBridgeDetail(v) { return v; }\n'
+    + checkers + '\n' + helper + '\n' + escape + '\nthis.__woAuth = __woAuth;', sandbox,
+  { filename: 'bridge.js:cookie-escape' });
 
   return { dom, sent, healers, sandbox, winRef };
 }
@@ -267,9 +276,17 @@ function loadCookieEscape() {
   check('a message without the token does not build the notice',
     dom.document.getElementById('rg-reload-loop') === null);
 
-  // Deliver the real request the way the engine sends it.
+  // A request carrying only the public token -- what any page can send -- builds nothing.
   for (const l of dom.listeners) {
     if (l.type === 'message') l.fn({ source: winRef, data: { source: 'wardenone-reload-loop', token: 'tok-123' } });
+  }
+  check('a request with only the routing token does not build the notice',
+    dom.document.getElementById('rg-reload-loop') === null);
+  // Deliver the real request the way the engine sends it: signed under the key (__woSignedNotice).
+  const signedRequest = { source: 'wardenone-reload-loop', token: 'tok-123', seq: 1,
+    mac: sandbox.__woAuth.hmac(TEST_KEY, 'reload-loop\n1\n') };
+  for (const l of dom.listeners) {
+    if (l.type === 'message') l.fn({ source: winRef, data: signedRequest });
   }
   const host = dom.document.getElementById('rg-reload-loop');
   check('the notice is mounted on request', !!host);
@@ -305,7 +322,7 @@ function loadCookieEscape() {
 {
   const { dom, healers, sandbox, winRef } = loadCookieEscape();
   for (const l of dom.listeners) {
-    if (l.type === 'message') l.fn({ source: winRef, data: { source: 'wardenone-reload-loop', token: 'tok-123' } });
+    if (l.type === 'message') l.fn({ source: winRef, data: signedReloadLoop(sandbox) });
   }
   check('a healer was registered on mount', healers.length === 1);
 
@@ -326,7 +343,7 @@ function loadCookieEscape() {
   // Dismiss must stop the healing, or "Keep blocked" would be unusable.
   const { dom, healers, sandbox, winRef } = loadCookieEscape();
   for (const l of dom.listeners) {
-    if (l.type === 'message') l.fn({ source: winRef, data: { source: 'wardenone-reload-loop', token: 'tok-123' } });
+    if (l.type === 'message') l.fn({ source: winRef, data: signedReloadLoop(sandbox) });
   }
   const host = dom.document.getElementById('rg-reload-loop');
   const buttons = [];

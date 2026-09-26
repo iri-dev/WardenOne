@@ -167,6 +167,8 @@ function run(options) {
     __woWarn: warnRegistry,
     /* Declared outside the slice; false unless a test asks for an assistant page. */
     conversationHost: !!opts.conversationHost,
+    /* Likewise, false unless a test asks for a search engine's results page. */
+    searchResultsHost: !!opts.searchResultsHost,
     log(type, detail) { logs.push({ type, detail }); },
     woOn(target, type, fn) { listeners[type] = fn; },
     woObserve(fn) { observers.push(fn); return { disconnect() {} }; },
@@ -221,16 +223,20 @@ async function check(name, fn) {
   // -------------------------------------------------------------------------
   // Instruction recognition
   // -------------------------------------------------------------------------
+  /* A paste keystroke, the step a lure needs and a tutorial does not. */
+  const PASTE_STEP = cmd(', then press Ctrl', String.fromCharCode(43), 'V');
   await check('each ClickFix instruction phrase is recognised by name', () => {
+    /* Each beside the paste that makes it a lure. Most of these on their own are what a
+       command tutorial says, which is the check after this one. */
     const phrases = [
       ['Type "enable pasting" to continue', 'Enable pasting'],
       ['Paste this into the console to continue', 'Paste into Console'],
-      ['Press Ctrl+Shift+I to continue', 'Press Ctrl+Shift+I'],
-      ['Press F12 to continue', 'Press F12'],
-      ['Open developer tools to continue', 'Open DevTools'],
-      ['Switch to the console tab to continue', 'Open Console'],
-      [cmd('Press ', WIN_RUN(), ' to continue'), cmd('Press ', WIN_RUN())],
-      [cmd('Open ', POWERSHELL(), ' to continue'), 'Open a command shell'],
+      ['Press Ctrl+Shift+I' + PASTE_STEP + ' to continue', 'Press Ctrl+Shift+I'],
+      ['Press F12' + PASTE_STEP + ' to continue', 'Press F12'],
+      ['Open developer tools' + PASTE_STEP + ' to continue', 'Open DevTools'],
+      ['Switch to the console tab' + PASTE_STEP + ' to continue', 'Open Console'],
+      [cmd('Press ', WIN_RUN(), PASTE_STEP, ' to continue'), cmd('Press ', WIN_RUN())],
+      [cmd('Open ', POWERSHELL(), PASTE_STEP, ' to continue'), 'Open a command shell'],
     ];
     for (const [body, expected] of phrases) {
       const runtime = run({ body });
@@ -239,6 +245,86 @@ async function check(name, fn) {
       assert.strictEqual(activity.type, 'warned_clickfix_instruction', 'wrong type for: ' + body);
       assert.strictEqual(activity.detail.instruction, expected, 'wrong label for: ' + body);
     }
+  });
+
+  /* ---- a command tutorial is not a lure ----------------------------------- *
+   * "Press Win+R, type cmd", "open Command Prompt, type sfc /scannow and press Enter": every
+   * command how-to reads like this, and each one was reported as ClickFix, with the red panel
+   * wherever "type" or "Enter" sat near the shell. What a lure runs is already on the clipboard
+   * and the reader never sees it, so its step is the paste. */
+  const PLUS = String.fromCharCode(43);
+  const TUTORIALS = [
+    ['https://www.techblog.example/chkdsk', cmd('How to use CHKDSK\n1. Press ', WIN_RUN(), ', type cmd, then press Ctrl',
+      PLUS, 'Shift', PLUS, 'Enter.\n2. Type chkdsk C: /f /r and press Enter.\n3. Type Y to schedule the scan.')],
+    ['https://www.techblog.example/sfc', 'Repair Windows system files\nOpen Command Prompt as administrator.\n'
+      + 'Type sfc /scannow and press Enter.\nWait until verification is 100% complete.'],
+    ['https://www.techblog.example/run-commands', cmd('40 useful Run commands\nPress ', WIN_RUN(),
+      ' to open the Run dialog box, then type any of these and press Enter.\ncmd - Command Prompt\nmsconfig - System Configuration')],
+    ['https://www.techblog.example/flushdns', 'Flush your DNS cache\nOpen Terminal (Admin) from the Start menu.\n'
+      + 'Type ipconfig /flushdns and press Enter.'],
+    ['https://www.techblog.example/windows-update', cmd('Reset Windows Update\nOpen ', POWERSHELL(), ' as administrator.\n',
+      'Type these one at a time and press Enter after each:\nnet stop wuauserv\nnet stop bits')],
+    ['https://www.webdev.example/debugging', 'Debugging JavaScript\nPress F12 to open DevTools.\n'
+      + 'Open the Console tab, type console.log("hello") and press Enter.'],
+  ];
+  await check('a command tutorial is not reported as ClickFix', () => {
+    for (const [page, body] of TUTORIALS) {
+      const runtime = run({ page, body });
+      assert.strictEqual(runtime.activities().length, 0, 'reported a tutorial: ' + page + ' ' + JSON.stringify(runtime.activities()));
+      assert.strictEqual(runtime.body.children.length, 0, 'raised a panel over a tutorial: ' + page);
+    }
+  });
+  await check('the same steps with a paste in them are still the lure', () => {
+    const lures = [
+      cmd('Microphone access failed\nTo fix the problem:\n1. Press ', WIN_RUN(), '\n2. Press Ctrl', PLUS, 'V\n3. Press Enter'),
+      cmd('Something went wrong.\nHow to fix:\n1. Open ', POWERSHELL(), '\n2. Paste the fix into ', POWERSHELL(), ' and press Enter.'),
+      cmd('Install the update\n1. Open Terminal\n2. Press Cmd ', PLUS, ' V to paste the command\n3. Press Return'),
+    ];
+    lures.forEach((body, i) => {
+      const runtime = run({ page: 'https://compromised.example/post', body });
+      const types = runtime.activities().map((entry) => entry.type);
+      assert(types.includes('warned_clickfix_instruction'), 'a paste lure went unreported: ' + body.split('\n')[0]);
+      if (i === 0) assert(runtime.body.children.length > 0, 'the Run-box paste lure lost its panel');
+    });
+  });
+  await check('a download-and-run command shown with the steps needs no paste', () => {
+    const body = cmd('Speed up your PC\nOpen ', POWERSHELL(), ' as administrator.\nType this and press Enter:\n', DOWNLOAD_RUN('evil.example'));
+    const runtime = run({ page: 'https://pc-tips.example/boost', body });
+    assert(runtime.activities().map((entry) => entry.type).includes('warned_clickfix_instruction'),
+      'steps beside a download-and-run command went unreported');
+  });
+
+  /* ---- a search results page is not the page talking ---------------------- *
+   * Its text is other sites' snippets, picked because they match what was searched: look up
+   * how to run sfc /scannow and the results are full of "press Win+R, type ...". */
+  await check('search results are not read as the page instructing you', async () => {
+    const results = cmd('sfc /scannow\nAI Overview\nOpen Command Prompt as administrator:\nPress ', WIN_RUN(),
+      ', type cmd, and press Enter.\nType sfc /scannow and press Enter.\nWhat is ClickFix?\n', FAKE_VERIFY_FLOW());
+    const ordinary = run({ page: 'https://blog.example/sfc', body: results });
+    assert(ordinary.activities().length > 0, 'the control page did not trigger at all');
+    const engine = run({ page: 'https://www.google.com/search?q=sfc', body: results, searchResultsHost: true });
+    assert.strictEqual(engine.activities().length, 0, JSON.stringify(engine.activities()));
+    assert.strictEqual(engine.body.children.length, 0, 'a panel was raised over search results');
+    /* A copy is an action, not a quotation: a page-driven malware write is still refused. */
+    await assert.rejects(engine.navigator.clipboard.writeText(ENCODED_PS()), /Blocked by WardenOne/);
+  });
+  await check('only the engines\' own hosts count as search results', () => {
+    const at = CONTENT.indexOf('searchResultsHost=/');
+    const tail = CONTENT.indexOf('.test(location.hostname)', at);
+    assert(at >= 0 && tail > at, 'the search-results host test is missing from the build');
+    const hostTest = vm.runInNewContext(CONTENT.slice(at + 'searchResultsHost='.length, tail));
+    for (const host of ['www.google.com', 'google.com', 'www.google.co.uk', 'www.google.com.au', 'www.google.de',
+      'www.bing.com', 'duckduckgo.com', 'html.duckduckgo.com', 'search.brave.com', 'search.yahoo.com',
+      'uk.search.yahoo.com', 'www.ecosia.org', 'www.startpage.com']) {
+      assert(hostTest.test(host), host + ' is a results page and was not recognised');
+    }
+    /* The adult gate's old copy of this list took google.attacker.com. */
+    for (const host of ['google.attacker.com', 'www.google.com.evil.tld', 'google.evilsite.com', 'sites.google.com',
+      'docs.google.com', 'bing.com.evil.io', 'duckduckgo.com.evil.io', 'search.yahoo.evil.com', 'search.brave.com.evil.net',
+      'yandex.evil.com', 'evil-google.com', 'notbing.com']) {
+      assert(!hostTest.test(host), host + ' was treated as a search engine');
+    }
+    assert(/const onSearchResults=searchResultsHost;/.test(CONTENT), 'the adult gate kept a second copy of the list');
   });
 
   /* ---- the panel must not be its own evidence ---------------------------- *
@@ -360,7 +446,7 @@ async function check(name, fn) {
   });
 
   await check('instruction-only text stays a weak, unblocked signal', () => {
-    const runtime = run({ body: 'Press F12 to continue' });
+    const runtime = run({ body: 'Press F12' + PASTE_STEP + ' to continue' });
     const activity = runtime.activities()[0];
     assert.strictEqual(activity.detail.evidence, 'Instruction text only');
     assert.strictEqual(activity.detail.blocked, false);
@@ -545,7 +631,7 @@ async function check(name, fn) {
   });
 
   await check('Activity labels never claim a warning was blocked when it was not', () => {
-    const runtime = run({ body: 'Press F12 to continue' });
+    const runtime = run({ body: 'Press F12' + PASTE_STEP + ' to continue' });
     const activity = runtime.activities()[0];
     assert.strictEqual(activity.detail.blocked, false);
     assert(/Warning only/i.test(activity.detail.outcome), 'an unblocked event does not say it was warning-only');

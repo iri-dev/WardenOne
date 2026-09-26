@@ -249,12 +249,19 @@ check('the pressure trim cuts the count with the array',
 
 /* ---- what warns, and what must not ---------------------------------------- */
 {
-  const score = makeScorer({ brand: (h) => (/paypa1/.test(h) ? { brand: 'PayPal', matched: h } : null) });
+  const score = makeScorer({ brand: (h) => (/paypa1/.test(h) ? { brand: 'PayPal', matched: h, kind: 'typosquat' } : null) });
   const r = score('paypa1-secure.example', CTX);
   check('a brand look-alike warns', r && r.level === 'warn', JSON.stringify(r));
   check('and names the brand it is imitating', r && /PayPal/.test(r.label));
   check('it is a warning, not a malicious verdict', r && r.level !== 'malicious',
     'a name that resembles a brand is evidence, not proof');
+  check('a typo of the brand is said to look like it', r && /^Looks like PayPal, but is not PayPal$/.test(r.label), r && r.label);
+  /* The label says what was seen. "Looks like Steam" on steamrip.com claimed an imitation the site
+     was not making; a name that carries a brand word beside a phishing word is said to use the name. */
+  const worn = makeScorer({ brand: () => ({ brand: 'Steam', matched: 'steam-login.example', kind: 'brand-in-name' }) })('steam-login.example', CTX);
+  check('a name that uses the brand word is said to use it, not to look like it', worn && /^Uses the Steam name, but is not Steam$/.test(worn.label), worn && worn.label);
+  const sub = makeScorer({ brand: () => ({ brand: 'Steam', matched: 'evil.example', kind: 'subdomain' }) })('steam.evil.example', CTX);
+  check('so is a brand worn as a subdomain', sub && /^Uses the Steam name/.test(sub.label), sub && sub.label);
 }
 {
   const r = makeScorer({})('xn--80ak6aa92e.example', CTX);

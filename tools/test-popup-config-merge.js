@@ -109,7 +109,6 @@ function makeHarness(storedConfig) {
         downloadVirusTotal: 'downloadVirusTotalKey',
         urlHaus: 'urlHausKey',
         abuseIpDb: 'abuseIpDbKey',
-        openPhish: 'openPhishKey',
         phishTank: 'phishTankKey',
         whoisXml: 'whoisXmlKey',
       };

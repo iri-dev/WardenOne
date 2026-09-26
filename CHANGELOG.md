@@ -17,6 +17,23 @@ as the work happened.
 
 ### Added
 
+- The "important extension change needs review" note in the popup's status card
+  now opens. Click it to see which extension changed, what it gained, the version
+  change and when it happened, and then mark it reviewed or open the Security
+  Centre without leaving the card. Before, it was just a sentence, and finding out
+  which extension it meant took a trip to another page.
+- A release performance profile, and the first one. `node tools/perf-profile.js`
+  loads the real extension into a real browser (Microsoft Edge; Chrome no longer
+  loads unpacked extensions from the command line), measures three local synthetic
+  pages with the extension off and on -- five runs each, cold and warm, main-thread
+  time, script, layout and style time, long tasks, navigation timing, heap after a
+  forced GC -- and writes medians, tails and every raw value to `docs/perf`, tied to
+  the commit and the browser version. It refuses to measure unless the extension is
+  loaded and its engine has stamped the page, and it carries a deliberately broken
+  variant so it can prove it sees a known regression before its numbers are trusted.
+  The profile of this build is in `docs/perf/profile-4cd3119.md`; its clearest
+  finding is the per-frame cost of the scripts that run in every frame, recorded
+  there for the next profile to be measured against.
 - A Store package, and a build that knows which package it is. Chrome's Web
   Store allows an extension one narrow purpose; EyeShield, Memory Shield, Tab
   Limit and Twitch Rewind are separate goals from protection, so
@@ -514,6 +531,285 @@ as the work happened.
 
 ### Fixed
 
+- A website can no longer fake WardenOne's findings about itself. WardenOne's parts on a page talk
+  over an internal channel the page can also listen to and write to. They already signed the
+  messages that make WardenOne act, such as settings and redirect warnings, but the security
+  findings were checked only by a label the page can read. A site could plant "card theft
+  blocked" entries in your Activity log, add to the badge counts and pop up WardenOne's own
+  notices over itself. It could also raise the "this page keeps reloading" panel, or tell Memory
+  Shield its camera had switched off so the tab could be put to sleep mid-call. All of these are
+  now signed with a secret key that the page can never see, and anything unsigned is ignored.
+- While fixing that, WardenOne found a bigger problem underneath it. The signing ran inside the
+  page's own script environment, and passed the secret key through built-in functions that a
+  page can quietly replace. A hostile page could have captured the key the next time WardenOne
+  signed anything, which happens every few seconds. It could then forge any of WardenOne's
+  signed messages, including the ones that change settings. The key is now turned into its
+  signing form once, before any page script exists, and signing no longer touches anything a
+  page can replace. Tests attack every copy of the signing code the way a page would.
+- IPv6 link-local addresses from `fe90::` to `febf::` were treated as public internet addresses.
+  Only `fe80::` was recognised, but the private range runs from `fe80` to `febf`. So Download
+  Shield could re-fetch a file from a device on your local network to check it, and other local
+  address checks could be fooled. A private IPv4 address written in IPv6 form (`[::ffff:10.0.0.1]`)
+  also got past the network rule that stops web pages reaching your local network. WardenOne's
+  address checks now share one classifier, and a test holds them all to the same answer.
+- The Permissions page's "What can leave the browser" list now covers everything WardenOne
+  contacts. It listed only the reputation checks you switch on, all under an "opt-in" banner.
+  It left out the daily filter-list downloads, Script Drift's re-checks of third-party scripts
+  and the Twitch requests, which all run without a click, plus the extension checker's Web
+  Store lookup and the network self-test. Those now appear in their own "Automatic" group, and
+  the page names every address. A test holds the page to the same list as the privacy policy,
+  built from the code. That test had never been run: the gate counted it as wired because its
+  name appeared in the syntax-check list. The gate now counts a test only if it runs it.
+- The support note's link to the README, and the privacy policy's link to the list of filter
+  sources, were dead on the published website, because neither file is published there. Both
+  now point at the repository.
+- Videos on streaming sites whose player loads the video itself, piece by piece (as
+  JW Player, hls.js and similar do), play again. Video hosts put a
+  one-time pass in each video link (`master.m3u8?token=…`). WardenOne's
+  session-token guard took that pass for your login token leaving the page, and
+  blocked it. The player then gave up with "This video file cannot be played
+  (Error Code: 232011)". Subtitles were blocked too, just because their web
+  addresses contain long ID codes. What decides it now is where a link came from,
+  not what it looks like: a link that a server sent to the page (in the player's
+  list of sources, in a playlist, in a video manifest) goes through, pass and all.
+  A token that a script only holds in memory was never sent to the page inside a
+  link to some other site, so it is still blocked, however the link is dressed up.
+  Links that merely echo what the page just sent, or that a script builds for
+  itself, don't count as sent. Some players are sent an encrypted source list and
+  decode the first playlist themselves. For those, that one playlist request is
+  also allowed, but only from a page that is actually playing video, and never
+  with a token or password the site has stored or you've typed in. Everything that
+  playlist leads to must still have come from a server. In embedded players, plain
+  ID codes in a web address's path no longer count as tokens, but long mixed-case
+  codes that look like secrets still do.
+- If GitHub, ChatGPT or YouTube Music change how their own light and dark themes
+  are switched, EyeShield no longer leaves them unthemed. After switching one of
+  these sites, EyeShield checks a few seconds later that the page really changed.
+  If it clearly didn't, it themes that page the way it themes any other site.
+- In dark mode, the "This page: …" line in the popup's status card was a pale
+  grey box. It now matches the rest of the card.
+- Changing EyeShield's mode applies to the page you're on straight away. Picking a
+  new mode sent it to the open tab, and then the tab asked for its settings again
+  and was answered from a copy taken before the change -- so it went straight back
+  to the old mode, and only pressing Save a second time made the new one stick.
+  Open tabs now wait for the updated settings instead of taking the old copy, and
+  never let an older copy undo a change they've already been sent. A tab that was
+  open before EyeShield was turned on (or before an update) also gets the site
+  themes for GitHub, YouTube Music and the other tuned sites when the popup
+  refreshes it, instead of the plain generic theme.
+- YouTube's play, volume and other player buttons stay visible under EyeShield.
+  YouTube's redesigned player draws each control on a faint dark pill, and those
+  pills are what keep a white icon readable over a bright frame. EyeShield cleared
+  every button and every box in the player's control bar to transparent, so on a
+  light video the controls vanished in every mode -- the autoplay switch lost its
+  knob too. The controls now keep YouTube's own paint; EyeShield only makes sure the
+  player's text stays white.
+- YouTube Music works with every EyeShield mode, and its album and playlist covers
+  show again. YouTube Music is its own app and shares none of YouTube's page
+  structure, so almost none of the YouTube theme applied to it -- except one rule
+  that painted the overlay YouTube Music lays over every cover, turning each one
+  into a black square in Ultra and a white one in Light. It now has its own
+  profile. Light is a real light theme: YouTube's own light colours for everything
+  YouTube Music shares with YouTube, its own surfaces turned light, and only what it
+  hard-codes for a dark page rewritten -- white text and icons made dark, and the
+  faint white tint behind chips made a faint grey one -- while covers, the play
+  buttons on them and the album art are left as they are. Dark and Ultra now look
+  different from Normal and from each other. Before, all three looked identical:
+  YouTube Music is already almost black, and Ultra's colours never reached the parts
+  you can see. Dark is calmer: the coloured artwork wash behind the top of the page
+  is gone, and the grey chips, search box, sidebar highlight and buttons are dimmer.
+  Ultra is true black: the page, sidebar and player bar are black, controls are drawn
+  as crisp outlines instead of grey blocks, and the grey secondary text is brighter.
+  Neither mode makes anything lighter, and the filter chip you have selected stays
+  white.
+- GitHub keeps its own design under EyeShield. The search box showed nothing as you
+  typed -- GitHub draws the typed text on a layer behind a see-through box, and
+  EyeShield painted the box solid -- every file name and commit message came out in
+  the same washed-out blue, and icons were drawn heavier than GitHub draws them.
+  EyeShield now switches GitHub to its own light or dark theme instead of repainting
+  it. Ultra takes the page to true black and GitHub's grey buttons, inputs, panels
+  and cards to near-black, keeping GitHub's borders so the layout still reads -- if
+  you already use GitHub's dark theme, Ultra is the deeper version of it. When you're signed in,
+  GitHub only loads the theme you picked, so EyeShield fetches GitHub's other
+  theme stylesheet the way GitHub's own theme picker does and switches once it has
+  arrived -- until then, or if it can't load, GitHub stays exactly as it was
+  rather than half-switched (the black page with dark text, white buttons and
+  missing icons). Your chosen dark variant (dimmed, high contrast) is used when
+  it's available. Turning EyeShield off puts back whatever theme GitHub had.
+- ChatGPT keeps its own design under EyeShield. Its send and voice buttons are
+  solid discs, white with a black icon in dark mode, and EyeShield forced every
+  button's icon to white -- a blank, pale circle beside the message box. In Light
+  the message box stayed dark and your conversations in the sidebar were nearly
+  invisible. EyeShield now switches ChatGPT between its own light and dark themes,
+  the same switch ChatGPT's settings use -- on every part of the page that carries
+  it, including menus and panels ChatGPT adds or redraws later. When you're signed
+  in, ChatGPT keeps that switch in a different place from the signed-out pages,
+  which EyeShield never touched, so a signed-in chat in Light kept its black page,
+  sidebar and message box with dark text on top. EyeShield now switches both, and
+  turning it off puts back exactly what ChatGPT had. ChatGPT's own dark theme is
+  already pure black, so Ultra looked no different from it. Ultra now goes further:
+  the message box turns black with a thin outline instead of grey, buttons, menus
+  and cards go near-black, and text and icons go pure white. Dark is ChatGPT's own
+  dark theme, so if ChatGPT is already dark for you, it looks the same as
+  EyeShield off. Your accent and message colours stay as ChatGPT shows them.
+- Pausing a Twitch stream no longer blanks the page. Turbo users and channel
+  subscribers get a "Stream Rewind" tip in the player when they pause, and
+  WardenOne's fake-confirm-box sweep took it for one: a short box, a title
+  starting "Stream", no link. It removed the tip on sight, the badge said "1
+  blocked", and Twitch's player broke on its next update and left nothing but
+  the dark background. The sweep deletes what it judges, and on Twitch, YouTube,
+  Spotify and X the page is the site's own app, so it no longer runs there --
+  fake boxes on those sites come from other people's frames, and the sweep still
+  runs inside those. It also stopped reading a box's title as a button: when a
+  box's real buttons are icons, the words around them are its message.
+- Looking up a Windows command no longer gets it called a scam. Searching for
+  `sfc /scannow` or a list of useful CMD commands put the red ClickFix panel over
+  the results, and a page listing Run commands -- `wscui.cpl` for Windows Security
+  Center, `mstsc` for Remote Desktop -- was locked as a tech-support scam. Three
+  things were wrong. A results page is other sites' snippets, and the page-text
+  checks (ClickFix, Scam Lock, fake updates) read it as the page talking to you;
+  they now leave the results pages of Google, Bing, DuckDuckGo, Brave, Yahoo and
+  the other main engines alone, as they already did AI assistants, and anything a
+  page copies to your clipboard is still checked there. The ClickFix guard also
+  took "type" and "press Enter" near a shell as paste instructions, so every
+  tutorial that says "open Command Prompt, type this, press Enter" looked like the
+  trick. Steps that only have you type a command you can read are left alone now;
+  steps that have you paste something you were never shown -- the Run box and
+  Ctrl+V -- or put a download-and-run command in front of you are still warned
+  about. And Scam Lock took two names for a scam. A Windows product name beside a
+  remote-support tool is not enough any more: a scam page also says your PC is
+  locked or infected, or gives a number to call, and those are still caught. The
+  search-engine list is one exact list now; the adult-content filter kept its own
+  copy, which let hosts like `google.attacker.com` skip it.
+- The corner badge can be pressed on Twitch again, and stays where it is. Twitch's
+  page never scrolls, so everything in its layout counts as anchored, and the
+  badge's corner is the chat box: the Chat button under the badge, the message
+  field directly above it, and above that the chat list, which on a quiet channel
+  is a focusable region the height of the whole column. The badge knew how to step
+  clear of one control, but every spot it tried was "taken": by the message field,
+  then by that page-tall region it could never clear -- so it stayed put and stopped
+  taking input, visible and dead, from the first time the stream resumed after a
+  blocked ad break, which is when it re-checks its corner; and a panel left open at
+  that moment was stranded, with nothing able to close it. Three changes. It climbs:
+  a spot taken by another control leads to the next spot above it, a bounded number
+  of times. A control taller than the badge could ever move -- a focusable column,
+  a page-tall wrapper -- is a region, not something the reader is aiming at, and is
+  no longer yielded to (an embedded frame still is: what is inside it cannot be
+  seen). And a re-check keeps the spot the badge already holds while it is still
+  clear, instead of climbing again from scratch and landing a few rows higher or
+  lower each time the stream fired an event; it comes home when the corner is clear.
+  A panel left open when the badge does stop taking input is closed rather than
+  stranded. Checked in a real browser with the extension loaded, on a busy channel
+  and a quiet one: the badge sits above the chat box and opens on every click.
+- Search results are no longer marked "Looks like Steam, but is not Steam" just
+  because the site's name contains the word. A search for "steamrip" carried that
+  badge on every steamrip.com result, and steamdb, protondb, applebees and
+  blog.google would have carried theirs: the worker's brand rule flagged any
+  domain that merely contained a brand word, while the in-page rule had long
+  required a sign-in word beside it. The two now agree. A name that contains a
+  brand is left alone; one dressed as a login, verify or secure destination, a
+  brand as a subdomain of someone else's site, an official brand domain moved to
+  another top-level domain (steamcommunity.ru), a typo of one (steamcommunlty.com)
+  or a digit swap (st3am.tk) is still marked -- and the badge now says what it saw:
+  "Looks like" for a typo or a moved domain, "Uses the Steam name" for the rest.
+  Brands that are also ordinary words (steam, apple, chase) on some other domain
+  ending no longer count on their own; chase.co.uk is a bank.
+- Two markers WardenOne left on every page for no reader are gone: a "protection
+  is on" flag that nothing had consulted since the engine's health moved to a
+  signed check, and a flag the ad-collapse step set and never read. A page could
+  use either only to tell that WardenOne was installed. What remains of that
+  surface -- the handles the extension's own parts need, the warnings it draws,
+  the events it uses to talk to itself -- is now written down with a reason for
+  each, and the gate fails on any new one; the same check proves that knowing
+  WardenOne is present buys a page nothing, because every path from the page's
+  world into a privileged decision is signed. WardenOne does not promise to be
+  invisible, and the README now says so.
+- The XSS Behavior Guard costs a page far less per assignment. Every wrapped
+  innerHTML, setAttribute, timer or navigation call re-read the page's URL,
+  path and window.name, decoded them again, and walked every tag of the value
+  before deciding nothing matched; a render loop paid that on every frame. The
+  guard now re-reads a source only when it changed, checks whether any source
+  text is even present before it walks anything, decodes only a value that can
+  decode, and remembers its verdict for a fragment it has already judged while
+  the sources stand still. Measured on the shipped code: a benign 8 KiB
+  fragment went from 352 to 47 microseconds, a 64 KiB one from 2.3 to 0.26
+  milliseconds, and a repeated fragment to about 15; a reflected payload is
+  caught exactly as before, and a new URL, name or message is seen at once.
+- The anti-fingerprint shield shows a site the same machine every time. The core
+  count, memory and GPU it reports were drawn afresh on every page load, so a
+  site saw a different computer on every reload and in every tab -- and the
+  systems that read exactly those values, fraud checks and "remember this
+  device", kept asking you to verify again. The draw is now per site: one site
+  always sees one machine, across reloads, tabs and its frames; two sites see
+  unrelated ones; and nothing in it is about you, so it links nothing across
+  sites. Canvas and audio noise still change per load.
+- Eye Shield no longer writes anything into a website's own storage. To paint its
+  dark or light backdrop before a page could flash its native colours, it kept the
+  chosen mode -- including "off" -- under a WardenOne-named key in every site's
+  localStorage, where the site could read it and where it stayed after uninstall.
+  The mode now travels inside the extension itself and the page cannot see it;
+  the backdrop still paints first. The old key is removed from every site you
+  visit with Eye Shield on, and from the open tabs when you switch it off.
+- WardenOne's own pages can follow your system's colour scheme. The theme switch
+  knew only Light and Dark; there is a System option beside them now, in the
+  popup header, the Interface section and onboarding, and it follows a
+  mid-session switch. Light stays the default. A chosen theme is also remembered
+  for the first paint of the next page, so no page flashes the other theme on
+  the way in.
+- A failure inside the protection check can no longer switch protections off.
+  The routine that applies your settings to the browser -- rules, injections,
+  content settings -- kept two spare copies of its list of protections for the
+  case where something went wrong, and the copies had drifted: between them they
+  forgot Header Shield, both cookie rules, Mail Shield, the search parameters and
+  the intranet rules, called six protections with a hard "off", and repeated two
+  calls. Had either been reached, an unknown configuration would have been
+  answered by disabling protections. There is one list now; when the check
+  cannot run, it leaves the browser's state exactly as it was, records that it
+  could not run, and the next wake tries again. A single protection that fails
+  is reported by name and no longer takes the rest of the list down with it.
+- The hidden page that plays notification sounds is closed when it is done. The
+  first sound of a session opened it and nothing ever closed it, so a page, its
+  scripts and an open audio context stayed resident until the browser closed, in
+  exchange for half a second of tone. It now closes a few seconds after the last
+  sound -- a burst of notices still shares one page, and no tune is cut short --
+  and releases its audio context as soon as the tune has ended. Sound stays off
+  by default; nothing changes for anyone who has not switched it on.
+- PhishTank lookups no longer announce WardenOne. Every lookup carried an
+  `X-WardenOne-Client` header with the exact extension version -- a header
+  PhishTank neither documents nor reads -- on a request that already identifies
+  you by your own key and the full address, so it only made WardenOne readers a
+  separable, build-by-build population for nothing. The header is gone. The one
+  request that still carries the version is Google Safe Browsing's, whose API
+  requires a client name and version, and the code and the privacy policy now say
+  so; a gate check fails if any other request starts introducing the extension.
+- The release zip carries only what belongs in an extension. The changelog (95 KiB),
+  the security policy and the support note were inside it -- not because a rule
+  kept them but because no rule removed them -- and the packaging comment said the
+  privacy policy was kept while a rule below excluded it. Each document is now
+  decided in writing: LICENSE, NOTICE and CREDITS.md travel with the work, the rest
+  are excluded by name, and the package check fails if an unlisted document
+  appears or the comment and the rules disagree again. The Store package leaves
+  the same two notes out.
+- A page can no longer summon WardenOne's redirect warning page for a destination
+  of its own. When the in-page guard stops a same-tab jump that followed a real
+  click, it asks the worker for the warning page, whose Continue button points at
+  the stopped destination -- and that request travelled on the same public routing
+  token as every other in-page event, so any script on the site could send one
+  with its own landing page as the destination, put it behind a genuine
+  WardenOne-branded Continue on a real chrome-extension:// page, and repeat it
+  eight times a minute to train you to click through. The request is now signed
+  by the guard under a key the page never had, over a number that only moves
+  forward and the destination, the reason and the kind the page will show; a
+  forged, replayed or altered request raises nothing. The block count on the
+  badge is unchanged, and a genuine stopped jump still offers Continue.
+- The OpenPhish row in the API keys section no longer asks for a token. The
+  community feed WardenOne uses is fetched whole and needs no key, so the
+  "Optional OpenPhish token" field stored a secret that nothing ever read -- and
+  the only place that said so was the result of a Test button a reader who
+  pastes and saves never presses. The field is gone; a token pasted into an
+  earlier build is deleted from stored settings on update, along with any other
+  saved key this build has no setting for. The keys that are used are untouched,
+  and the OpenPhish switch works exactly as before.
 - A command picked from the palette runs even when WardenOne's background worker
   went to sleep while the palette was open. The one-use permission the shortcut
   grants lived only in the worker's memory, and Chrome routinely puts the worker

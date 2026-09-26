@@ -9,6 +9,26 @@
  */
 let wardenAudioContext = null;
 
+/* The context lives for a sound, not for the session (LIFE-05). It used to be created lazily
+   and kept for as long as this document lived -- which, before the worker learned to close the
+   document, was the rest of the browser session. Once the last scheduled note has ended and a
+   short idle has passed, the context is closed and dropped; the next tune makes a new one
+   (playTone already treats a closed context as absent). The worker closes the document itself
+   a moment later; this keeps no audio graph alive in the meantime. */
+const WARDEN_AUDIO_IDLE_MS = 2000;
+let wardenAudioIdleTimer = 0;
+
+function releaseAudioContextWhenIdle(tuneSeconds) {
+  if (wardenAudioIdleTimer) clearTimeout(wardenAudioIdleTimer);
+  wardenAudioIdleTimer = setTimeout(() => {
+    wardenAudioIdleTimer = 0;
+    const context = wardenAudioContext;
+    wardenAudioContext = null;
+    if (!context || context.state === 'closed') return;
+    try { Promise.resolve(context.close()).catch(() => {}); } catch (_) {}
+  }, Math.ceil(Math.max(0, Number(tuneSeconds) || 0) * 1000) + WARDEN_AUDIO_IDLE_MS);
+}
+
 function soundSpec(sound) {
   /* 'notification' is the name the first version used for what is now 'soft'.
      Settings saved then still say it, so it keeps working. */
@@ -43,6 +63,7 @@ async function playTone(sound, volume) {
     oscillator.start(at);
     oscillator.stop(at + gap);
   });
+  releaseAudioContextWhenIdle(0.02 + spec.notes.length * gap);
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

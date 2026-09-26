@@ -87,7 +87,7 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
   installEngineAmbient(sandbox);
-vm.runInContext(startup + '\nglobalThis.__phishingTest = { loginRiskVerdict, looksLikeLookalikeHost };', sandbox, { filename: 'background-startup.js' });
+vm.runInContext(startup + '\nglobalThis.__phishingTest = { loginRiskVerdict, looksLikeLookalikeHost, loginBrandRiskForHost };', sandbox, { filename: 'background-startup.js' });
 
 const officialStartupHosts = [
   'login.microsoft365.com',
@@ -115,6 +115,71 @@ const risky = sandbox.__phishingTest.loginRiskVerdict('paypa1.com', 'https://pay
 assert.strictEqual(risky.risky, true, 'obvious PayPal typo should still be risky');
 
 console.log('[ok] phishing false-positive checks passed');
+
+// ---------------------------------------------------------------------------
+// The worker's brand-in-name rule, which the search-result marker asks with nothing but a host.
+//
+// Reported: a Google search for "steamrip" showed every steamrip.com result with "Looks like
+// Steam, but is not Steam". SteamRIP is not pretending to be Steam; its name merely contains
+// the word. The worker's loginBrandRiskForHost flagged ANY registrable domain containing a brand
+// token -- steamrip, steamdb, protondb, applebees, blog.google -- while the engine's own rule
+// (content.js, M31) had long required a phishing word beside a brand-in-name hit. The two now
+// answer the same way: a name that merely contains a brand is not a look-alike; one dressed as a
+// login, verify or secure destination is; a brand as a subdomain of someone else's site is; an
+// official brand domain moved to another TLD is; a typo or digit swap of the brand is.
+{
+  const brand = (host, url) => sandbox.__phishingTest.loginBrandRiskForHost(host, url || '');
+  const lookalike = (host) => sandbox.__phishingTest.looksLikeLookalikeHost(host);
+  let failed = 0;
+  const expect = (host, hit, why, url) => {
+    const got = brand(host, url);
+    const ok = hit ? !!got : !got;
+    if (ok) { console.log('  ok  - ' + host + (url ? ' ' + url : '') + (hit ? ' is a look-alike' : ' is left alone') + (why ? ' (' + why + ')' : '') + (got && got.kind ? ' [' + got.kind + ']' : '')); return; }
+    failed++;
+    console.error('  FAIL - ' + host + ' expected ' + (hit ? 'a brand hit' : 'no brand hit') + ' but got ' + JSON.stringify(got));
+  };
+  /* The report, and its siblings: a brand word inside an ordinary name. */
+  expect('steamrip.com', false, 'the reported false positive: contains "steam", is not dressed as Steam');
+  expect('www.steamrip.com', false);
+  expect('steamdb.info', false);
+  expect('steamgriddb.com', false);
+  expect('protondb.com', false);
+  expect('applebees.com', false);
+  expect('applesfera.com', false);
+  expect('amazonia.org', false);
+  expect('discordbots.gg', false);
+  expect('githubstatus.com', false);
+  expect('blog.google', false, 'a brand-owned TLD is not a look-alike of the brand');
+  expect('apps.apple', false);
+  expect('chase.co.uk', false, 'a common-word brand on another TLD is a real bank, not a swap');
+  expect('steam.xyz', false, 'the exact common word alone proves nothing (the engine agrees)');
+  for (const h of ['steamrip.com', 'steamdb.info', 'protondb.com', 'applebees.com']) {
+    if (lookalike(h)) { failed++; console.error('  FAIL - ' + h + ' is still a startup look-alike'); } else console.log('  ok  - ' + h + ' is not a startup look-alike');
+  }
+  /* What must still be caught. */
+  expect('steam-login.com', true, 'brand-in-name dressed as a login');
+  expect('steamlogin.com', true, 'glued to a phishing word');
+  expect('secure-steam-verify.net', true);
+  expect('paypal-verify.com', true);
+  expect('steam.evil.com', true, 'brand as a subdomain of another site');
+  expect('login.microsoft.attacker.net', true, 'brand buried mid-name');
+  expect('secure-steam.evil.net', true, 'hyphenated brand token in a subdomain');
+  expect('paypal.xyz', true, 'the exact brand on another TLD');
+  expect('steamcommunity.ru', true, 'an official brand domain moved to another TLD');
+  expect('steamcommunlty.com', true, 'a one-letter typo of an official brand domain');
+  expect('steampowerd.com', true);
+  expect('paypa1.com', true, 'digit-for-letter');
+  expect('st3am.tk', true, 'digit-for-letter on a common-word brand is still a typo');
+  expect('rnicrosoft.com', true);
+  expect('steamrip.com', true, 'at login time a phishing word in the URL still counts', 'https://steamrip.com/account/login');
+  /* And the kind travels, so the marker can say what it saw rather than claim imitation. */
+  const worn = brand('steam-login.com');
+  const typo = brand('steamcommunlty.com');
+  if (!(worn && worn.kind === 'brand-in-name' && typo && typo.kind === 'typosquat')) { failed++; console.error('  FAIL - the hit does not say which shape it saw: ' + JSON.stringify([worn, typo])); }
+  else console.log('  ok  - a hit names its shape (brand-in-name / typosquat)');
+  if (failed) { console.error('\n' + failed + ' brand-in-name check(s) failed'); process.exit(1); }
+  console.log('[ok] brand-in-name calibration checks passed');
+}
 
 // ---------------------------------------------------------------------------
 // M31. Behavioural verdicts, not just table contents.

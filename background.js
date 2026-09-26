@@ -1604,9 +1604,9 @@ function forgetNavSignals(tabId) {
 // The other half of the engine watchdog. bridge.js runs in the ISOLATED world, which a page
 // cannot reach. It holds the key the engine was handed at document_start and it tells us when
 // the engine never produced a signed "installed", or stopped answering a signed challenge
-// (SEC-03). Its word is the health authority here: the MAIN-world markers this used to read
-// (__wardenOneReadyVersion, __wardenOneProtectionActive) are page-writable, so a page could
-// dispose the engine and write them back, and the probe said "present".
+// (SEC-03). Its word is the health authority here: the MAIN-world marker this used to read
+// (__wardenOneReadyVersion, and a protection-active marker since removed) is page-writable, so
+// a page could dispose the engine and write it back, and the probe said "present".
 //
 // The response is a reload, not an injection. Injecting into a live document cannot hand the
 // new engine a key the page has not seen, so it would produce an engine that has to trust a
@@ -2077,8 +2077,10 @@ const DEFAULT_CONFIG = {
   urlHausKey: '',
   abuseIpDb: false,
   abuseIpDbKey: '',
+  // No openPhishKey: the community feed is fetched whole and takes no key. A token field
+  // used to sit here for a paid feed this build never used; the token it stored was a
+  // secret nothing read (BUG-09), and the update migration deletes any still stored.
   openPhish: false,
-  openPhishKey: '',
   phishTank: false,
   phishTankKey: '',
   whoisXml: false,
@@ -2299,14 +2301,19 @@ function deepFreezeSnapshot(value) {
 function sharedContentConfigSnapshot() {
   if (__contentConfigMemo) return __contentConfigMemo;
   const build = (async () => {
+    // The snapshot's revision: the moment its inputs were READ, taken before the read. The memo
+    // is dropped whenever an input key changes, so a newer configuration is a newer build, and a
+    // bridge that receives two answers out of order can tell which one is current (MV3-04). It
+    // used to be stamped after the reads finished, so a build that read the old settings just
+    // before a save, and finished just after the popup pushed the new ones to a tab, carried a
+    // revision newer than the push -- and Eye Shield, which sets aside answers older than its
+    // last push, would have taken it and put the previous mode back.
+    const rev = Date.now();
     const store = await localGet(contentConfigInputKeys());
     // The packaged seed first, so the cap favours it, then whatever the reader or a list added (BUG-10).
     const seed = await searchJunkSeed();
     return deepFreezeSnapshot({
-      // The snapshot's revision: its build time. The memo is dropped whenever an input key
-      // changes, so a newer configuration is a newer build, and a bridge that receives two
-      // answers out of order can tell which one is current (MV3-04).
-      rev: Date.now(),
+      rev,
       overrides: sanitizeContentConfig(store && store.wardenone_config),
       learned: sanitizeLearnedForContent(store && store.wardenone_learned),
       supplemental: sanitizeSupplementalLists(store && store[SUPPLEMENTAL_LIST_STORAGE_KEY]),
@@ -2485,6 +2492,17 @@ chrome.runtime.onInstalled.addListener((details) => {
         cfg.googleSearchResultCleanup = false;
         cfg.__searchCleanupSplitV352Enabled = true;
         changed = true;
+      }
+      // A secret-shaped field this build has no setting for is a credential nothing can read.
+      // Earlier builds offered an "Optional OpenPhish token" the community feed never used, and
+      // a reader who pasted one has had it sitting in plaintext beside the keys that are used
+      // (BUG-09). Deleting by pattern rather than by name, so the next retired provider key is
+      // purged the same way; the /Key$/ rule is the one the bridge and the export already use.
+      for (const field of Object.keys(cfg)) {
+        if (/Key$/.test(field) && !Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG, field)) {
+          delete cfg[field];
+          changed = true;
+        }
       }
       if (changed) localSet({ wardenone_config: cfg }).catch(() => {});
     }
@@ -7455,6 +7473,9 @@ async function checkSafeBrowsingUrl(rawUrl, apiKey) {
   if (!key || !url) return null;
   const endpoint = 'https://safebrowsing.googleapis.com/v4/threatMatches:find?key=' + encodeURIComponent(key);
   const body = {
+    // The one place the version travels: threatMatches.find requires a client object with an
+    // id and a version (the API's schema, not a courtesy). The request already carries the
+    // reader's own key, so the field adds nothing to who they are.
     client: { clientId: 'wardenone', clientVersion: WO_CLIENT_VERSION },
     threatInfo: {
       threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
@@ -7778,10 +7799,14 @@ async function fetchPhishTankUrl(rawUrl, apiKey) {
   try {
     const res = await fetchJsonWithTimeout(PHISHTANK_ENDPOINT, {
       method: 'POST',
+      // No X-WardenOne-Client header (DATA-03). PhishTank identifies an application by its
+      // app_key and asks for a descriptive User-Agent -- a header an extension's fetch cannot
+      // set -- and documents nothing else; the header named this reader as a WardenOne
+      // installation, down to the build, on a request that already carries their own key and
+      // the full URL. Nothing here should introduce WardenOne to a provider that did not ask.
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'X-WardenOne-Client': 'wardenone/' + WO_CLIENT_VERSION,
       },
       body: body.toString(),
     }, EXTERNAL_REPUTATION_TIMEOUT_MS);
@@ -8129,6 +8154,40 @@ function ipv4FromMappedIpv6(value) {
   return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255].join('.');
 }
 
+/* THE classifier for IPv6 addresses that are not public. normalizeIpLiteral (public-or-not, for
+   Download Shield's re-fetch, reputation lookups and isLocalOrPrivateHost) and classifyResolvedIp
+   (the DNS-rebinding guard) each used to carry their own prefix list, and one drifted:
+   normalizeIpLiteral tested the text "fe80", but link-local is fe80::/10 -- fe80 through febf --
+   so [fe90::1], [fea0::1] and [febf::1] passed as public addresses. Both now ask this one.
+
+   The address is first put in the URL parser's canonical form (lower case, leading zeros dropped,
+   the longest zero run compressed), so the ranges are tested on the numeric first group rather
+   than on however the text happened to be written: "fe80:0::1", "FE90::1" and "0:0:0:0:0:0:0:1"
+   all classify correctly. The engine's own copy of the link-local and ULA test (localAdminTarget
+   in src/content.js) and the intranet rule's regexFilter (INTRANET_NET_PATTERNS) are separate
+   scripts and a DNR regex; tools/test-ip-classifier-agreement.js holds all of them to this one. */
+function canonicalIpv6(value) {
+  const ip = String(value || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!ip || ip.indexOf(':') < 0 || !/^[0-9a-f:.]+$/.test(ip)) return '';
+  try {
+    return new URL('http://[' + ip + ']/').hostname.replace(/^\[|\]$/g, '');
+  } catch (_) {
+    return '';
+  }
+}
+function ipv6Range(value) {
+  const ip = canonicalIpv6(value);
+  if (!ip) return 'invalid';
+  if (ip === '::') return 'unspecified';
+  if (ip === '::1') return 'loopback';
+  const first = ip.charAt(0) === ':' ? 0 : parseInt(ip.split(':')[0], 16);
+  if ((first & 0xfe00) === 0xfc00) return 'private';     // fc00::/7, unique local
+  if ((first & 0xffc0) === 0xfe80) return 'linklocal';   // fe80::/10
+  if ((first & 0xff00) === 0xff00) return 'multicast';   // ff00::/8
+  if (/^2001:db8(?::|$)/.test(ip)) return 'documentation';  // 2001:db8::/32
+  return 'public';
+}
+
 function normalizeIpLiteral(value) {
   let ip = String(value || '').trim().toLowerCase();
   if (!ip) return '';
@@ -8151,11 +8210,7 @@ function normalizeIpLiteral(value) {
     return parts.join('.');
   }
   if (ip.includes(':')) {
-    if (!/^[0-9a-f:.]+$/i.test(ip)) return '';
-    if (ip === '::' || ip === '::1') return '';
-    if (/^(fc|fd|fe80|ff)/i.test(ip)) return '';
-    if (/^2001:db8:/i.test(ip)) return '';
-    return ip;
+    return ipv6Range(ip) === 'public' ? canonicalIpv6(ip) : '';
   }
   return '';
 }
@@ -9865,17 +9920,17 @@ function testWhoisXmlThreatIntelKey(apiKey) {
   });
 }
 
-async function testOpenPhishKey(apiKey) {
-  const key = String(apiKey || '').trim();
+/* OpenPhish is the keyless provider: the test is a fetch of the community feed itself, and
+   there is no token to validate. There used to be one, and this function's result -- a note
+   that the token was kept for a paid feed this build does not use -- was the only place the
+   product admitted the token went unread (BUG-09). */
+async function testOpenPhishKey() {
   try {
     const result = await getOpenPhishFeed(true);
     if (result && result.ok && result.feed) {
       return {
         ok: true,
-        validated: !key,
-        message: key
-          ? 'OpenPhish Community feed works. Token saved for future premium-feed support; this build uses the official community feed.'
-          : 'OpenPhish Community feed works. Phishing feed checks are enabled.',
+        message: 'OpenPhish Community feed works. Phishing feed checks are enabled.',
         feedSize: result.feed.urls.length,
       };
     }
@@ -9902,7 +9957,7 @@ async function testConfiguredProviderKey(provider, apiKey) {
   if (!key && String(provider || '') !== 'openPhish') return { ok: false, error: 'No ' + meta.label + ' API key saved.' };
   if (String(provider || '') === 'urlHaus') return testUrlHausKey(key);
   if (String(provider || '') === 'abuseIpDb') return testAbuseIpDbKey(key);
-  if (String(provider || '') === 'openPhish') return testOpenPhishKey(key);
+  if (String(provider || '') === 'openPhish') return testOpenPhishKey();
   if (String(provider || '') === 'phishTank') return testPhishTankKey(key);
   if (String(provider || '') === 'whoisXml') return testWhoisXmlKey(key);
   if (String(provider || '') === 'whoisXmlReputation') return testWhoisXmlReputationKey(key);
@@ -10577,6 +10632,7 @@ const RECONCILE_RETRY_MAX = 6;
 const RECONCILE_RETRY_MIN_MS = 60 * 1000;
 const RECONCILE_COMPONENT_LABELS = {
   config: 'settings could not be read',
+  reconcile: 'the protection check itself failed before it could run',
   privacyHeaders: 'privacy signal headers',
   headerShield: 'Header Shield',
   thirdPartyCookies: 'third-party cookie blocking',
@@ -10679,6 +10735,10 @@ function refreshExtensionState() {
         cfg.blockTrackers !== false ? 1 : 0,
         cfg.blockAllCookies === true ? 1 : 0,
         eyeShieldThemingActive(cfg) ? 1 : 0,
+        // The registration now carries the mode as its preload file (PRIV-12), so a change of
+        // mode with theming staying on must reach the reconciler too, or the next page paints
+        // the old backdrop.
+        eyeShieldPreloadFile(cfg),
         consentRejectActive(cfg) ? 1 : 0,
         cfg.blockFingerprintScripts !== false ? 1 : 0,
         cfg.blockFraudVendorScripts === true ? 1 : 0,
@@ -10713,43 +10773,52 @@ function refreshExtensionState() {
       const names = [];
       // Each applier is run under a name, and a resolved false counts as a failure: the
       // appliers catch their own Chrome errors, so a rejection was never going to arrive.
-      const run = (name, result) => { names.push(name); applied.push(Promise.resolve(result)); };
-      run('privacyHeaders', applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false));
-      run('headerShield', applyHeaderShieldRules({
+      // The applier is handed over as a thunk, so one that throws synchronously fails as THAT
+      // component and the rest of the list still runs (BUG-08). This is the one list: there is
+      // no second or third copy of it in the failure paths below, which is how three copies
+      // came to disagree about which components exist.
+      const run = (name, apply) => {
+        names.push(name);
+        let result;
+        try { result = apply(); } catch (_) { result = false; }
+        applied.push(Promise.resolve(result));
+      };
+      run('privacyHeaders', () => applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false));
+      run('headerShield', () => applyHeaderShieldRules({
         clientHints: on && cfg.clientHintProtection !== false,
         strictReferrer: on && cfg.capReferrer === true,
         trackerCache: on && cfg.trackerCacheProtection === true,
       }));
-      run('thirdPartyCookies', applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false));
-      run('trackerCookies', applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false));
-      run('allowlist', applyAllowlistRules(on ? activeAllowlist(cfg) : []));
-      run('mediaCompatibility', applyMediaCompatibilityRules(on));
-      run('loginCompatibility', applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false));
-      run('httpsUpgrade', applyHttpsUpgradeRule(on && cfg.forceHttps === true));
-      run('blocklistRulesets', refreshBlocklistRuleset(cfg));
-      run('eyeShield', reconcileEyeShieldInjection(cfg));
-      run('consentReject', reconcileConsentRejectInjection(cfg));
-      run('consentWall', reconcileConsentWallInjection(cfg));
-      run('mailShield', reconcileMailShieldInjection(cfg));
-      run('minerDetect', reconcileMinerDetectInjection(cfg));
-      run('searchJunk', reconcileSearchJunkInjection(cfg));
-      run('googleCleanupCss', reconcileGoogleCleanupCssInjection(cfg));
-      run('fingerprintScripts', applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true));
-      run('searchSponsoredAllow', applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
-      run('searchParams', applySearchParamRules(Object.assign({}, cfg, { enabled: on })));
-      run('allCookies', applyAllCookieBlock(on && cfg.blockAllCookies === true));
-      run('geolocation', applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)));
-      run('locationHeaders', applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true));
-      run('ipLookup', applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false));
-      run('intranet', applyIntranetNetworkRules(on && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false));
+      run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false));
+      run('trackerCookies', () => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false));
+      run('allowlist', () => applyAllowlistRules(on ? activeAllowlist(cfg) : []));
+      run('mediaCompatibility', () => applyMediaCompatibilityRules(on));
+      run('loginCompatibility', () => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false));
+      run('httpsUpgrade', () => applyHttpsUpgradeRule(on && cfg.forceHttps === true));
+      run('blocklistRulesets', () => refreshBlocklistRuleset(cfg));
+      run('eyeShield', () => reconcileEyeShieldInjection(cfg));
+      run('consentReject', () => reconcileConsentRejectInjection(cfg));
+      run('consentWall', () => reconcileConsentWallInjection(cfg));
+      run('mailShield', () => reconcileMailShieldInjection(cfg));
+      run('minerDetect', () => reconcileMinerDetectInjection(cfg));
+      run('searchJunk', () => reconcileSearchJunkInjection(cfg));
+      run('googleCleanupCss', () => reconcileGoogleCleanupCssInjection(cfg));
+      run('fingerprintScripts', () => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true));
+      run('searchSponsoredAllow', () => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
+      run('searchParams', () => applySearchParamRules(Object.assign({}, cfg, { enabled: on })));
+      run('allCookies', () => applyAllCookieBlock(on && cfg.blockAllCookies === true));
+      run('geolocation', () => applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)));
+      run('locationHeaders', () => applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true));
+      run('ipLookup', () => applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false));
+      run('intranet', () => applyIntranetNetworkRules(on && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false));
       // The reader-authored bands follow the master switch through their own appliers (BUG-02);
       // each answers {ok}, and a refusal is a degraded component like any other. Only when the
       // switch has moved, or on the first reconcile of this worker life: their own editors
       // rebuild them otherwise, and re-applying hundreds of rules on every toggle is not free.
       if (__userBandsAppliedFor !== on) {
-        run('userFilters', userFilterBandStep());
-        run('firewall', firewallBandStep());
-        run('userBlocklist', userBlocklistBandStep());
+        run('userFilters', () => userFilterBandStep());
+        run('firewall', () => firewallBandStep());
+        run('userBlocklist', () => userBlocklistBandStep());
         Promise.all(applied.slice(-3)).then((oks) => { if (oks.every((x) => x !== false)) __userBandsAppliedFor = on; }).catch(() => {});
       }
       Promise.allSettled(applied).then((results) => {
@@ -10767,49 +10836,17 @@ function refreshExtensionState() {
         clearReconcileDegraded();
       });
     }).catch(() => {
-      refreshPrivacyHeaders();
-      refreshAllowlistRules();
-      refreshMediaCompatibilityRules();
-      refreshLoginCompatibilityRules();
-      refreshHttpsUpgrade();
-      refreshBlocklistRuleset();
-      reconcileEyeShieldInjection();
-      reconcileConsentRejectInjection();
-      reconcileConsentWallInjection();
-    reconcileMailShieldInjection();
-      reconcileMailShieldInjection();
-      reconcileMinerDetectInjection();
-      reconcileSearchJunkInjection();
-      reconcileGoogleCleanupCssInjection({ enabled: false });
-      applyFingerprintScriptRules(false, false);
-      applyGoogleSearchSponsoredAllowRules(false);
-      applySearchParamRules({ enabled: false });
-      refreshAllCookieBlock();
-      refreshGlobalLocationBlock();
-      applyLocationPrivacyHeaderRule(false);
-      applyIpLookupBlockRules(false);
-    applyIntranetNetworkRules(false);
-      applyIntranetNetworkRules(false);
+      // An error before or around the list -- the read, the key, a helper -- means the desired
+      // state is unknown, and unknown means leave Chrome's state alone. There used to be a second
+      // list of appliers here and a third in the outer catch, hand-maintained copies of the one
+      // above that had drifted three appliers apart, called six protections with a hard off, and
+      // carried two pasted-twice calls (BUG-08); reached, they would have answered an unknown
+      // configuration by switching protections off. Now the reconcile is recorded as degraded
+      // and the wake-time retry runs the one list again (MV3-01).
+      noteReconcileDegraded(['reconcile'], '');
     });
   } catch (_) {
-    refreshPrivacyHeaders();
-    refreshAllowlistRules();
-    refreshMediaCompatibilityRules();
-    refreshLoginCompatibilityRules();
-    refreshHttpsUpgrade();
-    refreshBlocklistRuleset();
-    reconcileEyeShieldInjection();
-    reconcileConsentRejectInjection();
-    reconcileConsentWallInjection();
-    reconcileMinerDetectInjection();
-    reconcileSearchJunkInjection();
-    reconcileGoogleCleanupCssInjection({ enabled: false });
-    applyFingerprintScriptRules(false, false);
-    applyGoogleSearchSponsoredAllowRules(false);
-    refreshAllCookieBlock();
-    refreshGlobalLocationBlock();
-    applyLocationPrivacyHeaderRule(false);
-    applyIpLookupBlockRules(false);
+    noteReconcileDegraded(['reconcile'], '');
   }
 }
 
@@ -11094,6 +11131,42 @@ async function reconcileMinerDetectInjection(cfgArg) {
   } catch (_) { return false; }
 }
 
+/* The anti-flash backdrop's mode travels as a file: eyeshield-preload-<mode>.js is one line that
+   sets an isolated-world property, registered AHEAD of eyeshield.js in the same registration so
+   the script already knows the mode when it runs at document_start, before the page has painted
+   and before the async config snapshot has answered. The page cannot see that world. The mode
+   used to be cached in each site's own localStorage, which every site could read and which
+   outlived uninstall (PRIV-12). No file while the mode is off: the script is then registered for
+   the brightness and colour filters alone and paints no backdrop. */
+const EYESHIELD_PRELOAD_MODES = ['dark', 'ultra', 'light'];
+function eyeShieldPreloadFile(cfg) {
+  const mode = String((cfg && cfg.eyeShieldMode) || 'off').toLowerCase();
+  return EYESHIELD_PRELOAD_MODES.includes(mode) ? 'eyeshield-preload-' + mode + '.js' : '';
+}
+function eyeShieldScriptFiles(cfg) {
+  const preload = eyeShieldPreloadFile(cfg);
+  return preload ? [preload, 'eyeshield.js'] : ['eyeshield.js'];
+}
+/* Earlier builds left the mode under __woEyeShieldMode in the localStorage of every site they
+   themed. eyeshield.js removes it wherever it still runs; this covers the tabs that are open when
+   theming is switched off, after which the script no longer runs anywhere. */
+function eraseEyeShieldSiteMarkerFromOpenTabs() {
+  if (!chrome.scripting || typeof chrome.scripting.executeScript !== 'function') return;
+  try {
+    chrome.tabs.query({}, (tabs) => {
+      void chrome.runtime.lastError;
+      for (const t of (tabs || [])) {
+        if (!t || t.id == null || !/^https?:/i.test(t.url || '')) continue;
+        try {
+          chrome.scripting.executeScript(
+            { target: { tabId: t.id, allFrames: true }, func: () => { try { localStorage.removeItem('__woEyeShieldMode'); } catch (_) {} } },
+            () => { void chrome.runtime.lastError; },
+          );
+        } catch (_) {}
+      }
+    });
+  } catch (_) {}
+}
 async function reconcileEyeShieldInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   // The Store package does not carry eyeshield.js (CWS-03). A registration persisted by a package
@@ -11107,17 +11180,20 @@ async function reconcileEyeShieldInjection(cfgArg) {
     try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
   }
   const want = eyeShieldThemingActive(cfg);
+  const files = eyeShieldScriptFiles(cfg);
   let have = false;
+  let haveFiles = null;
   try {
     const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [EYESHIELD_SCRIPT_ID] });
     have = Array.isArray(reg) && reg.length > 0;
+    haveFiles = have && Array.isArray(reg[0].js) ? reg[0].js.map((f) => String(f).replace(/^\/+/, '')) : null;
   } catch (_) { have = false; }
   try {
     if (want && !have) {
       await chrome.scripting.registerContentScripts([{
         id: EYESHIELD_SCRIPT_ID,
         matches: ['<all_urls>'],
-        js: ['eyeshield.js'],
+        js: files,
         runAt: 'document_start',
         allFrames: true,
         matchOriginAsFallback: true,
@@ -11136,10 +11212,16 @@ async function reconcileEyeShieldInjection(cfgArg) {
       }]);
       // Apply live to already-open tabs so enabling theming doesn't need a reload.
       injectEyeShieldIntoOpenTabs();
+    } else if (want && have && haveFiles && haveFiles.join(',') !== files.join(',')
+        && typeof chrome.scripting.updateContentScripts === 'function') {
+      // The mode changed while theming stayed on: swap the preload file so the next page
+      // paints the new backdrop. Open tabs already re-theme from the config-update message.
+      await chrome.scripting.updateContentScripts([{ id: EYESHIELD_SCRIPT_ID, js: files }]);
     } else if (!want && have) {
       await chrome.scripting.unregisterContentScripts({ ids: [EYESHIELD_SCRIPT_ID, EYESHIELD_SITES_SCRIPT_ID] });
       // Open tabs keep their (now off-mode, cheap) instance until reload; the
       // config-update message already tells EyeShield to tear down any active theme.
+      eraseEyeShieldSiteMarkerFromOpenTabs();
     }
   } catch (_) { return false; }
 }
@@ -15791,6 +15873,10 @@ const INTRANET_NET_PATTERNS = [
   String.raw`^(https?|wss?)://([^/@]*@)?172\.(1[6-9]|2[0-9]|3[01])\.`,
   String.raw`^(https?|wss?)://([^/@]*@)?0\.0\.0\.0([:/]|$)`,
   String.raw`^(https?|wss?)://([^/@]*@)?\[?(::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:|fe[89ab][0-9a-f]:)`,
+  // An IPv4 private address written as IPv4-mapped IPv6: [::ffff:10.0.0.1] is the URL parser's
+  // [::ffff:a00:1], which the IPv4 patterns above never see. 10/8, 127/8, 192.168/16,
+  // 169.254/16 and 172.16/12, as the first mapped group appears once leading zeros are dropped.
+  String.raw`^(https?|wss?)://([^/@]*@)?\[::ffff:(a[0-9a-f]{2}|7f[0-9a-f]{2}|c0a8|a9fe|ac1[0-9a-f]):`,
   String.raw`^(https?|wss?)://([^/@]*@)?localhost([:/]|$)`,
   String.raw`^(https?|wss?)://([^/@]*@)?[^/:]+\.(local|localdomain|lan|home|internal|intranet|corp)([:/]|$)`,
 ];
@@ -15913,11 +15999,13 @@ function classifyResolvedIp(raw) {
     return 'public';
   }
   if (ip.indexOf(':') >= 0) {
-    const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
-    if (mapped) return classifyResolvedIp(mapped[1]);
-    if (ip === '::1' || ip === '::') return 'loopback';
-    if (/^f[cd][0-9a-f]{2}:/.test(ip)) return 'private';
-    if (/^fe[89ab][0-9a-f]:/.test(ip)) return 'linklocal';
+    /* Both spellings of an IPv4-mapped address (::ffff:10.0.0.1 and ::ffff:a00:1). */
+    const mapped = ipv4FromMappedIpv6(ip);
+    if (mapped) return classifyResolvedIp(mapped);
+    const range = ipv6Range(ip);
+    if (range === 'invalid') return '';
+    if (range === 'loopback' || range === 'unspecified') return 'loopback';
+    if (range === 'private' || range === 'linklocal') return range;
     return 'public';
   }
   return '';
@@ -16258,8 +16346,8 @@ async function buildProtectionHealthSummary(tab) {
   const list = healthListCounts(meta, auxMeta);
   const listAge = list.updated ? now - list.updated : 0;
   const issues = [];
-  const addIssue = (severity, text, topLevel) => {
-    if (text) issues.push({ severity, text, topLevel: topLevel === true });
+  const addIssue = (severity, text, topLevel, extra) => {
+    if (text) issues.push(Object.assign({ severity, text, topLevel: topLevel === true }, extra || {}));
   };
 
   if (cfg.enabled === false) addIssue('danger', 'Master switch is off, so page and network protections are paused.');
@@ -16294,9 +16382,27 @@ async function buildProtectionHealthSummary(tab) {
   const unreadExtensionAlerts = alerts.filter((event) => event && !event.reviewedAt
     && (event.severity === 'medium' || event.severity === 'high' || event.severity === 'critical'));
   const criticalExtensionAlerts = unreadExtensionAlerts.filter((event) => event.severity === 'critical' || event.severity === 'high');
+  /* The note used to be a sentence and nothing else: "1 important extension change needs
+     review." -- with no way to see WHICH extension, or what changed, without leaving the card
+     for the Security Centre. It now carries the changes themselves, so the popup can open the
+     note into them. Only what the card shows is sent, and only the newest few. */
   if (unreadExtensionAlerts.length) {
+    const short = (value, max) => String(value == null ? '' : value).slice(0, max);
     addIssue(criticalExtensionAlerts.length ? 'danger' : 'warn', unreadExtensionAlerts.length
-      + ' important extension change' + (unreadExtensionAlerts.length === 1 ? ' needs' : 's need') + ' review.');
+      + ' important extension change' + (unreadExtensionAlerts.length === 1 ? ' needs' : 's need') + ' review.', false, {
+      kind: 'extension-alerts',
+      total: unreadExtensionAlerts.length,
+      alerts: unreadExtensionAlerts.slice(0, 5).map((event) => ({
+        name: short(event.name || '(unknown extension)', 80),
+        severity: short(event.severity, 12),
+        summary: short(event.summary || 'Extension changed', 160),
+        when: Number(event.when) || 0,
+        fromVersion: short(event.fromVersion, 32),
+        toVersion: short(event.toVersion, 32),
+        enabled: event.enabled !== false,
+        reasons: (Array.isArray(event.reasons) ? event.reasons : []).slice(0, 3).map((reason) => short(reason, 200)),
+      })),
+    });
   }
   const extensionWatchStatusValue = store && store[EXT_WATCH_STATUS_KEY];
   if (cfg.watchExtensionPermissions !== false && extensionWatchStatusValue && extensionWatchStatusValue.state === 'error') {
@@ -17725,20 +17831,21 @@ async function wardenManualNotice(title, message, tab, id) {
   const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
   if (tabId !== null && /^https?:/i.test(String((tab && tab.url) || ''))) {
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        /* Dispatched in the isolated world, which is where the engine's toast
-           listener lives. Nothing is written into the page itself. */
+      /* Run in the extension's own isolated world and handed to the bridge there, which signs
+         it: the engine's notice card believes only signed events, because a page can dispatch
+         on the same bus (bridge.js eventSigned). No bridge, or no key, and it falls through to
+         the system notification rather than going out unsigned. */
+      const results = await chrome.scripting.executeScript({
+        target: { tabId, frameIds: [0] },
         func: (why, action) => {
           try {
-            document.dispatchEvent(new CustomEvent('wo-event', {
-              detail: { type: 'detected_manual_check', detail: { why, action, severity: 'Notice' } },
-            }));
-          } catch (_) {}
+            return typeof window.__wardenOneLocalNotice === 'function'
+              && window.__wardenOneLocalNotice('detected_manual_check', { why, action, severity: 'Notice' }) === true;
+          } catch (_) { return false; }
         },
         args: [title ? title + ' — ' + text : text, 'You asked for this check from the right-click menu.'],
       });
-      return true;
+      if (results && results[0] && results[0].result === true) return true;
     } catch (_) { /* fall through to the tray */ }
   }
   return showWardenSystemNotification(id || ('wo-check-' + Date.now()), {
@@ -17818,11 +17925,16 @@ function searchResultVerdictForHost(host, ctx) {
     }
   } catch (_) {}
 
-  /* Punycode, or a brand name worn by a domain that is not the brand's. */
+  /* Punycode, or a brand name worn by a domain that is not the brand's. The label says what was
+     seen: a typo or a moved official domain looks like the brand; a brand word beside a sign-in
+     word, or in a subdomain, USES the name. "Looks like Steam" on steamrip.com claimed an
+     imitation the site was not making, and the rule that produced it no longer fires on a name
+     that merely contains a brand word. */
   try {
     const brand = loginBrandRiskForHost(h, '');
     if (brand && brand.brand) {
-      return { level: 'warn', label: 'Looks like ' + brand.brand + ', but is not ' + brand.brand, detail: rd };
+      const looks = brand.kind === 'typosquat' || brand.kind === 'tld-swap';
+      return { level: 'warn', label: (looks ? 'Looks like ' + brand.brand : 'Uses the ' + brand.brand + ' name') + ', but is not ' + brand.brand, detail: rd };
     }
     if (/(^|\.)xn--/i.test(h)) {
       return { level: 'warn', label: 'The name is written in a script that can imitate another', detail: rd };
@@ -21193,6 +21305,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         let res;
         try {
           res = await fetch('https://haveibeenpwned.com/api/v3/breaches?Domain=' + encodeURIComponent(d), {
+            // HIBP's API requires a User-Agent that names the application (its v3 terms refuse
+            // requests without one). The product name only -- no version -- which is all an
+            // attribution requirement needs (DATA-03).
             headers: { 'User-Agent': 'WardenOne-Extension' },
             credentials: 'omit',
             redirect: 'error',
@@ -21457,7 +21572,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.

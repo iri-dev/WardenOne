@@ -161,7 +161,7 @@
     if (key !== null || !d || typeof d.token !== 'string' || !d.token || typeof d.key !== 'string' || !d.key) return;
     if (pageCouldHaveRun()) return;
     token = d.token;
-    key = d.key;
+    key = __woAuth.key(d.key);
   }, true);
   window.addEventListener('message', (event) => {
     if (settled || event.source !== window) return;

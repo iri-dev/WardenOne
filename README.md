@@ -127,6 +127,14 @@ A privacy check that cannot actually be measured is marked untestable.
 
 **The safest answer WardenOne can give is sometimes “I don't know”.**
 
+**And WardenOne does not promise to be invisible.** Some of its protections run inside the page's
+own world, and a page that looks can see them: a few named globals, the warnings it draws, the
+events it uses to talk to itself. Renaming those would not make anything safer, so instead every
+one of them is written down with its reason (`tools/test-detectability-budget.js` fails on any
+new one), and nothing a page learns that way buys it anything -- every path from the page's world
+into a privileged decision is signed with a key the page never had, and the protections that
+matter run where the page cannot reach.
+
 # Why the name **WardenOne**?
 
 **Warden** is the role: standing watch over the browser and stepping in when the evidence says
@@ -276,7 +284,9 @@ Forced popups and popunders, timer-opened ad tabs, gestureless redirects, CPA ch
 bounces, download-ad gates, deceptive confirmation prompts and frames that spend your click on an
 unrelated destination are handled as related but distinct tricks. In-page overlays can be removed
 with an Undo chip; real payment forms, CAPTCHAs, logins and media controls are guarded by structural
-compatibility exemptions.
+compatibility exemptions. When a same-tab jump is stopped right after a real click, WardenOne's own
+warning page offers a Continue button; only the guard that stopped the jump can ask for that page,
+so a script on the site cannot put a destination of its own behind it.
 
 Back-button protection refuses repeated re-add, stack and shove-forward patterns without deleting
 anything already in history or navigating on your behalf. A normal interaction vouches for the
@@ -893,6 +903,11 @@ shared by everyone using the protection.
 Consistency matters more than theatrical randomness. WebGL and WebGPU receive one GPU identity;
 different answers to the same question would be rarer than the real machine and therefore a better
 fingerprint. WebGPU limits are reduced to specification minimums shared by the protected group.
+The machine a site is shown — core count, memory, GPU — is drawn per site and holds across
+reloads, tabs and that site's frames, so "remember this device" and step-up sign-in checks see one
+computer; two sites see unrelated ones, and the draw carries nothing about you, so it cannot link
+one site's visitor to another's. Canvas and audio noise still change per load, where changing is
+the protection.
 
 ```mermaid
 flowchart LR
@@ -1439,7 +1454,9 @@ contrast, saturation, warmth and greyscale controls.
 ## WardenOne Themes
 
 Light and dark themes extend across WardenOne's own pages while preserving warning, status and
-disabled-control contrast.
+disabled-control contrast. Light is the default. Choose Dark in the popup, its Interface section
+or onboarding to switch every page, or System to have them follow your operating system's colour
+scheme, including when it changes mid-session.
 
 ## Twitch Local Rewind
 
@@ -1559,6 +1576,17 @@ than is strictly sensible.
 Everything goes through `node tools/check-maintainability.js` first. And when something
 turns out to be wrong on a real site, I'd rather leave the revert sitting in the history
 than tidy it away.
+
+## The performance profile
+
+Reasoning about cost is not measuring it, so a release candidate also gets a profile:
+`node tools/perf-profile.js` loads the real extension into a real browser, measures three local
+synthetic pages -- an article, a page that builds a deep DOM the way frameworks do, a page with
+eight frames -- with the extension off and on, five runs each, and writes the medians, the tails
+and every raw value to [docs/perf](docs/perf/), tied to the commit and the browser version. It
+refuses to measure unless the extension is actually loaded and running, it can prove it sees a
+known regression before its numbers are trusted, and nothing it does leaves the machine. The
+profile of the current build, and how to read one, are in [docs/perf/README.md](docs/perf/README.md).
 
 ## The Store package
 

@@ -231,6 +231,17 @@ function pageHasRun(worlds) {
 (async () => {
   console.log('\nMAIN-world authority\n');
 
+/* The engine keeps only the key's HMAC pad blocks, made once at the hand-off (__woAuth.key), never
+   the key text itself: holding the key means holding the pads made from exactly this key. */
+function holdsKey(pads, hex) {
+  if (!pads || !pads.i || !pads.o || !hex) return false;
+  const raw = Buffer.from(String(hex), 'hex');
+  for (let i = 0; i < 64; i++) {
+    const b = i < raw.length ? raw[i] : 0;
+    if (pads.i[i] !== (b ^ 0x36) || pads.o[i] !== (b ^ 0x5c)) return false;
+  }
+  return true;
+}
   /* ---- 1. the hand-off: engine first, bridge second, the page never ------------------ */
   {
     const worlds = makeWorlds();
@@ -239,7 +250,7 @@ function pageHasRun(worlds) {
     check('the bridge is fresh at document_start', bridge.api.fresh() === true);
     check('before the hand-off the engine holds no key', engine.api.key() === null);
     bridge.api.deliverKey();
-    check('the key reaches the engine synchronously, by the document, once', engine.api.key() === bridge.api.KEY && engine.api.token() === bridge.api.TOKEN);
+    check('the key reaches the engine synchronously, by the document, once', holdsKey(engine.api.key(), bridge.api.KEY) && engine.api.token() === bridge.api.TOKEN);
     check('the engine flushed a signed installed the moment it had the key, and the bridge counted it',
       engine.state.emitted.some((d) => d.type === 'installed' && d.mac) && bridge.api.seen() === true);
     check('the key never went out by postMessage', !worlds.posted.some((m) => m && JSON.stringify(m).indexOf(bridge.api.KEY) !== -1));
@@ -267,7 +278,7 @@ function pageHasRun(worlds) {
     const bridge = loadBridge(worlds);
     check('a style prelude from a sibling module does not seal the bridge', bridge.api.fresh() === true);
     bridge.api.deliverKey();
-    check('and the key still reaches the engine', engine.api.key() === bridge.api.KEY);
+    check('and the key still reaches the engine', holdsKey(engine.api.key(), bridge.api.KEY));
   }
   for (const [label, arrange] of [
     ['a handler attribute on that prelude', (d) => d.documentElement.children.push(element('style', { onload: 'steal()' }))],
@@ -293,7 +304,7 @@ function pageHasRun(worlds) {
     const bridge = loadBridge(worlds);
     bridge.api.deliverKey();
     const engine = loadEngine(worlds);
-    check('an engine loaded after the bridge asks for a replay at its start and holds the key', engine.api.key() === bridge.api.KEY);
+    check('an engine loaded after the bridge asks for a replay at its start and holds the key', holdsKey(engine.api.key(), bridge.api.KEY));
     check('and its installed was signed and counted', bridge.api.seen() === true);
     check('and the config the replay carried was applied', engine.api.store.__configReady === true);
   }
@@ -322,7 +333,7 @@ function pageHasRun(worlds) {
     check('and moving the sequence forward breaks the signature', spoofs() === 4);
 
     const forged = woAuth.handshake((type, detail) => page.dispatch(type, detail), (data) => page.post(data), { token });
-    check('a second wo-key from the page does not replace the first', engine.api.key() === bridge.api.KEY);
+    check('a second wo-key from the page does not replace the first', holdsKey(engine.api.key(), bridge.api.KEY));
     forged.sendConfig({ enabled: false });
     check('a config signed with the page\'s own key is refused', engine.api.store.enabled === true && spoofs() === 5);
 
@@ -423,7 +434,6 @@ function pageHasRun(worlds) {
     engine.api.abort();
     worlds.mainWindow.__wardenOneReadyVersion = '1.0.1';
     worlds.mainWindow.__wardenOneInstalled = '1.0.1';
-    worlds.mainWindow.__wardenOneProtectionActive = true;
     check('once the listeners are gone the challenge fails, whatever the markers say', bridge.api.engineAnswers() === false);
     worlds.document.addEventListener('wo-ping', (e) => {
       page.dispatch('wo-event', { token: bridge.api.TOKEN, type: 'pong', nonce: e.detail.nonce, mac: 'ef'.repeat(32) });
@@ -485,7 +495,9 @@ function pageHasRun(worlds) {
   check('a verdict that does not verify leaves the request pending',
     /if\(!__woVerify\("safe-browsing",id\+"\\n"\+JSON\.stringify\(m\.result\),m\)\)return;\s*const pending=safeBrowsingPending\.get\(id\)/.test(MIN));
   const minimised = [...MIN.matchAll(/__woAuth\.hmac\(/g)].length;
-  check('the shipped engine uses the HMAC exactly three times: verify, installed, pong', minimised === 3, String(minimised));
+  /* verify, installed, pong -- and since every security event and report is signed (bridge.js
+     eventSigned): signing an event, signing a report, and checking an event before believing it. */
+  check('the shipped engine uses the HMAC exactly six times: verify, installed, pong, sign event, sign report, check event', minimised === 6, String(minimised));
   check('the other MAIN security consumers take their key from wo-key too',
     ['anti-redirect.js', 'permission-chain.js', 'cryptominer-detect.js'].every((f) => {
       const src = fs.readFileSync(path.join(ROOT, f), 'utf8');

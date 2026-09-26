@@ -158,6 +158,9 @@ function checkContentBuild() {
   'download-review.js',
   'eyeshield.js',
   'eyeshield-sites.js',
+  'eyeshield-preload-dark.js',
+  'eyeshield-preload-ultra.js',
+  'eyeshield-preload-light.js',
   'twitch-adblock.js',
   'twitch-rewind.js',
   'twitch-vod-rewind.js',
@@ -190,6 +193,7 @@ function checkContentBuild() {
   'tools/test-tracker-frame-guard.js',
   'tools/test-transport-shield.js',
   'tools/test-dns-rebind-guard.js',
+  'tools/test-ip-classifier-agreement.js',
   'tools/test-webgpu-shield.js',
   'tools/test-storage-access-guard.js',
   'tools/test-worker-realm-guard.js',
@@ -206,8 +210,11 @@ function checkContentBuild() {
   'tools/test-pwned-password-check.js',
   'tools/test-header-shield.js',
   'tools/test-xss-behavior-guard.js',
+  'tools/test-xss-sink-cost.js',
+  'tools/bench-xss-sinks.js',
   'tools/test-xss-event-boundary.js',
   'tools/test-clickfix-guard.js',
+  'tools/test-scam-lock.js',
   'tools/test-engine-config-ownership.js',
   'tools/test-engine-config-source.js',
   'tools/test-permission-chain-trust.js',
@@ -242,7 +249,10 @@ function checkContentBuild() {
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
   'tools/test-eyeshield-yt-player.js',
+  'tools/test-eyeshield-native-site-themes.js',
+  'tools/test-eyeshield-preload-hint.js',
   'tools/test-protection-health.js',
+  'tools/test-health-extension-drop.js',
   'tools/test-twitch-adblock.js',
   'tools/test-spotify-adblock.js',
   'tools/test-twitch-failopen.js',
@@ -259,6 +269,7 @@ function checkContentBuild() {
   'tools/test-site-compatibility.js',
   'tools/test-streaming-compatibility.js',
   'tools/test-token-exfil-trust.js',
+  'tools/test-token-exfil-issued-links.js',
   'tools/test-oauth-guard.js',
   'tools/test-cryptominer-guard.js',
   'tools/test-miner-realms.js',
@@ -280,6 +291,7 @@ function checkContentBuild() {
   'tools/test-settings-io.js',
   'tools/test-popup-config-merge.js',
   'tools/test-reputation-fetch.js',
+  'tools/test-request-self-identification.js',
   'tools/test-shared-dom-watcher.js',
   'tools/test-popup-contrast.js',
   'tools/test-phishing-confidence.js',
@@ -306,6 +318,8 @@ function checkContentBuild() {
   'tools/test-redirect-chain-mirror.js',
   'tools/test-feed-load-safety.js',
   'tools/test-nav-signal-forgery.js',
+  'tools/test-redirect-interstitial-forgery.js',
+  'tools/test-main-world-key-isolation.js',
   'tools/test-content-config-memo.js',
   'tools/test-logger-redaction.js',
   'tools/test-message-reachability.js',
@@ -346,6 +360,7 @@ function checkContentBuild() {
   'tools/test-capability-guards.js',
   'tools/test-notification-guard.js',
   'tools/test-notification-center.js',
+  'tools/test-offscreen-lifecycle.js',
   'tools/test-fake-window-guard.js',
   'tools/test-fullscreen-guard.js',
   'tools/test-site-controls.js',
@@ -364,6 +379,10 @@ function checkContentBuild() {
   'tools/test-context-checks.js',
   'tools/test-stale-state.js',
   'tools/test-storage-prune-ladder.js',
+  'tools/test-reconcile-one-list.js',
+  'tools/test-detectability-budget.js',
+  'tools/test-perf-profile.js',
+  'tools/perf-profile.js',
   // Shipped root scripts. Several of these were only ever parsed incidentally, by whichever
   // behavioural test happened to read them -- and a test that regex-reads a file has not parsed it.
   // A syntax error in any of them shipped without the gate noticing.
@@ -438,6 +457,8 @@ checkCommand('cold-wake write tests', ['tools/test-cold-wake-writes.js']);
 checkCommand('redirect-chain mirror tests', ['tools/test-redirect-chain-mirror.js']);
 checkCommand('feed load safety tests', ['tools/test-feed-load-safety.js']);
 checkCommand('navigation signal forgery tests', ['tools/test-nav-signal-forgery.js']);
+checkCommand('redirect interstitial forgery tests', ['tools/test-redirect-interstitial-forgery.js']);
+checkCommand('MAIN-world key isolation and signed signal tests', ['tools/test-main-world-key-isolation.js']);
 checkCommand('content config memo tests', ['tools/test-content-config-memo.js']);
 checkCommand('logger redaction tests', ['tools/test-logger-redaction.js']);
 checkCommand('message reachability tests', ['tools/test-message-reachability.js']);
@@ -455,19 +476,23 @@ checkCommand('Header Shield tests', ['tools/test-header-shield.js']);
 checkCommand('Fraud-vendor script tests', ['tools/test-fraud-vendor-scripts.js']);
 checkCommand('Fake Window scan-cost tests', ['tools/test-fake-window-scan-cost.js']);
 checkCommand('Eye Shield site-split tests', ['tools/test-eyeshield-site-split.js']);
+checkCommand('Eye Shield preload-hint tests', ['tools/test-eyeshield-preload-hint.js']);
 checkCommand('Engine allowlist honesty tests', ['tools/test-engine-allowlist-honesty.js']);
 checkCommand('Logger reconnect tests', ['tools/test-logger-reconnect.js']);
 checkCommand('Script Drift storage tests', ['tools/test-script-drift-storage.js']);
 checkCommand('Permission justification tests', ['tools/test-permission-justification.js']);
 checkCommand('XSS Behavior Guard tests', ['tools/test-xss-behavior-guard.js']);
+checkCommand('XSS sink cost tests', ['tools/test-xss-sink-cost.js']);
 checkCommand('XSS event-boundary tests', ['tools/test-xss-event-boundary.js']);
 checkCommand('ClickFix guard tests', ['tools/test-clickfix-guard.js']);
+checkCommand('Scam Lock tests', ['tools/test-scam-lock.js']);
 checkCommand('runtime config lifecycle tests', ['tools/test-runtime-config-lifecycle.js']);
 checkCommand('network compatibility tests', ['tools/test-network-compatibility.js']);
 checkCommand('Smart Script Shield recovery tests', ['tools/test-smart-script-recovery.js']);
 checkCommand('site compatibility tests', ['tools/test-site-compatibility.js']);
 checkCommand('streaming compatibility tests', ['tools/test-streaming-compatibility.js']);
 checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js']);
+checkCommand('token guard issued-link tests', ['tools/test-token-exfil-issued-links.js']);
 checkCommand('OAuth guard tests', ['tools/test-oauth-guard.js']);
 checkCommand('cryptominer guard tests', ['tools/test-cryptominer-guard.js']);
 checkCommand('miner MAIN/ISOLATED realm tests', ['tools/test-miner-realms.js']);
@@ -488,6 +513,7 @@ checkCommand('insecure sign-in guard tests', ['tools/test-insecure-login.js']);
 checkCommand('settings export/import tests', ['tools/test-settings-io.js']);
 checkCommand('popup config merge tests', ['tools/test-popup-config-merge.js']);
 checkCommand('reputation fetch tests', ['tools/test-reputation-fetch.js']);
+checkCommand('request self-identification tests', ['tools/test-request-self-identification.js']);
 checkCommand('shared DOM watcher tests', ['tools/test-shared-dom-watcher.js']);
 checkCommand('popup contrast tests', ['tools/test-popup-contrast.js']);
 checkCommand('popup settings-search tests', ['tools/test-popup-search.js']);
@@ -510,6 +536,7 @@ checkCommand('Media Shield presence tests', ['tools/test-media-shield-presence.j
 checkCommand('tracker frame guard tests', ['tools/test-tracker-frame-guard.js']);
 checkCommand('transport shield tests', ['tools/test-transport-shield.js']);
 checkCommand('DNS rebind guard tests', ['tools/test-dns-rebind-guard.js']);
+checkCommand('IP classifier agreement tests', ['tools/test-ip-classifier-agreement.js']);
 checkCommand('WebGPU shield tests', ['tools/test-webgpu-shield.js']);
 checkCommand('storage access guard tests', ['tools/test-storage-access-guard.js']);
 checkCommand('worker realm guard tests', ['tools/test-worker-realm-guard.js']);
@@ -554,6 +581,12 @@ checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
 checkCommand('privacy cleaner wiring tests', ['tools/test-privacy-cleaner-wiring.js']);
 checkCommand('warning page secret tests', ['tools/test-warning-page-secrets.js']);
 checkCommand('reconcile honesty tests', ['tools/test-reconcile-honesty.js']);
+checkCommand('reconciler one-list tests', ['tools/test-reconcile-one-list.js']);
+checkCommand('detectability budget', ['tools/test-detectability-budget.js']);
+// The release performance profile harness (PERF-12). Its browser-driving half needs Edge and minutes;
+// the gate checks its statistics, pages, report and fail-closed rules, and that a profile of the
+// candidate exists in docs/perf and was produced with the extension actually loaded.
+checkCommand('performance profile harness', ['tools/test-perf-profile.js']);
 checkCommand('frame ClickFix tests', ['tools/test-frame-clickfix.js']);
 checkCommand('fingerprint realm tests', ['tools/test-fingerprint-realm.js']);
 checkCommand('confirm-bait linked overlay tests', ['tools/test-confirm-bait-linked-overlay.js']);
@@ -571,6 +604,7 @@ checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
 checkCommand('device access guard tests', ['tools/test-device-access-guard.js']);
 checkCommand('notification guard tests', ['tools/test-notification-guard.js']);
 checkCommand('Notification Centre tests', ['tools/test-notification-center.js']);
+checkCommand('offscreen document lifecycle tests', ['tools/test-offscreen-lifecycle.js']);
 checkCommand('capability guard tests', ['tools/test-capability-guards.js']);
 checkCommand('fake-window guard tests', ['tools/test-fake-window-guard.js']);
 checkCommand('full-screen guard tests', ['tools/test-fullscreen-guard.js']);
@@ -583,6 +617,7 @@ checkCommand('engine config ownership tests', ['tools/test-engine-config-ownersh
 checkCommand('engine config source tests', ['tools/test-engine-config-source.js']);
 checkCommand('content storage boundary tests', ['tools/test-content-storage-boundary.js']);
 checkCommand('package completeness tests', ['tools/test-package-completeness.js']);
+checkCommand('privacy disclosure contract', ['tools/test-privacy-disclosure.js']);
 checkCommand('permission-chain trust tests', ['tools/test-permission-chain-trust.js']);
 checkCommand('warning dialog tests', ['tools/test-warning-dialogs.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
@@ -597,6 +632,7 @@ checkCommand('list integrity enforcement tests', ['tools/test-list-integrity-enf
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
 checkCommand('EyeShield YouTube player tests', ['tools/test-eyeshield-yt-player.js']);
+checkCommand('EyeShield native site theme tests', ['tools/test-eyeshield-native-site-themes.js']);
 checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']);
 checkCommand('phishing confidence tests', ['tools/test-phishing-confidence.js']);
 checkCommand('default agreement tests', ['tools/test-default-agreement.js']);
@@ -629,6 +665,7 @@ checkCommand('command palette', ['tools/test-command-palette.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
+checkCommand('health card extension-note tests', ['tools/test-health-extension-drop.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Spotify adblock tests', ['tools/test-spotify-adblock.js']);
 checkCommand('Spotify media redirect tests', ['tools/test-spotify-media-dnr.js']);
@@ -663,16 +700,21 @@ checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);
 // ---------------------------------------------------------------------------
 const gateSource = read('tools/check-maintainability.js') || '';
 
-// Suites that exist but are neither syntax-checked nor executed here.
+// Suites that exist but are never executed here. This used to accept a suite whose name appeared
+// ANYWHERE in this file, and the syntax-check list above names every one of them -- so
+// test-privacy-disclosure.js was syntax-checked from the day it was added and never run, and four
+// of its checks went red unseen while the privacy policy and the code moved apart. Being named is
+// not being run: a suite counts only when a checkCommand call executes it.
 {
   const onDisk = fs.readdirSync('tools')
     .filter((f) => /^test-.*\.js$/.test(f))
     .map((f) => 'tools/' + f);
-  const orphans = onDisk.filter((f) => !gateSource.includes("'" + f + "'"));
+  const executed = new Set([...gateSource.matchAll(/checkCommand\([^\n]*?\[\s*'(tools\/test-[^']+\.js)'/g)].map((m) => m[1]));
+  const orphans = onDisk.filter((f) => !executed.has(f));
   if (orphans.length) {
-    fail('test suites not wired into the gate: ' + orphans.join(', '));
+    fail('test suites the gate never runs: ' + orphans.join(', '));
   } else {
-    console.log('[ok] every tools/test-*.js is wired into the gate (' + onDisk.length + ' suites)');
+    console.log('[ok] every tools/test-*.js is run by the gate (' + onDisk.length + ' suites)');
   }
 }
 

@@ -111,6 +111,9 @@ function world(o) {
     },
     location: { hostname: 'calls.example' },
     __woToken: 'tok',
+    /* The report is signed in the shipped engine; here it goes out as it would with no key. The
+       signature is tested in tools/test-main-world-key-isolation.js. */
+    __woSignedNotice: (m) => { delete m.kind; return m; },
     __woInterval: () => 0,
     clearInterval() {},
     setTimeout, DOMException, Promise, Object, Date, String, Number, Math, Array, Error, console,

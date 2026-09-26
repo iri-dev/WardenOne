@@ -134,6 +134,36 @@ function editDistanceWithin(a, b, limit) {
   return prev[b.length] > 0 && prev[b.length] <= limit;
 }
 
+/* Brand words that are also ordinary words, mirrored from the engine's COMMON_WORD_BRANDS: the
+   exact word on some other TLD proves nothing by itself (chase.co.uk is a bank; steam.xyz is a
+   word), so for these only a subdomain, a phishing word, a typo or a moved official domain counts. */
+var LOGIN_BRAND_COMMON_WORDS = new Set(['apple', 'chase', 'steam', 'discord', 'proton']);
+
+/* The names a brand is known by in a hostname: its token, and the second-level labels of its
+   official domains that carry the token (steampowered, steamcommunity, paypalobjects,
+   microsoftonline...). A typo or a TLD move of one of those is the classic kit --
+   steamcommunlty.com, steamcommunity.ru -- and the bare token would never see it. */
+function loginBrandTokens(profile) {
+  const brand = normalizeBrandish(profile.token);
+  const tokens = [brand];
+  for (const d of profile.domains || []) {
+    const sld = normalizeBrandish(String(d).split('.')[0]);
+    if (sld !== brand && sld.length > brand.length && sld.includes(brand) && !tokens.includes(sld)) tokens.push(sld);
+  }
+  return tokens;
+}
+
+/* Does this host wear a brand's name, and how? Answered by shape, the way the engine's own rule
+   (content.js, the M31 calibration) answers it, because the two used to disagree: this side
+   flagged ANY registrable domain that merely contained a brand token, so a search for "steamrip"
+   marked every steamrip.com result "Looks like Steam, but is not Steam" -- and steamdb, protondb,
+   applebees and blog.google with it -- while the engine let them all through. A name that
+   contains a brand word is not a look-alike. One dressed as a login, verify or secure
+   destination is (brand-in-name); a brand as a label to the left of somebody else's domain is
+   (subdomain); an official brand domain moved to another TLD, or the exact brand on another TLD
+   unless the brand is an ordinary word, is (tld-swap); a typo or digit swap of the brand is
+   (typosquat). `url` lets the login check count a phishing word in the path as well as the host;
+   the search marker passes none and judges the host alone. */
 function loginBrandRiskForHost(host, url) {
   const h = String(host || '').replace(/^www\./, '').toLowerCase();
   const rd = regDomainBg(h);
@@ -141,21 +171,39 @@ function loginBrandRiskForHost(host, url) {
   const core = rd.split('.')[0] || '';
   const compact = normalizeBrandish(core);
   const fullCompact = normalizeBrandish(rd);
+  const labels = h.split('.').filter(Boolean);
+  const subLabels = labels.slice(0, Math.max(0, labels.length - rd.split('.').length));
+  const subTokens = [];
+  for (const label of subLabels) for (const piece of label.split(/[-_]/)) if (piece) subTokens.push(normalizeBrandish(piece));
   const urlText = String(url || '') + ' ' + h;
-  const authish = /(login|logon|signin|sign-in|verify|verification|account|secure|password|passwd|mfa|2fa|oauth|session|billing|invoice|payment|wallet|bank|recover|confirm|unlock|update)/i.test(urlText);
+  const authish = /(login|logon|signin|sign-in|verify|verification|account|secure|security|password|passwd|mfa|2fa|oauth|session|billing|invoice|payment|wallet|bank|recover|recovery|confirm|unlock|update|suspended)/i.test(urlText);
   for (const profile of LOGIN_BRAND_PROFILES) {
     if (loginHostMatchesOfficialBrand(h, profile)) continue;
     const brand = normalizeBrandish(profile.token);
-    const containsBrand = fullCompact.includes(brand);
-    const closeBrand = editDistanceWithin(compact, brand, brand.length > 6 ? 2 : 1);
-    if (containsBrand || closeBrand) {
-      return {
-        brand: profile.label,
-        matched: rd,
-        reason: (containsBrand ? 'contains ' : 'resembles ') + profile.label + ' but is not an official ' + profile.label + ' domain',
-        authish,
-      };
+    let kind = '';
+    for (const token of loginBrandTokens(profile)) {
+      const common = token === brand && LOGIN_BRAND_COMMON_WORDS.has(brand);
+      const digitSwap = compact === token && /[0-9@!$]/.test(core);
+      /* One edit for a derived name (steamcommunlty, steampowerd): two would reach ordinary
+         words two letters from an official domain -- amazonia is two edits from amazonpay. */
+      const limit = token === brand ? (token.length > 6 ? 2 : 1) : 1;
+      if (digitSwap || editDistanceWithin(compact, token, limit)) { kind = 'typosquat'; break; }
+      if (compact === token && !common) { kind = 'tld-swap'; break; }
+      if (subTokens.includes(token)) { kind = 'subdomain'; break; }
+      if (fullCompact.includes(token) && authish) { kind = 'brand-in-name'; break; }
     }
+    if (!kind) continue;
+    const reason = kind === 'typosquat' ? 'resembles ' + profile.label
+      : kind === 'tld-swap' ? 'uses the exact name of ' + profile.label
+        : kind === 'subdomain' ? 'puts the name of ' + profile.label + ' in a subdomain'
+          : 'uses the name of ' + profile.label + ' beside a sign-in word';
+    return {
+      brand: profile.label,
+      matched: rd,
+      kind,
+      reason: reason + ' but is not an official ' + profile.label + ' domain',
+      authish,
+    };
   }
   return null;
 }

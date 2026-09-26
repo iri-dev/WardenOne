@@ -112,9 +112,11 @@ section('the Store tree', () => {
   const staged = spawnSync('git', ['write-tree'], { cwd: ROOT, encoding: 'utf8' });
   if (staged.status !== 0) throw new Error('git write-tree failed');
   TREE = tool.buildStoreTree({ treeish: staged.stdout.trim() });
-  check('the five files are gone', ['eyeshield.js', 'eyeshield-sites.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].every((f) => TREE.removed.includes(f) && !TREE.files.has(f)), TREE.omittedFiles);
+  check('the eight files are gone', ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].every((f) => TREE.removed.includes(f) && !TREE.files.has(f)), TREE.omittedFiles);
   check('tooling, sources, docs, the site and the workflow are not in the package', !Array.from(TREE.files.keys()).some((f) => /^(?:tools|src|docs|site|\.github)\//.test(f)));
-  check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
+  check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'NOTICE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
+  /* Every document in the package is there on purpose (REL-03): the repository's own notes are not. */
+  check('the changelog, the security policy and the support note are not in the package', ['CHANGELOG.md', 'SECURITY.md', 'SUPPORT.md', 'README.md'].every((f) => !TREE.files.has(f) && TREE.removed.includes(f)));
   check('the manifest no longer injects Twitch Rewind', !TREE.manifest.content_scripts.some((e) => (e.js || []).some((f) => /rewind/.test(f))));
   check('...and every other content script survived', TREE.manifest.content_scripts.length >= 6 && TREE.manifest.content_scripts.some((e) => (e.js || []).includes('anti-redirect.js')));
   check('the profile inside the package says store', /profile: 'store'/.test(TREE.files.get('build-profile.js')) && /omitted: Object\.freeze\(\['eyeShield', 'memoryShield', 'tabLimit', 'twitchRewind'\]\)/.test(TREE.files.get('build-profile.js')));
@@ -150,6 +152,11 @@ function workerRealm(store, extra) {
   parts.push(between(BG, 'const MODULE_LOADED = { memory: false };', '\n// ---- Forget Me When I Leave', 'the module loader'));
   parts.push(between(BG, 'const WO_MENU_ITEMS = [', '\n/* Built only when the definition changed', 'the menu table'));
   parts.push(grabFn(BG, 'wardenMenuFingerprint'));
+  // The registration's file list and its helpers (the preload hint file per mode, PRIV-12).
+  parts.push(between(BG, 'const EYESHIELD_PRELOAD_MODES = [', ';', 'the preload mode list') + ';');
+  parts.push(grabFn(BG, 'eyeShieldPreloadFile'));
+  parts.push(grabFn(BG, 'eyeShieldScriptFiles'));
+  parts.push(grabFn(BG, 'eraseEyeShieldSiteMarkerFromOpenTabs'));
   parts.push(grabFn(BG, 'reconcileEyeShieldInjection'));
   // The integrity list, as the repair handler assembles it, up to the loop that fetches it.
   parts.push('async function coreFiles() {' + between(BG, 'const CORE_FILES = [', '\n      // 1. core files present', 'the integrity list') + '\nreturn CORE_FILES; }');
@@ -175,7 +182,7 @@ section('the worker without the module', () => {
     check('EyeShield is never registered, and a leftover registration is removed', w.state.registered.length === 0 && w.state.unregistered.includes('wo-eyeshield-dynamic') && w.state.unregistered.includes('wo-eyeshield-sites-dynamic') && !w.state.injected, w.state);
     return w.api.coreFiles();
   }).then((files) => {
-    check('the integrity list asks for none of the omitted files', !files.some((f) => ['eyeshield.js', 'eyeshield-sites.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].includes(f)), files.filter((f) => /eyeshield|memory|rewind/.test(f)));
+    check('the integrity list asks for none of the omitted files', !files.some((f) => ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].includes(f)), files.filter((f) => /eyeshield|memory|rewind/.test(f)));
     check('...and does ask for the profile', files.includes('build-profile.js') && files.includes('background.js'));
   });
 });
@@ -277,7 +284,7 @@ section('determinism', () => {
     check('two builds of one tree are byte-identical', ha === hb && fs.statSync(a).size > 100000, [ha.slice(0, 12), hb.slice(0, 12)]);
     const names = zipEntries(fs.readFileSync(a));
     check('the archive lists the runtime and none of the omitted files', names.includes('manifest.json') && names.includes('build-profile.js') && names.includes('background.js')
-      && !names.some((n) => ['eyeshield.js', 'eyeshield-sites.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].includes(n)), names.filter((n) => /eyeshield|memory|rewind/.test(n)));
+      && !names.some((n) => ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].includes(n)), names.filter((n) => /eyeshield|memory|rewind/.test(n)));
     check('...and no tooling, sources or docs', !names.some((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)), names.filter((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)).slice(0, 5));
     check('manifest.json sits at the root of the archive', names.includes('manifest.json') && !names.some((n) => /\/manifest\.json$/.test(n)));
     check('the entry count matches the tree', names.filter((n) => !n.endsWith('/')).length === TREE.kept.length, [names.filter((n) => !n.endsWith('/')).length, TREE.kept.length]);

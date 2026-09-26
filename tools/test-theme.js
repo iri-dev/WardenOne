@@ -10,7 +10,8 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
 const css = read('theme.css');
-const source = read('theme.js');
+/* WARDENONE_THEME points a control run at a pre-fix copy of the controller. */
+const source = process.env.WARDENONE_THEME ? fs.readFileSync(process.env.WARDENONE_THEME, 'utf8') : read('theme.js');
 /* Read off disk rather than listed here. notifications.html shipped with a broken
    dark mode for exactly as long as this was a hand-written list: the page was
    never added to it, so nothing noticed that it never declared a page name, and
@@ -122,14 +123,38 @@ const pageStyle = (page) => {
   assert(shared, page + ' must load its page-specific or shared guide stylesheet');
   return read('guide-shell.css');
 };
-assert(!/data-wardenone-theme="system"/.test(popupHtml + onboardingHtml), 'theme controls must not offer System');
+/* Light is the default -- WardenOne was designed light-first, and that is the decision, not an
+   oversight -- and System is a choice offered beside Light and Dark everywhere they are offered
+   (BUG-11: the dark-mode commit shipped a two-state switch, so a reader who wanted the pages to
+   follow a dark operating system had no way to ask). The markup's initial selection and the
+   controller's default must agree, or the first paint shows one choice and the storage read
+   another. */
+assert((popupHtml.match(/data-wardenone-theme="system"/g) || []).length >= 2, 'popup must offer System in the header and Interface section');
+assert(/data-wardenone-theme="system"/.test(onboardingHtml), 'onboarding must offer System');
+assert.strictEqual((popupHtml.match(/data-wardenone-theme="light"[^>]*aria-pressed="true"/g) || []).length, 2, 'the popup markup must show Light as the initial selection in both places');
+assert.strictEqual((onboardingHtml.match(/data-wardenone-theme="light"[^>]*aria-pressed="true"/g) || []).length, 1, 'the onboarding markup must show Light as the initial selection');
+for (const [name, html] of [['popup', popupHtml], ['onboarding', onboardingHtml]]) {
+  assert(!/data-wardenone-theme="(?:system|dark)"[^>]*aria-pressed="true"/.test(html), name + ' must not mark System or Dark as the initial selection');
+  assert(!/data-wardenone-theme-status>(?!Light theme<)/.test(html), name + ' status text must start out saying Light theme');
+}
 assert((popupHtml.match(/data-wardenone-theme="light"/g) || []).length >= 2, 'popup must offer Light in the header and Interface section');
 assert((popupHtml.match(/data-wardenone-theme="dark"/g) || []).length >= 2, 'popup must offer Dark in the header and Interface section');
 assert(/<h2>Interface<\/h2>[\s\S]*?data-wardenone-theme="light"[\s\S]*?data-wardenone-theme="dark"/.test(popupHtml), 'popup theme controls must live in Interface');
 assert(/wo-theme-quick[\s\S]*?data-wardenone-theme="light"[\s\S]*?data-wardenone-theme="dark"/.test(popupHtml), 'popup header must include quick Light/Dark controls');
 assert(/onboarding-theme[\s\S]*?data-wardenone-theme="light"[\s\S]*?data-wardenone-theme="dark"/.test(onboardingHtml), 'onboarding must let the user choose Light or Dark');
 assert(/wardenone_theme/.test(source), 'theme preference must use a dedicated local key');
-assert(!/prefers-color-scheme/.test(source), 'theme controller must expose only Light and Dark');
+assert(/matchMedia\('\(prefers-color-scheme: dark\)'\)/.test(source), 'theme controller must resolve System through the colour-scheme query');
+assert(/const DEFAULT_THEME = 'light'/.test(source) && /let selected = DEFAULT_THEME/.test(source), 'Light must be the default; System is offered, never assumed');
+assert(/THEMES = new Set\(\['light', 'dark', 'system'\]\)/.test(source), 'the controller must know all three values');
+/* The palette is attribute-driven, resolved by the controller before first paint. A media block
+   in the CSS would be a second, competing resolution -- and a page that only defined its dark
+   palette inside one would lose it the moment the reader chose Dark on a light system. */
+assert(!/@media\s*\(\s*prefers-color-scheme/.test(css), 'theme.css must not define its palette inside a prefers-color-scheme block');
+for (const page of pages) {
+  assert(!/@media\s*\(\s*prefers-color-scheme/.test(read(page)), page + ' must not define a palette inside a prefers-color-scheme block; the controller resolves the theme');
+}
+assert(/:root\s*\{\s*color-scheme:\s*light;/.test(css) && /:root\[data-wardenone-theme-resolved="dark"\]\s*\{\s*color-scheme:\s*dark;/.test(css),
+  'color-scheme must follow the resolved theme on the root so form controls and scrollbars follow');
 assert(/chrome\.storage\.local\.get/.test(source) && /chrome\.storage\.local\.set/.test(source), 'theme preference must persist in local extension storage');
 assert(/chrome\.storage\.onChanged/.test(source), 'open extension pages must synchronize theme changes');
 assert(/--wo-page-background:\s*var\(--wo-bg\)/.test(darkBlockSource(css)), 'dark page background must be flat without ambient gradients');
@@ -291,51 +316,216 @@ class Control {
   click() { this.listeners.click(); }
 }
 
-const root = { attrs: {}, setAttribute(name, value) { this.attrs[name] = String(value); } };
-const controls = ['light', 'dark', 'light', 'dark'].map((theme) => new Control(theme));
-const statuses = [{ textContent: '' }, { textContent: '' }];
-let saved = null;
-let storageListener = null;
-const context = {
-  Set,
-  document: {
-    documentElement: root,
-    readyState: 'complete',
-    querySelectorAll(selector) {
-      if (selector === '[data-wardenone-theme]') return controls;
-      if (selector === '[data-wardenone-theme-status]') return statuses;
-      return [];
+/* A page with a fake DOM, a fake colour-scheme query and a fake storage. `run` builds one. */
+function themePage(opts) {
+  const o = opts || {};
+  /* The root records listeners like a control would, so a scenario can prove it never became one. */
+  const root = {
+    attrs: {}, listeners: {},
+    setAttribute(name, value) { this.attrs[name] = String(value); },
+    getAttribute(name) { return this.attrs[name] || null; },
+    addEventListener(name, fn) { this.listeners[name] = fn; },
+  };
+  /* Two groups in the markup's order (the popup header, then Interface): Light, Dark, System. */
+  const controls = ['light', 'dark', 'system', 'light', 'dark', 'system'].map((theme) => new Control(theme));
+  const statuses = [{ textContent: '' }, { textContent: '' }];
+  const state = { saved: null, storageListener: null, mediaListener: null, mirror: Object.assign({}, o.mirror || {}), root, controls, statuses };
+  /* The control pressed in each group, so a scenario reads "both groups show Light". */
+  state.pressed = () => [controls.slice(0, 3), controls.slice(3)].map((group) => group.filter((c) => c.attrs['aria-pressed'] === 'true').map((c) => c.theme).join(',') || 'none');
+  state.click = (theme) => controls.find((c) => c.theme === theme).click();
+  const query = { matches: !!o.dark, addEventListener(name, fn) { state.mediaListener = fn; } };
+  state.query = query;
+  const context = {
+    Set,
+    matchMedia(q) { assert.strictEqual(q, '(prefers-color-scheme: dark)'); return query; },
+    localStorage: {
+      getItem(k) { return Object.prototype.hasOwnProperty.call(state.mirror, k) ? state.mirror[k] : null; },
+      setItem(k, v) { state.mirror[k] = String(v); },
     },
-    addEventListener() {},
-  },
-  window: {},
-  chrome: {
-    runtime: {},
-    storage: {
-      local: {
-        get(key, callback) { assert.strictEqual(key, 'wardenone_theme'); callback({ wardenone_theme: 'dark' }); },
-        set(value) { saved = value; },
+    document: {
+      documentElement: root,
+      readyState: 'complete',
+      querySelectorAll(selector) {
+        /* As in a real document: once applyTheme has written the choice onto <html>, the
+           attribute selector matches the root too, ahead of the buttons. */
+        if (selector === '[data-wardenone-theme]') return root.attrs['data-wardenone-theme'] ? [root].concat(controls) : controls;
+        if (selector === '[data-wardenone-theme-status]') return statuses;
+        return [];
       },
-      onChanged: { addListener(fn) { storageListener = fn; } },
+      addEventListener() {},
     },
-  },
-};
-vm.runInNewContext(source, context, { filename: 'theme.js' });
-assert.strictEqual(root.attrs['data-wardenone-theme'], 'dark', 'stored preference must win after loading');
-assert.strictEqual(root.attrs['data-wardenone-theme-resolved'], 'dark');
-assert.strictEqual(controls[1].attrs['aria-pressed'], 'true', 'stored Dark header control must be selected');
-assert.strictEqual(controls[3].attrs['aria-pressed'], 'true', 'stored Dark Interface control must be selected');
+    window: {},
+    chrome: {
+      runtime: {},
+      storage: {
+        local: {
+          get(key, callback) {
+            assert.strictEqual(key, 'wardenone_theme');
+            state.beforeStorage = { theme: root.attrs['data-wardenone-theme'], resolved: root.attrs['data-wardenone-theme-resolved'] };
+            callback(o.stored === undefined ? {} : { wardenone_theme: o.stored });
+          },
+          set(value) { state.saved = value; },
+        },
+        onChanged: { addListener(fn) { state.storageListener = fn; } },
+      },
+    },
+  };
+  vm.runInNewContext(source, context, { filename: 'theme.js' });
+  return state;
+}
 
-controls[0].click();
-assert(saved && saved.wardenone_theme === 'light', 'clicking Light must persist locally');
-assert.strictEqual(root.attrs['data-wardenone-theme-resolved'], 'light');
-assert.strictEqual(controls[0].attrs['aria-pressed'], 'true');
-assert.strictEqual(controls[2].attrs['aria-pressed'], 'true', 'duplicate controls must stay synchronized');
-assert.strictEqual(statuses[0].textContent, 'Light theme');
+/* THE DEFAULT: nothing stored is Light, on a light machine and on a dark one. The dark machine
+   is the case that matters -- Light is the design the reader meets first, and following the
+   operating system is something they choose, so the page must not resolve through the query
+   until they do. */
+{
+  const t = themePage({ dark: true });
+  assert.strictEqual(t.root.attrs['data-wardenone-theme'], 'light', 'with nothing stored the choice is Light');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'and it resolves light even on a dark machine');
+  assert.strictEqual(t.beforeStorage.resolved, 'light', 'light from the first paint, before the stored preference has even been read');
+  assert.deepStrictEqual(t.pressed(), ['light', 'light'], 'the Light control is selected in both places');
+  assert.strictEqual(t.statuses[0].textContent, 'Light theme');
+  assert.strictEqual(t.statuses[1].textContent, 'Light theme');
+  /* The machine switches mid-session; nothing moves, because nothing is following it. */
+  t.query.matches = false;
+  t.mediaListener();
+  t.query.matches = true;
+  t.mediaListener();
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'the default does not follow the machine');
+  assert.strictEqual(t.saved, null, 'and nothing is written to storage on a plain load');
+}
+{
+  const t = themePage({ dark: false });
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'a light machine is light too');
+  assert.deepStrictEqual(t.pressed(), ['light', 'light']);
+}
 
-storageListener({ wardenone_theme: { newValue: 'dark' } }, 'local');
-assert.strictEqual(root.attrs['data-wardenone-theme-resolved'], 'dark', 'open pages must react to a stored Dark change');
-storageListener({ wardenone_theme: { newValue: 'system' } }, 'local');
-assert.strictEqual(root.attrs['data-wardenone-theme-resolved'], 'light', 'retired System values must safely migrate to Light');
+/* <html> carries data-wardenone-theme as well, and the bare attribute selector used to take it
+   for a control: aria-pressed="true" on the root, and a click listener that re-saved the current
+   theme on every click anywhere in the page -- turning "no choice yet" into a stored one. */
+{
+  const t = themePage({ dark: true });
+  assert.strictEqual(t.root.attrs['data-wardenone-theme'], 'light', 'the root carries the choice (the fake selector returns it, as a document would)');
+  assert(!('aria-pressed' in t.root.attrs), 'the root must not be marked pressed');
+  assert(!t.root.listeners.click, 'the root must not get a click listener');
+  assert.strictEqual(t.saved, null, 'so a click elsewhere on the page writes nothing');
+  t.click('dark');
+  assert(!('aria-pressed' in t.root.attrs), 'and still not after a choice re-syncs the controls');
+}
+
+/* SYSTEM, ONCE CHOSEN: resolves through the query, follows a mid-session switch, and the status
+   says what it resolved to. */
+{
+  const t = themePage({ dark: true, stored: 'system' });
+  assert.strictEqual(t.root.attrs['data-wardenone-theme'], 'system', 'a stored System is the choice');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark', 'and on a dark machine it resolves to dark');
+  assert.deepStrictEqual(t.pressed(), ['system', 'system'], 'the System control is selected in both places');
+  assert(/^System theme/.test(t.statuses[0].textContent) && /dark/.test(t.statuses[0].textContent), 'the status says System and what it resolved to: ' + t.statuses[0].textContent);
+  t.query.matches = false;
+  t.mediaListener();
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'a machine that turns light mid-session turns the page light');
+  assert(/light/.test(t.statuses[0].textContent), 'and the status follows: ' + t.statuses[0].textContent);
+  t.query.matches = true;
+  t.mediaListener();
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark', 'and back');
+}
+{
+  const t = themePage({ dark: false, stored: 'system' });
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'System on a light machine resolves to light');
+}
+
+/* An explicit choice wins in both directions and does not move with the machine. */
+{
+  const t = themePage({ dark: true, stored: 'light' });
+  assert.strictEqual(t.root.attrs['data-wardenone-theme'], 'light', 'a stored Light holds on a dark machine');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light');
+  assert.deepStrictEqual(t.pressed(), ['light', 'light'], 'stored Light is selected in both places');
+  t.query.matches = false;
+  t.mediaListener();
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'a machine change does not move an explicit choice');
+  assert.strictEqual(t.statuses[0].textContent, 'Light theme');
+}
+{
+  const t = themePage({ dark: false, stored: 'dark' });
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark', 'a stored Dark holds on a light machine');
+  assert.deepStrictEqual(t.pressed(), ['dark', 'dark'], 'stored Dark is selected in both places');
+  assert.strictEqual(t.statuses[0].textContent, 'Dark theme');
+  t.query.matches = true;
+  t.mediaListener();
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark', 'a machine change does not move an explicit Dark either');
+}
+
+/* The controls: Dark persists, System persists and resolves again, Light persists as a choice. */
+{
+  const t = themePage({ dark: true });
+  t.click('dark');
+  assert(t.saved && t.saved.wardenone_theme === 'dark', 'clicking Dark must persist locally');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark');
+  assert.deepStrictEqual(t.pressed(), ['dark', 'dark'], 'duplicate controls must stay synchronized');
+  assert.strictEqual(t.statuses[0].textContent, 'Dark theme');
+  assert.strictEqual(t.mirror.wardenone_theme, 'dark', 'the choice is mirrored for the next page\'s first paint');
+  t.click('system');
+  assert(t.saved && t.saved.wardenone_theme === 'system', 'clicking System must persist System, not a resolved value');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme'], 'system');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark', 'and resolve from the machine');
+  assert.strictEqual(t.mirror.wardenone_theme, 'system');
+  t.click('light');
+  assert(t.saved && t.saved.wardenone_theme === 'light', 'clicking Light must persist Light explicitly, not clear the choice');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light');
+  assert.deepStrictEqual(t.pressed(), ['light', 'light']);
+  t.query.matches = false;
+  t.mediaListener();
+  t.query.matches = true;
+  t.mediaListener();
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'a chosen Light no longer follows the machine');
+  /* Another open page changes the stored value; this one follows. */
+  t.storageListener({ wardenone_theme: { newValue: 'dark' } }, 'local');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark', 'open pages must react to a stored Dark change');
+  t.storageListener({ wardenone_theme: { newValue: 'system' } }, 'local');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme'], 'system', 'and to a stored System change');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark');
+  t.storageListener({ wardenone_theme: { newValue: 'light' } }, 'local');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'and to a stored Light change');
+  t.storageListener({ wardenone_theme: { newValue: 'sepia' } }, 'local');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme'], 'light', 'an unknown value means the Light default, never a resolved guess');
+  assert.deepStrictEqual(t.pressed(), ['light', 'light']);
+}
+
+/* The mirror: a reader who chose Dark, or System on a dark machine, sees dark from the first
+   paint instead of a light flash while storage is read. */
+{
+  const t = themePage({ dark: false, stored: 'dark', mirror: { wardenone_theme: 'dark' } });
+  assert.strictEqual(t.beforeStorage.resolved, 'dark', 'the mirrored choice is applied before the stored one is read');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'dark');
+}
+{
+  const t = themePage({ dark: true, stored: 'system', mirror: { wardenone_theme: 'system' } });
+  assert.strictEqual(t.beforeStorage.theme, 'system', 'a mirrored System is applied before storage answers');
+  assert.strictEqual(t.beforeStorage.resolved, 'dark', 'and resolves through the machine from the first paint');
+}
+{
+  /* A stale mirror is corrected by the stored value once it lands. */
+  const t = themePage({ dark: true, stored: 'light', mirror: { wardenone_theme: 'dark' } });
+  assert.strictEqual(t.beforeStorage.resolved, 'dark');
+  assert.strictEqual(t.root.attrs['data-wardenone-theme-resolved'], 'light', 'storage is the authority');
+  assert.strictEqual(t.mirror.wardenone_theme, 'light', 'and the mirror is corrected');
+}
+{
+  /* A mirror holding an unknown value is treated as no mirror: the Light default paints. */
+  const t = themePage({ dark: true, mirror: { wardenone_theme: 'sepia' } });
+  assert.strictEqual(t.beforeStorage.resolved, 'light');
+  assert.strictEqual(t.mirror.wardenone_theme, 'light', 'and the mirror is rewritten to the default');
+}
+{
+  /* No matchMedia at all (an unusual embedding): a chosen System means light, and nothing throws. */
+  const context = {
+    Set,
+    document: { documentElement: { attrs: {}, setAttribute(n, v) { this.attrs[n] = String(v); } }, readyState: 'complete', querySelectorAll() { return []; }, addEventListener() {} },
+    window: {}, chrome: { runtime: {}, storage: { local: { get(k, cb) { cb({ wardenone_theme: 'system' }); }, set() {} }, onChanged: { addListener() {} } } },
+  };
+  vm.runInNewContext(source, context, { filename: 'theme.js' });
+  assert.strictEqual(context.document.documentElement.attrs['data-wardenone-theme'], 'system');
+  assert.strictEqual(context.document.documentElement.attrs['data-wardenone-theme-resolved'], 'light', 'without a colour-scheme query System resolves to light');
+}
 
 console.log('[ok] shared extension theme tests');
