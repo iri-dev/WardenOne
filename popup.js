@@ -61,7 +61,7 @@ const DEFAULTS = {
   enabled: true,
   blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, backTrapGuard: true, clearCookiesOnLeave: false, clearServiceWorkersOnLeave: false, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
-  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, openPhishKey: '', phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
+  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
   mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, notificationAbuseGuard: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
@@ -155,7 +155,9 @@ const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiF
 const REPUTATION_PROVIDERS = [
   { key: 'urlHaus', keyField: 'urlHausKey', statusId: 'urlhaus-key-status', label: 'URLhaus', use: 'malware URL and download intelligence', emptyText: 'Paste a URLhaus Auth-Key to enable malware URL/download checks.', activeText: 'URLhaus malware URL checks are on. Known malware delivery URLs will be blocked.' },
   { key: 'abuseIpDb', keyField: 'abuseIpDbKey', statusId: 'abuseipdb-key-status', label: 'AbuseIPDB', use: 'malicious IP reports and suspicious server warnings', emptyText: 'Paste an AbuseIPDB API key to enable raw-IP server reputation.', activeText: 'AbuseIPDB raw-IP reputation is on. 75%+ abuse confidence blocks; 25-74 warns.' },
-  { key: 'openPhish', keyField: 'openPhishKey', statusId: 'openphish-key-status', label: 'OpenPhish', use: 'phishing intelligence feed and fake login detection', optionalKey: true, emptyText: 'No key required for the OpenPhish Community feed. Test the feed to enable it.', activeText: 'OpenPhish Community feed is on. Known phishing URLs will be blocked from the cached feed.' },
+  // OpenPhish is keyless: the community feed is fetched whole, so there is no field and no
+  // stored token. There used to be an "Optional OpenPhish token" here that nothing read (BUG-09).
+  { key: 'openPhish', noKey: true, statusId: 'openphish-key-status', label: 'OpenPhish', use: 'phishing intelligence feed and fake login detection', emptyText: 'No key required for the OpenPhish Community feed. Test the feed to enable it.', activeText: 'OpenPhish Community feed is on. Known phishing URLs will be blocked from the cached feed.' },
   { key: 'phishTank', keyField: 'phishTankKey', statusId: 'phishtank-key-status', label: 'PhishTank', use: 'community phishing database checks', emptyText: 'Paste a PhishTank API key to enable phishing URL reputation.', activeText: 'PhishTank URL reputation is on. Verified current phishing URLs will be blocked.' },
   { key: 'whoisXml', keyField: 'whoisXmlKey', statusId: 'whoisxml-key-status', label: 'WhoisXML API', use: 'domain registration age and ownership clues', emptyText: 'Paste a WhoisXML API key to enable domain age and ownership clues.', activeText: 'WhoisXML API is on. Download Guard will use richer domain age, registrar, and ownership clues.' },
   { key: 'whoisXmlReputation', keyField: 'whoisXmlKey', statusId: 'whoisxml-reputation-status', label: 'WhoisXML Domain Reputation', use: 'domain reputation scoring and blocklist warnings', autoEnableOnKeyChange: false, emptyText: 'Uses the WhoisXML API key above. Test it to enable domain reputation scoring.', activeText: 'WhoisXML Domain Reputation is on. Low reputation and malware/phishing warnings raise risk.' },
@@ -747,7 +749,6 @@ function readFromUI() {
     downloadVirusTotalKey: config.downloadVirusTotalKey || '',
     urlHausKey: config.urlHausKey || '',
     abuseIpDbKey: config.abuseIpDbKey || '',
-    openPhishKey: config.openPhishKey || '',
     phishTankKey: config.phishTankKey || '',
     whoisXmlKey: config.whoisXmlKey || '',
   };
@@ -787,14 +788,9 @@ function normalizeProviderSettings(previousProviderKeys) {
     config.downloadSafeBrowsing = false;
   }
   REPUTATION_PROVIDERS.forEach((p) => {
+    // A keyless provider has nothing here to normalize: its toggle is the whole control.
+    if (p.noKey || !p.keyField) return;
     const nextKey = String(config[p.keyField] || '').trim();
-    if (p.optionalKey) {
-      if (nextKey) {
-        const oldKey = String(previous[p.keyField] || '').trim();
-        if (!oldKey || oldKey !== nextKey) config[p.key] = true;
-      }
-      return;
-    }
     if (nextKey) {
       const oldKey = String(previous[p.keyField] || '').trim();
       if ((!oldKey || oldKey !== nextKey) && p.autoEnableOnKeyChange !== false) config[p.key] = true;
@@ -862,12 +858,13 @@ function syncReputationProviderStatus(provider, text, color) {
     el.style.color = color || 'var(--ink-faint)';
     return;
   }
-  const hasKey = !!String(config[meta.keyField] || '').trim();
-  if (meta.optionalKey && config[meta.key] === true) {
-    el.textContent = meta.activeText || (meta.label + ' is on.');
-    el.style.color = 'var(--plum)';
+  if (meta.noKey || !meta.keyField) {
+    const on = config[meta.key] === true;
+    el.textContent = on ? (meta.activeText || (meta.label + ' is on.')) : (meta.emptyText || (meta.label + ' is off.'));
+    el.style.color = on ? 'var(--plum)' : 'var(--ink-faint)';
     return;
   }
+  const hasKey = !!String(config[meta.keyField] || '').trim();
   if (!hasKey) {
     el.textContent = meta.emptyText || ('Paste an API key to enable ' + meta.label + ' URL reputation.');
     el.style.color = 'var(--ink-faint)';
@@ -897,7 +894,7 @@ function publicConfig(cfg) {
   delete out.downloadSafeBrowsingKey;
   delete out.downloadVirusTotalKey;
   delete out.forgetMeAllConfirmedAt;
-  REPUTATION_PROVIDERS.forEach((p) => { delete out[p.keyField]; });
+  REPUTATION_PROVIDERS.forEach((p) => { if (p.keyField) delete out[p.keyField]; });
   return out;
 }
 
@@ -964,7 +961,6 @@ const PROVIDER_KEY_FIELDS = {
   downloadVirusTotal: 'downloadVirusTotalKey',
   urlHaus: 'urlHausKey',
   abuseIpDb: 'abuseIpDbKey',
-  openPhish: 'openPhishKey',
   phishTank: 'phishTankKey',
   whoisXml: 'whoisXmlKey',
 };
@@ -1263,8 +1259,14 @@ function injectEyeShieldActiveTab() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs && tabs[0];
       if (!tab || tab.id == null || !/^https?:/i.test(tab.url || '') || !chrome.scripting) return;
-      chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['eyeshield.js'] }, () => {
+      // The per-site themes first, into the top frame where they are registered: a tab opened
+      // before theming was on (or before an update) has the core but not them, and refreshing
+      // it with the core alone left GitHub, YouTube Music and the other profiled sites generic.
+      chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, files: ['eyeshield-sites.js'] }, () => {
         void chrome.runtime.lastError;
+        chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['eyeshield.js'] }, () => {
+          void chrome.runtime.lastError;
+        });
       });
     });
   } catch (_) {}
@@ -1334,8 +1336,8 @@ function setupReputationProvider(providerKey) {
   const provider = REPUTATION_PROVIDERS.find((p) => p.key === providerKey);
   if (!provider) return;
   readFromUI();
-  const key = String(config[provider.keyField] || '').trim();
-  if (!key && !provider.optionalKey) {
+  const key = provider.keyField ? String(config[provider.keyField] || '').trim() : '';
+  if (!key && !provider.noKey) {
     syncReputationProviderStatus(provider, 'Paste your ' + provider.label + ' API key first.', 'var(--wo-danger)');
     applyToUI();
     return;
@@ -2877,6 +2879,110 @@ function healthNote(text, severity) {
   row.appendChild(body);
   return row;
 }
+/* The extension-change note opens in place: each change -- which extension, what changed, why it
+   matters -- with the two things the reader can do about it. Marking reviewed is the same
+   acknowledgement the Security Centre section below makes; the card re-reads its status after. */
+/* The card is redrawn whenever the activity log changes -- every few seconds on a busy page,
+   as ads and trackers are blocked -- and a rebuilt dropdown starts closed. It would snap shut
+   under the reader mid-sentence, so whether it is open is kept across redraws. */
+let healthExtensionDropOpen = false;
+function healthExtensionDrop(item) {
+  const severity = String(item.severity || 'warn');
+  const alerts = Array.isArray(item.alerts) ? item.alerts : [];
+  const drop = document.createElement('details');
+  drop.className = 'health-note health-drop' + (severity === 'danger' ? ' is-danger' : ' is-warn');
+  drop.open = healthExtensionDropOpen;
+  drop.addEventListener('toggle', () => { healthExtensionDropOpen = drop.open; });
+  const head = document.createElement('summary');
+  head.className = 'health-drop-summary';
+  const dot = document.createElement('span');
+  dot.className = 'health-note-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  const text = document.createElement('span');
+  text.className = 'health-drop-text';
+  text.textContent = String(item.text || '');
+  const chev = document.createElement('span');
+  chev.className = 'health-drop-chev';
+  chev.setAttribute('aria-hidden', 'true');
+  head.appendChild(dot);
+  head.appendChild(text);
+  head.appendChild(chev);
+  drop.appendChild(head);
+  const body = document.createElement('div');
+  body.className = 'health-drop-body';
+  alerts.forEach((a) => {
+    const level = String(a.severity || 'medium');
+    const card = document.createElement('div');
+    card.className = 'health-drop-card' + (level === 'high' || level === 'critical' ? ' is-danger' : '');
+    const top = document.createElement('div');
+    top.className = 'health-drop-top';
+    const name = document.createElement('span');
+    name.className = 'health-drop-name';
+    name.textContent = String(a.name || '(unknown extension)') + (a.enabled === false ? ' (disabled)' : '');
+    name.title = String(a.name || '');
+    const badge = document.createElement('span');
+    badge.className = 'health-drop-badge';
+    badge.textContent = level.replace(/^./, (c) => c.toUpperCase()) + (a.when ? ' · ' + fmtAlertAge(a.when) : '');
+    top.appendChild(name);
+    top.appendChild(badge);
+    card.appendChild(top);
+    const summary = document.createElement('div');
+    summary.className = 'health-drop-line';
+    summary.textContent = String(a.summary || 'Extension changed');
+    card.appendChild(summary);
+    if (a.fromVersion && a.toVersion && a.fromVersion !== a.toVersion) {
+      const version = document.createElement('div');
+      version.className = 'health-drop-line is-soft';
+      version.textContent = 'Version ' + a.fromVersion + ' → ' + a.toVersion;
+      card.appendChild(version);
+    }
+    (Array.isArray(a.reasons) ? a.reasons : []).forEach((reason) => {
+      const why = document.createElement('div');
+      why.className = 'health-drop-line is-soft';
+      why.textContent = '• ' + reason;
+      card.appendChild(why);
+    });
+    body.appendChild(card);
+  });
+  const more = Number(item.total || 0) - alerts.length;
+  if (more > 0) {
+    const rest = document.createElement('div');
+    rest.className = 'health-drop-line is-soft';
+    rest.textContent = '+ ' + more + ' more in the Security Centre.';
+    body.appendChild(rest);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'health-drop-actions';
+  const ack = document.createElement('button');
+  ack.type = 'button';
+  ack.className = 'btn';
+  ack.textContent = Number(item.total || alerts.length) > 1 ? 'Mark all reviewed' : 'Mark reviewed';
+  ack.addEventListener('click', () => {
+    ack.disabled = true;
+    ack.textContent = 'Saving…';
+    chrome.runtime.sendMessage({ kind: 'ack-extension-alerts' }, (res) => {
+      void chrome.runtime.lastError;
+      if (!res || !res.ok) {
+        ack.disabled = false;
+        ack.textContent = 'Couldn\'t save. Try again';
+        return;
+      }
+      healthExtensionDropOpen = false;
+      renderProtectionHealth();
+      if (typeof loadExtensionAlerts === 'function') loadExtensionAlerts();
+    });
+  });
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'btn';
+  open.textContent = 'Open Security Centre';
+  open.addEventListener('click', openExtensionSecurityCentre);
+  actions.appendChild(ack);
+  actions.appendChild(open);
+  body.appendChild(actions);
+  drop.appendChild(body);
+  return drop;
+}
 function renderProtectionHealth() {
   const panel = $('protection-health-panel');
   if (!panel) return;
@@ -2946,6 +3052,10 @@ function renderProtectionHealth() {
       items.forEach((item) => {
         const severity = item && item.severity ? String(item.severity) : 'info';
         const text = item && item.text ? item.text : String(item || '');
+        if (item && item.kind === 'extension-alerts' && Array.isArray(item.alerts) && item.alerts.length) {
+          issues.appendChild(healthExtensionDrop(item));
+          return;
+        }
         issues.appendChild(healthNote(text, severity));
       });
     }

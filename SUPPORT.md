@@ -4,6 +4,6 @@ Everything goes through the **[issue tracker](https://github.com/iri-dev/WardenO
 
 - **🐛 Found a bug?** A site broke, or a feature misbehaved → open a **Bug report**. The **site URL** and **which toggle is involved** are the most useful details (if turning one protection off fixes it, name that one).
 - **💡 Have an idea?** A new protection or an improvement → open a **Feature request**.
-- **❓ Just a question?** Skim the [README](README.md) first — most behaviour is toggleable in the popup — then open an issue if it's still unclear.
+- **❓ Just a question?** Skim the [README](https://github.com/iri-dev/WardenOne#readme) first — most behaviour is toggleable in the popup — then open an issue if it's still unclear.
 
 WardenOne runs entirely on your device: no account, no telemetry. The issue tracker is the way to reach the project.

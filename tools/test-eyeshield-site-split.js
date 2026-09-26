@@ -113,6 +113,25 @@ check('the catch-up injection carries the sites file into the top frame',
   /frameIds: \[0\][^;]*eyeshield-sites\.js/s.test(BG),
   'without it, enabling theming leaves an open YouTube tab generic until reload');
 
+/* ---- the bag the CORE builds holds everything the sites file reads -------------- */
+
+/* The run below proves the builders work on a bag this test assembles. That says nothing
+   about the bag eyeshield.js actually passes, and a helper added to the sites file but not
+   to the core's factory call is read as undefined on the live page -- a TypeError on one
+   site only. So compare the two lists directly. */
+{
+  const reads = [...new Set([...SITES.matchAll(/\bcore\.([A-Za-z_$][\w$]*)/g)].map((m) => m[1]))];
+  const callAt = CORE.indexOf('reg.factory({');
+  const callEnd = callAt < 0 ? -1 : CORE.indexOf('});', callAt);
+  const passed = callAt < 0 || callEnd < 0 ? [] : [...CORE.slice(callAt, callEnd)
+    .matchAll(/^\s*([A-Za-z_$][\w$]*):/gm)].map((m) => m[1]);
+  check('the core builds the factory bag in one call', callAt >= 0 && passed.length >= 10,
+    passed.length + ' helpers found');
+  const missing = reads.filter((n) => passed.indexOf(n) < 0);
+  check('every helper the sites file reads is passed by the core', missing.length === 0,
+    missing.join(', ') + ' -- undefined on the live page');
+}
+
 /* ---- the factory bag is complete: run every builder ----------------------------- */
 
 {
@@ -131,8 +150,8 @@ check('the catch-up injection carries the sites file into the top frame',
     const bag = {};
     ['paletteFor', 'youtubePalette', 'youtubeSubscribePalette', 'youtubeTextVars',
       'googlePaletteFor', 'scopedSelectors'].forEach((n) => { bag[n] = palette; });
-    ['isYouTubeHost', 'isTwitchHost', 'isChatGPTHost', 'isGoogleHost', 'isGitHubHost',
-      'isStackOverflowHost', 'isHackerNewsHost', 'isWikipediaHost', 'isRedditHost',
+    ['isYouTubeHost', 'isYouTubeMusicHost', 'isTwitchHost', 'isChatGPTHost', 'isGoogleHost',
+      'isGitHubHost', 'isStackOverflowHost', 'isHackerNewsHost', 'isWikipediaHost', 'isRedditHost',
       'isAmazonHost'].forEach((n) => { bag[n] = () => true; });
     bag.TWITCH_CHAT_NAME = 'chat';
     bag.TWITCH_NOT_CHAT_NAME = 'notchat';

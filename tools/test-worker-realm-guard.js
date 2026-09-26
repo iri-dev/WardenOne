@@ -196,8 +196,10 @@ pending.push((async function itCanBeTurnedOff() {
 
 (function wiredIntoTheConfigPath() {
   check('it is applied when config is applied', /applyIntranetNetworkRules\(on &&/.test(BG));
-  check('it is torn down on both disable paths',
-    (BG.match(/applyIntranetNetworkRules\(false\)/g) || []).length >= 2);
+  /* Off follows the master switch through the one reconcile list. (This used to count two hard
+     applyIntranetNetworkRules(false) calls -- the pasted-twice fallback BUG-08 removed.) */
+  check('it is torn down when the master switch is off, through the reconcile list',
+    /run\('intranet', \(\) => applyIntranetNetworkRules\(on && cfg\.intranetProtection !== false && cfg\.intranetNetworkRules !== false\)\);/.test(BG));
   check('it follows the intranet switch', /cfg\.intranetProtection !== false && cfg\.intranetNetworkRules !== false/.test(BG));
   check('a tab changing local context re-syncs the rules',
     /REBIND_TAB_IS_LOCAL\.get\(tabId\) !== local/.test(BG) && /refreshIntranetNetworkRules\(\)/.test(BG));

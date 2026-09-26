@@ -57,8 +57,9 @@ const CONFIG_CACHE = between('let __cfgCache = null;', '\n/* These stores are de
 const ORCHESTRATOR = between('// ---- Reconciliation honesty (MV3-01) ----', '\nfunction searchAiCleanupActive', 'the reconciler');
 const HEALTH_BLOCK = between('  let enabledRulesets = null;', '  // The tab the popup is open on, asked rather than assumed (FEAT-02).', 'the health block');
 
-/* the applier names the orchestrator runs, read from the source rather than restated */
-const RUN_CALLS = [...ORCHESTRATOR.matchAll(/run\('([A-Za-z]+)', ([A-Za-z]+)\(/g)].map((m) => ({ name: m[1], fn: m[2] }));
+/* the applier names the orchestrator runs, read from the source rather than restated. Each is
+   handed over as a thunk since BUG-08, so one that throws fails alone. */
+const RUN_CALLS = [...ORCHESTRATOR.matchAll(/run\('([A-Za-z]+)', \(\) => ([A-Za-z]+)\(/g)].map((m) => ({ name: m[1], fn: m[2] }));
 
 function fakeSession() {
   const store = {};
@@ -111,12 +112,14 @@ function worker({ session, config, configUnreadable, behaviour }) {
     locationExemptHosts: (cfg) => (cfg && cfg.allowlist) || [],
     scheduleSitePauseExpiry: () => {},
     eyeShieldThemingActive: () => false,
+    eyeShieldPreloadFile: () => '',
     consentRejectActive: () => false,
     searchSponsoredCleanupActive: () => false,
-    /* the .catch / catch fallback paths reference these; none should run */
+    /* the failure paths used to run a second list of appliers through these (BUG-08); they are
+       gone from the reconciler, and the stubs stay so a regression is a FALLBACK in the calls */
     refreshPrivacyHeaders() { calls.push('FALLBACK'); }, refreshAllowlistRules() { calls.push('FALLBACK'); },
-    refreshMediaCompatibilityRules() {}, refreshLoginCompatibilityRules() {}, refreshHttpsUpgrade() {},
-    refreshAllCookieBlock() {}, refreshGlobalLocationBlock() {},
+    refreshMediaCompatibilityRules() { calls.push('FALLBACK'); }, refreshLoginCompatibilityRules() { calls.push('FALLBACK'); }, refreshHttpsUpgrade() { calls.push('FALLBACK'); },
+    refreshAllCookieBlock() { calls.push('FALLBACK'); }, refreshGlobalLocationBlock() { calls.push('FALLBACK'); },
   };
   for (const { name, fn } of RUN_CALLS) {
     ctx[fn] = (...args) => {

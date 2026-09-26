@@ -32,7 +32,7 @@ const WARDENONE_BUILD = Object.freeze({
     eyeShield: Object.freeze({
       label: 'EyeShield',
       goal: 'Visual comfort: warmth, brightness, contrast, saturation and grayscale applied to pages.',
-      files: Object.freeze(['eyeshield.js', 'eyeshield-sites.js']),
+      files: Object.freeze(['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js']),
       keys: Object.freeze([
         'eyeShield', 'eyeShieldMode', 'eyeShieldBrightness', 'eyeShieldBrightnessByHost', 'eyeShieldContrast',
         'eyeShieldContrastByHost', 'eyeShieldSaturation', 'eyeShieldSaturationByHost', 'eyeShieldWarmth',

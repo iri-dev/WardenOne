@@ -39,6 +39,7 @@ const vm = require('vm');
 const SRC = fs.readFileSync('src/content.js', 'utf8');
 const MIN = fs.readFileSync('content.min.js', 'utf8');
 const BG = fs.readFileSync('background.js', 'utf8');
+const BRIDGE = fs.readFileSync('bridge.js', 'utf8');
 let failed = 0;
 
 function check(what, ok, why) {
@@ -135,17 +136,19 @@ check('each is wired to a handler',
 check('they all report through wardenManualNotice',
   /async function wardenManualNotice\(title, message, tab, id\)/.test(BG));
 check('which raises exactly the type showToast now lets through',
-  /type: 'detected_manual_check'/.test(BG));
+  /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(BG)
+    && /!\/\^detected_manual_check\$\/\.test\(String\(type \|\| ''\)\)\) return false;/.test(BRIDGE));
 check('and the engine has copy for that type',
   /detected_manual_check:\{[\s\S]{0,200}?title:"WardenOne check"/.test(MIN));
 
-/* The notice is dispatched from the ISOLATED world by chrome.scripting and read
-   by a MAIN-world listener. That boundary was checked against real Chrome via
-   CDP Page.createIsolatedWorld: a CustomEvent's detail crosses it intact, so the
-   dispatch is sound and the fault was entirely in the gates above. Pinned so a
-   future reader does not re-suspect the world boundary. */
-check('the notice is still dispatched as a DOM CustomEvent',
-  /document\.dispatchEvent\(new CustomEvent\('wo-event'/.test(BG));
+/* The notice is dispatched from the ISOLATED world and read by a MAIN-world listener. That
+   boundary was checked against real Chrome via CDP Page.createIsolatedWorld: a CustomEvent's
+   detail crosses it intact, so the dispatch is sound and the fault was entirely in the gates
+   above. Pinned so a future reader does not re-suspect the world boundary. The worker's script
+   now hands the notice to the bridge (same isolated world), which signs it: the engine's card
+   believes only signed events, since a page can dispatch on the same bus. */
+check('the notice is still dispatched as a DOM CustomEvent, by the bridge, signed',
+  /const dispatchLocalNotice = \(type, detail\) => \{[\s\S]{0,400}document\.dispatchEvent\(new CustomEvent\('wo-event', \{ detail: \{[\s\S]{0,200}src: 'bridge'[\s\S]{0,120}emac: __woAuth\.hmac\(KEY_PADS/.test(BRIDGE));
 
 if (failed) {
   console.error('manual check toast: ' + failed + ' failed');

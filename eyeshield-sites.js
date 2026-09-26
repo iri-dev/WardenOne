@@ -31,6 +31,7 @@
   reg.factory = function (core) {
     var paletteFor = core.paletteFor;
     var isYouTubeHost = core.isYouTubeHost;
+    var isYouTubeMusicHost = core.isYouTubeMusicHost;
     var youtubePalette = core.youtubePalette;
     var TWITCH_NOT_CHAT_NAME = core.TWITCH_NOT_CHAT_NAME;
     var youtubeSubscribePalette = core.youtubeSubscribePalette;
@@ -56,42 +57,24 @@
        rule below claims inherits the PAGE's text colour, which in light mode is
        near-black on a black player. */
     return '#player,#player-container,#movie_player,.html5-video-player{background-color:#000000 !important;color:#ffffff !important;}'
-      + '#movie_player .html5-video-container,#movie_player .html5-video-container *,#movie_player .video-stream,#movie_player video,#movie_player .ytp-player-content,#movie_player .ytp-player-content *,#movie_player .ytp-cued-thumbnail-overlay,#movie_player .ytp-cued-thumbnail-overlay-image,#movie_player .ytp-iv-video-content,#movie_player .ytp-ad-player-overlay,#movie_player .ytp-ad-overlay-container{background-color:transparent !important;border-color:transparent !important;box-shadow:none !important;}'
-      + '#movie_player .ytp-chrome-top,#movie_player .ytp-chrome-bottom,#movie_player .ytp-gradient-top,#movie_player .ytp-gradient-bottom,#movie_player .ytp-caption-window-container,#movie_player .ytp-subtitles-player-content,#movie_player .ytp-ce-element{background-color:transparent !important;}'
-      + '#movie_player button' + NOT_SWATCH + ',#movie_player [role="button"]' + NOT_SWATCH + ',#movie_player .ytp-button' + NOT_SWATCH + ',#movie_player [class*="button" i]' + NOT_SWATCH + '{background-color:transparent !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
-      + '#movie_player svg,#movie_player path,#movie_player yt-icon{background-color:transparent !important;}'
-      /* The clock, the seek bar and the volume slider are not buttons and carry
-         no "button" in their class, so nothing above claimed them and the page
-         remap painted them like ordinary page furniture -- the track and the
-         buffered span went black on a black player, and the clock went dark on
-         black in light mode. These are YouTube's own values, read off the site,
-         not theme ones: the player is black in every mode, so they do not
-         follow the page. */
-      + '#movie_player .ytp-chrome-controls,#movie_player .ytp-left-controls,#movie_player .ytp-right-controls,#movie_player .ytp-progress-bar-container,#movie_player .ytp-progress-bar,#movie_player .ytp-progress-bar-padding,#movie_player .ytp-scrubber-container,#movie_player .ytp-chapter-hover-container,#movie_player .ytp-volume-area,#movie_player .ytp-volume-panel,#movie_player .ytp-volume-slider{background-color:transparent !important;}'
-      /* And a net under all of it. Naming the parts one at a time leaves any
-         wrapper that was not named to the page remap, which paints it like a
-         card -- a pale box behind the controls. Nothing in the bottom chrome
-         has a surface of its own: it is an overlay on video. The four that do
-         carry paint are excluded here and given their own values below.
-         `:not()` takes the specificity of its argument, so this rule outranks
-         them; excluding them is what keeps their values. */
-      + '#movie_player .ytp-chrome-bottom :where(div,span):not(.ytp-swatch-background-color):not(.ytp-progress-list):not(.ytp-load-progress):not(.ytp-hover-progress):not(.ytp-volume-slider-handle):not(.ytp-time-wrapper){background-color:transparent !important;background-image:none !important;box-shadow:none !important;}'
-      + '#movie_player .ytp-progress-list{background-color:rgba(40,40,40,.6) !important;}'
-      + '#movie_player .ytp-load-progress{background-color:rgba(255,255,255,.4) !important;}'
-      + '#movie_player .ytp-hover-progress{background-color:rgba(0,0,0,.125) !important;}'
-      + '#movie_player .ytp-volume-slider-handle{background-color:#ffffff !important;}'
-      /* YouTube puts a faint dark pill behind the clock so it stays legible
-         over a bright frame. The net above was flattening it. */
-      + '#movie_player .ytp-time-wrapper{background-color:rgba(0,0,0,.3) !important;}'
-      + '#movie_player .ytp-time-display,#movie_player .ytp-time-display *,#movie_player .ytp-chapter-title-content,#movie_player .ytp-chapter-container,#movie_player .ytp-bound-time-left,#movie_player .ytp-bound-time-right{background-color:transparent !important;color:#eeeeee !important;-webkit-text-fill-color:#eeeeee !important;text-shadow:none !important;opacity:1 !important;}'
+      + '#movie_player .html5-video-container,#movie_player .html5-video-container *,#movie_player .video-stream,#movie_player video,#movie_player .ytp-cued-thumbnail-overlay,#movie_player .ytp-cued-thumbnail-overlay-image,#movie_player .ytp-iv-video-content{background-color:transparent !important;border-color:transparent !important;box-shadow:none !important;}'
+      /* The controls keep YouTube's own paint -- none of it is overridden here.
+         The player redesign draws every control on a translucent dark pill
+         (rgba(0,0,0,.3) behind play, next, the volume group, the clock, the
+         chapter title and the right-hand group), and those pills are the only
+         thing between a white icon and a white frame. Earlier rules forced every
+         button and every div in the bottom chrome transparent to guard against a
+         page remap that does not run on YouTube, and on a bright video the
+         controls vanished. Nothing else in the site theme reaches the player, so
+         the colours below are the whole of it: white in every mode, because the
+         player is black in every mode and the page's own text colour must not
+         leak in. */
+      + '#movie_player button' + NOT_SWATCH + ',#movie_player [role="button"]' + NOT_SWATCH + ',#movie_player .ytp-button' + NOT_SWATCH + ',#movie_player [class*="button" i]' + NOT_SWATCH + '{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;}'
+      + '#movie_player .ytp-time-display,#movie_player .ytp-time-display *,#movie_player .ytp-chapter-title-content,#movie_player .ytp-chapter-container,#movie_player .ytp-bound-time-left,#movie_player .ytp-bound-time-right{color:#eeeeee !important;-webkit-text-fill-color:#eeeeee !important;text-shadow:none !important;opacity:1 !important;}'
       /* YouTube makes the elapsed time a shade brighter than the duration
          beside it. Same specificity as the rule above, so it has to come
          after it to win. */
-      + '#movie_player .ytp-time-current{color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;}'
-      /* The bar and the knob are painted by the channel's own swatch, which is
-         not always red -- it was yellow on the video this was reported from --
-         so nothing here sets a colour on them. They only need to be let alone. */
-      + '#movie_player .ytp-swatch-background-color{border-color:transparent !important;box-shadow:none !important;}';
+      + '#movie_player .ytp-time-current{color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;}';
   }
 
   function youtubeVarsCSS(p) {
@@ -418,6 +401,103 @@
       + 'video,.html5-video-player,.ytp-player-content,.ytp-chrome-bottom,.ytp-gradient-top,.ytp-gradient-bottom{filter:none !important;}';
   }
 
+  /* YouTube Music is its own app on a YouTube host: ytmusic-* elements themed through
+     --ytmusic-* variables. The YouTube theme names neither, so almost none of it landed there,
+     and the little that did was harmful -- its bare `#content` selector matched the overlay div
+     YouTube Music lays over every album and playlist cover, and painting it the page colour
+     turned each cover into a flat square (black in Ultra, white in Light).
+
+     The app is designed dark. Dark keeps its own look. Ultra takes the canvas to true black and
+     sinks the raised surfaces -- cards, the player bar, menus, the search box -- from YouTube
+     Music's greys to near-black, since on a page that was already #030303 a black canvas alone
+     changes nothing anyone can see.
+
+     Light is built in three layers, measured on the live app (home, Explore, an album, the
+     now-playing page and the player bar): the core removes the `dark` attribute so YouTube's
+     own light colours apply to everything shared with YouTube; the variables below turn
+     YouTube Music's own surfaces light; and the core rewrites the text and icon colours its
+     stylesheets hard-code for a dark page (managedRemapsOwnText). Two things are left for this
+     stylesheet: the tinted artwork backdrop at the top of a page, faded to the page colour
+     instead of to black, and the wordmark -- an image of white lettering -- shown as its own
+     icon beside the word set in the app's own typeface. */
+  function youtubeMusicCSS(remap) {
+    if (!isYouTubeMusicHost()) return '';
+    const shell = ':root,html,body,ytmusic-app,ytmusic-app-layout';
+    const list = (pairs) => Object.keys(pairs).map((name) => name + ':' + pairs[name] + ' !important;').join('');
+    if (remap === 'light') {
+      return shell + '{' + list({
+        '--ytmusic-background': '#ffffff', '--ytmusic-general-background-a': '#f2f2f2',
+        '--ytmusic-general-background-c': '#ffffff', '--ytmusic-nav-bar': '#ffffff',
+        '--ytmusic-brand-background-solid': '#f2f2f2', '--ytmusic-player-bar-background': '#f9f9f9',
+        '--ytmusic-player-page-background': '#ffffff', '--ytmusic-detail-header': '#ffffff',
+        '--ytmusic-search-background': '#f2f2f2', '--ytmusic-search-border': '#d3d3d3',
+        '--ytmusic-search-bar-background-bauhaus': 'rgba(0,0,0,.05)', '--ytmusic-search-bar-border-bauhaus': 'rgba(0,0,0,.1)',
+        '--ytmusic-search-box-text-secondary': 'rgba(0,0,0,.55)',
+        '--ytmusic-text-primary': '#0f0f0f', '--ytmusic-text-secondary': '#606060',
+        '--ytmusic-text-disabled': '#909090', '--ytmusic-text-primary-inverse': '#ffffff',
+        '--ytmusic-divider': 'rgba(0,0,0,.1)', '--ytmusic-guide-divider': 'rgba(0,0,0,.1)',
+        '--ytmusic-guide-hover': 'rgba(0,0,0,.08)', '--ytmusic-ten-percent-layer': 'rgba(0,0,0,.1)',
+        '--ytmusic-badge-chip-background': 'rgba(0,0,0,.06)', '--ytmusic-badge-chip-inactive-hover': 'rgba(0,0,0,.1)',
+        '--ytmusic-explore-chip-background': 'rgba(0,0,0,.06)',
+        '--ytmusic-dialog-background-color': '#ffffff', '--ytmusic-dropdown-background': '#ffffff',
+        '--ytmusic-dropdown-item-hover-background': '#f2f2f2', '--ytmusic-icon-inactive': '#606060',
+        '--ytmusic-inactive-tab': 'rgba(0,0,0,.5)', '--ytmusic-wordmark-text': '#0f0f0f',
+        '--ytmusic-menu-item-hover-background-color': 'rgba(0,0,0,.05)',
+        '--ytmusic-guide-signin-promo-text-secondary': '#606060',
+        '--ytmusic-play-pause-button-background': '#0f0f0f',
+        '--ytmusic-toggle-button-chip-active-background': '#0f0f0f', '--ytmusic-inverted-background': '#0f0f0f',
+      }) + 'color-scheme:light !important;}'
+        + 'html,body{background-color:#ffffff !important;color:#0f0f0f !important;}'
+        + 'ytmusic-browse-response .background-gradient{background-image:linear-gradient(rgba(255,255,255,.72),#ffffff) !important;}'
+        + 'ytmusic-logo a{display:inline-flex !important;align-items:center !important;gap:1px !important;}'
+        + 'ytmusic-logo img.logo{width:24px !important;min-width:24px !important;object-fit:cover !important;object-position:left center !important;}'
+        + 'ytmusic-logo a::after{content:"Music";font-family:"YouTube Sans","YT Sans",Roboto,Arial,sans-serif;font-weight:700;font-size:20.5px;letter-spacing:-.45px;line-height:1;color:#030303;}';
+    }
+    if (remap !== 'dark' && remap !== 'ultra') return '';
+    /* Dark and Ultra used to be invisible here. Dark kept the app exactly as it was, and Ultra
+       set variables the components never read: each one re-declares its own (the search box
+       sets --ytmusic-search-background locally), and the chips, the search field, the active
+       sidebar entry and the tonal buttons paint hard-coded translucent white. On a page already
+       #030303, Normal, Dark and Ultra were indistinguishable side by side. So both now paint the
+       visible pieces directly, and neither ever makes anything lighter than YouTube Music's own:
+         Dark  -- calmer: the tinted artwork wash behind the top of the page is gone, and the grey
+                  fills (chips, search, active sidebar entry, tonal buttons) sink to half-strength.
+         Ultra -- true black: black canvas, bars and fills, each control drawn as a crisp outline
+                  instead of a grey block, and the dimmed secondary text brought up to near white.
+       A selected chip keeps its own white fill in both, so which filter is on stays obvious. */
+    const chip = 'ytmusic-chip-cloud-chip-renderer:not([is-selected]) a.ytmusic-chip-cloud-chip-renderer';
+    const search = 'ytmusic-search-box .search-box.ytmusic-search-box';
+    const guideActive = 'ytmusic-guide-entry-renderer[active] tp-yt-paper-item';
+    const tonal = 'ytmusic-app button.ytSpecButtonShapeNextTonal.ytSpecButtonShapeNextMono';
+    const calm = 'ytmusic-browse-response #background.immersive-background{visibility:hidden !important;}'
+      + 'ytmusic-browse-response .background-gradient{background-image:none !important;}';
+    if (remap === 'dark') {
+      return 'html,body{background-color:#030303 !important;}' + calm
+        + chip + ',' + guideActive + ',' + tonal + '{background-color:rgba(255,255,255,.055) !important;}'
+        + chip + ':hover,' + tonal + ':hover{background-color:rgba(255,255,255,.1) !important;}'
+        + search + '{background:rgba(255,255,255,.06) !important;border-color:rgba(255,255,255,.08) !important;}';
+    }
+    const outline = 'inset 0 0 0 1px rgba(255,255,255,.3)';
+    const secondary = 'ytmusic-app :is(.subtitle,.secondary-flex-columns,.strapline-text,.byline)';
+    return shell + '{' + list({
+      '--ytmusic-background': '#000000', '--ytmusic-general-background-c': '#000000',
+      '--ytmusic-nav-bar': '#000000', '--ytmusic-player-page-background': '#000000',
+      '--ytmusic-detail-header': '#000000', '--ytmusic-color-black4': '#000000',
+      '--ytmusic-general-background-a': '#0b0b0b', '--ytmusic-brand-background-solid': '#101010',
+      '--ytmusic-player-bar-background': '#000000', '--ytmusic-search-background': '#000000',
+      '--ytmusic-dialog-background-color': '#161616', '--ytmusic-dropdown-background': '#161616',
+      '--ytmusic-dropdown-item-hover-background': '#222222', '--ytmusic-text-secondary': '#d4d4d4',
+      '--yt-sys-color-baseline--base-background': '#000000', '--yt-sys-color-baseline--raised-background': '#0b0b0b',
+      '--yt-sys-color-baseline--menu-background': '#161616',
+    }) + '}'
+      + 'html,body,#guide-wrapper{background-color:#000000 !important;}' + calm
+      + 'ytmusic-player-bar{box-shadow:inset 0 1px 0 rgba(255,255,255,.18) !important;}'
+      + chip + ',' + guideActive + ',' + tonal + '{background-color:#000000 !important;box-shadow:' + outline + ' !important;color:#ffffff !important;}'
+      + chip + ':hover,' + tonal + ':hover{background-color:#141414 !important;}'
+      + search + '{background:#000000 !important;border-color:rgba(255,255,255,.3) !important;}'
+      + secondary + ',' + secondary + ' a{color:#d4d4d4 !important;}';
+  }
+
   function twitchChatAndPlayerCSS(bg, surface, raised, border, text, muted, accent) {
     const chatShell = '[data-a-target="stream-chat"],[data-a-target="stream-chat-header"],[data-test-selector="chat-room-component-layout"],.stream-chat,.chat-room,.chat-shell,.chat-list,.chat-list--default';
     const chatList = '[data-a-target="chat-scroller"],[data-test-selector="chat-scrollable-area__message-container"],.chat-scrollable-area__message-container,.chat-list__lines,[role="log"]';
@@ -559,79 +639,78 @@
       + twitchChatAndPlayerCSS(bg, surface, raised, border, text, muted, accent);
   }
 
+  /* ChatGPT is themed with its OWN light and dark themes: the core switches the `dark`/`light`
+     class and the `data-theme` attribute (applyChatGPTNativeTheme), so the composer, the sidebar,
+     its conversations and the white send and voice discs keep the colours ChatGPT gave them. The
+     profile that stood here painted over the app with selectors written for an older one: in Light the
+     composer stayed dark and the conversations stayed near-white on a light sidebar, and in the
+     dark modes every button's glyph was forced white onto ChatGPT's white discs.
+
+     What is left: ChatGPT picks light or dark colours three ways, and the class only reaches one.
+       - Tokens declared on `.dark`/`.light` scopes: the class switch (the core flips every scope).
+       - lightningcss's polyfilled light-dark(): two variables, `--lightningcss-light` and
+         `--lightningcss-dark`, which its components set per element. Pinned to the mode on every
+         element.
+       - The browser's own light-dark(), which resolves against each element's color-scheme --
+         and ChatGPT's components set `color-scheme: dark` on themselves, which the core header's
+         `html{color-scheme}` cannot reach. A signed-in page in Light kept its dark sidebar, panels
+         and composer with the tokens' dark text on top: flipping the class and pinning the
+         variables left exactly this out. color-scheme is pinned on every element too.
+       The core leaves the page background to ChatGPT (ownsPageBackground).
+
+     Dark is ChatGPT's own dark theme and nothing more. That theme is now true black (page and
+     sidebar #000, composer #1b1b1b), so where ChatGPT already shows it, Dark looks the same as Eye
+     Shield off. A charcoal Dark (#212121) was tried so the two would differ, and read as Eye
+     Shield making the page LIGHTER -- the one thing a dark mode must not do.
+
+     Ultra has to be visibly deeper than ChatGPT's own black, and the canvas cannot go further,
+     so it takes the rest: the composer goes black with a crisp outline in place of its grey fill,
+     buttons, menus and cards sink to near-black, and body text and icons go to pure white, as
+     Ultra's text does on every other site. Sinking the composer only to #111 was measured on the
+     reader's screen as indistinguishable from ChatGPT's own dark. The accent and the message
+     colours stay ChatGPT's and the reader's own.
+
+     The signed-in app takes these from its appearance theme (`--app-color-*`, computed per
+     account and declared on <html> and on any inner [data-theme] scope), so they are set where
+     it sets them and inherited from there. The signed-out app still uses the older
+     `--main-surface-*` set, and declares it again on EVERY element (`html.dark :not(.light …)`),
+     so a value set on <html> alone reaches nothing -- measured: <html> changed, the body under it
+     did not. Only that set goes on every element, and only on the signed-out app (the signed-in
+     one carries data-codex-window-type): declaring all of it on every element of a signed-in
+     page cost ~10% more style recalculation and ~17% more to add content, measured on 20,000
+     elements, for variables nothing there reads. */
+  const CHATGPT_ULTRA = {
+    app: {
+      '--app-color-background-surface-under': '#000000', '--app-color-background-surface': '#000000',
+      '--app-color-background-panel': '#000000',
+      '--app-color-background-elevated-primary': '#000000', '--app-color-background-elevated-primary-opaque': '#000000',
+      '--app-color-background-editor-opaque': '#0a0a0a', '--app-color-background-card': '#0a0a0a',
+      '--app-color-background-application-menu': '#0d0d0d',
+      '--app-color-background-control': '#141414', '--app-color-background-control-opaque': '#141414',
+      '--app-color-background-button-secondary': '#141414',
+      '--app-color-background-elevated-secondary': '#141414', '--app-color-background-elevated-secondary-opaque': '#141414',
+      '--app-color-background-callout-surface': '#1f1f1f',
+      '--app-color-background-mode-toggle-track': '#0b0b0b', '--app-color-background-mode-toggle-selected': '#1f1f1f',
+      '--color-background-mode-toggle-track': '#0b0b0b', '--color-background-mode-toggle-selected': '#1f1f1f',
+      '--app-color-text-foreground': '#ffffff', '--app-color-icon-primary': '#ffffff',
+      '--elevation-composer-dark': 'inset 0 0 0 1px #ffffff33',
+    },
+    older: {
+      '--main-surface-primary': '#000000', '--main-surface-secondary': '#000000', '--main-surface-background': '#000000e6',
+      '--sidebar-surface-primary': '#000000', '--sidebar-surface': '#000000',
+      '--composer-surface-primary': '#000000', '--bg-primary': '#000000',
+      '--bg-elevated-secondary': '#000000', '--bg-secondary-surface': '#000000',
+    },
+  };
   function chatGPTCSS(mode, inShadow) {
-    if (!isChatGPTHost()) return '';
-    const ultra = mode === 'ultra';
+    if (!isChatGPTHost() || inShadow) return '';
     const light = mode === 'light';
-    const p = light ? {
-      scheme: 'light',
-      bg: '#ffffff',
-      surface: '#f7f7f8',
-      raised: '#ececf1',
-      input: '#ffffff',
-      control: '#f4f4f5',
-      border: '#d9d9e3',
-      text: '#111111',
-      muted: '#5f6368',
-      link: '#0b57d0',
-    } : {
-      scheme: 'dark',
-      bg: ultra ? '#000000' : '#111318',
-      surface: ultra ? '#090a0d' : '#171a21',
-      raised: ultra ? '#111318' : '#20242d',
-      input: ultra ? '#0c0e12' : '#1c2028',
-      control: ultra ? '#151820' : '#252a34',
-      border: ultra ? '#2a2f3a' : '#363c49',
-      text: '#f3f5f7',
-      muted: '#a8afb9',
-      link: '#8ab4ff',
-    };
-    const root = inShadow ? ':host' : ':root,html,body,#root,#__next';
-    const vars = [
-      '--text-primary:' + p.text,
-      '--text-secondary:' + p.muted,
-      '--text-tertiary:' + p.muted,
-      '--text-quaternary:' + p.muted,
-      '--text-default:' + p.text,
-      '--surface-primary:' + p.bg,
-      '--surface-secondary:' + p.surface,
-      '--surface-tertiary:' + p.raised,
-      '--surface-hover:' + p.raised,
-      '--surface-active:' + p.raised,
-      '--main-surface-primary:' + p.bg,
-      '--main-surface-secondary:' + p.surface,
-      '--main-surface-tertiary:' + p.raised,
-      '--sidebar-surface-primary:' + p.surface,
-      '--sidebar-surface-secondary:' + p.raised,
-      '--sidebar-surface-tertiary:' + p.control,
-      '--composer-surface:' + p.input,
-      '--message-surface:' + p.bg,
-      '--border-light:' + p.border,
-      '--border-medium:' + p.border,
-      '--border-heavy:' + p.border,
-      '--link:' + p.link,
-    ].join(' !important;') + ' !important;';
-    const app = inShadow ? ':host,:host > *' : 'html,body,#root,#__next,main,[role="main"],[data-testid="conversation-turn"]';
-    const sidebar = inShadow ? ':host([data-sidebar]),:host [data-sidebar]' : 'aside,nav,[data-testid*="sidebar" i],[class*="sidebar" i],[class*="bg-token-sidebar-surface-primary" i]';
-    const tokenBg = '[class*="bg-token-main-surface-primary" i],[class*="bg-token-main-surface-secondary" i],[class*="bg-token-main-surface-tertiary" i],[class*="bg-token-surface-primary" i],[class*="bg-token-surface-secondary" i]';
-    const tokenText = '[class*="text-token-text-primary" i],[class*="text-token-text-secondary" i],[class*="text-token-text-tertiary" i],[class*="text-token-text-quaternary" i]';
-    const composerShell = 'form[data-type="unified-composer"],.composer-parent form';
-    const textbox = '#prompt-textarea,#prompt-textarea *,textarea,[contenteditable="true"],[role="textbox"]';
-    const bottom = '.composer-parent,[class*="bottom-0" i],[class*="sticky" i][class*="bottom" i],[class*="fixed" i][class*="bottom" i],[class*="bg-gradient-to-t" i],[class*="from-token-main-surface-primary" i],[class*="to-token-main-surface-primary" i]';
-    return root + '{' + vars + 'color-scheme:' + p.scheme + ' !important;background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;color:' + p.text + ' !important;}'
-      + app + '{background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
-      + sidebar + '{background:' + p.surface + ' !important;background-color:' + p.surface + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
-      + tokenBg + '{background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
-      + tokenText + ',p,li,h1,h2,h3,h4,h5,h6,article,article *{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
-      + '[class*="text-token-text-secondary" i],[class*="text-token-text-tertiary" i],[class*="text-token-text-quaternary" i],small,time{color:' + p.muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      + 'a[href],[role="link"]{color:' + p.link + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      + composerShell + '{background:' + p.input + ' !important;background-color:' + p.input + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
-      + textbox + '{background:transparent !important;background-color:transparent !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:transparent !important;box-shadow:none !important;}'
-      + bottom + '{background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;background-image:none !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
-      + 'button,[role="button"]{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;}'
-      + 'form[data-type="unified-composer"] button,[data-testid*="composer" i] button,.composer-parent button{background:transparent !important;background-color:transparent !important;border-color:transparent !important;border-radius:9999px !important;box-shadow:none !important;overflow:visible !important;}'
-      + 'svg,path{color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;}'
-      + 'img,picture,video,canvas,iframe,embed,object{filter:none !important;}';
+    const pin = ':root,:root *{--lightningcss-light:' + (light ? 'initial' : ' ') + ' !important;--lightningcss-dark:' + (light ? ' ' : 'initial') + ' !important;'
+      + 'color-scheme:' + (light ? 'light' : 'dark') + ' !important;}';
+    if (mode !== 'ultra') return pin;
+    const decl = (map) => Object.keys(map).map((name) => name + ':' + map[name] + ' !important;').join('');
+    return pin + 'html[data-theme="dark"],html[data-theme="dark"] [data-theme="dark"]{' + decl(CHATGPT_ULTRA.app) + '}'
+      + 'html.dark:not([data-codex-window-type]),html.dark:not([data-codex-window-type]) *{' + decl(CHATGPT_ULTRA.older) + '}';
   }
 
   function googleShadowCSS(mode) {
@@ -938,49 +1017,46 @@
       + googleSearchBoxCSS(remap);
   }
 
+  /* GitHub is themed with its OWN light and dark themes: the core switches data-color-mode on
+     <html> to match the mode (applyGitHubNativeTheme), so every component keeps the colours
+     GitHub designed for it -- the search box's transparent input over its rendered text, file
+     names in the text colour and links in GitHub's blue, octicons at their drawn weight.
+
+     What is left here is small. The core header paints the page a flat background of its own,
+     which would sit behind GitHub's surfaces in a different shade, so the page takes GitHub's
+     canvas back, and the colour scheme follows whichever theme GitHub is actually showing --
+     the switch waits for GitHub's stylesheet, so for a moment it can still be the old one. Ultra
+     then takes the canvas to true black and lifts the muted panels and overlays to GitHub's own
+     dark canvas colour, so menus and dialogs still stand off the page; that is keyed to the dark
+     mode being in force for the same reason. The --color-* names are the older generation of the
+     same tokens, still read by a few views. */
   function githubCSS(mode) {
     if (!isGitHubHost()) return '';
-    const p = paletteFor(mode);
-    const scheme = mode === 'light' ? 'light' : 'dark';
-    const vars = [
-      '--color-canvas-default:' + p.bg,
-      '--color-canvas-subtle:' + p.surface,
-      '--color-canvas-inset:' + p.raised,
-      '--color-canvas-overlay:' + p.raised,
-      '--color-fg-default:' + p.text,
-      '--color-fg-muted:' + p.muted,
-      '--color-fg-subtle:' + p.muted,
-      '--color-border-default:' + p.border,
-      '--color-border-muted:' + p.border,
-      '--color-accent-fg:' + p.link,
-      '--bgColor-default:' + p.bg,
-      '--bgColor-muted:' + p.surface,
-      '--bgColor-inset:' + p.raised,
-      '--fgColor-default:' + p.text,
-      '--fgColor-muted:' + p.muted,
-      '--borderColor-default:' + p.border,
-      '--button-default-bgColor-rest:' + p.control,
-      '--button-default-fgColor-rest:' + p.text,
-      '--button-default-borderColor-rest:' + p.border,
-      '--button-primary-bgColor-rest:#1f883d',
-      '--button-primary-fgColor-rest:#ffffff',
-    ].join(' !important;') + ' !important;';
-    return ':root,html,body{color-scheme:' + scheme + ' !important;' + vars + 'background:' + p.bg + ' !important;color:' + p.text + ' !important;}'
-      + 'body,.application-main,main,#js-repo-pjax-container,#repo-content-pjax-container,.Layout,.PageLayout,.feed-background{background:' + p.bg + ' !important;color:' + p.text + ' !important;}'
-      + '.Header,.AppHeader,.AppHeader-globalBar,.UnderlineNav,.Box,.Box-row,.Popover,.Popover-message,.SelectMenu-modal,.Overlay,.flash,.color-bg-default,.color-bg-subtle,.color-bg-inset,.markdown-body table tr{background:' + p.surface + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
-      + 'html body :is(header,.Header,.AppHeader,.AppHeader-globalBar,.HeaderMenu,.HeaderMenu--logged-out) :where(a,span,button,div,summary,svg,path){color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;text-shadow:none !important;}'
-      + 'html body :is(header,.Header,.AppHeader) .search-input-container.search-with-dialog,html body :is(header,.Header,.AppHeader) .search-input-container.search-with-dialog :where(div,span,input,button){background:' + p.input + ' !important;background-color:' + p.input + ' !important;background-image:none !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:' + p.border + ' !important;box-shadow:none !important;text-shadow:none !important;}'
-      + 'html body [class*="Primer_Brand__FormControl" i] :where(label,span,div),html body [class*="FormControl-label" i]{color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;text-shadow:none !important;}'
-      + 'html body [class*="Primer_Brand__Button" i]{color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;text-shadow:none !important;}'
-      + '.markdown-body,.markdown-body p,.markdown-body li,.markdown-body td,.markdown-body th,.markdown-body blockquote,.repo-list-item,.feed-item-content,.js-navigation-item,.text-normal,.fgColor-default{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
-      + '.color-fg-muted,.fgColor-muted,.text-small,.note,.Counter,[class*="muted" i]{color:' + p.muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      + 'a,a.Link--primary,.Link--muted:hover{color:' + p.link + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      + '.btn,.Button,[role="button"],button:not(.HeaderMenu-link){background:' + p.control + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
-      + '.btn-primary,.Button--primary,[class*="primary" i][class*="Button" i],a[href="/signup"]{background:#1f883d !important;border-color:#1f883d !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;}'
-      + 'html body input,html body textarea,html body select,html body [contenteditable="true"]{background:' + p.input + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
-      + 'html body input::placeholder,html body textarea::placeholder{color:' + p.muted + ' !important;-webkit-text-fill-color:' + p.muted + ' !important;opacity:1 !important;}'
-      + 'svg,path,octicon-icon{color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;}'
-      + 'img,picture,video,canvas,iframe,embed,object{filter:none !important;background:transparent !important;}';
+    const page = 'html,body{background-color:var(--bgColor-default) !important;color:var(--fgColor-default) !important;}'
+      + 'html[data-color-mode="light"]{color-scheme:light !important;}html[data-color-mode="dark"]{color-scheme:dark !important;}';
+    if (mode !== 'ultra') return page;
+    /* Ultra is more than a black page. A reader already on GitHub dark saw no difference but the
+       canvas, because every button, input, panel and card stayed GitHub's grey (#212830, #151b23).
+       Those go onto the same near-black ladder Ultra uses everywhere -- canvas, a lifted surface,
+       a raised overlay, then controls -- while borders stay GitHub's, so the structure holds. */
+    const tokens = {
+      '--bgColor-default': '#000000', '--bgColor-inset': '#000000', '--page-header-bgColor': '#000000',
+      '--dashboard-bgColor': '#000000', '--header-bgColor': '#000000', '--headerSearch-bgColor': '#000000',
+      '--controlTrack-bgColor-rest': '#000000',
+      '--bgColor-muted': '#08090c', '--card-bgColor': '#08090c', '--menu-bgColor-active': '#111319',
+      '--overlay-bgColor': '#0d0f14', '--contribution-default-bgColor-0': '#111319',
+      '--button-default-bgColor-rest': '#111319', '--button-default-bgColor-hover': '#1a1d25',
+      '--button-default-bgColor-active': '#20242d', '--button-default-bgColor-selected': '#20242d',
+      '--button-inactive-bgColor': '#151821', '--button-outline-bgColor-hover': '#1a1d25',
+      '--buttonKeybindingHint-default-bgColor-rest': '#1a1d25', '--buttonKeybindingHint-invisible-bgColor-rest': '#1a1d25',
+      '--control-bgColor-rest': '#0d0f14', '--control-bgColor-hover': '#151821', '--control-bgColor-active': '#1d2230',
+      '--control-bgColor-selected': '#111319', '--controlKnob-bgColor-rest': '#1a1d25', '--sideNav-bgColor-selected': '#111319',
+      '--color-canvas-default': '#000000', '--color-canvas-inset': '#000000',
+      '--color-canvas-subtle': '#08090c', '--color-canvas-overlay': '#0d0f14',
+    };
+    return 'html[data-color-mode="dark"]{'
+      + Object.keys(tokens).map((name) => name + ':' + tokens[name] + ' !important;').join('') + '}'
+      + page;
   }
 
   function stackOverflowCSS(mode) {
@@ -1295,6 +1371,7 @@
       wikipediaCSS: wikipediaCSS,
       youtubeDarkCSS: youtubeDarkCSS,
       youtubeLightCSS: youtubeLightCSS,
+      youtubeMusicCSS: youtubeMusicCSS,
       youtubeShadowCSS: youtubeShadowCSS,
     };
   };

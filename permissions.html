@@ -738,10 +738,16 @@
     color: var(--ink);
     font: 800 18px/1.2 var(--display);
   }
+  .external-ledger + .external-ledger { margin-top: 18px; }
   .service-row p {
     color: var(--ink-soft);
     font-size: 13.3px;
     line-height: 1.55;
+  }
+  .service-row p a {
+    color: var(--plum);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
   .hostline {
     color: var(--ink-faint);
@@ -1094,7 +1100,7 @@
               <div class="perm-row"><div class="perm-id"><code>tabs</code><span>Tabs</span></div><p>Applies per-tab protection, opens review pages, handles tab-limit tools, and avoids touching protected tabs incorrectly.</p><div class="boundary"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Used so protections follow the tab you are actually using.</span></div></div>
               <div class="perm-row"><div class="perm-id"><code>declarativeNetRequestFeedback</code><span>Filtering</span></div><p>Lets the Network Logger say <em>which</em> filter rule blocked a request, not just that something did. Chrome only joins a rule to an individual request for an extension loaded unpacked; a Store install gets the weaker form, which reports rules by tab and time, and the Logger says so on the page rather than guessing an attribution.</p><div class="boundary"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Read only while the Network Logger window is open, and never sent anywhere.</span></div></div>
               <div class="perm-row"><div class="perm-id"><code>contextMenus</code><span>Interface</span></div><p>Adds WardenOne&rsquo;s own entries to the right-click menu &mdash; check this link, scan this image, block this site, sleep this tab.</p><div class="boundary"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Adds menu entries only; it does not let WardenOne read the page you right-clicked.</span></div></div>
-              <div class="perm-row"><div class="perm-id"><code>offscreen</code><span>Interface</span></div><p>A service worker has no document, so it cannot play a sound. This opens a hidden page whose only job is to play a notification sound.</p><div class="boundary"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Plays a sound and nothing else, and only when a notice you switched on asks for one.</span></div></div>
+              <div class="perm-row"><div class="perm-id"><code>offscreen</code><span>Interface</span></div><p>A service worker has no document, so it cannot play a sound. This opens a hidden page whose only job is to play a notification sound, and closes it again a few seconds after the last one.</p><div class="boundary"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Plays a sound and nothing else, and only when a notice you switched on asks for one.</span></div></div>
             </div>
           </section>
         </div>
@@ -1108,7 +1114,20 @@
             <div class="section-kicker">External services</div>
             <h2>What can leave the browser.</h2>
           </div>
-          <p>These host permissions support reputation and threat intelligence checks. They exist for specific safety features, not as background tracking endpoints.</p>
+          <p>Every address WardenOne contacts outside your browser, split by whether it happens on its own or only after you switch something on. Nothing is ever sent to WardenOne&rsquo;s developer &mdash; there is no WardenOne server to send it to.</p>
+        </div>
+        <div class="external-ledger">
+          <div class="ledger-banner">
+            <div class="banner-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 1 1-2.35-5.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M20 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <span>Automatic</span>
+            <h3>Requests that happen without a click</h3>
+            <p>Three kinds of request run on their own. None of them sends your browsing history anywhere, and each stops when you switch its feature off in the popup.</p>
+          </div>
+          <div class="service-row"><div class="service-name"><span>Block-list updates</span><strong>Public filter lists</strong></div><p>Downloads the public ad, tracker, malware and phishing lists from their maintainers once a day, with a few retries if a download fails. Each list is fetched only while the protection that uses it is on. These are plain file downloads without cookies: nothing about the pages you visit is sent, and the list host sees an ordinary request from your IP address. Every list and its exact address is published in <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json" target="_blank" rel="noopener noreferrer">the source inventory</a>.</p><div class="hostline">raw.githubusercontent.com, filters.adtidy.org, easylist.to, easylist-downloads.adblockplus.org, phishing.army, malware-filter.gitlab.io, pgl.yoyo.org, ublockorigin.github.io</div></div>
+          <div class="service-row"><div class="service-name"><span>Script Drift Guard</span><strong>Third-party script re-checks</strong></div><p>To notice when a script a site relies on has been quietly swapped, WardenOne re-requests up to 14 third-party scripts a page has <em>already loaded</em>, hashes them on your device and compares the hash with the last copy it saw. Each request goes to a host that page just used, without cookies, so no one learns anything new. Scripts from the site itself, and allowlisted sites, are skipped. On by default; switch it off with <strong>Script drift guard</strong>.</p><div class="hostline">Only hosts the page you are on already loaded scripts from</div></div>
+          <div class="service-row"><div class="service-name"><span>Twitch, on Twitch only</span><strong>Twitch ad blocking and rewind</strong></div><p>Only while a Twitch page is open. <strong>Twitch ad blocking</strong> asks Twitch for the stream&rsquo;s playback token the way the player does, carrying the same <code>Authorization</code> header the Twitch page is already using &mdash; sent back to Twitch only, never stored, and without cookies. <strong>Twitch rewind</strong> asks whether the channel has an in-progress recording of the broadcast, and sends the channel name with no credentials at all.</p><div class="hostline">gql.twitch.tv</div></div>
         </div>
         <div class="external-ledger">
           <div class="ledger-banner">
@@ -1116,8 +1135,8 @@
               <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12h6M12 9v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </div>
             <span>Opt-in checks</span>
-            <h3>Reputation and intelligence providers</h3>
-            <p>These endpoints support specific safety checks. They are not used as background tracking pipes.</p>
+            <h3>Checks you switch on or start</h3>
+            <p>Nothing here is contacted until you enable the check, add its key, or press its button.</p>
           </div>
           <div class="service-row"><div class="service-name"><span>Breach checks</span><strong>Have I Been Pwned</strong></div><p>Used only when you click <strong>Check breach history</strong>. Sends the site's registrable domain to look up that <em>site's</em> public breach record — not your account, and not any password.</p><div class="hostline">haveibeenpwned.com</div></div><div class="service-row"><div class="service-name"><span>Password exposure</span><strong>Pwned Passwords</strong></div><p>Used only when you type a password into <strong>Check password exposure</strong> and press the button. The password is hashed on your device and only the <strong>first five characters of the hash</strong> are sent; the service replies with every suffix in that bucket and the match is made locally. The password and the full hash never leave your machine, the request carries no cookies and no referrer, and the answer is written nowhere. WardenOne does not read what you type into web pages.</p><div class="hostline">api.pwnedpasswords.com</div></div>
           <div class="service-row"><div class="service-name"><span>Domain age</span><strong>RDAP and WhoisXML</strong></div><p>Used for registration age and reputation clues when a new or suspicious domain asks for passwords or serves risky downloads.</p><div class="hostline">rdap.org, www.whoisxmlapi.com, domain-reputation.whoisxmlapi.com, threat-intelligence.whoisxmlapi.com</div></div>
@@ -1125,6 +1144,8 @@
           <div class="service-row"><div class="service-name"><span>File hash checks</span><strong>VirusTotal</strong></div><p>Optional URL and file-hash reputation. WardenOne can check a hash without uploading the downloaded file.</p><div class="hostline">www.virustotal.com</div></div>
           <div class="service-row"><div class="service-name"><span>Phishing feeds</span><strong>PhishTank and OpenPhish</strong></div><p>Optional phishing intelligence for known malicious links, forms, pages, and download flows.</p><div class="hostline">checkurl.phishtank.com, raw.githubusercontent.com/openphish/public_feed</div></div>
           <div class="service-row"><div class="service-name"><span>Malware sources</span><strong>URLhaus and AbuseIPDB</strong></div><p>Optional malware URL and abusive IP checks for suspicious servers, raw IP addresses, and risky download sources.</p><div class="hostline">urlhaus-api.abuse.ch, api.abuseipdb.com</div></div>
+          <div class="service-row"><div class="service-name"><span>Extension check</span><strong>Chrome Web Store</strong></div><p>Used only when you paste an extension&rsquo;s ID or store link into the extension checker. Asks for that listing&rsquo;s public page, without cookies, to learn whether it still exists and what it is called. Sends the extension&rsquo;s ID and nothing about you.</p><div class="hostline">chromewebstore.google.com</div></div>
+          <div class="service-row"><div class="service-name"><span>Network self-test</span><strong>Filtering detection</strong></div><p>Used only when you open the network test page and start it. It tries to load a favicon from two adult sites, one malware test host and two control sites, and sees which are blocked. Nothing is shown, but these are real requests: they can appear in DNS logs, in router, school or workplace monitoring, and in family-filter reports. On a network where that matters, don&rsquo;t run it.</p><div class="hostline">www.pornhub.com, xvideos.com, testsafebrowsing.appspot.com, www.google.com, www.cloudflare.com</div></div>
         </div>
       </div>
     </section>
