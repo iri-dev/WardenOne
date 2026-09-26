@@ -230,6 +230,7 @@
   background: var(--wo-card-gradient);
 }
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .health-stat,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .health-tab,
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .health-note,
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .api-field,
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-shell,
@@ -297,8 +298,9 @@
 .wo-theme-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
 .wo-theme-copy strong { color: var(--ink); font: 800 12px/1 var(--display); }
 .wo-theme-copy span { color: var(--ink-faint); font-size: 10.5px; font-weight: 700; }
-.wo-theme-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
-.wo-interface-theme-options { flex: none; width: 112px; }
+/* Three choices since BUG-11: Light (the default), Dark, System (following the operating system). */
+.wo-theme-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.wo-interface-theme-options { flex: none; width: 168px; }
 .wo-theme-option {
   min-height: 30px;
   border: 1px solid var(--line-strong);
@@ -450,7 +452,7 @@
 .onboarding-theme > div:first-child { display: grid; gap: 3px; }
 .onboarding-theme strong { color: var(--ink); font: 900 13px/1.1 var(--display); }
 .onboarding-theme span { color: var(--ink-faint); font-size: 11px; font-weight: 700; }
-.onboarding-theme .wo-theme-options { flex: none; width: 150px; }
+.onboarding-theme .wo-theme-options { flex: none; width: 222px; }
 
 :root[data-wardenone-page="download-review"][data-wardenone-theme-resolved="dark"] {
   --purple: var(--wo-violet);

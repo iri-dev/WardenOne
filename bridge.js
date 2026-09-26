@@ -171,9 +171,16 @@
      library: fixed 32-byte key (hex), text in, hex out. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
-    const U8=Uint8Array,U32=Uint32Array;
-    /* UTF-8 by hand rather than TextEncoder: a lifted fragment in a bare sandbox has no
-       TextEncoder, and the page cannot be handed a hook into this either way. */
+    const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
+    /* This code runs in the page's own world, where the page can replace any built-in method after
+       load. So nothing that touches the key calls one. The key becomes its two HMAC pad blocks ONCE,
+       in key(), at the document_start hand-off before any page script exists; after that a
+       signature is index reads and arithmetic on typed arrays -- no .set, .subarray, .length,
+       substr, parseInt or toString -- each of which a page could replace to be handed the key: a
+       patched String.prototype.substr, Uint8Array.prototype.set or typed-array length getter each
+       recovered the whole key from one signature (tools/test-main-world-key-isolation.js). The
+       message text is not secret; a page that tampers with how it is read only spoils its own
+       signature, which it could already do by stopping the event. */
     function encode(text){
       const s=String(text),out=new U8(3*s.length+3);
       let n=0;
@@ -185,16 +192,18 @@
         else if(c<0x10000)out[n++]=0xe0|(c>>12),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63);
         else out[n++]=0xf0|(c>>18),out[n++]=0x80|((c>>12)&63),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63)
       }
-      return out.subarray(0,n)
+      return{b:out,n:n}
     }
     const rotr=(x,n)=>(x>>>n)|(x<<(32-n));
-    function sha256(msg){
-      const len=msg.length,padded=new U8(((len+9+63)>>6)<<6);
-      padded.set(msg),padded[len]=0x80;
+    function sha256(msg,len){
+      const total=((len+9+63)>>6)<<6,padded=new U8(total);
+      for(let i=0;i<len;i++)padded[i]=msg[i];
+      padded[len]=0x80;
       const bits=len*8;
-      padded[padded.length-4]=(bits>>>24)&255,padded[padded.length-3]=(bits>>>16)&255,padded[padded.length-2]=(bits>>>8)&255,padded[padded.length-1]=bits&255;
-      const h=new U32([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]),w=new U32(64);
-      for(let off=0;off<padded.length;off+=64){
+      padded[total-4]=(bits>>>24)&255,padded[total-3]=(bits>>>16)&255,padded[total-2]=(bits>>>8)&255,padded[total-1]=bits&255;
+      const h=new U32(8),w=new U32(64);
+      h[0]=0x6a09e667,h[1]=0xbb67ae85,h[2]=0x3c6ef372,h[3]=0xa54ff53a,h[4]=0x510e527f,h[5]=0x9b05688c,h[6]=0x1f83d9ab,h[7]=0x5be0cd19;
+      for(let off=0;off<total;off+=64){
         for(let i=0;i<16;i++)w[i]=(padded[off+4*i]<<24)|(padded[off+4*i+1]<<16)|(padded[off+4*i+2]<<8)|padded[off+4*i+3];
         for(let i=16;i<64;i++){
           const s0=rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3),s1=rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
@@ -211,26 +220,30 @@
       for(let i=0;i<8;i++)out[4*i]=h[i]>>>24,out[4*i+1]=(h[i]>>>16)&255,out[4*i+2]=(h[i]>>>8)&255,out[4*i+3]=h[i]&255;
       return out
     }
-    function hexBytes(hex){
-      const s=String(hex||""),out=new U8(s.length>>1);
-      for(let i=0;i<out.length;i++)out[i]=parseInt(s.substr(2*i,2),16)||0;
-      return out
-    }
     function hex(bytes){
       let s="";
-      for(let i=0;i<bytes.length;i++)s+=(bytes[i]<256?(bytes[i]<16?"0":""):"")+bytes[i].toString(16);
+      for(let i=0;i<32;i++)s+=D[bytes[i]>>4]+D[bytes[i]&15];
       return s
     }
-    function hmac(keyHex,text){
-      const key=hexBytes(keyHex),block=new U8(64);
-      block.set(key.length>64?sha256(key):key);
-      const ipad=new U8(64),opad=new U8(64);
-      for(let i=0;i<64;i++)ipad[i]=block[i]^0x36,opad[i]=block[i]^0x5c;
-      const data=encode(String(text)),inner=new U8(64+data.length);
-      inner.set(ipad),inner.set(data,64);
-      const ih=sha256(inner),outer=new U8(96);
-      outer.set(opad),outer.set(ih,64);
-      return hex(sha256(outer))
+    /* The key's two pad blocks, made once. Call it only where the page cannot have run yet (the
+       wo-key hand-off at document_start) or cannot reach (the bridge's own world). */
+    function key(keyHex){
+      const s=String(keyHex||""),n=s.length>>1,raw=new U8(n);
+      for(let i=0;i<n;i++)raw[i]=parseInt(s.substr(2*i,2),16)||0;
+      const k=n>64?sha256(raw,n):raw,kl=n>64?32:n,ipad=new U8(64),opad=new U8(64);
+      for(let i=0;i<64;i++){
+        const b=i<kl?k[i]:0;
+        ipad[i]=b^0x36,opad[i]=b^0x5c
+      }
+      return{i:ipad,o:opad}
+    }
+    function hmac(k,text){
+      const pads="string"==typeof k?key(k):k,e=encode(text),n=e.n,data=e.b,inner=new U8(64+n),outer=new U8(96);
+      for(let i=0;i<64;i++)inner[i]=pads.i[i],outer[i]=pads.o[i];
+      for(let i=0;i<n;i++)inner[64+i]=data[i];
+      const ih=sha256(inner,64+n);
+      for(let i=0;i<32;i++)outer[64+i]=ih[i];
+      return hex(sha256(outer,96))
     }
     /* Constant-time-enough equality for two short hex strings; a mismatch is not a secret. */
     function same(a,b){
@@ -240,7 +253,32 @@
       for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);
       return 0===diff
     }
-    return{hmac:hmac,same:same}
+    /* A signed event's text: who sent it, its number, its type and a canonical form of its detail
+       -- keys sorted, every value typed, every string length-prefixed -- so the page's world and
+       the bridge's, which each hold their own copy of the detail, compute the same text from it. */
+    function canon(v,depth){
+      if(void 0===v)return"u";
+      if(null===v)return"n";
+      const t=typeof v;
+      if("string"===t)return"s"+v.length+":"+v;
+      if("number"===t)return"d"+String(v);
+      if("boolean"===t)return v?"T":"F";
+      if("object"!==t||depth>8)return"x";
+      let s;
+      if(Array.isArray(v)){
+        s="[";
+        for(let i=0;i<v.length&&i<256;i++)s+=canon(v[i],depth+1)+",";
+        return s+"]"
+      }
+      const keys=Object.keys(v).sort();
+      s="{";
+      for(let i=0;i<keys.length&&i<256;i++)s+=keys[i].length+":"+keys[i]+"="+canon(v[keys[i]],depth+1)+",";
+      return s+"}"
+    }
+    function eventText(src,seq,type,detail){
+      return"event\n"+String(src)+"\n"+String(seq)+"\n"+String(type)+"\n"+canon(detail,0)
+    }
+    return{hmac:hmac,same:same,key:key,canon:canon,eventText:eventText}
   })();
 
   const KEY = (function () {
@@ -296,6 +334,64 @@
     return message;
   };
   const engineMac = (kind, text) => (KEY ? __woAuth.hmac(KEY, kind + '\n' + String(text)) : '');
+
+  /* ROUTING TOKEN = ROUTING ONLY; THE KEY = ANYTHING WARDENONE BELIEVES.
+     The token rides every message on this bus and a page can read it, so a message that carries
+     only the token proves nothing about who sent it. Security events (blocked_*, detected_*,
+     gated_*, warned_*, behavioral_risk) were accepted on the token alone: a page could dispatch
+     blocked_payment_card_submit or detected_grabber_domain about itself and have WardenOne put it
+     in the Activity log, count it on the toolbar badge and pop its own branded notice on the page.
+     The permission-chain signal, the media-active flag Memory Shield consults before sleeping a
+     tab, and the reload-loop notice worked the same way. Each is now signed under the key this
+     bridge handed out at document_start, over a number that only moves forward -- one counter per
+     sender -- and its content; a page can still dispatch all of them, and none of them counts. */
+  const KEY_PADS = KEY ? __woAuth.key(KEY) : null;
+  const EVENT_SOURCES = new Set(['engine', 'hardener', 'miner', 'bridge']);
+  const eventSeqSeen = Object.create(null);
+  const eventSigned = (d) => {
+    const src = String((d && d.src) || '');
+    const seq = Number(d && d.eseq);
+    if (!KEY_PADS || !EVENT_SOURCES.has(src) || !Number.isInteger(seq) || seq <= (eventSeqSeen[src] || 0)) return false;
+    if (!__woAuth.same(d.emac, __woAuth.hmac(KEY_PADS, __woAuth.eventText(src, seq, String(d.type || ''), d.detail)))) return false;
+    eventSeqSeen[src] = seq;
+    return true;
+  };
+  let bridgeEventSeq = 0;
+  /* The bridge's own notices -- the answer to a right-click check the reader asked for -- go out
+     signed as the 'bridge' sender, so the engine's notice card believes them like any other. It is
+     reachable only from this extension's own world (the worker runs a one-line script there); the
+     page cannot see or call it. */
+  const dispatchLocalNotice = (type, detail) => {
+    if (!KEY_PADS || !/^detected_manual_check$/.test(String(type || ''))) return false;
+    bridgeEventSeq += 1;
+    const safe = boundedBridgeDetail(detail || {});
+    try {
+      document.dispatchEvent(new CustomEvent('wo-event', { detail: {
+        token: TOKEN, type, detail: safe, src: 'bridge', eseq: bridgeEventSeq,
+        emac: __woAuth.hmac(KEY_PADS, __woAuth.eventText('bridge', bridgeEventSeq, type, safe)),
+      } }));
+      return true;
+    } catch (_) { return false; }
+  };
+  try { Object.defineProperty(window, '__wardenOneLocalNotice', { value: dispatchLocalNotice, configurable: true }); } catch (_) {}
+  let permSignalSeqSeen = 0;
+  const permissionSignalSigned = (d) => {
+    const seq = Number(d && d.pseq);
+    if (!KEY_PADS || !Number.isInteger(seq) || seq <= permSignalSeqSeen) return false;
+    const body = Object.assign({}, d);
+    delete body.token; delete body.pseq; delete body.pmac;
+    if (!__woAuth.same(d.pmac, __woAuth.hmac(KEY_PADS, 'permission\n' + seq + '\n' + __woAuth.canon(body, 0)))) return false;
+    permSignalSeqSeen = seq;
+    return true;
+  };
+  let pageNoticeSeqSeen = 0;
+  const pageNoticeSigned = (kind, data, extra) => {
+    const seq = Number(data && data.seq);
+    if (!KEY_PADS || !Number.isInteger(seq) || seq <= pageNoticeSeqSeen) return false;
+    if (!__woAuth.same(data.mac, __woAuth.hmac(KEY_PADS, kind + '\n' + seq + '\n' + String(extra || '')))) return false;
+    pageNoticeSeqSeen = seq;
+    return true;
+  };
   const BRIDGE_RATE = Object.create(null);
   function bridgeRateOk(bucket, max, windowMs) {
     const key = String(bucket || 'message');
@@ -1929,6 +2025,26 @@
     }
   } catch (_) {}
 
+  /* The redirect interstitial is the one thing a wo-event makes the worker DO -- navigate the
+     tab to WardenOne's own warning page with a Continue button pointing at the event's url --
+     and the token that routes these events is public. A page that dispatched
+     blocked_gestureless_nav with a url of its own and silent:false put its landing page behind a
+     genuine, WardenOne-branded Continue on a real chrome-extension:// page, and could raise it
+     eight times a minute to devalue the warning a real hijack raises (SEC-15). The guard now
+     signs an interstitial request under the key this bridge handed out at document_start, over
+     a number that only moves forward and the destination, the reason and the kind the page will
+     show (the SEC-13 scheme); nothing that fails the signature, repeats a number or was altered
+     in flight is relayed. The badge count for the same event is unchanged: a block is a number,
+     not an action. */
+  let interstitialSeqSeen = 0;
+  const interstitialRequestSigned = (detail) => {
+    const seq = Number(detail && detail.seq);
+    if (!KEY || !Number.isInteger(seq) || seq <= interstitialSeqSeen) return false;
+    if (!__woAuth.same(detail.mac, engineMac('redirect-warning', seq + '\n' + String(detail.url) + '\n' + String(detail.why || '') + '\n' + String(detail.kind || '')))) return false;
+    interstitialSeqSeen = seq;
+    return true;
+  };
+
   woOn(document, 'wo-event', (e) => {
     const d = (e && e.detail) || {};
     // Route only token-bearing events. The token is not treated as a true secret;
@@ -1946,6 +2062,9 @@
     const securitySignal = type === 'behavioral_risk'
       || /^warned_(?:potential_)?xss_|^warned_potential_(?:dom_xss|xss_)|^warned_clickfix_|^warned_command_paste$/.test(type);
     if (/^blocked_|^detected_|^gated_|^warned_/.test(type) || type === 'behavioral_risk') {
+      /* Only a signed event is a finding (see eventSigned). The bridge's own notices are for the
+         page's notice card and are not findings to record. */
+      if (!eventSigned(d) || d.src === 'bridge') return;
       if (!bridgeRateOk(securitySignal ? 'wo-security-event' : 'wo-event', securitySignal ? 12 : 240, 60000)) return;
       try {
         chrome.runtime.sendMessage({ kind: 'rg-block', type, detail: boundedBridgeDetail(d.detail) }, () => { void chrome.runtime.lastError; });
@@ -1955,6 +2074,8 @@
       // silent === true means the hardener kept the user on their page (forced
       // redirect / popunder / overlay click) — no interstitial, just the badge.
       if (type === 'blocked_gestureless_nav' && d.detail && d.detail.url && d.detail.why !== 'no recent user gesture' && d.detail.silent !== true) {
+        // And only the guard may ask for one (SEC-15); the badge above already has the block.
+        if (!interstitialRequestSigned(d.detail)) return;
         try {
           chrome.runtime.sendMessage({ kind: 'redirect-warning', detail: boundedBridgeDetail(d.detail) }, () => { void chrome.runtime.lastError; });
         } catch (_) {}
@@ -2084,11 +2205,26 @@
   // Only one acquisition runs at a time; a new one (a refresh, a page shown again) supersedes
   // whatever an older one was still waiting for.
   let configAcquisition = 0;
+  // Sibling requests that arrive while a refresh is on its way wait for it. Answering them from
+  // the snapshot being replaced undid settings changes: on a change the worker tells every tab
+  // to refresh, and Eye Shield -- told the same thing -- asked here while this bridge's own
+  // re-fetch was still in flight, got the old snapshot, and put the old mode back. Nothing
+  // told it again when the new snapshot landed, so an open tab kept the mode it had until the
+  // reader pressed Save a second time.
+  let acquisitionInFlight = false;
+  const acquisitionWaiters = [];
+  const releaseAcquisitionWaiters = () => {
+    const waiting = acquisitionWaiters.splice(0, acquisitionWaiters.length);
+    for (let i = 0; i < waiting.length; i++) { try { waiting[i](); } catch (_) {} }
+  };
   const requestContentConfig = () => {
     const mine = ++configAcquisition;
+    acquisitionInFlight = true;
     bridgeFetchContentConfig(CONTENT_CONFIG_NEED, (res) => {
       if (mine !== configAcquisition) return;
+      acquisitionInFlight = false;
       applyContentSnapshot(res);
+      releaseAcquisitionWaiters();
     });
   };
   requestContentConfig();
@@ -2108,14 +2244,28 @@
   // about five seconds): those scripts fall back to their defaults when unanswered, and a
   // default-on protection should not wait half a minute to start on a worker that is gone.
   const SIBLING_CONFIG_ATTEMPTS = 4;
+  // How long a sibling waits on a refresh in flight before it is answered from what is held: a
+  // worker that has gone away must not leave Eye Shield without any answer.
+  const SIBLING_REFRESH_WAIT_MS = 8000;
   try {
     window.__wardenOneContentConfig = () => bridgeSnapshot;
     window.__wardenOneContentConfigRequest = (need, cb) => {
       const wanted = Array.isArray(need) && need.length ? need : CONTENT_CONFIG_NEED;
       const covered = wanted.every((n) => CONTENT_CONFIG_NEED.indexOf(n) >= 0);
       if (covered && bridgeSnapshot) {
-        const snap = bridgeSnapshot;
-        woTimeout(() => { try { cb(snap); } catch (_) {} }, 0);
+        let answered = false;
+        const answer = () => {
+          if (answered) return;
+          answered = true;
+          const snap = bridgeSnapshot;
+          woTimeout(() => { try { cb(snap); } catch (_) {} }, 0);
+        };
+        if (acquisitionInFlight) {
+          acquisitionWaiters.push(answer);
+          woTimeout(answer, SIBLING_REFRESH_WAIT_MS);
+          return;
+        }
+        answer();
         return;
       }
       bridgeFetchContentConfig(wanted, cb, SIBLING_CONFIG_ATTEMPTS);
@@ -2396,7 +2546,9 @@
 
     woOn(window, 'message', (e) => {
       if (e.source !== window || !e.data) return;
-      if (e.data.source !== 'wardenone-reload-loop' || e.data.token !== TOKEN) return;
+      /* Signed like the media report: the token alone let any page raise WardenOne's own
+         "reloading repeatedly" panel over itself. */
+      if (e.data.source !== 'wardenone-reload-loop' || e.data.token !== TOKEN || !pageNoticeSigned('reload-loop', e.data, '')) return;
       showReloadLoopNotice();
     });
   } catch (_) {}
@@ -2511,20 +2663,17 @@
       };
     }
   } catch (_) {}
-  // MAIN-world (content.js Media Shield) can tell us media went active/inactive.
-  // Token-gated like every other page-message path here. Without it any page could
-  // post {source:'wardenone-media', active:false} and clear this flag, and the flag
-  // is answered back to Memory Shield in the memory-form-check reply -- so a page
-  // holding a live camera or microphone could present itself as idle and become
-  // eligible to be slept or discarded. As elsewhere in this file the token is not
-  // treated as a true secret, since a page script can observe it; it keeps a page
-  // from forging this state casually and matches how config, permission-chain and
-  // the other relays already validate.
+  // MAIN-world (content.js Media Shield) can tell us media went active/inactive. This flag is
+  // answered back to Memory Shield in the memory-form-check reply, so a page that could post
+  // {source:'wardenone-media', active:false} could present a live camera or microphone as idle
+  // and become eligible to be slept or discarded. The token alone could not stop that -- a page
+  // script can read it -- so the report is signed under the key, over a number that only moves
+  // forward and the state it reports (pageNoticeSigned); anything else is ignored.
   let relayMediaActive = false;
   try {
     woOn(window, 'message', (e) => {
       if (e.source === window && e.data && e.data.source === 'wardenone-media'
-        && e.data.token === TOKEN) {
+        && e.data.token === TOKEN && pageNoticeSigned('media', e.data, e.data.active ? '1' : '0')) {
         relayMediaActive = !!e.data.active;
       }
     });
@@ -2855,7 +3004,7 @@
 
       woOn(document, 'wo-permission-signal', (e) => {
         const d = (e && e.detail) || {};
-        if (d.token !== TOKEN || !permissionChainGuardOn()) return;
+        if (d.token !== TOKEN || !permissionChainGuardOn() || !permissionSignalSigned(d)) return;
         const signal = cleanPermSignal(d);
         if (!signal) return;
         if (!bridgeRateOk('permission-chain-' + signal.permission, 10, 60000)) return;

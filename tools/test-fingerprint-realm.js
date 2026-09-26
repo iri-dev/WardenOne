@@ -118,7 +118,12 @@ section('build parity', () => {
 section('seed split', () => {
   const noise = region('FINGERPRINT-NOISE');
   check('the canvas noise is keyed on the shared seed', /hashBytes=data=>\{let h=\(_sc\^2166136261\)>>>0/.test(noise));
-  check('so is the hardware-profile draw', /woPick=\(arr,key\)=>arr\[Math\.floor\(makeRnd\(mixShared\(key\)\)/.test(noise));
+  /* The hardware draw is NOT on the per-load seed any more (COMPAT-11): a core count is a claim
+     about the machine, so it is keyed on the top-level site and holds across reloads. */
+  check('the hardware-profile draw is keyed on the site seed, not the per-load one', /woPick=\(arr,key\)=>arr\[Math\.floor\(makeRnd\(mixSite\(key\)\)/.test(noise)
+    && /mixSite=str=>\{let h=\(_st\^2166136261\)>>>0/.test(noise) && !/mixShared/.test(noise));
+  check('and the site seed is a hash of the site alone, with no per-load or per-reader input', /_st=\(\(\)=>\{let h=2166136261>>>0;const s="wo-site:"\+woSiteKey\(\);/.test(noise)
+    && !/_st=[^,]*(?:_sc|_sk|woSeed|getRandomValues|Math\.random)/.test(noise));
   check('the text-metric noise stays on the private seed', /seededTiny=\(key,scale=0\.01\)=>\(makeRnd\(mixSeed\(key\)\)/.test(noise)
     && /mixSeed=str=>\{let h=\(_sk\^2166136261\)>>>0/.test(noise),
     'a page knows the font and the string, so a shared seed here would let it subtract the noise');
@@ -228,6 +233,8 @@ function realm(opts) {
     hostname: o.hostname === undefined ? 'frame.example.com' : o.hostname,
     href: o.href || 'https://frame.example.com/',
     origin: o.origin || 'https://frame.example.com',
+    /* the top page's origin last, as the real property lists them */
+    ancestorOrigins: o.ancestors || [],
   };
   ctx.top = 'top' in o ? o.top : ctx;
   ctx.parent = 'parent' in o ? o.parent : ctx;
@@ -345,6 +352,53 @@ section('realms sharing a seed agree', () => {
   const cOther = run(realm({ parent: other, top: other, rand: 0x1111 }));
   check('a different seed gives a different picture', draw(cOther) !== pa);
   check('and the noise is stable within a realm', draw(a) === pa);
+});
+
+/* COMPAT-11: the hardware tuple is a claim about the machine. It must be identical across reloads,
+   tabs and frames of one site -- whatever the per-load randomness did -- and unrelated between
+   sites, while the canvas noise keeps re-rolling per load. */
+section('one site, one machine', () => {
+  const tuple = (c) => JSON.stringify([c.navigator.hardwareConcurrency, c.navigator.deviceMemory, c.__woGpu]);
+  /* A frame under a given top site, patched through the signed verdict path (no inherited seed),
+     with its own per-load randomness. */
+  const frameOn = (topOrigin, rand, hostname) => {
+    const c = realm({ parent: crossOrigin(), top: crossOrigin(), rand, hostname: hostname || 'frame.example.com', ancestors: [topOrigin] });
+    /* a WebGL prototype for the profile to patch, so the renderer string is part of the tuple */
+    c.WebGLRenderingContext = class WebGLRenderingContext { getParameter(p) { return 'native-' + p; } };
+    run(c);
+    giveKey(c, TOKEN, KEY);
+    post(c, configMsg(KEY, TOKEN, 1, { frameNoise: true }));
+    try { c.__woGpu = c.WebGLRenderingContext.prototype.getParameter.call({}, 37446); } catch (_) { c.__woGpu = 'n/a'; }
+    return c;
+  };
+  const a1 = frameOn('https://shop.example.com', 0x1111);
+  const a2 = frameOn('https://shop.example.com', 0x2222);
+  const a3 = frameOn('https://www.example.com', 0x3333, 'other.example.com');
+  check('the noise ran in each realm', wrapped(a1) && wrapped(a2) && wrapped(a3));
+  check('a reload (new per-load randomness) shows the same cores, memory and GPU', tuple(a1) === tuple(a2), tuple(a1) + ' vs ' + tuple(a2));
+  check('another subdomain of the same site, in another frame, shows the same machine', tuple(a1) === tuple(a3), tuple(a1) + ' vs ' + tuple(a3));
+  check('while the canvas noise still differs per load', draw(a1) !== draw(a2));
+  const sites = ['https://alpha.example', 'https://bravo.example', 'https://charlie.example', 'https://delta.example', 'https://echo.example', 'https://foxtrot.example', 'https://golf.example', 'https://hotel.example'];
+  const tuples = new Set(sites.map((s) => tuple(frameOn(s, 0x4444))));
+  check('different sites see different machines (eight sites, more than one tuple)', tuples.size >= 3, [...tuples].join(' | '));
+  /* co.uk-style suffixes: two labels are not the site there. */
+  const uk1 = frameOn('https://www.shop.co.uk', 0x5555);
+  const uk2 = frameOn('https://login.shop.co.uk', 0x6666);
+  check('www and login under one co.uk site agree', tuple(uk1) === tuple(uk2));
+  check('the GPU string is part of what holds, and is a profile string, not the machine\'s', typeof a1.__woGpu === 'string' && /ANGLE \(/.test(a1.__woGpu) && a1.__woGpu === a2.__woGpu, a1.__woGpu);
+  /* The site key itself, lifted from the built noise region and run against the cases above. */
+  const noise = region('FINGERPRINT-NOISE');
+  const keySrc = noise.slice(noise.indexOf('woSiteKey=()=>{'), noise.indexOf(',_st='));
+  check('the site-key function was found in the region', keySrc.length > 100 && keySrc.length < 2000, keySrc.length);
+  const keyFn = vm.runInNewContext('(function(location){ const ' + keySrc + '; return woSiteKey(); })', {});
+  const keyOf = (hostname, ancestors) => keyFn({ hostname, origin: 'https://' + hostname, ancestorOrigins: ancestors || [] });
+  check('the site key is the registrable domain of the top page', keyOf('www.example.com') === 'example.com' && keyOf('example.com') === 'example.com' && keyOf('a.b.c.example.org') === 'example.org');
+  check('with the short public suffixes kept whole', keyOf('www.shop.co.uk') === 'shop.co.uk' && keyOf('news.bbc.co.uk') === 'bbc.co.uk' && keyOf('mail.example.com.au') === 'example.com.au' && keyOf('www.example.ac.jp') === 'example.ac.jp');
+  check('a frame keys on the TOP site, not its own', keyOf('cdn.widgets.net', ['https://mid.example.org', 'https://www.example.com']) === 'example.com'
+    && keyOf('cdn.widgets.net', ['https://www.example.com:8443']) === 'example.com');
+  check('an about:blank child with no hostname still finds the top site', keyOf('', ['https://www.example.com']) === 'example.com');
+  check('an address is a site of its own, whole', keyOf('127.0.0.1') === '127.0.0.1' && keyOf('10.0.0.7') === '10.0.0.7' && keyOf('[::1]') === '[::1]' && keyOf('localhost') === 'localhost');
+  check('a bare or missing host does not throw', keyOf('') === '' && keyFn({}) === '' && keyFn(null) === '');
 });
 
 section('a parent with noise off', () => {

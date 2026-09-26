@@ -312,8 +312,7 @@
          the bypass has to be repeated rather than done once and left. */
       try{
         window.__wardenOneReadyVersion=void 0,
-        window.__wardenOneInstalled=void 0,
-        window.__wardenOneProtectionActive=void 0
+        window.__wardenOneInstalled=void 0
       }
       catch(_){
 
@@ -923,9 +922,16 @@
      module verifies the bridge's signature with the engine's own code (SEC-05). Self-contained. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
-    const U8=Uint8Array,U32=Uint32Array;
-    /* UTF-8 by hand rather than TextEncoder: a lifted fragment in a bare sandbox has no
-       TextEncoder, and the page cannot be handed a hook into this either way. */
+    const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
+    /* This code runs in the page's own world, where the page can replace any built-in method after
+       load. So nothing that touches the key calls one. The key becomes its two HMAC pad blocks ONCE,
+       in key(), at the document_start hand-off before any page script exists; after that a
+       signature is index reads and arithmetic on typed arrays -- no .set, .subarray, .length,
+       substr, parseInt or toString -- each of which a page could replace to be handed the key: a
+       patched String.prototype.substr, Uint8Array.prototype.set or typed-array length getter each
+       recovered the whole key from one signature (tools/test-main-world-key-isolation.js). The
+       message text is not secret; a page that tampers with how it is read only spoils its own
+       signature, which it could already do by stopping the event. */
     function encode(text){
       const s=String(text),out=new U8(3*s.length+3);
       let n=0;
@@ -937,16 +943,18 @@
         else if(c<0x10000)out[n++]=0xe0|(c>>12),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63);
         else out[n++]=0xf0|(c>>18),out[n++]=0x80|((c>>12)&63),out[n++]=0x80|((c>>6)&63),out[n++]=0x80|(c&63)
       }
-      return out.subarray(0,n)
+      return{b:out,n:n}
     }
     const rotr=(x,n)=>(x>>>n)|(x<<(32-n));
-    function sha256(msg){
-      const len=msg.length,padded=new U8(((len+9+63)>>6)<<6);
-      padded.set(msg),padded[len]=0x80;
+    function sha256(msg,len){
+      const total=((len+9+63)>>6)<<6,padded=new U8(total);
+      for(let i=0;i<len;i++)padded[i]=msg[i];
+      padded[len]=0x80;
       const bits=len*8;
-      padded[padded.length-4]=(bits>>>24)&255,padded[padded.length-3]=(bits>>>16)&255,padded[padded.length-2]=(bits>>>8)&255,padded[padded.length-1]=bits&255;
-      const h=new U32([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]),w=new U32(64);
-      for(let off=0;off<padded.length;off+=64){
+      padded[total-4]=(bits>>>24)&255,padded[total-3]=(bits>>>16)&255,padded[total-2]=(bits>>>8)&255,padded[total-1]=bits&255;
+      const h=new U32(8),w=new U32(64);
+      h[0]=0x6a09e667,h[1]=0xbb67ae85,h[2]=0x3c6ef372,h[3]=0xa54ff53a,h[4]=0x510e527f,h[5]=0x9b05688c,h[6]=0x1f83d9ab,h[7]=0x5be0cd19;
+      for(let off=0;off<total;off+=64){
         for(let i=0;i<16;i++)w[i]=(padded[off+4*i]<<24)|(padded[off+4*i+1]<<16)|(padded[off+4*i+2]<<8)|padded[off+4*i+3];
         for(let i=16;i<64;i++){
           const s0=rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3),s1=rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
@@ -963,26 +971,30 @@
       for(let i=0;i<8;i++)out[4*i]=h[i]>>>24,out[4*i+1]=(h[i]>>>16)&255,out[4*i+2]=(h[i]>>>8)&255,out[4*i+3]=h[i]&255;
       return out
     }
-    function hexBytes(hex){
-      const s=String(hex||""),out=new U8(s.length>>1);
-      for(let i=0;i<out.length;i++)out[i]=parseInt(s.substr(2*i,2),16)||0;
-      return out
-    }
     function hex(bytes){
       let s="";
-      for(let i=0;i<bytes.length;i++)s+=(bytes[i]<256?(bytes[i]<16?"0":""):"")+bytes[i].toString(16);
+      for(let i=0;i<32;i++)s+=D[bytes[i]>>4]+D[bytes[i]&15];
       return s
     }
-    function hmac(keyHex,text){
-      const key=hexBytes(keyHex),block=new U8(64);
-      block.set(key.length>64?sha256(key):key);
-      const ipad=new U8(64),opad=new U8(64);
-      for(let i=0;i<64;i++)ipad[i]=block[i]^0x36,opad[i]=block[i]^0x5c;
-      const data=encode(String(text)),inner=new U8(64+data.length);
-      inner.set(ipad),inner.set(data,64);
-      const ih=sha256(inner),outer=new U8(96);
-      outer.set(opad),outer.set(ih,64);
-      return hex(sha256(outer))
+    /* The key's two pad blocks, made once. Call it only where the page cannot have run yet (the
+       wo-key hand-off at document_start) or cannot reach (the bridge's own world). */
+    function key(keyHex){
+      const s=String(keyHex||""),n=s.length>>1,raw=new U8(n);
+      for(let i=0;i<n;i++)raw[i]=parseInt(s.substr(2*i,2),16)||0;
+      const k=n>64?sha256(raw,n):raw,kl=n>64?32:n,ipad=new U8(64),opad=new U8(64);
+      for(let i=0;i<64;i++){
+        const b=i<kl?k[i]:0;
+        ipad[i]=b^0x36,opad[i]=b^0x5c
+      }
+      return{i:ipad,o:opad}
+    }
+    function hmac(k,text){
+      const pads="string"==typeof k?key(k):k,e=encode(text),n=e.n,data=e.b,inner=new U8(64+n),outer=new U8(96);
+      for(let i=0;i<64;i++)inner[i]=pads.i[i],outer[i]=pads.o[i];
+      for(let i=0;i<n;i++)inner[64+i]=data[i];
+      const ih=sha256(inner,64+n);
+      for(let i=0;i<32;i++)outer[64+i]=ih[i];
+      return hex(sha256(outer,96))
     }
     /* Constant-time-enough equality for two short hex strings; a mismatch is not a secret. */
     function same(a,b){
@@ -992,7 +1004,32 @@
       for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);
       return 0===diff
     }
-    return{hmac:hmac,same:same}
+    /* A signed event's text: who sent it, its number, its type and a canonical form of its detail
+       -- keys sorted, every value typed, every string length-prefixed -- so the page's world and
+       the bridge's, which each hold their own copy of the detail, compute the same text from it. */
+    function canon(v,depth){
+      if(void 0===v)return"u";
+      if(null===v)return"n";
+      const t=typeof v;
+      if("string"===t)return"s"+v.length+":"+v;
+      if("number"===t)return"d"+String(v);
+      if("boolean"===t)return v?"T":"F";
+      if("object"!==t||depth>8)return"x";
+      let s;
+      if(Array.isArray(v)){
+        s="[";
+        for(let i=0;i<v.length&&i<256;i++)s+=canon(v[i],depth+1)+",";
+        return s+"]"
+      }
+      const keys=Object.keys(v).sort();
+      s="{";
+      for(let i=0;i<keys.length&&i<256;i++)s+=keys[i].length+":"+keys[i]+"="+canon(v[keys[i]],depth+1)+",";
+      return s+"}"
+    }
+    function eventText(src,seq,type,detail){
+      return"event\n"+String(src)+"\n"+String(seq)+"\n"+String(type)+"\n"+canon(detail,0)
+    }
+    return{hmac:hmac,same:same,key:key,canon:canon,eventText:eventText}
   })();
   /* AUTH-END */
 
@@ -1006,12 +1043,58 @@
   const __woEventQueue=[],
   __woRequestQueue=[],
   __woPendingRequests=new Map;
+  /* Every event this engine sends is signed (bridge.js eventSigned explains why): the token that
+     routes it is public, so the signature is what makes it a finding. "installed" keeps its own. */
+  let __woEventSeq=0,
+  __woNoticeSeq=0;
   function __woSignedDetail(detail){
     const d=Object.assign({
       token:__woToken
     },
     detail);
-    return"installed"===d.type&&null!==__woKey&&(d.mac=__woAuth.hmac(__woKey,"installed\n"+__woToken)),d
+    if(null===__woKey)return d;
+    if("installed"===d.type)return d.mac=__woAuth.hmac(__woKey,"installed\n"+__woToken),d;
+    __woEventSeq+=1;
+    d.src="engine";
+    d.eseq=__woEventSeq;
+    d.emac=__woAuth.hmac(__woKey,__woAuth.eventText("engine",__woEventSeq,String(d.type||""),d.detail));
+    return d
+  }
+  /* A report to the bridge that is not an event (media went live or idle; the reload-loop panel):
+     signed over its own number, shared by both, and what it says. */
+  function __woSignedNotice(message,extra){
+    const kind=message.kind;
+    delete message.kind;
+    if(null===__woKey)return message;
+    __woNoticeSeq+=1;
+    message.seq=__woNoticeSeq;
+    message.mac=__woAuth.hmac(__woKey,kind+"\n"+__woNoticeSeq+"\n"+String(extra||""));
+    return message
+  }
+  /* The engine believes a wo-event only when it is signed: the notice card, the page badge and
+     the risk score all read this bus, and a page can dispatch on it. One number per sender only
+     moves forward; the same event object seen again by the next listener is the same event. The
+     WeakMap methods and Reflect.apply are taken now, before the page can replace them. */
+  const __woEventLast=Object.create(null),
+  __woEventAccepted=new WeakMap,
+  __woWeakGet=WeakMap.prototype.get,
+  __woWeakSet=WeakMap.prototype.set,
+  __woApply=Reflect.apply;
+  function __woEventTrusted(d){
+    try{
+      if(!d||"object"!=typeof d||null===__woKey)return!1;
+      const src=String(d.src||""),
+      seq=Number(d.eseq);
+      if(!/^(?:engine|hardener|miner|bridge)$/.test(src)||!Number.isInteger(seq))return!1;
+      if(!__woAuth.same(d.emac,__woAuth.hmac(__woKey,__woAuth.eventText(src,seq,String(d.type||""),d.detail))))return!1;
+      if(__woApply(__woWeakGet,__woEventAccepted,[d])===src+":"+seq)return!0;
+      if(seq<=(__woEventLast[src]||0))return!1;
+      __woEventLast[src]=seq;
+      __woApply(__woWeakSet,__woEventAccepted,[d,src+":"+seq]);
+      return!0
+    }catch(_){
+      return!1
+    }
   }
   function __woEmit(detail){
     if(null!==__woToken)try{
@@ -1122,7 +1205,7 @@
     const d=e&&e.detail;
     if(null!==__woKey||!d||"string"!=typeof d.token||!d.token||"string"!=typeof d.key||!d.key)return;
     __woToken=d.token,
-    __woKey=d.key;
+    __woKey=__woAuth.key(d.key);
     for(;
     __woEventQueue.length;
     ){
@@ -1510,15 +1593,12 @@
          survive here forever. The derived Amazon and YouTube copies are rebuilt on every sync for
          the same reason -- deriving once would leave them stale the moment the config changed. */
       for(const k of Object.keys(WO))k in next||delete WO[k];
-      Object.assign(WO,next),
-      /* __wardenOneReadyVersion means "the script ran". It is stamped unconditionally,
-      because the watchdog re-injects when it is missing and must not loop on a site that
-      is legitimately paused. So it cannot also answer "is protection on" -- that is this
-      marker, which carries masterOn and is what the reporting surfaces should read.
-      BUG-01. */
-      (()=>{
-        try{window.__wardenOneProtectionActive=!1!==WO.enabled}catch(_){ }
-      })()
+      Object.assign(WO,next)
+      /* No "protection is on" marker on window any more. __wardenOneReadyVersion means "the
+      script ran" and is stamped unconditionally (the watchdog must not loop on a paused
+      site); the marker that once carried masterOn beside it (BUG-01) had no reader left --
+      the bridge's signed challenge is the health authority (SEC-03) -- and a page-visible
+      boolean that nothing consults is only a detection handle (SEC-12). */
     },
     __woConfigBound=(()=>{
       __woSyncConfig();
@@ -1547,6 +1627,18 @@
        have nothing to find here. Clipboard writes are still watched, because
        those are an action rather than something somebody said. */
     conversationHost=/(^|\.)(chatgpt\.com|openai\.com|claude\.ai|anthropic\.com|gemini\.google\.com|bard\.google\.com|aistudio\.google\.com|perplexity\.ai|copilot\.microsoft\.com|poe\.com|grok\.com|deepseek\.com|mistral\.ai|huggingface\.co)$/i.test(location.hostname),
+    /* A search engine's own pages, where the text is excerpts of other pages picked because they
+       match what was typed into the box. Searching how to run sfc /scannow fills the results with
+       "open Command Prompt, type sfc /scannow, press Enter"; searching for a tech-support scam
+       fills them with the scam's own script. The page-text heuristics read that as the page
+       talking to the reader and put ClickFix, scam and fake-update warnings over an ordinary search. Like
+       conversationHost, the engine is never itself the scam, and clipboard writes are still read,
+       because a copy is an action rather than a quotation.
+       Hoisted from the adult gate, which kept its own copy of this list, so there is one. That copy
+       matched google\.[a-z.]+ -- the label anchored, the suffix not -- so google.attacker.com passed,
+       and an exemption is only as narrow as its host test. Only the engines' own hosts count here:
+       sites.google.com and the like serve other people's pages. */
+    searchResultsHost=/^(?:www\.)?(?:google\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})|bing\.com|(?:html\.|lite\.)?duckduckgo\.com|search\.brave\.com|(?:[a-z]{2}\.)?search\.yahoo\.(?:com|co\.jp)|ecosia\.org|startpage\.com|mojeek\.com|qwant\.com|kagi\.com|yandex\.(?:com|[a-z]{2}|com\.[a-z]{2})|baidu\.com|search\.marginalia\.nu)$/i.test(location.hostname),
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
     /* The first `cap` characters of the page's text, in document order.
@@ -2169,10 +2261,12 @@
            cookie permission change. The bridge owns the real one in a closed shadow root. */
         const askBridgeForNotice=()=>{
             try{
-              window.postMessage({
+              window.postMessage(__woSignedNotice({
                 source:"wardenone-reload-loop",
-                token:__woToken
+                token:__woToken,
+                kind:"reload-loop"
               },
+              ""),
               "*")
             }
             catch(_){
@@ -2984,7 +3078,7 @@
            typed into the box, so searching for an explicit word gated the results page itself --
            on the search engine, before going anywhere. And "take me back" from a results page
            lands on the engine's home page, which is what that looked like from the outside. */
-        const onSearchResults=/^(?:www\.)?(?:google\.[a-z.]+|search\.brave\.com|duckduckgo\.com|(?:www\.)?bing\.com|search\.yahoo\.[a-z.]+|ecosia\.org|startpage\.com|mojeek\.com|qwant\.com|yandex\.[a-z.]+|baidu\.com|search\.marginalia\.nu)$/i.test(location.hostname);
+        const onSearchResults=searchResultsHost;
         /* The title corroborates the domain; it never decides on its own. It was worth the whole
            threshold by itself, so ANY page whose title carried one of these words was gated -- a
            results page, a news article about the industry, a forum thread discussing it. The
@@ -4315,7 +4409,13 @@
         "").toLowerCase(),
         p=u.pathname.toLowerCase();
         if(/^(localhost|0\.0\.0\.0|127(?:\.\d{1,3}){0,3}|::1)$/i.test(h))return!0;
-        if(/^(f[cd][0-9a-f]{2}|fe80):/i.test(h))return!0;
+        /* Unique local fc00::/7 and link-local fe80::/10 -- fe80 through febf, not the text
+           "fe80" alone. The hostname is the URL parser's canonical form, so the first group is
+           exactly four digits here. Held to background.js ipv6Range by
+           tools/test-ip-classifier-agreement.js. */
+        if(/^(f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):/i.test(h))return!0;
+        /* A private IPv4 address written as IPv4-mapped IPv6 (::ffff:10.0.0.1 is ::ffff:a00:1). */
+        if(/^::ffff:(a[0-9a-f]{2}|7f[0-9a-f]{2}|c0a8|a9fe|ac1[0-9a-f]):/i.test(h))return!0;
         if(/^\d{1,3}(\.\d{1,3}){3}$/.test(h)){
           const parts=h.split(".").map(Number),
           a=parts[0],
@@ -5698,9 +5798,240 @@
         }
 
       },
+      /* LINKS A SERVER HANDED OUT: the top-frame half of credentialFrameNoteIssued in
+         anti-redirect.js, which explains it in full. A streaming player loads its signed
+         playlists and segments (master.m3u8?token=...) with fetch/XHR. Such a link goes
+         through because a server handed that exact link to this page in a response the page
+         read, never because of how it looks: the path must match, and every token-like value
+         in its query must be in the link that was handed out. http(s) responses only, and a
+         same-site response that merely echoes its request hands nothing out. Only responses
+         that mention a token-like parameter are looked at in any detail. */
+      ISSUED_LIMIT=3000,
+      ISSUED_SCAN_MAX=2097152,
+      ISSUED_HINT=/(?:[?&#;]|\\u0026|&amp;)[A-Za-z0-9_.-]{0,40}(?:token|auth|sess|jwt|bearer|secret|credential|passw|key)[A-Za-z0-9_.-]{0,40}=|ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\./i,
+      issuedLinks=new Map,
+      issuedPatterns=[],
+      linkTokenParts=u=>{
+        const parts=[];
+        const tail=String(u.search||"")+String(u.hash||"");
+        for(const j of tail.match(/ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g)||[])parts.length<24&&parts.push(j);
+        for(const piece of[u.search,u.hash])try{
+          for(const[k,v]of new URLSearchParams(String(piece||"").replace(/^[?#]/,"")))parts.length<24&&keyIsSensitive(k)&&valueLooksSecret(v)&&parts.push(String(v));
+        }catch(_){}
+        for(const pre of tokenPrefixes)-1!==u.href.indexOf(pre)&&parts.push(pre);
+        return parts;
+      },
+      linkWasIssued=url=>{
+        try{
+          const u=new URL(url,location.href);
+          const href=u.href.split("#")[0];
+          const list=issuedLinks.get(u.origin+u.pathname);
+          if(list){
+            const parts=linkTokenParts(u);
+            for(const rec of list)if(parts.every(p=>-1!==rec.indexOf(p)||-1!==rec.indexOf(encodeURIComponent(p))))return!0;
+          }
+          for(const re of issuedPatterns)if(re.test(href))return!0;
+        }catch(_){}
+        return!1;
+      },
+      rememberIssued=(raw,base,echo)=>{
+        try{
+          const u=new URL(String(raw||"").trim(),base);
+          if(!/^https?:$/.test(u.protocol))return;
+          const href=u.href.split("#")[0];
+          if(!urlHasToken(href))return;
+          if(echo){
+            for(const p of linkTokenParts(u))if(-1!==echo.indexOf(p))return;
+          }
+          const key=u.origin+u.pathname;
+          let list=issuedLinks.get(key);
+          if(list)issuedLinks.delete(key);else list=[];
+          issuedLinks.set(key,list);
+          if(-1===list.indexOf(href)){
+            list.push(href);
+            if(list.length>8)list.shift();
+          }
+          for(;issuedLinks.size>ISSUED_LIMIT;)issuedLinks.delete(issuedLinks.keys().next().value);
+        }catch(_){}
+      },
+      rememberTemplate=(template,base)=>{
+        try{
+          const filled=String(template||"").replace(/\$\$/g,"w0dollarx").replace(/\$[A-Za-z]+(?:%0\d+d)?\$/g,"w0slotx");
+          const href=new URL(filled,base).href.split("#")[0];
+          if(-1===href.indexOf("w0slotx")){
+            rememberIssued(href.replace(/w0dollarx/g,"$"),base,"");
+            return;
+          }
+          if(!/^https?:/i.test(href))return;
+          const source="^"+href.split("w0slotx").map(piece=>piece.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("[^/?#&]*").replace(/w0dollarx/g,"\\$")+"$";
+          if(issuedPatterns.length>=200)issuedPatterns.shift();
+          issuedPatterns.push(new RegExp(source));
+        }catch(_){}
+      },
+      noteIssued=(text,responseUrl,request)=>{
+        try{
+          if("string"!=typeof text||!text||text.length>ISSUED_SCAN_MAX)return;
+          if(!ISSUED_HINT.test(text))return;
+          const base=new URL(String(responseUrl||""));
+          if(!/^https?:$/.test(base.protocol))return;
+          const echo=request&&request.sameParty?String(request.url||"")+"\n"+String(request.body||""):"";
+          const head=text.slice(0,4096);
+          let found=0;
+          if(/^\s*#EXTM3U/.test(head)){
+            const lines=text.split(/\r?\n/);
+            for(let i=0;i<lines.length&&found<6000;i++){
+              const line=lines[i].trim();
+              if(!line||!ISSUED_HINT.test(line))continue;
+              if("#"!==line.charAt(0)){
+                found++;
+                rememberIssued(line,base,echo);
+                continue;
+              }
+              const uri=/URI="([^"]+)"/.exec(line);
+              if(uri){
+                found++;
+                rememberIssued(uri[1],base,echo);
+              }
+            }
+          }else if(/<MPD[\s>]/.test(head)){
+            const unxml=v=>String(v||"").replace(/&amp;/g,"&");
+            const bases=[];
+            const baseRe=/<BaseURL[^>]*>\s*([^<\s]+)\s*<\/BaseURL>/gi;
+            let m;
+            for(;(m=baseRe.exec(text))&&bases.length<20;){
+              try{
+                bases.push(new URL(unxml(m[1]),bases.length?bases[bases.length-1]:base));
+              }catch(_){}
+              try{
+                bases.push(new URL(unxml(m[1]),base));
+              }catch(_){}
+            }
+            if(!bases.length)bases.push(base);
+            const attrRe=/\b(?:media|initialization|sourceURL)="([^"]+)"/g;
+            for(;(m=attrRe.exec(text))&&found<2000;){
+              const value=unxml(m[1]);
+              if(!ISSUED_HINT.test(value))continue;
+              found++;
+              for(const b of bases)-1!==value.indexOf("$")?rememberTemplate(value,b):rememberIssued(value,b,echo);
+            }
+          }
+          if(-1===text.indexOf("http"))return;
+          let flat=text;
+          if(-1!==flat.indexOf("\\/"))flat=flat.replace(/\\\//g,"/");
+          if(/\\u0026/i.test(flat))flat=flat.replace(/\\u0026/gi,"&");
+          if(-1!==flat.indexOf("&amp;"))flat=flat.replace(/&amp;/g,"&");
+          const linkRe=/https?:\/\/[^\s"'<>\x60\\()[\]{}|^]+/g;
+          let link;
+          for(;(link=linkRe.exec(flat))&&found<2000;){
+            if(!ISSUED_HINT.test(link[0]))continue;
+            found++;
+            rememberIssued(link[0],base,echo);
+          }
+        }catch(_){}
+      },
+      jsonText=value=>{
+        const out=[];
+        let seen=0;
+        const walk=(v,depth)=>{
+          if(++seen>20000||depth>12||out.length>2000)return;
+          if("string"==typeof v){
+            if((-1!==v.indexOf("://")||-1!==v.indexOf("#EXTM3U"))&&ISSUED_HINT.test(v))out.push(v);
+            return;
+          }
+          if(!v||"object"!=typeof v)return;
+          if(Array.isArray(v)){
+            for(let i=0;i<v.length;i++)walk(v[i],depth+1);
+            return;
+          }
+          for(const k in v)Object.prototype.hasOwnProperty.call(v,k)&&walk(v[k],depth+1);
+        };
+        try{
+          walk(value,0);
+        }catch(_){}
+        return out.join("\n");
+      },
+      textualType=t=>/mpegurl|dash\+xml|xml|json|javascript|text\/|vtt/i.test(String(t||"")),
+      bufferText=b=>{
+        try{
+          return!b||(b.byteLength||0)>ISSUED_SCAN_MAX||"undefined"==typeof TextDecoder?"":new TextDecoder("utf-8").decode(b);
+        }catch(_){
+          return"";
+        }
+      },
+      requestOf=(url,body)=>{
+        let same=!1;
+        try{
+          const h=regDomain(new URL(url,location.href).hostname);
+          same=!h||h===here||h.endsWith("."+here)||here.endsWith("."+h);
+        }catch(_){
+          same=!0;
+        }
+        return same?{sameParty:!0,url:String(url||""),body:dataToString(body).slice(0,65536)}:{sameParty:!1};
+      },
+      watchResponse=(response,url,body)=>{
+        try{
+          if(!response||"function"!=typeof response.text||!/^https?:/i.test(String(response.url||"")))return;
+          const type=String(response.headers&&response.headers.get&&response.headers.get("content-type")||"").toLowerCase();
+          if(/event-stream|ndjson|^(?:image|video|audio|font)\//.test(type))return;
+          const request=requestOf(url,body);
+          const note=t=>noteIssued(t,response.url,request);
+          const rText=response.text,
+          rJson=response.json,
+          rBuf=response.arrayBuffer,
+          rClone=response.clone;
+          response.text=function(){
+            return rText.apply(this,arguments).then(t=>(note(t),t));
+          };
+          if("function"==typeof rJson)response.json=function(){
+            return rText.apply(this,arguments).then(t=>(note(t),JSON.parse(t)));
+          };
+          if("function"==typeof rBuf&&textualType(type))response.arrayBuffer=function(){
+            return rBuf.apply(this,arguments).then(b=>(note(bufferText(b)),b));
+          };
+          if("function"==typeof rClone)response.clone=function(){
+            const copy=rClone.apply(this,arguments);
+            watchResponse(copy,url,body);
+            return copy;
+          };
+        }catch(_){}
+      },
+      xhrDone=function(){
+        try{
+          if(4!==this.readyState)return;
+          try{
+            this.removeEventListener("readystatechange",xhrDone,!0);
+          }catch(_){}
+          if(!(this.status>=200&&this.status<400))return;
+          const t=this.responseType;
+          let text="";
+          if(""===t||"text"===t)text=this.responseText;else if("json"===t)text=jsonText(this.response);else if("arraybuffer"===t&&textualType(this.getResponseHeader&&this.getResponseHeader("content-type")))text=bufferText(this.response);else return;
+          noteIssued(text,this.responseURL,requestOf(this.__wo_url,this.__wo_body));
+        }catch(_){}
+      },
+      /* The one exception, as in credentialFramePlaylistFallback: a player sent its source list
+         encrypted decrypts the playlist link itself, so no response holds it. The PLAYLIST alone
+         (.m3u8 / .mpd), by a plain GET from a page showing a video or audio element, goes
+         through unless it carries a token this page stores; what it leads to must still have
+         been handed out. */
+      PLAYLIST_PATH=/\.(?:m3u8|m3u|mpd)$/i,
+      playlistFallback=(data,url,method)=>{
+        if(null!=data&&""!==data)return!1;
+        if(method&&!/^(?:GET|HEAD)$/i.test(String(method)))return!1;
+        try{
+          if(!PLAYLIST_PATH.test(new URL(url,location.href).pathname))return!1;
+          if(!(document.getElementsByTagName("video").length||document.getElementsByTagName("audio").length))return!1;
+        }catch(_){
+          return!1;
+        }
+        return!hasKnownTokenPrefix(String(url||""));
+      },
+      /* A token in what is SENT (body, headers) always counts; one in the URL counts unless
+         a server handed out that very link (linkWasIssued), or it is a playing page's own
+         first playlist (playlistFallback). */
       bodyHasToken=(data,
       url,
-      headers)=>stringHasToken(dataToString(data))||stringHasToken(headersToString(headers))||url&&urlHasToken(url),
+      headers,
+      method)=>stringHasToken(dataToString(data))||stringHasToken(headersToString(headers))||url&&urlHasToken(url)&&!linkWasIssued(url)&&!playlistFallback(data,url,method),
       destIsForeign=url=>{
         try{
           const target=new URL(url,
@@ -5733,10 +6064,12 @@
               if(dest){
                 const body=init&&init.body||input&&input.body,
                 headers=headersToString(input&&input.headers,
-                init&&init.headers);
+                init&&init.headers),
+                method=init&&init.method||input&&"object"==typeof input&&input.method||"GET";
                 if(bodyHasToken(body,
                 url,
-                headers))return flagExfil(dest),
+                headers,
+                method))return flagExfil(dest),
                 Promise.reject(new DOMException("Blocked by WardenOne SessionShield",
                 "SecurityError"))
               }
@@ -5745,8 +6078,13 @@
             catch(_){
 
             }
-            return rf.apply(this,
-            arguments)
+            const pending=rf.apply(this,
+            arguments);
+            try{
+              const reqUrl="string"==typeof input?input:input&&(input.url||input.href);
+              if(pending&&"function"==typeof pending.then)pending.then(r=>watchResponse(r,reqUrl,init&&init.body||input&&input.body),()=>{});
+            }catch(_){}
+            return pending;
           }
 
         }
@@ -5756,7 +6094,9 @@
           data){
             const dest=destIsForeign(url);
             return dest&&bodyHasToken(data,
-            url)?(flagExfil(dest),
+            url,
+            null,
+            "POST")?(flagExfil(dest),
             !1):rb(url,
             data)
           }
@@ -5770,6 +6110,8 @@
           ...rest){
             return this.__wo_dest=destIsForeign(url),
             this.__wo_url=url,
+            this.__wo_method=m,
+            this.addEventListener("readystatechange",xhrDone,!0),
             this.__wo_headers=[],
             oOpen.call(this,
             m,
@@ -5791,9 +6133,10 @@
           });
           const oSend=RX.prototype.send;
           RX.prototype.send=function(body){
-            if(!this.__wo_dest||!bodyHasToken(body,
+            if(this.__wo_body=body,!this.__wo_dest||!bodyHasToken(body,
             this.__wo_url,
-            this.__wo_headers&&this.__wo_headers.join("\n")))return oSend.apply(this,
+            this.__wo_headers&&this.__wo_headers.join("\n"),
+            this.__wo_method))return oSend.apply(this,
             arguments);
             flagExfil(this.__wo_dest);
             try{
@@ -7572,10 +7915,18 @@
 
          The second is that on a video/chat host essentially ALL body text is user-generated, so
          even a proximity match is somebody talking rather than the page attacking. Those hosts are
-         skipped, using the established trustedMediaHost list rather than a new one. */
+         skipped, using the established trustedMediaHost list rather than a new one.
+
+         The third is that half of each pattern is a name, or a phrase any how-to uses: Windows
+         Security Center, Remote Desktop, Quick Assist, "contact Microsoft Support", "do not close
+         this window". A list of Windows commands names several of them a line apart ("wscui.cpl:
+         Windows Security Center", "mstsc: Remote Desktop Connection") and was locked as a scam. A scam
+         page also claims the machine is locked or infected, or gives a number to call, so the
+         window has to hold one of those once the ordinary phrases are taken out of it. */
       const SCAM_NEAR=600,
+      SCAM_ORDINARY=/windows\s+(defender\s+)?security\s+(alert|center)|critical\s+(security\s+)?(alert|warning)\b|your\s+(data|files|identity)\s+(is|are|may be)\s+at\s+risk|do\s+not\s+(close|restart|shut\s?down|turn\s+off)\s+(this\s+)?(window|computer|pc|browser)|contact\s+(microsoft|apple|windows)\s+support|anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|remote\s+(access|assistance|desktop|support|control|connection)|enter\s+(this\s+|the\s+)?(code|key|pin)\b|(install|download|run)\s+(the\s+)?(support|remote|cleanup)\s+(tool|software|app)/gi,
       scamScan=snapshot=>{
-        if(scamShown||trustedMediaHost||conversationHost)return!1;
+        if(scamShown||trustedMediaHost||conversationHost||searchResultsHost)return!1;
         try{
           const t=snapshot||bodyTextCapped(2e4);
           if(!t)return!1;
@@ -7584,9 +7935,12 @@
           const from=Math.max(0,
           fear.index-SCAM_NEAR),
           to=Math.min(t.length,
-          fear.index+fear[0].length+SCAM_NEAR);
-          CALL.test(t.slice(from,
-          to))&&showScamPanel("tech-support scam page text")
+          fear.index+fear[0].length+SCAM_NEAR),
+          near=t.slice(from,
+          to),
+          claims=near.replace(SCAM_ORDINARY,
+          " / ");
+          CALL.test(near)&&(FEAR.test(claims)||CALL.test(claims))&&showScamPanel("tech-support scam page text")
         }
         catch(_){
 
@@ -7596,7 +7950,7 @@
       scamGuard=__woTextScan.add({
         id:"scam-lock",
         delay:700,
-        done:()=>scamShown||trustedMediaHost||conversationHost,
+        done:()=>scamShown||trustedMediaHost||conversationHost||searchResultsHost,
         /* Either half of the pair counts: the fear line may already be on the page when the
            number to call arrives, and the other way round. */
         relevant:text=>{
@@ -7662,6 +8016,14 @@
       CLICKFIX_HUMAN_VERIFICATION=/(?:verify|confirm|prove)(?:\s+that)?\s+you(?:'re|\s+are)?\s+(?:a\s+)?human|human\s+verification|complete\s+(?:the\s+)?captcha|(?:verify|confirm|prove)\s+(?:that\s+)?you(?:'re|\s+are)?\s+not\s+(?:a\s+)?robot|i(?:'m|\s+am)\s+not\s+a\s+robot/i,
       CLICKFIX_VERIFICATION_STEPS=/(?:security\s+)?verification\s+(?:step|steps|required)|complete\s+(?:the\s+)?verification/i,
       CLICKFIX_PASTE_GUIDANCE=/(?:copy|paste|type|enter)[^\n.]{0,100}(?:console|devtools|developer\s+tools|powershell|terminal|command\s+prompt|run\s+dialog)|(?:console|devtools|developer\s+tools|powershell|terminal|command\s+prompt|run\s+dialog)[^\n.]{0,100}(?:copy|paste|type|enter)|(?:press\s+)?(?:ctrl|control)\s*\+\s*v/i,
+      /* The step that makes it ClickFix rather than a how-to is the paste. The page has already put
+      the command on the clipboard, so the lure has to get it pasted into the Run box, a shell or the
+      console without the reader ever seeing it. A tutorial shows the command and says type it --
+      "press Win+R, type cmd", "open Command Prompt, type sfc /scannow and press Enter" -- and
+      CLICKFIX_PASTE_GUIDANCE counts "type" and "Enter" as guidance, so every one of those was warned
+      about as a scam. An instruction that is only text now needs this beside it: a paste keystroke,
+      or pasting into a shell or the console. */
+      CLICKFIX_PASTE_STEP=/\b(?:ctrl|control|cmd|command)\s*\+\s*v\b|⌘\s*\+?\s*v\b|\bpaste\b[^\n.]{0,100}\b(?:console|powershell|terminal|run\s+dialog|cmd|command\s+prompt)\b|\b(?:type|enter|paste)\s+["']?enable\s+pasting\b/i,
       /* Where an install one-liner is the point of the page. WinUtil, SpotX and
       every other script project put "run this in PowerShell" next to a
       download-and-run command, which is the exact shape ClickFix uses -- so on
@@ -7879,11 +8241,13 @@
       clickfixVisiblePageText=()=>{
         try{
           /* On an assistant surface the body text is the conversation, so asking
-             one how ClickFix works writes the whole attack into the page. The
-             frame's own host is what is checked, so a scam embedded in an iframe
-             is still read normally. Clipboard hooks are untouched: this only
-             removes the text the instruction heuristics read. */
-          if(conversationHost)return"";
+             one how ClickFix works writes the whole attack into the page. A search
+             results page is the same: searching how to run a command fills it with
+             other sites' "press Win+R, type ..." steps. The frame's own host is what
+             is checked, so a scam embedded in an iframe is still read normally.
+             Clipboard hooks are untouched: this only removes the text the
+             instruction heuristics read. */
+          if(conversationHost||searchResultsHost)return"";
           const body=document.body;
           if(!body)return"";
           const raw="string"==typeof body.innerText?body.innerText:String(body.textContent||"");
@@ -7925,7 +8289,10 @@
         commandHit,
         fakeCaptcha?2800:1600)?commandHit.sample:"",
         lureShaped=clickfixLureShaped(bodyText,
-        instructionHit);
+        instructionHit),
+        pasteHit=instructionHit&&clickfixNearestRegexHit(bodyText,
+        CLICKFIX_PASTE_STEP,
+        instructionHit.index);
         return{
           instruction:instruction,
           fakeCaptcha:fakeCaptcha,
@@ -7936,7 +8303,11 @@
           /* For the text-only warnings: the instruction on a short, unquoted line of its
           own -- a step, not a sentence about one. The verification wording may sit in a
           paragraph; lures introduce themselves at length and then list the steps. */
-          lureShaped:lureShaped
+          lureShaped:lureShaped,
+          /* A paste step close enough to be the next step of the same recipe. */
+          pasteStep:clickfixEvidenceNear(instructionHit,
+          pasteHit,
+          600)
         }
       };
       let clickfixHighestWarning=0,
@@ -8334,7 +8705,10 @@
           "page instructions",
           "",
           !1);
-          else if(!found.documentation&&"Paste with Ctrl+V"!==found.instruction)warned=!0,
+          /* No fake verification beside it, so the steps alone have to be the trick: a paste,
+             or a download-and-run command shown with them. Opening a shell to type something
+             the page shows you is how every command tutorial reads. */
+          else if(!found.documentation&&"Paste with Ctrl+V"!==found.instruction&&(found.pasteStep||found.commandSample))warned=!0,
           warnClickfix("instruction",
           safeSignal,
           "page instructions",
@@ -8398,7 +8772,7 @@
         }))
       },
       fakeUpdateScan=snapshot=>{
-        if(!fuWarned&&!FU_VENDOR.test(fuHere))try{
+        if(!fuWarned&&!FU_VENDOR.test(fuHere)&&!searchResultsHost)try{
           const bodyText=snapshot||bodyTextCapped(2e4);
           if(!bodyText||!FU_LURE.test(bodyText))return!1;
           const inst=document.querySelector(FU_INSTALLER);
@@ -8430,7 +8804,7 @@
       fakeUpdateGuard=__woTextScan.add({
         id:"fake-update",
         delay:800,
-        done:()=>fuWarned||FU_VENDOR.test(fuHere),
+        done:()=>fuWarned||FU_VENDOR.test(fuHere)||searchResultsHost,
         relevant:text=>{
           const m=FU_LURE.exec(text)||FU_CTA.exec(text);
           return m?m[0].toLowerCase():""
@@ -13503,8 +13877,52 @@
         xssMessageDataGetterInstalled=!1,
         xssLocationKey="",
         xssWindowNameKey="";
+        /* The hot path is the sink side (PERF-11): every wrapped innerHTML, setAttribute, timer
+           or navigation call correlated its value with the mutable sources after the native call.
+           Three things keep that cheap without changing a verdict. The mutable-source refresh
+           re-registered the URL's parameters, path and window.name on every call, decoding and
+           shape-testing each; it now does so only when the URL or the name changed, or when a
+           static source was pushed out of the 96-entry list by message data (the flag below).
+           The analysis tests containment first -- no source text inside the value means no
+           correlation, whatever its shape -- and decodes the value only when it holds a
+           character that can decode. And a verdict is remembered per value, sink and filter
+           while the source set is unchanged (the generation below moves on every add or
+           remove), so a render loop that assigns one fragment repeatedly analyses it once. */
+        let xssSourceGeneration=0,
+        xssStaticSourcesEvicted=!1,
+        xssVerdictMemoGeneration=-1,
+        xssVerdictMemoChars=0,
+        xssFilterIdNext=1;
         const xssSources=[],
         xssSourceKeys=new Set,
+        xssVerdictMemo=new Map,
+        xssFilterIds=new WeakMap,
+        XSS_VERDICT_MEMO_ENTRIES=24,
+        XSS_VERDICT_MEMO_CHARS=524288,
+        xssVerdictMemoFor=()=>{
+          xssVerdictMemoGeneration!==xssSourceGeneration&&(xssVerdictMemo.clear(),
+          xssVerdictMemoChars=0,
+          xssVerdictMemoGeneration=xssSourceGeneration);
+          return xssVerdictMemo
+        },
+        xssVerdictMemoKey=(sourceFilter,kind,sink,raw)=>{
+          let id=0;
+          if("function"==typeof sourceFilter){
+            id=xssFilterIds.get(sourceFilter);
+            id||(id=xssFilterIdNext++,
+            xssFilterIds.set(sourceFilter,id))
+          }
+          return String(kind)+""+String(sink||"")+""+id+""+raw
+        },
+        rememberXssVerdict=(memo,key,verdict)=>{
+          while(memo.size>=XSS_VERDICT_MEMO_ENTRIES||xssVerdictMemoChars+key.length>XSS_VERDICT_MEMO_CHARS&&memo.size){
+            const oldest=memo.keys().next().value;
+            xssVerdictMemoChars-=oldest.length,
+            memo.delete(oldest)
+          }
+          memo.set(key,verdict),
+          xssVerdictMemoChars+=key.length
+        },
         xssInertScriptNodes=new WeakSet,
         xssMessageOriginRead=new WeakSet,
         xssMessageWeakSeen=new WeakSet,
@@ -13533,7 +13951,8 @@
             if(!predicate(candidate))continue;
             xssSources.splice(index,
             1),
-            candidate&&xssSourceKeys.delete(candidate.sourceKey)
+            candidate&&xssSourceKeys.delete(candidate.sourceKey),
+            xssSourceGeneration++
           }
         },
         pruneExpiredXssSources=()=>{
@@ -13595,8 +14014,10 @@
           }
           if(xssSources.length>=96){
             const oldest=xssSources.shift();
-            oldest&&xssSourceKeys.delete(oldest.sourceKey)
+            oldest&&(xssSourceKeys.delete(oldest.sourceKey),
+            /^(?:location\.|window\.name$)/.test(String(oldest.source||""))&&(xssStaticSourcesEvicted=!0))
           }
+          xssSourceGeneration++,
           xssSourceKeys.add(sourceKey),
           xssSources.push({
             text:text,
@@ -13704,7 +14125,7 @@
           }
 
         },
-        registerLocationSources=()=>{
+        registerLocationSources=force=>{
           try{
             const current=new URL(location.href);
             if(current.href!==xssLocationKey){
@@ -13712,6 +14133,7 @@
               xssUrlEvidence=!1,
               removeXssSources(candidate=>/^location\./.test(String(candidate&&candidate.source||"")))
             }
+            else if(!force)return;
             registerUrlObject(current,
             "location.search"),
             String(current.pathname||"").split("/").slice(0,
@@ -13750,13 +14172,17 @@
           0)
         },
         refreshMutableXssSources=()=>{
-          pruneExpiredXssSources(),
-          registerLocationSources();
+          pruneExpiredXssSources();
+          const evicted=xssStaticSourcesEvicted;
+          xssStaticSourcesEvicted=!1,
+          registerLocationSources(evicted);
           try{
             const currentName=String(window.name||"");
-            currentName!==xssWindowNameKey&&(xssWindowNameKey=currentName,
-            removeXssSources(candidate=>"window.name"===String(candidate&&candidate.source||""))),
+            if(currentName!==xssWindowNameKey)xssWindowNameKey=currentName,
+            removeXssSources(candidate=>"window.name"===String(candidate&&candidate.source||"")),
             registerXssSource(currentName,
+            "window.name");
+            else evicted&&registerXssSource(currentName,
             "window.name")
           }catch(_){ }
         },
@@ -14051,16 +14477,21 @@
           }
           return out
         },
-        xssCandidateInExecutableHtml=(raw,
-        candidate,
+        /* The executable fragments of a value, decoded and comparable, parsed once per sink call
+           and shared by every candidate the call tests: the two tokenisers behind
+           xssHtmlExecutionFragments are the cost of a matching value, and a URL with several
+           reflected parameters used to pay them once per parameter. */
+        xssExecutableFragmentSamples=(raw,
         includeScriptContent)=>{
-          if(!candidate||!candidate.comparable)return!1;
-          const fragments=xssHtmlExecutionFragments(raw,
-          includeScriptContent);
-          return fragments.some(fragment=>xssDecodeVariants(fragment,
-          8192).some(variant=>xssComparable(variant,
-          8192).includes(candidate.comparable)))
+          const out=[];
+          for(const fragment of xssHtmlExecutionFragments(raw,
+          includeScriptContent))for(const variant of xssDecodeVariants(fragment,
+          8192))out.push(xssComparable(variant,
+          8192));
+          return out
         },
+        xssCandidateInExecutableHtml=(fragmentSamples,
+        candidate)=>!!(candidate&&candidate.comparable)&&fragmentSamples.some(sample=>sample.includes(candidate.comparable)),
         xssCandidateReachedSink=(value,
         kind="html",
         sourceFilter,
@@ -14070,17 +14501,51 @@
           if(!xssSources.length)return null;
           const raw=String(value||"").slice(0,
           65536);
-          if("html"===kind&&!xssExecutableShape(raw)||"code"===kind&&raw.trim().length<4)return null;
-          const includeScriptContent=/^(?:document\.write|document\.writeln|iframe\.srcdoc)$/.test(String(sink||"")),
-          samples=xssDecodeVariants(raw,
-          65536).map(sample=>xssComparable(sample,
-          65536)),
-          matches=xssSources.filter(candidate=>(!sourceFilter||sourceFilter(candidate,
-          raw,
-          kind))&&("code"!==kind||!xssTrustedDocumentationContext()||candidate.untrustedMessage||candidate.payloadShape||!xssBenignDocumentationCode(candidate.text))&&samples.some(sample=>candidate.comparable.length>=8&&sample.includes(candidate.comparable))&&("html"!==kind||xssCandidateInExecutableHtml(raw,
-          candidate,
-          includeScriptContent)));
-          return matches.find(candidate=>candidate.untrustedMessage)||matches[0]||null
+          if("code"===kind&&raw.trim().length<4)return null;
+          const memo=xssVerdictMemoFor(),
+          memoKey=xssVerdictMemoKey(sourceFilter,
+          kind,
+          sink,
+          raw);
+          if(memo.has(memoKey))return memo.get(memoKey);
+          const verdict=(()=>{
+            /* Containment first. A value that holds no source text correlates with nothing,
+               whatever its shape, and that test is two linear passes and a native search per
+               source; the shape test that used to run first walks every tag. A value with no
+               percent, ampersand or plus cannot decode into anything it is not already, so its
+               variants are itself and the raw comparison is exact; otherwise the decoded
+               variants are consulted before giving up. The full filter below sees the same
+               samples it always did. */
+            const decodable=/[%&+]/.test(raw),
+            comparableRaw=xssComparable(raw,
+            65536),
+            contained=sample=>xssSources.some(candidate=>candidate.comparable.length>=8&&sample.includes(candidate.comparable));
+            let samples=null;
+            if(!contained(comparableRaw)){
+              if(!decodable)return null;
+              samples=xssDecodeVariants(raw,
+              65536).map(sample=>xssComparable(sample,
+              65536));
+              if(!samples.some(contained))return null
+            }
+            if("html"===kind&&!xssExecutableShape(raw))return null;
+            samples||(samples=decodable?xssDecodeVariants(raw,
+            65536).map(sample=>xssComparable(sample,
+            65536)):[comparableRaw]);
+            const includeScriptContent=/^(?:document\.write|document\.writeln|iframe\.srcdoc)$/.test(String(sink||""));
+            let fragmentSamples=null;
+            const matches=xssSources.filter(candidate=>(!sourceFilter||sourceFilter(candidate,
+            raw,
+            kind))&&("code"!==kind||!xssTrustedDocumentationContext()||candidate.untrustedMessage||candidate.payloadShape||!xssBenignDocumentationCode(candidate.text))&&samples.some(sample=>candidate.comparable.length>=8&&sample.includes(candidate.comparable))&&("html"!==kind||xssCandidateInExecutableHtml(fragmentSamples||(fragmentSamples=xssExecutableFragmentSamples(raw,
+            includeScriptContent)),
+            candidate)));
+            return matches.find(candidate=>candidate.untrustedMessage)||matches[0]||null
+          })();
+          /* Kept only while the source set is the one the verdict was computed against. */
+          return xssVerdictMemoGeneration===xssSourceGeneration&&rememberXssVerdict(memo,
+          memoKey,
+          verdict),
+          verdict
         };
         registerLocationSources();
         try{
@@ -15339,6 +15804,7 @@
         woOn(document,"wo-event",
         e=>{
           try{
+            if(!__woEventTrusted(e.detail))return;
             const t=e.detail&&e.detail.type;
             ("detected_grabber_domain"===t||/^blocked_grabber_/.test(t))&&addSignal(100,
             "Known IP logger service touched this page",
@@ -16390,7 +16856,41 @@
       _s/4294967296),
       tinyNoise=(scale=0.01)=>(rnd()-.5)*scale,
       mixSeed=str=>{let h=(_sk^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
-      mixShared=str=>{let h=(_sc^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
+      /* A third seed, for the hardware profile only (COMPAT-11). A core count is a claim about
+         the machine, and a machine does not change between two reloads of one site; drawn from
+         the per-load seed it did, and the systems that read exactly these values -- fraud and
+         risk engines, "remember this device", step-up sign-in -- saw a new computer on every
+         page view. So the profile is keyed on the SITE: the registrable domain of the top-level
+         page, which location.ancestorOrigins gives a cross-origin frame too, so a frame reports
+         the machine the page around it reports, as a real browser's frames do. One site always
+         sees one machine; two sites see unrelated ones. There is deliberately no per-reader
+         secret in it: nothing synchronous, extension-owned and storage-free exists at
+         document_start to carry one, and the alternatives are a key in the site's own storage
+         (the footprint PRIV-12 removed) or a value that settles after the page's first read
+         (two answers in one document, the worse tell). Said plainly: every reader shows a given
+         site the same machine, which is zero bits of identity, and nothing in it links one
+         site's visitor to another's. Canvas and audio noise stay on the per-load seed, where
+         re-rolling is the protection. */
+      woSiteKey=()=>{
+        try{
+          let host="";
+          try{const a=location.ancestorOrigins;if(a&&a.length){const m=/^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/i.exec(String(a[a.length-1]||""));if(m)host=m[1]}}catch(_){}
+          if(!host)try{host=String(location.hostname||"")}catch(_){}
+          if(!host)try{const m=/^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/i.exec(String(location.origin||""));if(m)host=m[1]}catch(_){}
+          host=host.toLowerCase().replace(/\.$/,"");
+          /* An address is a whole site of its own (127.0.0.1, [::1]); labels mean nothing there. */
+          if(/^\[|^\d+(?:\.\d+){3}$/.test(host))return host;
+          const p=host.split(".");
+          if(p.length<=2)return host;
+          /* Two labels, or three under a short second-level public suffix (co.uk, com.au, ac.jp). */
+          return 2===p[p.length-1].length&&/^(?:co|com|org|net|gov|edu|ac|ne|or|go|mil|nom|ltd|plc|me|id|sch|nhs|police|gob)$/.test(p[p.length-2])?p.slice(-3).join("."):p.slice(-2).join(".")
+        }
+        catch(_){
+          return""
+        }
+      },
+      _st=(()=>{let h=2166136261>>>0;const s="wo-site:"+woSiteKey();for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;return h>>>0})(),
+      mixSite=str=>{let h=(_st^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
       makeRnd=seed=>{let s=(seed>>>0)||1;return()=>(s=1664525*s+1013904223>>>0,s/4294967296)},
       hashBytes=data=>{let h=(_sc^2166136261)>>>0,step=Math.max(1,data.length>>12);for(let i=0;i<data.length;i+=step)h=Math.imul(h^data[i],16777619)>>>0;return(h^data.length)>>>0},
       seededTiny=(key,scale=0.01)=>(makeRnd(mixSeed(key))()-.5)*scale,
@@ -16603,8 +17103,8 @@
       catch(_){
 
       }
-      /* Per-session plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WardenOne tell. Seeded from the same per-load key as the canvas noise: cores, RAM and GPU vendor+renderer agree within a page but differ each load and across users. */
-      const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixShared(key))()*arr.length)%arr.length];
+      /* A plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WardenOne tell. Drawn from the site seed (_st, see woSiteKey): cores, RAM and GPU vendor+renderer agree within a page and across its frames, hold across reloads and tabs of one site, and differ between sites. */
+      const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixSite(key))()*arr.length)%arr.length];
       const woCores=woPick([4,8,8,12,16],"hwc"),
       woMem=woPick([4,8,8],"devmem"),
       woGpu=woPick([
@@ -18300,11 +18800,13 @@
           const ret=real(constraints);
           return ret&&ret.then?ret.then(stream=>{
             try{
-              window.postMessage({
+              window.postMessage(__woSignedNotice({
                 source:"wardenone-media",
                 token:__woToken,
-                active:!0
+                active:!0,
+                kind:"media"
               },
+              "1"),
               "*");
               const tracks=stream.getTracks?stream.getTracks():[];
               /* Asked, not awaited. stop() does not dispatch "ended", so a page ending its
@@ -18315,11 +18817,13 @@
               const woMediaIdle=()=>{
                 try{
                   if(tracks.some(x=>"live"===x.readyState))return!1;
-                  window.postMessage({
+                  window.postMessage(__woSignedNotice({
                     source:"wardenone-media",
                     token:__woToken,
-                    active:!1
+                    active:!1,
+                    kind:"media"
                   },
+                  "0"),
                   "*");
                   return!0
                 }
@@ -22229,6 +22733,7 @@
         const d=e&&e.detail||{
 
         };
+        if(!__woEventTrusted(d))return;
         /* quiet means the guard cleaned something up that the user never saw and
         never had a decision to make about. It still reaches the Activity Center;
         it just does not interrupt. Distinct from "silent", which only suppresses
@@ -22550,9 +23055,20 @@
                 };
                 const control=out.kind?null:el.closest(controls);
                 if(control){
-                  const anchor=badgeAnchorOf(control);
+                  const box=control.getBoundingClientRect(),
+                  /* A focusable container is not what the reader is aiming at. closest()
+                  climbs from the hit element to ANY matching ancestor, so on a quiet Twitch
+                  chat the empty space above the message field resolved to the whole chat
+                  column -- a [tabindex="0"] wrapper the height of the page -- and the badge
+                  could never clear it, so it went inert instead: visible and dead. A
+                  control taller than the badge could ever lift is a region, and the badge
+                  covering a corner of a region is in nobody's way. An iframe is the
+                  exception: what is inside it cannot be seen from here, and a chat embed
+                  puts its own send button exactly in this corner. */
+                  region="iframe"!==String(control.localName||"").toLowerCase()&&box.height>(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,
+                  anchor=region?null:badgeAnchorOf(control);
                   anchor&&(out.kind="control",
-                  out.control=control.getBoundingClientRect(),
+                  out.control=box,
                   out.anchor=anchor)
                 }
 
@@ -22656,22 +23172,44 @@
             chat bubble, a "back to top" button; then clear of the whole anchored block it
             sits in, for a bar with more than one thing in it. A spot counts only if
             nothing anchored is under it and no slider is beside it; when nothing fits
-            under the cap the badge stays put and stops taking input, as before. */
+            under the cap the badge stays put and stops taking input, as before.
+            A spot occupied by ANOTHER anchored control is not the end of the search: it
+            names the next candidate, clear of that control. On Twitch the corner is the
+            chat column's input row -- the Chat button under the badge, the chat input
+            directly above it -- on a page whose document never scrolls, so "clear of the
+            block" was the whole viewport and "clear of the control" landed on the input.
+            Nothing fit, and the badge sat there visible and dead from the first play
+            event on. Climbing the stack, bounded, reaches the message list above. */
             const limit=(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,
-            ups=[];
-            !force&&badgeLift>0&&ups.push(badgeLift),
-            [under.control&&under.control.top,
-            under.anchor&&under.anchor.top].forEach(t=>{
-              "number"==typeof t&&isFinite(t)&&ups.push(Math.ceil(home.bottom-t+BADGE_LIFT_GAP))
-            }),
+            BADGE_CLIMB_MAX=12,
+            ups=[],
+            propose=t=>{
+              if("number"!=typeof t||!isFinite(t))return;
+              const up=Math.ceil(home.bottom-t+BADGE_LIFT_GAP);
+              ups.length<BADGE_CLIMB_MAX&&ups.indexOf(up)<0&&ups.push(up)
+            };
+            /* The spot it already holds comes first on EVERY check, forced or not. A forced
+            re-check used to climb again from scratch, and on Twitch the stream's play events
+            force one every few minutes; each recomputation could land a few rows higher or
+            lower as chat notices came and went, so the badge hopped about while the reader
+            was aiming at it. It stays where it is while that spot is still clear, and comes
+            home only when home itself is clear again (the control branch is not entered). */
+            badgeLift>0&&ups.push(badgeLift),
+            propose(under.control&&under.control.top),
+            propose(under.anchor&&under.anchor.top),
             inert=!0;
             for(let i=0;i<ups.length;i++){
               const up=ups[i];
               if(up<=0||up>limit)continue;
               const there=badgeShiftRect(home,
-              up);
-              if(there.top<0)continue;
-              if(badgeProbe(there).kind||badgeNearMediaControl(there))continue;
+              up),
+              blocking=there.top<0?null:badgeProbe(there);
+              if(!blocking)continue;
+              if(blocking.kind){
+                "control"===blocking.kind&&blocking.control&&propose(blocking.control.top);
+                continue
+              }
+              if(badgeNearMediaControl(there))continue;
               lift=up,
               inert=!1;
               break
@@ -22695,7 +23233,11 @@
           badgeButton.classList.toggle("away",
           away),
           badgeButton.classList.toggle("inert",
-          inert)
+          inert),
+          /* A badge that has just stopped taking input cannot close its own panel, so a panel
+          left open at that moment stayed open with nothing able to dismiss it. Closed here;
+          the badge reopens it the next time it can be pressed. */
+          (away||inert)&&badgePanel&&badgePanel.classList.remove("open")
         }
         catch(_){
 
@@ -22909,6 +23451,7 @@
               "detected_manual_check"]);
               woOn(document,"wo-event",
               e=>{
+                if(!__woEventTrusted(e.detail))return;
                 const t=e.detail&&e.detail.type||"";
                 if("detected_download_gate"!==t&&!NO_BADGE_TYPES.has(t))return t&&/_failed$/.test(t)?(WO.__damaged=!0,
                 void renderBadge()):void(/^blocked_|^detected_|^gated_/.test(t)&&(counts[t]=(counts[t]||0)+1,
@@ -22944,7 +23487,6 @@
         const __woMaybeAdCollapse=()=>{
           if(__woAdCollapseStarted||!WO.adShield||!(!isGoogleSearchResults()||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup))return;
         __woAdCollapseStarted=!0;
-        window.__woAdCollapse=1;
         try{
           var __woAS=document.createElement("style");
           __woAS.textContent='[aria-label="Advertisement"]{display:none!important}';

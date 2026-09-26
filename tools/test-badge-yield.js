@@ -73,6 +73,7 @@ function el(tag, opts) {
     insideHost: !!o.insideHost,
     children: [],
     getBoundingClientRect() { return this.rect; },
+    get localName() { return this.tag; },
     matches(selector) {
       return String(selector || '').split(',').some((part) => {
         const t = part.trim();
@@ -121,6 +122,9 @@ function run(options) {
     },
     classList: { toggle(name, on) { toggled[name] = !!on; if (name === 'away') isAway = !!on; } },
   };
+  /* The panel the badge opens; a class set that remembers whether it is open. */
+  const panelClasses = new Set(opts.panelOpen ? ['open'] : []);
+  const badgePanel = { classList: { remove: (c) => panelClasses.delete(c), add: (c) => panelClasses.add(c), contains: (c) => panelClasses.has(c) } };
   /* Everything the page has in it, topmost first. Hit-testing returns the ones containing
      the point; the near-check returns the ones matching the slider/shell query. */
   const elements = (opts.build ? opts.build(body) : []) || [];
@@ -133,6 +137,7 @@ function run(options) {
     PLAYER_SHELL_SELECTOR: '[data-player],[data-video],[id="player" i],[class~="player" i]',
     badgeHost,
     badgeButton,
+    badgePanel,
     /* Declared in the engine's `let` chain, outside the slice: the current lift in px. */
     badgeLift: 0,
     document: {
@@ -151,6 +156,7 @@ function run(options) {
   vm.runInContext(block, sandbox, { filename: 'src/content.js:badge-yield' });
   const api = {
     sandbox, toggled, calls, lifts, now, elements, body,
+    panelOpen: () => panelClasses.has('open'),
     kind: () => vm.runInContext('badgeCoversPageControl()', sandbox),
     anchor: (node) => { sandbox.__n = node; return vm.runInContext('badgeAnchorOf(__n)', sandbox); },
     update: (force) => vm.runInContext('updateBadgeYield(' + (force ? 'true' : '') + ')', sandbox),
@@ -248,27 +254,149 @@ function run(options) {
   assert.strictEqual(r.lift(), 1064 - 900 + 8, 'it clears the bar (' + r.lift() + ')');
 }
 {
-  /* A fixed sidebar the full height of the window: nothing fits, so it falls back to inert. */
+  /* THE THIRD REPORT, Twitch: "when it blocks something the badge becomes unclickable".
+     Twitch is an app shell whose document never scrolls, so everything in its flow is
+     anchored. The badge's corner is the chat column's input row: the Chat button under the
+     badge, the chat input (a contenteditable with a tabindex) directly above it, and above
+     that the message list, which scrolls. "Clear of the control" landed on the input, which
+     is another anchored control, and "clear of the whole block" is the viewport itself on a
+     page that does not scroll -- so nothing fit and the badge went inert, visible and dead,
+     the moment a play event (an ad break blocked, the stream resuming) forced a re-check.
+     The badge now climbs: a spot occupied by another anchored control yields the next
+     candidate, clear of THAT control, until the spot is free or the cap is reached. */
+  const twitch = (opts) => run({
+    docHeight: 1080, htmlOverflow: 'hidden',
+    build: (body) => {
+      const column = under(el('section', { rect: rect(1580, 0, 1920, 1080) }), body);
+      const list = under(el('div', { style: { overflowY: 'auto' }, scrollHeight: opts && opts.shortList ? 800 : 9000, clientHeight: 940, rect: rect(1580, 0, 1920, 950) }), column);
+      const message = under(el('a', { attrs: { href: '/u/someone' }, rect: rect(1600, 900, 1900, 940) }), list);
+      const input = under(el('div', { attrs: { tabindex: '0', role: 'textbox' }, rect: rect(1600, 958, 1910, 1010) }), column);
+      const row = under(el('div', { rect: rect(1580, 1014, 1920, 1080) }), column);
+      const gear = under(el('button', { rect: rect(1790, 1020, 1830, 1060) }), row);
+      const send = under(el('button', { rect: rect(1838, 1020, 1904, 1060) }), row);
+      return [send, gear, row, input, message, list, column];
+    },
+  });
+  const r = twitch();
+  assert.strictEqual(r.kind(), 'control', 'the Chat button under the badge is an anchored control on a page that does not scroll');
+  assert.strictEqual(r.toggled.inert, false, 'the badge is NOT inert: it has somewhere to go');
+  assert.strictEqual(r.toggled.away, false, 'and is not hidden');
+  /* clear of the input, which is the second anchored control it met on the way up: 1064 - 958 + 8 */
+  assert.strictEqual(r.lift(), 1064 - 958 + 8, 'it climbs past the Chat button AND the chat input, to the message list (' + r.lift() + ')');
+  /* The forced re-check a play event triggers gives the same answer, not a dead badge. */
+  r.update(true);
+  assert.strictEqual(r.toggled.inert, false, 'a forced re-check (the play event) keeps it usable');
+  assert.strictEqual(r.lift(), 1064 - 958 + 8);
+  /* A short chat: the list does not scroll, so its last message is anchored too; the badge
+     climbs past that as well, one hop further. */
+  const quiet = twitch({ shortList: true });
+  assert.strictEqual(quiet.toggled.inert, false, 'a short chat list is one more hop, not a dead badge');
+  assert.strictEqual(quiet.lift(), 1064 - 900 + 8, 'clear of the last message (' + quiet.lift() + ')');
+}
+{
+  /* A fixed sidebar the full height of the window, with a link the full height of the
+     sidebar: a control the badge could never clear is a region, not something the reader is
+     aiming at with the one corner the badge covers -- so the badge stays usable. (It used to
+     go inert here: visible and dead, which is what the fourth report was.) */
   const r = run({
     build: (body) => {
       const side = under(el('nav', { style: { position: 'fixed' }, rect: rect(1600, 0, 1920, 1080) }), body);
       return [under(el('a', { attrs: { href: '/n' }, rect: rect(1620, 0, 1900, 1080) }), side), side];
     },
   });
-  assert.strictEqual(r.kind(), 'control');
-  assert.strictEqual(r.toggled.inert, true, 'with nowhere to go it stays put and stops taking input, as before');
-  assert.strictEqual(r.toggled.away, false, 'but stays visible');
+  assert.strictEqual(r.kind(), '', 'a control taller than the lift cap is a region, not a control');
+  assert.strictEqual(r.toggled.inert, false, 'the badge keeps taking input');
+  assert.strictEqual(r.toggled.away, false, 'and stays visible');
   assert.strictEqual(r.lift(), 0);
 }
 {
-  /* The cap: a block that would push the badge past 45% of the screen is not cleared. */
+  /* But a page-tall IFRAME is still a control: what is inside it cannot be seen from here,
+     and a chat embed puts its own send button in exactly this corner. Nothing fits, so this
+     is the one shape left that ends inert. */
+  const r = run({
+    build: (body) => [under(el('iframe', { style: { position: 'fixed' }, rect: rect(1560, 0, 1920, 1080) }), body)],
+  });
+  assert.strictEqual(r.kind(), 'control', 'a fixed page-tall iframe is still a control');
+  assert.strictEqual(r.toggled.inert, true, 'with nowhere to go it stays put and stops taking input');
+  assert.strictEqual(r.toggled.away, false, 'but stays visible');
+}
+{
+  /* THE FOURTH REPORT, from the real Twitch DOM on a quiet channel (two messages): under the
+     home corner the chat-settings button; 40px up the message field ([tabindex="0"]); and
+     every band above that the empty chat scroller, whose closest() focusable ancestor is a
+     [tabindex="0"] Layout wrapper the height of the whole column. The document is pinned, so
+     that wrapper was an anchored control 700px tall, no candidate could clear it, and the
+     badge went inert -- with its panel stuck open, since an inert badge cannot be pressed
+     to close it. The wrapper is a region now; the badge lifts clear of the message field
+     onto the empty list, and a panel left open when the badge stops taking input is closed. */
+  const quiet = (opts) => run(Object.assign({
+    docHeight: 1080, htmlOverflow: 'visible', bodyOverflow: 'hidden',
+    build: (body) => {
+      const column = under(el('section', { rect: rect(1580, 50, 1920, 1080) }), body);
+      const wrapper = under(el('div', { attrs: { tabindex: '0' }, rect: rect(1580, 50, 1920, 950) }), column);
+      const scroller = under(el('div', { attrs: { 'data-a-target': 'chat-scroller' }, style: { overflowY: 'auto' }, scrollHeight: 637, clientHeight: 637, rect: rect(1580, 60, 1920, 950) }), wrapper);
+      const input = under(el('div', { attrs: { tabindex: '0', role: 'textbox', 'data-a-target': 'chat-input' }, rect: rect(1600, 958, 1910, 1010) }), column);
+      const row = under(el('div', { rect: rect(1580, 1014, 1920, 1080) }), column);
+      const gear = under(el('button', { attrs: { 'data-a-target': 'chat-settings' }, rect: rect(1780, 1020, 1820, 1060) }), row);
+      const send = under(el('button', { rect: rect(1830, 1020, 1904, 1060) }), row);
+      return [send, gear, row, input, scroller, wrapper, column];
+    },
+  }, opts || {}));
+  const r = quiet();
+  assert.strictEqual(r.toggled.inert, false, 'the badge is usable on a quiet Twitch chat');
+  assert.strictEqual(r.toggled.away, false);
+  assert.strictEqual(r.lift(), 1064 - 958 + 8, 'it sits just clear of the message field, on the empty list (' + r.lift() + ')');
+  /* The panel: open when a forced re-check finds nothing fits, it is closed rather than stranded. */
+  const stuck = run({
+    panelOpen: true,
+    build: (body) => [under(el('iframe', { style: { position: 'fixed' }, rect: rect(1560, 0, 1920, 1080) }), body)],
+  });
+  assert.strictEqual(stuck.toggled.inert, true);
+  assert.strictEqual(stuck.panelOpen(), false, 'a panel left open when the badge stops taking input is closed, not stranded');
+  const fine = quiet({ panelOpen: true });
+  assert.strictEqual(fine.panelOpen(), true, 'and a panel stays open while the badge can still be pressed');
+  /* No hopping about. A forced re-check (the stream's play events force one every few
+     minutes) used to climb again from scratch, so as chat rows came and went the badge landed
+     a little higher or lower each time -- while the reader was aiming at it. The spot it holds
+     is tried first: while it is still clear it stays; it comes home when home is clear. */
+  const held = quiet();
+  assert.strictEqual(held.lift(), 1064 - 958 + 8);
+  const input = held.elements.find((n) => n.attrs['data-a-target'] === 'chat-input');
+  input.rect = rect(1600, 980, 1910, 1010);   /* the field shrank: a fresh climb would now say 92 */
+  held.update(true);
+  assert.strictEqual(held.lift(), 1064 - 958 + 8, 'a forced re-check keeps the spot the badge already holds while it is still clear');
+  for (const b of held.elements.filter((n) => n.tag === 'button')) b.rect = rect(1600, 1020, 1700, 1060);   /* the buttons moved away from the corner */
+  held.update(true);
+  assert.strictEqual(held.lift(), 0, 'and it comes home when home is clear again');
+}
+{
+  /* The climb is bounded: a stack of anchored controls taller than the cap still ends inert
+     rather than looping, and never costs more than a handful of hit tests. */
+  const r = run({
+    docHeight: 1080, htmlOverflow: 'hidden',
+    build: (body) => {
+      const out = [];
+      for (let i = 0; i < 30; i++) out.push(under(el('button', { rect: rect(1700, 1064 - (i + 1) * 36, 1910, 1064 - i * 36) }), body));
+      return out;
+    },
+  });
+  assert.strictEqual(r.toggled.inert, true, 'a column of buttons taller than the cap: inert, not a runaway climb');
+  assert(r.calls.hit <= 3 * 16, 'the climb is bounded (' + r.calls.hit + ' hit tests)');
+}
+{
+  /* The cap: a block that would push the badge past 45% of the screen is not cleared. A fixed
+     panel 580px tall, filled with a column of ordinary buttons: the climb reaches the cap
+     before it reaches a free spot, and the badge stops rather than floating mid-screen. */
   const r = run({
     build: (body) => {
       const panel = under(el('div', { style: { position: 'fixed' }, rect: rect(1500, 500, 1920, 1080) }), body);
-      return [under(el('button', { rect: rect(1520, 520, 1900, 1070) }), panel), panel];
+      const out = [];
+      for (let y = 1030; y >= 520; y -= 40) out.push(under(el('button', { rect: rect(1520, y, 1900, y + 38) }), panel));
+      out.push(panel);
+      return out;
     },
   });
-  assert.strictEqual(r.toggled.inert, true, 'a tall fixed panel is not cleared -- the badge would float mid-screen');
+  assert.strictEqual(r.toggled.inert, true, 'a tall fixed panel full of controls is not cleared -- the badge would float mid-screen');
   assert.strictEqual(r.lift(), 0);
 }
 {

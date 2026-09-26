@@ -209,7 +209,7 @@ const STORE = 'https://store-finder.net/';
     check('the reconcile arms it on every pass, before its own early-out, and never lets that stop the pass', /try \{ scheduleSitePauseExpiry\(cfg\); \} catch \(_\) \{\}[\s\S]{0,400}const stateKey = \[/.test(reconcile));
     check('the lapse is read through the pause resolver, the one place allowed to read the map', /function nextSitePauseLapse\(cfg\)/.test(BG) && /const earliest = nextSitePauseLapse\(cfg\);/.test(lift('scheduleSitePauseExpiry') || '') && !/cfg\.allowlistUntil/.test(lift('scheduleSitePauseExpiry') || ''));
     check('the excused sites are part of the desired state the reconcile keys on', /locationExemptHosts\(cfg\)\.join\(','\),/.test(reconcile));
-    check('the reconcile hands them to the applier', /run\('geolocation', applyGlobalLocationBlock\(on && cfg\.blockGeolocation === true, locationExemptHosts\(cfg\)\)\);/.test(reconcile));
+    check('the reconcile hands them to the applier', /run\('geolocation', \(\) => applyGlobalLocationBlock\(on && cfg\.blockGeolocation === true, locationExemptHosts\(cfg\)\)\);/.test(reconcile));
     check('the standalone refresh does too', /applyGlobalLocationBlock\(on && cfg\.blockGeolocation === true, locationExemptHosts\(cfg\)\);/.test(lift('refreshGlobalLocationBlock') || ''));
   } catch (e) { check('the alarm that notices the lapse', false, 'could not run: ' + (e && e.message || e)); }
 

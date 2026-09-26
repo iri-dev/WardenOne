@@ -58,7 +58,9 @@ const api = sandbox.__configBoundary;
 const secretFields = Object.keys(api.DEFAULT_CONFIG).filter((key) => /Key$/.test(key));
 
 check('the worker sanitizer preserves protection settings but rejects secrets and arbitrary fields', () => {
-  assert(secretFields.length >= 7, 'expected the provider credential fields in DEFAULT_CONFIG');
+  /* six since the unused OpenPhish token left the table (BUG-09); the fields are discovered, this
+     floor only says the discovery found them */
+  assert(secretFields.length >= 6, 'expected the provider credential fields in DEFAULT_CONFIG');
   const raw = {
     enabled: false,
     blockTokenExfil: true,

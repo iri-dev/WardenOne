@@ -162,7 +162,41 @@ async function recordWardenNotification(entry) {
    winner, which is what it wanted anyway. */
 var wardenOffscreenCreating = null;
 
+/* The document lives for a sound, not for the session (LIFE-05). The first sound of a
+   session created it and nothing closed it: one extension document, its scripts and an open
+   AudioContext stayed resident until the browser closed, in exchange for half a second of
+   tone. Now it is closed once it has been idle for a short grace after the last sound --
+   long enough that a burst of notifications shares one document and no tune is cut (the
+   longest is three notes 0.14 s apart), short enough to matter. A sound in flight holds the
+   close; a sound that arrives while the close is in flight waits for it to finish and
+   creates afresh, so the creation hardening above and the retry below stay exactly as they
+   are -- they matter more once the document can legitimately be absent again. */
+var WARDEN_OFFSCREEN_IDLE_MS = 3000;
+var wardenOffscreenIdleTimer = 0;
+var wardenOffscreenBusy = 0;
+var wardenOffscreenClosing = null;
+
+function closeWardenOffscreenDocument() {
+  if (wardenOffscreenBusy > 0 || wardenOffscreenClosing) return wardenOffscreenClosing || Promise.resolve();
+  wardenOffscreenClosing = Promise.resolve()
+    .then(function () { return chrome.offscreen.closeDocument(); })
+    .catch(function () { /* already gone, or never there: the state we wanted */ })
+    .then(function () { wardenOffscreenClosing = null; });
+  return wardenOffscreenClosing;
+}
+
+function scheduleWardenOffscreenClose() {
+  if (wardenOffscreenIdleTimer) clearTimeout(wardenOffscreenIdleTimer);
+  wardenOffscreenIdleTimer = setTimeout(function () {
+    wardenOffscreenIdleTimer = 0;
+    closeWardenOffscreenDocument();
+  }, WARDEN_OFFSCREEN_IDLE_MS);
+}
+
 async function ensureWardenOffscreenDocument() {
+  /* A document on its way out must finish leaving before we look for one: getContexts still
+     lists it, and a message sent to it is lost. */
+  if (wardenOffscreenClosing) await wardenOffscreenClosing;
   var url = chrome.runtime.getURL('offscreen.html');
   var contexts = [];
   try {
@@ -231,21 +265,29 @@ async function playWardenNotificationSound(sound, volume) {
     sound: name,
     volume: level,
   };
-  await ensureWardenOffscreenDocument();
+  /* A sound in flight holds the document open; the idle close is re-armed when it is done. */
+  if (wardenOffscreenIdleTimer) { clearTimeout(wardenOffscreenIdleTimer); wardenOffscreenIdleTimer = 0; }
+  wardenOffscreenBusy++;
   try {
-    await sendWardenOffscreenMessage(payload);
-  } catch (error) {
-    /* createDocument resolves when the document EXISTS, not when its scripts
-       have run -- so a message sent immediately after can arrive before
-       offscreen.js has registered its listener and come back as "Receiving end
-       does not exist". Nothing plays and nothing says why, which is what "most
-       of them do not play" looks like from the outside. One retry, after the
-       document has had a moment, and only for that error. */
-    var message = String((error && error.message) || '');
-    if (!/Receiving end does not exist|Could not establish connection/i.test(message)) throw error;
-    await new Promise(function (resolve) { setTimeout(resolve, 150); });
     await ensureWardenOffscreenDocument();
-    await sendWardenOffscreenMessage(payload);
+    try {
+      await sendWardenOffscreenMessage(payload);
+    } catch (error) {
+      /* createDocument resolves when the document EXISTS, not when its scripts
+         have run -- so a message sent immediately after can arrive before
+         offscreen.js has registered its listener and come back as "Receiving end
+         does not exist". Nothing plays and nothing says why, which is what "most
+         of them do not play" looks like from the outside. One retry, after the
+         document has had a moment, and only for that error. */
+      var message = String((error && error.message) || '');
+      if (!/Receiving end does not exist|Could not establish connection/i.test(message)) throw error;
+      await new Promise(function (resolve) { setTimeout(resolve, 150); });
+      await ensureWardenOffscreenDocument();
+      await sendWardenOffscreenMessage(payload);
+    }
+  } finally {
+    wardenOffscreenBusy--;
+    scheduleWardenOffscreenClose();
   }
   return true;
 }
