@@ -135,7 +135,7 @@ function engineRealm() {
     authBlock(CONTENT, 'src/content.js'),
     'let __woToken=null,__woKey=null;',
     between(CONTENT, '  let __woEventSeq=0,', '  function __woEmit(detail){', 'the engine\'s signing and checking'),
-    'this.api = { signed: __woSignedDetail, notice: __woSignedNotice, trusted: __woEventTrusted, arm: (t, k) => { __woToken = t; __woKey = __woAuth.key(k); } };',
+    'this.api = { signed: __woSignedDetail, notice: __woSignedNotice, request: __woSignedRequest, trusted: __woEventTrusted, arm: (t, k) => { __woToken = t; __woKey = __woAuth.key(k); } };',
   ].join('\n'), sandbox, { filename: 'src/content.js:events' });
   return sandbox.api;
 }
@@ -240,6 +240,45 @@ check('the media-active flag and the reload-loop panel need a signed report',
 check('the permission-chain relay needs a signed signal', /!permissionChainGuardOn\(\) \|\| !permissionSignalSigned\(d\)\) return;/.test(BRIDGE));
 check('the worker hands the right-click answer to the bridge, and falls back to a system notification',
   /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(read('background.js')) && /results\[0\]\.result === true\) return true;/.test(read('background.js')));
+/* SEC-14: the notice mute and "shown" requests. A page holding only the token could mute a
+   class of security notices on every site, for good, with one message. */
+console.log('notice mutes');
+{
+  const relay = {
+    TOKEN, KEY, Set, Object, String, Number, JSON, Uint8Array, Uint32Array, Math, Array,
+    location: { hostname: 'shop.example' },
+  };
+  vm.createContext(relay);
+  vm.runInContext([
+    authBlock(BRIDGE, 'bridge.js'),
+    'const KEY_PADS = KEY ? __woAuth.key(KEY) : null;',
+    'const relaySamePageHost = () => true;',
+    between(BRIDGE, '    let relayRequestSeqSeen = 0;', '    const postBackgroundReply', 'the relay\'s request check'),
+    'this.allowed = relayAllowedMessage;',
+  ].join('\n'), relay, { filename: 'bridge.js:relay' });
+  const e = engineRealm();
+  e.arm(TOKEN, KEY);
+  const mute = e.request({ kind: 'mute-toast', type: 'warned_clickfix_correlated', minutes: 0 });
+  check('the engine signs a mute it sends', Number.isInteger(mute.rseq) && /^[0-9a-f]{64}$/.test(mute.rmac));
+  const passed = relay.allowed(JSON.parse(JSON.stringify(mute)));
+  check('the bridge relays a signed mute, stripped to its fields', !!passed && passed.kind === 'mute-toast' && passed.minutes === 0 && !('rmac' in passed));
+  check('but not the same one twice', relay.allowed(JSON.parse(JSON.stringify(mute))) === null);
+  check('nor a token-only mute from the page -- the attack', relay.allowed({ kind: 'mute-toast', type: 'warned_clickfix_correlated', minutes: 0 }) === null);
+  const changed = Object.assign(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'behavioral_risk', minutes: 60 }))), { minutes: 0 });
+  check('nor a signed one-hour mute turned into "forever"', relay.allowed(changed) === null);
+  const retyped = Object.assign(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 }))), { type: 'warned_potential_xss_sink' });
+  check('nor one pointed at another notice type', relay.allowed(retyped) === null);
+  const shown = e.request({ kind: 'toast-shown', type: 'warned_clickfix_correlated' });
+  check('a signed "shown" is relayed', !!relay.allowed(JSON.parse(JSON.stringify(shown))));
+  check('a forged "shown" that would quieten the page\'s own warnings is not', relay.allowed({ kind: 'toast-shown', type: 'warned_clickfix_correlated' }) === null);
+  const shownAsMute = Object.assign(JSON.parse(JSON.stringify(e.request({ kind: 'toast-shown', type: 'blocked_popup' }))), { kind: 'mute-toast', minutes: 0 });
+  check('and a "shown" signature does not pass as a mute', relay.allowed(shownAsMute) === null);
+}
+check('the notice card signs both requests and only a real click mutes',
+  /__woBackgroundRequest\(__woSignedRequest\(\{kind:"mute-toast",type:type,minutes:minutes\}\)\)/.test(CONTENT)
+    && /__woBackgroundRequest\(__woSignedRequest\(\{kind:"toast-shown",type:type\}\)\)/.test(CONTENT)
+    && /ev=>\{\s*if\(!ev\.isTrusted\)return;\s*try\{\s*ev\.preventDefault\(\),\s*ev\.stopPropagation\(\),\s*__woBackgroundRequest\(__woSignedRequest\(\{kind:"mute-toast"/.test(CONTENT));
+
 const MIN = read('content.min.js');
 check('and the built engine carries all of it', MIN.indexOf('__woEventTrusted(') > 0 && MIN.indexOf('__woSignedNotice(') > 0 && MIN.indexOf('eventText:eventText') > 0);
 

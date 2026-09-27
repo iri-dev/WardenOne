@@ -270,7 +270,7 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
   check('the storage.onChanged hook clears the memo before it tells the pages to refresh',
     /\|\| changes\.wardenone_search_junk_domains\)\) \{\s*invalidateContentConfigMemo\(\);\s*scheduleContentConfigRefresh\(\);/.test(BG));
   check('and the worker\'s own writes clear it before that event can arrive',
-    /function localSet\(obj\) \{[\s\S]{0,400}invalidateContentConfigMemo\(\)/.test(BG));
+    /function localSet\(obj\) \{[\s\S]{0,800}invalidateContentConfigMemo\(\)/.test(BG));
   check('the handler passes what the caller asked for', /respond\(buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\)\), sendResponse\);/.test(BG));
   for (const file of REQUESTERS) {
     const src = fs.readFileSync(path.join(ROOT, file), 'utf8');

@@ -150,6 +150,18 @@ function dnrModel() {
   };
 }
 
+/* "All" is derived from the canonical request-type inventory (M45). */
+const ALL_TYPES = JSON.parse(BG.slice(BG.indexOf('const ALL_DNR_RESOURCE_TYPES = [') + 'const ALL_DNR_RESOURCE_TYPES = '.length, BG.indexOf('];', BG.indexOf('const ALL_DNR_RESOURCE_TYPES')) + 1).replace(/'/g, '"').replace(/,\s*\]/, ']'));
+/* The worker's per-store transaction lane (M48), with the same ordering guarantee. */
+function makeStoreTransaction() {
+  const lanes = new Map();
+  return (key, task) => {
+    const next = (lanes.get(key) || Promise.resolve()).then(task);
+    lanes.set(key, next.then(() => {}, () => {}));
+    return next;
+  };
+}
+
 /* ---- the firewall, lifted whole -------------------------------------------------- */
 
 const FW = between(BG, 'const FIREWALL_RULE_BASE = 950000;', '\n// ---- Cryptojacking guard', 'the firewall');
@@ -168,11 +180,12 @@ const unwrap = (sliceWithHead) => {
   return out;
 };
 
-function firewallWorld({ store, failStorage } = {}) {
+function firewallWorld({ store, failStorage, transaction } = {}) {
   const dnr = dnrModel();
   const storage = { [ 'wardenone_firewall' ]: store || {} };
   const ctx = {
     console: { warn() {} }, JSON, Object, Array, String, Number, Promise, Set, Map,
+    ALL_DNR_RESOURCE_TYPES: ALL_TYPES, storeTransaction: transaction || makeStoreTransaction(),
     FIREWALL_RULES_BUDGET: Number((/const FIREWALL_RULES_BUDGET = (\d+)/.exec(BG) || [])[1]),
     FIREWALL_SESSION_RULES_BUDGET: Number((/const FIREWALL_SESSION_RULES_BUDGET = (\d+)/.exec(BG) || [])[1]),
     chrome: { declarativeNetRequest: dnr.api },
@@ -304,6 +317,33 @@ function firewallWorld({ store, failStorage } = {}) {
   check('the guide explains it', /Allow once<\/strong>, under a domain/.test(FW_HTML) && /A specific column beats/.test(FW_HTML));
   check('the page redraws from the truth when a cell is refused', /if \(res && res\.rules\) RULES = res\.rules;/.test(FW_JS));
 
+  /* ---- M48: two quick cell changes both survive -------------------------------------- *
+     The handler reads the whole matrix, changes a copy, asks Chrome, then writes it back. Two
+     clicks in quick succession both read the old matrix and the later write erased the earlier
+     cell, while both were answered ok. Run with the real lane and with no lane at all. */
+  {
+    const clicks = (w) => Promise.all([
+      w.call(w.api.handleSet, { kind: 'firewall-set', site: 'news.example', domain: 'ads.example', column: 'script', verdict: 'block' }),
+      w.call(w.api.handleSet, { kind: 'firewall-set', site: 'news.example', domain: 'cdn.example', column: 'all', verdict: 'allow' }),
+    ]);
+    const laned = firewallWorld();
+    const [a, b] = await clicks(laned);
+    const stored = (laned.storage.wardenone_firewall || {})['news.example'] || {};
+    check('two overlapping firewall changes are both kept', a.ok && b.ok && !!stored['ads.example'] && !!stored['cdn.example'], JSON.stringify(stored));
+    const unlaned = firewallWorld({ transaction: (k, task) => task() });
+    const [c, d] = await clicks(unlaned);
+    const lost = (unlaned.storage.wardenone_firewall || {})['news.example'] || {};
+    check('and without the transaction lane one of them is lost -- the test sees the race',
+      !(lost['ads.example'] && lost['cdn.example']), JSON.stringify({ lost, answers: [c.ok, d.ok] }));
+  }
+  check('every whole-store writer runs in its store\'s lane',
+    /if \(msg && msg\.kind === 'firewall-set'\) \{\n    storeTransaction\(FIREWALL_KEY, async \(\) => \{/.test(BG)
+      && /if \(msg && msg\.kind === 'firewall-reset'\) \{\n    storeTransaction\(FIREWALL_KEY, async \(\) => \{/.test(BG)
+      && ['user-rules-set', 'custom-list-add', 'custom-list-update', 'custom-list-toggle', 'custom-list-remove'].every((k) =>
+        new RegExp("msg\\.kind === '" + k + "'[^\\n]*\\) \\{\\n    storeTransaction\\(USER_FILTER_STORES, async \\(\\) => \\{").test(BG))
+      && ['addHiddenElement', 'removeHiddenElement', 'clearHiddenElements'].every((f) =>
+        new RegExp('respond\\(storeTransaction\\(HIDDEN_STORE_KEY, \\(\\) => ' + f + '\\(').test(BG)));
+
   /* ---- the user filters, lifted whole ----------------------------------------------- */
   const UF = between(BG, 'const USER_RULE_BASE = 750000;', '\n// ======================= Network / filtering logger', 'the user filters');
   const UF_SET = between(BG, "  if (msg && msg.kind === 'user-rules-set') {\n", "  // ---- Custom lists ----", 'the user-rules-set handler');
@@ -317,6 +357,7 @@ function firewallWorld({ store, failStorage } = {}) {
     const ctx = {
       console: { warn() {} }, JSON, Object, Array, String, Number, Promise, Set, Map, RegExp, URL, Math, Date, AbortController, setTimeout, clearTimeout,
       USER_RULES_BUDGET: Number((/const USER_RULES_BUDGET = (\d+)/.exec(BG) || [])[1]),
+      storeTransaction: makeStoreTransaction(), USER_FILTER_STORES: 'user-filters',
       chrome: { declarativeNetRequest: dnr.api },
       localGet: async (key) => { const keys = Array.isArray(key) ? key : [key]; const out = {}; for (const k of keys) if (storage[k] !== undefined) out[k] = JSON.parse(JSON.stringify(storage[k])); return out; },
       masterSwitchOn: async () => storage.wardenone_config === undefined || (storage.wardenone_config || {}).enabled !== false,

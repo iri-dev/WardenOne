@@ -93,66 +93,140 @@ function wardenNotificationFindGroup(items, ruleId, host, at, settings) {
   return -1;
 }
 
+/* Writes are batched (COST-02). Every recorded event used to read both stores, prune, merge and
+   write the whole array back -- up to ~0.9 MiB at the 300-record cap -- once per event, while the
+   history writer beside it already buffered. Now events wait in memory for a short window and a
+   burst becomes one read and one write, with group merges collapsed inside the batch. A rule
+   switched off is decided from the cached config before anything is buffered or read. The cost
+   of the window: an event recorded in the last quarter-second before the worker is torn down can
+   miss the Notification Centre. The Activity log, which has its own write-ahead copy, still has it. */
+var WARDEN_NOTIFICATION_FLUSH_MS = 250;
+var __wardenNotificationBuffer = [];
+var __wardenNotificationFlushTimer = null;
+
 async function recordWardenNotification(entry) {
   if (typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT) return null;
   if (!entry || typeof entry !== 'object') return null;
   var type = String(entry.type || '').trim();
   if (!type) return null;
+  try {
+    var cfgStore = await localGet('wardenone_config');
+    var cfg = cfgStore && cfgStore.wardenone_config && typeof cfgStore.wardenone_config === 'object' ? cfgStore.wardenone_config : {};
+    var early = wardenNotificationResolvedPreference(sanitizeWardenNotificationSettings(cfg.notificationSettings), type);
+    if (early.mode === 'off') return null;
+  } catch (_) {}
+  return new Promise(function (resolve) {
+    __wardenNotificationBuffer.push({ entry: entry, type: type, resolve: resolve, result: null });
+    if (!__wardenNotificationFlushTimer) {
+      __wardenNotificationFlushTimer = setTimeout(flushWardenNotifications, WARDEN_NOTIFICATION_FLUSH_MS);
+    }
+  });
+}
 
+function flushWardenNotifications() {
+  if (__wardenNotificationFlushTimer) {
+    try { clearTimeout(__wardenNotificationFlushTimer); } catch (_) {}
+    __wardenNotificationFlushTimer = null;
+  }
+  var batch = __wardenNotificationBuffer.splice(0);
+  if (!batch.length) return __wardenNotificationWrite;
   __wardenNotificationWrite = __wardenNotificationWrite.then(async function () {
     var state = await loadWardenNotificationState();
-    var resolved = wardenNotificationResolvedPreference(state.settings, type);
-    if (resolved.mode === 'off') return null;
-
-    var at = wardenNotificationNow(entry.at);
-    var host = wardenNotificationHostFromEntry(entry);
-    var summary = wardenNotificationSummary(entry, resolved.definition);
-    var items = pruneWardenNotificationHistory(state.items, resolved.settings, at);
-    var groupAt = wardenNotificationFindGroup(items, resolved.ruleId, host, at, resolved.settings);
-    var recorded;
-
-    if (groupAt >= 0) {
-      recorded = Object.assign({}, items[groupAt]);
-      recorded.count = Math.min(9999, Math.max(1, Number(recorded.count) || 1) + 1);
-      recorded.at = Math.max(wardenNotificationNow(recorded.at), at);
-      recorded.read = false;
-      recorded.summary = summary;
-      recorded.title = resolved.definition.label;
-      recorded.severity = resolved.definition.severity;
-      recorded.mode = resolved.mode;
-      recorded.samples = Array.isArray(recorded.samples) ? recorded.samples.slice() : [];
-      recorded.samples.unshift({ summary: summary, at: at, host: host });
-      if (recorded.samples.length > WARDEN_NOTIFICATION_SAMPLE_CAP) {
-        recorded.samples = recorded.samples.slice(0, WARDEN_NOTIFICATION_SAMPLE_CAP);
-      }
-      items.splice(groupAt, 1);
-      items.unshift(recorded);
-    } else {
-      recorded = {
-        id: 'n-' + at + '-' + resolved.ruleId + '-' + (host || 'local'),
-        type: type,
-        ruleId: resolved.ruleId,
-        section: resolved.definition.section,
-        title: resolved.definition.label,
-        summary: summary,
-        host: host,
-        at: at,
-        count: 1,
-        read: false,
-        severity: resolved.definition.severity,
-        mode: resolved.mode,
-        samples: [{ summary: summary, at: at, host: host }],
-      };
-      items.unshift(recorded);
+    var items = state.items;
+    var latest = null;
+    for (var i = 0; i < batch.length; i++) {
+      var job = batch[i];
+      var resolved = wardenNotificationResolvedPreference(state.settings, job.type);
+      if (resolved.mode === 'off') continue;
+      var applied = applyWardenNotificationEntry(items, resolved, job.entry, job.type);
+      items = applied.items;
+      job.result = applied.recorded;
+      latest = applied.at;
     }
-
-    items = pruneWardenNotificationHistory(items, resolved.settings, at);
+    if (latest == null) return;
+    items = pruneWardenNotificationHistory(items, state.settings, latest);
     await localSet({ wardenone_notifications: items });
-    applyWardenNotificationBadge(items, resolved.settings);
-    return recorded;
-  }).catch(function () { return null; });
-
+    applyWardenNotificationBadge(items, state.settings);
+  }).catch(function () {}).then(function () {
+    batch.forEach(function (job) { try { job.resolve(job.result || null); } catch (_) {} });
+  });
   return __wardenNotificationWrite;
+}
+
+/* The one place that turns an event into a stored record or a merge into an existing group. */
+function applyWardenNotificationEntry(items, resolved, entry, type) {
+  var at = wardenNotificationNow(entry.at);
+  var host = wardenNotificationHostFromEntry(entry);
+  var summary = wardenNotificationSummary(entry, resolved.definition);
+  items = pruneWardenNotificationHistory(items, resolved.settings, at);
+  var groupAt = wardenNotificationFindGroup(items, resolved.ruleId, host, at, resolved.settings);
+  var recorded;
+
+  if (groupAt >= 0) {
+    recorded = Object.assign({}, items[groupAt]);
+    recorded.count = Math.min(9999, Math.max(1, Number(recorded.count) || 1) + 1);
+    recorded.at = Math.max(wardenNotificationNow(recorded.at), at);
+    recorded.read = false;
+    recorded.summary = summary;
+    recorded.title = resolved.definition.label;
+    recorded.severity = resolved.definition.severity;
+    recorded.mode = resolved.mode;
+    recorded.samples = Array.isArray(recorded.samples) ? recorded.samples.slice() : [];
+    recorded.samples.unshift({ summary: summary, at: at, host: host });
+    if (recorded.samples.length > WARDEN_NOTIFICATION_SAMPLE_CAP) {
+      recorded.samples = recorded.samples.slice(0, WARDEN_NOTIFICATION_SAMPLE_CAP);
+    }
+    items.splice(groupAt, 1);
+    items.unshift(recorded);
+  } else {
+    recorded = {
+      id: 'n-' + at + '-' + resolved.ruleId + '-' + (host || 'local'),
+      type: type,
+      ruleId: resolved.ruleId,
+      section: resolved.definition.section,
+      title: resolved.definition.label,
+      summary: summary,
+      host: host,
+      at: at,
+      count: 1,
+      read: false,
+      severity: resolved.definition.severity,
+      mode: resolved.mode,
+      samples: [{ summary: summary, at: at, host: host }],
+    };
+    items.unshift(recorded);
+  }
+
+  return { items: items, recorded: recorded, at: at };
+}
+
+/* The Notification Centre's "Mark all read" and "Clear" (M47). The page used to write its own
+   copy of the whole store: a six-field projection that dropped summaries, repeat counts and
+   samples for good, and a stale snapshot that erased any notice recorded after the page loaded.
+   Mutations now run here, behind the same write chain as recording, against the latest store and
+   by record id, and hand back the canonical records. Buffered events are flushed first, so "mark
+   all read" includes a notice that arrived a moment ago. */
+function mutateWardenNotifications(action, ids) {
+  flushWardenNotifications();
+  var pick = Array.isArray(ids) ? new Set(ids.map(String)) : null;
+  var run = __wardenNotificationWrite.then(async function () {
+    var state = await loadWardenNotificationState();
+    var items = state.items;
+    if (action === 'read') {
+      items = items.map(function (item) {
+        return (!pick || pick.has(String(item.id))) && !item.read ? Object.assign({}, item, { read: true }) : item;
+      });
+    } else if (action === 'clear') {
+      items = pick ? items.filter(function (item) { return !pick.has(String(item.id)); }) : [];
+    } else {
+      return state.items;
+    }
+    await localSet({ wardenone_notifications: items });
+    applyWardenNotificationBadge(items, state.settings);
+    return items;
+  });
+  __wardenNotificationWrite = run.catch(function () {});
+  return run;
 }
 
 /* One creation at a time. Two sounds close together both saw no document and
@@ -304,9 +378,24 @@ async function showWardenSystemNotification(id, options, type) {
   var state = await loadWardenNotificationState();
   var resolved = wardenNotificationResolvedPreference(state.settings, type || (options && options.title) || 'system_message');
   if (resolved.mode === 'off' || resolved.mode === 'history') return false;
-  var payload = Object.assign({}, options || {}, {
+  /* OS notifications can be shown on a lock screen and kept until dismissed. Only fixed,
+     category-level copy crosses that boundary; details stay in WardenOne's own surfaces. */
+  var copy = {
+    tab_limit_closed: ['Tab Limit', 'An old tab was closed. Open WardenOne for details.'],
+    download_review: ['Download Shield', 'A download needs review in WardenOne.'],
+    extension_change: ['Extension change', 'An extension change needs review in WardenOne.'],
+    manual_check: ['WardenOne check', 'Your requested site check has finished.'],
+    warning_integrity: ['WardenOne warning', 'A page obscured a security warning. Open WardenOne to review.'],
+    startup_review: ['WardenOne startup check', 'Items need review in WardenOne.'],
+  }[String(type || '')] || ['WardenOne notice', 'Open WardenOne to review this notice.'];
+  var payload = {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: copy[0],
+    message: copy[1],
+    priority: Math.max(-2, Math.min(2, Number(options && options.priority) || 0)),
     requireInteraction: resolved.mode === 'persistent' || resolved.duration === 'persistent',
-  });
+  };
   await new Promise(function (resolve, reject) {
     try {
       chrome.notifications.create(String(id || 'wardenone-' + Date.now()), payload, function () {

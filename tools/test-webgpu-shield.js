@@ -120,7 +120,7 @@ const pending = [];
      This checks the table itself: every entry's WebGPU vendor has to match the
      manufacturer named in its WebGL strings. A mismatched row would hand pages a
      contradiction that is rarer, and therefore more identifying, than the truth. */
-  const table = SOURCE.slice(SOURCE.indexOf('woGpu=woPick(['), SOURCE.indexOf('],"gpu")'));
+  const table = SOURCE.slice(SOURCE.indexOf('woGpu=woWindows?woPick(['), SOURCE.indexOf('],"gpu"):null'));
   const rows = table.split('{v:').slice(1);
   check('the GPU table still has every entry', rows.length === 5, rows.length + ' rows');
   rows.forEach((row) => {
@@ -318,7 +318,7 @@ pending.push((async function absentWebGpuIsNotAnError() {
     (SOURCE.match(/woGpuLimits/g) || []).length === (CONTENT.match(/woGpuLimits/g) || []).length);
   /* It rides the existing anti-fingerprinting switch. A separate toggle for each
      new surface is how a settings page turns into a list nobody reads. */
-  const noiseAt = SOURCE.indexOf('woGpu=woPick([');
+  const noiseAt = SOURCE.indexOf('woGpu=woWindows?woPick([');
   const shieldAt = SOURCE.indexOf('const woGpuLimits=');
   check('it lives inside the existing fingerprint-noise feature, not a new toggle',
     noiseAt > 0 && shieldAt > noiseAt);

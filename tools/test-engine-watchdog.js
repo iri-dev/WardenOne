@@ -62,6 +62,8 @@ function world(options) {
     DEFAULT_CONFIG: { enabled: true, allowlist: [] },
     localGet: () => Promise.resolve({ wardenone_config: o.config || {} }),
     activeAllowlist: (cfg) => (cfg && cfg.allowlist) || [],
+    /* The shared allowlist helper (BUG-03): the entry is the host or one of its parents. */
+    hostMatchesAllowlist: (host, list) => (list || []).some((d) => { const h = String(host || '').replace(/^www\./, ''); return h === d || h.endsWith('.' + d); }),
     registrableDomainBg: (h) => String(h || '').split('.').slice(-2).join('.'),
     isMainWorldRepairExcludedUrl: (u) => !!(o.compatExcluded && String(u).indexOf(o.compatExcluded) !== -1),
     queueHistory: (e) => history.push(e),

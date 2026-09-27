@@ -600,7 +600,9 @@
         finishZapperSave(undoEntry);
         const runtimeError = chrome.runtime.lastError;
         if (res && res.ok && !runtimeError) {
-          show('Saved for this site. It will stay gone after a reload.', false, sel);
+          show(res.persisted === false
+            ? 'Hidden in this private window only until this page reloads.'
+            : 'Saved for this site. It will stay gone after a reload.', false, sel);
           return;
         }
         const reason = (res && res.error) || (runtimeError && runtimeError.message) || 'WardenOne could not save the rule.';

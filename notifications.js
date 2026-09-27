@@ -167,24 +167,11 @@ function dayLabel(ts) {
 
 /* ---- grouping ------------------------------------------------------------ */
 
-const GROUP_WINDOW_MS = 60 * 60 * 1000;
-
-/* Same kind, same site, within the hour. Deliberately not "same kind, ever":
-   two tracker blocks on the same site a day apart are two things that happened,
-   and folding them would misreport when. */
-function groupItems(items, on) {
-  if (!on) return items.map((it) => ({ head: it, all: [it] }));
-  const out = [];
-  const index = new Map();
-  items.forEach((it) => {
-    const key = it.type + '|' + (it.host || '');
-    const prior = index.get(key);
-    if (prior && Math.abs(prior.head.at - it.at) < GROUP_WINDOW_MS) { prior.all.push(it); return; }
-    const entry = { head: it, all: [it] };
-    index.set(key, entry);
-    out.push(entry);
-  });
-  return out;
+/* The manager already groups: same rule, same site, within its window, when "group similar" is
+   on, and each stored record carries its own count and samples. Grouping those records again
+   here folded groups into groups and hid the real counts (M47), so a record is its own group. */
+function groupItems(items) {
+  return items.map((it) => ({ head: it, count: it.count || 1, samples: it.samples || [] }));
 }
 
 /* ---- rendering the list -------------------------------------------------- */
@@ -218,7 +205,7 @@ function renderList() {
   }
 
   let lastDay = '';
-  groupItems(visible, NC.settings.groupSimilar).forEach((group) => {
+  groupItems(visible).forEach((group) => {
     const it = group.head;
     const day = dayLabel(it.at);
     if (day !== lastDay) { host.appendChild(el('div', 'day', day)); lastDay = day; }
@@ -234,20 +221,21 @@ function renderList() {
     const body = el('div', 'body');
     const title = el('div', 't');
     title.appendChild(el('span', null, it.title || def.label || 'Notice'));
-    if (group.all.length > 1) title.appendChild(el('span', 'count', '×' + group.all.length));
+    if (group.count > 1) title.appendChild(el('span', 'count', '×' + group.count));
     body.appendChild(title);
 
-    if (it.message) body.appendChild(el('div', 'm', it.message));
+    if (it.summary) body.appendChild(el('div', 'm', it.summary));
 
     const meta = el('div', 'meta');
     if (it.host) meta.appendChild(el('span', null, it.host));
     meta.appendChild(el('span', null, ago(it.at)));
     body.appendChild(meta);
 
-    if (group.all.length > 1) {
-      const key = it.type + '|' + (it.host || '') + '|' + it.at;
+    if (group.count > 1 && group.samples.length) {
+      const key = it.id || (it.type + '|' + (it.host || '') + '|' + it.at);
       const open = NC.expanded.has(key);
-      const btn = el('button', 'more', open ? 'Hide the individual events' : 'Show all ' + group.all.length);
+      const shown = group.samples.length < group.count ? 'Show the latest ' + group.samples.length : 'Show all ' + group.count;
+      const btn = el('button', 'more', open ? 'Hide the individual events' : shown);
       btn.addEventListener('click', () => {
         if (open) NC.expanded.delete(key); else NC.expanded.add(key);
         renderList();
@@ -255,9 +243,9 @@ function renderList() {
       body.appendChild(btn);
       if (open) {
         const ul = el('ul', 'sublist');
-        group.all.forEach((sub) => {
+        group.samples.forEach((sub) => {
           const li = document.createElement('li');
-          li.appendChild(el('span', null, sub.message || sub.title || 'Event'));
+          li.appendChild(el('span', null, sub.summary || it.title || 'Event'));
           li.appendChild(el('span', null, ago(sub.at)));
           ul.appendChild(li);
         });
@@ -535,8 +523,44 @@ async function save() {
   await storageSet({ wardenone_config: Object.assign({}, config, { notificationSettings: NC.settings }) });
 }
 
-async function saveHistory() {
-  await storageSet({ wardenone_notifications: NC.items });
+/* The page never writes the notification store (M47). It asks the worker, which owns the store,
+   mutates the latest copy by id and answers with the canonical records. */
+function updateHistory(action, ids) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ kind: 'notifications-update', action, ids: ids || null }, (res) => {
+        void chrome.runtime.lastError;
+        if (res && res.ok && Array.isArray(res.items)) NC.items = normalizeItems(res.items);
+        resolve(!!(res && res.ok));
+      });
+    } catch (_) { resolve(false); }
+  });
+}
+
+/* Every field the manager stores is kept. The page used to project records down to six fields
+   and read a `message` the manager never writes, so descriptions were blank and repeat counts
+   and samples vanished. */
+function normalizeItems(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((i) => i && typeof i === 'object' && Number.isFinite(Number(i.at)))
+    .map((i) => ({
+      id: String(i.id || ''),
+      type: String(i.type || 'system'),
+      ruleId: String(i.ruleId || ''),
+      section: String(i.section || ''),
+      title: String(i.title || ''),
+      summary: String(i.summary || i.message || ''),
+      host: String(i.host || ''),
+      at: Number(i.at),
+      count: Math.max(1, Math.floor(Number(i.count) || 1)),
+      read: i.read === true,
+      severity: String(i.severity || ''),
+      mode: String(i.mode || ''),
+      samples: Array.isArray(i.samples) ? i.samples.filter((x) => x && typeof x === 'object').map((x) => ({
+        summary: String(x.summary || ''), at: Number(x.at) || 0, host: String(x.host || ''),
+      })) : [],
+    }))
+    .sort((a, b) => b.at - a.at);
 }
 
 
@@ -697,14 +721,12 @@ function bindPrefs() {
 
 function bindHistoryControls() {
   $('nc-read').addEventListener('click', async () => {
-    NC.items.forEach((i) => { i.read = true; });
-    await saveHistory();
+    await updateHistory('read', null);
     renderList(); renderBadge();
   });
   $('nc-clear').addEventListener('click', async () => {
     if (NC.items.length && !confirm('Clear all ' + NC.items.length + ' notifications from history?')) return;
-    NC.items = [];
-    await saveHistory();
+    await updateHistory('clear', null);
     renderList(); renderBadge();
   });
   const act = $('nc-activity');
@@ -719,18 +741,7 @@ async function load() {
   const stored = await storageGet(['wardenone_config', 'wardenone_notifications']);
   const cfg = stored.wardenone_config || {};
   NC.settings = sanitize(cfg.notificationSettings);
-  const raw = Array.isArray(stored.wardenone_notifications) ? stored.wardenone_notifications : [];
-  NC.items = raw
-    .filter((i) => i && typeof i === 'object' && Number.isFinite(Number(i.at)))
-    .map((i) => ({
-      type: String(i.type || 'system'),
-      title: String(i.title || ''),
-      message: String(i.message || ''),
-      host: String(i.host || ''),
-      at: Number(i.at),
-      read: i.read === true,
-    }))
-    .sort((a, b) => b.at - a.at);
+  NC.items = normalizeItems(stored.wardenone_notifications);
 
   renderPrefs();
   renderRules();
@@ -744,3 +755,12 @@ bindFilters();
 bindPrefs();
 bindHistoryControls();
 load();
+/* A notice recorded while the page is open appears without a reload, and the page never holds
+   a snapshot older than the store. */
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.wardenone_notifications) return;
+    NC.items = normalizeItems(changes.wardenone_notifications.newValue);
+    renderList(); renderBadge();
+  });
+} catch (_) {}

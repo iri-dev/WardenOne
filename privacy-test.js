@@ -77,6 +77,8 @@ function buildChecks(data) {
   const s = (data && data.shielded) || {};
   const b = (data && data.bare) || {};
   const set = (data && data.settings) || {};
+  const shieldErrors = s.errors || {};
+  const bareErrors = b.errors || {};
   const fp = set.antiFingerprintNoise;
   const rows = [];
 
@@ -143,9 +145,10 @@ function buildChecks(data) {
   const localIps = ((s.webrtcLocalIps && s.webrtcLocalIps.ips) || []);
   const bareIps = ((b.webrtcLocalIps && b.webrtcLocalIps.ips) || []);
   add('Local network addresses (WebRTC)', (function () {
-    if (!s.webrtcLocalIps || s.webrtcLocalIps.available === false) {
-      return { verdict: 'protected', why: 'WebRTC was not reachable from the page at all, so it could not ask for your local addresses.' };
-    }
+    if (shieldErrors.webrtcLocalIps || bareErrors.webrtcLocalIps) return { verdict: 'untested', why: 'The WebRTC probe failed: ' + String(shieldErrors.webrtcLocalIps || bareErrors.webrtcLocalIps) };
+    if (!s.webrtcLocalIps || !b.webrtcLocalIps) return { verdict: 'untested', why: 'The WebRTC probe did not finish in both runs.' };
+    if (b.webrtcLocalIps.available === false) return { verdict: 'design', why: 'This browser does not offer WebRTC local-address access to either run.' };
+    if (s.webrtcLocalIps.available === false) return { verdict: 'protected', why: 'The browser offered WebRTC, but the page with WardenOne could not reach it.' };
     if (!localIps.length && bareIps.length) {
       return { verdict: 'protected', why: 'The page was given no local addresses, while the same probe without WardenOne found ' + bareIps.length + '.' };
     }
@@ -167,8 +170,10 @@ function buildChecks(data) {
   })(), { 'with WardenOne': JSON.stringify(s.network), 'without': JSON.stringify(b.network) });
 
   add('Installed fonts', (function () {
-    const avail = s.fonts && s.fonts.available;
-    if (!avail) return { verdict: 'protected', why: 'The local font API was not reachable from the page, so it cannot enumerate what is installed.' };
+    if (shieldErrors.fonts || bareErrors.fonts) return { verdict: 'untested', why: 'The font probe failed: ' + String(shieldErrors.fonts || bareErrors.fonts) };
+    if (!s.fonts || !b.fonts) return { verdict: 'untested', why: 'The font probe did not finish in both runs.' };
+    if (b.fonts.available === false) return { verdict: 'design', why: 'This browser does not offer the local font API to a page.' };
+    if (s.fonts.available === false) return { verdict: 'protected', why: 'The browser offered the local font API, but the page with WardenOne could not reach it.' };
     return { verdict: 'design', why: 'The local font API exists here, but it cannot be used without a permission prompt. This test does not raise one — a test that makes the browser ask for something is a test nobody runs twice.' };
   })(), { 'queryLocalFonts reachable': String(!!(s.fonts && s.fonts.available)) });
 
