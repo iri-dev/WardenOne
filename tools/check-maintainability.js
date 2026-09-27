@@ -387,6 +387,7 @@ function checkContentBuild() {
   'tools/test-stale-state.js',
   'tools/test-storage-prune-ladder.js',
   'tools/test-reconcile-one-list.js',
+  'tools/test-reconcile-dnr-batch.js',
   'tools/test-detectability-budget.js',
   'tools/test-perf-profile.js',
   'tools/perf-profile.js',
@@ -592,6 +593,7 @@ checkCommand('privacy data inspection and erase tests', ['tools/test-privacy-dat
 checkCommand('warning page secret tests', ['tools/test-warning-page-secrets.js']);
 checkCommand('reconcile honesty tests', ['tools/test-reconcile-honesty.js']);
 checkCommand('reconciler one-list tests', ['tools/test-reconcile-one-list.js']);
+checkCommand('reconciler DNR batching tests', ['tools/test-reconcile-dnr-batch.js']);
 checkCommand('detectability budget', ['tools/test-detectability-budget.js']);
 // The release performance profile harness (PERF-12). Its browser-driving half needs Edge and minutes;
 // the gate checks its statistics, pages, report and fail-closed rules, and that a profile of the

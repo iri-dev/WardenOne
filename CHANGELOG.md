@@ -24,6 +24,7 @@ as the work happened.
 - Settings reconciliation now waits for an active generation to finish, skips duplicate requests for the same state, and runs one queued pass for newer settings. Stable network-rule owners skip work when their own inputs are unchanged, six owners share one dynamic and one session rule read per generation, and intranet switches are part of the desired-state key. SafeSearch settings flow through that pass instead of starting a second direct rule update.
 - A supplemental list refresh now waits for its one Grabber feed rule update without starting a duplicate update from the storage-change listener.
 - Remote list refreshes now compare the desired rule bands with Chrome's installed rules and skip the DNR transaction when the bands are already identical; the master switch is still checked at the commit boundary.
+- When several central rule owners change together, their disjoint changes now share one dynamic and one session Chrome transaction per store. A combined validation failure falls back to separate owner updates so one broken band does not hold back another.
 - The "important extension change needs review" note in the popup's status card
   now opens. Click it to see which extension changed, what it gained, the version
   change and when it happened, and then mark it reviewed or open the Security

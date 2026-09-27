@@ -10089,7 +10089,7 @@ async function whoisXmlDomainAgeLookupUrl(url, opts) {
 // Implemented in background-downloads.js.
 
 let __allowlistRulesKey = null;
-async function applyAllowlistRules(list, readRules) {
+async function applyAllowlistRules(list, readRules, submitRules) {
   try {
     const normalized = normalizeAllowlistHosts(list, 1000);
     const key = normalized.join(',');
@@ -10106,7 +10106,8 @@ async function applyAllowlistRules(list, readRules) {
         condition: { requestDomains: [h], resourceTypes: ['main_frame', 'sub_frame'] },
       });
     });
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
+    const change = { removeRuleIds: oldIds, addRules };
+    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
     __allowlistRulesKey = key;
   } catch (e) {
     console.warn('[WardenOne] allowlist DNR rules failed', e);
@@ -10115,7 +10116,7 @@ async function applyAllowlistRules(list, readRules) {
 }
 
 let __mediaCompatibilityRulesEnabled = null;
-async function applyMediaCompatibilityRules(enabled, readRules) {
+async function applyMediaCompatibilityRules(enabled, readRules, submitRules) {
   try {
     enabled = !!enabled;
     if (__mediaCompatibilityRulesEnabled === enabled) return;
@@ -10124,7 +10125,8 @@ async function applyMediaCompatibilityRules(enabled, readRules) {
       .filter((r) => r.id >= MEDIA_COMPAT_RULE_BASE && r.id < MEDIA_COMPAT_RULE_BASE + 100)
       .map((r) => r.id);
     if (!enabled) {
-      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules: [] });
+      const change = { removeRuleIds: oldIds, addRules: [] };
+      await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
       __mediaCompatibilityRulesEnabled = enabled;
       return;
     }
@@ -10178,7 +10180,8 @@ async function applyMediaCompatibilityRules(enabled, readRules) {
         resourceTypes: p.resourceTypes || allTypes,
       }, { requestDomains: p.requestDomains || [p.domain] }),
     }));
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules: frameAllowRules.concat(addRules) });
+    const change = { removeRuleIds: oldIds, addRules: frameAllowRules.concat(addRules) };
+    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
     __mediaCompatibilityRulesEnabled = enabled;
   } catch (e) {
     console.warn('[WardenOne] media compatibility DNR rules failed', e);
@@ -10195,7 +10198,7 @@ function loginCompatibilityRuleCondition(filter) {
     { resourceTypes: LOGIN_COMPAT_RESOURCE_TYPES },
   );
 }
-async function applyLoginCompatibilityRules(enabled, readRules) {
+async function applyLoginCompatibilityRules(enabled, readRules, submitRules) {
   try {
     enabled = !!enabled;
     if (__loginCompatibilityRulesEnabled === enabled) return;
@@ -10204,7 +10207,8 @@ async function applyLoginCompatibilityRules(enabled, readRules) {
       .filter((r) => r.id >= LOGIN_COMPAT_RULE_BASE && r.id < LOGIN_COMPAT_RULE_BASE + 300)
       .map((r) => r.id);
     if (!enabled) {
-      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules: [] });
+      const change = { removeRuleIds: oldIds, addRules: [] };
+      await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
       __loginCompatibilityRulesEnabled = enabled;
       return;
     }
@@ -10214,7 +10218,8 @@ async function applyLoginCompatibilityRules(enabled, readRules) {
       action: { type: 'allow' },
       condition: loginCompatibilityRuleCondition(filter),
     }));
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
+    const change = { removeRuleIds: oldIds, addRules };
+    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
     __loginCompatibilityRulesEnabled = enabled;
   } catch (e) {
     console.warn('[WardenOne] login compatibility DNR rules failed', e);
@@ -10770,6 +10775,52 @@ let __refreshExtensionStateInFlightKey = '';
 let __refreshExtensionStateQueued = false;
 let __privacyEraseInProgress = false;
 const __reconcileComponentKeys = new Map();
+function createReconcileDnrBatch(kind) {
+  const plans = [];
+  let closed = false;
+  let scheduled = false;
+  const update = kind === 'dynamic'
+    ? (change) => chrome.declarativeNetRequest.updateDynamicRules(change)
+    : (change) => chrome.declarativeNetRequest.updateSessionRules(change);
+  const api = {
+    submit(change) {
+      if (closed) return update(change);
+      return new Promise((resolve, reject) => {
+        plans.push({ change, resolve, reject });
+        if (!scheduled) {
+          scheduled = true;
+          setTimeout(() => { api.flush().catch(() => {}); }, 0);
+        }
+      });
+    },
+    async flush() {
+      if (closed) return;
+      closed = true;
+      if (!plans.length) return;
+      const removeRuleIds = plans.flatMap((plan) => plan.change.removeRuleIds || []);
+      const addRules = plans.flatMap((plan) => plan.change.addRules || []);
+      const uniqueRemovals = new Set(removeRuleIds);
+      const uniqueAdds = new Set(addRules.map((rule) => rule.id));
+      if (uniqueRemovals.size !== removeRuleIds.length || uniqueAdds.size !== addRules.length) {
+        const error = new Error('Overlapping DNR rule owners');
+        for (const plan of plans) plan.reject(error);
+        return;
+      }
+      try {
+        await update({ removeRuleIds, addRules });
+        for (const plan of plans) plan.resolve();
+      } catch (_) {
+        // A combined validation error must not prevent an unrelated owner from applying.
+        // Chrome's update is atomic, so falling back to the original per-band writes is safe.
+        for (const plan of plans) {
+          try { await update(plan.change); plan.resolve(); }
+          catch (error) { plan.reject(error); }
+        }
+      }
+    },
+  };
+  return api;
+}
 function refreshExtensionState() {
   if (__privacyEraseInProgress) return;
   try {
@@ -10850,6 +10901,8 @@ function refreshExtensionState() {
       let sessionRulesSnapshot = null;
       const sharedDynamicRules = () => (dynamicRulesSnapshot ||= chrome.declarativeNetRequest.getDynamicRules());
       const sharedSessionRules = () => (sessionRulesSnapshot ||= chrome.declarativeNetRequest.getSessionRules());
+      const dynamicBatch = createReconcileDnrBatch('dynamic');
+      const sessionBatch = createReconcileDnrBatch('session');
       // Each applier is run under a name, and a resolved false counts as a failure: the
       // appliers catch their own Chrome errors, so a rejection was never going to arrive.
       // The applier is handed over as a thunk, so one that throws synchronously fails as THAT
@@ -10883,9 +10936,9 @@ function refreshExtensionState() {
       }), [on && cfg.clientHintProtection !== false, on && cfg.capReferrer === true, on && cfg.trackerCacheProtection === true].join(','));
       run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
       run('trackerCookies', () => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
-      run('allowlist', () => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules), JSON.stringify(on ? activeAllowlist(cfg) : []));
-      run('mediaCompatibility', () => applyMediaCompatibilityRules(on, sharedSessionRules), String(on));
-      run('loginCompatibility', () => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules), String(on && cfg.loginCompatibility !== false));
+      run('allowlist', () => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules, sessionBatch.submit), JSON.stringify(on ? activeAllowlist(cfg) : []));
+      run('mediaCompatibility', () => applyMediaCompatibilityRules(on, sharedSessionRules, sessionBatch.submit), String(on));
+      run('loginCompatibility', () => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules, sessionBatch.submit), String(on && cfg.loginCompatibility !== false));
       run('httpsUpgrade', () => applyHttpsUpgradeRule(on && cfg.forceHttps === true), String(on && cfg.forceHttps === true));
       run('blocklistRulesets', () => refreshBlocklistRuleset(cfg));
       run('eyeShield', () => reconcileEyeShieldInjection(cfg));
@@ -10895,9 +10948,9 @@ function refreshExtensionState() {
       run('minerDetect', () => reconcileMinerDetectInjection(cfg));
       run('searchJunk', () => reconcileSearchJunkInjection(cfg));
       run('googleCleanupCss', () => reconcileGoogleCleanupCssInjection(cfg));
-      run('fingerprintScripts', () => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true, sharedDynamicRules), [on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true].join(','));
-      run('searchSponsoredAllow', () => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg), sharedDynamicRules), String(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
-      run('searchParams', () => applySearchParamRules(Object.assign({}, cfg, { enabled: on }), sharedSessionRules), [on, cfg.safeSearch === true, cfg.googleWebResultsOnly === true].join(','));
+      run('fingerprintScripts', () => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true, sharedDynamicRules, dynamicBatch.submit), [on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true].join(','));
+      run('searchSponsoredAllow', () => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg), sharedDynamicRules, dynamicBatch.submit), String(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
+      run('searchParams', () => applySearchParamRules(Object.assign({}, cfg, { enabled: on }), sharedSessionRules, sessionBatch.submit), [on, cfg.safeSearch === true, cfg.googleWebResultsOnly === true].join(','));
       run('allCookies', () => applyAllCookieBlock(on && cfg.blockAllCookies === true), String(on && cfg.blockAllCookies === true));
       run('geolocation', () => applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)), JSON.stringify([on && cfg.blockGeolocation === true, locationExemptHosts(cfg)]));
       run('locationHeaders', () => applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true), String(on && cfg.blockGeolocation === true));
@@ -13871,7 +13924,7 @@ const FRAUD_VENDOR_URL_FILTERS = [
 const FINGERPRINT_SCRIPT_URL_FILTERS = FINGERPRINT_LIBRARY_URL_FILTERS
   .concat(FRAUD_VENDOR_URL_FILTERS);
 
-async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules) {
+async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules, submitRules) {
   try {
     const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getDynamicRules());
     const oldIds = existing
@@ -13912,7 +13965,8 @@ async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules
         }, compatibilityExclusions),
       });
     });
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+    const change = { removeRuleIds: oldIds, addRules };
+    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateDynamicRules(change));
   } catch (e) {
     console.warn('[WardenOne] fingerprint script rules failed', e);
     return false;
@@ -14050,7 +14104,7 @@ const GOOGLE_SAFE_PRESENT = GOOGLE_SEARCH_MATCH + '.*[?&]safe=active';
 const GOOGLE_UDM_AND_SAFE_PRESENT = GOOGLE_SEARCH_MATCH
   + '(.*[?&]udm=.*[?&]safe=active|.*[?&]safe=active.*[?&]udm=)';
 
-async function applySearchParamRules(cfg, readRules) {
+async function applySearchParamRules(cfg, readRules, submitRules) {
   try {
     const config = cfg || {};
     const on = config.enabled !== false;
@@ -14114,11 +14168,12 @@ async function applySearchParamRules(cfg, readRules) {
         });
       }
     }
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: oldIds, addRules });
+    const change = { removeRuleIds: oldIds, addRules };
+    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
   } catch (e) { console.warn('[WardenOne] search parameter rules failed', e); return false; }
 }
 
-async function applyGoogleSearchSponsoredAllowRules(enabled, readRules) {
+async function applyGoogleSearchSponsoredAllowRules(enabled, readRules, submitRules) {
   try {
     enabled = !!enabled;
     const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getDynamicRules());
@@ -14146,7 +14201,8 @@ async function applyGoogleSearchSponsoredAllowRules(enabled, readRules) {
         });
       });
     }
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+    const change = { removeRuleIds: oldIds, addRules };
+    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateDynamicRules(change));
   } catch (e) {
     console.warn('[WardenOne] Google Search sponsored allow rules failed', e);
     return false;

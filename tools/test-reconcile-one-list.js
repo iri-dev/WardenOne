@@ -116,7 +116,10 @@ function worker({ session, config, fault }) {
   for (const { name, fn } of RUN_CALLS) {
     ctx[fn] = (...args) => {
       calls.push({ name, fn, args });
-      if (fault === 'snapshot' && typeof args[args.length - 1] === 'function') return args[args.length - 1]();
+      if (fault === 'snapshot' && ['allowlist', 'mediaCompatibility', 'loginCompatibility', 'fingerprintScripts', 'searchSponsoredAllow', 'searchParams'].includes(name)) {
+        const readRules = args.find((arg) => typeof arg === 'function');
+        return readRules();
+      }
       if (fault === 'applier-throws:' + name) throw new Error(name + ' threw synchronously');
       if (fault === 'defer:' + name && !releaseDeferred) {
         return new Promise((resolve) => { releaseDeferred = () => resolve(); });
