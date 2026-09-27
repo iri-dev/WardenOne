@@ -18,7 +18,9 @@ const DOWNLOADS = fs.readFileSync(path.join(ROOT, 'background-downloads.js'), 'u
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 
 function grabFn(source, name) {
-  const at = source.indexOf('function ' + name);
+  const marker = 'function ' + name;
+  const found = source.indexOf(marker);
+  const at = source.slice(Math.max(0, found - 6), found) === 'async ' ? found - 6 : found;
   assert(at >= 0, name + ' is missing');
   let depth = 0;
   let opened = false;
@@ -79,6 +81,44 @@ assert.deepStrictEqual(Object.keys(filtered).sort(), [
 assert.deepStrictEqual(payloadApi(false)({ wardenone_history: [1], wardenone_config: { enabled: true } }),
   { wardenone_history: [1], wardenone_config: { enabled: true } });
 
+async function checkPrivateSaveReplies() {
+  let durableWrites = 0;
+  const sandbox = {
+    Promise, Object, Set, String, INCOGNITO_CONTEXT: true,
+    chrome: { runtime: { lastError: null }, storage: { local: { set(_obj, cb) { durableWrites++; cb(); } } } },
+    contentConfigInputKeys: () => [], invalidateContentConfigMemo() {},
+    HIDDEN_STORE_KEY: 'wardenone_hidden_elements', HIDDEN_MAX_PER_HOST: 20, HIDDEN_MAX_HOSTS: 500,
+    normalizeAllowlistHost: (host) => host, isSafeSelector: () => true,
+    readHiddenElements: async () => ({}), refreshHiddenRulesForHost() {},
+    SCRIPT_TRUSTED_KEY: 'wardenone_script_trusted_hosts',
+    normalizeAllowlistHosts: (items) => items, getTrustedScriptHosts: async () => [],
+    applyScriptShieldRules() { throw new Error('unsaved private script trust was applied'); },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(SOURCE.slice(SOURCE.indexOf('const INCOGNITO_EPHEMERAL_LOCAL_KEYS'), SOURCE.indexOf('\nfunction localSet'))
+    + '\n' + grabFn(SOURCE, 'localSet')
+    + '\n' + grabFn(SOURCE, 'addHiddenElement')
+    + '\n' + grabFn(SOURCE, 'setTrustedScriptHosts')
+    + '\n' + grabFn(SOURCE, 'addTrustedScriptHost')
+    + '\nthis.api={localSet,addHiddenElement,addTrustedScriptHost};', sandbox);
+  const rejected = await sandbox.api.localSet({ wardenone_hidden_elements: { 'private.example': ['#secret'] } });
+  assert.strictEqual(rejected.persisted, false);
+  assert.strictEqual(rejected.reason, 'incognito');
+  const hidden = await sandbox.api.addHiddenElement('private.example', '#secret');
+  assert.strictEqual(hidden.ok, true);
+  assert.strictEqual(hidden.persisted, false);
+  const trusted = await sandbox.api.addTrustedScriptHost('private.example');
+  assert.strictEqual(trusted.ok, false);
+  assert.strictEqual(trusted.persisted, false);
+  assert.strictEqual(durableWrites, 0);
+  assert(SOURCE.includes('persisted: write.persisted'), 'JavaScript allowlist does not return the write outcome');
+  const PICKER = fs.readFileSync(path.join(ROOT, 'element-picker.js'), 'utf8');
+  const POPUP = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+  assert(/res\.persisted === false[\s\S]{0,160}only until this page reloads/.test(PICKER));
+  assert(/if \(tab\.incognito\)[\s\S]{0,160}cannot be saved/.test(POPUP));
+  assert(POPUP.includes('Private-window JavaScript change lasts only for this session'));
+}
+
 assert(/function queueHistory\(entry\)\s*\{\s*if \(INCOGNITO_CONTEXT\) return;/.test(SOURCE),
   'private events still enter the history buffer');
 assert(/function flushHistory\(\)\s*\{\s*__histTimer = null;\s*if \(INCOGNITO_CONTEXT\)/.test(SOURCE),
@@ -129,6 +169,7 @@ vm.runInContext(DOWNLOADS.slice(downloadPolicyStart, downloadPolicyEnd)
   + '\nthis.api={downloadStateGet,downloadStateSet};', downloadSandbox);
 
 Promise.all([
+  checkPrivateSaveReplies(),
   downloadSandbox.api.downloadStateGet('wardenone_pending_downloads').then((value) => {
     assert(value.wardenone_pending_downloads[7], 'private pending review was not recovered from session storage');
   }),

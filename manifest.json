@@ -27,19 +27,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "https://api.pwnedpasswords.com/*",
-    "https://haveibeenpwned.com/*",
-    "https://rdap.org/*",
-    "https://safebrowsing.googleapis.com/*",
-    "https://www.virustotal.com/*",
-    "https://checkurl.phishtank.com/*",
-    "https://urlhaus-api.abuse.ch/*",
-    "https://api.abuseipdb.com/*",
-    "https://www.whoisxmlapi.com/*",
-    "https://domain-reputation.whoisxmlapi.com/*",
-    "https://threat-intelligence.whoisxmlapi.com/*",
-    "https://raw.githubusercontent.com/openphish/public_feed/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"

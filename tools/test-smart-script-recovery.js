@@ -173,6 +173,7 @@ function createHarness(options = {}) {
     },
     async localSet(value) {
       if (value.wardenone_script_trusted_hosts) state.trusted = value.wardenone_script_trusted_hosts.slice();
+      return { persisted: true, keys: Object.keys(value) };
     },
   };
   vm.createContext(sandbox);

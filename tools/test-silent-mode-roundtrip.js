@@ -173,6 +173,7 @@ function bridgeHarness(merged) {
     /* The frame-noise verdict (SEC-05) is decided in sendConfig too; its own suite is
        tools/test-fingerprint-realm.js. Silent mode has nothing to do with it. */
     bridgeFrameNoiseAllowed: () => false,
+    mainWorldConfigForHost: (clean) => clean,
     mergeNormalizedHostLists: () => [],
     learnedGrabberDomains: [], supplementalLists: {},
     postToPage: (m) => posted.push(m),

@@ -170,7 +170,7 @@ function loadWholeQuietRule() {
   check('choosing one tells the reader where to undo it',
     /Undo it in WardenOne/.test(row));
   check('it uses the existing background request channel',
-    /__woBackgroundRequest\(\{kind:"mute-toast"/.test(row));
+    /__woBackgroundRequest\(__woSignedRequest\(\{kind:"mute-toast"/.test(row));  /* signed since SEC-14 */
   check('the built engine carries it', CONTENT.indexOf('Hide this:') > 0);
 }());
 
@@ -202,7 +202,7 @@ function loadWholeQuietRule() {
   /* Reported where the decision to show is final. Reporting at render would
      double-count a card the stagger deferred and never drew. */
   check("the engine reports a shown toast once, at the decision point",
-    SOURCE.indexOf('__woBackgroundRequest({kind:"toast-shown"') >= 0);
+    SOURCE.indexOf('__woBackgroundRequest(__woSignedRequest({kind:"toast-shown"') >= 0);  /* signed since SEC-14 */
   const rel = BRIDGE.slice(BRIDGE.indexOf("if (msg.kind === 'toast-shown')"), BRIDGE.indexOf("if (msg.kind === 'mute-toast')"));
   check("the relay accepts only the type for a shown report",
     /return { kind: .toast-shown., type }/.test(rel), rel.slice(0, 160));

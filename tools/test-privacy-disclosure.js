@@ -163,7 +163,7 @@ check('and something is wired to that control', /ss-pwned/.test(popupJs));
    'breach-check' kind was. */
 check('the worker has no password message kind', !bg.includes("kind === 'breach-check'"),
   'a page-reachable channel for hash prefixes is back');
-check('the lookup does not run in the worker', !bg.includes('api.pwnedpasswords.com'),
+check('the lookup does not run in the worker', !bg.includes('https://api.pwnedpasswords.com'),
   'it belongs in the extension page, where no tab can reach it');
 
 // OpenPhish was described as needing a key it has never needed.
@@ -240,7 +240,7 @@ check('a page navigation still drives a reputation lookup on its own',
   /urlReputationLookupUrl\(url, Object\.assign\(\{ context: 'page' \}/.test(BG_REP),
   'if lookups became click-only, this section can be softened -- but only then');
 check('the engine still keeps a whole-address form for its own comparisons',
-  /u\.hash = '';\s*\n\s*return u\.href\.slice\(0, 1500\);/.test(BG_REP),
+  /u\.hash = '';\s*\n\s*return u\.href;/.test(BG_REP),
   'normalizeSafeBrowsingUrl is what the warning pages and cooldown compare against');
 check('but what leaves for a provider has no userinfo, query or fragment',
   /function reputationQueryUrl\(url\) \{[\s\S]*?u\.username = '';\s*\n\s*u\.password = '';\s*\n\s*u\.search = '';\s*\n\s*u\.hash = '';/.test(BG_REP),
@@ -250,8 +250,8 @@ check('the policy says lookups happen as you navigate, not when you ask',
 check('the policy says providers get scheme, host and path, and no longer the whole address',
   /\*\*scheme, host and path\*\*/.test(policy) && !/receive the \*\*full address\*\*/.test(policy));
 check('and admits the path is kept and why', /path is kept on purpose/.test(policy) && /secret carried \*in the path\*/.test(policy));
-check('and states the 1,500-character cut the code actually applies',
-  /1,500 characters/.test(policy));
+check('and states the 1,500-character provider limit without claiming truncation',
+  /longer than 1,500 characters are skipped/.test(policy) && !/cut at 1,500 characters/.test(policy));
 check('the policy separates the providers that are held back on ordinary browsing',
   /held back during ordinary browsing/.test(policy));
 check('the short version does not present reputation lookups as key-gated only',
@@ -367,7 +367,23 @@ check('the affirmation is a section a reviewer can find, not a buried clause',
 check('the affirmation states the no-advertising limb explicitly',
   /never.{0,40}transferred or used for advertising/.test(policy));
 check('the policy date was refreshed alongside the content',
-  /last updated: september 11, 2026/.test(policy));
+  /last updated: september 27, 2026/.test(policy));
+
+/* M52: "the complete list" has to be complete about what the reader adds themselves, too. A
+   subscribed filter list is fetched from a host the reader chose, so it cannot be named -- it has
+   to be described. And the stores the reader authors are data WardenOne keeps. */
+const CUSTOM_LIST_FETCHED = /async function fetchCustomListText\(/.test(BGJS) && /credentials: 'omit'/.test(BGJS);
+check('custom lists are still fetched, so their disclosure still applies', CUSTOM_LIST_FETCHED);
+check('the policy describes fetching a filter list the reader added',
+  /### 9\. filter lists you add yourself/.test(policy) && /never on its own/.test(policy)
+    && /fetching a filter list you added\s*\n?\s*yourself/.test(policy));
+check('the policy lists the notification history it keeps', /notification history behind the notification centre/.test(policy)
+  && /up to 300 notices/.test(policy));
+check('the policy lists the rules and lists the reader makes',
+  ['my rules', 'filter lists\n  you subscribe to', 'per-site firewall', 'element zapper', 'blocked-site list']
+    .every((s) => policy.includes(s)), 'every store a reader authors has to be named');
+check('and the Permissions page lists the same button-pressed fetch',
+  /Filter lists you add/.test(PERMS_HTML));
 
 if (failed) { console.error('\n' + failed + ' disclosure check(s) failed'); process.exit(1); }
 console.log('\nprivacy disclosure contract holds (' + hosts.length + ' runtime endpoints checked)');

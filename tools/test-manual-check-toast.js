@@ -134,7 +134,7 @@ check('each is wired to a handler',
     && /info\.menuItemId === WO_MENU_MEDIA/.test(BG)
     && /info\.menuItemId === WO_MENU_FRAME/.test(BG));
 check('they all report through wardenManualNotice',
-  /async function wardenManualNotice\(title, message, tab, id\)/.test(BG));
+  /async function wardenManualNotice\(title, message, tab, id, documentId\)/.test(BG));
 check('which raises exactly the type showToast now lets through',
   /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(BG)
     && /!\/\^detected_manual_check\$\/\.test\(String\(type \|\| ''\)\)\) return false;/.test(BRIDGE));

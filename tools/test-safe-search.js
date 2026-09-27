@@ -184,13 +184,14 @@ check('non-search Google pages are untouched by the web-only rule',
 
 /* Wiring. */
 check('rules are re-applied when either toggle changes',
-  /o\.safeSearch\s*!==\s*n\.safeSearch/.test(BG)
-    && /o\.googleWebResultsOnly\s*!==\s*n\.googleWebResultsOnly/.test(BG));
+  /cfg\.safeSearch === true \? 1 : 0/.test(BG)
+    && /cfg\.googleWebResultsOnly === true \? 1 : 0/.test(BG)
+    && /run\('searchParams', \(\) => applySearchParamRules/.test(BG));
 /* The master switch folds into `enabled` on the one reconcile list; the applier clears its rules
    for enabled:false. (This used to match a hard-off call in a fallback list that switched
    protections off on an unreadable config -- the defect BUG-08 removed.) */
 check('rules are cleared when the extension is switched off, through the reconcile list',
-  /applySearchParamRules\(Object\.assign\(\{\}, cfg, \{ enabled: on \}\)\)/.test(BG));
+  /applySearchParamRules\(Object\.assign\(\{\}, cfg, \{ enabled: on \}\), sharedSessionRules\)/.test(BG));
 check('rules use session storage, not dynamic',
   /getSessionRules\(\)/.test(applyBody) && /updateSessionRules/.test(applyBody));
 

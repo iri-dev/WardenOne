@@ -224,6 +224,13 @@ new Promise((resolve) => {
   check('success is decided by the bridge\'s signed challenge, not a MAIN-world marker',
     /\{ kind: 'wo-engine-status' \}/.test(bg) && !/engineVersionInTab/.test(bg) && !/markWardenOneCopiesStale/.test(bg));
   check('the worker never executes a MAIN-world file into a live tab', !/executeScript\(\{ target, world: 'MAIN', files/.test(bg));
+  /* FEAT-06: the success line claimed "every component" while page-start helpers (mail, sign-in,
+     search, Twitch) are not looked at. It has to name what was checked, and say what was not. */
+  const popupJs = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+  check('the all-healthy line says what was checked and what was not',
+    !/Every component checked out/.test(popupJs) && /page engine answered in every open tab it runs on/.test(popupJs)
+      && /are not checked here/.test(popupJs));
+  check('no report line claims full protection', !/full protection/i.test(bg.slice(bg.indexOf("report.repaired.push(live"), bg.indexOf("report.repaired.push(live") + 800)));
 
   if (failures) {
     console.error('[fail] repair honesty tests: ' + failures + ' failure(s)');

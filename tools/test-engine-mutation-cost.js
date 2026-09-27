@@ -231,7 +231,7 @@ check('sweepSocialWidgets checks its flag before it walks anything',
 /* The pattern this follows -- already correct, and the reason the other two
    looked wrong next to it. */
 check('sweepDomLinks still gates before walking, as it always did',
-  /if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\)return;/.test(sweepBody('sweepDomLinks')));
+  /if\(!WO\.unshimLinks\)return;/.test(sweepBody('sweepDomLinks')));
 
 /* Guard the guards: a hoist is only valid while the per-element function really
    does bail on that condition first. If those change, the hoist is a behaviour
@@ -257,13 +257,13 @@ check('the social consumer gates before walking added nodes',
   /if\(!WO\.socialWidgetGuard\)return;\s*for\(let i=0;\s*i<added\.length;\s*i\+\+\)guardSocialNode\(added\[i\]\)/.test(SRC),
   'guardSocialNode and sweepSocialWidgets both test it first');
 check('the dom-link consumer gates before walking added nodes',
-  /if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\)return;\s*for\(let i=0;\s*i<added\.length;\s*i\+\+\)scrubDomLink\(added\[i\]\)/.test(SRC),
+  /if\(!WO\.unshimLinks\)return;\s*for\(let i=0;\s*i<added\.length;\s*i\+\+\)scrubDomLink\(added\[i\]\)/.test(SRC),
   'scrubDomLink and sweepDomLinks both test it first');
 /* Not anchored on `const`: scrubDomLink shares its declaration with the ping-attribute
    scrubber that now sits above it, so the keyword is on that one. The bail condition is
    what this check is about, and it is unchanged. */
 check('scrubDomLink really does bail on the same condition',
-  /\bscrubDomLink=el=>\{\s*try\{\s*if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\|\|/.test(SRC),
+  /\bscrubDomLink=el=>\{\s*try\{\s*if\(!WO\.unshimLinks\|\|/.test(SRC),
   'the consumer gate is only behaviour-preserving while this holds');
 
 /* Range controls can only carry a bounded numeric UI value. Running password,

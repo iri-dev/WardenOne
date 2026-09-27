@@ -176,6 +176,37 @@ function verdictOf(rows, name) {
   check('the same reading with the guard off is a choice, not a failure',
     verdictOf(rows, 'Local network addresses (WebRTC)') === 'design');
 }
+{
+  const rows = report({}, {}, {});
+  check('missing WebRTC and font probes are untested',
+    verdictOf(rows, 'Local network addresses (WebRTC)') === 'untested'
+      && verdictOf(rows, 'Installed fonts') === 'untested');
+  check('missing probes cannot fabricate a 100% headline', scoreOf(rows) === null);
+}
+{
+  const absent = { webrtcLocalIps: { available: false, ips: [] }, fonts: { available: false } };
+  const rows = report(absent, absent, {});
+  check('browser-absent WebRTC and font APIs are allowed by design',
+    verdictOf(rows, 'Local network addresses (WebRTC)') === 'design'
+      && verdictOf(rows, 'Installed fonts') === 'design');
+}
+{
+  const bare = { webrtcLocalIps: { available: true, ips: ['192.168.1.5'] }, fonts: { available: true } };
+  const shielded = { webrtcLocalIps: { available: false, ips: [] }, fonts: { available: false } };
+  const rows = report(shielded, bare, {});
+  check('only a shielded absence against a bare capability is protected',
+    verdictOf(rows, 'Local network addresses (WebRTC)') === 'protected'
+      && verdictOf(rows, 'Installed fonts') === 'protected');
+}
+{
+  const rows = report({ errors: { webrtcLocalIps: 'offer failed', fonts: 'permission check failed' } },
+    { webrtcLocalIps: { available: true, ips: [] }, fonts: { available: true } }, {});
+  check('probe errors stay visible and untested',
+    verdictOf(rows, 'Local network addresses (WebRTC)') === 'untested'
+      && verdictOf(rows, 'Installed fonts') === 'untested'
+      && rows.some((r) => /offer failed/.test(r.why))
+      && rows.some((r) => /permission check failed/.test(r.why)));
+}
 
 /* ---- what must stay untestable ---------------------------------------------- */
 {

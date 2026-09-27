@@ -13,7 +13,7 @@ network beneath them.**
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
 [![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip)
-![Protections](https://img.shields.io/badge/protections-107-8e44ad.svg)
+![Protections](https://img.shields.io/badge/protections-108-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Open source](https://img.shields.io/badge/source-open-2ea44f.svg)](LICENSE)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
@@ -31,9 +31,9 @@ network beneath them.**
 > [!WARNING]
 > **Official builds only.** WardenOne is a browser extension, never an `.exe`, installer or setup program. Download it only from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne). If you received another copy, read the [impersonation incident notice](https://iri-dev.github.io/WardenOne/stolen).
 
-> ## One master switch. 107 protections.
+> ## One master switch. 108 protections.
 >
-> **104 individually controllable · 3 watch-only**
+> **105 individually controllable · 3 watch-only**
 >
 > **Background Reports**, **Hardware & File Access** and **Browser Capabilities** are watch-only:
 > they record important activity without blocking or changing the page, so deliberately have no
@@ -798,6 +798,8 @@ Copied links lose recognised tracking parameters and known redirect wrappers; hy
 `ping` attributes are removed before they can report a click. WardenOne also intercepts tracking
 parameters added directly to the address bar by `history.pushState` or `replaceState`, where no
 link click and no navigation exists for an ordinary cleaner to catch.
+The popup has separate switches for link-click pings and the address/parameter cleaner. Neither
+rewrites the destination of an ordinary link or form.
 
 **Before**
 
@@ -1046,10 +1048,10 @@ replaces the reassuring state instead of being hidden beneath it.
 
 <p align="center">
   <a href="docs/screenshots/02-protection-health.webp">
-    <img src="docs/screenshots/02-protection-health.webp" alt="Protection Health expanded in the popup, showing 73 of 103 controllable shields active, recent blocks and list freshness" width="520">
+    <img src="docs/screenshots/02-protection-health.webp" alt="Protection Health expanded in the popup, showing switched-on shields, recent blocks and list freshness" width="520">
   </a>
 </p>
-<p align="center"><em>The popup reports controllable shields, recent blocks and list freshness without confusing 104 controls with 107 total protections.</em></p>
+<p align="center"><em>The popup reports controllable shields, recent blocks and list freshness without confusing 105 controls with 108 total protections.</em></p>
 
 ## Privacy Self-Test
 
@@ -1120,7 +1122,7 @@ Test again
 
 ## Per-site control
 
-**104 of the 107 protections have their own toggle**. The other three are watch-only systems: they
+**105 of the 108 protections have their own toggle**. The other three are watch-only systems: they
 record an event but never block or alter a page, so there is no individual blocking decision to
 switch.
 

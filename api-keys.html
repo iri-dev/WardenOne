@@ -1098,7 +1098,7 @@
             <div class="section-kicker">Sign-up</div>
             <h2>How to get each key.</h2>
           </div>
-          <p>Every one of these is a free account on the provider's own site. WardenOne cannot issue keys and never sees your account &mdash; you register, copy the key, and bring it back to the popup.</p>
+          <p>Every one of these is a free account on the provider's own site. WardenOne cannot issue keys and never sees your account &mdash; you register, copy the key, and bring it back to the popup. A provider can use that key to link any address checked to your account. Pasting or testing it saves it for checks you start; automatic checks require a separate switch in the popup.</p>
         </div>
         <div class="external-ledger">
           <div class="ledger-banner">
@@ -1150,9 +1150,9 @@
               </div>
             </div>
             <div class="control-list">
-              <div class="control-item"><h4>Keys stay on this device</h4><p>Provider keys are saved in Chrome's extension storage on your machine, alongside your other WardenOne settings. They are sent only to the provider they belong to, as part of a check you enabled.</p></div>
+              <div class="control-item"><h4>Keys are stored locally</h4><p>Provider keys are saved in Chrome's extension storage on your machine, alongside your other WardenOne settings. They are sent only to the provider they belong to, as part of a check you enabled. Google Safe Browsing, WhoisXML Domain Reputation and WhoisXML Threat Intelligence require the key in the HTTPS request URL, which provider or proxy logs may retain. Restrict a Google key to the Safe Browsing API and rotate any key exposed in a log.</p></div>
               <div class="control-item"><h4>The two WhoisXML add-ons need their own Test</h4><p>Domain Reputation and Threat Intelligence reuse the WhoisXML key, but they do not switch themselves on when the key changes. Press their own Test buttons to enable them.</p></div>
-              <div class="control-item"><h4>Turning one off</h4><p>Flip the provider's switch off and its lookups stop immediately. Clearing the field removes the key. Everything WardenOne does without providers keeps running either way.</p></div>
+              <div class="control-item"><h4>Turning one off</h4><p>Flip the provider's switch off and its automatic lookups stop immediately. A right-click check you start can still use its saved key. Clearing the field removes the key. Everything WardenOne does without providers keeps running either way.</p></div>
               <div class="control-item"><h4>Checking a link by hand</h4><p>With a VirusTotal key saved, the popup's URL scanner takes any pasted link and checks it before you visit &mdash; useful for a link someone sent you.</p></div>
             </div>
           </div>

@@ -112,7 +112,9 @@ const BRIDGE_REPLAY = between(BRIDGE, '  const bridgeReplay = () => {', '\n  // 
 const BRIDGE_WATCHDOG = between(BRIDGE, '  /* The engine has to PROVE it is there.', '\n  // Navigation attribution signals.', 'the watchdog and the wo-event listener');
 const BRIDGE_REPUTATION = between(BRIDGE, '  // A verdict is signed over its request id and its body', '\n  // Narrow MAIN-world -> background relay.', 'the reputation relay');
 const BRIDGE_RELAY = between(BRIDGE, '  // Narrow MAIN-world -> background relay.', '\n  // Cookie reload-loop escape.', 'the background relay');
-const SEND_TAIL = between(BRIDGE, "    postToPage(signed('config', JSON.stringify(clean)", ';\n', 'the config send') + ';';
+const SEND_TAIL = between(BRIDGE,
+  '    const pageConfig = mainWorldConfigForHost(clean, location.hostname);',
+  '\n  };', 'the config send');
 
 function loadBridge(worlds, options) {
   const o = options || {};
@@ -137,6 +139,7 @@ function loadBridge(worlds, options) {
     boundedBridgeDetail: (d) => d,
     bridgeConfigReady: true,
     bridgeConfig: o.config || { enabled: true },
+    mainWorldConfigForHost: (clean) => clean,
     chrome: {
       runtime: {
         lastError: null,
@@ -496,8 +499,9 @@ function holdsKey(pads, hex) {
     /if\(!__woVerify\("safe-browsing",id\+"\\n"\+JSON\.stringify\(m\.result\),m\)\)return;\s*const pending=safeBrowsingPending\.get\(id\)/.test(MIN));
   const minimised = [...MIN.matchAll(/__woAuth\.hmac\(/g)].length;
   /* verify, installed, pong -- and since every security event and report is signed (bridge.js
-     eventSigned): signing an event, signing a report, and checking an event before believing it. */
-  check('the shipped engine uses the HMAC exactly six times: verify, installed, pong, sign event, sign report, check event', minimised === 6, String(minimised));
+     eventSigned): signing an event, signing a report, and checking an event before believing it --
+     and signing the notice mute and shown requests the bridge relays (SEC-14). */
+  check('the shipped engine uses the HMAC exactly seven times: verify, installed, pong, sign event, sign report, check event, sign request', minimised === 7, String(minimised));
   check('the other MAIN security consumers take their key from wo-key too',
     ['anti-redirect.js', 'permission-chain.js', 'cryptominer-detect.js'].every((f) => {
       const src = fs.readFileSync(path.join(ROOT, f), 'utf8');

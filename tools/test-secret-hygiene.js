@@ -72,13 +72,14 @@ for (const key of keys) {
   check(key + ' input is masked', /type="password"/i.test(match[0]), match[0].slice(0, 80));
 }
 
-/* 4. Dropped when the provider is switched off. */
-check('popup clears keys for disabled providers on save',
-  /dropKeysForDisabledProviders\(config\);/.test(popupJs)
-    && /function dropKeysForDisabledProviders/.test(popupJs));
-const map = popupJs.slice(popupJs.indexOf('const PROVIDER_KEY_FIELDS'), popupJs.indexOf('function dropKeysForDisabledProviders'));
+/* 4. Keys remain available for explicit manual checks when automatic lookups are off. */
+check('popup normalizes saved provider keys without clearing disabled ones',
+  /normalizeStoredProviderKeys\(config\);/.test(popupJs)
+    && /function normalizeStoredProviderKeys/.test(popupJs)
+    && !/dropKeysForDisabledProviders/.test(popupJs));
+const map = popupJs.slice(popupJs.indexOf('const PROVIDER_KEY_FIELDS'), popupJs.indexOf('function normalizeStoredProviderKeys'));
 for (const key of keys) {
-  check('clear-on-disable covers ' + key, map.includes(key), 'missing from PROVIDER_KEY_FIELDS');
+  check('manual-check key inventory covers ' + key, map.includes(key), 'missing from PROVIDER_KEY_FIELDS');
 }
 
 /* 5. The settings export must not carry them.

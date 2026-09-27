@@ -66,8 +66,13 @@ function backWorld(options) {
   const history = {
     pushState(state, title, url) {
       pushed.push(url);
-      if (url) href = String(url);
+      if (url) href = new URL(String(url), href).href;
       return 'native-push';
+    },
+    replaceState(state, title, url) {
+      pushed.push(url);
+      if (url) href = new URL(String(url), href).href;
+      return 'native-replace';
     },
     /* The guard wraps these two as well, so the harness has to offer them to wrap. Both
        record rather than act: what matters is whether the call reached the real one. */
@@ -97,6 +102,7 @@ function backWorld(options) {
     moved,
     back() { if (listeners.popstate) listeners.popstate(); },
     push(url) { return sandbox.history.pushState(null, '', url); },
+    replace(url) { return sandbox.history.replaceState(null, '', url); },
     /* Any ordinary interaction vouches for the pushes that follow it. The guard listens for
        several; one stands in for all of them here. */
     gesture() { if (listeners.pointerdown) listeners.pointerdown(); },
@@ -133,15 +139,35 @@ function backWorld(options) {
   /* Flooding. The page stacks entries while you read, so that Back has to be pressed once
      for each of them before it can leave. Nothing asked for any of them. */
   const w = backWorld();
-  for (let i = 0; i < 20; i++) { w.advance(50); w.push('/step-' + i); }
-  check('a flood of entries nobody asked for is cut off', w.pushed.length === 6, w.pushed.length);
+  for (let i = 0; i < 20; i++) { w.advance(50); w.push('/same'); }
+  check('a repeated-address flood nobody asked for is cut off', w.pushed.length === 6, w.pushed.length);
   check('and it is reported as a back trap',
     w.logs.length === 1 && w.logs[0].type === 'warned_back_trap', w.logs);
   const flood = w.logs[0] && w.logs[0].detail;
   check('the notice says what this one actually did',
-    !!flood && /without you doing anything/i.test(flood.why), flood && flood.why);
+    !!flood && /recycling the same addresses/i.test(flood.why), flood && flood.why);
   check('and that Back is usable again',
     !!flood && /Back needs one press/i.test(flood.outcome), flood && flood.outcome);
+}
+
+{
+  const w = backWorld();
+  for (let i = 0; i < 10; i++) { w.advance(50); w.push('/spa/step-' + i); }
+  check('ten distinct startup routes all reach native history', w.pushed.length === 10, w.pushed);
+  check('distinct startup routes do not raise a trap warning', w.logs.length === 0, w.logs);
+}
+
+{
+  const w = backWorld();
+  for (let i = 0; i < 20; i++) { w.advance(50); w.push(i % 2 ? '/a' : '/b'); }
+  check('rapid alternating-address flood is cut off', w.pushed.length === 6, w.pushed.length);
+}
+
+{
+  const w = backWorld();
+  for (let i = 0; i < 20; i++) { w.advance(50); w.replace('/state-' + i); }
+  check('replaceState does not consume history flood budget', w.pushed.length === 20, w.pushed.length);
+  check('replaceState does not warn about history burial', w.logs.length === 0, w.logs);
 }
 
 {

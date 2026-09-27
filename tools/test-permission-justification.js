@@ -119,6 +119,9 @@ check('the page counts as many browser permissions as the manifest declares',
 check('and as many host scopes',
   stat('host scopes') === (MANIFEST.host_permissions || []).length,
   'page says ' + stat('host scopes') + ', manifest declares ' + (MANIFEST.host_permissions || []).length);
+check('the manifest does not imply a partial outbound host inventory',
+  JSON.stringify(MANIFEST.host_permissions) === JSON.stringify(['<all_urls>'])
+  && PERMS_HTML.includes('the manifest does not present a partial list of those hosts'));
 
 /* ---- host permissions are not quietly widened ------------------------------------ */
 

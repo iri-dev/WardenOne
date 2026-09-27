@@ -69,7 +69,7 @@ vm.createContext(box);
 vm.runInContext(
   logic + '\n;globalThis.api = { detectFormat, readZip, readLnk, verdictFor, extensionOf, humanSize,'
   + ' DANGEROUS_EXT, DOUBLE_EXT, HIDDEN_CHARS, EXT_EXPECTS, SIGNATURES, BOMB_RATIO,'
-  + ' normalizeApi, PE_CAPABILITY_INDEX, certNames };',
+  + ' normalizeApi, PE_CAPABILITY_INDEX, certNames, hashFile, HASH_MAX_BYTES, ZIP_READ_CHUNK };',
   box,
   { filename: 'file-shield.js' },
 );
@@ -180,6 +180,61 @@ async function readArchive(entries) {
     plain.zip ? 'files=' + plain.zip.files : 'no zip parsed');
   check('an ordinary archive raises nothing', plain.findings.length === 0,
     plain.titles.join('; '));
+
+  const boundaryName = 'x'.repeat(65500) + '.txt';
+  const acrossBoundary = await readArchive([{ name: boundaryName }, { name: 'after-boundary.exe' }]);
+  check('ZIP entry headers split across read chunks still parse',
+    acrossBoundary.zip.entries.length === 2 && acrossBoundary.zip.entries[1].name === 'after-boundary.exe');
+  check('the split archive still reports the executable',
+    acrossBoundary.findings.some((f) => /Windows will run/.test(f.title)));
+
+  const hugeDirectory = buildZip([{ name: 'first.txt' }]);
+  new DataView(hugeDirectory.buffer).setUint32(hugeDirectory.length - 22 + 12, 32 * 1024 * 1024, true);
+  const slices = [];
+  const sparse = {
+    size: 33 * 1024 * 1024,
+    slice(a, b) {
+      slices.push(b - a);
+      return { arrayBuffer: async () => {
+        const out = new Uint8Array(b - a);
+        out.set(hugeDirectory.subarray(a, Math.min(b, hugeDirectory.length)));
+        return out.buffer;
+      } };
+    },
+  };
+  const partial = await api.readZip(sparse, { start: sparse.size - hugeDirectory.length, bytes: hugeDirectory }, []);
+  check('a huge declared ZIP index is partial instead of fully allocated', partial.truncated);
+  check('every ZIP index read stays within the chunk limit',
+    slices.length > 0 && slices.every((n) => n <= api.ZIP_READ_CHUNK), JSON.stringify(slices));
+
+  const many = buildZip(Array.from({ length: 2000 }, (_, i) => ({ name: 'item-' + i + '.txt' })));
+  let reads = 0;
+  let cancelled = false;
+  try {
+    await api.readZip({ size: many.length, slice(a, b) {
+      reads++;
+      return { arrayBuffer: async () => many.slice(a, b).buffer };
+    } }, { start: 0, bytes: many }, [], () => reads < 1);
+  } catch (e) { cancelled = /cancelled/.test(String(e)); }
+  check('superseded archive scans stop before another chunk read', cancelled && reads === 1);
+
+  const z64Tail = new Uint8Array(42);
+  const z64v = new DataView(z64Tail.buffer);
+  z64v.setUint32(0, 0x07064b50, true);
+  z64v.setBigUint64(8, BigInt(Number.MAX_SAFE_INTEGER) + 1n, true);
+  z64v.setUint32(20, 0x06054b50, true);
+  z64v.setUint16(30, 0xFFFF, true);
+  z64v.setUint32(32, 0xFFFFFFFF, true);
+  z64v.setUint32(36, 0xFFFFFFFF, true);
+  let invalidRead = false;
+  const badZ64 = await api.readZip({ size: 1024, slice() { invalidRead = true; throw Error('unsafe read'); } },
+    { start: 982, bytes: z64Tail }, []);
+  check('unsafe ZIP64 offsets are refused before slicing', badZ64.truncated && !invalidRead);
+
+  let wholeRead = false;
+  const skipped = await api.hashFile({ size: api.HASH_MAX_BYTES + 1,
+    arrayBuffer: async () => { wholeRead = true; throw Error('must not read'); } });
+  check('large-file hashing skips before reading bytes', skipped.skipped && !wholeRead);
 
   const withExe = await readArchive([{ name: 'readme.txt' }, { name: 'setup.exe' }]);
   check('an executable inside an archive is reported',

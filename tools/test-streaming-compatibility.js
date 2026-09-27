@@ -71,9 +71,9 @@ function loadHiddenMediaBlockReason() {
     '!1!==WO.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement',
     'if(!0===WO.blockSuspiciousWebRTC',
   );
-  const declarations = sourceBetween(media, 'isMediaElement=el=>', 'mediaDetail=')
+  const declarations = sourceBetween(media, 'isMediaElement=el=>', ';\n        try{')
     .trim()
-    .replace(/,\s*$/, '');
+    .replace(/;\s*$/, '');
   const player = loadPlayerCompatibility('/', '');
   const sandbox = {
     document: { readyState: 'complete' },
@@ -746,8 +746,8 @@ test('hidden-autoplay protection leaves recognized player media alone', () => {
   assert(/mediaInsidePlayerShell=el=>/.test(media)
     && /return!!playerShellFor\(el\)/.test(media),
   'hidden-media protection has no player-shell compatibility boundary');
-  assert(/playBlockReason=el=>isMediaElement\(el\)&&!mediaInsidePlayerShell\(el\)&&hiddenMedia\(el\)/.test(media),
-    'hidden-media protection can still pause an initializing player video');
+  assert(/playBlockReason=el=>isMediaElement\(el\)&&"VIDEO"===el\.tagName&&!mediaInsidePlayerShell\(el\)&&hiddenMedia\(el\)/.test(media),
+    'hidden-media protection can still reject an initializing player video');
 
   const playBlockReason = loadHiddenMediaBlockReason();
   for (const framework of [

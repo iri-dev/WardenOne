@@ -30,6 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { webcrypto } = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -86,8 +87,10 @@ function leaks(text) {
 const PROVIDERS = between(BG, 'const REPUTATION_MAX_BYTES = ', '\nfunction safeBrowsingThreatLabel', 'the provider clients');
 const DIGEST = grabFn(BG, 'function urlDigest53(text) {');
 const WHOIS_ERR = grabFn(BG, 'function firstString() {') + grabFn(BG, 'function whoisXmlErrorText(data) {');
+const WHOIS_DOMAIN = grabFn(BG, 'async function fetchWhoisXmlDomain(domain, apiKey) {');
 const WHOIS_CONSTS = between(BG, 'const WHOISXML_TIMEOUT_MS = ', '\nfunction registrableDomainBg', 'the WhoisXML constants');
 const MANUAL = grabFn(BG, 'async function wardenHostFindings(host, url, cfg) {');
+const REPUTATION_CONFIG = grabFn(BG, 'async function urlReputationConfig(manual) {');
 
 function providerSandbox() {
   const store = {};
@@ -102,9 +105,12 @@ function providerSandbox() {
   const ctx = {
     console: { warn() {}, log() {} },
     URL, URLSearchParams, Date, Math, Object, Array, String, Number, Boolean, JSON, Promise, RegExp, Set, Map,
-    Error, setTimeout, clearTimeout, AbortController, TextEncoder, btoa, encodeURIComponent, decodeURIComponent,
+    Error, setTimeout, clearTimeout, AbortController, TextEncoder, crypto: webcrypto, btoa, encodeURIComponent, decodeURIComponent,
     parseInt, parseFloat, isFinite, isNaN, Symbol,
     WO_CLIENT_VERSION: '1.0.1',
+    WHOISXML_ENDPOINT: 'https://www.whoisxmlapi.com/whoisserver/WhoisService',
+    WHOISXML_REPUTATION_ENDPOINT: 'https://domain-reputation.whoisxmlapi.com/api/v2',
+    WHOISXML_THREAT_ENDPOINT: 'https://threat-intelligence.whoisxmlapi.com/api/v1',
     DEFAULT_CONFIG: { enabled: true },
     chrome: { storage: { session: { get: async () => ({}), set: async () => {} } } },
     localGet: async (key) => {
@@ -116,7 +122,10 @@ function providerSandbox() {
     readResponseTextWithByteLimit: (res) => res.text(),
     utf8ByteLength: (t) => Buffer.byteLength(String(t || ''), 'utf8'),
     registrableDomainBg: (h) => String(h || '').split('.').slice(-2).join('.'),
+    normalizeIpLiteral: () => '',
+    parseWhoisXmlResponse: () => ({ ok: true }),
     lookupDomainAge: async () => null,
+    whoisXmlDomainAgeLookupUrl: async () => null,
     fetch: async (url, options) => {
       requests.push({ url: String(url), body: String((options && options.body) || ''), headers: (options && options.headers) || {} });
       const host = new URL(String(url)).hostname;
@@ -127,13 +136,14 @@ function providerSandbox() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  vm.runInContext([DIGEST, WHOIS_CONSTS, WHOIS_ERR, PROVIDERS, MANUAL,
+  vm.runInContext([DIGEST, WHOIS_CONSTS, WHOIS_ERR, PROVIDERS, WHOIS_DOMAIN, REPUTATION_CONFIG, MANUAL,
     'globalThis.api = { urlReputationLookupUrl, normalizeSafeBrowsingUrl, reputationQueryUrl, reputationCacheKey,'
     + ' isReputationCacheKey, safeBrowsingLookupUrl, phishTankLookupUrl, urlHausLookupUrl, whoisXmlThreatIntelLookupUrl,'
-    + ' checkSafeBrowsingUrl, fetchPhishTankUrl, fetchUrlHausUrl, loadUrlHausCache, loadSafeBrowsingCache,'
+    + ' checkSafeBrowsingUrl, fetchPhishTankUrl, fetchUrlHausUrl, fetchWhoisXmlDomain, fetchWhoisXmlThreatIntel,'
+    + ' whoisXmlErrorText, loadUrlHausCache, loadSafeBrowsingCache,'
     + ' shouldUsePhishTankForContext, wardenHostFindings, urlDigest53 };',
   ].join('\n'), ctx);
-  return { api: ctx.api, store, writes, requests, replies };
+  return { api: ctx.api, ctx, store, writes, requests, replies };
 }
 
 function fullState(overrides) {
@@ -183,9 +193,21 @@ function askedAbout(req) {
     check('a private host is refused', api.reputationQueryUrl('http://192.168.1.1/admin?pw=x') === '' && api.reputationQueryUrl('http://localhost/x') === '');
     check('the form is idempotent', api.reputationQueryUrl(SENT) === SENT);
     const long = 'https://a.acme.net/' + 'p/'.repeat(2000);
-    check('cut at 1,500 characters', api.reputationQueryUrl(long).length === 1500);
-    check('the cache key is a 53-bit digest, not the address',
-      api.isReputationCacheKey(api.reputationCacheKey(SENT)) && api.reputationCacheKey(SENT) !== SENT && api.reputationCacheKey(SENT) === api.urlDigest53(SENT));
+    check('overlong provider paths are refused rather than truncated', api.reputationQueryUrl(long) === '');
+    const digest = await api.reputationCacheKey(SENT);
+    check('the cache key is a SHA-256 digest, not the address',
+      api.isReputationCacheKey(digest) && digest !== SENT && digest.length === 64);
+    const prefix = 'https://a.acme.net/' + 'p'.repeat(1480);
+    check('two paths sharing a long prefix never collide as accepted provider inputs',
+      api.reputationQueryUrl(prefix + 'one') === '' && api.reputationQueryUrl(prefix + 'two') === '');
+    check('the engine keeps each complete canonical address distinct',
+      api.normalizeSafeBrowsingUrl(prefix + 'one') !== api.normalizeSafeBrowsingUrl(prefix + 'two'));
+    const nearLimit = 'https://a.acme.net/' + 'p'.repeat(1470);
+    const one = api.reputationQueryUrl(nearLimit + 'one');
+    const two = api.reputationQueryUrl(nearLimit + 'two');
+    check('near-limit canonical paths remain distinct', !!one && !!two && one !== two);
+    check('near-limit canonical paths have distinct digest keys',
+      await api.reputationCacheKey(one) !== await api.reputationCacheKey(two));
     check('an address-shaped key is not a cache key', !api.isReputationCacheKey(SENT) && !api.isReputationCacheKey('login.example.test'));
   }
 
@@ -239,6 +261,28 @@ function askedAbout(req) {
       asked.map((a) => a.asked).join(' | '));
   }
 
+  {
+    const { api, requests } = providerSandbox();
+    await api.fetchWhoisXmlDomain('example.com', 'whois-secret');
+    const request = requests[0];
+    check('WhoisXML WHOIS uses its supported authorization header instead of a query key',
+      !!request && !request.url.includes('whois-secret')
+      && request.headers.Authorization === 'Bearer whois-secret');
+    const error = api.whoisXmlErrorText({ error: 'key=whois-secret in provider log' });
+    check('provider-supplied error text cannot echo a key into a receipt',
+      error && !error.includes('whois-secret'));
+  }
+  {
+    const { api, ctx } = providerSandbox();
+    ctx.fetch = async (url) => { throw Error('Request failed: ' + url); };
+    const google = await api.checkSafeBrowsingUrl(TARGET, 'google-secret');
+    const threat = await api.fetchWhoisXmlThreatIntel(TARGET, 'whois-secret');
+    const domain = await api.fetchWhoisXmlDomain('example.com', 'whois-secret');
+    check('thrown provider URLs cannot put Google or WhoisXML keys into result errors',
+      [google, threat, domain].every((r) => r && r.ok === false
+        && !/google-secret|whois-secret/.test(r.error || '')));
+  }
+
   /* ---- 4. the gate still reads the query on the device, then does not send it ------- */
   console.log('4. the held-back providers');
   {
@@ -282,7 +326,7 @@ function askedAbout(req) {
   {
     const { api, store, writes } = providerSandbox();
     const future = Date.now() + 60 * 60 * 1000;
-    const digest = api.reputationCacheKey('https://kept.example/p');
+    const digest = await api.reputationCacheKey('https://kept.example/p');
     store.wardenone_urlhaus_cache = {
       ['https://old.example/dl?token=' + SECRETS.session]: { checkedAt: 1, expiresAt: future, result: { ok: true, hit: false } },
       'https://old.example/plain': { checkedAt: 1, expiresAt: future, result: { ok: true, hit: false } },

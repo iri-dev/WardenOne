@@ -71,6 +71,7 @@ function loadBadge(options) {
   const written = [];
   const session = Object.assign({}, opts.session || {});
   const reads = [];
+  const sets = [];
   const sandbox = {
     Number, Object, String, Math, JSON, console,
     // Held rather than run: the 3s belt-and-braces finish must not pre-empt the
@@ -87,7 +88,7 @@ function loadBadge(options) {
         session: {
           // Deferred, like the real async call, so operations land in the gap.
           get: (key, cb) => { reads.push(() => cb({ [key]: session[key] })); },
-          set: (items, cb) => { Object.assign(session, items); if (cb) cb(); },
+          set: (items, cb) => { sets.push(JSON.stringify(items)); Object.assign(session, items); if (cb) cb(); },
         },
       },
       tabs: {
@@ -111,7 +112,29 @@ function loadBadge(options) {
     settle: () => { const q = reads.splice(0); q.forEach((f) => f()); },
     count: (tabId) => vm.runInContext('counts[' + tabId + ']', sandbox),
     ready: () => vm.runInContext('badgeCountsReady', sandbox),
+    sets,
+    /* Run the held timers, as the event loop would once the burst is over. */
+    flushTimers: () => { const q = sandbox.__timers.splice(0); q.forEach((f) => { try { f(); } catch (_) {} }); },
   };
+}
+
+{
+  /* PERF-08: a burst of blocks is one storage write, not one per block, and an unchanged
+     snapshot is not written again. */
+  const b = loadBadge({ openTabs: [7, 8] });
+  b.begin();
+  b.settle();
+  b.flushTimers();
+  const before = b.sets.length;
+  for (let i = 0; i < 60; i++) b.bump(i % 2 ? 7 : 8);
+  check('a burst of blocks writes nothing until the burst is over', b.sets.length === before, (b.sets.length - before) + ' writes during the burst');
+  b.flushTimers();
+  check('and then exactly one write carries the whole burst', b.sets.length === before + 1
+    && /"7":30/.test(b.sets[b.sets.length - 1]) && /"8":30/.test(b.sets[b.sets.length - 1]), b.sets.slice(before).join(' | '));
+  vm.runInContext('persistBadgeCounts()', b.sandbox);
+  b.flushTimers();
+  check('an unchanged snapshot is not written again', b.sets.length === before + 1, b.sets.length - before + ' writes');
+  check('the counts themselves were never delayed', b.count(7) === 30 && b.count(8) === 30);
 }
 
 {

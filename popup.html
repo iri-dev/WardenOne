@@ -363,6 +363,12 @@
     border-radius: 12px;
     font-size: 12px;
   }
+  .all-on-note {
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--wo-text-soft);
+  }
   .group { padding: 0 16px; }
   .card-group {
     background: var(--card);
@@ -749,7 +755,8 @@
   </div>
 
   <div class="top-quick">
-    <button class="btn primary" id="all-on" type="button">Turn everything on</button>
+    <button class="btn primary" id="all-on" type="button">Turn on recommended protections</button>
+    <div class="all-on-note" id="all-on-note" hidden></div>
   </div>
 
   <details class="health-panel" id="protection-health-panel" aria-live="polite">
@@ -932,10 +939,15 @@
           follow a risky link, submit a sensitive form or start a download &mdash; for as long as it stays on.
           It receives the address&rsquo;s <strong>scheme, host and path</strong>, never its query string,
           <code>#fragment</code> or a user name in the address, together with your IP address and the key you
-          gave it. Answers are kept on this device under a fingerprint, not the address, for up to 12 hours.
+          gave it. That key belongs to your provider account, so the provider can link every checked
+          address to your account across sessions and networks. Pasting or testing a key saves it for
+          checks you start yourself; turn on the separate provider switch to allow automatic checks.
+          Answers are kept on this device under a fingerprint, not the address, for up to 12 hours.
           PhishTank and WhoisXML are only asked about pages that look like sign-in, payment or redirect pages,
           or an address you ask about yourself; AbuseIPDB only about bare IP addresses; OpenPhish is never
-          asked anything. Each is a separate company with its own privacy policy.</div>
+          asked anything. Google Safe Browsing, WhoisXML Domain Reputation and WhoisXML Threat Intelligence
+          require their key in the HTTPS request URL, where provider or proxy logs may retain it. Restrict
+          and rotate keys through their provider dashboards. Each is a separate company with its own privacy policy.</div>
       </div>
       <div class="row" style="display:block;">
         <div class="tool-head" style="margin-bottom:4px;">
@@ -1097,7 +1109,7 @@
       <label class="tg"><input type="checkbox" data-key="clientHintProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional randomization for canvas, WebGL vendor strings, audio buffers, and coarse hardware hints. Runs in the page and in every frame it embeds, with one shared answer, so a frame cannot be used to read the real values; web workers are not covered and still see the real machine. It can break canvas-heavy sites and may make rare setups more unique, so it stays opt-in.</div></div>
+      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional randomization for WebGL vendor strings, audio buffers, text measurements and coarse hardware hints. Canvas pixels and image exports stay unchanged so artwork and signatures are not corrupted. Runs in the page and its frames; web workers are not covered and still see the real machine. It may make rare setups more unique, so it stays opt-in.</div></div>
       <label class="tg"><input type="checkbox" data-key="antiFingerprintNoise"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1178,8 +1190,12 @@
       <label class="tg"><input type="checkbox" data-key="clearServiceWorkersOnLeave"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Clean tracking redirects on links</div><div class="desc">Rewrite outbound links that hide the real destination behind a tracker (Facebook l.php, Google /url, Reddit out, etc.) so a click goes straight there. Also removes <code>ping</code> attributes, which quietly notify a third address every time you click a perfectly normal-looking link. The link still goes exactly where it says &mdash; <code>ping</code> is a separate beacon and carries no part of the navigation, so nothing but the site's click analytics is lost.</div></div>
+      <div><div class="name">Remove link click pings</div><div class="desc">Removes <code>ping</code> attributes that notify another address when you click a link. It leaves the link destination untouched. This switch also lets the explicit clean-copy tools unwrap known tracking redirects.</div></div>
       <label class="tg"><input type="checkbox" data-key="unshimLinks"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Remove tracking parameters from page addresses</div><div class="desc">Cleans recognised tracking parameters when a site changes its own address with the History API. Also applies to explicit clean-link actions. It leaves ordinary links and forms untouched, so turning off the ping switch above does not turn this cleaner off.</div></div>
+      <label class="tg"><input type="checkbox" data-key="stripTrackingParams"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row clean-copy-row">
       <div class="clean-copy-body"><div class="name">Clean links copied inside pages</div><div class="desc">Auto-strips tracking (utm_, fbclid, YouTube si, Amazon ref and similar) as you copy, so pastes come out clean. Covers Ctrl+C on a link and site Share/Copy buttons. Chrome&rsquo;s own &ldquo;Copy link address&rdquo; and the address bar are browser-level, so no extension can catch them &mdash; for those use the right-click &ldquo;Copy clean link&rdquo;, or the keyboard shortcut for this page (listed under Keyboard shortcuts below). On by default.</div>
@@ -1831,6 +1847,21 @@
         <button class="btn" id="cl-run" style="width:100%;margin-top:10px;">Clean selected</button>
         <div id="cl-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>
+      <div class="row" style="display:block;">
+        <div class="name" style="margin-bottom:6px;">WardenOne data on this device</div>
+        <div class="desc" style="margin-bottom:9px;">Inspect or erase WardenOne's own saved records. This does not clear websites' cookies, browser history or downloads. Erasing learned records and exceptions resets those protections.</div>
+        <button class="btn" id="privacy-data-inspect" type="button" style="width:100%;">Inspect saved datasets</button>
+        <div id="privacy-data-preview" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;"></div>
+        <label class="ck" style="margin:10px 0 8px;">Erase option
+          <select id="privacy-data-mode" style="margin-left:6px;">
+            <option value="all">Everything, including settings and API keys</option>
+            <option value="settings">Keep global switches, erase API keys</option>
+            <option value="settings-and-keys">Keep global switches and API keys</option>
+          </select>
+        </label>
+        <button class="btn" id="privacy-data-erase" type="button" style="width:100%;border:1px solid #b42332;color:#922132;">Erase WardenOne data</button>
+        <div id="privacy-data-result" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;"></div>
+      </div>
       <div class="row">
         <div><div class="name">Watch installed-extension changes</div><div class="desc">Keeps a local inventory of versions, permissions and enabled state. Harmless updates stay in the timeline; new powerful access is highlighted and explained. On by default.</div></div>
         <label class="tg"><input type="checkbox" data-key="watchExtensionPermissions"><span class="track"></span><span class="knob"></span></label>
@@ -1988,6 +2019,12 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true" focusable="false"><path d="M15.5 7.5a4 4 0 1 1-3.9 5H8.5l-1.5 1.5-1.5-1.5H3.5v-2.5h8.1a4 4 0 0 1 3.9-2.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16.5" cy="11.5" r="1.1" fill="currentColor"/></svg>
       </span>
       <span class="wo-footer-copy"><strong>How to get your API keys</strong><small>Free, optional, for a deeper scan</small></span>
+    </a>
+    <a id="wo-setup-link" href="onboarding.html" target="_blank" rel="noopener">
+      <span class="wo-footer-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true" focusable="false"><path d="M5 6.5h14M5 12h14M5 17.5h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16.5 16.2l1.4 1.4 2.6-2.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="wo-footer-copy"><strong>Set-up guide</strong><small>Pick Recommended or Maximum privacy again</small></span>
     </a>
   </div>
 <script src="build-profile.js"></script>

@@ -321,9 +321,79 @@ async function testWorkerSourceRead() {
       && /function readCapped\(res\)/.test(DETECT));
 }
 
+// ---------------------------------------------------------------------------
+// 3. The login-page age check's RDAP lookup (PERF-10). It called res.json() with no ceiling, the
+//    one external path left without one.
+// ---------------------------------------------------------------------------
+function loadDomainAge(fetchImpl) {
+  const state = { fetches: 0, writes: 0 };
+  const sandbox = {
+    console, Date, Object, Array, String, Number, Math, JSON, Promise, Error, Map, encodeURIComponent,
+    TextDecoder, TextEncoder,
+    setTimeout: () => 0, clearTimeout: () => {},
+    AbortController: class { constructor() { this.signal = {}; } abort() {} },
+    registrableDomainBg: (h) => String(h || '').split('.').slice(-2).join('.'),
+    isLocalOrPrivateHost: (h) => h === 'localhost',
+    localGet: async () => ({}),
+    localSet: async () => { state.writes++; },
+    lookupWhoisXmlDomain: async () => null,
+    fetch: (url, init) => { state.fetches++; return fetchImpl(url, init); },
+  };
+  vm.createContext(sandbox);
+  const constant = (name) => 'const ' + name + ' = ' + (BACKGROUND.match(new RegExp('const ' + name + ' = ([^;]+);')) || [])[1] + ';';
+  vm.runInContext([
+    liftFunction(BACKGROUND, 'utf8ByteLength'),
+    liftFunction(BACKGROUND, 'readResponseTextWithByteLimit'),
+    constant('DOMAIN_AGE_CACHE_KEY'), constant('DOMAIN_AGE_CACHE_MS'), constant('DOMAIN_AGE_TIMEOUT_MS'),
+    constant('DOMAIN_AGE_MAX_BYTES'), constant('DOMAIN_AGE_IN_FLIGHT'),
+    liftFunction(BACKGROUND, 'lookupDomainAge'),
+    liftFunction(BACKGROUND, 'lookupDomainAgeOnce'),
+  ].join('\n') + '\nthis.__lookup = lookupDomainAge;', sandbox, { filename: 'background.js' });
+  state.lookup = (d) => sandbox.__lookup(d, { enabled: true });
+  return state;
+}
+
+async function testDomainAge() {
+  const rdapHeaders = (len) => ({ get: (h) => (/content-type/i.test(h) ? 'application/rdap+json' : (len == null ? null : String(len))) });
+  {
+    const stream = streamingBody(8 * 1024 * 1024, 64 * 1024);
+    const s = loadDomainAge(async () => ({ ok: true, status: 200, headers: rdapHeaders(null), body: stream.body }));
+    const r = await s.lookup('huge.example');
+    check('an oversized RDAP answer is refused rather than parsed', r && r.ok === false && /too large/.test(String(r.error)), JSON.stringify(r));
+    check('and reading stops at the ceiling instead of buffering the whole body',
+      stream.cancelled() && stream.read() <= 512 * 1024, stream.read() + ' bytes read');
+  }
+  {
+    const s = loadDomainAge(async () => ({ ok: true, status: 200, headers: rdapHeaders(999999999), text: async () => '{}' }));
+    const r = await s.lookup('declared.example');
+    check('a declared length over the ceiling is refused before reading', r && r.ok === false && /too large/.test(String(r.error)));
+  }
+  {
+    const body = JSON.stringify({ events: [{ eventAction: 'registration', eventDate: new Date(Date.now() - 400 * 86400000).toISOString() }] });
+    let release;
+    const gate = new Promise((res) => { release = res; });
+    const s = loadDomainAge(async () => { await gate; return { ok: true, status: 200, headers: rdapHeaders(body.length), text: async () => body }; });
+    const a = s.lookup('normal.example');
+    const b = s.lookup('www.normal.example');
+    release();
+    const [ra, rb] = await Promise.all([a, b]);
+    check('a normal RDAP answer still yields the registration age', ra && ra.ok === true && ra.ageDays >= 399 && rb && rb.ageDays === ra.ageDays, JSON.stringify(ra));
+    check('two checks of one domain at once share a single request', s.fetches === 1, s.fetches + ' fetches');
+  }
+  {
+    const s = loadDomainAge(async () => ({ ok: true, status: 200, headers: { get: (h) => (/content-type/i.test(h) ? 'text/html' : '20') }, text: async () => '<html></html>' }));
+    const r = await s.lookup('portal.example');
+    check('a non-JSON answer is not parsed as RDAP', r && r.ok === false && s.writes === 0);
+  }
+  check('the RDAP path reads through the byte-limited reader, never res.json()',
+    /readResponseTextWithByteLimit\(res, DOMAIN_AGE_MAX_BYTES\)/.test(liftFunction(BACKGROUND, 'lookupDomainAgeOnce'))
+      && !/res\.json\(\)/.test(liftFunction(BACKGROUND, 'lookupDomainAgeOnce')));
+}
+
 async function main() {
   await testSiteBreach();
   await testWorkerSourceRead();
+  await testDomainAge();
 
   if (failed) { console.error('\n' + failed + ' bounded-fetch check(s) failed'); process.exit(1); }
   console.log('\noutbound requests stay bounded');
