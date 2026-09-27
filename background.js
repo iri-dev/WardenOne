@@ -12235,8 +12235,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.wardenone_malware_hashes) {
     loadMalwareHashes();
   }
-  // A feed (or manual edit) that updates the grabber domain list -> re-apply its dynamic rules.
-  if (area === 'local' && (changes.wardenone_grabber_domains || changes[SUPPLEMENTAL_LIST_STORAGE_KEY])) {
+  // Reader edits to the Grabber list need a refresh here. Supplemental updates call
+  // loadGrabberFeed after their own write and await its result; also doing it here
+  // launched a second full DNR enumeration for the same update.
+  if (area === 'local' && changes.wardenone_grabber_domains) {
     loadGrabberFeed();
   }
   // Same for the cryptominer host/pool list.
@@ -15446,7 +15448,7 @@ function remoteDomainRuleSourceKind(domain, buckets) {
 // commit boundary so that stale work cannot reinstall blocking behind an off
 // master switch. The post-commit check closes the much smaller race where the
 // setting changes while Chrome is applying the atomic rule update.
-async function commitRemoteListRules(removeRuleIds, addRules) {
+async function commitRemoteListRules(removeRuleIds, addRules, unchanged) {
   const masterEnabled = async () => {
     const store = await localGet('wardenone_config');
     const cfg = (store && store.wardenone_config) || {};
@@ -15458,13 +15460,13 @@ async function commitRemoteListRules(removeRuleIds, addRules) {
     return { applied: false, disabled: true };
   }
 
-  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
+  if (!unchanged) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
 
   if (!await masterEnabled()) {
     await removeWardenOneDynamicRules();
     return { applied: false, disabled: true };
   }
-  return { applied: true, disabled: false };
+  return { applied: true, disabled: false, unchanged: !!unchanged };
 }
 
 let __remoteListUpdateInFlight = null;
@@ -15645,11 +15647,12 @@ async function updateRemoteListsCore(reason) {
   try {
     // remove the previous dynamic set, then add the fresh one (atomic-ish)
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeIds = existing
+    const mine = existing
       .filter((r) => (r.id >= DYNAMIC_RULE_BASE && r.id < DYNAMIC_RULE_BASE + MAX_DYNAMIC)
-                  || (r.id >= OPTION_RULE_BASE && r.id < OPTION_RULE_BASE + OPTION_RULES_MAX))
-      .map((r) => r.id);
-    const replacement = await commitRemoteListRules(removeIds, addRules.concat(optionRules));
+                  || (r.id >= OPTION_RULE_BASE && r.id < OPTION_RULE_BASE + OPTION_RULES_MAX));
+    const removeIds = mine.map((r) => r.id);
+    const desiredRules = addRules.concat(optionRules);
+    const replacement = await commitRemoteListRules(removeIds, desiredRules, dnrBandUnchanged(mine, desiredRules));
     if (!replacement.applied) {
       return {
         ok: false,
@@ -19587,21 +19590,23 @@ return { removed, kept: all.length - removed, sites: sites.size };
 }
 
 function privacyStoreTimestamp(value) {
-  const candidates = [];
+  let oldest = null;
   const note = (record) => {
     if (!record || typeof record !== 'object') return;
     for (const name of ['at', 'updatedAt', 'fetchedAt', 'checkedAt', 'createdAt', 'ts']) {
       const number = Number(record[name]);
-      if (Number.isFinite(number) && number > 946684800000 && number <= Date.now() + 86400000) candidates.push(number);
+      if (Number.isFinite(number) && number > 946684800000 && number <= Date.now() + 86400000) {
+        oldest = oldest === null ? number : Math.min(oldest, number);
+      }
     }
   };
   note(value);
   if (Array.isArray(value)) {
-    for (const record of value.slice(0, 100)) note(record);
+    for (const record of value) note(record);
   } else if (value && typeof value === 'object') {
-    for (const record of Object.values(value).slice(0, 100)) note(record);
+    for (const record of Object.values(value)) note(record);
   }
-  return candidates.length ? Math.min(...candidates) : null;
+  return oldest;
 }
 
 async function inspectWardenOneData() {
