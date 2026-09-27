@@ -264,10 +264,10 @@ assert(/"pointerenter",[\s\S]{0,80}?updateBadgeYield\(\)/.test(badgeWiring),
 }
 
 /* ---- the media path -------------------------------------------------------- */
-const consider = code(slice('considerMedia=el=>{', 'scanMedia=root=>{', 'considerMedia'));
-assert(/mediaHiddenDefinitely\(el\)/.test(consider),
-  'the definitive, layout-free signals must be what is acted on immediately');
-assert(/setTimeout\(/.test(consider),
-  'a size verdict must be deferred until layout has actually happened');
+const media = code(slice('!1!==WO.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement',
+  'if(!0===WO.blockSuspiciousWebRTC', 'hidden media play guard'));
+assert(/proto\.play=guardedPlay/.test(media), 'the media decision must happen at play time');
+assert(!/querySelectorAll|woObserve|\.autoplay=|\.muted=|\.removeAttribute\(/.test(media),
+  'the hidden-media guard must not scan or change author media state');
 
 console.log('hot path layout tests passed (57 assertions)');

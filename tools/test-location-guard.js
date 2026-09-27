@@ -10,7 +10,7 @@
  *   - geolocation calls are denied while the toggle is on
  *   - already-live watches are cleared when blocking begins
  *   - permissions.query/request/revoke report geolocation as denied
- *   - page-visible language + timezone hints are masked
+ *   - page-visible locale and time remain native and internally consistent
  *   - turning the toggle off falls through to the real browser methods
  *
  * Run: node tools/test-location-guard.js
@@ -27,6 +27,7 @@ const vm = require('vm');
 const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const MIN = fs.readFileSync(path.join(__dirname, '..', 'content.min.js'), 'utf8');
+const BACKGROUND = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
 const START = MIN.indexOf('try{let locationEventCount=0;const locationPrivacyOn=');
 const END = MIN.indexOf('if(WO.mediaShield)try{', START);
 if (START < 0 || END < 0 || END <= START) {
@@ -138,11 +139,27 @@ function makeSandbox(blocked) {
   const v = await s.navigator.permissions.revoke({ name: 'geolocation' });
   check('permission APIs report geolocation denied', q.state === 'denied' && r.state === 'denied' && v.state === 'denied',
     { query: q.state, request: r.state, revoke: v.state });
-  check('navigator language hints are generic', s.navigator.language === 'en-US' && s.navigator.languages.join(',') === 'en-US,en',
+  check('navigator language hints remain native', s.navigator.language === 'en-GB' && s.navigator.languages.join(',') === 'en-GB,en',
     { language: s.navigator.language, languages: s.navigator.languages });
-  const tz = vm.runInContext('new Intl.DateTimeFormat().resolvedOptions().timeZone', s);
-  const offset = vm.runInContext('new Date().getTimezoneOffset()', s);
-  check('timezone hints are neutralized', tz === 'UTC' && offset === 0, { tz, offset });
+  const nativeTimeline = (instant) => ({
+    zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    offset: new Date(instant).getTimezoneOffset(),
+    localHour: new Date(instant).getHours(),
+    formatted: new Intl.DateTimeFormat(undefined, { hour: 'numeric', timeZoneName: 'short' }).format(new Date(instant)),
+  });
+  for (const instant of ['2026-01-15T12:00:00Z', '2026-07-15T12:00:00Z']) {
+    const observed = vm.runInContext(`({
+      zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      offset: new Date(${JSON.stringify(instant)}).getTimezoneOffset(),
+      localHour: new Date(${JSON.stringify(instant)}).getHours(),
+      formatted: new Intl.DateTimeFormat(undefined, { hour: 'numeric', timeZoneName: 'short' }).format(new Date(${JSON.stringify(instant)}))
+    })`, s);
+    check('native time is coherent in ' + instant.slice(0, 7),
+      JSON.stringify(observed) === JSON.stringify(nativeTimeline(instant)), { observed, native: nativeTimeline(instant) });
+  }
+  check('location header rule does not forge Accept-Language',
+    !BACKGROUND.slice(BACKGROUND.indexOf('async function applyLocationPrivacyHeaderRule'),
+      BACKGROUND.indexOf('let __ipLookupBlockRulesEnabled')).includes('Accept-Language'));
 
   const s2 = makeSandbox(false);
   const realWatch = s2.navigator.geolocation.watchPosition(() => {});

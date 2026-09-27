@@ -17,6 +17,11 @@ as the work happened.
 
 ### Added
 
+- The Privacy cleaner can inspect WardenOne's saved local and session datasets by size and known age, then erase all extension-owned storage and dynamic rules. The erase control can keep global switches, with or without API keys, while removing site exceptions and learned records; active Download Shield reviews must be resolved first.
+- High-stakes in-page warnings now also appear in an isolated, closed-shadow overlay with fixed wording and a self-healing owner. If a page covers that copy, WardenOne requests a generic browser notification. The secret-paste continuation rejects scripted clicks.
+- Context-menu and command-palette reputation checks now save a short-lived, target-free session receipt before contacting a provider. If the service worker dies, its next wake reports the interruption; answers are bound to the originating document and cannot be injected into a navigated page.
+- Automatic keyed reputation checks now consult hydrated local malware, scam and user-block records before constructing a provider request. Local malicious-list hits use WardenOne's own warning page, and a user-blocked site does not trigger a provider check. Pasting or testing a key still leaves automatic checking off until its separate switch is enabled.
+- Settings reconciliation now waits for an active generation to finish, skips duplicate requests for the same state, and runs one queued pass for newer settings. Stable network-rule owners skip work when their own inputs are unchanged, six owners share one dynamic and one session rule read per generation, and intranet switches are part of the desired-state key. SafeSearch settings flow through that pass instead of starting a second direct rule update.
 - The "important extension change needs review" note in the popup's status card
   now opens. Click it to see which extension changed, what it gained, the version
   change and when it happened, and then mark it reviewed or open the Security
@@ -531,6 +536,72 @@ as the work happened.
 
 ### Fixed
 
+- Eye Shield now limits foreign stylesheet processing to 64 connected sheets per
+  frame, 4 million source characters and 2 million transformed characters.
+  Detached sheets leave the cache and failed or budget-skipped sheets retry only
+  after a delay, so long-lived pages do not accumulate every old CSS URL.
+- Provider setup now warns where Google Safe Browsing and two WhoisXML APIs require
+  URL query credentials. Their clients return generic failure text so a thrown URL
+  or provider error cannot echo an API key into WardenOne's notices. WhoisXML's
+  WHOIS-record lookup continues using its supported authorization header.
+- The tracking-parameter cleaner now has its own visible popup switch and counts
+  among the 108 protections. The link-click ping switch controls ping removal
+  independently; ordinary link and form destinations remain untouched.
+- Mail Shield now stops its observer in open mail tabs and reading-pane frames as
+  soon as its switch turns off, and resumes one observer when turned back on.
+  Existing matching frames are injected on enable, while a recycled pixel image
+  with a new lazy URL is checked again.
+- File Shield reads ZIP indexes in 64 KB chunks with an 8 MB inspection budget,
+  validates ZIP64 offsets, and labels partial archive reports. Whole-file hashing
+  now stops at 32 MB and runs the two digests in sequence; a superseded scan stops
+  reading further archive chunks.
+- Pages now receive only their own allowlist decision. The global allow/forget lists,
+  per-site Eye Shield settings, private memory exceptions and DNS quarantine hosts stay
+  outside the page config; browser network rules continue enforcing quarantines.
+- Reputation checks keep the complete canonical page address for identity and use SHA-256
+  cache keys. Provider paths beyond their limit are skipped instead of being shortened
+  into another URL, preventing two long URLs from sharing a verdict.
+- Maximum Privacy no longer changes canvas pixels, readback or image exports, including
+  OffscreenCanvas. Artwork, signatures and generated images retain their authored content;
+  the optional mode continues to change other fingerprint surfaces.
+- Maximum Privacy leaves getClientRects() native, preserving the browser's DOMRectList type
+  and its methods for editors, selection tools and layout libraries.
+- Back-trap protection now permits a SPA to create many distinct startup routes and ignores
+  replaceState when counting history entries. It still stops rapid repeated or alternating
+  pushState calls and a page that re-arms the same address immediately after Back.
+- Link Cleanup no longer edits live anchor, area or form destinations, preserving signed
+  downloads, login links and application query state. Explicit Clean copied links remains
+  available, and click-tracking ping attributes are still removed.
+- Media Shield now checks hidden video at the moment of a gestureless play request. It leaves
+  hidden audio and the page's autoplay, mute and pause state untouched, so accessibility alerts
+  and reused player elements keep their original behavior.
+- Location Privacy now blocks geolocation without changing the browser's language, timezone,
+  clock offset or Accept-Language header. Dates and locale-sensitive sites see one coherent
+  native environment, including across daylight-saving changes.
+- Private-window site changes now report whether they were actually saved. Element Zapper says
+  when a hidden element will return after reload, script trust refuses an unsaved change, and
+  JavaScript exceptions identify their session-only scope. The popup also refuses to save a
+  private site's protection exception into the regular profile.
+- The privacy self-test no longer reports WebRTC or local fonts as protected when a probe failed
+  or the browser never offered the API. Failed probes are shown as untested and excluded from the
+  headline score.
+- Pasting or testing a reputation-provider API key no longer turns on automatic checks. A separate
+  provider switch now authorizes those requests; saved keys can still be used for manual checks.
+  The popup and privacy policy explain that providers can link checked addresses to the reader's
+  own account through the key.
+- Operating-system notifications now show generic alert categories, keeping site names, download
+  filenames and extension names inside WardenOne even when a notice stays until dismissed.
+- Release archives now fail the gate if they contain files outside the reviewed package inventory,
+  including Chrome's generated metadata, nested ZIPs and private notes. The rolling build checks
+  its final ZIP before publishing it.
+- The manifest now declares its actual whole-web host scope without a misleading partial list
+  of outside services. The Permissions page explains where that scope is used.
+- Maximum Privacy keeps real touch, PDF and network-connection capabilities available to sites.
+  Its screen dimensions round down and its usable area stays within the real screen, avoiding
+  layouts that extend under the taskbar or dock.
+- Maximum Privacy now leaves WebGL and WebGPU graphics identities native on macOS, Linux and
+  unknown platforms. Its Direct3D profile is used only when Windows platform signals agree, so
+  the graphics adapter no longer contradicts the browser's reported operating system.
 - A website can no longer fake WardenOne's findings about itself. WardenOne's parts on a page talk
   over an internal channel the page can also listen to and write to. They already signed the
   messages that make WardenOne act, such as settings and redirect warnings, but the security

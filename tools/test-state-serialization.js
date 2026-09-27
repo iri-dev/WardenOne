@@ -392,12 +392,29 @@ function testCoverage() {
     (refresh.match(/__refreshExtensionStateLastKey = stateKey/g) || []).length === 1);
 }
 
+/* MV3-07: the wrappers are installed when evaluation reaches SERIALIZED_STATE_APPLIERS.forEach, so
+   a listed applier called at the top level ABOVE that line runs unwrapped, whatever the list says.
+   The user-blocklist and never-block rebuilds did exactly that on every cold start. */
+function testBootOrder() {
+  const listAt = BACKGROUND.indexOf('const SERIALIZED_STATE_APPLIERS = [');
+  const names = [...BACKGROUND.slice(listAt, BACKGROUND.indexOf('];', listAt)).matchAll(/'(\w+)'/g)].map((m) => m[1]);
+  const wrapAt = BACKGROUND.indexOf('SERIALIZED_STATE_APPLIERS.forEach');
+  const early = [];
+  const lines = BACKGROUND.slice(0, wrapAt).split('\n');
+  lines.forEach((line, i) => { for (const n of names) if (line.startsWith(n + '(')) early.push(n + ' at line ' + (i + 1)); });
+  check('no listed applier is called at the top level before the wrappers exist', early.length === 0, early.join(', '));
+  const after = BACKGROUND.slice(wrapAt);
+  check('the two boot-time rebuilds still run, after the wrappers',
+    /\napplyNeverBlockAllowRules\(\);/.test(after) && /\napplyUserBlocklistRules\(\);/.test(after));
+}
+
 async function main() {
   await testConfigCache();
   await testCosmeticCache();
   await testSerializer();
   await testWrapping();
   testCoverage();
+  testBootOrder();
 
   if (failed) { console.error('\n' + failed + ' state serialization check(s) failed'); process.exit(1); }
   console.log('\nthe newest desired state is the one that lands');

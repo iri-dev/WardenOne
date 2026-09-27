@@ -61,6 +61,9 @@ jobs:
         # "Load unpacked" then fails with "Manifest file is missing or unreadable".
         run: git archive --format=zip -o WardenOne-latest.zip HEAD
 
+      - name: Verify release archive inventory
+        run: node tools/check-package-archive.js WardenOne-latest.zip
+
       - name: Write the notes
         run: |
           # Release notes say what changed. The old version of this step said only

@@ -87,11 +87,17 @@ function fakeSession() {
    applier throw synchronously, 'outer-throws' makes localGet itself throw. */
 function worker({ session, config, fault }) {
   const calls = [];
+  const dnrReads = { dynamic: 0, session: 0 };
+  let releaseDeferred = null;
   const ctx = {
     console: { warn() {}, log() {} },
     Promise, Object, Array, String, Number, JSON, Date, Math, setTimeout, clearTimeout, Error,
     chrome: {
       runtime: { lastError: null },
+      declarativeNetRequest: {
+        getDynamicRules() { dnrReads.dynamic++; return Promise.resolve([]); },
+        getSessionRules() { dnrReads.session++; return Promise.resolve([]); },
+      },
       storage: {
         local: { get(key, cb) { setTimeout(() => cb({ wardenone_config: config || {} }), 0); } },
         session,
@@ -110,7 +116,11 @@ function worker({ session, config, fault }) {
   for (const { name, fn } of RUN_CALLS) {
     ctx[fn] = (...args) => {
       calls.push({ name, fn, args });
+      if (fault === 'snapshot' && typeof args[args.length - 1] === 'function') return args[args.length - 1]();
       if (fault === 'applier-throws:' + name) throw new Error(name + ' threw synchronously');
+      if (fault === 'defer:' + name && !releaseDeferred) {
+        return new Promise((resolve) => { releaseDeferred = () => resolve(); });
+      }
       return Promise.resolve(undefined);
     };
   }
@@ -118,9 +128,10 @@ function worker({ session, config, fault }) {
   vm.createContext(ctx);
   vm.runInContext(CONFIG_CACHE + '\n' + ORCHESTRATOR + '\nglobalThis.api = { refreshExtensionState,'
     + ' scheduleExtensionStateRefresh, retryDegradedReconcileOnWake, readReconcileDegraded, localGet,'
-    + ' key: () => __refreshExtensionStateLastKey };', ctx);
+    + ' key: () => __refreshExtensionStateLastKey, publishConfig: __cfgCacheSet };', ctx);
   if (fault === 'outer-throws') ctx.localGet = () => { throw new Error('storage bridge missing'); };
-  return { api: ctx.api, calls, byName: (n) => calls.filter((c) => c.name === n) };
+  return { api: ctx.api, calls, dnrReads, byName: (n) => calls.filter((c) => c.name === n),
+    releaseDeferred: () => { if (releaseDeferred) releaseDeferred(); } };
 }
 const settle = (ms) => new Promise((r) => setTimeout(r, ms || 60));
 const names = (w) => w.calls.map((c) => c.name);
@@ -164,6 +175,34 @@ const offSwitching = (w) => w.calls.filter((c) => c.name.indexOf('LEGACY:') === 
     const w = worker({ session, config: { enabled: false } });
     w.api.refreshExtensionState(); await settle();
     check('the master switch off reaches every component as the config says, not as a fallback guess', names(w).length === RUN_CALLS.length && w.byName('privacyHeaders')[0].args[0] === false && w.byName('intranet')[0].args[0] === false);
+  }
+  {
+    const session = fakeSession();
+    const config = { enabled: true, safeSearch: false, blockSearchAiAnswers: false, intranetProtection: true };
+    const w = worker({ session, config });
+    w.api.refreshExtensionState(); await settle();
+    config.blockSearchAiAnswers = true;
+    w.api.publishConfig(config);
+    w.api.refreshExtensionState(); await settle();
+    check('a search-appearance change skips unrelated stable DNR owners',
+      w.byName('privacyHeaders').length === 1 && w.byName('headerShield').length === 1
+        && w.byName('searchParams').length === 1 && w.byName('allowlist').length === 1);
+    config.safeSearch = true;
+    w.api.publishConfig(config);
+    w.api.refreshExtensionState(); await settle();
+    check('a SafeSearch change runs its DNR owner but not unrelated owners',
+      w.byName('searchParams').length === 2 && w.byName('privacyHeaders').length === 1);
+    config.intranetProtection = false;
+    w.api.publishConfig(config);
+    w.api.refreshExtensionState(); await settle();
+    check('intranet setting is represented in the state key', w.byName('intranet').length >= 2);
+  }
+  {
+    const w = worker({ session: fakeSession(), config: { enabled: true }, fault: 'snapshot' });
+    w.api.refreshExtensionState(); await settle();
+    check('one generation shares one dynamic and one session DNR snapshot among readers',
+      w.dnrReads.dynamic === 1 && w.dnrReads.session === 1,
+      JSON.stringify(w.dnrReads));
   }
 
   /* ---- 3. the .then body throws before the list: nothing is touched, the reconcile is degraded ---- */
@@ -213,6 +252,28 @@ const offSwitching = (w) => w.calls.filter((c) => c.name.indexOf('LEGACY:') === 
     await settle(300);
     check('a cold worker retries and runs every component', scheduled === true && names(cold).length === RUN_CALLS.length, names(cold).length + ' calls');
     check('and, succeeding, clears the marker', !session.__store.wardenone_reconcile_degraded && cold.api.key() !== '');
+  }
+
+  /* An in-flight generation holds the next one until it settles. Repeated requests
+     for the same desired state do not launch another 24-applier fan-out. */
+  {
+    const w = worker({ session: fakeSession(), config: { enabled: true, safeSearch: false },
+      fault: 'defer:headerShield' });
+    w.api.refreshExtensionState(); await settle();
+    w.api.refreshExtensionState(); await settle();
+    check('same-state refresh does not duplicate an in-flight fan-out',
+      w.calls.length === RUN_CALLS.length, w.calls.length + ' calls');
+    w.api.publishConfig({ enabled: true, safeSearch: true });
+    w.api.refreshExtensionState(); await settle();
+    check('new settings wait for the first generation',
+      w.calls.length === RUN_CALLS.length, w.calls.length + ' calls');
+    w.releaseDeferred(); await settle(140);
+    check('the queued settings run once after the first generation',
+      w.byName('blocklistRulesets').length === 2
+        && w.byName('searchParams').length === 2
+        && w.byName('privacyHeaders').length === 1
+        && w.byName('searchParams')[1].args[0].safeSearch === true,
+      w.calls.length + ' calls');
   }
 
   console.log('');

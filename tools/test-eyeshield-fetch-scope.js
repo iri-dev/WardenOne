@@ -87,6 +87,10 @@ check('with a tracked timeout that aborts', !!FETCH_SRC && /controller\.abort\(\
 
 /* ---- 3. drive it ------------------------------------------------------------------------- */
 const LIFTED = [
+  constOf('FOREIGN_MAX_SHEETS') || 'const FOREIGN_MAX_SHEETS = 64;',
+  constOf('FOREIGN_CACHE_MAX_CHARS') || 'const FOREIGN_CACHE_MAX_CHARS = 4 * 1024 * 1024;',
+  constOf('FOREIGN_XFORM_MAX_CHARS') || 'const FOREIGN_XFORM_MAX_CHARS = 2 * 1024 * 1024;',
+  constOf('FOREIGN_RETRY_MS') || 'const FOREIGN_RETRY_MS = 60000;',
   constOf('FOREIGN_CSS_MAX_BYTES') || 'const FOREIGN_CSS_MAX_BYTES = 4000000;',
   constOf('FOREIGN_CSS_TIMEOUT_MS') || 'const FOREIGN_CSS_TIMEOUT_MS = 8000;',
   grabFn(EYE, 'isStylesheetContentType') || 'function isStylesheetContentType() { return true; }',
@@ -97,7 +101,7 @@ const LIFTED = [
 ].join('\n');
 
 function realm(fetchImpl) {
-  const state = { timers: [], timerId: 0, injected: [], messages: 0, fetches: [] };
+  const state = { timers: [], timerId: 0, injected: [], messages: 0, fetches: [], removed: 0 };
   const sandbox = {
     console, Promise, Object, Array, String, Number, Boolean, Set, Map, JSON, Math, Error, TypeError, Symbol,
     URL, Response, Headers, ReadableStream, TextDecoder, AbortController,
@@ -114,7 +118,9 @@ function realm(fetchImpl) {
     isManagedThemeHost: () => false,
     rootsList: () => [sandbox.document],
     injectForeignCSS: (mode) => { state.injected.push(mode); },
-    foreignCache: new Map(), foreignPending: new Set(), foreignToken: 0, activeRemap: 'dark',
+    foreignCache: new Map(), foreignPending: new Set(), foreignXform: new Map(),
+    foreignActiveHrefs: new Set(), foreignFailedAt: new Map(), foreignToken: 0, activeRemap: 'dark',
+    removeForeignEls: () => { state.removed++; },
     document: { styleSheets: [] },
   };
   const ctx = vm.createContext(sandbox);
@@ -243,6 +249,39 @@ const ownSheet = (href) => ({ href, disabled: false, ownerNode: { id: '' }, cssR
     r.sandbox.document.styleSheets = [foreignSheet('https://cdn.example/a.css')];
     r.api.applyForeignCSS('dark');
     check('a realm without fetch does nothing rather than throwing', r.state.fetches.length === 0 && r.state.messages === 0);
+  }
+  {
+    const body = 'x'.repeat(100000);
+    const r = realm(async () => cssResponse(body));
+    r.sandbox.document.styleSheets = Array.from({ length: 200 }, (_, i) => foreignSheet('https://cdn.example/' + i + '.css'));
+    r.api.applyForeignCSS('dark');
+    check('only the first bounded set of connected foreign sheets is fetched', r.state.fetches.length === 64);
+    await settle();
+    const chars = [...r.sandbox.foreignCache.values()].reduce((n, text) => n + text.length, 0);
+    check('foreign source cache stays under the aggregate budget', chars <= 4 * 1024 * 1024
+      && r.sandbox.foreignCache.size <= 64, 'chars=' + chars + ' entries=' + r.sandbox.foreignCache.size);
+    const before = r.state.fetches.length;
+    r.api.applyForeignCSS('dark');
+    check('budget-evicted active sheets are not immediately re-fetched in a loop', r.state.fetches.length === before);
+    r.sandbox.document.styleSheets = [];
+    r.api.applyForeignCSS('dark');
+    check('detached stylesheets leave the cache and injected CSS',
+      r.sandbox.foreignCache.size === 0 && r.sandbox.foreignFailedAt.size === 0 && r.state.removed > 0);
+  }
+  {
+    const styles = [];
+    const cache = new Map(Array.from({ length: 64 }, (_, i) => ['https://cdn.example/' + i + '.css', 'body{}']));
+    const ctx = vm.createContext({ Map, Set, Array, Object, String, THEME_ID: 'wo-eyeshield-theme',
+      foreignCache: cache, foreignXform: new Map(), foreignActiveHrefs: new Set(cache.keys()),
+      foreignEls: [], removeForeignEls: () => {}, transformForeignText: () => 'x'.repeat(100000),
+      document: { createElement: () => ({ setAttribute() {}, remove() {} }),
+        head: { appendChild: (style) => styles.push(style) } },
+    });
+    vm.runInContext((constOf('FOREIGN_XFORM_MAX_CHARS') || 'const FOREIGN_XFORM_MAX_CHARS = 2 * 1024 * 1024;')
+      + '\n' + grabFn(EYE, 'injectForeignCSS') + '\ninjectForeignCSS("dark");', ctx);
+    const transformed = [...ctx.foreignXform.values()].reduce((n, text) => n + text.length, 0);
+    check('transformed memo and injected CSS have separate aggregate bounds',
+      transformed <= 2 * 1024 * 1024 && styles.length === 1 && styles[0].textContent.length <= 2 * 1024 * 1024);
   }
 
   finished = true;

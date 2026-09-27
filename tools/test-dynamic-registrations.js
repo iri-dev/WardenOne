@@ -138,7 +138,7 @@ check('Twitch media compatibility allow remains installed',
   'targeted page guarding must retain the broad Twitch media allow');
 check('media compatibility refresh no longer depends on the Twitch ad-block toggle',
   /applyMediaCompatibilityRules\(cfg\.enabled !== false\)/.test(background)
-    && /applyMediaCompatibilityRules\(on\)/.test(background)
+    && /applyMediaCompatibilityRules\(on, sharedSessionRules\)/.test(background)
     && !/applyMediaCompatibilityRules\([^\n]*twitchAdBlock/.test(background),
   'media allows and the Twitch page guard must be independently toggleable');
 

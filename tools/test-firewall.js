@@ -44,7 +44,9 @@ function check(what, ok, why) {
 }
 
 /* ---- lift the rule generator and run it --------------------------------- */
-const region = BG.slice(BG.indexOf('const FIREWALL_RULE_BASE'), BG.indexOf('async function applyFirewallRules'));
+/* The canonical request-type inventory is lifted too: "All" is derived from it (M45). */
+const inventory = BG.slice(BG.indexOf('const ALL_DNR_RESOURCE_TYPES'), BG.indexOf('];', BG.indexOf('const ALL_DNR_RESOURCE_TYPES')) + 2);
+const region = inventory + '\n' + BG.slice(BG.indexOf('const FIREWALL_RULE_BASE'), BG.indexOf('async function applyFirewallRules'));
 check('the firewall engine is where the slice expects it', region.length > 0);
 const box = { String, Number, Object, Array, RegExp, console };
 /* The budget bands are declared up with the other bands rather than beside the
@@ -58,7 +60,7 @@ for (const band of ['FIREWALL_RULES_BUDGET', 'FIREWALL_SESSION_RULES_BUDGET']) {
 vm.createContext(box);
 vm.runInContext(region
   + ';globalThis.api = { firewallRulesFrom, firewallNormalizeHost, FIREWALL_COLUMNS,'
-  + ' FIREWALL_RULE_BASE, FIREWALL_RULE_MAX, FIREWALL_PRIORITY };',
+  + ' FIREWALL_RULE_BASE, FIREWALL_RULE_MAX, FIREWALL_PRIORITY, ALL_DNR_RESOURCE_TYPES };',
 box, { filename: 'background.js:firewall' });
 const api = box.api;
 
@@ -92,6 +94,15 @@ check('"all" really does cover stylesheets and the rest',
     && allowAll.condition.resourceTypes.includes('ping')
     && allowAll.condition.resourceTypes.includes('other'),
   'the page tells the reader that All is the one that covers everything else');
+/* Sampling three types is how "All" drifted to thirteen of fifteen and stayed green (M45). */
+const allTypes = new Set(api.FIREWALL_COLUMNS.all);
+const missingFromAll = api.ALL_DNR_RESOURCE_TYPES.filter((t) => !allTypes.has(t));
+check('"all" covers every request type the browser can issue', missingFromAll.length === 0 && api.ALL_DNR_RESOURCE_TYPES.length >= 15,
+  'missing: ' + missingFromAll.join(', '));
+check('every narrower column is a subset of "all"',
+  Object.entries(api.FIREWALL_COLUMNS).every(([, types]) => types.every((t) => allTypes.has(t))));
+check('WebTransport sits with the other data channels', api.FIREWALL_COLUMNS.xhr.includes('webtransport')
+  && /webtransport: 'xhr'/.test(JS));
 
 const cookie = rules.find((r) => r.condition.requestDomains[0] === 'analytics.example');
 check('the cookie column strips rather than blocks',

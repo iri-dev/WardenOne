@@ -37,6 +37,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { zipEntries, validateEntries, stagedZip } = require('./check-package-archive');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -160,6 +161,18 @@ const packaged = new Set();
   }
 }
 check('the release package was read', packaged.size > 40, packaged.size + ' entries');
+
+/* The ZIP that CI uploads must contain exactly the reviewed runtime inventory. This check reads
+ * the candidate ZIP's central directory, while the workflow checks the final named ZIP again. */
+{
+  const entries = zipEntries(stagedZip());
+  const problems = validateEntries(entries);
+  check('the staged release ZIP contains exactly the reviewed files', problems.length === 0, problems.join('; '));
+  for (const name of ['_metadata/generated_indexed_rulesets/ruleset', 'old-build.zip',
+    'notes/cws-submission.md', 'unexpected.js']) {
+    check('an added ' + name + ' is rejected', validateEntries([...entries, name]).length > 0);
+  }
+}
 
 /* ---- the canary ----------------------------------------------------------- *
  * A scanner that silently stops finding things passes forever. These three are the runtime-fetched

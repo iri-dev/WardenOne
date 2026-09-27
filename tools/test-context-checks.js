@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const webcrypto = require('crypto').webcrypto;
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -141,7 +142,8 @@ check('the tray is kept only as the fallback',
        have anything to say, and a toast injected into a discarded tab dies with it.
        They resolve whatever is on screen now instead. Both are a tab; neither is
        the tray. */
-    if (!/,\s*(?:tab|noticeTab|await wardenTabActionNoticeTarget\(\))$/.test(args)) bad.push(args.slice(0, 60));
+    if (!/,\s*(?:tab|noticeTab|await wardenTabActionNoticeTarget\(\))$/.test(args)
+      && !/,\s*tab,\s*id,\s*job\.documentId$/.test(args)) bad.push(args.slice(0, 80));
     at = BG.indexOf('await wardenManualNotice(', i);
   }
   check('every answer is given the tab it should appear on', !bad.length,
@@ -426,6 +428,8 @@ check('an over-long selection is refused rather than sent anywhere',
 /* ---- the routing, running the shipped code ------------------------------- */
 function runtime() {
   const notices = [];
+  const session = {};
+  const tabs = new Map();
   const region = kindSrc
     /* "async function", not "function" -- slicing from the shorter string starts
        after the async keyword and produces a body with a bare await in it. */
@@ -433,6 +437,8 @@ function runtime() {
       BG.indexOf(NL + 'function startElementTool(tab, frameId) {'));
   const sandbox = {
     URL, Set, Object, Array, Number, String, Math, Date, JSON, console, Boolean,
+    crypto: webcrypto,
+    reputationCacheKey: async (url) => String(url),
     MALWARE_HASHES: new Set(['e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855']),
     DEFAULT_CONFIG: {},
     localGet: async () => ({}),
@@ -440,6 +446,12 @@ function runtime() {
        have been injected instead of running it, so both delivery paths are
        visible: `via` says which one answered. */
     chrome: {
+      tabs: { get: async (id) => tabs.get(id) || null },
+      webNavigation: { getFrame: async ({ tabId }) => ({ documentId: 'doc-' + tabId }) },
+      storage: { session: {
+        get: async (key) => ({ [key]: session[key] }),
+        set: async (items) => { Object.assign(session, items); },
+      } },
       scripting: {
         executeScript: async (opts) => {
           notices.push({ via: 'toast', message: String((opts.args || [])[0] || ''), type: 'manual_check' });
@@ -475,8 +487,12 @@ function runtime() {
   vm.runInContext(region, sandbox, { filename: 'background.js:manual-check' });
   return {
     notices,
-    ask: (text, tab) => vm.runInContext('runWardenManualCheck(' + JSON.stringify(text) + ','
-      + JSON.stringify(tab || { id: 1, url: 'https://news.example/story' }) + ')', sandbox),
+    ask: (text, tab) => {
+      const current = tab || { id: 1, url: 'https://news.example/story' };
+      tabs.set(current.id, current);
+      return vm.runInContext('runWardenManualCheck(' + JSON.stringify(text) + ','
+        + JSON.stringify(current) + ')', sandbox);
+    },
     frame: (frameUrl, pageUrl) => vm.runInContext('describeWardenFrame('
       + JSON.stringify({ frameUrl }) + ',' + JSON.stringify({ id: 1, url: pageUrl }) + ')', sandbox),
   };

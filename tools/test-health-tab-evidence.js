@@ -80,11 +80,12 @@ function evidenceRunner(options) {
   const src = between(BG, 'const TAB_EVIDENCE_TIMEOUT_MS = 700;', '\nasync function buildProtectionHealthSummary(', 'the evidence functions')
     .replace('const TAB_EVIDENCE_TIMEOUT_MS = 700;', 'const TAB_EVIDENCE_TIMEOUT_MS = ' + (o.timeoutMs || 40) + ';');
   // eslint-disable-next-line no-new-func
-  const run = new Function('chrome', 'activeAllowlist', 'registrableDomainBg', 'engineExcludedByManifest', 'isMainWorldRepairExcludedUrl', 'ENGINE_GAVE_UP', 'setTimeout', 'clearTimeout',
+  const run = new Function('chrome', 'activeAllowlist', 'hostMatchesAllowlist', 'engineExcludedByManifest', 'isMainWorldRepairExcludedUrl', 'ENGINE_GAVE_UP', 'setTimeout', 'clearTimeout',
     '"use strict";' + src + '\nreturn tabProtectionEvidence;');
   const evidence = run(chrome,
     (cfg) => (cfg && cfg.allowlist) || [],
-    (h) => String(h).split('.').slice(-2).join('.'),
+    /* The shared helper's meaning: the entry is the host or one of its parents (BUG-03). */
+    (host, list) => (list || []).some((d) => host === d || String(host).endsWith('.' + d)),
     (url) => /excluded\.example/.test(url),
     (url) => /repair-excluded\.example/.test(url),
     o.gaveUp || {},

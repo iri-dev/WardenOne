@@ -189,7 +189,23 @@ function badgeCountsSnapshot() {
   return out;
 }
 
+/* One write per burst, and none when nothing changed. Every counted block used to serialise the
+   snapshot of every counted tab and write it to storage.session at once, so a page firing
+   hundreds of blocks cost hundreds of writes for a number only the toolbar shows (PERF-08). A
+   count lost in the last fifth of a second before the worker sleeps is display tolerance. */
+const BADGE_COUNTS_WRITE_DELAY_MS = 200;
+let badgeCountsWriteTimer = null;
+let badgeCountsLastWritten = '';
+
 function persistBadgeCounts() {
+  if (!badgeCountsReady || badgeCountsWriteTimer) return;
+  badgeCountsWriteTimer = setTimeout(() => {
+    badgeCountsWriteTimer = null;
+    writeBadgeCountsNow();
+  }, BADGE_COUNTS_WRITE_DELAY_MS);
+}
+
+function writeBadgeCountsNow() {
   if (!badgeCountsReady) return;
   if (badgeCountsWriteActive) {
     badgeCountsWriteAgain = true;
@@ -197,8 +213,12 @@ function persistBadgeCounts() {
   }
   const area = chrome.storage && chrome.storage.session;
   if (!area || typeof area.set !== 'function') return;
+  const snapshot = badgeCountsSnapshot();
+  const serialized = JSON.stringify(snapshot);
+  if (serialized === badgeCountsLastWritten) return;
+  badgeCountsLastWritten = serialized;
   badgeCountsWriteActive = true;
-  const payload = { [BADGE_COUNTS_SESSION_KEY]: badgeCountsSnapshot() };
+  const payload = { [BADGE_COUNTS_SESSION_KEY]: snapshot };
   let finished = false;
   const done = () => {
     if (finished) return;
@@ -1558,8 +1578,7 @@ async function maybeBlockForcedTopRedirect(details) {
   try { const st = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {}); } catch (_) {}
   if (cfg.enabled === false || cfg.blockPopupTricks === false) return;
   try {
-    const allow = activeAllowlist(cfg) || [];
-    if (allow.some((h) => siteIdentityBg(String(h)) === fromHost)) return;
+    if (hostMatchesAllowlist(new URL(fromUrl).hostname, activeAllowlist(cfg))) return;
   } catch (_) {}
   // One shot per page: a site that retries must not stack interstitials.
   LAST_GESTURE_AT[tabId] = now;
@@ -1664,8 +1683,7 @@ async function verifyEngineInTab(sender, msg) {
   let host = '';
   try {
     host = new URL(url).hostname;
-    const allow = activeAllowlist(cfg) || [];
-    if (allow.some((h) => registrableDomainBg(String(h)) === registrableDomainBg(host))) return { ok: false, reason: 'allowlisted' };
+    if (hostMatchesAllowlist(host, activeAllowlist(cfg))) return { ok: false, reason: 'allowlisted' };
   } catch (_) {}
   if (engineExcludedByManifest(url) || isMainWorldRepairExcludedUrl(url)) return { ok: false, reason: 'excluded' };
   const why = String((msg && msg.why) || '').slice(0, 40);
@@ -1782,8 +1800,7 @@ async function maybeFlagFrameDrivenRedirect(details) {
     return;
   }
   try {
-    const allow = activeAllowlist(cfg) || [];
-    if (allow.some((h) => siteIdentityBg(String(h)) === fromHost)) return;
+    if (hostMatchesAllowlist(new URL(fromUrl).hostname, activeAllowlist(cfg))) return;
   } catch (_) {}
   // One shot per gesture: a page that keeps trying must not stack interstitials.
   forgetNavSignals(tabId);
@@ -2458,7 +2475,9 @@ const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
      someone who chose maximum privacy has said which way they want that call
      to go. The warning still fires for everyone either way. */
   blockHighConfidencePhishing: true,
-  antiFingerprint: true,
+  /* Only the switch the popup shows. This also set the legacy antiFingerprint alias, which the
+     engine ORs with it and nothing lets the reader turn off, so the noise could not be switched
+     off again after choosing this bundle (PI-06). */
   antiFingerprintNoise: true,
   blockFraudVendorScripts: true,
   blockFirstPartyTrackers: true,
@@ -5553,13 +5572,16 @@ const FIREWALL_PRIORITY_ONCE = 97003;    // a temporary allowance beats every st
 // The columns of the matrix, and the request types each one covers. "all" is the
 // one people reach for, and it is the only one that also covers stylesheets,
 // objects, pings and everything else with no column of its own.
+/* "All" is the catch-all column, so it is the canonical inventory itself rather than a second
+   hand-kept list: the copy it replaced had thirteen types and quietly left WebTransport and
+   WebBundle outside "All" (M45). WebTransport is a page's data channel like XHR and WebSocket,
+   so it belongs in that column too. */
 const FIREWALL_COLUMNS = {
   script: ['script'],
-  xhr: ['xmlhttprequest', 'websocket'],
+  xhr: ['xmlhttprequest', 'websocket', 'webtransport'],
   frame: ['sub_frame'],
   media: ['media', 'image', 'font'],
-  all: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object',
-    'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'other'],
+  all: ALL_DNR_RESOURCE_TYPES.slice(),
 };
 
 function firewallNormalizeHost(value) {
@@ -6166,22 +6188,23 @@ function resetTrackerSessionState() {
   state.mirror.persist();
 }
 
-// Every host this extension itself depends on, derived from the manifest rather than typed out,
-// so the list cannot drift as providers are added or removed. Learning a block rule against our
+// Every keyed service this extension itself depends on. The manifest has one broad
+// <all_urls> scope, so it cannot serve as a provider inventory. Learning a block rule against our
 // own reputation, breach or filter-list endpoints would let a page switch off the checks that
 // protect the user, which is the most valuable thing the learner could be talked into.
 let __ownProviderDomains = null;
 function ownProviderDomains() {
   if (__ownProviderDomains) return __ownProviderDomains;
   const out = new Set();
-  try {
-    const hosts = (chrome.runtime.getManifest() || {}).host_permissions || [];
-    for (const pattern of hosts) {
-      const m = /^https?:\/\/([^/*]+)/.exec(String(pattern || ""));
-      const d = m ? normalizeTrackerDomain(m[1]) : "";
-      if (d) out.add(d);
-    }
-  } catch (_) {}
+  for (const host of [
+    'api.pwnedpasswords.com', 'haveibeenpwned.com', 'rdap.org',
+    'safebrowsing.googleapis.com', 'www.virustotal.com', 'checkurl.phishtank.com',
+    'urlhaus-api.abuse.ch', 'api.abuseipdb.com', 'www.whoisxmlapi.com',
+    'domain-reputation.whoisxmlapi.com', 'threat-intelligence.whoisxmlapi.com',
+  ]) {
+    const domain = normalizeTrackerDomain(host);
+    if (domain) out.add(domain);
+  }
   __ownProviderDomains = out;
   return out;
 }
@@ -6624,6 +6647,10 @@ securityStoresReady();
 const DOMAIN_AGE_CACHE_KEY = 'wardenone_domain_age_cache';
 const DOMAIN_AGE_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
 const DOMAIN_AGE_TIMEOUT_MS = 4500;
+/* An RDAP answer is a few kilobytes; the largest registries stay well under 100 KiB. The body
+   used to go straight into res.json() with no ceiling at all, the one external path without one
+   (PERF-10), so a misbehaving or hostile RDAP redirect could hand the worker any size it liked. */
+const DOMAIN_AGE_MAX_BYTES = 256 * 1024;
 const WHOISXML_CACHE_KEY = 'wardenone_whoisxml_cache';
 const WHOISXML_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
 const WHOISXML_CACHE_MAX = 250;
@@ -6924,7 +6951,7 @@ function persistentLocalPayload(obj) {
 
 function localSet(obj) {
   const payload = persistentLocalPayload(obj);
-  if (!payload || !Object.keys(payload).length) return Promise.resolve();
+  if (!payload || !Object.keys(payload).length) return Promise.resolve({ persisted: false, reason: INCOGNITO_CONTEXT ? 'incognito' : 'empty', keys: [] });
   // The content snapshot is built from four of these keys; a write to one of them must not
   // leave a stale copy to be served in the gap before storage.onChanged arrives (COST-01).
   if (Object.keys(payload).some((key) => contentConfigInputKeys().includes(key))) invalidateContentConfigMemo();
@@ -6939,7 +6966,7 @@ function localSet(obj) {
           if (Object.prototype.hasOwnProperty.call(payload, 'wardenone_config')) {
             __cfgCacheSet(__cfgClone(payload.wardenone_config) || {});
           }
-          resolve();
+          resolve({ persisted: true, keys: Object.keys(payload) });
         }
       });
     } catch (e) {
@@ -7264,10 +7291,21 @@ function windowsCreate(opts) {
  * ========================================================================== */
 importScripts('background-downloads.js');
 
-async function lookupDomainAge(domain, cfg) {
-  const reg = registrableDomainBg(domain);
-  if (!reg || /^\d{1,3}(\.\d{1,3}){3}$/.test(reg) || isLocalOrPrivateHost(reg)) return { ok: false, domain: reg, unsupported: true };
+/* Two checks of one domain at once (a login form and a download on the same site, say) share one
+   request instead of racing two to rdap.org and both writing the cache. */
+const DOMAIN_AGE_IN_FLIGHT = new Map();
 
+function lookupDomainAge(domain, cfg) {
+  const reg = registrableDomainBg(domain);
+  if (!reg || /^\d{1,3}(\.\d{1,3}){3}$/.test(reg) || isLocalOrPrivateHost(reg)) return Promise.resolve({ ok: false, domain: reg, unsupported: true });
+  const pending = DOMAIN_AGE_IN_FLIGHT.get(reg);
+  if (pending) return pending;
+  const run = lookupDomainAgeOnce(reg, cfg).finally(() => { DOMAIN_AGE_IN_FLIGHT.delete(reg); });
+  DOMAIN_AGE_IN_FLIGHT.set(reg, run);
+  return run;
+}
+
+async function lookupDomainAgeOnce(reg, cfg) {
   try {
     if (cfg && cfg.enabled !== false && cfg.whoisXml === true && String(cfg.whoisXmlKey || '').trim()) {
       const whois = await lookupWhoisXmlDomain(reg, cfg);
@@ -7290,7 +7328,15 @@ async function lookupDomainAge(domain, cfg) {
         signal: controller.signal,
       });
       if (!res.ok) return { ok: false, status: res.status, domain: reg };
-      const data = await res.json();
+      const type = String((res.headers && res.headers.get('content-type')) || '').toLowerCase();
+      if (type && !/json/.test(type)) return { ok: false, domain: reg, error: 'unexpected content type' };
+      let data;
+      try {
+        data = JSON.parse(await readResponseTextWithByteLimit(res, DOMAIN_AGE_MAX_BYTES));
+      } catch (e) {
+        return { ok: false, domain: reg, error: e && e.code === 'too_large' ? 'response too large' : 'unreadable response' };
+      }
+      if (!data || typeof data !== 'object') return { ok: false, noDate: true, domain: reg };
       let created = null;
       const events = Array.isArray(data.events) ? data.events : [];
       for (const e of events) {
@@ -7500,7 +7546,7 @@ async function checkSafeBrowsingUrl(rawUrl, apiKey) {
       .sort((a, b) => a - b)[0] || 0;
     return { provider: 'Google Safe Browsing', ok: true, hit: true, threats, matches, cacheDurationMs: cacheMs };
   } catch (e) {
-    return { provider: 'Google Safe Browsing', ok: false, error: String(e).slice(0, 120) };
+    return { provider: 'Google Safe Browsing', ok: false, error: 'Google Safe Browsing request failed. Check the connection and API key.' };
   }
 }
 
@@ -7519,7 +7565,7 @@ async function testSafeBrowsingKey(apiKey) {
     }
     return { ok: false, error: (result && result.error) || ('Safe Browsing test failed' + (result && result.status ? ' (HTTP ' + result.status + ')' : '') + '.') };
   } catch (e) {
-    return { ok: false, error: 'Could not reach Google Safe Browsing: ' + String(e).slice(0, 100) };
+    return { ok: false, error: 'Could not reach Google Safe Browsing. Check the connection and API key.' };
   }
 }
 
@@ -7597,7 +7643,7 @@ function normalizeSafeBrowsingUrl(url) {
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
     if (isLocalOrPrivateHost(u.hostname)) return '';
     u.hash = '';
-    return u.href.slice(0, 1500);
+    return u.href;
   } catch (_) {
     return '';
   }
@@ -7614,7 +7660,7 @@ function normalizeSafeBrowsingUrl(url) {
 // bought no detection and gave away the most.
 //
 // So a provider gets scheme, host and path, and nothing else: no userinfo, no query, no
-// fragment, cut at REPUTATION_QUERY_URL_MAX. The path is kept on purpose. A phishing form on
+// fragment. Paths beyond REPUTATION_QUERY_URL_MAX are refused rather than truncated. The path is kept on purpose. A phishing form on
 // docs.google.com or a page on sites.google.com is identified by its path, and a blocklist entry
 // for it is useless without one; that is a deliberate line, and it means a secret carried in a
 // path segment -- a reset link -- still travels. The policy says so. The same form is sent in
@@ -7629,7 +7675,7 @@ function reputationQueryUrl(url) {
     u.password = '';
     u.search = '';
     u.hash = '';
-    return u.href.slice(0, REPUTATION_QUERY_URL_MAX);
+    return u.href.length <= REPUTATION_QUERY_URL_MAX ? u.href : '';
   } catch (_) {
     return '';
   }
@@ -7637,11 +7683,13 @@ function reputationQueryUrl(url) {
 // A provider's answer is cached under a digest of what was asked, so the cache on disk is a
 // lookup table and not a list of the last twelve hundred pages. A key that is not a digest was
 // written by an earlier build, and is dropped when the cache loads.
-function reputationCacheKey(query) {
-  return urlDigest53(String(query || ''));
+async function reputationCacheKey(query) {
+  const bytes = new TextEncoder().encode(String(query || ''));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 function isReputationCacheKey(key) {
-  return /^[0-9a-f]{14}$/.test(String(key || ''));
+  return /^[0-9a-f]{64}$/.test(String(key || ''));
 }
 
 // ---- Shared per-provider reputation cache plumbing -------------------------------
@@ -7736,7 +7784,7 @@ async function safeBrowsingLookupUrl(url, opts) {
 
   const cache = await loadSafeBrowsingCache();
   const now = Date.now();
-  const key = reputationCacheKey(normalized);
+  const key = await reputationCacheKey(normalized);
   const cached = cache[key];
   if (cached && cached.expiresAt > now) {
     return Object.assign({ provider: 'Google Safe Browsing', ok: true, enabled: true, cached: true, url: normalized }, cached.result || {});
@@ -7896,7 +7944,7 @@ async function phishTankLookupUrl(url, opts) {
 
   const cache = await loadPhishTankCache();
   const now = Date.now();
-  const key = reputationCacheKey(normalized);
+  const key = await reputationCacheKey(normalized);
   const cached = cache[key];
   if (cached && cached.expiresAt > now) {
     return Object.assign({ provider: 'PhishTank', ok: true, enabled: true, cached: true, url: normalized }, cached.result || {});
@@ -8643,7 +8691,7 @@ async function urlHausLookupUrl(url, opts) {
 
   const cache = await loadUrlHausCache();
   const now = Date.now();
-  const key = reputationCacheKey(normalized);
+  const key = await reputationCacheKey(normalized);
   const cached = cache[key];
   if (cached && cached.expiresAt > now) {
     return Object.assign({ provider: 'URLhaus', ok: true, enabled: true, cached: true, url: normalized }, cached.result || {});
@@ -8798,7 +8846,7 @@ async function fetchWhoisXmlDomainReputation(domain, apiKey) {
     if (apiError) return { provider: 'WhoisXML Domain Reputation', ok: false, status: res.status || 0, error: apiError };
     return parseWhoisXmlDomainReputation(target, res.data || {}, res.status || 0);
   } catch (e) {
-    return { provider: 'WhoisXML Domain Reputation', ok: false, error: String(e).slice(0, 120) };
+    return { provider: 'WhoisXML Domain Reputation', ok: false, error: 'WhoisXML Domain Reputation request failed. Check the connection and API key.' };
   }
 }
 
@@ -8918,7 +8966,7 @@ async function fetchWhoisXmlThreatIntel(ioc, apiKey) {
     if (apiError) return { provider: 'WhoisXML Threat Intelligence', ok: false, status: res.status || 0, error: apiError };
     return parseWhoisXmlThreatIntel(query, res.data || {}, res.status || 0);
   } catch (e) {
-    return { provider: 'WhoisXML Threat Intelligence', ok: false, error: String(e).slice(0, 120) };
+    return { provider: 'WhoisXML Threat Intelligence', ok: false, error: 'WhoisXML Threat Intelligence request failed. Check the connection and API key.' };
   }
 }
 
@@ -8945,7 +8993,7 @@ async function whoisXmlThreatIntelLookupUrl(url, opts) {
 
   const cache = await loadWhoisXmlThreatCache();
   const now = Date.now();
-  const key = reputationCacheKey(ioc);
+  const key = await reputationCacheKey(ioc);
   const cached = cache[key];
   if (cached && cached.expiresAt > now) {
     return Object.assign({ provider: 'WhoisXML Threat Intelligence', ok: true, enabled: true, cached: true, ioc }, cached.result || {});
@@ -8983,7 +9031,7 @@ async function whoisXmlThreatIntelLookupUrl(url, opts) {
   return whoisXmlThreatInflight[key];
 }
 
-async function urlReputationConfig() {
+async function urlReputationConfig(manual) {
   try {
     const store = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
@@ -8992,14 +9040,14 @@ async function urlReputationConfig() {
     const abuseIpDbKey = String(cfg.abuseIpDbKey || '').trim();
     const urlHausKey = String(cfg.urlHausKey || '').trim();
     const whoisXmlKey = String(cfg.whoisXmlKey || '').trim();
-    const safeBrowsingEnabled = cfg.enabled !== false && cfg.downloadSafeBrowsing === true && !!key;
-    const phishTankEnabled = cfg.enabled !== false && cfg.phishTank === true && !!phishTankKey;
+    const safeBrowsingEnabled = cfg.enabled !== false && (manual === true || cfg.downloadSafeBrowsing === true) && !!key;
+    const phishTankEnabled = cfg.enabled !== false && (manual === true || cfg.phishTank === true) && !!phishTankKey;
     const openPhishEnabled = cfg.enabled !== false && cfg.openPhish === true;
-    const abuseIpDbEnabled = cfg.enabled !== false && cfg.abuseIpDb === true && !!abuseIpDbKey;
-    const urlHausEnabled = cfg.enabled !== false && cfg.urlHaus === true && !!urlHausKey;
-    const whoisXmlEnabled = cfg.enabled !== false && (cfg.whoisXml === true || cfg.whoisXmlReputation === true) && !!whoisXmlKey;
-    const whoisXmlReputationEnabled = cfg.enabled !== false && cfg.whoisXmlReputation === true && !!whoisXmlKey;
-    const whoisXmlThreatIntelEnabled = cfg.enabled !== false && cfg.whoisXmlThreatIntel === true && !!whoisXmlKey;
+    const abuseIpDbEnabled = cfg.enabled !== false && (manual === true || cfg.abuseIpDb === true) && !!abuseIpDbKey;
+    const urlHausEnabled = cfg.enabled !== false && (manual === true || cfg.urlHaus === true) && !!urlHausKey;
+    const whoisXmlEnabled = cfg.enabled !== false && (manual === true || cfg.whoisXml === true || cfg.whoisXmlReputation === true) && !!whoisXmlKey;
+    const whoisXmlReputationEnabled = cfg.enabled !== false && (manual === true || cfg.whoisXmlReputation === true) && !!whoisXmlKey;
+    const whoisXmlThreatIntelEnabled = cfg.enabled !== false && (manual === true || cfg.whoisXmlThreatIntel === true) && !!whoisXmlKey;
     return {
       cfg,
       key,
@@ -9020,6 +9068,17 @@ async function urlReputationConfig() {
   } catch (_) {
     return { cfg: Object.assign({}, DEFAULT_CONFIG), key: '', phishTankKey: '', abuseIpDbKey: '', urlHausKey: '', whoisXmlKey: '', safeBrowsingEnabled: false, phishTankEnabled: false, openPhishEnabled: false, abuseIpDbEnabled: false, urlHausEnabled: false, whoisXmlEnabled: false, whoisXmlReputationEnabled: false, whoisXmlThreatIntelEnabled: false, enabled: false };
   }
+}
+
+/* A local block needs no keyed provider request. Wait for cold-start hydration so
+   the first navigation has the same privacy boundary as later navigations. */
+async function locallyBlockedReputationHost(host) {
+  await Promise.all([__initBlockedDomains, loadLearned()]);
+  const domain = registrableDomainBg(host) || host;
+  if ((LEARNED[host] && LEARNED[host].userBlocked)
+    || (LEARNED[domain] && LEARNED[domain].userBlocked)) return 'user';
+  if (SECURITY_DOMAINS.has(host) || SECURITY_DOMAINS.has(domain)) return 'security';
+  return '';
 }
 
 function reputationResultPublic(result) {
@@ -9164,7 +9223,7 @@ async function urlReputationLookupUrl(url, opts) {
   }
   if (!checks.length) return { provider: 'URL reputation', ok: true, enabled: false, hit: false, url: normalized };
 
-  const results = (await Promise.all(checks)).filter(Boolean);
+  const results = (await Promise.all(checks.map((check) => Promise.resolve(check).catch(() => null)))).filter(Boolean);
   const hit = results.find((r) => r && r.ok && r.hit);
   const warning = results.find((r) => r && r.ok && r.warning);
   const ageWarning = results.find((r) => r && r.ok && r.provider === 'WhoisXML API' && r.warning);
@@ -9533,8 +9592,11 @@ async function handleSafeBrowsingNavigation(details) {
     if (!host || isLocalTrustHost(host)) return;
     // The user already saw this verdict and chose to continue anyway.
     if (await safeBrowsingBypassAllows(host)) return;
-
-    const verdict = await urlReputationLookupUrl(url, Object.assign({ context: 'page' }, state));
+    const local = await locallyBlockedReputationHost(host);
+    if (local === 'user') return;
+    const verdict = local === 'security'
+      ? { ok: true, hit: true, provider: 'WardenOne local malware and scam list', threats: ['MALWARE_OR_SCAM'] }
+      : await urlReputationLookupUrl(url, Object.assign({ context: 'page' }, state));
     if (verdict && verdict.ok && verdict.warning && !verdict.hit) {
       queueHistory({
         type: verdict.provider === 'AbuseIPDB' ? 'warned_abuseipdb_server' : 'warned_url_reputation',
@@ -9798,9 +9860,8 @@ function whoisXmlPrivacy(record) {
 
 function whoisXmlErrorText(data) {
   const err = data && (data.ErrorMessage || data.errorMessage || data.error || data.errors);
-  if (Array.isArray(err) && err[0]) return firstString(err[0].msg, err[0].message, err[0].detail, err[0]);
-  if (err && typeof err === 'object') return firstString(err.msg, err.message, err.detail, err.error);
-  return firstString(err, data && data.message);
+  return err || (data && data.message)
+    ? 'WhoisXML returned an error. Check the API key, remaining credits and provider status.' : '';
 }
 
 function parseWhoisXmlResponse(domain, data) {
@@ -9865,7 +9926,7 @@ async function fetchWhoisXmlDomain(domain, apiKey) {
     if (apiError) return { provider: 'WhoisXML API', ok: false, status: res.status || 0, error: apiError };
     return parseWhoisXmlResponse(reg, res.data);
   } catch (e) {
-    return { provider: 'WhoisXML API', ok: false, error: String(e).slice(0, 120) };
+    return { provider: 'WhoisXML API', ok: false, error: 'WhoisXML request failed. Check the connection and API key.' };
   }
 }
 
@@ -10028,13 +10089,13 @@ async function whoisXmlDomainAgeLookupUrl(url, opts) {
 // Implemented in background-downloads.js.
 
 let __allowlistRulesKey = null;
-async function applyAllowlistRules(list) {
+async function applyAllowlistRules(list, readRules) {
   try {
     const normalized = normalizeAllowlistHosts(list, 1000);
     const key = normalized.join(',');
     if (key === __allowlistRulesKey) return;
     // clear any existing allowlist rules first
-    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getSessionRules());
     const oldIds = existing.filter((r) => r.id >= ALLOWLIST_RULE_BASE && r.id < ALLOWLIST_RULE_BASE + 1000).map((r) => r.id);
     const addRules = [];
     normalized.forEach((h, i) => {
@@ -10054,11 +10115,11 @@ async function applyAllowlistRules(list) {
 }
 
 let __mediaCompatibilityRulesEnabled = null;
-async function applyMediaCompatibilityRules(enabled) {
+async function applyMediaCompatibilityRules(enabled, readRules) {
   try {
     enabled = !!enabled;
     if (__mediaCompatibilityRulesEnabled === enabled) return;
-    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getSessionRules());
     const oldIds = existing
       .filter((r) => r.id >= MEDIA_COMPAT_RULE_BASE && r.id < MEDIA_COMPAT_RULE_BASE + 100)
       .map((r) => r.id);
@@ -10134,11 +10195,11 @@ function loginCompatibilityRuleCondition(filter) {
     { resourceTypes: LOGIN_COMPAT_RESOURCE_TYPES },
   );
 }
-async function applyLoginCompatibilityRules(enabled) {
+async function applyLoginCompatibilityRules(enabled, readRules) {
   try {
     enabled = !!enabled;
     if (__loginCompatibilityRulesEnabled === enabled) return;
-    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getSessionRules());
     const oldIds = existing
       .filter((r) => r.id >= LOGIN_COMPAT_RULE_BASE && r.id < LOGIN_COMPAT_RULE_BASE + 300)
       .map((r) => r.id);
@@ -10705,7 +10766,12 @@ async function retryDegradedReconcileOnWake() {
 
 let __refreshExtensionStateLastKey = '';
 let __refreshExtensionStateGeneration = 0;
+let __refreshExtensionStateInFlightKey = '';
+let __refreshExtensionStateQueued = false;
+let __privacyEraseInProgress = false;
+const __reconcileComponentKeys = new Map();
 function refreshExtensionState() {
+  if (__privacyEraseInProgress) return;
   try {
     localGet('wardenone_config').then((res) => {
       if (res && res.unreadable) {
@@ -10750,6 +10816,8 @@ function refreshExtensionState() {
         // activeAllowlist, so without this a switch flipped for one site changed nothing here.
         locationExemptHosts(cfg).join(','),
         cfg.blockWebRTCLeak !== false ? 1 : 0,
+        cfg.intranetProtection !== false ? 1 : 0,
+        cfg.intranetNetworkRules !== false ? 1 : 0,
         // Both of these drive a dynamic content-script registration reconciled below, and neither
         // was represented here. The key is an early-out: once any other change had primed it,
         // toggling only one of these produced an identical key, the whole block returned before
@@ -10758,8 +10826,15 @@ function refreshExtensionState() {
         cfg.cryptominerCpuWatch === true ? 1 : 0,
         cfg.flagSearchJunk === true ? 1 : 0,
         cfg.warnSearchResults !== false ? 1 : 0,
+        cfg.safeSearch === true ? 1 : 0,
+        cfg.googleWebResultsOnly === true ? 1 : 0,
       ].join('|');
+      if (__refreshExtensionStateInFlightKey) {
+        if (stateKey !== __refreshExtensionStateInFlightKey) __refreshExtensionStateQueued = true;
+        return;
+      }
       if (stateKey === __refreshExtensionStateLastKey) return;
+      __refreshExtensionStateInFlightKey = stateKey;
       // The key is a claim that this desired state has been applied. Committing it here, before
       // any of the work below had run, made the claim up front: a second refresh could then settle
       // out of order and leave the opposite state applied while the key insisted otherwise, and a
@@ -10771,30 +10846,47 @@ function refreshExtensionState() {
       const generation = ++__refreshExtensionStateGeneration;
       const applied = [];
       const names = [];
+      let dynamicRulesSnapshot = null;
+      let sessionRulesSnapshot = null;
+      const sharedDynamicRules = () => (dynamicRulesSnapshot ||= chrome.declarativeNetRequest.getDynamicRules());
+      const sharedSessionRules = () => (sessionRulesSnapshot ||= chrome.declarativeNetRequest.getSessionRules());
       // Each applier is run under a name, and a resolved false counts as a failure: the
       // appliers catch their own Chrome errors, so a rejection was never going to arrive.
       // The applier is handed over as a thunk, so one that throws synchronously fails as THAT
       // component and the rest of the list still runs (BUG-08). This is the one list: there is
       // no second or third copy of it in the failure paths below, which is how three copies
       // came to disagree about which components exist.
-      const run = (name, apply) => {
+      const run = (name, apply, stableKey) => {
         names.push(name);
+        if (stableKey !== undefined && __reconcileComponentKeys.get(name) === stableKey) {
+          applied.push(Promise.resolve(true));
+          return;
+        }
         let result;
         try { result = apply(); } catch (_) { result = false; }
-        applied.push(Promise.resolve(result));
+        applied.push(Promise.resolve(result).then((value) => {
+          if (stableKey !== undefined) {
+            if (value === false) __reconcileComponentKeys.delete(name);
+            else __reconcileComponentKeys.set(name, stableKey);
+          }
+          return value;
+        }, (error) => {
+          __reconcileComponentKeys.delete(name);
+          throw error;
+        }));
       };
-      run('privacyHeaders', () => applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false));
+      run('privacyHeaders', () => applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false), String(on && cfg.sendPrivacySignals !== false));
       run('headerShield', () => applyHeaderShieldRules({
         clientHints: on && cfg.clientHintProtection !== false,
         strictReferrer: on && cfg.capReferrer === true,
         trackerCache: on && cfg.trackerCacheProtection === true,
-      }));
-      run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false));
-      run('trackerCookies', () => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false));
-      run('allowlist', () => applyAllowlistRules(on ? activeAllowlist(cfg) : []));
-      run('mediaCompatibility', () => applyMediaCompatibilityRules(on));
-      run('loginCompatibility', () => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false));
-      run('httpsUpgrade', () => applyHttpsUpgradeRule(on && cfg.forceHttps === true));
+      }), [on && cfg.clientHintProtection !== false, on && cfg.capReferrer === true, on && cfg.trackerCacheProtection === true].join(','));
+      run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
+      run('trackerCookies', () => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
+      run('allowlist', () => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules), JSON.stringify(on ? activeAllowlist(cfg) : []));
+      run('mediaCompatibility', () => applyMediaCompatibilityRules(on, sharedSessionRules), String(on));
+      run('loginCompatibility', () => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules), String(on && cfg.loginCompatibility !== false));
+      run('httpsUpgrade', () => applyHttpsUpgradeRule(on && cfg.forceHttps === true), String(on && cfg.forceHttps === true));
       run('blocklistRulesets', () => refreshBlocklistRuleset(cfg));
       run('eyeShield', () => reconcileEyeShieldInjection(cfg));
       run('consentReject', () => reconcileConsentRejectInjection(cfg));
@@ -10803,12 +10895,12 @@ function refreshExtensionState() {
       run('minerDetect', () => reconcileMinerDetectInjection(cfg));
       run('searchJunk', () => reconcileSearchJunkInjection(cfg));
       run('googleCleanupCss', () => reconcileGoogleCleanupCssInjection(cfg));
-      run('fingerprintScripts', () => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true));
-      run('searchSponsoredAllow', () => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
-      run('searchParams', () => applySearchParamRules(Object.assign({}, cfg, { enabled: on })));
-      run('allCookies', () => applyAllCookieBlock(on && cfg.blockAllCookies === true));
-      run('geolocation', () => applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)));
-      run('locationHeaders', () => applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true));
+      run('fingerprintScripts', () => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true, sharedDynamicRules), [on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true].join(','));
+      run('searchSponsoredAllow', () => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg), sharedDynamicRules), String(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
+      run('searchParams', () => applySearchParamRules(Object.assign({}, cfg, { enabled: on }), sharedSessionRules), [on, cfg.safeSearch === true, cfg.googleWebResultsOnly === true].join(','));
+      run('allCookies', () => applyAllCookieBlock(on && cfg.blockAllCookies === true), String(on && cfg.blockAllCookies === true));
+      run('geolocation', () => applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)), JSON.stringify([on && cfg.blockGeolocation === true, locationExemptHosts(cfg)]));
+      run('locationHeaders', () => applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true), String(on && cfg.blockGeolocation === true));
       run('ipLookup', () => applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false));
       run('intranet', () => applyIntranetNetworkRules(on && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false));
       // The reader-authored bands follow the master switch through their own appliers (BUG-02);
@@ -10834,6 +10926,12 @@ function refreshExtensionState() {
         }
         __refreshExtensionStateLastKey = stateKey;
         clearReconcileDegraded();
+      }).finally(() => {
+        __refreshExtensionStateInFlightKey = '';
+        if (__refreshExtensionStateQueued) {
+          __refreshExtensionStateQueued = false;
+          refreshExtensionState();
+        }
       });
     }).catch(() => {
       // An error before or around the list -- the read, the key, a helper -- means the desired
@@ -10844,6 +10942,11 @@ function refreshExtensionState() {
       // configuration by switching protections off. Now the reconcile is recorded as degraded
       // and the wake-time retry runs the one list again (MV3-01).
       noteReconcileDegraded(['reconcile'], '');
+      __refreshExtensionStateInFlightKey = '';
+      if (__refreshExtensionStateQueued) {
+        __refreshExtensionStateQueued = false;
+        refreshExtensionState();
+      }
     });
   } catch (_) {
     noteReconcileDegraded(['reconcile'], '');
@@ -10862,6 +10965,16 @@ function scheduleExtensionStateRefresh() {
 // whatever event woke it. onStartup and onInstalled call refreshExtensionState() themselves;
 // this is for the wake that neither of them covers.
 retryDegradedReconcileOnWake().catch(() => {});
+
+// A full erase reloads the worker to discard in-memory browsing state. Rebuild the
+// browser-owned rules on that cold wake; the erased local data is not recovered.
+const PRIVACY_ERASE_REBUILD_KEY = 'wardenone_erase_rebuild';
+try {
+  sessionArea()?.get(PRIVACY_ERASE_REBUILD_KEY).then((stored) => {
+    if (!stored || !stored[PRIVACY_ERASE_REBUILD_KEY]) return;
+    sessionArea().remove(PRIVACY_ERASE_REBUILD_KEY).then(() => refreshExtensionState()).catch(() => refreshExtensionState());
+  }).catch(() => {});
+} catch (_) {}
 
 function searchAiCleanupActive(cfg) {
   cfg = cfg || {};
@@ -11338,6 +11451,7 @@ async function reconcileConsentRejectInjection(cfgArg) {
    and a script that reads every <img> on the web to find the handful that are in
    an inbox would be a cost paid on every page for nothing. */
 const MAIL_SHIELD_SCRIPT_ID = 'wo-mail-shield-dynamic';
+let mailShieldLastPublishedState = null;
 const MAIL_SHIELD_MATCHES = [
   '*://mail.google.com/*',
   '*://inbox.google.com/*',
@@ -11357,17 +11471,38 @@ function mailShieldActive(cfg) {
   cfg = cfg || {};
   return cfg.enabled !== false && cfg.mailTrackingShield !== false;
 }
+function notifyMailShieldOpenTabs(enabled) {
+  try {
+    chrome.tabs.query({}, (tabs) => {
+      void chrome.runtime.lastError;
+      for (const tab of (tabs || [])) {
+        if (!tab || tab.id == null) continue;
+        try {
+          chrome.tabs.sendMessage(tab.id, { kind: 'mail-shield-state', enabled },
+            () => { void chrome.runtime.lastError; });
+        } catch (_) {}
+      }
+    });
+  } catch (_) {}
+}
 function injectMailShieldIntoOpenTabs() {
   try {
     chrome.tabs.query({}, (tabs) => {
       for (const t of (tabs || [])) {
-        if (!t || t.id == null || !/^https?:/i.test(t.url || '')) continue;
-        if (!MAIL_SHIELD_MATCHES.some((m) => matchesPatternHost(m, t.url))) continue;
+        if (!t || t.id == null) continue;
         try {
-          chrome.scripting.executeScript(
-            { target: { tabId: t.id, allFrames: true }, world: 'ISOLATED', files: ['mail-shield.js'] },
-            () => { void chrome.runtime.lastError; },
-          );
+          chrome.webNavigation.getAllFrames({ tabId: t.id }, (frames) => {
+            void chrome.runtime.lastError;
+            const frameIds = (frames || []).filter((f) => f && MAIL_SHIELD_MATCHES.some(
+              (m) => matchesPatternHost(m, f.url || ''))).map((f) => f.frameId);
+            if (!frameIds.length) return;
+            try {
+              chrome.scripting.executeScript(
+                { target: { tabId: t.id, frameIds }, world: 'ISOLATED', files: ['mail-shield.js'] },
+                () => { void chrome.runtime.lastError; },
+              );
+            } catch (_) {}
+          });
         } catch (_) {}
       }
     });
@@ -11420,6 +11555,10 @@ async function reconcileMailShieldInjection(cfgArg) {
       await chrome.scripting.unregisterContentScripts({ ids: [MAIL_SHIELD_SCRIPT_ID] });
     }
   } catch (_) { return false; }
+  if (mailShieldLastPublishedState !== want || have !== want) {
+    mailShieldLastPublishedState = want;
+    notifyMailShieldOpenTabs(want);
+  }
 }
 const CONSENT_WALL_SCRIPT_ID = 'wo-consent-wall-dynamic';
 function consentWallActive(cfg) {
@@ -11669,7 +11808,6 @@ async function applyLocationPrivacyHeaderRule(enabled) {
         action: {
           type: 'modifyHeaders',
           requestHeaders: [
-            { header: 'Accept-Language', operation: 'set', value: 'en-US,en;q=0.9' },
             { header: 'X-Geo', operation: 'remove' },
             { header: 'X-Geo-Position', operation: 'remove' },
             { header: 'X-Client-Geo-Location', operation: 'remove' },
@@ -12135,10 +12273,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
       }
       if (o.enabled !== n.enabled || o.blockCryptominers !== n.blockCryptominers) {
         applyMinerFeedRules();
-      }
-      if (o.enabled !== n.enabled || o.safeSearch !== n.safeSearch
-        || o.googleWebResultsOnly !== n.googleWebResultsOnly) {
-        applySearchParamRules(n);
       }
       if (o.enabled !== n.enabled) {
         applyScriptShieldRules();
@@ -12752,9 +12886,10 @@ async function getTrustedScriptHosts() {
 
 async function setTrustedScriptHosts(list) {
   const clean = normalizeAllowlistHosts(list, 500).sort();
-  await localSet({ [SCRIPT_TRUSTED_KEY]: clean });
+  const write = await localSet({ [SCRIPT_TRUSTED_KEY]: clean });
+  if (!write.persisted) return { ok: false, persisted: false, error: 'Private-window script trust cannot be saved.' };
   await applyScriptShieldRules();
-  return clean;
+  return { ok: true, persisted: true, items: clean };
 }
 
 async function addTrustedScriptHost(host) {
@@ -12762,14 +12897,12 @@ async function addTrustedScriptHost(host) {
   if (!h) return { ok: false, error: 'Open a normal web page first.' };
   const list = await getTrustedScriptHosts();
   if (!list.includes(h)) list.push(h);
-  const items = await setTrustedScriptHosts(list);
-  return { ok: true, host: h, items };
+  return { ...(await setTrustedScriptHosts(list)), host: h };
 }
 
 async function removeTrustedScriptHost(host) {
   const h = normalizeAllowlistHost(host);
-  const items = await setTrustedScriptHosts((await getTrustedScriptHosts()).filter((x) => x !== h));
-  return { ok: true, host: h, items };
+  return { ...(await setTrustedScriptHosts((await getTrustedScriptHosts()).filter((x) => x !== h))), host: h };
 }
 
 function cleanSmartScriptExactHost(value) {
@@ -13736,9 +13869,9 @@ const FRAUD_VENDOR_URL_FILTERS = [
 const FINGERPRINT_SCRIPT_URL_FILTERS = FINGERPRINT_LIBRARY_URL_FILTERS
   .concat(FRAUD_VENDOR_URL_FILTERS);
 
-async function applyFingerprintScriptRules(enabled, blockFraudVendors) {
+async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules) {
   try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getDynamicRules());
     const oldIds = existing
       .filter((r) => r.id >= FINGERPRINT_SCRIPT_RULE_BASE && r.id < FINGERPRINT_SCRIPT_RULE_BASE + FINGERPRINT_SCRIPT_RULE_MAX)
       .map((r) => r.id);
@@ -13915,13 +14048,13 @@ const GOOGLE_SAFE_PRESENT = GOOGLE_SEARCH_MATCH + '.*[?&]safe=active';
 const GOOGLE_UDM_AND_SAFE_PRESENT = GOOGLE_SEARCH_MATCH
   + '(.*[?&]udm=.*[?&]safe=active|.*[?&]safe=active.*[?&]udm=)';
 
-async function applySearchParamRules(cfg) {
+async function applySearchParamRules(cfg, readRules) {
   try {
     const config = cfg || {};
     const on = config.enabled !== false;
     const safeOn = on && config.safeSearch === true;
     const webOnly = on && config.googleWebResultsOnly === true;
-    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getSessionRules());
     const oldIds = existing
       .filter((r) => r.id >= SAFE_SEARCH_RULE_BASE && r.id < SAFE_SEARCH_RULE_BASE + SAFE_SEARCH_RULE_MAX)
       .map((r) => r.id);
@@ -13983,10 +14116,10 @@ async function applySearchParamRules(cfg) {
   } catch (e) { console.warn('[WardenOne] search parameter rules failed', e); return false; }
 }
 
-async function applyGoogleSearchSponsoredAllowRules(enabled) {
+async function applyGoogleSearchSponsoredAllowRules(enabled, readRules) {
   try {
     enabled = !!enabled;
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getDynamicRules());
     const oldIds = existing
       .filter((r) => r.id >= GOOGLE_SEARCH_ALLOW_RULE_BASE && r.id < GOOGLE_SEARCH_ALLOW_RULE_BASE + GOOGLE_SEARCH_ALLOW_RULE_MAX)
       .map((r) => r.id);
@@ -14152,11 +14285,9 @@ async function applyNeverBlockAllowRules() {
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
   } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); }
 }
-applyNeverBlockAllowRules();
-/* At startup because storage.session is empty after a browser restart -- that is
-   what makes a session block end -- and because an entry may have lapsed while the
-   worker was not running. */
-applyUserBlocklistRules();
+/* The boot-time calls of these two appliers live below SERIALIZED_STATE_APPLIERS: called here,
+   they ran before the wrappers existed, so a cold-start rebuild took the unqueued path and could
+   interleave with the first queued write to the same rule range (MV3-07). */
 
 function isMediaCompatFilter(pattern) {
   const p = String(pattern || '').toLowerCase();
@@ -14189,6 +14320,17 @@ function serializeSubsystem(name, task) {
   // The caller still gets `next` and still sees the rejection.
   __subsystemQueues.set(name, next.then(() => {}, () => {}));
   return next;
+}
+/* Whole-store writers, one transaction per store (M48). The firewall matrix, My Rules with the
+   subscribed lists, and the element-zapper selectors are each read whole, changed in a private
+   copy and written back whole. Chrome storage has no compare-and-swap and an awaited read-change-
+   write is not atomic, so two overlapping changes both read the old store and the later write
+   erased the earlier one while both callers were told it worked. Each whole transaction --
+   read, change, apply, write -- now runs in its store's own lane of the same queue the appliers
+   use. My Rules and the subscribed lists share one lane because they compile into one rule band. */
+const USER_FILTER_STORES = 'wardenone_user_rules+wardenone_custom_lists';
+function storeTransaction(key, task) {
+  return serializeSubsystem('store:' + key, task);
 }
 // applyScriptShieldRules is deliberately absent: it already owns its own serialization chain
 // (__scriptShieldRuleUpdate), and it is the pattern this generalises rather than a gap in it.
@@ -14243,6 +14385,12 @@ SERIALIZED_STATE_APPLIERS.forEach((name) => {
     return serializeSubsystem(name, () => original.apply(this, args));
   };
 });
+/* Boot-time appliers run only now, through the queue (MV3-07). */
+applyNeverBlockAllowRules();
+/* At startup because storage.session is empty after a browser restart -- that is
+   what makes a session block end -- and because an entry may have lapsed while the
+   worker was not running. */
+applyUserBlocklistRules();
 
 function isVideoPlatformHost(host) {
   const h = String(host || '').replace(/^www\./, '').toLowerCase();
@@ -15656,6 +15804,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
      handlers could run, so engine repair and navigation attribution were inert. */
   'wo-engine-check',
   'wo-nav-signal',
+  'warning-ui-compromised',
   /* The right-click report. It carries no data the worker acts on beyond "a menu
      is opening in your tab" -- the host is taken from the sender's own tab, never
      from the message -- so the worst a page can do with it is relabel its own
@@ -15719,6 +15868,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
      can be frequent on media pages, so its worker-side ceiling matches the bridge. */
   'wo-engine-check': { max: 8, windowMs: 60000 },
   'wo-nav-signal': { max: 180, windowMs: 60000 },
+  'warning-ui-compromised': { max: 2, windowMs: 60000 },
   /* A right-click is a hand movement; a page firing more than one a second is
      not reporting menus, so the ceiling is generous but real. */
   'menu-opening': { max: 60, windowMs: 60000 },
@@ -16037,9 +16187,8 @@ async function syncRebindQuarantineRules() {
   }
 }
 
-// The page guard cannot see resolved addresses, so it is told the answer. The
-// list rides along in the config because that is the channel content scripts
-// already listen to; a second channel would be a second thing to keep in sync.
+// The worker keeps the quarantine for restart recovery and DNR enforcement. The
+// bridge removes this host list before its config enters a page's MAIN world.
 async function publishRebindQuarantine() {
   try {
     // Session DNR rules remain active in the private split worker. Do not mirror
@@ -16064,9 +16213,11 @@ async function quarantineReboundHost(host, signal, details) {
   if (!rebindGuardEnabled(cfg)) return;
   if (hostMatchesAllowlist(host, activeAllowlist(cfg))) return;
 
-  REBIND_QUARANTINED.set(host, { at: Date.now(), signal });
-  await syncRebindQuarantineRules();
-  await publishRebindQuarantine();
+  await rebindQuarantineSerial(async () => {
+    REBIND_QUARANTINED.set(host, { at: Date.now(), signal });
+    await syncRebindQuarantineRules();
+    await publishRebindQuarantine();
+  });
 
   const why = signal === 'flip'
     ? host + ' answered with a public address and then a private one, which is what a DNS rebinding attack looks like.'
@@ -16086,13 +16237,30 @@ async function quarantineReboundHost(host, signal, details) {
 
 // Observe-only: this runs after the response has started, which is exactly why
 // it is a second layer and not a first one.
+/* Bounded (PERF-04). The map only has to remember enough to see a public name turn private, and
+   it used to hold every host the worker had seen until the worker was evicted. Oldest entries go
+   first; one that is evicted and then flips is still caught, as a 'private' signal rather than a
+   'flip'. */
+const REBIND_HOST_CLASS_MAX = 2048;
+function rememberRebindHostClass(host, cls) {
+  const previous = REBIND_HOST_CLASS.get(host);
+  if (previous === cls) return previous;
+  if (previous !== undefined) REBIND_HOST_CLASS.delete(host);
+  REBIND_HOST_CLASS.set(host, cls);
+  while (REBIND_HOST_CLASS.size > REBIND_HOST_CLASS_MAX) {
+    REBIND_HOST_CLASS.delete(REBIND_HOST_CLASS.keys().next().value);
+  }
+  return previous;
+}
+
 function noteResolvedAddress(details) {
   try {
     if (!details || !details.ip || !details.url) return;
-    const host = new URL(details.url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
-    if (!host) return;
+    /* The address first: a response without a usable one costs no URL parse at all. */
     const cls = classifyResolvedIp(details.ip);
     if (!cls) return;
+    const host = new URL(details.url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (!host) return;
     const local = cls !== 'public';
     const tabId = typeof details.tabId === 'number' ? details.tabId : -1;
 
@@ -16105,12 +16273,11 @@ function noteResolvedAddress(details) {
         REBIND_TAB_IS_LOCAL.set(tabId, local);
         refreshIntranetNetworkRules();
       }
-      REBIND_HOST_CLASS.set(host, cls);
+      rememberRebindHostClass(host, cls);
       return;
     }
 
-    const previous = REBIND_HOST_CLASS.get(host);
-    REBIND_HOST_CLASS.set(host, cls);
+    const previous = rememberRebindHostClass(host, cls);
     if (!local) return;
     // A name that was already local by sight is Intranet Guard's business and is
     // blocked on sight; there is nothing hidden about it to quarantine.
@@ -16122,29 +16289,71 @@ function noteResolvedAddress(details) {
   } catch (_) {}
 }
 
-async function clearRebindQuarantine() {
-  REBIND_QUARANTINED.clear();
-  REBIND_HOST_CLASS.clear();
-  REBIND_TAB_IS_LOCAL.clear();
-  await syncRebindQuarantineRules();
-  await publishRebindQuarantine();
+/* Restore, clear and new quarantines used to run independently (MV3-09). Every worker start
+   launched a restore from the durable config while a browser start launched a clear, and
+   whichever storage and DNR callbacks settled last won -- so a previous session's quarantine
+   could come back after the clear and block a host all through the next session. Now they run
+   through one queue, and a restore only restores a list written in THIS browser session:
+   storage.session is empty after a browser restart, so a missing mark means the durable list is
+   a leftover, and it is cleared rather than reinstalled, whichever event arrives first. */
+const REBIND_SESSION_MARK_KEY = 'wardenone_rebind_session';
+let rebindQuarantineChain = Promise.resolve();
+function rebindQuarantineSerial(task) {
+  const run = rebindQuarantineChain.then(task, task);
+  rebindQuarantineChain = run.catch(() => {});
+  return run;
+}
+async function markRebindSession() {
+  try { await chrome.storage.session.set({ [REBIND_SESSION_MARK_KEY]: true }); } catch (_) {}
+}
+async function rebindSessionMarked() {
+  try {
+    const got = await chrome.storage.session.get(REBIND_SESSION_MARK_KEY);
+    return !!(got && got[REBIND_SESSION_MARK_KEY]);
+  } catch (_) {
+    /* Cannot tell: keep the quarantine rather than drop a live one. */
+    return true;
+  }
+}
+
+function clearRebindQuarantine() {
+  return rebindQuarantineSerial(async () => {
+    REBIND_QUARANTINED.clear();
+    REBIND_HOST_CLASS.clear();
+    REBIND_TAB_IS_LOCAL.clear();
+    await syncRebindQuarantineRules();
+    await publishRebindQuarantine();
+    await markRebindSession();
+  });
 }
 
 // The worker is evicted after seconds of idle and re-evaluated on the next event,
 // so in-memory state is not session state. Rehydrating here is what makes the
 // quarantine last as long as the copy says it does; onStartup is what ends it.
-async function restoreRebindQuarantine() {
-  try {
-    if (INCOGNITO_CONTEXT) return;
-    const stored = await localGet('wardenone_config');
-    const hosts = ((stored && stored.wardenone_config) || {}).rebindQuarantine;
-    if (!Array.isArray(hosts) || !hosts.length) return;
-    hosts.slice(0, REBIND_QUARANTINE_MAX).forEach((host) => {
-      const h = String(host || '').toLowerCase();
-      if (h && !REBIND_QUARANTINED.has(h)) REBIND_QUARANTINED.set(h, { at: 0, signal: 'restored' });
-    });
-    await syncRebindQuarantineRules();
-  } catch (_) {}
+function restoreRebindQuarantine() {
+  return rebindQuarantineSerial(async () => {
+    try {
+      if (INCOGNITO_CONTEXT) return;
+      const sameSession = await rebindSessionMarked();
+      const stored = await localGet('wardenone_config');
+      const hosts = ((stored && stored.wardenone_config) || {}).rebindQuarantine;
+      if (!sameSession) {
+        if (Array.isArray(hosts) && hosts.length) {
+          REBIND_QUARANTINED.clear();
+          await syncRebindQuarantineRules();
+          await publishRebindQuarantine();
+        }
+        await markRebindSession();
+        return;
+      }
+      if (!Array.isArray(hosts) || !hosts.length) return;
+      hosts.slice(0, REBIND_QUARANTINE_MAX).forEach((host) => {
+        const h = String(host || '').toLowerCase();
+        if (h && !REBIND_QUARANTINED.has(h)) REBIND_QUARANTINED.set(h, { at: 0, signal: 'restored' });
+      });
+      await syncRebindQuarantineRules();
+    } catch (_) {}
+  });
 }
 restoreRebindQuarantine();
 
@@ -16169,7 +16378,10 @@ try {
   chrome.webRequest?.onResponseStarted?.addListener(noteResolvedAddress,
     { urls: ['<all_urls>'], types: REBIND_WATCH_TYPES });
 } catch (_) {
-  /* Older enums reject an unknown type in the filter; fall back to watching all. */
+  /* Older enums reject an unknown type in the filter; fall back to watching all -- and say so,
+     because on a supported Chrome this path means every image and media response wakes the
+     worker again (PERF-04). */
+  console.warn('[WardenOne] DNS rebind watch fell back to every response type');
   try { chrome.webRequest?.onResponseStarted?.addListener(noteResolvedAddress, { urls: ['<all_urls>'] }); } catch (__) {}
 }
 
@@ -16197,7 +16409,7 @@ const HEALTH_SHIELD_KEYS = [
   'blockGeolocation', 'blockAutoplayMedia', 'gateAdultSites', 'adultHeuristics', 'warnRedirectParams',
   'warnShorteners', 'warnSearchResults', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan',
   'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers',
-  'autoUpdateLists', 'trackerLearner', 'unshimLinks', 'cleanCopyLinks', 'socialWidgetGuard',
+  'autoUpdateLists', 'trackerLearner', 'unshimLinks', 'stripTrackingParams', 'cleanCopyLinks', 'socialWidgetGuard',
   'blockSupercookies', 'watchExtensionPermissions', 'startupCheck', 'blockPopupTricks', 'antiFingerprintNoise',
   'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'blockAllCookies', 'deAmp',
   'breachCheck', 'keystrokePressure', 'honeytokenMode', 'cryptominerCpuWatch', 'safeSearch',
@@ -16217,7 +16429,7 @@ const HEALTH_SHIELD_KEYS = [
 // as long as only one of them was checked.
 const WATCH_ONLY_GUARDS = ['logThirdPartyBeacons', 'deviceAccessGuard', 'capabilityGuard'];
 const SECOND_LEVEL_OF = {
-  // A mode of the IP-privacy guard, not a new protection (FEAT-03): the 107 does not move for it.
+  // A mode of the IP-privacy guard, not a new protection (FEAT-03): the count does not move for it.
   blockSuspiciousWebRTC: 'blockWebRTCLeak',
 };
 const CONTROL_KINDS = {
@@ -16279,8 +16491,7 @@ async function tabProtectionEvidence(tab, cfg) {
   let host = '';
   try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) { host = ''; }
   try {
-    const allow = activeAllowlist(cfg) || [];
-    if (host && allow.some((h) => registrableDomainBg(String(h)) === registrableDomainBg(host))) {
+    if (host && hostMatchesAllowlist(host, activeAllowlist(cfg))) {
       return { state: 'paused', host, text: 'Paused on ' + host + ' by your allowlist, so nothing is checked here.' };
     }
   } catch (_) {}
@@ -17349,9 +17560,9 @@ async function addHiddenElement(hostname, selector) {
   }
   list.push(sel);
   all[host] = list;
-  await localSet({ [HIDDEN_STORE_KEY]: all });
+  const write = await localSet({ [HIDDEN_STORE_KEY]: all });
   void refreshHiddenRulesForHost(host);
-  return { ok: true, selectors: list };
+  return { ok: true, persisted: write.persisted, selectors: list };
 }
 
 /* Wipe every saved rule on every site.
@@ -17375,11 +17586,11 @@ async function clearHiddenElements(hostname) {
     hosts = Object.keys(all);
     for (const host of hosts) delete all[host];
   }
-  await localSet({ [HIDDEN_STORE_KEY]: all });
+  const write = await localSet({ [HIDDEN_STORE_KEY]: all });
   /* Every host that had a rule needs its open tabs told, or the elements stay
      hidden until each one is reloaded. */
   for (const host of hosts) void refreshHiddenRulesForHost(host);
-  return { ok: true, cleared: hosts.length };
+  return { ok: true, persisted: write.persisted, cleared: hosts.length };
 }
 
 async function removeHiddenElement(hostname, selector) {
@@ -17388,9 +17599,9 @@ async function removeHiddenElement(hostname, selector) {
   const all = await readHiddenElements();
   const list = all[host] ? all[host].filter((s) => s !== String(selector).trim()) : [];
   if (list.length) all[host] = list; else delete all[host];
-  await localSet({ [HIDDEN_STORE_KEY]: all });
+  const write = await localSet({ [HIDDEN_STORE_KEY]: all });
   void refreshHiddenRulesForHost(host);
-  return { ok: true, selectors: list };
+  return { ok: true, persisted: write.persisted, selectors: list };
 }
 
 // ---- Right-click: the WardenOne submenu ------------------------------------
@@ -17826,7 +18037,7 @@ try {
 
    The system notification stays as the fallback for the case the toast genuinely
    cannot reach: a tab that refuses injection, or no tab at all. */
-async function wardenManualNotice(title, message, tab, id) {
+async function wardenManualNotice(title, message, tab, id, documentId) {
   const text = String(message || '').slice(0, 400);
   const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
   if (tabId !== null && /^https?:/i.test(String((tab && tab.url) || ''))) {
@@ -17836,7 +18047,7 @@ async function wardenManualNotice(title, message, tab, id) {
          on the same bus (bridge.js eventSigned). No bridge, or no key, and it falls through to
          the system notification rather than going out unsigned. */
       const results = await chrome.scripting.executeScript({
-        target: { tabId, frameIds: [0] },
+        target: documentId ? { tabId, documentIds: [documentId] } : { tabId, frameIds: [0] },
         func: (why, action) => {
           try {
             return typeof window.__wardenOneLocalNotice === 'function'
@@ -17847,6 +18058,7 @@ async function wardenManualNotice(title, message, tab, id) {
       });
       if (results && results[0] && results[0].result === true) return true;
     } catch (_) { /* fall through to the tray */ }
+    if (documentId) return false;
   }
   return showWardenSystemNotification(id || ('wo-check-' + Date.now()), {
     type: 'basic',
@@ -18004,7 +18216,7 @@ async function wardenHostFindings(host, url, cfg) {
 
   /* Reputation first: it is the one that can say "do not open this". */
   try {
-    const state = await urlReputationConfig();
+    const state = await urlReputationConfig(true);
     if (state && state.enabled) {
       const verdict = await urlReputationLookupUrl(normalizeSafeBrowsingUrl(url),
         Object.assign({ context: 'manual' }, state));
@@ -18037,6 +18249,91 @@ async function wardenHostFindings(host, url, cfg) {
   return lines;
 }
 
+const MANUAL_CHECK_JOURNAL_KEY = 'wardenone_manual_check_jobs';
+const MANUAL_CHECK_TTL_MS = 10 * 60 * 1000;
+let manualCheckJournalSerial = Promise.resolve();
+function manualCheckJournalStep(work) {
+  const run = manualCheckJournalSerial.then(work);
+  manualCheckJournalSerial = run.catch(() => {});
+  return run;
+}
+async function manualCheckJobs() {
+  const got = await chrome.storage.session.get(MANUAL_CHECK_JOURNAL_KEY);
+  const list = got && got[MANUAL_CHECK_JOURNAL_KEY];
+  return Array.isArray(list) ? list.filter((job) => job && typeof job.id === 'string'
+    && Number.isFinite(job.startedAt) && Date.now() - job.startedAt < MANUAL_CHECK_TTL_MS).slice(-20) : [];
+}
+async function manualCheckCurrentTab(job) {
+  if (!job || !Number.isInteger(job.tabId) || job.tabId < 0) return null;
+  try {
+    const tab = await chrome.tabs.get(job.tabId);
+    if (!tab || !tab.url || await reputationCacheKey(tab.url) !== job.tabUrlHash) return null;
+    if (job.documentId) {
+      const frame = await chrome.webNavigation.getFrame({ tabId: job.tabId, frameId: 0 });
+      if (!frame || frame.documentId !== job.documentId) return null;
+    }
+    return tab;
+  } catch (_) { return null; }
+}
+async function manualCheckNotice(job, title, message) {
+  const id = 'wo-check-' + job.id;
+  const tab = await manualCheckCurrentTab(job);
+  if (!tab) return wardenManualNotice('Check interrupted',
+    'The page changed or closed before the check finished. Please run it again if needed.', null, id);
+  const delivered = await wardenManualNotice(title, message, tab, id, job.documentId);
+  if (delivered) return true;
+  const stillCurrent = await manualCheckCurrentTab(job);
+  return stillCurrent
+    ? wardenManualNotice(title, message, null, id)
+    : wardenManualNotice('Check interrupted',
+      'The page changed or closed before the check finished. Please run it again if needed.', null, id);
+}
+async function recoverManualCheckJobs() {
+  return manualCheckJournalStep(async () => {
+    const jobs = await manualCheckJobs();
+    if (!jobs.length) return;
+    const remaining = [];
+    for (const job of jobs) {
+      try {
+        const delivered = await manualCheckNotice(job, 'Check interrupted',
+          'The requested reputation check was interrupted. Please run it again.');
+        if (!delivered) remaining.push(job);
+      } catch (_) { remaining.push(job); }
+    }
+    await chrome.storage.session.set({ [MANUAL_CHECK_JOURNAL_KEY]: remaining });
+  });
+}
+const manualCheckRecoveryReady = recoverManualCheckJobs().catch(() => {});
+async function startManualCheckJob(kind, tab) {
+  await manualCheckRecoveryReady;
+  const job = {
+    id: crypto.randomUUID(), kind,
+    tabId: tab && Number.isInteger(tab.id) ? tab.id : null,
+    tabUrlHash: tab && tab.url ? await reputationCacheKey(tab.url) : '',
+    documentId: '',
+    startedAt: Date.now(),
+  };
+  if (job.tabId !== null && /^https?:/i.test(String(tab.url || ''))) {
+    const frame = await chrome.webNavigation.getFrame({ tabId: job.tabId, frameId: 0 });
+    if (!frame || !frame.documentId) throw new Error('Document identity unavailable');
+    job.documentId = frame.documentId;
+  }
+  if (job.tabId !== null && !(await manualCheckCurrentTab(job))) throw new Error('Page changed');
+  await manualCheckJournalStep(async () => {
+    const jobs = await manualCheckJobs();
+    if (jobs.length >= 20) throw new Error('Too many pending checks');
+    jobs.push(job);
+    await chrome.storage.session.set({ [MANUAL_CHECK_JOURNAL_KEY]: jobs });
+  });
+  return job;
+}
+async function finishManualCheckJob(id) {
+  await manualCheckJournalStep(async () => {
+    const jobs = await manualCheckJobs();
+    await chrome.storage.session.set({ [MANUAL_CHECK_JOURNAL_KEY]: jobs.filter((job) => job.id !== id) });
+  });
+}
+
 async function runWardenManualCheck(rawText, tab) {
   const found = wardenIndicatorKind(rawText);
   if (!found) {
@@ -18044,6 +18341,23 @@ async function runWardenManualCheck(rawText, tab) {
       'That is not a link, domain, IP address or file hash. Select one of those and try again.', tab);
     return;
   }
+  let job = null;
+  let delivered = false;
+  if (found.kind === 'url' || found.kind === 'domain' || found.kind === 'ip') {
+    try { job = await startManualCheckJob(found.kind, tab); }
+    catch (_) {
+      await wardenManualNotice('Check could not start',
+        'WardenOne could not save this check for recovery. Please try again.', tab);
+      return;
+    }
+  }
+  const notice = async (title, message) => {
+    const ok = job && job.tabId !== null
+      ? await manualCheckNotice(job, title, message)
+      : await wardenManualNotice(title, message, tab);
+    if (ok) delivered = true;
+    return ok;
+  };
   try {
     const store = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
@@ -18052,7 +18366,7 @@ async function runWardenManualCheck(rawText, tab) {
       const host = found.kind === 'url' ? found.host : found.value;
       const url = found.kind === 'url' ? found.value : 'https://' + found.value + '/';
       const lines = await wardenHostFindings(host, url, cfg);
-      await wardenManualNotice(host, lines.join(' ') || 'Nothing known about ' + host + '.', tab);
+      await notice(host, lines.join(' ') || 'Nothing known about ' + host + '.');
       return;
     }
 
@@ -18064,20 +18378,20 @@ async function runWardenManualCheck(rawText, tab) {
          already knew. */
       const ip = normalizeIpLiteral(found.value);
       if (!ip) {
-        await wardenManualNotice(found.value,
-          'That is a private or reserved address, so it has no public reputation to look up.', tab);
+        await notice(found.value,
+          'That is a private or reserved address, so it has no public reputation to look up.');
         return;
       }
 
       const verdict = await abuseIpDbLookupIp(ip);
       if (!verdict || verdict.enabled === false) {
-        await wardenManualNotice(ip,
-          'A public address. Turn on AbuseIPDB and add a free key on the API keys page to look addresses up.', tab);
+        await notice(ip,
+          'A public address. Turn on AbuseIPDB and add a free key on the API keys page to look addresses up.');
         return;
       }
       if (!verdict.ok) {
-        await wardenManualNotice(ip,
-          'AbuseIPDB did not answer' + (verdict.error ? ': ' + String(verdict.error).slice(0, 120) : '.'), tab);
+        await notice(ip,
+          'AbuseIPDB did not answer' + (verdict.error ? ': ' + String(verdict.error).slice(0, 120) : '.'));
         return;
       }
 
@@ -18100,7 +18414,7 @@ async function runWardenManualCheck(rawText, tab) {
       if (verdict.isWhitelisted) lines.push('AbuseIPDB lists it as a known-good address.');
       if (verdict.cached) lines.push('(from a cached answer)');
 
-      await wardenManualNotice(ip, lines.join(' '), tab);
+      await notice(ip, lines.join(' '));
       return;
     }
 
@@ -18109,17 +18423,19 @@ async function runWardenManualCheck(rawText, tab) {
        SHA-256 only, so any other length is told it cannot be answered rather than
        being handed a clean-looking "not found" it did not earn. */
     if (found.kind !== 'sha256') {
-      await wardenManualNotice(found.kind.toUpperCase() + ' hash',
-        'WardenOne only keeps SHA-256 hashes, so it cannot answer for this one.', tab);
+      await notice(found.kind.toUpperCase() + ' hash',
+        'WardenOne only keeps SHA-256 hashes, so it cannot answer for this one.');
       return;
     }
     const known = typeof MALWARE_HASHES !== 'undefined' && MALWARE_HASHES.has(found.value);
-    await wardenManualNotice('SHA-256',
+    await notice('SHA-256',
       known
         ? 'This hash is on WardenOne\'s known-malware list. Do not run that file.'
-        : 'Not on WardenOne\'s known-malware list. That is not proof it is safe.', tab);
+        : 'Not on WardenOne\'s known-malware list. That is not proof it is safe.');
   } catch (e) {
-    await wardenManualNotice('The check did not finish', String((e && e.message) || e || 'Unknown error.'), tab);
+    await notice('The check did not finish', 'The provider or local check failed. Please try again.');
+  } finally {
+    if (job && delivered) await finishManualCheckJob(job.id).catch(() => {});
   }
 }
 
@@ -19270,6 +19586,86 @@ for (const cookie of all) {
 return { removed, kept: all.length - removed, sites: sites.size };
 }
 
+function privacyStoreTimestamp(value) {
+  const candidates = [];
+  const note = (record) => {
+    if (!record || typeof record !== 'object') return;
+    for (const name of ['at', 'updatedAt', 'fetchedAt', 'checkedAt', 'createdAt', 'ts']) {
+      const number = Number(record[name]);
+      if (Number.isFinite(number) && number > 946684800000 && number <= Date.now() + 86400000) candidates.push(number);
+    }
+  };
+  note(value);
+  if (Array.isArray(value)) {
+    for (const record of value.slice(0, 100)) note(record);
+  } else if (value && typeof value === 'object') {
+    for (const record of Object.values(value).slice(0, 100)) note(record);
+  }
+  return candidates.length ? Math.min(...candidates) : null;
+}
+
+async function inspectWardenOneData() {
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get(null),
+    chrome.storage.session ? chrome.storage.session.get(null) : Promise.resolve({}),
+  ]);
+  const records = [];
+  for (const [area, values] of [['local', local || {}], ['session', session || {}]]) {
+    for (const [key, value] of Object.entries(values)) {
+      const bytes = new TextEncoder().encode(JSON.stringify(value) || '').length;
+      records.push({ area, key, bytes, oldestKnownAt: privacyStoreTimestamp(value) });
+    }
+  }
+  records.sort((a, b) => b.bytes - a.bytes || a.key.localeCompare(b.key));
+  return { ok: true, records, totalBytes: records.reduce((sum, item) => sum + item.bytes, 0) };
+}
+
+function preservedPrivacyConfig(config, mode) {
+  if (mode === 'all' || !config || typeof config !== 'object' || Array.isArray(config)) return null;
+  const saved = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG, key)) continue;
+    if (!['string', 'number', 'boolean'].includes(typeof value)) continue;
+    if (/At$/.test(key)) continue;
+    if (mode === 'settings' && /Key$/.test(key)) continue;
+    saved[key] = value;
+  }
+  return saved;
+}
+
+async function eraseWardenOneData(mode) {
+  if (!['all', 'settings', 'settings-and-keys'].includes(mode)) return { ok: false, error: 'Choose a valid erase option.' };
+  if (__privacyEraseInProgress) return { ok: false, error: 'An erase is already running.' };
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get(null),
+    chrome.storage.session ? chrome.storage.session.get(null) : Promise.resolve({}),
+  ]);
+  const pending = Object.assign({}, (local || {}).wardenone_pending_downloads || {}, (session || {}).wardenone_pending_downloads || {});
+  if (Object.keys(pending).length) return { ok: false, error: 'Finish or cancel active Download Shield reviews before erasing WardenOne data.' };
+  const preserved = preservedPrivacyConfig((local || {}).wardenone_config, mode);
+  __privacyEraseInProgress = true;
+  try {
+    const [dynamic, sessionRules] = await Promise.all([
+      chrome.declarativeNetRequest.getDynamicRules(),
+      chrome.declarativeNetRequest.getSessionRules(),
+    ]);
+    if (dynamic.length) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
+    if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
+    await chrome.storage.local.clear();
+    if (chrome.storage.session) await chrome.storage.session.clear();
+    if (preserved) await chrome.storage.local.set({ wardenone_config: preserved });
+    if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true });
+    setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
+    return { ok: true, kept: mode === 'all' ? 'nothing' : (mode === 'settings' ? 'global switches' : 'global switches and API keys') };
+  } catch (error) {
+    __privacyEraseInProgress = false;
+    __refreshExtensionStateLastKey = '';
+    __reconcileComponentKeys.clear();
+    refreshExtensionState();
+    return { ok: false, error: String(error && error.message || error || 'Erase failed.') };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Defense-in-depth: device-wide DESTRUCTIVE actions (clear ALL site data, wipe a
   // site) must originate from a WardenOne extension page (popup/options), never from
@@ -19549,6 +19945,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'redirect-warning' && messageSenderIsTab(sender)) {
     respond(showRedirectWarning(sender, msg.detail || {}), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'warning-ui-compromised' && messageSenderIsTab(sender)) {
+    respond(showWardenSystemNotification('wo-warning-integrity-' + sender.tab.id, {}, 'warning_integrity')
+      .then((shown) => ({ ok: !!shown })), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'privacy-data-inspect' && messageSenderIsExtensionPage(sender)) {
+    respond(inspectWardenOneData(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'privacy-data-erase' && messageSenderIsExtensionPage(sender)) {
+    respond(eraseWardenOneData(String(msg.mode || '')), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'oauth-grant' && messageSenderIsTab(sender)) {
@@ -19860,6 +20269,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }));
       } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     })();
+    return true;
+  }
+  /* The Notification Centre's only way to change the store (M47): the worker owns it. */
+  if (msg && msg.kind === 'notifications-update') {
+    if (!messageSenderIsExtensionPath(sender, 'notifications.html')) {
+      sendResponse({ ok: false, error: 'Not allowed from this page.' });
+      return true;
+    }
+    const action = msg.action === 'read' || msg.action === 'clear' ? msg.action : '';
+    if (!action) { sendResponse({ ok: false, error: 'Unknown action.' }); return true; }
+    const ids = Array.isArray(msg.ids) ? msg.ids.slice(0, 500).map((id) => String(id).slice(0, 200)) : null;
+    mutateWardenNotifications(action, ids)
+      .then((items) => sendResponse({ ok: true, items }))
+      .catch((e) => sendResponse({ ok: false, error: String(e && e.message || e) }));
     return true;
   }
   if (msg && msg.kind === 'review-extension-snapshot') {
@@ -20467,14 +20890,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (msg.block) {
             // Remove the exception: no per-rule delete exists, so rebuild.
             list = list.filter((h) => h !== host);
-            await localSet({ [JS_ALLOWLIST_KEY]: list });
+            const write = await localSet({ [JS_ALLOWLIST_KEY]: list });
             const ok = await reconcileJsRules(true, list);
             if (!ok) { sendResponse({ ok: false, error: 'Could not update JavaScript setting.' }); return; }
+            sendResponse({ ...(await buildJsState(msg.url)), persisted: write.persisted });
+            return;
           } else {
             if (list.indexOf(host) < 0) list = list.concat([host]).slice(-500);
-            await localSet({ [JS_ALLOWLIST_KEY]: list });
+            const write = await localSet({ [JS_ALLOWLIST_KEY]: list });
             const ok = await jsSettingSet(jsHostPatterns(host), 'allow');
             if (!ok) { sendResponse({ ok: false, error: 'Could not update JavaScript setting.' }); return; }
+            sendResponse({ ...(await buildJsState(msg.url)), persisted: write.persisted });
+            return;
           }
           sendResponse(await buildJsState(msg.url));
           return;
@@ -20912,7 +21339,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'firewall-set') {
-    (async () => {
+    storeTransaction(FIREWALL_KEY, async () => {
       const site = firewallNormalizeHost(msg.site);
       const domain = firewallNormalizeHost(msg.domain);
       const column = String(msg.column || '');
@@ -20949,7 +21376,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       sendResponse({ ok: true, rules: next[site] || {}, omitted: firewallOmittedFor(after, site), held: after.rules.length, limit: after.limit, applied: result.applied });
-    })();
+    });
     return true;
   }
   if (msg && msg.kind === 'firewall-allow-once') {
@@ -20960,7 +21387,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'firewall-reset') {
-    (async () => {
+    storeTransaction(FIREWALL_KEY, async () => {
       const site = firewallNormalizeHost(msg.site);
       const matrix = await readFirewall();
       let next;
@@ -20979,7 +21406,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       sendResponse({ ok: true, applied: result.applied, sessionRemoved: session.removed });
-    })();
+    });
     return true;
   }
 
@@ -21043,7 +21470,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'user-rules-set') {
-    (async () => {
+    storeTransaction(USER_FILTER_STORES, async () => {
       try {
         const text = String(msg.text || '').slice(0, USER_RULE_TEXT_MAX);
         /* Parse before storing, so the answer describes what was actually
@@ -21073,7 +21500,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           error: '',
         });
       } catch (e) { sendResponse({ ok: false, error: String(e).slice(0, 200) }); }
-    })();
+    });
     return true;
   }
 
@@ -21088,7 +21515,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'custom-list-add' && msg.url) {
-    (async () => {
+    storeTransaction(USER_FILTER_STORES, async () => {
       try {
         const lists = await readCustomLists();
         if (lists.length >= CUSTOM_LIST_MAX) { sendResponse({ ok: false, error: 'That is the maximum number of lists.' }); return; }
@@ -21117,19 +21544,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused that list\'s rules (' + commit.error + '). It was not added.' }); return; }
         sendResponse({ ok: true, lists: customListRowsFor(lists, await readUserRulesText()) });
       } catch (e) { sendResponse({ ok: false, error: String(e).slice(0, 200) }); }
-    })();
+    });
     return true;
   }
   if (msg && msg.kind === 'custom-list-update' && msg.id) {
-    (async () => {
+    storeTransaction(USER_FILTER_STORES, async () => {
       const r = await refreshCustomList(msg.id);
       const lists = await readCustomLists();
       sendResponse(Object.assign({}, r, { lists: customListRowsFor(lists, await readUserRulesText()) }));
-    })();
+    });
     return true;
   }
   if (msg && msg.kind === 'custom-list-toggle' && msg.id) {
-    (async () => {
+    storeTransaction(USER_FILTER_STORES, async () => {
       const lists = await readCustomLists();
       const idx = lists.findIndex((l) => l && l.id === msg.id);
       if (idx < 0) { sendResponse({ ok: false, error: 'That list is not subscribed.' }); return; }
@@ -21141,29 +21568,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const commit = await commitUserFilters({ own: await readUserRulesText(), lists, storeLists: true });
       if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused the change (' + commit.error + '). The list was left as it was.', lists: customListRowsFor(await readCustomLists(), await readUserRulesText()) }); return; }
       sendResponse({ ok: true, lists: customListRowsFor(lists, await readUserRulesText()) });
-    })();
+    });
     return true;
   }
   if (msg && msg.kind === 'custom-list-remove' && msg.id) {
-    (async () => {
+    storeTransaction(USER_FILTER_STORES, async () => {
       const lists = (await readCustomLists()).filter((l) => !l || l.id !== msg.id);
       const commit = await commitUserFilters({ own: await readUserRulesText(), lists, storeLists: true });
       if (!commit.ok) { sendResponse({ ok: false, error: 'The browser refused the change (' + commit.error + '). The list is still subscribed.', lists: customListRowsFor(await readCustomLists(), await readUserRulesText()) }); return; }
       sendResponse({ ok: true, lists: customListRowsFor(lists, await readUserRulesText()) });
-    })();
+    });
     return true;
   }
 
   if (msg && msg.kind === 'hidden-add' && msg.hostname) {
-    respond(addHiddenElement(msg.hostname, msg.selector), sendResponse);
+    respond(storeTransaction(HIDDEN_STORE_KEY, () => addHiddenElement(msg.hostname, msg.selector)), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'hidden-remove' && msg.hostname) {
-    respond(removeHiddenElement(msg.hostname, msg.selector), sendResponse);
+    respond(storeTransaction(HIDDEN_STORE_KEY, () => removeHiddenElement(msg.hostname, msg.selector)), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'hidden-clear') {
-    respond(clearHiddenElements(msg.hostname), sendResponse);
+    respond(storeTransaction(HIDDEN_STORE_KEY, () => clearHiddenElements(msg.hostname)), sendResponse);
     return true;
   }
   /* Chrome has no "menu about to open" event, so the page reports the right-click
@@ -21712,7 +22139,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!leave) {
             try {
               const host = new URL(url).hostname;
-              leave = allow.some((h) => registrableDomainBg(String(h)) === registrableDomainBg(host));
+              leave = hostMatchesAllowlist(host, allow);
             } catch (_) { leave = true; }
           }
           if (leave) { skipped++; continue; }

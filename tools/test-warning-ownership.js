@@ -34,8 +34,10 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const MIN = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
+const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
 
 const WARNINGS = ['wo-scam-lock', 'wo-cmd-warn', 'wo-formtrap-warn', 'wo-clip-swap'];
+const OWNED_WARNINGS = WARNINGS.concat(['wo-sb-block', 'wo-paste-warn', 'wo-insecure-login', 'wo-fake-window', 'wo-fullscreen-spoof']);
 
 let failed = 0;
 function check(name, condition, extra) {
@@ -50,7 +52,8 @@ function check(name, condition, extra) {
 const decl = /const __woWarn=\{[\s\S]*?\n  \};/.exec(SRC);
 if (!decl) throw new Error('__woWarn declaration not found in src/content.js');
 
-const sandbox = { Map, console };
+const emitted = [];
+const sandbox = { Map, console, __woEmit: (event) => emitted.push(event) };
 vm.createContext(sandbox);
 vm.runInContext(decl[0].replace(/^const /, 'var ') + '\nglobalThis.__W=__woWarn;', sandbox);
 const W = sandbox.__W;
@@ -61,6 +64,10 @@ const W = sandbox.__W;
 
   W.mark('wo-cmd-warn', ours);
   check('after marking, the warning reports itself up', W.up('wo-cmd-warn') === true);
+  W.mark('wo-paste-warn', { isConnected: true, textContent: 'A secret is about to be pasted' });
+  check('marking a panel sends only its ID over the signed engine event bus',
+    emitted.some((event) => event.type === 'warning_panel' && event.detail.id === 'wo-paste-warn'
+      && Object.keys(event.detail).length === 1));
 
   ours.isConnected = false;
   check('a warning removed from the page is no longer up, so it can be re-shown',
@@ -71,6 +78,24 @@ const W = sandbox.__W;
     W.up('wo-formtrap-warn') === false, 'a decoy still suppresses the warning');
 
   check('warnings are tracked independently', W.up('wo-scam-lock') === false && W.up('wo-clip-swap') === false);
+}
+
+{
+  const src = SRC.replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const id of OWNED_WARNINGS) {
+    check(id + ' is registered for isolated warning ownership',
+      BRIDGE.includes("'" + id + "'") && src.includes('__woWarn.mark("' + id + '"'));
+  }
+  check('bridge requires an engine signature before creating the isolated copy',
+    /type === 'warning_panel'[\s\S]*?d\.src === 'engine' && eventSigned\(d\)[\s\S]*?showOwnedMainWarning/.test(BRIDGE));
+  check('isolated warning uses a closed-shadow owned overlay and trusted dismissal',
+    BRIDGE.includes("woOwnedOverlay('wo-owned-main-warning')")
+      && BRIDGE.includes('if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(button)) return;'));
+  check('isolated warning copy is fixed in bridge and checks for occlusion',
+    BRIDGE.includes('const message = mainWarningCopy[id];')
+      && BRIDGE.includes("kind: 'warning-ui-compromised'"));
+  check('paste continuation rejects scripted clicks and detached warning buttons',
+    /go\.textContent="Paste anyway",\s*go\.addEventListener\("click",\s*e=>\{\s*if\(!e\.isTrusted\|\|!wrap\.isConnected\)return;/.test(src));
 }
 
 // ---------------------------------------------------------------------------

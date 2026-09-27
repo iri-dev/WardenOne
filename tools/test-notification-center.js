@@ -59,7 +59,21 @@ async function main() {
      which on a tracker-heavy site buries the one notice that mattered under
      forty identical lines. */
   assert(/function groupItems\(/.test(pageJs) && /groupItems\(visible/.test(pageJs), 'grouping is configurable but not implemented');
-  assert(/GROUP_WINDOW_MS/.test(pageJs), 'grouping must be bounded in time, not "same kind ever"');
+  /* The manager groups, bounded in time; the page renders each stored group with its own count
+     and samples rather than grouping the groups again (M47). */
+  const managerJs = read('notification-manager.js');
+  assert(/WARDEN_NOTIFICATION_GROUP_WINDOW_MS/.test(managerJs) && /settings\.groupSimilar === false/.test(managerJs),
+    'grouping must be bounded in time, not "same kind ever", and switchable');
+  assert(!/GROUP_WINDOW_MS/.test(pageJs) && /group\.count > 1/.test(pageJs) && /group\.samples\.forEach/.test(pageJs),
+    'the page regroups already-grouped records instead of showing their counts and samples');
+  assert(/it\.summary/.test(pageJs) && !/it\.message\b/.test(pageJs),
+    'the page reads a message field the manager never writes');
+  /* The page never writes the store; the worker does, by id, against the latest copy (M47). */
+  assert(!/storageSet\(\{\s*wardenone_notifications/.test(pageJs) && /kind: 'notifications-update'/.test(pageJs),
+    'the page writes its own snapshot of the notification store again');
+  const bgJs = read('background.js');
+  assert(/msg\.kind === 'notifications-update'[\s\S]{0,200}messageSenderIsExtensionPath\(sender, 'notifications\.html'\)/.test(bgJs),
+    'only the Notification Centre page may change the notification store');
 
   assert(!/\son[a-z]+\s*=/.test(page), 'Notification Centre must not use inline event handlers');
   assert(page.includes('notifications.js') && page.includes('theme.js') && page.includes('notification-schema.js'), 'Notification Centre scripts are incomplete');
@@ -681,6 +695,64 @@ async function main() {
     rules: { suspicious_redirect: { mode: 'off' } },
   });
   assert.strictEqual(offSettings.rules.suspicious_redirect.enabled, false);
+
+  /* COST-02 + M47, against the real manager in a fresh context with counted storage. */
+  {
+    const st = { wardenone_config: {}, wardenone_notifications: [] };
+    const io = { storeReads: 0, storeWrites: 0 };
+    const ctx = {
+      console, URL, setTimeout, clearTimeout, INCOGNITO_CONTEXT: false,
+      importScripts: (file) => vm.runInContext(read(file), ctx, { filename: file }),
+      localGet: async (key) => {
+        const keys = Array.isArray(key) ? key : [key];
+        if (keys.includes('wardenone_notifications')) io.storeReads++;
+        return Object.fromEntries(keys.map((k) => [k, JSON.parse(JSON.stringify(st[k] === undefined ? null : st[k]))]));
+      },
+      localSet: async (payload) => { if (payload.wardenone_notifications) io.storeWrites++; Object.assign(st, JSON.parse(JSON.stringify(payload))); },
+      chrome: { runtime: { lastError: null, getURL: (f) => 'chrome-extension://test/' + f, getContexts: async () => [], sendMessage: async () => ({ ok: true }) },
+        offscreen: { createDocument: async () => {} }, notifications: { create: (i, o, cb) => cb && cb() } },
+    };
+    vm.createContext(ctx);
+    vm.runInContext(read('notification-manager.js'), ctx, { filename: 'notification-manager.js' });
+
+    await new Promise((r) => setTimeout(r, 20));
+    const baseReads = io.storeReads;
+    const baseWrites = io.storeWrites;
+    const burst = [];
+    for (let i = 0; i < 20; i++) {
+      burst.push(ctx.recordWardenNotification({ type: 'blocked_popup', url: 'https://burst' + (i % 4) + '.example/', at: 10000 + i, detail: { why: 'Popup ' + i } }));
+    }
+    const results = await Promise.all(burst);
+    assert.strictEqual(io.storeWrites - baseWrites, 1, 'a burst of twenty events must be one store write, not ' + (io.storeWrites - baseWrites));
+    assert.strictEqual(io.storeReads - baseReads, 1, 'and one store read, not ' + (io.storeReads - baseReads));
+    assert(results.every((r) => r && r.id), 'every caller still learns what was recorded');
+    assert.strictEqual(st.wardenone_notifications.length, 4, 'group merges collapse inside the batch');
+    assert.strictEqual(st.wardenone_notifications.reduce((n, r) => n + r.count, 0), 20, 'no event is lost in the batch');
+
+    st.wardenone_config.notificationSettings = ctx.sanitizeWardenNotificationSettings({ rules: { suspicious_redirect: { mode: 'off' } } });
+    const readsBefore = io.storeReads;
+    const off = await ctx.recordWardenNotification({ type: 'blocked_popup', url: 'https://off.example/', at: 20000 });
+    assert.strictEqual(off, null);
+    assert.strictEqual(io.storeReads, readsBefore, 'a rule switched off must not read the notification store at all');
+    st.wardenone_config.notificationSettings = ctx.wardenNotificationDefaultSettings();
+
+    /* The page's old path: a stale snapshot of six fields written back. Now: mark read by the
+       worker, which keeps every field. */
+    const beforeMark = JSON.parse(JSON.stringify(st.wardenone_notifications[0]));
+    const marked = await ctx.mutateWardenNotifications('read', null);
+    const after = marked.find((r) => r.id === beforeMark.id);
+    assert(after && after.read === true, 'mark read marks');
+    for (const field of ['summary', 'count', 'samples', 'ruleId', 'section', 'severity', 'mode']) {
+      assert.deepStrictEqual(after[field], beforeMark[field], 'mark read must keep ' + field);
+    }
+    /* A notice arriving between the page's load and its "Clear": clearing the ids the page saw
+       must not erase it. */
+    const seenIds = st.wardenone_notifications.map((r) => r.id);
+    await ctx.recordWardenNotification({ type: 'blocked_popup', url: 'https://late.example/', at: 30000, detail: { why: 'Late' } });
+    const cleared = await ctx.mutateWardenNotifications('clear', seenIds);
+    assert.strictEqual(cleared.length, 1, 'clearing what the page showed must keep the notice that arrived after');
+    assert.strictEqual(cleared[0].host, 'late.example');
+  }
 
   console.log('[ok] notification centre tests');
 }

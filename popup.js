@@ -54,7 +54,7 @@ const KEYS = [
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
   'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia',
   'deAmp', 'clientHintProtection', 'capReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
-  'trackerLearner', 'unshimLinks', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
+  'trackerLearner', 'unshimLinks', 'stripTrackingParams', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
 ];
 
 const DEFAULTS = {
@@ -138,7 +138,7 @@ const SITE_OVERRIDE_SCOPE = {
     'downloadSafeBrowsing', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation',
     'whoisXmlThreatIntel', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'intranetProtection',
     'blockGeolocation', 'silentMode', 'capReferrer', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
-    'trackerLearner', 'unshimLinks',
+    'trackerLearner', 'unshimLinks', 'stripTrackingParams',
   ],
 };
 const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed));
@@ -325,6 +325,13 @@ function applyToUI() {
       el.checked = config[k] !== false;
     });
   });
+  /* The engine runs fingerprint noise when the switch OR its legacy alias is on, and the
+     Maximum privacy bundle used to set the alias too -- so after choosing it, this switch read
+     off-able but turning it off changed nothing. It shows the truth here, and saving folds the
+     alias into it (readFromUI). */
+  if (config.antiFingerprint === true) {
+    document.querySelectorAll('input[data-key="antiFingerprintNoise"]').forEach((el) => { el.checked = true; });
+  }
   document.querySelectorAll('[data-config-text]').forEach((el) => {
     const key = el.getAttribute('data-config-text');
     el.value = config[key] || '';
@@ -739,6 +746,7 @@ function setJsShield(scope, block) {
       }
       syncJsShieldUI(res);
       if (res && res.ok && Array.isArray(res.trustedHosts)) renderScriptTrustList(res.trustedHosts);
+      if (res.persisted === false) setSavedTick('Private-window JavaScript change lasts only for this session', false);
     });
   });
 }
@@ -758,6 +766,8 @@ function readFromUI() {
     const els = document.querySelectorAll(`input[data-key="${k}"]`);
     if (els.length) config[k] = els[0].checked;
   });
+  /* One switch, one meaning: the fingerprint-noise switch is the whole truth once saved. */
+  if (document.querySelector('input[data-key="antiFingerprintNoise"]')) config.antiFingerprint = false;
   config.googleSearchResultCleanup = false;
   config.showDownloadBar = true;
   // Silent mode does not write showToasts/showBadge: the bridge gates what the page gets
@@ -771,32 +781,19 @@ function readFromUI() {
 }
 
 function normalizeProviderSettings(previousProviderKeys) {
-  const previous = previousProviderKeys || {};
+  void previousProviderKeys;
   const vtKey = String(config.downloadVirusTotalKey || '').trim();
-  if (vtKey) {
-    const oldKey = String(previous.downloadVirusTotalKey || '').trim();
-    if (!oldKey || oldKey !== vtKey) config.downloadVirusTotal = true;
-  } else {
+  if (!vtKey) {
     config.downloadVirusTotal = false;
     config.downloadVirusTotalHash = false;
   }
   const sbKey = String(config.downloadSafeBrowsingKey || '').trim();
-  if (sbKey) {
-    const oldKey = String(previous.downloadSafeBrowsingKey || '').trim();
-    if (!oldKey || oldKey !== sbKey) config.downloadSafeBrowsing = true;
-  } else {
-    config.downloadSafeBrowsing = false;
-  }
+  if (!sbKey) config.downloadSafeBrowsing = false;
   REPUTATION_PROVIDERS.forEach((p) => {
-    // A keyless provider has nothing here to normalize: its toggle is the whole control.
+    // A saved key is for manual checks; only the separate switch consents to automatic lookups.
     if (p.noKey || !p.keyField) return;
     const nextKey = String(config[p.keyField] || '').trim();
-    if (nextKey) {
-      const oldKey = String(previous[p.keyField] || '').trim();
-      if ((!oldKey || oldKey !== nextKey) && p.autoEnableOnKeyChange !== false) config[p.key] = true;
-    } else {
-      config[p.key] = false;
-    }
+    if (!nextKey) config[p.key] = false;
   });
 }
 
@@ -952,10 +949,8 @@ function setSavedTick(text, isError) {
   }
 }
 
-// A provider's API key has no purpose once that provider is switched off, and
-// leaving it behind means a secret sits in storage for a feature the user has
-// already decided against. Dropping it on save keeps stored secrets to the ones
-// actually in use, and re-enabling simply asks for the key again.
+// A disabled provider can still be used for a right-click check. Keep its key
+// until the reader erases the field, while the switch alone authorizes automatic checks.
 const PROVIDER_KEY_FIELDS = {
   downloadSafeBrowsing: 'downloadSafeBrowsingKey',
   downloadVirusTotal: 'downloadVirusTotalKey',
@@ -964,11 +959,11 @@ const PROVIDER_KEY_FIELDS = {
   phishTank: 'phishTankKey',
   whoisXml: 'whoisXmlKey',
 };
-function dropKeysForDisabledProviders(cfg) {
+function normalizeStoredProviderKeys(cfg) {
   if (!cfg || typeof cfg !== 'object') return;
   for (const provider of Object.keys(PROVIDER_KEY_FIELDS)) {
     const field = PROVIDER_KEY_FIELDS[provider];
-    if (cfg[provider] !== true && cfg[field]) cfg[field] = '';
+    cfg[field] = String(cfg[field] || '').trim();
   }
 }
 
@@ -1148,7 +1143,7 @@ function persistConfig(onSaved, onError) {
     // Applied to the merged result, not just to `config`: this decides what is
     // actually written, and a provider switched off in either copy must not leave
     // its key behind in storage.
-    dropKeysForDisabledProviders(next);
+    normalizeStoredProviderKeys(next);
     const adopted = Object.keys(next).filter((k) => changedKeys.indexOf(k) < 0
       && configValuesDiffer(next[k], savedConfigSnapshot[k]));
     chrome.storage.local.set({ wardenone_config: next }, () => {
@@ -1211,7 +1206,7 @@ function adoptExternalConfigChange(newValue) {
 }
 
 function saveConfig(label, afterSave) {
-  dropKeysForDisabledProviders(config);
+  normalizeStoredProviderKeys(config);
   persistConfig((adopted) => {
     // notify any open tabs so the change relays into their page (next load applies fully)
     chrome.tabs.query({}, (tabs) => {
@@ -1284,7 +1279,30 @@ function turnEverythingOn() {
   });
   readFromUI();
   applyToUI();
-  saveConfig('Everything on', reloadActiveHttpTab);
+  saveConfig('Recommended protections on', reloadActiveHttpTab);
+  showLeftOffNote();
+}
+
+/* The button used to say "Turn everything on" while deliberately leaving five visible
+   protections off (FEAT-05). It now says what it does, and afterwards names what it left alone
+   and why, by the labels the reader sees on those switches. */
+function showLeftOffNote() {
+  const note = $('all-on-note');
+  if (!note) return;
+  const names = [];
+  MANUAL_ONLY_TOGGLES.forEach((key) => {
+    if (key === 'silentMode') return;
+    const input = document.querySelector('input[data-key="' + key + '"]');
+    if (!input || input.checked) return;
+    const row = input.closest('.row');
+    const label = row && row.querySelector('.name');
+    const text = String((label && label.textContent) || '').trim();
+    if (text) names.push(text);
+  });
+  if (!names.length) { note.hidden = true; note.textContent = ''; return; }
+  note.textContent = 'Left off on purpose, because each can break sites or costs more than it saves for most people: '
+    + names.join('; ') + '. Turn any of them on by name if you want it.';
+  note.hidden = false;
 }
 
 function testVirusTotalKey() {
@@ -1295,17 +1313,17 @@ function testVirusTotalKey() {
     applyToUI();
     return;
   }
-  config.downloadVirusTotal = true;
-  applyToUI();
-  saveConfig('Saved', () => syncVirusTotalStatus('Testing VirusTotal key...', 'var(--ink-faint)'));
+  syncVirusTotalStatus('Testing VirusTotal key...', 'var(--ink-faint)');
   chrome.runtime.sendMessage({ kind: 'test-virustotal-key', key }, (res) => {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
     if (err || !res || !res.ok) {
       const msg = (res && res.error) || err || 'VirusTotal key test failed.';
-      syncVirusTotalStatus(msg, 'var(--wo-danger)');
+      config.downloadVirusTotal = false;
+      applyToUI();
+      saveConfig('Saved', () => syncVirusTotalStatus(msg, 'var(--wo-danger)'));
       return;
     }
-    syncVirusTotalStatus(res.message || 'VirusTotal key works. URL reputation is enabled.', 'var(--wo-success)');
+    saveConfig('Saved', () => syncVirusTotalStatus('VirusTotal key works. Turn on URL reputation separately for automatic checks.', 'var(--wo-success)'));
   });
 }
 
@@ -1326,9 +1344,7 @@ function testSafeBrowsingKey() {
       saveConfig('Saved', () => syncSafeBrowsingStatus((res && res.error) || err || 'Safe Browsing key test failed.', 'var(--wo-danger)'));
       return;
     }
-    config.downloadSafeBrowsing = true;
-    applyToUI();
-    saveConfig('Saved', () => syncSafeBrowsingStatus(res.message || 'Google Safe Browsing key works. URL reputation is enabled.', 'var(--wo-success)'));
+    saveConfig('Saved', () => syncSafeBrowsingStatus('Google Safe Browsing key works. Turn on URL reputation separately for automatic checks.', 'var(--wo-success)'));
   });
 }
 
@@ -1342,8 +1358,6 @@ function setupReputationProvider(providerKey) {
     applyToUI();
     return;
   }
-  config[provider.key] = false;
-  applyToUI();
   syncReputationProviderStatus(provider, 'Testing ' + provider.label + ' key...', 'var(--ink-faint)');
   chrome.runtime.sendMessage({ kind: 'test-reputation-provider-key', provider: provider.key, key }, (res) => {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
@@ -1353,10 +1367,8 @@ function setupReputationProvider(providerKey) {
       saveConfig('Saved', () => syncReputationProviderStatus(provider, (res && res.error) || err || (provider.label + ' key test failed.'), 'var(--wo-danger)'));
       return;
     }
-    config[provider.key] = true;
-    if (provider.key === 'whoisXml') config.downloadDomainAge = true;
-    applyToUI();
-    saveConfig('Saved', () => syncReputationProviderStatus(provider, res.message || (provider.label + ' responded. Reputation checks are enabled.'), 'var(--wo-success)'));
+    saveConfig('Saved', () => syncReputationProviderStatus(provider,
+      provider.label + ' key works. Turn on this provider separately for automatic checks.', 'var(--wo-success)'));
   });
 }
 
@@ -1397,6 +1409,10 @@ function allowlistCurrent() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
     if (!tab || !tab.url) return;
+    if (tab.incognito) {
+      setNote($('note'), [{ t: 'Private-window site exceptions cannot be saved. Use the main window to change this list.' }]);
+      return;
+    }
     let host;
     try { host = new URL(tab.url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return; }
     if (!host) return;
@@ -4893,6 +4909,78 @@ function renderPermResults(out, hostname, res) {
   paintForgetMe();
 })();
 
+// WardenOne-owned storage is separate from the browser/site-data cleaner above.
+// Inspect first, then ask for a destructive choice using the current inventory.
+(function wirePrivacyDataErase() {
+  const inspect = $('privacy-data-inspect');
+  const erase = $('privacy-data-erase');
+  const mode = $('privacy-data-mode');
+  const preview = $('privacy-data-preview');
+  const result = $('privacy-data-result');
+  if (!inspect || !erase || !mode || !preview || !result) return;
+  const ask = (message) => new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(message, (reply) => {
+        const error = chrome.runtime.lastError;
+        resolve(error ? { ok: false, error: error.message } : (reply || { ok: false, error: 'No response.' }));
+      });
+    } catch (error) { resolve({ ok: false, error: String(error) }); }
+  });
+  const paint = (data) => {
+    preview.textContent = '';
+    if (!data.ok) { preview.textContent = 'Could not inspect: ' + (data.error || 'unknown error'); return; }
+    const summary = document.createElement('div');
+    summary.textContent = data.records.length + ' datasets · ' + Math.round(data.totalBytes / 1024) + ' KiB saved';
+    preview.appendChild(summary);
+    const details = document.createElement('details');
+    const heading = document.createElement('summary');
+    heading.textContent = 'View dataset sizes and oldest known dates';
+    details.appendChild(heading);
+    const list = document.createElement('ul');
+    list.style.cssText = 'max-height:180px;overflow:auto;padding-left:18px;margin:6px 0;';
+    for (const item of data.records) {
+      const li = document.createElement('li');
+      const date = item.oldestKnownAt ? new Date(item.oldestKnownAt).toLocaleDateString() : 'age unknown';
+      li.textContent = item.area + ' · ' + item.key + ' · ' + Math.round(item.bytes / 1024) + ' KiB · ' + date;
+      list.appendChild(li);
+    }
+    details.appendChild(list);
+    preview.appendChild(details);
+  };
+  inspect.addEventListener('click', async () => {
+    inspect.disabled = true;
+    preview.textContent = 'Inspecting…';
+    paint(await ask({ kind: 'privacy-data-inspect' }));
+    inspect.disabled = false;
+  });
+  erase.addEventListener('click', async () => {
+    erase.disabled = true;
+    result.textContent = '';
+    const data = await ask({ kind: 'privacy-data-inspect' });
+    paint(data);
+    if (!data.ok) { erase.disabled = false; return; }
+    const labels = {
+      all: 'all WardenOne settings, API keys and saved records',
+      settings: 'saved records and API keys, keeping global switches',
+      'settings-and-keys': 'saved records, keeping global switches and API keys',
+    };
+    const choice = mode.value;
+    if (!labels[choice] || !confirm('Erase ' + labels[choice] + '?\n\n'
+      + data.records.length + ' datasets (' + Math.round(data.totalBytes / 1024) + ' KiB) are currently saved. '
+      + 'This resets learned protections and site exceptions. Active Download Shield reviews must be finished first.')) {
+      erase.disabled = false;
+      return;
+    }
+    const answer = await ask({ kind: 'privacy-data-erase', mode: choice });
+    if (answer.ok) {
+      try { localStorage.removeItem('wardenone_theme'); } catch (_) {}
+    }
+    result.textContent = answer.ok ? 'Erased. WardenOne is restarting with ' + answer.kept + ' kept.'
+      : 'Could not complete erasure: ' + (answer.error || 'unknown error');
+    if (!answer.ok) erase.disabled = false;
+  });
+})();
+
 // ----- Memory Shield UI -----
 /* The build profile (CWS-03). The Store package leaves out EyeShield, Memory Shield, Tab Limit and
    Twitch Rewind; every element marked data-feature for one of them is removed here before the popup
@@ -5583,7 +5671,9 @@ $('verify-repair').addEventListener('click', () => {
     if (report.ok && !failed.length && !repaired.length) {
       out.style.color = 'var(--violet)';
       addStrong('All healthy.');
-      addText(' Every component checked out - nothing needed fixing.');
+      /* Says what was checked (FEAT-06). "Every component" claimed the helpers that start with a
+         page -- mail, sign-in, search and Twitch -- which this tool does not look at. */
+      addText(' WardenOne’s files, saved settings and lists checked out, and the page engine answered in every open tab it runs on. Helpers that start with a page — mail, sign-in, search and Twitch — are not checked here; they start fresh when a page reloads.');
     } else {
       out.style.color = 'var(--ink-soft)';
       addStrong('Check complete.');

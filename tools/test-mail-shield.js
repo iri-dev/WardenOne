@@ -174,7 +174,9 @@ check('turning it off unregisters the script',
 check('it counts as a protection in the health total',
   /'mailTrackingShield'/.test(BG.slice(BG.indexOf('const HEALTH_SHIELD_KEYS'), BG.indexOf('const HEALTH_SHIELD_KEYS') + 4000)));
 check('the page asks whether it is switched on before doing anything',
-  /kind: 'content-config-get'/.test(SRC) && /cfg\.mailTrackingShield === false/.test(SRC));
+  /kind: 'content-config-get'/.test(SRC) && /cfg\.mailTrackingShield !== false/.test(SRC));
+check('the worker notifies existing mail frames when registration changes',
+  /notifyMailShieldOpenTabs\(want\)/.test(BG) && /kind: 'mail-shield-state'/.test(BG));
 check('it needs no permission the extension does not already have',
   !/optional_permissions|declarativeNetRequest/.test(SRC)
     && (MANIFEST.permissions || []).includes('scripting'));
@@ -197,6 +199,75 @@ check('the popup does not claim nothing is requested',
 check('the popup admits a provider may have fetched it server-side',
   /outside what any extension can see/.test(popupRow),
   'stopping the browser fetching a proxied image says nothing about the provider fetching it');
+
+/* Real lifecycle in two isolated frames: disabling must disconnect existing
+   observers; enabling must re-arm once, including after a duplicate injection. */
+function frameHarness() {
+  const listeners = new Set();
+  const observers = [];
+  const root = { nodeType: 1, tagName: 'HTML', querySelectorAll: () => [] };
+  const world = {
+    URL, RegExp, String, Number, Array, Object, Math, WeakSet, Set, console, setTimeout, clearTimeout,
+    location: { href: 'https://mail.google.com/mail/u/0/' }, window: {},
+    document: { readyState: 'complete', documentElement: root, addEventListener: () => {} },
+    chrome: { runtime: {
+      lastError: null,
+      sendMessage: (_msg, cb) => cb({ overrides: { enabled: true, mailTrackingShield: true } }),
+      onMessage: { addListener: (fn) => listeners.add(fn), removeListener: (fn) => listeners.delete(fn) },
+    } },
+    MutationObserver: class {
+      constructor(fn) { this.fn = fn; this.observing = false; observers.push(this); }
+      observe() { this.observing = true; }
+      disconnect() { this.observing = false; }
+    },
+  };
+  vm.createContext(world);
+  const inject = () => vm.runInContext(SRC, world, { filename: 'mail-shield.js' });
+  const send = (msg) => { for (const fn of [...listeners]) fn(msg); };
+  inject();
+  return { world, listeners, observers, inject, send };
+}
+for (const label of ['top frame', 'reading-pane iframe']) {
+  const frame = frameHarness();
+  check(label + ' starts one observer', frame.observers.length === 1 && frame.observers[0].observing);
+  frame.send({ kind: 'mail-shield-state', enabled: false });
+  check(label + ' stops immediately when disabled', !frame.observers[0].observing
+    && !frame.world.window.__wardenOneMailShieldApi.active());
+  frame.send({ kind: 'mail-shield-state', enabled: true });
+  check(label + ' re-arms exactly one observer', frame.observers.length === 1
+    && frame.observers[0].observing && frame.world.window.__wardenOneMailShieldApi.active());
+  const reused = img({ src: 'https://track.example/a.gif', width: '1', height: '1' });
+  frame.observers[0].fn([{ type: 'attributes', target: reused }]);
+  reused.setAttribute('data-src', 'https://track.example/b.gif');
+  frame.observers[0].fn([{ type: 'attributes', target: reused }]);
+  check(label + ' reclassifies a reused pixel node with a new lazy URL',
+    frame.world.window.__wardenOneMailShieldApi.count() === 2);
+  frame.inject();
+  check(label + ' ignores a duplicate injection', frame.observers.length === 1 && frame.listeners.size === 1);
+  frame.world.window.__wardenOneMailShieldReadyVersion = 'older';
+  frame.inject();
+  check(label + ' disposes the old version before installing a new one',
+    frame.observers.length === 2 && !frame.observers[0].observing
+      && frame.observers[1].observing && frame.listeners.size === 1);
+}
+
+const mailWorkerSource = BG.slice(BG.indexOf('const MAIL_SHIELD_SCRIPT_ID'),
+  BG.indexOf('const CONSENT_WALL_SCRIPT_ID'));
+const injected = [];
+const workerBox = { URL, chrome: {
+  runtime: { lastError: null },
+  tabs: { query: (_query, cb) => cb([{ id: 12, url: 'https://mail.google.com/' }]) },
+  webNavigation: { getAllFrames: (_target, cb) => cb([
+    { frameId: 0, url: 'https://mail.google.com/' },
+    { frameId: 4, url: 'https://mail.google.com/reading-pane' },
+    { frameId: 9, url: 'https://advertiser.example/widget' },
+  ]) },
+  scripting: { executeScript: (details, cb) => { injected.push(details); cb(); } },
+} };
+vm.createContext(workerBox);
+vm.runInContext(mailWorkerSource + '\ninjectMailShieldIntoOpenTabs();', workerBox);
+check('existing top and matching iframe receive injection without unrelated frames',
+  injected.length === 1 && injected[0].target.frameIds.join(',') === '0,4');
 
 if (failed) {
   console.error('mail shield: ' + failed + ' failed');

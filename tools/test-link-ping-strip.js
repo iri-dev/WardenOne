@@ -79,7 +79,7 @@ function run(world) {
     log: (type, detail) => logs.push({ type, detail }),
     /* Link cleanup's other half. Held to identity so this suite can only ever fail on
        the ping behaviour, never on redirect unwrapping changing somewhere else. */
-    stripTracking: (href) => href,
+    stripTracking: () => { throw new Error('live link cleaning rewrote a destination'); },
   };
   vm.createContext(sandbox);
   vm.runInContext(BLOCK + ';globalThis.__strip = stripPingAttr;globalThis.__scrub = scrubDomLink;',
@@ -121,9 +121,22 @@ function run(world) {
   scrub(el);
   check('a ping-only anchor is still stripped', !el.hasAttribute('ping'));
 }
-check('and the sweep selector actually looks for those',
-  /a\[href\],area\[href\],form\[action\],a\[ping\],area\[ping\]/.test(SRC),
-  'a[href] alone never visits an anchor that has only a ping');
+check('and the sweep selector visits only ping-bearing links',
+  /querySelectorAll\("a\[ping\],area\[ping\]"\)/.test(SRC),
+  'live destinations must never be rewritten during a sweep');
+{
+  const { scrub } = run({});
+  for (const [tag, name, value] of [
+    ['A', 'href', '/download?file=report.pdf&utm_source=partner&sig=ok'],
+    ['A', 'href', 'https://shop.example/product?tag=partner&sig=ok'],
+    ['AREA', 'href', 'https://auth.example/callback?code=x&utm_source=mail'],
+    ['FORM', 'action', '/search?q=book&utm_source=partner'],
+  ]) {
+    const el = makeEl(tag, { [name]: value, ping: 'https://tracker.example/click' });
+    scrub(el);
+    check(tag + ' keeps its signed or application URL', el.getAttribute(name) === value);
+  }
+}
 {
   const { scrub } = run({});
   const el = makeEl('A', { href: 'https://example.com/' });
@@ -185,12 +198,12 @@ check('there is no toggle of its own',
 check('and no entry in the protection count',
   !/'stripLinkPing'|'pingGuard'/.test(BG.match(/const HEALTH_SHIELD_KEYS = \[[\s\S]*?\];/)[0]));
 check('it rides the existing Link Cleanup gate',
-  /if\(!WO\.unshimLinks&&!WO\.stripTrackingParams\)return;\s*const t=e&&e\.target;/.test(SRC)
-  || /stripPingOnClick=e=>\{[\s\S]{0,120}!WO\.unshimLinks&&!WO\.stripTrackingParams/.test(SRC),
+  /if\(!WO\.unshimLinks\)return;\s*const t=e&&e\.target;/.test(SRC)
+  || /stripPingOnClick=e=>\{[\s\S]{0,120}!WO\.unshimLinks/.test(SRC),
   'turning Link Cleanup off has to turn this off too, or the switch is lying');
 check('the popup copy says what it now also does', /ping<\/code> attributes/.test(POPUP_HTML));
 check('and says the destination is untouched',
-  /still goes exactly where it says/.test(POPUP_HTML));
+  /leaves the link destination untouched/.test(POPUP_HTML));
 
 /* ---- the network half was already there and is still there ---------------- */
 check('ping is a filtered resource type for trackers',
