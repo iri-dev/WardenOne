@@ -267,12 +267,15 @@ pending.push((async function tabContextIsForgottenWithTheTab() {
 
 // --- the page guard reads the answer ---------------------------------------
 
-(function pageGuardHonoursTheQuarantine() {
-  const fn = SOURCE.slice(SOURCE.indexOf('const localAdminTarget='), SOURCE.indexOf('publicPage=()=>'));
-  check('localAdminTarget consults the quarantine list', /WO\.rebindQuarantine/.test(fn));
-  check('the quarantine covers subdomains of a caught host', /endsWith\("\."\+q\)/.test(fn));
-  check('the quarantine list is read live rather than latched',
-    fn.indexOf('WO.rebindQuarantine') > fn.indexOf('const localAdminTarget='));
+(function quarantineStaysOutOfPage() {
+  const bridge = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
+  check('quarantined hostnames are removed before config enters MAIN',
+    /delete clean\.rebindQuarantine/.test(bridge));
+  check('the page guard does not need the private quarantine host list',
+    !/WO\.rebindQuarantine/.test(SOURCE));
+  check('DNR quarantine covers every browser request type',
+    /const SECURITY_RESOURCE_TYPES = ALL_DNR_RESOURCE_TYPES/.test(BG)
+    && /condition: \{ requestDomains: \[host\], resourceTypes: SECURITY_RESOURCE_TYPES \}/.test(BG));
 }());
 
 // --- the boundary is stated honestly ----------------------------------------
@@ -315,19 +318,99 @@ pending.push((async function tabContextIsForgottenWithTheTab() {
      lasted the session. Without the onStartup clear it would instead last
      forever, stranding a host after one odd resolution on a VPN flip. Both
      halves are the promise. */
-  const restore = BG.slice(BG.indexOf("async function restoreRebindQuarantine"));
+  const restore = BG.slice(BG.indexOf('function restoreRebindQuarantine'), BG.indexOf('\nrestoreRebindQuarantine();'));
   check("the quarantine is rehydrated when the worker restarts",
-    /rebindQuarantine/.test(restore.slice(0, 700)) && /syncRebindQuarantineRules/.test(restore.slice(0, 900)));
+    /rebindQuarantine/.test(restore) && /syncRebindQuarantineRules/.test(restore));
   check('rehydration actually runs at worker evaluation',
     BG.indexOf('\nrestoreRebindQuarantine();') >= 0);
   const startup = BG.slice(BG.indexOf('chrome.runtime.onStartup'));
   check('a browser restart clears it', startup.slice(0, 300).indexOf('clearRebindQuarantine()') >= 0);
-  const clearBody = BG.slice(BG.indexOf('async function clearRebindQuarantine'), BG.indexOf('async function restoreRebindQuarantine'));
+  const clearBody = BG.slice(BG.indexOf('function clearRebindQuarantine'), BG.indexOf('function restoreRebindQuarantine'));
   check('clearing drops the rules and the published list',
     clearBody.indexOf('REBIND_QUARANTINED.clear()') >= 0
       && clearBody.indexOf('syncRebindQuarantineRules') >= 0
       && clearBody.indexOf('publishRebindQuarantine') >= 0);
 }());
+
+/* MV3-09: the worker-start restore and the browser-start clear used to run independently, and the
+   one whose callbacks settled last won. Both orders, with every storage and DNR callback deferred,
+   must end with no quarantine from the previous session -- and a worker restart inside one
+   session must still bring the quarantine back. */
+function sessionHarness(sessionMarked, durableHosts) {
+  const state = { sessionRules: [{ id: 932000, action: { type: 'block' }, condition: { requestDomains: durableHosts.slice() } }], session: sessionMarked ? { wardenone_rebind_session: true } : {} };
+  const config = { enabled: true, intranetProtection: true, dnsRebindGuard: true, rebindQuarantine: durableHosts.slice() };
+  const later = (fn) => new Promise((r) => setTimeout(() => r(fn()), Math.floor(Math.random() * 6)));
+  const sandbox = Object.assign({
+    console, URL, Date, Promise, Map, Set, Array, Object, Number, String, JSON,
+    INCOGNITO_CONTEXT: false,
+    REBIND_QUARANTINE_RULES_BUDGET: 128,
+    localGet: () => later(() => ({ wardenone_config: JSON.parse(JSON.stringify(config)) })),
+    localSet: (obj) => later(() => { if (obj && obj.wardenone_config) Object.assign(config, obj.wardenone_config); }),
+    queueHistory: () => {},
+    hostMatchesAllowlist: () => false,
+    activeAllowlist: () => [],
+    refreshIntranetNetworkRules: () => {},
+    isLocalOrPrivateHost: () => false,
+    chrome: {
+      webRequest: { onResponseStarted: { addListener() {} } },
+      storage: { session: {
+        get: (k) => later(() => ({ [k]: state.session[k] })),
+        set: (o) => later(() => { Object.assign(state.session, o); }),
+      } },
+      declarativeNetRequest: {
+        getSessionRules: () => later(() => state.sessionRules.slice()),
+        updateSessionRules: (update) => later(() => {
+          const remove = new Set(update.removeRuleIds || []);
+          state.sessionRules = state.sessionRules.filter((r) => !remove.has(r.id)).concat(update.addRules || []);
+        }),
+      },
+    },
+  }, resourceTypes.resolveAll(BG));
+  vm.createContext(sandbox);
+  /* The region ends with the top-level restoreRebindQuarantine() call: that IS the worker-start
+     restore, launched on evaluation exactly as the real worker launches it. */
+  vm.runInContext(
+    between('function ipv4FromMappedIpv6(', '\nfunction normalizeIpLiteral(')
+      + between('const REBIND_QUARANTINE_RULE_BASE', '\nconst HEALTH_SHIELD_KEYS = [')
+      + '\nthis.__api = { clearRebindQuarantine, restoreRebindQuarantine, REBIND_QUARANTINED, chain: () => rebindQuarantineChain };',
+    sandbox, { filename: 'background.js' });
+  return { api: sandbox.__api, state, config };
+}
+
+pending.push((async () => {
+  for (let round = 0; round < 12; round++) {
+    /* New browser session: the durable list is the previous session's. The browser-start clear is
+       fired either immediately (before the restore settles) or after it. */
+    const h = sessionHarness(false, ['old.example']);
+    if (round % 2) await new Promise((r) => setTimeout(r, 3));
+    h.api.clearRebindQuarantine();
+    await h.api.chain();
+    await new Promise((r) => setTimeout(r, 20));
+    await h.api.chain();
+    const rulesLeft = h.state.sessionRules.filter((r) => r.id >= 932000 && r.id < 932200).length;
+    if (h.api.REBIND_QUARANTINED.size || rulesLeft || (h.config.rebindQuarantine || []).length) {
+      check('a previous session\'s quarantine never survives a browser restart (round ' + round + ')', false,
+        JSON.stringify({ map: h.api.REBIND_QUARANTINED.size, rules: rulesLeft, durable: h.config.rebindQuarantine }));
+      return;
+    }
+  }
+  check('a previous session\'s quarantine never survives a browser restart, in either order', true);
+  {
+    /* The same without onStartup arriving at all: the session mark alone stops the reinstall. */
+    const h = sessionHarness(false, ['old.example']);
+    await new Promise((r) => setTimeout(r, 20));
+    await h.api.chain();
+    check('a leftover list is cleared even before the browser-start event arrives',
+      h.api.REBIND_QUARANTINED.size === 0 && (h.config.rebindQuarantine || []).length === 0);
+  }
+  {
+    /* A worker restart inside one browser session keeps the quarantine. */
+    const h = sessionHarness(true, ['live.example']);
+    await new Promise((r) => setTimeout(r, 20));
+    await h.api.chain();
+    check('a worker restart inside the session still restores the quarantine', h.api.REBIND_QUARANTINED.has('live.example'));
+  }
+})());
 // ---------------------------------------------------------------------------
 
 (function () {
@@ -360,6 +443,47 @@ pending.push((async function tabContextIsForgottenWithTheTab() {
     types.indexOf('main_frame') >= 0);
 }());
 // ---------------------------------------------------------------------------
+
+// --- PERF-04: the host memory is bounded and cheap --------------------------
+
+(function hostMemoryIsBounded() {
+  const sandbox = { console, URL, Date, Promise, Map, Set, Array, Object, String, Number, RegExp, parseInt, Math, JSON };
+  let urlParses = 0;
+  sandbox.URL = class extends URL { constructor(...a) { urlParses++; super(...a); } };
+  sandbox.chrome = { declarativeNetRequest: {}, storage: { local: { get: async () => ({}), set: async () => {} } } };
+  sandbox.localGet = async () => ({ wardenone_config: { enabled: true } });
+  sandbox.localSet = async () => {};
+  sandbox.queueHistory = () => {};
+  sandbox.isLocalOrPrivateHost = (h) => /^(localhost|127\.|10\.|192\.168\.)/.test(h);
+  sandbox.hostMatchesAllowlist = () => false;
+  sandbox.activeAllowlist = () => [];
+  sandbox.refreshIntranetNetworkRules = () => {};
+  vm.createContext(sandbox);
+  vm.runInContext(
+    between('function ipv4FromMappedIpv6(', '\nfunction normalizeIpLiteral(')
+      + between('const REBIND_QUARANTINE_RULE_BASE', '\nconst HEALTH_SHIELD_KEYS = [')
+      + '\nthis.__api = { noteResolvedAddress, REBIND_HOST_CLASS, REBIND_HOST_CLASS_MAX };',
+    sandbox, { filename: 'background.js' });
+  const api = sandbox.__api;
+  const max = api.REBIND_HOST_CLASS_MAX;
+  check('the host memory has a ceiling', Number.isInteger(max) && max > 0 && max <= 10000, String(max));
+  for (let i = 0; i < max + 500; i++) {
+    api.noteResolvedAddress({ type: 'script', tabId: 1, url: 'https://h' + i + '.example/a.js', ip: '93.184.216.34' });
+  }
+  check('a long browsing session never grows it past the ceiling', api.REBIND_HOST_CLASS.size === max, String(api.REBIND_HOST_CLASS.size));
+  check('the oldest hosts are the ones let go', !api.REBIND_HOST_CLASS.has('h0.example') && api.REBIND_HOST_CLASS.has('h' + (max + 499) + '.example'));
+  const before = urlParses;
+  api.noteResolvedAddress({ type: 'script', tabId: 1, url: 'https://cached.example/a.js', ip: '' });
+  api.noteResolvedAddress({ type: 'script', tabId: 1, url: 'https://cached.example/a.js', ip: 'not-an-ip' });
+  check('a response with no usable address costs no URL parse', urlParses === before, (urlParses - before) + ' parses');
+  api.noteResolvedAddress({ type: 'script', tabId: 1, url: 'https://steady.example/a.js', ip: '93.184.216.34' });
+  const order = Array.from(api.REBIND_HOST_CLASS.keys());
+  api.noteResolvedAddress({ type: 'script', tabId: 1, url: 'https://steady.example/b.js', ip: '93.184.216.35' });
+  check('seeing a host again with the same class does not rewrite it',
+    Array.from(api.REBIND_HOST_CLASS.keys()).join() === order.join());
+  api.noteResolvedAddress({ type: 'script', tabId: 1, url: 'https://steady.example/c.js', ip: '10.0.0.8' });
+  check('and a public name turning private is still recorded as the change', api.REBIND_HOST_CLASS.get('steady.example') === 'private');
+})();
 
 Promise.all(pending).then(() => {
   if (failures.length) {

@@ -66,6 +66,8 @@ function world(options) {
     DEFAULT_CONFIG: { enabled: true, blockPopupTricks: true, allowlist: [] },
     localGet: () => Promise.resolve({ wardenone_config: o.config || {} }),
     activeAllowlist: (cfg) => (cfg && cfg.allowlist) || [],
+    /* The shared allowlist helper (BUG-03): the entry is the host or one of its parents. */
+    hostMatchesAllowlist: (host, list) => (list || []).some((d) => { const h = String(host || '').replace(/^www\./, ''); return h === d || h.endsWith('.' + d); }),
     /* Both names are real in background.js -- registrableDomainBg is a thin wrapper
        -- and the two functions under test happen to use one each. Stubbing only one
        let a ReferenceError land in a catch that returns, so the guard silently did

@@ -66,8 +66,12 @@
  */
 (() => {
   'use strict';
-  if (window.__wardenOneMailShield) return;
-  window.__wardenOneMailShield = true;
+  const MAIL_SHIELD_VERSION = '1.0.1';
+  if (window.__wardenOneMailShieldReadyVersion === MAIL_SHIELD_VERSION) return;
+  if (window.__wardenOneMailShieldReadyVersion) {
+    try { window.__wardenOneMailShieldDispose?.(); } catch (_) {}
+  }
+  window.__wardenOneMailShieldVersion = MAIL_SHIELD_VERSION;
 
   const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   const MARK = 'data-wo-mail-shield';
@@ -103,6 +107,10 @@
   let removed = 0;
   let proxied = 0;
   let reportTimer = 0;
+  let active = false;
+  let enabled = false;
+  let disposed = false;
+  let configGeneration = 0;
 
   function attrNum(el, name) {
     const raw = el.getAttribute(name);
@@ -148,11 +156,12 @@
   function classify(img) {
     /* Lazy attributes first: the real URL often lives there until the client
        decides to load it, and cleaning only src would be undone a moment later. */
-    const raw = img.getAttribute('src')
+    const currentSrc = img.getAttribute('src') || '';
+    const raw = (currentSrc !== PIXEL ? currentSrc : '')
       || img.getAttribute('data-src')
       || img.getAttribute('data-original-src')
       || img.getAttribute('data-lazy-src')
-      || '';
+      || currentSrc;
     if (!raw) return null;
     /* Never touch what the page made itself, an attachment, or an inline image:
        none of those reach a third party. Strictly this is already covered by the
@@ -178,7 +187,9 @@
   }
 
   function neutralise(img, verdict) {
-    if (img.getAttribute(MARK)) return false;
+    if (img.getAttribute(MARK) && img.getAttribute('src') === PIXEL
+      && ['data-src', 'data-original-src', 'data-lazy-src'].every((attr) =>
+        !img.hasAttribute(attr) || img.getAttribute(attr) === PIXEL)) return false;
     try {
       img.setAttribute(MARK, verdict.wasProxied ? 'proxied' : 'direct');
       /* Order matters: clear the lazy attributes first, or the client swaps the
@@ -223,7 +234,9 @@
     if (!node || node.nodeType !== 1) return;
     const images = node.tagName === 'IMG' ? [node] : node.querySelectorAll('img');
     for (const img of images) {
-      if (seen.has(img)) continue;
+      if (seen.has(img) && img.getAttribute('src') === PIXEL
+        && ['data-src', 'data-original-src', 'data-lazy-src'].every((attr) =>
+          !img.hasAttribute(attr) || img.getAttribute(attr) === PIXEL)) continue;
       seen.add(img);
       const verdict = classify(img);
       if (verdict) neutralise(img, verdict);
@@ -244,7 +257,9 @@
   });
 
   function start() {
+    if (disposed || !enabled || active) return;
     if (document.documentElement) {
+      active = true;
       sweep(document.documentElement);
       observer.observe(document.documentElement, {
         childList: true,
@@ -254,6 +269,53 @@
       });
     }
   }
+
+  function setEnabled(wantEnabled) {
+    if (disposed) return;
+    enabled = wantEnabled === true;
+    if (!enabled) {
+      active = false;
+      observer.disconnect();
+      if (reportTimer) { clearTimeout(reportTimer); reportTimer = 0; }
+      return;
+    }
+    if (document.documentElement) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+  }
+
+  function refreshConfig() {
+    const generation = ++configGeneration;
+    askContentConfig(['overrides'], (res) => {
+      void chrome.runtime.lastError;
+      if (disposed || generation !== configGeneration) return;
+      const cfg = (res && res.overrides) || {};
+      setEnabled(cfg.enabled !== false && cfg.mailTrackingShield !== false);
+    });
+  }
+
+  const onMessage = (msg) => {
+    if (!msg || disposed) return;
+    if (msg.kind === 'mail-shield-state') {
+      configGeneration++;
+      setEnabled(msg.enabled === true);
+    } else if (msg.kind === 'config-update' && msg.overrides) {
+      configGeneration++;
+      setEnabled(msg.overrides.enabled !== false && msg.overrides.mailTrackingShield !== false);
+    } else if (msg.kind === 'content-config-refresh') {
+      setTimeout(refreshConfig, 0);
+    }
+  };
+  try { chrome.runtime.onMessage.addListener(onMessage); } catch (_) {}
+  window.__wardenOneMailShieldDispose = () => {
+    if (disposed) return;
+    disposed = true;
+    active = false;
+    configGeneration++;
+    observer.disconnect();
+    if (reportTimer) { clearTimeout(reportTimer); reportTimer = 0; }
+    try { chrome.runtime.onMessage.removeListener(onMessage); } catch (_) {}
+    window.__wardenOneMailShieldReadyVersion = '';
+  };
 
   /* The settings snapshot, asked for through the bridge when it has run here (MV3-04). The
      isolated bridge owns acquisition: it retries when the worker dies mid-reply and answers from
@@ -269,18 +331,10 @@
 
   /* Off unless the toggle says otherwise, asked until answered (MV3-04). A mail client is the
      last place to act on a stale assumption about what the reader wanted. */
-  askContentConfig(['overrides'], (res) => {
-    void chrome.runtime.lastError;
-    // The switches arrive as `overrides`; this read `config`, a field the worker never sends,
-    // so the gate below compared against {} and never held.
-    const cfg = (res && res.overrides) || {};
-    if (cfg.enabled === false || cfg.mailTrackingShield === false) return;
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', start, { once: true });
-      start();
-    } else start();
-  });
+  refreshConfig();
 
   /* For the tests, and for anyone reading the page in a console. */
-  window.__wardenOneMailShieldApi = { classify, originalUrl, declaredTiny, declaredHidden, count: () => removed };
+  window.__wardenOneMailShieldApi = { classify, originalUrl, declaredTiny, declaredHidden,
+    count: () => removed, active: () => active };
+  window.__wardenOneMailShieldReadyVersion = MAIL_SHIELD_VERSION;
 })();

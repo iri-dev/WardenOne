@@ -225,6 +225,9 @@ function checkContentBuild() {
   'tools/test-youtube-compat.js',
   'tools/test-learned-grabber-scope.js',
   'tools/test-manual-check-toast.js',
+  'tools/test-manual-check-journal.js',
+  'tools/test-store-candidate.js',
+  'tools/test-store-rights.js',
   'tools/test-blocked-site-list.js',
   'tools/test-user-filters.js',
   'tools/test-network-logger.js',
@@ -291,6 +294,7 @@ function checkContentBuild() {
   'tools/test-settings-io.js',
   'tools/test-popup-config-merge.js',
   'tools/test-reputation-fetch.js',
+  'tools/test-keyed-provider-consent.js',
   'tools/test-request-self-identification.js',
   'tools/test-shared-dom-watcher.js',
   'tools/test-popup-contrast.js',
@@ -302,11 +306,13 @@ function checkContentBuild() {
   'tools/test-repair-honesty.js',
   'tools/test-engine-teardown.js',
   'tools/test-bridge-host-lists.js',
+  'tools/test-main-config-minimisation.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
   'tools/test-message-hardening.js',
   'tools/test-secret-hygiene.js',
   'tools/test-history-privacy.js',
+  'tools/test-privacy-data-erase.js',
   'tools/test-static-dnr-compatibility.js',
   'tools/test-dnr-budget.js',
   'tools/test-dnr-atomic-replace.js',
@@ -360,6 +366,7 @@ function checkContentBuild() {
   'tools/test-capability-guards.js',
   'tools/test-notification-guard.js',
   'tools/test-notification-center.js',
+  'tools/test-system-notification-privacy.js',
   'tools/test-offscreen-lifecycle.js',
   'tools/test-fake-window-guard.js',
   'tools/test-fullscreen-guard.js',
@@ -468,6 +475,7 @@ checkCommand('listener registration tests', ['tools/test-listener-registration.j
 checkCommand('logger batch reset tests', ['tools/test-logger-batch-reset.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
 checkCommand('bridge host list tests', ['tools/test-bridge-host-lists.js']);
+checkCommand('MAIN config minimisation tests', ['tools/test-main-config-minimisation.js']);
 checkCommand('hostile message hardening tests', ['tools/test-message-hardening.js']);
 checkCommand('message rate limit tests', ['tools/test-message-rate-limits.js']);
 checkCommand('secret hygiene tests', ['tools/test-secret-hygiene.js']);
@@ -513,6 +521,7 @@ checkCommand('insecure sign-in guard tests', ['tools/test-insecure-login.js']);
 checkCommand('settings export/import tests', ['tools/test-settings-io.js']);
 checkCommand('popup config merge tests', ['tools/test-popup-config-merge.js']);
 checkCommand('reputation fetch tests', ['tools/test-reputation-fetch.js']);
+checkCommand('keyed provider consent tests', ['tools/test-keyed-provider-consent.js']);
 checkCommand('request self-identification tests', ['tools/test-request-self-identification.js']);
 checkCommand('shared DOM watcher tests', ['tools/test-shared-dom-watcher.js']);
 checkCommand('popup contrast tests', ['tools/test-popup-contrast.js']);
@@ -579,6 +588,7 @@ checkCommand('incognito isolation tests', ['tools/test-incognito-isolation.js'])
 checkCommand('download false-positive tests', ['tools/test-download-false-positives.js']);
 checkCommand('cookie cleaner tests', ['tools/test-cookie-cleaner.js']);
 checkCommand('privacy cleaner wiring tests', ['tools/test-privacy-cleaner-wiring.js']);
+checkCommand('privacy data inspection and erase tests', ['tools/test-privacy-data-erase.js']);
 checkCommand('warning page secret tests', ['tools/test-warning-page-secrets.js']);
 checkCommand('reconcile honesty tests', ['tools/test-reconcile-honesty.js']);
 checkCommand('reconciler one-list tests', ['tools/test-reconcile-one-list.js']);
@@ -604,6 +614,7 @@ checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
 checkCommand('device access guard tests', ['tools/test-device-access-guard.js']);
 checkCommand('notification guard tests', ['tools/test-notification-guard.js']);
 checkCommand('Notification Centre tests', ['tools/test-notification-center.js']);
+checkCommand('system notification privacy tests', ['tools/test-system-notification-privacy.js']);
 checkCommand('offscreen document lifecycle tests', ['tools/test-offscreen-lifecycle.js']);
 checkCommand('capability guard tests', ['tools/test-capability-guards.js']);
 checkCommand('fake-window guard tests', ['tools/test-fake-window-guard.js']);
@@ -642,6 +653,9 @@ checkCommand('engine mutation cost tests', ['tools/test-engine-mutation-cost.js'
 checkCommand('YouTube compatibility-pause tests', ['tools/test-youtube-compat.js']);
 checkCommand('learned grabber scope tests', ['tools/test-learned-grabber-scope.js']);
 checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);
+checkCommand('manual check journal tests', ['tools/test-manual-check-journal.js']);
+checkCommand('Store candidate attestation tests', ['tools/test-store-candidate.js']);
+checkCommand('Store rights gate tests', ['tools/test-store-rights.js']);
 checkCommand('blocked site list tests', ['tools/test-blocked-site-list.js']);
 checkCommand('user filter rules and custom lists', ['tools/test-user-filters.js']);
 checkCommand('network logger', ['tools/test-network-logger.js']);

@@ -219,11 +219,11 @@ function world(opts) {
 
   check('no page-reachable message kind was reintroduced', !BG.includes("kind === 'breach-check'"),
     'a channel pages can post hash prefixes into');
-  check('the worker does not perform the lookup', !BG.includes('api.pwnedpasswords.com'),
+  check('the worker does not perform the lookup', !BG.includes('https://api.pwnedpasswords.com'),
     'it belongs in the extension page, which no tab can reach');
 
   const hosts = (MANIFEST.host_permissions || []).join(' ');
-  check('the host permission it needs is granted', hosts.indexOf('api.pwnedpasswords.com') >= 0);
+  check('the host permission it needs is granted by the whole-web scope', hosts.includes('<all_urls>'));
 }());
 
 /* ---- the claim printed next to the box has to be true -------------------- */

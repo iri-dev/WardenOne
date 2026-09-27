@@ -1442,9 +1442,15 @@
   // path is untouched, and any failure here just falls back to today's behaviour. We
   // emit ONLY the recoloured declarations (selectorText + transformed colour props),
   // so a sheet's relative url() backgrounds are never re-hosted/broken.
+  const FOREIGN_MAX_SHEETS = 64;
+  const FOREIGN_CACHE_MAX_CHARS = 4 * 1024 * 1024;
+  const FOREIGN_XFORM_MAX_CHARS = 2 * 1024 * 1024;
+  const FOREIGN_RETRY_MS = 60000;
   let foreignCache = new Map();   // href -> css text ('' = fetch failed/none)
-  let foreignXform = new Map();    // href + '|' + mode -> transformed css (memo; raw text is immutable)
+  let foreignXform = new Map();    // href + '|' + mode -> transformed css
   let foreignPending = new Set(); // href -> fetch in flight
+  let foreignActiveHrefs = new Set();
+  let foreignFailedAt = new Map();
   let foreignEls = [];
   let foreignToken = 0;           // bumped on mode change/disable to drop stale async work
   function removeForeignEls() {
@@ -1468,6 +1474,7 @@
         if (readable) continue; // same-origin -> already handled by buildThemeCSS
         seen.add(href);
         out.push(href);
+        if (out.length >= FOREIGN_MAX_SHEETS) return out;
       }
     }
     return out;
@@ -1505,11 +1512,20 @@
   }
   function injectForeignCSS(mode) {
     let css = '';
-    foreignCache.forEach((text, href) => {
+    foreignActiveHrefs.forEach((href) => {
+      const text = foreignCache.get(href);
       if (!text) return;
       const key = href + '|' + mode;
       let t = foreignXform.get(key);
-      if (t === undefined) { t = transformForeignText(text, mode, href); foreignXform.set(key, t); }
+      if (t === undefined) {
+        t = transformForeignText(text, mode, href);
+        if (t.length > FOREIGN_XFORM_MAX_CHARS) t = '';
+        foreignXform.set(key, t);
+        while ([...foreignXform.values()].reduce((n, value) => n + value.length, 0) > FOREIGN_XFORM_MAX_CHARS) {
+          foreignXform.delete(foreignXform.keys().next().value);
+        }
+      }
+      if (css.length + t.length > FOREIGN_XFORM_MAX_CHARS) return;
       css += t;
     });
     removeForeignEls();
@@ -1595,21 +1611,54 @@
       if (isManagedThemeHost()) return; // managed hosts use bespoke CSS, not the generic remap
       if (typeof fetch !== 'function' || typeof CSSStyleSheet === 'undefined') return;
       const hrefs = collectForeignHrefs(roots || rootsList());
-      if (!hrefs.length) return;
+      foreignActiveHrefs = new Set(hrefs);
+      for (const href of foreignCache.keys()) {
+        if (foreignActiveHrefs.has(href)) continue;
+        foreignCache.delete(href);
+        foreignFailedAt.delete(href);
+        for (const key of foreignXform.keys()) if (key.startsWith(href + '|')) foreignXform.delete(key);
+      }
+      for (const href of foreignFailedAt.keys()) if (!foreignActiveHrefs.has(href)) foreignFailedAt.delete(href);
+      if (!hrefs.length) { foreignToken++; removeForeignEls(); return; }
       const token = ++foreignToken;
       let cachedAny = false;
       for (let i = 0; i < hrefs.length; i++) {
         const href = hrefs[i];
-        if (foreignCache.has(href)) { cachedAny = true; continue; }
+        if (foreignCache.has(href)) {
+          if (foreignCache.get(href) || Date.now() - (foreignFailedAt.get(href) || 0) < FOREIGN_RETRY_MS) {
+            cachedAny = true;
+            continue;
+          }
+          foreignCache.delete(href);
+          foreignFailedAt.delete(href);
+        }
+        if (foreignFailedAt.has(href)) {
+          if (Date.now() - foreignFailedAt.get(href) < FOREIGN_RETRY_MS) continue;
+          foreignFailedAt.delete(href);
+        }
         if (foreignPending.has(href)) continue;
         foreignPending.add(href);
         try {
           fetchForeignSheet(href, (css) => {
             foreignPending.delete(href);
-            foreignCache.set(href, css);
+            if (!foreignActiveHrefs.has(href)) return;
+            const text = css && css.length <= FOREIGN_CACHE_MAX_CHARS ? css : '';
+            foreignCache.delete(href);
+            foreignCache.set(href, text);
+            if (!text) foreignFailedAt.set(href, Date.now());
+            else foreignFailedAt.delete(href);
+            let total = [...foreignCache.values()].reduce((n, value) => n + value.length, 0);
+            while (total > FOREIGN_CACHE_MAX_CHARS || foreignCache.size > FOREIGN_MAX_SHEETS) {
+              const oldest = foreignCache.keys().next().value;
+              if (oldest === undefined) break;
+              total -= (foreignCache.get(oldest) || '').length;
+              foreignCache.delete(oldest);
+              foreignFailedAt.set(oldest, Date.now());
+              for (const key of foreignXform.keys()) if (key.startsWith(oldest + '|')) foreignXform.delete(key);
+            }
             if (token === foreignToken && activeRemap === mode) injectForeignCSS(mode);
           });
-        } catch (e) { foreignPending.delete(href); foreignCache.set(href, ''); }
+        } catch (e) { foreignPending.delete(href); foreignCache.set(href, ''); foreignFailedAt.set(href, Date.now()); }
       }
       if (cachedAny) injectForeignCSS(mode); // reflect current mode immediately for already-fetched sheets
     } catch (e) {}

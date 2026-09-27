@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: September 11, 2026**
+**Last updated: September 27, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -28,8 +28,9 @@ unclear, contact us (see **Contact** below).
   public registration-data service, (5) **opt-in** reputation look-ups that you must switch
   on yourself — and which, once on, **send the addresses of pages you open** to the
   provider automatically, which is why they are off by default and described in full
-  below — (6) three things you start by pressing a
-  button — the site breach check, the extension checker, and the network filtering
+  below — (6) four things you start by pressing a
+  button — the site breach check, the extension checker, fetching a filter list you added
+  yourself, and the network filtering
   self-test, **which deliberately requests a favicon from named adult and malware-test
   domains and can therefore show up in DNS or filter logs** — and (7) Twitch's own API,
   while you are on Twitch, for the ad-blocking and rewind features. Each is described in
@@ -110,6 +111,16 @@ account by WardenOne, and is **not** uploaded to us:
   are not sent to a reputation server.
 - Any API keys you choose to enter for optional reputation providers (stored locally so
   the extension can authenticate to the provider you enabled).
+- The notification history behind the Notification Centre: up to 300 notices, each with a
+  short description, the site it concerned and up to twelve examples of repeats, kept for the
+  retention you choose there (30 days unless you change it) and removed by its **Clear**
+  button.
+- The rules and lists you make yourself: the text you write in **My Rules**, the filter lists
+  you subscribe to (their addresses and the rules they returned), your per-site firewall
+  choices, the page elements you hid with the element zapper (the site and the element's
+  selector), and your own blocked-site list. These are yours rather than something WardenOne
+  observed, so nothing expires them; each is removed from the page where you made it, and all
+  of them go when WardenOne is removed. An earlier version of this policy did not list them.
 
 The opt-in Twitch local rewind feature makes short, high-bitrate clips of video and audio
 already playing in the current tab and keeps up to five minutes in volatile browser
@@ -118,9 +129,19 @@ disk by WardenOne, and are discarded when the channel, page, or tab closes. To c
 memory use, the oldest clips may be discarded before five minutes on unusually high-
 bitrate streams.
 
-**Deleting this data:** Removing WardenOne from your browser deletes its local storage.
-You can also reset settings from the options page, and the "Forget this site" and
-"Clean browsing data" tools remove data on demand.
+**Deleting this data:** The popup's **Privacy cleaner → WardenOne data on this device**
+shows each saved local or session dataset, its approximate size and its oldest known
+date when the dataset has a timestamp. **Erase WardenOne data** clears local and
+session storage and WardenOne's dynamic and session network rules, then restarts the
+extension to rebuild default protections. You can erase everything, keep global
+switches without API keys, or keep global switches and API keys. Both keep-options
+remove site exceptions, user-authored rules and learned records. Finish any active
+Download Shield reviews before erasing so a paused download is not stranded.
+
+**Forget this site now** clears that website's browser data and permissions; it is
+not an erase of all WardenOne records about the site. **Clean browser data** clears
+the selected browser/site data and the specific WardenOne history records named by
+that control. Removing WardenOne from Chrome also removes the extension's storage.
 
 ---
 
@@ -260,6 +281,25 @@ required a key, which was not true of OpenPhish. Earlier builds also offered an 
 OpenPhish token field; nothing ever read that token, the field no longer exists, and a
 token saved by an earlier build is deleted from your settings when WardenOne updates.
 
+Your API key identifies your account with its provider. When automatic checks are on, that
+provider can join the addresses WardenOne submits to your account across browser sessions,
+IP address changes and networks. Entering or testing a key alone leaves automatic checks off;
+you must turn on the provider's separate switch. A saved key remains available for a
+right-click check you start yourself while automatic checks are off. Erase the key field to
+remove it from this device.
+
+Google Safe Browsing requires its API key in the request URL. WhoisXML Domain Reputation
+and Threat Intelligence also document a query-string API key. Those HTTPS URLs can appear
+in provider, proxy or debugging logs. WhoisXML's WHOIS-record endpoint supports a bearer
+header, which WardenOne uses instead. These provider clients do not copy raw exception or
+provider-supplied error text into result messages; failed checks use generic text and HTTP
+status. Restrict the Google key to the Safe Browsing API in Google Cloud,
+keep provider keys private, and rotate a key if it was copied into a log or shared. The
+[Google Safe Browsing setup guide](https://developers.google.com/safe-browsing/v4/get-started),
+[WhoisXML Domain Reputation request guide](https://domain-reputation.whoisxmlapi.com/api/documentation/making-requests)
+and [Threat Intelligence request guide](https://threat-intelligence.whoisxmlapi.com/api/documentation/making-requests)
+describe these authentication methods.
+
 **Be clear about what switching one on means.** These are not buttons you press per site.
 Once a provider is enabled, WardenOne asks it about pages **as you navigate to them**, on
 its own, for the whole time it stays enabled. Earlier wording here said "the specific
@@ -269,7 +309,8 @@ impression. Precisely:
 - **Google Safe Browsing** and **urlhaus** receive the address of every page you open, as
   **scheme, host and path** — `https://example.com/some/page`. The query string (everything
   from `?` on), the `#fragment` and any user name in the address are removed before the
-  request is made, and the address is cut at 1,500 characters. The path is kept on purpose:
+  request is made. Provider URLs longer than 1,500 characters are skipped rather than
+  shortened into a different address. The path is kept on purpose:
   a phishing page on a shared host is identified by its path, and a blocklist entry for it
   is useless without one. That means a secret carried *in the path* — the token in a
   password-reset link — does still travel; one carried in the query does not. Over a
@@ -346,6 +387,15 @@ a Twitch page:
 Twitch already knows you are watching Twitch, which is why this is listed as a request
 rather than a disclosure of anything new. Both features are described in the popup and
 both can be turned off there.
+
+### 9. Filter lists you add yourself (you press the button)
+
+**My Rules** can subscribe to a filter list at an `https://` address you type. WardenOne
+fetches it when you add it and again when you press its update button — never on its own —
+from exactly the address you gave, without cookies. That list's host receives an ordinary
+request and your IP address, as it would if you opened the address yourself, and nothing
+else. Which host that is depends entirely on the address you chose, which is why it is
+described here rather than named. An earlier version of this policy left this out.
 
 **That is the complete list of external endpoints WardenOne contacts.** Everything above
 is either a public filter list, a check you switched on, or a button you pressed. There is

@@ -640,7 +640,7 @@ async function main() {
   process.exit(failed ? 1 : 0);
 }
 
-module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, LONGTASK_SCRIPT };
+module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, freePort, edgePath };
 
 if (require.main === module) {
   main().catch((e) => { console.error('perf profile: ' + (e && e.stack || e)); process.exit(2); });

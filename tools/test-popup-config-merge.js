@@ -101,8 +101,8 @@ function makeHarness(storedConfig) {
   };
   const sandbox = {
     chrome, console, JSON, Object, Array, Set, String, Number, Boolean,
-    // popup.js's real helper; a provider with no key must not keep a stored key
-    dropKeysForDisabledProviders(cfg) {
+    // popup.js's real helper; disabled providers retain keys for explicit manual checks.
+    normalizeStoredProviderKeys(cfg) {
       if (!cfg || typeof cfg !== 'object') return;
       const map = {
         downloadSafeBrowsing: 'downloadSafeBrowsingKey',
@@ -113,7 +113,7 @@ function makeHarness(storedConfig) {
         whoisXml: 'whoisXmlKey',
       };
       for (const provider of Object.keys(map)) {
-        if (cfg[provider] !== true && cfg[map[provider]]) cfg[map[provider]] = '';
+        cfg[map[provider]] = String(cfg[map[provider]] || '').trim();
       }
     },
     // adoptExternalConfigChange touches the DOM only to find text fields; there are

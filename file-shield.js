@@ -30,8 +30,10 @@ const HEAD_BYTES = 65536;
 const TAIL_BYTES = 131072;
 /* crypto.subtle.digest has no streaming form, so the whole file must sit in
    memory to be hashed. Past this we say so rather than hanging the tab. */
-const HASH_MAX_BYTES = 768 * 1024 * 1024;
+const HASH_MAX_BYTES = 32 * 1024 * 1024;
 const ZIP_MAX_ENTRIES = 4000;
+const ZIP_READ_CHUNK = 64 * 1024;
+const ZIP_SCAN_MAX_BYTES = 8 * 1024 * 1024;
 /* A ratio past this is the shape of a decompression bomb. Ordinary text and
    installers land far below it; the pathological cases are 1000:1 and up. */
 const BOMB_RATIO = 250;
@@ -179,7 +181,7 @@ function detectFormat(head, size, isoProbe) {
 /* Read from the central directory only. Nothing is decompressed, so a bomb
    cannot go off while being measured -- the sizes are metadata. That also
    means an archive can lie about them, and the report says "claims". */
-async function readZip(file, tail, findings) {
+async function readZip(file, tail, findings, shouldContinue = () => true) {
   const size = file.size;
   let eocd = -1;
   for (let i = tail.bytes.length - 22; i >= 0; i--) {
@@ -198,7 +200,10 @@ async function readZip(file, tail, findings) {
     const locator = eocd - 20;
     if (locator >= 0 && tail.bytes[locator] === 0x50 && tail.bytes[locator + 1] === 0x4B
       && tail.bytes[locator + 2] === 0x06 && tail.bytes[locator + 3] === 0x07) {
-      const z64At = Number(new DataView(tail.bytes.buffer, tail.bytes.byteOffset, tail.bytes.byteLength).getBigUint64(locator + 8, true));
+      const z64At = Number(tv.getBigUint64(locator + 8, true));
+      if (!Number.isSafeInteger(z64At) || z64At > size - 56) {
+        return { entries: [], files: 0, totalUncompressed: 0, truncated: true, count: entryCount };
+      }
       const z64 = new Uint8Array(await file.slice(z64At, z64At + 56).arrayBuffer());
       if (startsWith(z64, 0, [0x50, 0x4B, 0x06, 0x06])) {
         const zv = new DataView(z64.buffer);
@@ -206,27 +211,55 @@ async function readZip(file, tail, findings) {
         cdSize = Number(zv.getBigUint64(40, true));
         cdOffset = Number(zv.getBigUint64(48, true));
       }
-    }
+    } else return { entries: [], files: 0, totalUncompressed: 0, truncated: true, count: entryCount };
   }
-  if (!(cdOffset >= 0) || !(cdSize > 0) || cdOffset + cdSize > size) return { entries: [], truncated: true, count: entryCount };
+  if (![entryCount, cdSize, cdOffset].every(Number.isSafeInteger)
+    || cdOffset < 0 || cdSize <= 0 || cdOffset > size || cdSize > size - cdOffset) {
+    return { entries: [], files: 0, totalUncompressed: 0, truncated: true, count: entryCount };
+  }
 
-  const cd = new Uint8Array(await file.slice(cdOffset, cdOffset + cdSize).arrayBuffer());
-  const cv = new DataView(cd.buffer);
-  const entries = [];
+  const scanEnd = cdOffset + Math.min(cdSize, ZIP_SCAN_MAX_BYTES);
+  let nextRead = cdOffset;
+  let cd = new Uint8Array(0);
   let p = 0;
+  async function ensureBytes(n) {
+    while (cd.length - p < n && nextRead < scanEnd) {
+      if (!shouldContinue()) throw new Error('Scan cancelled');
+      const end = Math.min(nextRead + ZIP_READ_CHUNK, scanEnd);
+      const part = new Uint8Array(await file.slice(nextRead, end).arrayBuffer());
+      if (!part.length) break;
+      const carry = cd.subarray(p);
+      const joined = new Uint8Array(carry.length + part.length);
+      joined.set(carry);
+      joined.set(part, carry.length);
+      cd = joined;
+      p = 0;
+      nextRead += part.length;
+    }
+    return cd.length - p >= n;
+  }
+  const entries = [];
+  let incomplete = false;
   let totalCompressed = 0;
   let totalUncompressed = 0;
   let encrypted = 0;
   let worstRatio = 0;
 
-  while (p + 46 <= cd.length && entries.length < ZIP_MAX_ENTRIES) {
-    if (!(cd[p] === 0x50 && cd[p + 1] === 0x4B && cd[p + 2] === 0x01 && cd[p + 3] === 0x02)) break;
+  while (entries.length < ZIP_MAX_ENTRIES && entries.length < entryCount) {
+    if (!await ensureBytes(46)) { incomplete = true; break; }
+    if (!(cd[p] === 0x50 && cd[p + 1] === 0x4B && cd[p + 2] === 0x01 && cd[p + 3] === 0x02)) {
+      incomplete = true;
+      break;
+    }
+    const cv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength);
     const flags = u16(cv, p + 8);
     const comp = u32(cv, p + 20);
     const uncomp = u32(cv, p + 24);
     const nameLen = u16(cv, p + 28);
     const extraLen = u16(cv, p + 30);
     const commentLen = u16(cv, p + 32);
+    const recordLen = 46 + nameLen + extraLen + commentLen;
+    if (!await ensureBytes(recordLen)) { incomplete = true; break; }
     const rawName = cd.subarray(p + 46, p + 46 + nameLen);
     /* Bit 11 says the name is UTF-8. Without it ZIP is officially CP437; UTF-8
        is what everything actually writes, so decode as UTF-8 either way but
@@ -243,7 +276,7 @@ async function readZip(file, tail, findings) {
     }
     if (flags & 0x1) encrypted++;
     entries.push({ name, size: uncomp, compressed: comp, dir: isDir, encrypted: !!(flags & 0x1) });
-    p += 46 + nameLen + extraLen + commentLen;
+    p += recordLen;
   }
 
   const files = entries.filter((e) => !e.dir);
@@ -326,7 +359,7 @@ async function readZip(file, tail, findings) {
     totalCompressed,
     worstRatio,
     ooxml: files.some((e) => e.name === '[Content_Types].xml'),
-    truncated: entries.length >= ZIP_MAX_ENTRIES,
+    truncated: incomplete || entries.length < entryCount || cdSize > ZIP_SCAN_MAX_BYTES,
   };
 }
 
@@ -804,15 +837,13 @@ async function hashFile(file) {
   }
   const buf = await file.arrayBuffer();
   const hex = (d) => Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
-  const [sha256, sha1] = await Promise.all([
-    crypto.subtle.digest('SHA-256', buf),
-    crypto.subtle.digest('SHA-1', buf),
-  ]);
+  const sha256 = await crypto.subtle.digest('SHA-256', buf);
+  const sha1 = await crypto.subtle.digest('SHA-1', buf);
   return { sha256: hex(sha256), sha1: hex(sha1) };
 }
 
 /* ---- the scan ----------------------------------------------------------- */
-async function analyse(file, onStage) {
+async function analyse(file, onStage, shouldContinue = () => true) {
   const findings = [];
   const name = file.name || '(no name)';
   const ext = extensionOf(name);
@@ -897,7 +928,13 @@ async function analyse(file, onStage) {
   let lnk = null;
   if (format.id === 'zip') {
     onStage('Reading the archive index…');
-    zip = await readZip(file, tail, findings);
+    zip = await readZip(file, tail, findings, shouldContinue);
+    if (zip && zip.truncated) findings.push({
+      level: 'caution',
+      title: 'Only part of the archive index was inspected',
+      detail: 'WardenOne checked ' + zip.entries.length + ' entr' + (zip.entries.length === 1 ? 'y' : 'ies')
+        + '. The rest may contain files or risks that this report cannot describe.',
+    });
   }
   if (format.id === 'lnk') {
     lnk = readLnk(head);
@@ -959,6 +996,7 @@ async function analyse(file, onStage) {
   }
 
   onStage('Hashing…');
+  if (!shouldContinue()) throw new Error('Scan cancelled');
   const hash = await hashFile(file);
 
   /* The one check that can say a file IS bad rather than merely odd, and it
@@ -1179,8 +1217,8 @@ function render(report) {
   zipBox.hidden = !report.zip;
   if (report.zip) {
     $('zip-summary').textContent = report.zip.files + ' file' + (report.zip.files === 1 ? '' : 's')
-      + ', ' + humanSize(report.zip.totalUncompressed) + ' when expanded'
-      + (report.zip.truncated ? ' (first ' + ZIP_MAX_ENTRIES + ' entries listed)' : '')
+      + ', at least ' + humanSize(report.zip.totalUncompressed) + ' when expanded'
+      + (report.zip.truncated ? ' (partial index: ' + report.zip.entries.length + ' entries checked)' : '')
       + '. Read from the archive index; nothing was extracted.';
     const tbody = $('zip-rows');
     tbody.textContent = '';
@@ -1266,7 +1304,7 @@ async function scan(files) {
     try {
       const report = await analyse(list[i], (stage) => {
         if (run === SCAN_RUN) $('progress').textContent = prefix + stage;
-      });
+      }, () => run === SCAN_RUN);
       batch.push(report);
     } catch (e) {
       batch.push({

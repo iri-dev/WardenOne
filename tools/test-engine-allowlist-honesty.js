@@ -153,6 +153,46 @@ check('disposal clears the ready and installed markers',
     /ENGINE_RELOAD_MAX/.test(probe) && /reason: 'gave-up'/.test(probe));
 }
 
+/* ---- BUG-03: every allowlist check means the same thing --------------------------------
+   Five worker call sites compared entries by registrable domain -- allow.some((h) =>
+   registrableDomainBg(h) === registrableDomainBg(host)) -- which is symmetric: allowlisting
+   mail.example.com paused the forced-navigation guard, Repair's re-arm and the health check on
+   shop.example.com too. Everything else went through hostMatchesAllowlist, where the entry has to
+   be the page host or one of its parents. One helper, one meaning. */
+{
+  const workerFiles = fs.readdirSync(ROOT).filter((f) => /^background.*\.js$/.test(f));
+  const offenders = [];
+  for (const f of workerFiles) {
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    text.split('\n').forEach((line, i) => {
+      if (/allow(list)?\w*\.some\(\s*\(?\w+\)?\s*=>\s*(registrableDomainBg|siteIdentityBg)\(/.test(line)) offenders.push(f + ':' + (i + 1));
+    });
+  }
+  check('no worker call site compares an allowlist entry by registrable domain', offenders.length === 0, offenders.join(', '));
+  check('the three paths the audit named now use the shared helper',
+    (BG.match(/hostMatchesAllowlist\(new URL\(fromUrl\)\.hostname, activeAllowlist\(cfg\)\)/g) || []).length === 2
+      && /if \(hostMatchesAllowlist\(host, activeAllowlist\(cfg\)\)\) return \{ ok: false, reason: 'allowlisted' \};/.test(BG)
+      && /if \(host && hostMatchesAllowlist\(host, activeAllowlist\(cfg\)\)\) \{/.test(BG)
+      && /leave = hostMatchesAllowlist\(host, allow\);/.test(BG));
+
+  const DOMAIN_UTILS = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
+  const lift = (name) => {
+    const at = BG.indexOf('\nfunction ' + name + '(');
+    return BG.slice(at + 1, BG.indexOf('\n}\n', at) + 3);
+  };
+  const box = { URL, console, normalizeIpLiteral: () => '', isLocalOrPrivateHost: () => false };
+  box.globalThis = box;
+  box.self = box;
+  vm.createContext(box);
+  vm.runInContext(DOMAIN_UTILS + '\n' + lift('normalizeAllowlistHost') + '\n' + lift('normalizeAllowlistHosts') + '\n'
+    + lift('hostMatchesAllowlist') + '\nthis.__match = hostMatchesAllowlist;', box, { filename: 'allowlist' });
+  const match = box.__match;
+  check('allowlisting one subdomain does not pause its sibling', match('shop.example.com', ['mail.example.com']) === false);
+  check('allowlisting a subdomain does not pause the parent site', match('example.com', ['mail.example.com']) === false);
+  check('allowlisting a site still covers its subdomains', match('mail.example.com', ['example.com']) === true);
+  check('and the exact host itself', match('mail.example.com', ['mail.example.com']) === true);
+}
+
 console.log('');
 if (failures) {
   console.log(failures + ' check(s) failed');

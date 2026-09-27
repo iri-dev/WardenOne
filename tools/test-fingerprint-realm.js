@@ -21,7 +21,7 @@
  *   - the engine publishes a realm record at document_start on a non-configurable accessor and
  *     settles it whichever way the switch points;
  *   - the shipped module, run in stub realms: a same-origin child adopts the parent's record
- *     synchronously and reproduces its seed (same cores, same GPU, same canvas noise), a child
+ *     synchronously and reproduces its seed (same cores and GPU); a child
  *     of a parent with noise off installs nothing, a cross-origin child waits for its bridge's
  *     signed verdict and refuses forged keys, replays and bad signatures, a top-level http(s)
  *     page is left to the engine, a top-level about:blank window adopts from its opener;
@@ -117,7 +117,7 @@ section('build parity', () => {
 /* ---- 2. the two seeds --------------------------------------------------------------------- */
 section('seed split', () => {
   const noise = region('FINGERPRINT-NOISE');
-  check('the canvas noise is keyed on the shared seed', /hashBytes=data=>\{let h=\(_sc\^2166136261\)>>>0/.test(noise));
+  check('canvas exports and readback are left native', !/noisyCanvasForRead|hashBytes=data=>|HTMLCanvasElement\.prototype\.toDataURL=function/.test(noise));
   /* The hardware draw is NOT on the per-load seed any more (COMPAT-11): a core count is a claim
      about the machine, so it is keyed on the top-level site and holds across reloads. */
   check('the hardware-profile draw is keyed on the site seed, not the per-load one', /woPick=\(arr,key\)=>arr\[Math\.floor\(makeRnd\(mixSite\(key\)\)/.test(noise)
@@ -275,14 +275,24 @@ function realm(opts) {
   class Navigator {}
   ctx.Navigator = Navigator;
   ctx.navigator = Object.create(Navigator.prototype);
+  ctx.navigator.platform = o.platform === undefined ? 'Win32' : o.platform;
+  ctx.navigator.userAgentData = { platform: o.uaPlatform === undefined ? 'Windows' : o.uaPlatform };
   Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get() { return 20; }, configurable: true });
   Object.defineProperty(Navigator.prototype, 'deviceMemory', { get() { return 32; }, configurable: true });
+  Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get() { return o.touch === undefined ? 10 : o.touch; }, configurable: true, enumerable: true });
+  Object.defineProperty(Navigator.prototype, 'mimeTypes', { get() { return { 'application/pdf': { type: 'application/pdf' } }; }, configurable: true, enumerable: true });
+  Object.defineProperty(Navigator.prototype, 'plugins', { get() { return [{ name: 'Chrome PDF Viewer' }]; }, configurable: true, enumerable: true });
+  const nativeConnection = { effectiveType: '3g', addEventListener() {}, removeEventListener() {} };
+  Object.defineProperty(Navigator.prototype, 'connection', { get() { return nativeConnection; }, configurable: true, enumerable: true });
+  ctx.__nativeConnection = nativeConnection;
   ctx.navigator.language = 'en-US';
   class Screen {}
   ctx.Screen = Screen;
   ctx.screen = Object.create(Screen.prototype);
-  Object.defineProperty(Screen.prototype, 'width', { get() { return 2560; }, configurable: true });
-  Object.defineProperty(Screen.prototype, 'height', { get() { return 1440; }, configurable: true });
+  Object.defineProperty(Screen.prototype, 'width', { get() { return o.screenWidth || 2560; }, configurable: true, enumerable: true });
+  Object.defineProperty(Screen.prototype, 'height', { get() { return o.screenHeight || 1440; }, configurable: true, enumerable: true });
+  Object.defineProperty(Screen.prototype, 'availWidth', { get() { return o.availWidth || 2520; }, configurable: true, enumerable: true });
+  Object.defineProperty(Screen.prototype, 'availHeight', { get() { return o.availHeight || 1400; }, configurable: true, enumerable: true });
   ctx.innerWidth = 1200; ctx.innerHeight = 800;
   const rand = o.rand || 0x12345678;
   ctx.crypto = { getRandomValues(a) { for (let i = 0; i < a.length; i++) a[i] = (rand + i * 7919) >>> 0; return a; } };
@@ -292,16 +302,18 @@ function realm(opts) {
   ctx.__settled = 0;
   doc.addEventListener('wo-realm-settled', () => { ctx.__settled++; });
   vm.createContext(ctx);
-  ctx.__native = { toDataURL: HTMLCanvasElement.prototype.toDataURL, getImageData: CanvasRenderingContext2D.prototype.getImageData };
+  ctx.__native = { toDataURL: HTMLCanvasElement.prototype.toDataURL, getImageData: CanvasRenderingContext2D.prototype.getImageData,
+    getClientRects: Element.prototype.getClientRects };
   return ctx;
 }
 function run(ctx) {
   try { vm.runInContext(REALM, ctx, { filename: 'fingerprint-realm.js' }); } catch (e) { ctx.__threw = e; }
   return ctx;
 }
-const wrapped = (ctx) => ctx.HTMLCanvasElement.prototype.toDataURL !== ctx.__native.toDataURL;
+const wrapped = (ctx) => ctx.navigator.hardwareConcurrency !== 20;
 const accessor = (ctx) => Object.getOwnPropertyDescriptor(ctx, '__wardenOneRealm');
-const draw = (ctx) => { const c = ctx.document.createElement('canvas'); c.width = 16; c.height = 16; return c.toDataURL(); };
+const draw = (ctx) => { const c = ctx.document.createElement('canvas'); c.width = 16; c.height = 16;
+  c.getContext('2d').putImageData({ data: FIXTURE_PIXELS }, 0, 0); return c.toDataURL(); };
 const hmac = (keyHex, text) => nodeCrypto.createHmac('sha256', Buffer.from(keyHex, 'hex')).update(String(text), 'utf8').digest('hex');
 const KEY = 'a'.repeat(64);
 const TOKEN = 'tok-1234';
@@ -324,13 +336,13 @@ section('same-origin child adopts synchronously', () => {
   check('with the parent\'s seed', c.__wardenOneRealm && c.__wardenOneRealm.noise === true && c.__wardenOneRealm.seed === 0xABCDEF01,
     JSON.stringify(c.__wardenOneRealm));
   check('and the record is frozen', Object.isFrozen(c.__wardenOneRealm));
-  check('toDataURL is wrapped before the page can borrow it', wrapped(c));
-  check('and cloaked', String(c.HTMLCanvasElement.prototype.toDataURL) === 'function toDataURL() { [native code] }',
-    String(c.HTMLCanvasElement.prototype.toDataURL).slice(0, 80));
-  check('getImageData is wrapped', c.CanvasRenderingContext2D.prototype.getImageData !== c.__native.getImageData);
+  check('Maximum Privacy runs before the page can borrow APIs', wrapped(c));
+  check('toDataURL stays native', c.HTMLCanvasElement.prototype.toDataURL === c.__native.toDataURL);
+  check('getImageData stays native', c.CanvasRenderingContext2D.prototype.getImageData === c.__native.getImageData);
+  check('getClientRects retains its native collection contract', c.Element.prototype.getClientRects === c.__native.getClientRects);
   check('hardwareConcurrency is the profile draw, not the machine', [4, 8, 12, 16].includes(c.navigator.hardwareConcurrency) && c.navigator.hardwareConcurrency !== 20);
   check('deviceMemory too', [4, 8].includes(c.navigator.deviceMemory));
-  check('the screen is rounded like the engine rounds it', c.screen.width === 2600 && c.screen.height === 1400, c.screen.width + 'x' + c.screen.height);
+  check('the screen rounds down without claiming pixels the display lacks', c.screen.width === 2500 && c.screen.height === 1400, c.screen.width + 'x' + c.screen.height);
   check('the realm tells its document it settled', c.__settled === 1);
   check('and asked for no bridge replay -- it did not need one', c.__replays === 0);
   let redefined = false;
@@ -346,17 +358,17 @@ section('realms sharing a seed agree', () => {
   check('two frames adopting one record report the same cores and memory',
     a.navigator.hardwareConcurrency === b.navigator.hardwareConcurrency && a.navigator.deviceMemory === b.navigator.deviceMemory);
   const pa = draw(a), pb = draw(b);
-  check('and the same canvas noise for the same pixels, despite different local randomness', pa === pb && pa !== 'data:clean:none');
-  check('which is noise, not the clean pixels', pa !== 'data:clean:' + Array.from(FIXTURE_PIXELS).join(','));
+  check('and identical native canvas exports despite different local randomness', pa === pb && pa === 'data:clean:' + Array.from(FIXTURE_PIXELS).join(','));
+  check('user-authored pixels are not changed', pa === 'data:clean:' + Array.from(FIXTURE_PIXELS).join(','));
   const other = ancestor(Object.freeze({ v: 1, noise: true, seed: 0x00000001 }));
   const cOther = run(realm({ parent: other, top: other, rand: 0x1111 }));
-  check('a different seed gives a different picture', draw(cOther) !== pa);
-  check('and the noise is stable within a realm', draw(a) === pa);
+  check('a different seed still keeps authored pixels', draw(cOther) === pa);
+  check('and output is stable within a realm', draw(a) === pa);
 });
 
 /* COMPAT-11: the hardware tuple is a claim about the machine. It must be identical across reloads,
    tabs and frames of one site -- whatever the per-load randomness did -- and unrelated between
-   sites, while the canvas noise keeps re-rolling per load. */
+   sites, while canvas pixels remain native across loads. */
 section('one site, one machine', () => {
   const tuple = (c) => JSON.stringify([c.navigator.hardwareConcurrency, c.navigator.deviceMemory, c.__woGpu]);
   /* A frame under a given top site, patched through the signed verdict path (no inherited seed),
@@ -377,7 +389,7 @@ section('one site, one machine', () => {
   check('the noise ran in each realm', wrapped(a1) && wrapped(a2) && wrapped(a3));
   check('a reload (new per-load randomness) shows the same cores, memory and GPU', tuple(a1) === tuple(a2), tuple(a1) + ' vs ' + tuple(a2));
   check('another subdomain of the same site, in another frame, shows the same machine', tuple(a1) === tuple(a3), tuple(a1) + ' vs ' + tuple(a3));
-  check('while the canvas noise still differs per load', draw(a1) !== draw(a2));
+  check('while canvas exports stay identical across loads', draw(a1) === draw(a2));
   const sites = ['https://alpha.example', 'https://bravo.example', 'https://charlie.example', 'https://delta.example', 'https://echo.example', 'https://foxtrot.example', 'https://golf.example', 'https://hotel.example'];
   const tuples = new Set(sites.map((s) => tuple(frameOn(s, 0x4444))));
   check('different sites see different machines (eight sites, more than one tuple)', tuples.size >= 3, [...tuples].join(' | '));
@@ -399,6 +411,46 @@ section('one site, one machine', () => {
   check('an about:blank child with no hostname still finds the top site', keyOf('', ['https://www.example.com']) === 'example.com');
   check('an address is a site of its own, whole', keyOf('127.0.0.1') === '127.0.0.1' && keyOf('10.0.0.7') === '10.0.0.7' && keyOf('[::1]') === '[::1]' && keyOf('localhost') === 'localhost');
   check('a bare or missing host does not throw', keyOf('') === '' && keyFn({}) === '' && keyFn(null) === '');
+});
+
+section('graphics identity follows the browser platform', () => {
+  const make = (platform, uaPlatform) => {
+    const parent = ancestor(Object.freeze({ v: 1, noise: true, seed: 0xABCDEF01 }));
+    const c = realm({ parent, top: parent, platform, uaPlatform });
+    c.WebGLRenderingContext = class WebGLRenderingContext { getParameter(p) { return 'native-' + platform + '-' + p; } };
+    const nativeAdapter = { info: { vendor: 'native-' + platform }, requestDevice() { return Promise.resolve({}); } };
+    const nativeRequest = () => Promise.resolve(nativeAdapter);
+    c.navigator.gpu = { requestAdapter: nativeRequest };
+    run(c);
+    return { c, nativeAdapter, nativeRequest, gl: c.WebGLRenderingContext.prototype.getParameter.call({}, 37446) };
+  };
+  const windows = make('Win32', 'Windows');
+  check('Windows receives a Direct3D renderer', /Direct3D11/.test(windows.gl));
+  check('Windows WebGPU uses the same selected vendor', windows.c.navigator.gpu.requestAdapter !== windows.nativeRequest);
+  for (const [platform, uaPlatform] of [['MacIntel', 'macOS'], ['Linux x86_64', 'Linux'], ['Unknown', 'Unknown'], ['Win32', 'macOS']]) {
+    const v = make(platform, uaPlatform);
+    check(platform + '/' + uaPlatform + ' retains native WebGL', v.gl === 'native-' + platform + '-37446', v.gl);
+    check(platform + '/' + uaPlatform + ' retains native WebGPU', v.c.navigator.gpu.requestAdapter === v.nativeRequest);
+  }
+  const table = SRC.slice(SRC.indexOf('woGpu=woWindows?woPick(['), SRC.indexOf('],"gpu"):null'));
+  check('every Windows profile uses a Windows graphics API', (table.match(/Direct3D11/g) || []).length === 5 && !/Metal|Vulkan/.test(table));
+});
+
+section('native capabilities remain usable under noise', () => {
+  for (const [width, height, available] of [[1920, 1080, 1040], [1366, 768, 720], [1536, 864, 816], [2560, 1440, 1400]]) {
+    const parent = ancestor(Object.freeze({ v: 1, noise: true, seed: 0xABCDEF01 }));
+    const c = run(realm({ parent, top: parent, screenWidth: width, screenHeight: height, availWidth: width, availHeight: available }));
+    check(width + 'x' + height + ' never overstates the real screen', c.screen.width <= width && c.screen.height <= height);
+    check(width + 'x' + height + ' retains a smaller usable height', c.screen.availHeight < c.screen.height && c.screen.availHeight <= available);
+    check(width + 'x' + height + ' retains a valid usable width', c.screen.availWidth <= c.screen.width);
+  }
+  const parent = ancestor(Object.freeze({ v: 1, noise: true, seed: 0xABCDEF01 }));
+  const c = run(realm({ parent, top: parent }));
+  check('touch capability remains nonzero on a touch device', c.navigator.maxTouchPoints === 10);
+  check('PDF capability remains visible', !!c.navigator.mimeTypes['application/pdf'] && c.navigator.plugins.length > 0);
+  check('connection is the native live object', c.navigator.connection === c.__nativeConnection && c.navigator.connection.effectiveType === '3g');
+  check('native touch descriptor keeps its shape', Object.getOwnPropertyDescriptor(c.Navigator.prototype, 'maxTouchPoints').enumerable === true);
+  check('patched screen descriptor keeps its native enumerability', Object.getOwnPropertyDescriptor(c.Screen.prototype, 'height').enumerable === true);
 });
 
 section('a parent with noise off', () => {
@@ -595,7 +647,8 @@ section('bridge verdict', () => {
     && blank.verdict(Object.assign({}, on, { allowlist: ['site.example.com'] })) === false);
   check('sendConfig decides while siteOverrides is still there to consult',
     BRIDGE.indexOf('clean.frameNoise = bridgeFrameNoiseAllowed(clean);') > 0
-      && BRIDGE.indexOf('clean.frameNoise = bridgeFrameNoiseAllowed(clean);') < BRIDGE.indexOf('delete clean.siteOverrides;')
+      && BRIDGE.indexOf('clean.frameNoise = bridgeFrameNoiseAllowed(clean);')
+        < BRIDGE.indexOf('delete clean.siteOverrides;', BRIDGE.indexOf('  const sendConfig = (overrides) => {'))
       && BRIDGE.indexOf('clean.frameNoise = bridgeFrameNoiseAllowed(clean);') > BRIDGE.indexOf('clean.allowlist = sanitizeBridgeHostList(bridgeActiveAllowlist(clean), 1000);'),
     'the allowlist must be resolved before, and siteOverrides deleted after');
 });

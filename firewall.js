@@ -40,7 +40,7 @@ const COLUMNS = [
    each domain has actually been doing. */
 const TYPE_COLUMN = {
   script: 'script',
-  xmlhttprequest: 'xhr', websocket: 'xhr',
+  xmlhttprequest: 'xhr', websocket: 'xhr', webtransport: 'xhr',
   sub_frame: 'frame', main_frame: 'frame',
   media: 'media', image: 'media', font: 'media',
 };

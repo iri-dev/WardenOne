@@ -1018,6 +1018,104 @@
   let permChainOverlay = null;
   let loginAgeOverlay = null;
 
+  // MAIN can cancel an action, but a hostile page owns its light DOM. Keep an independent
+  // copy of its high-stakes warning in this isolated world so removing or counterfeiting
+  // the MAIN panel does not make the warning disappear. The signed event carries only
+  // an ID. Every word in this copy comes from ISOLATED, not page-tamperable MAIN text.
+  const mainWarningCopy = Object.freeze({
+    'wo-sb-block': 'A destination was flagged as dangerous. WardenOne stopped the action.',
+    'wo-clip-swap': 'A page tried to change a copied address. Check what you paste.',
+    'wo-scam-lock': 'This page shows signs of a scam. Do not follow its payment or verification instructions.',
+    'wo-cmd-warn': 'This page may be asking you to run a dangerous command. Do not paste commands into a terminal or the Run dialog.',
+    'wo-paste-warn': 'You were about to paste a password or token into a risky field. The paste was stopped.',
+    'wo-formtrap-warn': 'This form has warning signs. Check the site and the destination before entering sensitive data.',
+    'wo-insecure-login': 'This sign-in may send your password without encryption. Check the address before continuing.',
+    'wo-fake-window': 'This page may be imitating a browser or system window. Check the real address bar.',
+    'wo-fullscreen-spoof': 'This page may be using fullscreen to imitate your browser. Exit fullscreen and check the address bar.',
+  });
+  const mainWarningText = new Map();
+  let mainWarningOverlay = null;
+  let mainWarningChecks = [];
+  function clearMainWarningChecks() {
+    for (const cancel of mainWarningChecks) cancel();
+    mainWarningChecks = [];
+  }
+  function showOwnedMainWarning(detail) {
+    const id = String(detail && detail.id || '');
+    if (!Object.prototype.hasOwnProperty.call(mainWarningCopy, id)) return;
+    const message = mainWarningCopy[id];
+    if (!message) return;
+    if (mainWarningText.has(id)) mainWarningText.delete(id);
+    mainWarningText.set(id, message);
+    while (mainWarningText.size > 6) mainWarningText.delete(mainWarningText.keys().next().value);
+    clearMainWarningChecks();
+    if (mainWarningOverlay) mainWarningOverlay.destroy();
+    const overlay = mainWarningOverlay = woOwnedOverlay('wo-owned-main-warning');
+    const root = overlay.root();
+    const card = document.createElement('div');
+    card.setAttribute('style', 'all:initial!important;box-sizing:border-box!important;position:fixed!important;'
+      + 'top:16px!important;left:50%!important;transform:translateX(-50%)!important;'
+      + 'width:min(480px,calc(100vw - 32px))!important;max-height:70vh!important;overflow:auto!important;'
+      + 'padding:16px!important;border:2px solid #b42332!important;border-radius:14px!important;'
+      + 'background:#fff8f8!important;color:#281d2e!important;box-shadow:0 18px 52px #4a182c66!important;'
+      + 'font:14px/1.45 system-ui,sans-serif!important;');
+    const heading = document.createElement('strong');
+    heading.setAttribute('style', 'all:initial!important;display:block!important;font:bold 16px/1.3 system-ui,sans-serif!important;color:#922132!important;margin-bottom:8px!important;');
+    heading.textContent = 'WardenOne warning';
+    card.appendChild(heading);
+    for (const warning of mainWarningText.values()) {
+      const item = document.createElement('p');
+      item.setAttribute('style', 'all:initial!important;display:block!important;font:13px/1.5 system-ui,sans-serif!important;color:#281d2e!important;margin:8px 0!important;white-space:normal!important;overflow-wrap:anywhere!important;');
+      item.textContent = warning;
+      card.appendChild(item);
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('style', 'all:initial!important;display:block!important;cursor:pointer!important;'
+      + 'background:#922132!important;color:white!important;padding:9px 14px!important;'
+      + 'border-radius:8px!important;font:bold 13px system-ui,sans-serif!important;margin-top:12px!important;');
+    button.textContent = 'I understand';
+    const onAcknowledge = (e) => {
+      if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(button)) return;
+      clearMainWarningChecks();
+      mainWarningText.clear();
+      mainWarningOverlay = null;
+      overlay.destroy();
+    };
+    button.addEventListener('click', onAcknowledge);
+    const destroyOwnedWarning = overlay.destroy.bind(overlay);
+    overlay.destroy = () => {
+      button.removeEventListener('click', onAcknowledge);
+      destroyOwnedWarning();
+    };
+    card.appendChild(button);
+    root.appendChild(card);
+    overlay.mount();
+    overlay.dialog({ label: 'WardenOne warning', focus: 'button' });
+    let reportedOcclusion = false;
+    const checkVisible = () => {
+      if (mainWarningOverlay !== overlay || reportedOcclusion) return;
+      if (!overlay.hostNode()) { clearMainWarningChecks(); mainWarningOverlay = null; return; }
+      try {
+        const rect = card.getBoundingClientRect();
+        const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
+        const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + Math.min(rect.height / 2, 36)));
+        const hit = document.elementFromPoint(x, y);
+        if (rect.width > 0 && rect.height > 0 && overlay.hostNode().isConnected
+          && (hit === overlay.hostNode() || overlay.hostNode().contains(hit))) return;
+      } catch (_) {}
+      reportedOcclusion = true;
+      clearMainWarningChecks();
+      try { chrome.runtime.sendMessage({ kind: 'warning-ui-compromised' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+    };
+    for (const delay of [200, 800, 2500, 6000]) {
+      const timer = woTimeout(checkVisible, delay);
+      mainWarningChecks.push(() => clearTimeout(timer));
+    }
+    const interval = woInterval(checkVisible, 10000);
+    mainWarningChecks.push(() => clearInterval(interval));
+  }
+
   // Smart Script Shield recovery is deliberately driven by this isolated-world
   // signal, not by a page-visible CustomEvent. The evidence is intentionally
   // narrow: an actual video, a recognised player library root, or a media-route
@@ -1855,6 +1953,21 @@
     }, true);
   } catch (_) {}
 
+  function mainWorldConfigForHost(source, host) {
+    const clean = Object.assign({}, source || {});
+    const current = normalizeBridgeHost(host);
+    clean.allowlist = current && bridgeHostMatchesList(current, clean.allowlist) ? [current] : [];
+    delete clean.forgetMeList;
+    delete clean.allowlistUntil;
+    delete clean.siteOverrides;
+    delete clean.memoryNeverSleepHosts;
+    delete clean.rebindQuarantine;
+    for (const field of Object.keys(clean)) {
+      if (/ByHost$|Key$/.test(field)) delete clean[field];
+    }
+    return clean;
+  }
+
   const sendConfig = (overrides) => {
     const raw = (overrides && typeof overrides === 'object') ? overrides : {};
     bridgeConfig = Object.assign({}, bridgeConfig, raw);
@@ -1927,7 +2040,8 @@
     // carries no site, and a value that arrived inside overrides would be a second opinion on
     // who this frame is. Inside the signed copy, so the page cannot supply one either (SEC-07).
     clean.frameSite = bridgeFrameSite;
-    postToPage(signed('config', JSON.stringify(clean), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: clean }));
+    const pageConfig = mainWorldConfigForHost(clean, location.hostname);
+    postToPage(signed('config', JSON.stringify(pageConfig), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: pageConfig }));
     try { document.dispatchEvent(new CustomEvent('wo-bridge-config-ready')); } catch (_) {}
   };
   const bridgeReplay = () => {
@@ -2057,6 +2171,10 @@
     }
     if (type === 'pong') {
       if (bridgePendingPong && d.nonce === bridgePendingPong.nonce && __woAuth.same(d.mac, engineMac('pong', bridgePendingPong.nonce))) bridgePendingPong.ok();
+      return;
+    }
+    if (type === 'warning_panel') {
+      if (d.src === 'engine' && eventSigned(d)) showOwnedMainWarning(d.detail);
       return;
     }
     const securitySignal = type === 'behavioral_risk'
@@ -2384,6 +2502,14 @@
       const here = relayPageHost();
       return !!(clean && here && clean === here);
     };
+    let relayRequestSeqSeen = 0;
+    const relayRequestSigned = (raw, body) => {
+      const seq = Number(raw && raw.rseq);
+      if (!KEY_PADS || !Number.isInteger(seq) || seq <= relayRequestSeqSeen) return false;
+      if (!__woAuth.same(raw.rmac, __woAuth.hmac(KEY_PADS, 'bg-request\n' + seq + '\n' + __woAuth.canon(body, 0)))) return false;
+      relayRequestSeqSeen = seq;
+      return true;
+    };
     const relayAllowedMessage = (raw) => {
       const msg = Object.assign({}, raw || {});
       if (msg.kind === 'adshield-cosmetic') {
@@ -2400,9 +2526,13 @@
          else. The host is taken from the sending tab by the worker, never from
          the page, so a page cannot claim to have shown a notice on someone
          else's site and silence it there. */
+      /* SEC-14: both were reachable with the public token alone -- one forged mute silenced a
+         class of security notices on every site, for good. They now carry the engine's signature
+         over exactly these fields, with a sequence that only moves forward. */
       if (msg.kind === 'toast-shown') {
         const type = String(msg.type || '');
         if (!/^[a-z_]{3,60}$/.test(type)) return null;
+        if (!relayRequestSigned(msg, { kind: 'toast-shown', type: msg.type })) return null;
         return { kind: 'toast-shown', type };
       }
       if (msg.kind === 'mute-toast') {
@@ -2410,6 +2540,7 @@
         if (!/^[a-z_]{3,60}$/.test(type)) return null;
         const minutes = Number(msg.minutes);
         if (![60, 120, 480, 0].includes(minutes)) return null;
+        if (!relayRequestSigned(msg, { kind: 'mute-toast', type: msg.type, minutes: msg.minutes })) return null;
         return { kind: 'mute-toast', type, minutes };
       }
       if (msg.kind === 'domain-age') {

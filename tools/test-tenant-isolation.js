@@ -233,7 +233,10 @@ section('worker: navigation ownership binds to the tenant', () => {
   const forced = grabFn(BG, 'maybeBlockForcedTopRedirect');
   check('the forced top-redirect check compares site identities', /const fromHost = siteIdentityBg\(fromParsed\.hostname\)/.test(forced) && /const toHost = siteIdentityBg\(toUrl\.hostname\)/.test(forced) && !/registrableDomainBg\(/.test(forced));
   const frame = grabFn(BG, 'maybeFlagFrameDrivenRedirect');
-  check('the frame-driven redirect check compares site identities', (frame.match(/siteIdentityBg\(/g) || []).length >= 3 && !/registrableDomain(?:Bg)?\(/.test(frame));
+  /* Two site identities (from, to); the allowlist goes through the shared helper, which matches
+     the exact host or its parents rather than any sibling on the same domain (BUG-03). */
+  check('the frame-driven redirect check compares site identities', (frame.match(/siteIdentityBg\(/g) || []).length >= 2 && !/registrableDomain(?:Bg)?\(/.test(frame)
+    && /hostMatchesAllowlist\(new URL\(fromUrl\)\.hostname, activeAllowlist\(cfg\)\)/.test(frame));
 });
 
 section('worker: the redirect warning treats the sibling as cross-site', () => {

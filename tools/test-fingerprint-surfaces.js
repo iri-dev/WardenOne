@@ -73,6 +73,8 @@ function harness(opts) {
     cloak: (fn) => fn,
     screenW: 1600,
     screenH: 900,
+    availW: 1600,
+    availH: 860,
     navigator: {
       language: opts.language || 'en-US',
       keyboard: opts.noKeyboard ? undefined : { getLayoutMap() { return Promise.resolve(new Map([['KeyA', 'q']])); } },
@@ -131,7 +133,7 @@ pending.push((async function screenDetailsAgreeWithTheScreenSpoof() {
      than either answer alone. */
   check('its width matches the spoofed screen width', one.width === 1600, String(one.width));
   check('its height matches the spoofed screen height', one.height === 900, String(one.height));
-  check('avail dimensions match too', one.availWidth === 1600 && one.availHeight === 900);
+  check('available dimensions match the reduced Screen area', one.availWidth === 1600 && one.availHeight === 860);
   check('colour depth matches the Screen spoof', one.colorDepth === 24 && one.pixelDepth === 24);
   check('the real display list is gone', JSON.stringify(details.screens).indexOf('real') < 0);
   check('currentScreen is the same screen', details.currentScreen === one);

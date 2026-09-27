@@ -118,6 +118,7 @@ function loadStores(options = {}) {
     liftFunction(DOWNLOADS, 'recoverStrandedPausedDownloads'),
   ].join('\n')
     + '\nvar SESSION_STARTED_AT = ' + state.sessionStartedAt + ';'
+    + '\nvar downloadSessionMarkReady = Promise.resolve();'
     + '\nthis.__api = { rememberPendingDownload, getPendingDownload, removePendingDownload,'
     + ' getHandledDownloads, isDownloadHandled, rememberHandledDownload, recoverStrandedPausedDownloads };',
   sandbox, { filename: 'background-downloads.js' });
@@ -312,10 +313,46 @@ function testSessionStamp() {
     'without this the session boundary would never move');
 }
 
+/* MV3-08: the cold read of yesterday's session mark must never overwrite the stamp onStartup
+   has just made, whichever answers first. */
+async function testSessionMarkRace() {
+  const run = async (readFirst) => {
+    let answerRead;
+    const storage = { wardenone_session_started_at: 1000 };
+    const sandbox = {
+      Date, Promise, console,
+      /* The value is captured when the read is issued, as the real storage call does; only the
+         answer is late. */
+      downloadStateGet: () => { const seen = storage.wardenone_session_started_at; return new Promise((resolve) => { answerRead = () => resolve({ wardenone_session_started_at: seen }); }); },
+      downloadStateSet: async (obj) => { Object.assign(storage, obj); },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(
+      liftBetween(DOWNLOADS, 'let SESSION_STARTED_AT = 0;', 'function downloadStartedBeforeSession(')
+        + liftFunction(DOWNLOADS, 'downloadStartedBeforeSession')
+        + '\nthis.__api = { mark: markBrowserSessionStart, ready: downloadSessionMarkReady, at: () => SESSION_STARTED_AT, before: downloadStartedBeforeSession };',
+      sandbox, { filename: 'background-downloads.js' });
+    const api = sandbox.__api;
+    if (readFirst) { answerRead(); await api.ready; await api.mark(); }
+    else { await api.mark(); answerRead(); await api.ready; }
+    return api;
+  };
+  const late = await run(false);
+  check('a late cold read does not overwrite the new session stamp', late.at() > 1000, String(late.at()));
+  check('so a download restored from yesterday is still recognised as yesterday\'s',
+    late.before({ startTime: new Date(Date.now() - 3600000).toISOString() }) === true);
+  const early = await run(true);
+  check('a read that answers first is simply replaced by the stamp', early.at() > 1000);
+  check('recovery and the scan both wait for the read before judging the boundary',
+    /await downloadSessionMarkReady;\s*\n\s*let recovered = 0;/.test(DOWNLOADS)
+      && /await downloadSessionMarkReady;\s*\n\s*if \(downloadStartedBeforeSession\(item\)\) \{/.test(DOWNLOADS));
+}
+
 async function main() {
   await testStoreOwnership();
   await testStrandedRecovery();
   testSessionStamp();
+  await testSessionMarkRace();
 
   if (failed) { console.error('\n' + failed + ' download ownership check(s) failed'); process.exit(1); }
   console.log('\nno paused download loses its owner');

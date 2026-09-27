@@ -30,8 +30,7 @@
   const __woConfigStore={};
   /* SEC-05: what this realm decided about fingerprint noise, for the realms a page can reach
      from here. A same-origin child frame -- about:blank, srcdoc, a real URL -- is a fresh
-     realm with untouched prototypes, and the page can borrow them: a hidden iframe's
-     toDataURL applied to a top-frame canvas gives the clean fingerprint. The frame module
+     realm with untouched prototypes, and the page can borrow them. The frame module
      (fingerprint-realm.js) runs in every child frame at its own document_start and, when it
      is same-origin with this window, reads this record synchronously -- so the child is
      patched, with the same shared seed, before the page's appendChild has even returned.
@@ -39,8 +38,8 @@
      the first page script: a page that gets there first can pin the name with a var of its
      own, and then a later definition of ours would fail. Non-configurable, so nothing after
      this line can redefine or delete it; the getter reads a closure variable the page cannot
-     write. The record itself is frozen. It carries the noise verdict and the shared
-     canvas-class seed (see __woFingerprintNoise for why the other seed stays private). A page
+     write. The record itself is frozen. It carries the noise verdict and a shared realm
+     seed; bitmap exports stay native to preserve user-authored work. A page
      can read it -- everything here is page-readable by construction -- but it cannot forge a
      "noise off" for the frames it creates. */
   let __woRealmRecord=null;
@@ -106,7 +105,13 @@
       return !!(el&&el.isConnected)
     },
     mark(id,el){
-      this.seen.set(id,el)
+      this.seen.set(id,el);
+      try{
+        __woEmit({type:"warning_panel",detail:{id:String(id).slice(0,64)}})
+      }
+      catch(_){
+
+      }
     },
     /* WardenOne's own warnings are appended to the page they are warning about,
        so anything that reads document.body reads them back. That is not a
@@ -1070,6 +1075,20 @@
     message.seq=__woNoticeSeq;
     message.mac=__woAuth.hmac(__woKey,kind+"\n"+__woNoticeSeq+"\n"+String(extra||""));
     return message
+  }
+  /* SEC-14: "hide this kind of notice" and "I showed this notice" reach the worker through the
+     bridge, and a page could send both with the public token alone: one forged mute silenced a
+     class of security notices on every site for good, and a forged "shown" quietened the
+     page's own warnings for half an hour. The engine now signs them with the key the page never
+     sees, and the bridge relays neither without the signature. */
+  let __woRequestSeq=0;
+  function __woSignedRequest(message){
+    const m=Object.assign({},message);
+    if(null===__woKey)return m;
+    __woRequestSeq+=1;
+    m.rseq=__woRequestSeq;
+    m.rmac=__woAuth.hmac(__woKey,"bg-request\n"+__woRequestSeq+"\n"+__woAuth.canon(message,0));
+    return m
   }
   /* The engine believes a wo-event only when it is signed: the notice card, the page badge and
      the risk score all read this bus, and a page can dispatch on it. One number per sender only
@@ -2123,7 +2142,8 @@
 
         }),
         wrap.appendChild(btn),
-        (document.body||document.documentElement).appendChild(wrap)
+        (document.body||document.documentElement).appendChild(wrap),
+        __woWarn.mark("wo-sb-block",wrap)
       }
       catch(_){
 
@@ -3291,22 +3311,8 @@
     },
     scrubDomLink=el=>{
       try{
-        if(!WO.unshimLinks&&!WO.stripTrackingParams||!el||!el.tagName)return;
-        if("A"===el.tagName||"AREA"===el.tagName){
-          stripPingAttr(el);
-          const old=el.getAttribute("href");
-          if(!old)return;
-          const cleaned=stripTracking(old);
-          cleaned!==old&&el.setAttribute("href",
-          cleaned)
-        }
-        else if("FORM"===el.tagName){
-          const old=el.getAttribute("action")||el.action||"";
-          if(!old)return;
-          const cleaned=stripTracking(old);
-          cleaned!==old&&el.setAttribute("action",
-          cleaned)
-        }
+        if(!WO.unshimLinks||!el||!el.tagName)return;
+        ("A"===el.tagName||"AREA"===el.tagName)&&stripPingAttr(el)
 
       }
       catch(_){
@@ -3316,10 +3322,10 @@
     },
     sweepDomLinks=root=>{
       try{
-        if(!WO.unshimLinks&&!WO.stripTrackingParams)return;
+        if(!WO.unshimLinks)return;
         /* a[ping] as well as a[href]: the attribute is legal without an href, and a
            link with only a ping is a beacon wearing a link's clothes. */
-        (root||document).querySelectorAll("a[href],area[href],form[action],a[ping],area[ping]").forEach(scrubDomLink)
+        (root||document).querySelectorAll("a[ping],area[ping]").forEach(scrubDomLink)
       }
       catch(_){
 
@@ -3331,7 +3337,7 @@
       woObserve((muts,added,roots)=>{
         /* sweepDomLinks already gated on exactly this; scrubDomLink is a no-op
            without it too. Gating the loop skips the walk as well as the scan. */
-        if(!WO.unshimLinks&&!WO.stripTrackingParams)return;
+        if(!WO.unshimLinks)return;
         for(let i=0;
         i<added.length;
         i++)scrubDomLink(added[i]);
@@ -3361,7 +3367,7 @@
     try{
       const stripPingOnClick=e=>{
         try{
-          if(!WO.unshimLinks&&!WO.stripTrackingParams)return;
+          if(!WO.unshimLinks)return;
           const t=e&&e.target;
           if(!t||!t.closest)return;
           const a=t.closest("a[ping],area[ping]");
@@ -4423,16 +4429,6 @@
           return a===10||a===127||a===192&&b===168||a===172&&b>=16&&b<=31||a===169&&b===254
         }
         if(/\.(local|localdomain|lan|home|internal|intranet|corp)$/i.test(h))return!0;
-        /* Names the background caught resolving to a private address. A hostname
-           cannot reveal that about itself, so the answer is handed down from the
-           one place that can see it: chrome.webRequest reports the resolved IP
-           once a response starts. That makes this detection, not prevention --
-           the request that exposed the rebinding has already happened. Every
-           request after it is refused by the guard that was already here. */
-        if(Array.isArray(WO.rebindQuarantine)&&WO.rebindQuarantine.some(d=>{
-          const q=String(d||"").toLowerCase();
-          return q&&(h===q||h.endsWith("."+q))
-        }))return!0;
         return/^(router|gateway|modem|fritz\.box|myfiosgateway\.com|tplinkwifi\.net|routerlogin\.net|routerlogin\.com|asusrouter\.com|miwifi\.com)$/i.test(h)||/(^|\/)(admin|login|cgi-bin|goform|setup|webfig|luci)(\/|$)/i.test(p)&&/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|router|gateway|modem)/i.test(h)
       }
       catch(_){
@@ -8932,7 +8928,8 @@
           "font-size:11px!important;color:#7a5f93!important;line-height:1.5!important;margin:10px 0 0 0!important;"),
           foot.textContent=downgraded?"If this is your own site, the form's action should start with https://.":"If you continue, avoid reusing this password anywhere else.",
           wrap.appendChild(foot),
-          (document.body||document.documentElement).appendChild(wrap)
+          (document.body||document.documentElement).appendChild(wrap),
+          __woWarn.mark("wo-insecure-login",wrap)
         }
         catch(_){
 
@@ -9064,7 +9061,8 @@
           "flex:none!important;border:1px solid rgba(192,57,43,.4)!important;cursor:pointer!important;background:rgba(192,57,43,.08)!important;color:#c0392b!important;border-radius:10px!important;padding:10px 14px!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
           go.textContent="Paste anyway",
           go.addEventListener("click",
-          ()=>{
+          e=>{
+            if(!e.isTrusted||!wrap.isConnected)return;
             try{
               wrap.remove()
             }
@@ -9081,7 +9079,8 @@
           }),
           row.appendChild(go),
           wrap.appendChild(row),
-          (document.body||document.documentElement).appendChild(wrap)
+          (document.body||document.documentElement).appendChild(wrap),
+          __woWarn.mark("wo-paste-warn",wrap)
         }
         catch(_){
 
@@ -16838,16 +16837,11 @@
 
       };
       let _s=woSeed();
-      /* Two seeds, on purpose. _sc is the canvas-class seed: it keys the pixel noise
-         (hashBytes) and the hardware-profile draw (woPick), and it is the one the realm record
-         carries, so a same-origin child frame produces the identical canvas hash, the same
-         core count and the same GPU as the page around it -- in a real browser those agree
-         across realms, and two realms that disagreed would be the cleaner tell. It is safe to
-         share because the noise it keys is a function of the CLEAN pixels, which a page does
-         not have. _sk stays private to this realm: it keys the text-metric and geometry noise
+      /* The shared realm seed remains in the record for child-frame synchronization.
+         _sk stays private to this realm: it keys the text-metric and geometry noise
          (seededTiny, rectSeed), whose inputs -- a font and a string, a rectangle -- the page
          knows exactly, so a page that could read that seed could compute the noise and
-         subtract it. A realm that knows _sc still cannot recover a width. */
+         subtract it. A realm that knows the shared seed still cannot recover a width. */
       const _sc=inherited&&"object"==typeof inherited&&Number.isInteger(inherited.seed)&&inherited.seed>=0&&inherited.seed<=4294967295?inherited.seed>>>0:woSeed();
       const __woCloak=new WeakMap;
       try{const _oFTS=Function.prototype.toString,_cFTS=function toString(){const n=__woCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)};__woCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
@@ -16869,8 +16863,8 @@
          (the footprint PRIV-12 removed) or a value that settles after the page's first read
          (two answers in one document, the worse tell). Said plainly: every reader shows a given
          site the same machine, which is zero bits of identity, and nothing in it links one
-         site's visitor to another's. Canvas and audio noise stay on the per-load seed, where
-         re-rolling is the protection. */
+         site's visitor to another's. Audio noise stays on the per-load seed, where
+         re-rolling is the protection. Canvas pixels and exports remain native. */
       woSiteKey=()=>{
         try{
           let host="";
@@ -16892,93 +16886,8 @@
       _st=(()=>{let h=2166136261>>>0;const s="wo-site:"+woSiteKey();for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;return h>>>0})(),
       mixSite=str=>{let h=(_st^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
       makeRnd=seed=>{let s=(seed>>>0)||1;return()=>(s=1664525*s+1013904223>>>0,s/4294967296)},
-      hashBytes=data=>{let h=(_sc^2166136261)>>>0,step=Math.max(1,data.length>>12);for(let i=0;i<data.length;i+=step)h=Math.imul(h^data[i],16777619)>>>0;return(h^data.length)>>>0},
       seededTiny=(key,scale=0.01)=>(makeRnd(mixSeed(key))()-.5)*scale,
-      cloak=(fn,name)=>{try{__woCloak.set(fn,name)}catch(_){}return fn},
-      noisify=canvas=>{
-        try{
-          const ctx=canvas.getContext&&canvas.getContext("2d");
-          if(!ctx)return;
-          const w=canvas.width,
-          h=canvas.height;
-          if(!w||!h||w*h>5e6)return;
-          const img=ctx.getImageData(0,
-          0,
-          w,
-          h),
-          d=img.data,
-          r=makeRnd(hashBytes(d)),
-          tweaks=Math.max(8,
-          Math.floor(w*h/4096));
-          for(let i=0;
-          i<tweaks;
-          i++){
-            const px=4*Math.floor(r()*(w*h));
-            d[px]=d[px]^(r()<.5?1:0),
-            d[px+1]=d[px+1]^(r()<.5?1:0),
-            d[px+2]=d[px+2]^(r()<.5?1:0)
-          }
-          ctx.putImageData(img,
-          0,
-          0)
-        }
-        catch(_){
-
-        }
-
-      },
-      noisyCanvasForRead=canvas=>{
-        try{
-          if(!canvas||!canvas.width||!canvas.height)return canvas;
-          const copy=document.createElement("canvas");
-          copy.width=canvas.width,
-          copy.height=canvas.height;
-          const ctx=copy.getContext&&copy.getContext("2d");
-          return ctx&&(ctx.drawImage(canvas,
-          0,
-          0),
-          noisify(copy)),
-          copy
-        }
-        catch(_){
-          return canvas
-        }
-
-      },
-      origToDataURL=HTMLCanvasElement.prototype.toDataURL;
-      HTMLCanvasElement.prototype.toDataURL=function(...args){
-        return origToDataURL.apply(noisyCanvasForRead(this),
-        args)
-      };
-      const origToBlob=HTMLCanvasElement.prototype.toBlob;
-      origToBlob&&(HTMLCanvasElement.prototype.toBlob=function(cb,
-      ...rest){
-        return origToBlob.call(noisyCanvasForRead(this),
-        cb,
-        ...rest)
-      });
-      const origGetImageData=CanvasRenderingContext2D.prototype.getImageData;
-      CanvasRenderingContext2D.prototype.getImageData=function(...args){
-        const res=origGetImageData.apply(this,
-        args);
-        try{
-          const d=res.data,
-          r=makeRnd(hashBytes(d)),
-          tweaks=Math.max(4,
-          Math.floor(d.length/16384));
-          for(let i=0;
-          i<tweaks;
-          i++){
-            const idx=Math.floor(r()*d.length);
-            d[idx]=d[idx]^(r()<.5?1:0)
-          }
-
-        }
-        catch(_){
-
-        }
-        return res
-      };
+      cloak=(fn,name)=>{try{__woCloak.set(fn,name)}catch(_){}return fn};
       try{
         const patchMeasureText=proto=>{
           if(!proto||!proto.measureText)return;
@@ -17066,17 +16975,6 @@
             }
 
           }
-          if(proto.getClientRects){
-            const origList=proto.getClientRects;
-            proto.getClientRects=function(...args){
-              const list=origList.apply(this,
-              args),
-              out=Array.from(list||[]).map(wrapRect);
-              return out.item=i=>out[i]||null,
-              out
-            }
-
-          }
 
         };
         patchRectProto(window.Element&&Element.prototype),
@@ -17103,19 +17001,22 @@
       catch(_){
 
       }
-      /* A plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WardenOne tell. Drawn from the site seed (_st, see woSiteKey): cores, RAM and GPU vendor+renderer agree within a page and across its frames, hold across reloads and tabs of one site, and differ between sites. */
+      /* A plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WardenOne tell. Drawn from the site seed (_st, see woSiteKey): cores, RAM and GPU vendor+renderer agree within a page and across its frames, hold across reloads and tabs of one site, and differ between sites. The renderer table describes Windows only; on other or contradictory platforms, keep both graphics APIs native. */
       const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixSite(key))()*arr.length)%arr.length];
       const woCores=woPick([4,8,8,12,16],"hwc"),
       woMem=woPick([4,8,8],"devmem"),
-      woGpu=woPick([
+      woPlatform=String(navigator.platform||""),
+      woUaPlatform=String(navigator.userAgentData&&navigator.userAgentData.platform||""),
+      woWindows=/^Win/i.test(woPlatform)&&(!woUaPlatform||/^Windows$/i.test(woUaPlatform)),
+      woGpu=woWindows?woPick([
         {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
         {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) HD Graphics 630 (0x0000591B) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
         {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"turing"}},
         {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"ampere"}},
         {v:"Google Inc. (AMD)",r:"ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"amd",architecture:"gcn-4"}}
-      ],"gpu");
+      ],"gpu"):null;
       const patchGL=proto=>{
-        if(!proto||!proto.getParameter)return;
+        if(!woGpu||!proto||!proto.getParameter)return;
         const orig=proto.getParameter;
         proto.getParameter=function(p){
           return 37445===p?woGpu.v:37446===p?woGpu.r:orig.call(this,
@@ -17301,7 +17202,7 @@
           }
 
         };
-        if(navigator.gpu&&navigator.gpu.requestAdapter){
+        if(woGpu&&navigator.gpu&&navigator.gpu.requestAdapter){
           const gpu=navigator.gpu,
           realRequest=gpu.requestAdapter;
           /* No probe reporting here on purpose: this block has no reporter in
@@ -17409,50 +17310,6 @@
         })
       }
       try{
-        if(window.OffscreenCanvas){
-          const ocb=OffscreenCanvas.prototype.convertToBlob;
-          ocb&&(OffscreenCanvas.prototype.convertToBlob=function(...a){
-            return noisify(this),
-            ocb.apply(this,
-            a)
-          })
-        }
-
-      }
-      catch(_){
-
-      }
-      try{
-        if(window.OffscreenCanvasRenderingContext2D){
-          const ogid=OffscreenCanvasRenderingContext2D.prototype.getImageData;
-          ogid&&(OffscreenCanvasRenderingContext2D.prototype.getImageData=function(...a){
-            const res=ogid.apply(this,
-            a);
-            try{
-              const d=res.data,
-              r=makeRnd(hashBytes(d)),
-              tw=Math.max(4,
-              Math.floor(d.length/16384));
-              for(let i=0;
-              i<tw;
-              i++){
-                const idx=Math.floor(r()*d.length);
-                d[idx]=d[idx]^(r()<.5?1:0)
-              }
-
-            }
-            catch(_){
-
-            }
-            return res
-          })
-        }
-
-      }
-      catch(_){
-
-      }
-      try{
         if(window.AudioBuffer){
           const ogcd=AudioBuffer.prototype.getChannelData,
           _farb=new WeakSet;
@@ -17499,11 +17356,13 @@
       val)=>{
         try{
           const g=cloak(function(){return val},"get "+name);
+          const native=Object.getOwnPropertyDescriptor(obj,name);
           Object.defineProperty(obj,
           name,
           {
             get:g,
-            configurable:!0
+            configurable:native?native.configurable:!0,
+            enumerable:native?native.enumerable:!0
           })
         }
         catch(_){
@@ -17516,22 +17375,16 @@
       woCores),
       defp(Navigator.prototype,
       "deviceMemory",
-      woMem),
-      defp(Navigator.prototype,
-      "maxTouchPoints",
-      0);
+      woMem);
       try{
-        const emptyList=Object.freeze([]),
-        screenW=Math.max(800,
-        100*Math.round((screen.width||innerWidth||1200)/100)),
-        screenH=Math.max(600,
-        100*Math.round((screen.height||innerHeight||800)/100));
-        defp(Navigator.prototype,
-        "plugins",
-        emptyList),
-        defp(Navigator.prototype,
-        "mimeTypes",
-        emptyList),
+        const realScreenW=screen.width||innerWidth||1200,
+        realScreenH=screen.height||innerHeight||800,
+        realAvailW=screen.availWidth||realScreenW,
+        realAvailH=screen.availHeight||realScreenH,
+        screenW=Math.max(1,100*Math.floor(realScreenW/100)),
+        screenH=Math.max(2,100*Math.floor(realScreenH/100)),
+        availW=Math.min(screenW,Math.max(1,100*Math.floor(realAvailW/100))),
+        availH=Math.min(screenH-1,Math.max(1,100*Math.floor(realAvailH/100)));
         window.Screen&&(defp(Screen.prototype,
         "width",
         screenW),
@@ -17540,10 +17393,10 @@
         screenH),
         defp(Screen.prototype,
         "availWidth",
-        screenW),
+        availW),
         defp(Screen.prototype,
         "availHeight",
-        screenH),
+        availH),
         defp(Screen.prototype,
         "colorDepth",
         24),
@@ -17571,8 +17424,8 @@
           const one={
             availLeft:0,
             availTop:0,
-            availWidth:screenW,
-            availHeight:screenH,
+            availWidth:availW,
+            availHeight:availH,
             width:screenW,
             height:screenH,
             colorDepth:24,
@@ -17734,34 +17587,6 @@
           })
         }
 
-      }
-      catch(_){
-
-      }
-      try{
-        const conn={
-          downlink:10,
-          effectiveType:"4g",
-          rtt:50,
-          saveData:!1,
-          onchange:null,
-          addEventListener:()=>{
-
-          },
-          removeEventListener:()=>{
-
-          },
-          dispatchEvent:()=>!0
-        };
-        defp(Navigator.prototype,
-        "connection",
-        conn),
-        defp(Navigator.prototype,
-        "mozConnection",
-        conn),
-        defp(Navigator.prototype,
-        "webkitConnection",
-        conn)
       }
       catch(_){
 
@@ -18327,55 +18152,7 @@
           return!1
         }
 
-      }),
-      maskNavigatorValue=(name,
-      value)=>{
-        try{
-          const proto=Navigator&&Navigator.prototype,
-          desc=proto&&Object.getOwnPropertyDescriptor(proto,
-          name),
-          originalValue=(()=>{try{
-            return navigator[name]
-          }
-          catch(_){
-            return value
-          }})();
-          if(desc&&desc.get&&desc.get.__wardenoneLocationGuard)return;
-          const getter=function(){
-            return"function"==typeof value?value():value
-          };
-          try{
-            Object.defineProperty(getter,
-            "__wardenoneLocationGuard",
-            {
-              value:!0
-            })
-          }
-          catch(_){
-
-          }
-          Object.defineProperty(proto||navigator,
-          name,
-          {
-            configurable:!0,
-            enumerable:!0,
-            get:function(){
-              if(locationPrivacyOn())return getter();
-              try{
-                return desc&&desc.get?desc.get.call(this):originalValue
-              }
-              catch(_){
-                return getter()
-              }
-
-            }
-          })
-        }
-        catch(_){
-
-        }
-
-      };
+      });
       if(navigator.geolocation){
         const geo=navigator.geolocation,
         liveGeoWatches=new Set,
@@ -18519,55 +18296,6 @@
           }
           return real(desc)
         })
-      }
-      maskNavigatorValue("language",
-      "en-US"),
-      maskNavigatorValue("languages",
-      ()=>["en-US",
-      "en"]);
-      try{
-        const proto=Intl&&Intl.DateTimeFormat&&Intl.DateTimeFormat.prototype,
-        real=proto&&proto.resolvedOptions;
-        real&&!real.__wardenoneLocationGuard&&(proto.resolvedOptions=function(){
-          const out=real.apply(this,
-          arguments);
-          if(locationPrivacyOn())try{
-            return Object.assign({
-
-            },
-            out,
-            {
-              timeZone:"UTC"
-            })
-          }
-          catch(_){
-
-          }
-          return out
-        },
-        Object.defineProperty(proto.resolvedOptions,
-        "__wardenoneLocationGuard",
-        {
-          value:!0
-        }))
-      }
-      catch(_){
-
-      }
-      try{
-        const real=Date.prototype.getTimezoneOffset;
-        real&&!real.__wardenoneLocationGuard&&(Date.prototype.getTimezoneOffset=function(){
-          return locationPrivacyOn()?0:real.apply(this,
-          arguments)
-        },
-        Object.defineProperty(Date.prototype.getTimezoneOffset,
-        "__wardenoneLocationGuard",
-        {
-          value:!0
-        }))
-      }
-      catch(_){
-
       }
     }
     catch(e){
@@ -18921,8 +18649,7 @@
         })
       }),
       !1!==WO.blockAutoplayMedia&&!trustedMediaHost&&window.HTMLMediaElement){
-        const mediaLogged=new WeakSet,
-        isMediaElement=el=>el&&/^(AUDIO|VIDEO)$/i.test(el.tagName||""),
+        const isMediaElement=el=>el&&/^(AUDIO|VIDEO)$/i.test(el.tagName||""),
         hiddenMedia=el=>{
           try{
             const cs=getComputedStyle(el),
@@ -18943,118 +18670,31 @@
           }
 
         },
-        playBlockReason=el=>isMediaElement(el)&&!mediaInsidePlayerShell(el)&&hiddenMedia(el)?"Hidden media player":"",
-        mediaDetail=(el,
-        reason)=>({
-          action:reason,
-          tag:String(el&&el.tagName||"media").toLowerCase(),
-          risk:mediaRisk.autoplay,
-          muted:!(!el||!el.muted),
-          hidden:!(!el||!hiddenMedia(el))
-        }),
-        neutralizeMedia=(el,
-        reason)=>{
-          if(!isMediaElement(el)||!reason)return!1;
-          try{
-            el.autoplay=!1,
-            el.removeAttribute("autoplay")
-          }
-          catch(_){
-
-          }
-          try{
-            el.muted=!0
-          }
-          catch(_){
-
-          }
-          try{
-            el.pause&&el.pause()
-          }
-          catch(_){
-
-          }
-          return mediaLogged.has(el)||(mediaLogged.add(el),
-          noteMedia(hiddenMedia(el)?"blocked_hidden_media":"blocked_autoplay_media",
-          mediaDetail(el,
-          reason))),
-          !0
-        },
-        /* Signals that are true regardless of layout. These can be acted on the moment
-        the element is seen, because no measurement is involved. */
-        mediaHiddenDefinitely=el=>{
-          try{
-            const cs=getComputedStyle(el);
-            return!!(el.hidden||"none"===cs.display||"hidden"===cs.visibility||0===Number(cs.opacity))
-          }
-          catch(_){
-            return!1
-          }
-
-        },
-        /* A MutationObserver callback runs BEFORE layout, so an element that was just
-        inserted measures 0x0 however big it is about to be -- and the size test is what
-        decides "hidden" for anything without a controls attribute. Acting there condemns
-        media for the crime of being new.
-
-        It is not a harmless mistake: neutralizeMedia sets autoplay=false and muted=true
-        on the element permanently, and a site that REUSES one media element (YouTube
-        reuses a single hover-preview video for every thumbnail) stays broken for the
-        rest of the page's life after one mis-timed scan. Rare to trigger, then
-        persistent, which is exactly how it was reported -- grey thumbnails that never
-        recover until reload.
-
-        So a size-only verdict is re-measured once layout has actually happened. The
-        definitive signals above still act immediately. */
-        considerMedia=el=>{
-          const reason=playBlockReason(el);
-          if(!reason)return;
-          if(mediaHiddenDefinitely(el))return void neutralizeMedia(el,
-          reason);
-          setTimeout(()=>{
-            try{
-              const again=playBlockReason(el);
-              again&&neutralizeMedia(el,
-              again)
-            }
-            catch(_){
-
-            }
-
-          },
-          250)
-        },
-        scanMedia=root=>{
-          try{
-            if(!root)return;
-            isMediaElement(root)&&considerMedia(root),
-            root.querySelectorAll&&root.querySelectorAll("audio,video").forEach(considerMedia)
-          }
-          catch(_){
-
-          }
-
-        };
-        document.documentElement&&scanMedia(document.documentElement),
-        woOn(document,"DOMContentLoaded",
-        ()=>scanMedia(document.documentElement),
-        {
-          once:!0
-        });
+        playBlockReason=el=>isMediaElement(el)&&"VIDEO"===el.tagName&&!mediaInsidePlayerShell(el)&&hiddenMedia(el)?"Hidden media player":"";
         try{
-          woObserve((muts,added,roots)=>{
-            /* scanMedia checks the node itself and then scans its subtree for
-               audio/video, so a root's own call already covers every node added
-               underneath it in the same batch. */
-            for(let i=0;
-            i<roots.length;
-            i++)scanMedia(roots[i])
-          })
+          const proto=window.HTMLMediaElement.prototype,
+          realPlay=proto&&proto.play;
+          if(realPlay&&!realPlay.__wardenoneHiddenMediaGuard){
+            const guardedPlay=function(){
+              const reason=playBlockReason(this);
+              if(reason&&!recentMediaGesture()){
+                noteMedia("blocked_hidden_media",{
+                  action:reason,
+                  tag:"video",
+                  risk:mediaRisk.autoplay,
+                  hidden:!0
+                });
+                return Promise.reject(new DOMException("Hidden autoplay blocked by WardenOne","NotAllowedError"))
+              }
+              return realPlay.apply(this,arguments)
+            };
+            Object.defineProperty(guardedPlay,"__wardenoneHiddenMediaGuard",{value:!0});
+            proto.play=guardedPlay
+          }
         }
         catch(_){
 
         }
-
       }
       if(!0===WO.blockSuspiciousWebRTC&&!trustedMediaHost){
         const patchRTC=name=>{
@@ -19232,17 +18872,17 @@
       let btLastPop=0,
       btRearms=0,
       btGestureAt=0,
-      btGestureless=0,
+      btBurstStarted=0,
+      btRecentTargets=[],
       btWarned=!1;
       /* How long after Back a push still counts as answering it. */
       const BT_POP_WINDOW=1200,
       /* How long a real interaction keeps vouching for the pushes that follow. Generous,
       because a single-page app can take a moment to finish a transition it started. */
       BT_GESTURE_WINDOW=5e3,
-      /* A budget, not a ban. An app normalising its route on load legitimately pushes once
-      or twice before anyone has touched anything, so a hard no would break ordinary sites.
-      Six is far past what those need and far under a flood, which runs to dozens. */
-      BT_GESTURELESS_PUSHES=6;
+      /* Only a rapid run that keeps recycling one or two addresses resembles a history
+      burial. Distinct startup routes and replaceState calls must be left alone. */
+      BT_REPEAT_WINDOW=2e3;
       const btUrl=()=>{
         try{return String(location.href||"")}catch(_){return""}
       },
@@ -19280,7 +18920,8 @@
       btGesture=()=>{
         const now=Date.now();
         now-btGestureAt<150||(btGestureAt=now,
-        btGestureless=0)
+        btBurstStarted=0,
+        btRecentTargets=[])
       };
       for(const btEv of["pointerdown","mousedown","keydown","touchstart","click","wheel","scroll"])woOn(window,
       btEv,
@@ -19309,14 +18950,22 @@
             working again on the very next press. */
             try{
               const btNow=Date.now();
-              if(btUrl()===btTarget(url)&&btLastPop&&btNow-btLastPop<BT_POP_WINDOW&&++btRearms>=2)return void btNotice("Each time you pressed Back this page put the same address straight back into your history, so Back could not leave. Pages that do this are usually trying to keep you on a scam or a fake alert.",
+              if(name==="pushState"&&btUrl()===btTarget(url)&&btLastPop&&btNow-btLastPop<BT_POP_WINDOW&&++btRearms>=2)return void btNotice("Each time you pressed Back this page put the same address straight back into your history, so Back could not leave. Pages that do this are usually trying to keep you on a scam or a fake alert.",
               "The repeat entries were refused, so Back works again.");
               /* The other shape, and the one that does not need you to press Back at all: the
               page quietly stacks entries while you read, so that by the time you do press it,
               Back has to be pressed once for every entry before it can leave. Nothing asked
               for any of them, which is what separates it from an app you are using. */
-              if((!btGestureAt||btNow-btGestureAt>BT_GESTURE_WINDOW)&&++btGestureless>BT_GESTURELESS_PUSHES)return void btNotice("This page kept adding entries to your history without you doing anything. That is a way of burying the page you came from, so Back has to be pressed over and over before it can leave.",
-              "The extra entries were refused, so Back needs one press.")
+              if(name==="pushState"&&(!btGestureAt||btNow-btGestureAt>BT_GESTURE_WINDOW)){
+                if(!btBurstStarted||btNow-btBurstStarted>BT_REPEAT_WINDOW){
+                  btBurstStarted=btNow,
+                  btRecentTargets=[]
+                }
+                btRecentTargets.push(btTarget(url));
+                btRecentTargets.length>8&&btRecentTargets.shift();
+                if(btRecentTargets.length>=7&&new Set(btRecentTargets).size<=2)return void btNotice("This page kept recycling the same addresses in your history without you doing anything. That is a way of burying the page you came from, so Back has to be pressed over and over before it can leave.",
+                "The repeat entries were refused, so Back needs one press.")
+              }
             }
             catch(_){
 
@@ -22441,7 +22090,7 @@
            render, which is deferred by the stagger and would double-report a
            card that never appeared. The worker takes the host from the tab. */
         try{
-          __woBackgroundRequest({kind:"toast-shown",type:type})
+          __woBackgroundRequest(__woSignedRequest({kind:"toast-shown",type:type}))
         }
         catch(_){
 
@@ -22521,10 +22170,11 @@
             b.addEventListener("blur",()=>{try{S(b,muteRest)}catch(_){}}),
             b.addEventListener("click",
             ev=>{
+              if(!ev.isTrusted)return;
               try{
                 ev.preventDefault(),
                 ev.stopPropagation(),
-                __woBackgroundRequest({kind:"mute-toast",type:type,minutes:minutes}),
+                __woBackgroundRequest(__woSignedRequest({kind:"mute-toast",type:type,minutes:minutes})),
                 muteRow.textContent="",
                 oTextDiv(muteRow,"font-size:10.5px!important;color:#6b4f85!important;",0===minutes?"Hidden from now on. Undo it in WardenOne.":"Hidden for "+label+". Undo it in WardenOne."),
                 setTimeout(()=>{try{dismiss()}catch(_){}},1400)

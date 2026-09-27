@@ -32,6 +32,7 @@ const SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const MIN = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
+const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
 const HISTORY_JS = fs.readFileSync(path.join(ROOT, 'history.js'), 'utf8');
 
 let failed = 0;
@@ -236,12 +237,12 @@ check('and shows which parameters went',
   'without this it renders as a row with a blank detail');
 check('it raises no toast', !/toast\([^)]*cleaned_history_url/.test(SRC));
 
-/* ---- merged, not a new feature -------------------------------------------- */
-check('there is no toggle of its own',
-  !/spaTrackingCleaner|historyUrlClean|cleanHistoryParams/i.test(BG)
-  && !/data-key="[a-zA-Z]*[Hh]istory[a-zA-Z]*"/.test(POPUP_HTML));
-check('and no entry in the protection count',
-  !/'cleanHistoryUrl'|'spaTracking'/.test(BG.match(/const HEALTH_SHIELD_KEYS = \[[\s\S]*?\];/)[0]));
+/* ---- the visible owner of the existing parameter policy -------------------- */
+check('the parameter cleaner has a visible switch',
+  /data-key="stripTrackingParams"/.test(POPUP_HTML)
+  && /'stripTrackingParams'/.test(POPUP_JS));
+check('and an entry in the protection count',
+  /'stripTrackingParams'/.test(BG.match(/const HEALTH_SHIELD_KEYS = \[[\s\S]*?\];/)[0]));
 check('it rides the parameter-stripping flag the link cleaner already uses',
   /WO\.stripTrackingParams&&arguments\.length>=3/.test(SRC),
   'one policy for a link and for an address bar, or the two drift apart');

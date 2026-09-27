@@ -142,7 +142,18 @@ check('the bundle is built own-text-first, then each enabled list in stored orde
   /let text = String\(own \|\| ''\);\s*for \(const l of \(lists \|\| \[\]\)\) \{[\s\S]{0,300}text \+= '\\n' \+ l\.text;/.test(BG));
 
 /* ---- the firewall compile ------------------------------------------------------------ */
-const fw = { String, Number, Object, Array, RegExp, console, JSON };
+/* "All" is derived from the canonical request-type inventory (M45). */
+const ALL_TYPES = JSON.parse(BG.slice(BG.indexOf('const ALL_DNR_RESOURCE_TYPES = [') + 'const ALL_DNR_RESOURCE_TYPES = '.length, BG.indexOf('];', BG.indexOf('const ALL_DNR_RESOURCE_TYPES')) + 1).replace(/'/g, '"').replace(/,\s*\]/, ']'));
+/* The worker's per-store transaction lane (M48), with the same ordering guarantee. */
+function makeStoreTransaction() {
+  const lanes = new Map();
+  return (key, task) => {
+    const next = (lanes.get(key) || Promise.resolve()).then(task);
+    lanes.set(key, next.then(() => {}, () => {}));
+    return next;
+  };
+}
+const fw = { String, Number, Object, Array, RegExp, console, JSON, ALL_DNR_RESOURCE_TYPES: ALL_TYPES };
 for (const band of ['FIREWALL_RULES_BUDGET', 'FIREWALL_SESSION_RULES_BUDGET']) {
   fw[band] = Number((BG.match(new RegExp('const ' + band + ' = (\\d+)')) || [])[1] || 0);
 }

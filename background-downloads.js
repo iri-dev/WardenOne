@@ -161,11 +161,23 @@ const DOWNLOAD_SAFE_LOGGED = new Set();
 // the browser stays open, so stamping there declared a new session the user never started: a
 // download from minutes earlier became "previous session", lost its pending record, was marked
 // handled, and had its review panel closed -- left paused with nothing to explain it.
+//
+// The cold read carries a generation (MV3-08). It starts on worker evaluation and onStartup can
+// stamp the new session before it answers; the late answer used to overwrite the new stamp with
+// yesterday's, so the startup jobs 800/1500 ms later treated restored downloads as this
+// session's. A stamp now bumps the generation and a read that began before it is discarded, and
+// every decision that depends on the boundary waits for the read to settle first.
 let SESSION_STARTED_AT = 0;
-downloadStateGet('wardenone_session_started_at').then((x) => {
-  SESSION_STARTED_AT = (x && x.wardenone_session_started_at) || 0;
-}).catch(() => {});
+let sessionMarkGeneration = 0;
+const downloadSessionMarkReady = (() => {
+  const startedAt = sessionMarkGeneration;
+  return downloadStateGet('wardenone_session_started_at').then((x) => {
+    if (sessionMarkGeneration !== startedAt) return;
+    SESSION_STARTED_AT = (x && x.wardenone_session_started_at) || 0;
+  }).catch(() => {});
+})();
 async function markBrowserSessionStart() {
+  sessionMarkGeneration++;
   SESSION_STARTED_AT = Date.now();
   try { await downloadStateSet({ wardenone_session_started_at: SESSION_STARTED_AT }); } catch (_) {}
 }
@@ -2248,6 +2260,7 @@ async function runDownloadGuardScan(id, hint, reason) {
     // Leftover from a PREVIOUS browser session (Chrome restores paused/interrupted
     // downloads on restart). Never re-pop a review for these -- resolve quietly and
     // leave the download paused in Chrome for the user to manage.
+    await downloadSessionMarkReady;
     if (downloadStartedBeforeSession(item)) {
       if (pending) await removePendingDownload(key);
       await rememberHandledDownload(key, 'previous-session');
@@ -2428,6 +2441,7 @@ async function recoverStrandedPausedDownloads() {
     if (cfg.enabled === false || cfg.downloadReputation === false) return 0;
     const items = await downloadSearch({ state: 'in_progress', paused: true });
     if (!Array.isArray(items) || !items.length) return 0;
+    await downloadSessionMarkReady;
     let recovered = 0;
     for (const item of items) {
       if (!item || item.id == null) continue;

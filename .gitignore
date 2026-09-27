@@ -12,6 +12,7 @@ key.pem
 WardenOne-v*.zip
 # The Store package (tools/build-store-package.js): built from a commit on demand, never tracked.
 WardenOne-store.zip
+.store-candidates/
 
 # Machine-local tool settings.
 .*/settings.local.json

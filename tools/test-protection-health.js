@@ -55,6 +55,23 @@ assert(/function renderProtectionHealth/.test(popupJs), 'popup should render pro
 assert(/kind: 'protection-health'/.test(popupJs), 'popup should request protection health');
 assert(/function turnEverythingOn[\s\S]*querySelector\('input\[data-key="silentMode"\]'\)[\s\S]*checked = false/.test(popupJs), 'Turn everything on should restore visible safety feedback by disabling silent mode');
 assert(/function turnEverythingOn[\s\S]*document\.querySelectorAll\('input\[data-key\]'\)/.test(popupJs), 'Turn everything on should cover every popup data-key toggle');
+/* FEAT-05: the button said "everything" while leaving five visible protections off on purpose.
+   It now says "recommended" and names what it left alone -- so every one of those switches has to
+   have a name on its row for the note to show. */
+assert(/id="all-on" type="button">Turn on recommended protections</.test(popupHtml) && !/>Turn everything on</.test(popupHtml),
+  'the button must not claim to turn everything on');
+assert(/saveConfig\('Recommended protections on', reloadActiveHttpTab\);\s*\n\s*showLeftOffNote\(\);/.test(popupJs)
+  && /id="all-on-note"[^>]*hidden/.test(popupHtml), 'turning the recommended set on must say what it left off');
+{
+  const manual = (popupJs.match(/const MANUAL_ONLY_TOGGLES = new Set\(\[([^\]]*)\]\)/) || [])[1] || '';
+  const keys = [...manual.matchAll(/'(\w+)'/g)].map((m) => m[1]).filter((k) => k !== 'silentMode');
+  assert(keys.length >= 5, 'the left-off set was not found');
+  keys.forEach((key) => {
+    const at = popupHtml.indexOf('data-key="' + key + '"');
+    const row = popupHtml.slice(popupHtml.lastIndexOf('<div class="row">', at), at);
+    assert(at > 0 && /<div class="name">[^<]+<\/div>/.test(row), key + ' has no named row, so the note could not name it');
+  });
+}
 assert(/const status = cfg\.enabled === false \? 'Off'[\s\S]*'Check setup'[\s\S]*"You're safe"/.test(background), 'health status should use safer calm label');
 assert(/severity === 'warn' && i\.topLevel/.test(background), 'non-critical notes should not force top-level attention state');
 assert(/font-family:\s*var\(--display\);[\s\S]*font-size:\s*13px;[\s\S]*font-weight:\s*700;/.test(popupHtml), 'health title should use the popup display heading styling');
