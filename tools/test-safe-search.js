@@ -191,7 +191,7 @@ check('rules are re-applied when either toggle changes',
    for enabled:false. (This used to match a hard-off call in a fallback list that switched
    protections off on an unreadable config -- the defect BUG-08 removed.) */
 check('rules are cleared when the extension is switched off, through the reconcile list',
-  /applySearchParamRules\(Object\.assign\(\{\}, cfg, \{ enabled: on \}\), sharedSessionRules\)/.test(BG));
+  /applySearchParamRules\(Object\.assign\(\{\}, cfg, \{ enabled: on \}\), sharedSessionRules, sessionBatch\.submit\)/.test(BG));
 check('rules use session storage, not dynamic',
   /getSessionRules\(\)/.test(applyBody) && /updateSessionRules/.test(applyBody));
 
