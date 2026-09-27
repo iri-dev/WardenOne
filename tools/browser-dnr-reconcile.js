@@ -47,7 +47,13 @@ async function run() {
       const config=(await chrome.storage.local.get('wardenone_config')).wardenone_config || {};
       const session=await dnr.getSessionRules();
       const band=session.filter(r=>r.id>=743000&&r.id<743040).sort((a,b)=>a.id-b.id);
-      globalThis.__woDnrProfile={config,band:JSON.stringify(band),counts:{dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0},
+      const loginBand=session.filter(r=>r.id>=807000&&r.id<807300).sort((a,b)=>a.id-b.id);
+      const dynamic=await dnr.getDynamicRules();
+      const fingerprintBand=dynamic.filter(r=>r.id>=931500&&r.id<931580).sort((a,b)=>a.id-b.id);
+      const sponsorBand=dynamic.filter(r=>r.id>=931700&&r.id<931720).sort((a,b)=>a.id-b.id);
+      globalThis.__woDnrProfile={config,band:JSON.stringify(band),loginBand:JSON.stringify(loginBand),
+        fingerprintBand:JSON.stringify(fingerprintBand),sponsorBand:JSON.stringify(sponsorBand),
+        counts:{dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0},
         timings:{dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0},traces:[]};
       const names={getDynamicRules:'dynamicReads',getSessionRules:'sessionReads',
         updateDynamicRules:'dynamicWrites',updateSessionRules:'sessionWrites'};
@@ -66,7 +72,8 @@ async function run() {
         dnr[name]=wrapped;
         if(dnr[name]!==wrapped) throw Error('DNR instrument did not attach: '+name);
       }
-      return {safeSearch:config.safeSearch===true,bandSize:band.length};
+      return {safeSearch:config.safeSearch===true,bandSize:band.length,loginBandSize:loginBand.length,
+        fingerprintBandSize:fingerprintBand.length,sponsorBandSize:sponsorBand.length};
     })()`);
     const unrelated = await evaluate(`(async () => {
       const p=globalThis.__woDnrProfile;
@@ -112,7 +119,66 @@ async function run() {
         same:JSON.stringify(band)===p.band,counts,timings};
     })()`);
     if (!restored || !restored.same) throw new Error('SafeSearch band did not restore: ' + JSON.stringify(restored));
-    console.log(JSON.stringify({ seeded, baseline, unrelated, toggled, restored }));
+    const combined = await evaluate(`(async () => {
+      const p=globalThis.__woDnrProfile;
+      p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:true,loginCompatibility:false}});
+      await new Promise(r=>setTimeout(r,2200));
+      const changed={...p.counts};
+      p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      await chrome.storage.local.set({wardenone_config:p.config});
+      await new Promise(r=>setTimeout(r,2200));
+      const restoredCounts={...p.counts};
+      const session=await chrome.declarativeNetRequest.getSessionRules();
+      const safe=session.filter(r=>r.id>=743000&&r.id<743040).sort((a,b)=>a.id-b.id);
+      const login=session.filter(r=>r.id>=807000&&r.id<807300).sort((a,b)=>a.id-b.id);
+      return {changed,restoredCounts,exact:JSON.stringify(safe)===p.band&&JSON.stringify(login)===p.loginBand};
+    })()`);
+    if (!combined || !combined.exact || combined.changed.sessionWrites !== 1 || combined.restoredCounts.sessionWrites !== 1) {
+      throw new Error('Two session owners did not merge or restore exactly: ' + JSON.stringify(combined));
+    }
+    const dynamicCombined = await evaluate(`(async () => {
+      const p=globalThis.__woDnrProfile;
+      p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      p.traces=[];
+      await chrome.storage.local.set({wardenone_config:{...p.config,blockFingerprintScripts:false,googleSearchResultCleanup:true}});
+      await new Promise(r=>setTimeout(r,2200));
+      const changed={...p.counts};
+      const traces=p.traces.slice();
+      p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      await chrome.storage.local.set({wardenone_config:p.config});
+      await new Promise(r=>setTimeout(r,2200));
+      const restoredCounts={...p.counts};
+      const dynamic=await chrome.declarativeNetRequest.getDynamicRules();
+      const fingerprint=dynamic.filter(r=>r.id>=931500&&r.id<931580).sort((a,b)=>a.id-b.id);
+      const sponsor=dynamic.filter(r=>r.id>=931700&&r.id<931720).sort((a,b)=>a.id-b.id);
+      return {changed,restoredCounts,traces,exact:JSON.stringify(fingerprint)===p.fingerprintBand&&JSON.stringify(sponsor)===p.sponsorBand};
+    })()`);
+    if (!dynamicCombined || !dynamicCombined.exact || dynamicCombined.changed.dynamicWrites !== 1
+      || dynamicCombined.restoredCounts.dynamicWrites !== 1) {
+      throw new Error('Two dynamic owners did not merge or restore exactly: ' + JSON.stringify(dynamicCombined));
+    }
+    const rapid = await evaluate(`(async () => {
+      const p=globalThis.__woDnrProfile;
+      p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:true}});
+      await new Promise(r=>setTimeout(r,40));
+      await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:false}});
+      await new Promise(r=>setTimeout(r,40));
+      await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:true}});
+      await new Promise(r=>setTimeout(r,2200));
+      const applied={...p.counts};
+      const active=(await chrome.declarativeNetRequest.getSessionRules()).filter(r=>r.id>=743000&&r.id<743040).length;
+      await chrome.storage.local.set({wardenone_config:p.config});
+      await new Promise(r=>setTimeout(r,2200));
+      const restored=(await chrome.declarativeNetRequest.getSessionRules())
+        .filter(r=>r.id>=743000&&r.id<743040).sort((a,b)=>a.id-b.id);
+      return {applied,active,exact:JSON.stringify(restored)===p.band};
+    })()`);
+    if (!rapid || !rapid.exact || rapid.active < 1 || rapid.applied.sessionWrites !== 1) {
+      throw new Error('Rapid settings did not settle to the newest generation: ' + JSON.stringify(rapid));
+    }
+    console.log(JSON.stringify({ seeded, baseline, unrelated, toggled, restored, combined, dynamicCombined, rapid }));
     console.log('[ok] near-limit browser toggle restored the exact SafeSearch rule band');
     await evaluate(`chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds:Array.from({length:${seeded.seeded}},(_,i)=>5000000+i),addRules:[]})`);
