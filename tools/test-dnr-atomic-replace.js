@@ -69,6 +69,14 @@ function enclosingFunction(source, index) {
       if (/addRules/.test(arg)) offenders.push(fn + ' is listed as removal-only but adds rules');
       continue;
     }
+    /* The central reconciler now submits a named change to a one-call batch. The
+       applier defines that change with both keys immediately before passing it;
+       the batch helper is exercised for atomicity and fallback by its own suite. */
+    if (arg.trim() === 'change') {
+      const nearby = BG.slice(Math.max(0, m.index - 350), m.index);
+      if (fn === 'createReconcileDnrBatch'
+        || /const change = \{ removeRuleIds: oldIds, addRules(?::|\s*\})/.test(nearby)) continue;
+    }
     if (!/removeRuleIds/.test(arg) || !/addRules/.test(arg)) {
       offenders.push(fn + ' @' + BG.slice(0, m.index).split('\n').length + ': ' + arg.replace(/\s+/g, ' ').slice(0, 60));
     }
