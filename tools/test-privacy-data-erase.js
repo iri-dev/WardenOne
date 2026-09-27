@@ -62,6 +62,10 @@ function harness(initialLocal, initialSession) {
   assert.strictEqual(inventory.ok, true);
   assert.strictEqual(inventory.records.length, 1);
   assert(inventory.records[0].bytes > 0 && inventory.records[0].oldestKnownAt);
+  const oldAt = Date.now() - 90 * 86400000;
+  h = harness({ wardenone_history: Array.from({ length: 120 }, (_, i) => ({ at: i === 119 ? oldAt : Date.now() - 86400000 })) }, {});
+  const largeInventory = await h.api.inspectWardenOneData();
+  assert.strictEqual(largeInventory.records[0].oldestKnownAt, oldAt, 'preview must inspect past the first hundred records');
 
   const cfg = { enabled: false, downloadSafeBrowsingKey: 'secret', siteOverrides: { 'example.test': { adShield: false } }, allowlist: ['example.test'] };
   assert.strictEqual(h.api.preservedPrivacyConfig(cfg, 'all'), null);

@@ -17,11 +17,13 @@ as the work happened.
 
 ### Added
 
-- The Privacy cleaner can inspect WardenOne's saved local and session datasets by size and known age, then erase all extension-owned storage and dynamic rules. The erase control can keep global switches, with or without API keys, while removing site exceptions and learned records; active Download Shield reviews must be resolved first.
+- The Privacy cleaner can inspect WardenOne's saved local and session datasets by size and known age, then erase all extension-owned storage and dynamic rules. The date preview scans every timestamped record, including records past the first hundred. The erase control can keep global switches, with or without API keys, while removing site exceptions and learned records; active Download Shield reviews must be resolved first.
 - High-stakes in-page warnings now also appear in an isolated, closed-shadow overlay with fixed wording and a self-healing owner. If a page covers that copy, WardenOne requests a generic browser notification. The secret-paste continuation rejects scripted clicks.
 - Context-menu and command-palette reputation checks now save a short-lived, target-free session receipt before contacting a provider. If the service worker dies, its next wake reports the interruption; answers are bound to the originating document and cannot be injected into a navigated page.
 - Automatic keyed reputation checks now consult hydrated local malware, scam and user-block records before constructing a provider request. Local malicious-list hits use WardenOne's own warning page, and a user-blocked site does not trigger a provider check. Pasting or testing a key still leaves automatic checking off until its separate switch is enabled.
 - Settings reconciliation now waits for an active generation to finish, skips duplicate requests for the same state, and runs one queued pass for newer settings. Stable network-rule owners skip work when their own inputs are unchanged, six owners share one dynamic and one session rule read per generation, and intranet switches are part of the desired-state key. SafeSearch settings flow through that pass instead of starting a second direct rule update.
+- A supplemental list refresh now waits for its one Grabber feed rule update without starting a duplicate update from the storage-change listener.
+- Remote list refreshes now compare the desired rule bands with Chrome's installed rules and skip the DNR transaction when the bands are already identical; the master switch is still checked at the commit boundary.
 - The "important extension change needs review" note in the popup's status card
   now opens. Click it to see which extension changed, what it gained, the version
   change and when it happened, and then mark it reviewed or open the Security
