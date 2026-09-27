@@ -306,6 +306,9 @@ async function fire(b) {
   check('both loaders still run at start and both appliers are still serialized',
     /^loadGrabberFeed\(\);$/m.test(BG) && /^loadMinerFeed\(\);$/m.test(BG)
       && /'applyGrabberFeedRules',\s*'applyMinerFeedRules',/.test(BG));
+  check('supplemental list writes await one Grabber refresh without a storage-listener duplicate',
+    /await localSet\(\{ \[SUPPLEMENTAL_LIST_STORAGE_KEY\]: lists, \[SUPPLEMENTAL_LIST_META_KEY\]: meta \}\);\s*try \{ await loadGrabberFeed\(\);/.test(BG)
+      && /if \(area === 'local' && changes\.wardenone_grabber_domains\) \{\s*loadGrabberFeed\(\);/.test(BG));
 
   finished = true;
   console.log('');

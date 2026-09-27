@@ -319,6 +319,15 @@ test('remote-list commit cannot reinstall DNR rules after the master switch turn
   assert.strictEqual(duringCommit.state.updates.length, 1);
   assert.strictEqual(duringCommit.state.removeAllCalls, 1,
     'post-commit master check did not remove rules from a commit-boundary race');
+
+  const unchanged = loadRemoteListCommitGuard();
+  const stable = await unchanged.commit([10002], [{ id: 10002 }], true);
+  assert.strictEqual(stable.applied, true);
+  assert.strictEqual(stable.unchanged, true);
+  assert.strictEqual(unchanged.state.updates.length, 0,
+    'identical remote-list rules caused an unnecessary Chrome transaction');
+  assert(/commitRemoteListRules\(removeIds, desiredRules, dnrBandUnchanged\(mine, desiredRules\)\)/.test(BACKGROUND),
+    'remote-list planner did not pass a byte-equivalent band comparison to the guarded commit');
 });
 
 test('location-privacy update migration preserves an explicit disabled setting', () => {
