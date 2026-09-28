@@ -4914,6 +4914,7 @@ function renderPermResults(out, hostname, res) {
 (function wirePrivacyDataErase() {
   const inspect = $('privacy-data-inspect');
   const erase = $('privacy-data-erase');
+  const eraseSite = $('privacy-data-erase-site');
   const mode = $('privacy-data-mode');
   const preview = $('privacy-data-preview');
   const result = $('privacy-data-result');
@@ -4941,7 +4942,8 @@ function renderPermResults(out, hostname, res) {
     for (const item of data.records) {
       const li = document.createElement('li');
       const date = item.oldestKnownAt ? new Date(item.oldestKnownAt).toLocaleDateString() : 'age unknown';
-      li.textContent = item.area + ' · ' + item.key + ' · ' + Math.round(item.bytes / 1024) + ' KiB · ' + date;
+      li.textContent = item.area + ' · ' + item.key + ' · ' + Math.round(item.bytes / 1024)
+        + ' KiB · ' + date + ' · ' + item.owner + ' · ' + item.retention;
       list.appendChild(li);
     }
     details.appendChild(list);
@@ -4978,6 +4980,34 @@ function renderPermResults(out, hostname, res) {
     result.textContent = answer.ok ? 'Erased. WardenOne is restarting with ' + answer.kept + ' kept.'
       : 'Could not complete erasure: ' + (answer.error || 'unknown error');
     if (!answer.ok) erase.disabled = false;
+  });
+  if (eraseSite) eraseSite.addEventListener('click', () => {
+    currentHost(async (host) => {
+      if (!host) { result.textContent = 'Open a website to erase its WardenOne records.'; return; }
+      eraseSite.disabled = true;
+      result.textContent = 'Inspecting this site’s records…';
+      const plan = await ask({ kind: 'privacy-data-erase-site', host, dryRun: true });
+      if (!plan.ok) {
+        result.textContent = 'Could not inspect: ' + (plan.error || 'unknown error');
+        eraseSite.disabled = false;
+        return;
+      }
+      if (!plan.affected.length) {
+        result.textContent = 'No saved WardenOne records found for this site.';
+        eraseSite.disabled = false;
+        return;
+      }
+      if (!confirm('Erase WardenOne records for ' + plan.site + '?\n\n'
+        + plan.affected.length + ' datasets will change. Shared reputation caches, tracker learning and Script Drift baselines may be cleared for other sites too. Restarting WardenOne also clears temporary session records. Website cookies and browser history are untouched.')) {
+        eraseSite.disabled = false;
+        result.textContent = 'Site erasure cancelled.';
+        return;
+      }
+      const answer = await ask({ kind: 'privacy-data-erase-site', host });
+      result.textContent = answer.ok ? 'Erased WardenOne records for ' + answer.site + '. WardenOne is restarting.'
+        : 'Could not complete site erasure: ' + (answer.error || 'unknown error');
+      if (!answer.ok) eraseSite.disabled = false;
+    });
   });
 })();
 

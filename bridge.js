@@ -1049,6 +1049,35 @@
   const mainWarningText = new Map();
   let mainWarningOverlay = null;
   let mainWarningChecks = [];
+  function ownedWarningIsVisible(overlay, card) {
+    const host = overlay.hostNode();
+    if (!host || !host.isConnected) return false;
+    try {
+      const rect = card.getBoundingClientRect();
+      for (let node = host; node && node.nodeType === 1; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity) < 0.5) return false;
+        const filter = String(style.filter || 'none');
+        const blur = /\bblur\(\s*([\d.]+)px\s*\)/i.exec(filter);
+        const brightness = /\bbrightness\(\s*([\d.]+)(%)?\s*\)/i.exec(filter);
+        const opacity = /\bopacity\(\s*([\d.]+)(%)?\s*\)/i.exec(filter);
+        if ((blur && Number(blur[1]) >= 4)
+          || (brightness && Number(brightness[1]) < (brightness[2] ? 35 : 0.35))
+          || (opacity && Number(opacity[1]) < (opacity[2] ? 50 : 0.5))) return false;
+      }
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      const points = [[0.5, 0.12], [0.25, 0.5], [0.75, 0.5], [0.5, 0.88]];
+      let visible = 0;
+      for (const [fx, fy] of points) {
+        const x = rect.left + rect.width * fx;
+        const y = rect.top + rect.height * fy;
+        if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+        const hit = document.elementFromPoint(x, y);
+        if (hit === host || host.contains(hit)) visible++;
+      }
+      return visible >= 3;
+    } catch (_) { return false; }
+  }
   function clearMainWarningChecks() {
     for (const cancel of mainWarningChecks) cancel();
     mainWarningChecks = [];
@@ -1059,6 +1088,7 @@
     if (!Object.prototype.hasOwnProperty.call(mainWarningCopy, id)) return;
     const message = mainWarningCopy[id];
     if (!message) return;
+    if (mainToastOverlay) closeOwnedToast(mainToastOverlay);
     if (mainWarningText.has(id)) mainWarningText.delete(id);
     mainWarningText.set(id, message);
     while (mainWarningText.size > 6) mainWarningText.delete(mainWarningText.keys().next().value);
@@ -1132,14 +1162,7 @@
     const checkVisible = () => {
       if (mainWarningOverlay !== overlay || reportedOcclusion) return;
       if (!overlay.hostNode()) { clearMainWarningChecks(); mainWarningOverlay = null; return; }
-      try {
-        const rect = card.getBoundingClientRect();
-        const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
-        const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + Math.min(rect.height / 2, 36)));
-        const hit = document.elementFromPoint(x, y);
-        if (rect.width > 0 && rect.height > 0 && overlay.hostNode().isConnected
-          && (hit === overlay.hostNode() || overlay.hostNode().contains(hit))) return;
-      } catch (_) {}
+      if (ownedWarningIsVisible(overlay, card)) return;
       reportedOcclusion = true;
       clearMainWarningChecks();
       try { chrome.runtime.sendMessage({ kind: 'warning-ui-compromised' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
@@ -1150,6 +1173,105 @@
     }
     const interval = woInterval(checkVisible, 10000);
     mainWarningChecks.push(() => clearInterval(interval));
+  }
+
+  /* Toasts whose loss would hide a security decision get a small independent copy.
+     MAIN decides whether a toast is enabled or muted, then signs only its type.
+     The page cannot supply wording or a decision action to this copy. */
+  const mainToastCopy = Object.freeze({
+    blocked_safe_browsing_link: 'WardenOne blocked a dangerous link.',
+    blocked_safe_browsing_form: 'WardenOne blocked a form on a dangerous page.',
+    blocked_safe_browsing_paste: 'WardenOne stopped a secret paste on a dangerous page.',
+    blocked_token_exfil: 'WardenOne blocked a token-shaped value leaving this site.',
+    blocked_skimmer_exfil: 'WardenOne blocked card or password data leaving this page.',
+    blocked_payment_card_submit: 'WardenOne stopped card details from being sent by this checkout.',
+    warned_confirm_bait: 'This page showed a fake confirmation box. Do not follow its instructions.',
+    warned_notification_scam: 'This site raised a notification that resembles a fake alert.',
+    warned_device_request: 'This site requested access to a device. Choose one only if you intended to.',
+    warned_device_silent: 'This site used a device you allowed on an earlier visit.',
+    blocked_speech_capture: 'WardenOne blocked speech recognition through your microphone.',
+    warned_file_silent: 'This site used file access you allowed on an earlier visit.',
+    warned_file_request: 'This site requested a file or folder. Choose one only if you intended to.',
+    warned_speech_capture: 'This site started speech recognition. Leave if you did not start it.',
+    warned_fake_window: 'This page may be imitating a sign-in window. Check the real address bar.',
+    warned_fullscreen_spoof: 'This page may be imitating the browser in fullscreen. Exit fullscreen first.',
+    blocked_media_capture: 'WardenOne blocked an unexpected camera or microphone request.',
+    blocked_screen_capture: 'WardenOne blocked an unexpected screen capture request.',
+    warned_media_capture: 'This site requested camera or microphone access.',
+    warned_hidden_media_capture: 'This site requested camera or microphone access without a recent click.',
+    warned_screen_capture: 'This site requested screen capture access.',
+    warned_hidden_screen_capture: 'This site requested screen capture without a recent click.',
+    warned_abuseipdb_server: 'An external reputation provider reported this server as suspicious.',
+    warned_url_reputation: 'An external reputation provider reported this URL as suspicious.',
+    warned_phishing: 'This site resembles a well-known brand. Check the real address before signing in.',
+    warned_payment_card_entry: 'This checkout has payment-risk signals. Check its address before continuing.',
+    warned_fake_update: 'This page offers a fake browser or system update. Do not run its download.',
+    warned_honeytoken_read: 'A page script read a decoy credential. Be careful what you enter here.',
+  });
+  let mainToastOverlay = null;
+  let mainToastChecks = [];
+  const mainToastText = new Map();
+  function closeOwnedToast(overlay, clearText = true) {
+    if (mainToastOverlay !== overlay) return;
+    for (const cancel of mainToastChecks) cancel();
+    mainToastChecks = [];
+    mainToastOverlay = null;
+    if (clearText) mainToastText.clear();
+    overlay.destroy();
+  }
+  function showOwnedMainToast(detail) {
+    const id = String(detail && detail.id || '');
+    if (!Object.prototype.hasOwnProperty.call(mainToastCopy, id) || mainWarningOverlay) return;
+    if (mainToastText.has(id)) mainToastText.delete(id);
+    mainToastText.set(id, mainToastCopy[id]);
+    while (mainToastText.size > 4) mainToastText.delete(mainToastText.keys().next().value);
+    if (mainToastOverlay) closeOwnedToast(mainToastOverlay, false);
+    const overlay = mainToastOverlay = woOwnedOverlay('wo-owned-security-toast');
+    const root = overlay.root();
+    const card = document.createElement('div');
+    card.setAttribute('role', 'alert');
+    card.setAttribute('style', 'all:initial!important;box-sizing:border-box!important;position:fixed!important;'
+      + 'top:16px!important;right:16px!important;width:min(340px,calc(100vw - 32px))!important;'
+      + 'max-height:55vh!important;overflow:auto!important;padding:14px!important;'
+      + 'border:2px solid #b42332!important;border-radius:12px!important;'
+      + 'background:#fff8f8!important;color:#281d2e!important;box-shadow:0 12px 34px #4a182c66!important;'
+      + 'font:13px/1.45 system-ui,sans-serif!important;');
+    const heading = document.createElement('strong');
+    heading.setAttribute('style', 'all:initial!important;display:block!important;font:bold 14px system-ui,sans-serif!important;color:#922132!important;margin-bottom:5px!important;');
+    heading.textContent = 'WardenOne warning';
+    card.appendChild(heading);
+    for (const copy of mainToastText.values()) {
+      const message = document.createElement('span');
+      message.setAttribute('style', 'all:initial!important;display:block!important;font:13px/1.45 system-ui,sans-serif!important;color:#281d2e!important;margin:6px 0!important;');
+      message.textContent = copy;
+      card.appendChild(message);
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('style', 'all:initial!important;display:block!important;cursor:pointer!important;'
+      + 'margin-top:8px!important;color:#922132!important;font:bold 12px system-ui,sans-serif!important;');
+    button.textContent = 'Dismiss';
+    const dismiss = (e) => { if (e.isTrusted && overlay.owns(button)) closeOwnedToast(overlay); };
+    button.addEventListener('click', dismiss);
+    card.appendChild(button);
+    const originalDestroy = overlay.destroy.bind(overlay);
+    overlay.destroy = () => { button.removeEventListener('click', dismiss); originalDestroy(); };
+    root.appendChild(card);
+    overlay.mount();
+    let reported = false;
+    const check = () => {
+      if (mainToastOverlay !== overlay || reported || ownedWarningIsVisible(overlay, card)) return;
+      reported = true;
+      try { chrome.runtime.sendMessage({ kind: 'warning-ui-compromised' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+    };
+    for (const delay of [200, 800, 2500, 6000]) {
+      const timer = woTimeout(check, delay);
+      mainToastChecks.push(() => clearTimeout(timer));
+    }
+    const interval = woInterval(check, 10000);
+    mainToastChecks.push(() => clearInterval(interval));
+    const expiry = woTimeout(() => closeOwnedToast(overlay), 15000);
+    mainToastChecks.push(() => clearTimeout(expiry));
   }
 
   // Smart Script Shield recovery is deliberately driven by this isolated-world
@@ -2195,7 +2317,9 @@
     return true;
   };
 
-  woOn(document, 'wo-event', (e) => {
+  /* Capture at window before a page's document listener can stop propagation of a warning.
+     MAIN dispatches on document; a non-bubbling event still travels down the capture path. */
+  woOn(window, 'wo-event', (e) => {
     const d = (e && e.detail) || {};
     // Route only token-bearing events. The token is not treated as a true secret;
     // background learning and privileged actions are separately constrained.
@@ -2211,6 +2335,10 @@
     }
     if (type === 'warning_panel') {
       if (d.src === 'engine' && eventSigned(d)) showOwnedMainWarning(d.detail);
+      return;
+    }
+    if (type === 'warning_toast') {
+      if (d.src === 'engine' && eventSigned(d)) showOwnedMainToast(d.detail);
       return;
     }
     const securitySignal = type === 'behavioral_risk'
@@ -2235,7 +2363,7 @@
         } catch (_) {}
       }
     }
-  });
+  }, true);
 
   // Navigation attribution signals. Deliberately NOT routed through the wo-event
   // path above: they are not findings, must never reach the history or the badge,
