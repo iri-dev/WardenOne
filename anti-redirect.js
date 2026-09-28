@@ -274,6 +274,15 @@
       return false;
     }
   }());
+  // Discord's server onboarding is drawn as short, floating dialogs with affirmative
+  // controls. Removing those React-owned nodes can strand the reader before they can
+  // choose roles or pronouns. Skip only the DOM confirm-bait remover on Discord's app
+  // origins; navigation and real window.open checks still run. A third-party frame
+  // keeps its own hostname and is still inspected.
+  const DISCORD_APP_HOST = (function () {
+    try { return /^(?:discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)$/i.test(location.hostname); }
+    catch (_) { return false; }
+  }());
   const TRUSTED_BASE_DOMAINS = new Set([
     'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'recaptcha.net',
     'hcaptcha.com', 'facebook.com', 'fbcdn.net', 'apple.com', 'cdn-apple.com', 'icloud.com',
@@ -526,7 +535,7 @@
   // the box actually is. This script already runs in every frame; only this check
   // was refusing to.
   function confirmBaitEnabled() {
-    if (MEDIA_APP_HOST) return false;
+    if (MEDIA_APP_HOST || DISCORD_APP_HOST) return false;
     const c = cfg();
     // Deliberately NOT gated on configReady(), unlike everything else here. The
     // config arrives by message, and in a third-party frame that message may never
@@ -1335,7 +1344,7 @@
       const overlay = intentWasExplicit ? null : gestureOnOverlay(target);
       if (!overlay) signal('gesture');
       // Not on a media app, where the box under a click is the site's own player (MEDIA_APP_HOST).
-      else if (!MEDIA_APP_HOST && confirmBaitOverlay(overlay)) {
+      else if (!MEDIA_APP_HOST && !DISCORD_APP_HOST && confirmBaitOverlay(overlay)) {
         emit('warned_confirm_bait', {
           matched: String(lastIntentText || '').slice(0, 40),
           silent: true,
@@ -1949,7 +1958,7 @@
   function installConfirmBaitSweep() {
     // Not installed at all on a media app: its chat and player churn would drive the sweep every
     // few frames for a guard that is switched off there (see MEDIA_APP_HOST).
-    if (baitInstalled || MEDIA_APP_HOST) return;
+    if (baitInstalled || MEDIA_APP_HOST || DISCORD_APP_HOST) return;
     baitInstalled = true;
     try {
       const baitObserver = woObserver((records) => {
