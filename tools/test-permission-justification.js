@@ -29,6 +29,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 const PERMS_HTML = fs.readFileSync(path.join(ROOT, 'permissions.html'), 'utf8');
+const AUDIT = fs.readFileSync(path.join(ROOT, 'docs', 'permission-audit.md'), 'utf8');
 
 let failures = 0;
 function check(label, condition, extra) {
@@ -65,8 +66,11 @@ const NO_NAMESPACE = {
 
 /* ---- every declared permission is used ------------------------------------------- */
 
+const declaredPermissions = [...(MANIFEST.permissions || []), ...(MANIFEST.optional_permissions || [])];
+check('required and optional permission sets do not overlap',
+  new Set(declaredPermissions).size === declaredPermissions.length);
 const unused = [];
-for (const perm of MANIFEST.permissions) {
+for (const perm of declaredPermissions) {
   if (NO_NAMESPACE[perm]) continue;
   /* A real call, not a mention. Optional chaining counts: most of these namespaces are
      reached as chrome.webNavigation?.onCommitted, and a matcher that only accepted a bare
@@ -95,14 +99,14 @@ check('and nothing calls it either', !/chrome\.tabGroups\s*\./.test(CODE),
 
 /* ---- every declared permission is explained -------------------------------------- */
 
-const unexplained = MANIFEST.permissions.filter((p) => !PERMS_HTML.includes('<code>' + p + '</code>'));
+const unexplained = declaredPermissions.filter((p) => !PERMS_HTML.includes('<code>' + p + '</code>'));
 check('every declared permission has a row on the permissions page', unexplained.length === 0,
   unexplained.join(', ') + ' -- the page promises why each permission exists');
 
 /* ---- and nothing is explained that is not declared -------------------------------- */
 
 const rows = [...PERMS_HTML.matchAll(/<div class="perm-id"><code>([a-zA-Z]+)<\/code>/g)].map((m) => m[1]);
-const declared = new Set(MANIFEST.permissions);
+const declared = new Set(declaredPermissions);
 const stale = rows.filter((r) => !declared.has(r));
 check('the page explains no permission the manifest no longer asks for', stale.length === 0,
   stale.join(', ') + ' -- a row outliving its permission tells the reader WardenOne wants more than it does');
@@ -114,8 +118,8 @@ check('the page explains no permission the manifest no longer asks for', stale.l
    (CWS-04). It is pinned to the manifest here, in both counters. */
 const stat = (label) => Number((new RegExp('<strong>(\\d+)</strong><span>' + label + '</span>').exec(PERMS_HTML) || [])[1]);
 check('the page counts as many browser permissions as the manifest declares',
-  stat('browser permissions') === MANIFEST.permissions.length,
-  'page says ' + stat('browser permissions') + ', manifest declares ' + MANIFEST.permissions.length);
+  stat('browser permissions') === declaredPermissions.length,
+  'page says ' + stat('browser permissions') + ', manifest declares ' + declaredPermissions.length);
 check('and as many host scopes',
   stat('host scopes') === (MANIFEST.host_permissions || []).length,
   'page says ' + stat('host scopes') + ', manifest declares ' + (MANIFEST.host_permissions || []).length);
@@ -128,6 +132,9 @@ check('the manifest does not imply a partial outbound host inventory',
 check('no optional permissions are declared without being explained',
   !MANIFEST.optional_permissions || MANIFEST.optional_permissions.every(
     (p) => PERMS_HTML.includes('<code>' + p + '</code>')));
+check('the audit maps every named permission and the host scope',
+  declaredPermissions.every((p) => AUDIT.includes('| `' + p + '` |'))
+  && AUDIT.includes('`<all_urls>`'));
 
 console.log('');
 if (failures) {

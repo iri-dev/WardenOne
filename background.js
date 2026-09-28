@@ -3042,12 +3042,26 @@ async function updateAdShieldCosmetics() {
     // whatever the network batch still has out, so this no longer adds ten bodies beside it. Each
     // source still fails independently (one list outage must never block the others), and
     // successful texts are joined in list order so behaviour is unchanged.
-    const texts = await Promise.all(ADSHIELD_COSMETIC_LISTS.map(async (url) => {
+    const fetchedSources = await Promise.all(ADSHIELD_COSMETIC_LISTS.map(async (url) => {
       try {
         const fetched = await fetchValidatedRemoteListText(url, true, LIST_FETCH_TIMEOUT_MS);
-        return fetched && fetched.ok ? fetched.text : '';
-      } catch (_) { return ''; /* skip this source */ }
+        return { url, text: fetched && fetched.ok ? fetched.text : '' };
+      } catch (_) { return { url, text: '' }; /* skip this source */ }
     }));
+    try {
+      const previousPublisherStore = await localGet('wardenone_adshield_cosmetic_publishers');
+      const previousPublishers = (previousPublisherStore && previousPublisherStore.wardenone_adshield_cosmetic_publishers) || [];
+      const records = Object.create(null);
+      for (const entry of previousPublishers) {
+        if (entry && entry.url) records[entry.url] = { publisherUpdatedAt: entry.publishedAt, acceptedAt: entry.fetchedAt };
+      }
+      for (const source of fetchedSources) {
+        if (source.text) records[source.url] = { publisherUpdatedAt: parseListPublisherDate(source.text), acceptedAt: Date.now() };
+      }
+      const failed = fetchedSources.filter((source) => !source.text).map((source) => ({ url: source.url }));
+      await localSet({ wardenone_adshield_cosmetic_publishers: listSourcePublications(ADSHIELD_COSMETIC_LISTS, records, failed) });
+    } catch (e) { console.warn('[WardenOne] cosmetic publisher metadata save failed', e); }
+    const texts = fetchedSources.map((source) => source.text);
     const combinedText = texts.filter(Boolean).join('\n');
     if (!combinedText.trim()) return; // keep whatever we had
     const parsed = parseCosmeticFilters(combinedText);
@@ -4725,6 +4739,7 @@ async function refreshCustomList(id) {
       skipped: parsed.errors.length,
       updatedAt: now,
       checkedAt: now,
+      publisherUpdatedAt: parseListPublisherDate(got.text),
       error: '',
     });
   }
@@ -7061,6 +7076,7 @@ function storagePruneLadder() {
         'wardenone_adshield_cosmetic_at',
         'wardenone_adshield_cosmetic_hash',
         'wardenone_adshield_cosmetic_checked_at',
+        'wardenone_adshield_cosmetic_publishers',
       ],
     },
   ];
@@ -12452,10 +12468,15 @@ async function getForgetConfig() {
   const store = await localGet('wardenone_config');
   const cfg = (store && store.wardenone_config) || {};
   const allConfirmed = cfg.forgetMeMode === 'all' && Number(cfg.forgetMeAllConfirmedAt || 0) > 0;
+  let historyGranted = false;
+  if (cfg.forgetMeHistory === true) {
+    try { historyGranted = await chrome.permissions.contains({ permissions: ['history'] }); }
+    catch (_) { historyGranted = false; }
+  }
   return {
     mode: cfg.forgetMeMode === 'list' ? 'list' : allConfirmed ? 'all' : 'off',
     list: normalizeAllowlistHosts(cfg.forgetMeList || []),
-    history: cfg.forgetMeHistory === true,
+    history: historyGranted,
     allowlist: activeAllowlist(cfg),
   };
 }
@@ -14753,6 +14774,85 @@ const LIST_STALE_ALERT_THROTTLE_MS = 12 * 60 * 60 * 1000;
 const LIST_SEMANTIC_SKETCH_SIZE = 128;
 const LIST_SEMANTIC_MIN_VALUES = 32;
 const LIST_SEMANTIC_MIN_OVERLAP = 0.35;
+const LIST_PUBLISHER_STALE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/* Only an explicit date in a list's comment header counts as the publisher's date.
+   HTTP Last-Modified and our own fetch time can describe a CDN copy, not the list. */
+function parseListPublisherDate(text, now = Date.now()) {
+  const lines = String(text || '').slice(0, 16384).split(/\r?\n/).slice(0, 64);
+  for (const raw of lines) {
+    const line = raw.replace(/^\uFEFF/, '').trim();
+    if (!line || /^\[Adblock Plus/i.test(line)) continue;
+    if (!/^[#!]/.test(line)) break;
+    const header = line.replace(/^[#!]\s*/, '');
+    const field = header.match(/^(?:last\s+modified|last\s+updated?|updated|time\s*updated|date)(?::\s*|\s+)(.+)$/i)
+      || header.match(/^Destroylist\s*-\s*Primary Active\s*\|\s*plain\s*\|\s*[\d,]+\s+domains\s*\|\s*(.+)$/i);
+    if (!field) continue;
+    const value = field[1].trim().replace(/\s*\((UTC|GMT)\)\s*$/i, ' $1');
+    const iso = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d{1,3})?(?:Z|[+-]\d{2}:?\d{2}|\s+(?:UTC|GMT)))?$/i;
+    const english = /^(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+)?\d{1,2}\s+[A-Za-z]+\s+\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?\s+(?:UTC|GMT|[+-]\d{4}|[+-]\d{2}:\d{2}))?$/i;
+    const monthFirst = /^[A-Za-z]+\s+\d{1,2},?\s+\d{4}$/i;
+    if (!iso.test(value) && !english.test(value) && !monthFirst.test(value)) continue;
+    const months = 'jan feb mar apr may jun jul aug sep oct nov dec'.split(' ');
+    let year = 0;
+    let month = 0;
+    let day = 0;
+    const isoParts = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const englishParts = value.match(/^(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+)?(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/i);
+    const monthFirstParts = value.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/i);
+    if (isoParts) { year = Number(isoParts[1]); month = Number(isoParts[2]); day = Number(isoParts[3]); }
+    else if (englishParts) { year = Number(englishParts[3]); month = months.indexOf(englishParts[2].slice(0, 3).toLowerCase()) + 1; day = Number(englishParts[1]); }
+    else if (monthFirstParts) { year = Number(monthFirstParts[3]); month = months.indexOf(monthFirstParts[1].slice(0, 3).toLowerCase()) + 1; day = Number(monthFirstParts[2]); }
+    if (month < 1 || month > 12 || day < 1 || day > 31
+        || new Date(Date.UTC(year, month - 1, day)).getUTCDate() !== day) continue;
+    const parsed = Date.parse(!isoParts && !/\d{2}:\d{2}/.test(value) ? value + ' UTC' : value);
+    if (Number.isFinite(parsed) && parsed >= Date.UTC(2000, 0, 1) && parsed <= now + 24 * 60 * 60 * 1000) return parsed;
+  }
+  return 0;
+}
+
+function listSourcePublications(sources, records, failures) {
+  const failed = new Set((failures || []).map((item) => item && item.url));
+  return (sources || []).filter((source) => source && !(source.localPath)).map((source) => {
+    const url = typeof source === 'string' ? source : source.url;
+    const record = records && records[url];
+    return {
+      url,
+      label: typeof source === 'string' ? '' : String(source.label || ''),
+      publishedAt: Number(record && record.publisherUpdatedAt) || 0,
+      fetchedAt: Number(record && record.acceptedAt) || 0,
+      fetchFailed: failed.has(url),
+    };
+  });
+}
+
+function listPublisherSummary(entries, now = Date.now()) {
+  let dated = 0;
+  let unknown = 0;
+  let stale = 0;
+  for (const item of entries || []) {
+    const publishedAt = Number(item && item.publishedAt) || 0;
+    if (!publishedAt) { unknown++; continue; }
+    dated++;
+    if (now - publishedAt > LIST_PUBLISHER_STALE_MS) stale++;
+  }
+  return { dated, unknown, stale };
+}
+
+function mergedListPublisherSources(...groups) {
+  const byUrl = new Map();
+  for (const group of groups) {
+    for (const entry of (Array.isArray(group) ? group : [])) {
+      if (!entry || !entry.url) continue;
+      const prior = byUrl.get(entry.url);
+      if (!prior || Number(entry.fetchedAt || 0) > Number(prior.fetchedAt || 0)
+          || (Number(entry.fetchedAt || 0) === Number(prior.fetchedAt || 0) && !entry.fetchFailed)) {
+        byUrl.set(entry.url, entry);
+      }
+    }
+  }
+  return Array.from(byUrl.values());
+}
 
 function listIntegritySeed(value) {
   const existing = String(value || '').toLowerCase();
@@ -14918,7 +15018,7 @@ function listIntegrityAlert(scope, url, reason, extra) {
   return alert;
 }
 
-function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, optionRules, seed) {
+function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, optionRules, seed, publisherUpdatedAt) {
   const domainCount = Array.isArray(domains) ? domains.length : 0;
   const optionRuleCount = Array.isArray(optionRules) ? optionRules.length : 0;
   const semanticSketch = listSemanticSketch(seed, domains, optionRules);
@@ -14957,6 +15057,7 @@ function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, o
     optionRuleCount,
     semanticSketch,
     acceptedAt: Date.now(),
+    publisherUpdatedAt: Number(publisherUpdatedAt) || 0,
     url,
   };
   if (reasons.length) return { ok: false, record, reason: reasons.join('; ') };
@@ -15024,7 +15125,8 @@ async function fetchListSource(url, reason, integrity) {
       byteLength,
       domains,
       optionRules,
-      integrity && integrity.seed
+      integrity && integrity.seed,
+      parseListPublisherDate(text)
     );
     if (!verdict.ok) {
       console.warn('[WardenOne] source integrity rejected (' + reason + '):', url, verdict.reason);
@@ -15181,7 +15283,7 @@ function supplementalSourceDomains(lists) {
   return out;
 }
 
-function supplementalSourceRecord(source, hash, byteLength, lists, seed) {
+function supplementalSourceRecord(source, hash, byteLength, lists, seed, publisherUpdatedAt) {
   return {
     url: source && source.url,
     label: source && source.label,
@@ -15190,10 +15292,11 @@ function supplementalSourceRecord(source, hash, byteLength, lists, seed) {
     counts: supplementalListCounts(lists),
     semanticSketch: listSemanticSketch(seed, supplementalSourceDomains(lists), []),
     acceptedAt: Date.now(),
+    publisherUpdatedAt: Number(publisherUpdatedAt) || 0,
   };
 }
 
-function evaluateSupplementalSourceIntegrity(source, previous, hash, byteLength, lists, seed) {
+function evaluateSupplementalSourceIntegrity(source, previous, hash, byteLength, lists, seed, publisherUpdatedAt) {
   const reasons = [];
   if (previous) {
     const byteReason = listCountDriftReason(previous.byteLength, byteLength, 'supplemental byte size', {
@@ -15210,7 +15313,7 @@ function evaluateSupplementalSourceIntegrity(source, previous, hash, byteLength,
       if (reason) reasons.push(reason);
     }
   }
-  const record = supplementalSourceRecord(source, hash, byteLength, lists, seed);
+  const record = supplementalSourceRecord(source, hash, byteLength, lists, seed, publisherUpdatedAt);
   const semanticReason = listSemanticDriftReason(previous, hash, record.semanticSketch);
   if (semanticReason) reasons.push(semanticReason);
   if (reasons.length) return { ok: false, record, reason: reasons.join('; ') };
@@ -15248,7 +15351,7 @@ async function fetchSupplementalListSource(source, reason, previousRecord, seed)
     const byteLength = fetched.byteLength || utf8ByteLength(text);
     const lists = parseSupplementalListText(source, text);
     const hash = await sha256TextHex(text);
-    const verdict = evaluateSupplementalSourceIntegrity(source, previousRecord, hash, byteLength, lists, seed);
+    const verdict = evaluateSupplementalSourceIntegrity(source, previousRecord, hash, byteLength, lists, seed, parseListPublisherDate(text));
     if (!verdict.ok) {
       return {
         ok: false,
@@ -15386,6 +15489,7 @@ async function updateSupplementalLists(reason) {
     keptPrevious: merged.keptPrevious,
     sourceIntegritySeed: semanticSeed,
     sourceRecords: acceptedRecords,
+    publisherSources: listSourcePublications(sources, acceptedRecords, failures),
   };
   await localSet({ [SUPPLEMENTAL_LIST_STORAGE_KEY]: lists, [SUPPLEMENTAL_LIST_META_KEY]: meta });
   try { await loadGrabberFeed(); } catch (_) {}
@@ -15757,6 +15861,8 @@ async function updateRemoteListsCore(reason) {
       reason,
       sourceSetId,
       sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
+      publisherSources: listSourcePublications(sources,
+        Object.assign({}, savedIntegrity && savedIntegrity.sources, acceptedIntegrityRecords), sourceFailures),
       storedDomainCount: storedDomains.storedCount || 0,
       integrity: {
         sourcePins: Object.keys((savedIntegrity && savedIntegrity.sources) || {}).length,
@@ -16578,7 +16684,7 @@ async function tabProtectionEvidence(tab, cfg) {
   return { state: 'failed', host, text: 'The in-page engine is not running on ' + host + '. Verify & Repair reloads the tab to put it back.' };
 }
 
-function healthListCounts(meta, auxMeta) {
+function healthListCounts(meta, auxMeta, publisherSources) {
   const active = Number((meta && (meta.activeCount || meta.activeRuleCount)) || 0);
   const total = Number((meta && (meta.totalCount || meta.count)) || 0);
   const auxCounts = (auxMeta && auxMeta.counts) || {};
@@ -16592,6 +16698,7 @@ function healthListCounts(meta, auxMeta) {
     total,
     auxTotal,
     sources: meta && meta.sources ? meta.sources : null,
+    publisher: listPublisherSummary(publisherSources),
   };
 }
 
@@ -16602,6 +16709,7 @@ async function buildProtectionHealthSummary(tab) {
     'wardenone_history',
     'wardenone_list_meta',
     SUPPLEMENTAL_LIST_META_KEY,
+    'wardenone_adshield_cosmetic_publishers',
     EXT_ALERTS_KEY,
     EXT_WATCH_STATUS_KEY,
     typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'wardenone_startup_report',
@@ -16613,7 +16721,12 @@ async function buildProtectionHealthSummary(tab) {
   const blocked24h = hist.filter((e) => isBlockLike(e && e.type) && now - Number((e && e.at) || 0) <= 24 * 60 * 60 * 1000).length;
   const meta = store && store.wardenone_list_meta;
   const auxMeta = store && store[SUPPLEMENTAL_LIST_META_KEY];
-  const list = healthListCounts(meta, auxMeta);
+  const publisherSources = mergedListPublisherSources(
+    meta && meta.publisherSources,
+    auxMeta && auxMeta.publisherSources,
+    store && store.wardenone_adshield_cosmetic_publishers,
+  );
+  const list = healthListCounts(meta, auxMeta, publisherSources);
   const listAge = list.updated ? now - list.updated : 0;
   const issues = [];
   const addIssue = (severity, text, topLevel, extra) => {
@@ -16628,8 +16741,12 @@ async function buildProtectionHealthSummary(tab) {
   if (cfg.silentMode === true) addIssue('info', 'Silent mode is hiding most popups and badge feedback.');
   if (cfg.watchExtensionPermissions === false) addIssue('info', 'Extension permission-change alerts are off.');
   if (!list.updated && cfg.autoUpdateLists !== false) addIssue('info', 'Remote lists have not updated yet; built-in rules are active.');
-  else if (listAge > 7 * 24 * 60 * 60 * 1000) addIssue('info', 'Remote lists are more than 7 days old.');
-  else if (listAge > 72 * 60 * 60 * 1000) addIssue('info', 'Remote lists are getting stale.');
+  else if (listAge > 7 * 24 * 60 * 60 * 1000) addIssue('info', 'WardenOne last fetched remote lists more than 7 days ago.');
+  else if (listAge > 72 * 60 * 60 * 1000) addIssue('info', 'WardenOne has not fetched remote lists recently.');
+  if (list.publisher.stale) {
+    addIssue('info', list.publisher.stale + (list.publisher.stale === 1 ? ' feed has' : ' feeds have')
+      + ' a publisher date over 30 days old. Downloaded rules remain active. Only the publisher can date a new edition; see Blocklist for the sources.');
+  }
   // A feed that did not answer is not a problem you have. Updates merge sources and never wipe
   // on a failed fetch, so the copy already downloaded stays active and nothing is unprotected --
   // the next run usually picks it up. Reporting every transient miss put a permanent-looking
@@ -16764,7 +16881,8 @@ async function buildProtectionHealthSummary(tab) {
   const setupIssue = issues.find((i) => i.severity === 'warn' && i.topLevel);
   const highest = criticalIssue ? 'danger' : setupIssue ? 'warning' : 'ok';
   const verified = tabEvidence.state === 'verified';
-  const status = cfg.enabled === false ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : verified ? "You're safe" : 'Protections on';
+  const publisherAgeNote = list.publisher.stale > 0;
+  const status = cfg.enabled === false ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : verified && !publisherAgeNote ? "You're safe" : 'Protections on';
   const detail = cfg.enabled === false
     ? 'Turn the master switch back on to re-enable WardenOne.'
     : criticalIssue
@@ -16772,9 +16890,11 @@ async function buildProtectionHealthSummary(tab) {
       : setupIssue
         ? setupIssue.text
         : verified
-          ? (issues.length
-            ? 'Core shields are running on this page. A few notes are tucked below.'
-            : 'Core shields are running on this page and watching quietly.')
+          ? (publisherAgeNote
+            ? 'Core shields are running on this page. Some publishers have not dated a new feed edition recently; see Blocklist for the sources.'
+            : issues.length
+              ? 'Core shields are running on this page. A few notes are tucked below.'
+              : 'Core shields are running on this page and watching quietly.')
           : 'No issue found in what could be checked. ' + tabEvidence.text;
 
   return {
@@ -19702,6 +19822,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Downloaded protection lists', sensitivity: 'public list data', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Until refreshed or all data is erased', siteErase: 'keep', keys: [
     'wardenone_adshield_cosmetic', 'wardenone_adshield_cosmetic_at',
     'wardenone_adshield_cosmetic_checked_at', 'wardenone_adshield_cosmetic_hash',
+    'wardenone_adshield_cosmetic_publishers',
     'wardenone_aux_lists', 'wardenone_aux_list_meta',
     'wardenone_cryptominer_domains', 'wardenone_grabber_domains', 'wardenone_search_junk_domains',
     'wardenone_malware_hashes', 'wardenone_openphish_feed_cache', 'wardenone_list_integrity',
@@ -21797,6 +21918,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           addedAt: now,
           updatedAt: now,
           checkedAt: now,
+          publisherUpdatedAt: parseListPublisherDate(got.text),
           error: '',
         });
         const commit = await commitUserFilters({ own: await readUserRulesText(), lists, storeLists: true });

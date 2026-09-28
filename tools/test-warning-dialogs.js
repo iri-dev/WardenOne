@@ -85,6 +85,7 @@ function makeDom() {
       removeChild(c) {
         const i = this.children.indexOf(c);
         if (i >= 0) this.children.splice(i, 1);
+        c.parentNode = null;
         this.firstChild = this.children[0] || null;
         return c;
       },
@@ -201,8 +202,11 @@ function buildDispose() {
   const root = ov.root();
   const safe = dom.node('button');
   const risky = dom.node('button');
+  const disabled = dom.node('button');
+  disabled.disabled = true;
   root.appendChild(safe);
   root.appendChild(risky);
+  root.appendChild(disabled);
   ov.mount();
   ov.dialog({ label: 'WardenOne phishing warning', description: 'Check the address.' });
 
@@ -274,6 +278,7 @@ function buildDispose() {
   check('Tab on the last control wraps to the first', prevented === 1 && safe.focused > 1);
   press(true, safe);
   check('Shift+Tab on the first control wraps to the last', prevented === 2 && risky.focused > 0);
+  check('the disabled button is excluded from the dialog tab sequence', disabled.focused === 0);
 
   // ---------------------------------------------------------------------------
   // 4. Teardown. This is the part that breaks the host page if it leaks.
@@ -311,6 +316,9 @@ function buildDispose() {
   check('both copies bind the ring inside the shadow root rather than on the host',
     /focusRing = woFocusRing\(shadow\);/.test(BRIDGE) && /focusRing = woFocusRing\(shadow\);/.test(OAUTH),
     'a ring bound on the host only ever sees the host');
+  check('both owned-dialog copies skip disabled controls and restore focus after reparenting',
+    BRIDGE.includes('!n.disabled && !n.hidden') && OAUTH.includes('!n.disabled && !n.hidden')
+      && BRIDGE.includes('let dialogFocus = null;') && OAUTH.includes('let dialogFocus = null;'));
   check('the indicator uses an outline, which forced-colors mode honours',
     /setProperty\('outline', '3px solid currentColor', 'important'\)/.test(BRIDGE)
     && /setProperty\('outline', '3px solid currentColor', 'important'\)/.test(OAUTH));
@@ -362,8 +370,11 @@ function buildEngine() {
   const card = dom.document.createElement('div');
   const safe = dom.document.createElement('button');
   const risky = dom.document.createElement('button');
+  const disabled = dom.document.createElement('button');
+  disabled.disabled = true;
   card.appendChild(safe);
   card.appendChild(risky);
+  card.appendChild(disabled);
   host.appendChild(card);
   dom.document.body.appendChild(host);
 
@@ -413,6 +424,7 @@ function buildEngine() {
   check('Tab on the last engine control wraps to the first', prevented === 1 && safe.focused > 1);
   press(true, safe);
   check('Shift+Tab on the first engine control wraps to the last', prevented === 2 && risky.focused > 0);
+  check('the disabled engine action is excluded from tab wraparound', disabled.focused === 0);
   press(false, safe);
   check('Tab in the middle of the sequence is left alone', prevented === 2);
 
@@ -502,6 +514,12 @@ function buildEngine() {
 
   check('a live overlay is registered while it is on screen', sandbox.__overlays.size === 1);
   check('opening a dialog moves focus off the page', prior.focused > 0 && dom.document.activeElement !== prior);
+
+  const beforeHeal = btn.focused;
+  ov.hostNode().remove();
+  dom.document.activeElement = dom.document.body;
+  ov.mount();
+  check('replacing a removed warning restores focus inside its dialog', btn.focused > beforeHeal && dom.document.activeElement === btn);
 
   ov.destroy();
   check('destroy deregisters the overlay', sandbox.__overlays.size === 0);

@@ -218,6 +218,7 @@ function checkContentBuild() {
   'tools/test-engine-config-ownership.js',
   'tools/test-engine-config-source.js',
   'tools/test-permission-chain-trust.js',
+  'tools/test-optional-history-permission.js',
   'tools/test-warning-dialogs.js',
   'tools/test-phishing-false-positives.js',
   'tools/test-element-picker.js',
@@ -255,6 +256,7 @@ function checkContentBuild() {
   'tools/test-eyeshield-native-site-themes.js',
   'tools/test-eyeshield-preload-hint.js',
   'tools/test-protection-health.js',
+  'tools/test-list-publisher-dates.js',
   'tools/test-health-extension-drop.js',
   'tools/test-twitch-adblock.js',
   'tools/test-spotify-adblock.js',
@@ -490,6 +492,7 @@ checkCommand('Engine allowlist honesty tests', ['tools/test-engine-allowlist-hon
 checkCommand('Logger reconnect tests', ['tools/test-logger-reconnect.js']);
 checkCommand('Script Drift storage tests', ['tools/test-script-drift-storage.js']);
 checkCommand('Permission justification tests', ['tools/test-permission-justification.js']);
+checkCommand('Optional history permission tests', ['tools/test-optional-history-permission.js']);
 checkCommand('XSS Behavior Guard tests', ['tools/test-xss-behavior-guard.js']);
 checkCommand('XSS sink cost tests', ['tools/test-xss-sink-cost.js']);
 checkCommand('XSS event-boundary tests', ['tools/test-xss-event-boundary.js']);
@@ -633,6 +636,7 @@ checkCommand('package completeness tests', ['tools/test-package-completeness.js'
 checkCommand('privacy disclosure contract', ['tools/test-privacy-disclosure.js']);
 checkCommand('permission-chain trust tests', ['tools/test-permission-chain-trust.js']);
 checkCommand('warning dialog tests', ['tools/test-warning-dialogs.js']);
+checkCommand('warning accessibility tests', ['tools/test-warning-accessibility.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
 checkCommand('behavioural false-positive tests', ['tools/test-behavioral-false-positives.js']);
 checkCommand('google cleanup tests', ['tools/test-google-cleanup.js']);
@@ -642,6 +646,7 @@ checkCommand('IP privacy tests', ['tools/test-ip-privacy.js']);
 checkCommand('location guard tests', ['tools/test-location-guard.js']);
 checkCommand('supplemental list tests', ['tools/test-supplemental-lists.js']);
 checkCommand('list integrity enforcement tests', ['tools/test-list-integrity-enforcement.js']);
+checkCommand('list publisher date tests', ['tools/test-list-publisher-dates.js']);
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
 checkCommand('EyeShield YouTube player tests', ['tools/test-eyeshield-yt-player.js']);
