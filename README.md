@@ -57,6 +57,29 @@ you the evidence behind the decisions it makes.
 2. Open `chrome://extensions` and enable **Developer mode** in the top-right.
 3. Select **Load unpacked**, then choose the unzipped folder containing `manifest.json`.
 
+## Verify the GitHub download
+
+Download [WardenOne-latest.zip.sha256](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip.sha256) alongside the ZIP before installing. The release notes show the same SHA-256 and a link to its GitHub build attestation. Because `latest-build` is replaced after each passing push, download the ZIP and checksum together; if they differ, fetch both again.
+
+On Windows PowerShell, in the directory containing both files:
+
+```powershell
+$expected = ((Get-Content .\WardenOne-latest.zip.sha256 -Raw) -split '\s+')[0]
+$actual = (Get-FileHash .\WardenOne-latest.zip -Algorithm SHA256).Hash
+if ($actual -ine $expected) { throw 'WardenOne ZIP checksum mismatch' }
+'SHA-256 matches'
+```
+
+On Linux, run `sha256sum -c WardenOne-latest.zip.sha256`; on macOS, run `shasum -a 256 -c WardenOne-latest.zip.sha256`.
+
+To verify that GitHub Actions in **this repository** attested the downloaded ZIP from `main`, use the [GitHub CLI](https://cli.github.com/):
+
+```text
+gh attestation verify WardenOne-latest.zip --repo iri-dev/WardenOne --signer-workflow iri-dev/WardenOne/.github/workflows/gate.yml --source-ref refs/heads/main
+```
+
+The checksum detects changed or mismatched bytes. The attestation checks those bytes against the claimed build origin; neither check proves that every protection is bug-free. The attested source commit should match the full commit shown in the release notes. An older ZIP from this repository can also have a valid attestation, so use the current release's checksum and commit when checking the rolling download.
+
 ## First run
 
 Choose **Recommended** for WardenOne's compatibility-conscious defaults, or **Maximum
@@ -1046,6 +1069,13 @@ Protection Health asks whether the expected engines, registrations, lists and pa
 present and responding. It does not equate “setting saved” with “protection running”, and a failure
 replaces the reassuring state instead of being hidden beneath it.
 
+The Blocklist section distinguishes when WardenOne fetched a remote feed from the date in that
+feed's publisher header. Open **Publisher dates** to inspect individual sources. A date over 30
+days old is flagged even after a successful download; a feed without a reliable dated header says
+**publisher date unknown**. User-subscribed lists show the same distinction in **My filters**.
+These dates inform list health and do not disable existing rules.
+For a source-by-source live header audit, run `node tools/check-feed-publishers.js`.
+
 <p align="center">
   <a href="docs/screenshots/02-protection-health.webp">
     <img src="docs/screenshots/02-protection-health.webp" alt="Protection Health expanded in the popup, showing switched-on shields, recent blocks and list freshness" width="520">
@@ -1451,7 +1481,11 @@ preload. These are performance choices, kept separate from security verdicts.
 ## EyeShield
 
 EyeShield remembers per-site Normal, Light, Dark or OLED-black Ultra display modes with brightness,
-contrast, saturation, warmth and greyscale controls.
+contrast, saturation, warmth and greyscale controls. The popup groups the extra adjustments under
+**More reading controls** and announces slider values as percentages. Security warnings keep their
+keyboard and screen-reader support independently of EyeShield; no display mode needs to be enabled
+to use them. The local accessibility check and its remaining spoken-screen-reader pass are recorded
+in [the accessibility audit](docs/accessibility-audit.md).
 
 ## WardenOne Themes
 
@@ -1616,7 +1650,7 @@ details, antivirus verdicts and recovery steps for anyone who ran the false copy
 
 Because a browser security extension holds meaningful permissions, source authenticity matters. A
 build from another repository, file host or website was not produced by this project, even if the
-screenshots and description were copied exactly.
+screenshots and description were copied exactly. [Verify the GitHub download](#verify-the-github-download) before loading it.
 
 # Feedback & security reporting
 

@@ -2846,7 +2846,7 @@
       },
       focusables=()=>{
         try{
-          return Array.prototype.slice.call(box.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'))
+          return Array.prototype.slice.call(box.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')).filter(n=>!n.disabled&&!n.hidden&&n.getAttribute('aria-hidden')!=="true"&&n.getAttribute('tabindex')!=="-1"&&(!n.getClientRects||n.getClientRects().length>0))
         }
         catch(_){
           return[]

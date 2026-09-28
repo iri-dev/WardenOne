@@ -46,6 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,7 +66,20 @@ jobs:
       - name: Verify release archive inventory
         run: node tools/check-package-archive.js WardenOne-latest.zip
 
+      - name: Write and verify the ZIP checksum
+        run: |
+          sha256sum WardenOne-latest.zip > WardenOne-latest.zip.sha256
+          sha256sum --check WardenOne-latest.zip.sha256
+
+      - name: Attest the ZIP build provenance
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: WardenOne-latest.zip
+
       - name: Write the notes
+        env:
+          ATTESTATION_URL: ${{ steps.provenance.outputs.attestation-url }}
         run: |
           # Release notes say what changed. The old version of this step said only
           # how the build was produced -- the commit it came from and that the gate
@@ -109,6 +124,9 @@ jobs:
             echo 'change that passes the gate, so the download here is never behind the code.'
             echo
             echo "Version \`$(node -p "require('./manifest.json').version")\` · commit \`$(git rev-parse --short HEAD)\`"
+            echo "Source commit: \`$GITHUB_SHA\`"
+            echo "ZIP SHA-256: \`$(cut -d' ' -f1 WardenOne-latest.zip.sha256)\`"
+            echo "[GitHub build attestation]($ATTESTATION_URL) · [How to verify](https://github.com/iri-dev/WardenOne#verify-the-github-download)"
           } > notes.md
 
       - name: Move the rolling tag to this commit
@@ -123,11 +141,21 @@ jobs:
           # Updated in place rather than recreated, so watchers are not notified of a
           # new release on every push.
           if gh release view latest-build >/dev/null 2>&1; then
-            gh release upload latest-build WardenOne-latest.zip --clobber
+            gh release upload latest-build WardenOne-latest.zip WardenOne-latest.zip.sha256 --clobber
             gh release edit latest-build --notes-file notes.md --prerelease=false --latest
           else
-            gh release create latest-build WardenOne-latest.zip \
+            gh release create latest-build WardenOne-latest.zip WardenOne-latest.zip.sha256 \
               --title "Latest build (main)" \
               --notes-file notes.md \
               --latest
           fi
+
+      - name: Verify the assets served by GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p downloaded-release
+          gh release download latest-build --pattern 'WardenOne-latest.zip*' --dir downloaded-release
+          cmp WardenOne-latest.zip downloaded-release/WardenOne-latest.zip
+          cmp WardenOne-latest.zip.sha256 downloaded-release/WardenOne-latest.zip.sha256
+          (cd downloaded-release && sha256sum --check WardenOne-latest.zip.sha256)

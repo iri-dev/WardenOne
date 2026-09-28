@@ -95,6 +95,23 @@ async function run() {
       throw new Error('The real-browser warning removal and owned-overlay check did not pass');
     }
     console.log('[ok] real-browser warning remains in a closed owned overlay after page removal');
+    await cdp.send('Accessibility.enable', {}, sessionId);
+    const ax = await cdp.send('Accessibility.getFullAXTree', {}, sessionId);
+    const dialog = (ax.nodes || []).find((node) => !node.ignored && node.role && node.role.value === 'alertdialog');
+    if (!dialog || !dialog.name || !dialog.name.value) throw new Error('Owned warning has no named alertdialog in the browser accessibility tree');
+    const initialFocus = await cdp.send('Runtime.evaluate', { expression: 'document.activeElement && document.activeElement.id', returnByValue: true }, sessionId);
+    if (!initialFocus.result || initialFocus.result.value !== 'wo-owned-main-warning') throw new Error('Owned warning did not take initial focus');
+    for (let i = 0; i < 5; i++) {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId);
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId);
+      const focused = await cdp.send('Runtime.evaluate', {
+        expression: 'document.activeElement && document.activeElement.id', returnByValue: true,
+      }, sessionId);
+      if (!focused.result || focused.result.value !== 'wo-owned-main-warning') {
+        throw new Error('Tab left the owned warning dialog on step ' + (i + 1) + ': ' + JSON.stringify(focused.result && focused.result.value));
+      }
+    }
+    console.log('[ok] owned warning has a named alertdialog and keeps keyboard focus inside');
     await cdp.send('Runtime.evaluate', {
       expression: `(() => { const node=document.getElementById('wo-owned-main-warning');
         const fragment=document.createDocumentFragment(); fragment.appendChild(node); return !node.isConnected; })()`,
@@ -105,6 +122,10 @@ async function run() {
       expression: `!!document.getElementById('wo-owned-main-warning')`, returnByValue: true,
     }, sessionId);
     if (!reparented.result || reparented.result.value !== true) throw new Error('Reparented warning was not restored');
+    const reparentedFocus = await cdp.send('Runtime.evaluate', {
+      expression: 'document.activeElement && document.activeElement.id', returnByValue: true,
+    }, sessionId);
+    if (!reparentedFocus.result || reparentedFocus.result.value !== 'wo-owned-main-warning') throw new Error('Reparented warning did not restore focus');
     console.log('[ok] reparented warning returns to the page');
     const { sessionId: worker } = await cdp.send('Target.attachToTarget', { targetId: extension.workerTargetId, flatten: true });
     await cdp.send('Runtime.enable', {}, worker);

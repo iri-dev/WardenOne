@@ -118,7 +118,54 @@ function bareIndexLinks(text) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. No hardcoded version anywhere in a link.
+// 3. The mutable rolling asset publishes the digest and provenance of its bytes.
+// ---------------------------------------------------------------------------
+{
+  const rolling = WORKFLOW.split(/\n  rolling-build:/)[1] || '';
+  check('the publishing job may issue a GitHub attestation',
+    /contents: write/.test(rolling) && /id-token: write/.test(rolling)
+      && /attestations: write/.test(rolling));
+  const steps = [
+    'name: Package the extension',
+    'name: Verify release archive inventory',
+    'name: Write and verify the ZIP checksum',
+    'name: Attest the ZIP build provenance',
+    'name: Write the notes',
+    'name: Move the rolling tag to this commit',
+    'name: Publish or refresh the rolling build',
+    'name: Verify the assets served by GitHub',
+  ].map((name) => rolling.indexOf(name));
+  check('package inspection, checksum and attestation all finish before publication',
+    steps.every((at) => at >= 0) && steps.every((at, index) => index === 0 || at > steps[index - 1]));
+  check('the checksum covers the exact ZIP that is uploaded',
+    /sha256sum WardenOne-latest\.zip > WardenOne-latest\.zip\.sha256/.test(rolling)
+      && /sha256sum --check WardenOne-latest\.zip\.sha256/.test(rolling));
+  check('the pinned GitHub attestation action signs that same ZIP',
+    /uses: actions\/attest@[0-9a-f]{40}/.test(rolling)
+      && /subject-path: WardenOne-latest\.zip/.test(rolling));
+  check('both release creation and refresh upload the ZIP and checksum',
+    /gh release upload latest-build WardenOne-latest\.zip WardenOne-latest\.zip\.sha256 --clobber/.test(rolling)
+      && /gh release create latest-build WardenOne-latest\.zip WardenOne-latest\.zip\.sha256/.test(rolling));
+  check('the job downloads and checks the published copies',
+    /gh release download latest-build --pattern 'WardenOne-latest\.zip\*' --dir downloaded-release/.test(rolling)
+      && /cmp WardenOne-latest\.zip downloaded-release\/WardenOne-latest\.zip/.test(rolling)
+      && /cmp WardenOne-latest\.zip\.sha256 downloaded-release\/WardenOne-latest\.zip\.sha256/.test(rolling)
+      && /cd downloaded-release && sha256sum --check WardenOne-latest\.zip\.sha256/.test(rolling));
+  check('release notes identify the full source commit, ZIP digest and attestation',
+    /Source commit:.*\$GITHUB_SHA/.test(rolling)
+      && /ZIP SHA-256:.*WardenOne-latest\.zip\.sha256/.test(rolling)
+      && /steps\.provenance\.outputs\.attestation-url/.test(rolling));
+
+  check('README gives the checksum asset and an origin-constrained verification command',
+    README.includes(LATEST_ASSET + '.sha256')
+      && /Get-FileHash .*WardenOne-latest\.zip -Algorithm SHA256/.test(README)
+      && /gh attestation verify WardenOne-latest\.zip --repo iri-dev\/WardenOne --signer-workflow iri-dev\/WardenOne\/\.github\/workflows\/gate\.yml --source-ref refs\/heads\/main/.test(README));
+  check('the site points readers to the verification steps',
+    SITE.includes('https://github.com/iri-dev/WardenOne#verify-the-github-download'));
+}
+
+// ---------------------------------------------------------------------------
+// 4. No hardcoded version anywhere in a link.
 // ---------------------------------------------------------------------------
 {
   for (const [label, text] of [['README.md', README], ['site/index.html', SITE]]) {
@@ -129,7 +176,7 @@ function bareIndexLinks(text) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. The index page is still allowed where it is genuinely an index.
+// 5. The index page is still allowed where it is genuinely an index.
 //    This is the anti-overcorrection half: if a future edit "fixed" the footer nav and the
 //    provenance list too, the checks above would all still pass and nobody would notice the
 //    index had stopped being linked at all.
@@ -143,7 +190,7 @@ function bareIndexLinks(text) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Negative control. If these did not fail, the checks above would prove nothing.
+// 6. Negative control. If these did not fail, the checks above would prove nothing.
 // ---------------------------------------------------------------------------
 {
   const OLD_README = '1. Download the latest `WardenOne-vX.Y.Z.zip` from the [Releases]('
