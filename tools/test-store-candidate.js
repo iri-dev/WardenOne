@@ -5,7 +5,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
+const { spawnSync } = require('child_process');
 const { createCandidate, verifyCandidate } = require('./build-store-candidate.js');
+const { loadProfile, storeOmitted } = require('./build-store-package.js');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wardenone-candidate-test-'));
 try {
@@ -13,7 +15,14 @@ try {
   assert.strictEqual(verifyCandidate(first.jsonPath).record.zipSha256, first.record.zipSha256);
   assert(first.record.files.some((f) => f.name === 'manifest.json'));
   assert(!first.record.files.some((f) => f.name.startsWith('tools/')));
-  assert(!first.record.files.some((f) => f.name === 'eyeshield.js'));
+  const committedProfile = spawnSync('git', ['show', first.record.commit + ':build-profile.js'], { cwd: path.resolve(__dirname, '..'), encoding: 'utf8' });
+  assert.strictEqual(committedProfile.status, 0);
+  const { build } = loadProfile(committedProfile.stdout);
+  const omitted = new Set(storeOmitted(build));
+  const names = new Set(first.record.files.map((f) => f.name));
+  for (const [id, feature] of Object.entries(build.features)) {
+    for (const file of feature.files) assert.strictEqual(names.has(file), !omitted.has(id));
+  }
   const second = createCandidate(dir);
   assert.strictEqual(second.record.zipSha256, first.record.zipSha256);
   const bytes = fs.readFileSync(first.zipPath);

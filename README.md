@@ -1592,10 +1592,10 @@ profile of the current build, and how to read one, are in [docs/perf/README.md](
 
 ## The Store package
 
-The GitHub build is the whole of WardenOne. Chrome's Web Store allows an extension one narrow
-purpose, and four features here -- EyeShield, Memory Shield, Tab Limit and Twitch Rewind -- are
-separate goals from protection, so a Store package would leave them out: the files, the manifest
-entries and the settings, not just the description. `node tools/build-store-package.js` builds
+The GitHub build is the whole of WardenOne. The proposed Chrome Web Store package includes
+EyeShield's optional page readability controls and Memory Shield's resource controls, including
+Tab Limit. It leaves out Twitch Rewind as a separate media utility: its files, manifest entries and
+settings, not just the description. `node tools/build-store-package.js` builds
 that package from a commit, byte-for-byte reproducibly, and the worker and popup read
 `build-profile.js` to run cleanly without what was left out. The decision and every popup
 section's place under the one purpose are written down in

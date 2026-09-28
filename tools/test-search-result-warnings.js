@@ -33,6 +33,7 @@ const { h, makeDocument } = require('./lib/mini-dom');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const STARTUP = fs.readFileSync(path.join(ROOT, 'background-startup.js'), 'utf8');
 const SCRIPT = fs.readFileSync(path.join(ROOT, 'search-junk.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
@@ -248,6 +249,30 @@ check('the pressure trim cuts the count with the array',
 }
 
 /* ---- what warns, and what must not ---------------------------------------- */
+{
+  /* The real worker brand detector feeds the real search-result scorer. A mocked brand result
+     cannot catch a false flag that starts in the detector, as the Disboard report did. */
+  const first = STARTUP.indexOf('var LOGIN_BRAND_PROFILES = [');
+  const last = STARTUP.indexOf('async function runStartupCheck(', first);
+  check('the worker brand detector is available', first >= 0 && last > first);
+  if (first >= 0 && last > first) {
+    const brandWorld = {
+      String, Array, Set, Math, RegExp,
+      regDomainBg: (host) => {
+        const parts = String(host || '').replace(/^www\./, '').split('.').filter(Boolean);
+        return parts.slice(-2).join('.');
+      },
+    };
+    vm.createContext(brandWorld);
+    vm.runInContext(STARTUP.slice(first, last) + '\nglobalThis.brandRisk = loginBrandRiskForHost; globalThis.lookalike = looksLikeLookalikeHost;', brandWorld);
+    const score = makeScorer({ brand: (h) => brandWorld.brandRisk(h, ''), lookalike: (h) => brandWorld.lookalike(h) });
+    check('a Disboard server result has no fake-Discord warning', score('disboard.org', CTX) === null);
+    check('a plain Discord directory suffix has no typo warning', score('discords.example', CTX) === null);
+    check('a Discord login lure still warns', !!score('discord-login.example', CTX));
+    check('a visual Discord substitution still warns', !!score('disc0rd.example', CTX));
+    check('a Discord subdomain on an unrelated site still warns', !!score('discord.evil.example', CTX));
+  }
+}
 {
   const score = makeScorer({ brand: (h) => (/paypa1/.test(h) ? { brand: 'PayPal', matched: h, kind: 'typosquat' } : null) });
   const r = score('paypa1-secure.example', CTX);
