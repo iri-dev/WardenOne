@@ -92,6 +92,36 @@ function harness(initialLocal, initialSession) {
   assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, 'secret');
   assert.strictEqual(h.local.wardenone_config.siteOverrides, undefined);
 
+  /* Seed every WardenOne-named runtime storage key found in the shipped scripts.
+     This catches an erase implementation that switches from a full store clear to a
+     hand-maintained list and accidentally leaves one feature's records behind. */
+  const runtime = fs.readdirSync(root).filter((name) => name.endsWith('.js')
+    && name !== 'content.min.js' && name !== 'fingerprint-realm.js');
+  const ownedKeys = new Set();
+  for (const name of runtime) {
+    const source = fs.readFileSync(path.join(root, name), 'utf8');
+    for (const match of source.matchAll(/\bwardenone_[a-z0-9_]+\b/g)) ownedKeys.add(match[0]);
+  }
+  assert(ownedKeys.size >= 40, 'the all-store sentinel census unexpectedly shrank');
+  const localSentinels = {};
+  const sessionSentinels = {};
+  for (const key of ownedKeys) {
+    localSentinels[key] = { sentinel: 'local:' + key };
+    sessionSentinels[key] = { sentinel: 'session:' + key };
+  }
+  localSentinels.wardenone_config = cfg;
+  localSentinels.wardenone_pending_downloads = {};
+  sessionSentinels.wardenone_pending_downloads = {};
+  h = harness(localSentinels, sessionSentinels);
+  const census = await h.api.inspectWardenOneData();
+  assert.strictEqual(census.records.length, ownedKeys.size * 2);
+  assert.strictEqual((await h.api.eraseWardenOneData('settings-and-keys')).ok, true);
+  assert.deepStrictEqual(Object.keys(h.local), ['wardenone_config']);
+  assert.deepStrictEqual(Object.keys(h.session), ['wardenone_erase_rebuild']);
+  assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, 'secret');
+  assert.strictEqual(h.local.wardenone_config.siteOverrides, undefined);
+  assert.strictEqual(h.dynamic.length + h.sessionRules.length, 0);
+
   assert(html.includes('id="privacy-data-inspect"') && html.includes('id="privacy-data-erase"'));
   assert(popup.includes("ask({ kind: 'privacy-data-inspect' })") && popup.includes("ask({ kind: 'privacy-data-erase', mode: choice })"));
   assert(bg.includes("msg.kind === 'privacy-data-erase' && messageSenderIsExtensionPage(sender)"));

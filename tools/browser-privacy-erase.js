@@ -29,11 +29,13 @@ async function run() {
     await sleep(500);
     const evaluate = async (expression, target = sessionId) => {
       const value = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, target);
-      if (value.exceptionDetails) throw new Error(value.exceptionDetails.text);
+      if (value.exceptionDetails) throw new Error((value.exceptionDetails.exception && value.exceptionDetails.exception.description) || value.exceptionDetails.text);
       return value.result && value.result.value;
     };
     await evaluate(`chrome.storage.local.set({wardenone_history:[{url:'https://erase-sentinel.example/',at:Date.now()}],
+      wardenone_erase_sentinel_local:{site:'erase-sentinel.example'},
       wardenone_config:{enabled:true,downloadSafeBrowsingKey:'erase-test-secret',siteOverrides:{'erase-sentinel.example':{adShield:false}}}})`);
+    await evaluate(`chrome.storage.session.set({wardenone_erase_sentinel_session:{site:'erase-sentinel.example'}})`);
     const before = await evaluate(`new Promise(r=>chrome.runtime.sendMessage({kind:'privacy-data-inspect'},r))`);
     if (!before || !before.ok || !before.records.some((x) => x.key === 'wardenone_history')) throw new Error('Seeded history was absent from preview');
     const erased = await evaluate(`new Promise(r=>chrome.runtime.sendMessage({kind:'privacy-data-erase',mode:'settings'},r))`);
@@ -43,8 +45,8 @@ async function run() {
     const attached = await cdp.send('Target.attachToTarget', { targetId: next.targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, attached.sessionId);
     await sleep(500);
-    const after = await evaluate(`chrome.storage.local.get(null).then(x=>({
-      sentinel:JSON.stringify(x).includes('erase-sentinel.example'),
+    const after = await evaluate(`Promise.all([chrome.storage.local.get(null),chrome.storage.session.get(null)]).then(([x,s])=>({
+      sentinel:JSON.stringify(x).includes('erase-sentinel.example')||JSON.stringify(s).includes('erase-sentinel.example'),
       key:x.wardenone_config&&x.wardenone_config.downloadSafeBrowsingKey,
       enabled:x.wardenone_config&&x.wardenone_config.enabled,
       keys:Object.keys(x).length}))`, attached.sessionId);

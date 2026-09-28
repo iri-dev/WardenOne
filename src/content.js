@@ -104,10 +104,12 @@
       const el=this.seen.get(id);
       return !!(el&&el.isConnected)
     },
-    mark(id,el){
+    mark(id,el,decisionId){
       this.seen.set(id,el);
       try{
-        __woEmit({type:"warning_panel",detail:{id:String(id).slice(0,64)}})
+        const detail={id:String(id).slice(0,64)};
+        if(Number.isInteger(decisionId)&&decisionId>0)detail.decisionId=decisionId;
+        __woEmit({type:"warning_panel",detail:detail})
       }
       catch(_){
 
@@ -9012,10 +9014,25 @@
 
       },
       pageRiskReason=el=>WO.__pageRisk&&WO.__pageRisk.phishing?"This page looks like a fake/look-alike of "+(WO.__pageRisk.brand||"a real site"):isInsecure?"This page is not secure (http://)  -  anything you paste can be read in transit":formGoesForeign(el)?"This form sends what you type to a different website":"";
-      let pasteWarned=!1;
+      let pasteWarned=!1,
+      pasteDecision=null,
+      pasteDecisionSeq=0,
+      pasteDecisionId=0;
+      woOn(document,"wo-event",e=>{
+        const d=e&&e.detail;
+        if(!d||"warning_decision"!==d.type||"bridge"!==d.src||!__woEventTrusted(d))return;
+        const seq=Number(d.eseq);
+        if(!Number.isInteger(seq)||seq<=pasteDecisionSeq||!d.detail||"wo-paste-warn"!==d.detail.id||d.detail.decisionId!==pasteDecisionId)return;
+        pasteDecisionSeq=seq;
+        const proceed=pasteDecision;
+        pasteDecision=null;
+        if(proceed)try{proceed()}catch(_){}
+      });
       const showPastePanel=(reason,
       onConfirm)=>{
         try{
+          pasteDecision=null;
+          pasteDecisionId++;
           const old=document.getElementById("wo-paste-warn");
           if(old&&old.remove(),
           !document.body&&!document.documentElement)return;
@@ -9047,6 +9064,7 @@
           cancel.textContent="Cancel paste",
           cancel.addEventListener("click",
           ()=>{
+            pasteDecision=null;
             try{
               wrap.remove()
             }
@@ -9056,31 +9074,18 @@
 
           }),
           row.appendChild(cancel);
-          const go=document.createElement("button");
+          const go=document.createElement("div");
           go.setAttribute("style",
-          "flex:none!important;border:1px solid rgba(192,57,43,.4)!important;cursor:pointer!important;background:rgba(192,57,43,.08)!important;color:#c0392b!important;border-radius:10px!important;padding:10px 14px!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
-          go.textContent="Paste anyway",
-          go.addEventListener("click",
-          e=>{
-            if(!e.isTrusted||!wrap.isConnected)return;
-            try{
-              wrap.remove()
-            }
-            catch(_){
-
-            }
-            try{
-              onConfirm()
-            }
-            catch(_){
-
-            }
-
-          }),
+          "flex:none!important;color:#7a2020!important;font-family:Quicksand,system-ui,sans-serif!important;font-weight:700!important;font-size:12.5px!important;"),
+          go.textContent="Use WardenOne's separate warning to paste anyway",
           row.appendChild(go),
+          pasteDecision=()=>{
+            try{wrap.remove()}catch(_){}
+            onConfirm()
+          },
           wrap.appendChild(row),
           (document.body||document.documentElement).appendChild(wrap),
-          __woWarn.mark("wo-paste-warn",wrap)
+          __woWarn.mark("wo-paste-warn",wrap,pasteDecisionId)
         }
         catch(_){
 
@@ -9090,7 +9095,7 @@
       insertPastedText=(target,
       text)=>{
         try{
-          if(!target)return;
+          if(!target||!target.isConnected)return;
           if("string"==typeof target.value&&target.setRangeText){
             const s=null!=target.selectionStart?target.selectionStart:target.value.length,
             en=null!=target.selectionEnd?target.selectionEnd:target.value.length;

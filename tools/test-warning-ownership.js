@@ -68,6 +68,10 @@ const W = sandbox.__W;
   check('marking a panel sends only its ID over the signed engine event bus',
     emitted.some((event) => event.type === 'warning_panel' && event.detail.id === 'wo-paste-warn'
       && Object.keys(event.detail).length === 1));
+  W.mark('wo-paste-warn', { isConnected: true }, 7);
+  check('a paste warning binds its isolated choice to one pending request',
+    emitted.some((event) => event.type === 'warning_panel' && event.detail.id === 'wo-paste-warn'
+      && event.detail.decisionId === 7));
 
   ours.isConnected = false;
   check('a warning removed from the page is no longer up, so it can be re-shown',
@@ -94,8 +98,50 @@ const W = sandbox.__W;
   check('isolated warning copy is fixed in bridge and checks for occlusion',
     BRIDGE.includes('const message = mainWarningCopy[id];')
       && BRIDGE.includes("kind: 'warning-ui-compromised'"));
-  check('paste continuation rejects scripted clicks and detached warning buttons',
-    /go\.textContent="Paste anyway",\s*go\.addEventListener\("click",\s*e=>\{\s*if\(!e\.isTrusted\|\|!wrap\.isConnected\)return;/.test(src));
+  check('paste continuation belongs to the isolated overlay, not the page-owned panel',
+    !/go\.textContent="Paste anyway"/.test(src)
+      && BRIDGE.includes("continuePaste.textContent = 'Paste anyway'")
+      && BRIDGE.includes('if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(continuePaste)) return;'));
+  check('the isolated choice is signed and the engine rejects replayed decisions',
+    BRIDGE.includes("const type = 'warning_decision'")
+      && BRIDGE.includes('if (!dispatchWarningDecision(id, decisionId)) return;')
+      && src.includes('"warning_decision"!==d.type||"bridge"!==d.src||!__woEventTrusted(d)')
+      && src.includes('seq<=pasteDecisionSeq')
+      && src.includes('d.detail.decisionId!==pasteDecisionId'));
+}
+
+{
+  const start = SRC.indexOf('let pasteWarned=!1,');
+  const end = SRC.indexOf('const showPastePanel=', start);
+  if (start < 0 || end < start) throw new Error('paste decision listener was not found');
+  let listener = null;
+  let accepted = 0;
+  const context = {
+    document: {}, Number,
+    woOn: (_target, type, fn) => { if (type === 'wo-event') listener = fn; },
+    __woEventTrusted: (detail) => detail.emac === 'valid',
+  };
+  vm.createContext(context);
+  vm.runInContext(SRC.slice(start, end)
+    + '\nglobalThis.setPasteDecision=(id,fn)=>{pasteDecisionId=id;pasteDecision=fn};'
+    + '\nglobalThis.pasteDecisionSequence=()=>pasteDecisionSeq;', context);
+  if (!listener) throw new Error('paste decision listener was not installed');
+  const decision = (seq, id, mac = 'valid') => ({ detail: {
+    type: 'warning_decision', src: 'bridge', eseq: seq, emac: mac,
+    detail: { id: 'wo-paste-warn', decisionId: id },
+  } });
+  context.setPasteDecision(8, () => { accepted++; });
+  listener(decision(1, 8, 'forged'));
+  listener(decision(2, 7));
+  check('forged and old-request decisions cannot continue a paste', accepted === 0);
+  listener(decision(3, 8));
+  check('a signed choice continues its own pending paste once', accepted === 1);
+  listener(decision(3, 8));
+  context.setPasteDecision(9, () => { accepted++; });
+  listener(decision(4, 8));
+  check('replay of a previous paste choice cannot authorize the next request', accepted === 1);
+  listener(decision(5, 9));
+  check('a new signed choice can authorize the new request', accepted === 2 && context.pasteDecisionSequence() === 5);
 }
 
 // ---------------------------------------------------------------------------
