@@ -44,8 +44,8 @@ const ARRAYS = [
 // Generated rulesets that ship inside the package. These are redistribution rather than fetching,
 // so they are listed separately and carry their build input.
 const GENERATED = [
-  { file: 'rules-adshield.json', builtBy: 'tools/build-adshield-dnr.js', from: 'ADSHIELD_NET_LISTS' },
-  { file: 'rules-easyprivacy.json', builtBy: 'tools/build-easyprivacy-dnr.js', from: 'ADSHIELD_NET_LISTS' },
+  { file: 'rules-adshield.json', builtBy: 'tools/build-adshield-dnr.js', from: 'EasyList network-filter input' },
+  { file: 'rules-easyprivacy.json', builtBy: 'tools/build-easyprivacy-dnr.js', from: 'EasyPrivacy input plus rules-trackers.json' },
   { file: 'cosmetic-rules.json', builtBy: 'tools/build-cosmetics.js', from: 'ADSHIELD_COSMETIC_LISTS' },
   // Not a filter list: the Public Suffix List's private section, which decides site identity
   // (SEC-07). Fetched by the build tool only, never at runtime; the file carries its list version.

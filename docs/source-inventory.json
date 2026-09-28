@@ -529,7 +529,7 @@
     {
       "file": "rules-adshield.json",
       "builtBy": "tools/build-adshield-dnr.js",
-      "derivedFrom": "ADSHIELD_NET_LISTS",
+      "derivedFrom": "EasyList network-filter input",
       "kind": "redistributed",
       "licence": "",
       "licenceVerified": false
@@ -537,7 +537,7 @@
     {
       "file": "rules-easyprivacy.json",
       "builtBy": "tools/build-easyprivacy-dnr.js",
-      "derivedFrom": "ADSHIELD_NET_LISTS",
+      "derivedFrom": "EasyPrivacy input plus rules-trackers.json",
       "kind": "redistributed",
       "licence": "",
       "licenceVerified": false
