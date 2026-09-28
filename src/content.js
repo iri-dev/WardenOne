@@ -1645,6 +1645,11 @@
        anything earlier -- and the scam scan can run synchronously when body already exists. One
        definition, per the house rule, rather than a second copy of the same list. */
     trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|spotify\.com|spotifycdn\.com|scdn\.co|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname),
+    /* Discord's server setup and member-profile dialogs are first-party app UI.
+       The generic popup/overlay shape tests cannot tell a short role prompt from
+       click bait there. Keep this separate from trustedMediaHost: Discord still
+       needs its other protections, including link and request checks. */
+    discordAppHost=/^(?:discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)$/i.test(location.hostname),
     /* Assistant surfaces, where the page text is a conversation the user is
        having rather than the page talking to them. Asking an assistant about
        tech-support scams or about ClickFix produces a page whose text contains
@@ -20682,7 +20687,7 @@
     catch(_){
 
     }
-    if(WO.removeOverlays&&!trustedMediaHost&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
+    if(WO.removeOverlays&&!trustedMediaHost&&!discordAppHost&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
       /* Mutable on purpose: start() sets it and the observer timeout clears it. It used to sit
          inside the const chain below, where the first assignment threw TypeError and aborted
          engine start-up on every ordinary page, because removeOverlays is on by default. */
@@ -22815,8 +22820,7 @@
       control elsewhere cannot bring the chip back over the member list. */
       badgeDiscordProfileOpen=()=>{
         try{
-          const host=String(location.hostname||"").toLowerCase();
-          if(!(host==="discord.com"||host==="discordapp.com"||host==="canary.discord.com"||host==="ptb.discord.com")||!/^\/channels\/\d+(?:\/|$)/.test(location.pathname||""))return!1;
+          if(!discordAppHost||!/^\/channels\/\d+(?:\/|$)/.test(location.pathname||""))return!1;
           const home=badgeHomeRect();
           if(!home)return!1;
           const x=home.left+home.width/2,
@@ -22843,8 +22847,7 @@
       also keeps the chip. Protection and the toolbar badge run either way. */
       badgeOnDiscordServer=profileOpen=>{
         try{
-          const host=String(location.hostname||"").toLowerCase();
-          return!profileOpen&&(host==="discord.com"||host==="discordapp.com"||host==="canary.discord.com"||host==="ptb.discord.com")&&/^\/channels\/\d+(?:\/|$)/.test(location.pathname||"")
+          return!profileOpen&&discordAppHost&&/^\/channels\/\d+(?:\/|$)/.test(location.pathname||"")
         }
         catch(_){
           return!1
@@ -23116,7 +23119,7 @@
             },
             !badgeEventsBound){
               badgeEventsBound=!0;
-              if(/^(?:discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)$/i.test(location.hostname||"")){
+              if(discordAppHost){
                 woOn(window,"popstate",badgeRouteChanged),
                 woOn(window,"hashchange",badgeRouteChanged);
                 try{
