@@ -104,6 +104,8 @@ function loginHostMatchesOfficialBrand(host, profile) {
 function normalizeBrandish(value) {
   return String(value || '')
     .toLowerCase()
+    .replace(/rn/g, 'm')
+    .replace(/vv/g, 'w')
     .replace(/[@]/g, 'a')
     .replace(/[0]/g, 'o')
     .replace(/[1!]/g, 'i')
@@ -162,8 +164,8 @@ function loginBrandTokens(profile) {
    destination is (brand-in-name); a brand as a label to the left of somebody else's domain is
    (subdomain); an official brand domain moved to another TLD, or the exact brand on another TLD
    unless the brand is an ordinary word, is (tld-swap); a typo or digit swap of the brand is
-   (typosquat). `url` lets the login check count a phishing word in the path as well as the host;
-   the search marker passes none and judges the host alone. */
+   (typosquat). A site's own /login path is not evidence that its independent brand is
+   impersonating somebody else; only a sign-in word in the host supports brand-in-name. */
 function loginBrandRiskForHost(host, url) {
   const h = String(host || '').replace(/^www\./, '').toLowerCase();
   const rd = regDomainBg(h);
@@ -175,22 +177,26 @@ function loginBrandRiskForHost(host, url) {
   const subLabels = labels.slice(0, Math.max(0, labels.length - rd.split('.').length));
   const subTokens = [];
   for (const label of subLabels) for (const piece of label.split(/[-_]/)) if (piece) subTokens.push(normalizeBrandish(piece));
-  const urlText = String(url || '') + ' ' + h;
-  const authish = /(login|logon|signin|sign-in|verify|verification|account|secure|security|password|passwd|mfa|2fa|oauth|session|billing|invoice|payment|wallet|bank|recover|recovery|confirm|unlock|update|suspended)/i.test(urlText);
+  const authWord = /(login|logon|signin|sign-in|verify|verification|account|secure|security|password|passwd|mfa|2fa|oauth|session|billing|invoice|payment|wallet|bank|recover|recovery|confirm|unlock|update|suspended)/i;
+  const hostAuthish = authWord.test(h);
+  const authish = hostAuthish || authWord.test(String(url || ''));
   for (const profile of LOGIN_BRAND_PROFILES) {
     if (loginHostMatchesOfficialBrand(h, profile)) continue;
     const brand = normalizeBrandish(profile.token);
     let kind = '';
     for (const token of loginBrandTokens(profile)) {
       const common = token === brand && LOGIN_BRAND_COMMON_WORDS.has(brand);
-      const digitSwap = compact === token && /[0-9@!$]/.test(core);
-      /* One edit for a derived name (steamcommunlty, steampowerd): two would reach ordinary
-         words two letters from an official domain -- amazonia is two edits from amazonpay. */
-      const limit = token === brand ? (token.length > 6 ? 2 : 1) : 1;
-      if (digitSwap || editDistanceWithin(compact, token, limit)) { kind = 'typosquat'; break; }
+      const visualSwap = compact === token && core !== token;
+      /* Two edits from a seven-letter brand is too broad: disboard is a Discord directory,
+         not a Discord typo. For common-word brands a plain one-letter suffix is also an
+         ordinary name shape (discords), unless it repeats the final letter (discordd). Keep visual
+         substitutions and one-edit mistakes; rn/m and vv/w are folded above. */
+      const plainSuffix = common && compact.length === token.length + 1 && compact.startsWith(token)
+        && compact[compact.length - 1] !== compact[compact.length - 2];
+      if (visualSwap || (!plainSuffix && editDistanceWithin(compact, token, 1))) { kind = 'typosquat'; break; }
       if (compact === token && !common) { kind = 'tld-swap'; break; }
       if (subTokens.includes(token)) { kind = 'subdomain'; break; }
-      if (fullCompact.includes(token) && authish) { kind = 'brand-in-name'; break; }
+      if (fullCompact.includes(token) && hostAuthish) { kind = 'brand-in-name'; break; }
     }
     if (!kind) continue;
     const reason = kind === 'typosquat' ? 'resembles ' + profile.label

@@ -20,8 +20,8 @@ importScripts('domain-utils.js');
 // platform and not just the 26 the curated table names (SEC-07). Worker only -- frames are told
 // their own site with the content config rather than carrying 87 KB each.
 importScripts('psl-private.js');
-// Which separable utilities this package carries (CWS-03). The Store package omits EyeShield,
-// Memory Shield, Tab Limit and Twitch Rewind -- the files, not just the words -- and every guard
+// Which separable utilities this package carries (CWS-03). The Store package includes EyeShield,
+// Memory Shield and Tab Limit, and omits Twitch Rewind -- the files, not just the words. Every guard
 // below that reads woFeatureOmitted() is what lets this worker run without them.
 importScripts('build-profile.js');
 importScripts('notification-manager.js');
@@ -11335,8 +11335,8 @@ function eraseEyeShieldSiteMarkerFromOpenTabs() {
 }
 async function reconcileEyeShieldInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
-  // The Store package does not carry eyeshield.js (CWS-03). A registration persisted by a package
-  // that did would ask Chrome for a file this one has not got, on every page, so it is removed.
+  // A build that omits EyeShield must remove any registration persisted by an earlier build,
+  // so Chrome does not ask for a missing file on every page.
   if (woFeatureOmitted('eyeShield')) {
     try { await chrome.scripting.unregisterContentScripts({ ids: [EYESHIELD_SCRIPT_ID, EYESHIELD_SITES_SCRIPT_ID] }); } catch (_) {}
     return;
@@ -12420,8 +12420,8 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
 
 // ======================= Memory Shield =======================
 // Implemented in background-memory.js so RAM-saving behavior is isolated from the main service worker.
-// A separable utility (CWS-03): the Store package does not carry the file, and this worker has to
-// run without it. Nothing here calls into the module unless it loaded; the popup's memory-* messages
+// A separable module (CWS-03): a package can omit it, so the worker must run without it.
+// Nothing here calls into the module unless it loaded; the popup's memory-* messages
 // get "not in this build" instead, and the tab menu leaves out the three entries the module serves.
 const MODULE_LOADED = { memory: false };
 if (!woFeatureOmitted('memoryShield')) {
@@ -17988,8 +17988,8 @@ const WO_MENU_ITEMS = [
 ];
 /* The three tab entries and their separator are served by background-memory.js; a package without
    the module offers no entry that could only answer "could not sleep this tab" (CWS-03). Removed
-   from the table itself, so the fingerprint below -- which reads the table -- differs between the
-   two packages and a menu built by the other one is rebuilt, not trusted. */
+   from the table itself, so the fingerprint below -- which reads the table -- differs between
+   builds with and without the module, and a stale menu is rebuilt. */
 const WO_MENU_MODULE_ITEMS = new Set(['wardenone-sep-tab', WO_MENU_SLEEP_TAB, WO_MENU_NEVER_SLEEP, WO_MENU_CLOSE_TAB]);
 if (!MODULE_LOADED.memory) {
   for (let i = WO_MENU_ITEMS.length - 1; i >= 0; i--) if (WO_MENU_MODULE_ITEMS.has(WO_MENU_ITEMS[i].id)) WO_MENU_ITEMS.splice(i, 1);

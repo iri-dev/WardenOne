@@ -6,15 +6,17 @@ download is for GitHub users; it is not the Store upload candidate.
 ## Listing source text
 
 - **Name:** WardenOne
-- **Single purpose:** Protect web browsing from malicious sites, trackers and unsafe
-  requests, while giving the reader local controls and warnings.
-- **Short description:** Browser protection for malicious sites, trackers, risky
-  downloads and privacy threats, with local controls and clear warnings.
+- **Single purpose:** Help readers browse with more control by blocking threats and trackers,
+  guarding private data, adapting page readability and limiting resources used by idle tabs.
+- **Short description:** Browser protection with privacy, readability and idle-tab resource controls.
 - **Detailed description:** WardenOne checks pages, links, redirects and downloads
   with built-in lists and on-device signals. Optional external reputation providers
   require the reader's own API key and separate consent for automatic lookups.
-  The Store package omits EyeShield, Memory Shield, Tab Limit and Twitch Rewind;
-  see [the package purpose record](store-single-purpose.md).
+  EyeShield offers optional brightness, contrast, warmth, saturation and grayscale
+  adjustments for page readability and visual comfort. Memory Shield can discard eligible
+  inactive tabs to release RAM while preserving active work and media; Tab Limit is an optional
+  part of that resource control, with tab closing separately opt-in. The Store package omits
+  Twitch Rewind; see [the package purpose record](store-single-purpose.md).
 - **Privacy policy:** `PRIVACY.md` at the candidate commit. Its provider and
   retention disclosures must match the Dashboard's data-use answers.
 - **Permission explanations:** `permissions.html` at the candidate commit.

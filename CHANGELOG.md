@@ -17,6 +17,8 @@ as the work happened.
 
 ### Added
 
+- Search results for Disboard and similarly named independent server directories no longer claim they are fake Discord sites. The worker's brand check now requires a closer typo or visual substitution, and a site's own login path no longer turns a brand word in its name into an impersonation warning. Explicit Discord login lures, subdomain spoofs and visual typos still warn.
+- The proposed Store package now retains EyeShield's page readability controls and Memory Shield's idle-tab resource controls, including Tab Limit. The Store listing and purpose record explain their roles and acknowledge that single-purpose review is still a reviewer judgment. Twitch Rewind remains outside that package; the GitHub build still carries all four.
 - Discord server onboarding dialogs, including role and pronoun pickers, are left to Discord instead of being removed by the generic overlay and confirm-bait cleaners. The exception is limited to Discord's app origins; other protection checks remain active.
 - On Discord server channels, the in-page Guard active chip hides so it does not cover the member list. It remains available in DMs and when a profile popout covers its corner, and follows channel and popout changes without a reload; protection and the browser toolbar badge continue to run.
 - The Store rights gate now requires a documented release-owner decision for each upstream input, including review evidence, terms revision, use and notice decisions, and a matching digest for redistributed files. Regenerating the source inventory preserves completed decisions for unchanged inputs; Store submission remains blocked while the 41 current records await review.
