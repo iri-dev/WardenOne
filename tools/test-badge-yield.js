@@ -65,6 +65,7 @@ function el(tag, opts) {
     nodeType: 1,
     tag: String(tag).toLowerCase(),
     attrs: Object.assign({}, o.attrs || {}),
+    textContent: o.text || '',
     style: Object.assign({ position: 'static', overflowY: 'visible' }, o.style || {}),
     scrollHeight: o.scrollHeight || 0,
     clientHeight: o.clientHeight || 0,
@@ -133,6 +134,7 @@ function run(options) {
     Math, String, Object, Array, Number, isFinite,
     Date: { now: () => now.t },
     window: { innerWidth: opts.viewport || VIEW.w, innerHeight: VIEW.h },
+    location: { hostname: opts.host || 'example.test', pathname: opts.path || '/' },
     getComputedStyle: (node) => { calls.style++; return node.style || {}; },
     PLAYER_SHELL_SELECTOR: '[data-player],[data-video],[id="player" i],[class~="player" i]',
     badgeHost,
@@ -160,11 +162,52 @@ function run(options) {
     kind: () => vm.runInContext('badgeCoversPageControl()', sandbox),
     anchor: (node) => { sandbox.__n = node; return vm.runInContext('badgeAnchorOf(__n)', sandbox); },
     update: (force) => vm.runInContext('updateBadgeYield(' + (force ? 'true' : '') + ')', sandbox),
+    routeChanged: () => vm.runInContext('badgeRouteChanged()', sandbox),
     lift: () => { const last = lifts.filter((l) => l[0] === '--rg-lift').pop(); return last ? parseInt(last[1], 10) : null; },
     fs: () => vm.runInContext('badgeInFullscreen()', sandbox),
   };
   api.update(true);
   return api;
+}
+
+/* Discord's member pane occupies the chip's corner on guild routes. Switching between
+   guild channels and DMs is an SPA navigation, so the same mounted badge must change
+   without a reload. Profiles and lookalike hosts must keep the ordinary behaviour. */
+{
+  const r = run({ host: 'discord.com', path: '/channels/@me/123', panelOpen: true });
+  assert.strictEqual(r.toggled.away, false, 'Discord DMs keep the badge');
+  r.sandbox.location.pathname = '/channels/123456789/987654321';
+  r.routeChanged();
+  assert.strictEqual(r.toggled.away, true, 'a server channel hides the badge');
+  assert.strictEqual(r.toggled.inert, true, 'a hidden badge does not intercept member clicks');
+  assert.strictEqual(r.panelOpen(), false, 'the badge panel closes when entering a server');
+  r.sandbox.location.pathname = '/channels/@me/123';
+  r.routeChanged();
+  assert.strictEqual(r.toggled.away, false, 'returning to a DM restores it');
+  r.sandbox.location.pathname = '/users/123456789';
+  r.routeChanged();
+  assert.strictEqual(r.toggled.away, false, 'a profile route keeps it visible');
+  const spoof = run({ host: 'discord.com.evil.test', path: '/channels/123456789/987654321' });
+  assert.strictEqual(spoof.toggled.away, false, 'a lookalike host does not get the Discord exception');
+  const canary = run({ host: 'canary.discord.com', path: '/channels/123456789' });
+  assert.strictEqual(canary.toggled.away, true, 'the canary app also hides on servers');
+  const popout = under(el('div', { rect: rect(1600, 400, 1920, 1080) }), canary.body);
+  const profileButton = under(el('button', { text: 'View Full Profile', rect: rect(1620, 1070, 1900, 1078) }), popout);
+  canary.elements.push(profileButton, popout);
+  canary.routeChanged();
+  assert.strictEqual(canary.toggled.away, false, 'a profile popout at the badge corner restores it on a server');
+  canary.elements.splice(canary.elements.indexOf(profileButton), 1);
+  canary.elements.splice(canary.elements.indexOf(popout), 1);
+  canary.routeChanged();
+  assert.strictEqual(canary.toggled.away, true, 'closing the profile popout hides it again');
+  const elsewhere = run({
+    host: 'discord.com', path: '/channels/123456789',
+    build: (body) => {
+      const left = under(el('div', { rect: rect(0, 400, 320, 1080) }), body);
+      return [under(el('button', { text: 'View Full Profile', rect: rect(20, 1070, 300, 1078) }), left), left];
+    },
+  });
+  assert.strictEqual(elsewhere.toggled.away, true, 'a profile elsewhere does not expose the chip over members');
 }
 
 /* ---- the reported case: a player's own control under the badge --------------------------- */
@@ -609,6 +652,10 @@ for (const forbidden of ['pointermove', 'mousemove', 'pointerover', 'scroll', 's
 }
 assert(wiring.includes('fullscreenchange'), 'entering fullscreen must still re-check');
 assert(/"play"/.test(wiring), 'a player starting must still re-check');
+assert(/"currententrychange"/.test(wiring) && /"popstate"/.test(wiring),
+  'Discord SPA navigation must re-check the chip');
+assert(/"click"/.test(wiring) && /"keyup"/.test(wiring),
+  'Discord profile popouts must re-check without a route change');
 /* The yield block itself adds no observer or timer of its own. */
 const yieldCode = source.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '');
 assert(!/MutationObserver|setInterval|setTimeout|requestAnimationFrame|addEventListener|woOn\(/.test(yieldCode),
