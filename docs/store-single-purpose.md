@@ -1,40 +1,74 @@
 # One purpose: the Store package
 
-Chrome's Web Store allows an extension one narrow purpose, easy to understand, and asks that
-clearly separate features be separate extensions. WardenOne's purpose is protection:
+Chrome's Web Store asks for one narrow purpose and for clearly separate functions to be separate
+extensions. The Store package describes WardenOne as protective browsing with reader-controlled
+page presentation and resource use:
 
-> **WardenOne protects you from what a web page, a download or another extension is about to do
-> to you -- it blocks threats and trackers, defends your privacy, and reviews what is being asked
-> of you before you agree to it.**
+> **WardenOne helps readers browse with more control: it blocks threats and trackers, defends
+> privacy, warns about risky actions, offers optional page display controls for readability,
+> and releases resources held by eligible idle tabs.**
 
-Everything the Store package carries answers to that sentence. The GitHub build carries four more
-things, and this page is the record of the decision about them.
+The feature decisions below are the proposed Store scope. The GitHub build carries all four
+utilities. Inclusion in this local package is not a Chrome Web Store approval.
 
 ## The decision
 
-Four features in the GitHub build are separate goals a reader could want, or not want, on their
-own: **EyeShield** (visual comfort), **Memory Shield** and **Tab Limit** (RAM and tab volume) and
-**Twitch Rewind** (local replay of a live stream). None of them protects anyone, and each could be
-understood, wanted and uninstalled on its own. So:
+The earlier package removed four features. **EyeShield** has a case for inclusion: its optional
+brightness, contrast, warmth, saturation and grayscale controls let a reader adjust pages for
+readability and visual comfort, including readers with low vision or light sensitivity. These
+controls are described plainly in the Store listing; no claim that they prevent eye disease or
+vision loss is made.
 
-- **The Store package omits them.** Omits the code -- the files, the manifest entries, the
-  settings -- not just the words in the listing. `tools/build-store-package.js` builds that
-  package from the committed tree with git's own plumbing, so the same commit always yields the
-  same bytes, and refuses to build if anything left in the package still asks for a file that was
-  removed.
-- **The GitHub build is unchanged.** The release on GitHub is the repository as it is, all four
-  utilities included, for readers who install from source and want them.
+**Memory Shield** has a case for inclusion as resource protection: it uses Chrome's tab discard
+mechanism to release RAM held by eligible idle tabs, while checking for unsaved forms and active
+media and preserving pinned, audible, login and payment tabs under the reader's settings. This
+can reduce background resource use, but it does not promise a specific CPU or RAM saving.
+**Tab Limit** belongs to the same feature: its default is off; when enabled, it sleeps an
+eligible idle tab at the chosen cap, and closing instead requires a separate opt-in. These
+controls can also help offset WardenOne's own resource cost. Resource Saver's autoplay, prefetch,
+background throttling and lazy-media settings serve the same resource-protection purpose.
+
+The policy case is one focus area: reader-controlled protective browsing. Memory Shield limits
+resources spent on tabs the reader is not using, and Tab Limit is a control inside that same
+module and popup section. The listing names both plainly so users know what the extension may
+do to their tabs. This is a proposed interpretation of the Store's single-purpose rule, not a
+reviewer decision.
+
+**Twitch Rewind has a strong viewer-control case.** Twitch's own
+[Stream Rewind](https://help.twitch.tv/s/article/stream-rewind) is currently limited to eligible
+subscribers on channels where the broadcaster enables it. WardenOne's opt-in local DVR buffers
+only the stream already playing in the current tab, keeps that recording in bounded local memory,
+and uploads none of it. It cannot recover footage from before the tab started watching. Its
+separate VOD rewind button uses an available in-progress Twitch VOD in Twitch's own player; it
+does not make a recording. Pausing, revisiting a missed moment and
+resuming a live broadcast are ordinary playback controls. The local DVR also uses substantial
+RAM and CPU, which its popup discloses.
+
+The possible Store argument is that WardenOne gives readers control over what happens in their
+browser, including media they have chosen to watch. The single-purpose risk is substantial:
+live-stream playback is an entertainment function distinct from threat, privacy, readability and
+resource protection. Chrome's [single-purpose guidance](https://developer.chrome.com/docs/webstore/program-policies/quality-guidelines-faq)
+allows related functions in one narrow focus area but asks for clearly separate functions to be
+separate extensions. The proposed Store profile therefore omits both rewind modes while the full
+GitHub build keeps them. A separate, narrowly described Twitch rewind extension would make the
+clearest Store case if Store distribution of this feature becomes a goal. A reviewer may also see
+EyeShield or Memory Shield as separate purposes; this record does not claim guaranteed approval.
+
+- **The Store package includes EyeShield, Memory Shield and Tab Limit, and omits Twitch Rewind.**
+  For Twitch Rewind, it removes the files, manifest entries and settings, not just the listing
+  words. `tools/build-store-package.js` builds that package from the committed tree with git's
+  own plumbing, so the same commit always yields the same bytes. The build refuses dangling
+  references to files it removed.
+- **The GitHub build is unchanged.** The repository carries all four utilities.
 - **Both packages run the same code.** `build-profile.js` tells the worker and the popup which
-  package they are in. A package without Memory Shield answers its popup messages with "not in
-  this build", offers no tab-sleep menu entries and ignores a leftover sweep alarm; a package
-  without EyeShield never registers it and removes a registration an earlier package left behind;
-  the popup removes the sections for what it lacks before it paints; the integrity check does not
-  ask for files the package was built without. In the full build the omitted list is empty and
-  none of this does anything.
+  package they are in. The Store package loads Memory Shield, keeps Tab Limit controls and tab
+  actions, registers EyeShield, and removes the Twitch Rewind controls. Guards also let a build
+  without a module start cleanly and report "not in this build". The integrity check does not ask
+  for files a package lacks. In the full build the omitted list is empty.
 
-The list is a publisher decision and lives in one place, the `features` table in
-`build-profile.js`. Removing a utility from that table puts it back in the Store package; adding
-one takes it out. The gate (`node tools/build-store-package.js --check`) fails if the table names
+The publisher decision lives in the `store` field of each feature in `build-profile.js`.
+`include` carries the feature into the Store package; `omit` removes it. The gate
+(`node tools/build-store-package.js --check`) fails if the table names
 a file or a setting that does not exist, if a guard the package relies on is missing, if the
 popup has an unmarked section, if this page is stale, or if a dry-run build leaves a dangling
 reference.
@@ -55,21 +89,18 @@ by a person, with this page in front of them.
 _Generated by `tools/build-store-package.js --doc` from the `features` table in `build-profile.js`._
 _Do not edit this block by hand; the gate rebuilds and checks it._
 
-| Utility | Its own goal | Files the Store package leaves out | Settings it leaves out |
-| --- | --- | --- | --- |
-| EyeShield (`eyeShield`) | Visual comfort: warmth, brightness, contrast, saturation and grayscale applied to pages. | `eyeshield.js`, `eyeshield-sites.js`, `eyeshield-preload-dark.js`, `eyeshield-preload-ultra.js`, `eyeshield-preload-light.js` | `eyeShield`, `eyeShieldMode`, `eyeShieldBrightness`, `eyeShieldBrightnessByHost`, `eyeShieldContrast`, `eyeShieldContrastByHost`, `eyeShieldSaturation`, `eyeShieldSaturationByHost`, `eyeShieldWarmth`, `eyeShieldWarmthByHost`, `eyeShieldGrayscale`, `eyeShieldGrayscaleByHost` |
-| Memory Shield (`memoryShield`) | RAM: sleeping idle tabs, freeing memory, finding duplicate and zombie tabs. | `background-memory.js` | `memoryShield`, `memoryMode`, `memoryMinutesOverride`, `memoryNeverPinned`, `memoryNeverAudio`, `memoryNeverForms`, `memoryNeverPayment`, `memoryNeverSleepHosts` |
-| Tab Limit (`tabLimit`) | Tab volume: sleeping or closing the oldest unused tab once a window passes a limit. | _none of its own (inside Memory Shield)_ | `tabLimitGuard`, `tabLimitMax`, `tabLimitClose`, `tabLimitMinIdleMinutes`, `tabLimitWarn` |
-| Twitch Rewind (`twitchRewind`) | Local replay of a live Twitch stream: a rewind buffer and a jump to the in-progress recording. | `twitch-rewind.js`, `twitch-vod-rewind.js` | `twitchRewind`, `twitchRewindMinutes`, `twitchVodRewind` |
+| Utility | Store decision | Its goal | Files omitted | Settings omitted |
+| --- | --- | --- | --- | --- |
+| EyeShield (`eyeShield`) | Included | Reader-controlled page presentation for readability and visual comfort: brightness, contrast, warmth, saturation and grayscale. | — | — |
+| Memory Shield (`memoryShield`) | Included | Resource protection: discard eligible idle tabs to release RAM, with safeguards for active work and media; find duplicate and long-idle tabs. | — | — |
+| Tab Limit (`tabLimit`) | Included | Memory Shield control: when an optional tab cap is reached, sleep an eligible idle tab or close one if the reader opts in. | — | — |
+| Twitch Rewind (`twitchRewind`) | Omitted | Local replay of a live Twitch stream: a rewind buffer and a jump to the in-progress recording. | `twitch-rewind.js`, `twitch-vod-rewind.js` | `twitchRewind`, `twitchRewindMinutes`, `twitchVodRewind` |
 
 <!-- END GENERATED FEATURE TABLE -->
 
 Memory Shield's *Resource Saver* rows (block autoplay, throttle background tabs, block prefetch,
-lazy-load media) stay in the Store package: their page half lives in the engine, not in the
-omitted module, and each also has a protective reading -- autoplay and prefetch are things a page
-does without being asked, and prefetch reaches sites the reader never chose to visit. Under the
-Store profile the section is relabelled *Resource Saver*. A reviewer may weigh those four
-differently; they are named here so that the judgment is made knowingly rather than by omission.
+lazy-load media) also stay in the Store package. These controls limit work a page does in the
+background. A reviewer may weigh them differently; they are named here for a complete review.
 
 ## Every section of the popup, against the sentence
 
@@ -84,14 +115,14 @@ row here, so a section cannot be added without saying how it answers the sentenc
 | Download Shield | Reviews a download's source and reputation before it is kept: threat protection. |
 | Privacy | Blocks trackers and fingerprinting, strips tracking identifiers, sends Global Privacy Control: privacy. |
 | AdShield | Filters advertising and tracking requests and elements, the largest tracking and malvertising surface on the web. The Twitch Rewind block that sits inside this section in the GitHub build is a separable utility and is omitted from the Store package. |
-| Memory Shield | Omitted from the Store package (RAM and tab volume are a separate goal). The Resource Saver rows that remain are described above, and the section is relabelled for them. |
+| Memory Shield | Releases RAM held by eligible idle tabs, offers safeguards for active work and media, and includes Tab Limit as an optional resource control. Resource Saver rows limit background work. These functions are disclosed in the listing; their single-purpose fit remains a reviewer judgment. |
 | Forget Me & Logins | Clears a site's data when you leave it and warns about sign-ins on newly registered domains: privacy and threat protection. |
 | Media Shield | Refuses camera, microphone and screen capture a page starts without you, and hidden background media: protection against abuse of device access. |
 | Adult-site safety | Gates adult sites and enforces safe search: content protection chosen by the reader. |
 | Advanced detection (catches rotating/custom domains) | Phishing, scam and fake-update heuristics that work without a list: threat protection. |
 | SessionShield — login & session protection | Stops tokens, passwords and card numbers leaving a page for a stranger, and watches for skimmers: protection of credentials. |
 | Blocklist (auto-updating) | The threat, tracker and ad lists the network layer enforces, and their update schedule. |
-| EyeShield | Omitted from the Store package (visual comfort is a separate goal). |
+| EyeShield | Optional brightness, contrast, warmth, saturation and grayscale controls let readers adjust page presentation for readability and visual comfort. This is disclosed in the listing; the single-purpose fit remains a reviewer judgment. |
 | What WardenOne watches | The watch-only guards that record device-access and capability probes without changing a page: protection evidence. |
 | Interface | How WardenOne shows itself -- badge, toasts, silent mode. Presentation of the protection, not a feature of its own. |
 | Settings backup | Export and import of WardenOne's own settings. Housekeeping for the extension itself. |

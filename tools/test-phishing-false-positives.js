@@ -148,16 +148,29 @@ console.log('[ok] phishing false-positive checks passed');
   expect('applesfera.com', false);
   expect('amazonia.org', false);
   expect('discordbots.gg', false);
+  expect('disboard.org', false, 'a Discord server directory is not a Discord impersonation');
+  expect('www.disboard.org', false);
+  expect('disboard.org', false, 'a directory login is still its own site', 'https://disboard.org/login');
+  expect('discords.example', false, 'a plain suffix is not enough to call a directory a typo');
+  expect('discordservers.example', false, 'a directory using a brand word is not a login lure');
+  expect('discordservers.example', false, 'its own login path is not brand impersonation', 'https://discordservers.example/account/login');
   expect('githubstatus.com', false);
   expect('blog.google', false, 'a brand-owned TLD is not a look-alike of the brand');
   expect('apps.apple', false);
   expect('chase.co.uk', false, 'a common-word brand on another TLD is a real bank, not a swap');
   expect('steam.xyz', false, 'the exact common word alone proves nothing (the engine agrees)');
-  for (const h of ['steamrip.com', 'steamdb.info', 'protondb.com', 'applebees.com']) {
+  for (const h of ['steamrip.com', 'steamdb.info', 'protondb.com', 'applebees.com', 'disboard.org']) {
     if (lookalike(h)) { failed++; console.error('  FAIL - ' + h + ' is still a startup look-alike'); } else console.log('  ok  - ' + h + ' is not a startup look-alike');
   }
+  const disboardLogin = sandbox.__phishingTest.loginRiskVerdict('disboard.org', 'https://disboard.org/login', null, 14);
+  if (disboardLogin.risky) { failed++; console.error('  FAIL - Disboard login is called risky: ' + JSON.stringify(disboardLogin.reasons)); }
+  else console.log('  ok  - Disboard login is not called risky');
   /* What must still be caught. */
   expect('steam-login.com', true, 'brand-in-name dressed as a login');
+  expect('discord-login.example', true, 'a Discord login lure still warns');
+  expect('disc0rd.example', true, 'digit substitution still warns');
+  expect('discordd.example', true, 'repeated final letter still warns');
+  expect('paypals.example', true, 'a suffix on a distinctive brand still warns');
   expect('steamlogin.com', true, 'glued to a phishing word');
   expect('secure-steam-verify.net', true);
   expect('paypal-verify.com', true);
@@ -171,7 +184,7 @@ console.log('[ok] phishing false-positive checks passed');
   expect('paypa1.com', true, 'digit-for-letter');
   expect('st3am.tk', true, 'digit-for-letter on a common-word brand is still a typo');
   expect('rnicrosoft.com', true);
-  expect('steamrip.com', true, 'at login time a phishing word in the URL still counts', 'https://steamrip.com/account/login');
+  expect('steamrip.com', false, 'a site using a brand word may have its own account path', 'https://steamrip.com/account/login');
   /* And the kind travels, so the marker can say what it saw rather than claim imitation. */
   const worn = brand('steam-login.com');
   const typo = brand('steamcommunlty.com');
