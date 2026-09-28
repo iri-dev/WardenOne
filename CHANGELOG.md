@@ -17,6 +17,7 @@ as the work happened.
 
 ### Added
 
+- Discord server onboarding dialogs, including role and pronoun pickers, are left to Discord instead of being removed by the generic overlay and confirm-bait cleaners. The exception is limited to Discord's app origins; other protection checks remain active.
 - On Discord server channels, the in-page Guard active chip hides so it does not cover the member list. It remains available in DMs and when a profile popout covers its corner, and follows channel and popout changes without a reload; protection and the browser toolbar badge continue to run.
 - The Store rights gate now requires a documented release-owner decision for each upstream input, including review evidence, terms revision, use and notice decisions, and a matching digest for redistributed files. Regenerating the source inventory preserves completed decisions for unchanged inputs; Store submission remains blocked while the 41 current records await review.
 - The Privacy cleaner can erase WardenOne records and site exceptions for the current site. It previews affected datasets, preserves other sites' durable records and public protection lists, clears shared derived caches that cannot be separated by site, and rebuilds network rules after the extension restarts. The dataset inventory now shows each store's owner and retention policy.

@@ -164,6 +164,10 @@ if (isBaitBox) {
   check('bait: "Please confirm to continue" is still removed', isBaitBox(dialog('Attention Please confirm to continue', ['Cancel', 'Continue'])) === true);
   check('bait: "The file is ready to download" is still removed', isBaitBox(dialog('Attention The file is ready to download', ['Cancel', 'Download'])) === true);
   check('bait: "Your stream is ready" is still removed', isBaitBox(dialog('Your stream is ready', ['Get Access'])) === true);
+  check('a short role picker has the bait shape the Discord exemption must preserve',
+    isBaitBox(dialog('Choose your roles', ['Continue'])) === true);
+  check('a short pronoun picker has the bait shape the Discord exemption must preserve',
+    isBaitBox(dialog('Pick your pronouns', ['Next'])) === true);
   check('a cookie banner is still left alone', isBaitBox(dialog('We use cookies to improve your experience', ['Accept', 'Decline'])) === false);
   const linkedControl = div('modal', [div('t', [], 'Watch the trailer now'), el('a', { href: '/watch/44' }, [], 'Watch')]);
   el('body', {}, [linkedControl]);
@@ -232,10 +236,42 @@ if (mediaDecl) {
     check(host + ' is not', mediaApp(host) === false);
   }
 }
-check('the bait test is switched off there', /function confirmBaitEnabled\(\) \{\s*if \(MEDIA_APP_HOST\) return false;/.test(GUARD));
-check('and the sweep is never installed there', /function installConfirmBaitSweep\(\) \{[\s\S]{0,300}?if \(baitInstalled \|\| MEDIA_APP_HOST\) return;/.test(GUARD));
+check('the bait test is switched off there', /function confirmBaitEnabled\(\) \{\s*if \(MEDIA_APP_HOST \|\| DISCORD_APP_HOST\) return false;/.test(GUARD));
+check('and the sweep is never installed there', /function installConfirmBaitSweep\(\) \{[\s\S]{0,300}?if \(baitInstalled \|\| MEDIA_APP_HOST \|\| DISCORD_APP_HOST\) return;/.test(GUARD));
 check('nor is a click there warned about as a fake confirm box',
-  /if \(!overlay\) signal\('gesture'\);[\s\S]{0,160}?else if \(!MEDIA_APP_HOST && confirmBaitOverlay\(overlay\)\) \{/.test(GUARD));
+  /if \(!overlay\) signal\('gesture'\);[\s\S]{0,160}?else if \(!MEDIA_APP_HOST && !DISCORD_APP_HOST && confirmBaitOverlay\(overlay\)\) \{/.test(GUARD));
+
+/* Discord's own app dialogs must survive both removers. The host check is exact;
+   third-party frames and lookalike hosts still receive the normal bait check. */
+const discordDecl = (GUARD.match(/const DISCORD_APP_HOST = \(function \(\) \{[\s\S]*?\}\(\)\);/) || [])[0] || '';
+const gateSrc = GUARD.slice(GUARD.indexOf('function confirmBaitEnabled()'), GUARD.indexOf('const BAIT_REMOVE_CAP'));
+const baitEnabledOn = (hostname) => vm.runInNewContext(mediaDecl + '\n' + discordDecl + '\n'
+  + 'function cfg(){return {enabled:true,blockPopupTricks:true}} function hostAllowedByUser(){return false}'
+  + gateSrc + '\nconfirmBaitEnabled()', { location: { hostname } });
+check('Discord app host and bait gate lift for behavioural checks', !!discordDecl && gateSrc.includes('function confirmBaitEnabled'));
+for (const host of ['discord.com', 'discordapp.com', 'canary.discord.com', 'ptb.discord.com']) {
+  check(host + ' keeps its own onboarding dialogs', baitEnabledOn(host) === false);
+}
+for (const host of ['discord.com.evil.test', 'support.discord.com', 'frame.example.test']) {
+  check(host + ' does not receive the app-dialog exception', baitEnabledOn(host) === true);
+}
+const engineDiscord = (CONTENT_SRC.match(/discordAppHost=(\/\^.+?\/i)\.test\(location\.hostname\)/) || [])[1] || '';
+const guardDiscord = (discordDecl.match(/return (\/\^.+?\/i)\.test\(location\.hostname\)/) || [])[1] || '';
+check('both Discord app scripts match the same exact hosts', !!engineDiscord && engineDiscord === guardDiscord);
+const engineHost = engineDiscord ? vm.runInNewContext(engineDiscord) : null;
+const overlayGateLine = CONTENT_SRC.split('\n').find((line) => line.includes('if(WO.removeOverlays&&!trustedMediaHost&&')) || '';
+const overlayGate = overlayGateLine.trim().replace(/^if\(/, '').replace(/\)\{$/, '');
+check('the main overlay cleaner has an exact Discord app gate', !!engineHost && overlayGate.includes('!discordAppHost'));
+const overlayEnabledOn = (hostname) => vm.runInNewContext(overlayGate, {
+  WO: { removeOverlays: true, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleSearchResultCleanup: false },
+  trustedMediaHost: false,
+  discordAppHost: engineHost.test(hostname),
+  location: { hostname },
+  isGoogleSearchResults: () => false,
+});
+check('the main overlay cleaner leaves Discord onboarding alone', overlayEnabledOn('discord.com') === false);
+check('the main overlay cleaner still runs on unrelated pages', overlayEnabledOn('example.test') === true);
+check('a lookalike Discord host is not exempt', overlayEnabledOn('discord.com.evil.test') === true);
 
 /* ---- the shape of the fix, pinned in the source ---------------------------------------------- */
 check('the guard records whether each control sits inside a link',

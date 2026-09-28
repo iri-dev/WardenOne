@@ -39,6 +39,9 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
+const discordHostPattern = (source.match(/discordAppHost=(\/\^.+?\/i)\.test\(location\.hostname\)/) || [])[1];
+assert(discordHostPattern, 'the Discord app host matcher is present');
+const isDiscordAppHost = vm.runInNewContext(discordHostPattern);
 
 const start = source.indexOf('badgeYieldState={at:0');
 const end = source.indexOf('alignBadge=()=>{', start);
@@ -135,6 +138,7 @@ function run(options) {
     Date: { now: () => now.t },
     window: { innerWidth: opts.viewport || VIEW.w, innerHeight: VIEW.h },
     location: { hostname: opts.host || 'example.test', pathname: opts.path || '/' },
+    discordAppHost: isDiscordAppHost.test(opts.host || 'example.test'),
     getComputedStyle: (node) => { calls.style++; return node.style || {}; },
     PLAYER_SHELL_SELECTOR: '[data-player],[data-video],[id="player" i],[class~="player" i]',
     badgeHost,

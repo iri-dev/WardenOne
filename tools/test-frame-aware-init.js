@@ -58,13 +58,14 @@ function between(src, startMark, endMark, what) {
 
 const BAIT = between(AR, '  // ---- confirm-bait sweep: installed per document', '\n  /* CREDENTIAL_FRAME_GUARD_START', 'the bait sweep install');
 
-function frame({ top, width, height, media }) {
+function frame({ top, width, height, media, discord }) {
   const state = { observers: 0, timers: [], resize: null, observed: null };
   const win = { innerWidth: width, innerHeight: height };
   const ctx = {
     console: { warn() {} }, Set, Array, Object, Math, Number, String,
     TOP_FRAME: !!top,
     MEDIA_APP_HOST: !!media,
+    DISCORD_APP_HOST: !!discord,
     window: win,
     document: { documentElement: { tag: 'html' } },
     woObserver: (cb) => { state.observers++; return { observe: (target, opts) => { state.observed = opts; }, disconnect() {} }; },
@@ -130,6 +131,11 @@ function frame({ top, width, height, media }) {
   const child = frame({ top: false, width: 800, height: 600, media: true });
   child.ctx.installConfirmBaitSweep();
   check('nor in a dialog-sized frame of its own, whoever calls the installer', child.state.observers === 0 && child.state.timers.length === 0);
+}
+{
+  const app = frame({ top: true, width: 1400, height: 900, discord: true });
+  check('Discord app onboarding installs no confirm-bait remover',
+    app.state.observers === 0 && app.state.timers.length === 0);
 }
 check('the thresholds are what the comment says', /const BAIT_FRAME_MIN_W = 400;/.test(AR) && /const BAIT_FRAME_MIN_H = 300;/.test(AR));
 check('the grid\'s own small-viewport guard is still there', /if \(w < 150 \|\| h < 120\) return found;/.test(AR),
