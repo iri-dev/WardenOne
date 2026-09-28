@@ -5012,9 +5012,9 @@ function renderPermResults(out, hostname, res) {
 })();
 
 // ----- Memory Shield UI -----
-/* The build profile (CWS-03). The Store package leaves out EyeShield, Memory Shield, Tab Limit and
-   Twitch Rewind; every element marked data-feature for one of them is removed here before the popup
-   paints, a heading with a fallback label is relabelled for what remains under it, and nothing
+/* The build profile (CWS-03). The Store package includes EyeShield, Memory Shield and Tab Limit,
+   and leaves out Twitch Rewind; every element marked data-feature for an omitted utility is
+   removed before the popup paints, a heading with a fallback label is relabelled, and nothing
    below asks the worker for a feature this package does not carry. In the full build the omitted
    list is empty and this does nothing. */
 function applyBuildProfile() {

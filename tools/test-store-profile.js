@@ -8,9 +8,9 @@
  * The Store package carries one purpose, and the code knows which package it is in (CWS-03).
  * Run: node tools/test-store-profile.js
  *
- * Chrome's Web Store allows one narrow purpose per extension. EyeShield, Memory Shield, Tab Limit
- * and Twitch Rewind are separate goals, so the Store package omits them: the files, the manifest
- * entries and the settings. That is only honest if the code left behind runs without them, so this
+ * Chrome's Web Store allows one narrow purpose per extension. The Store package includes
+ * EyeShield's display settings and Memory Shield's resource controls, including Tab Limit, and
+ * omits Twitch Rewind. That is only honest if the code runs with exactly those choices, so this
  * suite does three things. It builds the Store tree the way the tool does and checks what is and is
  * not in it. It lifts the worker's guarded paths and the popup's applier and runs them under the
  * Store profile -- the module loader, the memory-* messages, the tab menu, EyeShield's registration,
@@ -86,7 +86,8 @@ function between(src, from, to, what) {
 let tool = null;
 try { tool = require('./build-store-package.js'); } catch (e) { check('the Store build tool loads', false, String(e && e.message)); }
 const PROFILE_TEXT = fs.existsSync(path.join(ROOT, 'build-profile.js')) ? fs.readFileSync(path.join(ROOT, 'build-profile.js'), 'utf8') : '';
-const STORE_IDS = ['eyeShield', 'memoryShield', 'tabLimit', 'twitchRewind'];
+const FEATURE_IDS = ['eyeShield', 'memoryShield', 'tabLimit', 'twitchRewind'];
+const STORE_IDS = ['twitchRewind'];
 /* The profile as the package would carry it: the repository text for the full build, the tool's
    rewrite for the Store build. */
 function profileSource(store) {
@@ -98,10 +99,11 @@ section('the profile', () => {
   check('build-profile.js exists', PROFILE_TEXT.length > 0);
   const { build } = tool.loadProfile();
   check('the repository copy is the full build', build.profile === 'full' && build.omitted.length === 0, [build.profile, build.omitted]);
-  check('it records the four separable utilities the audit named', JSON.stringify(Object.keys(build.features)) === JSON.stringify(STORE_IDS), Object.keys(build.features));
-  check('each carries a goal a reader could want on its own, in words', STORE_IDS.every((id) => /\w+ ?: .{20,}/.test(build.features[id].goal)));
+  check('it records the four utilities the audit named', JSON.stringify(Object.keys(build.features)) === JSON.stringify(FEATURE_IDS), Object.keys(build.features));
+  check('each carries a goal in words', FEATURE_IDS.every((id) => /\w+ ?: .{20,}/.test(build.features[id].goal)));
+  check('EyeShield and resource controls are included; only replay is omitted', ['eyeShield', 'memoryShield', 'tabLimit'].every((id) => build.features[id].store === 'include') && JSON.stringify(tool.storeOmitted(build)) === JSON.stringify(STORE_IDS));
   const store = tool.loadProfile(profileSource(true)).build;
-  check('the Store rewrite omits all four and nothing else', store.profile === 'store' && JSON.stringify(store.omitted) === JSON.stringify(STORE_IDS));
+  check('the Store rewrite omits only replay', store.profile === 'store' && JSON.stringify(store.omitted) === JSON.stringify(STORE_IDS));
   check('the rewrite touches only the two marked lines', PROFILE_TEXT.split('\n').length === profileSource(true).split('\n').length
     && PROFILE_TEXT.replace(/profile: 'full',\n  omitted: Object\.freeze\(\[\]\),/, '') === profileSource(true).replace(/profile: 'store',\n  omitted: Object\.freeze\(\[[^\]]*\]\),/, ''));
 });
@@ -112,14 +114,16 @@ section('the Store tree', () => {
   const staged = spawnSync('git', ['write-tree'], { cwd: ROOT, encoding: 'utf8' });
   if (staged.status !== 0) throw new Error('git write-tree failed');
   TREE = tool.buildStoreTree({ treeish: staged.stdout.trim() });
-  check('the eight files are gone', ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].every((f) => TREE.removed.includes(f) && !TREE.files.has(f)), TREE.omittedFiles);
+  check('the replay files are gone', ['twitch-rewind.js', 'twitch-vod-rewind.js'].every((f) => TREE.removed.includes(f) && !TREE.files.has(f)), TREE.omittedFiles);
+  check('the Memory Shield module remains', TREE.files.has('background-memory.js') && !TREE.removed.includes('background-memory.js'));
+  check('EyeShield and its preload files remain', ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((f) => TREE.files.has(f) && !TREE.removed.includes(f)));
   check('tooling, sources, docs, the site and the workflow are not in the package', !Array.from(TREE.files.keys()).some((f) => /^(?:tools|src|docs|site|\.github)\//.test(f)));
   check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'NOTICE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
   /* Every document in the package is there on purpose (REL-03): the repository's own notes are not. */
   check('the changelog, the security policy and the support note are not in the package', ['CHANGELOG.md', 'SECURITY.md', 'SUPPORT.md', 'README.md'].every((f) => !TREE.files.has(f) && TREE.removed.includes(f)));
   check('the manifest no longer injects Twitch Rewind', !TREE.manifest.content_scripts.some((e) => (e.js || []).some((f) => /rewind/.test(f))));
   check('...and every other content script survived', TREE.manifest.content_scripts.length >= 6 && TREE.manifest.content_scripts.some((e) => (e.js || []).includes('anti-redirect.js')));
-  check('the profile inside the package says store', /profile: 'store'/.test(TREE.files.get('build-profile.js')) && /omitted: Object\.freeze\(\['eyeShield', 'memoryShield', 'tabLimit', 'twitchRewind'\]\)/.test(TREE.files.get('build-profile.js')));
+  check('the profile inside the package says store', /profile: 'store'/.test(TREE.files.get('build-profile.js')) && /omitted: Object\.freeze\(\['twitchRewind'\]\)/.test(TREE.files.get('build-profile.js')));
   check('nothing left asks for a file that is gone', TREE.dangling.length === 0, TREE.dangling);
   check('nothing left names an omitted file outside the guarded loaders', TREE.stray.length === 0, TREE.stray);
 });
@@ -168,21 +172,23 @@ function workerRealm(store, extra) {
   return { api: sandbox.api, state };
 }
 
-section('the worker without the module', () => {
+section('the Store worker with resource protection', () => {
   const w = workerRealm(true);
-  check('the Store worker never imports background-memory.js', !w.state.imported.includes('background-memory.js') && w.api.MODULE_LOADED.memory === false, w.state.imported);
+  check('the Store worker imports background-memory.js', w.state.imported.includes('background-memory.js') && w.api.MODULE_LOADED.memory === true, w.state.imported);
   const responses = [];
   const handled = w.api.guardMessage({ kind: 'memory-score' }, (r) => responses.push(r));
-  check('memory-score is answered "not in this build"', handled === true && responses.length === 1 && responses[0].ok === false && responses[0].omitted === true, responses);
+  check('memory-score reaches its module', handled === false && responses.length === 0, responses);
   const other = [];
   check('a message for anything else passes the guard', w.api.guardMessage({ kind: 'tracker-learner-status' }, (r) => other.push(r)) === false && other.length === 0);
   const ids = w.api.WO_MENU_ITEMS.map((i) => i.id);
-  check('the tab menu has no sleep, never-sleep or close entry and no separator for them', !ids.includes('sleep') && !ids.includes('never') && !ids.includes('close') && !ids.includes('wardenone-sep-tab') && ids.includes('block') && ids.includes('zap'), ids);
+  check('the tab menu keeps its sleep, never-sleep and close actions', ids.includes('sleep') && ids.includes('never') && ids.includes('close') && ids.includes('wardenone-sep-tab') && ids.includes('block') && ids.includes('zap'), ids);
   return w.api.reconcileEyeShieldInjection({ enabled: true, eyeShield: true }).then(() => {
-    check('EyeShield is never registered, and a leftover registration is removed', w.state.registered.length === 0 && w.state.unregistered.includes('wo-eyeshield-dynamic') && w.state.unregistered.includes('wo-eyeshield-sites-dynamic') && !w.state.injected, w.state);
+    check('EyeShield stays active in the Store worker', w.state.registered.includes('wo-eyeshield-dynamic') && w.state.unregistered.length === 0, w.state);
     return w.api.coreFiles();
   }).then((files) => {
-    check('the integrity list asks for none of the omitted files', !files.some((f) => ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].includes(f)), files.filter((f) => /eyeshield|memory|rewind/.test(f)));
+    check('the integrity list asks for none of the omitted files', !files.some((f) => ['twitch-rewind.js', 'twitch-vod-rewind.js'].includes(f)), files.filter((f) => /rewind/.test(f)));
+    check('the integrity list still asks for Memory Shield', files.includes('background-memory.js'));
+    check('the integrity list still asks for EyeShield and its preloads', ['eyeshield.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((f) => files.includes(f)));
     check('...and does ask for the profile', files.includes('build-profile.js') && files.includes('background.js'));
   });
 });
@@ -192,7 +198,7 @@ section('the worker with everything, and the module missing anyway', () => {
   check('the full worker imports the module', full.state.imported.includes('background-memory.js') && full.api.MODULE_LOADED.memory === true);
   const ids = full.api.WO_MENU_ITEMS.map((i) => i.id);
   check('...and offers the whole menu', ids.includes('sleep') && ids.includes('never') && ids.includes('close') && ids.includes('wardenone-sep-tab'));
-  check('the menu fingerprint differs between the two packages, so a stale menu is rebuilt', full.api.wardenMenuFingerprint(true) !== workerRealm(true).api.wardenMenuFingerprint(true));
+  check('the menu fingerprint is the same when both packages have Memory Shield', full.api.wardenMenuFingerprint(true) === workerRealm(true).api.wardenMenuFingerprint(true));
   const broken = workerRealm(false, { importThrows: true });
   check('a full build whose module file is missing still starts, with the module marked absent', broken.api.MODULE_LOADED.memory === false);
   const handled = [];
@@ -239,10 +245,10 @@ function popupRealm(store) {
 section('the popup', () => {
   const store = popupRealm(true);
   const q = (s) => store.doc.querySelectorAll(s);
-  check('under the Store profile the EyeShield heading and panel are gone', q('#eyeshield-title').length === 0 && q('#eyeshield-panel').length === 0);
+  check('under the Store profile the EyeShield heading and panel remain', q('#eyeshield-title').length === 1 && q('#eyeshield-panel').length === 1);
   check('...the Twitch Rewind block is gone', q('.rewind-drop').length === 0 && q('input[data-key="twitchRewind"]').length === 0);
-  check('...every Memory Shield and Tab Limit row is gone', q('input[data-key="memoryShield"]').length === 0 && q('#tl-guard').length === 0 && q('#mem-score').length === 0);
-  check('...the section heading is relabelled for what remains under it', q('#mem-title').length === 1 && q('#mem-title')[0].textContent === 'Resource Saver' && !q('#mem-title')[0].hasAttribute('data-feature'));
+  check('...Memory Shield and Tab Limit controls remain', q('input[data-key="memoryShield"]').length === 1 && q('#tl-guard').length === 1 && q('#mem-score').length === 1);
+  check('...the Memory Shield heading remains', q('#mem-title').length === 1 && q('#mem-title')[0].textContent === 'Memory Shield');
   check('...the Resource Saver row and the rest of the popup stay', q('#resource-saver').length === 1 && q('#privacy-title').length === 1);
   check('...and the applier reports what it removed', JSON.stringify(store.omitted) === JSON.stringify(STORE_IDS));
   const full = popupRealm(false);
@@ -255,7 +261,7 @@ section('the popup', () => {
   const unmarked = [];
   const controls = [];
   for (const id of STORE_IDS) build.features[id].keys.forEach((k) => controls.push('data-key="' + k + '"'));
-  ['id="tl-guard"', 'id="tl-max"', 'id="tl-idle"', 'id="tl-close"', 'id="tl-warn"', 'id="tr-minutes"', 'id="mem-score"', 'id="mem-modes"', 'id="eyeshield-modes"', 'id="eyeshield-brightness"'].forEach((c) => controls.push(c));
+  ['id="tr-minutes"'].forEach((c) => controls.push(c));
   for (const c of controls) {
     const at = POPUP_HTML.indexOf(c);
     if (at < 0) continue;   // a setting with no control of its own (per-host maps, the mode string)
@@ -283,8 +289,9 @@ section('determinism', () => {
     const hb = crypto.createHash('sha256').update(fs.readFileSync(b)).digest('hex');
     check('two builds of one tree are byte-identical', ha === hb && fs.statSync(a).size > 100000, [ha.slice(0, 12), hb.slice(0, 12)]);
     const names = zipEntries(fs.readFileSync(a));
-    check('the archive lists the runtime and none of the omitted files', names.includes('manifest.json') && names.includes('build-profile.js') && names.includes('background.js')
-      && !names.some((n) => ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'background-memory.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'].includes(n)), names.filter((n) => /eyeshield|memory|rewind/.test(n)));
+    check('the archive carries EyeShield and Memory Shield and excludes replay', names.includes('manifest.json') && names.includes('build-profile.js') && names.includes('background.js') && names.includes('background-memory.js')
+      && ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((n) => names.includes(n))
+      && !names.some((n) => ['twitch-rewind.js', 'twitch-vod-rewind.js'].includes(n)), names.filter((n) => /eyeshield|memory|rewind/.test(n)));
     check('...and no tooling, sources or docs', !names.some((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)), names.filter((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)).slice(0, 5));
     check('manifest.json sits at the root of the archive', names.includes('manifest.json') && !names.some((n) => /\/manifest\.json$/.test(n)));
     check('the entry count matches the tree', names.filter((n) => !n.endsWith('/')).length === TREE.kept.length, [names.filter((n) => !n.endsWith('/')).length, TREE.kept.length]);
@@ -295,8 +302,8 @@ section('determinism', () => {
 
 /* ---- 6. what the reader and the reviewer are told ---------------------------------------- */
 section('the record', () => {
-  check('the decision page exists and states the one sentence', /WardenOne protects you from/.test(DOC) && /## The decision/.test(DOC));
-  check('...names the four utilities as omitted', STORE_IDS.every((id) => DOC.includes('`' + id + '`')));
+  check('the decision page exists and states the purpose', /WardenOne helps readers browse with more control/.test(DOC) && /## The decision/.test(DOC));
+  check('...records all four utility decisions', FEATURE_IDS.every((id) => DOC.includes('`' + id + '`')) && ['eyeShield', 'memoryShield', 'tabLimit'].every((id) => new RegExp('`' + id + '`\\) \\| Included').test(DOC)) && /Twitch Rewind \(`twitchRewind`\) \| Omitted/.test(DOC));
   check('...has a row for every popup section', tool.popupSections().every((s) => DOC.includes('| ' + s + ' |')), tool.popupSections().filter((s) => !DOC.includes('| ' + s + ' |')));
   check('...and says the GitHub build is unchanged', /GitHub build is unchanged/.test(DOC));
   check('the README points at the Store package and the record', /build-store-package\.js/.test(README) && /store-single-purpose\.md/.test(README));

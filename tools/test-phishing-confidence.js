@@ -96,6 +96,7 @@ const ORDINARY = [
   'gemini.google.com',
   'signal.org',
   'discord.com',
+  'disboard.org',
   'developer.apple.com',
   'support.google.com',
 ];
@@ -128,6 +129,12 @@ const PHISHING = [
     check(host + ' is not flagged at all', !v,
       v && (v.confidence + '/' + v.kind + ' — the registrable label is being counted, not resolved'));
   });
+}());
+
+(function theDiscordDirectoryIsItsOwnSite() {
+  const v = verdict('disboard.org');
+  check('Disboard is not a Discord look-alike in the page detector', !v,
+    v && (v.confidence + '/' + v.kind));
 }());
 
 (function realPhishingIsStillCaught() {

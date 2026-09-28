@@ -7,18 +7,14 @@
 /*
  * The build profile: which of WardenOne's separable utilities this package carries (CWS-03).
  *
- * WardenOne's purpose is protection -- blocking threats, defending privacy, reviewing what a page,
- * a download or an extension is about to do. Four features in the GitHub build serve a different
- * goal a reader could want, or not want, on their own: EyeShield (visual comfort), Memory Shield
- * and Tab Limit (RAM and tab volume), Twitch Rewind (local replay). Chrome's Web Store rule is one
- * narrow purpose per extension, and the reviewer's question is whether each top-level feature
- * delivers that one sentence. Those four do not, so the Store package omits them -- omits the
- * code, not just the description -- and this file is how every part of WardenOne knows which
- * package it is in.
+ * WardenOne's Store purpose is protective browsing with reader control over page presentation
+ * and resource use. EyeShield supports readability; Memory Shield releases resources used by
+ * inactive tabs, and Tab Limit is part of that resource control. Twitch Rewind remains omitted
+ * as a separate replay goal. The Store decision for each feature is explicit below.
  *
  * `profile` and `omitted` are the two lines tools/build-store-package.js rewrites for the Store
  * package; in the repository they say `full` and nothing, and the gate checks that. `features` is
- * the decision record: each separable utility with everything the package would carry for it. The
+ * the decision record: each utility with its Store decision and everything it would carry. The
  * worker imports this file, the popup loads it, and both degrade a missing feature to "not in this
  * build" rather than to an error. docs/store-single-purpose.md is generated from this table.
  */
@@ -31,7 +27,8 @@ const WARDENONE_BUILD = Object.freeze({
   features: Object.freeze({
     eyeShield: Object.freeze({
       label: 'EyeShield',
-      goal: 'Visual comfort: warmth, brightness, contrast, saturation and grayscale applied to pages.',
+      store: 'include',
+      goal: 'Reader-controlled page presentation for readability and visual comfort: brightness, contrast, warmth, saturation and grayscale.',
       files: Object.freeze(['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js']),
       keys: Object.freeze([
         'eyeShield', 'eyeShieldMode', 'eyeShieldBrightness', 'eyeShieldBrightnessByHost', 'eyeShieldContrast',
@@ -43,7 +40,8 @@ const WARDENONE_BUILD = Object.freeze({
     }),
     memoryShield: Object.freeze({
       label: 'Memory Shield',
-      goal: 'RAM: sleeping idle tabs, freeing memory, finding duplicate and zombie tabs.',
+      store: 'include',
+      goal: 'Resource protection: discard eligible idle tabs to release RAM, with safeguards for active work and media; find duplicate and long-idle tabs.',
       files: Object.freeze(['background-memory.js']),
       keys: Object.freeze([
         'memoryShield', 'memoryMode', 'memoryMinutesOverride', 'memoryNeverPinned', 'memoryNeverAudio',
@@ -54,7 +52,8 @@ const WARDENONE_BUILD = Object.freeze({
     }),
     tabLimit: Object.freeze({
       label: 'Tab Limit',
-      goal: 'Tab volume: sleeping or closing the oldest unused tab once a window passes a limit.',
+      store: 'include',
+      goal: 'Memory Shield control: when an optional tab cap is reached, sleep an eligible idle tab or close one if the reader opts in.',
       // Implemented inside background-memory.js; its own switch and settings, no file of its own.
       files: Object.freeze([]),
       keys: Object.freeze(['tabLimitGuard', 'tabLimitMax', 'tabLimitClose', 'tabLimitMinIdleMinutes', 'tabLimitWarn']),
@@ -63,6 +62,7 @@ const WARDENONE_BUILD = Object.freeze({
     }),
     twitchRewind: Object.freeze({
       label: 'Twitch Rewind',
+      store: 'omit',
       goal: 'Local replay of a live Twitch stream: a rewind buffer and a jump to the in-progress recording.',
       files: Object.freeze(['twitch-rewind.js', 'twitch-vod-rewind.js']),
       keys: Object.freeze(['twitchRewind', 'twitchRewindMinutes', 'twitchVodRewind']),
