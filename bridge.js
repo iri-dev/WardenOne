@@ -373,6 +373,19 @@
       return true;
     } catch (_) { return false; }
   };
+  const dispatchWarningDecision = (id, decisionId) => {
+    if (!KEY_PADS || id !== 'wo-paste-warn' || !Number.isSafeInteger(decisionId) || decisionId < 1) return false;
+    bridgeEventSeq += 1;
+    const type = 'warning_decision';
+    const detail = { id, decisionId };
+    try {
+      document.dispatchEvent(new CustomEvent('wo-event', { detail: {
+        token: TOKEN, type, detail, src: 'bridge', eseq: bridgeEventSeq,
+        emac: __woAuth.hmac(KEY_PADS, __woAuth.eventText('bridge', bridgeEventSeq, type, detail)),
+      } }));
+      return true;
+    } catch (_) { return false; }
+  };
   try { Object.defineProperty(window, '__wardenOneLocalNotice', { value: dispatchLocalNotice, configurable: true }); } catch (_) {}
   let permSignalSeqSeen = 0;
   const permissionSignalSigned = (d) => {
@@ -1042,6 +1055,7 @@
   }
   function showOwnedMainWarning(detail) {
     const id = String(detail && detail.id || '');
+    const decisionId = Number(detail && detail.decisionId);
     if (!Object.prototype.hasOwnProperty.call(mainWarningCopy, id)) return;
     const message = mainWarningCopy[id];
     if (!message) return;
@@ -1083,12 +1097,34 @@
       overlay.destroy();
     };
     button.addEventListener('click', onAcknowledge);
+    card.appendChild(button);
+    let continuePaste = null;
+    let onContinuePaste = null;
+    if (id === 'wo-paste-warn' && Number.isSafeInteger(decisionId) && decisionId > 0) {
+      continuePaste = document.createElement('button');
+      continuePaste.type = 'button';
+      continuePaste.setAttribute('style', 'all:initial!important;display:block!important;cursor:pointer!important;'
+        + 'background:#fff!important;color:#922132!important;padding:9px 14px!important;'
+        + 'border:1px solid #922132!important;border-radius:8px!important;'
+        + 'font:bold 13px system-ui,sans-serif!important;margin-top:8px!important;');
+      continuePaste.textContent = 'Paste anyway';
+      onContinuePaste = (e) => {
+        if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(continuePaste)) return;
+        if (!dispatchWarningDecision(id, decisionId)) return;
+        clearMainWarningChecks();
+        mainWarningText.clear();
+        mainWarningOverlay = null;
+        overlay.destroy();
+      };
+      continuePaste.addEventListener('click', onContinuePaste);
+      card.appendChild(continuePaste);
+    }
     const destroyOwnedWarning = overlay.destroy.bind(overlay);
     overlay.destroy = () => {
       button.removeEventListener('click', onAcknowledge);
+      if (continuePaste) continuePaste.removeEventListener('click', onContinuePaste);
       destroyOwnedWarning();
     };
-    card.appendChild(button);
     root.appendChild(card);
     overlay.mount();
     overlay.dialog({ label: 'WardenOne warning', focus: 'button' });
