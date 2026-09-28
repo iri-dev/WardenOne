@@ -22590,7 +22590,7 @@
       Player shells count as controls, not just buttons: a player's seek bar, its
       settings menu and its exit-fullscreen affordance are frequently divs with
       listeners rather than anything a button selector would match. */
-      badgeYieldState={at:0,sig:""},
+      badgeYieldState={at:0,sig:"",route:"",profile:!1},
       /* How long a hover-driven answer stays good while the viewport is unchanged. */
       BADGE_YIELD_CACHE_MS=4000,
       /* How far up the badge may move to clear something before it gives up and goes
@@ -22809,6 +22809,48 @@
         }
 
       },
+      /* A user popout can open over a server without changing the route. Its
+      View Full Profile button identifies the popout from its visible UI, and a
+      bounded ancestor must cover the badge's corner so an unrelated profile
+      control elsewhere cannot bring the chip back over the member list. */
+      badgeDiscordProfileOpen=()=>{
+        try{
+          const host=String(location.hostname||"").toLowerCase();
+          if(!(host==="discord.com"||host==="discordapp.com"||host==="canary.discord.com"||host==="ptb.discord.com")||!/^\/channels\/\d+(?:\/|$)/.test(location.pathname||""))return!1;
+          const home=badgeHomeRect();
+          if(!home)return!1;
+          const x=home.left+home.width/2,
+          y=home.top+home.height/2,
+          buttons=document.querySelectorAll('button,[role="button"]');
+          for(let i=buttons.length-1;i>=0;i--){
+            const button=buttons[i];
+            if(!/^View Full Profile$/i.test(String(button.textContent||button.getAttribute&&button.getAttribute("aria-label")||"").trim()))continue;
+            for(let node=button.parentElement,depth=0;node&&depth<8;node=node.parentElement,depth++){
+              const box=node.getBoundingClientRect();
+              if(box.width>0&&box.width<=500&&box.height>0&&box.height<=(window.innerHeight||0)&&box.left<=x&&box.right>=x&&box.top<=y&&box.bottom>=y)return!0
+            }
+          }
+        }
+        catch(_){
+
+        }
+        return!1
+
+      },
+      /* Discord server channels keep a member list at the badge's home corner.
+      That list scrolls inside the app, so the generic control-yield rule leaves
+      the chip over member rows. DMs use @me; a profile popout at this corner
+      also keeps the chip. Protection and the toolbar badge run either way. */
+      badgeOnDiscordServer=profileOpen=>{
+        try{
+          const host=String(location.hostname||"").toLowerCase();
+          return!profileOpen&&(host==="discord.com"||host==="discordapp.com"||host==="canary.discord.com"||host==="ptb.discord.com")&&/^\/channels\/\d+(?:\/|$)/.test(location.pathname||"")
+        }
+        catch(_){
+          return!1
+        }
+
+      },
       /* Throttled, because the hit test below is a real layout read. Callers are
       events that can actually change the answer -- entering fullscreen, resizing,
       or the pointer arriving in the badge's own corner -- never a timer. */
@@ -22822,23 +22864,28 @@
           forty-odd forced layout reads -- and crossing the badge five times in a couple
           of seconds asked five times. That accumulation is what turned repeated
           crossings into a stall: smooth at first, worse the more it was triggered.
-          Keyed on viewport size, and every FORCED caller (resize, fullscreenchange, a
-          player starting, the load-time one-shots) recomputes regardless, so a player
+          Keyed on viewport size and Discord's route/profile state, and every FORCED
+          caller (resize, fullscreenchange, a player starting, the load-time
+          one-shots) recomputes regardless, so a player
           bar that mounts late is still noticed. Only the hover path is cached. */
-          const sig=(window.innerWidth||0)+"x"+(window.innerHeight||0);
+          const route=String(location.pathname||""),
+          profile=badgeDiscordProfileOpen(),
+          sig=(window.innerWidth||0)+"x"+(window.innerHeight||0)+"|"+route+"|"+profile;
           if(!force&&sig===badgeYieldState.sig&&now-badgeYieldState.at<BADGE_YIELD_CACHE_MS)return;
           badgeYieldState.at=now,
-          badgeYieldState.sig=sig;
+          badgeYieldState.sig=sig,
+          badgeYieldState.route=route,
+          badgeYieldState.profile=profile;
           /* All the reading first, then one write. Every measurement is of the badge's
           HOME corner, whatever it is doing right now. */
-          const fs=badgeInFullscreen(),
-          home=badgeHomeRect(),
-          under=fs||!home?null:badgeProbe(home),
-          near=!fs&&home?badgeNearMediaControl(home):!1;
+          const hide=badgeInFullscreen()||badgeOnDiscordServer(profile),
+          home=hide?null:badgeHomeRect(),
+          under=hide||!home?null:badgeProbe(home),
+          near=!hide&&home?badgeNearMediaControl(home):!1;
           let away=!1,
           inert=!1,
           lift=0;
-          if(fs||!home)away=inert=!0;
+          if(hide||!home)away=inert=!0;
           else if("player"===under.kind||near)away=inert=!0;
           else if("control"===under.kind){
             /* Out of the way rather than dead. The spot it already holds first, when the
@@ -22912,6 +22959,15 @@
           left open at that moment stayed open with nothing able to dismiss it. Closed here;
           the badge reopens it the next time it can be pressed. */
           (away||inert)&&badgePanel&&badgePanel.classList.remove("open")
+        }
+        catch(_){
+
+        }
+
+      },
+      badgeRouteChanged=()=>{
+        try{
+          if(String(location.pathname||"")!==badgeYieldState.route||badgeDiscordProfileOpen()!==badgeYieldState.profile)updateBadgeYield(!0)
         }
         catch(_){
 
@@ -23059,7 +23115,31 @@
               bEl.classList.add("pop"))
             },
             !badgeEventsBound){
-              badgeEventsBound=!0,
+              badgeEventsBound=!0;
+              if(/^(?:discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)$/i.test(location.hostname||"")){
+                woOn(window,"popstate",badgeRouteChanged),
+                woOn(window,"hashchange",badgeRouteChanged);
+                try{
+                  window.navigation&&woOn(window.navigation,"currententrychange",badgeRouteChanged)
+                }
+                catch(_){
+
+                }
+                /* A click can open or close a profile popout without a route change.
+                It also covers older browsers without the Navigation API. The
+                deferred check only reruns the badge's full hit tests when the
+                route or the profile at this corner changed. */
+                woOn(document,"click",()=>setTimeout(badgeRouteChanged,0),{
+                  capture:!0,
+                  passive:!0
+                }),
+                woOn(document,"keyup",e=>{
+                  if(e&&/^(?:Escape|Enter| )$/.test(e.key||""))setTimeout(badgeRouteChanged,0)
+                },{
+                  capture:!0,
+                  passive:!0
+                })
+              }
               /* A scrollbar can appear or vanish long after load -- an SPA growing
               its content, or the window being resized past a breakpoint. */
               woOn(window,
