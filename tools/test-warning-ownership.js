@@ -92,12 +92,31 @@ const W = sandbox.__W;
   }
   check('bridge requires an engine signature before creating the isolated copy',
     /type === 'warning_panel'[\s\S]*?d\.src === 'engine' && eventSigned\(d\)[\s\S]*?showOwnedMainWarning/.test(BRIDGE));
+  check('isolated warning relay captures before page listeners can stop propagation',
+    BRIDGE.includes("woOn(window, 'wo-event', (e) => {")
+      && /woOn\(window, 'wo-event',[\s\S]*?\}, true\);/.test(BRIDGE));
   check('isolated warning uses a closed-shadow owned overlay and trusted dismissal',
     BRIDGE.includes("woOwnedOverlay('wo-owned-main-warning')")
       && BRIDGE.includes('if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(button)) return;'));
   check('isolated warning copy is fixed in bridge and checks for occlusion',
     BRIDGE.includes('const message = mainWarningCopy[id];')
       && BRIDGE.includes("kind: 'warning-ui-compromised'"));
+  const toastList = /const OWNED_TOAST_TYPES=new Set\(\[([\s\S]*?)\]\);/.exec(src);
+  const toastMap = /const mainToastCopy = Object\.freeze\(\{([\s\S]*?)\n  \}\);/.exec(BRIDGE);
+  const emittedToasts = toastList ? [...toastList[1].matchAll(/"([a-z_]+)"/g)].map((match) => match[1]).sort() : [];
+  const ownedToasts = toastMap ? [...toastMap[1].matchAll(/^    ([a-z_]+):/gm)].map((match) => match[1]).sort() : [];
+  check('every high-stakes toast emitted by MAIN has fixed isolated copy',
+    emittedToasts.length >= 10 && JSON.stringify(emittedToasts) === JSON.stringify(ownedToasts)
+      && emittedToasts.every((type) => src.includes(type + ':{')));
+  check('owned toast is sent only after MAIN preference and dedupe gates, and accepted only with an engine signature',
+    src.indexOf('toastSeen.add(key);') < src.indexOf('if(OWNED_TOAST_TYPES.has(type))__woEmit({type:"warning_toast"')
+      && /type === 'warning_toast'[\s\S]*?d\.src === 'engine' && eventSigned\(d\)[\s\S]*?showOwnedMainToast/.test(BRIDGE)
+      && BRIDGE.includes("woOwnedOverlay('wo-owned-security-toast')"));
+  check('warnings raised before the toast listener is ready are delivered after it registers',
+    src.includes('const __woToastPending=[];')
+      && src.includes('if(__woToastPending.length>32)__woToastPending.shift()')
+      && src.indexOf('woOn(document,"wo-event",') < src.indexOf('__woToastReady=!0;')
+      && src.includes('showToast(pending.type,pending.detail)'));
   check('paste continuation belongs to the isolated overlay, not the page-owned panel',
     !/go\.textContent="Paste anyway"/.test(src)
       && BRIDGE.includes("continuePaste.textContent = 'Paste anyway'")

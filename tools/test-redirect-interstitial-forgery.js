@@ -85,7 +85,7 @@ const sig = (seq, url, why, kind) => 'redirect-warning\n' + seq + '\n' + url + '
 /* ---- the bridge's wo-event relay, in the isolated world ---------------------------------- */
 function bridgeRealm(opts) {
   const o = opts || {};
-  const relayStart = BRIDGE.indexOf("woOn(document, 'wo-event'");
+  const relayStart = BRIDGE.indexOf("woOn(window, 'wo-event'");
   assert(relayStart >= 0, 'the bridge no longer relays wo-event');
   const listener = balanced(BRIDGE, relayStart) + ');';
   const engineMacLine = /^\s*const engineMac = [^\n]+/m.exec(BRIDGE);
@@ -95,6 +95,7 @@ function bridgeRealm(opts) {
     TOKEN, KEY: o.key === undefined ? KEY : o.key, Number, String, Object, RegExp, Date, Uint8Array, Uint32Array, Math, Array, WeakSet, Set, JSON,
     chrome: { runtime: { lastError: null, sendMessage: (msg) => { state.sent.push(JSON.parse(JSON.stringify(msg))); } } },
     document: { dispatchEvent(ev) { const fn = state.listeners[ev.type]; if (fn) fn(ev); return true; } },
+    window: {},
     woOn: (target, type, fn) => { state.listeners[type] = fn; },
   };
   const ctx = vm.createContext(sandbox);

@@ -29,13 +29,23 @@ unpublished Dashboard settings.
 
 1. Finish and commit the change. Run `node tools/check-maintainability.js` on a
    clean checkout of that exact commit.
-2. Run `node tools/check-store-rights.js`. It must pass. Each runtime list and
-   redistributed ruleset needs a release-owner licence decision in
-   `docs/source-inventory.json`, with any required notice in the exact package.
-3. Run `node tools/build-store-candidate.js`. It builds the Store profile from
+2. Run `node tools/build-store-candidate.js`. It builds the Store profile from
    `HEAD` into ignored `.store-candidates/`, with a commit-and-digest filename.
    The sibling JSON records the exact ZIP SHA-256, byte length and every file
    hash. Run `node tools/build-store-candidate.js --verify <attestation.json>`.
+3. Before publishing or uploading that candidate, run `node tools/check-store-rights.js`.
+   It must pass. Each runtime list and redistributed ruleset needs a release-owner
+   decision in `docs/source-inventory.json`. Set `licenceVerified` only after
+   reviewing the terms, and record `rightsReview` with `reviewer`, `reviewedAt`
+   (YYYY-MM-DD), an HTTPS `evidenceUrl` for the terms, `termsRevision`, and
+   `approvedUse` (`runtime-fetch` or `redistribution`). Set `noticeDisposition`
+   to `not-required` or `included`; for `included`, list the shipped notice
+   files in `noticeFiles` (`NOTICE`, `CREDITS.md`, `LICENSE`). For redistributed
+   files, also record the exact `artifactSha256`. The gate rejects a changed
+   artifact and incomplete decisions. Regenerating the inventory preserves
+   decisions for unchanged source URLs and file names, but a new URL begins
+   unreviewed. Review any changed generated artifact again before updating its
+   digest. Current unresolved inputs remain in place and block submission.
 4. Enable GitHub release immutability for future releases in repository Settings.
    Create a **draft** release at a new `store-candidate-<commit>` tag, attach the
    ZIP and JSON, then publish the release. Confirm GitHub marks it Immutable.

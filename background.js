@@ -19665,6 +19665,70 @@ function privacyStoreTimestamp(value) {
   return oldest;
 }
 
+/* One inventory for retention disclosure and site erasure. A null maximum means this
+   category has no guaranteed global limit; a feature's own pruning may be stricter. */
+const PRIVACY_STORE_POLICY = Object.freeze([
+  { owner: 'Settings and user rules', sensitivity: 'site preferences', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Until changed or erased', siteErase: 'prune', keys: [
+    'wardenone_config', 'wardenone_firewall', 'wardenone_hidden_elements', 'wardenone_user_rules',
+    'wardenone_blocklist',
+    'wardenone_custom_lists', 'wardenone_blocked_domains', 'wardenone_learned',
+    'wardenone_js_allowlist', 'wardenone_js_global_block', 'wardenone_download_trusted_sites',
+    'wardenone_ext_reputation_custom', 'wardenone_script_trusted_hosts', 'wardenone_location_site_rules',
+  ] },
+  { owner: 'Activity history', sensitivity: 'browsing records', area: 'local', maxAgeDays: 30, maxItems: 200, retention: '30 days; latest 200 events', siteErase: 'prune', keys: [
+    'wardenone_history',
+  ] },
+  { owner: 'Notification Centre', sensitivity: 'security records', area: 'local', maxAgeDays: null, maxItems: 300, retention: 'Reader choice: unlimited, 1, 7 or 30 days; latest 300 notices', siteErase: 'prune', keys: [
+    'wardenone_notifications',
+  ] },
+  { owner: 'Tracker learning', sensitivity: 'derived browsing evidence', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Candidates expire after 30 days without a new sighting; user decisions stay until erased', siteErase: 'reset', keys: [
+    'wardenone_tracker_learner',
+  ] },
+  { owner: 'Script Drift', sensitivity: 'derived script evidence', area: 'local', maxAgeDays: null, maxItems: 700, retention: 'Baselines unseen for 30 days are pruned; active baselines can persist', siteErase: 'reset', keys: [
+    'wardenone_script_drift_baselines',
+  ] },
+  { owner: 'Reputation lookups', sensitivity: 'browsing-derived cache', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Feature-managed cache; no single global age guarantee', siteErase: 'reset', keys: [
+    'wardenone_safe_browsing_cache', 'wardenone_phishtank_cache', 'wardenone_urlhaus_cache',
+    'wardenone_whoisxml_cache', 'wardenone_whoisxml_reputation_cache', 'wardenone_whoisxml_threat_cache',
+    'wardenone_abuseipdb_cache', 'wardenone_domain_age_cache', 'wardenone_breach_cache',
+  ] },
+  { owner: 'Security and extension reviews', sensitivity: 'site or extension records', area: 'local or session', maxAgeDays: null, maxItems: null, retention: 'Feature-managed; erase or review in its feature', siteErase: 'prune', keys: [
+    'wardenone_ext_alerts', 'wardenone_ext_baseline', 'wardenone_ext_reviews',
+    'wardenone_ext_reputation_state', 'wardenone_ext_watch_status', 'wardenone_startup_report',
+    'wardenone_pending_downloads', 'wardenone_recent_redirect_chains', 'wardenone_forget_tab_hosts',
+    'wardenone_permission_chain_state', 'wardenone_blocked_security_count',
+    'wardenone_reconcile_degraded',
+  ] },
+  { owner: 'Downloaded protection lists', sensitivity: 'public list data', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Until refreshed or all data is erased', siteErase: 'keep', keys: [
+    'wardenone_adshield_cosmetic', 'wardenone_adshield_cosmetic_at',
+    'wardenone_adshield_cosmetic_checked_at', 'wardenone_adshield_cosmetic_hash',
+    'wardenone_aux_lists', 'wardenone_aux_list_meta',
+    'wardenone_cryptominer_domains', 'wardenone_grabber_domains', 'wardenone_search_junk_domains',
+    'wardenone_malware_hashes', 'wardenone_openphish_feed_cache', 'wardenone_list_integrity',
+    'wardenone_list_meta', 'wardenone_list_retry_n', 'wardenone_storage_meta',
+  ] },
+  { owner: 'Temporary operation state', sensitivity: 'session state', area: 'session', maxAgeDays: null, maxItems: null, retention: 'Browser or extension session', siteErase: 'prune', keys: [
+    '__wardenone_badge_counts', '__wardenone_ext_scan_done', '__wardenone_hist_buffer',
+    '__wardenone_menu_built', '__wardenone_sb_bypass',
+    'wardenone_block_offer', 'wardenone_blocklist_session', 'wardenone_download_handled',
+    'wardenone_erase_rebuild', 'wardenone_manual_check_jobs', 'wardenone_palette_grant',
+    'wardenone_rebind_session', 'wardenone_tracker_session', 'wardenone_sw_registered',
+    'wardenone_session_started_at',
+  ] },
+  { owner: 'Interface preferences', sensitivity: 'settings', area: 'local or extension page', maxAgeDays: null, maxItems: null, retention: 'Until changed or erased', siteErase: 'prune', keys: [
+    'wardenone_advanced_providers_open', 'wardenone_all_cookies_previous_setting',
+    'wardenone_consent_accepted', 'wardenone_location_previous_setting',
+    'wardenone_onboarding_done_at', 'wardenone_onboarding_maxprivacy_at',
+    'wardenone_onboarding_recommended_at', 'wardenone_popup_scroll_memory',
+    'wardenone_popup_search_memory', 'wardenone_script_shield_mode', 'wardenone_theme',
+    'wardenone_warning',
+  ] },
+]);
+const PRIVACY_STORE_BY_KEY = new Map();
+for (const policy of PRIVACY_STORE_POLICY) {
+  for (const key of policy.keys) PRIVACY_STORE_BY_KEY.set(key, policy);
+}
+
 async function inspectWardenOneData() {
   const [local, session] = await Promise.all([
     chrome.storage.local.get(null),
@@ -19674,7 +19738,14 @@ async function inspectWardenOneData() {
   for (const [area, values] of [['local', local || {}], ['session', session || {}]]) {
     for (const [key, value] of Object.entries(values)) {
       const bytes = new TextEncoder().encode(JSON.stringify(value) || '').length;
-      records.push({ area, key, bytes, oldestKnownAt: privacyStoreTimestamp(value) });
+      const policy = PRIVACY_STORE_BY_KEY.get(key);
+      records.push({ area, key, bytes, oldestKnownAt: privacyStoreTimestamp(value),
+        owner: policy ? policy.owner : 'Unregistered store',
+        sensitivity: policy ? policy.sensitivity : 'unknown',
+        retention: policy ? policy.retention : 'Unknown; review required',
+        maxAgeDays: policy ? policy.maxAgeDays : null,
+        maxItems: policy ? policy.maxItems : null,
+        siteErase: policy ? policy.siteErase : 'review required' });
     }
   }
   records.sort((a, b) => b.bytes - a.bytes || a.key.localeCompare(b.key));
@@ -19692,6 +19763,130 @@ function preservedPrivacyConfig(config, mode) {
     saved[key] = value;
   }
   return saved;
+}
+
+const PRIVACY_SITE_OPAQUE_KEYS = new Set(PRIVACY_STORE_POLICY
+  .filter((policy) => policy.siteErase === 'reset')
+  .flatMap((policy) => policy.keys));
+
+function privacySiteIdentity(raw) {
+  const value = String(raw || '').trim().toLowerCase().replace(/^["'(<]+|["')>,.;]+$/g, '');
+  if (!value || value.length > 2048) return '';
+  let host = value;
+  try {
+    if (/^https?:\/\//.test(value)) host = new URL(value).hostname;
+    else if (!/^[a-z0-9.-]+$/.test(value)) return '';
+  } catch (_) { return ''; }
+  if (!host || !host.includes('.') || !/^[a-z0-9.-]+$/.test(host)) return '';
+  return siteIdentityBg(host) || '';
+}
+
+function privacySiteMentions(raw, site) {
+  if (typeof raw !== 'string' || !raw) return false;
+  return raw.split(/[\s|,;]+/).some((part) => privacySiteIdentity(part) === site);
+}
+
+function privacySiteResidual(serialized, site) {
+  if (!serialized) return false;
+  const escaped = site.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|[^a-z0-9.-])(?:[a-z0-9-]+\\.)*' + escaped + '(?=[^a-z0-9.-]|$)', 'i').test(serialized);
+}
+
+function privacySitePrune(value, site) {
+  if (typeof value === 'string') return privacySiteMentions(value, site) ? undefined : value;
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((item) => privacySitePrune(item, site)).filter((item) => item !== undefined);
+  for (const field of ['site', 'host', 'domain', 'url', 'origin', 'href', 'pageUrl', 'pageHost']) {
+    if (privacySiteMentions(value[field], site)) return undefined;
+  }
+  const out = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (privacySiteMentions(key, site)) continue;
+    const kept = privacySitePrune(child, site);
+    if (kept !== undefined) out[key] = kept;
+  }
+  return out;
+}
+
+function privacyPruneUserRules(value, site) {
+  const text = typeof value === 'string' ? value : value && typeof value.text === 'string' ? value.text : null;
+  if (text === null) return privacySitePrune(value, site);
+  const lines = text.split(/\r?\n/).flatMap((line) => {
+    if (!privacySiteResidual(line, site)) return [line];
+    const cosmetic = line.indexOf('##');
+    if (cosmetic > 0) {
+      const domains = line.slice(0, cosmetic).split(',');
+      const kept = domains.filter((domain) => !privacySiteMentions(domain.trim(), site));
+      if (kept.length && kept.length < domains.length) return [kept.join(',') + line.slice(cosmetic)];
+    }
+    return [];
+  });
+  const nextText = lines.join('\n');
+  return typeof value === 'string' ? nextText : Object.assign({}, value, { text: nextText });
+}
+
+async function planWardenOneSiteErase(rawHost) {
+  const site = privacySiteIdentity(rawHost);
+  if (!site) return { ok: false, error: 'Choose a valid website host.' };
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get(null),
+    chrome.storage.session ? chrome.storage.session.get(null) : Promise.resolve({}),
+  ]);
+  const pending = Object.assign({}, (local || {}).wardenone_pending_downloads || {}, (session || {}).wardenone_pending_downloads || {});
+  if (Object.keys(pending).length) return { ok: false, error: 'Finish or cancel active Download Shield reviews before erasing WardenOne data.' };
+  const writes = [];
+  for (const [area, values] of [['local', local || {}], ['session', session || {}]]) {
+    for (const [key, value] of Object.entries(values)) {
+      const policy = PRIVACY_STORE_BY_KEY.get(key);
+      if (policy && policy.siteErase === 'keep') continue;
+      const opaque = PRIVACY_SITE_OPAQUE_KEYS.has(key);
+      const next = opaque ? undefined : key === 'wardenone_user_rules'
+        ? privacyPruneUserRules(value, site) : privacySitePrune(value, site);
+      const before = JSON.stringify(value);
+      const after = next === undefined ? undefined : JSON.stringify(next);
+      if (before === after) continue;
+      if (key === 'wardenone_config' && privacySiteResidual(after, site)) {
+        return { ok: false, error: 'A site setting could not be safely separated; no data was erased.' };
+      }
+      /* Unknown record shapes are removed as a whole if pruning leaves the host behind.
+         This avoids claiming a site was forgotten while retaining its URL in a nested field. */
+      const safe = privacySiteResidual(after, site) ? undefined : next;
+      writes.push({ area, key, value: safe });
+    }
+  }
+  return { ok: true, site, writes, affected: writes.map(({ area, key }) => ({ area, key })) };
+}
+
+async function eraseWardenOneSite(rawHost, dryRun) {
+  if (__privacyEraseInProgress) return { ok: false, error: 'An erase is already running.' };
+  const plan = await planWardenOneSiteErase(rawHost);
+  if (!plan.ok || dryRun === true || !plan.writes.length) {
+    return { ok: plan.ok, error: plan.error, site: plan.site, affected: plan.affected || [] };
+  }
+  __privacyEraseInProgress = true;
+  try {
+    for (const { area, key, value } of plan.writes) {
+      const store = chrome.storage[area];
+      if (value === undefined) await store.remove(key);
+      else await store.set({ [key]: value });
+    }
+    const [dynamic, sessionRules] = await Promise.all([
+      chrome.declarativeNetRequest.getDynamicRules(),
+      chrome.declarativeNetRequest.getSessionRules(),
+    ]);
+    if (dynamic.length) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
+    if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
+    if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true });
+    setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
+    return { ok: true, site: plan.site, affected: plan.affected };
+  } catch (error) {
+    /* A storage or DNR failure can happen after earlier writes succeeded. Restart
+       instead of reconciling from stale in-memory state, then let the reader retry. */
+    try { if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true }); } catch (_) {}
+    setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
+    return { ok: false, error: String(error && error.message || error || 'Site erase failed.')
+      + ' WardenOne is restarting; inspect the records and retry.' };
+  }
 }
 
 async function eraseWardenOneData(mode) {
@@ -19719,11 +19914,10 @@ async function eraseWardenOneData(mode) {
     setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
     return { ok: true, kept: mode === 'all' ? 'nothing' : (mode === 'settings' ? 'global switches' : 'global switches and API keys') };
   } catch (error) {
-    __privacyEraseInProgress = false;
-    __refreshExtensionStateLastKey = '';
-    __reconcileComponentKeys.clear();
-    refreshExtensionState();
-    return { ok: false, error: String(error && error.message || error || 'Erase failed.') };
+    try { if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true }); } catch (_) {}
+    setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
+    return { ok: false, error: String(error && error.message || error || 'Erase failed.')
+      + ' WardenOne is restarting; inspect the records and retry.' };
   }
 }
 
@@ -20019,6 +20213,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'privacy-data-erase' && messageSenderIsExtensionPage(sender)) {
     respond(eraseWardenOneData(String(msg.mode || '')), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'privacy-data-erase-site' && messageSenderIsExtensionPage(sender)) {
+    respond(eraseWardenOneSite(msg.host, msg.dryRun === true), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'oauth-grant' && messageSenderIsTab(sender)) {

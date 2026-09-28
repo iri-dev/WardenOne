@@ -17,7 +17,7 @@ const start = bg.indexOf('function privacyStoreTimestamp(');
 const end = bg.indexOf('\nchrome.runtime.onMessage.addListener(', start);
 assert(start >= 0 && end > start, 'privacy erase functions exist');
 
-function harness(initialLocal, initialSession) {
+function harness(initialLocal, initialSession, options = {}) {
   const local = Object.assign({}, initialLocal);
   const session = Object.assign({}, initialSession);
   const dynamic = [{ id: 100 }, { id: 101 }];
@@ -27,6 +27,7 @@ function harness(initialLocal, initialSession) {
   const area = (state) => ({
     async get() { return Object.assign({}, state); },
     async clear() { for (const key of Object.keys(state)) delete state[key]; },
+    async remove(key) { delete state[key]; },
     async set(values) { Object.assign(state, values); },
   });
   const sandbox = {
@@ -36,6 +37,7 @@ function harness(initialLocal, initialSession) {
         async getDynamicRules() { return dynamic.slice(); },
         async getSessionRules() { return sessionRules.slice(); },
         async updateDynamicRules({ removeRuleIds }) {
+          if (options.failDynamicRules) throw new Error('DNR update failed');
           for (const id of removeRuleIds) dynamic.splice(dynamic.findIndex((r) => r.id === id), 1);
         },
         async updateSessionRules({ removeRuleIds }) {
@@ -45,14 +47,15 @@ function harness(initialLocal, initialSession) {
       runtime: { reload() { reloaded = true; } },
     },
     TextEncoder,
-    Date,
+    Date, URL,
+    siteIdentityBg(host) { return host.endsWith('.webflow.io') ? host : host.split('.').slice(-2).join('.'); },
     setTimeout: (fn) => { timers.push(fn); },
   };
   vm.createContext(sandbox);
   vm.runInContext('const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'
     + 'const PRIVACY_ERASE_REBUILD_KEY = "wardenone_erase_rebuild";'
     + 'let __privacyEraseInProgress = false;' + bg.slice(start, end)
-    + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, preservedPrivacyConfig };', sandbox);
+    + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
   return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, reloaded: () => reloaded };
 }
 
@@ -62,6 +65,24 @@ function harness(initialLocal, initialSession) {
   assert.strictEqual(inventory.ok, true);
   assert.strictEqual(inventory.records.length, 1);
   assert(inventory.records[0].bytes > 0 && inventory.records[0].oldestKnownAt);
+  assert.strictEqual(inventory.records[0].retention, '30 days; latest 200 events');
+
+  const policies = h.api.policy;
+  const registered = policies.flatMap((policy) => Array.from(policy.keys));
+  assert.strictEqual(new Set(registered).size, registered.length, 'store registry has duplicate keys');
+  for (const key of ['wardenone_notifications', 'wardenone_tracker_learner', 'wardenone_script_drift_baselines']) {
+    const policy = policies.find((entry) => entry.keys.includes(key));
+    assert.strictEqual(policy.maxAgeDays, null, key + ' has no global maximum age');
+  }
+  const runtime = fs.readdirSync(root).filter((name) => name.endsWith('.js')
+    && name !== 'content.min.js' && name !== 'fingerprint-realm.js');
+  const named = new Set();
+  for (const name of runtime) {
+    const source = fs.readFileSync(path.join(root, name), 'utf8');
+    for (const match of source.matchAll(/\b(?:__)?wardenone_[a-z0-9_]+\b/g)) named.add(match[0]);
+  }
+  assert.deepStrictEqual([...named].filter((key) => !registered.includes(key)).sort(), [],
+    'new WardenOne stores need owner, sensitivity, retention, limits and site-erase policy');
   const oldAt = Date.now() - 90 * 86400000;
   h = harness({ wardenone_history: Array.from({ length: 120 }, (_, i) => ({ at: i === 119 ? oldAt : Date.now() - 86400000 })) }, {});
   const largeInventory = await h.api.inspectWardenOneData();
@@ -84,6 +105,52 @@ function harness(initialLocal, initialSession) {
   assert.strictEqual(h.local.wardenone_config.siteOverrides, undefined);
   assert.deepStrictEqual(Object.keys(h.session), ['wardenone_erase_rebuild']);
   assert.strictEqual(h.dynamic.length + h.sessionRules.length, 0);
+
+  h = harness({
+    wardenone_history: [{ url: 'https://erase.example/one' }, { url: 'https://keep.example/two' }],
+    wardenone_config: { enabled: false, downloadSafeBrowsingKey: 'secret',
+      allowlist: ['erase.example', 'keep.example'],
+      siteOverrides: { 'erase.example': { adShield: false }, 'keep.example': { adShield: true } } },
+    wardenone_safe_browsing_cache: { opaqueHash: { hit: true } },
+    wardenone_script_drift_baselines: { opaqueHash: { hash: 'digest' } },
+    wardenone_blocklist: ['erase.example', 'keep.example'],
+    wardenone_cryptominer_domains: { minerHosts: ['erase.example', 'public.example'], poolHosts: [] },
+    wardenone_user_rules: { text: '||erase.example^\n||keep.example^\nerase.example,keep.example##.banner', updatedAt: Date.now() },
+    wardenone_unusual_record: { items: [{ site: 'erase.example', at: Date.now() }, { site: 'keep.example', at: Date.now() }] },
+  }, { wardenone_startup_report: { hosts: ['erase.example', 'keep.example'] } });
+  const sitePlan = await h.api.eraseWardenOneSite('erase.example', true);
+  assert.strictEqual(sitePlan.ok, true);
+  assert(sitePlan.affected.some((entry) => entry.key === 'wardenone_safe_browsing_cache'));
+  assert.strictEqual(h.local.wardenone_history.length, 2, 'dry run must not change storage');
+  const siteErased = await h.api.eraseWardenOneSite('erase.example', false);
+  assert.strictEqual(siteErased.ok, true);
+  assert(!JSON.stringify(Object.entries(h.local).filter(([key]) => key !== 'wardenone_cryptominer_domains')).includes('erase.example')
+    && !JSON.stringify(h.session).includes('erase.example'));
+  assert(JSON.stringify(h.local).includes('keep.example') && JSON.stringify(h.session).includes('keep.example'));
+  assert.deepStrictEqual(Array.from(h.local.wardenone_blocklist), ['keep.example'], 'user blocklist loses only this site');
+  assert.deepStrictEqual(Array.from(h.local.wardenone_cryptominer_domains.minerHosts), ['erase.example', 'public.example'], 'public list remains intact');
+  assert.strictEqual(h.local.wardenone_user_rules.text, '||keep.example^\nkeep.example##.banner',
+    'site erase keeps unrelated user rules and the other half of a cosmetic rule');
+  assert.strictEqual(h.local.wardenone_config.enabled, false);
+  assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, 'secret');
+  assert.strictEqual(h.local.wardenone_safe_browsing_cache, undefined);
+  assert.strictEqual(h.local.wardenone_script_drift_baselines, undefined);
+  assert.strictEqual(h.dynamic.length + h.sessionRules.length, 0);
+  h.timers[0]();
+  assert.strictEqual(h.reloaded(), true);
+
+  h = harness({ wardenone_history: [{ url: 'https://erase.example/' }] }, {}, { failDynamicRules: true });
+  const partial = await h.api.eraseWardenOneSite('erase.example', false);
+  assert.strictEqual(partial.ok, false);
+  assert(partial.error.includes('restarting') && partial.error.includes('retry'));
+  assert.strictEqual(h.local.wardenone_history.length, 0, 'completed storage writes remain erased');
+  h.timers[0]();
+  assert.strictEqual(h.reloaded(), true, 'partial failure restarts before stale state can repopulate storage');
+
+  h = harness({ wardenone_history: [{ url: 'https://alice.webflow.io/' }, { url: 'https://bob.webflow.io/' }] }, {});
+  assert.strictEqual((await h.api.eraseWardenOneSite('alice.webflow.io', false)).ok, true);
+  assert.strictEqual(h.local.wardenone_history.length, 1);
+  assert.strictEqual(h.local.wardenone_history[0].url, 'https://bob.webflow.io/');
   h.timers[0]();
   assert.strictEqual(h.reloaded(), true);
 
@@ -95,8 +162,6 @@ function harness(initialLocal, initialSession) {
   /* Seed every WardenOne-named runtime storage key found in the shipped scripts.
      This catches an erase implementation that switches from a full store clear to a
      hand-maintained list and accidentally leaves one feature's records behind. */
-  const runtime = fs.readdirSync(root).filter((name) => name.endsWith('.js')
-    && name !== 'content.min.js' && name !== 'fingerprint-realm.js');
   const ownedKeys = new Set();
   for (const name of runtime) {
     const source = fs.readFileSync(path.join(root, name), 'utf8');
@@ -125,5 +190,7 @@ function harness(initialLocal, initialSession) {
   assert(html.includes('id="privacy-data-inspect"') && html.includes('id="privacy-data-erase"'));
   assert(popup.includes("ask({ kind: 'privacy-data-inspect' })") && popup.includes("ask({ kind: 'privacy-data-erase', mode: choice })"));
   assert(bg.includes("msg.kind === 'privacy-data-erase' && messageSenderIsExtensionPage(sender)"));
+  assert(bg.includes("msg.kind === 'privacy-data-erase-site' && messageSenderIsExtensionPage(sender)"));
+  assert(html.includes('id="privacy-data-erase-site"') && popup.includes("kind: 'privacy-data-erase-site'"));
   console.log('[ok] privacy data inspection and erase tests');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

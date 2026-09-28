@@ -113,7 +113,7 @@ account by WardenOne, and is **not** uploaded to us:
   the extension can authenticate to the provider you enabled).
 - The notification history behind the Notification Centre: up to 300 notices, each with a
   short description, the site it concerned and up to twelve examples of repeats, kept for the
-  retention you choose there (30 days unless you change it) and removed by its **Clear**
+  retention you choose there (30 days unless you change it, including a no-expiry choice) and removed by its **Clear**
   button.
 - The rules and lists you make yourself: the text you write in **My Rules**, the filter lists
   you subscribe to (their addresses and the rules they returned), your per-site firewall
@@ -142,6 +142,14 @@ Download Shield reviews before erasing so a paused download is not stranded.
 not an erase of all WardenOne records about the site. **Clean browser data** clears
 the selected browser/site data and the specific WardenOne history records named by
 that control. Removing WardenOne from Chrome also removes the extension's storage.
+**Erase WardenOne records for this site** removes matching site records and site
+exceptions from extension storage. Shared reputation caches, tracker learning and
+Script Drift baselines are cleared in full because their derived keys cannot be
+reliably attributed to one site. Other sites' durable records and global switches
+are kept, including downloaded public protection lists; restarting WardenOne may
+clear temporary session records for other sites.
+It also rebuilds WardenOne's network rules; it does not clear website
+cookies or browser history.
 
 ---
 
