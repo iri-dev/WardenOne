@@ -38,6 +38,7 @@
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
   }
+  html.wo-popup-tab body { width: min(348px, 100%); }
   .head {
     padding: 18px 18px 16px;
     display: flex;
@@ -510,6 +511,12 @@
   .ck .ck-s { display:block; font-size:11px; font-weight:700; margin-top:1px; }
   .ck .ck-s.keep { color:#1f693d; }
   .ck .ck-s.out { color:#973c69; }
+  #privacy-data-mode { min-width:0; max-width:100%; flex:1; }
+  @media (max-width: 360px) {
+    .wo-popup-tab .foot { display:grid; grid-template-columns:minmax(0,1fr); }
+    .wo-popup-tab .privacy-data-mode-row { display:block; }
+    .wo-popup-tab #privacy-data-mode { display:block; width:100%; max-width:100%; min-width:0; margin:6px 0 0 !important; }
+  }
   .ck input { width:15px; height:15px; accent-color:#b06fd6; cursor:pointer; }
   .note {
     font-size: 11px; color: var(--ink-faint); padding: 6px 18px 8px; line-height: 1.5;
@@ -672,6 +679,7 @@
 .eyeshield-extras summary::-webkit-details-marker{display:none;}
 .eyeshield-extras summary::after{content:"+";float:right;color:var(--ink-faint);font-weight:800;}
 .eyeshield-extras[open] summary::after{content:"\2212";}
+.eyeshield-help{margin:7px 0 2px;color:var(--ink-soft);font-size:11.5px;line-height:1.45;}
 .eyeshield-panel.is-disabled .eyeshield-extras{pointer-events:none;opacity:.85;}
 .eyeshield-reset{
   margin-top:11px;width:100%;height:30px;border:0;border-radius:12px;
@@ -716,6 +724,15 @@
   .list-failure-url { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     color:var(--ink-soft); word-break:break-all; flex:1; }
   .list-failure-why { color:var(--wo-danger); white-space:nowrap; font-weight:700; }
+  #list-publisher-details { margin-top:8px; max-width:100%; }
+  #list-publisher-details > summary { cursor:pointer; color:var(--plum); font-size:11px; font-weight:700; }
+  #list-publisher-details > .desc { max-width:none; margin-top:6px; line-height:1.4; }
+  #list-publisher-rows { margin-top:6px; max-height:230px; overflow:auto; display:flex; flex-direction:column; gap:5px; }
+  .list-publisher-row { border-top:1px solid var(--line); padding-top:5px; font-size:10.5px; line-height:1.4; }
+  .list-publisher-name { color:var(--ink-soft); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; overflow-wrap:anywhere; }
+  .list-publisher-date.is-stale { color:var(--wo-warning); font-weight:700; }
+  .list-publisher-date.is-unknown { color:var(--ink-soft); }
+  .list-publisher-fetch { color:var(--ink-faint); }
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
@@ -772,7 +789,7 @@
       <div class="health-grid">
         <div class="health-stat"><strong id="health-active-count">-</strong><span>Switched on</span></div>
         <div class="health-stat"><strong id="health-blocked-count">-</strong><span>Blocked 24h</span></div>
-        <div class="health-stat"><strong id="health-list-updated">-</strong><span>Lists</span></div>
+        <div class="health-stat"><strong id="health-list-updated">-</strong><span>Fetched</span></div>
       </div>
       <div class="health-tab" id="health-tab-line" aria-live="polite"></div>
       <div class="health-issues" id="health-issues"></div>
@@ -1359,7 +1376,7 @@
       <label class="tg"><input type="checkbox" id="forget-enable"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name" style="font-size:12px;">Also clear the site's browser history</div><div class="desc">Most private. Off keeps your history.</div></div>
+      <div><div class="name" style="font-size:12px;">Also clear the site's browser history</div><div class="desc">Most private. Off keeps your history. Chrome may ask for history access when you turn this on.</div><div class="desc" id="forget-history-status" role="status" aria-live="polite"></div></div>
       <label class="tg"><input type="checkbox" id="forget-history"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="display:block;">
@@ -1575,7 +1592,12 @@
       <!-- Named, not counted. A feed that 404s needs a new URL and one that is
            over its size cap needs a smaller edition of the same list; as a bare
            number those look identical and neither gets fixed. -->
-      <div id="list-failures" hidden></div></div>
+      <div id="list-failures" hidden></div>
+      <details id="list-publisher-details" hidden>
+        <summary id="list-publisher-summary">Publisher dates</summary>
+        <p class="desc">These are source dates, where available. Older dates do not switch off downloaded rules. Fetching again cannot change a publisher's date; a new edition has to come from the source.</p>
+        <div id="list-publisher-rows"></div>
+      </details></div>
       <button class="btn" id="update-now" style="flex:none;padding:8px 14px;">Update now</button>
     </div>
     </div>
@@ -1684,7 +1706,8 @@
       </label>
       <input id="eyeshield-brightness" class="eyeshield-range" type="range" min="0" max="200" step="1" value="100">
       <details class="eyeshield-extras" id="eyeshield-extras">
-        <summary>Extras</summary>
+        <summary>More reading controls</summary>
+        <p class="eyeshield-help">Adjust colours to make pages easier to read. Warning pages and keyboard controls work without turning EyeShield on.</p>
         <label class="eyeshield-slider-row" for="eyeshield-contrast">
           <span class="eyeshield-host" id="eyeshield-contrast-host">This site contrast</span>
           <span class="eyeshield-value" id="eyeshield-contrast-value">100%</span>
@@ -1852,7 +1875,7 @@
         <div class="desc" style="margin-bottom:9px;">Inspect or erase WardenOne's own saved records. This does not clear websites' cookies, browser history or downloads. Erasing learned records and exceptions resets those protections.</div>
         <button class="btn" id="privacy-data-inspect" type="button" style="width:100%;">Inspect saved datasets</button>
         <div id="privacy-data-preview" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;"></div>
-        <label class="ck" style="margin:10px 0 8px;">Erase option
+        <label class="ck privacy-data-mode-row" style="margin:10px 0 8px;">Erase option
           <select id="privacy-data-mode" style="margin-left:6px;">
             <option value="all">Everything, including settings and API keys</option>
             <option value="settings">Keep global switches, erase API keys</option>

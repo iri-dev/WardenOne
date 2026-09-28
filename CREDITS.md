@@ -1,9 +1,10 @@
 # Credits & Attribution
 
-WardenOne is built on the work of the open-source ad-blocking and privacy
-community. Like every serious content blocker (uBlock Origin, AdGuard, Brave),
-it stands on shared, openly-licensed filter lists and filtering techniques. We
-gratefully credit the upstream projects below.
+WardenOne is built on the work of the ad-blocking and privacy community. It
+uses upstream filter lists and filtering techniques credited below. The
+source-by-source rights review for a proposed Chrome Web Store package is still
+open; a blank licence entry in the generated inventory means its terms have not
+been approved for that package.
 
 ## YouTube ad blocking
 
@@ -223,8 +224,8 @@ Rulesets compiled from the above and **redistributed inside the package**:
 
 | File | Built by | From |
 | --- | --- | --- |
-| `rules-adshield.json` | `tools/build-adshield-dnr.js` | `ADSHIELD_NET_LISTS` |
-| `rules-easyprivacy.json` | `tools/build-easyprivacy-dnr.js` | `ADSHIELD_NET_LISTS` |
+| `rules-adshield.json` | `tools/build-adshield-dnr.js` | `EasyList network-filter input` |
+| `rules-easyprivacy.json` | `tools/build-easyprivacy-dnr.js` | `EasyPrivacy input plus rules-trackers.json` |
 | `cosmetic-rules.json` | `tools/build-cosmetics.js` | `ADSHIELD_COSMETIC_LISTS` |
 | `psl-private.js` | `tools/build-psl.js` | `Public Suffix List (publicsuffix.org), private section` |
 

@@ -47,6 +47,9 @@
   button.danger:disabled{opacity:.55;cursor:not-allowed}
   button.danger:not(:disabled):hover{background:#fdeef4}
   .escape{margin-top:20px;padding-top:4px;border-top:1px solid #efe2f7}
+  .escape h2{font-family:var(--display);font-size:14px;line-height:1.4;color:var(--ink);font-weight:800;margin-bottom:3px}
+  .escape h2:focus{outline:2px solid currentColor;outline-offset:3px}
+  .escape-ready{font-size:12px;font-weight:700;color:var(--ink-soft);margin-top:10px}
   .note{font-size:12px;color:var(--ink-faint);margin-top:18px}
   @media (max-width:560px){
     .panel{padding:22px}
@@ -86,7 +89,7 @@
 
     <div class="escape" id="escape" hidden>
       <div class="item">
-        <div class="label">Before you continue</div>
+        <h2 id="escape-title" tabindex="-1">Before you continue</h2>
         <div class="value">
           Reputation feeds do get things wrong, and if this is your bank, your university
           login, or a site you know, that is worth reporting so it can be fixed for
@@ -98,6 +101,7 @@
         <button id="report">Report a false positive</button>
         <button id="proceed" class="danger" disabled>Continue anyway (5)</button>
       </div>
+      <div class="escape-ready" id="escape-ready" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="note">
         Continuing unblocks <span id="escape-host"></span> for 30 minutes in this browsing
         session only. It is not added to your allowlist, and it re-blocks when you restart

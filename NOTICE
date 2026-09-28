@@ -45,5 +45,7 @@ Upstream work
 -------------
 
 WardenOne builds on filter lists and filtering techniques from the wider
-ad-blocking and privacy community. Those projects and their licences are credited
-in CREDITS.md; their copyright and attribution rights are retained.
+ad-blocking and privacy community. Sources are identified in CREDITS.md, and
+their copyright and attribution rights are retained. Some upstream licence
+decisions for a proposed Store package remain open; see
+docs/store-rights-research.md.

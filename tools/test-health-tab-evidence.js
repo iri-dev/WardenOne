@@ -161,8 +161,10 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
   /* ---- 2. the status decision --------------------------------------------------------- */
   const DECISION = between(BG, '  // ---- what this adds up to', '\n  return {', 'the status decision');
   // eslint-disable-next-line no-new-func
-  const decide = new Function('cfg', 'issues', 'tabEvidence', 'healthCountActiveShields',
+  const decideRaw = new Function('cfg', 'issues', 'tabEvidence', 'list', 'healthCountActiveShields',
     '"use strict";' + DECISION + '\nreturn { status, detail, highest, configuredShields };');
+  const decide = (cfg, issues, tabEvidence, healthCountActiveShields, list = { publisher: { stale: 0 } }) =>
+    decideRaw(cfg, issues, tabEvidence, list, healthCountActiveShields);
   const STATES = ['verified', 'failed', 'unknown', 'restricted', 'paused', 'excluded', 'sleeping', 'off'];
   const evidenceFor = (state) => ({ state, text: 'Reason for ' + state + '.' });
   const count = () => 99;
@@ -184,6 +186,10 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
     check('a danger beats a verified page', d.status === 'Needs review' && d.detail === 'a danger');
     const off = decide({ enabled: false }, [], evidenceFor('verified'), () => 0);
     check('master off is Off whatever the page says', off.status === 'Off');
+    const dated = decide({ enabled: true }, [{ severity: 'info', text: 'old publisher date', topLevel: false }],
+      evidenceFor('verified'), count, { publisher: { stale: 4 } });
+    check('old publisher dates leave verified shields on without a setup warning',
+      dated.status === 'Protections on' && dated.highest === 'ok' && /Blocklist/.test(dated.detail));
     check('the count reported is a count of switches, named so', r.configuredShields === 99 && /configuredShields/.test(DECISION) && !/activeShields/.test(DECISION));
   }
   /* The failed state must become a top-level warning in the builder itself. */

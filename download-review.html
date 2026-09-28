@@ -23,7 +23,6 @@
   }
   * { box-sizing: border-box; }
   body {
-    min-width: 360px;
     margin: 0;
     background:
       radial-gradient(110% 75% at 0% 0%, #e3cdf4 0%, transparent 56%),
@@ -167,6 +166,7 @@
     justify-content: flex-end;
     gap: 9px;
     margin-top: 14px;
+    flex-wrap: wrap;
   }
   button {
     border: 0;
@@ -212,6 +212,12 @@
     display: flex;
     justify-content: flex-end;
   }
+  @media (max-width: 360px) {
+    .wrap { padding: 12px; }
+    .actions, .advanced.show { display: grid; }
+    .detail-row { grid-template-columns: 1fr; gap: 2px; }
+    .grade-band { grid-template-columns: 54px minmax(0, 1fr); }
+  }
   .result {
     min-height: 18px;
     margin-top: 10px;
@@ -256,7 +262,7 @@
     <section class="grade-band">
       <div class="grade" id="grade">?</div>
       <div>
-        <div class="status" id="status">Checking...</div>
+        <div class="status" id="status" role="status" aria-live="polite" aria-atomic="true">Checking...</div>
         <div class="score" id="score"></div>
       </div>
     </section>

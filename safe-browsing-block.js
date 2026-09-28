@@ -109,6 +109,7 @@
       escapePanel.hidden = false;
       if (foot) foot.hidden = true;
       document.getElementById('wrong')?.setAttribute('disabled', 'disabled');
+      document.getElementById('escape-title')?.focus();
       let left = 5;
       if (proceed) {
         proceed.textContent = 'Continue anyway (' + left + ')';
@@ -118,6 +119,8 @@
           clearInterval(tick);
           proceed.textContent = 'Continue anyway';
           proceed.removeAttribute('disabled');
+          const ready = document.getElementById('escape-ready');
+          if (ready) ready.textContent = 'Continue anyway is now available.';
         }, 1000);
       }
     });
@@ -147,6 +150,8 @@
       chrome.runtime.sendMessage({ kind: 'safe-browsing-allow-once', host: host }, (res) => { void chrome.runtime.lastError;
         if (res && res.ok) { consumeRecord(() => { location.href = url; }); return; }
         proceed.textContent = 'Could not continue';
+        const ready = document.getElementById('escape-ready');
+        if (ready) ready.textContent = 'Could not continue. Go back or open activity.';
       });
     });
   });

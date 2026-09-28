@@ -17,7 +17,6 @@
     "alarms",
     "browsingData",
     "cookies",
-    "history",
     "management",
     "contentSettings",
     "contextMenus",
@@ -25,6 +24,9 @@
     "notifications",
     "offscreen",
     "tabs"
+  ],
+  "optional_permissions": [
+    "history"
   ],
   "host_permissions": [
     "<all_urls>"

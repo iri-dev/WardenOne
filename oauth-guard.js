@@ -226,6 +226,7 @@
     let restoreFocusTo = null;
     let trapHandler = null;
     let focusRing = null;
+    let dialogFocus = null;
 
     const container = () => document.body || document.documentElement || null;
 
@@ -251,7 +252,12 @@
       const parent = container();
       if (!parent || !host) return false;
       try {
-        if (host.parentNode !== parent) parent.appendChild(host);
+        if (host.parentNode !== parent) {
+          parent.appendChild(host);
+          if (dialogFocus) {
+            try { dialogFocus.focus(); } catch (_) { try { host.focus(); } catch (_) {} }
+          }
+        }
         return true;
       } catch (_) {
         return false;
@@ -302,6 +308,7 @@
           const box = document.createElement('div');
           box.setAttribute('role', 'alertdialog');
           box.setAttribute('aria-modal', 'true');
+          box.setAttribute('tabindex', '-1');
           if (o.label) box.setAttribute('aria-label', String(o.label));
           if (o.description) box.setAttribute('aria-description', String(o.description));
           box.setAttribute('style', 'all:initial!important;display:block!important;');
@@ -317,7 +324,8 @@
             try {
               return Array.prototype.slice.call(box.querySelectorAll(
                 'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])',
-              )).filter((n) => n.offsetParent !== null || n === box);
+              )).filter((n) => !n.disabled && !n.hidden && n.getAttribute('aria-hidden') !== 'true'
+                && n.getAttribute('tabindex') !== '-1' && n.offsetParent !== null);
             } catch (_) { return []; }
           };
 
@@ -330,7 +338,10 @@
           // that can be dismissed by a reflexive Enter.
           try {
             host.setAttribute('tabindex', '-1');
-            const first = (o.focus && box.querySelector(o.focus)) || focusables()[0] || box;
+            const list = focusables();
+            const chosen = o.focus && box.querySelector(o.focus);
+            const first = (chosen && list.includes(chosen) && chosen) || list[0] || box;
+            dialogFocus = first;
             if (first && first.focus) first.focus();
             // The dialog took focus without being asked to, so show where it went. From here on the
             // ring follows :focus-visible, which is what keeps a mouse click from leaving one.
@@ -377,6 +388,7 @@
           try { restoreFocusTo.focus(); } catch (_) {}
         }
         restoreFocusTo = null;
+        dialogFocus = null;
         host = null;
         shadow = null;
       },

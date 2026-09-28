@@ -3,6 +3,10 @@
 Status: **blocked pending upstream rights review (CWS-06)**. The rolling `latest-build`
 download is for GitHub users; it is not the Store upload candidate.
 
+The [source-by-source research record](store-rights-research.md) documents the evidence found
+for every inventoried input. It is preparation for the release-owner decision, not approval to
+submit. No unresolved source is removed from the full or proposed Store build.
+
 ## Listing source text
 
 - **Name:** WardenOne

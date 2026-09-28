@@ -24,6 +24,14 @@
 // later in start-up cannot cost the whole settings surface its labels.
 try { labelToggleControls(); } catch (_) {}
 
+/* An action popup sizes itself from its content, so its body needs an intrinsic width.
+   An extension page opened in a browser tab can instead reflow with the viewport. */
+try {
+  chrome.tabs.getCurrent((tab) => {
+    if (tab) document.documentElement.classList.add('wo-popup-tab');
+  });
+} catch (_) {}
+
 // Cached element lookup. Replaces ~135 raw getElementById calls: shorter,
 // one obvious place to typo-check an id, and it caches the node so repeated lookups of
 // the same id don't re-walk the DOM. The isConnected guard re-queries if a cached node
@@ -910,6 +918,7 @@ function load() {
     }
     config.showDownloadBar = true;
     applyToUI();
+    reconcileForgetHistoryPermission();
     updateAllowlistBtn();
     // Painted after applyToUI so the per-site list can read each protection's
     // label out of its own row rather than keeping a second copy of the wording.
@@ -1696,10 +1705,21 @@ function renderCustomLists(lists) {
     } else {
       bits.push(Number(l.ruleCount || 0) + ' rules');
     }
-    bits.push('updated ' + fmtListWhen(l.updatedAt));
+    bits.push('fetched ' + fmtListWhen(l.updatedAt));
+    const publisherDate = Number(l.publisherUpdatedAt) || 0;
+    bits.push(publisherDate ? 'publisher ' + fmtListWhen(publisherDate) : 'publisher date unknown');
     if (Number(l.skipped || 0)) bits.push(l.skipped + ' skipped');
     if (l.enabled === false) bits.push('off');
     meta.textContent = bits.join(' · ');
+    left.appendChild(name);
+    left.appendChild(meta);
+    if (publisherDate && Date.now() - publisherDate > 30 * 24 * 60 * 60 * 1000) {
+      const old = document.createElement('div');
+      old.className = 'desc';
+      old.style.color = 'var(--wo-warning)';
+      old.textContent = 'Publisher date is over 30 days old. Fetching this list again will not make its source newer.';
+      left.appendChild(old);
+    }
     if (l.enabled !== false && l.off !== true && Number(l.overflow || 0)) {
       const over = document.createElement('div');
       over.className = 'desc';
@@ -1707,8 +1727,6 @@ function renderCustomLists(lists) {
       over.textContent = l.overflow + ' of this list\'s blocking rules are past the shared limit and not in use. Your own rules and the lists above it are served first.';
       left.appendChild(over);
     }
-    left.appendChild(name);
-    left.appendChild(meta);
     if (l.error) {
       const bad = document.createElement('div');
       bad.className = 'desc';
@@ -2164,6 +2182,7 @@ function paintEyeShield() {
   if (range) {
     range.value = String(brightness);
     range.disabled = !effectsOn;
+    range.setAttribute('aria-valuetext', brightness + '%');
   }
   paintEyeShieldValue('eyeshield-value', brightness, 0, 200, effectsOn, 'EyeShield brightness');
   const host = $('eyeshield-host');
@@ -2178,7 +2197,7 @@ function paintEyeShield() {
 function paintEyeShieldPct(globalKey, mapKey, lo, hi, dflt, rangeId, valueId, hostId, label, masterOn) {
   const pct = getEyeShieldPct(globalKey, mapKey, lo, hi, dflt);
   const range = $(rangeId);
-  if (range) { range.value = String(pct); range.disabled = !masterOn; }
+  if (range) { range.value = String(pct); range.disabled = !masterOn; range.setAttribute('aria-valuetext', pct + '%'); }
   paintEyeShieldValue(valueId, pct, lo, hi, masterOn, 'EyeShield ' + label);
   const host = $(hostId);
   if (host) host.textContent = 'All sites ' + label;
@@ -3060,7 +3079,10 @@ function renderProtectionHealth() {
       const list = res.list || {};
       lists.textContent = list.updated ? fmtAgoShort(list.updated) : 'Built-in';
       const enforced = Number(list.active || 0) || Number(list.total || 0);
-      lists.title = enforced ? ('Blocking ' + fmtCount(enforced) + ' domains' + (list.auxTotal ? ' plus ' + fmtCount(list.auxTotal) + ' page-list entries' : '')) : 'Built-in rules active';
+      const publisher = list.publisher || {};
+      lists.title = (enforced ? ('Blocking ' + fmtCount(enforced) + ' domains' + (list.auxTotal ? ' plus ' + fmtCount(list.auxTotal) + ' page-list entries' : '')) : 'Built-in rules active')
+        + '. Last fetched by WardenOne; publisher dates: ' + Number(publisher.dated || 0) + ' known, '
+        + Number(publisher.stale || 0) + ' over 30 days old, ' + Number(publisher.unknown || 0) + ' unknown.';
     }
     if (issues) {
       issues.textContent = '';
@@ -3090,8 +3112,59 @@ function listMetaCount(meta) {
 function listMetaActiveCount(meta) {
   return Number((meta && (meta.activeCount || meta.activeRuleCount)) || 0);
 }
+function renderListPublishers(...groups) {
+  const details = $('list-publisher-details');
+  const summary = $('list-publisher-summary');
+  const rows = $('list-publisher-rows');
+  if (!details || !summary || !rows) return { stale: 0, unknown: 0 };
+  const byUrl = new Map();
+  for (const group of groups) {
+    for (const entry of (Array.isArray(group) ? group : [])) {
+      if (!entry || !entry.url) continue;
+      const prior = byUrl.get(entry.url);
+      if (!prior || Number(entry.fetchedAt || 0) >= Number(prior.fetchedAt || 0)) byUrl.set(entry.url, entry);
+    }
+  }
+  const entries = Array.from(byUrl.values());
+  details.hidden = !entries.length;
+  const staleAfter = 30 * 24 * 60 * 60 * 1000;
+  const isStale = (entry) => Number(entry.publishedAt || 0) > 0 && Date.now() - Number(entry.publishedAt) > staleAfter;
+  const counts = {
+    stale: entries.filter(isStale).length,
+    unknown: entries.filter((entry) => !Number(entry.publishedAt || 0)).length,
+  };
+  summary.textContent = 'Publisher dates · ' + counts.stale + ' old · ' + counts.unknown + ' unknown';
+  rows.textContent = '';
+  entries.sort((a, b) => Number(isStale(b)) - Number(isStale(a))
+    || Number(!b.publishedAt) - Number(!a.publishedAt)
+    || String(a.url).localeCompare(String(b.url)));
+  for (const entry of entries) {
+    const row = document.createElement('div');
+    row.className = 'list-publisher-row';
+    const name = document.createElement('div');
+    name.className = 'list-publisher-name';
+    let sourceName = String(entry.url);
+    try { const url = new URL(sourceName); sourceName = url.hostname + url.pathname; } catch (_) {}
+    name.textContent = entry.label ? entry.label + ' · ' + sourceName : sourceName;
+    name.title = String(entry.url);
+    const date = document.createElement('div');
+    date.className = 'list-publisher-date' + (isStale(entry) ? ' is-stale' : !entry.publishedAt ? ' is-unknown' : '');
+    const publishedAt = Number(entry.publishedAt) || 0;
+    date.textContent = publishedAt
+      ? 'Publisher: ' + new Date(publishedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ' (' + fmtAgo(publishedAt) + ')'
+      : 'publisher date unknown';
+    if (publishedAt) date.title = new Date(publishedAt).toISOString();
+    const fetched = document.createElement('div');
+    fetched.className = 'list-publisher-fetch';
+    fetched.textContent = (entry.fetchedAt ? 'WardenOne fetched ' + fmtAgo(entry.fetchedAt) : 'WardenOne has not fetched this feed')
+      + (entry.fetchFailed ? ' · latest fetch failed' : '');
+    row.append(name, date, fetched);
+    rows.appendChild(row);
+  }
+  return counts;
+}
 function renderListMeta() {
-  chrome.storage.local.get(['wardenone_list_meta', 'wardenone_aux_list_meta'], (x) => {
+  chrome.storage.local.get(['wardenone_list_meta', 'wardenone_aux_list_meta', 'wardenone_adshield_cosmetic_publishers'], (x) => {
     const meta = x && x.wardenone_list_meta;
     const auxMeta = x && x.wardenone_aux_list_meta;
     const statusEl = $('list-status');
@@ -3107,7 +3180,7 @@ function renderListMeta() {
       } else {
         statusEl.textContent = 'Blocking ' + fmtCount(count) + ' domains';
       }
-      let line = 'Updated ' + fmtAgo(meta.updated);
+      let line = 'Fetched ' + fmtAgo(meta.updated);
       if (activeCount && activeCount < count) line += ' - ' + fmtCount(count) + ' known in feeds';
       // surface feed health: if some sources failed, the user should know coverage
       // is partial rather than seeing a silently-smaller number.
@@ -3141,6 +3214,7 @@ function renderListMeta() {
           failEl.appendChild(row);
         }
       }
+      renderListPublishers(meta.publisherSources, auxMeta && auxMeta.publisherSources, x && x.wardenone_adshield_cosmetic_publishers);
       const age = meta.updated ? Date.now() - Number(meta.updated) : 0;
       if (age > 7 * 24 * 60 * 60 * 1000) {
         line += ' - stale';
@@ -3161,6 +3235,7 @@ function renderListMeta() {
       statusEl.textContent = 'Blocking ' + fmtCount(162) + ' domains (built-in)';
       updEl.textContent = 'Auto-update runs daily - tap to fetch more';
       updEl.style.color = '';
+      renderListPublishers(auxMeta && auxMeta.publisherSources, x && x.wardenone_adshield_cosmetic_publishers);
     }
   });
 }
@@ -3201,7 +3276,7 @@ $('update-now').addEventListener('click', () => {
       updEl.textContent = '';
       const span = document.createElement('span');
       span.className = 'saved';
-      span.textContent = 'Updated - blocking ' + fmtCount(blocking) + ' domains';
+      span.textContent = 'Fetched - blocking ' + fmtCount(blocking) + ' domains';
       updEl.appendChild(span);
       if (activeCount && activeCount < count) updEl.appendChild(document.createTextNode(' - ' + fmtCount(count) + ' known in feeds'));
       const activeAdShield = Number(meta.activeDomainRuleCounts && meta.activeDomainRuleCounts.adshield);
@@ -3225,8 +3300,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // showing a value that is no longer true. Fires for our own writes too, but those
   // already match `config` by then, so nothing is adopted and there is no loop.
   if (area === 'local' && changes.wardenone_config) adoptExternalConfigChange(changes.wardenone_config.newValue);
-  if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta)) renderListMeta();
-  if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
+  if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers)) renderListMeta();
+  if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
   if (area === 'local' && (changes.wardenone_ext_alerts || changes.wardenone_ext_reviews
       || changes.wardenone_ext_reputation_custom)) loadExtensionAlerts();
   if (area === 'local' && changes.wardenone_startup_report) loadStartupReport();
@@ -4854,6 +4929,23 @@ function renderPermResults(out, hostname, res) {
 })();
 
 // ----- Forget Me UI -----
+function reconcileForgetHistoryPermission() {
+  if (config.forgetMeHistory !== true) return;
+  const hist = $('forget-history');
+  const status = $('forget-history-status');
+  if (hist) hist.disabled = true;
+  chrome.permissions.contains({ permissions: ['history'] }).then((granted) => {
+    if (hist) hist.disabled = false;
+    if (granted || config.forgetMeHistory !== true) return;
+    config.forgetMeHistory = false;
+    if (hist) hist.checked = false;
+    if (status) status.textContent = 'History access is off. Turn this on again to ask Chrome for access.';
+    save();
+  }).catch(() => {
+    if (hist) hist.disabled = false;
+    if (status) status.textContent = 'Could not check history access. Browser history will not be cleared until access is confirmed.';
+  });
+}
 (function initForgetMe() {
   const toggle = $('forget-enable');
   if (!toggle) return;
@@ -4872,7 +4964,37 @@ function renderPermResults(out, hostname, res) {
   });
 
   const hist = $('forget-history');
-  if (hist) hist.addEventListener('change', () => { config.forgetMeHistory = hist.checked; save(); });
+  const histStatus = $('forget-history-status');
+  if (hist) hist.addEventListener('change', () => {
+    if (!hist.checked) {
+      config.forgetMeHistory = false;
+      if (histStatus) histStatus.textContent = 'Browser history will be kept.';
+      save();
+      return;
+    }
+    hist.disabled = true;
+    try {
+      chrome.permissions.request({ permissions: ['history'] }).then((granted) => {
+        hist.disabled = false;
+        if (!granted) {
+          hist.checked = false;
+          if (histStatus) histStatus.textContent = 'History access was not granted. Browser history will be kept.';
+          return;
+        }
+        config.forgetMeHistory = true;
+        if (histStatus) histStatus.textContent = 'History access granted. Forget Me can clear this site from browser history.';
+        save();
+      }).catch(() => {
+        hist.disabled = false;
+        hist.checked = false;
+        if (histStatus) histStatus.textContent = 'Could not request history access. Browser history will be kept.';
+      });
+    } catch (_) {
+      hist.disabled = false;
+      hist.checked = false;
+      if (histStatus) histStatus.textContent = 'Could not request history access. Browser history will be kept.';
+    }
+  });
 
   const currentHost = (cb) => {
     try {
