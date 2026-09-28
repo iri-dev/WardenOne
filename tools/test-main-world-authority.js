@@ -64,6 +64,7 @@ function descendants(el, out) { (el.children || []).forEach((c) => { out.push(c)
 function makeWorlds() {
   const events = [];
   const docListeners = [];
+  const windowListeners = [];
   function listenerOk(l) { return !(l.opts && l.opts.signal && l.opts.signal.aborted); }
   const documentElement = element('html', {}, []);
   documentElement.getElementsByTagName = (q) => { if (q !== '*') throw new Error('the seal asks for every element'); return descendants(documentElement, []); };
@@ -76,6 +77,7 @@ function makeWorlds() {
     removeEventListener(type, fn) { const i = docListeners.findIndex((l) => l.type === type && l.fn === fn); if (i >= 0) docListeners.splice(i, 1); },
     dispatchEvent(evt) {
       events.push(evt);
+      windowListeners.slice().filter((l) => l.type === evt.type && l.opts.capture && listenerOk(l)).forEach((l) => { try { l.fn(evt); } catch (e) { events.push({ type: 'listener-threw', error: String(e) }); } });
       docListeners.slice().filter((l) => l.type === evt.type && listenerOk(l)).forEach((l) => { try { l.fn(evt); } catch (e) { events.push({ type: 'listener-threw', error: String(e) }); } });
       return true;
     },
@@ -87,8 +89,15 @@ function makeWorlds() {
   function makeWindow(name) {
     const w = {
       name,
-      addEventListener(type, fn, opts) { if (type === 'message') messageListeners.push({ fn, w, opts: opts || {} }); },
-      removeEventListener(type, fn) { const i = messageListeners.findIndex((l) => l.fn === fn); if (i >= 0) messageListeners.splice(i, 1); },
+      addEventListener(type, fn, opts) {
+        if (type === 'message') messageListeners.push({ fn, w, opts: opts || {} });
+        else windowListeners.push({ type, fn, w, opts: opts === true ? { capture: true } : (opts || {}) });
+      },
+      removeEventListener(type, fn) {
+        const list = type === 'message' ? messageListeners : windowListeners;
+        const i = list.findIndex((l) => l.fn === fn);
+        if (i >= 0) list.splice(i, 1);
+      },
       postMessage(data) {
         posted.push(data);
         // Every listener sees the event as coming from the window of its own world; the
@@ -517,7 +526,7 @@ function holdsKey(pads, hex) {
       return src.indexOf("new CustomEvent('wo-bridge-replay')") > src.indexOf("woOn(document, 'wo-key'");
     }));
   check('the bridge hands the key over last, after every listener exists',
-    BRIDGE.lastIndexOf('  deliverKey();') > BRIDGE.indexOf("woOn(document, 'wo-event', (e) => {")
+    BRIDGE.lastIndexOf('  deliverKey();') > BRIDGE.indexOf("woOn(window, 'wo-event', (e) => {")
     && BRIDGE.lastIndexOf('  deliverKey();') > BRIDGE.indexOf("woOn(document, 'wo-safe-browsing-check'"));
 
   console.log('');

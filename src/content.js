@@ -1117,7 +1117,13 @@
       return!1
     }
   }
+  let __woToastReady=!1;
+  const __woToastPending=[];
   function __woEmit(detail){
+    if(!__woToastReady&&detail&&/^(?:blocked_|detected_|warned_)/.test(String(detail.type||""))){
+      __woToastPending.push({type:String(detail.type),detail:detail.detail&&"object"==typeof detail.detail?{...detail.detail}:detail.detail});
+      if(__woToastPending.length>32)__woToastPending.shift()
+    }
     if(null!==__woToken)try{
       document.dispatchEvent(new CustomEvent("wo-event",
       {
@@ -21969,6 +21975,14 @@
       let lastToastAt=0,
       recentKey="",
       toastSeen=new Set();
+      const OWNED_TOAST_TYPES=new Set(["blocked_safe_browsing_link","blocked_safe_browsing_form",
+      "blocked_safe_browsing_paste","blocked_token_exfil","blocked_skimmer_exfil","blocked_payment_card_submit",
+      "warned_confirm_bait","warned_notification_scam","warned_device_request","warned_device_silent",
+      "blocked_speech_capture","warned_speech_capture","warned_file_request","warned_file_silent",
+      "warned_fake_window","warned_fullscreen_spoof","blocked_media_capture","blocked_screen_capture",
+      "warned_media_capture","warned_hidden_media_capture","warned_screen_capture","warned_hidden_screen_capture",
+      "warned_abuseipdb_server","warned_url_reputation","warned_phishing","warned_payment_card_entry",
+      "warned_fake_update","warned_honeytoken_read"]);
       const quietToastHost=v=>{
         try{
           const raw=String(v||"").trim();
@@ -22091,6 +22105,7 @@
         notice a person gets, and this queue cannot grow without bound because the set above
         admits each distinct wording exactly once per page. */
         toastSeen.add(key);
+        if(OWNED_TOAST_TYPES.has(type))__woEmit({type:"warning_toast",detail:{id:type}});
         /* Report it once, here, where the decision to show is final -- not at
            render, which is deferred by the stagger and would double-report a
            card that never appeared. The worker takes the host from the tab. */
@@ -22412,7 +22427,11 @@
 
         }
 
-      })
+      });
+      __woToastReady=!0;
+      for(const pending of __woToastPending.splice(0)){
+        if(!pending.detail||!0!==pending.detail.quiet)showToast(pending.type,pending.detail)
+      }
     }
     {
       const counts=Object.create(null);
