@@ -48,8 +48,8 @@ function check(name, condition, extra) {
   console.error('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
-/* Internal maintainer notes do not belong in the public repository. .gitignore blocks an
- * accidental add; this index check also catches `git add -f`, case variants, and moving either
+/* Internal maintainer notes do not belong in the public repository. This index check catches
+ * an accidental add, `git add -f`, case variants, and moving either
  * filename into a subdirectory. */
 {
   const trackedResult = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' });
