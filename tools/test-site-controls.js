@@ -200,7 +200,7 @@ function is(name, got, want, extra) {
 //    meta-refresh blocking running there anyway.
 // ---------------------------------------------------------------------------
 {
-  check('the redirect guard checks the allowlist', /function hostAllowedByUser\(\)/.test(ANTI_REDIRECT));
+  check('the redirect guard checks the allowlist', /function hostAllowedByUser\(config\)/.test(ANTI_REDIRECT));
   check('and it checks it on the master gate, not one feature',
     /return configReady\(\) && c\.enabled !== false && !hostAllowedByUser\(\);/.test(ANTI_REDIRECT));
   check('its host match is on a label boundary',

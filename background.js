@@ -1121,6 +1121,91 @@ const REDIRECT_CHAIN_RECENT_MAX = 80;
 function chainAbuseTld(host) {
   return /\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|mom|hair|tattoo)$/i.test(String(host || ''));
 }
+/* A page can open a popup through a form target or a fresh frame's Window.open,
+   bypassing the player frame's MAIN-world hook. Chrome still reports the source
+   frame and first destination here. A risky domain ending is not proof of abuse:
+   require a recent signed player or overlay signal from the source tab too. */
+async function maybeCloseSuspiciousFramePopup(details) {
+  if (!details || !Number.isInteger(details.tabId) || details.tabId < 0
+      || !Number.isInteger(details.sourceTabId) || details.sourceTabId < 0
+      || !Number.isInteger(details.sourceFrameId) || details.sourceFrameId <= 0) return;
+  let targetHost = '';
+  try {
+    const target = new URL(String(details.url || ''));
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') return;
+    targetHost = target.hostname.toLowerCase();
+  } catch (_) { return; }
+  if (!chainAbuseTld(targetHost)) return;
+  const signalAt = Math.max(PLAYER_GESTURE_AT[details.sourceTabId] || 0, POPUP_OVERLAY_AT[details.sourceTabId] || 0);
+  if (!signalAt || Date.now() - signalAt > 8000) return;
+  let cfg = {};
+  try { const stored = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {}); } catch (_) { return; }
+  if (cfg.enabled === false || cfg.blockForcedPopups === false || cfg.strictPopupShield === false) return;
+  let sourceHost = '';
+  try { sourceHost = new URL((await chrome.tabs.get(details.sourceTabId)).url).hostname.toLowerCase(); } catch (_) { return; }
+  if (!sourceHost || siteIdentityBg(sourceHost) === siteIdentityBg(targetHost)
+      || hostMatchesAllowlist(sourceHost, activeAllowlist(cfg))) return;
+  const overrides = cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
+  for (const pattern of Object.keys(overrides)) {
+    if (!hostMatchesSite(sourceHost, pattern)) continue;
+    const entry = overrides[pattern];
+    if (entry && (entry.blockForcedPopups === false || entry.strictPopupShield === false)) return;
+  }
+  try {
+    await chrome.tabs.remove(details.tabId);
+    queueHistory({
+      type: 'blocked_popup',
+      detail: { matched: targetHost, why: 'An embedded frame opened a suspicious popup.' },
+      url: String(details.url || '').slice(0, 300),
+      at: Date.now(),
+    });
+  } catch (_) {}
+}
+/* A confirmed transparent link over a real player can also open a staged
+   about:blank window. webNavigation has no destination to judge at creation,
+   so close a tab spawned from that signed overlay gesture after the content
+   script has identified the bait. Ordinary blank OAuth windows have no such
+   signal and stay open. */
+async function maybeCloseOverlaySpawnedPopup(tab) {
+  if (!tab || !Number.isInteger(tab.id) || tab.id < 0) return false;
+  let sourceTabId = tab.openerTabId;
+  if (!Number.isInteger(sourceTabId) || sourceTabId < 0) {
+    // Chrome omits openerTabId for some noopener windows. Never infer an opener
+    // for a normal tab: only a newly created blank popup window, and only when
+    // exactly one tab has reported the signed overlay gesture, can be paired.
+    if ((tab.url && tab.url !== 'about:blank') || (tab.pendingUrl && tab.pendingUrl !== 'about:blank')) return false;
+    let win;
+    try { win = await chrome.windows.get(tab.windowId); } catch (_) { return false; }
+    if (!win || win.type !== 'popup') return false;
+    const recent = Object.keys(POPUP_OVERLAY_AT).filter((id) => Date.now() - POPUP_OVERLAY_AT[id] < 8000);
+    if (recent.length !== 1) return false;
+    sourceTabId = Number(recent[0]);
+  }
+  const at = POPUP_OVERLAY_AT[sourceTabId];
+  if (!at || Date.now() - at > 8000) return false;
+  let cfg = {};
+  try { const stored = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {}); } catch (_) { return false; }
+  if (cfg.enabled === false || cfg.blockForcedPopups === false || cfg.strictPopupShield === false) return false;
+  let sourceHost = '';
+  try { sourceHost = new URL((await chrome.tabs.get(sourceTabId)).url).hostname.toLowerCase(); } catch (_) { return false; }
+  if (!sourceHost || hostMatchesAllowlist(sourceHost, activeAllowlist(cfg))) return false;
+  const overrides = cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
+  for (const pattern of Object.keys(overrides)) {
+    if (!hostMatchesSite(sourceHost, pattern)) continue;
+    const entry = overrides[pattern];
+    if (entry && (entry.blockForcedPopups === false || entry.strictPopupShield === false)) return false;
+  }
+  try {
+    await chrome.tabs.remove(tab.id);
+    queueHistory({
+      type: 'blocked_popup',
+      detail: { why: 'A transparent cross-site link over a player opened a window.' },
+      url: String(tab.pendingUrl || tab.url || 'about:blank').slice(0, 300),
+      at: Date.now(),
+    });
+    return true;
+  } catch (_) { return false; }
+}
 // The key a chain is remembered under is a digest of its final URL, not the URL (PRIV-04),
 // and the key a reputation provider's answer is cached under is a digest of what was asked
 // (PRIV-03).
@@ -1466,6 +1551,7 @@ async function purgeTrackingBounces(chain, finalUrl, cfg) {
 // what keeps ordinary navigation out of this.
 // Interstitial, never a silent cancel: a wrong call here must stay recoverable.
 const PLAYER_GESTURE_AT = Object.create(null);
+const POPUP_OVERLAY_AT = Object.create(null);
 const TOP_NAV_OWNED_AT = Object.create(null);
 const TOP_NAV_OWNED_HOST = Object.create(null);
 const LAST_TOP_URL = Object.create(null);
@@ -1481,6 +1567,7 @@ const FORCED_NAV_GESTURE_MS = 5000;
 function noteNavSignal(tabId, signal, host) {
   if (tabId == null || tabId < 0) return { ok: true };
   if (signal === 'player-gesture') PLAYER_GESTURE_AT[tabId] = Date.now();
+  else if (signal === 'popup-overlay') POPUP_OVERLAY_AT[tabId] = Date.now();
   else if (signal === 'top-nav-authorized') {
     const clean = messageCleanHost(host);
     if (!clean) return { ok: false };
@@ -1615,6 +1702,7 @@ async function maybeBlockForcedTopRedirect(details) {
 
 function forgetNavSignals(tabId) {
   delete PLAYER_GESTURE_AT[tabId];
+  delete POPUP_OVERLAY_AT[tabId];
   delete TOP_NAV_OWNED_AT[tabId];
   delete TOP_NAV_OWNED_HOST[tabId];
   delete LAST_GESTURE_AT[tabId];
@@ -1913,6 +2001,36 @@ registerListener('redirect-chain warnings', () => {
 registerListener('popup tracking', () => {
   chrome.webNavigation?.onCreatedNavigationTarget?.addListener((details) => {
     if (details && details.sourceTabId != null && details.sourceTabId >= 0) POPUP_OPENED_AT[details.sourceTabId] = Date.now();
+    maybeCloseSuspiciousFramePopup(details).catch(() => {});
+  });
+});
+registerListener('player overlay popup cleanup', () => {
+  chrome.tabs.onCreated.addListener((tab) => {
+    if (!tab) return;
+    let closed = false;
+    let inFlight = false;
+    const tryCloseOverlayPopup = () => {
+      if (closed || inFlight) return;
+      inFlight = true;
+      maybeCloseOverlaySpawnedPopup(tab).then((removed) => { if (removed) closed = true; })
+        .catch(() => {}).finally(() => { inFlight = false; });
+    };
+    tryCloseOverlayPopup();
+    setTimeout(tryCloseOverlayPopup, 250);
+    setTimeout(tryCloseOverlayPopup, 850);
+  });
+});
+registerListener('player overlay popup window cleanup', () => {
+  chrome.windows.onCreated.addListener((window) => {
+    if (!window || window.type !== 'popup' || !Number.isInteger(window.id)) return;
+    const tryClosePopupWindow = async () => {
+      const tabs = await chrome.tabs.query({ windowId: window.id });
+      if (tabs.length !== 1) return;
+      await maybeCloseOverlaySpawnedPopup(tabs[0]);
+    };
+    tryClosePopupWindow().catch(() => {});
+    setTimeout(() => { tryClosePopupWindow().catch(() => {}); }, 100);
+    setTimeout(() => { tryClosePopupWindow().catch(() => {}); }, 300);
   });
 });
 registerListener('tab-close cleanup', () => {
@@ -2395,6 +2513,25 @@ async function buildContentConfigSnapshot(frameHost, needs) {
     supplemental,
     searchJunkDomains: want('searchJunk') ? shared.searchJunkDomains : [],
   };
+}
+
+async function buildRedirectBootstrapSnapshot(sender) {
+  const stored = await localGet('wardenone_config');
+  const cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {});
+  const host = contentConfigFrameHost(sender);
+  const overrides = cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
+  let siteOff = {};
+  for (const pattern of Object.keys(overrides)) {
+    if (host && hostMatchesSite(host, pattern) && overrides[pattern] && typeof overrides[pattern] === 'object') {
+      siteOff = Object.assign(siteOff, overrides[pattern]);
+    }
+  }
+  return { ok: true, overrides: {
+    enabled: cfg.enabled !== false && siteOff.enabled !== false,
+    blockForcedPopups: cfg.blockForcedPopups !== false && siteOff.blockForcedPopups !== false,
+    strictPopupShield: cfg.strictPopupShield !== false && siteOff.strictPopupShield !== false,
+    allowlist: activeAllowlist(cfg),
+  } };
 }
 
 let __contentConfigRefreshTimer = null;
@@ -15922,6 +16059,7 @@ async function updateRemoteLists(reason) {
 const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'rg-block',
   'content-config-get',
+  'redirect-bootstrap-get',
   /* Silencing a notice, and reporting that one was shown. Both carry a warning
      type and nothing else; the host is taken from the sending tab. Missing from
      this list they were rejected as 'Not allowed from this context' before ever
@@ -15988,6 +16126,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
      least-privilege snapshot. Keep enough room for frame-heavy applications while still
      preventing a compromised tab from turning configuration reads into a storage flood. */
   'content-config-get': { max: 500, windowMs: 60000 },
+  'redirect-bootstrap-get': { max: 500, windowMs: 60000 },
   /* A results page asks once per batch of hosts it has not asked about, and remembers the
      answers -- so a search plus several "more results" is a handful of calls, not one per
      result. The ceiling is for the forged case: this reads blocklist membership, and
@@ -18327,9 +18466,6 @@ function searchResultVerdictForHost(host, ctx) {
       const looks = brand.kind === 'typosquat' || brand.kind === 'tld-swap';
       return { level: 'warn', label: (looks ? 'Looks like ' + brand.brand : 'Uses the ' + brand.brand + ' name') + ', but is not ' + brand.brand, detail: rd };
     }
-    if (/(^|\.)xn--/i.test(h)) {
-      return { level: 'warn', label: 'The name is written in a script that can imitate another', detail: rd };
-    }
     if (looksLikeLookalikeHost(h)) {
       return { level: 'warn', label: 'Spelled like a well-known site, but is not it', detail: rd };
     }
@@ -20210,6 +20346,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // rules and not the top page's.
     const frameHost = contentConfigFrameHost(sender);
     respond(buildContentConfigSnapshot(frameHost, contentConfigNeeds(msg.need)), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'redirect-bootstrap-get' && messageSenderIsTab(sender)) {
+    respond(buildRedirectBootstrapSnapshot(sender), sendResponse);
     return true;
   }
   /* Opening the palette from the popup, for the case Chrome creates every time this

@@ -34,6 +34,7 @@ const { h, makeDocument } = require('./lib/mini-dom');
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const STARTUP = fs.readFileSync(path.join(ROOT, 'background-startup.js'), 'utf8');
+const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 const SCRIPT = fs.readFileSync(path.join(ROOT, 'search-junk.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
@@ -264,13 +265,24 @@ check('the pressure trim cuts the count with the array',
       },
     };
     vm.createContext(brandWorld);
+    const idnStart = DOMAIN.indexOf('const WARDENONE_IDN_CONFUSABLES');
+    const idnEnd = DOMAIN.indexOf('function regDomain(', idnStart);
+    check('the shared IDN helper is available', idnStart >= 0 && idnEnd > idnStart);
+    vm.runInContext(DOMAIN.slice(idnStart, idnEnd), brandWorld);
     vm.runInContext(STARTUP.slice(first, last) + '\nglobalThis.brandRisk = loginBrandRiskForHost; globalThis.lookalike = looksLikeLookalikeHost;', brandWorld);
     const score = makeScorer({ brand: (h) => brandWorld.brandRisk(h, ''), lookalike: (h) => brandWorld.lookalike(h) });
     check('a Disboard server result has no fake-Discord warning', score('disboard.org', CTX) === null);
     check('a plain Discord directory suffix has no typo warning', score('discords.example', CTX) === null);
     check('a Discord login lure still warns', !!score('discord-login.example', CTX));
     check('a visual Discord substitution still warns', !!score('disc0rd.example', CTX));
+    check('two digit-to-letter swaps still warn', !!score('6oo6le.example', CTX));
+    check('repeated one-for-ell swaps still warn', !!score('we11sfargo.example', CTX));
     check('a Discord subdomain on an unrelated site still warns', !!score('discord.evil.example', CTX));
+    const idnSpoof = score('xn--80ak6aa92e.example', CTX);
+    check('an encoded Apple lookalike names Apple', idnSpoof && /Apple/.test(idnSpoof.label), JSON.stringify(idnSpoof));
+    const idnSubdomain = score('xn--l-7sba6dbr.evil.example', CTX);
+    check('an encoded brand subdomain names its target', idnSubdomain && /PayPal/.test(idnSubdomain.label), JSON.stringify(idnSubdomain));
+    check('an unrelated IDN is not called suspicious', score('xn--bcher-kva.example', CTX) === null);
   }
 }
 {
@@ -287,10 +299,6 @@ check('the pressure trim cuts the count with the array',
   check('a name that uses the brand word is said to use it, not to look like it', worn && /^Uses the Steam name, but is not Steam$/.test(worn.label), worn && worn.label);
   const sub = makeScorer({ brand: () => ({ brand: 'Steam', matched: 'evil.example', kind: 'subdomain' }) })('steam.evil.example', CTX);
   check('so is a brand worn as a subdomain', sub && /^Uses the Steam name/.test(sub.label), sub && sub.label);
-}
-{
-  const r = makeScorer({})('xn--80ak6aa92e.example', CTX);
-  check('punycode warns', r && r.level === 'warn', JSON.stringify(r));
 }
 {
   const r = makeScorer({})('203.0.113.9', CTX);
