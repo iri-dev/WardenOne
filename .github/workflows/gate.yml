@@ -29,10 +29,19 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .node-version
 
       - name: Run the maintainability gate
         run: node tools/check-maintainability.js
+
+      - name: Record package footprint
+        run: node tools/check-performance-budget.js --out performance-metrics.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-footprint-${{ github.sha }}
+          path: performance-metrics.json
+          retention-days: 90
 
   # Every push that passes the gate rebuilds the rolling `latest-build` release and
   # replaces the package attached to it, so the ordinary download always matches
@@ -52,6 +61,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
 
       - name: Package the extension
         # Same command used to cut a real release: .gitattributes export-ignore keeps
@@ -81,14 +94,7 @@ jobs:
         env:
           ATTESTATION_URL: ${{ steps.provenance.outputs.attestation-url }}
         run: |
-          # Release notes say what changed. The old version of this step said only
-          # how the build was produced -- the commit it came from and that the gate
-          # had passed -- which is the kind of thing nobody downloading a build
-          # wants to read. Commit subjects here are written as whole sentences
-          # about what changed, so they make the list directly.
-          #
-          # The window is "since the previous rolling build", which is exactly where
-          # the latest-build tag still points: this step runs BEFORE the tag moves.
+          # Summarise commits since the previous rolling tag before moving it.
           PREV="$(git rev-parse -q --verify refs/tags/latest-build || true)"
           if [ -n "$PREV" ] && [ "$PREV" != "$GITHUB_SHA" ]; then
             git log --no-merges --format='- %s' "$PREV..HEAD" > changes.txt
@@ -124,9 +130,19 @@ jobs:
             echo 'change that passes the gate, so the download here is never behind the code.'
             echo
             echo "Version \`$(node -p "require('./manifest.json').version")\` · commit \`$(git rev-parse --short HEAD)\`"
+            echo
+            echo '<details>'
+            echo '<summary>Optional advanced verification — checksum and build origin</summary>'
+            echo
+            echo 'Only the ZIP is needed to install WardenOne. The .sha256 file and attestation are optional checks for people who want to verify their download.'
+            echo
+            echo 'The SHA-256 checksum checks that your ZIP matches the published ZIP. The GitHub attestation links those ZIP bytes to this repository workflow and source commit; neither check guarantees the extension is bug-free.'
+            echo
             echo "Source commit: \`$GITHUB_SHA\`"
             echo "ZIP SHA-256: \`$(cut -d' ' -f1 WardenOne-latest.zip.sha256)\`"
             echo "[GitHub build attestation]($ATTESTATION_URL) · [How to verify](https://github.com/iri-dev/WardenOne#verify-the-github-download)"
+            echo
+            echo '</details>'
           } > notes.md
 
       - name: Move the rolling tag to this commit

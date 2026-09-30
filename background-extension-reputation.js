@@ -50,15 +50,15 @@ var EXT_REPUTATION_STATUS_RANK = {
 };
 var EXT_ACCESS_RANK = { low: 0, medium: 1, high: 2, critical: 3 };
 
-/* Stable ids for the facts produced by background-extension-watch.js. The
-   purpose profiles used to see only hand-written database signatures, so an
-   extension could gain a powerful Chrome permission that had no signature and
-   still be called RECOGNIZED. Every base capability now enters the same
-   comparison. A profile must account for it explicitly or it is unexpected. */
+/* Base Chrome capabilities enter the purpose comparison even without a database signature. */
 var EXT_BASE_CAPABILITY_IDS = Object.freeze({
   '<all_urls>': 'all-site-data',
   tabs: 'tab-metadata',
+  bookmarks: 'bookmarks-control',
   history: 'history-access',
+  sessions: 'session-history-access',
+  topSites: 'top-sites-access',
+  webNavigation: 'navigation-observation',
   cookies: 'cookie-access',
   webRequest: 'network-observation',
   webRequestBlocking: 'blocking-web-request',
@@ -66,12 +66,19 @@ var EXT_BASE_CAPABILITY_IDS = Object.freeze({
   debugger: 'debugger-control',
   management: 'extension-management',
   nativeMessaging: 'native-program-bridge',
+  geolocation: 'device-location',
+  identity: 'account-identity-tokens',
+  'identity.email': 'account-email-access',
+  privacy: 'browser-privacy-control',
+  contentSettings: 'site-permission-control',
+  browsingData: 'browsing-data-deletion',
+  tabCapture: 'tab-media-capture',
+  desktopCapture: 'screen-capture-request',
   clipboardRead: 'clipboard-read',
   declarativeNetRequestWithHostAccess: 'declarative-network-control',
   downloads: 'downloads-control',
   scripting: 'script-injection',
   'combination:broad-scripting': 'script-everywhere',
-  'combination:broad-sensitive-data': 'session-data-everywhere',
   'scope:finite-hosts': 'wide-finite-host-set',
   'installType:development': 'nonstandard-install',
   'installType:sideload': 'nonstandard-install',
@@ -80,7 +87,11 @@ var EXT_BASE_CAPABILITY_IDS = Object.freeze({
 var EXT_BASE_CAPABILITY_SEVERITIES = Object.freeze({
   'all-site-data': 'high',
   'tab-metadata': 'medium',
+  'bookmarks-control': 'medium',
   'history-access': 'high',
+  'session-history-access': 'medium',
+  'top-sites-access': 'medium',
+  'navigation-observation': 'medium',
   'cookie-access': 'high',
   'network-observation': 'medium',
   'blocking-web-request': 'high',
@@ -89,10 +100,19 @@ var EXT_BASE_CAPABILITY_SEVERITIES = Object.freeze({
   'debugger-control': 'critical',
   'extension-management': 'high',
   'native-program-bridge': 'critical',
+  'device-location': 'high',
+  'account-identity-tokens': 'high',
+  'account-email-access': 'medium',
+  'browser-privacy-control': 'high',
+  'site-permission-control': 'high',
+  'browsing-data-deletion': 'high',
+  'tab-media-capture': 'high',
+  'screen-capture-request': 'high',
   'clipboard-read': 'high',
   'downloads-control': 'medium',
   'script-injection': 'medium',
   'script-everywhere': 'high',
+  'history-everywhere': 'high',
   'session-data-everywhere': 'critical',
   'wide-finite-host-set': 'medium',
   'nonstandard-install': 'medium',
@@ -151,22 +171,21 @@ function extensionVersionAffected(version, affected) {
   return false;
 }
 
-/* A broad kind-profile says what password managers generally need. An exact-ID
-   contract records the extra capability that one verified product documents.
-   Keeping those layers separate is important: Bitwarden declaring clipboard
-   read must not silently excuse the same permission on every password manager. */
+/* Exact-ID contracts may add allowances or replace a broad kind profile. */
 function sanitizeExtensionCapabilityContract(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (raw.expectedMode !== undefined && raw.expectedMode !== 'replace') return null;
   const expected = Array.from(new Set((Array.isArray(raw.expected) ? raw.expected : [])
     .map((value) => extensionReputationText(value, 80))
     .filter((value) => /^[a-z0-9-]{2,80}$/.test(value)))).slice(0, 20);
   const needs = extensionReputationText(raw.needs, 400);
   const evidence = extensionReputationText(raw.evidence, 700);
   const reference = extensionReputationText(raw.reference, 500);
-  /* Per-identity exceptions require a human-readable purpose and a cited HTTPS
-     source. An undocumented allow-list entry is rejected instead of trusted. */
+  /* Identity-specific allowances need a purpose and HTTPS evidence. */
   if (!expected.length || !needs || !evidence || !/^https:\/\//i.test(reference)) return null;
-  return { expected, needs, evidence, reference };
+  const contract = { expected, needs, evidence, reference };
+  if (raw.expectedMode === 'replace') contract.expectedMode = 'replace';
+  return contract;
 }
 
 function sanitizeExtensionReputationRecord(id, raw, sources, origin) {
@@ -187,6 +206,8 @@ function sanitizeExtensionReputationRecord(id, raw, sources, origin) {
     retrievedAt: extensionReputationIsoDate(sourceRaw.retrievedAt || raw.retrievedAt),
   };
   if (!source.label) return null;
+  const capabilityContract = origin === 'custom' || status !== 'recognized_identity'
+    ? null : sanitizeExtensionCapabilityContract(raw.capabilityContract);
   return {
     id: String(id),
     name: extensionReputationText(raw.name, 180),
@@ -194,13 +215,10 @@ function sanitizeExtensionReputationRecord(id, raw, sources, origin) {
     reason,
     categories: Array.from(new Set((Array.isArray(raw.categories) ? raw.categories : [])
       .map((value) => extensionReputationText(value, 80)).filter(Boolean))).slice(0, 20),
-    /* A category describes an extension. It does not grant permission. Only a
-       bundled record may deliberately bind this exact id to a capability
-       profile; imported intelligence cannot turn a category into an allowlist. */
-    capabilityProfile: origin === 'custom' || status !== 'recognized_identity'
+    /* Imported categories cannot grant expected capabilities. */
+    capabilityProfile: origin === 'custom' || status !== 'recognized_identity' || (raw.capabilityContract && !capabilityContract)
       ? '' : extensionReputationText(raw.capabilityProfile, 80),
-    capabilityContract: origin === 'custom' || status !== 'recognized_identity'
-      ? null : sanitizeExtensionCapabilityContract(raw.capabilityContract),
+    capabilityContract,
     affected,
     source,
     reviewedAt,
@@ -228,13 +246,9 @@ function sanitizeCapabilitySignature(raw) {
   return signature;
 }
 
-/* What each KIND of extension is expected to be able to do. Only bundled data
-   defines these: an imported local database may add evidence about identities,
-   but letting an import declare that some category is allowed to hold the
-   debugger would turn a reputation import into a permission allowlist. */
+/* Only bundled data may define kind profiles; imports cannot widen expected access. */
 function sanitizeCapabilityProfiles(raw, signatures) {
-  const known = new Set((signatures || []).map((signature) => signature.id)
-    .concat(Object.values(EXT_BASE_CAPABILITY_IDS)));
+  const known = extensionKnownCapabilityIds(signatures);
   const out = {};
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   for (const name of Object.keys(source).slice(0, 200)) {
@@ -242,8 +256,7 @@ function sanitizeCapabilityProfiles(raw, signatures) {
     if (!profile || typeof profile !== 'object') continue;
     const label = extensionReputationText(profile.label, 120);
     const needs = extensionReputationText(profile.needs, 300);
-    /* A capability id that matches no signature would silently be treated as
-       unexpected, putting a trusted extension back in the attention list. */
+    /* Ignore unknown capability ids instead of accepting a broken profile. */
     const expected = Array.from(new Set((Array.isArray(profile.expected) ? profile.expected : [])
       .map((value) => extensionReputationText(value, 80)).filter((value) => known.has(value)))).slice(0, 40);
     if (!label || !needs || !expected.length) continue;
@@ -299,6 +312,7 @@ function validateExtensionReputationDatabase(raw, options) {
       }
       record.capabilityContract = filtered.length
         ? Object.assign({}, record.capabilityContract, { expected: filtered }) : null;
+      if (!record.capabilityContract) record.capabilityProfile = '';
     });
   }
   const fatal = Number(raw.schema) !== EXT_REPUTATION_SCHEMA || ids.length > maxEntries;
@@ -441,31 +455,19 @@ function reputationLabel(status) {
   })[status] || 'No local reputation record';
 }
 
-/* Does the installed extension call itself roughly what the catalogue expects?
-
-   Deliberately loose. Publishers localise their names, append taglines and
-   rename between releases -- "Bitwarden Password Manager" ships as "Bitwarden"
-   in places, and demanding an exact string would withhold recognition from the
-   very extensions this exists to reassure people about. One shared distinctive
-   word is enough, which is a low bar for the real product and a high one for an
-   unrelated extension that happens to share a mistyped ID. */
+/* Corroborate an exact ID with a loose name match, allowing localisation and taglines. */
 function extensionNameCorroborates(installedName, recordName) {
   const expected = extensionReputationText(recordName, 180).toLowerCase();
   if (!expected) return true;
   const actual = extensionReputationText(installedName, 180).toLowerCase();
   if (!actual) return false;
   const words = (text) => new Set(text.split(/[^a-z0-9]+/).filter((word) => word.length >= 3
-    /* Words every second extension uses carry no evidence either way. */
+    /* Generic words provide no identity evidence. */
     && ["the", "and", "for", "web", "app", "free", "new", "pro", "plus", "chrome", "browser",
       "extension", "tool", "tools", "manager", "password", "privacy", "security", "blocker",
       "search", "protection", "official", "legacy", "listing"].indexOf(word) < 0));
   const expectedWords = words(expected);
-  /* A name with no [a-z0-9] words left after splitting is not a name with no
-     content -- it is Chinese, Korean, Japanese, Russian or Arabic. Returning
-     true here meant corroboration silently did nothing for every non-Latin
-     extension in the catalogue, so a wrong ID on one of those would have been
-     recognised rather than withheld. Compare the whole normalised string
-     instead, which works for any script. */
+  /* Non-Latin names have no ASCII words; compare their full normalised strings. */
   if (!expectedWords.size) {
     const squash = (text) => text.replace(/\s+/g, '');
     const a = squash(actual);
@@ -476,8 +478,7 @@ function extensionNameCorroborates(installedName, recordName) {
   for (const word of expectedWords) {
     if (actualWords.has(word)) return true;
   }
-  /* Fall back to substring either way, for one-word names and for the case
-     where the installed name is a shortened form of the recorded one. */
+  /* One-word and shortened names may still corroborate. */
   const squash = (text) => text.replace(/[^a-z0-9]+/g, "");
   const a = squash(actual);
   const b = squash(expected);
@@ -490,16 +491,8 @@ function lookupExtensionReputation(extension, database) {
     ? database.entryCandidates[id] : (fallbackRecord ? [fallbackRecord] : []);
   const matching = candidates.filter((candidate) => extensionVersionAffected(extension && extension.version, candidate.affected));
   const record = matching.reduce((best, candidate) => chooseExtensionReputationRecord(best, candidate), null);
-  /* An exact ID match is the strongest signal available, and it is only as good
-     as the ID. A catalogue of hundreds of hand-recorded identities will
-     eventually contain a wrong one, and a wrong ID in the RECOGNISED direction
-     is the dangerous kind: it would tell someone an unknown extension is the
-     official Bitwarden.
-     So recognition additionally requires the installed extension's name to
-     resemble the name on the record. Nothing else does -- a documented
-     compromise still applies on ID alone, because an attacker renaming their
-     copy must not shed its history. This makes a bad ID fail closed: the worst
-     case becomes a missing reassurance rather than a false one. */
+  /* Withhold positive recognition on a name mismatch. Adverse records still follow the ID
+     so a renamed harmful extension cannot shed its history. */
   if (record && (record.status === 'recognized_identity' || record.status === 'catalogued_listing')
       && !extensionNameCorroborates(extension && extension.name, record.name)) {
     return {
@@ -591,7 +584,10 @@ function mergeExtensionAccessRisk(extension, database) {
      from the contract comparison. classifyExtensionRisk already gives every
      material fact a stable permission token, which is mapped here. */
   for (const capability of (base.capabilities || [])) {
-    const id = EXT_BASE_CAPABILITY_IDS[String(capability.permission || '')];
+    /* The watcher's shared marker covers history or cookies; trust contracts distinguish them. */
+    const id = capability.permission === 'combination:broad-sensitive-data'
+      ? (tokens.has('cookies') ? 'session-data-everywhere' : 'history-everywhere')
+      : EXT_BASE_CAPABILITY_IDS[String(capability.permission || '')];
     if (!id) continue;
     const severity = EXT_BASE_CAPABILITY_SEVERITIES[id]
       || ((Number(capability.weight) || 0) >= 5 ? 'high' : ((Number(capability.weight) || 0) >= 2 ? 'medium' : 'low'));
@@ -660,24 +656,12 @@ function materialExtensionReviewSnapshot(snapshot) {
   return out;
 }
 
-/* stored first, current second -- the direction matters below. */
 function sameExtensionReviewSnapshot(stored, current) {
   if (!stored || !current) return false;
   const before = materialExtensionReviewSnapshot(stored);
   const after = materialExtensionReviewSnapshot(current);
-  /* The evidence record changing is usually a reason to look again -- but not
-     when it changed in the reassuring direction. Adding an extension to the
-     catalogue made its record digest move from nothing to something, which
-     re-opened review on everything newly recognised: an extension people had
-     already looked at, with no meaningful access, reappeared in "Needs
-     attention" because WardenOne had learned who it was. Learning something
-     good about an extension must not read as a change in the extension. */
-  /* Not a rank comparison: the scale puts no_record at 0 and recognized_identity
-     at 1, so "we learned what this is" looks like an increase while being the
-     most reassuring thing that can happen. What matters is whether the NEW
-     record says something adverse -- an incident or worse. Anything below that
-     is either no information or good information, and neither is a reason to ask
-     someone to look again. */
+  /* Newly catalogued or recognised identities do not invalidate a review when the
+     extension itself did not change. Adverse records still do. */
   const gainedIdentityContext = (before.reputationStatus === 'no_record'
       && (after.reputationStatus === 'catalogued_listing' || after.reputationStatus === 'recognized_identity'))
     || (before.reputationStatus === 'catalogued_listing' && after.reputationStatus === 'recognized_identity');
@@ -712,8 +696,7 @@ function latestExtensionChange(id, alerts) {
   return extensionChangeView(item);
 }
 
-/* A quiet new event must not hide an older permission gain that still needs a
-   decision. Prefer the strongest unreviewed event, then the newest one. */
+/* Keep an older permission gain visible behind newer quiet events. */
 function pendingActionableExtensionChange(id, alerts) {
   const items = (Array.isArray(alerts) ? alerts : []).filter((event) => event && event.id === id
     && event.kind !== 'removed' && !event.reviewedAt
@@ -723,24 +706,10 @@ function pendingActionableExtensionChange(id, alerts) {
   return extensionChangeView(items[0]);
 }
 
-/* What this extension is expected to be able to do, given what it is.
- *
- * The catalogue could previously only say "powerful", and everything worth
- * recognising is powerful: a password manager that cannot read the page cannot
- * fill anything in. So an exactly-matched official Bitwarden was recognised and
- * then flagged REVIEW ACCESS for the single capability that makes it a password
- * manager -- which trains people to dismiss the warning, and a warning everyone
- * dismisses protects nobody.
- *
- * With a profile the question stops being "is this powerful" and becomes "is
- * this powerful in the way this kind of extension is powerful". A password
- * manager reaching a desktop app is a password manager. A password manager that
- * can suddenly route your traffic through a proxy is a story.
- */
+/* An exact-ID replacement contract takes precedence over its kind profile. */
 function extensionCapabilityProfile(reputation, database) {
   const profiles = (database && database.capabilityProfiles) || {};
-  /* Categories are display metadata. Only an explicit binding on a bundled
-     exact-id record may grant an expected-capability contract. */
+  /* Only a bundled exact-ID binding may grant expected capabilities. */
   if (!reputation || reputation.status !== 'recognized_identity' || reputation.origin !== 'bundled') return null;
   const profileName = String(reputation.capabilityProfile || '');
   const profile = profileName && profiles[profileName];
@@ -751,17 +720,17 @@ function extensionCapabilityProfile(reputation, database) {
     category: profileName,
     label: String(profile.label || profileName),
     needs: String((contract && contract.needs) || profile.needs || ''),
-    expected: Array.from(new Set((Array.isArray(profile.expected) ? profile.expected : [])
-      .concat(contract && Array.isArray(contract.expected) ? contract.expected : []))),
+    expected: Array.from(new Set(contract && contract.expectedMode === 'replace'
+      ? contract.expected
+      : (Array.isArray(profile.expected) ? profile.expected : [])
+        .concat(contract && Array.isArray(contract.expected) ? contract.expected : []))),
     evidence: String((contract && contract.evidence) || profile.evidence || ''),
     reference: String((contract && contract.reference) || profile.reference || ''),
     identitySpecific: !!contract,
   };
 }
 
-/* Split what the extension can do into "this is what it is for" and "this is
-   not". Only an exactly recognised identity earns the split: for anything else
-   there is no claim about what it is, so no claim about what it should need. */
+/* Only recognised bundled identities have an expected-capability contract. */
 function splitExtensionCapabilities(reputation, access, database) {
   const signatures = (access && Array.isArray(access.signatures)) ? access.signatures : [];
   const recognised = reputation && reputation.status === 'recognized_identity' && reputation.origin === 'bundled';
@@ -772,9 +741,7 @@ function splitExtensionCapabilities(reputation, access, database) {
   const expected = [];
   const unexpected = [];
   signatures.forEach((signature) => {
-    /* Medium capabilities remain visible but do not interrupt. Install source
-       is judged separately because it changes whether the exact-id identity
-       claim can be relied upon at all. */
+    /* Medium access remains visible; install source is judged separately. */
     if ((EXT_ACCESS_RANK[signature.severity] || 0) < EXT_ACCESS_RANK.high) return;
     (profile.expected.indexOf(signature.id) >= 0 ? expected : unexpected).push(signature);
   });
@@ -826,10 +793,7 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
     recommendedAction = 'Check why ' + capabilities.profile.label + ' needs this: ' + String(first.label || '').toLowerCase();
   } else if (unreadChange && reputation.status === 'recognized_identity' && capabilities.profile
       && (pendingChange.kind === 'installed' || pendingChange.kind === 'enabled')) {
-    /* The watcher scores a first install or re-enable from the extension's
-       entire capability set. When every powerful capability is covered by this
-       exact identity's contract, keep the event in the timeline without turning
-       the normal install itself into an access alarm. */
+    /* Record a normal install without alarming on contracted capabilities. */
     verdict = { code: 'expected_install_change', label: 'EXPECTED INSTALL EVENT', tone: 'info', needsAttention: false };
     recommendedAction = 'The install event is recorded; its current powerful access matches the verified purpose for ' + capabilities.profile.label;
   } else if (unreadChange) {
@@ -839,12 +803,7 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
     verdict = { code: 'review_stale', label: 'REVIEW UPDATE', tone: 'warning', needsAttention: true };
     recommendedAction = 'Review its current access, identity and install source';
   } else if (reputation.status === 'recognized_identity' && capabilities.profile) {
-    /* Recognised, and everything it can do is what this kind of extension is for.
-       This is the branch Bitwarden belongs in, and it used to be unreachable:
-       the powerful-access test sat above it, so an exactly-matched official
-       password manager was flagged for being able to fill in passwords. Every
-       extension worth recognising is powerful, so recognition bought nothing and
-       the warning list filled with things nobody should act on. */
+    /* Recognition with expected access belongs outside the attention list. */
     verdict = { code: 'recognized_expected', label: 'RECOGNIZED', tone: 'calm', needsAttention: false };
     recommendedAction = capabilities.expected.length
       ? 'Normal for ' + capabilities.profile.label + ': it needs to ' + capabilities.profile.needs
@@ -853,9 +812,7 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
     verdict = { code: 'catalogued_powerful', label: 'VERIFY THIS LISTING', tone: 'warning', needsAttention: true };
     recommendedAction = 'The exact ID matches a catalogued Chrome Web Store listing, but its publisher and powerful access are not yet verified';
   } else if (!reviewed && accessRank >= EXT_ACCESS_RANK.high) {
-    /* Powerful, and we cannot say what it is. That combination is the one that
-       genuinely deserves a look -- which is what this verdict was always trying
-       to say, and could not, while it was also firing on everything known. */
+    /* Unexplained powerful access warrants review. */
     verdict = { code: 'powerful_access', label: 'REVIEW ACCESS', tone: 'warning', needsAttention: true };
     recommendedAction = reputation.status === 'recognized_identity'
       ? 'The identity record has no verified capability contract yet; check that this powerful access matches what it does'
@@ -876,27 +833,14 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
     verdict = { code: 'review_recommended', label: 'REVIEW RECOMMENDED', tone: 'info', needsAttention: true };
     recommendedAction = 'Check that the listed access matches what the extension does';
   }
-  /* Last word: an extension with no adverse record, no unreviewed change and no
-     meaningful reach has nothing interesting about it, and must never appear in
-     "Needs attention" whatever the branches above concluded. A low-access
-     utility sitting in a warning list next to a compromised extension is how the
-     list stops being read -- and the branches above have now twice found a way
-     to put one there, once through a version bump and once through the database
-     learning the extension's name. This is the floor under both. */
+  /* Low-access extensions without adverse records or pending changes stay out of
+     "Needs attention", even after a version bump or catalogue update. */
   if (verdict.needsAttention
-      /* Not "=== 0". That meant the floor only caught extensions nothing was
-         known about, so a RECOGNISED extension with no meaningful access -- the
-         least interesting thing in the list -- could not reach it, because being
-         recognised raises the rank to 1. What matters is that nothing ADVERSE is
-         recorded. */
       && reputationRank < EXT_REPUTATION_STATUS_RANK.historical_incident
       && accessRank <= EXT_ACCESS_RANK.low
       && !unreadChange
       && !capabilities.unexpected.length) {
     verdict = { code: 'nothing_of_note', label: 'NOTHING OF NOTE', tone: 'calm', needsAttention: false };
-    /* Careful with this wording: something may well have changed -- a rename is
-       one of the ways to arrive here. What is true is that it cannot reach
-       anything and nothing is recorded against it. */
     recommendedAction = 'It cannot reach anything sensitive and nothing is recorded against it';
   }
   if (!extension.enabled && reputationRank < EXT_REPUTATION_STATUS_RANK.reported_harmful) {
@@ -932,17 +876,7 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
   };
 }
 
-/* Bands, not a weighted sum.
- *
- * The old score multiplied reputation rank by 100, and recognized_identity is
- * rank 1 -- so a recognised, entirely quiet extension scored 100 and sorted
- * above an unrecognised one that needed attention. Recognition outweighed the
- * finding, which is backwards: knowing what something is should decide how it is
- * JUDGED, never whether it is shown first.
- *
- * What someone opening this page wants, in order: the things asking something of
- * them worst-first, then the things nobody has identified, then the quiet ones
- * they do not need to read. */
+/* Sort by action needed before identity or raw access: incidents, changes, unknowns, quiet. */
 var EXT_SORT_BAND = {
   documentedIncident: 60,
   unexpectedOrChanged: 50,

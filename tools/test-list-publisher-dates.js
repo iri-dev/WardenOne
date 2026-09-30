@@ -11,6 +11,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const popup = fs.readFileSync(path.join(root, 'popup.js'), 'utf8');
+const health = fs.readFileSync(path.join(root, 'popup-health.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8');
 const from = background.indexOf('const LIST_PUBLISHER_STALE_MS');
 const to = background.indexOf('function listIntegritySeed', from);
@@ -88,6 +89,7 @@ check('old publisher dates are information, not a setup failure', () => {
   assert.strictEqual(issues[0].severity, 'info');
   assert.notStrictEqual(issues[0].topLevel, true);
   assert(/Downloaded rules remain active/.test(issues[0].text));
+  assert(/daily checks continue while Auto-update is on/.test(issues[0].text));
 
   const from = background.indexOf('  const configuredShields = healthCountActiveShields(cfg);', issueTo);
   const to = background.indexOf('  return {', from);
@@ -123,20 +125,19 @@ check('network, supplemental and cosmetic fetches all record dates for the popup
   assert(/publisherSources: listSourcePublications/.test(background));
   assert(/id="list-publisher-details"/.test(html));
   assert(/Older dates do not switch off downloaded rules/.test(html));
-  assert(/publisher date unknown/.test(popup));
-  assert(/let line = 'Fetched '/.test(popup));
+  assert(/publisher date unknown/.test(health));
+  assert(/let line = 'Fetched '/.test(health));
   assert(/publisherUpdatedAt: parseListPublisherDate\(got\.text\)/.test(background), 'custom subscriptions must record publisher dates');
   assert(/bits\.push\(publisherDate \? 'publisher '/.test(popup), 'custom subscriptions must show publisher dates');
-  const metaStart = popup.indexOf('function renderListMeta()');
-  const metaEnd = popup.indexOf("$('update-now').addEventListener", metaStart);
-  assert(metaStart >= 0 && metaEnd > metaStart);
-  assert(!/line \+= .*publisher dates over 30 days old/.test(popup.slice(metaStart, metaEnd)),
+  const metaStart = health.indexOf('function renderListMeta()');
+  assert(metaStart >= 0);
+  assert(!/line \+= .*publisher dates over 30 days old/.test(health.slice(metaStart)),
     'the Blocklist summary should leave source-date counts to its dedicated details');
 });
 
 check('popup names the old feed and displays unknown separately from fetch time', () => {
-  const start = popup.indexOf('function renderListPublishers');
-  const end = popup.indexOf('function renderListMeta', start);
+  const start = health.indexOf('function renderListPublishers');
+  const end = health.indexOf('function renderListMeta', start);
   assert(start >= 0 && end > start);
   const elements = {};
   const make = () => ({ children: [], textContent: '', hidden: false,
@@ -147,13 +148,16 @@ check('popup names the old feed and displays unknown separately from fetch time'
   const uiContext = { Date: FixedDate, Number, String, Array, Map, URL, document: { createElement: make },
     $: (id) => elements[id], fmtAgo: () => 'ago' };
   vm.createContext(uiContext);
-  vm.runInContext(popup.slice(start, end) + '\nglobalThis.render = renderListPublishers;', uiContext);
+  vm.runInContext(health.slice(start, end) + '\nglobalThis.render = renderListPublishers;', uiContext);
   const result = uiContext.render([
     { url: 'https://malware-filter.gitlab.io/vn-badsite-filter/list.txt', publishedAt: Date.parse('2025-04-11T12:02:15Z'), fetchedAt: now },
     { url: 'https://example.org/unknown.txt', publishedAt: 0, fetchedAt: now },
+    { url: 'https://example.org/recent.txt', publishedAt: now - 86400000, fetchedAt: now },
   ]);
+  assert.strictEqual(result.recent, 1);
   assert.strictEqual(result.stale, 1);
   assert.strictEqual(result.unknown, 1);
+  assert(/1 recent/.test(elements['list-publisher-summary'].textContent));
   assert(/1 old/.test(elements['list-publisher-summary'].textContent));
   const rows = elements['list-publisher-rows'].children;
   assert(/malware-filter\.gitlab\.io/.test(rows[0].children[0].textContent));

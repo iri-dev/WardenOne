@@ -273,6 +273,13 @@
     gap: 5px;
   }
   .health-panel[open] .health-issues.is-visible { display: grid; }
+  .diagnostics-actions { display: flex; gap: 7px; margin-top: 11px; }
+  .diagnostics-actions .btn { flex: 1; min-width: 0; padding: 7px 5px; font-size: 10px; }
+  .diagnostics-actions .btn:disabled { opacity: .55; cursor: default; }
+  .diagnostics-status { margin-top: 6px; color: var(--ink-soft); font-size: 10px; }
+  .diagnostics-preview { max-height: 190px; overflow: auto; margin: 8px 0 0; padding: 8px;
+    border: 1px solid var(--line-2); border-radius: 10px; background: rgba(255,255,255,.55);
+    color: var(--ink-soft); font: 10px/1.4 monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   .health-note {
     display: flex;
     align-items: flex-start;
@@ -738,6 +745,8 @@
   .list-publisher-date.is-stale { color:var(--wo-warning); font-weight:700; }
   .list-publisher-date.is-unknown { color:var(--ink-soft); }
   .list-publisher-fetch { color:var(--ink-faint); }
+  .list-update-action { display:flex; justify-content:center; padding:10px 12px 12px; }
+  .list-update-action .btn { flex:none; min-width:138px; padding:8px 14px; }
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
@@ -805,6 +814,12 @@
       </div>
       <div class="health-tab" id="health-tab-line" aria-live="polite"></div>
       <div class="health-issues" id="health-issues"></div>
+      <div class="diagnostics-actions">
+        <button class="btn" id="diagnostics-prepare" type="button">Prepare diagnostics</button>
+        <button class="btn" id="diagnostics-download" type="button" disabled>Download report</button>
+      </div>
+      <div class="diagnostics-status" id="diagnostics-status" role="status">Local report with counts and states only. Review it before sharing.</div>
+      <pre class="diagnostics-preview" id="diagnostics-preview" hidden></pre>
     </div>
   </details>
 
@@ -1609,11 +1624,11 @@
       <div id="list-failures" hidden></div>
       <details id="list-publisher-details" hidden>
         <summary id="list-publisher-summary">Publisher dates</summary>
-        <p class="desc">These are source dates, where available. Older dates do not switch off downloaded rules. Fetching again cannot change a publisher's date; a new edition has to come from the source.</p>
+        <p class="desc">These are source dates, where available. Older dates do not switch off downloaded rules. WardenOne checks for new editions daily while auto-update is on and keeps the last accepted copy. A publisher date changes only when that source posts a new edition.</p>
         <div id="list-publisher-rows"></div>
       </details></div>
-      <button class="btn" id="update-now" style="flex:none;padding:8px 14px;">Update now</button>
     </div>
+    <div class="list-update-action"><button class="btn" id="update-now" type="button">Update now</button></div>
     </div>
 
 <!-- Two things a bundled list can never cover: a rule only this person wants, and
@@ -2066,6 +2081,9 @@
   </div>
 <script src="build-profile.js"></script>
 <script src="notification-schema.js"></script>
+<script src="popup-health.js"></script>
 <script src="popup.js"></script>
+<script src="popup-settings-search.js"></script>
+<script src="popup-diagnostics.js"></script>
 </body>
 </html>

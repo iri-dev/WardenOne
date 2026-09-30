@@ -4,14 +4,7 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Static regression checks for the user-trust surfaces:
- * - popup protection health panel
- * - recovery permission reset on cleanup actions
- * - richer Payment Guard explanations
- *
- * Run: node tools/test-protection-health.js
- */
+/* Regression checks for protection health, permission reset and Payment Guard copy. */
 'use strict';
 
 const fs = require('fs');
@@ -30,13 +23,11 @@ function assert(condition, message) {
 const background = read('background.js');
 const popupHtml = read('popup.html');
 const popupJs = read('popup.js');
+const popupHealth = read('popup-health.js');
 const content = read('src/content.js');
 const manifest = JSON.parse(read('manifest.json'));
 
-// Not pinned to a literal, on purpose. It used to be, and then every release turned into a hunt
-// through the test suite for numbers to hand-edit -- busywork that caught nothing, because
-// test-runtime-idempotence.js already enforces the check with teeth: every shipped script must
-// carry the version the manifest declares. All this file needs is that the field is a real one.
+// Runtime idempotence tests check version agreement; this checks its format.
 assert(/^\d+\.\d+\.\d+$/.test(manifest.version), 'manifest version should be a plain semver number');
 
 assert(/kind === 'protection-health'/.test(background), 'background should expose protection-health endpoint');
@@ -51,8 +42,10 @@ assert(popupHtml.indexOf('id="all-on"') >= 0 && popupHtml.indexOf('id="protectio
 assert(/id="health-active-count"/.test(popupHtml), 'popup should show active shield count');
 assert(/id="health-blocked-count"/.test(popupHtml), 'popup should show blocked count');
 assert(/id="health-list-updated"/.test(popupHtml), 'popup should show list freshness');
-assert(/function renderProtectionHealth/.test(popupJs), 'popup should render protection health');
-assert(/kind: 'protection-health'/.test(popupJs), 'popup should request protection health');
+assert(/function renderProtectionHealth/.test(popupHealth), 'popup should render protection health');
+assert(/kind: 'protection-health'/.test(popupHealth), 'popup should request protection health');
+assert(popupHtml.indexOf('<script src="popup-health.js"></script>') < popupHtml.indexOf('<script src="popup.js"></script>'),
+  'health helpers must load before popup startup calls them');
 assert(/function turnEverythingOn[\s\S]*querySelector\('input\[data-key="silentMode"\]'\)[\s\S]*checked = false/.test(popupJs), 'Turn everything on should restore visible safety feedback by disabling silent mode');
 assert(/function turnEverythingOn[\s\S]*document\.querySelectorAll\('input\[data-key\]'\)/.test(popupJs), 'Turn everything on should cover every popup data-key toggle');
 /* FEAT-05: the button said "everything" while leaving five visible protections off on purpose.
@@ -78,7 +71,7 @@ assert(/font-family:\s*var\(--display\);[\s\S]*font-size:\s*13px;[\s\S]*font-wei
 assert(/font:\s*800 15px\/1 var\(--display\)/.test(popupHtml), 'health stat numbers should use the bold display style shared with other popup stats');
 assert(/\.health-title\s*\{[\s\S]*color:\s*var\(--plum\);[\s\S]*font-family:\s*var\(--display\);/.test(popupHtml), 'health title should use the soft plum accent like other popup labels');
 assert(/background:\s*rgba\(142, 57, 191, 0\.1\)/.test(popupHtml), 'health chip should use a soft purple tint');
-assert(/items\.length \? 'Notes' : 'Open'/.test(popupJs), 'health dropdown chip should use softer labels');
+assert(/items\.length \? 'Notes' : 'Open'/.test(popupHealth), 'health dropdown chip should use softer labels');
 
 const keyBody = popupJs.match(/const KEYS = \[([\s\S]*?)\];/);
 assert(keyBody, 'popup should define KEYS');

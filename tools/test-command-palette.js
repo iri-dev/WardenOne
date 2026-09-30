@@ -239,9 +239,7 @@ const gateTests = (async () => {
 
 /* ---- reachable without a key ------------------------------------------------ */
 {
-  /* Chrome applies a suggested key only at INSTALL time, so a command added by an update
-     arrives with nothing bound. A palette that can only be opened by a shortcut nobody
-     has set yet is a discovery surface nobody discovers. */
+  /* Commands added after install may have no browser-assigned shortcut. */
   const at = BG.indexOf("msg.kind === 'palette-open'");
   check('the popup can open the palette', at > 0);
   const opener = BG.slice(at, at + 900);

@@ -30,7 +30,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+const POPUP_HEALTH = fs.readFileSync(path.join(ROOT, 'popup-health.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 
 let pass = 0;
@@ -199,9 +199,9 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
   /* ---- 3. the popup: the count is labelled as switches, the page line is shown -------- */
   check('the popup labels the count as switches on, not active shields',
     /<strong id="health-active-count">-<\/strong><span>Switched on<\/span>/.test(POPUP_HTML) && !/Active shields/.test(POPUP_HTML));
-  check('the popup names the tab it is open on when it asks', /kind: 'protection-health', tabId/.test(POPUP_JS) && /chrome\.tabs\.query\(\{ active: true, currentWindow: true \}[\s\S]{0,200}ask\(/.test(POPUP_JS));
-  check('the popup shows the page\'s evidence line', /id="health-tab-line"/.test(POPUP_HTML) && /This page: engine verified\./.test(POPUP_JS) && /This page: engine missing\./.test(POPUP_JS) && /This page: cannot be checked\./.test(POPUP_JS));
-  check('the popup reads the renamed count', /res\.configuredShields/.test(POPUP_JS) && !/res\.activeShields/.test(POPUP_JS));
+  check('the popup names the tab it is open on when it asks', /kind: 'protection-health', tabId/.test(POPUP_HEALTH) && /chrome\.tabs\.query\(\{ active: true, currentWindow: true \}[\s\S]{0,200}ask\(/.test(POPUP_HEALTH));
+  check('the popup shows the page\'s evidence line', /id="health-tab-line"/.test(POPUP_HTML) && /This page: engine verified\./.test(POPUP_HEALTH) && /This page: engine missing\./.test(POPUP_HEALTH) && /This page: cannot be checked\./.test(POPUP_HEALTH));
+  check('the popup reads the renamed count', /res\.configuredShields/.test(POPUP_HEALTH) && !/res\.activeShields/.test(POPUP_HEALTH));
   check('the worker reads the tab back from Chrome rather than trusting the message', /chrome\.tabs\.get\(tabId, /.test(between(BG, "msg.kind === 'protection-health'", 'buildProtectionHealthSummary(tab)', 'the handler')));
 
   console.log('');

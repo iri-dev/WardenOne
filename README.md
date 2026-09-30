@@ -1052,6 +1052,11 @@ days old is flagged even after a successful download; a feed without a reliable 
 **publisher date unknown**. User-subscribed lists show the same distinction in **My filters**.
 These dates inform list health and do not disable existing rules.
 For a source-by-source live header audit, run `node tools/check-feed-publishers.js`.
+The 30-day threshold asks for a source review, not automatic deletion: WardenOne keeps the last
+accepted rules and continues daily checks while auto-update is enabled. Before retiring a truly
+abandoned source, compare its unique domains and false-positive risk with the current feeds, then
+add a vetted replacement if needed. The [September 2026 source review](docs/feed-freshness-review.md)
+records the four older dated feeds without removing them.
 
 <p align="center">
   <a href="docs/screenshots/02-protection-health.webp">
@@ -1590,7 +1595,8 @@ actually sure about it. The history goes quiet and then several commits land at 
 which is usually just one long session finally ending. Probably more of those at 2am
 than is strictly sensible.
 
-Everything goes through `node tools/check-maintainability.js` first. And when something
+Use Node 24 (recorded in `.node-version`). Everything goes through
+`node tools/check-maintainability.js` first. And when something
 turns out to be wrong on a real site, I'd rather leave the revert sitting in the history
 than tidy it away.
 
@@ -1637,8 +1643,9 @@ verification](#verify-the-github-download) below for extra assurance.
 ## Verify the GitHub download
 
 **Optional, for advanced users.** The three [Quick install](#quick-install) steps are enough to
-install the ZIP from the official GitHub release. You do not need to calculate a hash or install the
-GitHub CLI. These checks give you extra evidence about the exact ZIP you downloaded:
+install the ZIP from the official GitHub release. You only need `WardenOne-latest.zip`; downloading
+the `.sha256` file, calculating a hash and using the GitHub CLI are optional. These checks give you
+extra evidence about the exact ZIP you downloaded:
 
 - **SHA-256 checksum:** a fingerprint that catches a damaged, changed or mismatched ZIP when it
   differs from the checksum published with the same release.

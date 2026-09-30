@@ -29,6 +29,8 @@ try {
   const first = createCandidate(dir, testCommit);
   assert.strictEqual(verifyCandidate(first.jsonPath).record.zipSha256, first.record.zipSha256);
   assert(first.record.files.some((f) => f.name === 'manifest.json'));
+  assert(first.record.files.some((f) => f.name === 'PRIVACY.md'), 'Store ZIP carries its reviewed privacy copy');
+  assert(!first.record.files.some((f) => f.name === '.gitattributes'));
   assert(!first.record.files.some((f) => f.name.startsWith('tools/')));
   const committedProfile = spawnSync('git', ['show', first.record.commit + ':build-profile.js'], { cwd: path.resolve(__dirname, '..'), encoding: 'utf8' });
   assert.strictEqual(committedProfile.status, 0);

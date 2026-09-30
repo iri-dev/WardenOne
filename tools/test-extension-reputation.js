@@ -17,6 +17,7 @@ const BUNDLED_DATABASE = JSON.parse(fs.readFileSync('extension-reputation.json',
 const ID_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const ID_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const GREAT_SUSPENDER_ID = 'klbibkeccnjlkjkiokjodocebajanakg';
+const CHATGPT_ID = 'hehggadaopoacecdllhhajmbjkdcmajg';
 
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -219,6 +220,93 @@ async function main() {
       'historical_incident');
     assert.strictEqual(api.lookupExtensionReputation(extension('bigefpfhnfcobdlfbedofhhaibnlghod', { version: '3.39.5' }), database).status,
       'no_record', 'a repaired version must not inherit a version-scoped incident verdict');
+    assert.strictEqual(BUNDLED_DATABASE.entries[CHATGPT_ID].source, 'chatgpt-chrome-official');
+    assert.strictEqual(BUNDLED_DATABASE.sources['chatgpt-chrome-official'].reference,
+      'https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg',
+      'the official identity must be backed by the exact-ID OpenAI listing');
+    const chatgpt = extension(CHATGPT_ID, {
+      name: 'ChatGPT',
+      permissions: ['alarms', 'bookmarks', 'debugger', 'declarativeNetRequestWithHostAccess',
+        'downloads', 'favicon', 'history', 'nativeMessaging', 'notifications', 'scripting',
+        'sessions', 'storage', 'tabGroups', 'tabs', 'topSites', 'webNavigation', 'contextMenus', 'sidePanel'],
+      hostPermissions: ['<all_urls>'],
+    });
+    const recognized = api.buildExtensionAssessment(chatgpt, database, {}, [], []);
+    assert.strictEqual(recognized.reputation.status, 'recognized_identity');
+    assert.strictEqual(recognized.verdict.code, 'recognized_expected',
+      'the published browser-assistant purpose explains the current powerful access');
+    assert.strictEqual(recognized.verdict.needsAttention, false);
+    assert(recognized.capabilities.expected.some((item) => item.id === 'history-everywhere'));
+    assert.strictEqual(recognized.capabilities.unexpected.length, 0);
+    assert.strictEqual(recognized.capabilities.profile.category, 'chatgpt_browser_agent');
+    assert.strictEqual(recognized.capabilities.profile.identitySpecific, true);
+    assert.deepStrictEqual(Array.from(recognized.capabilities.profile.expected).sort(),
+      BUNDLED_DATABASE.entries[CHATGPT_ID].capabilityContract.expected.slice().sort(),
+      'ChatGPT must use its exact-ID list without generic browser-agent allowances');
+    for (const id of ['cookie-access', 'session-data-everywhere', 'network-observation', 'network-everywhere']) {
+      assert(!recognized.capabilities.profile.expected.includes(id), id + ' must not be inherited from the broader browser-agent profile');
+    }
+    for (const [added, capabilities] of [
+      [['cookies'], ['cookie-access', 'session-data-everywhere']],
+      [['webRequest'], ['network-everywhere']],
+      [['proxy'], ['traffic-proxy']],
+      [['cookies', 'webRequest'], ['cookie-access', 'session-data-everywhere', 'network-everywhere']],
+      [['desktopCapture'], ['screen-capture-request']],
+      [['browsingData'], ['browsing-data-deletion']],
+      [['identity'], ['account-identity-tokens']],
+    ]) {
+      const gainedAccess = api.buildExtensionAssessment(extension(CHATGPT_ID, {
+        name: 'ChatGPT', permissions: chatgpt.permissions.concat(added),
+        hostPermissions: chatgpt.hostPermissions,
+      }), database, {}, [], []);
+      assert.strictEqual(gainedAccess.verdict.code, 'unexpected_capability', added.join(' + ') + ' must prompt review');
+      assert.strictEqual(gainedAccess.verdict.needsAttention, true);
+      for (const capability of capabilities) {
+        assert(gainedAccess.capabilities.unexpected.some((item) => item.id === capability), capability + ' must be unexpected');
+      }
+    }
+    const copiedName = api.buildExtensionAssessment(extension(ID_A, {
+      name: 'ChatGPT', permissions: chatgpt.permissions, hostPermissions: chatgpt.hostPermissions,
+    }), database, {}, [], []);
+    assert.strictEqual(copiedName.reputation.status, 'no_record', 'a copied ChatGPT name does not inherit trust');
+    assert.strictEqual(copiedName.verdict.code, 'powerful_access');
+    const newPower = api.buildExtensionAssessment(extension(CHATGPT_ID, {
+      name: 'ChatGPT', permissions: chatgpt.permissions.concat('management'),
+      hostPermissions: chatgpt.hostPermissions,
+    }), database, {}, [], []);
+    assert.strictEqual(newPower.verdict.code, 'unexpected_capability',
+      'recognition must not excuse future extension-management access');
+    const unpacked = api.buildExtensionAssessment(extension(CHATGPT_ID, {
+      name: 'ChatGPT', installType: 'development', permissions: chatgpt.permissions,
+      hostPermissions: chatgpt.hostPermissions,
+    }), database, {}, [], []);
+    assert.strictEqual(unpacked.verdict.code, 'identity_source_mismatch',
+      'a copied ID in an unpacked extension must not inherit normal-install trust');
+    for (const breakContract of [
+      (entry) => { entry.capabilityContract.expectedMode = 'extend'; },
+      (entry) => { entry.capabilityContract.expected = ['unknown-capability']; },
+    ]) {
+      const broken = clone(BUNDLED_DATABASE);
+      breakContract(broken.entries[CHATGPT_ID]);
+      const checked = api.validateExtensionReputationDatabase(broken, { origin: 'bundled' });
+      assert(checked.ok);
+      const assessment = api.buildExtensionAssessment(chatgpt,
+        Object.assign({ available: true }, checked.database), {}, [], []);
+      assert.strictEqual(assessment.capabilities.profile, null,
+        'a malformed exact-ID contract must not fall back to broad generic allowances');
+      assert.strictEqual(assessment.verdict.needsAttention, true);
+    }
+    const missingContract = clone(BUNDLED_DATABASE);
+    delete missingContract.entries[CHATGPT_ID].capabilityContract;
+    const fallback = api.validateExtensionReputationDatabase(missingContract, { origin: 'bundled' });
+    assert(fallback.ok);
+    const fallbackAssessment = api.buildExtensionAssessment(chatgpt,
+      Object.assign({ available: true }, fallback.database), {}, [], []);
+    assert.strictEqual(fallbackAssessment.capabilities.profile.category, 'chatgpt_browser_agent');
+    assert(!fallbackAssessment.capabilities.profile.expected.includes('cookie-access'));
+    assert(!fallbackAssessment.capabilities.profile.expected.includes('network-everywhere'));
+    assert.strictEqual(fallbackAssessment.verdict.needsAttention, true,
+      'a missing exact-ID contract must not inherit broad generic allowances');
   }
 
   {
@@ -256,6 +344,20 @@ async function main() {
 
   {
     const database = await api.loadCombinedExtensionReputation();
+    const baseCapabilities = {
+      bookmarks: ['bookmarks-control', 'medium'], sessions: ['session-history-access', 'medium'],
+      topSites: ['top-sites-access', 'medium'], webNavigation: ['navigation-observation', 'medium'],
+      geolocation: ['device-location', 'high'], identity: ['account-identity-tokens', 'high'],
+      'identity.email': ['account-email-access', 'medium'], privacy: ['browser-privacy-control', 'high'],
+      contentSettings: ['site-permission-control', 'high'], browsingData: ['browsing-data-deletion', 'high'],
+      tabCapture: ['tab-media-capture', 'high'], desktopCapture: ['screen-capture-request', 'high'],
+    };
+    for (const [permission, [id, severity]] of Object.entries(baseCapabilities)) {
+      const access = api.mergeExtensionAccessRisk(extension(ID_A, { permissions: [permission] }),
+        { capabilitySignatures: [] });
+      assert(access.signatures.some((item) => item.id === id && item.severity === severity),
+        permission + ' must remain visible without a database signature');
+    }
     const powerful = extension(ID_A, {
       name: 'Friendly Security Helper', permissions: ['storage', 'scripting'], hostPermissions: ['<all_urls>'],
     });
