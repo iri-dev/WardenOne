@@ -165,6 +165,22 @@ async function main() {
     assert(injection.score > allSites.score, 'all-sites + scripting should score above broad access alone');
     const credentialReach = h.watch.classifyExtensionRisk(makeExtension('creds', { permissions: ['cookies'], hostPermissions: ['<all_urls>'] }));
     assert.strictEqual(credentialReach.level, 'critical', 'cookies + broad host access should be critical capability reach');
+    const newPermissionLevels = {
+      bookmarks: 'medium', sessions: 'medium', topSites: 'medium', webNavigation: 'medium',
+      geolocation: 'high', identity: 'high', 'identity.email': 'medium', privacy: 'high',
+      contentSettings: 'high', browsingData: 'high', tabCapture: 'high', desktopCapture: 'high',
+    };
+    for (const [permission, level] of Object.entries(newPermissionLevels)) {
+      const previous = makeExtension('new-' + permission);
+      const current = makeExtension('new-' + permission, {
+        version: '2.0.0', permissions: ['storage', permission],
+      });
+      const delta = h.watch.describeExtensionDelta(previous, current, Date.now());
+      assert.strictEqual(delta.severity, level, permission + ' must stand out at the right level');
+      assert.strictEqual(delta.reviewedAt, null, permission + ' must require review');
+      assert(delta.reasons.some((reason) => /Can /.test(reason)), permission + ' needs a specific capability explanation');
+      assert(!delta.reasons.some((reason) => /Only lower-impact access/.test(reason)), permission + ' cannot use the generic low-impact copy');
+    }
     const localFiles = h.watch.classifyExtensionRisk(makeExtension('files', { hostPermissions: ['file:///*'] }));
     assert(localFiles.flags.some((text) => /local file URLs/.test(text)), 'file access needs an honest local-file label');
     assert(!localFiles.flags.some((text) => /all websites/.test(text)), 'file:// must not be mislabeled as all websites');

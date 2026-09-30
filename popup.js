@@ -6,22 +6,7 @@
    with the date, and to keep these notices intact. */
 /* WardenOne popup logic */
 
-// Every toggle is an <input type="checkbox"> inside a <label class="tg"> holding only the
-// track and knob spans -- no text. A label takes its accessible name from its own text
-// content, so all 115 of them had none: a screen reader announced "checkbox, not checked"
-// with nothing to say what it controlled, across the whole settings surface. The visible
-// name sits in a sibling .name (or .lbl for the master switch) which is never inside the
-// label, so there is nothing for the label to pick up.
-//
-// Done structurally rather than as 115 hand edits. The rows are regular but not
-// identical -- some nest the name two levels up, the master switch uses .lbl, and two
-// toggles carry a description long enough that the name sits far from the input -- so
-// walking the real DOM covers every variant, cannot introduce a duplicate id, and labels
-// any toggle added later automatically instead of silently missing it.
-//
-// It runs FIRST, before anything else in this file. The script tag sits at the end of
-// <body> so the DOM is already parsed, and putting the call here means a throw anywhere
-// later in start-up cannot cost the whole settings surface its labels.
+// Label switches before other startup work so a later error cannot leave them unnamed.
 try { labelToggleControls(); } catch (_) {}
 
 /* An action popup sizes itself from its content, so its body needs an intrinsic width.
@@ -32,10 +17,7 @@ try {
   });
 } catch (_) {}
 
-// Cached element lookup. Replaces ~135 raw getElementById calls: shorter,
-// one obvious place to typo-check an id, and it caches the node so repeated lookups of
-// the same id don't re-walk the DOM. The isConnected guard re-queries if a cached node
-// was detached (e.g. a list section was rebuilt), so it stays correct for dynamic UI.
+// Re-query cached ids when a dynamic section replaces its node.
 const __getById = document.getElementById.bind(document);
 const __elCache = new Map();
 function $(id) {
@@ -93,12 +75,7 @@ const DEFAULTS = {
   siteOverrides: {},
 };
 
-// Settings the worker has and the popup has no control for. The exporter writes the live config,
-// which is the worker's table; the importer used to check keys against DEFAULTS alone, so these
-// came back from WardenOne's own backup as "unrecognised" and kept the target machine's values
-// (PI-04). They are listed here, with their worker defaults, so the import schema is exactly the
-// export schema. tools/test-settings-roundtrip.js fails when the worker gains a key that is in
-// neither table.
+// Include worker-only settings so exported backups round-trip through the popup importer.
 const IMPORT_ONLY_DEFAULTS = {
   logThirdPartyBeacons: true,
   downloadHardBlockCritical: true,
@@ -109,21 +86,8 @@ const IMPORT_ONLY_DEFAULTS = {
 };
 const IMPORT_SCHEMA = Object.assign({}, IMPORT_ONLY_DEFAULTS, DEFAULTS);
 
-// Which protections "Turn off one protection here" may offer, and what turning one off on a
-// site actually stops (FEAT-01). The picker used to be generated from every boolean in KEYS,
-// so it offered certificate checks, list updates, Download Shield and Memory Shield -- worker
-// and network features no per-site code ever reads -- and confirmed "turned off for shop.example"
-// while nothing changed. Only bridge.js resolves siteOverrides, so only what the page-side
-// scripts (the engine, the bridge, the MAIN guards) read can be scoped to one site.
-//
-//   page        -- the whole protection runs in the page and stops here completely.
-//   mixed       -- the page half stops here; a network or worker half (DNR rules, header rules,
-//                  download checks, the worker's own gates) keeps running, and the picker says so.
-//   coordinated -- the page guard and worker backstop both honour the site override.
-//
-// Anything not listed has no page half and is not offered; a stored override for it is dropped
-// at load and reported once. tools/test-site-override-scope.js derives the split from the
-// sources that read each key and fails when this table and the code disagree.
+/* Only page-side protections can be turned off per site. "mixed" leaves the network or worker
+   half running; "coordinated" also stops the worker backstop. Unlisted keys are rejected. */
 const SITE_OVERRIDE_SCOPE = {
   page: [
     'blockGesturelessNav', 'backTrapGuard', 'blockMetaRefresh',
@@ -154,11 +118,7 @@ const SITE_OVERRIDE_SCOPE = {
 const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed, SITE_OVERRIDE_SCOPE.coordinated));
 const SITE_OVERRIDE_MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
 
-// cryptominerCpuWatch is here because "Turn everything on" should not quietly
-// start benchmarking the CPU on every page you visit. It is opt-in on purpose.
-// blockSuspiciousWebRTC is here too: it breaks video calls, and a button called "Turn everything
-// on" should not be what ends someone's meeting (FEAT-03). The Maximum-privacy bundle in
-// onboarding still sets it, by name, for the reader who asked for that.
+// Keep costly or compatibility-sensitive switches out of "Turn everything on".
 const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess', 'blockSuspiciousWebRTC']);
 const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'paymentCardGuard', 'blockGeolocation']);
 
@@ -175,12 +135,7 @@ const REPUTATION_PROVIDERS = [
 ];
 
 let config = Object.assign({}, DEFAULTS);
-// What storage held the last time this popup and storage agreed. The popup keeps
-// `config` for as long as it is open, so writing it back wholesale reverts anything
-// another surface changed meanwhile -- the onboarding page applying a bundle, the
-// options page toggling a setting, or Repair writing a cleaned config back. Diffing
-// against this snapshot says which keys the popup actually means to change; every
-// other key is taken from the freshest stored value at write time.
+// Diff against this snapshot so popup saves do not overwrite another surface's changes.
 let savedConfigSnapshot = configClone(DEFAULTS);
 let eyeShieldHost = '';
 let eyeShieldSaveTimer = 0;
@@ -198,9 +153,7 @@ function configValuesDiffer(a, b) {
   try { return JSON.stringify(a) !== JSON.stringify(b); } catch (_) { return true; }
 }
 
-// Keys this popup has changed since it last agreed with storage. Deliberately biased
-// toward reporting a key as changed: writing our own value back for a key we own is
-// harmless, while missing one loses the user's edit.
+// Prefer reporting an owned key as changed over losing a popup edit.
 function popupChangedKeys() {
   const keys = new Set(Object.keys(config));
   Object.keys(savedConfigSnapshot).forEach((k) => keys.add(k));
@@ -2885,367 +2838,6 @@ document.querySelectorAll('[data-config-text]').forEach((el) => {
   el.addEventListener('change', save);
 });
 
-// ----- Blocklist status + manual update -----
-function fmtAgo(ts) {
-  if (!ts) return 'never';
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return Math.floor(s / 60) + ' min ago';
-  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
-  return Math.floor(s / 86400) + ' d ago';
-}
-// The same instant, worded for a stat tile rather than a sentence. The health panel puts three
-// tiles across a popup barely 310px wide, which leaves each value about 84px; "11 min ago" at
-// 15px/800 does not fit and was being clipped to "11 min a...". Everywhere the value sits in
-// prose ("Updated 11 min ago") keeps fmtAgo, where the longer wording reads better and has room.
-function fmtAgoShort(ts) {
-  if (!ts) return 'never';
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return Math.floor(s / 60) + 'm ago';
-  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-  return Math.floor(s / 86400) + 'd ago';
-}
-function fmtCount(n) {
-  return Number(n || 0).toLocaleString();
-}
-function healthNote(text, severity) {
-  const row = document.createElement('div');
-  row.className = 'health-note' + (severity === 'danger' ? ' is-danger' : severity === 'warn' ? ' is-warn' : '');
-  const dot = document.createElement('span');
-  dot.className = 'health-note-dot';
-  dot.setAttribute('aria-hidden', 'true');
-  const body = document.createElement('span');
-  body.textContent = text;
-  row.appendChild(dot);
-  row.appendChild(body);
-  return row;
-}
-/* The extension-change note opens in place: each change -- which extension, what changed, why it
-   matters -- with the two things the reader can do about it. Marking reviewed is the same
-   acknowledgement the Security Centre section below makes; the card re-reads its status after. */
-/* The card is redrawn whenever the activity log changes -- every few seconds on a busy page,
-   as ads and trackers are blocked -- and a rebuilt dropdown starts closed. It would snap shut
-   under the reader mid-sentence, so whether it is open is kept across redraws. */
-let healthExtensionDropOpen = false;
-function healthExtensionDrop(item) {
-  const severity = String(item.severity || 'warn');
-  const alerts = Array.isArray(item.alerts) ? item.alerts : [];
-  const drop = document.createElement('details');
-  drop.className = 'health-note health-drop' + (severity === 'danger' ? ' is-danger' : ' is-warn');
-  drop.open = healthExtensionDropOpen;
-  drop.addEventListener('toggle', () => { healthExtensionDropOpen = drop.open; });
-  const head = document.createElement('summary');
-  head.className = 'health-drop-summary';
-  const dot = document.createElement('span');
-  dot.className = 'health-note-dot';
-  dot.setAttribute('aria-hidden', 'true');
-  const text = document.createElement('span');
-  text.className = 'health-drop-text';
-  text.textContent = String(item.text || '');
-  const chev = document.createElement('span');
-  chev.className = 'health-drop-chev';
-  chev.setAttribute('aria-hidden', 'true');
-  head.appendChild(dot);
-  head.appendChild(text);
-  head.appendChild(chev);
-  drop.appendChild(head);
-  const body = document.createElement('div');
-  body.className = 'health-drop-body';
-  alerts.forEach((a) => {
-    const level = String(a.severity || 'medium');
-    const card = document.createElement('div');
-    card.className = 'health-drop-card' + (level === 'high' || level === 'critical' ? ' is-danger' : '');
-    const top = document.createElement('div');
-    top.className = 'health-drop-top';
-    const name = document.createElement('span');
-    name.className = 'health-drop-name';
-    name.textContent = String(a.name || '(unknown extension)') + (a.enabled === false ? ' (disabled)' : '');
-    name.title = String(a.name || '');
-    const badge = document.createElement('span');
-    badge.className = 'health-drop-badge';
-    badge.textContent = level.replace(/^./, (c) => c.toUpperCase()) + (a.when ? ' · ' + fmtAlertAge(a.when) : '');
-    top.appendChild(name);
-    top.appendChild(badge);
-    card.appendChild(top);
-    const summary = document.createElement('div');
-    summary.className = 'health-drop-line';
-    summary.textContent = String(a.summary || 'Extension changed');
-    card.appendChild(summary);
-    if (a.fromVersion && a.toVersion && a.fromVersion !== a.toVersion) {
-      const version = document.createElement('div');
-      version.className = 'health-drop-line is-soft';
-      version.textContent = 'Version ' + a.fromVersion + ' → ' + a.toVersion;
-      card.appendChild(version);
-    }
-    (Array.isArray(a.reasons) ? a.reasons : []).forEach((reason) => {
-      const why = document.createElement('div');
-      why.className = 'health-drop-line is-soft';
-      why.textContent = '• ' + reason;
-      card.appendChild(why);
-    });
-    body.appendChild(card);
-  });
-  const more = Number(item.total || 0) - alerts.length;
-  if (more > 0) {
-    const rest = document.createElement('div');
-    rest.className = 'health-drop-line is-soft';
-    rest.textContent = '+ ' + more + ' more in the Security Centre.';
-    body.appendChild(rest);
-  }
-  const actions = document.createElement('div');
-  actions.className = 'health-drop-actions';
-  const ack = document.createElement('button');
-  ack.type = 'button';
-  ack.className = 'btn';
-  ack.textContent = Number(item.total || alerts.length) > 1 ? 'Mark all reviewed' : 'Mark reviewed';
-  ack.addEventListener('click', () => {
-    ack.disabled = true;
-    ack.textContent = 'Saving…';
-    chrome.runtime.sendMessage({ kind: 'ack-extension-alerts' }, (res) => {
-      void chrome.runtime.lastError;
-      if (!res || !res.ok) {
-        ack.disabled = false;
-        ack.textContent = 'Couldn\'t save. Try again';
-        return;
-      }
-      healthExtensionDropOpen = false;
-      renderProtectionHealth();
-      if (typeof loadExtensionAlerts === 'function') loadExtensionAlerts();
-    });
-  });
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.className = 'btn';
-  open.textContent = 'Open Security Centre';
-  open.addEventListener('click', openExtensionSecurityCentre);
-  actions.appendChild(ack);
-  actions.appendChild(open);
-  body.appendChild(actions);
-  drop.appendChild(body);
-  return drop;
-}
-function renderProtectionHealth() {
-  const panel = $('protection-health-panel');
-  if (!panel) return;
-  const title = $('health-status-title');
-  const detail = $('health-status-detail');
-  const chip = $('health-status-chip');
-  const active = $('health-active-count');
-  const blocked = $('health-blocked-count');
-  const lists = $('health-list-updated');
-  const issues = $('health-issues');
-  const tabLine = $('health-tab-line');
-  const setLevel = (level) => {
-    panel.classList.toggle('is-warning', level === 'warning');
-    panel.classList.toggle('is-danger', level === 'danger');
-  };
-  // The worker is told which tab this popup is open on, so the summary can ask that page's
-  // bridge whether the engine is actually there, rather than counting switches and calling
-  // the count "active". The tab id is the only thing sent; the worker reads the tab itself.
-  const ask = (tabId) => chrome.runtime.sendMessage({ kind: 'protection-health', tabId }, (res) => {
-    const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
-    if (err || !res || !res.ok) {
-      setLevel('warning');
-      if (title) title.textContent = 'Protection status unavailable';
-      if (detail) detail.textContent = 'Chrome has not answered yet. Open the popup again or use Verify & Repair below.';
-      if (chip) chip.textContent = 'Retry';
-      if (active) active.textContent = '-';
-      if (blocked) blocked.textContent = '-';
-      if (lists) lists.textContent = '-';
-      if (tabLine) tabLine.textContent = '';
-      if (issues) { issues.textContent = ''; issues.classList.add('is-visible'); issues.appendChild(healthNote('Could not read local protection health: ' + (err || 'unknown error'), 'danger')); }
-      return;
-    }
-    const level = res.level === 'danger' ? 'danger' : res.level === 'warning' ? 'warning' : 'ok';
-    const items = Array.isArray(res.needsAttention) ? res.needsAttention : [];
-    setLevel(level);
-    if (title) title.textContent = res.status || 'Protections on';
-    if (detail) detail.textContent = res.detail || 'No issue found in what could be checked.';
-    if (chip) chip.textContent = level === 'danger' ? 'Review' : level === 'warning' ? 'Check' : (items.length ? 'Notes' : 'Open');
-    if (active) {
-      active.textContent = fmtCount(res.configuredShields || 0) + '/' + fmtCount(res.totalShields || 0);
-      active.title = 'Switched on in settings. Whether the engine is running on this page is the line below the numbers.';
-    }
-    if (tabLine) {
-      const tab = res.tab || {};
-      const state = String(tab.state || 'unknown');
-      tabLine.textContent = (state === 'verified' ? 'This page: engine verified. '
-        : state === 'failed' ? 'This page: engine missing. '
-          : state === 'paused' ? 'This page: paused. '
-            : state === 'excluded' ? 'This page: not injected here. '
-              : state === 'restricted' ? 'This page: cannot be checked. '
-                : state === 'off' ? 'This page: WardenOne is off. '
-                  : state === 'sleeping' ? 'This page: asleep. '
-                    : state === 'unconfigured' ? 'This page: engine running, settings pending. '
-                      : 'This page: not confirmed yet. ') + String(tab.text || '');
-      tabLine.className = 'health-tab' + (state === 'failed' ? ' is-warn' : state === 'verified' ? ' is-ok' : '');
-    }
-    if (blocked) blocked.textContent = fmtCount(res.blocked24h || 0);
-    if (lists) {
-      const list = res.list || {};
-      lists.textContent = list.updated ? fmtAgoShort(list.updated) : 'Built-in';
-      const enforced = Number(list.active || 0) || Number(list.total || 0);
-      const publisher = list.publisher || {};
-      lists.title = (enforced ? ('Blocking ' + fmtCount(enforced) + ' domains' + (list.auxTotal ? ' plus ' + fmtCount(list.auxTotal) + ' page-list entries' : '')) : 'Built-in rules active')
-        + '. Last fetched by WardenOne; publisher dates: ' + Number(publisher.dated || 0) + ' known, '
-        + Number(publisher.stale || 0) + ' over 30 days old, ' + Number(publisher.unknown || 0) + ' unknown.';
-    }
-    if (issues) {
-      issues.textContent = '';
-      issues.classList.toggle('is-visible', items.length > 0);
-      items.forEach((item) => {
-        const severity = item && item.severity ? String(item.severity) : 'info';
-        const text = item && item.text ? item.text : String(item || '');
-        if (item && item.kind === 'extension-alerts' && Array.isArray(item.alerts) && item.alerts.length) {
-          issues.appendChild(healthExtensionDrop(item));
-          return;
-        }
-        issues.appendChild(healthNote(text, severity));
-      });
-    }
-  });
-  try {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      void chrome.runtime.lastError;
-      const tab = tabs && tabs[0];
-      ask(tab && typeof tab.id === 'number' ? tab.id : -1);
-    });
-  } catch (_) { ask(-1); }
-}
-function listMetaCount(meta) {
-  return Number((meta && (meta.totalCount || meta.count)) || 0);
-}
-function listMetaActiveCount(meta) {
-  return Number((meta && (meta.activeCount || meta.activeRuleCount)) || 0);
-}
-function renderListPublishers(...groups) {
-  const details = $('list-publisher-details');
-  const summary = $('list-publisher-summary');
-  const rows = $('list-publisher-rows');
-  if (!details || !summary || !rows) return { stale: 0, unknown: 0 };
-  const byUrl = new Map();
-  for (const group of groups) {
-    for (const entry of (Array.isArray(group) ? group : [])) {
-      if (!entry || !entry.url) continue;
-      const prior = byUrl.get(entry.url);
-      if (!prior || Number(entry.fetchedAt || 0) >= Number(prior.fetchedAt || 0)) byUrl.set(entry.url, entry);
-    }
-  }
-  const entries = Array.from(byUrl.values());
-  details.hidden = !entries.length;
-  const staleAfter = 30 * 24 * 60 * 60 * 1000;
-  const isStale = (entry) => Number(entry.publishedAt || 0) > 0 && Date.now() - Number(entry.publishedAt) > staleAfter;
-  const counts = {
-    stale: entries.filter(isStale).length,
-    unknown: entries.filter((entry) => !Number(entry.publishedAt || 0)).length,
-  };
-  summary.textContent = 'Publisher dates · ' + counts.stale + ' old · ' + counts.unknown + ' unknown';
-  rows.textContent = '';
-  entries.sort((a, b) => Number(isStale(b)) - Number(isStale(a))
-    || Number(!b.publishedAt) - Number(!a.publishedAt)
-    || String(a.url).localeCompare(String(b.url)));
-  for (const entry of entries) {
-    const row = document.createElement('div');
-    row.className = 'list-publisher-row';
-    const name = document.createElement('div');
-    name.className = 'list-publisher-name';
-    let sourceName = String(entry.url);
-    try { const url = new URL(sourceName); sourceName = url.hostname + url.pathname; } catch (_) {}
-    name.textContent = entry.label ? entry.label + ' · ' + sourceName : sourceName;
-    name.title = String(entry.url);
-    const date = document.createElement('div');
-    date.className = 'list-publisher-date' + (isStale(entry) ? ' is-stale' : !entry.publishedAt ? ' is-unknown' : '');
-    const publishedAt = Number(entry.publishedAt) || 0;
-    date.textContent = publishedAt
-      ? 'Publisher: ' + new Date(publishedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ' (' + fmtAgo(publishedAt) + ')'
-      : 'publisher date unknown';
-    if (publishedAt) date.title = new Date(publishedAt).toISOString();
-    const fetched = document.createElement('div');
-    fetched.className = 'list-publisher-fetch';
-    fetched.textContent = (entry.fetchedAt ? 'WardenOne fetched ' + fmtAgo(entry.fetchedAt) : 'WardenOne has not fetched this feed')
-      + (entry.fetchFailed ? ' · latest fetch failed' : '');
-    row.append(name, date, fetched);
-    rows.appendChild(row);
-  }
-  return counts;
-}
-function renderListMeta() {
-  chrome.storage.local.get(['wardenone_list_meta', 'wardenone_aux_list_meta', 'wardenone_adshield_cosmetic_publishers'], (x) => {
-    const meta = x && x.wardenone_list_meta;
-    const auxMeta = x && x.wardenone_aux_list_meta;
-    const statusEl = $('list-status');
-    const updEl = $('list-updated');
-    const count = listMetaCount(meta);
-    const activeCount = listMetaActiveCount(meta);
-    if (count) {
-      // Lead with the ACTIVELY-BLOCKED count -- that's the number that actually
-      // matters (how many domains are being enforced right now). Show the larger
-      // "known" total as context when the cap means not all are active.
-      if (activeCount && activeCount < count) {
-        statusEl.textContent = 'Blocking ' + fmtCount(activeCount) + ' domains';
-      } else {
-        statusEl.textContent = 'Blocking ' + fmtCount(count) + ' domains';
-      }
-      let line = 'Fetched ' + fmtAgo(meta.updated);
-      if (activeCount && activeCount < count) line += ' - ' + fmtCount(count) + ' known in feeds';
-      // surface feed health: if some sources failed, the user should know coverage
-      // is partial rather than seeing a silently-smaller number.
-      const s = meta.sources;
-      if (s && typeof s.total === 'number') {
-        line += ' - ' + s.succeeded + '/' + s.total + ' feeds';
-        if (s.failed > 0) line += ' (' + s.failed + ' unreachable)';
-      }
-      /* Name them. "5 unreachable" on its own is a number nobody can act on, and
-         three feeds sat refused behind that number for months -- one of them a
-         list whose bucket was therefore always empty. The reason matters as much
-         as the name: a 404 needs a new URL, "over its cap" needs a smaller
-         edition of the same list, and they look identical as a count. */
-      const failedList = (s && Array.isArray(s.failures)) ? s.failures : [];
-      const failEl = $('list-failures');
-      if (failEl) {
-        failEl.textContent = '';
-        failEl.hidden = failedList.length === 0;
-        for (const f of failedList) {
-          const row = document.createElement('div');
-          row.className = 'list-failure';
-          let host = String(f.url || '');
-          try { host = new URL(host).hostname + new URL(host).pathname; } catch (_) { /* keep the raw string */ }
-          const name = document.createElement('span');
-          name.className = 'list-failure-url';
-          name.textContent = host.length > 58 ? host.slice(0, 58) + '…' : host;
-          const why = document.createElement('span');
-          why.className = 'list-failure-why';
-          why.textContent = f.error || 'failed';
-          row.append(name, why);
-          failEl.appendChild(row);
-        }
-      }
-      renderListPublishers(meta.publisherSources, auxMeta && auxMeta.publisherSources, x && x.wardenone_adshield_cosmetic_publishers);
-      const age = meta.updated ? Date.now() - Number(meta.updated) : 0;
-      if (age > 7 * 24 * 60 * 60 * 1000) {
-        line += ' - stale';
-        updEl.style.color = 'var(--wo-danger)';
-      } else if (age > 72 * 60 * 60 * 1000) {
-        line += ' - getting stale';
-        updEl.style.color = 'var(--wo-warning)';
-      } else {
-        updEl.style.color = '';
-      }
-      const activeAdShield = Number(meta.activeDomainRuleCounts && meta.activeDomainRuleCounts.adshield);
-      if (activeAdShield) line += ' - AdShield ' + fmtCount(activeAdShield);
-      const auxCounts = (auxMeta && auxMeta.counts) || {};
-      const auxTotal = Number(auxCounts.adultDomainsExtra || 0) + Number(auxCounts.grabberDomainsExtra || 0) + Number(auxCounts.trustedPaymentHostsExtra || 0);
-      if (auxTotal) line += ' - page lists +' + fmtCount(auxTotal);
-      updEl.textContent = line;
-    } else {
-      statusEl.textContent = 'Blocking ' + fmtCount(162) + ' domains (built-in)';
-      updEl.textContent = 'Auto-update runs daily - tap to fetch more';
-      updEl.style.color = '';
-      renderListPublishers(auxMeta && auxMeta.publisherSources, x && x.wardenone_adshield_cosmetic_publishers);
-    }
-  });
-}
 $('update-now').addEventListener('click', () => {
   const btn = $('update-now');
   const updEl = $('list-updated');
@@ -3303,9 +2895,7 @@ $('update-now').addEventListener('click', () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  // Take on anything another surface changed while we were open, so the controls stop
-  // showing a value that is no longer true. Fires for our own writes too, but those
-  // already match `config` by then, so nothing is adopted and there is no loop.
+  // Adopt changes from other surfaces while this popup remains open.
   if (area === 'local' && changes.wardenone_config) adoptExternalConfigChange(changes.wardenone_config.newValue);
   if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers)) renderListMeta();
   if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
@@ -3324,11 +2914,7 @@ function renderNotificationUnread(value) {
     return;
   }
   const unread = (Array.isArray(value) ? value : []).filter((item) => item && !item.read).length;
-  /* The count is no longer drawn beside the button. It was a second copy of a
-     number the toolbar shield already carries, sitting inside a row of plain
-     navigation buttons where nothing else has a badge -- so it read as an alert
-     about the popup rather than a count of things waiting elsewhere.
-     It stays in the accessible name, where it is the only way to know. */
+  /* Keep unread count in the accessible name without adding a second visual badge. */
   button.setAttribute('aria-label', 'Notification centre' + (unread ? ', ' + unread + ' unread' : ''));
 }
 
@@ -3336,9 +2922,7 @@ function labelToggleControls() {
   let named = 0;
   const unnamed = [];
 
-  // The visible name for a row's control sits in a .name (or .lbl) that is a preceding
-  // SIBLING of the control, or nested inside one. Searching only backwards means a name
-  // can never be pulled out of the next row down.
+  // Search preceding siblings so a switch never inherits the next row's name.
   const findNameFor = (anchor) => {
     let nameEl = null;
     let descEl = null;
@@ -4521,12 +4105,7 @@ function loadExtensionAlerts() {
       heading.textContent = 'Needs attention';
       listEl.appendChild(heading);
       urgent.forEach((item) => {
-        /* Neutral card, coloured edge. Filling the whole card with the warning
-           wash made every entry look like an emergency and made the panel look
-           like a hazard sign -- and the tan is doing that job for a row that
-           often just means "have a look at this". The severity now lives in a
-           3px accent and the badge, on the ordinary surface every other row in
-           this popup uses, so the list reads as a list. */
+        /* Show severity at the edge; a full warning wash made routine reviews look urgent. */
         const card = document.createElement('div');
         const dangerous = item.verdict.tone === 'danger';
         const accent = dangerous ? 'var(--wo-danger)' : 'var(--wo-warning)';
@@ -4541,34 +4120,19 @@ function loadExtensionAlerts() {
         name.title = item.name;
         top.appendChild(name);
         const badge = document.createElement('span');
-        /* Sentence case, not shouting. "UNEXPECTED ACCESS" in caps beside a tan
-           background reads as an alarm even when the finding is mild. */
         badge.style.cssText = 'flex:none;font-size:9.5px;font-weight:700;letter-spacing:.02em;color:' + accent + ';';
         badge.textContent = String(item.verdict.label || '').toLowerCase()
           .replace(/^./, (c) => c.toUpperCase());
         top.appendChild(badge);
         card.appendChild(top);
-        /* One sentence saying what is actually going on, instead of three
-           colon-prefixed fields. "Reputation: Recognized identity — exact ID
-           match / Access: HIGH / Change: ..." is a debug dump: it makes the
-           reader do the reasoning the engine already did, and it looks alarming
-           whatever it says. recommendedAction is now specific enough to stand on
-           its own -- it names the capability, or the kind of extension and what
-           that kind needs. */
+        /* Lead with the engine's advice rather than raw signal labels. */
         card.appendChild(makeLine(item.recommendedAction || item.reputation.label, 'var(--wo-text)'));
-        /* The evidence, quieter and underneath, for anyone who wants it. A
-           documented compromise leads with its evidence; anything else leads
-           with what it can reach. */
+        /* Show supporting evidence beneath the advice when it adds information. */
         const evidence = item.verdict.tone === 'danger' && item.reputation && item.reputation.reason
           ? String(item.reputation.reason).split('. ')[0]
           : (item.capabilities && item.capabilities.unexpected && item.capabilities.unexpected.length
             ? item.capabilities.unexpected.map((s) => s.label).join(' · ')
             : ((item.access.reasons && item.access.reasons[0]) || ''));
-        /* The advice already names the capability when there is an unexpected
-           one, so printing the evidence underneath repeated the same sentence in
-           two colours -- which reads as two findings and makes the card twice as
-           tall for nothing. Show it only when it says something the line above
-           did not. */
         const advice = String(item.recommendedAction || '').toLowerCase();
         const alreadySaid = evidence && advice.indexOf(String(evidence).toLowerCase().slice(0, 40)) >= 0;
         if (evidence && !alreadySaid) card.appendChild(makeLine(evidence, 'var(--wo-text-soft)'));
@@ -5855,324 +5419,10 @@ $('verify-repair').addEventListener('click', () => {
   });
 });
 
-;(function(){
-  var inp=document.getElementById('wo-settings-search');
-  if(inp){
-    var nores=document.getElementById('wo-noresult');
-    var clearBtn=document.getElementById('wo-search-clear');
-    var countEl=document.getElementById('wo-search-count');
-
-    // Related-term groups. Matching any word in a group also surfaces settings
-    // described with any other word in the same group, so "adblock" finds the
-    // AdShield pack, "tracker" finds analytics, "yt" finds YouTube, etc.
-    var SYN=[
-      ['ad','ads','adblock','adblocker','adblocking','adshield','advert','adverts','advertise','advertising','advertisement','advertisements','commercial','commercials','sponsor','sponsored','preroll','midroll','banner','banners','easylist','ublock','cosmetic'],
-      ['track','tracker','trackers','tracking','analytics','telemetry','beacon','beacons','pixel','pixels','spy','spyware','snoop','snooping'],
-      ['cookie','cookies','consent','gdpr','ccpa','supercookie','supercookies'],
-      ['popup','popups','popunder','popunders','overlay','overlays','nag','nags','tidy','remover','interstitial','interstitials','modal','modals','dismiss','cleaner'],
-      ['youtube','yt','video','playback','player'],
-      ['twitch','ttv','stream','streamer','streaming'],
-      ['fingerprint','fingerprinting','canvas','webgl'],
-      ['ip','webrtc','grabber','grabbers','logger','iplogger','grabify','geolocation'],
-      ['malware','virus','viruses','malicious','trojan','infected'],
-      ['phish','phishing','scam','scams','fake','spoof','spoofing','lookalike','impersonate','homograph'],
-      ['download','downloads','file','files','installer','installers'],
-      ['video','media','autoplay','audio','sound','playback'],
-      ['redirect','redirects','redirection','bounce','bounces','hop','hops'],
-      ['js','javascript','script','scripts','scriptlet','noscript','webassembly','wasm'],
-      ['cert','certs','certificate','certificates','ssl','tls','https','secure'],
-      ['token','tokens','session','sessions','exfil','exfiltration','hijack','hijacking','credential','credentials','password','passwords'],
-      ['camera','webcam','mic','microphone','capture','screenshare','screencapture'],
-      ['social','embed','embeds','facebook','instagram','tiktok','twitter','widget'],
-      ['storage','localstorage'],
-      ['prefetch','preload','preconnect'],
-      ['clipboard','paste','copy','clickfix'],
-      ['memory','ram','tab','tabs','sleep','throttle','battery','cpu','performance'],
-      ['notification','notifications','toast','toasts','badge','alert','alerts'],
-      ['breach','breached','pwned','leak','leaked','haveibeenpwned'],
-      ['skimmer','skimmers','magecart','card','cards','payment','payments','checkout'],
-      ['referrer','referer'],
-      ['adult','nsfw','porn','xxx'],
-      ['techsupport','support','locker','scareware'],
-      ['update','updates','outdated','version'],
-      ['form','forms','login','signin'],
-      ['keylogger','keystroke','keylogging'],
-      ['silent','silence','quiet','noiseless','notification-free','stealth','stealthy','distraction','distraction-free'],
-      ['eye','eyeshield','vision','brightness','contrast','saturation','warmth','grayscale','dim','readability','tint','comfort'],
-      ['master','switch','toggle','all','everything'],
-      ['media','camera','mic','microphone','screen','capture','audio','video','webcam'],
-      ['review','extension','extensions','permission','permissions','manage','management','reviewer'],
-      ['scan','scanner','scanning','check','audit','inspect'],
-      ['panic','emergency','logout','clear','clean','cleanup','wipe','reset'],
-      ['forget','forgetme','leave','wipe','clean','clear','history','login','logins','remember','remembered','stay','logged','signin','session'],
-      ['badge','indicator','icon','toolbar','action'],
-      ['search','query','filter','find','explore']
-    ];
-    function toks(s){return (String(s).toLowerCase().match(/[a-z0-9]+/g))||[];}
-
-    // Build keyword set from an element's text + all relevant attributes.
-    function buildKeywords(el){
-      var base=el.textContent||'';
-      var attrs='';
-      // Extract data-key as words (camelCase -> space-separated)
-      var dk=el.getAttribute('data-key');
-      if(dk)attrs+=' '+dk.replace(/([a-z0-9])([A-Z])/g,'$1 $2');
-      // Extract data-eyeshield-mode
-      var em=el.getAttribute('data-eyeshield-mode');
-      if(em)attrs+=' '+em;
-      // Extract data-mode
-      var dm=el.getAttribute('data-mode');
-      if(dm)attrs+=' '+dm;
-      // Extract data-search-preset
-      var sp=el.getAttribute('data-search-preset');
-      if(sp)attrs+=' '+sp;
-      // Extract data-perm
-      var dp=el.getAttribute('data-perm');
-      if(dp)attrs+=' '+dp;
-      // Include the element's id and any parent section id
-      var id=el.id;
-      var parentIds='';
-      if(id)parentIds+=' '+id.replace(/([a-z0-9])([A-Z])/g,'$1 $2');
-      // Walk up to find a section / group id
-      var p=el.parentElement;
-      for(var pi=0;pi<3&&p;p=p.parentElement,pi++){
-        if(p.id)parentIds+=' '+p.id.replace(/([a-z0-9])([A-Z])/g,'$1 $2');
-      }
-      var full=base+attrs+parentIds;
-      // raw text for relevance scoring
-      var rawLower=full.toLowerCase();
-      var set=Object.create(null);
-      toks(full).forEach(function(t){set[t]=1;});
-      for(var i=0;i<SYN.length;i++){
-        var g=SYN[i],hit=false;
-        for(var j=0;j<g.length;j++){if(set[g[j]]){hit=true;break;}}
-        if(hit){for(var k=0;k<g.length;k++)set[g[k]]=1;}
-      }
-      var words=Object.keys(set);
-      return {el:el,words:words,text:' '+words.join(' ')+' ',raw:rawLower,attrs:attrs,parentIds:parentIds};
-    }
-
-    // Index ALL interactive/searchable elements in the popup.
-    var rows=[];
-    // Standard .row elements (all toggle rows inside card-groups)
-    document.querySelectorAll('.row').forEach(function(row){rows.push(buildKeywords(row));});
-    // EyeShield is one compound control. Indexing its descendants separately made a
-    // search for "dark" hide Normal, Light, Ultra, brightness and Extras inside the
-    // still-visible panel, leaving a broken one-button mode selector.
-    var eyePanel=$('eyeshield-panel');
-    if(eyePanel)rows.push(buildKeywords(eyePanel));
-    // Master switch area
-    var masterEl=$('master-state');
-    if(masterEl)rows.push(buildKeywords(masterEl));
-    // "Turn everything on" button
-    var allOn=$('all-on');
-    if(allOn)rows.push(buildKeywords(allOn));
-    // Script Shield section rows and actions.
-    ['js-global','js-smart','js-site','js-privacy-limits','js-shield-desc','script-trust-list','script-trust-add-current'].forEach(function(id){
-      var el=$(id);
-      if(el)rows.push(buildKeywords(el));
-    });
-    // Search preset chips
-    document.querySelectorAll('.wo-search-chip').forEach(function(el){rows.push(buildKeywords(el));});
-    // The no-result area is status UI, not a searchable setting.
-    // Scan site / breach / domain age buttons
-    ['ss-scan','ss-sitebreach','ss-domage','ss-clear','ss-panic','cl-run','ext-review','ext-review-open','verify-repair','startup-run','mem-free','mem-dupes','mem-tab-usage','mem-zombies','perm-scan','perm-reset','ug-btn'].forEach(function(id){
-      var el=$(id);
-      if(el)rows.push(buildKeywords(el));
-    });
-    // Additional action buttons in Memory Shield (mode buttons)
-    document.querySelectorAll('.mem-mode').forEach(function(el){rows.push(buildKeywords(el));});
-    // Tab limit controls
-    ['tl-guard','tl-max','tl-idle','tl-close','tl-warn'].forEach(function(id){
-      var el=$(id);
-      if(el)rows.push(buildKeywords(el));
-    });
-    // Download trust button
-    var dtBtn=$('download-trust-add-current');
-    if(dtBtn)rows.push(buildKeywords(dtBtn));
-    // "Allowlist this site" button
-    var alBtn=$('allowlist');
-    if(alBtn)rows.push(buildKeywords(alBtn));
-    // Add the section headings too so sections are findable by their heading text
-    document.querySelectorAll('.group>h2, .eyeshield-panel+h2, #js-shield+h2').forEach(function(h3){
-      if(h3.id==='eyeshield-title'||h3.id==='site-controls-title')return;
-      rows.push(buildKeywords(h3));
-    });
-    // Activity log / Network buttons
-    ['open-activity','open-notifications','open-network'].forEach(function(id){
-      var el=$(id);
-      if(el)rows.push(buildKeywords(el));
-    });
-
-    // Damerau-Levenshtein, capped — tolerates typos like "adsheild"->"adshield".
-    var seenSearchEls=[];
-    rows=rows.filter(function(row){
-      if(!row||!row.el)return false;
-      if(seenSearchEls.indexOf(row.el)>=0)return false;
-      seenSearchEls.push(row.el);
-      return true;
-    });
-
-    function dist(a,b){
-      var al=a.length,bl=b.length;
-      if(!al)return bl;if(!bl)return al;
-      if(al-bl>2||bl-al>2)return 3;
-      var d=[],i,j;
-      for(i=0;i<=al;i++){d[i]=[];d[i][0]=i;}
-      for(j=0;j<=bl;j++)d[0][j]=j;
-      for(i=1;i<=al;i++)for(j=1;j<=bl;j++){
-        var cost=a.charCodeAt(i-1)===b.charCodeAt(j-1)?0:1;
-        d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+cost);
-        if(i>1&&j>1&&a.charCodeAt(i-1)===b.charCodeAt(j-2)&&a.charCodeAt(i-2)===b.charCodeAt(j-1))
-          d[i][j]=Math.min(d[i][j],d[i-2][j-2]+1);
-      }
-      return d[al][bl];
-    }
-
-    // Returns a relevance score for a query token against a search row.
-    // Higher = more relevant. Returns 0 if no match.
-    function scoreMatch(qt,r){
-      // Direct text match in the element's visible content — best
-      var baseLower=(r.el.textContent||'').toLowerCase();
-      if(baseLower.indexOf(qt)>=0)return 100;
-      // Match in the combined raw text (base + attrs + parentIds)
-      if(r.raw.indexOf(qt)>=0)return 80;
-      // Match in attributes (data-key, data-eyeshield-mode, etc.)
-      if(r.attrs.indexOf(qt)>=0)return 70;
-      // Match in parent element ids (section names)
-      if(r.parentIds.indexOf(qt)>=0)return 50;
-      // Synonym match via expanded text
-      if(r.text.indexOf(qt)>=0)return 40;
-      // Fuzzy/typo match.
-      // Two edits used to be allowed from six characters up, which is a third of a
-      // six-letter word -- so searching "speech" matched "speed", and "speech rec"
-      // returned an unrelated control whose description carried both "speed"
-      // and "records". Two edits now need a word long enough for two edits to still
-      // leave it recognisable. Every real typo this is for -- microphon, fingerprnt,
-      // notifcation, clipboad, downlaod, certifcate -- is one edit, or long enough to
-      // keep its allowance.
-      if(qt.length>=4){
-        var th=qt.length<=7?1:2,c0=qt.charCodeAt(0);
-        for(var i=0;i<r.words.length;i++){
-          var w=r.words[i];
-          if(w.charCodeAt(0)!==c0)continue;
-          if(w.length-qt.length>th||qt.length-w.length>th)continue;
-          if(dist(qt,w)<=th)return 20;
-        }
-      }
-      return 0;
-    }
-
-    function run(){
-      var raw=(inp.value||'').trim();
-      var q=raw.toLowerCase();
-      var qts=toks(q);
-      var shown=0;
-      for(var i=0;i<rows.length;i++){
-        var row=rows[i];
-        var ok=true;
-        for(var t=0;t<qts.length;t++){
-          var sc=scoreMatch(qts[t],row);
-          if(sc===0){ok=false;break;}
-        }
-        row.el.classList.toggle('wo-hidden',!ok);
-        if(ok)shown++;
-      }
-      // Hide/show card-groups based on whether they have any visible .row
-      document.querySelectorAll('.card-group').forEach(function(g){
-        var hide=!!q&&!g.querySelector('.row:not(.wo-hidden)');
-        g.classList.toggle('wo-hidden',hide);
-        var hh=g.previousElementSibling;
-        if(hh&&/^H[1-6]$/.test(hh.tagName))hh.classList.toggle('wo-hidden',hide);
-        var foldout=g.parentElement;
-        if(foldout&&foldout.classList.contains('rewind-drop')){
-          var foldoutOpenAttr='data-wo-search-was-open';
-          if(q){
-            if(!foldout.hasAttribute(foldoutOpenAttr))foldout.setAttribute(foldoutOpenAttr,foldout.open?'true':'false');
-            foldout.classList.toggle('wo-hidden',hide);
-            if(!hide)foldout.open=true;
-          }else{
-            foldout.classList.remove('wo-hidden');
-            if(foldout.hasAttribute(foldoutOpenAttr)){
-              foldout.open=foldout.getAttribute(foldoutOpenAttr)==='true';
-              foldout.removeAttribute(foldoutOpenAttr);
-            }
-          }
-        }
-      });
-      // The panel itself is the indexed result, so its heading follows that one
-      // semantic match while every control inside keeps its normal layout.
-      if(eyePanel){
-        var eyeVisible=!eyePanel.classList.contains('wo-hidden');
-        var eyeH3=eyePanel.previousElementSibling;
-        if(eyeH3&&/^H[1-6]$/.test(eyeH3.tagName))eyeH3.classList.toggle('wo-hidden',!eyeVisible);
-      }
-      // Hide/show master switch + Turn everything on when searching
-      var masterArea=document.querySelector('.master');
-      if(masterArea){
-        var masterVisible=!q||!masterArea.querySelector('.wo-hidden');
-        masterArea.classList.toggle('wo-hidden',!masterVisible);
-      }
-      var topQuick=document.querySelector('.top-quick');
-      if(topQuick){
-        var tqVisible=!q||!topQuick.querySelector('.wo-hidden');
-        topQuick.classList.toggle('wo-hidden',!tqVisible);
-      }
-      // Hide/show the JavaScript shield section
-      var jsShield=$('js-shield');
-      if(jsShield){
-        var jsVisible=!q||!jsShield.querySelector('.wo-hidden');
-        jsShield.classList.toggle('wo-hidden',!jsVisible);
-        var jsH3=jsShield.previousElementSibling;
-        if(jsH3&&/^H[1-6]$/.test(jsH3.tagName))jsH3.classList.toggle('wo-hidden',!jsVisible);
-      }
-      // Hide/show the search panel itself when there's a query that matches nothing?
-      // (Leave it visible always so user can clear the search)
-      if(nores)nores.style.display=(q&&shown===0)?'block':'none';
-      if(clearBtn)clearBtn.style.display=raw?'flex':'none';
-      if(countEl){
-        countEl.textContent=q?(shown+' result'+(shown===1?'':'s')):'';
-        countEl.classList.toggle('has-results',!!q);
-      }
-      saveSearchSoon();
-    }
-
-    inp.addEventListener('input',run);
-    inp.addEventListener('search',run);
-    if(clearBtn)clearBtn.addEventListener('click',function(){inp.value='';run();inp.focus();});
-    document.querySelectorAll('[data-search-preset]').forEach(function(btn){
-      btn.addEventListener('click',function(){
-        inp.value=btn.getAttribute('data-search-preset')||btn.textContent||'';
-        run();
-        inp.focus();
-      });
-    });
-
-    // ---- remember the query across popup opens (convenience) ----
-    var searchSaveTimer=0, restoringSearch=false;
-    function persistSearch(){
-      var raw=(inp.value||'').trim();
-      var store=popupScrollStore();
-      if(raw)store.set({[POPUP_SEARCH_KEY]:{q:raw,at:Date.now()}});
-      else store.remove(POPUP_SEARCH_KEY);
-    }
-    function saveSearchSoon(){
-      if(restoringSearch)return;
-      clearTimeout(searchSaveTimer);
-      searchSaveTimer=setTimeout(persistSearch,120);
-    }
-    function flushSearch(){ if(restoringSearch)return; clearTimeout(searchSaveTimer); persistSearch(); }
-    restorePopupSearch=function(done){
-      popupScrollStore().get(POPUP_SEARCH_KEY,function(res){
-        var e=res&&res[POPUP_SEARCH_KEY];
-        var saved=String((e&&typeof e==='object'?e.q:e)||'');
-        if(saved){ restoringSearch=true; inp.value=saved; run(); restoringSearch=false; }
-        if(typeof done==='function')done();
-      });
-    };
-    window.addEventListener('pagehide',flushSearch);
-    document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden')flushSearch(); });
-  }
-  var pl=document.getElementById('wo-perms-link');
-  if(pl)pl.addEventListener('click',function(e){try{e.preventDefault();chrome.tabs.create({url:chrome.runtime.getURL('permissions.html')});}catch(_){}});
-})();
+const permissionsLink = $('wo-perms-link');
+if (permissionsLink) permissionsLink.addEventListener('click', (event) => {
+  try {
+    event.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL('permissions.html') });
+  } catch (_) {}
+});

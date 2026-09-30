@@ -1,5 +1,12 @@
 # Release performance profiles
 
+CI also records the package footprint after each passing gate: ZIP and unpacked bytes,
+bundled DNR rules, manifest-injected scripts, and content and worker source bytes. The
+limits in [`static-budget.json`](static-budget.json) are compared with the staged package
+by `node tools/check-performance-budget.js`; CI keeps the measurements as a build
+artifact for 90 days. These are size and rule-count checks. The browser profile below
+measures execution time and heap; it currently does not measure worker startup time.
+
 Each `profile-<commit>.json` here is an enabled-versus-disabled measurement of that release
 candidate in a real browser with the real extension loaded, produced by
 `node tools/perf-profile.js`; the `.md` beside it is the readable summary, and the JSON keeps the

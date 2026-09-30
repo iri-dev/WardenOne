@@ -4,18 +4,7 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The popup's "N important extension changes need review" note opens into the changes.
- *
- * It used to be a sentence and nothing else: no way to see WHICH extension, or what changed,
- * without leaving the card for the Security Centre. The worker now sends the changes with the
- * note, and the popup draws the note as a dropdown with the two things the reader can do.
- *
- * Both halves are lifted from the shipped files and run: the worker's block with real alert
- * records, and the popup's builder against a small fake DOM, down to pressing "Mark reviewed".
- *
- * Run: node tools/test-health-extension-drop.js
- */
+/* Check that extension-change notes carry useful details and remain usable across redraws. */
 'use strict';
 
 const fs = require('fs');
@@ -23,7 +12,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-const POPUP = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+const POPUP = fs.readFileSync(path.join(ROOT, 'popup-health.js'), 'utf8');
 const HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 
 let failed = 0;

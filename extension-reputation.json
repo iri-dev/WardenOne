@@ -1,9 +1,14 @@
 {
   "schema": 1,
-  "datasetVersion": "2026.08.31.473",
-  "generatedAt": "2026-08-31T00:00:00Z",
+  "datasetVersion": "2026.09.30.476",
+  "generatedAt": "2026-09-30T13:48:26Z",
   "description": "Local exact-ID extension intelligence with three deliberately separate states: documented incidents, publisher-verified identities with explicit capability contracts, and catalogue-only Chrome Web Store listings. A catalogue match identifies a listing name only; it never proves safety or excuses access. Runtime lookups and reviews stay on this device.",
   "sources": {
+    "chatgpt-chrome-official": {
+      "label": "OpenAI ChatGPT Chrome Web Store listing",
+      "reference": "https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg",
+      "retrievedAt": "2026-09-30"
+    },
     "great-suspender-incident": {
       "label": "The Great Suspender security incident record",
       "reference": "https://github.com/greatsuspender/thegreatsuspender/issues/1263",
@@ -573,6 +578,20 @@
       "evidence": "Anthropic documents Claude in Chrome acting on pages and explains its debugger, scripting, host, downloads, native-messaging and related permissions.",
       "reference": "https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome"
     },
+    "chatgpt_browser_agent": {
+      "label": "the ChatGPT browser assistant",
+      "needs": "read and act on pages across tabs and communicate with the ChatGPT desktop app",
+      "expected": [
+        "debugger-control",
+        "script-everywhere",
+        "native-program-bridge",
+        "all-site-data",
+        "script-injection",
+        "declarative-network-control"
+      ],
+      "evidence": "OpenAI's exact-ID Chrome Web Store listing describes browser control and desktop-app integration; the reviewed installed manifest declares debugger, scripting, nativeMessaging, declarativeNetRequestWithHostAccess and all-site host access.",
+      "reference": "https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg"
+    },
     "general_extension": {
       "label": "a general browser extension",
       "needs": "read and change the pages you visit, which is what most extensions with site access do",
@@ -674,6 +693,36 @@
     }
   ],
   "entries": {
+    "hehggadaopoacecdllhhajmbjkdcmajg": {
+      "name": "ChatGPT",
+      "status": "recognized_identity",
+      "reason": "This exact ID matches OpenAI's ChatGPT Chrome Web Store listing. Browser control, all-site access, desktop-app messaging and browsing-history access fit the published purpose; the identity match does not certify any future update or suppress new-access warnings.",
+      "categories": [
+        "browser_agent"
+      ],
+      "affected": {
+        "kind": "all_versions"
+      },
+      "source": "chatgpt-chrome-official",
+      "reviewedAt": "2026-09-30",
+      "capabilityProfile": "chatgpt_browser_agent",
+      "capabilityContract": {
+        "expectedMode": "replace",
+        "expected": [
+          "debugger-control",
+          "script-everywhere",
+          "native-program-bridge",
+          "all-site-data",
+          "script-injection",
+          "declarative-network-control",
+          "history-access",
+          "history-everywhere"
+        ],
+        "needs": "read and act on pages across tabs, use browser history when you approve it, and communicate with the ChatGPT desktop app",
+        "evidence": "OpenAI's exact-ID Chrome Web Store listing describes browser automation, desktop-app control and permission prompts before referencing browsing history; the installed 1.26.901.11451 manifest declares debugger, scripting, history, nativeMessaging and all-site host access.",
+        "reference": "https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg"
+      }
+    },
     "klbibkeccnjlkjkiokjodocebajanakg": {
       "name": "The Great Suspender (legacy listing)",
       "status": "historical_incident",

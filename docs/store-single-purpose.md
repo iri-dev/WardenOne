@@ -8,8 +8,8 @@ page presentation and resource use:
 > privacy, warns about risky actions, offers optional page display controls for readability,
 > and releases resources held by eligible idle tabs.**
 
-The feature decisions below are the proposed Store scope. The GitHub build carries all four
-utilities. Inclusion in this local package is not a Chrome Web Store approval.
+The decisions below define the proposed Store scope. The GitHub build carries all four
+utilities. Chrome Web Store approval remains subject to Google's review.
 
 ## The decision
 
@@ -28,11 +28,9 @@ eligible idle tab at the chosen cap, and closing instead requires a separate opt
 controls can also help offset WardenOne's own resource cost. Resource Saver's autoplay, prefetch,
 background throttling and lazy-media settings serve the same resource-protection purpose.
 
-The policy case is one focus area: reader-controlled protective browsing. Memory Shield limits
-resources spent on tabs the reader is not using, and Tab Limit is a control inside that same
-module and popup section. The listing names both plainly so users know what the extension may
-do to their tabs. This is a proposed interpretation of the Store's single-purpose rule, not a
-reviewer decision.
+The policy case is reader-controlled protective browsing. Memory Shield limits resources spent
+on unused tabs, and Tab Limit is a control inside that module and popup section. The listing
+names both so users know what the extension may do to their tabs.
 
 **Twitch Rewind has a strong viewer-control case.** Twitch's own
 [Stream Rewind](https://help.twitch.tv/s/article/stream-rewind) is currently limited to eligible
@@ -52,7 +50,7 @@ allows related functions in one narrow focus area but asks for clearly separate 
 separate extensions. The proposed Store profile therefore omits both rewind modes while the full
 GitHub build keeps them. A separate, narrowly described Twitch rewind extension would make the
 clearest Store case if Store distribution of this feature becomes a goal. A reviewer may also see
-EyeShield or Memory Shield as separate purposes; this record does not claim guaranteed approval.
+EyeShield or Memory Shield as separate purposes.
 
 - **The Store package includes EyeShield, Memory Shield and Tab Limit, and omits Twitch Rewind.**
   For Twitch Rewind, it removes the files, manifest entries, settings, controls, permissions

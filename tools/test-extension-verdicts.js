@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What the Security Centre says about an extension, and when it says nothing.
- * Run: node tools/test-extension-verdicts.js
- *
- * The bug this suite exists for: an exactly-matched official Bitwarden was
- * labelled REVIEW ACCESS and put in "Needs attention". The verdict chain tested
- * for powerful access ABOVE recognised identity, and every extension worth
- * recognising is powerful — a password manager that cannot read the page cannot
- * fill anything in. So recognition bought nothing, and the attention list filled
- * with entries nobody should act on. A warning everybody dismisses protects
- * nobody, which makes a false alarm a security bug and not a cosmetic one.
- *
- * The fix is not "trust recognised extensions". It is that the catalogue now
- * records what each exact, verified extension is for, so the question stops being "is
- * this powerful" and becomes "is this powerful in the way this kind of thing is
- * powerful". A password manager reaching its desktop app is a password manager.
- * A password manager that can route your traffic through a proxy is a story, and
- * that case must still fire — which is most of what is checked below.
- */
+/* Security Centre verdict regressions: expected powerful access stays quiet, while
+   unexpected access and documented incidents still demand review. */
 'use strict';
 
 const assert = require('assert');
@@ -210,11 +193,15 @@ function assess(id, overrides) {
 // --- the catalogue itself ---------------------------------------------------
 
 (function everyRecognisedKindHasAProfile() {
-  /* A recognised entry whose category has no profile falls through to being
-     judged as an unknown — which is the original bug, arriving one category
-     later. This is the check that stops it coming back when someone adds the
-     twenty-second entry. */
+  /* Every recognised identity needs a profile to explain its powerful access. */
   const profiles = DB.capabilityProfiles || {};
+  const known = new Set((DB.capabilitySignatures || []).map((signature) => signature.id).concat([
+    'all-site-data', 'tab-metadata', 'history-access', 'cookie-access', 'network-observation',
+    'blocking-web-request', 'declarative-network-control', 'traffic-proxy', 'debugger-control',
+    'extension-management', 'native-program-bridge', 'clipboard-read', 'downloads-control',
+    'script-injection', 'script-everywhere', 'session-data-everywhere', 'wide-finite-host-set',
+    'nonstandard-install',
+  ]));
   const orphans = [];
   Object.entries(DB.entries).forEach(([id, entry]) => {
     if (entry.status !== 'recognized_identity') return;
@@ -226,26 +213,11 @@ function assess(id, overrides) {
     check('profile ' + name + ' says what it is', !!profile.label);
     check('profile ' + name + ' says why it needs what it needs', !!profile.needs);
     check('profile ' + name + ' lists expected capabilities', Array.isArray(profile.expected) && profile.expected.length > 0);
-    const known = new Set((DB.capabilitySignatures || []).map((s) => s.id).concat([
-      'all-site-data', 'tab-metadata', 'history-access', 'cookie-access', 'network-observation',
-      'blocking-web-request', 'declarative-network-control', 'clipboard-read', 'downloads-control',
-      'script-injection', 'wide-finite-host-set', 'nonstandard-install',
-    ]));
     const unknown = (profile.expected || []).filter((c) => !known.has(c));
-    /* A typo here would silently mark a real capability unexpected, putting a
-       trusted extension back in the attention list — the exact bug, spelled
-       differently. */
     check('profile ' + name + ' names only real capability signatures', unknown.length === 0, unknown.join(', '));
   });
   Object.entries(DB.entries).forEach(([id, entry]) => {
     if (!entry.capabilityContract) return;
-    const known = new Set((DB.capabilitySignatures || []).map((s) => s.id).concat([
-      'all-site-data', 'tab-metadata', 'history-access', 'cookie-access', 'network-observation',
-      'blocking-web-request', 'declarative-network-control', 'traffic-proxy', 'debugger-control',
-      'extension-management', 'native-program-bridge', 'clipboard-read', 'downloads-control',
-      'script-injection', 'script-everywhere', 'session-data-everywhere', 'wide-finite-host-set',
-      'nonstandard-install',
-    ]));
     const unknown = (entry.capabilityContract.expected || []).filter((c) => !known.has(c));
     check('exact contract ' + id + ' names only real capabilities', unknown.length === 0, unknown.join(', '));
     check('exact contract ' + id + ' cites its evidence',
@@ -343,7 +315,10 @@ function assess(id, overrides) {
 }());
 (function theCardIsNotDressedAsAnEmergency() {
   const POPUP = fs.readFileSync(path.join(ROOT, "popup.js"), "utf8");
-  const card = POPUP.slice(POPUP.indexOf("Neutral card, coloured edge"), POPUP.indexOf("listEl.appendChild(card)"));
+  const start = POPUP.indexOf("urgent.forEach((item) => {");
+  const end = POPUP.indexOf("listEl.appendChild(card)", start);
+  check('the urgent card renderer is findable', start >= 0 && end > start);
+  const card = POPUP.slice(start, end);
   check("the card no longer fills itself with the warning wash",
     card.indexOf("--wo-warning-bg") < 0 && card.indexOf("--wo-danger-bg") < 0,
     "a saturated background is back");
@@ -360,7 +335,10 @@ function assess(id, overrides) {
      list: once through a version bump, once through the database learning its
      name. This is the floor under both. */
   check("a backstop verdict exists", /nothing_of_note/.test(SOURCE));
-  const guard = SOURCE.slice(SOURCE.indexOf("Last word: an extension with no adverse record"), SOURCE.indexOf("if (!extension.enabled"));
+  const start = SOURCE.indexOf("if (verdict.needsAttention");
+  const end = SOURCE.indexOf("if (!extension.enabled", start);
+  check('the low-access verdict guard is findable', start >= 0 && end > start);
+  const guard = SOURCE.slice(start, end);
   check("it requires no ADVERSE record, not merely no record at all",
     /reputationRank < EXT_REPUTATION_STATUS_RANK.historical_incident/.test(guard),
     'a recognised extension with no reach could not reach the floor');

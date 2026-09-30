@@ -3,12 +3,10 @@
 Status: **blocked pending upstream rights review (CWS-06)**. The rolling `latest-build`
 download is for GitHub users; it is not the Store upload candidate.
 There is no Chrome Web Store Dashboard draft or submitted listing yet (30 September 2026).
-The text below is proposed copy, so alignment with an actual Dashboard listing cannot be
-claimed until the release owner compares the saved fields and records the result here.
+The proposed copy below must be compared with the saved Dashboard fields before submission.
 
-The [source-by-source research record](store-rights-research.md) documents the evidence found
-for every inventoried input. It is preparation for the release-owner decision, not approval to
-submit. No unresolved source is removed from the full or proposed Store build.
+The [source-by-source research record](store-rights-research.md) tracks evidence for each input.
+Unresolved sources remain in both builds and block Store submission.
 
 ## Listing source text
 
@@ -28,25 +26,21 @@ submit. No unresolved source is removed from the full or proposed Store build.
   retention disclosures must match the Dashboard's data-use answers.
 - **Permission explanations:** `permissions.html` at the candidate commit.
   Compare every declared permission in `manifest.json` to the text submitted
-  in the Dashboard; do not infer approval from the presence of this file.
+  in the Dashboard.
 
-This proposed listing contains no claim about a feature removed from the Store package.
-The internal [package purpose record](store-single-purpose.md) explains the exclusion.
-The publisher must compare these fields with the saved Dashboard fields immediately before
-submission and record any differences here. The repository cannot read unpublished Dashboard
-settings. Chrome reviewers decide whether this combination meets the single-purpose policy;
-the written case does not promise approval.
+The [package purpose record](store-single-purpose.md) explains the excluded feature.
+Record the Dashboard comparison and any differences here once a draft exists. Chrome reviewers
+decide whether this combination meets the single-purpose policy.
 
 ## Release procedure
 
-1. Finish and commit the change. Run `node tools/check-maintainability.js` on a
-   clean checkout of that exact commit.
-2. Run `node tools/build-store-candidate.js`. It builds the Store profile from
-   `HEAD` into ignored `.store-candidates/`, with a commit-and-digest filename.
-   The sibling JSON records the exact ZIP SHA-256, byte length and every file
-   hash. Run `node tools/build-store-candidate.js --verify <attestation.json>`.
-3. Before publishing or uploading that candidate, run `node tools/check-store-rights.js`.
-   It must pass. Each runtime list and redistributed ruleset needs a release-owner
+1. Finish and commit the change. From a clean checkout of that exact commit, run
+   `node tools/check-store-release.js` with Node 24. This single command runs the
+   maintainability gate (syntax, tests, security and generated-file checks), the
+   rights gate, builds the Store ZIP, audits every ZIP entry against the commit,
+   and writes a sibling SHA-256 file. A green run names the exact ZIP to upload.
+   It currently stops at the unresolved rights gate; do not bypass that failure.
+2. Each runtime list and redistributed ruleset needs a release-owner
    decision in `docs/source-inventory.json`. Set `licenceVerified` only after
    reviewing the terms, and record `rightsReview` with `reviewer`, `reviewedAt`
    (YYYY-MM-DD), an HTTPS `evidenceUrl` for the terms, `termsRevision`, and
@@ -58,14 +52,14 @@ the written case does not promise approval.
    decisions for unchanged source URLs and file names, but a new URL begins
    unreviewed. Review any changed generated artifact again before updating its
    digest. Current unresolved inputs remain in place and block submission.
-4. Enable GitHub release immutability for future releases in repository Settings.
+3. Enable GitHub release immutability for future releases in repository Settings.
    Create a **draft** release at a new `store-candidate-<commit>` tag, attach the
    ZIP and JSON, then publish the release. Confirm GitHub marks it Immutable.
    Never attach the Store ZIP to the mutable `latest-build` release.
-5. Download the candidate from its release URL and compare its SHA-256 with the
+4. Download the candidate from its release URL and compare its SHA-256 with the
    JSON record. Upload that same ZIP to the Chrome Web Store without repacking.
    Compare the local upload file's digest again immediately before the upload.
-6. Record the candidate tag, commit, ZIP digest, Store submission date, Dashboard
+5. Record the candidate tag, commit, ZIP digest, Store submission date, Dashboard
    listing/privacy comparison and reviewer outcome below. A new build requires
    a new tag, digest and review entry.
 

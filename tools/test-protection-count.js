@@ -33,6 +33,7 @@ const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+const POPUP_HEALTH = fs.readFileSync(path.join(ROOT, 'popup-health.js'), 'utf8');
 const CONTENT = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 
 let failures = 0;
@@ -239,13 +240,13 @@ check('the list of failures is bounded',
   /sourceFailures\.slice\(0, \d+\)/.test(BG),
   'a permanently broken feed should not grow storage without limit');
 check('the popup names them rather than only counting them',
-  /id="list-failures"/.test(POPUP_HTML) && /list-failure-url/.test(POPUP_JS)
-    && /list-failure-why/.test(POPUP_JS));
+  /id="list-failures"/.test(POPUP_HTML) && /list-failure-url/.test(POPUP_HEALTH)
+    && /list-failure-why/.test(POPUP_HEALTH));
 check('and shows the reason, not just the name',
-  /why\.textContent = f\.error/.test(POPUP_JS),
+  /why\.textContent = f\.error/.test(POPUP_HEALTH),
   'a 404 needs a new URL and an over-cap list needs a smaller edition; as a count they look identical');
 check('nothing is shown when every feed worked',
-  /failEl\.hidden = failedList\.length === 0/.test(POPUP_JS));
+  /failEl\.hidden = failedList\.length === 0/.test(POPUP_HEALTH));
 
 console.log('');
 if (failures) {

@@ -56,7 +56,7 @@ function grabFn(src, name) {
 }
 
 /* the popup's tables and the two functions, as shipped */
-const TABLES = between(POPUP, 'const DEFAULTS = {', '\n// cryptominerCpuWatch is here', 'the popup tables');
+const TABLES = between(POPUP, 'const DEFAULTS = {', '\nconst SITE_OVERRIDE_SCOPE = {', 'the popup tables');
 const SECRET = between(POPUP, 'const SECRET_FIELD_RE', '\n', 'the secret pattern');
 const ctx = { Object, Array, Number, String, JSON, RegExp };
 vm.createContext(ctx);

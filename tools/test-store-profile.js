@@ -149,7 +149,7 @@ section('the Store tree', () => {
   check('the Memory Shield module remains', TREE.files.has('background-memory.js') && !TREE.removed.includes('background-memory.js'));
   check('EyeShield and its preload files remain', ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((f) => TREE.files.has(f) && !TREE.removed.includes(f)));
   check('tooling, sources, docs, the site and the workflow are not in the package', !Array.from(TREE.files.keys()).some((f) => /^(?:tools|src|docs|site|\.github)\//.test(f)));
-  check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'NOTICE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
+  check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'NOTICE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
   /* Every document in the package is there on purpose (REL-03): the repository's own notes are not. */
   check('the changelog, the security policy and the support note are not in the package', ['CHANGELOG.md', 'SECURITY.md', 'SUPPORT.md', 'README.md'].every((f) => !TREE.files.has(f) && TREE.removed.includes(f)));
   check('the manifest no longer injects Twitch Rewind', !TREE.manifest.content_scripts.some((e) => (e.js || []).some((f) => /rewind/.test(f))));
@@ -291,7 +291,9 @@ section('the popup', () => {
   const full = popupRealm(false);
   const fq = (s) => full.doc.querySelectorAll(s);
   check('under the full profile nothing moves', fq('#eyeshield-panel').length === 1 && fq('.rewind-drop').length === 1 && fq('#tl-guard').length === 1 && fq('#mem-title')[0].textContent === 'Memory Shield' && full.omitted.length === 0);
-  check('the popup loads the profile before its own script', POPUP_HTML.indexOf('<script src="build-profile.js"></script>') > 0 && POPUP_HTML.indexOf('<script src="build-profile.js"></script>') < POPUP_HTML.indexOf('<script src="popup.js"></script>'));
+  check('the popup loads profile, health, state and search in order', POPUP_HTML.indexOf('<script src="build-profile.js"></script>') > 0 && POPUP_HTML.indexOf('<script src="build-profile.js"></script>') < POPUP_HTML.indexOf('<script src="popup-health.js"></script>')
+    && POPUP_HTML.indexOf('<script src="popup-health.js"></script>') < POPUP_HTML.indexOf('<script src="popup.js"></script>')
+    && POPUP_HTML.indexOf('<script src="popup.js"></script>') < POPUP_HTML.indexOf('<script src="popup-settings-search.js"></script>'));
   check('the applier runs before anything paints', /const OMITTED_FEATURES = applyBuildProfile\(\);/.test(POPUP_JS) && POPUP_JS.indexOf('const OMITTED_FEATURES = applyBuildProfile();') < POPUP_JS.indexOf('(function initMemoryShield() {'));
   /* Every control for an omitted setting in the real popup sits under a marked element. */
   const { build } = tool.loadProfile();
@@ -355,7 +357,7 @@ section('the record', () => {
   check('the proposed listing and purpose record use the same purpose sentence', DOC.replace(/^> ?/gm, '').replace(/\s+/g, ' ').includes(purpose)
     && SUBMISSION.replace(/\s+/g, ' ').includes(purpose));
   check('the listing is marked proposed and Dashboard comparison pending', /no Chrome Web Store Dashboard draft or submitted listing yet/i.test(SUBMISSION.replace(/\s+/g, ' '))
-    && /alignment with an actual Dashboard listing cannot be claimed/i.test(SUBMISSION.replace(/\s+/g, ' ')));
+    && /proposed copy below must be compared with the saved Dashboard fields before submission/i.test(SUBMISSION.replace(/\s+/g, ' ')));
   const listingDescription = /\*\*Detailed description:\*\*([\s\S]*?)\n- \*\*Privacy policy:\*\*/.exec(SUBMISSION);
   check('the proposed listing does not advertise excluded replay', !!listingDescription && !/Twitch Rewind|local rewind|replay/i.test(listingDescription[1]));
   check('the README points at the Store package and the record', /build-store-package\.js/.test(README) && /store-single-purpose\.md/.test(README));
