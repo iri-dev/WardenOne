@@ -23,6 +23,10 @@ const { installEngineAmbient } = require('./lib/engine-ambient.js');
 const source = fs.readFileSync('src/content.js', 'utf8');
 const min = fs.readFileSync('content.min.js', 'utf8');
 const startup = fs.readFileSync('background-startup.js', 'utf8');
+const domainSource = fs.readFileSync('domain-utils.js', 'utf8');
+const idnStart = domainSource.indexOf('const WARDENONE_IDN_CONFUSABLES');
+const idnEnd = domainSource.indexOf('function regDomain(', idnStart);
+assert(idnStart >= 0 && idnEnd > idnStart, 'shared IDN helper has moved');
 const brandStart = source.indexOf('const BRANDS={');
 const brandEnd = brandStart >= 0 ? source.indexOf('};\n      try{', brandStart) : -1;
 assert(brandStart >= 0 && brandEnd > brandStart, 'content phishing brand table not found');
@@ -86,6 +90,7 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
+vm.runInContext(domainSource.slice(idnStart, idnEnd), sandbox);
   installEngineAmbient(sandbox);
 vm.runInContext(startup + '\nglobalThis.__phishingTest = { loginRiskVerdict, looksLikeLookalikeHost, loginBrandRiskForHost };', sandbox, { filename: 'background-startup.js' });
 
@@ -227,6 +232,7 @@ console.log('[ok] phishing false-positive checks passed');
       Object, Array, Set, Math, String, RegExp,
     };
     installEngineAmbient(sandbox);
+    vm.runInContext(domainSource.slice(idnStart, idnEnd), sandbox);
     vm.runInContext(detectSrc + '\nthis.__hit = phishHit;', sandbox, { filename: 'src/content.js' });
     return sandbox.__hit;
   }

@@ -233,6 +233,7 @@
     paymentCardGuard: true,
     gestureWindowMs: 2400,
   };
+  let popupBootstrapConfig = null;
   let lastGestureAt = 0;
   let intendedHost = '';
   let intentWasExplicit = false;
@@ -314,9 +315,9 @@
   // result was that "allow this site" left forced-popup, gestureless-navigation
   // and meta-refresh blocking running there anyway. The allowlist travels with
   // the config, so the check belongs here.
-  function hostAllowedByUser() {
+  function hostAllowedByUser(config) {
     try {
-      const list = cfg().allowlist;
+      const list = (config || cfg()).allowlist;
       if (!Array.isArray(list) || !list.length) return false;
       const host = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
       if (!host) return false;
@@ -882,11 +883,12 @@
   }
 
   function popupEnabled() {
-    return masterEnabled() && cfg().blockForcedPopups !== false;
+    const c = configReady() ? cfg() : popupBootstrapConfig;
+    return !!c && c.enabled !== false && !hostAllowedByUser(c) && c.blockForcedPopups !== false;
   }
 
   function strictPopupEnabled() {
-    return popupEnabled() && cfg().strictPopupShield === true;
+    return popupEnabled() && (configReady() ? cfg() : popupBootstrapConfig).strictPopupShield === true;
   }
 
   function playerDocument() {
@@ -1540,7 +1542,7 @@
   popupMatcherEntries.set('core:popup-policy', corePopupPolicy);
 
   function popupBlockMatch(rawTarget) {
-    if (!masterEnabled()) return null;
+    if (!masterEnabled() && !popupEnabled()) return null;
     const match = popupMatcherApi.match(rawTarget, {
       topFrame: TOP_FRAME,
       freshGesture: freshGesture(),
@@ -1682,14 +1684,91 @@
     }
   }
 
+  // Some ad scripts place a nearly transparent, page-sized link and an anonymous
+  // fixed-position square over a real player, then consume mousedown before a
+  // click reaches the link guard. Remove only this layered shape when a real
+  // player control is underneath; leave normal controls and media UI untouched.
+  let layeredPlayerClick = null;
+  function guardLayeredPlayerPopup(event) {
+    if (!strictPopupEnabled() || !event || event.isTrusted === false) return;
+    const pt = coordsOf(event);
+    if (!pt || !pointOnVideo(pt.x, pt.y) || typeof document.elementsFromPoint !== 'function') return;
+    let stack = [];
+    try { stack = document.elementsFromPoint(pt.x, pt.y).slice(0, 16); } catch (_) { return; }
+    const playerButton = stack.find((el) => el && el.tagName === 'BUTTON' &&
+      el.closest && el.closest('.video-js,.jwplayer,.plyr,[data-player],#player'));
+    if (!playerButton) return;
+    const baitAnchor = stack.find((el) => {
+      if (!el || el.tagName !== 'A') return false;
+      const host = hostOf(el.href || (el.getAttribute && el.getAttribute('href')) || '');
+      if (!host || sameParty(host, location.hostname)) return false;
+      const parent = el.parentElement;
+      if (!parent) return false;
+      let rect;
+      try { rect = parent.getBoundingClientRect(); } catch (_) { return false; }
+      if (!rect || rect.width * rect.height < window.innerWidth * window.innerHeight * 0.6) return false;
+      try {
+        const css = getComputedStyle(parent);
+        return css.position === 'fixed' && Number(css.opacity) < 0.05;
+      } catch (_) { return false; }
+    });
+    if (!baitAnchor) return;
+    const baitUrl = String(baitAnchor.href || '').slice(0, 500);
+    const cover = baitAnchor.parentElement;
+    for (const el of [baitAnchor, cover]) {
+      try { el.style.setProperty('pointer-events', 'none', 'important'); } catch (_) {}
+    }
+    for (const el of stack) {
+      if (!el || el === baitAnchor || el === cover || el.tagName !== 'DIV') continue;
+      try {
+        const rect = el.getBoundingClientRect();
+        const css = getComputedStyle(el);
+        if (css.position === 'fixed' && Number(css.zIndex) >= 1000000000
+            && rect.width <= 240 && rect.height <= 240
+            && !el.textContent.trim() && !el.children.length) {
+          el.style.setProperty('pointer-events', 'none', 'important');
+        }
+      } catch (_) {}
+    }
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
+    layeredPlayerClick = { at: Date.now(), x: pt.x, y: pt.y };
+    markHostile();
+    lastGestureTainted = true;
+    intentWasExplicit = false;
+    signal('popup-overlay');
+    emit('blocked_popup', {
+      kind: 'player-overlay', url: baitUrl, matched: hostOf(baitUrl),
+      why: 'a transparent cross-site link covered a player control', silent: true,
+    });
+    const media = stack.find((el) => el && el.tagName === 'VIDEO' && typeof el.play === 'function');
+    if (media) {
+      try {
+        const started = media.play();
+        if (started && typeof started.catch === 'function') started.catch(() => { try { playerButton.click(); } catch (_) {} });
+      } catch (_) { try { playerButton.click(); } catch (_) {} }
+    } else {
+      try { playerButton.click(); } catch (_) {}
+    }
+  }
+
   ['pointerdown', 'mousedown', 'click', 'auxclick', 'keydown', 'touchstart', 'touchend'].forEach((name) => {
     try { woOn(window, name, markIntent, true); } catch (_) {}
   });
+  try { woOn(window, 'pointerdown', guardLayeredPlayerPopup, true); } catch (_) {}
+  try { woOn(window, 'mousedown', guardLayeredPlayerPopup, true); } catch (_) {}
+  try { woOn(window, 'click', (event) => {
+    const prior = layeredPlayerClick;
+    if (!prior || event.isTrusted === false || Date.now() - prior.at > 700) return;
+    const pt = coordsOf(event);
+    if (!pt || Math.abs(pt.x - prior.x) > 24 || Math.abs(pt.y - prior.y) > 24) return;
+    layeredPlayerClick = null;
+    try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
+  }, true); } catch (_) {}
 
   // Click-layer guard: cancels hijack clicks whose default action navigates
   // natively (so the window.open/location hooks below never see them).
   function guardClick(event) {
-    if (!masterEnabled()) return;
+    if (!masterEnabled() && !popupEnabled()) return;
     const el = event && event.target && event.target.nodeType === 1 ? event.target : null;
     const a = el && el.closest ? el.closest('a[href],area[href]') : null;
     if (!a) return;
@@ -3216,6 +3295,12 @@
       woDispose();
       return;
     }
+    if (msg.source === 'wardenone' && msg.kind === 'redirect-bootstrap' && token && msg.token === token
+        && msg.overrides && typeof msg.overrides === 'object'
+        && woVerify('redirect-bootstrap', JSON.stringify(msg.overrides), msg)) {
+      if (!configReady()) popupBootstrapConfig = msg.overrides;
+      return;
+    }
     if (msg.source === 'wardenone' && msg.kind === 'config' && token && msg.token === token
         && msg.overrides && typeof msg.overrides === 'object'
         && woVerify('config', JSON.stringify(msg.overrides), msg)) {
@@ -3230,6 +3315,7 @@
         paymentCardGuard: true,
         gestureWindowMs: DEFAULT_WINDOW_MS,
       }, msg.overrides, { __configReady: true });
+      popupBootstrapConfig = null;
       clearTrackerFrameStorage();
     }
   }, true);

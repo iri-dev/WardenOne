@@ -86,7 +86,8 @@ function boot(options) {
         onCreatedNavigationTarget: listener('webNavigation.onCreatedNavigationTarget'),
         onCommitted: listener('webNavigation.onCommitted'),
       },
-      tabs: { onRemoved: listener('tabs.onRemoved') },
+      tabs: { onCreated: listener('tabs.onCreated'), onRemoved: listener('tabs.onRemoved') },
+      windows: { onCreated: listener('windows.onCreated') },
     },
     noteRedirectHop() {}, evaluateRedirectChain() {}, domainOfTab() { return ''; }, forgetNavSignals() {}, forgetRebindTab() {},
     forgetWarningRecordsForTab() {}, maybeClearOnLeave() {}, maybeClearServiceWorkersOnLeave() {}, maybeBlockForcedTopRedirect() {},
@@ -101,7 +102,7 @@ function boot(options) {
 if (start >= 0 && end > start) {
   {
     const b = boot();
-    check('with nothing throwing, all five listeners register', b.registered.length === 5 && b.api.LISTENERS_NOT_REGISTERED.length === 0,
+    check('with nothing throwing, all seven listeners register', b.registered.length === 7 && b.api.LISTENERS_NOT_REGISTERED.length === 0,
       b.registered.map((r) => r.name).join(', '));
     const hop = b.registered.find((r) => r.name === 'webRequest.onBeforeRedirect');
     check('the redirect-hop listener still carries its main_frame filter', !!hop && hop.filter && hop.filter.types && hop.filter.types[0] === 'main_frame');
@@ -109,8 +110,8 @@ if (start >= 0 && end > start) {
   {
     /* The card's verification: the first registration throws. */
     const b = boot({ throwOn: 'webRequest.onBeforeRedirect' });
-    check('when the first registration throws, the other four still register',
-      b.registered.length === 4 && b.registered.map((r) => r.name).join(',') === 'webNavigation.onCompleted,webNavigation.onCreatedNavigationTarget,tabs.onRemoved,webNavigation.onCommitted',
+    check('when the first registration throws, the other six still register',
+      b.registered.length === 6 && b.registered.map((r) => r.name).join(',') === 'webNavigation.onCompleted,webNavigation.onCreatedNavigationTarget,tabs.onCreated,windows.onCreated,tabs.onRemoved,webNavigation.onCommitted',
       b.registered.map((r) => r.name).join(', '));
     check('and the failure is recorded by the name a reader would recognise', b.api.LISTENERS_NOT_REGISTERED.join(',') === 'redirect-hop recording', b.api.LISTENERS_NOT_REGISTERED.join(','));
     /* And the guard the card was most worried about still works through its listener. */
@@ -122,7 +123,7 @@ if (start >= 0 && end > start) {
   }
   {
     const b = boot({ throwOn: 'tabs.onRemoved' });
-    check('a throw in the middle costs only that one listener', b.registered.length === 4 && b.api.LISTENERS_NOT_REGISTERED.join(',') === 'tab-close cleanup',
+    check('a throw in the middle costs only that one listener', b.registered.length === 6 && b.api.LISTENERS_NOT_REGISTERED.join(',') === 'tab-close cleanup',
       b.registered.map((r) => r.name).join(', ') + ' / ' + b.api.LISTENERS_NOT_REGISTERED.join(','));
   }
   {

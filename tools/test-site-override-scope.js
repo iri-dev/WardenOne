@@ -64,6 +64,7 @@ vm.runInContext(block(POPUP, 'const KEYS = [', '];') + '\n' + block(POPUP, 'cons
 const { KEYS, DEFAULTS, SITE_OVERRIDE_SCOPE } = tables.T;
 const PAGE = new Set(SITE_OVERRIDE_SCOPE.page);
 const MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
+const COORDINATED = new Set(SITE_OVERRIDE_SCOPE.coordinated);
 
 /* ---- who reads what, from the sources ---------------------------------------------- */
 const pageReads = new Set();
@@ -88,15 +89,17 @@ for (const f of ['background.js', 'background-downloads.js', 'background-startup
 console.log('\nsite override scope\n');
 
 const toggles = KEYS.filter((k) => typeof DEFAULTS[k] === 'boolean');
-check('the table names only real toggles', [...PAGE, ...MIXED].every((k) => toggles.includes(k)), [...PAGE, ...MIXED].filter((k) => !toggles.includes(k)).join(', '));
-check('no key is in both halves', [...PAGE].every((k) => !MIXED.has(k)));
+check('the table names only real toggles', [...PAGE, ...MIXED, ...COORDINATED].every((k) => toggles.includes(k)), [...PAGE, ...MIXED, ...COORDINATED].filter((k) => !toggles.includes(k)).join(', '));
+check('no key appears in multiple scopes', [...PAGE].every((k) => !MIXED.has(k) && !COORDINATED.has(k)) && [...MIXED].every((k) => !COORDINATED.has(k)));
 const pageWrong = [...PAGE].filter((k) => !pageReads.has(k) || workerReads.has(k));
 check('every page-resolved key is read by a page-side script and by no worker file', pageWrong.length === 0, pageWrong.join(', '));
 const mixedWrong = [...MIXED].filter((k) => !pageReads.has(k) || !workerReads.has(k));
 check('every mixed key is read by a page-side script and by the worker', mixedWrong.length === 0, mixedWrong.join(', '));
-const missing = toggles.filter((k) => pageReads.has(k) && !PAGE.has(k) && !MIXED.has(k));
+const coordinatedWrong = [...COORDINATED].filter((k) => !pageReads.has(k) || !workerReads.has(k));
+check('every coordinated key is read by a page-side script and by the worker', coordinatedWrong.length === 0, coordinatedWrong.join(', '));
+const missing = toggles.filter((k) => pageReads.has(k) && !PAGE.has(k) && !MIXED.has(k) && !COORDINATED.has(k));
 check('every toggle a page-side script reads is offered somewhere', missing.length === 0, missing.join(', '));
-const offeredButUnread = toggles.filter((k) => (PAGE.has(k) || MIXED.has(k)) && !pageReads.has(k));
+const offeredButUnread = toggles.filter((k) => (PAGE.has(k) || MIXED.has(k) || COORDINATED.has(k)) && !pageReads.has(k));
 check('nothing is offered that no page-side script reads', offeredButUnread.length === 0, offeredButUnread.join(', '));
 
 /* the record's table, by name */
@@ -104,6 +107,7 @@ check('a content-only protection is page-resolved (Media Shield)', PAGE.has('med
 check('a worker-only one is not offered (certificate guard)', !PAGE.has('certificateGuard') && !MIXED.has('certificateGuard') && workerReads.has('certificateGuard') && !pageReads.has('certificateGuard'));
 check('a DNR-only one is not offered (intranet network rules)', !PAGE.has('intranetNetworkRules') && !MIXED.has('intranetNetworkRules'));
 check('a mixed one is offered as page-part-only (third-party cookies)', MIXED.has('blockThirdPartyCookies') && workerReads.has('blockThirdPartyCookies'));
+check('popup guards have a coordinated site override', COORDINATED.has('blockForcedPopups') && COORDINATED.has('strictPopupShield'));
 check('a global setting is not offered (list auto-update)', !PAGE.has('autoUpdateLists') && !MIXED.has('autoUpdateLists'));
 check('Download Shield and Memory Shield are not offered', ['downloadDomainAge', 'downloadVirusTotal', 'memoryShield', 'memoryNeverForms'].every((k) => !PAGE.has(k) && !MIXED.has(k)));
 

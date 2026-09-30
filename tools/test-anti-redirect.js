@@ -28,6 +28,7 @@ const PREDS = {
   'form[action]': (el) => el.tagName === 'FORM' && el.attrs.action != null,
   'a,button,input,[role="button"],[tabindex]': (el) => ['A', 'BUTTON', 'INPUT'].indexOf(el.tagName) >= 0 || el.attrs.role === 'button' || el.attrs.tabindex != null,
   'video,audio': (el) => el.tagName === 'VIDEO' || el.tagName === 'AUDIO',
+  '.video-js,.jwplayer,.plyr,[data-player],#player': (el) => /\bvideo-js\b|\bjwplayer\b|\bplyr\b/.test(el.className) || el.id === 'player' || el.attrs['data-player'] != null,
 };
 
 function makeEl(props) {
@@ -45,13 +46,16 @@ function makeEl(props) {
     formAction: props.formAction,
     action: props.action,
     target: props.target || '',
-    style: props.style || {},
+    style: Object.assign({ setProperty(name, value) { this[name] = value; } }, props.style || {}),
+    children: props.children || [],
     rect: props.rect || { left: 0, top: 0, width: 10, height: 10, right: 10, bottom: 10 },
     containsVideo: !!props.containsVideo,
     getAttribute(n) { return this.attrs[n] != null ? this.attrs[n] : null; },
     hasAttribute(n) { return this.attrs[n] != null; },
     getBoundingClientRect() { return this.rect; },
     querySelector(sel) { return sel === 'video' && this.containsVideo ? makeEl({ tag: 'video' }) : null; },
+    click() { if (props.onClick) props.onClick(); },
+    play() { if (props.onPlay) return props.onPlay(); },
     closest(sel) {
       const p = PREDS[sel];
       let e = this;
@@ -113,7 +117,11 @@ function build(opts) {
   sandbox.String = String;
   sandbox.Math = Math;
   sandbox.CustomEvent = class CustomEvent { constructor(t, i) { this.type = t; this.detail = i && i.detail; } };
-  sandbox.getComputedStyle = (el) => ({ opacity: String(el && el.style && el.style.opacity != null ? el.style.opacity : '1') });
+  sandbox.getComputedStyle = (el) => ({
+    opacity: String(el && el.style && el.style.opacity != null ? el.style.opacity : '1'),
+    position: String(el && el.style && el.style.position || 'static'),
+    zIndex: String(el && el.style && el.style.zIndex || 'auto'),
+  });
   sandbox.Location = function Location() {};
   const nativeAssign = function (u) { state.assigned.push(String(u)); };
   const nativeReplace = function (u) { state.replaced.push(String(u)); };
@@ -140,6 +148,7 @@ function build(opts) {
   sandbox.location = loc;
   sandbox.document = {
     activeElement: null,
+    elementsFromPoint: opts.elementStack ? () => opts.elementStack : undefined,
     dispatchEvent(ev) { if (ev && ev.type === 'wo-event') state.emits.push(ev.detail); },
     getElementsByTagName(tag) {
       tag = String(tag || '').toLowerCase();
@@ -216,12 +225,24 @@ function build(opts) {
         }, config || opts.config || {}));
       }
     },
+    sendBootstrap(overrides) {
+      const data = api.link.sign('redirect-bootstrap', JSON.stringify(overrides), {
+        source: 'wardenone', kind: 'redirect-bootstrap', token: api.link.token, overrides,
+      });
+      api.fire('message', { source: innerWindow, data });
+    },
+    forgeBootstrap(overrides) {
+      api.fire('message', { source: innerWindow, data: {
+        source: 'wardenone', kind: 'redirect-bootstrap', token: api.link.token,
+        overrides, seq: 999, mac: 'f'.repeat(64),
+      } });
+    },
     /* A page's attempt: the same message without a valid signature. */
     forgeConfig(overrides) {
       api.fire('message', { source: innerWindow, data: { source: 'wardenone', kind: 'config', token: api.link ? api.link.token : 'tok', overrides, seq: 999, mac: 'f'.repeat(64) } });
     },
   };
-  api.handshake();
+  api.handshake(opts.deferConfig ? false : undefined);
   return api;
 }
 
@@ -268,6 +289,26 @@ function check(name, cond, extra) {
   check('T3 popup from video click blocked', t.state.opened.length === 0, t.state.opened);
 }
 
+// A cold worker must not leave the first player click unguarded. The bridge
+// sends a signed, storage-backed popup bootstrap before the full snapshot.
+{
+  const t = build({ deferConfig: true,
+    videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
+  t.sendBootstrap({ enabled: true, blockForcedPopups: true, strictPopupShield: true, allowlist: [] });
+  t.userClick(t.videos[0], 300, 300);
+  t.open('https://newsboydurance.cfd/ad');
+  check('T3 cold-start popup bootstrap blocks an ad on the first click', t.state.opened.length === 0);
+  t.handshake({ enabled: false });
+  t.open('https://newsboydurance.cfd/ad');
+  check('T3 full disabled config replaces the bootstrap', t.state.opened.length === 1);
+}
+{
+  const t = build({ deferConfig: true });
+  t.forgeBootstrap({ enabled: true, blockForcedPopups: true, strictPopupShield: true });
+  t.open('https://newsboydurance.cfd/ad');
+  check('T3 forged bootstrap cannot enable the guard', t.state.opened.length === 1);
+}
+
 // T3b: gesture on a div that OVERLAYS the video (coords inside video rect)
 {
   const t = build({ videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
@@ -275,6 +316,38 @@ function check(name, cond, extra) {
   t.userClick(overlay, 300, 300);
   t.open('https://randomapp.com/dash');
   check('T3b popup from overlay-on-video click blocked', t.state.opened.length === 0, t.state.opened);
+}
+
+// T3c: a transparent cross-site link and anonymous click square over the Play
+// button lose pointer access; the real player control gets one activation.
+{
+  const player = makeEl({ className: 'video-js' });
+  let plays = 0;
+  const button = makeEl({ tag: 'button', parent: player, onClick: () => { plays++; } });
+  const video = makeEl({ tag: 'video', onPlay: () => { plays++; return Promise.resolve(); } });
+  const cover = makeEl({ style: { position: 'fixed', opacity: '0.01', zIndex: '2147483647' },
+    rect: { left: 0, top: 0, width: 1000, height: 800 } });
+  const link = makeEl({ tag: 'a', parent: cover, href: 'https://wearadmiration.com/ads', attrs: { href: 'https://wearadmiration.com/ads' } });
+  const square = makeEl({ style: { position: 'fixed', zIndex: '2147483647' },
+    rect: { left: 240, top: 240, width: 120, height: 120 }, text: '' });
+  const t = build({ videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }],
+    elementStack: [square, link, cover, button, video] });
+  const press = t.fire('pointerdown', { target: square, clientX: 300, clientY: 300 });
+  check('T3c layered ad press is cancelled and the play control activates', press.defaultPrevented && plays === 1, { press: press.defaultPrevented, plays });
+  check('T3c both ad layers lose pointer access', square.style['pointer-events'] === 'none' && cover.style['pointer-events'] === 'none');
+  const click = t.fire('click', { target: makeEl({}), clientX: 300, clientY: 300 });
+  check('T3c follow-up trusted click cannot launch the ad', click.defaultPrevented);
+}
+{
+  const player = makeEl({ className: 'video-js' });
+  const button = makeEl({ tag: 'button', parent: player });
+  const cover = makeEl({ style: { position: 'fixed', opacity: '1', zIndex: '2147483647' },
+    rect: { left: 0, top: 0, width: 1000, height: 800 } });
+  const link = makeEl({ tag: 'a', parent: cover, href: 'https://example.com/guide', attrs: { href: 'https://example.com/guide' } });
+  const t = build({ videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }],
+    elementStack: [link, cover, button] });
+  const press = t.fire('pointerdown', { target: link, clientX: 300, clientY: 300 });
+  check('T3c visible linked player control is left alone', !press.defaultPrevented && cover.style['pointer-events'] !== 'none');
 }
 
 // T4: same-tab redirect from a plain-element gesture is blocked (interstitial)

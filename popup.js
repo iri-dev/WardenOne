@@ -116,16 +116,17 @@ const IMPORT_SCHEMA = Object.assign({}, IMPORT_ONLY_DEFAULTS, DEFAULTS);
 // while nothing changed. Only bridge.js resolves siteOverrides, so only what the page-side
 // scripts (the engine, the bridge, the MAIN guards) read can be scoped to one site.
 //
-//   page  -- the whole protection runs in the page and stops here completely.
-//   mixed -- the page half stops here; a network or worker half (DNR rules, header rules,
-//            download checks, the worker's own gates) keeps running, and the picker says so.
+//   page        -- the whole protection runs in the page and stops here completely.
+//   mixed       -- the page half stops here; a network or worker half (DNR rules, header rules,
+//                  download checks, the worker's own gates) keeps running, and the picker says so.
+//   coordinated -- the page guard and worker backstop both honour the site override.
 //
 // Anything not listed has no page half and is not offered; a stored override for it is dropped
 // at load and reported once. tools/test-site-override-scope.js derives the split from the
 // sources that read each key and fails when this table and the code disagree.
 const SITE_OVERRIDE_SCOPE = {
   page: [
-    'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'backTrapGuard', 'blockMetaRefresh',
+    'blockGesturelessNav', 'backTrapGuard', 'blockMetaRefresh',
     'blockSuspiciousWebRTC', 'twitchAdBlock', 'twitchRewind', 'twitchVodRewind', 'blockFirstPartyTrackers',
     'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'breachCheck', 'insecureLoginGuard',
     'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard',
@@ -148,8 +149,9 @@ const SITE_OVERRIDE_SCOPE = {
     'blockGeolocation', 'silentMode', 'capReferrer', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
     'trackerLearner', 'unshimLinks', 'stripTrackingParams',
   ],
+  coordinated: ['blockForcedPopups', 'strictPopupShield'],
 };
-const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed));
+const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed, SITE_OVERRIDE_SCOPE.coordinated));
 const SITE_OVERRIDE_MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
 
 // cryptominerCpuWatch is here because "Turn everything on" should not quietly
