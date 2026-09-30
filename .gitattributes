@@ -46,6 +46,7 @@ SECURITY.md export-ignore
 SUPPORT.md export-ignore
 .gitignore export-ignore
 .gitattributes export-ignore
+.node-version export-ignore
 # A generated ZIP is never part of a release archive, even if it is staged.
 WardenOne-store.zip export-ignore
 WardenOne-latest.zip export-ignore

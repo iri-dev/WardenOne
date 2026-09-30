@@ -27,6 +27,12 @@ function warn(message) {
   warnings.push(message);
 }
 
+const requiredNodeMajor = Number(read('.node-version').trim());
+if (!Number.isInteger(requiredNodeMajor) || Number(process.versions.node.split('.')[0]) !== requiredNodeMajor) {
+  fail('Use Node ' + (Number.isInteger(requiredNodeMajor) ? requiredNodeMajor : 'from .node-version')
+    + ' for this gate; running ' + process.version);
+}
+
 function checkJson(file) {
   try {
     JSON.parse(read(file));
@@ -148,6 +154,9 @@ function checkContentBuild() {
   'background-downloads.js',
   'bridge.js',
   'popup.js',
+  'popup-health.js',
+  'popup-diagnostics.js',
+  'popup-settings-search.js',
   'notifications.js',
   'notification-schema.js',
   'notification-manager.js',
@@ -258,6 +267,7 @@ function checkContentBuild() {
   'tools/test-eyeshield-native-site-themes.js',
   'tools/test-eyeshield-preload-hint.js',
   'tools/test-protection-health.js',
+  'tools/test-diagnostics-export.js',
   'tools/test-list-publisher-dates.js',
   'tools/test-health-extension-drop.js',
   'tools/test-twitch-adblock.js',
@@ -442,6 +452,12 @@ checkRuleCount('ADSHIELD_STATIC_RULE_COUNT', 'rules-adshield.json');
 checkContentMinProvenance();
 checkContentBuild();
 checkCommand('security posture checks', ['tools/check-security-posture.js']);
+checkCommand('README document links', ['tools/check-readme-doc-links.js']);
+checkCommand('README link staging tests', ['tools/test-readme-doc-links.js']);
+checkCommand('repository hygiene', ['tools/check-repository-hygiene.js']);
+checkCommand('repository hygiene tests', ['tools/test-repository-hygiene.js']);
+checkCommand('package performance budget', ['tools/check-performance-budget.js']);
+checkCommand('performance budget tests', ['tools/test-performance-budget.js']);
 checkCommand('memory shield tests', ['tools/test-memory-shield.js']);
 checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--check']);
 /* The harness embeds a copy of the shipped toast block so it opens by double-click
@@ -667,6 +683,7 @@ checkCommand('learned grabber scope tests', ['tools/test-learned-grabber-scope.j
 checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);
 checkCommand('manual check journal tests', ['tools/test-manual-check-journal.js']);
 checkCommand('Store candidate attestation tests', ['tools/test-store-candidate.js']);
+checkCommand('Store release gate tests', ['tools/test-store-release-gate.js']);
 checkCommand('Store rights gate tests', ['tools/test-store-rights.js']);
 checkCommand('blocked site list tests', ['tools/test-blocked-site-list.js']);
 checkCommand('user filter rules and custom lists', ['tools/test-user-filters.js']);
@@ -691,6 +708,7 @@ checkCommand('command palette', ['tools/test-command-palette.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
+checkCommand('diagnostics export tests', ['tools/test-diagnostics-export.js']);
 checkCommand('health card extension-note tests', ['tools/test-health-extension-drop.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Spotify adblock tests', ['tools/test-spotify-adblock.js']);

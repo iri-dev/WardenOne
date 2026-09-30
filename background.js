@@ -16884,7 +16884,7 @@ async function buildProtectionHealthSummary(tab) {
   else if (listAge > 72 * 60 * 60 * 1000) addIssue('info', 'WardenOne has not fetched remote lists recently.');
   if (list.publisher.stale) {
     addIssue('info', list.publisher.stale + (list.publisher.stale === 1 ? ' feed has' : ' feeds have')
-      + ' a publisher date over 30 days old. Downloaded rules remain active. Only the publisher can date a new edition; see Blocklist for the sources.');
+      + ' a publisher date over 30 days old. Downloaded rules remain active; daily checks continue while Auto-update is on. See Blocklist > Publisher dates for the sources.');
   }
   // A feed that did not answer is not a problem you have. Updates merge sources and never wipe
   // on a failed fetch, so the copy already downloaded stays active and nothing is unprotected --
@@ -17009,6 +17009,8 @@ async function buildProtectionHealthSummary(tab) {
   // one that has not answered yet is reported as what it is, and lowers nothing.
   const tabEvidence = await tabProtectionEvidence(tab, cfg);
   if (tabEvidence.state === 'failed') addIssue('warn', tabEvidence.text, true);
+  const componentFailures = (degraded && Array.isArray(degraded.failed) ? degraded.failed.length : 0)
+    + LISTENERS_NOT_REGISTERED.length + (__blocklistRulesetError ? 1 : 0);
 
   // ---- what this adds up to ------------------------------------------------------------
   // "You're safe" is said only when the page in front of the reader answered the engine's
@@ -17042,6 +17044,7 @@ async function buildProtectionHealthSummary(tab) {
     level: highest,
     detail,
     configuredShields,
+    componentFailures,
     totalShields: HEALTH_SHIELD_KEYS.length,
     tab: tabEvidence,
     blocked24h,
@@ -19955,6 +19958,9 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     'wardenone_permission_chain_state', 'wardenone_blocked_security_count',
     'wardenone_reconcile_degraded',
   ] },
+  { owner: 'Protection verification', sensitivity: 'aggregate status', area: 'local', maxAgeDays: null, maxItems: 1, retention: 'Last check until replaced or all data is erased', siteErase: 'keep', keys: [
+    'wardenone_last_verification',
+  ] },
   { owner: 'Downloaded protection lists', sensitivity: 'public list data', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Until refreshed or all data is erased', siteErase: 'keep', keys: [
     'wardenone_adshield_cosmetic', 'wardenone_adshield_cosmetic_at',
     'wardenone_adshield_cosmetic_checked_at', 'wardenone_adshield_cosmetic_hash',
@@ -20338,12 +20344,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'content-config-get' && messageSenderIsTab(sender)) {
-    // The reader's own hidden-element rules ride along with the config. Every frame used to
-    // open a second channel for them at document_start ('hidden-list'), which the fixture in
-    // PERF-02 measured as one of the two round trips every child frame paid before it could
-    // do anything; one answer carries both now. The sender's own frame URL decides the host
-    // (its inherited origin for an about:blank child), so a cross-origin frame gets its own
-    // rules and not the top page's.
+    // Return hidden rules with the config, scoped to this frame's origin, including about:blank.
     const frameHost = contentConfigFrameHost(sender);
     respond(buildContentConfigSnapshot(frameHost, contentConfigNeeds(msg.need)), sendResponse);
     return true;
@@ -20352,12 +20353,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(buildRedirectBootstrapSnapshot(sender), sendResponse);
     return true;
   }
-  /* Opening the palette from the popup when the browser leaves its suggested key unbound.
-     A conflict or a reader's shortcut change can keep a command unassigned across updates.
-     A palette that can only be opened by an unavailable shortcut is hard to discover.
-     Extension pages only, and it goes through openCommandPalette so the one-shot claim is
-     recorded exactly as it is from the keyboard -- a second way in is always the one that
-     turns out to have skipped a gate. */
+  /* Popup fallback for an unassigned shortcut. Only extension pages may enter through the
+     normal palette opener, which records the same single-use grant as the keyboard path. */
   if (msg && msg.kind === 'palette-open') {
     if (!messageSenderIsExtensionPage(sender)) {
       try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
@@ -20374,12 +20371,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
-  /* A palette pick. Three gates, and none of them trusts the page: the command must be on
-     PALETTE_ALLOWED, the pick must carry the nonce the shortcut handed THIS tab's palette
-     within the last two minutes, and that grant is consumed so one press buys one action. A
-     forged message from a compromised content-script world has no way to open the palette
-     and so never holds a nonce. The grant lives in storage.session, so the worker that opened
-     the palette need not be the one that answers the pick (MV3-06). */
+  /* Each tab may spend only its own short-lived grant on an allowed command. The grant lives
+     in storage.session so it survives an MV3 worker restart. */
   if (msg && msg.kind === 'palette-run' && messageSenderIsTab(sender)) {
     (async () => {
       try {
@@ -22519,8 +22512,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
-          CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4');
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.
           for (const omitted of woOmittedFiles()) {
@@ -22681,6 +22674,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         report.ok = false;
       }
 
+      try {
+        await localSet({ wardenone_last_verification: {
+          at: Date.now(), version: chrome.runtime.getManifest().version,
+          passed: report.ok === true && report.checks.every((check) => check.ok === true),
+        } });
+      } catch (_) {}
       sendResponse(report);
     })();
     return true; // async

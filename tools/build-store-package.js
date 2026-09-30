@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The Store package: WardenOne with explicit decisions for its separable utilities (CWS-03).
- *
- * Chrome's Web Store allows one narrow purpose per extension, and the reviewer's question is
- * whether every top-level feature delivers the stated purpose. EyeShield remains for reader-
- * controlled page presentation, and Memory Shield with its Tab Limit control remains for
- * resource protection. Twitch Rewind is omitted as a separate replay goal. The GitHub build
- * carries everything.
- *
- * Deterministic: the package is built from the HEAD tree with git's own plumbing, never from the
- * working copy, and its entries carry the commit's own time, so the same commit always yields the
- * same bytes. build-profile.js is the decision record it reads; the worker and the popup read the
- * same file at run time, which is how a package that lacks a module still runs cleanly.
- *
- *   node tools/build-store-package.js                    # write WardenOne-store.zip from HEAD
- *   node tools/build-store-package.js --out <file.zip>   # elsewhere
- *   node tools/build-store-package.js --staged           # from the staged tree instead of HEAD
- *   node tools/build-store-package.js --doc              # rewrite the generated block of
- *                                                        # docs/store-single-purpose.md
- *   node tools/build-store-package.js --check            # gate: the profile, the table, the guards,
- *                                                        # the doc and a dry-run build all agree
- */
+/* Build the Store profile from a Git tree. build-profile.js holds the utility decisions;
+   docs/store-single-purpose.md records the policy case and build commands. */
 'use strict';
 
 const fs = require('fs');
@@ -39,17 +19,11 @@ const PROFILE_FILE = 'build-profile.js';
 const DOC = path.join(ROOT, 'docs', 'store-single-purpose.md');
 const DOC_BEGIN = '<!-- BEGIN GENERATED FEATURE TABLE -->';
 const DOC_END = '<!-- END GENERATED FEATURE TABLE -->';
-/* Not part of the product: sources, tooling, the website and the workflow. The GitHub archive
-   carries them because it is the repository; the Store package is the extension. The security
-   policy and the support note are for people reading the repository, where GitHub shows them
-   (REL-03); LICENSE, NOTICE and PRIVACY.md stay -- the licence travels with the work, and a
-   reviewer opening the package finds the policy the listing links to. */
-const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^CHANGELOG\.md$/, /^CREDITS\.md$/, /^README\.md$/, /^SECURITY\.md$/, /^SUPPORT\.md$/, /\.zip$/i];
-/* The only places the package may still name an omitted file: loaders that check the profile first.
-   Each entry here has a guard in the --check list below; a name anywhere else is a build failure. */
+/* Keep source and repository docs out of the Store ZIP; retain licence and privacy files. */
+const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^\.node-version$/, /^CHANGELOG\.md$/, /^CREDITS\.md$/, /^README\.md$/, /^SECURITY\.md$/, /^SUPPORT\.md$/, /\.zip$/i];
+/* Omitted-file references are allowed only behind the checked profile guards. */
 const GUARDED_REFERENCES = {
-  // The guarded module loader, the guarded EyeShield registration, and the integrity list, which
-  // drops omitted names at run time through woOmittedFiles().
+  // Loaders and integrity checks drop omitted files at run time.
   'background.js': ['background-memory.js', 'eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'],
   'popup.js': ['eyeshield.js', 'eyeshield-sites.js'],
 };
@@ -68,8 +42,7 @@ function gitBuffer(args, input) {
   return res.stdout;
 }
 
-/* The decision record, evaluated rather than parsed, so the worker, the popup and this tool cannot
-   read it three different ways. */
+/* Evaluate the same profile source used by the worker and popup. */
 function loadProfile(source) {
   const text = source !== undefined ? source : fs.readFileSync(path.join(ROOT, PROFILE_FILE), 'utf8');
   const sandbox = { Object, String, Array };
@@ -78,11 +51,9 @@ function loadProfile(source) {
   return { build: sandbox.build, text };
 }
 
-/* The Store profile follows the explicit decision for each utility in the table. */
 function storeOmitted(build) {
   const ids = Object.keys(build.features);
-  /* Commits made before the explicit decision field omitted every recorded utility. Keep a
-     candidate built from one of those commits tied to that commit's actual decision. */
+  /* Preserve the historical omission rule when building an older commit. */
   if (ids.every((id) => build.features[id].store === undefined)) return ids;
   return ids.filter((id) => build.features[id].store === 'omit');
 }
@@ -114,9 +85,7 @@ function rewriteProfile(text, ids) {
     : rewritten;
 }
 
-/* The Store ZIP removes the omitted utility's inactive paths as well as its script files.
-   Every substitution has a required count or bounded marker, so source changes cannot silently
-   leave a half-stripped package. The full GitHub build keeps its original runtime files. */
+/* Bounded substitutions remove inactive paths and fail when their source shape changes. */
 function rewriteStoreRuntime(name, source) {
   let text = source;
   if (name === 'background.js') {
@@ -129,6 +98,8 @@ function rewriteStoreRuntime(name, source) {
     text = replaceExact(text, ", 'twitchRewind', 'twitchVodRewind'", '', 2, name);
     text = replaceExact(text, ', twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true', '', 1, name);
     text = replaceExact(text, '  paintTwitchRewindUI();\n', '', 1, name);
+    text = text.replaceAll('rewind-drop', 'foldout-drop');
+  } else if (name === 'popup-settings-search.js') {
     text = text.replaceAll('rewind-drop', 'foldout-drop');
   } else if (name === 'popup.html') {
     text = stripMarked(text, '<!-- STORE-OMIT-TWITCH-BEGIN -->\n', '<!-- STORE-OMIT-TWITCH-END -->\n', name);
@@ -148,7 +119,7 @@ function rewriteStoreRuntime(name, source) {
   return text;
 }
 
-const STORE_REWRITE_FILES = ['background.js', 'popup.js', 'popup.html', 'permissions.html', 'eyeshield.js', 'PRIVACY.md'];
+const STORE_REWRITE_FILES = ['background.js', 'popup.js', 'popup-settings-search.js', 'popup.html', 'permissions.html', 'eyeshield.js', 'PRIVACY.md'];
 const DEAD_STORE_REWIND = /twitch(?:Vod)?Rewind|twitch[-_]vod[-_]rewind|twitch[-_]rewind|Twitch (?:local )?rewind|ad-blocking and rewind|tr-minutes|data-wardenone-replay|rewind-drop/i;
 
 function omittedFilesFor(build, ids) {
@@ -280,7 +251,14 @@ function writeZip(tree, outPath) {
   const env = Object.assign({}, process.env, { GIT_INDEX_FILE: indexFile });
   try {
     git(['read-tree', tree.treeish], { env });
-    if (tree.removed.length) git(['update-index', '--force-remove', '--'].concat(tree.removed), { env });
+    /* Git needs the commit's attributes while archiving, even though they exclude themselves. */
+    const removedFromTree = tree.removed.filter((file) => file !== '.gitattributes');
+    if (removedFromTree.length) git(['update-index', '--force-remove', '--'].concat(removedFromTree), { env });
+    const attributes = git(['show', tree.treeish + ':.gitattributes']);
+    const storeAttributes = replaceExact(attributes, 'PRIVACY.md export-ignore',
+      'PRIVACY.md -export-ignore', 1, '.gitattributes');
+    const attributesOid = git(['hash-object', '-w', '--stdin'], { input: storeAttributes, env }).trim();
+    git(['update-index', '--add', '--cacheinfo', '100644,' + attributesOid + ',.gitattributes'], { env });
     for (const [p, text] of tree.rewritten) {
       const oid = git(['hash-object', '-w', '--stdin'], { input: text, env }).trim();
       git(['update-index', '--add', '--cacheinfo', '100644,' + oid + ',' + p], { env });

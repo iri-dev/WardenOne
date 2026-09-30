@@ -36,7 +36,7 @@ const ROOT = path.resolve(__dirname, '..');
 const read = (env, rel) => { try { return fs.readFileSync(process.env[env] || path.join(ROOT, rel), 'utf8'); } catch (_) { return ''; } };
 const BRIDGE = read('WARDENONE_BRIDGE', 'bridge.js');
 const BG = read('WARDENONE_BACKGROUND', 'background.js');
-const POPUP = read('WARDENONE_POPUP', 'popup.js');
+const POPUP_HEALTH = read('WARDENONE_POPUP_HEALTH', 'popup-health.js');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 
 let pass = 0;
@@ -326,7 +326,7 @@ section('worker', () => {
     /if \(Object\.keys\(payload\)\.some\(\(key\) => contentConfigInputKeys\(\)\.includes\(key\)\)\) invalidateContentConfigMemo\(\);/.test(BG));
   check('the engine status carries whether the document is configured', /configured: bridgeConfigReady/.test(BRIDGE));
   check('and Protection Health tells running from configured', /answer\.alive && answer\.configured === false/.test(BG) && /state: 'unconfigured'/.test(BG));
-  check('with a label in the popup', /state === 'unconfigured' \? 'This page: engine running, settings pending\. '/.test(POPUP));
+  check('with a label in the popup', /state === 'unconfigured' \? 'This page: engine running, settings pending\. '/.test(POPUP_HEALTH));
 });
 
 /* ---- the siblings ---------------------------------------------------------------------------- */

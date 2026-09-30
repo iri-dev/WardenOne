@@ -6,9 +6,12 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
-const source = fs.readFileSync('popup.js', 'utf8');
+const source = fs.readFileSync('popup-settings-search.js', 'utf8');
+const popupHtml = fs.readFileSync('popup.html', 'utf8');
 const searchBlock = source.match(/;\(function\(\)\{\r?\n  var inp=document\.getElementById\('wo-settings-search'\);[\s\S]*?\r?\n\}\)\(\);/);
-assert(searchBlock, 'popup settings-search block must remain discoverable');
+assert(searchBlock, 'popup settings-search module must remain discoverable');
+assert(popupHtml.indexOf('<script src="popup.js"></script>') < popupHtml.indexOf('<script src="popup-settings-search.js"></script>'),
+  'settings search must load after popup state helpers');
 
 class FakeClassList {
   constructor(names) {
@@ -176,7 +179,7 @@ const context = {
   $(id) { return document.getElementById(id); },
 };
 
-vm.runInNewContext(searchBlock[0], context, { filename: 'popup.js:settings-search' });
+vm.runInNewContext(searchBlock[0], context, { filename: 'popup-settings-search.js' });
 
 searchInput.value = 'dar';
 searchInput.emit('input');
