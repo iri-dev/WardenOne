@@ -17,6 +17,8 @@ as the work happened.
 
 ### Added
 
+- On Windows, the suggested palette and clean-address shortcuts are now Alt+Shift+O and Alt+Shift+U. Brave and Edge assigned both on fresh installs and after reloading an existing install where the old W and C suggestions stayed blank. The popup notices an unassigned palette shortcut and offers direct Open palette and Set shortcut buttons. Shortcut guidance now explains browser conflicts and user changes.
+- Verified the local Store ZIP contains no inactive Twitch Rewind scripts, settings, popup controls, permission text, privacy disclosures or integrity expectations. The proposed listing now uses the purpose record's exact sentence and explicitly awaits comparison with a future Dashboard draft; Store submission remains blocked by unresolved source rights.
 - Strengthened forced-popup protection on ad-heavy embedded video pages. A lightweight settings reply starts the popup guard before the full worker snapshot, transparent links layered over Play no longer steal the click, and the worker closes suspicious frame popups and staged blank popup windows tied to a confirmed player overlay. The player media request stays available.
 - Expanded phishing lookalike checks for `2/z`, `6/g`, `8/b`, `9/g`, repeated `1/l` and combinations of visual swaps. Encoded Cyrillic and Greek brand lookalikes are now recognized in the worker, page detector and search results. Ordinary internationalized domains no longer receive a phishing warning merely for using Punycode; the covered cases and limits are recorded in the phishing audit.
 - Checked the `/login`, `/verify`, `/account`, and `/oauth` warning reduction against the revision before `10eced2`. A password form that claims to be Discord, Steam, Google or another covered brand on a different domain now uses a matching sign-in path as corroboration for a form-trap warning. Independent sites' own account pages stay clear; `tools/test-phishing-path-intent.js` exercises both cases and records the remaining limits in the phishing audit.
@@ -189,7 +191,7 @@ as the work happened.
   the wrong word for most of what a browser exposes normally. Where it cannot
   measure something honestly it says so instead of grading it. Nothing leaves your
   device, and the page is put back as it was found.
-- A command palette on Alt+Shift+W. Past a certain number of tools, finding one
+- A command palette with a browser shortcut. Past a certain number of tools, finding one
   becomes the problem rather than lacking one. Type a few letters, press Enter.
   The overlay is display only: it draws a list and reports what you picked, and
   every action behind it is checked by the extension itself — because "pause
@@ -206,7 +208,7 @@ as the work happened.
   rule matched this way says so plainly rather than posing as an exact answer.
 - Added a browser-level clean-copy route for the current page address. Chrome
   does not expose ordinary Ctrl+C from its top address bar to extensions, so
-  WardenOne now provides Alt+Shift+C and a popup button that copy the active
+  WardenOne now provides a keyboard shortcut and a popup button that copy the active
   page URL after removing known tracking parameters and copied text-fragment
   payloads; the setting text now says exactly which page copies it can clean
   automatically.

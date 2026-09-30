@@ -361,12 +361,14 @@ function applyToUI() {
   paintTwitchRewindUI();
 }
 
+/* STORE-OMIT-TWITCH-PAINT-BEGIN */
 // Reflect the Twitch rewind buffer length into its number input. Not a data-key
 // control, so "Turn everything on" never changes the buffer size.
 function paintTwitchRewindUI() {
   const mins = $('tr-minutes');
   if (mins) mins.value = Number(config.twitchRewindMinutes) > 0 ? Number(config.twitchRewindMinutes) : 5;
 }
+/* STORE-OMIT-TWITCH-PAINT-END */
 
 // Reflect the saved Memory Shield mode (gentle/balanced/aggressive/emergency) into the
 // mode buttons. Hoisted so applyToUI() can repaint it after the config loads -- the
@@ -1783,6 +1785,13 @@ function loadCustomLists() {
   });
 }
 
+function renderPaletteShortcutState(commands) {
+  const note = $('palette-shortcut-note');
+  if (!note || !Array.isArray(commands)) return;
+  const palette = commands.find((cmd) => cmd && cmd.name === 'command-palette');
+  note.hidden = !palette || !!palette.shortcut;
+}
+
 function wireMyFilters() {
   const save = $('user-rules-save');
   if (save) save.addEventListener('click', saveUserRules);
@@ -1855,18 +1864,16 @@ function wireMyFilters() {
     });
   }
 
-  const palette = $('open-palette');
-  if (palette) {
-    palette.addEventListener('click', () => {
-      /* Goes through the same message the shortcut does, so the palette is opened by the
-         background and gets its one-shot claim exactly as it would from the keyboard.
-         Opening it from here without that would be a second way in, and the second way is
-         always the one that turns out to have skipped a gate. */
-      chrome.runtime.sendMessage({ kind: 'palette-open' }, () => {
-        try { void chrome.runtime.lastError; } catch (_) {}
-        window.close();
-      });
+  const openPaletteFromPopup = () => {
+    /* Both popup buttons use the same guarded worker path as the keyboard command. */
+    chrome.runtime.sendMessage({ kind: 'palette-open' }, () => {
+      try { void chrome.runtime.lastError; } catch (_) {}
+      window.close();
     });
+  };
+  for (const id of ['open-palette', 'open-palette-quick']) {
+    const button = $(id);
+    if (button) button.addEventListener('click', openPaletteFromPopup);
   }
 
   const privacyTest = $('open-privacy-test');
@@ -1895,6 +1902,7 @@ function wireMyFilters() {
       try { void chrome.runtime.lastError; } catch (_) {}
       shortcutList.textContent = '';
       const items = Array.isArray(commands) ? commands.filter((c) => c && c.name !== '_execute_action') : [];
+      renderPaletteShortcutState(items);
       if (!items.length) {
         shortcutList.textContent = 'Chrome did not report any shortcuts.';
         return;
@@ -1915,12 +1923,9 @@ function wireMyFilters() {
       }
     });
   }
-  const shortcutsButton = $('open-shortcuts');
-  if (shortcutsButton) {
-    shortcutsButton.addEventListener('click', () => {
-      /* Chrome does not let an extension assign its own shortcuts, so this opens the
-         browser's page for it. Offering a keybinding UI here would be inventing one that
-         cannot take effect. */
+  for (const id of ['open-shortcuts', 'set-palette-shortcut']) {
+    const button = $(id);
+    if (button) button.addEventListener('click', () => {
       chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
     });
   }
@@ -2798,7 +2803,7 @@ function copyCleanCurrentAddressFromPopup() {
     const wrote = await writePopupClipboard(result.cleaned);
     if (!wrote) {
       status.style.color = 'var(--wo-danger)';
-      status.textContent = 'Chrome refused clipboard access. Press Alt+Shift+C instead.';
+      status.textContent = 'Browser refused clipboard access. Try the clean-address shortcut shown under Keyboard shortcuts, if set.';
       button.disabled = false;
       return;
     }
@@ -4915,6 +4920,7 @@ function renderPermResults(out, hostname, res) {
   paintTabLimitUI();
 })();
 
+/* STORE-OMIT-TWITCH-INIT-BEGIN */
 // ----- Twitch local rewind: buffer length -----
 (function initTwitchRewind() {
   const mins = $('tr-minutes');
@@ -4929,6 +4935,7 @@ function renderPermResults(out, hostname, res) {
   });
   paintTwitchRewindUI();
 })();
+/* STORE-OMIT-TWITCH-INIT-END */
 
 // ----- Forget Me UI -----
 function reconcileForgetHistoryPermission() {
@@ -5136,8 +5143,8 @@ function reconcileForgetHistoryPermission() {
 })();
 
 // ----- Memory Shield UI -----
-/* The build profile (CWS-03). The Store package includes EyeShield, Memory Shield and Tab Limit,
-   and leaves out Twitch Rewind; every element marked data-feature for an omitted utility is
+/* The build profile (CWS-03). The Store package includes EyeShield, Memory Shield and Tab Limit;
+   every element marked data-feature for an omitted utility is
    removed before the popup paints, a heading with a fallback label is relabelled, and nothing
    below asks the worker for a feature this package does not carry. In the full build the omitted
    list is empty and this does nothing. */
@@ -6039,7 +6046,7 @@ $('verify-repair').addEventListener('click', () => {
       // Fuzzy/typo match.
       // Two edits used to be allowed from six characters up, which is a third of a
       // six-letter word -- so searching "speech" matched "speed", and "speech rec"
-      // returned Twitch local rewind, whose description happens to carry both "speed"
+      // returned an unrelated control whose description carried both "speed"
       // and "records". Two edits now need a word long enough for two edits to still
       // leave it recognisable. Every real typo this is for -- microphon, fingerprnt,
       // notifcation, clipboad, downlaod, certifcate -- is one edit, or long enough to
@@ -6077,18 +6084,18 @@ $('verify-repair').addEventListener('click', () => {
         g.classList.toggle('wo-hidden',hide);
         var hh=g.previousElementSibling;
         if(hh&&/^H[1-6]$/.test(hh.tagName))hh.classList.toggle('wo-hidden',hide);
-        var rewind=g.parentElement;
-        if(rewind&&rewind.classList.contains('rewind-drop')){
-          var rewindOpenAttr='data-wo-search-was-open';
+        var foldout=g.parentElement;
+        if(foldout&&foldout.classList.contains('rewind-drop')){
+          var foldoutOpenAttr='data-wo-search-was-open';
           if(q){
-            if(!rewind.hasAttribute(rewindOpenAttr))rewind.setAttribute(rewindOpenAttr,rewind.open?'true':'false');
-            rewind.classList.toggle('wo-hidden',hide);
-            if(!hide)rewind.open=true;
+            if(!foldout.hasAttribute(foldoutOpenAttr))foldout.setAttribute(foldoutOpenAttr,foldout.open?'true':'false');
+            foldout.classList.toggle('wo-hidden',hide);
+            if(!hide)foldout.open=true;
           }else{
-            rewind.classList.remove('wo-hidden');
-            if(rewind.hasAttribute(rewindOpenAttr)){
-              rewind.open=rewind.getAttribute(rewindOpenAttr)==='true';
-              rewind.removeAttribute(rewindOpenAttr);
+            foldout.classList.remove('wo-hidden');
+            if(foldout.hasAttribute(foldoutOpenAttr)){
+              foldout.open=foldout.getAttribute(foldoutOpenAttr)==='true';
+              foldout.removeAttribute(foldoutOpenAttr);
             }
           }
         }
