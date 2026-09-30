@@ -45,7 +45,7 @@ function pngSize(file) {
   if (b.length < 24 || b.toString('ascii', 1, 4) !== 'PNG') return null;
   return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
 }
-/* The PNG captures are local sources -- .gitignore keeps them out of the repo and the README
+/* The PNG captures are local sources -- they stay out of the repo, and the README
    ships their .webp twins -- so a checkout without them (the gate on GitHub) still has to be
    able to hold every frame to a capture. A source counts as present when the PNG is here or
    its tracked .webp twin is. */

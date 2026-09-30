@@ -31,8 +31,8 @@ tools/ export-ignore
 src/ export-ignore
 .github/ export-ignore
 README.md export-ignore
-# Defence in depth for private maintainer notes: .gitignore and the gate reject
-# these names, while export-ignore also keeps them out if somebody force-adds one.
+# Defence in depth for private maintainer notes: the gate rejects these names,
+# while export-ignore also keeps them out if somebody force-adds one.
 CWS-SUBMISSION.md export-ignore
 MAINTAINABILITY.md export-ignore
 # The store wants a privacy-policy URL, and the live page is the one that matters.
@@ -46,3 +46,7 @@ SECURITY.md export-ignore
 SUPPORT.md export-ignore
 .gitignore export-ignore
 .gitattributes export-ignore
+# A generated ZIP is never part of a release archive, even if it is staged.
+WardenOne-store.zip export-ignore
+WardenOne-latest.zip export-ignore
+WardenOne-v*.zip export-ignore

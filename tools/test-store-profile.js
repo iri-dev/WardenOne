@@ -33,6 +33,7 @@ const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
 const CHANGELOG = fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8');
 const GATE = fs.readFileSync(path.join(ROOT, 'tools', 'check-maintainability.js'), 'utf8');
+const ATTRIBUTES = fs.readFileSync(path.join(ROOT, '.gitattributes'), 'utf8');
 const DOC = fs.existsSync(path.join(ROOT, 'docs', 'store-single-purpose.md')) ? fs.readFileSync(path.join(ROOT, 'docs', 'store-single-purpose.md'), 'utf8') : '';
 const { h, makeDocument } = require('./lib/mini-dom.js');
 
@@ -308,7 +309,10 @@ section('the record', () => {
   check('...and says the GitHub build is unchanged', /GitHub build is unchanged/.test(DOC));
   check('the README points at the Store package and the record', /build-store-package\.js/.test(README) && /store-single-purpose\.md/.test(README));
   check('the CHANGELOG records it', /Store package/.test(CHANGELOG) && /build-store-package/.test(CHANGELOG));
-  check('the default output name is ignored by git', /^WardenOne-store\.zip$/m.test(fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8')));
+  const trackedIgnore = spawnSync('git', ['ls-files', '--error-unmatch', '.gitignore'], { cwd: ROOT, encoding: 'utf8' });
+  check('ignore rules stay local', trackedIgnore.status !== 0);
+  check('the default Store ZIP cannot enter either package', /^WardenOne-store\.zip export-ignore$/m.test(ATTRIBUTES)
+    && tool.NON_RUNTIME.some((pattern) => pattern.test('WardenOne-store.zip')));
   check('the gate runs the tool\'s check and this suite', /build-store-package\.js', '--check'/.test(GATE) && /test-store-profile\.js/.test(GATE));
 });
 

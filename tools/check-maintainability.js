@@ -449,7 +449,7 @@ checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--che
    one -- so a toast added to the engine could be missing from the page used to test
    toast timings, with nothing to say so.
 
-   Guarded on presence: both files are deliberately gitignored (see .gitignore),
+   Guarded on presence: both files are local-only and absent from a fresh clone,
    because the page and its builder only make sense as a pair and neither is
    shipped. CI has neither, so an unguarded check fails there for a file the repo
    is not supposed to contain -- which is exactly what happened when this was
