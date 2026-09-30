@@ -194,7 +194,7 @@ const TAB = { id: 1, url: 'https://example.com/page' };
       && /info\.menuItemId === WO_MENU_COPY_LINK/.test(BG));
   const command = MANIFEST.commands && MANIFEST.commands['copy-clean-current-address'];
   check('the browser-level current-address command is declared',
-    command && command.suggested_key && command.suggested_key.default === 'Alt+Shift+C');
+    command && command.suggested_key && command.suggested_key.default === 'Alt+Shift+U');
   check('the command routes to the current-address copy operation',
     /command === WO_COMMAND_COPY_CLEAN_ADDRESS\) void copyWardenCleanCurrentAddress\(\)/.test(BG));
   check('the popup offers the same current-address action',

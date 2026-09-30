@@ -11,7 +11,22 @@ const { loadProfile, storeOmitted } = require('./build-store-package.js');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wardenone-candidate-test-'));
 try {
-  const first = createCandidate(dir);
+  /* The gate runs before a commit. Build a temporary, unreachable commit from the staged tree
+     so the candidate under test is exactly what would be committed. No branch or tag moves. */
+  const cwd = path.resolve(__dirname, '..');
+  const tree = spawnSync('git', ['write-tree'], { cwd, encoding: 'utf8' });
+  assert.strictEqual(tree.status, 0, tree.stderr);
+  const parent = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
+  assert.strictEqual(parent.status, 0, parent.stderr);
+  const identity = {
+    GIT_AUTHOR_NAME: 'iri', GIT_AUTHOR_EMAIL: '294003935+iri-dev@users.noreply.github.com',
+    GIT_COMMITTER_NAME: 'iri', GIT_COMMITTER_EMAIL: '294003935+iri-dev@users.noreply.github.com',
+  };
+  const testObject = spawnSync('git', ['commit-tree', tree.stdout.trim(), '-p', parent.stdout.trim()],
+    { cwd, encoding: 'utf8', input: 'Store candidate test\n', env: { ...process.env, ...identity } });
+  assert.strictEqual(testObject.status, 0, testObject.stderr);
+  const testCommit = testObject.stdout.trim();
+  const first = createCandidate(dir, testCommit);
   assert.strictEqual(verifyCandidate(first.jsonPath).record.zipSha256, first.record.zipSha256);
   assert(first.record.files.some((f) => f.name === 'manifest.json'));
   assert(!first.record.files.some((f) => f.name.startsWith('tools/')));
@@ -23,7 +38,7 @@ try {
   for (const [id, feature] of Object.entries(build.features)) {
     for (const file of feature.files) assert.strictEqual(names.has(file), !omitted.has(id));
   }
-  const second = createCandidate(dir);
+  const second = createCandidate(dir, testCommit);
   assert.strictEqual(second.record.zipSha256, first.record.zipSha256);
   const bytes = fs.readFileSync(first.zipPath);
   bytes[Math.floor(bytes.length / 2)] ^= 1;

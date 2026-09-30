@@ -78,11 +78,12 @@ function verifyCandidate(attestationPath) {
   if (JSON.stringify(actual) !== JSON.stringify(record.files)) throw new Error('Candidate file inventory differs');
   return { record, zipPath };
 }
-function createCandidate(outDir) {
-  const commit = git(['rev-parse', 'HEAD']).toString('utf8').trim();
+function createCandidate(outDir, testCommit) {
+  const commit = testCommit || git(['rev-parse', 'HEAD']).toString('utf8').trim();
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error('Candidate commit must be a full Git object ID');
   const profileSource = git(['show', commit + ':build-profile.js']).toString('utf8');
   const tree = buildStoreTree({ treeish: commit, profileSource });
-  if (tree.dangling.length || tree.stray.length) throw new Error('Store tree has dangling or omitted references');
+  if (tree.dangling.length || tree.stray.length || tree.deadRewind.length) throw new Error('Store tree has dangling, omitted or replay references');
   fs.mkdirSync(outDir, { recursive: true });
   const temp = path.join(os.tmpdir(), 'wardenone-store-candidate-' + process.pid + '.zip');
   try {

@@ -36,7 +36,7 @@
     {
       "file": "05-command-palette.png",
       "source": "docs/screenshots/13-command-palette.png",
-      "caption": "Alt+Shift+W opens the command palette for the current tab.",
+      "caption": "The command palette opens tools for the current tab.",
       "controlled": false
     }
   ],

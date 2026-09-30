@@ -9,12 +9,12 @@
  *
  * WardenOne's Store purpose is protective browsing with reader control over page presentation
  * and resource use. EyeShield supports readability; Memory Shield releases resources used by
- * inactive tabs, and Tab Limit is part of that resource control. Twitch Rewind remains omitted
- * as a separate replay goal. The Store decision for each feature is explicit below.
+ * inactive tabs, and Tab Limit is part of that resource control. The Store decision for each
+ * feature is explicit below.
  *
- * `profile` and `omitted` are the two lines tools/build-store-package.js rewrites for the Store
- * package; in the repository they say `full` and nothing, and the gate checks that. `features` is
- * the decision record: each utility with its Store decision and everything it would carry. The
+ * tools/build-store-package.js sets `profile` to `store` and strips omitted utility entries
+ * from the packaged copy; in the repository the profile says `full` and carries every utility.
+ * `features` is the decision record: each utility with its Store decision and everything it would carry. The
  * worker imports this file, the popup loads it, and both degrade a missing feature to "not in this
  * build" rather than to an error. docs/store-single-purpose.md is generated from this table.
  */
@@ -60,6 +60,7 @@ const WARDENONE_BUILD = Object.freeze({
       messages: Object.freeze([]),
       popupSections: Object.freeze([]),
     }),
+    // STORE-OMIT-TWITCH-BEGIN
     twitchRewind: Object.freeze({
       label: 'Twitch Rewind',
       store: 'omit',
@@ -69,6 +70,7 @@ const WARDENONE_BUILD = Object.freeze({
       messages: Object.freeze([]),
       popupSections: Object.freeze([]),
     }),
+    // STORE-OMIT-TWITCH-END
   }),
 });
 
