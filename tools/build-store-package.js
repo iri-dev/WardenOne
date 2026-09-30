@@ -44,7 +44,7 @@ const DOC_END = '<!-- END GENERATED FEATURE TABLE -->';
    policy and the support note are for people reading the repository, where GitHub shows them
    (REL-03); LICENSE, NOTICE and PRIVACY.md stay -- the licence travels with the work, and a
    reviewer opening the package finds the policy the listing links to. */
-const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^CHANGELOG\.md$/, /^CREDITS\.md$/, /^README\.md$/, /^SECURITY\.md$/, /^SUPPORT\.md$/];
+const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^CHANGELOG\.md$/, /^CREDITS\.md$/, /^README\.md$/, /^SECURITY\.md$/, /^SUPPORT\.md$/, /\.zip$/i];
 /* The only places the package may still name an omitted file: loaders that check the profile first.
    Each entry here has a guard in the --check list below; a name anywhere else is a build failure. */
 const GUARDED_REFERENCES = {
