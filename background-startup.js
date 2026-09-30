@@ -108,11 +108,16 @@ function normalizeBrandish(value) {
     .replace(/vv/g, 'w')
     .replace(/[@]/g, 'a')
     .replace(/[0]/g, 'o')
-    .replace(/[1!]/g, 'i')
+    .replace(/[1]/g, 'l')
+    .replace(/[!]/g, 'i')
+    .replace(/[2]/g, 'z')
     .replace(/[3]/g, 'e')
     .replace(/[4]/g, 'a')
     .replace(/[5$]/g, 's')
+    .replace(/[6]/g, 'g')
     .replace(/[7]/g, 't')
+    .replace(/[8]/g, 'b')
+    .replace(/[9]/g, 'g')
     .replace(/[^a-z0-9]/g, '');
 }
 
@@ -134,6 +139,14 @@ function editDistanceWithin(a, b, limit) {
     if (rowMin > limit) return false;
   }
   return prev[b.length] > 0 && prev[b.length] <= limit;
+}
+
+function oneAdjacentSwap(a, b) {
+  if (a.length !== b.length || a === b) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  return i + 1 < a.length && a[i] === b[i + 1] && a[i + 1] === b[i]
+    && a.slice(i + 2) === b.slice(i + 2);
 }
 
 /* Brand words that are also ordinary words, mirrored from the engine's COMMON_WORD_BRANDS: the
@@ -178,13 +191,20 @@ function loginBrandRiskForHost(host, url) {
   const subTokens = [];
   for (const label of subLabels) for (const piece of label.split(/[-_]/)) if (piece) subTokens.push(normalizeBrandish(piece));
   const authWord = /(login|logon|signin|sign-in|verify|verification|account|secure|security|password|passwd|mfa|2fa|oauth|session|billing|invoice|payment|wallet|bank|recover|recovery|confirm|unlock|update|suspended)/i;
-  const hostAuthish = authWord.test(h);
-  const authish = hostAuthish || authWord.test(String(url || ''));
+  const normalizedHost = normalizeBrandish(h);
+  const urlAuthish = authWord.test(String(url || ''));
+  const idnLabels = wardenOneIdnLabels(h);
   for (const profile of LOGIN_BRAND_PROFILES) {
     if (loginHostMatchesOfficialBrand(h, profile)) continue;
     const brand = normalizeBrandish(profile.token);
+    /* The sign-in word must be outside the brand's own name. Otherwise 1Password
+       always contains "password", Bank of America contains "bank", and even
+       "steamfans" accidentally contains "mfa" across the two words. */
+    const hostAuthish = authWord.test(normalizedHost.replace(brand, ''));
+    const authish = hostAuthish || urlAuthish;
     let kind = '';
     for (const token of loginBrandTokens(profile)) {
+      if (idnLabels.some((label) => normalizeBrandish(label.skeleton) === token)) { kind = 'homograph'; break; }
       const common = token === brand && LOGIN_BRAND_COMMON_WORDS.has(brand);
       const visualSwap = compact === token && core !== token;
       /* Two edits from a seven-letter brand is too broad: disboard is a Discord directory,
@@ -193,13 +213,15 @@ function loginBrandRiskForHost(host, url) {
          substitutions and one-edit mistakes; rn/m and vv/w are folded above. */
       const plainSuffix = common && compact.length === token.length + 1 && compact.startsWith(token)
         && compact[compact.length - 1] !== compact[compact.length - 2];
-      if (visualSwap || (!plainSuffix && editDistanceWithin(compact, token, 1))) { kind = 'typosquat'; break; }
+      if (visualSwap || oneAdjacentSwap(compact, token)
+        || (!plainSuffix && editDistanceWithin(compact, token, 1))) { kind = 'typosquat'; break; }
       if (compact === token && !common) { kind = 'tld-swap'; break; }
       if (subTokens.includes(token)) { kind = 'subdomain'; break; }
       if (fullCompact.includes(token) && hostAuthish) { kind = 'brand-in-name'; break; }
     }
     if (!kind) continue;
-    const reason = kind === 'typosquat' ? 'resembles ' + profile.label
+    const reason = kind === 'homograph' ? 'uses look-alike characters to imitate ' + profile.label
+      : kind === 'typosquat' ? 'resembles ' + profile.label
       : kind === 'tld-swap' ? 'uses the exact name of ' + profile.label
         : kind === 'subdomain' ? 'puts the name of ' + profile.label + ' in a subdomain'
           : 'uses the name of ' + profile.label + ' beside a sign-in word';
@@ -220,7 +242,6 @@ function loginRiskVerdict(host, url, age, maxDays) {
   const reasons = [];
   const brand = loginBrandRiskForHost(h, url);
   if (brand) reasons.push(brand.reason);
-  if (/(^|\.)xn--/i.test(h)) reasons.push('domain uses punycode/homograph encoding');
   const ageDays = age && typeof age.ageDays === 'number' ? age.ageDays : null;
   const isNew = typeof ageDays === 'number' && ageDays < maxDays;
   if (isNew) reasons.push('domain is only ' + ageDays + ' day(s) old');
@@ -237,13 +258,18 @@ function loginRiskVerdict(host, url, age, maxDays) {
 
 function looksLikeLookalikeHost(host) {
   // lightweight reuse of the punycode + digit-substitution heuristics
-  const h = regDomainBg(host);
-  if (!h) return false;
-  if (/(^|\.)xn--/i.test(h)) return true; // homograph/punycode
-  if (loginBrandRiskForHost(h, '')) return true;
+  const h = String(host || '').replace(/^www\./, '').toLowerCase();
+  const rd = regDomainBg(h);
+  if (!rd) return false;
+  const brand = loginBrandRiskForHost(h, '');
+  if (brand) {
+    if (brand.kind !== 'subdomain' || brand.authish) return true;
+    const profile = LOGIN_BRAND_PROFILES.find((p) => p.label === brand.brand);
+    if (profile && profile.domains.some((d) => h.startsWith(d + '.') || h.includes('.' + d + '.'))) return true;
+  }
   // brand with digit substitution (paypa1, g00gle, micros0ft, amaz0n)
   const BRANDS = ['paypal', 'google', 'microsoft', 'amazon', 'apple', 'facebook', 'netflix', 'coinbase', 'binance', 'instagram'];
-  const core = h.split('.')[0];
+  const core = rd.split('.')[0];
   for (const b of BRANDS) {
     if (core === b) return false; // exact brand word handled by real-domain check elsewhere
     // same length, <=2 char differences, looks like the brand

@@ -2395,7 +2395,7 @@
   woOn(document, 'wo-nav-signal', (e) => {
     const d = (e && e.detail) || {};
     if (d.token !== TOKEN) return;
-    const kind = d.kind === 'player-gesture' || d.kind === 'top-nav-authorized' || d.kind === 'gesture'
+    const kind = d.kind === 'player-gesture' || d.kind === 'popup-overlay' || d.kind === 'top-nav-authorized' || d.kind === 'gesture'
       ? d.kind : '';
     if (!kind) return;
     const host = kind === 'top-nav-authorized' ? String(d.host || '').toLowerCase() : '';
@@ -2430,6 +2430,19 @@
   //    Eye Shield, Mail Shield, OAuth Guard, the search marker, the Twitch tools) through the
   //    isolated window, so they stop making one-shot requests of their own and, when they only
   //    need the switches, do not make a second round trip at all.
+  // The full snapshot gathers several datasets and can arrive after a first
+  // player click. Ask the worker for only the popup switches in parallel;
+  // storage remains private to trusted extension contexts. No other MAIN-world
+  // guard is enabled until the full content-config-get reply arrives.
+  try {
+    chrome.runtime.sendMessage({ kind: 'redirect-bootstrap-get' }, (res) => {
+      if (chrome.runtime.lastError || !res || !res.ok || !res.overrides) return;
+      const bootstrap = res.overrides;
+      postToPage(signed('redirect-bootstrap', JSON.stringify(bootstrap), {
+        source: 'wardenone', kind: 'redirect-bootstrap', token: TOKEN, overrides: bootstrap,
+      }));
+    });
+  } catch (_) {}
   const CONTENT_CONFIG_NEED = ['overrides', 'learned', 'supplemental', 'hidden'];
   const CONFIG_RETRY_BASE_MS = 300;
   const CONFIG_RETRY_MAX_MS = 5000;
