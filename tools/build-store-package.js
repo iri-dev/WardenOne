@@ -87,14 +87,69 @@ function storeOmitted(build) {
   return ids.filter((id) => build.features[id].store === 'omit');
 }
 
+function replaceExact(text, before, after, expected, where) {
+  const parts = text.split(before);
+  if (parts.length - 1 !== expected) throw new Error(where + ': expected ' + expected + ' occurrence(s) of ' + JSON.stringify(before));
+  return parts.join(after);
+}
+
+function stripMarked(text, begin, end, where) {
+  const start = text.indexOf(begin);
+  const finish = start < 0 ? -1 : text.indexOf(end, start + begin.length);
+  if (start < 0 || finish < 0 || text.indexOf(begin, start + begin.length) >= 0 || text.indexOf(end, finish + end.length) >= 0) {
+    throw new Error(where + ': Store omission markers are missing or duplicated');
+  }
+  return text.slice(0, start) + text.slice(finish + end.length);
+}
+
 function rewriteProfile(text, ids) {
   const begin = text.indexOf('// BUILD-PROFILE-BEGIN');
   const end = text.indexOf('// BUILD-PROFILE-END');
   if (begin < 0 || end < 0 || end < begin) throw new Error(PROFILE_FILE + ' has lost its BUILD-PROFILE markers');
   const lineEnd = text.indexOf('\n', begin) + 1;
-  const body = "  profile: 'store',\n  omitted: Object.freeze(" + JSON.stringify(ids).replace(/"/g, "'").replace(/,/g, ', ') + '),\n  ';
-  return text.slice(0, lineEnd) + body + text.slice(end);
+  const body = "  profile: 'store',\n  omitted: Object.freeze([]),\n  ";
+  const rewritten = text.slice(0, lineEnd) + body + text.slice(end);
+  return ids.includes('twitchRewind')
+    ? stripMarked(rewritten, '    // STORE-OMIT-TWITCH-BEGIN\n', '    // STORE-OMIT-TWITCH-END\n', PROFILE_FILE)
+    : rewritten;
 }
+
+/* The Store ZIP removes the omitted utility's inactive paths as well as its script files.
+   Every substitution has a required count or bounded marker, so source changes cannot silently
+   leave a half-stripped package. The full GitHub build keeps its original runtime files. */
+function rewriteStoreRuntime(name, source) {
+  let text = source;
+  if (name === 'background.js') {
+    text = replaceExact(text, '  twitchRewind: false,\n  twitchRewindMinutes: 5,\n  twitchVodRewind: true,\n', '', 1, name);
+    text = replaceExact(text, "tool: ['elementZapper', 'twitchRewind', 'twitchVodRewind']", "tool: ['elementZapper']", 1, name);
+    text = replaceExact(text, ", 'twitch-rewind.js', 'bridge.js'", ", 'bridge.js'", 1, name);
+  } else if (name === 'popup.js') {
+    text = stripMarked(text, '/* STORE-OMIT-TWITCH-PAINT-BEGIN */\n', '/* STORE-OMIT-TWITCH-PAINT-END */\n', name);
+    text = stripMarked(text, '/* STORE-OMIT-TWITCH-INIT-BEGIN */\n', '/* STORE-OMIT-TWITCH-INIT-END */\n', name);
+    text = replaceExact(text, ", 'twitchRewind', 'twitchVodRewind'", '', 2, name);
+    text = replaceExact(text, ', twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true', '', 1, name);
+    text = replaceExact(text, '  paintTwitchRewindUI();\n', '', 1, name);
+    text = text.replaceAll('rewind-drop', 'foldout-drop');
+  } else if (name === 'popup.html') {
+    text = stripMarked(text, '<!-- STORE-OMIT-TWITCH-BEGIN -->\n', '<!-- STORE-OMIT-TWITCH-END -->\n', name);
+    text = text.replaceAll('rewind-drop', 'foldout-drop').replaceAll('rewind-caret', 'foldout-caret');
+  } else if (name === 'permissions.html') {
+    text = replaceExact(text, '<strong>Twitch ad blocking and rewind</strong>', '<strong>Twitch ad blocking</strong>', 1, name);
+    text = replaceExact(text, ' <strong>Twitch rewind</strong> asks whether the channel has an in-progress recording of the broadcast, and sends the channel name with no credentials at all.', '', 1, name);
+  } else if (name === 'eyeshield.js') {
+    text = replaceExact(text, ', html video[data-wardenone-replay]', '', 1, name);
+  } else if (name === 'PRIVACY.md') {
+    text = replaceExact(text, 'for the ad-blocking and rewind features.', 'for ad blocking.', 1, name);
+    text = replaceExact(text, "The opt-in Twitch local rewind feature makes short, high-bitrate clips of video and audio\nalready playing in the current tab and keeps up to five minutes in volatile browser\nmemory. The clips are used only for the in-player replay, are never uploaded or saved to\ndisk by WardenOne, and are discarded when the channel, page, or tab closes. To control\nmemory use, the oldest clips may be discarded before five minutes on unusually high-\nbitrate streams.\n\n", '', 1, name);
+    text = replaceExact(text, "Two Twitch features talk to Twitch's own API at `gql.twitch.tv`, and only while you are on\na Twitch page:", "Twitch ad blocking talks to Twitch's own API at `gql.twitch.tv`, and only while you are on\na Twitch page:", 1, name);
+    text = replaceExact(text, '- **Twitch rewind** asks whether the channel you are watching has an in-progress recording\n  of the live broadcast, so it can open it at the point you joined. That request sends the\n  channel name and no credentials at all.\n', '', 1, name);
+    text = replaceExact(text, 'rather than a disclosure of anything new. Both features are described in the popup and\nboth can be turned off there.', 'rather than a disclosure of anything new. This feature is described in the popup and\ncan be turned off there.', 1, name);
+  }
+  return text;
+}
+
+const STORE_REWRITE_FILES = ['background.js', 'popup.js', 'popup.html', 'permissions.html', 'eyeshield.js', 'PRIVACY.md'];
+const DEAD_STORE_REWIND = /twitch(?:Vod)?Rewind|twitch[-_]vod[-_]rewind|twitch[-_]rewind|Twitch (?:local )?rewind|ad-blocking and rewind|tr-minutes|data-wardenone-replay|rewind-drop/i;
 
 function omittedFilesFor(build, ids) {
   const out = [];
@@ -179,11 +234,17 @@ function buildStoreTree(options) {
   const rewritten = new Map();
   rewritten.set('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
   rewritten.set(PROFILE_FILE, rewriteProfile(profileText, ids));
+  if (ids.includes('twitchRewind')) {
+    for (const name of STORE_REWRITE_FILES) {
+      if (!kept.some((entry) => entry.path === name)) throw new Error('Store runtime file missing: ' + name);
+      rewritten.set(name, rewriteStoreRuntime(name, show(name)));
+    }
+  }
   // Text of every runtime file, for the reference scan.
   const files = new Map();
   for (const e of kept) {
     if (rewritten.has(e.path)) { files.set(e.path, rewritten.get(e.path)); continue; }
-    if (/\.(?:js|html|json|css)$/.test(e.path)) files.set(e.path, show(e.path));
+    if (/\.(?:js|html|json|css|md|txt)$/i.test(e.path)) files.set(e.path, show(e.path));
     else files.set(e.path, '');
   }
   const refs = referencedFiles(files);
@@ -205,7 +266,11 @@ function buildStoreTree(options) {
       stray.push(name + ' -> ' + f);
     }
   }
-  return { treeish, ids, omittedFiles, kept, removed, rewritten, files, manifest, dangling, stray, profile: JSON.parse(JSON.stringify(build)) };
+  const deadRewind = [];
+  if (ids.includes('twitchRewind')) {
+    for (const [name, text] of files) if (DEAD_STORE_REWIND.test(text)) deadRewind.push(name);
+  }
+  return { treeish, ids, omittedFiles, kept, removed, rewritten, files, manifest, dangling, stray, deadRewind, profile: JSON.parse(JSON.stringify(build)) };
 }
 
 /* A git tree object for the package, built in a scratch index so the real index is never touched,
@@ -318,6 +383,7 @@ function check() {
     const tree = buildStoreTree({ treeish: git(['write-tree']).trim() });
     if (tree.dangling.length) problems.push('the Store tree has dangling references: ' + tree.dangling.join('; '));
     if (tree.stray.length) problems.push('the Store tree still names omitted files: ' + tree.stray.join('; '));
+    if (tree.deadRewind.length) problems.push('the Store tree still contains Twitch Rewind paths: ' + tree.deadRewind.join(', '));
     for (const f of tree.omittedFiles) if (tree.files.has(f)) problems.push('omitted file still in the tree: ' + f);
   } catch (e) {
     problems.push('dry-run build failed: ' + (e && e.message || e));
@@ -345,9 +411,10 @@ function main() {
     treeish: staged ? git(['write-tree']).trim() : 'HEAD',
     profileSource: git(['show', staged ? ':build-profile.js' : 'HEAD:build-profile.js']),
   });
-  if (tree.dangling.length || tree.stray.length) {
+  if (tree.dangling.length || tree.stray.length || tree.deadRewind.length) {
     tree.dangling.forEach((d) => console.error('dangling: ' + d));
     tree.stray.forEach((d) => console.error('names an omitted file: ' + d));
+    tree.deadRewind.forEach((d) => console.error('contains a removed utility path: ' + d));
     process.exit(1);
   }
   const { treeId, when } = writeZip(tree, out);

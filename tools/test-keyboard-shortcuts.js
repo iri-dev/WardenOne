@@ -12,7 +12,7 @@
  * ways a shortcut goes wrong:
  *
  *   1. It collides. Chrome allows four suggested keys and each one is a chance to take a
- *      combination the reader already uses, so most ship unassigned on purpose.
+ *      combination the reader already uses, so additional commands ship unassigned.
  *   2. It claims something it does not do. A shortcut listed beside an action it no
  *      longer runs is worse than no list at all, which is why the popup reads the list
  *      from Chrome rather than restating it.
@@ -65,6 +65,9 @@ for (const n of withKeys) {
 }
 check('no two defaults are the same key',
   new Set(withKeys.map((n) => commands[n].suggested_key.default)).size === withKeys.length);
+check('palette and clean-address suggestions avoid combinations unassigned in fresh Brave and Edge',
+  commands['command-palette'].suggested_key.default === 'Alt+Shift+O'
+    && commands['copy-clean-current-address'].suggested_key.default === 'Alt+Shift+U');
 
 /* ---- one tool, one shortcut ------------------------------------------------ */
 check('there is no separate picker and zapper command',
@@ -243,7 +246,30 @@ function makeRunner(world) {
   check('there is a way to change them',
     /chrome:\/\/extensions\/shortcuts/.test(POPUP_JS),
     'Chrome does not let an extension assign its own, so this has to hand off');
-  check('the copy says Chrome owns the list', /Chrome owns this list/.test(POPUP_HTML));
+  check('the copy says the browser owns shortcut assignment', /Your browser owns these keys/.test(POPUP_HTML)
+    && !/only applies a suggested key when an extension is first installed/.test(POPUP_HTML));
+  check('the unbound palette has visible routes to open it or set a key',
+    /id="palette-shortcut-note"[^>]*hidden/.test(POPUP_HTML)
+    && /id="open-palette-quick"/.test(POPUP_HTML) && /id="set-palette-shortcut"/.test(POPUP_HTML)
+    && /'open-palette', 'open-palette-quick'/.test(popupCode)
+    && /'open-shortcuts', 'set-palette-shortcut'/.test(popupCode)
+    && /renderPaletteShortcutState\(items\)/.test(popupCode));
+  {
+    const begin = POPUP_JS.indexOf('function renderPaletteShortcutState(commands) {');
+    const end = POPUP_JS.indexOf('\n}\n', begin);
+    check('the palette shortcut status function remains findable', begin >= 0 && end > begin);
+    if (begin >= 0 && end > begin) {
+      const note = { hidden: true };
+      const state = { $: (id) => id === 'palette-shortcut-note' ? note : null };
+      vm.runInNewContext(POPUP_JS.slice(begin, end + 3) + '\nthis.render = renderPaletteShortcutState;', state);
+      state.render([{ name: 'command-palette', shortcut: '' }]);
+      check('an unassigned palette is surfaced', note.hidden === false);
+      state.render([{ name: 'command-palette', shortcut: 'Alt+Shift+O' }]);
+      check('an assigned palette does not show the warning', note.hidden === true);
+      state.render([{ name: 'element-tool', shortcut: 'Alt+Shift+E' }]);
+      check('a missing palette entry does not invent an assignment problem', note.hidden === true);
+    }
+  }
   check('every command is wired to a handler',
     names.every((n) => BG.includes("'" + n + "'")), JSON.stringify(names));
 

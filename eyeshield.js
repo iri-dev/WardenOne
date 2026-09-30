@@ -1310,8 +1310,8 @@
       // player media (its `media`/`playerMedia` rules, specificity ~0,1,1) to keep
       // the remap off the stream. This adjustment must out-specify that, so scope
       // it to the player video with an html-prefixed, player-scoped selector
-      // (specificity 0,1,2) — it wins the cascade and reaches the stream (and the
-      // twitch-rewind replay surfaces) while staying a cheap per-video GPU shader.
+      // (specificity 0,1,2) — it wins the cascade and reaches the stream and
+      // separately marked replay surfaces while staying a cheap per-video GPU shader.
       const sel = 'html :is(.persistent-player,.video-player,.video-player__container,'
         + '[data-a-target="video-player"],[data-a-target="video-ref"],.live-video-player,'
         + '.channel-root__player,.twilight-player-root) video, html video[data-wardenone-replay]';

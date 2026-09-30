@@ -1378,9 +1378,10 @@ and says nothing about the rest of that domain — and the same entry takes the 
 
 ## Command Palette
 
-Press **Alt+Shift+W**, type a few letters and choose a WardenOne action: check the site, run the
-Self-Test, hide an element, clean the page address, pause here, open the Logger or Firewall, check a
-file or extension, inspect Activity, or open settings.
+When your browser has assigned the suggested **Alt+Shift+O** shortcut, press it,
+type a few letters and choose a WardenOne action: check the site, run the Self-Test, hide an
+element, clean the page address, pause here, open the Logger or Firewall, check a file or
+extension, inspect Activity, or open settings.
 
 <p align="center">
   <a href="docs/screenshots/13-command-palette.webp">
@@ -1409,8 +1410,11 @@ what you type into it or restyle its internal controls into something misleading
 
 Repeated actions use Chrome's native extension shortcut system rather than a key listener injected
 into every page. Pages cannot see or swallow those shortcuts, and you can rebind them at
-`chrome://extensions/shortcuts`. Chrome allows four defaults; later or additional commands appear
-as **Not set** until you choose a key.
+`chrome://extensions/shortcuts` (Brave also opens this as `brave://extensions/shortcuts`).
+WardenOne suggests four keys, including **Alt+Shift+U** for a clean page address.
+Browsers may leave a suggestion unassigned when it conflicts or you have cleared it. The other
+commands intentionally have no suggested key. If the palette key is **Not set**, use the popup's
+**Open palette** or **Set shortcut** button; WardenOne cannot assign a browser shortcut for you.
 
 ## Forget Me & Logins
 
