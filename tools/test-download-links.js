@@ -155,11 +155,20 @@ function bareIndexLinks(text) {
     /Source commit:.*\$GITHUB_SHA/.test(rolling)
       && /ZIP SHA-256:.*WardenOne-latest\.zip\.sha256/.test(rolling)
       && /steps\.provenance\.outputs\.attestation-url/.test(rolling));
+  check('release notes keep technical verification optional and below installation',
+    /echo "## Install"[\s\S]*?echo '<details>'[\s\S]*?echo '<summary>Optional advanced verification/.test(rolling)
+      && /Only the ZIP is needed to install WardenOne/.test(rolling)
+      && /echo '<\/details>'/.test(rolling));
 
   check('README gives the checksum asset and an origin-constrained verification command',
     README.includes(LATEST_ASSET + '.sha256')
       && /Get-FileHash .*WardenOne-latest\.zip -Algorithm SHA256/.test(README)
       && /gh attestation verify WardenOne-latest\.zip --repo iri-dev\/WardenOne --signer-workflow iri-dev\/WardenOne\/\.github\/workflows\/gate\.yml --source-ref refs\/heads\/main/.test(README));
+  check('README and site say verification is optional for advanced users',
+    /\*\*Optional, for advanced users\.\*\*/.test(README)
+      && /downloading\s+the `\.sha256` file, calculating a hash and using the GitHub CLI are optional/.test(README)
+      && /Only the ZIP is needed to install/.test(SITE)
+      && /optional SHA-256 checksum/.test(SITE));
   check('the site points readers to the verification steps',
     SITE.includes('https://github.com/iri-dev/WardenOne#verify-the-github-download'));
 }

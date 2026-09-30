@@ -65,6 +65,21 @@ function zipFiles(bytes) {
 function manifestFiles(files) {
   return [...files].sort(([a], [b]) => a.localeCompare(b)).map(([name, detail]) => ({ name, ...detail }));
 }
+function expectedFiles(commit) {
+  const profileSource = git(['show', commit + ':build-profile.js']).toString('utf8');
+  const tree = buildStoreTree({ treeish: commit, profileSource });
+  if (tree.dangling.length || tree.stray.length || tree.deadRewind.length) {
+    throw new Error('Store source tree has dangling, omitted or replay references');
+  }
+  const files = new Map();
+  for (const entry of tree.kept) {
+    const bytes = tree.rewritten.has(entry.path)
+      ? Buffer.from(tree.rewritten.get(entry.path), 'utf8')
+      : git(['cat-file', 'blob', entry.oid]);
+    files.set(entry.path, { size: bytes.length, sha256: sha256(bytes) });
+  }
+  return { tree, files: manifestFiles(files) };
+}
 function verifyCandidate(attestationPath) {
   const record = JSON.parse(fs.readFileSync(attestationPath, 'utf8'));
   if (record.schema !== 1 || !/^[0-9a-f]{40}$/.test(record.commit)
@@ -76,6 +91,23 @@ function verifyCandidate(attestationPath) {
   if (sha256(bytes) !== record.zipSha256 || bytes.length !== record.zipBytes) throw new Error('Candidate ZIP digest differs');
   const actual = manifestFiles(zipFiles(bytes));
   if (JSON.stringify(actual) !== JSON.stringify(record.files)) throw new Error('Candidate file inventory differs');
+  const expected = expectedFiles(record.commit);
+  if (JSON.stringify(actual) !== JSON.stringify(expected.files)) {
+    const actualByName = new Map(actual.map((file) => [file.name, file]));
+    const expectedByName = new Map(expected.files.map((file) => [file.name, file]));
+    const missing = expected.files.filter((file) => !actualByName.has(file.name)).map((file) => file.name);
+    const extra = actual.filter((file) => !expectedByName.has(file.name)).map((file) => file.name);
+    const changed = expected.files.filter((file) => actualByName.has(file.name)
+      && (actualByName.get(file.name).sha256 !== file.sha256 || actualByName.get(file.name).size !== file.size))
+      .map((file) => file.name);
+    throw new Error('Candidate ZIP differs from its reviewed source tree: missing [' + missing.join(', ')
+      + '], extra [' + extra.join(', ') + '], changed [' + changed.slice(0, 5).join(', ') + ']'
+      + (changed.length ? ' first ' + JSON.stringify(actualByName.get(changed[0]))
+        + ' expected ' + JSON.stringify(expectedByName.get(changed[0])) : ''));
+  }
+  if (record.version !== expected.tree.manifest.version || record.profile !== 'store') {
+    throw new Error('Candidate manifest or build profile differs');
+  }
   return { record, zipPath };
 }
 function createCandidate(outDir, testCommit) {

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-09-30",
+  "baseline": {
+    "githubZipBytes": 2112829,
+    "unpackedBytes": 9997741,
+    "staticDnrRules": 28361,
+    "manifestScriptEntries": 14,
+    "manifestScriptFiles": 12,
+    "manifestScriptBytes": 1507630,
+    "workerSourceBytes": 1364737
+  },
+  "maximum": {
+    "githubZipBytes": 2430000,
+    "unpackedBytes": 11500000,
+    "staticDnrRules": 30000,
+    "manifestScriptEntries": 16,
+    "manifestScriptFiles": 13,
+    "manifestScriptBytes": 1750000,
+    "workerSourceBytes": 1600000
+  }
+}
