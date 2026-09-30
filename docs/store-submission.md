@@ -2,6 +2,9 @@
 
 Status: **blocked pending upstream rights review (CWS-06)**. The rolling `latest-build`
 download is for GitHub users; it is not the Store upload candidate.
+There is no Chrome Web Store Dashboard draft or submitted listing yet (30 September 2026).
+The text below is proposed copy, so alignment with an actual Dashboard listing cannot be
+claimed until the release owner compares the saved fields and records the result here.
 
 The [source-by-source research record](store-rights-research.md) documents the evidence found
 for every inventoried input. It is preparation for the release-owner decision, not approval to
@@ -10,8 +13,9 @@ submit. No unresolved source is removed from the full or proposed Store build.
 ## Listing source text
 
 - **Name:** WardenOne
-- **Single purpose:** Help readers browse with more control by blocking threats and trackers,
-  guarding private data, adapting page readability and limiting resources used by idle tabs.
+- **Single purpose:** WardenOne helps readers browse with more control: it blocks threats and
+  trackers, defends privacy, warns about risky actions, offers optional page display controls
+  for readability, and releases resources held by eligible idle tabs.
 - **Short description:** Browser protection with privacy, readability and idle-tab resource controls.
 - **Detailed description:** WardenOne checks pages, links, redirects and downloads
   with built-in lists and on-device signals. Optional external reputation providers
@@ -19,17 +23,19 @@ submit. No unresolved source is removed from the full or proposed Store build.
   EyeShield offers optional brightness, contrast, warmth, saturation and grayscale
   adjustments for page readability and visual comfort. Memory Shield can discard eligible
   inactive tabs to release RAM while preserving active work and media; Tab Limit is an optional
-  part of that resource control, with tab closing separately opt-in. The Store package omits
-  Twitch Rewind; see [the package purpose record](store-single-purpose.md).
+  part of that resource control, with tab closing separately opt-in.
 - **Privacy policy:** `PRIVACY.md` at the candidate commit. Its provider and
   retention disclosures must match the Dashboard's data-use answers.
 - **Permission explanations:** `permissions.html` at the candidate commit.
   Compare every declared permission in `manifest.json` to the text submitted
   in the Dashboard; do not infer approval from the presence of this file.
 
-The publisher must compare this record with the live Dashboard fields immediately
-before submission and record any differences here. The repository cannot read
-unpublished Dashboard settings.
+This proposed listing contains no claim about a feature removed from the Store package.
+The internal [package purpose record](store-single-purpose.md) explains the exclusion.
+The publisher must compare these fields with the saved Dashboard fields immediately before
+submission and record any differences here. The repository cannot read unpublished Dashboard
+settings. Chrome reviewers decide whether this combination meets the single-purpose policy;
+the written case does not promise approval.
 
 ## Release procedure
 

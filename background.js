@@ -21,7 +21,7 @@ importScripts('domain-utils.js');
 // their own site with the content config rather than carrying 87 KB each.
 importScripts('psl-private.js');
 // Which separable utilities this package carries (CWS-03). The Store package includes EyeShield,
-// Memory Shield and Tab Limit, and omits Twitch Rewind -- the files, not just the words. Every guard
+// Memory Shield and Tab Limit, and applies the package's utility omissions. Every guard
 // below that reads woFeatureOmitted() is what lets this worker run without them.
 importScripts('build-profile.js');
 importScripts('notification-manager.js');
@@ -20352,10 +20352,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(buildRedirectBootstrapSnapshot(sender), sendResponse);
     return true;
   }
-  /* Opening the palette from the popup, for the case Chrome creates every time this
-     extension updates: a command added after install arrives with NO key bound, because
-     suggested keys are only applied at install time. A palette that can only be opened by
-     a shortcut nobody has set yet is a discovery surface nobody discovers.
+  /* Opening the palette from the popup when the browser leaves its suggested key unbound.
+     A conflict or a reader's shortcut change can keep a command unassigned across updates.
+     A palette that can only be opened by an unavailable shortcut is hard to discover.
      Extension pages only, and it goes through openCommandPalette so the one-shot claim is
      recorded exactly as it is from the keyboard -- a second way in is always the one that
      turns out to have skipped a gate. */

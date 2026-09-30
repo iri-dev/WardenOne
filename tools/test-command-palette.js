@@ -255,10 +255,11 @@ const gateTests = (async () => {
     'a second way in is always the one that turns out to have skipped a gate');
   check('the popup offers the button', /id="open-palette"/.test(
     fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8')));
-  check('and the popup explains why a new shortcut is blank',
-    /only applies a suggested key when an extension is first installed/.test(
-      fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8')),
-    'otherwise "Not set" reads as WardenOne being broken rather than as Chrome being Chrome');
+  check('and the popup explains an unassigned suggestion without claiming it can force one',
+    /a suggestion may remain <em>Not set<\/em>/.test(
+      fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8'))
+      && /cannot assign or restore a key/.test(fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8')),
+    'the browser may decline a suggested shortcut or preserve a user change');
 }
 
 /* ---- it reuses, rather than reimplements ------------------------------------ */

@@ -55,16 +55,16 @@ clearest Store case if Store distribution of this feature becomes a goal. A revi
 EyeShield or Memory Shield as separate purposes; this record does not claim guaranteed approval.
 
 - **The Store package includes EyeShield, Memory Shield and Tab Limit, and omits Twitch Rewind.**
-  For Twitch Rewind, it removes the files, manifest entries and settings, not just the listing
-  words. `tools/build-store-package.js` builds that package from the committed tree with git's
-  own plumbing, so the same commit always yields the same bytes. The build refuses dangling
-  references to files it removed.
+  For Twitch Rewind, it removes the files, manifest entries, settings, controls, permissions
+  copy and integrity expectations. `tools/build-store-package.js` builds that package from the
+  committed tree with git's own plumbing, so the same commit always yields the same bytes. The
+  build refuses dangling references to files it removed.
 - **The GitHub build is unchanged.** The repository carries all four utilities.
-- **Both packages run the same code.** `build-profile.js` tells the worker and the popup which
-  package they are in. The Store package loads Memory Shield, keeps Tab Limit controls and tab
-  actions, registers EyeShield, and removes the Twitch Rewind controls. Guards also let a build
-  without a module start cleanly and report "not in this build". The integrity check does not ask
-  for files a package lacks. In the full build the omitted list is empty.
+- **The Store package strips the omitted utility's code and copy.** `build-profile.js` tells the
+  worker and popup which package they are in. The Store package loads Memory Shield, keeps Tab
+  Limit controls and tab actions, and registers EyeShield. Guards let a build without a module
+  start cleanly and report "not in this build". The integrity check does not ask for files a
+  package lacks. In the full build the omitted list is empty.
 
 The publisher decision lives in the `store` field of each feature in `build-profile.js`.
 `include` carries the feature into the Store package; `omit` removes it. The gate

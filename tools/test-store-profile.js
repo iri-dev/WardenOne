@@ -24,6 +24,7 @@ const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -35,6 +36,7 @@ const CHANGELOG = fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8');
 const GATE = fs.readFileSync(path.join(ROOT, 'tools', 'check-maintainability.js'), 'utf8');
 const ATTRIBUTES = fs.readFileSync(path.join(ROOT, '.gitattributes'), 'utf8');
 const DOC = fs.existsSync(path.join(ROOT, 'docs', 'store-single-purpose.md')) ? fs.readFileSync(path.join(ROOT, 'docs', 'store-single-purpose.md'), 'utf8') : '';
+const SUBMISSION = fs.readFileSync(path.join(ROOT, 'docs', 'store-submission.md'), 'utf8');
 const { h, makeDocument } = require('./lib/mini-dom.js');
 
 let pass = 0;
@@ -64,6 +66,33 @@ function zipEntries(buf) {
     at += 30 + nameLen + extraLen;
   }
   return names;
+}
+/* Read the archive bytes, not only the in-memory build tree. Git writes standard ZIP central
+   directory entries; each one points to its local header and compressed payload. */
+function zipTextEntries(buf) {
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0) throw new Error('ZIP end record missing');
+  const count = buf.readUInt16LE(eocd + 10);
+  let at = buf.readUInt32LE(eocd + 16);
+  const out = new Map();
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(at) !== 0x02014b50) throw new Error('ZIP central entry missing');
+    const method = buf.readUInt16LE(at + 10);
+    const compressedSize = buf.readUInt32LE(at + 20);
+    const nameLen = buf.readUInt16LE(at + 28);
+    const extraLen = buf.readUInt16LE(at + 30);
+    const commentLen = buf.readUInt16LE(at + 32);
+    const localAt = buf.readUInt32LE(at + 42);
+    const name = buf.subarray(at + 46, at + 46 + nameLen).toString('utf8');
+    if (/\.(?:js|html|json|css|md|txt)$/i.test(name)) {
+      if (buf.readUInt32LE(localAt) !== 0x04034b50) throw new Error('ZIP local entry missing: ' + name);
+      const dataAt = localAt + 30 + buf.readUInt16LE(localAt + 26) + buf.readUInt16LE(localAt + 28);
+      const data = buf.subarray(dataAt, dataAt + compressedSize);
+      out.set(name, (method === 8 ? zlib.inflateRawSync(data) : method === 0 ? data : (() => { throw new Error('unsupported ZIP method ' + method); })()).toString('utf8'));
+    }
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
 }
 function balanced(src, start) {
   let depth = 0; let seen = false;
@@ -104,9 +133,10 @@ section('the profile', () => {
   check('each carries a goal in words', FEATURE_IDS.every((id) => /\w+ ?: .{20,}/.test(build.features[id].goal)));
   check('EyeShield and resource controls are included; only replay is omitted', ['eyeShield', 'memoryShield', 'tabLimit'].every((id) => build.features[id].store === 'include') && JSON.stringify(tool.storeOmitted(build)) === JSON.stringify(STORE_IDS));
   const store = tool.loadProfile(profileSource(true)).build;
-  check('the Store rewrite omits only replay', store.profile === 'store' && JSON.stringify(store.omitted) === JSON.stringify(STORE_IDS));
-  check('the rewrite touches only the two marked lines', PROFILE_TEXT.split('\n').length === profileSource(true).split('\n').length
-    && PROFILE_TEXT.replace(/profile: 'full',\n  omitted: Object\.freeze\(\[\]\),/, '') === profileSource(true).replace(/profile: 'store',\n  omitted: Object\.freeze\(\[[^\]]*\]\),/, ''));
+  check('the Store profile carries only its included utilities', store.profile === 'store' && store.omitted.length === 0
+    && JSON.stringify(Object.keys(store.features)) === JSON.stringify(FEATURE_IDS.filter((id) => !STORE_IDS.includes(id))));
+  check('included feature metadata survives the Store rewrite', ['eyeShield', 'memoryShield', 'tabLimit'].every((id) =>
+    JSON.stringify(store.features[id]) === JSON.stringify(build.features[id])));
 });
 
 /* ---- 2. the Store tree ------------------------------------------------------------------ */
@@ -124,13 +154,19 @@ section('the Store tree', () => {
   check('the changelog, the security policy and the support note are not in the package', ['CHANGELOG.md', 'SECURITY.md', 'SUPPORT.md', 'README.md'].every((f) => !TREE.files.has(f) && TREE.removed.includes(f)));
   check('the manifest no longer injects Twitch Rewind', !TREE.manifest.content_scripts.some((e) => (e.js || []).some((f) => /rewind/.test(f))));
   check('...and every other content script survived', TREE.manifest.content_scripts.length >= 6 && TREE.manifest.content_scripts.some((e) => (e.js || []).includes('anti-redirect.js')));
-  check('the profile inside the package says store', /profile: 'store'/.test(TREE.files.get('build-profile.js')) && /omitted: Object\.freeze\(\['twitchRewind'\]\)/.test(TREE.files.get('build-profile.js')));
+  check('the profile inside the package says store and carries no replay entry', /profile: 'store'/.test(TREE.files.get('build-profile.js'))
+    && /omitted: Object\.freeze\(\[\]\)/.test(TREE.files.get('build-profile.js')) && !/twitchRewind/.test(TREE.files.get('build-profile.js')));
   check('nothing left asks for a file that is gone', TREE.dangling.length === 0, TREE.dangling);
   check('nothing left names an omitted file outside the guarded loaders', TREE.stray.length === 0, TREE.stray);
+  check('no shipped code, setting, UI or permission copy names replay', TREE.deadRewind.length === 0, TREE.deadRewind);
+  check('the Store manifest has no replay command or message declaration', !/twitch(?:Vod)?Rewind|twitch[-_]rewind/i.test(JSON.stringify(TREE.manifest)));
+  check('the Store permissions page describes Twitch ad blocking only', /<strong>Twitch ad blocking<\/strong>/.test(TREE.files.get('permissions.html'))
+    && !/Twitch ad blocking and rewind|Twitch rewind/i.test(TREE.files.get('permissions.html')));
 });
 
 /* ---- 3. the worker under each profile --------------------------------------------------- */
 function workerRealm(store, extra) {
+  const workerText = store ? TREE.files.get('background.js') : BG;
   const state = { imported: [], registered: [], unregistered: [], responses: [], created: [] };
   const sandbox = Object.assign({
     Object, String, Array, Number, JSON, Promise, Math, console,
@@ -154,19 +190,19 @@ function workerRealm(store, extra) {
   }, extra || {});
   vm.createContext(sandbox);
   const parts = [profileSource(store)];
-  parts.push(between(BG, 'const MODULE_LOADED = { memory: false };', '\n// ---- Forget Me When I Leave', 'the module loader'));
-  parts.push(between(BG, 'const WO_MENU_ITEMS = [', '\n/* Built only when the definition changed', 'the menu table'));
-  parts.push(grabFn(BG, 'wardenMenuFingerprint'));
+  parts.push(between(workerText, 'const MODULE_LOADED = { memory: false };', '\n// ---- Forget Me When I Leave', 'the module loader'));
+  parts.push(between(workerText, 'const WO_MENU_ITEMS = [', '\n/* Built only when the definition changed', 'the menu table'));
+  parts.push(grabFn(workerText, 'wardenMenuFingerprint'));
   // The registration's file list and its helpers (the preload hint file per mode, PRIV-12).
-  parts.push(between(BG, 'const EYESHIELD_PRELOAD_MODES = [', ';', 'the preload mode list') + ';');
-  parts.push(grabFn(BG, 'eyeShieldPreloadFile'));
-  parts.push(grabFn(BG, 'eyeShieldScriptFiles'));
-  parts.push(grabFn(BG, 'eraseEyeShieldSiteMarkerFromOpenTabs'));
-  parts.push(grabFn(BG, 'reconcileEyeShieldInjection'));
+  parts.push(between(workerText, 'const EYESHIELD_PRELOAD_MODES = [', ';', 'the preload mode list') + ';');
+  parts.push(grabFn(workerText, 'eyeShieldPreloadFile'));
+  parts.push(grabFn(workerText, 'eyeShieldScriptFiles'));
+  parts.push(grabFn(workerText, 'eraseEyeShieldSiteMarkerFromOpenTabs'));
+  parts.push(grabFn(workerText, 'reconcileEyeShieldInjection'));
   // The integrity list, as the repair handler assembles it, up to the loop that fetches it.
-  parts.push('async function coreFiles() {' + between(BG, 'const CORE_FILES = [', '\n      // 1. core files present', 'the integrity list') + '\nreturn CORE_FILES; }');
+  parts.push('async function coreFiles() {' + between(workerText, 'const CORE_FILES = [', '\n      // 1. core files present', 'the integrity list') + '\nreturn CORE_FILES; }');
   // The message guard, alone: the first statement of the memory-* block.
-  const guard = between(BG, "if (msg && msg.kind && (woOmittedMessage(msg.kind)", "if (msg && msg.kind === 'memory-score')", 'the message guard');
+  const guard = between(workerText, "if (msg && msg.kind && (woOmittedMessage(msg.kind)", "if (msg && msg.kind === 'memory-score')", 'the message guard');
   parts.push('function guardMessage(msg, sendResponse) {' + guard + '\nreturn false; }');
   parts.push('this.api = { MODULE_LOADED, WO_MENU_ITEMS, wardenMenuFingerprint, reconcileEyeShieldInjection, coreFiles, guardMessage, woFeatureOmitted, woOmittedFiles, woOmittedMessage, WARDENONE_BUILD };');
   vm.runInContext(parts.join('\n'), sandbox, { filename: 'worker-' + (store ? 'store' : 'full') + '.js' });
@@ -230,7 +266,7 @@ function popupRealm(store) {
   const doc = makeDocument('chrome-extension://x/popup.html', [
     h('h2', { id: 'eyeshield-title', 'data-feature': 'eyeShield' }, ['EyeShield']),
     h('section', { id: 'eyeshield-panel', 'data-feature': 'eyeShield' }, [h('button', { class: 'eyeshield-mode' })]),
-    h('details', { class: 'rewind-drop', 'data-feature': 'twitchRewind' }, [h('input', { 'data-key': 'twitchRewind' })]),
+    ...(store ? [] : [h('details', { class: 'rewind-drop', 'data-feature': 'twitchRewind' }, [h('input', { 'data-key': 'twitchRewind' })])]),
     h('h2', { id: 'mem-title', 'data-feature': 'memoryShield', 'data-feature-fallback': 'Resource Saver' }, ['Memory Shield']),
     h('div', { class: 'row', 'data-feature': 'memoryShield' }, [h('input', { 'data-key': 'memoryShield' })]),
     h('div', { class: 'row', 'data-feature': 'tabLimit' }, [h('input', { id: 'tl-guard' })]),
@@ -240,7 +276,7 @@ function popupRealm(store) {
   ]);
   const sandbox = { document: doc, Object, String, Array, console };
   vm.createContext(sandbox);
-  vm.runInContext(profileSource(store) + '\n' + grabFn(POPUP_JS, 'applyBuildProfile') + '\nthis.omitted = applyBuildProfile();', sandbox);
+  vm.runInContext(profileSource(store) + '\n' + grabFn(store ? TREE.files.get('popup.js') : POPUP_JS, 'applyBuildProfile') + '\nthis.omitted = applyBuildProfile();', sandbox);
   return { doc, omitted: sandbox.omitted };
 }
 section('the popup', () => {
@@ -251,7 +287,7 @@ section('the popup', () => {
   check('...Memory Shield and Tab Limit controls remain', q('input[data-key="memoryShield"]').length === 1 && q('#tl-guard').length === 1 && q('#mem-score').length === 1);
   check('...the Memory Shield heading remains', q('#mem-title').length === 1 && q('#mem-title')[0].textContent === 'Memory Shield');
   check('...the Resource Saver row and the rest of the popup stay', q('#resource-saver').length === 1 && q('#privacy-title').length === 1);
-  check('...and the applier reports what it removed', JSON.stringify(store.omitted) === JSON.stringify(STORE_IDS));
+  check('...and the physically trimmed package needs no runtime UI removal', store.omitted.length === 0);
   const full = popupRealm(false);
   const fq = (s) => full.doc.querySelectorAll(s);
   check('under the full profile nothing moves', fq('#eyeshield-panel').length === 1 && fq('.rewind-drop').length === 1 && fq('#tl-guard').length === 1 && fq('#mem-title')[0].textContent === 'Memory Shield' && full.omitted.length === 0);
@@ -290,12 +326,20 @@ section('determinism', () => {
     const hb = crypto.createHash('sha256').update(fs.readFileSync(b)).digest('hex');
     check('two builds of one tree are byte-identical', ha === hb && fs.statSync(a).size > 100000, [ha.slice(0, 12), hb.slice(0, 12)]);
     const names = zipEntries(fs.readFileSync(a));
+    const zippedText = zipTextEntries(fs.readFileSync(a));
     check('the archive carries EyeShield and Memory Shield and excludes replay', names.includes('manifest.json') && names.includes('build-profile.js') && names.includes('background.js') && names.includes('background-memory.js')
       && ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((n) => names.includes(n))
       && !names.some((n) => ['twitch-rewind.js', 'twitch-vod-rewind.js'].includes(n)), names.filter((n) => /eyeshield|memory|rewind/.test(n)));
     check('...and no tooling, sources or docs', !names.some((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)), names.filter((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)).slice(0, 5));
     check('manifest.json sits at the root of the archive', names.includes('manifest.json') && !names.some((n) => /\/manifest\.json$/.test(n)));
     check('the entry count matches the tree', names.filter((n) => !n.endsWith('/')).length === TREE.kept.length, [names.filter((n) => !n.endsWith('/')).length, TREE.kept.length]);
+    const normalizedArchiveText = (text) => text.replace(/\r\n/g, '\n');
+    const zipTextMismatch = [...zippedText].filter(([name, value]) => normalizedArchiveText(value) !== normalizedArchiveText(TREE.files.get(name))).map(([name]) => name);
+    const zipTextMissing = [...TREE.files.keys()].filter((name) => /\.(?:js|html|json|css|md|txt)$/i.test(name) && !zippedText.has(name));
+    check('the ZIP text matches the checked Store tree after archive newline conversion', zipTextMismatch.length === 0 && zipTextMissing.length === 0,
+      { mismatch: zipTextMismatch, missing: zipTextMissing });
+    check('the ZIP carries no removed replay code, UI, settings, messages, docs or integrity paths',
+      [...zippedText].every(([, value]) => !/twitch(?:Vod)?Rewind|twitch[-_]vod[-_]rewind|twitch[-_]rewind|Twitch (?:local )?rewind|ad-blocking and rewind|tr-minutes|data-wardenone-replay|rewind-drop/i.test(value)));
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
   }
@@ -307,6 +351,13 @@ section('the record', () => {
   check('...records all four utility decisions', FEATURE_IDS.every((id) => DOC.includes('`' + id + '`')) && ['eyeShield', 'memoryShield', 'tabLimit'].every((id) => new RegExp('`' + id + '`\\) \\| Included').test(DOC)) && /Twitch Rewind \(`twitchRewind`\) \| Omitted/.test(DOC));
   check('...has a row for every popup section', tool.popupSections().every((s) => DOC.includes('| ' + s + ' |')), tool.popupSections().filter((s) => !DOC.includes('| ' + s + ' |')));
   check('...and says the GitHub build is unchanged', /GitHub build is unchanged/.test(DOC));
+  const purpose = 'WardenOne helps readers browse with more control: it blocks threats and trackers, defends privacy, warns about risky actions, offers optional page display controls for readability, and releases resources held by eligible idle tabs.';
+  check('the proposed listing and purpose record use the same purpose sentence', DOC.replace(/^> ?/gm, '').replace(/\s+/g, ' ').includes(purpose)
+    && SUBMISSION.replace(/\s+/g, ' ').includes(purpose));
+  check('the listing is marked proposed and Dashboard comparison pending', /no Chrome Web Store Dashboard draft or submitted listing yet/i.test(SUBMISSION.replace(/\s+/g, ' '))
+    && /alignment with an actual Dashboard listing cannot be claimed/i.test(SUBMISSION.replace(/\s+/g, ' ')));
+  const listingDescription = /\*\*Detailed description:\*\*([\s\S]*?)\n- \*\*Privacy policy:\*\*/.exec(SUBMISSION);
+  check('the proposed listing does not advertise excluded replay', !!listingDescription && !/Twitch Rewind|local rewind|replay/i.test(listingDescription[1]));
   check('the README points at the Store package and the record', /build-store-package\.js/.test(README) && /store-single-purpose\.md/.test(README));
   check('the CHANGELOG records it', /Store package/.test(CHANGELOG) && /build-store-package/.test(CHANGELOG));
   const trackedIgnore = spawnSync('git', ['ls-files', '--error-unmatch', '.gitignore'], { cwd: ROOT, encoding: 'utf8' });

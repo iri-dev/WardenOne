@@ -82,7 +82,7 @@
   .shield svg { width: 24px; height: 24px; }
   .title { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: 0.01em; color: var(--ink); }
   .sub { color: var(--ink-faint); font-size: 11px; font-weight: 600; margin-top: 1px; }
-  /* My filters. The section is a rewind-drop like Twitch local rewind, so only
+  /* My filters. The section uses the shared disclosure style, so only
      the field styling lives here. */
   .adv-textarea, .adv-input {
     width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px;
@@ -364,6 +364,11 @@
     border-radius: 12px;
     font-size: 12px;
   }
+  .palette-shortcut-note { margin: 8px 16px 2px; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 12px; background: var(--card); color: var(--wo-text); font-size: 11px; line-height: 1.45; }
+  .palette-shortcut-note[hidden] { display: none; }
+  .palette-shortcut-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .palette-shortcut-actions .btn { flex: 1; padding: 7px 8px; font-size: 10.5px; }
   .all-on-note {
     margin-top: 6px;
     font-size: 11px;
@@ -774,6 +779,13 @@
   <div class="top-quick">
     <button class="btn primary" id="all-on" type="button">Turn on recommended protections</button>
     <div class="all-on-note" id="all-on-note" hidden></div>
+  </div>
+  <div class="palette-shortcut-note" id="palette-shortcut-note" role="status" hidden>
+    <strong>Command palette shortcut is not set.</strong> Your browser did not assign the suggested key. You can still open the palette, or choose a key in the browser's shortcut settings.
+    <div class="palette-shortcut-actions">
+      <button class="btn" id="open-palette-quick" type="button">Open palette</button>
+      <button class="btn" id="set-palette-shortcut" type="button">Set shortcut</button>
+    </div>
   </div>
 
   <details class="health-panel" id="protection-health-panel" aria-live="polite">
@@ -1268,6 +1280,7 @@
       <label class="tg"><input type="checkbox" data-key="blockSponsoredSearchResults"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
+<!-- STORE-OMIT-TWITCH-BEGIN -->
 <details class="rewind-drop" data-feature="twitchRewind">
       <summary>Twitch local rewind<span class="rewind-caret" aria-hidden="true">&#9662;</span></summary>
     <div class="card-group">
@@ -1285,6 +1298,7 @@
     </div>
     </div>
     </details>
+<!-- STORE-OMIT-TWITCH-END -->
 <h2 data-feature="memoryShield" data-feature-fallback="Resource Saver">Memory Shield</h2>
     <div class="card-group">
     <div data-feature="memoryShield" class="row">
@@ -1605,7 +1619,7 @@
 <!-- Two things a bundled list can never cover: a rule only this person wants, and
      a list only this person subscribes to. Neither gets a shield toggle -- a rule
      you wrote is on because you wrote it, and each list carries its own switch.
-     Collapsed like Twitch local rewind: nobody needs filter syntax for WardenOne
+     Collapsed as an advanced disclosure: nobody needs filter syntax for WardenOne
      to work, so it must not read as something left unfinished. -->
 <details class="rewind-drop" id="my-filters-drop">
       <summary>My filters (advanced)<span class="rewind-caret" aria-hidden="true">&#9662;</span></summary>
@@ -1666,15 +1680,14 @@
       <div class="desc">Runs live probes against the page in your current tab and reports what it could actually read &mdash; canvas, GPU, audio, screen, local addresses, tracking parameters, hyperlink auditing and the rest. <strong>Nothing is read off this settings screen:</strong> each probe runs twice on the same page, once with WardenOne's shields and once without, and the two answers are compared. If a browser update ever quietly breaks a shield, the two start agreeing and the test says so.</div>
       <button class="btn" id="open-privacy-test" type="button" style="width:100%;margin-top:8px;">Run the privacy test</button>
     </div>
-    <!-- Keyboard shortcuts. Read from Chrome rather than restated here: the reader can
+    <!-- Keyboard shortcuts. Read from the browser rather than restated here: the reader can
          rebind any of these, and a hard-coded table would start lying the moment they
-         did. Chrome does not let an extension assign a shortcut itself, so the button
-         opens the browser's own page for it rather than pretending otherwise. -->
+         did. Extensions cannot force an assignment, so the button opens the browser's page. -->
     <div class="row" style="display:block;border-bottom:none;">
       <div class="name">Keyboard shortcuts</div>
-      <div class="desc">Chrome owns this list, and the keys below are whatever it currently reports &mdash; change or clear any of them and this updates to match. <strong>A shortcut added by an update shows as <em>Not set</em> until you assign it:</strong> Chrome only applies a suggested key when an extension is first installed, so anything new arrives blank rather than taking a combination you might already be using.</div>
+      <div class="desc">Your browser owns these keys. WardenOne suggests up to four; a suggestion may remain <em>Not set</em> if the key is unavailable or you cleared it. WardenOne cannot assign or restore a key over your browser settings. The remaining commands intentionally have no suggested key.</div>
       <div id="shortcut-list" class="shortcut-list">Loading&hellip;</div>
-      <button class="btn" id="open-shortcuts" type="button" style="width:100%;margin-top:8px;">Change these in Chrome</button>
+      <button class="btn" id="open-shortcuts" type="button" style="width:100%;margin-top:8px;">Change these in your browser</button>
       <!-- So the palette is reachable whether or not its key is bound. It is the way the
            rest of the tools are found, and a discovery surface that needs a shortcut
            nobody has set yet is one nobody discovers. -->
