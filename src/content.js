@@ -9423,20 +9423,25 @@
         "binance.us"],
         chase:["chase.com",
         "jpmorganchase.com"],
-        wellsfargo:["wellsfargo.com"]
+        wellsfargo:["wellsfargo.com"],
+        discord:["discord.com",
+        "discordapp.com"],
+        steam:["steampowered.com",
+        "steamcommunity.com"]
       },
       brandClaimMismatch=scope=>{
         try{
-          let text="";
-          (scope.querySelectorAll?scope.querySelectorAll('h1,h2,h3,legend,label,[class*="title" i],[class*="heading" i]'):[]).forEach(h=>{
-            text+=" "+(h.textContent||"")
-          });
-          const own=(scope.textContent||"").slice(0,
-          400);
-          text=(text+" "+own).toLowerCase();
-          for(const brand in BRAND_LOGIN)if(new RegExp("(sign[ -]?in to|log[ -]?in to|continue to|"+brand+"\\s+account|welcome to)\\s+"+brand+"|"+brand+"\\s+(account\\s+)?(sign[ -]?in|log[ -]?in|login)",
-          "i").test(text)&&!BRAND_LOGIN[brand].some(d=>sibling(here,
-          regHost(d))))return brand.charAt(0).toUpperCase()+brand.slice(1)
+          const headings=Array.from(scope.querySelectorAll?scope.querySelectorAll('h1,h2,h3,legend,label,[class*="title" i],[class*="heading" i]'):[]);
+          const own=String(scope.textContent||"").slice(0,
+          400).trim();
+          for(const brand in BRAND_LOGIN){
+            const exact=new RegExp("^(?:sign[ -]?in to|log[ -]?in to|welcome to)\\s+"+brand+"(?:\\s+account)?[.!?:]?\\s*$",
+            "i"),
+            named=new RegExp("^"+brand+"\\s+(?:account\\s+)?(?:sign[ -]?in|log[ -]?in|login)[.!?:]?\\s*$",
+            "i");
+            if((headings.some(h=>exact.test(String(h.textContent||"").trim())||named.test(String(h.textContent||"").trim()))||exact.test(own)||named.test(own))&&!BRAND_LOGIN[brand].some(d=>sibling(here,
+            regHost(d))))return brand.charAt(0).toUpperCase()+brand.slice(1)
+          }
         }
         catch(_){
 
@@ -9608,8 +9613,12 @@
         WO.__pageRisk&&WO.__pageRisk.phishing&&(score+=3,
         reasons.push("this page is a look-alike of "+(WO.__pageRisk.brand||"a real site")));
         const brand=brandClaimMismatch(form);
+        let pathName=String(location.pathname||"");
+        try{pathName=decodeURIComponent(pathName)}catch(_){}
         return brand&&(score+=4,
-        reasons.push("it claims to be "+brand+", but this site is not "+brand)),
+        reasons.push("it claims to be "+brand+", but this site is not "+brand),
+        /(?:^|\/)(?:login|verify|account|oauth2?)(?:\/|$|\.(?:php|html?|aspx?)(?:\/|$))/i.test(pathName)&&(score+=1,
+        reasons.push("the page address asks for sign-in or account verification"))),
         isOverlay(form)&&(score+=2,
         reasons.push("the login box is an overlay floating on top of the page")),
         injectedForms.has(pwField)&&(score+=2,
@@ -16321,7 +16330,10 @@
          anything else under a two-part suffix. SITE_BOUNDARY.site already
          knows the difference and is used for exactly this elsewhere in the
          file; the detector was the one place still counting dots. */
-      sld=(SITE_BOUNDARY.site(here).split(".")[0]||here),
+      siteHost=SITE_BOUNDARY.site(here),
+      sld=(siteHost.split(".")[0]||here),
+      subdomainLabels=parts.slice(0,
+      -siteHost.split(".").length),
       fullHost=here,
       visualNorm=s=>s.replace(/rn/g,
       "m").replace(/vv/g,
@@ -16331,7 +16343,10 @@
       "e").replace(/5/g,
       "s").replace(/7/g,
       "t").replace(/8/g,
-      "b").replace(/\$/g,
+      "b").replace(/2/g,
+      "z").replace(/6/g,
+      "g").replace(/9/g,
+      "g").replace(/\$/g,
       "s").replace(/@/g,
       "a").replace(/!/g,
       "i"),
@@ -16401,6 +16416,13 @@
         diffs>1)return!1;
         return 1===diffs&&adj
       },
+      isAdjacentSwap=(cand,
+      brand)=>{
+        if(cand.length!==brand.length||cand===brand)return!1;
+        let i=0;
+        while(i<cand.length&&cand[i]===brand[i])i++;
+        return i+1<cand.length&&cand[i]===brand[i+1]&&cand[i+1]===brand[i]&&cand.slice(i+2)===brand.slice(i+2)
+      },
       isTyposquat=(cand,
       brand)=>{
         if(cand===brand)return!1;
@@ -16410,6 +16432,9 @@
         if(cand.length===brand.length&&1===lev(cand,
         brand))return!0;
         if(nc.length===nb.length&&1===lev(nc,
+        nb))return!0;
+        if(isAdjacentSwap(cand,
+        brand)||isAdjacentSwap(nc,
         nb))return!0;
         if(brand.length>=5&&1===Math.abs(cand.length-brand.length)){
           const longer=cand.length>brand.length?cand:brand,
@@ -16458,6 +16483,7 @@
       "pnc"]);
       let phishHit=null;
       const isPuny=/(^|\.)xn--/i.test(here),
+      idnLabels=wardenOneIdnLabels(here),
       hasPhishWord=/(login|signin|sign-in|secure|security|verify|verification|account|update|confirm|wallet|recovery|unlock|suspended)/.test(here),
       /* The same list the grabber/payment host filter uses. A registrable
          domain on one of these is not proof of anything by itself, which is
@@ -16468,7 +16494,23 @@
           phishHit=null;
           break
         }
-        if(isTyposquat(sld,
+        if(idnLabels.some(label=>label.skeleton===brand||(BRANDS[brand]||[]).some(d=>d.includes(brand)&&label.skeleton===d.split(".")[0]))){
+          phishHit={
+            brand:brand,
+            kind:"homograph",
+            confidence:"high"
+          }
+
+        }
+        else if((BRANDS[brand]||[]).some(d=>here.startsWith(d+".")||here.includes("."+d+"."))){
+          phishHit={
+            brand:brand,
+            kind:"subdomain-spoof",
+            confidence:"medium"
+          }
+
+        }
+        else if(isTyposquat(sld,
         brand)){
           const hi=visualNorm(sld)===visualNorm(brand)||subIsKbTypo(sld,
           brand);
@@ -16503,6 +16545,11 @@
           brand:brand,
           kind:"tld-swap",
           confidence:"high"
+        };
+        if(!phishHit&&hasPhishWord&&subdomainLabels.some(label=>label.includes(brand)&&/(login|signin|sign-in|secure|verify|verification|account|update|confirm|wallet|recovery|unlock|suspended)/.test(label)))phishHit={
+          brand:brand,
+          kind:"brand-in-name",
+          confidence:"medium"
         };
         if(phishHit)break
       }

@@ -40,6 +40,78 @@ const WARDENONE_OPAQUE_TENANT_SUFFIXES = Object.freeze([
   'storage.googleapis.com',
 ]);
 
+/* A small, deliberate subset of the Unicode confusables used in protected-brand
+ * hostnames. This is not a full UTS #39 skeleton. Unknown characters remain
+ * unknown rather than being silently stripped into an ASCII brand name. */
+const WARDENONE_IDN_CONFUSABLES = Object.freeze({
+  '\u0430': 'a', '\u0441': 'c', '\u0435': 'e', '\u0456': 'i', '\u0458': 'j',
+  '\u04cf': 'l', '\u043c': 'm', '\u043e': 'o', '\u0440': 'p', '\u0455': 's',
+  '\u0442': 't', '\u0443': 'y', '\u0445': 'x', '\u0501': 'd', '\u051d': 'w',
+  '\u03b1': 'a', '\u03b2': 'b', '\u03b5': 'e', '\u03b9': 'i', '\u03ba': 'k',
+  '\u03bf': 'o', '\u03c1': 'p', '\u03c4': 't', '\u03c5': 'u', '\u03bd': 'v',
+  '\u03c7': 'x',
+});
+
+/* RFC 3492 decoding of one ACE label. Browser URL.hostname supplies the ACE form;
+ * URL does not expose a reverse conversion in page or service-worker JavaScript. */
+function wardenOnePunycodeDecode(label) {
+  const ace = String(label || '').toLowerCase();
+  if (!/^xn--[a-z0-9-]{1,59}$/.test(ace)) return '';
+  const input = ace.slice(4);
+  const dash = input.lastIndexOf('-');
+  const output = dash < 0 ? [] : Array.from(input.slice(0, dash), (ch) => ch.codePointAt(0));
+  let pos = dash < 0 ? 0 : dash + 1;
+  let n = 128;
+  let i = 0;
+  let bias = 72;
+  const digit = (ch) => /[a-z]/.test(ch) ? ch.charCodeAt(0) - 97
+    : /[0-9]/.test(ch) ? ch.charCodeAt(0) - 22 : -1;
+  while (pos < input.length) {
+    const old = i;
+    let weight = 1;
+    for (let k = 36; ; k += 36) {
+      if (pos >= input.length) return '';
+      const value = digit(input[pos++]);
+      if (value < 0 || !Number.isSafeInteger(i + value * weight)) return '';
+      i += value * weight;
+      const threshold = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
+      if (value < threshold) break;
+      weight *= 36 - threshold;
+      if (!Number.isSafeInteger(weight)) return '';
+    }
+    let delta = Math.floor((i - old) / (old === 0 ? 700 : 2));
+    delta += Math.floor(delta / (output.length + 1));
+    let k = 0;
+    while (delta > 455) { delta = Math.floor(delta / 35); k += 36; }
+    bias = k + Math.floor(36 * delta / (delta + 38));
+    n += Math.floor(i / (output.length + 1));
+    if (n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) return '';
+    i %= output.length + 1;
+    output.splice(i++, 0, n);
+  }
+  try { return String.fromCodePoint(...output); } catch (_) { return ''; }
+}
+
+function wardenOneIdnLabels(host) {
+  const value = String(host || '').toLowerCase();
+  if (!value.includes('xn--')) return [];
+  const found = [];
+  for (const label of value.split('.')) {
+    if (!label.startsWith('xn--')) continue;
+    const decoded = wardenOnePunycodeDecode(label);
+    if (!decoded) continue;
+    let skeleton = '';
+    let mapped = false;
+    for (const ch of decoded.normalize('NFKC').toLowerCase()) {
+      const replacement = WARDENONE_IDN_CONFUSABLES[ch];
+      if (replacement) mapped = true;
+      skeleton += replacement || ch;
+    }
+    if (mapped && /^[a-z0-9]+$/.test(skeleton)) found.push({ label, skeleton });
+  }
+  return found;
+}
+
 function regDomain(host) {
   let value = String(host || '').trim().toLowerCase().replace(/\.+$/, '');
   try {

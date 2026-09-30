@@ -221,6 +221,8 @@ function checkContentBuild() {
   'tools/test-optional-history-permission.js',
   'tools/test-warning-dialogs.js',
   'tools/test-phishing-false-positives.js',
+  'tools/test-phishing-differential.js',
+  'tools/test-phishing-path-intent.js',
   'tools/test-element-picker.js',
   'tools/test-engine-mutation-cost.js',
   'tools/test-youtube-compat.js',
@@ -271,6 +273,7 @@ function checkContentBuild() {
   'tools/test-network-compatibility.js',
   'tools/test-smart-script-recovery.js',
   'tools/test-script-popup-shield.js',
+  'tools/test-frame-popup-backstop.js',
   'tools/test-site-compatibility.js',
   'tools/test-streaming-compatibility.js',
   'tools/test-token-exfil-trust.js',
@@ -638,6 +641,8 @@ checkCommand('permission-chain trust tests', ['tools/test-permission-chain-trust
 checkCommand('warning dialog tests', ['tools/test-warning-dialogs.js']);
 checkCommand('warning accessibility tests', ['tools/test-warning-accessibility.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
+checkCommand('phishing differential tests', ['tools/test-phishing-differential.js']);
+checkCommand('phishing path-intent tests', ['tools/test-phishing-path-intent.js']);
 checkCommand('behavioural false-positive tests', ['tools/test-behavioral-false-positives.js']);
 checkCommand('google cleanup tests', ['tools/test-google-cleanup.js']);
 checkCommand('payment card guard tests', ['tools/test-payment-card-guard.js']);
@@ -699,6 +704,7 @@ checkCommand('onboarding bundle tests', ['tools/test-onboarding-bundles.js']);
 checkCommand('runtime idempotence tests', ['tools/test-runtime-idempotence.js']);
 checkCommand('anti redirect tests', ['tools/test-anti-redirect.js']);
 checkCommand('frame-driven redirect tests', ['tools/test-frame-redirect-guard.js']);
+checkCommand('frame popup backstop tests', ['tools/test-frame-popup-backstop.js']);
 checkCommand('beacon logging tests', ['tools/test-beacon-logging.js']);
 checkCommand('clear-on-leave tests', ['tools/test-clear-on-leave.js']);
 checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js']);

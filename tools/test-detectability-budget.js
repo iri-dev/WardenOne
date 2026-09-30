@@ -85,6 +85,7 @@ const EVENTS = {
 };
 const MESSAGE_KINDS = {
   config: 'the signed config from the bridge to the MAIN modules; verified with the key before use',
+  'redirect-bootstrap': 'signed popup-only settings from the bridge while the full worker snapshot is in flight',
   'frame-clickfix': 'the bridge forwards a frame\'s ClickFix signal',
 };
 const DOM_IDS = {

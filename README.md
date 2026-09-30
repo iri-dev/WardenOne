@@ -57,29 +57,6 @@ you the evidence behind the decisions it makes.
 2. Open `chrome://extensions` and enable **Developer mode** in the top-right.
 3. Select **Load unpacked**, then choose the unzipped folder containing `manifest.json`.
 
-## Verify the GitHub download
-
-Download [WardenOne-latest.zip.sha256](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip.sha256) alongside the ZIP before installing. The release notes show the same SHA-256 and a link to its GitHub build attestation. Because `latest-build` is replaced after each passing push, download the ZIP and checksum together; if they differ, fetch both again.
-
-On Windows PowerShell, in the directory containing both files:
-
-```powershell
-$expected = ((Get-Content .\WardenOne-latest.zip.sha256 -Raw) -split '\s+')[0]
-$actual = (Get-FileHash .\WardenOne-latest.zip -Algorithm SHA256).Hash
-if ($actual -ine $expected) { throw 'WardenOne ZIP checksum mismatch' }
-'SHA-256 matches'
-```
-
-On Linux, run `sha256sum -c WardenOne-latest.zip.sha256`; on macOS, run `shasum -a 256 -c WardenOne-latest.zip.sha256`.
-
-To verify that GitHub Actions in **this repository** attested the downloaded ZIP from `main`, use the [GitHub CLI](https://cli.github.com/):
-
-```text
-gh attestation verify WardenOne-latest.zip --repo iri-dev/WardenOne --signer-workflow iri-dev/WardenOne/.github/workflows/gate.yml --source-ref refs/heads/main
-```
-
-The checksum detects changed or mismatched bytes. The attestation checks those bytes against the claimed build origin; neither check proves that every protection is bug-free. The attested source commit should match the full commit shown in the release notes. An older ZIP from this repository can also have a valid attestation, so use the current release's checksum and commit when checking the rolling download.
-
 ## First run
 
 Choose **Recommended** for WardenOne's compatibility-conscious defaults, or **Maximum
@@ -1650,7 +1627,41 @@ details, antivirus verdicts and recovery steps for anyone who ran the false copy
 
 Because a browser security extension holds meaningful permissions, source authenticity matters. A
 build from another repository, file host or website was not produced by this project, even if the
-screenshots and description were copied exactly. [Verify the GitHub download](#verify-the-github-download) before loading it.
+screenshots and description were copied exactly. Advanced users can do the [optional download
+verification](#verify-the-github-download) below for extra assurance.
+
+## Verify the GitHub download
+
+**Optional, for advanced users.** The three [Quick install](#quick-install) steps are enough to
+install the ZIP from the official GitHub release. You do not need to calculate a hash or install the
+GitHub CLI. These checks give you extra evidence about the exact ZIP you downloaded:
+
+- **SHA-256 checksum:** a fingerprint that catches a damaged, changed or mismatched ZIP when it
+  differs from the checksum published with the same release.
+- **GitHub build attestation:** a record that links those ZIP bytes to a build run by this
+  repository's GitHub Actions workflow from `main`.
+
+If you want to check the hash, download [WardenOne-latest.zip.sha256](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip.sha256) alongside the ZIP. Because `latest-build` is replaced after each passing push, download both files together. If the hashes differ, fetch both again and do not load a ZIP that still fails. The release notes also show the ZIP's SHA-256 and a link to its attestation.
+
+On Windows PowerShell, in the directory containing both files:
+
+```powershell
+$expected = ((Get-Content .\WardenOne-latest.zip.sha256 -Raw) -split '\s+')[0]
+$actual = (Get-FileHash .\WardenOne-latest.zip -Algorithm SHA256).Hash
+if ($actual -ine $expected) { throw 'WardenOne ZIP checksum mismatch' }
+'SHA-256 matches'
+```
+
+On Linux, run `sha256sum -c WardenOne-latest.zip.sha256`; on macOS, run `shasum -a 256 -c WardenOne-latest.zip.sha256`.
+
+For the optional build-origin check, use the [GitHub CLI](https://cli.github.com/):
+
+```text
+gh attestation verify WardenOne-latest.zip --repo iri-dev/WardenOne --signer-workflow iri-dev/WardenOne/.github/workflows/gate.yml --source-ref refs/heads/main
+```
+
+Neither check proves that every protection is bug-free. Compare the attested source commit with the
+full commit in the release notes: an older ZIP can also have a valid attestation.
 
 # Feedback & security reporting
 
