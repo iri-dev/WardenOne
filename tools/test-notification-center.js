@@ -335,6 +335,26 @@ async function main() {
   assert(/'Notification centre' \+ \(unread \? ', ' \+ unread \+ ' unread' : ''\)/.test(popupJsSrc),
     'the unread count must survive in the accessible name');
   assert(popup.includes('Notification centre'), 'the popup should name the page it opens');
+  {
+    const start = popupJsSrc.indexOf('function renderNotificationUnread(');
+    const end = popupJsSrc.indexOf('\nfunction labelToggleControls(', start);
+    assert(start >= 0 && end > start, 'popup unread renderer must be available');
+    let reads = 0;
+    let label = '';
+    const realm = {
+      $(id) { return id === 'open-notifications' ? { setAttribute(_name, value) { label = value; } } : null; },
+      chrome: { storage: { local: { get(_key, callback) {
+        assert(++reads < 3, 'missing notification history caused repeated storage reads');
+        callback({});
+      } } } },
+    };
+    vm.runInNewContext(popupJsSrc.slice(start, end) + '\nrenderNotificationUnread();', realm);
+    assert.strictEqual(reads, 1, 'empty history needs one storage read');
+    assert.strictEqual(label, 'Notification centre');
+    vm.runInNewContext(popupJsSrc.slice(start, end)
+      + '\nrenderNotificationUnread([{ read: false }, { read: true }, { read: false }]);', realm);
+    assert.strictEqual(label, 'Notification centre, 2 unread');
+  }
 
   const content = read('src/content.js');
   assert(content.includes('notificationPreference=type=>'), 'content toasts must consult notification preferences');

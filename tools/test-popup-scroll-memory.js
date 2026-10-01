@@ -20,6 +20,7 @@ function realm(withSession = true) {
   const listeners = {};
   const panelListeners = {};
   let nextTimer = 1;
+  let now = 0;
   const panel = {
     open: false,
     addEventListener(name, fn) { panelListeners[name] = fn; },
@@ -49,22 +50,36 @@ function realm(withSession = true) {
     Date,
     Number,
     Math,
-    setTimeout(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
+    setTimeout(fn, delay = 0) { const id = nextTimer++; timers.set(id, { fn, at: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
-    requestAnimationFrame(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
+    requestAnimationFrame(fn) { const id = nextTimer++; timers.set(id, { fn, at: now + 16 }); return id; },
   };
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
+  const nextDue = () => [...timers.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+  const advance = (ms) => {
+    const until = now + ms;
+    let count = 0;
+    while (timers.size && nextDue()[1].at <= until) {
+      assert(++count < 30, 'timers should settle');
+      const [id, entry] = nextDue();
+      timers.delete(id);
+      now = entry.at;
+      entry.fn();
+    }
+    now = until;
+  };
   const runTimers = () => {
     let count = 0;
     while (timers.size) {
       assert(++count < 30, 'restore should have bounded retries');
-      const [id, fn] = timers.entries().next().value;
+      const [id, entry] = nextDue();
       timers.delete(id);
-      fn();
+      now = entry.at;
+      entry.fn();
     }
   };
-  return { sandbox, values, writes, listeners, panelListeners, panel, element, runTimers, timers };
+  return { sandbox, values, writes, listeners, panelListeners, panel, element, advance, runTimers, timers };
 }
 
 for (const withSession of [true, false]) {
@@ -75,10 +90,23 @@ for (const withSession of [true, false]) {
 
   r.element.scrollTop = 237;
   r.listeners.scroll();
+  r.advance(200);
   r.listeners.scroll();
   assert.strictEqual(r.timers.size, 1, 'scroll saves should debounce');
-  r.runTimers();
+  r.advance(200);
+  assert.strictEqual(r.writes.length, 0, 'active scrolling should not write storage');
+  r.advance(250);
   assert.strictEqual(r.values.wardenone_popup_scroll_memory.y, 237);
+  const settledWrites = r.writes.length;
+  r.listeners.pagehide();
+  r.listeners.beforeunload();
+  r.listeners.visibilitychange();
+  assert.strictEqual(r.writes.length, settledWrites, 'closing events should not write the same position again');
+  r.element.scrollTop = 310;
+  r.listeners.scroll();
+  r.listeners.pagehide();
+  assert.strictEqual(r.values.wardenone_popup_scroll_memory.y, 310, 'closing saves a pending scroll immediately');
+  assert.strictEqual(r.timers.size, 0, 'closing cancels the pending idle save');
 
   r.values.wardenone_popup_scroll_memory = { y: 800, at: Date.now() };
   vm.runInContext('restorePopupScrollPosition()', r.sandbox);
@@ -102,6 +130,27 @@ for (const withSession of [true, false]) {
   assert.strictEqual(r.writes.length, panelWrites, 'restoring must not save the panel state');
   r.runTimers();
   assert(done);
+
+  const early = realm(withSession);
+  vm.runInContext('initPopupScrollMemory()', early.sandbox);
+  early.values.wardenone_popup_scroll_memory = { y: 800, at: Date.now() };
+  early.listeners.wheel();
+  vm.runInContext('restorePopupScrollPosition()', early.sandbox);
+  early.runTimers();
+  assert.strictEqual(early.element.scrollTop, 0, 'user input before restore should keep the current position');
+
+  const moving = realm(withSession);
+  vm.runInContext('initPopupScrollMemory()', moving.sandbox);
+  moving.values.wardenone_popup_scroll_memory = { y: 800, at: Date.now() };
+  vm.runInContext('restorePopupScrollPosition()', moving.sandbox);
+  moving.advance(16);
+  assert.strictEqual(moving.element.scrollTop, 600);
+  moving.element.scrollTop = 150;
+  moving.listeners.wheel();
+  moving.runTimers();
+  assert.strictEqual(moving.element.scrollTop, 150, 'restore retries must not pull against user scrolling');
+  moving.listeners.pagehide();
+  assert.strictEqual(moving.values.wardenone_popup_scroll_memory.y, 150, 'the user position should save on close');
 }
 
 console.log('[ok] popup scroll and advanced-provider state persist across sessions');

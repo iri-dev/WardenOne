@@ -227,10 +227,15 @@ new Promise((resolve) => {
   /* FEAT-06: the success line claimed "every component" while page-start helpers (mail, sign-in,
      search, Twitch) are not looked at. It has to name what was checked, and say what was not. */
   const popupJs = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+  const popupHtml = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
   check('the all-healthy line says what was checked and what was not',
     !/Every component checked out/.test(popupJs) && /page engine answered in every open tab it runs on/.test(popupJs)
       && /are not checked here/.test(popupJs));
   check('no report line claims full protection', !/full protection/i.test(bg.slice(bg.indexOf("report.repaired.push(live"), bg.indexOf("report.repaired.push(live") + 800)));
+  check('the repair description uses plain language and warns about unsaved work',
+    /Checks WardenOne for problems and fixes what it can/.test(popupHtml)
+      && /Save any work in open tabs first/.test(popupHtml)
+      && !/page engine/.test(popupHtml.slice(popupHtml.indexOf('id="verify-repair"') - 500, popupHtml.indexOf('id="verify-repair"'))));
 
   if (failures) {
     console.error('[fail] repair honesty tests: ' + failures + ' failure(s)');

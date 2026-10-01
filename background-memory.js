@@ -346,7 +346,10 @@ async function freeRamNow() {
       if (!live.ok) return { kept: "couldn't check for unsaved work" };
       if (cfg.memoryNeverForms && live.formDirty) return { kept: 'unsaved form' };
       if (live.mediaActive) return { kept: 'camera/mic in use' };
-      try { await chrome.tabs.discard(tab.id); return { slept: true }; } catch (_) { return null; }
+      try {
+        const discarded = await chrome.tabs.discard(tab.id);
+        return discarded ? { slept: true } : { kept: 'Chrome refused to sleep' };
+      } catch (_) { return { kept: 'Chrome refused to sleep' }; }
     });
     for (const result of results) {
       if (result && result.slept) slept++;
@@ -362,13 +365,13 @@ async function freeRamNow() {
   }
 }
 
-// Duplicate-tab detector: group tabs by normalized URL.
+// Duplicate-tab detector: fragments can be routes to different app documents.
 async function findDuplicateTabs() {
   try {
     const tabs = await chrome.tabs.query({});
     const byUrl = Object.create(null);
     for (const tab of tabs) {
-      const u = (tab.url || '').split('#')[0];
+      const u = tab.url || '';
       if (!/^https?:/i.test(u)) continue;
       (byUrl[u] = byUrl[u] || []).push({ id: tab.id, title: tab.title, active: tab.active });
     }
@@ -379,16 +382,43 @@ async function findDuplicateTabs() {
   } catch (e) { return { ok: false, error: String(e) }; }
 }
 
-// Close all-but-one of each duplicate URL (keeps the active one if present).
+function duplicateTabProtected(tab, cfg, live) {
+  return !tab || tab.status === 'loading' || (tab.pendingUrl && tab.pendingUrl !== tab.url)
+    || tab.pinned || !!tabKeepReason(tab, cfg) || !live.ok || live.formDirty || live.mediaActive;
+}
+
+// Keep protected copies; when all are clean, keep the most recently used one.
 async function closeDuplicateTabs() {
   try {
-    const { groups } = await findDuplicateTabs();
+    const found = await findDuplicateTabs();
+    if (!found.ok) return found;
+    const { groups } = found;
+    const cfg = await getMemoryConfig();
     let closed = 0;
     for (const g of (groups || [])) {
-      // keep the active tab, else the first
-      const keepId = (g.tabs.find((t) => t.active) || g.tabs[0]).id;
-      for (const t of g.tabs) {
-        if (t.id !== keepId) { try { await chrome.tabs.remove(t.id); closed++; } catch (_) {} }
+      const reviewed = await mapLimited(g.tabs, MEMORY_LIVE_CHECK_CONCURRENCY, async (entry) => {
+        const tab = await tabsGet(entry.id);
+        if (!tab || tab.url !== g.url) return null;
+        const live = await tabLiveState(tab.id);
+        const protectedTab = duplicateTabProtected(tab, cfg, live);
+        const priority = tab.active ? 5 : (!live.ok || live.formDirty || live.mediaActive) ? 4
+          : tab.pinned ? 3 : tab.audible ? 2 : protectedTab ? 2 : 1;
+        return { tab, protectedTab, priority, lastUsed: tabLastUsedOrNull(tab) || 0 };
+      });
+      const copies = reviewed.filter((entry) => entry && entry.tab);
+      if (copies.length < 2) continue;
+      copies.sort((a, b) => b.priority - a.priority || b.lastUsed - a.lastUsed || a.tab.id - b.tab.id);
+      const keepId = copies[0].tab.id;
+      for (const entry of copies) {
+        if (entry.tab.id === keepId || entry.protectedTab) continue;
+        const live = await tabLiveState(entry.tab.id);
+        if (!live.ok || live.formDirty || live.mediaActive) continue;
+        const survivor = await tabsGet(keepId);
+        if (!survivor || survivor.url !== g.url) break;
+        const fresh = await tabsGet(entry.tab.id);
+        if (!fresh || fresh.url !== g.url || duplicateTabProtected(fresh, cfg, live)) continue;
+        if ((tabLastUsedOrNull(fresh) || 0) > entry.lastUsed) continue;
+        try { await chrome.tabs.remove(fresh.id); closed++; } catch (_) {}
       }
     }
     if (closed) queueHistory({ type: 'memory_dupes_closed', detail: { closed }, url: '', at: Date.now() });
@@ -559,7 +589,7 @@ async function enforceTabLimit(windowId) {
     if (tabKeepReason(tab, cfg) && !disposable) continue;  // protected unless a disposable new-tab
     if (!close && tab.discarded) continue;                 // already asleep -> its RAM is freed
     const last = tabLastUsed(tab, now);
-    safe.push({ tab, idleMs: now - last, disposable });
+    safe.push({ tab, idleMs: now - last, lastUsed: last, selectedUrl: tab.url || tab.pendingUrl || '', disposable });
   }
   if (!safe.length) return;
   // close empty new-tab pages first, then the most-idle (least-recently-used) real tabs.
@@ -578,22 +608,36 @@ async function enforceTabLimit(windowId) {
     if (!candidates.length) return;
   }
 
-  for (const { tab, idleMs } of candidates) {
+  for (const { tab, lastUsed, selectedUrl } of candidates) {
     // final live-state check right before acting (camera/mic, unsaved form)
     const live = await tabLiveState(tab.id);
     if (!live.ok) continue; // no answer is not the same as a clean answer, and this path can close
     if (live.mediaActive) continue;
     if (cfg.memoryNeverForms && live.formDirty) continue;
-    const host = (() => { try { return new URL(tab.url).hostname.replace(/^www\./, ''); } catch { return tab.url || ''; } })();
-    const idleMin = Math.round(idleMs / 60000);
+    let currentCount = tabs.length;
+    if (close) {
+      try { currentCount = (await chrome.tabs.query({ windowId })).length; } catch (_) { continue; }
+      if (currentCount <= max) break;
+    }
+    const fresh = await tabsGet(tab.id);
+    if (!fresh || fresh.windowId !== windowId) continue;
+    const freshDisposable = close && isDisposableTab(fresh) && !fresh.active && !fresh.pinned;
+    if (tabKeepReason(fresh, cfg) && !freshDisposable) continue;
+    if ((fresh.url || fresh.pendingUrl || '') !== selectedUrl) continue;
+    const freshNow = Date.now();
+    const freshLastUsed = tabLastUsed(fresh, freshNow);
+    if (freshLastUsed > lastUsed || (!close && (fresh.discarded || freshNow - freshLastUsed < minIdleMs))) continue;
+    const host = (() => { try { return new URL(fresh.url).hostname.replace(/^www\./, ''); } catch { return fresh.url || ''; } })();
+    const idleMin = Math.round((freshNow - freshLastUsed) / 60000);
     try {
       if (close) {
         await chrome.tabs.remove(tab.id);
-        queueHistory({ type: 'tab_limit_closed', detail: { host, idleMin, max, count: tabs.length }, url: host, at: Date.now() });
+        queueHistory({ type: 'tab_limit_closed', detail: { host, idleMin, max, count: currentCount }, url: host, at: Date.now() });
         if (cfg.tabLimitWarn) notifyTabLimitClosed(host, idleMin);
       } else {
-        await chrome.tabs.discard(tab.id);
-        queueHistory({ type: 'tab_limit_slept', detail: { host, idleMin, max, count: tabs.length }, url: host, at: Date.now() });
+        const discarded = await chrome.tabs.discard(tab.id);
+        if (!discarded) continue;
+        queueHistory({ type: 'tab_limit_slept', detail: { host, idleMin, max, count: currentCount }, url: host, at: Date.now() });
       }
     } catch (_) { /* tab closed or can't be discarded -- skip */ }
   }
@@ -752,7 +796,8 @@ async function memoryActOnTab(tabId, action, opts) {
   if (live.mediaActive) return { ok: false, error: 'Protected tab: camera/mic in use' };
   try {
     if (action === 'sleep') {
-      if (!tab.discarded) await chrome.tabs.discard(id);
+      const discarded = await chrome.tabs.discard(id);
+      if (!discarded) return { ok: false, error: 'Chrome refused to sleep this tab.' };
       return { ok: true, action: 'sleep', tabId: id };
     }
     if (action === 'close') {
@@ -933,7 +978,7 @@ async function sleepIdleGroups(cfgArg, snapshot) {
         const live = await tabLiveState(t.id);
         if (!live.ok) return false;
         if ((cfg.memoryNeverForms && live.formDirty) || live.mediaActive) return false;
-        try { await chrome.tabs.discard(t.id); return true; } catch (_) { return false; }
+        try { return !!(await chrome.tabs.discard(t.id)); } catch (_) { return false; }
       });
       const groupSlept = results.filter(Boolean).length;
       sleptTabs += groupSlept;

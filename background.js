@@ -16786,41 +16786,41 @@ function tabEngineStatus(tabId) {
   });
 }
 async function tabProtectionEvidence(tab, cfg) {
-  if (!tab || typeof tab.id !== 'number') return { state: 'unknown', text: 'No open page to check.' };
+  if (!tab || typeof tab.id !== 'number') return { state: 'unknown', summary: 'No open page to check.', text: 'No open page to check.' };
   const url = String(tab.url || tab.pendingUrl || '');
   if (!/^https?:/i.test(url)) {
-    return { state: 'restricted', text: 'This page cannot be checked: Chrome does not run extensions here. The network shields still apply to what it loads.' };
+    return { state: 'restricted', summary: 'This browser page cannot be checked.', text: 'Chrome does not run extensions on this page. Network protection still applies to what it loads.' };
   }
-  if (cfg && cfg.enabled === false) return { state: 'off', text: 'WardenOne is switched off.' };
+  if (cfg && cfg.enabled === false) return { state: 'off', summary: 'WardenOne is off.', text: 'WardenOne is switched off.' };
   let host = '';
   try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) { host = ''; }
   try {
     if (host && hostMatchesAllowlist(host, activeAllowlist(cfg))) {
-      return { state: 'paused', host, text: 'Paused on ' + host + ' by your allowlist, so nothing is checked here.' };
+      return { state: 'paused', host, summary: 'Paused on this site.', text: 'Paused on ' + host + ' by your allowlist, so nothing is checked here.' };
     }
   } catch (_) {}
   if (engineExcludedByManifest(url) || isMainWorldRepairExcludedUrl(url)) {
-    return { state: 'excluded', host, text: 'The in-page engine does not run on ' + host + ' (a compatibility exclusion). The network shields still apply.' };
+    return { state: 'excluded', host, summary: 'Page checks do not run here.', text: 'Page checks do not run on ' + host + ' for compatibility. Network protection still applies.' };
   }
-  if (tab.discarded) return { state: 'sleeping', host, text: 'This tab is asleep; it is checked when it wakes.' };
+  if (tab.discarded) return { state: 'sleeping', host, summary: 'This tab is asleep.', text: 'This tab is asleep; it is checked when it wakes.' };
   if (ENGINE_GAVE_UP[tab.id]) {
-    return { state: 'failed', host, text: 'This page switches the in-page engine off on every load, and WardenOne has stopped reloading it. The network shields still apply.' };
+    return { state: 'failed', host, text: 'This page keeps switching off page protection. WardenOne has stopped reloading it. Network protection still applies.' };
   }
   const answer = await tabEngineStatus(tab.id);
   if (answer === 'timeout' || !answer) {
-    return { state: 'unknown', host, text: 'The page has not answered the engine check yet. Open the popup again once it has finished loading, or run Verify & Repair.' };
+    return { state: 'unknown', host, summary: 'This page has not been checked yet.', text: 'WardenOne has not confirmed protection on this page. Reopen the popup after it loads; if it stays this way, use Verify & Repair.' };
   }
   // Running is not the same as configured (MV3-04): an engine that answers but has not yet
   // received this document's settings is on compiled defaults, and says so rather than
   // reporting itself verified.
   if (answer.alive && answer.configured === false) {
-    return { state: 'unconfigured', host, text: 'The in-page engine is running on ' + host + ' but has not received your settings yet -- it is on its defaults and keeps asking the worker for them.' };
+    return { state: 'unconfigured', host, summary: 'Page protection is starting.', text: 'Page protection is running on ' + host + ' but has not received your settings yet. Check again shortly.' };
   }
-  if (answer.alive) return { state: 'verified', host, text: 'The in-page engine answered its signed check on ' + host + '.' };
+  if (answer.alive) return { state: 'verified', host, text: 'WardenOne confirmed page protection is running on ' + host + '.' };
   if (answer.fresh === false) {
-    return { state: 'unknown', host, text: 'This page loaded before this copy of WardenOne did, so its engine cannot vouch for itself. Reload the page to check it.' };
+    return { state: 'unknown', host, summary: 'Reload this page to check protection.', text: 'This page was open before WardenOne started. Reload it to check page protection.' };
   }
-  return { state: 'failed', host, text: 'The in-page engine is not running on ' + host + '. Verify & Repair reloads the tab to put it back.' };
+  return { state: 'failed', host, text: 'Page protection is not running on ' + host + '. Verify & Repair reloads the tab to restore it.' };
 }
 
 function healthListCounts(meta, auxMeta, publisherSources) {
@@ -17036,7 +17036,7 @@ async function buildProtectionHealthSummary(tab) {
             : issues.length
               ? 'Core shields are running on this page. A few notes are tucked below.'
               : 'Core shields are running on this page and watching quietly.')
-          : 'No issue found in what could be checked. ' + tabEvidence.text;
+          : (tabEvidence.summary || tabEvidence.text);
 
   return {
     ok: true,

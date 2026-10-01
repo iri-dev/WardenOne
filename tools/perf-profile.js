@@ -252,6 +252,7 @@ async function launch(edge, variant, extensionDir, port, profileDir) {
     '--disable-background-networking', '--disable-component-update', '--disable-sync', '--no-service-autorun',
     '--disable-features=msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost',
   ];
+  if (process.env.WARDENONE_HEADLESS === '1') args.push('--headless=new');
   if (variant === 'off') args.push('--disable-extensions');
   else args.push('--disable-extensions-except=' + extensionDir, '--load-extension=' + extensionDir);
   args.push('about:blank');

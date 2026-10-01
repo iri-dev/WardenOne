@@ -16,7 +16,7 @@ async function run() {
   let cdp;
   let page;
   try {
-    const browser = await profile.launch(profile.edgePath(), 'on', ROOT, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
@@ -58,6 +58,44 @@ async function run() {
     }
 
     await openPopup();
+    const browserName = process.env.WARDENONE_BROWSER_NAME || 'Microsoft Edge';
+    const expectedBrowser = { 'Microsoft Edge': 'Edge', 'Google Chrome': 'Chrome' }[browserName] || browserName;
+    await until(`document.getElementById('ug-name').textContent === ${JSON.stringify(expectedBrowser)}`, 'Update Guardian browser detection');
+    assert.equal(await value("document.getElementById('ug-btn').textContent"), `Check ${expectedBrowser} updates`);
+    const cardText = await value("document.querySelector('.update-guardian').textContent");
+    if (expectedBrowser === 'Edge') assert(!/Brave/.test(cardText), 'Edge must not show Brave release wording');
+    if (expectedBrowser === 'Brave') assert(!/Edge/.test(cardText), 'Brave must not show Edge release wording');
+    assert(await value("(() => { const button = document.getElementById('ug-btn'); const text = document.createRange(); text.selectNodeContents(button); const box = button.getBoundingClientRect(); const label = text.getBoundingClientRect(); return Math.abs((box.left + box.right - label.left - label.right) / 2) < 2; })()"),
+      'the update button label should be centered');
+    assert(await value("document.getElementById('ug-refresh').getAttribute('aria-label') === 'Check again'"));
+    assert(!(await value("document.getElementById('ug-note').textContent.includes('hidden from extensions')")));
+    assert(await value("(() => { const select = document.getElementById('privacy-data-mode'); const row = select.closest('.row'); return select.getBoundingClientRect().width > 250 && select.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1; })()"),
+      'the reset choice should fit across the popup');
+    assert.equal(await value("document.getElementById('privacy-data-erase').textContent"), 'Reset WardenOne');
+    await value("(() => { const select = document.getElementById('privacy-data-mode'); select.value = 'settings'; select.dispatchEvent(new Event('change')); })()");
+    assert.equal(await value("document.getElementById('privacy-data-erase').textContent"), 'Clear records and API keys');
+    await value("(() => { const select = document.getElementById('privacy-data-mode'); select.value = 'all'; select.dispatchEvent(new Event('change')); })()");
+    if (process.env.WARDENONE_PRIVACY_SCREENSHOT) {
+      await value("document.getElementById('privacy-data-mode').closest('.row').scrollIntoView({block:'center'})");
+      await cdp.send('Page.bringToFront', {}, page.sessionId);
+      await sleep(300);
+      const top = await value("document.getElementById('privacy-data-mode').closest('.row').getBoundingClientRect().top + scrollY");
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'png', clip: { x: 0, y: Math.max(0, top - 45), width: 348, height: 400, scale: 1 }, captureBeyondViewport: true,
+      }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_PRIVACY_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    if (process.env.WARDENONE_POPUP_SCREENSHOT) {
+      await until("document.getElementById('ug-status').dataset.state !== 'checking'", 'Update Guardian status', 15000);
+      await value("document.querySelector('.update-guardian').scrollIntoView({block:'center'})");
+      await cdp.send('Page.bringToFront', {}, page.sessionId);
+      await sleep(300);
+      const top = await value("document.querySelector('.update-guardian').getBoundingClientRect().top + scrollY");
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'png', clip: { x: 0, y: Math.max(0, top - 120), width: 348, height: 450, scale: 1 }, captureBeyondViewport: true,
+      }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_POPUP_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
     const searches = [
       ['WebAssembly', '#js-shield .row'],
       ['brightness', '#eyeshield-panel'],
@@ -80,6 +118,9 @@ async function run() {
 
     await value("document.querySelector('#protection-health-panel summary').click()");
     await until("document.getElementById('health-status-title').textContent !== 'Checking protection'", 'Protection Health');
+    const healthSummary = await value("document.getElementById('health-status-detail').textContent");
+    assert(!/engine check|No issue found in what could be checked/i.test(healthSummary),
+      'the closed health card should use plain language');
     assert(await value("document.getElementById('protection-health-panel').open"), 'Protection Health must open');
     await value("document.getElementById('diagnostics-prepare').click()");
     await until("document.getElementById('diagnostics-preview').textContent.includes('WardenOne diagnostics')", 'diagnostics preview');
@@ -95,7 +136,11 @@ async function run() {
     await until("new Promise(resolve => chrome.storage.session.get('wardenone_popup_search_memory', data => resolve(data.wardenone_popup_search_memory?.q === 'WebAssembly')))", 'saved search');
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
     await openPopup();
-    await until("document.getElementById('wo-settings-search').value === 'WebAssembly'", 'restored search');
+    try { await until("document.getElementById('wo-settings-search').value === 'WebAssembly'", 'restored search', 30000); }
+    catch (error) {
+      const state = await value("new Promise(resolve => chrome.storage.session.get('wardenone_popup_search_memory', data => resolve({ saved: data.wardenone_popup_search_memory, current: document.getElementById('wo-settings-search').value })))");
+      throw new Error(error.message + ': ' + JSON.stringify(state));
+    }
     assert(await visible('#js-shield'), 'restored search must keep Script Shield visible');
     await value("document.getElementById('wo-search-clear').click()");
 
@@ -111,7 +156,15 @@ async function run() {
     await value("(() => { const el = document.getElementById('enabled'); el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); })()");
     await until("new Promise(resolve => chrome.storage.local.get('wardenone_config', data => resolve(data.wardenone_config?.enabled === true)))", 'restored enabled config');
     assert(await value("[...document.querySelectorAll('.group .tg')].every(el => !el.classList.contains('disabled'))"));
-    console.log('[ok] real popup search, health, diagnostics, reopen and master-switch checks passed');
+    await value("new Promise(resolve => chrome.storage.session.set({wardenone_popup_scroll_memory:{y:5000,at:Date.now()}},resolve))");
+    await value("scrollTo(0,0); restorePopupScrollPosition()");
+    await until('scrollY > 4000', 'saved popup scroll position');
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 300, deltaX: 0, deltaY: 420 }, page.sessionId);
+    await sleep(100);
+    const userScrollY = await value('scrollY');
+    await sleep(600);
+    assert(Math.abs((await value('scrollY')) - userScrollY) < 5, 'restoration must not pull against user scrolling');
+    console.log('[ok] real popup search, health, diagnostics, updates, scroll, reopen and master-switch checks passed');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const resolved = path.resolve(dir);

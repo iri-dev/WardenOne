@@ -156,7 +156,7 @@ function renderProtectionHealth() {
     if (err || !res || !res.ok) {
       setLevel('warning');
       if (title) title.textContent = 'Protection status unavailable';
-      if (detail) detail.textContent = 'Chrome has not answered yet. Open the popup again or use Verify & Repair below.';
+      if (detail) detail.textContent = 'Could not check right now. Reopen the popup or use Verify & Repair.';
       if (chip) chip.textContent = 'Retry';
       if (active) active.textContent = '-';
       if (blocked) blocked.textContent = '-';
@@ -169,24 +169,16 @@ function renderProtectionHealth() {
     const items = Array.isArray(res.needsAttention) ? res.needsAttention : [];
     setLevel(level);
     if (title) title.textContent = res.status || 'Protections on';
-    if (detail) detail.textContent = res.detail || 'No issue found in what could be checked.';
+    if (detail) detail.textContent = res.detail || 'Protection status is not confirmed yet.';
     if (chip) chip.textContent = level === 'danger' ? 'Review' : level === 'warning' ? 'Check' : (items.length ? 'Notes' : 'Open');
     if (active) {
       active.textContent = fmtCount(res.configuredShields || 0) + '/' + fmtCount(res.totalShields || 0);
-      active.title = 'Switched on in settings. Whether the engine is running on this page is the line below the numbers.';
+      active.title = 'Switched on in settings. This page\'s result is shown below.';
     }
     if (tabLine) {
       const tab = res.tab || {};
       const state = String(tab.state || 'unknown');
-      tabLine.textContent = (state === 'verified' ? 'This page: engine verified. '
-        : state === 'failed' ? 'This page: engine missing. '
-          : state === 'paused' ? 'This page: paused. '
-            : state === 'excluded' ? 'This page: not injected here. '
-              : state === 'restricted' ? 'This page: cannot be checked. '
-                : state === 'off' ? 'This page: WardenOne is off. '
-                  : state === 'sleeping' ? 'This page: asleep. '
-                    : state === 'unconfigured' ? 'This page: engine running, settings pending. '
-                      : 'This page: not confirmed yet. ') + String(tab.text || '');
+      tabLine.textContent = String(tab.text || '');
       tabLine.className = 'health-tab' + (state === 'failed' ? ' is-warn' : state === 'verified' ? ' is-ok' : '');
     }
     if (blocked) blocked.textContent = fmtCount(res.blocked24h || 0);
