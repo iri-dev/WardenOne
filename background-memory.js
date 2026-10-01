@@ -257,20 +257,44 @@ async function mapLimited(items, limit, worker) {
   return results;
 }
 
-// Discard tabs that are safe and inactive past the threshold.
-async function memorySweep(reason, cfgArg) {
+async function runMemoryMaintenance(cfgArg) {
   try {
     const cfg = cfgArg || await getMemoryConfig();
     if (!cfg.memoryShield) return { ok: false, disabled: true };
     const tabs = await chrome.tabs.query({});
     const now = Date.now();
+    const states = new Map();
+    for (const tab of tabs) {
+      states.set(tab.id, { keep: tabKeepReason(tab, cfg), idleMs: now - tabLastUsed(tab, now) });
+    }
+    const snapshot = { tabs, now, states, live: new Map(), discarded: new Set() };
+    await throttleInactiveTabs(cfg, snapshot);
+    const sweep = await memorySweep('alarm', cfg, snapshot);
+    if (!sweep.ok) return sweep;
+    const groups = await sleepIdleGroups(cfg, snapshot);
+    return { ok: true, sweep, groups };
+  } catch (e) { return { ok: false, error: String(e) }; }
+}
+
+function snapshotLiveState(snapshot, tabId) {
+  if (!snapshot.live.has(tabId)) snapshot.live.set(tabId, tabLiveState(tabId));
+  return snapshot.live.get(tabId);
+}
+
+// Discard tabs that are safe and inactive past the threshold.
+async function memorySweep(reason, cfgArg, snapshot) {
+  try {
+    const cfg = cfgArg || await getMemoryConfig();
+    if (!cfg.memoryShield) return { ok: false, disabled: true };
+    const tabs = snapshot ? snapshot.tabs : await chrome.tabs.query({});
+    const now = snapshot ? snapshot.now : Date.now();
     const thresholdMs = cfg._minutes * 60000;
     const candidates = [];
     for (const tab of tabs) {
-      const keep = tabKeepReason(tab, cfg);
+      const state = snapshot && snapshot.states.get(tab.id);
+      const keep = state ? state.keep : tabKeepReason(tab, cfg);
       if (keep) continue;
-      const last = tabLastUsed(tab, now);
-      const idleMs = now - last;
+      const idleMs = state ? state.idleMs : now - tabLastUsed(tab, now);
       if (idleMs < thresholdMs) continue;
       candidates.push({ tab, idleMs });
     }
@@ -278,12 +302,14 @@ async function memorySweep(reason, cfgArg) {
       // Check the tab's live state once. We always check active camera/mic (a live
       // media tab must never be slept); the form-dirty check only applies when the
       // user has form protection enabled.
-      const live = await tabLiveState(tab.id);
+      const live = await (snapshot ? snapshotLiveState(snapshot, tab.id) : tabLiveState(tab.id));
       if (!live.ok) return null; // could not ask -- an unanswered tab is not a verified-clean one
       if (live.mediaActive) return null; // active camera/mic -- never sleep
       if (cfg.memoryNeverForms && live.formDirty) return null; // unsaved form input
       try {
-        await chrome.tabs.discard(tab.id);
+        const discarded = await chrome.tabs.discard(tab.id);
+        if (!discarded) return null;
+        if (snapshot) snapshot.discarded.add(tab.id);
         const host = (() => { try { return new URL(tab.url).hostname; } catch { return tab.url || ''; } })();
         queueHistory({
           type: 'memory_tab_slept',
@@ -861,7 +887,7 @@ async function memoryCloseTabByHand(tabArg) {
 }
 
 // ---- Tab-group sleeping: discard all safe tabs in groups idle past threshold ----
-async function sleepIdleGroups(cfgArg) {
+async function sleepIdleGroups(cfgArg, snapshot) {
   try {
     // No chrome.tabGroups guard here, because nothing below calls chrome.tabGroups. The grouping
     // is read from tab.groupId, which belongs to chrome.tabs and is present whether or not that
@@ -872,8 +898,8 @@ async function sleepIdleGroups(cfgArg) {
     // feature is unsupported.
     const cfg = cfgArg || await getMemoryConfig();
     if (!cfg.memoryShield) return { ok: false, disabled: true };
-    const tabs = await chrome.tabs.query({});
-    const now = Date.now();
+    const tabs = snapshot ? snapshot.tabs : await chrome.tabs.query({});
+    const now = snapshot ? snapshot.now : Date.now();
     const thresholdMs = cfg._minutes * 60000;
     // group tabs by groupId (>-1 means grouped)
     const groups = Object.create(null);
@@ -887,10 +913,16 @@ async function sleepIdleGroups(cfgArg) {
       // a group is "idle" only if EVERY tab in it is idle past threshold and none active
       const allIdle = gtabs.every((t) => {
         if (t.active) return false;
-        const last = tabLastUsed(t, now);
-        return (now - last) >= thresholdMs;
+        const state = snapshot && snapshot.states.get(t.id);
+        return (state ? state.idleMs : now - tabLastUsed(t, now)) >= thresholdMs;
       });
       if (!allIdle) continue;
+      if (snapshot) {
+        const groupSlept = gtabs.filter((t) => snapshot.discarded.has(t.id)).length;
+        sleptTabs += groupSlept;
+        if (groupSlept) sleptGroups++;
+        continue;
+      }
       const candidates = [];
       for (const t of gtabs) {
         const keep = tabKeepReason(t, cfg);
@@ -917,27 +949,28 @@ async function sleepIdleGroups(cfgArg) {
 // achievable part of "reduce background activity before discard"). We can't flush
 // a tab's RAM cache or strip already-loaded scripts -- no extension can -- but we
 // CAN tell an inactive tab to pause autoplaying audio/video, which cuts real CPU.
-async function throttleInactiveTabs(cfgArg) {
+async function throttleInactiveTabs(cfgArg, snapshot) {
   try {
     const cfg = cfgArg || await getMemoryConfig();
     if (!cfg.memoryShield) return;
     // throttle tabs idle past HALF the sleep threshold (the "freeze" stage before
     // the later discard). e.g. balanced(30m) -> pause media at 15m, discard at 30m.
     const halfMs = (cfg._minutes * 60000) / 2;
-    const now = Date.now();
-    const tabs = await chrome.tabs.query({});
+    const now = snapshot ? snapshot.now : Date.now();
+    const tabs = snapshot ? snapshot.tabs : await chrome.tabs.query({});
     for (const tab of tabs) {
       if (tab.active || tab.discarded || tab.audible) continue;
       if (!/^https?:/i.test(tab.url || '')) continue;
       try {
         if (isVideoPlatformHost(new URL(tab.url).hostname)) continue;
       } catch (_) {}
-      const keep = tabKeepReason(tab, cfg);
+      const state = snapshot && snapshot.states.get(tab.id);
+      const keep = state ? state.keep : tabKeepReason(tab, cfg);
       if (keep) continue;
       // Throttling stays fail-open on purpose -- the worst outcome here is a paused video, not a
       // lost draft, so this path never consults live state and never needs to.
-      const last = tabLastUsed(tab, now);
-      if ((now - last) < halfMs) continue;
+      const idleMs = state ? state.idleMs : now - tabLastUsed(tab, now);
+      if (idleMs < halfMs) continue;
       try { chrome.tabs.sendMessage(tab.id, { kind: 'memory-throttle' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
     }
   } catch (_) {}

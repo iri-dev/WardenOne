@@ -223,7 +223,7 @@ check('Twitch consent fast path cannot click navigational legal links',
 check('consent reject has an attribute-agnostic banner fallback for obfuscated bars (e.g. X BottomBar)',
   /function tryGenericReject/.test(consent)
     && /function consentBannerAncestor/.test(consent)
-    && /if \(tryGenericReject\(\)\) return;/.test(consent));
+    && /if \(tryGenericReject\(roots\)\) return;/.test(consent));
 check('generic reject fallback still requires a safe reject control inside a real consent banner',
   /tryGenericReject[\s\S]*safeRejectCandidate\(el\)[\s\S]*consentBannerAncestor\(el\)/.test(consent)
     && /consentBannerAncestor[\s\S]*hasStrongConsentLanguage\(own\)[\s\S]*protectedContainerContext\(n, el\)/.test(consent));

@@ -116,6 +116,16 @@ function popupHarness(stored) {
 
 const COMBOS = [[true, true], [true, false], [false, true], [false, false]];
 
+{
+  const p = popupHarness({ showToasts: true, showBadge: true, silentMode: false });
+  const off = p.flip('enabled', false);
+  check('master off dims toast and badge controls without rewriting their choices',
+    p.greyed('showToasts') && p.greyed('showBadge') && off.showToasts === true && off.showBadge === true);
+  p.flip('enabled', true);
+  check('master on restores toast and badge controls when Silent is off',
+    !p.greyed('showToasts') && !p.greyed('showBadge'));
+}
+
 /* Turning Silent on stores silentMode alone; the two switches keep their values and are
    only greyed. Turning it off gives back exactly those values. All four combinations. */
 for (const [toasts, badge] of COMBOS) {

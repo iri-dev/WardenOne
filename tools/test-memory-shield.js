@@ -19,6 +19,9 @@ function loadMemoryShield(options = {}) {
     tabs: Array.from(options.tabs || []),
     config: Object.assign({}, options.config || {}),
     discarded: [],
+    queries: 0,
+    liveChecks: [],
+    throttled: [],
     removed: [],
     activated: [],
     alarmsCreated: [],
@@ -67,6 +70,7 @@ function loadMemoryShield(options = {}) {
         onCreated: capture('onCreated'),
         onRemoved: capture('onRemoved'),
         query: async (q) => {
+          state.queries++;
           const all = state.tabs.slice();
           if (q && q.windowId != null) return all.filter((t) => t.windowId === q.windowId);
           return all;
@@ -92,7 +96,13 @@ function loadMemoryShield(options = {}) {
           return reborn;
         },
         remove: async (id) => { state.removed.push(id); },
-        sendMessage(tabId, _msg, callback) {
+        sendMessage(tabId, msg, callback) {
+          if (msg && msg.kind === 'memory-throttle') {
+            state.throttled.push(tabId);
+            if (callback) callback({ ok: true });
+            return;
+          }
+          state.liveChecks.push(tabId);
           const reply = state.liveReply(tabId);
           // `undefined` models a bridge that never answers: the callback simply never runs and the
           // timeout is what resolves it, which is the shape a hung tab actually has.
@@ -150,6 +160,7 @@ async function main() {
   [
     'getMemoryConfig',
     'memorySweep',
+    'runMemoryMaintenance',
     'freeRamNow',
     'findDuplicateTabs',
     'closeDuplicateTabs',
@@ -210,6 +221,7 @@ async function main() {
 
   await testRecencySurvivesRestart();
   await testUnknownLiveStateKeepsTheTab();
+  await testSharedMaintenancePass();
   await testSweepAlarmFollowsTheSetting();
   await testColdStartsKeepTheSweepDeadline();
   await testNeverSleepIsExactAndHonoured();
@@ -372,6 +384,44 @@ async function testUnknownLiveStateKeepsTheTab() {
     .memory.tabLiveState(1);
   assert.strictEqual(okState.ok, true);
   assert.strictEqual(okState.formDirty, true);
+}
+
+async function testSharedMaintenancePass() {
+  const config = { memoryShield: true, memoryMode: 'balanced' };
+  const tabs = [
+    sleepableTab(1, 120, { groupId: 7 }),
+    sleepableTab(2, 120, { groupId: 7 }),
+    sleepableTab(3, 120),
+    sleepableTab(4, 120, { pinned: true }),
+    sleepableTab(5, 3),
+    sleepableTab(6, 120),
+    sleepableTab(7, 120, { active: true }),
+  ];
+  const run = loadMemoryShield({ config, tabs, liveReply: (id) => ({ formDirty: id === 6, mediaActive: false }) });
+  const before = run.state.queries;
+  const result = await run.sandbox.runMemoryMaintenance();
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(run.state.queries - before, 1, 'one alarm pass should read tabs once');
+  assert.deepStrictEqual(run.state.liveChecks.slice().sort((a, b) => a - b), [1, 2, 3, 6], 'each eligible tab should get one live check');
+  assert.deepStrictEqual(run.state.discarded.slice().sort((a, b) => a - b), [1, 2, 3], 'grouped tabs should not be discarded twice');
+  assert.strictEqual(result.sweep.slept, 3);
+  assert.strictEqual(result.groups.sleptTabs, 2);
+  assert.strictEqual(result.groups.sleptGroups, 1);
+  assert.strictEqual(run.state.history.filter((entry) => entry.type === 'memory_group_slept').length, 1);
+  assert(run.state.throttled.includes(6), 'a dirty but idle tab should still receive the non-destructive throttle');
+
+  const disabled = loadMemoryShield({ config: { memoryShield: false }, tabs });
+  const disabledQueries = disabled.state.queries;
+  assert.strictEqual((await disabled.sandbox.runMemoryMaintenance()).disabled, true);
+  assert.strictEqual(disabled.state.queries, disabledQueries, 'disabled maintenance must not query tabs');
+
+  const unknown = loadMemoryShield({ config, tabs: [sleepableTab(8, 120)], liveReply: () => UNREACHABLE });
+  assert.strictEqual((await unknown.sandbox.runMemoryMaintenance()).sweep.slept, 0);
+  assert.deepStrictEqual(unknown.state.discarded, [], 'an unreachable tab must stay awake');
+
+  const refused = loadMemoryShield({ config, tabs: [sleepableTab(9, 120, { __undiscardable: true })] });
+  assert.strictEqual((await refused.sandbox.runMemoryMaintenance()).sweep.slept, 0,
+    'a refused discard must not be reported as a successful sleep');
 }
 
 // ---------------------------------------------------------------------------

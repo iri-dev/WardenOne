@@ -327,21 +327,21 @@ different compatibility costs.
 
 ### Session Token Guard
 
-SessionShield finds token-shaped values exposed in URLs, cookies and script-readable storage. The
-continuous watch catches new values the moment they are written after login rather than scanning
-only on page load. Token Guard then prevents those exact values from leaving for an unrelated
-domain through fetch, XHR, beacons, WebSockets, forms and the equivalent paths inside embedded
-frames.
+SessionShield finds token-shaped values exposed in URLs, cookies and script-readable storage. Its
+continuous watch checks observed storage writes after login rather than scanning only on page load.
+Token Guard checks page and frame request APIs for those exact values and blocks
+matching calls it observes to unrelated domains. Its page-level hooks can be bypassed by hostile
+page code; browser network rules independently block destinations they cover.
 
 Known noisy services can be treated more calmly in the local log without weakening the actual
 protection. The token itself is never copied into the Activity Centre to explain that it was saved.
 
-> **Token appears → exact value is watched locally → unrelated destination is blocked → event is recorded without the token**
+> **Token appears → exact value is watched locally → matching page request is stopped when observed → event is recorded without the token**
 
 ### Form Skimmer & Magecart Guard
 
 Third-party scripts reading password or payment fields are suspicious; those values leaving for an
-off-site address are stronger evidence. WardenOne observes both and blocks the exfiltration path,
+off-site address are stronger evidence. WardenOne observes both and can block matching requests it sees,
 including forms and request APIs inside embedded frames, where many hosted payment fields live.
 
 The guard follows the credential value and destination relationship rather than treating every
@@ -588,9 +588,9 @@ separate because routers and development devices often use deliberately local ar
 ### Intranet Guard
 
 A public web page should not be able to probe your router, NAS, printer, development server or
-another private admin panel. Intranet Guard covers fetch, XHR, forms, beacons, sockets, scripts,
-frames, media and background workers, whether the target is written as an IP address or a name such
-as `router.local`.
+another private admin panel. Intranet Guard checks page requests, while its browser network rules
+block direct private-network targets across pages and workers, including IP addresses and local
+names such as `router.local`. Keep the network rules on for that browser-enforced boundary.
 
 Pages you deliberately opened from your own network keep access to it. The important distinction is
 who initiated the relationship: a local tool reaching local resources is normal; an unrelated
@@ -898,29 +898,27 @@ any browser extension can observe. Mail Shield does not claim to stop all email 
 
 ## Anti-fingerprinting
 
-The opt-in shield covers canvas, audio, WebGL, WebGPU, hardware hints, fonts, monitor layout,
+The opt-in shield covers canvas text measurements, audio, WebGL, WebGPU, fonts, monitor layout,
 keyboard layout, voices and related measuring surfaces with per-session noise or fixed answers
 shared by everyone using the protection.
 
-Consistency matters more than theatrical randomness. WebGL and WebGPU receive one GPU identity;
+Consistency matters more than theatrical randomness. WebGL and WebGPU receive one GPU identity in
+the page and its frames;
 different answers to the same question would be rarer than the real machine and therefore a better
 fingerprint. WebGPU limits are reduced to specification minimums shared by the protected group.
-The machine a site is shown — core count, memory, GPU — is drawn per site and holds across
-reloads, tabs and that site's frames, so "remember this device" and step-up sign-in checks see one
-computer; two sites see unrelated ones, and the draw carries nothing about you, so it cannot link
-one site's visitor to another's. Canvas and audio noise still change per load, where changing is
-the protection.
+The GPU identity is drawn per site and holds across reloads, tabs and that site's frames. Core
+count and memory stay native because a worker can expose their real values. Two sites receive
+unrelated GPU draws, while canvas and audio noise still change per load.
 
 ```mermaid
 flowchart LR
     Ask["Page measures you<br/>canvas · audio · WebGL · fonts · screen · voices"] --> Shield["WardenOne answers"]
-    Shield --> Same["The same answer every time,<br/>shared with everyone using the shield"]
-    Shield -.->|never| Random["A different answer each time<br/>rarer than the real machine, so a better fingerprint"]
-    Same --> Crowd["You look like the group, not like you"]
+    Shield --> Stable["GPU identity stays stable<br/>for one site and its frames"]
+    Shield --> Noise["Text and audio noise<br/>changes per load"]
+    Shield --> Native["Core count and memory<br/>stay native"]
+    Stable --> Limit["Workers can still expose<br/>real graphics"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
-    classDef dead fill:#3a1a30,stroke:#7a3562,color:#e6c8dc
-    class Ask,Shield,Same,Crowd warden
-    class Random dead
+    class Ask,Shield,Stable,Noise,Native,Limit warden
     linkStyle default stroke:#c45ca7
 ```
 
@@ -938,7 +936,9 @@ same switch, the same pause and the same per-site choices as the page around the
 left alone, like the sign-in and captcha hosts the shield already skips. Not covered: web workers. A
 worker's realm cannot be reached from an extension without re-serving the worker's code, which breaks
 module workers and scripts that resolve paths from their own location, so an `OffscreenCanvas` inside a
-worker still answers with the real machine.
+worker still answers with the real machine. The page's core count and memory are left native to
+avoid a page-versus-worker mismatch for those values. Worker graphics can still differ from the
+page's protected graphics, so this shield cannot guarantee consistency across all realms.
 
 <details>
 <summary><strong>Why anti-fingerprinting is opt-in</strong></summary>
@@ -1546,15 +1546,22 @@ a key; enabling a provider adds a clearly scoped lookup rather than turning on a
 There is no WardenOne server in the middle of your browsing. The work is split across the browser
 surfaces that actually hold the evidence:
 
-- **Browser network layer** — filtering, known threats, redirects, downloads and private-network boundaries.
+- **Browser network layer** — rules for listed destinations and direct private-network targets, plus browser-level redirect and download checks.
 - **Page and session layer** — deceptive interfaces, credential flows, privacy APIs, links and device-use signals.
 - **Extension worker** — local state and the browser APIs that join those layers together.
 - **Local interfaces** — Activity, Self-Test, Repair, Logger, Firewall and review tools that explain and control the result.
 
+Browser-enforced network rules remain in force if a website changes its JavaScript. Exact-value token
+and skimmer checks instead wrap page APIs such as `fetch`, XHR and `sendBeacon`. A hostile page can
+replace those wrappers, borrow an unwrapped method or use a path they do not observe. These checks
+can stop matching calls they see, but cannot guarantee that malicious code already running in a page
+cannot send a secret. Network rules block covered destinations; they do not inspect the secret value
+in an arbitrary request.
+
 ```mermaid
 flowchart TB
     Page["Web page"] --> PageLayer["Page and session layer<br/>deceptive interfaces · credential flows · privacy APIs · links"]
-    Net["Every request"] --> NetLayer["Browser network layer<br/>blocklists · trackers · redirects · private-network boundary"]
+    Net["Browser requests"] --> NetLayer["Browser network layer<br/>listed destinations · direct private-network targets"]
     Dl["Download"] --> DlLayer["Download Shield<br/>origin · identity · behaviour"]
 
     PageLayer --> Worker
@@ -1599,6 +1606,15 @@ Use Node 24 (recorded in `.node-version`). Everything goes through
 `node tools/check-maintainability.js` first. And when something
 turns out to be wrong on a real site, I'd rather leave the revert sitting in the history
 than tidy it away.
+
+## A source bundle for review
+
+Run `node tools/build-source-bundle.js` from a clean checkout to create a ZIP beside the repository.
+It contains every file tracked in the current commit, including `src/`, `tools/` and docs. It leaves
+out local directories such as `.git/`, `.claude/`, `.store-candidates/` and `.publish/`. This is the
+source for review; the `latest-build` ZIP is the smaller extension package. The command refuses a
+dirty checkout so local work is not silently omitted. Use `--committed` only when you deliberately
+want a ZIP of `HEAD` without your uncommitted changes.
 
 ## The performance profile
 

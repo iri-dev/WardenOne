@@ -1153,7 +1153,7 @@
       <label class="tg"><input type="checkbox" data-key="clientHintProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional randomization for WebGL vendor strings, audio buffers, text measurements and coarse hardware hints. Canvas pixels and image exports stay unchanged so artwork and signatures are not corrupted. Runs in the page and its frames; web workers are not covered and still see the real machine. It may make rare setups more unique, so it stays opt-in.</div></div>
+      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional changes to page and frame graphics, audio, text and display measurements. Core count and memory stay native because workers can reveal them. Canvas pixels and image exports stay unchanged. Web workers are not covered and can still reveal real graphics. It may make rare setups more unique, so it stays opt-in.</div></div>
       <label class="tg"><input type="checkbox" data-key="antiFingerprintNoise"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1511,7 +1511,7 @@
       <label class="tg"><input type="checkbox" data-key="antiClickjacking"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Intranet/router protection</div><div class="desc">Public pages cannot silently reach local admin panels &mdash; fetch, XHR, forms, beacons, sockets, scripts, frames and media are all covered. This works by reading the address a page asks for, so it stops anything aimed at your network by name or by IP. A public-looking name that quietly resolves to your router is a different problem, handled below.</div></div>
+      <div><div class="name">Intranet/router protection</div><div class="desc">Checks page requests aimed at local admin panels by IP or local name. Page API hooks can be bypassed by hostile site code; keep the browser network rule below on to block direct private-network requests across pages and workers. Public-looking names that resolve to your router are handled below.</div></div>
       <label class="tg"><input type="checkbox" data-key="intranetProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1519,7 +1519,7 @@
       <label class="tg"><input type="checkbox" data-key="dnsRebindGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Enforce it at the network layer too</div><div class="desc">The protection above works by rewriting what a page can call. A background worker gets its own private copy of those same functions, untouched, so a few lines running in one could reach your network with the guard still sitting there. This adds a second rule that refuses local addresses no matter which part of a page asked, which is the only way to cover workers without rewriting their code and breaking them. Pages you opened from your own network keep full access to it, including other devices on it. Turn this off if something on your network stops loading and you would rather have it back.</div></div>
+      <div><div class="name">Enforce it at the network layer too</div><div class="desc">Browser rules block direct private-network requests from public pages, including requests made by workers or through page APIs WardenOne does not see. Pages opened from your own network keep access to local devices. Turn this off if it breaks a local tool; the page-level check alone is easier for hostile site code to bypass.</div></div>
       <label class="tg"><input type="checkbox" data-key="intranetNetworkRules"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1538,19 +1538,19 @@
       <label class="tg"><input type="checkbox" data-key="sessionShield"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Protect session tokens</div><div class="desc">Block token-shaped values from leaving a site for another domain. Keeps protection on, but treats noisy trusted services more calmly in the activity log. Includes outgoing requests made inside embedded frames.</div></div>
+      <div><div class="name">Protect session tokens</div><div class="desc">Checks page requests, including those in embedded frames, for known token values and stops matching calls it sees to unrelated domains. Hostile page code can bypass these JavaScript hooks; browser rules still block listed destinations. Noisy trusted services are treated more calmly in the activity log.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockTokenExfil"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Continuous token watch</div><div class="desc">Detect tokens the moment they're written to storage (e.g. after login), not just at page load.</div></div>
+      <div><div class="name">Continuous token watch</div><div class="desc">Checks observed storage writes for token-shaped values after login, not just at page load. Hostile page code can bypass page-level hooks.</div></div>
       <label class="tg"><input type="checkbox" data-key="continuousTokenScan"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Detect &amp; block form skimmers</div><div class="desc">Spots third-party scripts reading password/card fields on payment pages, and blocks card or password data being sent to an off-site address (Magecart-style theft). Includes forms and request APIs inside embedded frames.</div></div>
+      <div><div class="name">Detect &amp; block form skimmers</div><div class="desc">Watches password and card fields on payment pages and can stop matching off-site requests it observes, including forms and request APIs in embedded frames. These page-level checks can be bypassed by hostile site code.</div></div>
       <label class="tg"><input type="checkbox" data-key="detectSkimmers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Payment card guard</div><div class="desc">Warns before card details leave scammy, very new, suspicious, or reputation-flagged checkout pages, and blocks cards on insecure, look-alike, raw-IP, or known-dangerous payment forms. Embedded frames receive a lightweight card-exfiltration guard; full checkout and reputation analysis stays on the top page.</div></div>
+      <div><div class="name">Payment card guard</div><div class="desc">Uses page-level form checks to warn on suspicious checkouts and stop matching card submissions it sees on insecure, look-alike, raw-IP, or known-dangerous forms. Embedded frames receive a lightweight card-exfiltration check; full checkout and reputation analysis stays on the top page.</div></div>
       <label class="tg"><input type="checkbox" data-key="paymentCardGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -2082,6 +2082,7 @@
 <script src="build-profile.js"></script>
 <script src="notification-schema.js"></script>
 <script src="popup-health.js"></script>
+<script src="popup-scroll-memory.js"></script>
 <script src="popup.js"></script>
 <script src="popup-settings-search.js"></script>
 <script src="popup-diagnostics.js"></script>
