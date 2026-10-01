@@ -72,6 +72,7 @@ const LIFTED = [
   constLine('__feedLoadRetries', 'const __feedLoadRetries = new Map();'),
   'const GRABBER_FEED_DOMAINS = new Set(); const MINER_HOSTS = new Set(); const MINER_POOL_HOSTS = new Set();',
   grabFn(BG, 'dnrValueMatches'), grabFn(BG, 'dnrBandUnchanged'),
+  orElse('getDynamicRulesInBand', 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }'),
   orElse('localGetStrict', 'function localGetStrict(keys) { return localGet(keys); }'),
   orElse('scheduleFeedLoadRetry', 'function scheduleFeedLoadRetry() { return false; }'),
   orElse('clearFeedLoadRetry', 'function clearFeedLoadRetry() {}'),

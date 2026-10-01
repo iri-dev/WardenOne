@@ -301,7 +301,10 @@ async function extensionReady(cdp, port, expectedVersion) {
         let workerMetrics = true;
         try { await cdp.send('Performance.enable', {}, sessionId); } catch (_) { workerMetrics = false; }
         if (wakeTarget) { try { await cdp.send('Target.closeTarget', { targetId: wakeTarget }); } catch (_) {} }
-        return { id: manifest.id, workerSession: workerMetrics ? sessionId : null, workerTargetId: w.targetId, workerMetrics };
+        /* The session stays attached, and an attached debugger keeps the worker awake for as long
+           as it is: every measurement taken after this one is of a warm worker. A tool that needs
+           the worker to sleep (a cold wake) calls releaseWorker first. */
+        return { id: manifest.id, workerSession: workerMetrics ? sessionId : null, workerTargetId: w.targetId, workerMetrics, attachedSession: sessionId };
       }
       try { await cdp.send('Target.detachFromTarget', { sessionId }); } catch (_) {}
     }
@@ -317,6 +320,18 @@ async function extensionReady(cdp, port, expectedVersion) {
       }
     }
     await sleep(500);
+  }
+}
+/* Let the worker sleep again: drop extensionReady's session and resolve once the worker target
+   has gone, which Chrome does after about thirty quiet seconds. */
+async function releaseWorker(cdp, ext, timeoutMs) {
+  if (ext.attachedSession) await cdp.send('Target.detachFromTarget', { sessionId: ext.attachedSession }).catch(() => {});
+  const deadline = Date.now() + (timeoutMs || 120000);
+  for (;;) {
+    const { targetInfos } = await cdp.send('Target.getTargets');
+    if (!targetInfos.some((t) => t.targetId === ext.workerTargetId || (t.type === 'service_worker' && t.url === 'chrome-extension://' + ext.id + '/background.js'))) return;
+    if (Date.now() > deadline) throw new Error('the worker did not go idle: something kept it awake (an attached session, an open extension page, a busy tab)');
+    await sleep(1000);
   }
 }
 async function closeExtensionTabs(cdp, port, id) {
@@ -641,7 +656,7 @@ async function main() {
   process.exit(failed ? 1 : 0);
 }
 
-module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, freePort, edgePath };
+module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, releaseWorker, closeExtensionTabs, freePort, edgePath };
 
 if (require.main === module) {
   main().catch((e) => { console.error('perf profile: ' + (e && e.stack || e)); process.exit(2); });

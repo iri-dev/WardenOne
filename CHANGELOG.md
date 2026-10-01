@@ -575,6 +575,7 @@ as the work happened.
 
 ### Fixed
 
+- Closing a tab, opening the popup or any other action after a quiet half-minute no longer freezes the browser for about a second. Waking up, WardenOne asked the browser for all ~22,000 of its network rules six times to check a few hundred of its own, and each answer stalled the tab strip and scrolling. The first settings change after a wake did the same, and "Block this site" read every rule to confirm its one. Each now reads only the rules it is checking, and the learned-site and tracker rules are no longer rewritten when nothing changed.
 - Stopped the popup from repeatedly reading notification history when no history exists. The empty state now settles after one read, removing the continuous work that made scrolling sluggish on fresh profiles.
 - The popup now stops restoring its old scroll position when you start interacting, and avoids repeated storage writes during quick up-and-down scrolling or when it closes.
 - Protection Health now uses a short, plain-language summary when a page has not confirmed protection. The expanded panel keeps the reason and next step; "You're safe" still requires a confirmed page check.
