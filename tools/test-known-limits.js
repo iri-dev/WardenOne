@@ -27,6 +27,8 @@ const ROOT = path.resolve(__dirname, '..');
 const SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const CONTENT = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+const POPUP = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 
 let pass = 0;
 const failures = [];
@@ -85,29 +87,16 @@ function check(name, cond, detail) {
 
 // --- Workers: the realm that cannot be reached ------------------------------
 
-(function workerNavigatorIsAKnownAndUnfixedContradiction() {
-  /* The hardware spoofs are installed on Navigator.prototype. A worker's
-     navigator is a WorkerNavigator, in a separate realm, on a prototype this
-     code never touches -- so a page that reads hardwareConcurrency from a worker
-     gets the real number while the main thread reports the rounded one.
-
-     That is a contradiction, and contradictions have been treated as worse than
-     either answer everywhere else in this codebase. It is unfixed because the
-     only way in is to re-serve the worker's source from a blob, which changes
-     self.location under scripts that use it to resolve their own resources,
-     breaks module workers' relative imports, and is forbidden outright for
-     service workers.
-
-     Pinned rather than papered over. If someone later adds a worker shim, this
-     check should be the thing that reminds them what it was for; if someone
-     removes the hardware spoof, the contradiction goes with it and this check
-     should be deleted deliberately rather than left passing by accident. */
-  check('the hardware spoofs are on Navigator.prototype, which workers do not share',
-    /defp\(Navigator\.prototype,\s*"hardwareConcurrency"/.test(SOURCE.replace(/\s+/g, ' ')),
-    'the hardwareConcurrency spoof moved — recheck whether workers now agree');
+(function workerHardwareValuesRemainNative() {
+  /* Worker values remain native; page-only substitutions would expose a mismatch. */
+  const noise = SOURCE.slice(SOURCE.indexOf('/* FINGERPRINT-NOISE-BEGIN'), SOURCE.indexOf('/* FINGERPRINT-NOISE-END'));
+  check('core count and memory are not spoofed only in the page realm',
+    !/defp\(Navigator\.prototype,\s*"(?:hardwareConcurrency|deviceMemory)"/.test(noise.replace(/\s+/g, ' '))
+      && !/woPick\([^;]*"(?:hwc|devmem)"/.test(noise),
+    'recheck worker parity before changing either value');
   check('nothing pretends to cover WorkerNavigator',
     SOURCE.indexOf('WorkerNavigator') < 0,
-    'something now touches WorkerNavigator — this limitation may be closed');
+    'worker injection now needs its own compatibility review');
 
   /* The network layer is the part that DOES reach every realm, and it is what
      the intranet guarantee rests on. If those rules go, worker requests stop
@@ -165,42 +154,8 @@ function check(name, cond, detail) {
 // --- page-realm wrappers are replaceable, and stay that way -----------------
 
 (function theNetworkWrappersAreReplaceableByThePageOnPurpose() {
-  /* The engine watches the network from inside the page's own realm: it assigns
-     over window.fetch, XMLHttpRequest.prototype.open and navigator.sendBeacon.
-     Everything reading those -- token-exfil, the card skimmer detector, beacon
-     logging -- is only as durable as the assignment.
-
-     It is not durable, and this was checked rather than assumed. A page can put
-     a same-origin iframe in the document and take the copies out of it:
-
-       const w = document.body.appendChild(document.createElement('iframe')).contentWindow;
-       w.fetch(url);                                     // never reaches the wrapper
-       XMLHttpRequest.prototype.open = w.XMLHttpRequest.prototype.open;  // disarms it
-
-     The second line is the one that matters: it does not dodge the wrapper for
-     one call, it removes it from the top frame for the rest of the page's life,
-     with nothing shown to the reader.
-
-     Two fixes suggest themselves and both are worse than the problem:
-
-     - defineProperty with writable:false. It stops the second line and not the
-       first, and it breaks every site that legitimately wraps fetch -- error
-       reporters, analytics SDKs, polyfills. Paying real breakage for half a
-       mitigation is the wrong side of the trade this codebase keeps making.
-     - re-arming on a timer. Same objection to the first line, and re-wrapping
-       whatever a site installed is its own source of breakage.
-
-     What actually closes it is the work already scheduled against the frame
-     scope: running the credential-facing subset with all_frames and
-     match_about_blank, so a child realm arrives patched instead of pristine.
-     That is worth recording here because it means the frame-scope item buys
-     more than its own disclosure claims -- it is also the fix for this.
-
-     So the premise being pinned is NOT "the wrappers are safe". It is: the
-     network-blocking spine does not depend on them. DNR rules are enforced by
-     the browser, outside the page's reach, and stay up whatever the page does
-     to our assignments. The day the blocking starts depending on a page-realm
-     wrapper, this stops being an accepted limit. */
+  /* Hostile pages can replace these hooks or borrow another realm's methods.
+     Keep them writable for compatibility; exact-value checks remain best-effort. */
   check('the network wrappers are still plain assignments, not hardened property definitions',
     /window\.fetch=function/.test(CONTENT) && !/defineProperty\(window,\s*["']fetch["'][^)]*writable:\s*!1/.test(CONTENT),
     'if these became non-writable, the site-breakage trade above was taken and needs revisiting');
@@ -208,16 +163,22 @@ function check(name, cond, detail) {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
   const dnr = manifest.declarative_net_request || {};
   const files = dnr.rule_resources || [];
-  check('blocking is still carried by browser-enforced DNR rules, not by the page realm',
+  check('known-destination blocking retains browser-enforced DNR rules',
     files.length > 0 && files.some((r) => r.enabled !== false),
-    'if blocking moved into the page realm it inherits every bypass described above');
+    'listed destinations would lose their page-independent rule set');
 
   let ruleCount = 0;
   files.forEach((r) => {
     try { ruleCount += JSON.parse(fs.readFileSync(path.join(ROOT, r.path), 'utf8')).length; } catch (_) {}
   });
-  check('the rule set is still substantial rather than a stub', ruleCount > 1000,
-    'only ' + ruleCount + ' rules — the spine this limit leans on has thinned out');
+  check('the browser rule set is still substantial rather than a stub', ruleCount > 1000,
+    'only ' + ruleCount + ' rules remain');
+
+  check('README distinguishes page hooks from browser rules',
+    README.includes('Browser-enforced network rules remain in force if a website changes its JavaScript.')
+      && README.includes('cannot guarantee that malicious code already running in a page'));
+  check('popup discloses bypassable SessionShield hooks',
+    POPUP.includes('Hostile page code can bypass these JavaScript hooks; browser rules still block listed destinations.'));
 
   /* The isolated world is the other thing a page cannot touch. If the bridge
      ever moved into the page's realm, the message channel would join the list

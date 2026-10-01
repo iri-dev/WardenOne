@@ -47,95 +47,66 @@ function formatAge(days) {
   return days + ' day' + (days === 1 ? '' : 's');
 }
 
-function formatExternalReputation(items) {
-  if (!Array.isArray(items) || !items.length) return '';
-  return items.map((item) => {
-    if (item.provider === 'VirusTotal' && item.ok === false) {
-      return item.status === 429
-        ? 'VirusTotal: rate limited'
-        : 'VirusTotal: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'VirusTotal' && item.stats) {
-      return 'VirusTotal: ' + (item.stats.malicious || 0) + ' malicious, ' + (item.stats.suspicious || 0) + ' suspicious';
-    }
-    if (item.provider === 'VirusTotal' && item.notFound) {
-      return 'VirusTotal: no URL report yet';
-    }
-    if (item.provider === 'VirusTotal file hash' && item.stats) {
-      return 'VirusTotal URL-content hash: ' + (item.stats.malicious || 0) + ' malicious, ' + (item.stats.suspicious || 0) + ' suspicious';
-    }
-    if (item.provider === 'Google Safe Browsing' && item.ok === false) {
-      return 'Google Safe Browsing: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'Google Safe Browsing' && item.threats && item.threats.length) {
-      return 'Google Safe Browsing: ' + item.threats.join(', ');
-    }
-    if (item.provider === 'Google Safe Browsing' && item.ok) {
-      return 'Google Safe Browsing: clear';
-    }
-    if (item.provider === 'PhishTank' && item.ok === false) {
-      return item.rateLimited ? 'PhishTank: rate limited' : 'PhishTank: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'PhishTank' && item.hit) {
-      return 'PhishTank: verified phishing' + (item.phishId ? ' #' + item.phishId : '');
-    }
-    if (item.provider === 'PhishTank' && item.ok) {
-      return item.inDatabase ? 'PhishTank: listed, not current/verified' : 'PhishTank: clear';
-    }
-    if (item.provider === 'OpenPhish' && item.ok === false) {
-      return 'OpenPhish: feed lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'OpenPhish' && item.hit) {
-      return 'OpenPhish: phishing feed match';
-    }
-    if (item.provider === 'OpenPhish' && item.ok) {
-      return item.stale ? 'OpenPhish: clear (stale feed)' : 'OpenPhish: clear';
-    }
-    if (item.provider === 'AbuseIPDB' && item.ok === false) {
-      return item.rateLimited ? 'AbuseIPDB: rate limited' : 'AbuseIPDB: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'AbuseIPDB' && (item.hit || item.warning)) {
-      return 'AbuseIPDB: ' + (item.score || 0) + '% abuse confidence' + (item.totalReports ? ', ' + item.totalReports + ' reports' : '');
-    }
-    if (item.provider === 'AbuseIPDB' && item.ok) {
-      return 'AbuseIPDB: clear';
-    }
-    if (item.provider === 'URLhaus' && item.ok === false) {
-      return item.rateLimited ? 'URLhaus: rate limited' : 'URLhaus: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'URLhaus' && item.hit) {
+const PROVIDER_RENDERERS = new Map([
+  ['VirusTotal', (item) => {
+    if (item.ok === false) return item.status === 429 ? 'VirusTotal: rate limited' : 'VirusTotal: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.stats) return 'VirusTotal: ' + (item.stats.malicious || 0) + ' malicious, ' + (item.stats.suspicious || 0) + ' suspicious';
+    if (item.notFound) return 'VirusTotal: no URL report yet';
+  }],
+  ['VirusTotal file hash', (item) => {
+    if (item.stats) return 'VirusTotal URL-content hash: ' + (item.stats.malicious || 0) + ' malicious, ' + (item.stats.suspicious || 0) + ' suspicious';
+  }],
+  ['Google Safe Browsing', (item) => {
+    if (item.ok === false) return 'Google Safe Browsing: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.threats && item.threats.length) return 'Google Safe Browsing: ' + item.threats.join(', ');
+    if (item.ok) return 'Google Safe Browsing: clear';
+  }],
+  ['PhishTank', (item) => {
+    if (item.ok === false) return item.rateLimited ? 'PhishTank: rate limited' : 'PhishTank: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.hit) return 'PhishTank: verified phishing' + (item.phishId ? ' #' + item.phishId : '');
+    if (item.ok) return item.inDatabase ? 'PhishTank: listed, not current/verified' : 'PhishTank: clear';
+  }],
+  ['OpenPhish', (item) => {
+    if (item.ok === false) return 'OpenPhish: feed lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.hit) return 'OpenPhish: phishing feed match';
+    if (item.ok) return item.stale ? 'OpenPhish: clear (stale feed)' : 'OpenPhish: clear';
+  }],
+  ['AbuseIPDB', (item) => {
+    if (item.ok === false) return item.rateLimited ? 'AbuseIPDB: rate limited' : 'AbuseIPDB: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.hit || item.warning) return 'AbuseIPDB: ' + (item.score || 0) + '% abuse confidence' + (item.totalReports ? ', ' + item.totalReports + ' reports' : '');
+    if (item.ok) return 'AbuseIPDB: clear';
+  }],
+  ['URLhaus', (item) => {
+    if (item.ok === false) return item.rateLimited ? 'URLhaus: rate limited' : 'URLhaus: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.hit) {
       const scope = item.hostOnly ? 'malware host' : 'malware URL';
       const payloads = item.payloadCount ? ', ' + item.payloadCount + ' payload' + (item.payloadCount === 1 ? '' : 's') : '';
       return 'URLhaus: ' + scope + (item.threat ? ' - ' + item.threat : '') + (item.signatures && item.signatures.length ? ' / ' + item.signatures.join(', ') : '') + payloads;
     }
-    if (item.provider === 'URLhaus' && item.ok) {
-      return 'URLhaus: clear';
-    }
-    if (item.provider === 'WhoisXML Domain Reputation' && item.ok === false) {
-      return item.rateLimited ? 'WhoisXML reputation: rate limited' : 'WhoisXML reputation: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'WhoisXML Domain Reputation' && (item.hit || item.warning)) {
-      return 'WhoisXML reputation: ' + (item.reputationScore != null ? Math.round(Number(item.reputationScore)) + '/100' : 'warning');
-    }
-    if (item.provider === 'WhoisXML Domain Reputation' && item.ok) {
-      return 'WhoisXML reputation: clear';
-    }
-    if (item.provider === 'WhoisXML Threat Intelligence' && item.ok === false) {
-      return item.rateLimited ? 'WhoisXML threat intel: rate limited' : 'WhoisXML threat intel: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
-    }
-    if (item.provider === 'WhoisXML Threat Intelligence' && (item.hit || item.warning)) {
-      return 'WhoisXML threat intel: ' + (item.total || 0) + ' IoC match' + ((item.total || 0) === 1 ? '' : 'es') + (item.threatTypes && item.threatTypes.length ? ' / ' + item.threatTypes.join(', ') : '');
-    }
-    if (item.provider === 'WhoisXML Threat Intelligence' && item.ok) {
-      return 'WhoisXML threat intel: clear';
-    }
-    if (item.provider === 'WhoisXML API' && item.warning) {
-      return 'WhoisXML domain age: ' + (item.ageDays != null ? item.ageDays + ' days' : 'warning');
-    }
-    if (item.provider === 'WhoisXML API' && item.ok) {
-      return 'WhoisXML domain age: clear';
-    }
-    return item.provider || 'External reputation';
+    if (item.ok) return 'URLhaus: clear';
+  }],
+  ['WhoisXML Domain Reputation', (item) => {
+    if (item.ok === false) return item.rateLimited ? 'WhoisXML reputation: rate limited' : 'WhoisXML reputation: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.hit || item.warning) return 'WhoisXML reputation: ' + (item.reputationScore != null ? Math.round(Number(item.reputationScore)) + '/100' : 'warning');
+    if (item.ok) return 'WhoisXML reputation: clear';
+  }],
+  ['WhoisXML Threat Intelligence', (item) => {
+    if (item.ok === false) return item.rateLimited ? 'WhoisXML threat intel: rate limited' : 'WhoisXML threat intel: lookup failed' + (item.status ? ' (HTTP ' + item.status + ')' : '');
+    if (item.hit || item.warning) return 'WhoisXML threat intel: ' + (item.total || 0) + ' IoC match' + ((item.total || 0) === 1 ? '' : 'es') + (item.threatTypes && item.threatTypes.length ? ' / ' + item.threatTypes.join(', ') : '');
+    if (item.ok) return 'WhoisXML threat intel: clear';
+  }],
+  ['WhoisXML API', (item) => {
+    if (item.warning) return 'WhoisXML domain age: ' + (item.ageDays != null ? item.ageDays + ' days' : 'warning');
+    if (item.ok) return 'WhoisXML domain age: clear';
+  }],
+]);
+
+function formatExternalReputation(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return items.map((item) => {
+    const provider = item && typeof item.provider === 'string' ? item.provider : '';
+    const render = PROVIDER_RENDERERS.get(provider);
+    return (render && render(item)) || provider || 'External reputation';
   }).join(' · ');
 }
 

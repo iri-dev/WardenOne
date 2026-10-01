@@ -12,6 +12,8 @@ const searchBlock = source.match(/;\(function\(\)\{\r?\n  var inp=document\.getE
 assert(searchBlock, 'popup settings-search module must remain discoverable');
 assert(popupHtml.indexOf('<script src="popup.js"></script>') < popupHtml.indexOf('<script src="popup-settings-search.js"></script>'),
   'settings search must load after popup state helpers');
+assert(popupHtml.includes('id="js-shield"') && popupHtml.includes('WebAssembly startup'),
+  'the search fixture must cover the real Script Shield section');
 
 class FakeClassList {
   constructor(names) {
@@ -126,6 +128,12 @@ const interfaceGroup = new FakeElement({ classes: ['card-group'] });
 interfaceGroup.previousElementSibling = interfaceHeading;
 const interfaceTheme = interfaceGroup.append(new FakeElement({ classes: ['row'], text: 'Theme Light Dark' }));
 
+const scriptHeading = new FakeElement({ tagName: 'H2', text: 'Script Shield' });
+const scriptGroup = new FakeElement({ id: 'js-shield', classes: ['card-group'] });
+scriptGroup.previousElementSibling = scriptHeading;
+const webAssemblyRow = scriptGroup.append(new FakeElement({ classes: ['row'], text: 'Block JavaScript and WebAssembly startup' }));
+const trustedScriptRow = scriptGroup.append(new FakeElement({ classes: ['row'], text: 'Trusted script sites' }));
+
 const rewindDetails = new FakeElement({ tagName: 'DETAILS', classes: ['rewind-drop'], open: false });
 const rewindGroup = rewindDetails.append(new FakeElement({ classes: ['card-group'] }));
 /* The real row's wording matters here: it carries both 'speed' and 'records', which is how
@@ -146,6 +154,7 @@ const byId = new Map([
   [eyeModes.id, eyeModes],
   [brightnessRange.id, brightnessRange],
   [extras.id, extras],
+  [scriptGroup.id, scriptGroup],
 ]);
 
 const document = {
@@ -157,9 +166,9 @@ const document = {
     return null;
   },
   querySelectorAll(selector) {
-    if (selector === '.row') return [rewindRow, interfaceTheme, micRow];
-    if (selector === '.card-group') return [rewindGroup, interfaceGroup, micGroup];
-    if (selector === '.group>h2, .eyeshield-panel+h2, #js-shield+h2') return [eyeHeading, interfaceHeading];
+    if (selector === '.row') return [rewindRow, interfaceTheme, micRow, webAssemblyRow, trustedScriptRow];
+    if (selector === '.card-group') return [rewindGroup, interfaceGroup, micGroup, scriptGroup];
+    if (selector === '.group>h2, .eyeshield-panel+h2, #js-shield+h2') return [eyeHeading, interfaceHeading, scriptHeading];
     if (selector.indexOf('.eyeshield-mode') >= 0) return eyeSearchChildren.slice();
     return [];
   },
@@ -196,6 +205,20 @@ searchInput.value = 'eyeshield';
 searchInput.emit('input');
 assert.strictEqual(resultCount.textContent, '1 result', 'EyeShield must not be double-counted through its heading');
 
+searchInput.value = 'WebAssembly';
+searchInput.emit('input');
+assert(!scriptGroup.classList.contains('wo-hidden'), 'WebAssembly must keep Script Shield visible');
+assert(!scriptHeading.classList.contains('wo-hidden'), 'WebAssembly must keep the Script Shield heading visible');
+assert(!webAssemblyRow.classList.contains('wo-hidden'), 'the matching Script Shield row must stay visible');
+searchInput.value = 'WebAssembly startup';
+searchInput.emit('input');
+assert(trustedScriptRow.classList.contains('wo-hidden'), 'unrelated Script Shield rows may hide');
+
+searchInput.value = 'trusted script sites';
+searchInput.emit('input');
+assert(!scriptGroup.classList.contains('wo-hidden'), 'a later Script Shield row must also keep its section visible');
+assert(!trustedScriptRow.classList.contains('wo-hidden'), 'the trusted sites row must stay visible');
+
 searchInput.value = 'twitch';
 searchInput.emit('input');
 assert(!rewindDetails.classList.contains('wo-hidden'), 'a matching rewind section must be visible');
@@ -207,6 +230,10 @@ assert(!eyePanel.classList.contains('wo-hidden'), 'clearing search must restore 
 assert(!rewindDetails.classList.contains('wo-hidden'), 'clearing search must restore the rewind section');
 assert.strictEqual(rewindDetails.open, false, 'clearing search must restore the rewind section collapsed state');
 assert.strictEqual(resultCount.textContent, '', 'clearing search must clear the result count');
+assert(!scriptGroup.classList.contains('wo-hidden') && !scriptHeading.classList.contains('wo-hidden'),
+  'clearing search must restore Script Shield');
+assert(!webAssemblyRow.classList.contains('wo-hidden') && !trustedScriptRow.classList.contains('wo-hidden'),
+  'clearing search must restore every Script Shield row');
 
 /* Fuzzy matching used to allow two edits from six characters up -- a third of a six-letter
    word. So 'speech' matched 'speed', and because the Twitch rewind row also says 'records',

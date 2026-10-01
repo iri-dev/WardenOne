@@ -14,6 +14,9 @@ raw per-run values, the readiness evidence and the metadata (commit, browser and
 versions, CPU, throttle, date). Raw DevTools traces from `--trace` land in `traces/`, which is
 not tracked (tens of MB each).
 
+The separate [YouTube memory review](youtube-memory-review-2026-10-01.md) records the owner's
+1.2 GB Brave warning, controlled playback measurements, and what remains unproven.
+
 ## How to read one
 
 - **off** is the same browser with no extension; **on** is WardenOne loaded from the working tree.

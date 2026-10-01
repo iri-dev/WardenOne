@@ -49,7 +49,7 @@ const script = fs.readFileSync('popup-diagnostics.js', 'utf8');
 const allowlist = JSON.parse(fs.readFileSync('tools/package-allowlist.json', 'utf8'));
 assert(html.includes('id="diagnostics-prepare"') && html.includes('id="diagnostics-download"'));
 assert(html.includes('id="diagnostics-preview" hidden') && html.includes('src="popup-diagnostics.js"'));
-assert(allowlist.includes('popup-diagnostics.js') && bg.includes("CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js')"));
+assert(allowlist.includes('popup-diagnostics.js') && bg.includes("'popup-diagnostics.js', 'popup-scroll-memory.js'"));
 assert(bg.includes('componentFailures,') && bg.includes('wardenone_last_verification'));
 assert(script.includes("prepare.addEventListener('click'") && script.includes("download.addEventListener('click'"));
 assert(!script.includes('fetch('));

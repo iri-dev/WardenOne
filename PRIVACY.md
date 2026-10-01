@@ -47,10 +47,10 @@ account by WardenOne, and is **not** uploaded to us:
 - Your settings and which protections are enabled.
 - A local activity log of what WardenOne blocked or flagged (for the popup and the
   Activity/History page). It records security events WardenOne itself acted on, not the pages
-  you visited. Addresses in it are kept as site and path only — never the query string, and
-  with anything in the path that is not a plain route word blanked out: tokens, identifiers,
-  account and order numbers — because the query is where sign-in codes and reset links carry
-  their secrets and the path is where account and order numbers travel. The log keeps at most
+  you visited. Logged addresses keep the scheme, host and path, but drop the query string and
+  fragment. Path segments that look like tokens or long identifiers are replaced with `*`.
+  Plain lowercase words and numbers of up to eight digits may remain, including names, short
+  account or order numbers, or secrets that have those shapes. The log keeps at most
   the last 200 events and nothing older than 30 days (the same period as the notification
   copy of those events); **Clear history** on the Activity page removes it at once.
 - **Warning-page hand-off records, held in memory for as long as they are needed.** When
@@ -67,9 +67,9 @@ account by WardenOne, and is **not** uploaded to us:
   address — not the address — for ten minutes.
 - Download-review records for the Download Guard: the file name, the grade and its reasons,
   and the source address in the same form the activity log keeps — scheme, host and a path
-  with token-shaped parts starred, never the query string — for up to two hours, at most 25
-  at a time. The exact address is not kept by WardenOne; it stays in Chrome's own download
-  list. An earlier build kept the full address, signed download links included.
+  with token-shaped parts starred, without the query string or fragment — for up to two hours,
+  at most 25 at a time. Chrome's own download list may retain the full source address. An
+  earlier build kept the full address in these records, signed download links included.
 - The startup safety check's report: for each open tab it flagged, the host and the reason —
   never the page title — for 24 hours. In a private window the report is kept in memory only
   and is gone when the window closes; it never reaches the normal profile.
