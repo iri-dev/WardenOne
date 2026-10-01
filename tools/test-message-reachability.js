@@ -77,9 +77,13 @@ const RETIRED = ['list-extensions', 'get-extension-alerts', 'list-site-permissio
 const back = RETIRED.filter((k) => handled.has(k));
 check('the retired handlers stay retired', back.length === 0, back.join(', '));
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const MEMORY = fs.readFileSync(path.join(ROOT, 'background-memory.js'), 'utf8');
 check('their replacements are still handled and still sent',
   ['extension-security-report', 'clean-browser', 'memory-free-ram', 'scan-site-permissions'].every((k) => handled.has(k) && emitted.has(k)));
-check('the group sleeper still runs from the Memory Shield alarm', /memorySweep\('alarm', cfg\); throttleInactiveTabs\(cfg\); sleepIdleGroups\(cfg\);/.test(BG));
+check('the group sleeper still runs from the Memory Shield alarm', /runMemoryMaintenance\(cfg\)/.test(BG)
+  && /async function runMemoryMaintenance\(cfgArg\)/.test(MEMORY)
+  && /await memorySweep\('alarm', cfg, snapshot\)/.test(MEMORY)
+  && /await sleepIdleGroups\(cfg, snapshot\)/.test(MEMORY));
 check('the permission sweep is still reachable through the cleaner', /if \(t\.sitePermissions\) perms = await resetSensitiveSitePermissionsGlobally\(\);/.test(BG));
 
 console.log('');

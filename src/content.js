@@ -16913,21 +16913,8 @@
       _s/4294967296),
       tinyNoise=(scale=0.01)=>(rnd()-.5)*scale,
       mixSeed=str=>{let h=(_sk^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
-      /* A third seed, for the hardware profile only (COMPAT-11). A core count is a claim about
-         the machine, and a machine does not change between two reloads of one site; drawn from
-         the per-load seed it did, and the systems that read exactly these values -- fraud and
-         risk engines, "remember this device", step-up sign-in -- saw a new computer on every
-         page view. So the profile is keyed on the SITE: the registrable domain of the top-level
-         page, which location.ancestorOrigins gives a cross-origin frame too, so a frame reports
-         the machine the page around it reports, as a real browser's frames do. One site always
-         sees one machine; two sites see unrelated ones. There is deliberately no per-reader
-         secret in it: nothing synchronous, extension-owned and storage-free exists at
-         document_start to carry one, and the alternatives are a key in the site's own storage
-         (the footprint PRIV-12 removed) or a value that settles after the page's first read
-         (two answers in one document, the worse tell). Said plainly: every reader shows a given
-         site the same machine, which is zero bits of identity, and nothing in it links one
-         site's visitor to another's. Audio noise stays on the per-load seed, where
-         re-rolling is the protection. Canvas pixels and exports remain native. */
+      /* The site seed keeps the page's WebGL and WebGPU answers stable across frames and reloads.
+         Core count and memory stay native: workers expose the real values. */
       woSiteKey=()=>{
         try{
           let host="";
@@ -17064,11 +17051,9 @@
       catch(_){
 
       }
-      /* A plausible hardware profile instead of constant values, so a fixed "4 cores plus one GPU string" stops being a WardenOne tell. Drawn from the site seed (_st, see woSiteKey): cores, RAM and GPU vendor+renderer agree within a page and across its frames, hold across reloads and tabs of one site, and differ between sites. The renderer table describes Windows only; on other or contradictory platforms, keep both graphics APIs native. */
+      /* Use a site-stable graphics identity on Windows; keep native graphics on other platforms. */
       const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixSite(key))()*arr.length)%arr.length];
-      const woCores=woPick([4,8,8,12,16],"hwc"),
-      woMem=woPick([4,8,8],"devmem"),
-      woPlatform=String(navigator.platform||""),
+      const woPlatform=String(navigator.platform||""),
       woUaPlatform=String(navigator.userAgentData&&navigator.userAgentData.platform||""),
       woWindows=/^Win/i.test(woPlatform)&&(!woUaPlatform||/^Windows$/i.test(woUaPlatform)),
       woGpu=woWindows?woPick([
@@ -17433,12 +17418,6 @@
         }
 
       };
-      defp(Navigator.prototype,
-      "hardwareConcurrency",
-      woCores),
-      defp(Navigator.prototype,
-      "deviceMemory",
-      woMem);
       try{
         const realScreenW=screen.width||innerWidth||1200,
         realScreenH=screen.height||innerHeight||800,

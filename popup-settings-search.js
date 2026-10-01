@@ -223,13 +223,6 @@
         var tqVisible=!q||!topQuick.querySelector('.wo-hidden');
         topQuick.classList.toggle('wo-hidden',!tqVisible);
       }
-      var jsShield=$('js-shield');
-      if(jsShield){
-        var jsVisible=!q||!jsShield.querySelector('.wo-hidden');
-        jsShield.classList.toggle('wo-hidden',!jsVisible);
-        var jsH3=jsShield.previousElementSibling;
-        if(jsH3&&/^H[1-6]$/.test(jsH3.tagName))jsH3.classList.toggle('wo-hidden',!jsVisible);
-      }
       if(nores)nores.style.display=(q&&shown===0)?'block':'none';
       if(clearBtn)clearBtn.style.display=raw?'flex':'none';
       if(countEl){

@@ -128,9 +128,13 @@ async function main() {
   console.log("4) JSON.parse hook leaves unrelated JSON untouched:");
   {
     const ctx = newCtx("{}");
+    let stringifies = 0;
+    const originalStringify = ctx.JSON.stringify;
+    ctx.JSON.stringify = function () { stringifies++; return originalStringify.apply(this, arguments); };
     vm.runInContext(src, ctx);
-    const r = ctx.JSON.parse('{"foo":1,"bar":{"baz":2}}');
+    const r = ctx.JSON.parse(JSON.stringify({ foo: 1, bar: { baz: 2, data: 'x'.repeat(50000) } }));
     ok("object unchanged", r.foo === 1 && r.bar.baz === 2);
+    ok("ordinary JSON is not serialized again for error detection", stringifies === 0);
   }
 
   console.log("5) fetch-response hook on /youtubei/v1/player:");
@@ -429,6 +433,23 @@ async function main() {
     });
     const login = JSON.parse(captured[1].body);
     ok("LOGIN_REQUIRED does not rotate past param_first", login.params === "eAFgAQ" && !login.context.client.clientScreen);
+
+    for (const [label, input, reviver] of [
+      ["escaped player error", '{"playabilityStatus":{"status":"\\u0055NPLAYABLE"},"videoDetails":{"videoId":"escaped"}}'],
+      ["reviver-produced player error", '{"playabilityStatus":{"status":"RECOVER"},"videoDetails":{"videoId":"revived"}}',
+        (key, value) => key === "status" ? "UNPLAYABLE" : value],
+    ]) {
+      captured = null;
+      const errorCtx = newCtx("{}");
+      errorCtx.self.fetch = function () { captured = arguments; return Promise.resolve(new FakeResponse("{}", { status: 200 })); };
+      vm.runInContext(src, errorCtx);
+      errorCtx.JSON.parse(input, reviver);
+      await errorCtx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", {
+        method: "POST",
+        body: JSON.stringify({ context: { client: { clientName: "WEB", userAgent: "UA" } }, playbackContext: { contentPlaybackContext: {} } }),
+      });
+      ok(label + " still rotates", JSON.parse(captured[1].body).params === "8AUB");
+    }
   }
 
   console.log("18) bounded recovery section installs without throwing + stays stealthy:");

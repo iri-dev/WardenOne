@@ -400,8 +400,13 @@
     }
   }
 
-  function responseLooksRecoverableError(obj) {
+  function responseLooksRecoverableError(obj, source, reviver) {
     try {
+      // Escapes and revivers can create marker text absent from the source.
+      if (typeof source === "string" && typeof reviver !== "function" &&
+          source.indexOf("\\u") === -1 &&
+          source.indexOf("playerErrorMessageRenderer") === -1 &&
+          source.indexOf("UNPLAYABLE") === -1) return false;
       var text = safeString(obj);
       if (text.indexOf("CONTENT_CHECK_REQUIRED") !== -1) return false;
       return text.indexOf("playerErrorMessageRenderer") !== -1 || text.indexOf("UNPLAYABLE") !== -1;
@@ -410,9 +415,9 @@
     }
   }
 
-  function rotateFromResponse(obj) {
+  function rotateFromResponse(obj, source, reviver) {
     if (!playerShapingAllowed() || mode === MODE_NONE) return;
-    if (responseLooksRecoverableError(obj)) advanceMode(responseVideoId(obj), "parse");
+    if (responseLooksRecoverableError(obj, source, reviver)) advanceMode(responseVideoId(obj), "parse");
   }
 
   function definePlain(name, value) {
@@ -610,7 +615,7 @@
       try {
         if (masterEnabled()) {
           if (mightContainPlayerAds(obj)) pruneAdGuard(obj);
-          rotateFromResponse(obj);
+          rotateFromResponse(obj, args && args[0], args && args[1]);
         }
       } catch (_) {}
       return obj;

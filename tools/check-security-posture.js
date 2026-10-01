@@ -166,6 +166,7 @@ const PAGE_AND_WORKER_JS = [
   'download-review.js',
   'popup.js',
   'popup-health.js',
+  'popup-scroll-memory.js',
   'popup-diagnostics.js',
   'popup-settings-search.js',
   'extensions.js',

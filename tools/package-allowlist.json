@@ -70,6 +70,7 @@
   "popup-diagnostics.js",
   "popup-health.js",
   "popup.js",
+  "popup-scroll-memory.js",
   "popup-settings-search.js",
   "privacy-probe.js",
   "privacy-test.html",
