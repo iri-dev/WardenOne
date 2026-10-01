@@ -594,17 +594,20 @@ function runtime() {
     };
     const liveFn = pickFn('async function wardenBlockRuleLive(host) {');
     const dropFn = pickFn('async function wardenDropSiteWorker(host) {');
+    const bandFn = pickFn('async function getDynamicRulesInBand(base, size) {');
     check('the block verifier is still where the test expects it', liveAt >= 0 && !!liveFn);
     check('and the service-worker drop is too', !!dropFn);
+    check('the verifier reads the learned band, not every dynamic rule',
+      /getDynamicRulesInBand\(LEARNED_RULE_BASE, LEARNED_MAX\)/.test(liveFn) && !/getDynamicRules\(\)/.test(liveFn));
     const region = BG.slice(Math.min.apply(null, starts),
       BG.indexOf(NL2 + 'function startElementTool(tab, frameId) {'))
-      + NL2 + liveFn + NL2 + dropFn;
+      + NL2 + liveFn + NL2 + dropFn + NL2 + bandFn;
     const build = (opts) => {
       opts = opts || {};
       const notices = []; const reloads = []; const wiped = [];
       const sb = {
         URL, Object, String, Date, Number, console, Set, JSON,
-        LEARNED: {}, BLOCKED_DOMAINS: new Set(),
+        LEARNED: {}, BLOCKED_DOMAINS: new Set(), LEARNED_RULE_BASE: 700000, LEARNED_MAX: 2000,
         WO_MENU_BLOCK: 'b', DEFAULT_CONFIG: { enabled: true },
         normalizeLearnedDomain: (h) => String(h || '').toLowerCase().replace(/^www\./, ''),
         /* The menu reads the host through this one, so the sandbox needs it too. */
