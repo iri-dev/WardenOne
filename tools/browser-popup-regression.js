@@ -156,11 +156,17 @@ async function run() {
     await value("(() => { const el = document.getElementById('enabled'); el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); })()");
     await until("new Promise(resolve => chrome.storage.local.get('wardenone_config', data => resolve(data.wardenone_config?.enabled === true)))", 'restored enabled config');
     assert(await value("[...document.querySelectorAll('.group .tg')].every(el => !el.classList.contains('disabled'))"));
-    await value("new Promise(resolve => chrome.storage.session.set({wardenone_popup_scroll_memory:{y:5000,at:Date.now()}},resolve))");
+    /* Midway down, and the wheel turned toward the larger gap: a saved position past the end
+       clamps to it, and a wheel pointed into an end does not move the page at all. */
+    const maxScroll = await value('document.scrollingElement.scrollHeight - innerHeight');
+    assert(maxScroll > 200, 'the popup is too short to test scroll restoration: ' + maxScroll);
+    const savedY = Math.floor(maxScroll / 2);
+    await value(`new Promise(resolve => chrome.storage.session.set({wardenone_popup_scroll_memory:{y:${savedY},at:Date.now()}},resolve))`);
     await value("scrollTo(0,0); restorePopupScrollPosition()");
-    await until('scrollY > 4000', 'saved popup scroll position');
+    await until(`Math.abs(scrollY - ${savedY}) < 2`, 'saved popup scroll position');
     const restoredY = await value('scrollY');
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 300, deltaX: 0, deltaY: 420 }, page.sessionId);
+    const wheelDelta = maxScroll - restoredY >= restoredY ? 420 : -420;
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 300, deltaX: 0, deltaY: wheelDelta }, page.sessionId);
     /* The wheel lands asynchronously; compare from where it landed, not from a fixed delay. */
     await until(`scrollY !== ${restoredY}`, 'the wheel scroll to land');
     const userScrollY = await value('scrollY');

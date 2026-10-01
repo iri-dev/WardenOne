@@ -235,6 +235,28 @@ function tabLiveState(tabId) {
   });
 }
 
+// The live check above can take a second, and the tab can change inside it -- most simply, the
+// reader switches to it, and Chrome discards an active tab when asked (measured; see
+// memorySleepTabByHand). So every automatic path reads the tab again right before acting and acts
+// only on the tab it chose: still unprotected, on the same address, not used since it was chosen,
+// and past `minIdleMs` where the path has a threshold. The same final check Tab Limit makes.
+// `selected` is what was captured at selection time: { id, url, lastUsed } (lastUsed may be null).
+async function tabStillSleepable(selected, cfg, minIdleMs) {
+  const fresh = await tabsGet(selected.id);
+  if (!fresh) return { ok: false, reason: 'tab closed' };
+  const keep = tabKeepReason(fresh, cfg);
+  if (keep) return { ok: false, reason: keep, protected: true };
+  if ((fresh.url || fresh.pendingUrl || '') !== selected.url) return { ok: false, reason: 'navigated while checked' };
+  const lastUsed = tabLastUsedOrNull(fresh);
+  if (lastUsed != null && (selected.lastUsed == null || lastUsed > selected.lastUsed)) return { ok: false, reason: 'used while checked' };
+  const now = Date.now();
+  if (minIdleMs > 0 && now - tabLastUsed(fresh, now) < minIdleMs) return { ok: false, reason: 'no longer idle' };
+  return { ok: true, tab: fresh };
+}
+function sleepSelection(tab, lastUsed) {
+  return { id: tab.id, url: tab.url || tab.pendingUrl || '', lastUsed: lastUsed == null ? null : lastUsed };
+}
+
 const MEMORY_LIVE_CHECK_CONCURRENCY = 4;
 async function mapLimited(items, limit, worker) {
   const list = Array.isArray(items) ? items : [];
@@ -296,9 +318,9 @@ async function memorySweep(reason, cfgArg, snapshot) {
       if (keep) continue;
       const idleMs = state ? state.idleMs : now - tabLastUsed(tab, now);
       if (idleMs < thresholdMs) continue;
-      candidates.push({ tab, idleMs });
+      candidates.push({ tab, idleMs, selected: sleepSelection(tab, now - idleMs) });
     }
-    const results = await mapLimited(candidates, MEMORY_LIVE_CHECK_CONCURRENCY, async ({ tab, idleMs }) => {
+    const results = await mapLimited(candidates, MEMORY_LIVE_CHECK_CONCURRENCY, async ({ tab, idleMs, selected }) => {
       // Check the tab's live state once. We always check active camera/mic (a live
       // media tab must never be slept); the form-dirty check only applies when the
       // user has form protection enabled.
@@ -306,6 +328,7 @@ async function memorySweep(reason, cfgArg, snapshot) {
       if (!live.ok) return null; // could not ask -- an unanswered tab is not a verified-clean one
       if (live.mediaActive) return null; // active camera/mic -- never sleep
       if (cfg.memoryNeverForms && live.formDirty) return null; // unsaved form input
+      if (!(await tabStillSleepable(selected, cfg, thresholdMs)).ok) return null;
       try {
         const discarded = await chrome.tabs.discard(tab.id);
         if (!discarded) return null;
@@ -342,10 +365,13 @@ async function freeRamNow() {
       candidates.push(tab);
     }
     const results = await mapLimited(candidates, MEMORY_LIVE_CHECK_CONCURRENCY, async (tab) => {
+      const selected = sleepSelection(tab, tabLastUsedOrNull(tab));
       const live = await tabLiveState(tab.id);
       if (!live.ok) return { kept: "couldn't check for unsaved work" };
       if (cfg.memoryNeverForms && live.formDirty) return { kept: 'unsaved form' };
       if (live.mediaActive) return { kept: 'camera/mic in use' };
+      const still = await tabStillSleepable(selected, cfg, 0);
+      if (!still.ok) return { kept: still.reason };
       try {
         const discarded = await chrome.tabs.discard(tab.id);
         return discarded ? { slept: true } : { kept: 'Chrome refused to sleep' };
@@ -790,10 +816,16 @@ async function memoryActOnTab(tabId, action, opts) {
   const requireIdleHours = opts && Number(opts.requireIdleHours) >= 0 ? Number(opts.requireIdleHours) : 6;
   const last = tabLastUsedOrNull(tab) || 0;
   if (requireIdleHours > 0 && (!last || (Date.now() - last) < requireIdleHours * 3600000)) return { ok: false, error: 'Tab is no longer idle enough.' };
+  const selected = sleepSelection(tab, tabLastUsedOrNull(tab));
   const live = await tabLiveState(id);
   if (!live.ok) return { ok: false, error: "Couldn't check this tab for unsaved work. Try again, or reload the tab first." };
   if (cfg.memoryNeverForms && live.formDirty) return { ok: false, error: 'Protected tab: unsaved form' };
   if (live.mediaActive) return { ok: false, error: 'Protected tab: camera/mic in use' };
+  const still = await tabStillSleepable(selected, cfg, requireIdleHours * 3600000);
+  if (!still.ok) {
+    if (still.reason === 'tab closed') return { ok: false, error: 'Tab no longer exists.' };
+    return { ok: false, error: still.protected ? 'Protected tab: ' + still.reason : 'Tab was used or changed while it was being checked.' };
+  }
   try {
     if (action === 'sleep') {
       const discarded = await chrome.tabs.discard(id);
@@ -975,9 +1007,12 @@ async function sleepIdleGroups(cfgArg, snapshot) {
         candidates.push(t);
       }
       const results = await mapLimited(candidates, MEMORY_LIVE_CHECK_CONCURRENCY, async (t) => {
+        const selected = sleepSelection(t, tabLastUsed(t, now));
         const live = await tabLiveState(t.id);
         if (!live.ok) return false;
         if ((cfg.memoryNeverForms && live.formDirty) || live.mediaActive) return false;
+        const still = await tabStillSleepable(selected, cfg, thresholdMs);
+        if (!still.ok || still.tab.groupId !== t.groupId) return false;
         try { return !!(await chrome.tabs.discard(t.id)); } catch (_) { return false; }
       });
       const groupSlept = results.filter(Boolean).length;

@@ -22629,6 +22629,12 @@
       badge floating mid-screen would be stranger than one that is momentarily dead. */
       BADGE_LIFT_MAX_RATIO=.45,
       BADGE_LIFT_GAP=8,
+      /* Twitch's chat column, by Twitch's own readable class names rather than the generated
+      ones beside them, and how far above the badge's corner it may end and still hold it: a
+      logged-out page puts a sign-up bar under the chat. */
+      BADGE_TWITCH_CHAT_SELECTOR='[class~="chat-shell"],[class~="stream-chat"],[class~="video-chat"],[data-test-selector="chat-room-component-layout"]',
+      BADGE_TWITCH_CHAT_REACH=120,
+      badgeTwitchHost=/(^|\.)twitch\.tv$/i.test(location.hostname||""),
       /* The corner the badge lives in when nothing is in the way: its current box moved
       back down by whatever lift it carries. Every check below measures HOME, so a lifted
       badge keeps asking "is the corner free again?" rather than "is this spot free?" --
@@ -22880,6 +22886,26 @@
         }
 
       },
+      /* Twitch's chat column fills the badge's corner from the Chat button up: the message
+      field, then banners, polls and pinned notices, then the messages. The climb below always
+      found a spot, and every spot was chat someone was reading -- a different one each time a
+      banner came or went, which is why the chip seemed to wander. Hidden there, as on a
+      Discord server; protection and the toolbar badge run as before. */
+      badgeOnTwitchChat=home=>{
+        try{
+          if(!badgeTwitchHost||!home)return!1;
+          const x=home.left+home.width/2,
+          chats=document.querySelectorAll(BADGE_TWITCH_CHAT_SELECTOR);
+          for(let i=0;i<chats.length&&i<8;i++){
+            const box=chats[i].getBoundingClientRect();
+            if(box&&box.width>0&&box.height>0&&box.left<=x&&box.right>=x&&box.top<home.bottom&&box.bottom>=home.top-BADGE_TWITCH_CHAT_REACH)return!0
+          }
+        }
+        catch(_){
+
+        }
+        return!1
+      },
       /* Throttled, because the hit test below is a real layout read. Callers are
       events that can actually change the answer -- entering fullscreen, resizing,
       or the pointer arriving in the badge's own corner -- never a timer. */
@@ -22907,8 +22933,10 @@
           badgeYieldState.profile=profile;
           /* All the reading first, then one write. Every measurement is of the badge's
           HOME corner, whatever it is doing right now. */
-          const hide=badgeInFullscreen()||badgeOnDiscordServer(profile),
-          home=hide?null:badgeHomeRect(),
+          const fixedHide=badgeInFullscreen()||badgeOnDiscordServer(profile),
+          homeRect=fixedHide?null:badgeHomeRect(),
+          hide=fixedHide||badgeOnTwitchChat(homeRect),
+          home=hide?null:homeRect,
           under=hide||!home?null:badgeProbe(home),
           near=!hide&&home?badgeNearMediaControl(home):!1;
           let away=!1,
@@ -23145,15 +23173,27 @@
             },
             !badgeEventsBound){
               badgeEventsBound=!0;
-              if(discordAppHost){
-                woOn(window,"popstate",badgeRouteChanged),
-                woOn(window,"hashchange",badgeRouteChanged);
+              if(discordAppHost||badgeTwitchHost){
+                /* Both are single-page apps: a channel or a server is entered without a
+                reload, and leaving the chat behind must bring the chip back. A Twitch
+                channel's chat mounts after its route changes, and an offline channel has no
+                play event to re-check on, so a changed route is looked at again once it has
+                had time to render, as at load. */
+                const onRoute=()=>{
+                  const before=badgeYieldState.route;
+                  badgeRouteChanged(),
+                  badgeTwitchHost&&badgeYieldState.route!==before&&(setTimeout(()=>updateBadgeYield(!0),1500),setTimeout(()=>updateBadgeYield(!0),4000))
+                };
+                woOn(window,"popstate",onRoute),
+                woOn(window,"hashchange",onRoute);
                 try{
-                  window.navigation&&woOn(window.navigation,"currententrychange",badgeRouteChanged)
+                  window.navigation&&woOn(window.navigation,"currententrychange",onRoute)
                 }
                 catch(_){
 
                 }
+              }
+              if(discordAppHost){
                 /* A click can open or close a profile popout without a route change.
                 It also covers older browsers without the Navigation API. The
                 deferred check only reruns the badge's full hit tests when the

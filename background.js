@@ -3878,15 +3878,13 @@ function dnrBandUnchanged(installed, desired) {
 // remote lists alone are ~22,000 -- and builds that reply on the browser's UI thread, about
 // 200 ms per call. Six appliers read on every wake, so a tab close that woke the worker froze
 // the tab strip for over a second. Callers still filter to their band; this only narrows the
-// reply. An older Chrome that rejects the filter gets the full read it had before.
+// reply. No unfiltered fallback: the filter is Chrome 111+ and the manifest requires 121, so a
+// rejection is a transient Chrome error, and answering it with the full read would bring the
+// stall back. Every caller catches and leaves its band for the next wake, as it did before.
 async function getDynamicRulesInBand(base, size) {
   const ruleIds = [];
   for (let i = 0; i < size; i++) ruleIds.push(base + i);
-  try {
-    return await chrome.declarativeNetRequest.getDynamicRules({ ruleIds });
-  } catch (_) {
-    return chrome.declarativeNetRequest.getDynamicRules();
-  }
+  return chrome.declarativeNetRequest.getDynamicRules({ ruleIds });
 }
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
