@@ -23173,6 +23173,37 @@
             },
             !badgeEventsBound){
               badgeEventsBound=!0;
+              /* Twitch also collapses and expands its chat on the same route -- its own
+              button, a shortcut, a narrow window -- and nothing below re-checks for that: the
+              chip stayed hidden over a corner that had come free, or showed over the Chat
+              button when the chat came back. The chat column's own size is the signal. It
+              changes when the column opens or closes, not when a message arrives, because the
+              messages scroll inside it. A column that mounts later is picked up on the route
+              and load follow-ups, and a detached one is let go. */
+              const twitchChats=new Set();
+              let twitchChatT=0;
+              const twitchChatRo=badgeTwitchHost&&"function"==typeof ResizeObserver?new ResizeObserver(()=>{
+                clearTimeout(twitchChatT),
+                twitchChatT=setTimeout(()=>updateBadgeYield(!0),250)
+              }):null,
+              watchTwitchChat=()=>{
+                if(!twitchChatRo)return;
+                try{
+                  twitchChats.forEach(n=>{
+                    n.isConnected||(twitchChatRo.unobserve(n),twitchChats.delete(n))
+                  }),
+                  document.querySelectorAll(BADGE_TWITCH_CHAT_SELECTOR).forEach(n=>{
+                    twitchChats.has(n)||(twitchChats.add(n),twitchChatRo.observe(n))
+                  })
+                }
+                catch(_){
+
+                }
+              },
+              recheckBadge=()=>{
+                watchTwitchChat(),
+                updateBadgeYield(!0)
+              };
               if(discordAppHost||badgeTwitchHost){
                 /* Both are single-page apps: a channel or a server is entered without a
                 reload, and leaving the chat behind must bring the chip back. A Twitch
@@ -23182,7 +23213,7 @@
                 const onRoute=()=>{
                   const before=badgeYieldState.route;
                   badgeRouteChanged(),
-                  badgeTwitchHost&&badgeYieldState.route!==before&&(setTimeout(()=>updateBadgeYield(!0),1500),setTimeout(()=>updateBadgeYield(!0),4000))
+                  badgeTwitchHost&&badgeYieldState.route!==before&&(setTimeout(recheckBadge,1500),setTimeout(recheckBadge,4000))
                 };
                 woOn(window,"popstate",onRoute),
                 woOn(window,"hashchange",onRoute);
@@ -23255,13 +23286,13 @@
               re-renders its player bar on navigation, so one late look is not enough.
               Three cheap one-shots cover a bar that arrives seconds in without polling
               for it. */
-              setTimeout(()=>updateBadgeYield(!0),
+              setTimeout(recheckBadge,
               1500),
-              setTimeout(()=>updateBadgeYield(!0),
+              setTimeout(recheckBadge,
               4000),
-              setTimeout(()=>updateBadgeYield(!0),
+              setTimeout(recheckBadge,
               9000),
-              updateBadgeYield(!0);
+              recheckBadge();
               const NO_BADGE_TYPES=new Set(["blocked_tracker_request",
               "detected_thirdparty_tracker",
               "blocked_thirdparty_cookie",

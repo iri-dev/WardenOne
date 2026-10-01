@@ -747,7 +747,7 @@ that a newer release is available. Brave may hide its exact version from extensi
 Chrome or Edge major version does not establish the installed patch level. In those cases it shows
 the latest release but sends you to the browser's update page for a final check. Chrome's check
 uses releases available to all Stable users, so a staged rollout is not treated as a missed update.
-Results are cached for six hours; the refresh icon checks again. The check sends no browsing
+Results are reused for up to six hours while the browser stays open; a restart or the refresh icon checks again. The check sends no browsing
 history or page address. [Sources and comparison limits](docs/update-guardian-release-baseline.md)
 are recorded separately.
 
