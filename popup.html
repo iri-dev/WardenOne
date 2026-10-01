@@ -511,6 +511,19 @@
   .clean-copy-result { display:none; margin-top:6px; color:var(--ink-faint); font-size:10.5px; line-height:1.35; }
   .tool-divider { height:1px; background:var(--line); margin:11px 0; }
   .inline-version { font-size:11px; font-weight:700; color:var(--ink-soft); white-space:nowrap; }
+  .update-guardian { display:block; }
+  .ug-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .ug-browser { flex:none; padding:3px 8px; border-radius:999px; background:rgba(139,63,176,.1); color:var(--plum); font:600 10px/1.2 var(--display); }
+  .ug-status { margin-top:9px; color:var(--ink); font:600 12.5px/1.3 var(--body); }
+  .ug-status[data-state="update"] { color:var(--warn); }
+  .ug-status[data-state="unknown"] { color:var(--ink-soft); }
+  .update-guardian .ug-note { max-width:none; margin-top:3px; font-size:11px; line-height:1.4; }
+  .ug-latest { margin:8px 0 10px; color:var(--ink-faint); font-size:10.5px; line-height:1.3; }
+  .ug-actions { display:flex; gap:7px; }
+  .ug-actions .btn { height:34px; font-weight:600; }
+  .ug-open { flex:1; min-width:0; padding:0 12px; display:flex; align-items:center; justify-content:center; line-height:1.2; white-space:nowrap; }
+  .ug-refresh { flex:none; width:36px; padding:0; display:grid; place-items:center; }
+  .ug-refresh svg { width:16px; height:16px; }
   .nav-btn { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--plum); }
   .nav-btn svg { flex: none; opacity: 0.85; }
   .nav-btn:hover { color: #7d39b8; background: #ecdcf7; }
@@ -523,11 +536,12 @@
   .ck .ck-s { display:block; font-size:11px; font-weight:700; margin-top:1px; }
   .ck .ck-s.keep { color:#1f693d; }
   .ck .ck-s.out { color:#973c69; }
-  #privacy-data-mode { min-width:0; max-width:100%; flex:1; }
+  .privacy-data-mode-row { display:block; margin:10px 0 8px; }
+  #privacy-data-mode { display:block; width:100%; min-width:0; margin-top:6px; padding:7px 9px; border:1px solid var(--line-2); border-radius:10px; background:var(--card); color:var(--ink); font:500 11.5px var(--body); }
+  .privacy-erase-btn { display:flex; align-items:center; justify-content:center; width:100%; min-height:38px; padding:8px 12px; border:1px solid var(--line-2); background:var(--bg-2); color:var(--ink-soft); font-weight:600; line-height:1.3; text-align:center; white-space:normal; }
+  .privacy-erase-btn + .privacy-erase-btn { margin-top:7px; }
   @media (max-width: 360px) {
     .wo-popup-tab .foot { display:grid; grid-template-columns:minmax(0,1fr); }
-    .wo-popup-tab .privacy-data-mode-row { display:block; }
-    .wo-popup-tab #privacy-data-mode { display:block; width:100%; max-width:100%; min-width:0; margin:6px 0 0 !important; }
   }
   .ck input { width:15px; height:15px; accent-color:#b06fd6; cursor:pointer; }
   .note {
@@ -1369,7 +1383,7 @@
       <div id="mem-score" style="font-size:12px;color:var(--ink-soft,#534064);line-height:1.6;margin-bottom:9px;">Checking memory usage…</div>
       <button class="btn" id="mem-free" style="width:100%;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Free RAM now</button>
       <div id="mem-free-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
-      <button class="btn" id="mem-dupes" style="width:100%;margin-top:7px;">Check for duplicate tabs</button>
+      <button class="btn" id="mem-dupes" style="width:100%;margin-top:7px;">Find matching tabs</button>
       <div id="mem-dupes-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>
       <div id="mem-heavy" style="margin-top:10px;font-size:11px;line-height:1.5;"></div>
       <button class="btn" id="mem-tab-usage" style="width:100%;margin-top:7px;">Show all tabs</button>
@@ -1899,19 +1913,19 @@
         <div id="cl-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
       </div>
       <div class="row" style="display:block;">
-        <div class="name" style="margin-bottom:6px;">WardenOne data on this device</div>
-        <div class="desc" style="margin-bottom:9px;">Inspect or erase WardenOne's own saved records. This does not clear websites' cookies, browser history or downloads. Erasing learned records and exceptions resets those protections.</div>
-        <button class="btn" id="privacy-data-inspect" type="button" style="width:100%;">Inspect saved datasets</button>
+        <div class="name" style="margin-bottom:6px;">What WardenOne saves</div>
+        <div class="desc" style="margin-bottom:9px;">Your settings, site choices, protection lists and security records are saved in this browser. Your saved activity is not uploaded. If you turn on an optional reputation check, it may send the site being checked and your API key to that provider.</div>
+        <button class="btn" id="privacy-data-inspect" type="button" style="width:100%;">See what&rsquo;s saved</button>
         <div id="privacy-data-preview" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;"></div>
-        <label class="ck privacy-data-mode-row" style="margin:10px 0 8px;">Erase option
-          <select id="privacy-data-mode" style="margin-left:6px;">
-            <option value="all">Everything, including settings and API keys</option>
-            <option value="settings">Keep global switches, erase API keys</option>
-            <option value="settings-and-keys">Keep global switches and API keys</option>
+        <label class="ck privacy-data-mode-row">What to keep after reset
+          <select id="privacy-data-mode">
+            <option value="all">Nothing (full reset)</option>
+            <option value="settings">Basic settings</option>
+            <option value="settings-and-keys">Basic settings and API keys</option>
           </select>
         </label>
-        <button class="btn" id="privacy-data-erase" type="button" style="width:100%;border:1px solid #b42332;color:#922132;">Erase WardenOne data</button>
-        <button class="btn" id="privacy-data-erase-site" type="button" style="width:100%;margin-top:7px;border:1px solid #b42332;color:#922132;">Erase WardenOne records for this site</button>
+        <button class="btn privacy-erase-btn" id="privacy-data-erase" type="button">Reset WardenOne</button>
+        <button class="btn privacy-erase-btn" id="privacy-data-erase-site" type="button">Clear records for this site</button>
         <div id="privacy-data-result" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;"></div>
       </div>
       <div class="row">
@@ -1973,15 +1987,18 @@
           <button class="btn perm-link" data-perm="location">Location</button>
         </div>
       </div>
-      <div class="row" style="display:block;">
-        <div class="tool-head">
-          <div>
-            <div class="name">Update Guardian</div>
-            <div class="desc" id="ug-note">Keeping your browser updated protects you from known security bugs.</div>
-          </div>
-          <span class="inline-version" id="ug-name">-</span>
+      <div class="row update-guardian">
+        <div class="ug-head">
+          <div class="name">Update Guardian</div>
+          <span class="ug-browser" id="ug-name">Browser</span>
         </div>
-        <button class="btn" id="ug-btn" style="width:100%;">Check for browser updates</button>
+        <div class="ug-status" id="ug-status" role="status" aria-live="polite">Checking for updates…</div>
+        <div class="desc ug-note" id="ug-note"></div>
+        <div class="ug-latest" id="ug-latest"></div>
+        <div class="ug-actions">
+          <button class="btn ug-open" id="ug-btn">Open browser updates</button>
+          <button class="btn ug-refresh" id="ug-refresh" type="button" aria-label="Check again" title="Check again"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 9a7 7 0 0 1 12-2l2.5 4M18.5 15a7 7 0 0 1-12 2L4 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
       </div>
     </div>
 </div>
@@ -2028,8 +2045,7 @@
   <!-- Space above, not just below: Verify & repair sat directly under the note
        explaining the Save button, so it read as part of that sentence. -->
   <div style="padding:14px 16px 6px;">
-    <div class="desc" style="margin-bottom:6px;">Checks the packaged files, the rules and every open tab&rsquo;s page engine. A tab whose engine
-      no longer answers is <strong>reloaded</strong> &mdash; a form you were filling in there is lost. Tabs that answer are not touched.</div>
+    <div class="desc" style="margin-bottom:6px;">Checks WardenOne for problems and fixes what it can. If WardenOne has stopped working in a tab, that tab may reload. Save any work in open tabs first.</div>
     <button class="btn" id="verify-repair" style="width:100%;">Verify &amp; repair</button>
     <div id="repair-result" style="font-size:11px;color:var(--ink-faint);line-height:1.5;margin-top:8px;display:none;"></div>
   </div>

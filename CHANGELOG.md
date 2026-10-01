@@ -17,6 +17,8 @@ as the work happened.
 
 ### Added
 
+- Update Guardian now checks official Brave, Chrome and Edge Stable release sources when the popup opens, caches the result for six hours, and uses a compact, lighter status card with browser-specific wording. It still warns when a newer release can be established. Verify & Repair now explains its possible tab reload in plain language.
+- The rolling GitHub build now waits for a real Edge popup regression on Windows, covering search, Protection Health, diagnostics, reopening and the master switch.
 - Added a source-review ZIP command that archives the committed repository, including source, tests and docs, while excluding untracked local directories. It refuses a dirty checkout unless the user explicitly selects the committed snapshot.
 - Extension Security Centre now calls out new bookmark, session, navigation, identity, location, browser-setting, data-deletion and capture permissions with specific impact and review priority. ChatGPT's exact-ID capability contract continues to flag newly added cookie, network, proxy and extension-management access.
 - Protection Health can prepare a local diagnostics report for support. Its preview and optional text download contain aggregate counts and states, with no domains, history, keys, or extension names. Verify & Repair now records its last overall result for that report.
@@ -41,7 +43,7 @@ as the work happened.
 - Discord server onboarding dialogs, including role and pronoun pickers, are left to Discord instead of being removed by the generic overlay and confirm-bait cleaners. The exception is limited to Discord's app origins; other protection checks remain active.
 - On Discord server channels, the in-page Guard active chip hides so it does not cover the member list. It remains available in DMs and when a profile popout covers its corner, and follows channel and popout changes without a reload; protection and the browser toolbar badge continue to run.
 - The Store rights gate now requires a documented release-owner decision for each upstream input, including review evidence, terms revision, use and notice decisions, and a matching digest for redistributed files. Regenerating the source inventory preserves completed decisions for unchanged inputs; Store submission remains blocked while the 41 current records await review.
-- The Privacy cleaner can erase WardenOne records and site exceptions for the current site. It previews affected datasets, preserves other sites' durable records and public protection lists, clears shared derived caches that cannot be separated by site, and rebuilds network rules after the extension restarts. The dataset inventory now shows each store's owner and retention policy.
+- The Privacy cleaner can clear WardenOne records and site exceptions for the current site. Its controls now explain local storage and optional provider lookups in plain language and fit at popup width. It previews affected datasets, preserves other sites' durable records and public protection lists, clears shared derived caches that cannot be separated by site, and rebuilds network rules after the extension restarts. The dataset inventory shows each store's owner and retention policy.
 - Security critical toasts get a fixed, isolated copy that survives page removal and requests a browser notification if hidden. Warnings raised before the toast listener starts are delivered when it is ready, and the warning relay captures events before page listeners can stop them.
 - The Privacy cleaner can inspect WardenOne's saved local and session datasets by size and known age, then erase all extension-owned storage and dynamic rules. The date preview scans every timestamped record, including records past the first hundred. The erase control can keep global switches, with or without API keys, while removing site exceptions and learned records; active Download Shield reviews must be resolved first.
 - High-stakes in-page warnings now also appear in an isolated, closed-shadow overlay with fixed wording and a self-healing owner. If a page covers that copy, WardenOne requests a generic browser notification. The secret-paste continuation rejects scripted clicks.
@@ -370,6 +372,7 @@ as the work happened.
 
 ### Changed
 
+- Diagnostics labels Brave with its Chromium version and retains that label in the exported report. README review wording now matches version-only extension updates; package metrics explicitly measure the staged-tree ZIP.
 - YouTube player-error checks skip reserializing ordinary parsed JSON; escaped and reviver-produced errors still use the full check.
 - Consent scans now reuse one document and shadow-root snapshot for container and fallback searches. Banner helpers also avoid querying each container twice while preserving shadow-root controls.
 - Consent scanning avoids repeating descendant checks for nested DOM additions. The Memory Shield alarm now shares one tab snapshot and one live check per sleep candidate across throttling, sleeping and group reporting.
@@ -572,6 +575,15 @@ as the work happened.
 
 ### Fixed
 
+- Stopped the popup from repeatedly reading notification history when no history exists. The empty state now settles after one read, removing the continuous work that made scrolling sluggish on fresh profiles.
+- The popup now stops restoring its old scroll position when you start interacting, and avoids repeated storage writes during quick up-and-down scrolling or when it closes.
+- Protection Health now uses a short, plain-language summary when a page has not confirmed protection. The expanded panel keeps the reason and next step; "You're safe" still requires a confirmed page check.
+- Update Guardian now flags Brave on Chromium 153 against Brave's documented Chromium 154 desktop release. It identifies Brave through the browser API, uses Chromium rather than the Brave product version, and no longer calls an unverified browser "current".
+- Removed the disabled consent page-unlock code and its delayed no-op calls. Auto-reject still clicks only safe consent choices; the separate consent-wall feature handles its own guarded lock release.
+- Duplicate-tab cleanup now compares full addresses, including hash routes, keeps active or protected copies, and closes only copies whose live state can be checked safely. The popup no longer promises exactly one remaining copy.
+- Tab Limit Close rechecks the live tab and window count before removal, skipping tabs activated, used, protected or navigated since selection.
+- Memory Shield now counts and logs a tab as slept only when Chrome confirms the discard, including Free RAM Now, Tab Limit, manual tab actions and group sleeping.
+- Popup search restoration waits for all popup scripts before loading saved settings, avoiding a startup race that could lose the visible search on reopen.
 - Script Shield stays visible when a settings search matches one of its rows, including WebAssembly. Clearing the search restores the full section. Turning the master switch off also keeps the toast and badge controls dimmed when Silent Mode is off.
 - Eye Shield now limits foreign stylesheet processing to 64 connected sheets per
   frame, 4 million source characters and 2 million transformed characters.

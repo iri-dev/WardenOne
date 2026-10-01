@@ -43,6 +43,22 @@ jobs:
           path: performance-metrics.json
           retention-days: 90
 
+  browser-popup:
+    name: real-popup-regression
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Test the popup in Edge
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-popup-regression.js
+
   # Every push that passes the gate rebuilds the rolling `latest-build` release and
   # replaces the package attached to it, so the ordinary download always matches
   # main. It is the only release: the old versioned ones were removed on
@@ -50,7 +66,7 @@ jobs:
   # only ever something to download by mistake.
   rolling-build:
     name: publish-latest-build
-    needs: gate
+    needs: [gate, browser-popup]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

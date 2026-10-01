@@ -196,6 +196,7 @@ function checkContentBuild() {
   'tools/test-dynamic-registrations.js',
   'tools/test-consent-reject.js',
   'tools/test-consent-wall.js',
+  'tools/test-update-guardian.js',
   'tools/test-protection-count.js',
   'tools/test-engine-watchdog.js',
   'tools/test-file-access-guard.js',
@@ -566,6 +567,7 @@ checkCommand('repair honesty tests', ['tools/test-repair-honesty.js']);
 checkCommand('engine teardown tests', ['tools/test-engine-teardown.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
 checkCommand('consent wall tests', ['tools/test-consent-wall.js']);
+checkCommand('Update Guardian tests', ['tools/test-update-guardian.js']);
 checkCommand('protection count tests', ['tools/test-protection-count.js']);
 checkCommand('engine watchdog tests', ['tools/test-engine-watchdog.js']);
 checkCommand('file access guard tests', ['tools/test-file-access-guard.js']);

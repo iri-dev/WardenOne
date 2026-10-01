@@ -686,10 +686,11 @@ enabled state, install type, Chrome permission warnings and capability combinati
 exact IDs with the incident and identity catalogue bundled on your device, without uploading the
 extension list.
 
-“Reviewed” belongs to the exact version and permission snapshot. A later update cannot inherit an
-old reassurance. Broad access is explained rather than automatically called malicious, and an
-unknown ID is never called safe. Explicit buttons can disable an extension or ask Chrome to confirm
-its removal; WardenOne never removes one on its own.
+Reviews remain valid across version-only updates. Changes to permissions, identity, install source
+or reputation evidence reopen the review; version changes remain visible in the change history.
+Broad access is explained rather than automatically called malicious, and an unknown ID is never
+called safe. Explicit buttons can disable an extension or ask Chrome to confirm its removal;
+WardenOne never removes one on its own.
 
 <p align="center">
   <a href="docs/screenshots/06-extension-centre.webp">
@@ -740,12 +741,15 @@ is an identity and listing check—not a code review.
 
 ### Update Guardian
 
-The browser itself is part of the security boundary. Update Guardian detects its name and major
-version, then conservatively estimates the expected Chromium generation from the release cadence.
-It warns only when the browser appears several major versions behind, so an ordinary staged rollout
-does not cry wolf. An extension cannot fetch a perfectly authoritative “current” version or update
-the browser itself; the button opens the browser's own update page. This is security hygiene, not a
-comfort extra.
+Update Guardian checks the latest public Stable release from Brave, Chrome or Edge when you open
+the popup and shows a simple update status. It suggests an update when it can establish
+that a newer release is available. Brave may hide its exact version from extensions, and a matching
+Chrome or Edge major version does not establish the installed patch level. In those cases it shows
+the latest release but sends you to the browser's update page for a final check. Chrome's check
+uses releases available to all Stable users, so a staged rollout is not treated as a missed update.
+Results are cached for six hours; the refresh icon checks again. The check sends no browsing
+history or page address. [Sources and comparison limits](docs/update-guardian-release-baseline.md)
+are recorded separately.
 
 <p align="center">
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
