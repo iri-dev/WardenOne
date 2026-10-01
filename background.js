@@ -3874,6 +3874,20 @@ function dnrBandUnchanged(installed, desired) {
   }
   return true;
 }
+// Read one band, not every dynamic rule. Unfiltered, Chrome answers with all of them -- the
+// remote lists alone are ~22,000 -- and builds that reply on the browser's UI thread, about
+// 200 ms per call. Six appliers read on every wake, so a tab close that woke the worker froze
+// the tab strip for over a second. Callers still filter to their band; this only narrows the
+// reply. An older Chrome that rejects the filter gets the full read it had before.
+async function getDynamicRulesInBand(base, size) {
+  const ruleIds = [];
+  for (let i = 0; i < size; i++) ruleIds.push(base + i);
+  try {
+    return await chrome.declarativeNetRequest.getDynamicRules({ ruleIds });
+  } catch (_) {
+    return chrome.declarativeNetRequest.getDynamicRules();
+  }
+}
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
 // Blocklist-refresh chatter is opt-in; it fired on every update in the service
@@ -4263,8 +4277,9 @@ function loadLearned() {
 }
 async function applyLearnedRules() {
   try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const oldIds = existing.filter((x) => x.id >= LEARNED_RULE_BASE && x.id < LEARNED_RULE_BASE + LEARNED_MAX).map((x) => x.id);
+    const existing = await getDynamicRulesInBand(LEARNED_RULE_BASE, LEARNED_MAX);
+    const mine = existing.filter((x) => x.id >= LEARNED_RULE_BASE && x.id < LEARNED_RULE_BASE + LEARNED_MAX);
+    const oldIds = mine.map((x) => x.id);
     const cfgStore = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false) {
@@ -4314,7 +4329,8 @@ async function applyLearnedRules() {
       action: { type: 'block' },
       condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'] },
     }));
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+    // Runs on every wake: an unchanged band must not cost Chrome a rewrite of every dynamic rule.
+    if (!dnrBandUnchanged(mine, addRules)) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
     return { ok: true, count: addRules.length };
   } catch (e) {
     /* Still logged, but no longer only logged. Swallowing this is what let
@@ -4355,7 +4371,9 @@ async function wardenDropSiteWorker(host) {
    them used to surface as "Blocked." followed by the page loading normally. */
 async function wardenBlockRuleLive(host) {
   try {
-    const rules = await chrome.declarativeNetRequest.getDynamicRules();
+    /* The learned band is where "Block this site" writes; reading every dynamic rule to find it
+       froze the browser's UI thread for ~200 ms on each click. */
+    const rules = await getDynamicRulesInBand(LEARNED_RULE_BASE, LEARNED_MAX);
     return (rules || []).some((r) => r && r.action && r.action.type === 'block'
       && r.condition && Array.isArray(r.condition.requestDomains)
       && r.condition.requestDomains.indexOf(host) >= 0
@@ -4469,7 +4487,7 @@ function addGrabberFeedDomains(arr, target) {
 }
 async function applyGrabberFeedRules() {
   try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await getDynamicRulesInBand(GRABBER_FEED_RULE_BASE, GRABBER_FEED_MAX);
     const mine = existing.filter((x) => x.id >= GRABBER_FEED_RULE_BASE && x.id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX);
     const cfg = await readFeedConfig();
     const domains = grabberFeedDisabled(cfg) ? [] : Array.from(GRABBER_FEED_DOMAINS).slice(0, GRABBER_FEED_MAX);
@@ -4769,7 +4787,7 @@ async function applyUserFilterRulesFrom(bundle) {
   }
   let oldIds = [];
   try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await getDynamicRulesInBand(USER_RULE_BASE, USER_RULE_MAX);
     oldIds = (existing || [])
       .filter((x) => x.id >= USER_RULE_BASE && x.id < USER_RULE_BASE + USER_RULE_MAX)
       .map((x) => x.id);
@@ -5657,7 +5675,7 @@ async function applyUserBlocklistRules() {
     const all = await readUserBlocklist();
     const { live } = pruneExpiredBlocks(all, now);
     const on = await masterSwitchOn();
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await getDynamicRulesInBand(USER_BLOCKLIST_RULE_BASE, USER_BLOCKLIST_RULES_BUDGET);
     const mine = existing
       .filter((r) => r.id >= USER_BLOCKLIST_RULE_BASE && r.id < USER_BLOCKLIST_RULE_BASE + USER_BLOCKLIST_RULES_BUDGET);
     const addRules = on ? userBlockRulesFrom(live) : [];
@@ -5855,7 +5873,7 @@ async function applyFirewallRulesFrom(rules) {
     return { ok: false, applied: 0, error: 'Dynamic rules are not available in this browser.' };
   }
   try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await getDynamicRulesInBand(FIREWALL_RULE_BASE, FIREWALL_RULE_MAX);
     const mine = (existing || [])
       .filter((r) => r.id >= FIREWALL_RULE_BASE && r.id < FIREWALL_RULE_BASE + FIREWALL_RULE_MAX)
       .map((r) => r.id);
@@ -6022,7 +6040,7 @@ function minerFeedDisabled(cfg) {
 }
 async function applyMinerFeedRules() {
   try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await getDynamicRulesInBand(MINER_FEED_RULE_BASE, MINER_FEED_MAX);
     const mine = existing.filter((x) => x.id >= MINER_FEED_RULE_BASE && x.id < MINER_FEED_RULE_BASE + MINER_FEED_MAX);
     const off = minerFeedDisabled(await readFeedConfig());
     const miners = off ? [] : Array.from(MINER_HOSTS).slice(0, MINER_POOL_RULE_OFFSET);
@@ -6414,10 +6432,9 @@ async function saveTrackerLearner(applyRules) {
 
 async function applyTrackerLearnerRules() {
   try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const oldIds = existing
-      .filter((x) => x.id >= TRACKER_RULE_BASE && x.id < TRACKER_RULE_BASE + TRACKER_RULE_MAX)
-      .map((x) => x.id);
+    const existing = await getDynamicRulesInBand(TRACKER_RULE_BASE, TRACKER_RULE_MAX);
+    const mine = existing.filter((x) => x.id >= TRACKER_RULE_BASE && x.id < TRACKER_RULE_BASE + TRACKER_RULE_MAX);
+    const oldIds = mine.map((x) => x.id);
     const cfgStore = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false || cfg.trackerLearner === false) {
@@ -6450,6 +6467,7 @@ async function applyTrackerLearnerRules() {
       .filter((domain) => TRACKER_LEARNER.domains[domain] && TRACKER_LEARNER.domains[domain].state === 'learned')
       .sort((a, b) => Number((TRACKER_LEARNER.domains[b] && TRACKER_LEARNER.domains[b].hits) || 0) - Number((TRACKER_LEARNER.domains[a] && TRACKER_LEARNER.domains[a].hits) || 0))
       .forEach((domain) => addRule('block', 1800, domain));
+    if (dnrBandUnchanged(mine, rules)) return;
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: rules });
   } catch (e) {
     console.warn('[WardenOne] tracker learner rules failed', e);
@@ -11050,9 +11068,15 @@ function refreshExtensionState() {
       const generation = ++__refreshExtensionStateGeneration;
       const applied = [];
       const names = [];
-      let dynamicRulesSnapshot = null;
+      // Per band: one full snapshot was every dynamic rule (~22,000), built on the browser's UI
+      // thread, on the first settings change of each worker life.
+      const dynamicBandSnapshots = new Map();
       let sessionRulesSnapshot = null;
-      const sharedDynamicRules = () => (dynamicRulesSnapshot ||= chrome.declarativeNetRequest.getDynamicRules());
+      const sharedDynamicRules = (base, size) => {
+        const key = base + ':' + size;
+        if (!dynamicBandSnapshots.has(key)) dynamicBandSnapshots.set(key, getDynamicRulesInBand(base, size));
+        return dynamicBandSnapshots.get(key);
+      };
       const sharedSessionRules = () => (sessionRulesSnapshot ||= chrome.declarativeNetRequest.getSessionRules());
       const dynamicBatch = createReconcileDnrBatch('dynamic');
       const sessionBatch = createReconcileDnrBatch('session');
@@ -14084,7 +14108,7 @@ const FINGERPRINT_SCRIPT_URL_FILTERS = FINGERPRINT_LIBRARY_URL_FILTERS
 
 async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules, submitRules) {
   try {
-    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getDynamicRules());
+    const existing = await (readRules || getDynamicRulesInBand)(FINGERPRINT_SCRIPT_RULE_BASE, FINGERPRINT_SCRIPT_RULE_MAX);
     const oldIds = existing
       .filter((r) => r.id >= FINGERPRINT_SCRIPT_RULE_BASE && r.id < FINGERPRINT_SCRIPT_RULE_BASE + FINGERPRINT_SCRIPT_RULE_MAX)
       .map((r) => r.id);
@@ -14334,7 +14358,7 @@ async function applySearchParamRules(cfg, readRules, submitRules) {
 async function applyGoogleSearchSponsoredAllowRules(enabled, readRules, submitRules) {
   try {
     enabled = !!enabled;
-    const existing = await (readRules ? readRules() : chrome.declarativeNetRequest.getDynamicRules());
+    const existing = await (readRules || getDynamicRulesInBand)(GOOGLE_SEARCH_ALLOW_RULE_BASE, GOOGLE_SEARCH_ALLOW_RULE_MAX);
     const oldIds = existing
       .filter((r) => r.id >= GOOGLE_SEARCH_ALLOW_RULE_BASE && r.id < GOOGLE_SEARCH_ALLOW_RULE_BASE + GOOGLE_SEARCH_ALLOW_RULE_MAX)
       .map((r) => r.id);
@@ -14485,7 +14509,7 @@ async function applyNeverBlockAllowRules() {
       if (NEVER_BLOCK_ALLOW_EXCLUDE.has(h)) continue;
       if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) && !h.includes('..') && !seen.has(h)) { seen.add(h); domains.push(h); }
     }
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existing = await getDynamicRulesInBand(NEVER_BLOCK_ALLOW_RULE_BASE, NEVER_BLOCK_ALLOW_MAX);
     const mine = existing.filter((x) => x.id >= NEVER_BLOCK_ALLOW_RULE_BASE && x.id < NEVER_BLOCK_ALLOW_RULE_BASE + NEVER_BLOCK_ALLOW_MAX);
     const addRules = [];
     const BATCH = 100;
