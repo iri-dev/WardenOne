@@ -159,8 +159,10 @@ async function run() {
     await value("new Promise(resolve => chrome.storage.session.set({wardenone_popup_scroll_memory:{y:5000,at:Date.now()}},resolve))");
     await value("scrollTo(0,0); restorePopupScrollPosition()");
     await until('scrollY > 4000', 'saved popup scroll position');
+    const restoredY = await value('scrollY');
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 300, deltaX: 0, deltaY: 420 }, page.sessionId);
-    await sleep(100);
+    /* The wheel lands asynchronously; compare from where it landed, not from a fixed delay. */
+    await until(`scrollY !== ${restoredY}`, 'the wheel scroll to land');
     const userScrollY = await value('scrollY');
     await sleep(600);
     assert(Math.abs((await value('scrollY')) - userScrollY) < 5, 'restoration must not pull against user scrolling');
@@ -169,7 +171,9 @@ async function run() {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const resolved = path.resolve(dir);
     if (path.dirname(resolved) === path.resolve(os.tmpdir()) && path.basename(resolved).startsWith('wo-popup-regression-')) {
-      fs.rmSync(resolved, { recursive: true, force: true });
+      /* Edge's helper processes can hold profile files briefly after the DevTools endpoint closes. */
+      try { fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
+      catch (error) { console.warn('[warn] could not remove the temporary profile: ' + error.message); }
     }
   }
 }
