@@ -164,7 +164,8 @@ function makeStoreTransaction() {
 
 /* ---- the firewall, lifted whole -------------------------------------------------- */
 
-const FW = between(BG, 'const FIREWALL_RULE_BASE = 950000;', '\n// ---- Cryptojacking guard', 'the firewall');
+const BAND_READ = between(BG, 'async function getDynamicRulesInBand(', '\nconst MEDIA_COMPAT_RULE_BASE', 'the band read');
+const FW = BAND_READ + '\n' + between(BG, 'const FIREWALL_RULE_BASE = 950000;', '\n// ---- Cryptojacking guard', 'the firewall');
 const FW_SET = between(BG, "  if (msg && msg.kind === 'firewall-set') {\n", "  if (msg && msg.kind === 'firewall-allow-once') {", 'the firewall-set handler');
 const FW_ONCE = between(BG, "  if (msg && msg.kind === 'firewall-allow-once') {\n", "  if (msg && msg.kind === 'firewall-reset') {", 'the allow-once handler');
 const FW_RESET = between(BG, "  if (msg && msg.kind === 'firewall-reset') {\n", '\n  // ---- File Shield ----', 'the firewall-reset handler');
@@ -372,7 +373,7 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
     };
     ctx.globalThis = ctx;
     vm.createContext(ctx);
-    vm.runInContext(HOST_FN + '\n' + UF
+    vm.runInContext(HOST_FN + '\n' + BAND_READ + '\n' + UF
       + '\nasync function handleSet(msg, sendResponse) {\n' + unwrap(UF_SET) + '\n}'
       + '\nasync function handleToggle(msg, sendResponse) {\n' + unwrap(UF_TOGGLE) + '\n}'
       + '\nglobalThis.api = { parseUserFilterLine, parseUserFilterText, userFilterBundleFor, applyUserFilterRulesFrom, commitUserFilters,'

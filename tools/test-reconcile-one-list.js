@@ -56,6 +56,9 @@ function balancedFrom(src, start) {
 }
 
 const CONFIG_CACHE = between('let __cfgCache = null;', '\n/* These stores are derived from sites visited', 'the config cache');
+const BAND_READ = between('async function getDynamicRulesInBand(', '\nconst MEDIA_COMPAT_RULE_BASE', 'the band read');
+/* The dynamic readers and the band each asks for, as the real appliers do. */
+const DYNAMIC_BANDS = { fingerprintScripts: [931500, 80], searchSponsoredAllow: [931700, 20] };
 const ORCHESTRATOR = between('// ---- Reconciliation honesty (MV3-01) ----', '\nfunction searchAiCleanupActive', 'the reconciler');
 const REFRESH = balancedFrom(ORCHESTRATOR, ORCHESTRATOR.indexOf('function refreshExtensionState() {'));
 
@@ -87,7 +90,7 @@ function fakeSession() {
    applier throw synchronously, 'outer-throws' makes localGet itself throw. */
 function worker({ session, config, fault }) {
   const calls = [];
-  const dnrReads = { dynamic: 0, session: 0 };
+  const dnrReads = { dynamic: 0, unfiltered: 0, session: 0 };
   let releaseDeferred = null;
   const ctx = {
     console: { warn() {}, log() {} },
@@ -95,7 +98,7 @@ function worker({ session, config, fault }) {
     chrome: {
       runtime: { lastError: null },
       declarativeNetRequest: {
-        getDynamicRules() { dnrReads.dynamic++; return Promise.resolve([]); },
+        getDynamicRules(filter) { dnrReads.dynamic++; if (!filter || !Array.isArray(filter.ruleIds)) dnrReads.unfiltered++; return Promise.resolve([]); },
         getSessionRules() { dnrReads.session++; return Promise.resolve([]); },
       },
       storage: {
@@ -118,7 +121,9 @@ function worker({ session, config, fault }) {
       calls.push({ name, fn, args });
       if (fault === 'snapshot' && ['allowlist', 'mediaCompatibility', 'loginCompatibility', 'fingerprintScripts', 'searchSponsoredAllow', 'searchParams'].includes(name)) {
         const readRules = args.find((arg) => typeof arg === 'function');
-        return readRules();
+        const band = DYNAMIC_BANDS[name];
+        /* Twice: a second read of the same band must reuse the first. */
+        return band ? readRules(...band).then(() => readRules(...band)) : readRules();
       }
       if (fault === 'applier-throws:' + name) throw new Error(name + ' threw synchronously');
       if (fault === 'defer:' + name && !releaseDeferred) {
@@ -129,7 +134,7 @@ function worker({ session, config, fault }) {
   }
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  vm.runInContext(CONFIG_CACHE + '\n' + ORCHESTRATOR + '\nglobalThis.api = { refreshExtensionState,'
+  vm.runInContext(CONFIG_CACHE + '\n' + BAND_READ + '\n' + ORCHESTRATOR + '\nglobalThis.api = { refreshExtensionState,'
     + ' scheduleExtensionStateRefresh, retryDegradedReconcileOnWake, readReconcileDegraded, localGet,'
     + ' key: () => __refreshExtensionStateLastKey, publishConfig: __cfgCacheSet };', ctx);
   if (fault === 'outer-throws') ctx.localGet = () => { throw new Error('storage bridge missing'); };
@@ -203,9 +208,11 @@ const offSwitching = (w) => w.calls.filter((c) => c.name.indexOf('LEGACY:') === 
   {
     const w = worker({ session: fakeSession(), config: { enabled: true }, fault: 'snapshot' });
     w.api.refreshExtensionState(); await settle();
-    check('one generation shares one dynamic and one session DNR snapshot among readers',
-      w.dnrReads.dynamic === 1 && w.dnrReads.session === 1,
+    check('one generation reads each dynamic band once and shares one session snapshot among readers',
+      w.dnrReads.dynamic === Object.keys(DYNAMIC_BANDS).length && w.dnrReads.session === 1,
       JSON.stringify(w.dnrReads));
+    /* Unfiltered, the read is every dynamic rule (~22,000), built on the browser's UI thread. */
+    check('no dynamic read asks for every rule', w.dnrReads.unfiltered === 0, JSON.stringify(w.dnrReads));
   }
 
   /* ---- 3. the .then body throws before the list: nothing is touched, the reconcile is degraded ---- */

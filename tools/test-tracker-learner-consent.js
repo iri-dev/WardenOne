@@ -60,7 +60,7 @@ const PIECES = ['normalizeTrackerDomain', 'registrableDomainBg', 'trackerStoreSh
   'isProtectedTrackerDomain', 'looksLikeKnownTrackerHost',
   'ownProviderDomains', 'noteTrackerObservation', 'pruneTrackerLearnerStore', 'saveTrackerLearner',
   'applyTrackerLearnerRules', 'trackerLearnerProposals', 'decideTrackerProposal', 'decideAllTrackerProposals',
-  'trackerLearnerStatus'];
+  'trackerLearnerStatus', 'getDynamicRulesInBand', 'dnrValueMatches', 'dnrBandUnchanged'];
 const CONSTS = BG.slice(BG.indexOf('const TRACKER_LEARNER_KEY ='), BG.indexOf('\n', BG.indexOf('const TRACKER_RESOURCE_TYPES')));
 
 function rig(options) {

@@ -70,6 +70,8 @@ function lift(name) {
 
 const fnStart = BG.indexOf('async function applyFingerprintScriptRules');
 const fnEnd = BG.indexOf('\n}', fnStart) + 2;
+const bandStart = BG.indexOf('async function getDynamicRulesInBand');
+const bandRead = bandStart < 0 ? '' : BG.slice(bandStart, BG.indexOf('\n}', bandStart) + 2);
 
 const ctx = { console: { warn() {} }, Object, Array, String, Number };
 vm.createContext(ctx);
@@ -85,6 +87,7 @@ vm.runInContext([
   'let captured = [];',
   'const chrome = { declarativeNetRequest: { getDynamicRules: async () => [],'
     + ' updateDynamicRules: async (x) => { captured = x.addRules; } } };',
+  bandRead,
   BG.slice(fnStart, fnEnd),
   'globalThis.build = async (a, b) => { await applyFingerprintScriptRules(a, b); return captured; };',
   'globalThis.FRAUD = FRAUD_VENDOR_DOMAIN_FILTERS;',

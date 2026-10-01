@@ -7,7 +7,8 @@ by `node tools/check-performance-budget.js`; CI keeps the measurements as a buil
 artifact for 90 days. A release ZIP archived from a commit includes its commit ID in the ZIP
 comment, so its byte count can differ from the staged-tree metric; the published SHA-256 covers
 the actual release ZIP. These are size and rule-count checks. The browser profile below
-measures execution time and heap; it currently does not measure worker startup time.
+measures execution time and heap with the worker held awake; what a worker wake costs the browser
+is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 
 Each `profile-<commit>.json` here is an enabled-versus-disabled measurement of that release
 candidate in a real browser with the real extension loaded, produced by
@@ -18,6 +19,26 @@ not tracked (tens of MB each).
 
 The separate [YouTube memory review](youtube-memory-review-2026-10-01.md) records the owner's
 1.2 GB Brave warning, controlled playback measurements, and what remains unproven.
+
+## Cold worker wakes
+
+The worker stops after about thirty quiet seconds, and the next tab close, popup open or
+navigation starts it again. Whatever a wake asks of Chrome is answered on the browser's UI
+thread, the one that draws the tab strip and routes scrollbar drags. `node tools/browser-cold-wake.js`
+waits for the remote lists to install, lets the worker sleep, then closes a tab and opens the
+popup, each on a sleeping worker, and fails on any UI-thread stall answering a rule-API call or
+on more than 300 ms of UI-thread stalls in all. It needs Edge and network access and takes about
+three minutes, so it is not part of the gate.
+
+Measured on 2026-10-01 (Edge 150, i5-12400F, 22,134 dynamic rules). Six appliers read every
+dynamic rule on each wake to filter their own band; Chrome builds each reply on the UI thread in
+170-270 ms and sends it as a ~21.8 MB message. Closing a tab on a sleeping worker froze the UI
+thread six times, 1,123 ms in all; dragging the popup's scrollbar straight after opening it saw a
+worst move of 500 ms to 5 s. With band-filtered reads (`getDynamicRulesInBand`) the same tab
+close shows no rule-API stall (UI thread 226-252 ms busy over 5 s, against 1,260 ms) and the
+popup drag's worst move is 66 ms. The harness above keeps a debugger attached to the worker,
+which keeps it awake, so it cannot see any of this; `releaseWorker` in `perf-profile.js` lets
+a tool measure a wake.
 
 ## How to read one
 

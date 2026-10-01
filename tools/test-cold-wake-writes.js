@@ -24,6 +24,11 @@
  * wake is a fresh module realm), counting writes. Then every way state can change is
  * exercised to prove the skip is a comparison and not a memory: external loss of a band,
  * a corrupted rule, a list that grew, the switch turning, an install, a browser restart.
+ *
+ * The reads matter too. Unfiltered, getDynamicRules returns every dynamic rule -- the remote
+ * lists alone are ~22,000 -- and Chrome builds that reply on its UI thread, ~200 ms a call,
+ * six calls a wake. The modelled browser holds a block of such foreign rules, honours the
+ * ruleIds filter the way Chrome does, and counts every foreign rule a wake reads back.
  */
 'use strict';
 
@@ -78,6 +83,7 @@ const LIFTED = [
   grabFn(BG, 'installWardenContextMenu'),
   orElse(BG, 'dnrValueMatches', 'function dnrValueMatches() { return false; }'),
   orElse(BG, 'dnrBandUnchanged', 'function dnrBandUnchanged() { return false; }'),
+  orElse(BG, 'getDynamicRulesInBand', 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }'),
   /* The feed appliers read their switch through these since LIFE-02; older sources read it inline. */
   orElse(BG, 'readFeedConfig', "async function readFeedConfig() { const s = await localGet('wardenone_config'); return Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); }"),
   orElse(BG, 'grabberFeedDisabled', 'function grabberFeedDisabled(cfg) { return cfg.enabled === false || (cfg.blockGrabberResources === false && cfg.warnGrabberDomains === false && cfg.blockMalwareSites === false); }'),
@@ -93,7 +99,9 @@ const LIFTED = [
 function browser() {
   const state = {
     dynamic: new Map(), menus: [], local: { wardenone_config: { enabled: true, elementZapper: true } }, session: {},
-    counts: { dnrWrites: 0, dnrRulesWritten: 0, removeAll: 0, creates: 0, inventories: 0, reports: 0 },
+    /* Remote-list rules: dynamic, but in no band a wake rebuilds. */
+    foreign: new Map(Array.from({ length: 500 }, (_, i) => [10000 + i, { id: 10000 + i, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||list' + i + '.example^' } }])),
+    counts: { dnrWrites: 0, dnrRulesWritten: 0, removeAll: 0, creates: 0, inventories: 0, reports: 0, foreignRead: 0 },
     blocklist: [{ domain: 'bad.example', scope: 'permanent' }],
     grabberDomains: ['grab1.example', 'grab2.example', 'grab3.example'],
     minerHosts: ['miner1.example', 'miner2.example'],
@@ -103,7 +111,12 @@ function browser() {
   const chrome = {
     runtime: { lastError: null, id: 'self', getManifest: () => ({ version: '1.0.1' }) },
     declarativeNetRequest: {
-      getDynamicRules: async () => [...state.dynamic.values()].map(clone),
+      getDynamicRules: async (filter) => {
+        const ids = filter && Array.isArray(filter.ruleIds) ? new Set(filter.ruleIds) : null;
+        const foreign = [...state.foreign.values()].filter((r) => !ids || ids.has(r.id));
+        state.counts.foreignRead += foreign.length;
+        return [...state.dynamic.values()].filter((r) => !ids || ids.has(r.id)).concat(foreign).map(clone);
+      },
       updateDynamicRules: async (u) => {
         state.counts.dnrWrites++;
         for (const id of (u.removeRuleIds || [])) state.dynamic.delete(id);
@@ -186,6 +199,8 @@ const quiet = (d) => d.dnrWrites === 0 && d.removeAll === 0 && d.creates === 0 &
   }
   check('fifty further wakes to unchanged state write nothing: no DNR write, no menu rebuild, no inventory', quietWakes === 50, JSON.stringify(noisy));
   check('and leave the rules exactly as they were', JSON.stringify([...b.state.dynamic.values()]) === rulesAfterFirst);
+  check('no wake reads back a dynamic rule outside the bands it rebuilds', first.delta.foreignRead === 0 && b.state.counts.foreignRead === 0,
+    b.state.counts.foreignRead + ' foreign rules read over ' + 51 + ' wakes');
   check('the menu Chrome holds is still the full menu', b.state.menus.length === 14 && b.state.menus[0].id === 'wardenone-root');
 
   /* ---- the skip is a comparison, not a memory ------------------------------------------ */
@@ -264,7 +279,16 @@ const quiet = (d) => d.dnrWrites === 0 && d.removeAll === 0 && d.creates === 0 &
   check('every band applier compares before it writes',
     ['applyNeverBlockAllowRules', 'applyUserBlocklistRules', 'applyGrabberFeedRules', 'applyMinerFeedRules']
       .every((name) => /dnrBandUnchanged\(mine, addRules\)/.test(grabFn(BG, name))));
-  check('the installed rules are still read on every wake, so external loss is still seen', /const existing = await chrome\.declarativeNetRequest\.getDynamicRules\(\);\s*const mine = /.test(grabFn(BG, 'applyGrabberFeedRules')));
+  check('the installed rules are still read on every wake, so external loss is still seen', /const existing = await getDynamicRulesInBand\(GRABBER_FEED_RULE_BASE, GRABBER_FEED_MAX\);\s*const mine = /.test(grabFn(BG, 'applyGrabberFeedRules')));
+  /* The six appliers a cold wake runs, as measured: these two arrive through the learned-domain
+     load and the tracker learner, not the four above, and wrote on every wake as well. */
+  const WAKE_APPLIERS = ['applyNeverBlockAllowRules', 'applyUserBlocklistRules', 'applyGrabberFeedRules', 'applyMinerFeedRules', 'applyLearnedRules', 'applyTrackerLearnerRules'];
+  check('every applier a wake runs reads only its own band',
+    WAKE_APPLIERS.every((name) => /await getDynamicRulesInBand\([A-Z_]+_BASE, [A-Z_]+\)/.test(grabFn(BG, name)) && !/chrome\.declarativeNetRequest\.getDynamicRules\(\)/.test(grabFn(BG, name))),
+    WAKE_APPLIERS.filter((name) => !/getDynamicRulesInBand\(/.test(grabFn(BG, name))).join(', '));
+  check('the learned and tracker bands compare before they write',
+    /dnrBandUnchanged\(mine, addRules\)/.test(grabFn(BG, 'applyLearnedRules')) && /dnrBandUnchanged\(mine, rules\)/.test(grabFn(BG, 'applyTrackerLearnerRules')));
+  check('the band read asks Chrome for the band by id', has(BG, 'getDynamicRulesInBand') && /getDynamicRules\(\{ ruleIds \}\)/.test(grabFn(BG, 'getDynamicRulesInBand')));
   check('the worker-start scan is the only gated one; every management event still reconciles',
     /chrome\.management\.onInstalled\.addListener\(\(\) => scheduleExtensionReconcile\('installed'\)\)/.test(WATCH)
       && /setTimeout\(\(\) => \{ extensionScanOnWorkerStart\(\)\.catch/.test(WATCH)
