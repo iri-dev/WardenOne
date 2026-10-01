@@ -28,7 +28,7 @@ function check(name, cond, extra) {
   console.log('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
-function runConsentDialog(dialogText, labels) {
+function runConsentDialog(dialogText, labels, scheduled) {
   const clicks = [];
   const rect = (width, height) => ({ width, height, top: 40, left: 50, right: 50 + width, bottom: 40 + height });
   let dialog;
@@ -150,7 +150,11 @@ function runConsentDialog(dialogText, labels) {
       },
     },
     requestAnimationFrame(fn) { fn(); },
-    setTimeout(fn, delay) { if (delay === 0) fn(); return 1; },
+    setTimeout(fn, delay) {
+      if (scheduled) scheduled.push(delay);
+      if (delay === 0) fn();
+      return 1;
+    },
     setInterval() { return 1; },
     clearInterval() {},
     console,
@@ -228,13 +232,17 @@ check('generic reject fallback still requires a safe reject control inside a rea
   /tryGenericReject[\s\S]*safeRejectCandidate\(el\)[\s\S]*consentBannerAncestor\(el\)/.test(consent)
     && /consentBannerAncestor[\s\S]*hasStrongConsentLanguage\(own\)[\s\S]*protectedContainerContext\(n, el\)/.test(consent));
 
+const rejectTimers = [];
 const auxiliaryAuthDialogClicks = runConsentDialog(
   'Before you continue. Sign in. We use cookies and data to maintain services, measure engagement, build an advertising profile, transfer data, and let you withdraw consent.',
-  ['Reject all', 'Accept all', 'More options']
+  ['Reject all', 'Accept all', 'More options'],
+  rejectTimers
 );
 check('an explicit consent decision pair is not suppressed by an unrelated authentication control',
   auxiliaryAuthDialogClicks.length === 1 && auxiliaryAuthDialogClicks[0] === 'Reject all',
   JSON.stringify(auxiliaryAuthDialogClicks));
+check('a successful rejection does not schedule obsolete page-unlock retries',
+  !rejectTimers.includes(250) && !rejectTimers.includes(900));
 
 const ambiguousAuthDialogClicks = runConsentDialog(
   'Sign in to manage privacy preferences and cookie settings.',

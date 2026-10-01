@@ -580,9 +580,6 @@
       const buttons = visibleControlsInDocument();
       const reject = buttons.find((el) => /^reject(?:\s+all)?$/i.test(controlLabel(el)) && !isUnsafeAutoClickLink(el));
       if (reject && clickControl(reject)) {
-        releasePageLock();
-        woTimeout(releasePageLock, 250);
-        woTimeout(releasePageLock, 900);
         logAction('reject', 'Twitch cookie banner: Reject');
         finishConsentWork();
         return true;
@@ -635,9 +632,6 @@
         if (!safeRejectCandidate(el)) continue;
         if (!consentBannerAncestor(el)) continue;
         if (clickControl(el)) {
-          releasePageLock();
-          woTimeout(releasePageLock, 250);
-          woTimeout(releasePageLock, 900);
           logAction('reject', elementText(el));
           finishConsentWork();
           return true;
@@ -664,48 +658,6 @@
     try { el.focus({ preventScroll: true }); } catch (_) {}
     try { el.click(); } catch (_) {}
     return true;
-  }
-
-  function releasePageLock() {
-    return;
-    try {
-      const unlock = (el) => {
-        if (!el) return;
-        try { el.style.setProperty('overflow', 'auto', 'important'); } catch (_) {}
-        try { el.style.setProperty('pointer-events', 'auto', 'important'); } catch (_) {}
-        try {
-          ['modal-open', 'no-scroll', 'noscroll', 'overflow-hidden', 'is-clipped', 'ReactModal__Body--open']
-            .forEach((cls) => el.classList && el.classList.remove(cls));
-        } catch (_) {}
-      };
-      unlock(document.documentElement);
-      unlock(document.body);
-
-      const visibleModal = Array.from(document.querySelectorAll('[aria-modal="true"],dialog[open]')).some((el) => isVisible(el));
-      document.querySelectorAll('[inert]').forEach((el) => {
-        try { el.removeAttribute('inert'); } catch (_) {}
-      });
-      if (!visibleModal) {
-        document.querySelectorAll('body > [aria-hidden="true"],main[aria-hidden="true"],#root[aria-hidden="true"],#app[aria-hidden="true"],[data-reactroot][aria-hidden="true"]').forEach((el) => {
-          try { el.removeAttribute('aria-hidden'); } catch (_) {}
-        });
-      }
-
-      document.querySelectorAll('body > .modal-backdrop,body > [class*="backdrop" i],body > [id*="backdrop" i],body > [class*="overlay" i],body > [id*="overlay" i],body > [class*="scrim" i],body > [id*="scrim" i],body > [class*="veil" i],body > [id*="veil" i]').forEach((el) => {
-        try {
-          const style = getComputedStyle(el);
-          const rect = el.getBoundingClientRect();
-          const text = String(el.innerText || el.textContent || '').trim();
-          const blob = text + ' ' + String(el.id || '') + ' ' + String(el.className || '');
-          const full = rect.width >= innerWidth * 0.7 && rect.height >= innerHeight * 0.7 && rect.left <= innerWidth * 0.18 && rect.top <= innerHeight * 0.18;
-          const fixed = /^(fixed|absolute|sticky)$/i.test(style.position);
-          const backdrop = /backdrop|overlay|scrim|veil|modal|cookie|consent|cmp|onetrust|didomi|trustarc|truste|usercentrics|sourcepoint|quantcast|iubenda|cookiebot|cookieyes|osano|termly|axeptio|civic|crownpeak|cookielaw|cookiehub|ketch|privacy-manager/i.test(blob);
-          if (fixed && full && (backdrop || text.length < 60)) {
-            el.style.setProperty('display', 'none', 'important');
-          }
-        } catch (_) {}
-      });
-    } catch (_) {}
   }
 
   // The one case auto-reject cannot help with: a banner offering no way to say no,
@@ -891,9 +843,6 @@
       const controls = getControls(container);
       const reject = controls.find(safeRejectCandidate);
       if (reject && clickControl(reject)) {
-        releasePageLock();
-        woTimeout(releasePageLock, 250);
-        woTimeout(releasePageLock, 900);
         logAction('reject', elementText(reject));
         finishConsentWork();
         return;
@@ -907,9 +856,6 @@
       if (!changed) continue;
       const save = getControls(container).find((el) => saveChoicesCandidate(el, container, changed));
       if (save && clickControl(save)) {
-        releasePageLock();
-        woTimeout(releasePageLock, 250);
-        woTimeout(releasePageLock, 900);
         logAction('reject', 'disabled optional consent choices');
         finishConsentWork();
         return;

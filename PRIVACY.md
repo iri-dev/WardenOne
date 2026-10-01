@@ -129,12 +129,12 @@ disk by WardenOne, and are discarded when the channel, page, or tab closes. To c
 memory use, the oldest clips may be discarded before five minutes on unusually high-
 bitrate streams.
 
-**Deleting this data:** The popup's **Privacy cleaner → WardenOne data on this device**
+**Deleting this data:** The popup's **Privacy cleaner → What WardenOne saves**
 shows each saved local or session dataset, its approximate size and its oldest known
-date when the dataset has a timestamp. **Erase WardenOne data** clears local and
+date when the dataset has a timestamp. **Reset WardenOne** clears local and
 session storage and WardenOne's dynamic and session network rules, then restarts the
-extension to rebuild default protections. You can erase everything, keep global
-switches without API keys, or keep global switches and API keys. Both keep-options
+extension to rebuild default protections. You can reset everything, keep basic
+settings without API keys, or keep basic settings and API keys. Both keep-options
 remove site exceptions, user-authored rules and learned records. Finish any active
 Download Shield reviews before erasing so a paused download is not stranded.
 
@@ -142,7 +142,7 @@ Download Shield reviews before erasing so a paused download is not stranded.
 not an erase of all WardenOne records about the site. **Clean browser data** clears
 the selected browser/site data and the specific WardenOne history records named by
 that control. Removing WardenOne from Chrome also removes the extension's storage.
-**Erase WardenOne records for this site** removes matching site records and site
+**Clear records for this site** removes matching site records and site
 exceptions from extension storage. Shared reputation caches, tracker learning and
 Script Drift baselines are cleared in full because their derived keys cannot be
 reliably attributed to one site. Other sites' durable records and global switches
@@ -172,6 +172,17 @@ maintainer and its exact URL are published in
 [`docs/source-inventory.json`](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json), which is **generated from the
 list constants in the code** rather than written by hand, so it cannot quietly fall behind
 what WardenOne actually fetches.
+
+### 1b. Browser release check (when you open the popup)
+
+Update Guardian asks your browser maker for its current public Stable release when you
+open the popup or press **Check again**. Brave uses `versions.brave.com` and
+`brave.com`; Chrome uses `versionhistory.googleapis.com`; Edge uses
+`edgeupdates.microsoft.com`. Only the source for your detected browser is contacted.
+These requests carry no browsing history, page address, or WardenOne settings and use
+no cookies; the maker still sees an ordinary request from your IP address. Results
+are kept in temporary extension storage for six hours. If the check fails, WardenOne
+does not guess that your browser is current.
 
 ### 2. Script tamper check — "Script Drift Guard" (on by default)
 
@@ -406,7 +417,7 @@ else. Which host that is depends entirely on the address you chose, which is why
 described here rather than named. An earlier version of this policy left this out.
 
 **That is the complete list of external endpoints WardenOne contacts.** Everything above
-is either a public filter list, a check you switched on, or a button you pressed. There is
+is a public filter list, a browser release check when you open the popup, a check you switched on, or a button you pressed. There is
 no background telemetry, no crash reporting, no usage analytics, and nothing whatsoever is
 sent to WardenOne's developer — there is no WardenOne server to send it to.
 

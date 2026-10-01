@@ -2799,7 +2799,10 @@ function renderNotificationUnread(value) {
   const button = $('open-notifications');
   if (!button) return;
   if (value === undefined) {
-    chrome.storage.local.get('wardenone_notifications', (stored) => renderNotificationUnread(stored && stored.wardenone_notifications));
+    chrome.storage.local.get('wardenone_notifications', (stored) => {
+      const notifications = stored && stored.wardenone_notifications;
+      renderNotificationUnread(Array.isArray(notifications) ? notifications : []);
+    });
     return;
   }
   const unread = (Array.isArray(value) ? value : []).filter((item) => item && !item.read).length;
@@ -2869,7 +2872,7 @@ function labelToggleControls() {
 initPopupScrollMemory();
 initAdvancedProvidersMemory();
 initEyeShield();
-load();
+document.addEventListener('DOMContentLoaded', load, { once: true });
 renderUpdateGuardian();
 renderListMeta();
 renderProtectionHealth();
@@ -3090,51 +3093,63 @@ function riskFill(risk) {
   return 'var(--wo-popup-risk-low)';
 }
 
-// ----- Update Guardian: detect browser + estimate if it looks outdated -----
-// HONEST LIMITS: an extension can't fetch the true "current" version, and can't
-// update the browser. So we (1) detect name + major version, (2) ESTIMATE the
-// expected current Chromium major from today's date using Chrome's steady ~4-week
-// release cadence, and (3) only warn when clearly behind (big margin, so normal
-// lag never cries wolf). The update button always works regardless.
-function detectBrowser() {
-  const uaData = navigator.userAgentData;
-  let name = 'Browser', major = 0, isChromium = false;
-  // Prefer userAgentData.brands (modern, structured, not spoofed by UA string)
-  if (uaData && Array.isArray(uaData.brands)) {
-    isChromium = uaData.brands.some((b) => /Chromium/i.test(b.brand));
-    // pick the most specific brand (skip "Not.A/Brand" placeholders)
-    const order = ['Microsoft Edge', 'Brave', 'Opera', 'Vivaldi', 'Google Chrome', 'Chromium'];
-    for (const want of order) {
-      const hit = uaData.brands.find((b) => b.brand === want);
-      if (hit) { name = want; major = parseInt(hit.version, 10) || 0; break; }
-    }
-    if (major === 0) {
-      const chrom = uaData.brands.find((b) => /Chromium/i.test(b.brand));
-      if (chrom) { major = parseInt(chrom.version, 10) || 0; name = 'Chromium'; }
-    }
-  }
-  // Fallback / refinement via UA string (also catches Firefox, Safari)
-  const ua = navigator.userAgent || '';
-  if (name === 'Browser' || major === 0) {
-    let m;
-    if ((m = ua.match(/Edg\/(\d+)/))) { name = 'Microsoft Edge'; major = +m[1]; isChromium = true; }
-    else if ((m = ua.match(/OPR\/(\d+)/))) { name = 'Opera'; major = +m[1]; isChromium = true; }
-    else if (/Brave/i.test(ua) && (m = ua.match(/Chrome\/(\d+)/))) { name = 'Brave'; major = +m[1]; isChromium = true; }
-    else if ((m = ua.match(/Vivaldi\/(\d+)/))) { name = 'Vivaldi'; major = +m[1]; isChromium = true; }
-    else if ((m = ua.match(/Firefox\/(\d+)/))) { name = 'Firefox'; major = +m[1]; }
-    else if ((m = ua.match(/Version\/(\d+).*Safari/))) { name = 'Safari'; major = +m[1]; }
-    else if ((m = ua.match(/Chrome\/(\d+)/))) { name = 'Google Chrome'; major = +m[1]; isChromium = true; }
-  }
-  return { name, major, isChromium };
+// ----- Update Guardian -----
+const UPDATE_GUARDIAN_CACHE_MS = 6 * 60 * 60 * 1000;
+const UPDATE_GUARDIAN_TIMEOUT_MS = 7000;
+
+function guardianVersion(value) {
+  return typeof value === 'string' && /^\d{1,4}(?:\.\d{1,5}){1,3}$/.test(value) ? value : '';
 }
 
-// Estimate the expected current Chromium major version from today's date.
-// Anchor: Chrome 126 reached stable ~2024-06-11. Cadence: ~4 weeks per major.
-function expectedChromiumMajor() {
-  const anchorVersion = 126;
-  const anchorDate = Date.UTC(2024, 5, 11); // 2024-06-11
-  const weeks = (Date.now() - anchorDate) / (7 * 24 * 3600 * 1000);
-  return anchorVersion + Math.floor(weeks / 4);
+function compareGuardianVersions(a, b) {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    if ((left[i] || 0) !== (right[i] || 0)) return (left[i] || 0) - (right[i] || 0);
+  }
+  return 0;
+}
+
+async function detectBrowser() {
+  const uaData = navigator.userAgentData;
+  const brands = uaData && Array.isArray(uaData.brands) ? uaData.brands : [];
+  const ua = navigator.userAgent || '';
+  let high = {};
+  try {
+    if (uaData && uaData.getHighEntropyValues) {
+      high = await uaData.getHighEntropyValues(['fullVersionList', 'architecture']);
+    }
+  } catch (_) {}
+  let brave = false;
+  try { brave = !!(navigator.brave && await navigator.brave.isBrave()); } catch (_) {}
+  const edge = brands.some((brand) => brand.brand === 'Microsoft Edge') || /\bEdg\//.test(ua);
+  const namedBrand = ['Microsoft Edge', 'Brave', 'Opera', 'Vivaldi', 'Google Chrome']
+    .find((name) => brands.some((brand) => brand.brand === name));
+  const name = edge ? 'Microsoft Edge' : brave ? 'Brave' : namedBrand
+    || (/Edg\/\d+/.test(ua) ? 'Microsoft Edge' : /OPR\/\d+/.test(ua) ? 'Opera'
+      : /Brave/i.test(ua) ? 'Brave' : /Vivaldi\/\d+/.test(ua) ? 'Vivaldi'
+        : /Firefox\/\d+/.test(ua) ? 'Firefox' : /Version\/\d+.*Safari/.test(ua) ? 'Safari'
+          : /Chrome\/\d+/.test(ua) ? 'Google Chrome'
+            : brands.some((brand) => brand.brand === 'Chromium') ? 'Chromium' : 'Browser');
+  const chromium = brands.find((brand) => brand.brand === 'Chromium');
+  const engineMajor = parseInt(chromium && chromium.version, 10)
+    || parseInt((/\b(?:Chrome|Chromium)\/(\d+)/.exec(ua) || [])[1], 10) || 0;
+  const ownVersion = /\b(?:Edg|OPR|Vivaldi|Firefox|Version)\/(\d+)/.exec(ua);
+  const major = /^(?:Firefox|Safari)$/.test(name) ? parseInt(ownVersion && ownVersion[1], 10) || 0
+    : engineMajor || parseInt(ownVersion && ownVersion[1], 10) || 0;
+  const fullBrands = Array.isArray(high.fullVersionList) ? high.fullVersionList : [];
+  const brandVersion = (brand) => guardianVersion((fullBrands.find((item) => item.brand === brand) || {}).version);
+  const reportedVersion = name === 'Brave' ? brandVersion('Brave')
+    : name === 'Microsoft Edge' ? brandVersion('Microsoft Edge') || brandVersion('Microsoft Edge WebView2')
+      : name === 'Google Chrome' ? brandVersion('Google Chrome') : '';
+  const fullVersion = reportedVersion && !/\.0\.0\.0$/.test(reportedVersion)
+    && (name !== 'Brave' || (reportedVersion.split('.').length >= 3
+      && Number(reportedVersion.split('.')[0]) !== engineMajor)) ? reportedVersion : '';
+  const os = /Win/i.test(uaData?.platform || navigator.platform || ua) ? 'win'
+    : /Mac/i.test(uaData?.platform || navigator.platform || ua) ? 'mac'
+      : /Linux/i.test(uaData?.platform || navigator.platform || ua) ? 'linux' : '';
+  const arch = /arm/i.test(high.architecture || '') ? 'arm64' : 'x64';
+  return { name, major, fullVersion, os, arch };
 }
 
 // The update page differs per browser.
@@ -3144,53 +3159,171 @@ function updatePageFor(name) {
     case 'Brave': return 'brave://settings/help';
     case 'Opera': return 'opera://settings/help';
     case 'Vivaldi': return 'vivaldi://settings/help';
-    case 'Firefox': return null; // about:preferences can't be opened by extensions reliably
+    case 'Firefox': return null;
     case 'Safari': return null;
     default: return 'chrome://settings/help';
   }
 }
 
-function renderUpdateGuardian() {
+function guardianSource(browser) {
+  if (!browser.os) return null;
+  if (browser.name === 'Brave') {
+    const platform = browser.os === 'win' ? 'windows' : browser.os === 'mac' ? 'macos' : 'linux';
+    return ['https://versions.brave.com/latest/release-' + platform + '-' + browser.arch + '.version',
+      'https://brave.com/latest/'];
+  }
+  if (browser.name === 'Google Chrome') {
+    return ['https://versionhistory.googleapis.com/v1/chrome/platforms/' + browser.os
+      + '/channels/stable/versions/all/releases?filter=fraction%3D1%2Cendtime%3Dnone&order_by=version%20desc&page_size=1'];
+  }
+  if (browser.name === 'Microsoft Edge') return ['https://edgeupdates.microsoft.com/api/products/stable'];
+  return null;
+}
+
+async function guardianFetchText(url, limit) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPDATE_GUARDIAN_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { credentials: 'omit', cache: 'no-store',
+      referrerPolicy: 'no-referrer', signal: controller.signal });
+    if (!response.ok || new URL(response.url).origin !== new URL(url).origin
+      || Number(response.headers.get('content-length') || 0) > limit) throw new Error('release source unavailable');
+    const text = await response.text();
+    if (text.length > limit) throw new Error('release response too large');
+    return text;
+  } finally { clearTimeout(timeout); }
+}
+
+function parseBraveRelease(versionText, notes) {
+  const product = guardianVersion(versionText.trim());
+  const desktop = notes.indexOf('<h2 id="desktop">');
+  const next = desktop < 0 ? -1 : notes.indexOf('<h3 id="desktop-release-notes-', desktop);
+  const following = next < 0 ? -1 : notes.indexOf('<h3 id="desktop-release-notes-', next + 4);
+  const section = next < 0 ? '' : notes.slice(next, following < 0 ? next + 12000 : following);
+  const notesVersion = /Release Notes\s*<strong>v([\d.]+)<\/strong>/.exec(section);
+  const chromium = /Upgraded Chromium to (\d+\.\d+\.\d+\.\d+)/.exec(section);
+  if (!product || !notesVersion || notesVersion[1] !== product) throw new Error('Brave sources disagree');
+  return { version: product, engine: guardianVersion(chromium && chromium[1]) };
+}
+
+function parseChromeRelease(text) {
+  const releases = JSON.parse(text).releases;
+  const release = Array.isArray(releases) && releases[0];
+  const version = guardianVersion(release && release.version);
+  if (!version || release.fraction !== 1 || !release.serving || release.serving.endTime) {
+    throw new Error('Chrome release not broadly available');
+  }
+  return { version };
+}
+
+function parseEdgeRelease(text, os) {
+  const products = JSON.parse(text);
+  const stable = Array.isArray(products) && products.find((item) => item.Product === 'Stable');
+  const platform = { win: 'Windows', mac: 'MacOS', linux: 'Linux' }[os];
+  const versions = (stable && Array.isArray(stable.Releases) ? stable.Releases : [])
+    .filter((item) => item.Platform === platform).map((item) => guardianVersion(item.ProductVersion)).filter(Boolean);
+  if (!versions.length) throw new Error('Edge release unavailable');
+  versions.sort(compareGuardianVersions);
+  return { version: versions[versions.length - 1] };
+}
+
+async function guardianLatest(browser, force = false) {
+  const urls = guardianSource(browser);
+  if (!urls) return null;
+  const key = 'updateGuardian:' + browser.name + ':' + browser.os + ':' + browser.arch;
+  if (!force && chrome.storage?.session) {
+    try {
+      const cached = (await chrome.storage.session.get(key))[key];
+      if (cached && Date.now() - cached.at < UPDATE_GUARDIAN_CACHE_MS
+        && cached.at <= Date.now() && guardianVersion(cached.release?.version)) return cached.release;
+    } catch (_) {}
+  }
+  const release = browser.name === 'Brave'
+    ? parseBraveRelease(...await Promise.all([guardianFetchText(urls[0], 100), guardianFetchText(urls[1], 150000)]))
+    : browser.name === 'Google Chrome' ? parseChromeRelease(await guardianFetchText(urls[0], 20000))
+      : parseEdgeRelease(await guardianFetchText(urls[0], 100000), browser.os);
+  try { await chrome.storage?.session?.set({ [key]: { at: Date.now(), release } }); } catch (_) {}
+  return release;
+}
+
+function guardianAssessment(browser, latest) {
+  if (!latest) return { state: 'unknown', title: 'Could not check right now', detail: 'Try again or check updates in your browser.' };
+  const installed = browser.fullVersion;
+  if (browser.name === 'Brave') {
+    if ((installed && compareGuardianVersions(installed, latest.version) < 0)
+      || (latest.engine && browser.major && browser.major < Number(latest.engine.split('.')[0]))) {
+      return { state: 'update', title: 'Brave update available', detail: 'Your browser is behind the latest Brave release.' };
+    }
+    if (installed && compareGuardianVersions(installed, latest.version) >= 0) {
+      return { state: 'current', title: 'Brave is up to date', detail: 'Your version matches the latest public release.' };
+    }
+    if (latest.engine && browser.major) {
+      return { state: 'major', title: 'Brave looks current', detail: 'Check Brave for smaller security updates.' };
+    }
+    return { state: 'unknown', title: 'Check Brave updates', detail: 'WardenOne cannot compare your installed version with the latest release.' };
+  }
+  if (!browser.major) return { state: 'unknown', title: 'Check browser updates', detail: 'WardenOne cannot read your installed version.' };
+  if (browser.major < Number(latest.version.split('.')[0])
+    || (installed && compareGuardianVersions(installed, latest.version) < 0)) {
+    return browser.name === 'Microsoft Edge'
+      ? { state: 'update', title: 'Edge update available', detail: 'Your browser may follow a managed update schedule. Check Edge updates.' }
+      : { state: 'update', title: 'Chrome update available', detail: 'Your browser is behind the latest Stable release.' };
+  }
+  if (installed && compareGuardianVersions(installed, latest.version) >= 0) {
+    return { state: 'current', title: (browser.name === 'Microsoft Edge' ? 'Edge' : 'Chrome') + ' is up to date',
+      detail: 'Your version matches the latest widely available Stable release.' };
+  }
+  return { state: 'major', title: (browser.name === 'Microsoft Edge' ? 'Edge' : 'Chrome') + ' looks current',
+    detail: 'Check your browser for smaller security updates.' };
+}
+
+async function renderUpdateGuardian(force = false) {
   const nameEl = $('ug-name');
+  const statusEl = $('ug-status');
   const noteEl = $('ug-note');
   const btn = $('ug-btn');
-  if (!nameEl) return;
-  const b = detectBrowser();
-  nameEl.textContent = b.name + (b.major ? ' ' + b.major : '');
-  let outdated = false;
-  if (b.isChromium && b.major > 0) {
-    const expected = expectedChromiumMajor();
-    // only warn when clearly behind (>= 4 majors ~ roughly 4 months) so normal
-    // staged-rollout lag doesn't trigger a false alarm.
-    if (expected - b.major >= 4) outdated = true;
-  }
-  if (outdated) {
-    noteEl.textContent = 'Your browser version looks older than expected for today. Keeping it updated protects you from known security bugs.';
-    noteEl.style.color = 'var(--wo-danger)';
-    nameEl.style.color = 'var(--wo-danger)';
-  } else if (b.major > 0) {
-    noteEl.textContent = 'Looks current. It\'s still worth checking now and then — updates patch security bugs.';
-    noteEl.style.color = 'var(--ink-faint)';
-  } else {
-    noteEl.textContent = 'Keeping your browser updated protects you from known security bugs.';
-    noteEl.style.color = 'var(--ink-faint)';
-  }
-  // wire the button to the right update page
+  const latestEl = $('ug-latest');
+  const refresh = $('ug-refresh');
+  if (!nameEl || !statusEl || !noteEl || !btn || !latestEl || !refresh) return;
+  const b = await detectBrowser();
+  const displayName = b.name === 'Google Chrome' ? 'Chrome' : b.name === 'Microsoft Edge' ? 'Edge' : b.name;
+  nameEl.textContent = displayName;
+  const source = guardianSource(b);
+  latestEl.textContent = '';
+  statusEl.textContent = source ? 'Checking for updates…' : 'Check updates in your browser';
+  statusEl.dataset.state = source ? 'checking' : 'unknown';
+  noteEl.textContent = source ? '' : 'Live release checks are not available for this browser.';
+  refresh.style.display = source ? '' : 'none';
+  refresh.disabled = !!source;
+  refresh.onclick = () => { void renderUpdateGuardian(true); };
   const page = updatePageFor(b.name);
   if (page) {
     btn.style.display = '';
+    btn.textContent = source ? 'Check ' + displayName + ' updates' : 'Open browser updates';
     btn.onclick = () => chrome.tabs.create({ url: page });
   } else {
-    // Firefox/Safari: can't open their settings page from here; guide instead
     btn.style.display = '';
     btn.textContent = 'How to update ' + b.name;
     btn.onclick = () => {
       noteEl.textContent = b.name === 'Firefox'
         ? 'Open the menu → Help → About Firefox to check for updates.'
         : 'Update ' + b.name + ' from your system settings or app store.';
-      noteEl.style.color = 'var(--ink-soft)';
     };
   }
+  if (!source) return;
+  try {
+    const latest = await guardianLatest(b, force);
+    latestEl.textContent = 'Latest ' + displayName + ' release: ' + latest.version;
+    const assessment = guardianAssessment(b, latest);
+    statusEl.textContent = assessment.title;
+    statusEl.dataset.state = assessment.state;
+    noteEl.textContent = assessment.detail;
+  } catch (_) {
+    const assessment = guardianAssessment(b, null);
+    statusEl.textContent = assessment.title;
+    statusEl.dataset.state = assessment.state;
+    noteEl.textContent = assessment.detail;
+  } finally { refresh.disabled = false; }
 }
 
 // Remove a single exposed token from the page's storage. Works for
@@ -4515,11 +4648,11 @@ function reconcileForgetHistoryPermission() {
     preview.textContent = '';
     if (!data.ok) { preview.textContent = 'Could not inspect: ' + (data.error || 'unknown error'); return; }
     const summary = document.createElement('div');
-    summary.textContent = data.records.length + ' datasets · ' + Math.round(data.totalBytes / 1024) + ' KiB saved';
+    summary.textContent = data.records.length + ' saved items · ' + Math.round(data.totalBytes / 1024) + ' KiB';
     preview.appendChild(summary);
     const details = document.createElement('details');
     const heading = document.createElement('summary');
-    heading.textContent = 'View dataset sizes and oldest known dates';
+    heading.textContent = 'View storage details';
     details.appendChild(heading);
     const list = document.createElement('ul');
     list.style.cssText = 'max-height:180px;overflow:auto;padding-left:18px;margin:6px 0;';
@@ -4539,19 +4672,27 @@ function reconcileForgetHistoryPermission() {
     paint(await ask({ kind: 'privacy-data-inspect' }));
     inspect.disabled = false;
   });
+  const eraseLabels = {
+    all: 'Reset WardenOne',
+    settings: 'Clear records and API keys',
+    'settings-and-keys': 'Clear saved records',
+  };
+  const updateEraseLabel = () => { erase.textContent = eraseLabels[mode.value] || eraseLabels.all; };
+  mode.addEventListener('change', updateEraseLabel);
+  updateEraseLabel();
   erase.addEventListener('click', async () => {
     erase.disabled = true;
     result.textContent = '';
     const data = await ask({ kind: 'privacy-data-inspect' });
     paint(data);
     if (!data.ok) { erase.disabled = false; return; }
-    const labels = {
-      all: 'all WardenOne settings, API keys and saved records',
-      settings: 'saved records and API keys, keeping global switches',
-      'settings-and-keys': 'saved records, keeping global switches and API keys',
+    const confirmations = {
+      all: 'Reset WardenOne completely? This removes its settings, API keys and saved records.',
+      settings: 'Clear saved records and API keys? Basic settings will stay.',
+      'settings-and-keys': 'Clear saved records? Basic settings and API keys will stay.',
     };
     const choice = mode.value;
-    if (!labels[choice] || !confirm('Erase ' + labels[choice] + '?\n\n'
+    if (!confirmations[choice] || !confirm(confirmations[choice] + '\n\n'
       + data.records.length + ' datasets (' + Math.round(data.totalBytes / 1024) + ' KiB) are currently saved. '
       + 'This resets learned protections and site exceptions. Active Download Shield reviews must be finished first.')) {
       erase.disabled = false;
@@ -4561,7 +4702,9 @@ function reconcileForgetHistoryPermission() {
     if (answer.ok) {
       try { localStorage.removeItem('wardenone_theme'); } catch (_) {}
     }
-    result.textContent = answer.ok ? 'Erased. WardenOne is restarting with ' + answer.kept + ' kept.'
+    result.textContent = answer.ok ? (choice === 'all' ? 'WardenOne was reset and is restarting.'
+      : 'Saved records cleared. WardenOne is restarting with '
+        + (choice === 'settings' ? 'basic settings' : 'basic settings and API keys') + ' kept.')
       : 'Could not complete erasure: ' + (answer.error || 'unknown error');
     if (!answer.ok) erase.disabled = false;
   });
@@ -4581,14 +4724,14 @@ function reconcileForgetHistoryPermission() {
         eraseSite.disabled = false;
         return;
       }
-      if (!confirm('Erase WardenOne records for ' + plan.site + '?\n\n'
+      if (!confirm('Clear saved WardenOne records for ' + plan.site + '?\n\n'
         + plan.affected.length + ' datasets will change. Shared reputation caches, tracker learning and Script Drift baselines may be cleared for other sites too. Restarting WardenOne also clears temporary session records. Website cookies and browser history are untouched.')) {
         eraseSite.disabled = false;
         result.textContent = 'Site erasure cancelled.';
         return;
       }
       const answer = await ask({ kind: 'privacy-data-erase-site', host });
-      result.textContent = answer.ok ? 'Erased WardenOne records for ' + answer.site + '. WardenOne is restarting.'
+      result.textContent = answer.ok ? 'Cleared WardenOne records for ' + answer.site + '. WardenOne is restarting.'
         : 'Could not complete site erasure: ' + (answer.error || 'unknown error');
       if (!answer.ok) eraseSite.disabled = false;
     });
@@ -4792,7 +4935,10 @@ function featureOmitted(id) { return OMITTED_FEATURES.indexOf(id) !== -1; }
       if (out) {
         out.style.display = 'block';
         if (r && r.ok) {
-          out.textContent = 'Slept ' + r.slept + ' tab' + (r.slept === 1 ? '' : 's') + '. Kept ' + r.kept + ' (active, pinned, audio, forms, etc.).';
+          const refused = r.keptReasons && r.keptReasons['Chrome refused to sleep'] || 0;
+          out.textContent = 'Slept ' + r.slept + ' tab' + (r.slept === 1 ? '' : 's') + '. Kept ' + r.kept
+            + ' (active, pinned, audio, forms, etc.).'
+            + (refused ? ' Chrome refused to sleep ' + refused + ' of the kept tabs.' : '');
         } else { out.textContent = 'Could not free RAM right now.'; }
       }
       setTimeout(loadScore, 400);
@@ -4804,25 +4950,30 @@ function featureOmitted(id) { return OMITTED_FEATURES.indexOf(id) !== -1; }
     const out = $('mem-dupes-result');
     dupBtn.disabled = true; dupBtn.textContent = 'Checking…';
     chrome.runtime.sendMessage({ kind: 'memory-duplicates' }, (r) => {
-      dupBtn.disabled = false; dupBtn.textContent = 'Check for duplicate tabs';
+      dupBtn.disabled = false; dupBtn.textContent = 'Find matching tabs';
       if (!out) return;
       out.style.display = 'block';
-      if (!r || !r.ok) { out.textContent = 'Could not check duplicates.'; return; }
-      if (!r.extraCount) { out.textContent = 'No duplicate tabs found.'; return; }
+      if (!r || !r.ok) { out.textContent = 'Could not check matching tabs.'; return; }
+      if (!r.extraCount) { out.textContent = 'No matching web addresses found.'; return; }
       out.textContent = '';
       const line = document.createElement('div');
-      line.textContent = 'You have ' + r.extraCount + ' duplicate tab' + (r.extraCount === 1 ? '' : 's') + ' across ' + (Array.isArray(r.groups) ? r.groups.length : 0) + ' page(s).';
+      const groupCount = Array.isArray(r.groups) ? r.groups.length : 0;
+      line.textContent = 'Found ' + r.extraCount + ' extra tab' + (r.extraCount === 1 ? '' : 's')
+        + ' sharing ' + groupCount + ' exact web address' + (groupCount === 1 ? '' : 'es') + '.';
       line.style.marginBottom = '6px';
       out.appendChild(line);
       const close = document.createElement('button');
       close.className = 'btn';
       close.style.cssText = 'width:100%;font-size:11px;border:1px solid var(--wo-popup-soft-danger-line);color:var(--wo-popup-soft-danger);';
-      close.textContent = 'Close ' + r.extraCount + ' duplicate' + (r.extraCount === 1 ? '' : 's') + ' (keep one of each)';
+      close.textContent = 'Close eligible matching tabs';
       close.addEventListener('click', () => {
-        if (!confirm('Close ' + r.extraCount + ' duplicate tab(s)? One copy of each page is kept.')) return;
+        if (!confirm('Matching addresses can still hold different in-page work. WardenOne keeps active, protected, busy or unverified tabs, but cannot detect every app’s unsaved state. Close eligible matches?')) return;
         close.disabled = true; close.textContent = 'Closing…';
         chrome.runtime.sendMessage({ kind: 'memory-close-duplicates' }, (rr) => { void chrome.runtime.lastError;
-          out.textContent = (rr && rr.ok) ? ('Closed ' + rr.closed + ' duplicate tab(s).') : 'Could not close duplicates.';
+          out.textContent = (rr && rr.ok)
+            ? (rr.closed ? 'Closed ' + rr.closed + ' eligible matching tab' + (rr.closed === 1 ? '' : 's') + '. Other matches stayed open.'
+              : 'No matching tabs were eligible to close.')
+            : 'Could not close matching tabs.';
           setTimeout(loadScore, 400);
         });
       });

@@ -1,10 +1,12 @@
 # Release performance profiles
 
-CI also records the package footprint after each passing gate: ZIP and unpacked bytes,
+CI also records the package footprint after each passing gate: staged-tree ZIP and unpacked bytes,
 bundled DNR rules, manifest-injected scripts, and content and worker source bytes. The
 limits in [`static-budget.json`](static-budget.json) are compared with the staged package
 by `node tools/check-performance-budget.js`; CI keeps the measurements as a build
-artifact for 90 days. These are size and rule-count checks. The browser profile below
+artifact for 90 days. A release ZIP archived from a commit includes its commit ID in the ZIP
+comment, so its byte count can differ from the staged-tree metric; the published SHA-256 covers
+the actual release ZIP. These are size and rule-count checks. The browser profile below
 measures execution time and heap; it currently does not measure worker startup time.
 
 Each `profile-<commit>.json` here is an enabled-versus-disabled measurement of that release

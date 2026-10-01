@@ -37,7 +37,7 @@ function buildDiagnosticsReport({ health, config, dnr, verification, browser, ve
   const verifyStatus = checked && checked.at && diagnosticDate(checked.at) !== 'Unknown'
     ? (checked.passed === true ? 'Passed' : 'Issues found') + ' on ' + diagnosticDate(checked.at)
     : 'Not recorded for this version';
-  const browserLabel = /^(?:Brave \(version unavailable\)|Microsoft Edge \d+|Google Chrome \d+|Chromium \d+|Chromium-based browser \d+|Unknown)$/.test(String(browser))
+  const browserLabel = /^(?:Brave \(version unavailable\)|Brave \(Chromium \d+\)|Microsoft Edge \d+|Google Chrome \d+|Chromium \d+|Chromium-based browser \d+|Unknown)$/.test(String(browser))
     ? browser : 'Unknown';
   const text = [
     'WardenOne diagnostics',
@@ -70,7 +70,7 @@ async function diagnosticBrowser(nav) {
   try {
     if (nav.brave && await nav.brave.isBrave()) {
       const braveVersion = /\b(?:Chrome|Chromium)\/(\d+)\b/i.exec(String(nav.userAgent || ''));
-      return braveVersion ? 'Brave ' + braveVersion[1] : 'Brave (version unavailable)';
+      return braveVersion ? 'Brave (Chromium ' + braveVersion[1] + ')' : 'Brave (version unavailable)';
     }
   } catch (_) {}
   const brands = nav.userAgentData && nav.userAgentData.brands || [];

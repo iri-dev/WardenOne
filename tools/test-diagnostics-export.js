@@ -55,5 +55,10 @@ assert(script.includes("prepare.addEventListener('click'") && script.includes("d
 assert(!script.includes('fetch('));
 
 diagnosticBrowser({ brave: { isBrave: async () => true }, userAgent: 'Chrome/999' })
-  .then((name) => { assert.strictEqual(name, 'Brave 999'); console.log('[ok] diagnostics export tests'); })
+  .then((name) => {
+    assert.strictEqual(name, 'Brave (Chromium 999)');
+    assert(buildDiagnosticsReport({ ...base, browser: name }).includes('Browser: Brave (Chromium 999)'));
+    assert(buildDiagnosticsReport({ ...base, browser: 'Brave 999' }).includes('Browser: Unknown'));
+    console.log('[ok] diagnostics export tests');
+  })
   .catch((error) => { console.error(error); process.exitCode = 1; });
