@@ -225,6 +225,7 @@ async function main() {
   await testSharedMaintenancePass();
   await testDiscardRefusals();
   await testTabLimitCloseRechecksState();
+  await testSleepPathsRecheckBeforeDiscard();
   await testDuplicateCloseSafety();
   await testSweepAlarmFollowsTheSetting();
   await testColdStartsKeepTheSweepDeadline();
@@ -508,6 +509,59 @@ async function testTabLimitCloseRechecksState() {
   assert(safe.gets.includes(1), 'Tab Limit must fetch the candidate again before closing it');
   assert.deepStrictEqual(safe.removed, [1]);
   assert.strictEqual(safe.history.filter((entry) => entry.type === 'tab_limit_closed').length, 1);
+}
+
+// The live check can take a second, and the tab can change inside it: the reader switches to it,
+// uses it, navigates it, pins it, closes it. Chrome discards an active tab when asked, so nothing
+// downstream would catch it. Every automatic sleep path must read the tab again before acting --
+// the check Tab Limit already makes -- and leave a tab that changed.
+async function testSleepPathsRecheckBeforeDiscard() {
+  const config = { memoryShield: true, memoryMode: 'balanced' };
+  const paths = [
+    ['the timed sweep', (h) => h.sandbox.memorySweep('alarm'), () => [sleepableTab(1, 600), sleepableTab(2, 0, { active: true })]],
+    ['the shared maintenance pass', (h) => h.sandbox.runMemoryMaintenance(), () => [sleepableTab(1, 600), sleepableTab(2, 0, { active: true })]],
+    ['Free RAM Now', (h) => h.sandbox.freeRamNow(), () => [sleepableTab(1, 600), sleepableTab(2, 0, { active: true })]],
+    ['group sleeping', (h) => h.sandbox.sleepIdleGroups(), () => [sleepableTab(1, 600, { groupId: 7 }), sleepableTab(2, 0, { active: true })]],
+    ['the popup Sleep button', (h) => h.sandbox.memoryActOnTab(1, 'sleep'), () => [sleepableTab(1, 600), sleepableTab(2, 0, { active: true })]],
+    ['the popup Close button', (h) => h.sandbox.memoryActOnTab(1, 'close'), () => [sleepableTab(1, 600), sleepableTab(2, 0, { active: true })]],
+  ];
+  const changes = [
+    ['the reader switched to it', (state) => { state.tabs[0].active = true; state.tabs[1].active = false; }],
+    ['the reader used it and switched away', (state) => { state.tabs[0].lastAccessed = Date.now(); }],
+    ['it navigated', (state) => { state.tabs[0].url = 'https://ordinary.example/elsewhere'; }],
+    ['it was pinned', (state) => { state.tabs[0].pinned = true; }],
+    ['it started playing audio', (state) => { state.tabs[0].audible = true; }],
+    ['it was closed', (state) => { state.tabs.splice(0, 1); }],
+  ];
+  for (const [pathLabel, act, tabs] of paths) {
+    for (const [changeLabel, mutate] of changes) {
+      let harness;
+      harness = loadMemoryShield({ config, tabs: tabs(), liveReply: (tabId) => {
+        if (tabId === 1) mutate(harness.state);
+        return { formDirty: false, mediaActive: false };
+      } });
+      await act(harness);
+      assert.deepStrictEqual(Array.from(harness.state.discarded), [], `${pathLabel} slept tab 1 after ${changeLabel} during its live check`);
+      assert.deepStrictEqual(Array.from(harness.state.removed), [], `${pathLabel} closed tab 1 after ${changeLabel} during its live check`);
+    }
+    /* Unchanged, the same path still acts -- and it read the tab again to know that. */
+    const clean = loadMemoryShield({ config, tabs: tabs() });
+    await act(clean);
+    const acted = clean.state.discarded.length + clean.state.removed.length;
+    assert.strictEqual(acted, 1, `${pathLabel} no longer acts on an unchanged idle tab`);
+    assert(clean.state.gets.includes(1), `${pathLabel} acted without reading the tab again`);
+  }
+  /* Free RAM Now says why it kept the tab, rather than counting it as refused by Chrome. */
+  let harness;
+  harness = loadMemoryShield({ config, tabs: [sleepableTab(1, 600), sleepableTab(2, 0, { active: true })], liveReply: () => {
+    harness.state.tabs[0].active = true;
+    return { formDirty: false, mediaActive: false };
+  } });
+  const freed = await harness.sandbox.freeRamNow();
+  assert.strictEqual(freed.slept, 0);
+  /* Two: tab 2 was the active tab all along, tab 1 became it during the check. */
+  assert.strictEqual(freed.keptReasons['active tab'], 2, JSON.stringify(freed.keptReasons));
+  assert(!freed.keptReasons['Chrome refused to sleep'], 'a tab kept for changing was reported as refused by Chrome');
 }
 
 async function testDuplicateCloseSafety() {

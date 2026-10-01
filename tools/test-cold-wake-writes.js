@@ -289,6 +289,11 @@ const quiet = (d) => d.dnrWrites === 0 && d.removeAll === 0 && d.creates === 0 &
   check('the learned and tracker bands compare before they write',
     /dnrBandUnchanged\(mine, addRules\)/.test(grabFn(BG, 'applyLearnedRules')) && /dnrBandUnchanged\(mine, rules\)/.test(grabFn(BG, 'applyTrackerLearnerRules')));
   check('the band read asks Chrome for the band by id', has(BG, 'getDynamicRulesInBand') && /getDynamicRules\(\{ ruleIds \}\)/.test(grabFn(BG, 'getDynamicRulesInBand')));
+  /* A fallback to the unfiltered read would answer a transient Chrome error with the very stall
+     the band read exists to remove; the manifest's minimum Chrome already has the filter. */
+  check('the band read never falls back to reading every rule', has(BG, 'getDynamicRulesInBand') && !/getDynamicRules\(\)/.test(grabFn(BG, 'getDynamicRulesInBand')));
+  check('the minimum Chrome the manifest names has the ruleIds filter (Chrome 111)',
+    Number(JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).minimum_chrome_version) >= 111);
   check('the worker-start scan is the only gated one; every management event still reconciles',
     /chrome\.management\.onInstalled\.addListener\(\(\) => scheduleExtensionReconcile\('installed'\)\)/.test(WATCH)
       && /setTimeout\(\(\) => \{ extensionScanOnWorkerStart\(\)\.catch/.test(WATCH)

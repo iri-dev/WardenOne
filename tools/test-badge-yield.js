@@ -214,6 +214,44 @@ function run(options) {
   assert.strictEqual(elsewhere.toggled.away, true, 'a profile elsewhere does not expose the chip over members');
 }
 
+/* Twitch's chat column fills the corner from the Chat button up, so every spot the climb can
+   reach is chat someone is reading -- reported as a chip sitting over the messages, in a
+   different place each time banners came and went. The column, not any one control in it,
+   decides: hidden while it holds the corner, on Twitch only, and back when it is gone. */
+{
+  const chatPage = (opts) => (body) => {
+    const o = opts || {};
+    const column = under(el('div', { attrs: { class: o.column || 'chat-shell' }, rect: o.rect || rect(1500, 60, 1920, 1080) }), body);
+    const send = under(el('button', { text: 'Chat', rect: rect(1820, 1020, 1910, 1070), style: { position: 'fixed' } }), column);
+    const field = under(el('div', { attrs: { tabindex: '0' }, rect: rect(1510, 960, 1910, 1010), style: { position: 'fixed' } }), column);
+    return [send, field, column];
+  };
+  const twitch = run({ host: 'www.twitch.tv', path: '/somechannel', docHeight: 1080, build: chatPage(), panelOpen: true });
+  assert.strictEqual(twitch.toggled.away, true, 'the chip is hidden while Twitch chat holds its corner');
+  assert.strictEqual(twitch.toggled.inert, true, 'and takes no clicks meant for the chat');
+  assert.strictEqual(twitch.lift(), 0, 'and does not climb into the messages');
+  assert.strictEqual(twitch.panelOpen(), false, 'and its panel closes');
+  const signedOut = run({ host: 'www.twitch.tv', path: '/somechannel', docHeight: 1080, build: chatPage({ rect: rect(1500, 60, 1920, 940) }) });
+  assert.strictEqual(signedOut.toggled.away, true, 'a sign-up bar between the chat and the corner does not bring the chip back over the chat');
+  const room = run({ host: 'www.twitch.tv', path: '/popout/somechannel/chat', docHeight: 1080, build: chatPage({ column: 'stream-chat' }) });
+  assert.strictEqual(room.toggled.away, true, 'the popout chat is chat too');
+  const farAbove = run({ host: 'www.twitch.tv', path: '/somechannel', docHeight: 1080, build: chatPage({ rect: rect(1500, 60, 1920, 600) }) });
+  assert.notStrictEqual(farAbove.toggled.away, true, 'a chat column ending far above the corner does not hold it');
+  const leftSide = run({ host: 'www.twitch.tv', path: '/somechannel', docHeight: 1080, build: chatPage({ rect: rect(0, 60, 400, 1080) }) });
+  assert.notStrictEqual(leftSide.toggled.away, true, 'a chat column away from the corner leaves the chip alone');
+  const directory = run({ host: 'www.twitch.tv', path: '/directory' });
+  assert.strictEqual(directory.toggled.away, false, 'a Twitch page with no chat keeps the chip');
+  const elsewhere = run({ host: 'example.test', docHeight: 1080, build: chatPage() });
+  assert.notStrictEqual(elsewhere.toggled.away, true, 'the same layout on another site keeps the ordinary yield');
+  const lookalike = run({ host: 'twitch.tv.evil.test', docHeight: 1080, build: chatPage() });
+  assert.notStrictEqual(lookalike.toggled.away, true, 'a lookalike host does not get the Twitch exception');
+  /* Leaving the channel without a reload: the chat unmounts and the route changes. */
+  twitch.elements.length = 0;
+  twitch.sandbox.location.pathname = '/directory';
+  twitch.routeChanged();
+  assert.strictEqual(twitch.toggled.away, false, 'leaving the chat behind brings the chip back');
+}
+
 /* ---- the reported case: a player's own control under the badge --------------------------- */
 {
   const r = run({ build: (body) => [under(el('div', { attrs: { 'data-player': '' }, rect: rect(1500, 900, 1920, 1080) }), body)] });

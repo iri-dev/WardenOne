@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: September 27, 2026**
+**Last updated: October 1, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -21,18 +21,21 @@ unclear, contact us (see **Contact** below).
   hosts the page you are viewing has already contacted itself.
 - **We never sell, rent, or share your data**, and we do not use it for advertising.
 - The only times data leaves your device are: (1) downloading public block-lists to keep
-  protection current, (2) re-requesting third-party scripts a page has already loaded, so
-  they can be checked for tampering — on by default, and it reaches no host the page has
-  not already used, (3) an **opt-in** password-breach check that uses privacy-preserving
-  k-anonymity, (4) an **opt-in** login-page age check that sends a site's domain to a
-  public registration-data service, (5) **opt-in** reputation look-ups that you must switch
-  on yourself — and which, once on, **send the addresses of pages you open** to the
-  provider automatically, which is why they are off by default and described in full
-  below — (6) four things you start by pressing a
+  protection current, (2) a browser-release check when you open the popup — Update
+  Guardian asks Brave, Google or Microsoft (whichever makes your browser) for its latest
+  Stable version, at most once every six hours unless you press **Check again**; it sends
+  nothing about the pages you visit, and it has no off switch — (3) re-requesting
+  third-party scripts a page has already loaded, so they can be checked for tampering — on
+  by default, and it reaches no host the page has not already used, (4) an **opt-in**
+  password-breach check that uses privacy-preserving k-anonymity, (5) an **opt-in**
+  login-page age check that sends a site's domain to a public registration-data service,
+  (6) **opt-in** reputation look-ups that you must switch on yourself — and which, once on,
+  **send the addresses of pages you open** to the provider automatically, which is why they
+  are off by default and described in full below — (7) four things you start by pressing a
   button — the site breach check, the extension checker, fetching a filter list you added
   yourself, and the network filtering
   self-test, **which deliberately requests a favicon from named adult and malware-test
-  domains and can therefore show up in DNS or filter logs** — and (7) Twitch's own API,
+  domains and can therefore show up in DNS or filter logs** — and (8) Twitch's own API,
   while you are on Twitch, for the ad-blocking and rewind features. Each is described in
   detail below, and the full list of hosts is there rather than here.
 
