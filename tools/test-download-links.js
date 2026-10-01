@@ -122,6 +122,13 @@ function bareIndexLinks(text) {
 // ---------------------------------------------------------------------------
 {
   const rolling = WORKFLOW.split(/\n  rolling-build:/)[1] || '';
+  const browser = (WORKFLOW.split(/\n  browser-popup:/)[1] || '').split(/\n  rolling-build:/)[0];
+  check('the real popup runs in Edge on a Windows runner',
+    /runs-on: windows-2025/.test(browser)
+      && /WARDENONE_HEADLESS: '1'/.test(browser)
+      && /run: node tools\/browser-popup-regression\.js/.test(browser));
+  check('the rolling build waits for the real popup',
+    /needs: \[gate, browser-popup\]/.test(rolling));
   check('the publishing job may issue a GitHub attestation',
     /contents: write/.test(rolling) && /id-token: write/.test(rolling)
       && /attestations: write/.test(rolling));

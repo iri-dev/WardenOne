@@ -20,6 +20,7 @@ function loadMemoryShield(options = {}) {
     config: Object.assign({}, options.config || {}),
     discarded: [],
     queries: 0,
+    gets: [],
     liveChecks: [],
     throttled: [],
     removed: [],
@@ -145,7 +146,7 @@ function loadMemoryShield(options = {}) {
       return h === 'youtube.com' || h.endsWith('.youtube.com') || h === 'twitch.tv' || h.endsWith('.twitch.tv');
     },
     queueHistory(entry) { state.history.push(entry); },
-    tabsGet: async (id) => state.tabs.find((t) => t.id === id) || null,
+    tabsGet: async (id) => { state.gets.push(id); return state.tabs.find((t) => t.id === id) || null; },
     extensionUiAllowed: async () => true,
   };
   sandbox.globalThis = sandbox;
@@ -222,6 +223,9 @@ async function main() {
   await testRecencySurvivesRestart();
   await testUnknownLiveStateKeepsTheTab();
   await testSharedMaintenancePass();
+  await testDiscardRefusals();
+  await testTabLimitCloseRechecksState();
+  await testDuplicateCloseSafety();
   await testSweepAlarmFollowsTheSetting();
   await testColdStartsKeepTheSweepDeadline();
   await testNeverSleepIsExactAndHonoured();
@@ -422,6 +426,153 @@ async function testSharedMaintenancePass() {
   const refused = loadMemoryShield({ config, tabs: [sleepableTab(9, 120, { __undiscardable: true })] });
   assert.strictEqual((await refused.sandbox.runMemoryMaintenance()).sweep.slept, 0,
     'a refused discard must not be reported as a successful sleep');
+}
+
+async function testDiscardRefusals() {
+  const config = { memoryShield: true, tabLimitGuard: true, tabLimitMax: 2,
+    tabLimitMinIdleMinutes: 30, tabLimitClose: false };
+  const refusedTab = (id, extra) => sleepableTab(id, 600, { __undiscardable: true, ...extra });
+
+  const free = loadMemoryShield({ config, tabs: [refusedTab(1), sleepableTab(2, 600)] });
+  const freed = await free.sandbox.freeRamNow();
+  assert.strictEqual(freed.slept, 1);
+  assert.strictEqual(freed.kept, 1);
+  assert.strictEqual(freed.keptReasons['Chrome refused to sleep'], 1);
+  assert.deepStrictEqual(free.state.discarded, [2]);
+  assert.strictEqual(free.state.history.find((entry) => entry.type === 'memory_free_ram').detail.slept, 1);
+
+  const limitTabs = [refusedTab(1), sleepableTab(2, 600, { active: true }),
+    sleepableTab(3, 600, { pinned: true })];
+  const limit = loadMemoryShield({ config, tabs: limitTabs });
+  await limit.sandbox.enforceTabLimit(1);
+  assert.deepStrictEqual(limit.state.discarded, []);
+  assert.strictEqual(limit.state.history.filter((entry) => entry.type === 'tab_limit_slept').length, 0);
+  const allowed = loadMemoryShield({ config, tabs: [sleepableTab(1, 600), ...limitTabs.slice(1)] });
+  await allowed.sandbox.enforceTabLimit(1);
+  assert.deepStrictEqual(allowed.state.discarded, [1]);
+  assert.strictEqual(allowed.state.history.filter((entry) => entry.type === 'tab_limit_slept').length, 1);
+
+  const manual = loadMemoryShield({ config, tabs: [refusedTab(1)] });
+  const acted = await manual.sandbox.memoryActOnTab(1, 'sleep');
+  assert.strictEqual(acted.ok, false);
+  assert(/refused to sleep/.test(acted.error));
+  assert.deepStrictEqual(manual.state.discarded, []);
+
+  const group = loadMemoryShield({ config, tabs: [refusedTab(1, { groupId: 7 }),
+    sleepableTab(2, 600, { groupId: 7 })] });
+  const grouped = await group.sandbox.sleepIdleGroups();
+  assert.strictEqual(grouped.sleptTabs, 1);
+  assert.strictEqual(grouped.sleptGroups, 1);
+  assert.deepStrictEqual(group.state.discarded, [2]);
+  const groupHistory = group.state.history.filter((entry) => entry.type === 'memory_group_slept');
+  assert.strictEqual(groupHistory.length, 1);
+  assert.strictEqual(groupHistory[0].detail.tabs, 1);
+  const none = loadMemoryShield({ config, tabs: [refusedTab(1, { groupId: 7 })] });
+  assert.strictEqual((await none.sandbox.sleepIdleGroups()).sleptGroups, 0);
+  assert.strictEqual(none.state.history.filter((entry) => entry.type === 'memory_group_slept').length, 0);
+}
+
+async function testTabLimitCloseRechecksState() {
+  const config = { memoryShield: true, tabLimitGuard: true, tabLimitMax: 2,
+    tabLimitClose: true, tabLimitWarn: false };
+  const tabs = () => [sleepableTab(1, 600), sleepableTab(2, 600, { active: true }),
+    sleepableTab(3, 600, { pinned: true })];
+  async function run(mutate) {
+    let harness;
+    harness = loadMemoryShield({ config, tabs: tabs(), liveReply: () => {
+      if (mutate) mutate(harness.state);
+      return { formDirty: false, mediaActive: false };
+    } });
+    await harness.sandbox.enforceTabLimit(1);
+    return harness.state;
+  }
+
+  for (const [label, mutate] of [
+    ['selected tab became active', (state) => {
+      state.tabs[0].active = true;
+      state.tabs[1].active = false;
+    }],
+    ['selected tab was used and switched away from', (state) => {
+      state.tabs[0].lastAccessed = Date.now();
+    }],
+    ['selected tab became pinned', (state) => { state.tabs[0].pinned = true; }],
+    ['selected tab navigated', (state) => { state.tabs[0].url = 'https://ordinary.example/new'; }],
+    ['the window fell below the limit', (state) => { state.tabs.pop(); }],
+  ]) {
+    const state = await run(mutate);
+    assert.deepStrictEqual(state.removed, [], label);
+    assert.strictEqual(state.history.filter((entry) => entry.type === 'tab_limit_closed').length, 0, label);
+  }
+
+  const safe = await run();
+  assert(safe.gets.includes(1), 'Tab Limit must fetch the candidate again before closing it');
+  assert.deepStrictEqual(safe.removed, [1]);
+  assert.strictEqual(safe.history.filter((entry) => entry.type === 'tab_limit_closed').length, 1);
+}
+
+async function testDuplicateCloseSafety() {
+  const url = 'https://ordinary.example/editor';
+  const tab = (id, age, extra) => sleepableTab(id, age, { url, ...extra });
+  const routed = loadMemoryShield({ tabs: [
+    tab(1, 60, { url: 'https://app.example/#/document/123' }),
+    tab(2, 60, { url: 'https://app.example/#/document/999' }),
+    tab(3, 60, { url: 'https://app.example/#/document/123' }),
+  ] });
+  const found = await routed.sandbox.findDuplicateTabs();
+  assert.strictEqual(found.extraCount, 1);
+  assert.strictEqual(found.groups[0].url, 'https://app.example/#/document/123');
+  assert.deepStrictEqual(Array.from(found.groups[0].tabs, (entry) => entry.id), [1, 3]);
+
+  const clean = loadMemoryShield({ tabs: [tab(1, 120), tab(2, 30), tab(3, 60)] });
+  assert.strictEqual((await clean.sandbox.closeDuplicateTabs()).closed, 2);
+  assert.deepStrictEqual(clean.state.removed.slice().sort((a, b) => a - b), [1, 3],
+    'the most recently used clean copy should survive');
+
+  for (const [label, first, config, reply] of [
+    ['active', { active: true }, {}, () => ({ formDirty: false, mediaActive: false })],
+    ['unsaved form', {}, { memoryNeverForms: false }, (id) => ({ formDirty: id === 1, mediaActive: false })],
+    ['pinned', { pinned: true }, { memoryNeverPinned: false }, () => ({ formDirty: false, mediaActive: false })],
+    ['audible', { audible: true }, {}, () => ({ formDirty: false, mediaActive: false })],
+    ['camera or mic', {}, {}, (id) => ({ formDirty: false, mediaActive: id === 1 })],
+    ['unverified', {}, {}, (id) => id === 1 ? UNREACHABLE : ({ formDirty: false, mediaActive: false })],
+  ]) {
+    const run = loadMemoryShield({ config, tabs: [tab(1, 120, first), tab(2, 30)], liveReply: reply });
+    assert.strictEqual((await run.sandbox.closeDuplicateTabs()).closed, 1, label);
+    assert.deepStrictEqual(run.state.removed, [2], label + ' copy should be kept');
+  }
+
+  for (const [label, config] of [
+    ['allowlisted', { allowlist: ['ordinary.example'] }],
+    ['never-sleep', { memoryNeverSleepHosts: ['ordinary.example'] }],
+  ]) {
+    const run = loadMemoryShield({ config, tabs: [tab(1, 120), tab(2, 30)] });
+    assert.strictEqual((await run.sandbox.closeDuplicateTabs()).closed, 0, label);
+    assert.deepStrictEqual(run.state.removed, [], label);
+  }
+  const unknown = loadMemoryShield({ tabs: [tab(1, 120), tab(2, 30)], liveReply: () => UNREACHABLE });
+  assert.strictEqual((await unknown.sandbox.closeDuplicateTabs()).closed, 0);
+  assert.deepStrictEqual(unknown.state.removed, []);
+
+  for (const [label, change] of [
+    ['becomes active', (state) => { state.tabs[0].active = true; }],
+    ['gets new form input', () => ({ formDirty: true, mediaActive: false })],
+    ['navigates', (state) => { state.tabs[0].url = 'https://ordinary.example/other'; }],
+    ['is used again', (state) => { state.tabs[0].lastAccessed = Date.now(); }],
+    ['loses its survivor', (state) => { state.tabs.splice(1, 1); }],
+  ]) {
+    let run;
+    let checks = 0;
+    run = loadMemoryShield({ tabs: [tab(1, 120), tab(2, 30)], liveReply: (id) => {
+      if (id === 1 && ++checks === 2) {
+        const response = change(run.state);
+        if (response) return response;
+      }
+      return { formDirty: false, mediaActive: false };
+    } });
+    assert.strictEqual((await run.sandbox.closeDuplicateTabs()).closed, 0, label);
+    assert.deepStrictEqual(run.state.removed, [], label);
+    assert.strictEqual(run.state.history.filter((entry) => entry.type === 'memory_dupes_closed').length, 0, label);
+  }
 }
 
 // ---------------------------------------------------------------------------

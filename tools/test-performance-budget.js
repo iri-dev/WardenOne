@@ -15,10 +15,10 @@ const manifest = {
 };
 const metrics = summarizeMetrics(42, files, manifest, () => 3);
 assert.deepStrictEqual(metrics, {
-  githubZipBytes: 42, unpackedBytes: 65, staticDnrRules: 3,
+  stagedZipBytes: 42, unpackedBytes: 65, staticDnrRules: 3,
   manifestScriptEntries: 2, manifestScriptFiles: 1, manifestScriptBytes: 10,
   workerSourceBytes: 50,
 });
-assert.deepStrictEqual(budgetFailures(metrics, { githubZipBytes: 42, staticDnrRules: 3 }), []);
-assert.deepStrictEqual(budgetFailures(metrics, { githubZipBytes: 41 }), ['githubZipBytes: 42 > 41']);
+assert.deepStrictEqual(budgetFailures(metrics, { stagedZipBytes: 42, staticDnrRules: 3 }), []);
+assert.deepStrictEqual(budgetFailures(metrics, { stagedZipBytes: 41 }), ['stagedZipBytes: 42 > 41']);
 console.log('Performance budget metric tests passed');

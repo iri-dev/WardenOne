@@ -26,7 +26,7 @@ function summarizeMetrics(zipBytes, files, manifest, ruleCount) {
   const rules = (manifest.declarative_net_request && manifest.declarative_net_request.rule_resources || [])
     .filter((resource) => resource.enabled !== false);
   return {
-    githubZipBytes: zipBytes,
+    stagedZipBytes: zipBytes,
     unpackedBytes: [...files.values()].reduce((total, file) => total + file.size, 0),
     staticDnrRules: rules.reduce((total, resource) => total + ruleCount(resource.path), 0),
     manifestScriptEntries: scripts.length,

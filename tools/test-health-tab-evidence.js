@@ -109,7 +109,7 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
   }
   {
     const e = await evidenceRunner({ bridge: null }).evidence(TAB(), CFG);
-    check('no bridge to answer is unknown, not failed', e.state === 'unknown' && /not answered/.test(e.text), JSON.stringify(e));
+    check('no bridge to answer is unknown, not failed', e.state === 'unknown' && /not been checked yet/.test(e.summary) && /Verify & Repair/.test(e.text), JSON.stringify(e));
   }
   {
     const e = await evidenceRunner({ bridge: 'hang', timeoutMs: 30 }).evidence(TAB(), CFG);
@@ -121,7 +121,7 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
   }
   {
     const e = await evidenceRunner({ bridge: { ok: true, alive: false, seen: false, fresh: false } }).evidence(TAB(), CFG);
-    check('a bridge that arrived after the page ran cannot vouch: unknown, with the reload advice', e.state === 'unknown' && /loaded before/.test(e.text), JSON.stringify(e));
+    check('a bridge that arrived after the page ran cannot vouch: unknown, with the reload advice', e.state === 'unknown' && /Reload this page/.test(e.summary), JSON.stringify(e));
   }
   for (const url of ['chrome://newtab/', 'chrome-extension://abc/popup.html', 'about:blank', 'file:///C:/x.html', '']) {
     const r = evidenceRunner({ bridge: { ok: true, alive: true } });
@@ -168,13 +168,18 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
   const STATES = ['verified', 'failed', 'unknown', 'restricted', 'paused', 'excluded', 'sleeping', 'off'];
   const evidenceFor = (state) => ({ state, text: 'Reason for ' + state + '.' });
   const count = () => 99;
+  const pendingEvidence = await evidenceRunner({ bridge: null }).evidence(TAB(), CFG);
+  const pending = decide({ enabled: true }, [], pendingEvidence, count);
+  check('the closed card gives an unconfirmed page one short, plain sentence',
+    pending.status === 'Protections on' && pending.detail === pendingEvidence.summary
+      && pending.detail.length < 60 && !/engine|safe/i.test(pending.detail), JSON.stringify(pending));
   for (const state of STATES) {
     const r = decide({ enabled: true }, [], evidenceFor(state), count);
     if (state === 'verified') {
       check('a verified page with no issue is "You\'re safe"', r.status === "You're safe" && /running on this page/.test(r.detail), JSON.stringify(r));
     } else {
       check('with no issue found, ' + state + ' is "Protections on" and says why the page could not be vouched for',
-        r.status === 'Protections on' && /No issue found in what could be checked\. Reason for /.test(r.detail) && r.highest === 'ok', JSON.stringify(r));
+        r.status === 'Protections on' && r.detail === 'Reason for ' + state + '.' && r.highest === 'ok', JSON.stringify(r));
     }
   }
   {
@@ -200,7 +205,9 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
   check('the popup labels the count as switches on, not active shields',
     /<strong id="health-active-count">-<\/strong><span>Switched on<\/span>/.test(POPUP_HTML) && !/Active shields/.test(POPUP_HTML));
   check('the popup names the tab it is open on when it asks', /kind: 'protection-health', tabId/.test(POPUP_HEALTH) && /chrome\.tabs\.query\(\{ active: true, currentWindow: true \}[\s\S]{0,200}ask\(/.test(POPUP_HEALTH));
-  check('the popup shows the page\'s evidence line', /id="health-tab-line"/.test(POPUP_HTML) && /This page: engine verified\./.test(POPUP_HEALTH) && /This page: engine missing\./.test(POPUP_HEALTH) && /This page: cannot be checked\./.test(POPUP_HEALTH));
+  check('the popup shows the page\'s plain-language evidence line', /id="health-tab-line"/.test(POPUP_HTML) && /tabLine\.textContent = String\(tab\.text \|\| ''\)/.test(POPUP_HEALTH));
+  check('an unconfirmed page gets a short summary without claiming safety',
+    decide({ enabled: true }, [], { state: 'unknown', summary: 'This page has not been checked yet.', text: 'More detail.' }, count).detail === 'This page has not been checked yet.');
   check('the popup reads the renamed count', /res\.configuredShields/.test(POPUP_HEALTH) && !/res\.activeShields/.test(POPUP_HEALTH));
   check('the worker reads the tab back from Chrome rather than trusting the message', /chrome\.tabs\.get\(tabId, /.test(between(BG, "msg.kind === 'protection-health'", 'buildProtectionHealthSummary(tab)', 'the handler')));
 

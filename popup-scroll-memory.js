@@ -7,8 +7,12 @@
 
 const POPUP_SCROLL_KEY = 'wardenone_popup_scroll_memory';
 const ADVANCED_PROVIDERS_OPEN_KEY = 'wardenone_advanced_providers_open';
+const POPUP_SCROLL_IDLE_MS = 450;
 let popupScrollSaveTimer = 0;
+let popupScrollLastSavedY = null;
 let popupScrollRestoring = false;
+let popupScrollUserInteracted = false;
+let popupScrollRestoreGeneration = 0;
 let advancedProvidersRestoring = false;
 
 function popupScrollStore() {
@@ -33,34 +37,47 @@ function setPopupScrollY(y) {
 }
 
 function savePopupScrollPosition() {
+  clearTimeout(popupScrollSaveTimer);
+  popupScrollSaveTimer = 0;
   if (popupScrollRestoring) return;
-  const store = popupScrollStore();
   const y = getPopupScrollY();
-  store.set({ [POPUP_SCROLL_KEY]: { y, at: Date.now() } });
+  if (y === popupScrollLastSavedY) return;
+  popupScrollLastSavedY = y;
+  popupScrollStore().set({ [POPUP_SCROLL_KEY]: { y, at: Date.now() } });
 }
 
 function schedulePopupScrollSave() {
   if (popupScrollRestoring) return;
   clearTimeout(popupScrollSaveTimer);
-  popupScrollSaveTimer = setTimeout(savePopupScrollPosition, 120);
+  popupScrollSaveTimer = setTimeout(savePopupScrollPosition, POPUP_SCROLL_IDLE_MS);
+}
+
+function stopPopupScrollRestore() {
+  popupScrollUserInteracted = true;
+  popupScrollRestoreGeneration++;
+  popupScrollRestoring = false;
 }
 
 function restorePopupScrollPosition() {
+  if (popupScrollUserInteracted) return;
   const store = popupScrollStore();
   store.get(POPUP_SCROLL_KEY, (res) => {
+    if (popupScrollUserInteracted) return;
     const entry = res && res[POPUP_SCROLL_KEY];
     const y = Number(entry && typeof entry === 'object' ? entry.y : entry);
     if (!Number.isFinite(y) || y <= 0) return;
     popupScrollRestoring = true;
+    const generation = ++popupScrollRestoreGeneration;
     let tries = 0;
     const apply = () => {
+      if (generation !== popupScrollRestoreGeneration || popupScrollUserInteracted) return;
       setPopupScrollY(y);
       tries += 1;
       if (tries < 6) {
         setTimeout(apply, tries < 2 ? 0 : 80);
         return;
       }
-      setTimeout(() => { popupScrollRestoring = false; }, 80);
+      setTimeout(() => { if (generation === popupScrollRestoreGeneration) popupScrollRestoring = false; }, 80);
     };
     requestAnimationFrame(apply);
   });
@@ -68,6 +85,10 @@ function restorePopupScrollPosition() {
 
 function initPopupScrollMemory() {
   window.addEventListener('scroll', schedulePopupScrollSave, { passive: true });
+  window.addEventListener('wheel', stopPopupScrollRestore, { passive: true, once: true });
+  window.addEventListener('touchstart', stopPopupScrollRestore, { passive: true, once: true });
+  window.addEventListener('pointerdown', stopPopupScrollRestore, { passive: true, once: true });
+  window.addEventListener('keydown', stopPopupScrollRestore, { once: true });
   window.addEventListener('pagehide', savePopupScrollPosition);
   window.addEventListener('beforeunload', savePopupScrollPosition);
   document.addEventListener('visibilitychange', () => {
