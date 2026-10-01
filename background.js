@@ -2145,6 +2145,9 @@ const DEFAULT_CONFIG = {
   blockSponsoredSearchResults: false,
   scriptletEngine: true,
   twitchAdBlock: true,
+  /* Twitch's Low Latency mode off unless the viewer chose it, while the ad blocker is on: see
+     installSteadyPlaybackPreference in twitch-adblock.js. */
+  twitchSteadyPlayback: true,
   twitchRewind: false,
   twitchRewindMinutes: 5,
   twitchVodRewind: true,
@@ -16762,7 +16765,7 @@ const CONTROL_KINDS = {
   presentation: ['showBadge', 'showToasts', 'silentMode'],
   tool: ['elementZapper', 'twitchRewind', 'twitchVodRewind'],
   comfort: [
-    'blockAutoplay', 'killPrefetch', 'lazyLoadMedia',
+    'blockAutoplay', 'killPrefetch', 'lazyLoadMedia', 'twitchSteadyPlayback',
     'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk',
     'memoryShield', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverPinned', 'throttleBackgroundTabs',
   ],

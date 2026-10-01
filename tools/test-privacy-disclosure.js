@@ -291,6 +291,18 @@ check('the short version names the automatic browser-release check',
   'the summary claims to list every way data leaves; Update Guardian runs on every popup open');
 check('and does not suggest it can be switched off', /it has no off switch/.test(shortVersion),
   'there is no setting for it; if one is added, say so instead');
+/* The six-hour cache lives in storage.session, which Chrome clears on a browser restart and on
+   an extension reload or update. "At most once every six hours" was therefore false: open the
+   popup, restart, open it again, and that is two requests in minutes. The wording follows the
+   storage area the code actually uses. */
+const guardianSessionCache = /chrome\.storage\.session\.get\(key\)/.test(POPUP_JS) && /updateGuardian:/.test(POPUP_JS);
+const PERMS_FILE = fs.readFileSync(path.join(ROOT, 'permissions.html'), 'utf8');
+check('the release check still caches in session storage, so the wording below still applies', guardianSessionCache,
+  'if the cache moves to storage.local, a hard six-hour limit becomes true and the policy may say so');
+check('the summary does not promise a six-hour limit that a restart breaks',
+  !/at most once every six hours/.test(shortVersion) && /up to six hours while the browser stays\s*\n?\s*open/.test(shortVersion));
+check('and neither does the Permissions page',
+  !/cached for six hours\./i.test(PERMS_FILE) && /up to six hours while the browser stays open/i.test(PERMS_FILE));
 
 /* 7b. The website said "the few checks that contact an outside service are opt-in". The release
        check is automatic, as are the list downloads, so that sentence was false. */

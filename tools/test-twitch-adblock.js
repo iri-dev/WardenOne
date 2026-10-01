@@ -3641,6 +3641,64 @@ test('10-second prune pauses then restores a detached ad before blob-video reuse
   assertDetachedCleanup(video, original, 'pruned blob reuse');
 });
 
+/* Steadier playback. Measured live: in Low Latency mode a clean backup (no prefetch hints) ran
+   with under one segment buffered through every ad break and stalled on any hiccup; with Low
+   Latency off the same breaks held a 3 s floor. Twitch reads IG.get('lowLatencyModeEnabled', true)
+   from localStorage, so only an unset value is answered 'false', and nothing is ever written. */
+function storageHarness(config) {
+  class HarnessStorage {
+    constructor() { this.data = new Map(); }
+    getItem(key) { return this.data.has(String(key)) ? this.data.get(String(key)) : null; }
+    setItem(key, value) { this.data.set(String(key), String(value)); }
+  }
+  const nativeGetItem = HarnessStorage.prototype.getItem;
+  const harness = createPageHarness(config, {
+    configureWindow(window) {
+      window.Storage = HarnessStorage;
+      window.localStorage = new HarnessStorage();
+    },
+  });
+  return { harness, window: harness.window, nativeGetItem, other: new HarnessStorage() };
+}
+
+test('steadier playback answers an unset Twitch Low Latency preference with off', () => {
+  const { window } = storageHarness();
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'unset Low Latency preference was not answered off');
+  equal(window.localStorage.getItem('volume'), null, 'an unrelated key was changed');
+  equal(window.localStorage.data.has('lowLatencyModeEnabled'), false, 'the preference was written to storage');
+});
+
+test('steadier playback keeps a Low Latency choice the viewer made in Twitch', () => {
+  const { window } = storageHarness();
+  window.localStorage.setItem('lowLatencyModeEnabled', 'true');
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'true', 'an explicit Low Latency choice was overridden');
+  window.localStorage.setItem('lowLatencyModeEnabled', 'false');
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'an explicit off choice was not kept');
+});
+
+test('steadier playback leaves other storage and the switched-off cases alone', () => {
+  const on = storageHarness();
+  equal(on.other.getItem('lowLatencyModeEnabled'), null, 'a storage object other than localStorage was answered');
+  equal(storageHarness({ twitchSteadyPlayback: false }).window.localStorage.getItem('lowLatencyModeEnabled'), null,
+    'switching steadier playback off did not restore Twitch\'s default');
+  equal(storageHarness({ twitchAdBlock: false }).window.localStorage.getItem('lowLatencyModeEnabled'), null,
+    'the preference was answered with the ad blocker off');
+  equal(storageHarness({ enabled: false }).window.localStorage.getItem('lowLatencyModeEnabled'), null,
+    'the preference was answered with WardenOne off');
+});
+
+test('steadier playback follows a live settings change and keeps a native-looking hook', () => {
+  const { harness, window, nativeGetItem } = storageHarness();
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'precondition: answered off');
+  window.__WO_CONFIG__ = Object.assign({}, window.__WO_CONFIG__, { twitchSteadyPlayback: false });
+  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null, 'a live switch-off was not honoured');
+  const hook = window.Storage.prototype.getItem;
+  assert(hook !== nativeGetItem, 'precondition: the hook is installed');
+  equal(hook.name, 'getItem', 'hook name gives it away');
+  equal(hook.toString(), Function.prototype.toString.call(nativeGetItem), 'hook source gives it away');
+});
+
 test('dedicated module installs no React/reload/polling recovery', () => {
   const harness = createPageHarness();
   assert(harness.state.intervals === 0, 'module installed a setInterval watchdog');

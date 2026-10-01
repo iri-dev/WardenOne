@@ -136,6 +136,7 @@
   };
 
   let enabled = true;
+  let steadyPlayback = true;
   let bridgeToken = '';
   let revision = 0;
   const workers = new Set();
@@ -872,6 +873,7 @@
   function updateEnabled() {
     const config = window.__WO_CONFIG__;
     enabled = !config || (config.enabled !== false && config.twitchAdBlock !== false);
+    steadyPlayback = !config || config.twitchSteadyPlayback !== false;
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
     setTwitchVisibilityGuardEnabled(enabled);
@@ -895,6 +897,7 @@
     if (message.source !== 'wardenone' || message.kind !== 'config' || !bridgeToken || message.token !== bridgeToken) return;
     const config = message.overrides || {};
     enabled = config.enabled !== false && config.twitchAdBlock !== false;
+    steadyPlayback = config.twitchSteadyPlayback !== false;
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
     setTwitchVisibilityGuardEnabled(enabled);
@@ -1361,6 +1364,38 @@
       const rebuilt = await spliceDeniedPlaybackTokens(response, tokenPlan);
       return rebuilt || response;
     });
+  }
+
+  // Steadier playback: Twitch's Low Latency mode is off unless the viewer chose it.
+  // In Low Latency mode the player sits about a second behind live, which Twitch's own stream
+  // makes safe with prefetch hints. A clean backup carries none, so during an ad break the player
+  // ran with under one segment buffered and any hiccup stalled it -- measured live on a 720p60
+  // channel: buffer floor 0.0-0.4 s through breaks and a 3.5 s freeze; with Low Latency off the same
+  // breaks held a 3.0 s floor (4.7 s average) and nothing stalled. Twitch reads the preference as
+  // IG.get('lowLatencyModeEnabled', true) from localStorage, so only an UNSET value is answered
+  // 'false': a viewer who switches Low Latency on in Twitch's own settings writes 'true' and keeps
+  // it. Nothing is written, so turning this off restores Twitch's default on the next player load.
+  const LOW_LATENCY_KEY = 'lowLatencyModeEnabled';
+  function installSteadyPlaybackPreference() {
+    let proto = null;
+    try { proto = window.Storage && window.Storage.prototype; } catch (_) { return; }
+    const nativeGetItem = proto && proto.getItem;
+    if (typeof nativeGetItem !== 'function' || nativeGetItem.__woTwitchCurrent) return;
+    function getItem(key) {
+      const value = nativeGetItem.apply(this, arguments);
+      try {
+        if (value === null && key === LOW_LATENCY_KEY && enabled && steadyPlayback &&
+            this === window.localStorage) return 'false';
+      } catch (_) {}
+      return value;
+    }
+    try {
+      Object.defineProperty(getItem, '__woTwitchCurrent', { value: VERSION });
+      Object.defineProperty(getItem, 'name', { value: 'getItem' });
+      Object.defineProperty(getItem, 'length', { value: 1 });
+      getItem.toString = Function.prototype.toString.bind(nativeGetItem);
+      proto.getItem = getItem;
+    } catch (_) {}
   }
 
   function installFetchHook() {
@@ -1841,6 +1876,15 @@
     // the 2.5s pre-roll budget could use it. This remains below that outer budget
     // and does not delay mid-roll fallback, whose own wait stays bounded at 900ms.
     const BACKUP_POLL_TIMEOUT_MS = 1500;
+    // A clean backup carries no prefetch hints (measured: mobile_feed lists none while the native
+    // playlist does), so the player learns of each backup segment only once it is listed, and only
+    // on its next poll. A poll landing just before the backup publishes added nothing, the player was
+    // holding under one segment, and the picture ran dry -- the spinner at an ad break. Measured live:
+    // a poll at 215.29 s found no new segment, the buffer hit zero at 216.25 s, the next poll at
+    // 216.30 s had it. Such a poll is held and the backup re-polled until it advances, as LL-HLS
+    // blocking reload does, within this bound; past it the poll is answered exactly as before.
+    const BACKUP_HOLD_MS = 1500;
+    const BACKUP_HOLD_STEP_MS = 250;
     const COMPLETE_MEDIA_RETRY_MS = 650;
     const NATIVE_RELEASE_POLLS = 3;
     const AD_QUARANTINE_MAX_MS = 120 * 1000;
@@ -3681,6 +3725,29 @@
       return pending;
     }
 
+    function backupTailAhead(tail, served) {
+      if (!tail || !served) return true;
+      return tail.number > served.number || tail.pdt > served.pdt;
+    }
+
+    // Blocking reload for a clean backup (BACKUP_HOLD_MS). Only a poll that would hand the player
+    // nothing newer than it already has is held; a backup that stops advancing, changes container,
+    // or is replaced ends the hold with the body it would have served anyway.
+    async function holdForBackupAdvance(info, epoch, key, cached, current) {
+      if (!current || !current.tail || backupTailAhead(current.tail, cached.servedTail)) return current;
+      const until = Date.now() + BACKUP_HOLD_MS;
+      let latest = current;
+      while (Date.now() + BACKUP_HOLD_STEP_MS <= until) {
+        await new Promise((resolve) => setTimeout(resolve, BACKUP_HOLD_STEP_MS));
+        if (!interventionCurrent(info, epoch) || backups.get(key) !== cached) return latest;
+        const next = await pollCachedBackup(cached);
+        if (!next || !next.tail || (info.mediaContainer && next.container !== info.mediaContainer)) return latest;
+        latest = next;
+        if (backupTailAhead(next.tail, cached.servedTail)) return next;
+      }
+      return latest;
+    }
+
     function discardWarmedBackupResource(url, entry, abort) {
       if (!entry) return;
       if (warmedBackupResources.get(url) === entry) warmedBackupResources.delete(url);
@@ -3929,6 +3996,8 @@
             }
           }
           if (!interventionCurrent(info, epoch)) return null;
+          current = await holdForBackupAdvance(info, epoch, key, cached, current);
+          if (!interventionCurrent(info, epoch)) return null;
           if (current && (!info.mediaContainer || current.container === info.mediaContainer)) {
             info.servedBackupEdge = current.edgeWall;
             wlog('  clean stream via cached playerType=' + (cached.playerType || '?'));
@@ -3940,6 +4009,7 @@
             if (aligned === null) return null;
             warmBackupResources(current.text, !(state && state.backupActive));
             if (activate !== false && state) state.backupActive = true;
+            if (current.tail) cached.servedTail = current.tail;
             return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
           }
           backups.delete(key);
@@ -4000,6 +4070,8 @@
       if (aligned === null) return null;
       warmBackupResources(candidate.text, !(state && state.backupActive));
       if (state) state.backupActive = true;
+      const servedTail = candidate.lastTail || sequenceTail(candidate.text);
+      if (servedTail) candidate.servedTail = servedTail;
       return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
     }
 
@@ -4673,6 +4745,7 @@
   }
 
   updateEnabled();
+  installSteadyPlaybackPreference();
   installWorkerHook();
   installFetchHook();
   installXhrHook();
