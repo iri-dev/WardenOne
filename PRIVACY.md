@@ -23,8 +23,9 @@ unclear, contact us (see **Contact** below).
 - The only times data leaves your device are: (1) downloading public block-lists to keep
   protection current, (2) a browser-release check when you open the popup — Update
   Guardian asks Brave, Google or Microsoft (whichever makes your browser) for its latest
-  Stable version, at most once every six hours unless you press **Check again**; it sends
-  nothing about the pages you visit, and it has no off switch — (3) re-requesting
+  Stable version, reusing the answer for up to six hours while the browser stays open (a
+  restart, or **Check again**, asks afresh); it sends nothing about the pages you visit,
+  and it has no off switch — (3) re-requesting
   third-party scripts a page has already loaded, so they can be checked for tampering — on
   by default, and it reaches no host the page has not already used, (4) an **opt-in**
   password-breach check that uses privacy-preserving k-anonymity, (5) an **opt-in**
@@ -184,8 +185,10 @@ open the popup or press **Check again**. Brave uses `versions.brave.com` and
 `edgeupdates.microsoft.com`. Only the source for your detected browser is contacted.
 These requests carry no browsing history, page address, or WardenOne settings and use
 no cookies; the maker still sees an ordinary request from your IP address. Results
-are kept in temporary extension storage for six hours. If the check fails, WardenOne
-does not guess that your browser is current.
+are kept in temporary extension storage for up to six hours. That storage is cleared when
+the browser closes or WardenOne is reloaded or updated, so the first popup after a restart
+asks again even if six hours have not passed. If the check fails, WardenOne does not guess
+that your browser is current.
 
 ### 2. Script tamper check — "Script Drift Guard" (on by default)
 
