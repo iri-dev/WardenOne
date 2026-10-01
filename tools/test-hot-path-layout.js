@@ -166,6 +166,83 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert.strictEqual(sandbox.testMutations([
     { type: 'childList', addedNodes: [node({ textContent: 'We use cookies. Reject all or accept all.' })] },
   ]), true, 'an obfuscated consent banner with no useful attributes must still wake the scanner');
+  let rootReads = 0;
+  let childReads = 0;
+  let descendantQueries = 0;
+  const root = node({ childNodes: [], querySelector() { descendantQueries++; return null; } });
+  Object.defineProperty(root, 'textContent', { get() { rootReads++; return 'ordinary content'; } });
+  const children = Array.from({ length: 100 }, () => {
+    const child = node({ parentElement: root, childNodes: [] });
+    Object.defineProperty(child, 'textContent', { get() { childReads++; return 'ordinary content'; } });
+    return child;
+  });
+  assert.strictEqual(sandbox.testMutations([
+    { type: 'childList', addedNodes: [root] },
+    { type: 'childList', addedNodes: children },
+  ]), false);
+  assert.strictEqual(rootReads, 1, 'the added subtree should be read once');
+  assert.strictEqual(childReads, 0, 'nested additions should not rebuild their subtree text');
+  assert.strictEqual(descendantQueries, 1, 'the consent selector should inspect the outer root once');
+  const late = node({ parentElement: root, childNodes: [{ nodeType: 3, nodeValue: 'Cookie choices' }] });
+  assert.strictEqual(sandbox.testMutations([
+    { type: 'childList', addedNodes: [root, late] },
+  ]), true, 'direct consent text in a nested addition should still wake the scanner');
+}
+{
+  const declarations = [
+    consent.slice(consent.indexOf('function getContainers('), consent.indexOf('function getControls(')),
+    consent.slice(consent.indexOf('function visibleControlsInDocument('), consent.indexOf('function tryTwitchReject(')),
+  ].join('\n');
+  const banner = { id: 'shadow-banner' };
+  const reject = { id: 'shadow-reject' };
+  const documentRoot = { querySelectorAll: () => [] };
+  const shadowRoot = { querySelectorAll: (selector) => selector === 'banner' ? [banner] : [reject] };
+  let rootWalks = 0;
+  const sandbox = {
+    document: documentRoot, CONTAINER_SELECTOR: 'banner', CONTROL_SELECTOR: 'button',
+    collectRoots: () => { rootWalks++; return [documentRoot, shadowRoot]; },
+    looksLikeConsentContainer: () => true, containerScore: () => 0, isVisible: () => true,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(declarations + '\nthis.getContainers = getContainers; this.visibleControls = visibleControlsInDocument;', sandbox);
+  const roots = sandbox.collectRoots();
+  assert.strictEqual(sandbox.getContainers(roots)[0], banner, 'a shadow-root banner stays discoverable');
+  assert.strictEqual(sandbox.visibleControls(roots)[0], reject, 'the same shadow root supplies its controls');
+  assert.strictEqual(rootWalks, 1, 'one scan should collect document and shadow roots once');
+  const scan = consent.slice(consent.indexOf('function scan()'), consent.indexOf('function queueScan('));
+  assert(/const roots = collectRoots\(document\);\s*const containers = getContainers\(roots\);/.test(scan)
+    && /tryGenericReject\(roots\)/.test(scan), 'scan must pass the shared roots to both searches');
+}
+{
+  const declarations = [
+    consent.slice(consent.indexOf('function explicitConsentDecisionPair('), consent.indexOf('function protectedContainerContext(')),
+    consent.slice(consent.indexOf('function getControls('), consent.indexOf('function controlLabel(')),
+    consent.slice(consent.indexOf('function turnOffOptionalToggles('), consent.indexOf('function saveChoicesCandidate(')),
+  ].join('\n');
+  const reject = { label: 'Reject all' };
+  const accept = { label: 'Accept all' };
+  let containerQueries = 0;
+  let shadowQueries = 0;
+  const container = { querySelectorAll() { containerQueries++; return [reject]; } };
+  const shadowRoot = { querySelectorAll() { shadowQueries++; return [accept]; } };
+  const sandbox = {
+    CONTROL_SELECTOR: 'button', EXPLICIT_REJECT_RE: /^Reject all$/, EXPLICIT_ACCEPT_RE: /^Accept all$/,
+    collectRoots: () => [container, shadowRoot], elementText: () => 'Cookie choices',
+    hasStrongConsentLanguage: () => true, isVisible: () => true,
+    isUnsafeAutoClickLink: () => false, controlLabel: (el) => el.label,
+    optionalToggleCandidate: () => false,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(declarations + '\nthis.pair = explicitConsentDecisionPair; this.controls = getControls; this.toggles = turnOffOptionalToggles;', sandbox);
+  assert.strictEqual(sandbox.pair(container), true, 'a shadow-root accept control completes the consent pair');
+  assert.strictEqual(containerQueries, 1, 'pair search should query the container once');
+  assert.strictEqual(shadowQueries, 1, 'pair search should query its shadow root once');
+  assert.strictEqual(sandbox.controls(container).length, 2, 'banner controls still include the shadow root');
+  assert.strictEqual(containerQueries, 2, 'control search should query the container once');
+  assert.strictEqual(shadowQueries, 2, 'control search should query its shadow root once');
+  assert.strictEqual(sandbox.toggles(container), 0);
+  assert.strictEqual(containerQueries, 3, 'toggle search should query the container once');
+  assert.strictEqual(shadowQueries, 3, 'toggle search should query its shadow root once');
 }
 {
   /* A page that has gone twenty seconds without a banner does not have one. Without
@@ -270,4 +347,4 @@ assert(/proto\.play=guardedPlay/.test(media), 'the media decision must happen at
 assert(!/querySelectorAll|woObserve|\.autoplay=|\.muted=|\.removeAttribute\(/.test(media),
   'the hidden-media guard must not scan or change author media state');
 
-console.log('hot path layout tests passed (57 assertions)');
+console.log('hot path layout tests passed');

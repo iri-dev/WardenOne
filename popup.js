@@ -162,121 +162,10 @@ function popupChangedKeys() {
   return changed;
 }
 
-const POPUP_SCROLL_KEY = 'wardenone_popup_scroll_memory';
-const ADVANCED_PROVIDERS_OPEN_KEY = 'wardenone_advanced_providers_open';
 const POPUP_SEARCH_KEY = 'wardenone_popup_search_memory';
 // Reassigned by the settings-search block once it's wired; restores the last query
 // on popup open so reopening jumps straight back to what you were looking at.
 let restorePopupSearch = (done) => { if (typeof done === 'function') done(); };
-let popupScrollSaveTimer = 0;
-let popupScrollRestoring = false;
-let advancedProvidersRestoring = false;
-
-function popupScrollStore() {
-  return (chrome.storage && chrome.storage.session) ? chrome.storage.session : chrome.storage.local;
-}
-
-function popupScrollElement() {
-  return document.scrollingElement || document.documentElement || document.body;
-}
-
-function getPopupScrollY() {
-  const el = popupScrollElement();
-  return Math.max(0, Math.round(el.scrollTop || window.scrollY || 0));
-}
-
-function setPopupScrollY(y) {
-  const el = popupScrollElement();
-  const maxY = Math.max(0, el.scrollHeight - (window.innerHeight || document.documentElement.clientHeight || 0));
-  const top = Math.min(Math.max(0, Number(y) || 0), maxY);
-  window.scrollTo(0, top);
-  el.scrollTop = top;
-}
-
-function savePopupScrollPosition() {
-  if (popupScrollRestoring) return;
-  const store = popupScrollStore();
-  const y = getPopupScrollY();
-  store.set({ [POPUP_SCROLL_KEY]: { y, at: Date.now() } });
-}
-
-function schedulePopupScrollSave() {
-  if (popupScrollRestoring) return;
-  clearTimeout(popupScrollSaveTimer);
-  popupScrollSaveTimer = setTimeout(savePopupScrollPosition, 120);
-}
-
-function restorePopupScrollPosition() {
-  const store = popupScrollStore();
-  store.get(POPUP_SCROLL_KEY, (res) => {
-    const entry = res && res[POPUP_SCROLL_KEY];
-    const y = Number(entry && typeof entry === 'object' ? entry.y : entry);
-    if (!Number.isFinite(y) || y <= 0) return;
-    popupScrollRestoring = true;
-    let tries = 0;
-    const apply = () => {
-      setPopupScrollY(y);
-      tries += 1;
-      if (tries < 6) {
-        setTimeout(apply, tries < 2 ? 0 : 80);
-        return;
-      }
-      setTimeout(() => { popupScrollRestoring = false; }, 80);
-    };
-    requestAnimationFrame(apply);
-  });
-}
-
-function initPopupScrollMemory() {
-  window.addEventListener('scroll', schedulePopupScrollSave, { passive: true });
-  window.addEventListener('pagehide', savePopupScrollPosition);
-  window.addEventListener('beforeunload', savePopupScrollPosition);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') savePopupScrollPosition();
-  });
-}
-
-function advancedProvidersPanel() {
-  return document.querySelector('.advanced-providers');
-}
-
-function saveAdvancedProvidersState() {
-  if (advancedProvidersRestoring) return;
-  const panel = advancedProvidersPanel();
-  if (!panel) return;
-  popupScrollStore().set({ [ADVANCED_PROVIDERS_OPEN_KEY]: { open: !!panel.open, at: Date.now() } });
-}
-
-function restoreAdvancedProvidersState(done) {
-  const panel = advancedProvidersPanel();
-  if (!panel) {
-    if (typeof done === 'function') done();
-    return;
-  }
-  popupScrollStore().get(ADVANCED_PROVIDERS_OPEN_KEY, (res) => {
-    const entry = res && res[ADVANCED_PROVIDERS_OPEN_KEY];
-    if (entry === undefined || entry === null) {
-      if (typeof done === 'function') done();
-      return;
-    }
-    const open = typeof entry === 'object' ? entry.open === true : entry === true;
-    advancedProvidersRestoring = true;
-    panel.open = open;
-    setTimeout(() => {
-      advancedProvidersRestoring = false;
-      if (typeof done === 'function') done();
-    }, 0);
-  });
-}
-
-function initAdvancedProvidersMemory() {
-  const panel = advancedProvidersPanel();
-  if (!panel) return;
-  panel.addEventListener('toggle', () => {
-    saveAdvancedProvidersState();
-    schedulePopupScrollSave();
-  });
-}
 
 function applyToUI() {
   const enabledEl = $('enabled');
@@ -580,12 +469,12 @@ function reflectMasterDisable() {
 // as greyed, the generic change handler read them back through readFromUI on the very next
 // save, and turning Silent off left both stored off.
 function reflectSilentMode() {
-  const silentOn = config.silentMode === true;
+  const disabled = config.silentMode === true || !$('enabled').checked;
   ['showToasts', 'showBadge'].forEach((key) => {
     const el = document.querySelector(`input[data-key="${key}"]`);
     if (el) {
       const tg = el.closest('.tg');
-      if (tg) tg.classList.toggle('disabled', silentOn);
+      if (tg) tg.classList.toggle('disabled', disabled);
     }
   });
 }

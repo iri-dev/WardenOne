@@ -155,6 +155,7 @@ function checkContentBuild() {
   'bridge.js',
   'popup.js',
   'popup-health.js',
+  'popup-scroll-memory.js',
   'popup-diagnostics.js',
   'popup-settings-search.js',
   'notifications.js',
@@ -189,6 +190,7 @@ function checkContentBuild() {
   'tools/check-feeds.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
+  'tools/test-download-review-format.js',
   'tools/test-extension-change-watch.js',
   'tools/test-extension-reputation.js',
   'tools/test-dynamic-registrations.js',
@@ -308,6 +310,7 @@ function checkContentBuild() {
   'tools/test-session-score.js',
   'tools/test-settings-io.js',
   'tools/test-popup-config-merge.js',
+  'tools/test-popup-scroll-memory.js',
   'tools/test-reputation-fetch.js',
   'tools/test-keyed-provider-consent.js',
   'tools/test-request-self-identification.js',
@@ -456,6 +459,7 @@ checkCommand('README document links', ['tools/check-readme-doc-links.js']);
 checkCommand('README link staging tests', ['tools/test-readme-doc-links.js']);
 checkCommand('repository hygiene', ['tools/check-repository-hygiene.js']);
 checkCommand('repository hygiene tests', ['tools/test-repository-hygiene.js']);
+checkCommand('source bundle tests', ['tools/test-source-bundle.js']);
 checkCommand('package performance budget', ['tools/check-performance-budget.js']);
 checkCommand('performance budget tests', ['tools/test-performance-budget.js']);
 checkCommand('memory shield tests', ['tools/test-memory-shield.js']);
@@ -543,6 +547,7 @@ checkCommand('session security scoring tests', ['tools/test-session-score.js']);
 checkCommand('insecure sign-in guard tests', ['tools/test-insecure-login.js']);
 checkCommand('settings export/import tests', ['tools/test-settings-io.js']);
 checkCommand('popup config merge tests', ['tools/test-popup-config-merge.js']);
+checkCommand('popup scroll memory tests', ['tools/test-popup-scroll-memory.js']);
 checkCommand('reputation fetch tests', ['tools/test-reputation-fetch.js']);
 checkCommand('keyed provider consent tests', ['tools/test-keyed-provider-consent.js']);
 checkCommand('request self-identification tests', ['tools/test-request-self-identification.js']);
@@ -553,6 +558,7 @@ checkCommand('shared extension theme tests', ['tools/test-theme.js']);
 checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
+checkCommand('download review formatting tests', ['tools/test-download-review-format.js']);
 checkCommand('extension change watcher tests', ['tools/test-extension-change-watch.js']);
 checkCommand('extension reputation tests', ['tools/test-extension-reputation.js']);
 checkCommand('dynamic registration tests', ['tools/test-dynamic-registrations.js']);

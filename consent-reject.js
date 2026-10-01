@@ -346,7 +346,7 @@
       if (!container || !hasStrongConsentLanguage(elementText(container))) return false;
       let reject = rejectControl && isVisible(rejectControl) && EXPLICIT_REJECT_RE.test(controlLabel(rejectControl));
       let accept = false;
-      const roots = [container].concat(collectRoots(container));
+      const roots = collectRoots(container);
       const seen = new Set();
       let inspected = 0;
       for (const root of roots) {
@@ -406,9 +406,8 @@
     }
   }
 
-  function getContainers() {
+  function getContainers(roots) {
     const out = [];
-    const roots = collectRoots(document);
     roots.forEach((root) => {
       try {
         const list = root.querySelectorAll(CONTAINER_SELECTOR);
@@ -422,7 +421,7 @@
   }
 
   function getControls(container) {
-    const roots = [container].concat(collectRoots(container));
+    const roots = collectRoots(container);
     const out = [];
     const seen = new Set();
     for (let r = 0; r < roots.length && out.length < 240; r++) {
@@ -526,7 +525,7 @@
   function turnOffOptionalToggles(container) {
     let changed = 0;
     try {
-      const roots = [container].concat(collectRoots(container));
+      const roots = collectRoots(container);
       const seen = new Set();
       for (const root of roots) {
         const list = root.querySelectorAll && root.querySelectorAll('input[type="checkbox"],input[type="radio"],[role="switch"],[role="checkbox"],[aria-checked]');
@@ -553,10 +552,10 @@
     return true;
   }
 
-  function visibleControlsInDocument() {
+  function visibleControlsInDocument(roots) {
     const out = [];
     const seen = new Set();
-    const roots = collectRoots(document);
+    roots = roots || collectRoots(document);
     for (let r = 0; r < roots.length && out.length < 500; r++) {
       const root = roots[r];
       try {
@@ -628,9 +627,9 @@
   // document-wide for a genuine reject button sitting inside a real consent banner. The
   // safeRejectCandidate + strong-consent-language + PROTECT guards keep this from firing on
   // unrelated "Decline"/"Deny" buttons, and it never clicks an accept-only control.
-  function tryGenericReject() {
+  function tryGenericReject(roots) {
     try {
-      const controls = visibleControlsInDocument();
+      const controls = visibleControlsInDocument(roots);
       for (const el of controls) {
         if (clicked.has(el)) continue;
         if (!safeRejectCandidate(el)) continue;
@@ -886,7 +885,8 @@
 
     if (tryTwitchReject()) return;
 
-    const containers = getContainers();
+    const roots = collectRoots(document);
+    const containers = getContainers(roots);
     for (const container of containers) {
       const controls = getControls(container);
       const reject = controls.find(safeRejectCandidate);
@@ -900,7 +900,7 @@
       }
     }
 
-    if (tryGenericReject()) return;
+    if (tryGenericReject(roots)) return;
 
     for (const container of containers) {
       const changed = turnOffOptionalToggles(container);
@@ -1020,28 +1020,39 @@
   // arrivals made each step buy an 1800-node tree walk. The cheap node-local test
   // preserves late/obfuscated banners: vendor/class/role selectors, consent wording,
   // and reject/settings controls next to consent wording all wake the full scanner.
-  function mutationNodeMayAffectConsent(node) {
+  function mutationNodeMayAffectConsent(node, nested, fullText) {
     try {
       if (!node) return false;
       if (node.nodeType === 3) return hasConsentLanguage(String(node.nodeValue || ''));
       if (node.nodeType !== 1) return false;
+      const role = node.getAttribute && node.getAttribute('role');
       const identity = [
         node.id,
         typeof node.className === 'string' ? node.className : '',
-        node.getAttribute && node.getAttribute('role'),
+        role,
         node.getAttribute && node.getAttribute('aria-label'),
         node.getAttribute && node.getAttribute('data-testid'),
         node.getAttribute && node.getAttribute('data-test'),
       ].filter(Boolean).join(' ');
       if (CONSENT_FRAME_HINT_RE.test(identity)) return true;
-      if (node.matches && node.matches(CONTAINER_SELECTOR)) return true;
-      const text = String(node.textContent || '').slice(0, 2400);
+      if (String(node.tagName || '').toLowerCase() === 'dialog' || role === 'dialog'
+          || (node.getAttribute && node.getAttribute('aria-modal') === 'true')) return true;
+      if (!nested && node.matches && node.matches(CONTAINER_SELECTOR)) return true;
+      let text;
+      if (nested && node.childNodes) {
+        const direct = [];
+        for (const child of node.childNodes) if (child.nodeType === 3) direct.push(child.nodeValue || '');
+        text = direct.join(' ');
+      } else {
+        const all = String(node.textContent || '');
+        text = fullText ? all : all.slice(0, 2400);
+      }
       if (hasConsentLanguage(text)) return true;
       if (CONSENT_ACTION_TEXT_RE.test(text)) {
         const parentText = String(node.parentElement && node.parentElement.textContent || '').slice(0, 2400);
         if (hasConsentLanguage(parentText)) return true;
       }
-      return !!(node.querySelector && node.querySelector(CONTAINER_SELECTOR));
+      return !nested && !!(node.querySelector && node.querySelector(CONTAINER_SELECTOR));
     } catch (_) {
       return false;
     }
@@ -1049,15 +1060,20 @@
 
   function mutationsMayAffectConsent(records) {
     try {
+      const added = [];
       for (const record of records || []) {
         if (record.type === 'attributes') {
           if (mutationNodeMayAffectConsent(record.target)) return true;
           continue;
         }
-        const added = record.addedNodes || [];
-        for (let i = 0; i < added.length; i++) {
-          if (mutationNodeMayAffectConsent(added[i])) return true;
-        }
+        for (const node of record.addedNodes || []) added.push(node);
+      }
+      const batch = new Set(added);
+      for (const node of added) {
+        let ancestor = node.parentNode || node.parentElement;
+        while (ancestor && !batch.has(ancestor)) ancestor = ancestor.parentNode || ancestor.parentElement;
+        const nested = !!ancestor;
+        if (mutationNodeMayAffectConsent(node, nested, !nested)) return true;
       }
     } catch (_) {}
     return false;

@@ -17,6 +17,7 @@ as the work happened.
 
 ### Added
 
+- Added a source-review ZIP command that archives the committed repository, including source, tests and docs, while excluding untracked local directories. It refuses a dirty checkout unless the user explicitly selects the committed snapshot.
 - Extension Security Centre now calls out new bookmark, session, navigation, identity, location, browser-setting, data-deletion and capture permissions with specific impact and review priority. ChatGPT's exact-ID capability contract continues to flag newly added cookie, network, proxy and extension-management access.
 - Protection Health can prepare a local diagnostics report for support. Its preview and optional text download contain aggregate counts and states, with no domains, history, keys, or extension names. Verify & Repair now records its last overall result for that report.
 - Added a clean-checkout Store release command that runs the full gate and source-rights review before creating a byte-audited ZIP and SHA-256 file. CI now checks README-linked docs and tracks package size, bundled rules and script footprint against reviewed limits. The Store ZIP includes its privacy notice; unresolved source rights still block submission.
@@ -369,6 +370,12 @@ as the work happened.
 
 ### Changed
 
+- YouTube player-error checks skip reserializing ordinary parsed JSON; escaped and reviver-produced errors still use the full check.
+- Consent scans now reuse one document and shadow-root snapshot for container and fallback searches. Banner helpers also avoid querying each container twice while preserving shadow-root controls.
+- Consent scanning avoids repeating descendant checks for nested DOM additions. The Memory Shield alarm now shares one tab snapshot and one live check per sleep candidate across throttling, sleeping and group reporting.
+- Clarified that SessionShield's exact-value and skimmer checks use bypassable page hooks, while browser network rules independently block covered destinations and direct private-network requests.
+- Anti-fingerprinting now leaves core count and device memory native in pages and frames, avoiding page-only substitutions for values a worker can expose. Other opt-in noise remains; worker graphics are still outside the shield.
+- Clarified that activity and download-review records can retain lowercase names and short numeric values in URL paths; token-shaped segments, queries and fragments are removed from those records.
 - Replaced the README's provisional product images with a complete set captured from
   the real WardenOne build. The main reading path now shows the master switch, first
   run, a held download, File Shield evidence, pre-install extension checking, Activity
@@ -565,6 +572,7 @@ as the work happened.
 
 ### Fixed
 
+- Script Shield stays visible when a settings search matches one of its rows, including WebAssembly. Clearing the search restores the full section. Turning the master switch off also keeps the toast and badge controls dimmed when Silent Mode is off.
 - Eye Shield now limits foreign stylesheet processing to 64 connected sheets per
   frame, 4 million source characters and 2 million transformed characters.
   Detached sheets leave the cache and failed or budget-skipped sheets retry only
