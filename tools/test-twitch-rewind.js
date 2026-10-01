@@ -62,6 +62,13 @@ assert(/MediaRecorder/.test(rewind) && /captureStream/.test(rewind), 'runtime sh
 assert(/videoBitsPerSecond: videoBitrate\(sourceVideo\)/.test(rewind), 'recorder should use adaptive high-quality video bitrate');
 assert(/return 16000000/.test(rewind) && /return 12000000/.test(rewind), 'high-resolution replay should use a visibly loss-resistant bitrate');
 assert(vp8Index >= 0 && vp9Index >= 0 && vp8Index < vp9Index, 'recorder should prefer the lower-overhead VP8 codec');
+// Recording at the stream's 60 fps doubled the encoder's load (measured: +0.66-0.84 of a core
+// against +0.33-0.36 at 30 fps on a live 720p60 stream) and Twitch's picture dropped frames and
+// quality under it. The capture track is capped before any recorder sees it; refusal fails open.
+assert(/const RECORD_MAX_FPS = 30;/.test(rewind), 'the local copy should be recorded at up to 30 fps');
+assert(/applyConstraints\(\{ frameRate: \{ max: RECORD_MAX_FPS \} \}\)/.test(rewind), 'the cap should be a frame-rate constraint on the capture track');
+assert(/capRecordingFrameRate\(stream\);\s*captureStreamRef = stream;/.test(rewind), 'every new capture stream should be capped before it is used');
+assert(/applied\.catch\(\(\) => \{\}\)/.test(rewind) && /function capRecordingFrameRate[\s\S]{0,700}catch \(_\) \{\}/.test(rewind), 'a browser that refuses the cap should still record');
 
 // ---- Single continuous recorder (the core of the rewrite) ------------------
 assert(/const CHUNK_MS = 1000;/.test(rewind), 'recording should emit continuous timeslice chunks');

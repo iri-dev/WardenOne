@@ -245,6 +245,18 @@ function run(options) {
   assert.notStrictEqual(elsewhere.toggled.away, true, 'the same layout on another site keeps the ordinary yield');
   const lookalike = run({ host: 'twitch.tv.evil.test', docHeight: 1080, build: chatPage() });
   assert.notStrictEqual(lookalike.toggled.away, true, 'a lookalike host does not get the Twitch exception');
+  /* Collapsing the chat on the same channel: Twitch keeps the column in the page at zero
+     size and the route does not change. The next forced check must bring the chip back, and
+     expanding it again must hide it. (What triggers that check is the wiring, below.) */
+  const same = run({ host: 'www.twitch.tv', path: '/somechannel', docHeight: 1080, build: chatPage() });
+  assert.strictEqual(same.toggled.away, true, 'chat open on the channel: hidden');
+  const columnBox = same.elements[2].rect;
+  for (const n of same.elements) n.rect = rect(0, 0, 0, 0);
+  same.update(true);
+  assert.strictEqual(same.toggled.away, false, 'chat collapsed on the same route brings the chip back');
+  same.elements[2].rect = columnBox;
+  same.update(true);
+  assert.strictEqual(same.toggled.away, true, 'chat expanded again hides it');
   /* Leaving the channel without a reload: the chat unmounts and the route changes. */
   twitch.elements.length = 0;
   twitch.sandbox.location.pathname = '/directory';
@@ -698,6 +710,16 @@ assert(/"currententrychange"/.test(wiring) && /"popstate"/.test(wiring),
   'Discord SPA navigation must re-check the chip');
 assert(/"click"/.test(wiring) && /"keyup"/.test(wiring),
   'Discord profile popouts must re-check without a route change');
+/* Twitch collapses and expands chat without a route change or a resize: the chat column's own
+   size is watched, a change forces a re-check, and columns that mount later are picked up by the
+   load and route follow-ups. Size, not mutations -- chat mutates on every message. */
+assert(/new ResizeObserver\(\(\)=>\{\s*clearTimeout\(twitchChatT\),\s*twitchChatT=setTimeout\(\(\)=>updateBadgeYield\(!0\)/.test(wiring),
+  'a change in the Twitch chat column\'s size must force a badge re-check');
+assert(/querySelectorAll\(BADGE_TWITCH_CHAT_SELECTOR\)[\s\S]{0,120}twitchChatRo\.observe\(n\)/.test(wiring),
+  'the observer must watch the chat columns the yield decision reads');
+assert(/setTimeout\(recheckBadge,\s*1500\)/.test(wiring) && /setTimeout\(recheckBadge,1500\),setTimeout\(recheckBadge,4000\)/.test(wiring),
+  'load and route follow-ups must pick up a chat column that mounted after them');
+assert(!/MutationObserver/.test(wiring), 'no mutation observer: Twitch chat mutates on every message');
 /* The yield block itself adds no observer or timer of its own. */
 const yieldCode = source.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '');
 assert(!/MutationObserver|setInterval|setTimeout|requestAnimationFrame|addEventListener|woOn\(/.test(yieldCode),

@@ -759,6 +759,65 @@ test('cached clean-backup polling tolerates an 800ms media leg without refreshin
     'slow cached-media poll discarded its valid token and attempted a forbidden refresh');
 });
 
+/* Measured live: a clean backup carries no prefetch hints, so a player poll that landed just before
+   the backup published its next segment got nothing new, and under one segment of buffer the picture
+   ran dry -- the spinner at an ad break. That poll is now held, re-polling the backup, until it
+   advances (LL-HLS blocking reload), within BACKUP_HOLD_MS. */
+function holdRuntime(backupBody) {
+  const counters = { backupFetches: 0 };
+  const runtime = createRuntime({
+    initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
+    fetchRoute: standardFetchRoute({
+      originalMedia: STITCHED_AD,
+      backupMedia() {
+        counters.backupFetches++;
+        return backupBody(counters.backupFetches);
+      },
+    }),
+    gqlRoute(message) { return jsonResponse(nestedToken(message.body.variables.playerType)); },
+  });
+  return { runtime, counters };
+}
+const holdPlaylist = (sequence) => sequencedPlaylist({
+  sequence, startMs: SEQUENCE_BASE_TIME + (sequence - 99100) * 2000, path: 'hold-backup',
+});
+
+test('a cached backup poll that would add nothing is held until the backup publishes its next segment', async () => {
+  let advanceAt = Infinity;
+  const { runtime, counters } = holdRuntime((fetchNumber) => holdPlaylist(fetchNumber >= advanceAt ? 99101 : 99100));
+  await mapMaster(runtime);
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(first.includes('/hold-backup/99102.ts'), 'fixture did not serve the clean backup on the first ad poll');
+  for (let turn = 0; turn < 4; turn++) await new Promise((resolve) => setImmediate(resolve));
+  /* The next player poll arrives before the backup has published: its early poll and the first
+     re-poll still see the old edge, the one after that sees the new segment. */
+  advanceAt = counters.backupFetches + 3;
+  const started = performance.now();
+  const second = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+  assert(second.includes('/hold-backup/99103.ts'),
+    'a poll that would add nothing was answered without waiting for the backup to advance');
+  assert(elapsed >= 200 && elapsed < 1500, 'the hold should end as soon as the backup advances: ' + elapsed.toFixed(0) + 'ms');
+});
+
+test('a backup that does not advance is held only for the bound, then answered exactly as before', async () => {
+  const { runtime, counters } = holdRuntime(() => holdPlaylist(99100));
+  await mapMaster(runtime);
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(first.includes('/hold-backup/99102.ts'), 'fixture did not serve the clean backup on the first ad poll');
+  for (let turn = 0; turn < 4; turn++) await new Promise((resolve) => setImmediate(resolve));
+  const fetchesBefore = counters.backupFetches;
+  const started = performance.now();
+  const second = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+  assert(second.includes('/hold-backup/99102.ts') && !second.includes('/hold-backup/99103.ts'),
+    'an unadvanced backup was not served as it would have been without the hold');
+  assert(!second.includes('#EXT-X-GAP') && !second.includes('data:video/mp4'), 'the hold starved or poisoned the decoder');
+  assert(elapsed >= 1200 && elapsed < 2500, 'the hold must stop at its bound: ' + elapsed.toFixed(0) + 'ms');
+  assert(counters.backupFetches - fetchesBefore <= 8,
+    'the hold re-polled the backup without bound: ' + (counters.backupFetches - fetchesBefore) + ' fetches');
+});
+
 test('a clean backup hands its already-started edge segment to the player without delaying the swap', async () => {
   const cleanBackup = sequencedPlaylist({
     sequence: 99100,
