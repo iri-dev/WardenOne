@@ -715,6 +715,10 @@ assert(/"click"/.test(wiring) && /"keyup"/.test(wiring),
    load and route follow-ups. Size, not mutations -- chat mutates on every message. */
 assert(/new ResizeObserver\(\(\)=>\{\s*clearTimeout\(twitchChatT\),\s*twitchChatT=setTimeout\(\(\)=>updateBadgeYield\(!0\)/.test(wiring),
   'a change in the Twitch chat column\'s size must force a badge re-check');
+assert(/__woHold\(new ResizeObserver/.test(wiring),
+  'the Twitch chat observer must be registered with engine teardown');
+assert(/twitchChatRo&&__woHold\(twitchChatCleanup\)/.test(wiring),
+  'the Twitch chat debounce must be cancelled during engine teardown');
 assert(/querySelectorAll\(BADGE_TWITCH_CHAT_SELECTOR\)[\s\S]{0,120}twitchChatRo\.observe\(n\)/.test(wiring),
   'the observer must watch the chat columns the yield decision reads');
 assert(/setTimeout\(recheckBadge,\s*1500\)/.test(wiring) && /setTimeout\(recheckBadge,1500\),setTimeout\(recheckBadge,4000\)/.test(wiring),

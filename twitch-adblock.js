@@ -19,7 +19,7 @@
 (function wardenOneTwitchAdblock() {
   'use strict';
 
-  const VERSION = '1.0.1';
+  const VERSION = '1.0.2';
   // Hook-status chatter is opt-in: it printed into every twitch.tv page console
   // on every load. Ad-time logging stays on, since that is what makes a missed
   // ad diagnosable after the fact.
@@ -129,6 +129,22 @@
       } catch (_) {}
     }
   };
+  let steadyPlaybackStoragePrototype = null;
+  let steadyPlaybackNativeGetItem = null;
+  let steadyPlaybackGetItem = null;
+  const woTwitchResourceDispose = window.__wardenOneTwitchAdblockDispose;
+  window.__wardenOneTwitchAdblockDispose = () => {
+    try {
+      if (steadyPlaybackGetItem && steadyPlaybackStoragePrototype &&
+          steadyPlaybackStoragePrototype.getItem === steadyPlaybackGetItem) {
+        steadyPlaybackStoragePrototype.getItem = steadyPlaybackNativeGetItem;
+      }
+    } catch (_) {}
+    steadyPlaybackStoragePrototype = null;
+    steadyPlaybackNativeGetItem = null;
+    steadyPlaybackGetItem = null;
+    woTwitchResourceDispose();
+  };
   const woClearTimeout = (id) => {
     if (!id) return;
     woPending.delete(id);
@@ -136,7 +152,7 @@
   };
 
   let enabled = true;
-  let steadyPlayback = true;
+  let steadyPlayback = false;
   let bridgeToken = '';
   let revision = 0;
   const workers = new Set();
@@ -873,7 +889,7 @@
   function updateEnabled() {
     const config = window.__WO_CONFIG__;
     enabled = !config || (config.enabled !== false && config.twitchAdBlock !== false);
-    steadyPlayback = !config || config.twitchSteadyPlayback !== false;
+    steadyPlayback = !!(config && config.__configReady === true && config.twitchSteadyPlayback !== false);
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
     setTwitchVisibilityGuardEnabled(enabled);
@@ -1395,6 +1411,9 @@
       Object.defineProperty(getItem, 'length', { value: 1 });
       getItem.toString = Function.prototype.toString.bind(nativeGetItem);
       proto.getItem = getItem;
+      steadyPlaybackStoragePrototype = proto;
+      steadyPlaybackNativeGetItem = nativeGetItem;
+      steadyPlaybackGetItem = getItem;
     } catch (_) {}
   }
 
@@ -3688,12 +3707,16 @@
       return pending;
     }
 
-    function pollCachedBackup(cached) {
+    function pollCachedBackup(cached, timeoutMs) {
       const url = String(cached && cached.url || '');
       if (!url) return Promise.resolve(null);
       if (Date.now() - Number(cached.ts || 0) >= BACKUP_TTL) return Promise.resolve(null);
+      const pollTimeout = Number.isFinite(timeoutMs)
+        ? Math.max(0, Number(timeoutMs))
+        : BACKUP_POLL_TIMEOUT_MS;
+      if (!pollTimeout) return Promise.resolve(null);
       if (pendingBackupPolls.has(url)) return pendingBackupPolls.get(url);
-      const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), BACKUP_POLL_TIMEOUT_MS)
+      const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), pollTimeout)
         .then((current) => {
           const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(current.text, url));
           if (!normalized) return null;
@@ -3737,10 +3760,14 @@
       if (!current || !current.tail || backupTailAhead(current.tail, cached.servedTail)) return current;
       const until = Date.now() + BACKUP_HOLD_MS;
       let latest = current;
-      while (Date.now() + BACKUP_HOLD_STEP_MS <= until) {
-        await new Promise((resolve) => setTimeout(resolve, BACKUP_HOLD_STEP_MS));
+      while (true) {
+        const remaining = until - Date.now();
+        if (remaining <= 0) break;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(BACKUP_HOLD_STEP_MS, remaining)));
+        const pollRemaining = until - Date.now();
+        if (pollRemaining <= 0) break;
         if (!interventionCurrent(info, epoch) || backups.get(key) !== cached) return latest;
-        const next = await pollCachedBackup(cached);
+        const next = await pollCachedBackup(cached, Math.min(BACKUP_POLL_TIMEOUT_MS, pollRemaining));
         if (!next || !next.tail || (info.mediaContainer && next.container !== info.mediaContainer)) return latest;
         latest = next;
         if (backupTailAhead(next.tail, cached.servedTail)) return next;
