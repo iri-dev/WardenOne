@@ -442,7 +442,7 @@ function createPageHarness(config, harnessOptions) {
     pathname: '/fixturechannel',
     href: 'https://www.twitch.tv/fixturechannel',
   };
-  window.__WO_CONFIG__ = Object.assign({ enabled: true, twitchAdBlock: true }, config || {});
+  window.__WO_CONFIG__ = Object.assign({ enabled: true, twitchAdBlock: true, __configReady: true }, config || {});
   window.sessionStorage = sessionStorage;
   window.Worker = NativeWorker;
   if (typeof harnessOptions.configureWindow === 'function') {
@@ -3661,6 +3661,17 @@ function storageHarness(config) {
   return { harness, window: harness.window, nativeGetItem, other: new HarnessStorage() };
 }
 
+function loadReplacementTwitchModule(harness) {
+  const parts = MANIFEST.version.split('.').map(Number);
+  parts[2]++;
+  const replacementVersion = parts.join('.');
+  const source = MODULE_SOURCE.replace(/const VERSION = '[^']+';/,
+    "const VERSION = '" + replacementVersion + "';");
+  assert(source !== MODULE_SOURCE, 'replacement Twitch module did not receive a newer version');
+  vm.runInContext(source, harness.sandbox, { filename: 'replacement-twitch-adblock.js' });
+  return replacementVersion;
+}
+
 test('steadier playback answers an unset Twitch Low Latency preference with off', () => {
   const { window } = storageHarness();
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'unset Low Latency preference was not answered off');
@@ -3687,6 +3698,31 @@ test('steadier playback leaves other storage and the switched-off cases alone', 
     'the preference was answered with WardenOne off');
 });
 
+test('steadier playback honours a saved off setting at module startup', () => {
+  const { window } = storageHarness({ twitchSteadyPlayback: false });
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null,
+    'startup answered Low Latency off before the saved setting was available');
+});
+
+test('steadier playback stays native until authoritative config arrives', () => {
+  const { harness, window } = storageHarness({ __configReady: false, twitchSteadyPlayback: true });
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null,
+    'placeholder config applied the Steady Playback default before authentication');
+
+  window.__WO_CONFIG__ = Object.assign({}, window.__WO_CONFIG__, {
+    __configReady: true,
+    twitchSteadyPlayback: true,
+  });
+  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false',
+    'authoritative enabled setting did not activate the preference hook');
+
+  window.__WO_CONFIG__.twitchSteadyPlayback = false;
+  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null,
+    'authoritative disabled setting did not restore native preference behavior');
+});
+
 test('steadier playback follows a live settings change and keeps a native-looking hook', () => {
   const { harness, window, nativeGetItem } = storageHarness();
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'precondition: answered off');
@@ -3697,6 +3733,39 @@ test('steadier playback follows a live settings change and keeps a native-lookin
   assert(hook !== nativeGetItem, 'precondition: the hook is installed');
   equal(hook.name, 'getItem', 'hook name gives it away');
   equal(hook.toString(), Function.prototype.toString.call(nativeGetItem), 'hook source gives it away');
+});
+
+test('steadier playback restores the native hook on dispose', () => {
+  const { window, nativeGetItem } = storageHarness();
+  assert(window.Storage.prototype.getItem !== nativeGetItem, 'precondition: the hook is installed');
+  window.__wardenOneTwitchAdblockDispose();
+  assert(window.Storage.prototype.getItem === nativeGetItem,
+    'dispose did not restore the native storage method');
+});
+
+test('steadier playback restores its hook before a replacement module installs', () => {
+  const { harness, window, nativeGetItem } = storageHarness({ twitchSteadyPlayback: false });
+  const oldHook = window.Storage.prototype.getItem;
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null, 'precondition: old module leaves the preference native');
+
+  window.__WO_CONFIG__ = Object.assign({}, window.__WO_CONFIG__, { twitchSteadyPlayback: true });
+  const replacementVersion = loadReplacementTwitchModule(harness);
+
+  assert(window.__wardenOneTwitchAdblockReady === replacementVersion,
+    'replacement Twitch module did not install');
+  assert(window.Storage.prototype.getItem !== oldHook, 'replacement module reused the disposed hook');
+  assert(window.Storage.prototype.getItem !== nativeGetItem, 'replacement module did not install its hook');
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false',
+    'replacement module did not control the steady playback preference');
+});
+
+test('steadier playback does not restore a hook replaced by the page', () => {
+  const { window } = storageHarness();
+  const pageGetItem = function pageGetItem() { return 'page replacement'; };
+  window.Storage.prototype.getItem = pageGetItem;
+  window.__wardenOneTwitchAdblockDispose();
+  assert(window.Storage.prototype.getItem === pageGetItem,
+    'module teardown overwrote a later page replacement');
 });
 
 test('dedicated module installs no React/reload/polling recovery', () => {

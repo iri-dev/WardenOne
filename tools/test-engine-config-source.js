@@ -128,6 +128,13 @@ const REAL = { enabled: true, detectPhishing: true, paymentCardGuard: true, dete
   const run = runEngine(REAL, null, 'example.com');
   check('legitimate start reflects the store', run.WO.detectSkimmers === true);
 
+  const twitchStartup = runEngine(Object.assign({}, REAL, {
+    twitchSteadyPlayback: false,
+  }), null, 'www.twitch.tv');
+  check('a saved Twitch Steady Playback setting reaches the initial config projection',
+    twitchStartup.WO.twitchSteadyPlayback === false,
+    'initial value was ' + twitchStartup.WO.twitchSteadyPlayback);
+
   // What the token-checked handler does: mutate the store in place, then notify.
   run.sandbox.__woConfigStore.paymentCardGuard = false;
   run.fireConfigChange();

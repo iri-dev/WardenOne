@@ -66,7 +66,7 @@
  */
 (() => {
   'use strict';
-  const MAIL_SHIELD_VERSION = '1.0.1';
+  const MAIL_SHIELD_VERSION = '1.0.2';
   if (window.__wardenOneMailShieldReadyVersion === MAIL_SHIELD_VERSION) return;
   if (window.__wardenOneMailShieldReadyVersion) {
     try { window.__wardenOneMailShieldDispose?.(); } catch (_) {}
