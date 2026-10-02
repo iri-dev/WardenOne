@@ -129,20 +129,20 @@
       } catch (_) {}
     }
   };
-  let steadyPlaybackStoragePrototype = null;
-  let steadyPlaybackNativeGetItem = null;
-  let steadyPlaybackGetItem = null;
+  /* The page globals this copy replaced -- fetch, XHR open, Worker, Storage getItem. Each entry
+     puts back what it found, but only while the global still holds this copy's hook, so a page or
+     another extension that wrapped it later keeps its wrapper. A hook that cannot be taken back
+     goes inert instead: once disposed, every wrapper passes straight through to what it wrapped,
+     so it can never act on settings this copy has stopped listening to. Chained rather than
+     folded into the registry above, which every guard shares byte for byte. */
+  const woRestore = [];
+  let woDisposed = false;
   const woTwitchResourceDispose = window.__wardenOneTwitchAdblockDispose;
   window.__wardenOneTwitchAdblockDispose = () => {
-    try {
-      if (steadyPlaybackGetItem && steadyPlaybackStoragePrototype &&
-          steadyPlaybackStoragePrototype.getItem === steadyPlaybackGetItem) {
-        steadyPlaybackStoragePrototype.getItem = steadyPlaybackNativeGetItem;
-      }
-    } catch (_) {}
-    steadyPlaybackStoragePrototype = null;
-    steadyPlaybackNativeGetItem = null;
-    steadyPlaybackGetItem = null;
+    woDisposed = true;
+    for (const restore of woRestore.splice(0, woRestore.length)) {
+      try { restore(); } catch (_) {}
+    }
     woTwitchResourceDispose();
   };
   const woClearTimeout = (id) => {
@@ -189,8 +189,31 @@
   let playbackStallFailOpenSource = '';
   let playbackStallFailOpenTime = 0;
 
+  /* A copy from before teardown restored these globals (1.0.1 and earlier, or one with no
+     disposer at all) leaves its hooks installed, bound to settings it no longer hears about.
+     Its Worker accessor is the dangerous one: its message handlers died with its listeners, so
+     wrapping it would load two worker runtimes into one worker, and the older one would wait on a
+     page that never answers. Every copy chains its constructor to the one it wrapped, so step back
+     to the browser's own. fetch, XHR open and getItem cannot be unwrapped that way, so they are
+     wrapped on top; an older layer underneath only sees traffic this copy has already handled or
+     chosen to pass on. */
+  function workerBeneathOlderCopies(candidate) {
+    let current = candidate;
+    for (let hops = 0; hops < 8; hops++) {
+      let owner = '';
+      try { owner = typeof current === 'function' ? current.__woTwitchCurrent : ''; } catch (_) {}
+      if (!owner || owner === VERSION) break;
+      let inner = null;
+      try { inner = Object.getPrototypeOf(current); } catch (_) {}
+      if (typeof inner !== 'function' || inner === Function.prototype) break;
+      current = inner;
+    }
+    return current;
+  }
+
   const nativeFetch = window.fetch;
-  const NativeWorker = window.Worker;
+  const pageWorker = window.Worker;
+  const NativeWorker = workerBeneathOlderCopies(pageWorker);
   const NativeXMLHttpRequest = typeof XMLHttpRequest === 'function' ? XMLHttpRequest : null;
   const nativeXhrOpen = NativeXMLHttpRequest && NativeXMLHttpRequest.prototype &&
     NativeXMLHttpRequest.prototype.open;
@@ -326,11 +349,36 @@
     '[class*="video-player"][class*="display-ad" i],' +
     '[class*="video-player"][class*="vertical-video-ad" i],' +
     '[class*="video-player"][class*="pushdown-sda" i]{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;inset:0!important;transform:none!important;}';
+  /* Mounted on the first clean ad break, by installAdChromeCss. */
+  let adChromeCss = null;
+
+  /* A copy's stylesheets leave with it. A released copy no longer hears settings, so a sheet it
+     left mounted goes on hiding and reshaping the page in whatever state the switch was in when it
+     stopped listening -- which copies up to 1.0.1 did. So before mounting, a copy also clears what
+     an older one left: a <style> carrying one of these ids, directly under <head> or <html> where
+     every copy has mounted them, that is not its own. Nothing else on the page is touched. */
+  const TWITCH_STYLE_IDS = ['wo-twitch-adblock-css', 'wo-twitch-ad-chrome'];
+  function unmountStyle(style) {
+    try { if (style) style.remove(); } catch (_) {}
+  }
+  function clearStaleStyles() {
+    for (const parent of new Set([document.head, document.documentElement])) {
+      if (!parent || !parent.children) continue;
+      for (const node of Array.from(parent.children)) {
+        if (node === adCss || node === adChromeCss) continue;
+        if (String(node.tagName || '').toUpperCase() !== 'STYLE' || !TWITCH_STYLE_IDS.includes(node.id)) continue;
+        unmountStyle(node);
+      }
+    }
+  }
+  woHold({ disconnect() { unmountStyle(adCss); unmountStyle(adChromeCss); } });
 
   function mountCss() {
-    if (adCss.isConnected) return;
+    if (woDisposed || adCss.isConnected) return;
     const root = document.head || document.documentElement;
-    if (root) root.appendChild(adCss);
+    if (!root) return;
+    clearStaleStyles();
+    root.appendChild(adCss);
   }
 
   mountCss();
@@ -1396,11 +1444,11 @@
     let proto = null;
     try { proto = window.Storage && window.Storage.prototype; } catch (_) { return; }
     const nativeGetItem = proto && proto.getItem;
-    if (typeof nativeGetItem !== 'function' || nativeGetItem.__woTwitchCurrent) return;
+    if (typeof nativeGetItem !== 'function' || nativeGetItem.__woTwitchCurrent === VERSION) return;
     function getItem(key) {
       const value = nativeGetItem.apply(this, arguments);
       try {
-        if (value === null && key === LOW_LATENCY_KEY && enabled && steadyPlayback &&
+        if (value === null && key === LOW_LATENCY_KEY && !woDisposed && enabled && steadyPlayback &&
             this === window.localStorage) return 'false';
       } catch (_) {}
       return value;
@@ -1411,15 +1459,14 @@
       Object.defineProperty(getItem, 'length', { value: 1 });
       getItem.toString = Function.prototype.toString.bind(nativeGetItem);
       proto.getItem = getItem;
-      steadyPlaybackStoragePrototype = proto;
-      steadyPlaybackNativeGetItem = nativeGetItem;
-      steadyPlaybackGetItem = getItem;
+      woRestore.push(() => { if (proto.getItem === getItem) proto.getItem = nativeGetItem; });
     } catch (_) {}
   }
 
   function installFetchHook() {
-    if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent) return;
+    if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent === VERSION) return;
     function twitchFetch(input, init) {
+      if (woDisposed) return nativeFetch.apply(this, arguments);
       const url = requestUrl(input);
       if (enabled && AD_SERVICE_URL_RE.test(url)) {
         if (VIDEO_AD_SERVICE_URL_RE.test(url)) announceAdImminent();
@@ -1469,13 +1516,14 @@
       twitchFetch.toString = Function.prototype.toString.bind(nativeFetch);
     } catch (_) {}
     window.fetch = twitchFetch;
+    woRestore.push(() => { if (window.fetch === twitchFetch) window.fetch = nativeFetch; });
   }
 
   function installXhrHook() {
-    if (typeof nativeXhrOpen !== 'function' || nativeXhrOpen.__woTwitchCurrent) return;
+    if (typeof nativeXhrOpen !== 'function' || nativeXhrOpen.__woTwitchCurrent === VERSION) return;
     function twitchXhrOpen(method, url) {
       const target = String(url || '');
-      if (enabled && AD_SERVICE_URL_RE.test(target)) {
+      if (!woDisposed && enabled && AD_SERVICE_URL_RE.test(target)) {
         if (VIDEO_AD_SERVICE_URL_RE.test(target)) announceAdImminent();
       }
       return nativeXhrOpen.apply(this, arguments);
@@ -1483,7 +1531,9 @@
     try {
       Object.defineProperty(twitchXhrOpen, '__woTwitchCurrent', { value: VERSION });
       twitchXhrOpen.toString = Function.prototype.toString.bind(nativeXhrOpen);
-      NativeXMLHttpRequest.prototype.open = twitchXhrOpen;
+      const proto = NativeXMLHttpRequest.prototype;
+      proto.open = twitchXhrOpen;
+      woRestore.push(() => { if (proto.open === twitchXhrOpen) proto.open = nativeXhrOpen; });
     } catch (_) {}
   }
 
@@ -1573,7 +1623,7 @@
     const nativeReset = manager.reset;
     function twitchAdManagerReset() {
       const result = nativeReset.apply(this, arguments);
-      if (enabled && adManagerState.manager === manager) {
+      if (!woDisposed && enabled && adManagerState.manager === manager) {
         adManagerState.declinedByWarden = false;
         applyAdManagerDecline(manager);
       }
@@ -1643,13 +1693,14 @@
 
   let adChromeCssInstalled = false;
   function installAdChromeCss() {
-    if (adChromeCssInstalled) return;
+    if (adChromeCssInstalled || woDisposed) return;
     try {
       const root = document.documentElement;
       if (!root) return;
       adChromeCssInstalled = true;
       const style = document.createElement('style');
       style.id = 'wo-twitch-ad-chrome';
+      adChromeCss = style;
       const gate = 'html[data-wo-twitch-adblock="blocked-clean"] ';
       // Honest status of this list: the exact-match badge selectors that used to
       // live here were byte-identical to ungated rules in adCss above, and the
@@ -1703,6 +1754,7 @@
         // rather than by class, because the wrapper classes also back the pause,
         // loading and mature-content screens.
         gate + TWITCH_TURBO_OVERLAY_SELECTOR + '{display:none!important;}';
+      clearStaleStyles();
       root.appendChild(style);
     } catch (_) {}
   }
@@ -3715,7 +3767,14 @@
         ? Math.max(0, Number(timeoutMs))
         : BACKUP_POLL_TIMEOUT_MS;
       if (!pollTimeout) return Promise.resolve(null);
-      if (pendingBackupPolls.has(url)) return pendingBackupPolls.get(url);
+      /* Joining a poll another caller started must not inherit that caller's longer deadline --
+         a hold with 200 ms left would otherwise wait out the whole shared request. This caller
+         waits its own timeout and then sees nothing new; the shared request runs on for whoever
+         else is waiting on it. */
+      if (pendingBackupPolls.has(url)) {
+        return settleBeforeDeadline(pendingBackupPolls.get(url), Date.now() + pollTimeout)
+          .then((outcome) => outcome.value);
+      }
       const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), pollTimeout)
         .then((current) => {
           const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(current.text, url));
@@ -4623,6 +4682,8 @@
   }
 
   function installWorkerHook() {
+    /* Any Twitch constructor still here is this version's own, or an older one that could not be
+       unwrapped; layering over either doubles the worker runtime, so decline. */
     if (typeof NativeWorker !== 'function' || NativeWorker.__woTwitchCurrent) return;
 
     let workerDelegate = NativeWorker;
@@ -4643,6 +4704,11 @@
     }
 
     function TwitchWorker(scriptUrl, options) {
+      // A disposed copy can still be reached through a reference cached before it
+      // was replaced -- a late wrapper's inner constructor, say. Go straight to the
+      // browser's Worker: routing through the delegate or window.Worker again could
+      // loop back into whichever wrapper made the call.
+      if (woDisposed) return new NativeWorker(scriptUrl, options);
       // A compatible late wrapper may call a cached copy of this constructor (or
       // window.Worker) as its delegate. Bypass our hook only for that nested call
       // so wrappers compose without recursively re-wrapping the Twitch blob.
@@ -4752,23 +4818,51 @@
       Object.defineProperty(TwitchWorker, 'name', { value: 'Worker' });
       TwitchWorker.toString = Function.prototype.toString.bind(NativeWorker);
     } catch (_) {}
+    let replaced = null;
+    try { replaced = Object.getOwnPropertyDescriptor(window, 'Worker') || null; } catch (_) {}
+    const enumerable = replaced ? !!replaced.enumerable : true;
+    const accessor = {
+      configurable: true,
+      enumerable: enumerable,
+      get() { return TwitchWorker; },
+      // Cached native/current assignments must not bypass the Twitch hook.
+      // Preserve compatible late wrappers as a mutable delegate, with the
+      // recursion guard above handling wrappers that call window.Worker again.
+      // A cached older copy's constructor is no delegate either: it would wrap the
+      // player worker a second time.
+      set(value) {
+        if (value === TwitchWorker || value === NativeWorker || value === pageWorker) return;
+        if (typeof value === 'function') workerDelegate = value;
+      }
+    };
     try {
-      const descriptor = Object.getOwnPropertyDescriptor(window, 'Worker');
-      Object.defineProperty(window, 'Worker', {
-        configurable: true,
-        enumerable: descriptor ? !!descriptor.enumerable : true,
-        get() { return TwitchWorker; },
-        // Cached native/current assignments must not bypass the Twitch hook.
-        // Preserve compatible late wrappers as a mutable delegate, with the
-        // recursion guard above handling wrappers that call window.Worker again.
-        set(value) {
-          if (value === TwitchWorker || value === NativeWorker) return;
-          if (typeof value === 'function') workerDelegate = value;
-        }
-      });
+      Object.defineProperty(window, 'Worker', accessor);
     } catch (_) {
       window.Worker = TwitchWorker;
     }
+    // Put back what was there, unless the page has moved on. A late wrapper the
+    // setter took as a delegate is the page's latest Worker, so it is what the
+    // page gets back; an older copy's accessor is never handed back.
+    woRestore.push(() => {
+      const current = Object.getOwnPropertyDescriptor(window, 'Worker');
+      if (current && current.get === accessor.get) {
+        if (workerDelegate !== NativeWorker) {
+          Object.defineProperty(window, 'Worker', {
+            configurable: true, enumerable: enumerable, writable: true, value: workerDelegate
+          });
+        } else if (!replaced) {
+          delete window.Worker;
+        } else if (pageWorker !== NativeWorker) {
+          Object.defineProperty(window, 'Worker', {
+            configurable: true, enumerable: enumerable, writable: true, value: NativeWorker
+          });
+        } else {
+          Object.defineProperty(window, 'Worker', replaced);
+        }
+      } else if (current && current.value === TwitchWorker) {
+        window.Worker = NativeWorker;
+      }
+    });
   }
 
   updateEnabled();
