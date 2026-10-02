@@ -14790,23 +14790,25 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
   return rules;
 }
 
-/* Sometimes a feed is just wrong about one site. These are domains a security feed lists that,
-   checked by hand, aren't malware or phishing sites, so WardenOne neither blocks them nor calls
-   them malware on search results. Exact domains only, each with the reason. Look-alike copies
-   are different domains and stay blocked. Being here never marks a site safe: it only drops the
-   feed's mistake. The reader's own lists and rules don't come through this parser, so their
-   choices still apply, and so does every other protection on the page.
+/* Domains where a single security feed's listing disagrees with the other sources checked, so
+   WardenOne doesn't act on that one listing: no block, no malware label on search results. This
+   suppresses the single-feed verdict only. It does not mark the site safe, and unknown still
+   doesn't mean safe. Each entry covers the domain and its www. host, nothing else: any other
+   subdomain a feed lists stays blockable, and so do look-alike copies, which are different
+   domains. The reader's own lists and rules don't come through this parser, so their choices
+   still apply, and so does every other protection on the page.
 
-     steamrip.com  A well-known game piracy site. Risky the way piracy sites are, but listed by
-                   only one of the sixteen security feeds (flinteger's malicious aggregate), with
-                   no malware or phishing on record. Its fake copies (steamrip-en.pages.dev,
-                   steamrip.us.com, steamripzone.com) are listed by other feeds and stay
-                   blocked. Checked 2026-10-02. */
+     steamrip.com  A well-known game piracy site, risky the way piracy sites are. Listed by one
+                   of the sixteen security feeds (flinteger's malicious aggregate). The other
+                   feeds don't list it, and the other sources checked disagree with that
+                   listing; that is not the same as a clean record. Its fake copies
+                   (steamrip-en.pages.dev, steamrip.us.com, steamripzone.com) are listed by
+                   other feeds and stay blocked. Checked 2026-10-02. */
 const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com']);
 function isFeedFalsePositiveDomain(host) {
   const d = String(host || '').toLowerCase();
   for (const listed of FEED_FALSE_POSITIVE_DOMAINS) {
-    if (d === listed || d.endsWith('.' + listed)) return true;
+    if (d === listed || d === 'www.' + listed) return true;
   }
   return false;
 }
@@ -14850,7 +14852,7 @@ function parseList(text) {
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(line)) return;
     if (isMediaCompatDomain(line)) return;
     if (isNeverBlockDomain(line)) return; // GitHub & other vetted infra: never blocklist-block
-    if (isFeedFalsePositiveDomain(line)) return; // a feed's known mistake, checked by hand (see above)
+    if (isFeedFalsePositiveDomain(line)) return; // one feed's disputed listing, not a safe verdict (see above)
     if (domainRe.test(line) && !seen.has(line)) {
       seen.add(line);
       out.push(line);
