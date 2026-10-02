@@ -99,6 +99,23 @@
       try { event.removeListener(fn); } catch (_) {}
     }
   };
+  /* Rewind's real holdings are not in that registry: a running MediaRecorder and its capture
+     tracks, a buffer that can reach hundreds of MB, replay blob URLs, a muted live picture during
+     a rewind, and controls in Twitch's player bar. shutdown() releases all of them, and a disposal
+     that skipped it left the recorder encoding with nothing listening. Stopping the capture does
+     not stop a later copy recording the same <video>: Twitch's player is captured through the
+     element capturer, where each captureStream() is independent (measured in Edge 150). Only a
+     MediaStream-backed element -- the local harness -- cannot be captured again once a capture of
+     it is stopped. `disposed` keeps a late settings reply from starting it again. Chained rather
+     than folded into the registry, which every guard shares byte for byte. */
+  let disposed = false;
+  const woRewindResourceDispose = window.__wardenOneTwitchRewindDispose;
+  window.__wardenOneTwitchRewindDispose = () => {
+    disposed = true;
+    enabled = false;
+    try { shutdown(); } catch (_) {}
+    woRewindResourceDispose();
+  };
 
   const isHarness = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
   const DEFAULT_BUFFER_SECONDS = 300;
@@ -1528,6 +1545,7 @@
   }
 
   function applyConfig(config) {
+    if (disposed) return;
     applyBufferConfig(config && config.twitchRewindMinutes);
     const nextEnabled = !!(config && config.enabled !== false && config.twitchRewind === true);
     if (nextEnabled === enabled) return;

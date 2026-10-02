@@ -4,8 +4,11 @@
 
 ### Fixed
 
-- Versioned shipped runtime guards now advance with the manifest, so Repair can replace
-  `1.0.1` Twitch adblock and rewind runtimes in tabs that survived the extension update.
+- The Twitch ad blocker and Twitch Rewind now carry the extension's version. If a newer copy is
+  ever run in a tab that still holds an older one, it replaces it, and the old copy lets go of
+  everything it held (its network and player hooks, its page styles, Rewind's recorder and
+  controls) instead of running on beside it. Repair doesn't re-run them itself: it reloads any
+  tab whose protection stops answering, which starts it fresh.
 
 ## 1.0.1 — 2026-08-21
 

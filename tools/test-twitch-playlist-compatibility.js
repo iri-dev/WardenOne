@@ -863,6 +863,82 @@ test('a slow final backup poll cannot extend the absolute hold deadline', async 
     'a slow final poll extended the absolute hold deadline: ' + elapsed.toFixed(0) + 'ms');
 });
 
+/* The hold's last poll can find one already in flight for the same backup -- a second player
+   request's early poll, started with the full poll timeout. Joining it used to mean waiting out
+   that request's deadline instead of the hold's own. */
+test('a hold that joins another request\'s slow backup poll still ends at its own deadline', async () => {
+  let holdPhase = false;
+  let holdFetches = 0;
+  let slowNext = false;
+  let sharedPoll = null;
+  let parallel = null;
+  let fetchesWhileShared = 0;
+  const { runtime } = holdRuntime((fetchNumber, url, init) => {
+    if (!holdPhase) return holdPlaylist(99100);
+    if (sharedPoll && !sharedPoll.abortedAt) fetchesWhileShared++;
+    if (!slowNext) {
+      /* The hold's own early poll is the first fetch, its re-polls follow every 250 ms. Right
+         after the one at ~1000 ms, a second player request starts its early poll of the same
+         backup, so the hold's ~1250 ms re-poll finds that one in flight. Keyed to the hold's
+         own poll, not the wall clock, so a loaded machine cannot slide it past the last re-poll. */
+      if (++holdFetches === 5) {
+        setImmediate(() => {
+          slowNext = true;
+          parallel = runtime.fetch(ORIGINAL_MEDIA_URL).then((response) => response.text(), () => '');
+        });
+      }
+      return holdPlaylist(99100);
+    }
+    slowNext = false;
+    sharedPoll = { startedAt: performance.now(), abortedAt: 0 };
+    const poll = sharedPoll;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(holdPlaylist(99100));
+      }, 3000);
+      const abort = () => {
+        if (settled) return;
+        settled = true;
+        poll.abortedAt = performance.now();
+        clearTimeout(timer);
+        const error = new Error('fixture shared backup poll timed out');
+        error.name = 'AbortError';
+        reject(error);
+      };
+      const signal = init && init.signal;
+      if (signal) {
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      }
+    });
+  });
+  await mapMaster(runtime);
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(first.includes('/hold-backup/99102.ts'), 'fixture did not serve the clean backup on the first ad poll');
+  for (let turn = 0; turn < 4; turn++) await new Promise((resolve) => setImmediate(resolve));
+
+  holdPhase = true;
+  const started = performance.now();
+  const held = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+  const fetchedBeside = fetchesWhileShared;
+  if (parallel) await parallel;
+
+  assert(sharedPoll, 'fixture did not start the shared slow poll during the hold');
+  assert(fetchedBeside === 0,
+    'fixture: the hold polled on its own instead of joining the shared poll (' + fetchedBeside + ' fetches)');
+  assert(held.includes('/hold-backup/99102.ts') && !held.includes('/hold-backup/99103.ts'),
+    'joining a shared poll changed the served playlist');
+  assert(elapsed >= 1200 && elapsed < 2100,
+    'a shared in-flight poll extended the absolute hold deadline: ' + elapsed.toFixed(0) + 'ms');
+  assert(sharedPoll.abortedAt - sharedPoll.startedAt >= 1300,
+    'the hold cut short the shared poll another request was still waiting on: aborted after ' +
+    (sharedPoll.abortedAt - sharedPoll.startedAt).toFixed(0) + 'ms');
+});
+
 test('a clean backup hands its already-started edge segment to the player without delaying the swap', async () => {
   const cleanBackup = sequencedPlaylist({
     sequence: 99100,

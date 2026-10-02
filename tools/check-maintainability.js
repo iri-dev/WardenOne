@@ -278,6 +278,7 @@ function checkContentBuild() {
   'tools/test-twitch-failopen.js',
   'tools/test-twitch-playlist-compatibility.js',
   'tools/test-twitch-rewind.js',
+  'tools/test-twitch-rewind-dispose.js',
   'tools/test-twitch-vod-rewind.js',
   'tools/test-onboarding-bundles.js',
   'tools/serve-rewind-harness.js',
@@ -725,6 +726,7 @@ checkCommand('Spotify silent media asset', ['tools/build-spotify-media.js', '--c
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);
 checkCommand('Twitch playlist compatibility tests', ['tools/test-twitch-playlist-compatibility.js']);
 checkCommand('Twitch rewind tests', ['tools/test-twitch-rewind.js']);
+checkCommand('Twitch rewind dispose tests', ['tools/test-twitch-rewind-dispose.js']);
 checkCommand('Twitch VOD rewind tests', ['tools/test-twitch-vod-rewind.js']);
 checkCommand('onboarding bundle tests', ['tools/test-onboarding-bundles.js']);
 checkCommand('runtime idempotence tests', ['tools/test-runtime-idempotence.js']);
