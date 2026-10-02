@@ -4,10 +4,12 @@
 
 ### Fixed
 
-- The Twitch ad blocker and Twitch Rewind now carry the extension's version. If a newer copy is
-  ever run in a tab that still holds an older one, it replaces it, and the old copy lets go of
+- The Twitch ad blocker and Twitch Rewind now carry the extension's version. From this version
+  on, if a newer copy is ever run in a tab that still holds an older one, the old copy lets go of
   everything it held (its network and player hooks, its page styles, Rewind's recorder and
-  controls) instead of running on beside it. Repair doesn't re-run them itself: it reloads any
+  controls) and the new one takes its place. A copy from 1.0.1 or earlier can't hand its hooks
+  back, so a newer copy leaves it running as it was, still following your switches, and the tab
+  gets the new one when it reloads. Repair doesn't re-run either script itself: it reloads any
   tab whose protection stops answering, which starts it fresh.
 - SteamRIP (steamrip.com) is no longer blocked, or labelled "On a malware and scam blocklist" in
   search results. Only one of the security feeds listed it, and the other sources checked
