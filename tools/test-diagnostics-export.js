@@ -6,9 +6,11 @@ const { buildDiagnosticsReport, diagnosticBrowser } = require('../popup-diagnost
 
 const secret = 'SECRET-DOMAIN.example';
 const now = Date.now();
+/* totalShields is the switchable count (HEALTH_SHIELD_KEYS, 105), not the 108 headline, which
+   also counts the three watch-only guards that have no switch to be on or off. */
 const base = {
   health: {
-    ok: true, level: 'warning', configuredShields: 101, totalShields: 106,
+    ok: true, level: 'warning', configuredShields: 103, totalShields: 105,
     componentFailures: 0, detail: secret, needsAttention: [{ text: secret, alerts: [{ name: secret }] }],
     tab: { state: 'verified', host: secret, text: secret },
     list: { active: 28412, updated: now - 3600000,
@@ -23,7 +25,7 @@ const base = {
   browser: 'Brave (version unavailable)', version: '1.0.1', now,
 };
 const report = buildDiagnosticsReport(base);
-assert(report.includes('Protections active: 101/106'));
+assert(report.includes('Protections active: 103/105'));
 assert(report.includes('Failed modules: 0'));
 assert(report.includes('Rules loaded: 28,412'));
 assert(report.includes('Lists current: 6/7'));

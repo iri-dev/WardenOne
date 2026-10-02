@@ -175,8 +175,8 @@ function check(name, cond, detail) {
     'only ' + ruleCount + ' rules remain');
 
   check('README distinguishes page hooks from browser rules',
-    README.includes('Browser-enforced network rules remain in force if a website changes its JavaScript.')
-      && README.includes('cannot guarantee that malicious code already running in a page'));
+    /Browser-enforced network rules (?:remain in force|keep working)[^.]*?if a website changes its JavaScript\./.test(README)
+      && /(?:cannot|can't) guarantee that malicious code\s+already running in a page/.test(README));
   check('popup discloses bypassable SessionShield hooks',
     POPUP.includes('Hostile page code can bypass these JavaScript hooks; browser rules still block listed destinations.'));
 
