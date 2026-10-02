@@ -1,7 +1,7 @@
 /* WardenOne — Copyright (C) 2026 iri · GNU GPL v3 or later, see LICENSE · Official source: https://github.com/iri-dev/WardenOne · Upstream filter-list attribution: CREDITS.md · A modified copy must say so, with a date (GPLv3 5a), and keep this notice. */
 !function(){
   "use strict";
-  const __WO_RUNTIME_VERSION="1.0.1";
+  const __WO_RUNTIME_VERSION="1.0.2";
   if("string"==typeof window.__wardenOneReadyVersion&&window.__wardenOneReadyVersion)return;
   /* Amazon's real storefronts, enumerated. This used to be /(^|\.)amazon\.[a-z.]+$/i, which anchors the
      label but not the suffix -- so it matched any host the attacker owned, as long as some label
@@ -633,6 +633,7 @@
     blockSponsoredSearchResults:!1,
     scriptletEngine:!0,
     twitchAdBlock:!0,
+    twitchSteadyPlayback:!0,
     blockAutoplay:!1,
     throttleBackgroundTabs:!1,
     killPrefetch:!1,
@@ -822,6 +823,7 @@
       blockSponsoredSearchResults:gate(!0===cfg.blockSponsoredSearchResults||!0===cfg.googleSearchResultCleanup),
       scriptletEngine:gate(cfg.scriptletEngine),
       twitchAdBlock:gate(cfg.twitchAdBlock),
+      twitchSteadyPlayback:gate(cfg.twitchSteadyPlayback),
       blockAutoplay:gate(cfg.blockAutoplay),
       throttleBackgroundTabs:gate(cfg.throttleBackgroundTabs),
       killPrefetch:gate(cfg.killPrefetch),
@@ -23182,11 +23184,16 @@
               and load follow-ups, and a detached one is let go. */
               const twitchChats=new Set();
               let twitchChatT=0;
-              const twitchChatRo=badgeTwitchHost&&"function"==typeof ResizeObserver?new ResizeObserver(()=>{
+              const twitchChatCleanup={disconnect(){
+                clearTimeout(twitchChatT),
+                twitchChatT=0
+              }},
+              twitchChatRo=badgeTwitchHost&&"function"==typeof ResizeObserver?__woHold(new ResizeObserver(()=>{
                 clearTimeout(twitchChatT),
                 twitchChatT=setTimeout(()=>updateBadgeYield(!0),250)
-              }):null,
-              watchTwitchChat=()=>{
+              })):null;
+              twitchChatRo&&__woHold(twitchChatCleanup);
+              const watchTwitchChat=()=>{
                 if(!twitchChatRo)return;
                 try{
                   twitchChats.forEach(n=>{
