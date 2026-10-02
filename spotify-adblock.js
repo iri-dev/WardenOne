@@ -40,7 +40,7 @@
 (function wardenOneSpotifyAdblock() {
   'use strict';
 
-  const VERSION = '1.0.1';
+  const VERSION = '1.0.2';
   if (!/^open\.spotify\.com$/i.test(String(location.hostname || ''))) return;
   if (window.__wardenOneSpotifyAdblockReady) return;
   window.__wardenOneSpotifyAdblockReady = VERSION;

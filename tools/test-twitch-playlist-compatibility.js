@@ -769,9 +769,9 @@ function holdRuntime(backupBody) {
     initialState: { tokenTemplate: playbackTokenTemplate(CHANNEL) },
     fetchRoute: standardFetchRoute({
       originalMedia: STITCHED_AD,
-      backupMedia() {
+      backupMedia(url, init, state) {
         counters.backupFetches++;
-        return backupBody(counters.backupFetches);
+        return backupBody(counters.backupFetches, url, init, state);
       },
     }),
     gqlRoute(message) { return jsonResponse(nestedToken(message.body.variables.playerType)); },
@@ -816,6 +816,51 @@ test('a backup that does not advance is held only for the bound, then answered e
   assert(elapsed >= 1200 && elapsed < 2500, 'the hold must stop at its bound: ' + elapsed.toFixed(0) + 'ms');
   assert(counters.backupFetches - fetchesBefore <= 8,
     'the hold re-polled the backup without bound: ' + (counters.backupFetches - fetchesBefore) + ' fetches');
+});
+
+test('a slow final backup poll cannot extend the absolute hold deadline', async () => {
+  let holdPhase = false;
+  let holdPolls = 0;
+  const { runtime } = holdRuntime((fetchNumber, url, init) => {
+    if (!holdPhase) return holdPlaylist(99100);
+    holdPolls++;
+    if (holdPolls <= 4) return holdPlaylist(99100);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(holdPlaylist(99100));
+      }, 3000);
+      const signal = init && init.signal;
+      const abort = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        const error = new Error('fixture slow backup poll timed out');
+        error.name = 'AbortError';
+        reject(error);
+      };
+      if (signal) {
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      }
+    });
+  });
+  await mapMaster(runtime);
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(first.includes('/hold-backup/99102.ts'), 'fixture did not serve the clean backup on the first ad poll');
+  for (let turn = 0; turn < 4; turn++) await new Promise((resolve) => setImmediate(resolve));
+
+  holdPhase = true;
+  const started = performance.now();
+  const second = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  const elapsed = performance.now() - started;
+  assert(second.includes('/hold-backup/99102.ts') && !second.includes('/hold-backup/99103.ts'),
+    'a slow unadvanced backup poll changed the served playlist');
+  assert(holdPolls >= 5, 'fixture did not start the deliberately slow final hold poll');
+  assert(elapsed >= 1200 && elapsed < 2300,
+    'a slow final poll extended the absolute hold deadline: ' + elapsed.toFixed(0) + 'ms');
 });
 
 test('a clean backup hands its already-started edge segment to the player without delaying the swap', async () => {

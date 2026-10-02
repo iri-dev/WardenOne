@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 — 2026-10-02
+
+### Fixed
+
+- Versioned shipped runtime guards now advance with the manifest, so Repair can replace
+  `1.0.1` Twitch adblock and rewind runtimes in tabs that survived the extension update.
+
 ## 1.0.1 — 2026-08-21
 
 Everything below this heading landed after the v1.0.0 release was published. If you
@@ -577,6 +584,14 @@ as the work happened.
 
 ### Fixed
 
+- Twitch chat badge observation now follows engine teardown, including its pending debounce, so
+  repairing a long-lived tab cannot leave old sidebar observers running.
+- Twitch's initial page configuration now carries the saved Steadier Playback setting, so a
+  Twitch navigation does not briefly apply the default while the bridge finishes its update.
+- Twitch's clean-backup blocking reload now gives its manifest polls the remaining hold budget,
+  so a slow final poll cannot extend the promised 1.5-second playback hold.
+- Twitch's Steadier Playback preference hook now restores the native storage method when an
+  older Twitch module is replaced, so a repaired tab follows the replacement module's setting.
 - Twitch ad breaks no longer freeze the stream. While AdShield plays the clean stream through a break, a request that would bring no new video is now held until the clean stream has the next piece ready, instead of leaving the player to run dry. A new "Steadier Twitch playback" switch, on by default, also turns Twitch's Low Latency mode off unless you switched it on yourself, so the player keeps a few seconds of video buffered. On a live channel the buffer through breaks went from running empty, with a 3.5-second freeze, to never dropping below 3 seconds. The stream sits a few seconds further behind live; turn the switch off to keep Twitch's default.
 - Twitch local rewind records its copy of the stream at up to 30 frames a second instead of the stream's 60, which cuts its CPU use. Recording at full frame rate added more than a CPU core on a six-core desktop, and under that load Twitch's own picture dropped frames and stepped down in quality. The live picture is unchanged; rewound video plays at 30 frames a second.
 - Closing a tab, opening the popup or any other action after a quiet half-minute no longer freezes the browser for about a second. Waking up, WardenOne asked the browser for all ~22,000 of its network rules six times to check a few hundred of its own, and each answer stalled the tab strip and scrolling. The first settings change after a wake did the same, and "Block this site" read every rule to confirm its one. Each now reads only the rules it is checking, and the learned-site and tracker rules are no longer rewritten when nothing changed.
