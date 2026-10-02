@@ -76,17 +76,20 @@
     if (!embedFrame) return;
   }
   if (/^clips\.twitch\.tv$/i.test(location.hostname) || /^\/[^/]+\/clip\//i.test(location.pathname || '')) return;
-  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
-     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
-     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
-     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
-     older one, and it must release the old one's listeners, observers and timers first or both
-     copies stay live and are charged for the same work. */
+  /* A tab keeps the copy it loaded with until it reloads: Chrome does not inject a newer copy into
+     a tab that is already open, and Repair reloads a tab rather than running this script into it
+     again. If a second copy does arrive -- two installs side by side, say -- a newer one replaces
+     an older one only when the older one can hand back everything it holds, which its disposer
+     says by carrying __woReleases. Copies up to 1.0.1 cannot: their fetch and getItem hooks keep
+     the browser's own functions in a closure, and once their listeners were released those hooks
+     went on answering ad requests and Low Latency whatever the switches said. Such a copy is left
+     in charge, still listening to settings, until the tab reloads. Stacking on it looked like a
+     replacement while the old hooks still decided. */
   if (window.__wardenOneTwitchAdblockReady === VERSION) return;
   if (window.__wardenOneTwitchAdblockReady) {
-    try {
-      if (typeof window.__wardenOneTwitchAdblockDispose === 'function') window.__wardenOneTwitchAdblockDispose();
-    } catch (_) {}
+    const previous = window.__wardenOneTwitchAdblockDispose;
+    if (typeof previous !== 'function' || previous.__woReleases !== true) return;
+    try { window.__wardenOneTwitchAdblockDispose(); } catch (_) {}
   }
   window.__wardenOneTwitchAdblockReady = VERSION;
 
@@ -133,8 +136,9 @@
      puts back what it found, but only while the global still holds this copy's hook, so a page or
      another extension that wrapped it later keeps its wrapper. A hook that cannot be taken back
      goes inert instead: once disposed, every wrapper passes straight through to what it wrapped,
-     so it can never act on settings this copy has stopped listening to. Chained rather than
-     folded into the registry above, which every guard shares byte for byte. */
+     so it can never act on settings this copy has stopped listening to. The disposer is marked
+     __woReleases so a newer copy knows it may take this one's place. Chained rather than folded
+     into the registry above, which every guard shares byte for byte. */
   const woRestore = [];
   let woDisposed = false;
   const woTwitchResourceDispose = window.__wardenOneTwitchAdblockDispose;
@@ -145,6 +149,7 @@
     }
     woTwitchResourceDispose();
   };
+  Object.defineProperty(window.__wardenOneTwitchAdblockDispose, '__woReleases', { value: true });
   const woClearTimeout = (id) => {
     if (!id) return;
     woPending.delete(id);
@@ -189,31 +194,8 @@
   let playbackStallFailOpenSource = '';
   let playbackStallFailOpenTime = 0;
 
-  /* A copy from before teardown restored these globals (1.0.1 and earlier, or one with no
-     disposer at all) leaves its hooks installed, bound to settings it no longer hears about.
-     Its Worker accessor is the dangerous one: its message handlers died with its listeners, so
-     wrapping it would load two worker runtimes into one worker, and the older one would wait on a
-     page that never answers. Every copy chains its constructor to the one it wrapped, so step back
-     to the browser's own. fetch, XHR open and getItem cannot be unwrapped that way, so they are
-     wrapped on top; an older layer underneath only sees traffic this copy has already handled or
-     chosen to pass on. */
-  function workerBeneathOlderCopies(candidate) {
-    let current = candidate;
-    for (let hops = 0; hops < 8; hops++) {
-      let owner = '';
-      try { owner = typeof current === 'function' ? current.__woTwitchCurrent : ''; } catch (_) {}
-      if (!owner || owner === VERSION) break;
-      let inner = null;
-      try { inner = Object.getPrototypeOf(current); } catch (_) {}
-      if (typeof inner !== 'function' || inner === Function.prototype) break;
-      current = inner;
-    }
-    return current;
-  }
-
   const nativeFetch = window.fetch;
-  const pageWorker = window.Worker;
-  const NativeWorker = workerBeneathOlderCopies(pageWorker);
+  const NativeWorker = window.Worker;
   const NativeXMLHttpRequest = typeof XMLHttpRequest === 'function' ? XMLHttpRequest : null;
   const nativeXhrOpen = NativeXMLHttpRequest && NativeXMLHttpRequest.prototype &&
     NativeXMLHttpRequest.prototype.open;
@@ -353,23 +335,10 @@
   let adChromeCss = null;
 
   /* A copy's stylesheets leave with it. A released copy no longer hears settings, so a sheet it
-     left mounted goes on hiding and reshaping the page in whatever state the switch was in when it
-     stopped listening -- which copies up to 1.0.1 did. So before mounting, a copy also clears what
-     an older one left: a <style> carrying one of these ids, directly under <head> or <html> where
-     every copy has mounted them, that is not its own. Nothing else on the page is touched. */
-  const TWITCH_STYLE_IDS = ['wo-twitch-adblock-css', 'wo-twitch-ad-chrome'];
+     left mounted would go on hiding and reshaping the page in whatever state the switch was in
+     when it stopped listening. */
   function unmountStyle(style) {
     try { if (style) style.remove(); } catch (_) {}
-  }
-  function clearStaleStyles() {
-    for (const parent of new Set([document.head, document.documentElement])) {
-      if (!parent || !parent.children) continue;
-      for (const node of Array.from(parent.children)) {
-        if (node === adCss || node === adChromeCss) continue;
-        if (String(node.tagName || '').toUpperCase() !== 'STYLE' || !TWITCH_STYLE_IDS.includes(node.id)) continue;
-        unmountStyle(node);
-      }
-    }
   }
   woHold({ disconnect() { unmountStyle(adCss); unmountStyle(adChromeCss); } });
 
@@ -377,7 +346,6 @@
     if (woDisposed || adCss.isConnected) return;
     const root = document.head || document.documentElement;
     if (!root) return;
-    clearStaleStyles();
     root.appendChild(adCss);
   }
 
@@ -1754,7 +1722,6 @@
         // rather than by class, because the wrapper classes also back the pause,
         // loading and mature-content screens.
         gate + TWITCH_TURBO_OVERLAY_SELECTOR + '{display:none!important;}';
-      clearStaleStyles();
       root.appendChild(style);
     } catch (_) {}
   }
@@ -4682,8 +4649,8 @@
   }
 
   function installWorkerHook() {
-    /* Any Twitch constructor still here is this version's own, or an older one that could not be
-       unwrapped; layering over either doubles the worker runtime, so decline. */
+    /* An older copy hands Worker back before this one installs, so a Twitch constructor still here
+       is one nothing accounts for; layering over it would double the worker runtime, so decline. */
     if (typeof NativeWorker !== 'function' || NativeWorker.__woTwitchCurrent) return;
 
     let workerDelegate = NativeWorker;
@@ -4828,10 +4795,8 @@
       // Cached native/current assignments must not bypass the Twitch hook.
       // Preserve compatible late wrappers as a mutable delegate, with the
       // recursion guard above handling wrappers that call window.Worker again.
-      // A cached older copy's constructor is no delegate either: it would wrap the
-      // player worker a second time.
       set(value) {
-        if (value === TwitchWorker || value === NativeWorker || value === pageWorker) return;
+        if (value === TwitchWorker || value === NativeWorker) return;
         if (typeof value === 'function') workerDelegate = value;
       }
     };
@@ -4842,7 +4807,7 @@
     }
     // Put back what was there, unless the page has moved on. A late wrapper the
     // setter took as a delegate is the page's latest Worker, so it is what the
-    // page gets back; an older copy's accessor is never handed back.
+    // page gets back.
     woRestore.push(() => {
       const current = Object.getOwnPropertyDescriptor(window, 'Worker');
       if (current && current.get === accessor.get) {
@@ -4852,10 +4817,6 @@
           });
         } else if (!replaced) {
           delete window.Worker;
-        } else if (pageWorker !== NativeWorker) {
-          Object.defineProperty(window, 'Worker', {
-            configurable: true, enumerable: enumerable, writable: true, value: NativeWorker
-          });
         } else {
           Object.defineProperty(window, 'Worker', replaced);
         }

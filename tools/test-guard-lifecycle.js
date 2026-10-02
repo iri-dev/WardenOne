@@ -41,8 +41,8 @@ const GUARDS = [
   { file: 'permission-chain.js', flag: '__wardenOnePermissionChainInstalled', dispose: '__wardenOnePermissionChainDispose', main: true },
   { file: 'eyeshield.js', flag: '__wardenOneEyeShieldInstalled', dispose: '__wardenOneEyeShieldDispose', refreshes: true },
   { file: 'oauth-guard.js', flag: '__wardenOneOAuthGuardInstalled', dispose: '__wardenOneOAuthGuardDispose' },
-  { file: 'twitch-adblock.js', flag: '__wardenOneTwitchAdblockReady', dispose: '__wardenOneTwitchAdblockDispose', versionExpr: 'VERSION', worker: 'function twitchWorkerRuntime' },
-  { file: 'twitch-rewind.js', flag: '__wardenOneTwitchRewindReady', dispose: '__wardenOneTwitchRewindDispose', topFrameOnly: true },
+  { file: 'twitch-adblock.js', flag: '__wardenOneTwitchAdblockReady', dispose: '__wardenOneTwitchAdblockDispose', versionExpr: 'VERSION', worker: 'function twitchWorkerRuntime', releaseMark: true },
+  { file: 'twitch-rewind.js', flag: '__wardenOneTwitchRewindReady', dispose: '__wardenOneTwitchRewindDispose', topFrameOnly: true, releaseMark: true },
   { file: 'twitch-vod-rewind.js', flag: '__wardenOneVodRewind', dispose: '__wardenOneVodRewindDispose' },
   { file: 'cryptominer-detect.js', flag: '__wardenOneMinerWatch', dispose: '__wardenOneMinerWatchDispose', main: true },
   { file: 'search-junk.js', flag: '__wardenOneSearchJunk', dispose: '__wardenOneSearchJunkDispose' },
@@ -122,6 +122,12 @@ for (const g of GUARDS) {
   check(g.file + ': dispose clears pending timeouts',
     /woPending\.forEach\(\(id\) => \{ try \{ clearTimeout\(id\); \} catch \(_\) \{\} \}\);/.test(src));
   check(g.file + ': dispose drains the registry', /woKeep\.splice\(0, woKeep\.length\)/.test(src));
+  // These two replace an older copy only when its disposer is marked as releasing everything.
+  // A copy that dropped the mark could never be replaced again, and nothing would say so.
+  if (g.releaseMark) {
+    check(g.file + ': the published dispose is marked as releasing everything',
+      src.includes('Object.defineProperty(window.' + g.dispose + ", '__woReleases', { value: true });"));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -364,12 +370,15 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
       ['a matching flag still returns early', MANIFEST.version, false, false],
       ['a stale flag reinstalls and disposes the old copy', 'wo-stale', true, true],
       ['an unset flag installs cleanly', undefined, true, false],
-    ];
-  for (const [label, flagValue, expectRan, expectDisposed] of cases) {
+    ].concat(g.releaseMark
+      ? [['a stale copy that cannot release its holdings is left in charge, undisposed', 'wo-stale', false, false, 'unmarked']]
+      : []);
+  for (const [label, flagValue, expectRan, expectDisposed, variant] of cases) {
     const win = {};
     let disposed = false;
     if (flagValue !== undefined) win[g.flag] = flagValue;
     win[g.dispose] = () => { disposed = true; };
+    if (g.releaseMark && variant !== 'unmarked') win[g.dispose].__woReleases = true;
     const sandbox = { window: win, top: win };
     sandbox.window.top = g.topFrameOnly ? win : win;
     vm.createContext(sandbox);
