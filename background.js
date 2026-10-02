@@ -14790,6 +14790,27 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
   return rules;
 }
 
+/* Sometimes a feed is just wrong about one site. These are domains a security feed lists that,
+   checked by hand, aren't malware or phishing sites, so WardenOne neither blocks them nor calls
+   them malware on search results. Exact domains only, each with the reason. Look-alike copies
+   are different domains and stay blocked. Being here never marks a site safe: it only drops the
+   feed's mistake. The reader's own lists and rules don't come through this parser, so their
+   choices still apply, and so does every other protection on the page.
+
+     steamrip.com  A well-known game piracy site. Risky the way piracy sites are, but listed by
+                   only one of the sixteen security feeds (flinteger's malicious aggregate), with
+                   no malware or phishing on record. Its fake copies (steamrip-en.pages.dev,
+                   steamrip.us.com, steamripzone.com) are listed by other feeds and stay
+                   blocked. Checked 2026-10-02. */
+const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com']);
+function isFeedFalsePositiveDomain(host) {
+  const d = String(host || '').toLowerCase();
+  for (const listed of FEED_FALSE_POSITIVE_DOMAINS) {
+    if (d === listed || d.endsWith('.' + listed)) return true;
+  }
+  return false;
+}
+
 // Extract only unambiguous whole-host entries: a plain hostname, a hosts-file
 // entry, or an exact ||hostname^ rule. URL paths, options, wildcards, and
 // exceptions are intentionally left to the network-rule parser so they can
@@ -14829,6 +14850,7 @@ function parseList(text) {
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(line)) return;
     if (isMediaCompatDomain(line)) return;
     if (isNeverBlockDomain(line)) return; // GitHub & other vetted infra: never blocklist-block
+    if (isFeedFalsePositiveDomain(line)) return; // a feed's known mistake, checked by hand (see above)
     if (domainRe.test(line) && !seen.has(line)) {
       seen.add(line);
       out.push(line);

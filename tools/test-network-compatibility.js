@@ -218,6 +218,29 @@ test('simple-list parser accepts only unambiguous whole hosts', () => {
   ]);
 });
 
+/* Reported 2026-10-02: Google results for SteamRIP said "On a malware and scam blocklist", and the
+   site itself was blocked. Only one of the sixteen security feeds lists steamrip.com; the fakes
+   that copy its name are listed by others. The site comes out however a feed writes it, and the
+   copies go on being blocked. */
+test('a feed false positive is dropped in every spelling, and its look-alikes are kept', () => {
+  const { parseList } = loadNetworkParsers();
+  const parsed = Array.from(parseList([
+    'steamrip.com',
+    'www.steamrip.com',
+    '0.0.0.0 steamrip.com',
+    '||steamrip.com^',
+    'STEAMRIP.COM',
+    'steamrip-en.pages.dev',
+    '||steamrip.us.com^',
+    'steamripzone.com',
+    'notsteamrip.com',
+  ].join('\n')));
+  assert.deepStrictEqual(parsed, ['steamrip-en.pages.dev', 'steamrip.us.com', 'steamripzone.com', 'notsteamrip.com']);
+
+  const fromJson = Array.from(parseList(JSON.stringify({ blocklist: ['steamrip.com', 'steamrip.us.com'] })));
+  assert.deepStrictEqual(fromJson, ['steamrip.us.com']);
+});
+
 test('JSON list parsing does not broaden URLs, options, or allowlist entries', () => {
   const { parseList } = loadNetworkParsers();
   const parsed = Array.from(parseList(JSON.stringify({
