@@ -10,8 +10,10 @@
   controls) instead of running on beside it. Repair doesn't re-run them itself: it reloads any
   tab whose protection stops answering, which starts it fresh.
 - SteamRIP (steamrip.com) is no longer blocked, or labelled "On a malware and scam blocklist" in
-  search results. One security feed listed it by mistake. The fake copies of the site that other
-  feeds list are still blocked.
+  search results. Only one of the security feeds listed it, and the other sources checked
+  disagree, so WardenOne no longer acts on that one listing. That isn't a verdict that the site
+  is safe. The fake copies of the site that other feeds list are still blocked, and so is any
+  other steamrip.com subdomain a feed lists.
 
 ## 1.0.1 — 2026-08-21
 

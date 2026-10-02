@@ -220,22 +220,37 @@ test('simple-list parser accepts only unambiguous whole hosts', () => {
 
 /* Reported 2026-10-02: Google results for SteamRIP said "On a malware and scam blocklist", and the
    site itself was blocked. Only one of the sixteen security feeds lists steamrip.com; the fakes
-   that copy its name are listed by others. The site comes out however a feed writes it, and the
+   that copy its name are listed by others. The site and its www. host come out however a feed
+   writes them. Nothing wider does: any other subdomain a feed lists stays blockable, and the
    copies go on being blocked. */
-test('a feed false positive is dropped in every spelling, and its look-alikes are kept', () => {
+test('a single-feed listing is dropped for the domain and www only, and everything else is kept', () => {
   const { parseList } = loadNetworkParsers();
   const parsed = Array.from(parseList([
     'steamrip.com',
     'www.steamrip.com',
     '0.0.0.0 steamrip.com',
     '||steamrip.com^',
+    '||www.steamrip.com^',
     'STEAMRIP.COM',
+    'evil.steamrip.com',
+    '0.0.0.0 login.steamrip.com',
+    '||cdn.www.steamrip.com^',
+    'www2.steamrip.com',
     'steamrip-en.pages.dev',
     '||steamrip.us.com^',
     'steamripzone.com',
     'notsteamrip.com',
   ].join('\n')));
-  assert.deepStrictEqual(parsed, ['steamrip-en.pages.dev', 'steamrip.us.com', 'steamripzone.com', 'notsteamrip.com']);
+  assert.deepStrictEqual(parsed, [
+    'evil.steamrip.com',
+    'login.steamrip.com',
+    'cdn.www.steamrip.com',
+    'www2.steamrip.com',
+    'steamrip-en.pages.dev',
+    'steamrip.us.com',
+    'steamripzone.com',
+    'notsteamrip.com',
+  ]);
 
   const fromJson = Array.from(parseList(JSON.stringify({ blocklist: ['steamrip.com', 'steamrip.us.com'] })));
   assert.deepStrictEqual(fromJson, ['steamrip.us.com']);
