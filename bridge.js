@@ -1110,28 +1110,38 @@
     if (mainWarningOverlay) mainWarningOverlay.destroy();
     const overlay = mainWarningOverlay = woOwnedOverlay('wo-owned-main-warning');
     const root = overlay.root();
+    // Dressed like the page engine's own warning panels (the clipboard-swap and fake-window
+    // cards): the same alert border and tag, Quicksand and Nunito, and WardenOne's pink-purple
+    // button, so a blocking warning from either half looks like one product.
     const card = document.createElement('div');
     card.setAttribute('style', 'all:initial!important;box-sizing:border-box!important;position:fixed!important;'
-      + 'top:16px!important;left:50%!important;transform:translateX(-50%)!important;'
+      + 'top:24px!important;left:50%!important;transform:translateX(-50%)!important;'
       + 'width:min(480px,calc(100vw - 32px))!important;max-height:70vh!important;overflow:auto!important;'
-      + 'padding:16px!important;border:2px solid #b42332!important;border-radius:14px!important;'
-      + 'background:#fff8f8!important;color:#281d2e!important;box-shadow:0 18px 52px #4a182c66!important;'
-      + 'font:14px/1.45 system-ui,sans-serif!important;');
+      + 'padding:16px 18px!important;border:2px solid #c0392b!important;border-radius:16px!important;'
+      + 'background:rgba(255,247,247,.99)!important;color:#2d1b40!important;'
+      + 'box-shadow:0 18px 52px rgba(120,20,20,.4)!important;'
+      + 'font:13px/1.5 "Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;');
     const heading = document.createElement('strong');
-    heading.setAttribute('style', 'all:initial!important;display:block!important;font:bold 16px/1.3 system-ui,sans-serif!important;color:#922132!important;margin-bottom:8px!important;');
+    heading.setAttribute('style', 'all:initial!important;display:inline-block!important;'
+      + 'background:rgba(192,57,43,.14)!important;color:#c0392b!important;padding:3px 9px!important;border-radius:8px!important;'
+      + 'font:700 11px/1.4 "Quicksand",system-ui,sans-serif!important;letter-spacing:.04em!important;'
+      + 'text-transform:uppercase!important;margin-bottom:6px!important;');
     heading.textContent = 'WardenOne warning';
     card.appendChild(heading);
     for (const warning of mainWarningText.values()) {
       const item = document.createElement('p');
-      item.setAttribute('style', 'all:initial!important;display:block!important;font:13px/1.5 system-ui,sans-serif!important;color:#281d2e!important;margin:8px 0!important;white-space:normal!important;overflow-wrap:anywhere!important;');
+      item.setAttribute('style', 'all:initial!important;display:block!important;'
+        + 'font:12.5px/1.55 "Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;color:#4a3661!important;'
+        + 'margin:8px 0!important;white-space:normal!important;overflow-wrap:anywhere!important;');
       item.textContent = warning;
       card.appendChild(item);
     }
     const button = document.createElement('button');
     button.type = 'button';
-    button.setAttribute('style', 'all:initial!important;display:block!important;cursor:pointer!important;'
-      + 'background:#922132!important;color:white!important;padding:9px 14px!important;'
-      + 'border-radius:8px!important;font:bold 13px system-ui,sans-serif!important;margin-top:12px!important;');
+    button.setAttribute('style', 'all:initial!important;display:block!important;box-sizing:border-box!important;'
+      + 'width:100%!important;cursor:pointer!important;text-align:center!important;'
+      + 'background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;padding:10px 14px!important;'
+      + 'border-radius:10px!important;font:700 12.5px "Quicksand",system-ui,sans-serif!important;margin-top:12px!important;');
     button.textContent = 'I understand';
     const onAcknowledge = (e) => {
       if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(button)) return;
@@ -1147,10 +1157,11 @@
     if (id === 'wo-paste-warn' && Number.isSafeInteger(decisionId) && decisionId > 0) {
       continuePaste = document.createElement('button');
       continuePaste.type = 'button';
-      continuePaste.setAttribute('style', 'all:initial!important;display:block!important;cursor:pointer!important;'
-        + 'background:#fff!important;color:#922132!important;padding:9px 14px!important;'
-        + 'border:1px solid #922132!important;border-radius:8px!important;'
-        + 'font:bold 13px system-ui,sans-serif!important;margin-top:8px!important;');
+      continuePaste.setAttribute('style', 'all:initial!important;display:block!important;box-sizing:border-box!important;'
+        + 'width:100%!important;cursor:pointer!important;text-align:center!important;'
+        + 'background:#fff!important;color:#7a3fa8!important;padding:9px 14px!important;'
+        + 'border:1px solid #d9b8ee!important;border-radius:10px!important;'
+        + 'font:700 12.5px "Quicksand",system-ui,sans-serif!important;margin-top:8px!important;');
       continuePaste.textContent = 'Paste anyway';
       onContinuePaste = (e) => {
         if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(continuePaste)) return;
@@ -1242,28 +1253,35 @@
     if (mainToastOverlay) closeOwnedToast(mainToastOverlay, false);
     const overlay = mainToastOverlay = woOwnedOverlay('wo-owned-security-toast');
     const root = overlay.root();
+    // Dressed exactly like the page engine's own toast (lavender card, purple edge, Quicksand
+    // title) so it reads as WardenOne, not as a different product's alert.
     const card = document.createElement('div');
     card.setAttribute('role', 'alert');
     card.setAttribute('style', 'all:initial!important;box-sizing:border-box!important;position:fixed!important;'
       + 'top:16px!important;right:16px!important;width:min(340px,calc(100vw - 32px))!important;'
-      + 'max-height:55vh!important;overflow:auto!important;padding:14px!important;'
-      + 'border:2px solid #b42332!important;border-radius:12px!important;'
-      + 'background:#fff8f8!important;color:#281d2e!important;box-shadow:0 12px 34px #4a182c66!important;'
-      + 'font:13px/1.45 system-ui,sans-serif!important;');
+      + 'max-height:55vh!important;overflow:auto!important;padding:13px 15px!important;'
+      + 'border-left:4px solid #9d54c9!important;border-radius:14px!important;'
+      + 'background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;color:#3d2a52!important;'
+      + 'box-shadow:0 8px 28px rgba(120,55,160,.26)!important;'
+      + 'font:13px/1.45 "Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;');
     const heading = document.createElement('strong');
-    heading.setAttribute('style', 'all:initial!important;display:block!important;font:bold 14px system-ui,sans-serif!important;color:#922132!important;margin-bottom:5px!important;');
+    heading.setAttribute('style', 'all:initial!important;display:block!important;'
+      + 'font:700 13.5px/1.3 "Quicksand","Nunito",system-ui,sans-serif!important;color:#3d2a52!important;margin-bottom:2px!important;');
     heading.textContent = 'WardenOne warning';
     card.appendChild(heading);
     for (const copy of mainToastText.values()) {
       const message = document.createElement('span');
-      message.setAttribute('style', 'all:initial!important;display:block!important;font:13px/1.45 system-ui,sans-serif!important;color:#281d2e!important;margin:6px 0!important;');
+      message.setAttribute('style', 'all:initial!important;display:block!important;'
+        + 'font:12px/1.45 "Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;color:#7a5f93!important;margin:4px 0!important;');
       message.textContent = copy;
       card.appendChild(message);
     }
     const button = document.createElement('button');
     button.type = 'button';
-    button.setAttribute('style', 'all:initial!important;display:block!important;cursor:pointer!important;'
-      + 'margin-top:8px!important;color:#922132!important;font:bold 12px system-ui,sans-serif!important;');
+    button.setAttribute('style', 'all:initial!important;display:inline-block!important;cursor:pointer!important;'
+      + 'margin-top:8px!important;padding:2px 8px!important;border-radius:7px!important;'
+      + 'border:1px solid #e0cff0!important;background:#f2e9f9!important;color:#5d3f78!important;'
+      + 'font:600 11px/16px "Nunito",system-ui,sans-serif!important;');
     button.textContent = 'Dismiss';
     const dismiss = (e) => { if (e.isTrusted && overlay.owns(button)) closeOwnedToast(overlay); };
     button.addEventListener('click', dismiss);
