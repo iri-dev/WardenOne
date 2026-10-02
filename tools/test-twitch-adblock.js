@@ -3711,9 +3711,10 @@ function loadReplacementTwitchModule(harness) {
 }
 
 /* What 1.0.0 and 1.0.1 shipped: a teardown that released listeners and timers but left fetch, XHR
-   open, Worker and getItem installed and live, bound to settings the copy no longer heard, and left
-   its stylesheets mounted. Built from the current source with only the hook and stylesheet release
-   taken out, so the hooks and sheets are the real ones. */
+   open, Worker and getItem installed, bound to settings the copy no longer heard, and left its
+   stylesheets mounted -- so its disposer carried no __woReleases mark. Built from the current
+   source with only the hook and stylesheet release and the mark taken out, so the hooks and sheets
+   are the real ones. */
 const LEGACY_TWITCH_VERSION = '0.0.0-legacy-teardown';
 function legacyTwitchSource() {
   const hookRelease = '    woDisposed = true;\n' +
@@ -3721,10 +3722,12 @@ function legacyTwitchSource() {
     '      try { restore(); } catch (_) {}\n' +
     '    }\n';
   const styleRelease = '  woHold({ disconnect() { unmountStyle(adCss); unmountStyle(adChromeCss); } });\n';
+  const releaseMark = "  Object.defineProperty(window.__wardenOneTwitchAdblockDispose, '__woReleases', { value: true });\n";
   assert(MODULE_SOURCE.includes(hookRelease), 'legacy fixture could not find the hook release to remove');
   assert(MODULE_SOURCE.includes(styleRelease), 'legacy fixture could not find the stylesheet release to remove');
-  return MODULE_SOURCE.replace(hookRelease, '').replace(styleRelease, '').replace(/const VERSION = '[^']+';/,
-    "const VERSION = '" + LEGACY_TWITCH_VERSION + "';");
+  assert(MODULE_SOURCE.includes(releaseMark), 'legacy fixture could not find the release mark to remove');
+  return MODULE_SOURCE.replace(hookRelease, '').replace(styleRelease, '').replace(releaseMark, '')
+    .replace(/const VERSION = '[^']+';/, "const VERSION = '" + LEGACY_TWITCH_VERSION + "';");
 }
 
 /* The <style> elements a Twitch copy mounts, in the places it mounts them. */
@@ -3957,40 +3960,6 @@ test('a newer copy takes the stylesheets of the copy it releases out of the page
   assert(mountedTwitchStyles(harness).length === 0, 'teardown left a stylesheet the copy mounted');
 });
 
-test('a newer copy clears the stylesheets an older copy left behind, and nothing of the page\'s', () => {
-  const harness = createPageHarness(null, { moduleSource: legacyTwitchSource() });
-  const { document, root } = harness;
-  startCleanAdBreak(harness, 'blob:https://www.twitch.tv/legacy-styles-player');
-  const legacy = mountedTwitchStyles(harness);
-  assert(legacy.length === 2, 'precondition: the legacy copy mounted both of its stylesheets');
-
-  /* A page stylesheet, a page element that happens to share the id, and a same-id sheet the page
-     placed somewhere no copy mounts one. */
-  const pageSheet = root.appendChild(document.createElement('style'));
-  pageSheet.id = 'page-theme';
-  const namesake = root.appendChild(document.createElement('div'));
-  namesake.id = 'wo-twitch-adblock-css';
-  const body = root.appendChild(document.createElement('body'));
-  const nestedSheet = body.appendChild(document.createElement('style'));
-  nestedSheet.id = 'wo-twitch-ad-chrome';
-
-  vm.runInContext(MODULE_SOURCE, harness.sandbox, { filename: 'twitch-adblock.js' });
-  assert(harness.window.__wardenOneTwitchAdblockReady === MANIFEST.version, 'current Twitch module did not install');
-  assert(legacy.every((node) => !node.isConnected && node.parentElement === null),
-    'the current copy left a legacy stylesheet mounted');
-  const current = mountedTwitchStyles(harness);
-  assert(current.length === 1 && current[0].id === 'wo-twitch-adblock-css' && !legacy.includes(current[0]),
-    'the current copy did not mount exactly its own ad stylesheet');
-  assert(pageSheet.parentElement === root && namesake.parentElement === root &&
-    body.parentElement === root && nestedSheet.parentElement === body,
-  'clearing legacy stylesheets removed an element the page owns');
-
-  setTwitchConfig(harness, { twitchAdBlock: false });
-  const off = mountedTwitchStyles(harness);
-  assert(off.length === 1 && off.every((node) => node.disabled),
-    'switching the ad blocker off left a WardenOne Twitch stylesheet applied');
-});
-
 test('a released copy cannot mount its stylesheet once the document gains a root', () => {
   const harness = createPageHarness(null, { rootless: true });
   const { document } = harness;
@@ -4060,48 +4029,68 @@ test('teardown hands a late Worker wrapper back as the page\'s Worker', () => {
     'the late wrapper did not reach the native Worker exactly once through the released hook');
 });
 
-test('a newer copy takes over from an older one whose teardown left its hooks live', async () => {
-  const { harness, window, nativeGetItem } = storageHarness(null, { moduleSource: legacyTwitchSource() });
+/* A copy that cannot release its hooks is not replaced in place. Its fetch and getItem hooks keep
+   the browser's functions in a closure, so a newer copy could only stack on top -- and once the old
+   copy's listeners were released, the layer underneath kept answering ad requests and Low Latency
+   whatever the switches said. So the newer copy steps aside and the tab keeps the old copy, whole
+   and still listening, until it reloads. */
+test('a newer copy leaves an older one that cannot release its hooks in charge', () => {
+  const { harness, window } = storageHarness(null, { moduleSource: legacyTwitchSource() });
   const { state } = harness;
   const XHR = harness.sandbox.XMLHttpRequest;
-  const LegacyWorker = window.Worker;
-  assert(LegacyWorker.__woTwitchCurrent === LEGACY_TWITCH_VERSION, 'precondition: the legacy copy hooked Worker');
+  startCleanAdBreak(harness, 'blob:https://www.twitch.tv/legacy-styles-player');
+  const legacy = {
+    fetch: window.fetch,
+    open: XHR.prototype.open,
+    Worker: window.Worker,
+    getItem: window.Storage.prototype.getItem,
+    dispose: window.__wardenOneTwitchAdblockDispose,
+    styles: mountedTwitchStyles(harness),
+  };
+  assert(legacy.Worker.__woTwitchCurrent === LEGACY_TWITCH_VERSION && legacy.fetch.__woTwitchCurrent === LEGACY_TWITCH_VERSION,
+    'precondition: the legacy copy hooked the page');
+  assert(legacy.styles.length === 2, 'precondition: the legacy copy mounted both of its stylesheets');
+  assert(legacy.dispose.__woReleases !== true, 'precondition: the legacy disposer carries no release mark');
 
   vm.runInContext(MODULE_SOURCE, harness.sandbox, { filename: 'twitch-adblock.js' });
-  const current = MANIFEST.version;
-  assert(window.__wardenOneTwitchAdblockReady === current, 'current Twitch module did not install');
-  assert(LegacyWorker.__woTwitchCurrent !== current && window.fetch.__woTwitchCurrent === current &&
-    XHR.prototype.open.__woTwitchCurrent === current && window.Storage.prototype.getItem.__woTwitchCurrent === current &&
-    window.Worker.__woTwitchCurrent === current,
-  'the current copy declined to hook a surface the legacy copy left behind');
-  assert(window.Storage.prototype.getItem !== nativeGetItem, 'precondition: getItem is hooked');
+  equal(window.__wardenOneTwitchAdblockReady, LEGACY_TWITCH_VERSION, 'the current copy installed over a legacy copy');
+  assert(window.fetch === legacy.fetch && XHR.prototype.open === legacy.open && window.Worker === legacy.Worker &&
+    window.Storage.prototype.getItem === legacy.getItem && window.__wardenOneTwitchAdblockDispose === legacy.dispose,
+  'the current copy stacked a hook on a legacy copy it cannot release');
+  const styles = mountedTwitchStyles(harness);
+  assert(styles.length === 2 && styles.every((node) => legacy.styles.includes(node)),
+    'the current copy changed the legacy copy\'s stylesheets');
 
-  /* The legacy accessor's page handlers died with its listeners, so its constructor must not stay
-     in the chain: the current copy steps back to the browser's Worker instead of wrapping it. */
+  const before = state.blobSources.size;
   const worker = new window.Worker('blob:https://www.twitch.tv/after-legacy-player');
   const wrapper = state.blobSources.get(worker.url) || '';
-  assert(state.blobSources.size === 1 && state.workerInstances.length === 1,
-    'the player worker went through the legacy constructor as well');
-  assert(wrapper.includes(JSON.stringify(current)) && !wrapper.includes(JSON.stringify(LEGACY_TWITCH_VERSION)),
-    'the player worker carries the legacy runtime');
-  announceWorkerReady(worker, current);
-  assert(worker.messages.some((message) => message && message.type === 'config' &&
-    message.__woTwitchAdblock === current), 'the current copy did not answer its own worker');
+  assert(state.blobSources.size === before + 1 && wrapper.includes(JSON.stringify(LEGACY_TWITCH_VERSION)) &&
+    !wrapper.includes(JSON.stringify(MANIFEST.version)),
+  'a player worker was not wrapped exactly once, by the copy left in charge');
+});
 
-  /* A page that cached window.Worker before Repair and assigns it back must not slip the legacy
-     constructor in as a delegate. The switched-off and teardown checks below are what would see
-     it: harness blob URLs are not Twitch-origin, so the legacy constructor only shows itself on a
-     player URL it is handed directly, or when teardown hands it back as the page's Worker. */
-  window.Worker = LegacyWorker;
+test('a legacy copy left in charge still follows the switches', async () => {
+  const { harness, window } = storageHarness(null, { moduleSource: legacyTwitchSource() });
+  const { state } = harness;
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'precondition: legacy steadier playback is on');
+  assert((await window.fetch(STANDARD_VIDEO_AD_URL)).status === 204 && state.fetchCalls.length === 0,
+    'precondition: the legacy ad blocker answers ad requests');
 
-  setTwitchConfig(harness, { twitchAdBlock: false });
-  const offUrl = 'blob:https://www.twitch.tv/after-legacy-player-off';
-  assert(new window.Worker(offUrl).url === offUrl,
-    'with the ad blocker off, a player worker was still wrapped through the legacy constructor');
+  vm.runInContext(MODULE_SOURCE, harness.sandbox, { filename: 'twitch-adblock.js' });
+  setTwitchConfig(harness, { twitchAdBlock: false, twitchSteadyPlayback: false });
 
-  window.__wardenOneTwitchAdblockDispose();
-  assert(window.Worker === harness.NativeWorker,
-    'teardown handed back the legacy accessor instead of the browser\'s Worker');
+  const passed = await window.fetch(STANDARD_VIDEO_AD_URL);
+  assert(passed.status === 200 && state.fetchCalls.length === 1,
+    'with the ad blocker off, an ad request did not reach the browser\'s fetch');
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null,
+    'with steadier playback off, Low Latency was still answered off');
+  const offUrl = 'blob:https://www.twitch.tv/legacy-player-off';
+  assert(new window.Worker(offUrl).url === offUrl, 'with the ad blocker off, a player worker was still wrapped');
+
+  setTwitchConfig(harness, { twitchAdBlock: true, twitchSteadyPlayback: true });
+  assert((await window.fetch(STANDARD_VIDEO_AD_URL)).status === 204 && state.fetchCalls.length === 1,
+    'switching the ad blocker back on was not heard');
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'switching steadier playback back on was not heard');
 });
 
 test('dedicated module installs no React/reload/polling recovery', () => {

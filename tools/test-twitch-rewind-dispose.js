@@ -455,6 +455,31 @@ test('a settings reply that lands after disposal cannot start the released copy 
   assert(page.byId('wardenone-twitch-rewind').length === 1, 'a late settings reply remounted the released copy\'s controls');
 });
 
+/* What 1.0.1 shipped: a disposer that released listeners and timers but never called shutdown(), so
+   it left the recorder, capture and controls running, and carried no __woReleases mark. A newer
+   copy does not replace such a copy in place -- that put a second recorder on the same video -- so
+   the tab keeps the old one, whole, until it reloads. */
+test('a newer copy leaves an older one that cannot release its recorder in charge', () => {
+  const shutdownCall = '    try { shutdown(); } catch (_) {}\n';
+  const releaseMark = "  Object.defineProperty(window.__wardenOneTwitchRewindDispose, '__woReleases', { value: true });\n";
+  assert(SOURCE.includes(shutdownCall) && SOURCE.includes(releaseMark), 'legacy fixture could not find the release to remove');
+  const legacySource = SOURCE.replace(shutdownCall, '').replace(releaseMark, '');
+  const page = createPage();
+  page.load(legacySource, '0.0.0-legacy-rewind');
+  const recorder = page.recording()[0];
+  assert(page.recording().length === 1, 'fixture: the legacy copy did not start a recorder');
+  const dispose = page.window.__wardenOneTwitchRewindDispose;
+
+  page.load(SOURCE);
+  assert(page.window.__wardenOneTwitchRewindReady === '0.0.0-legacy-rewind' && page.window.__wardenOneTwitchRewindDispose === dispose,
+    'the current copy installed over a legacy copy it cannot release');
+  const running = page.recording();
+  assert(running.length === 1 && running[0] === recorder, 'the page does not hold exactly one recorder, the legacy copy\'s');
+  for (const id of ['wardenone-twitch-rewind', 'wardenone-twitch-playback-style']) {
+    assert(page.byId(id).length === 1, 'the page holds ' + page.byId(id).length + ' copies of #' + id);
+  }
+});
+
 let failed = 0;
 for (const item of tests) {
   try {

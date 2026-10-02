@@ -26,18 +26,19 @@
   'use strict';
 
   const WO_GUARD_VERSION = '1.0.2';
-  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
-     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
-     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
-     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
-     older one, and it must release the old one's listeners, observers and timers first or both
-     copies stay live and are charged for the same work. */
+  /* A tab keeps the copy it loaded with until it reloads: Chrome does not inject a newer copy into
+     a tab that is already open, and Repair reloads a tab rather than running this script into it
+     again. If a second copy does arrive, a newer one replaces an older one only when the older one
+     can hand back everything it holds, which its disposer says by carrying __woReleases. Copies up
+     to 1.0.1 cannot: their disposer released listeners and timers but left the recorder, its
+     capture and the controls running, so replacing one put a second recorder on the same video.
+     Such a copy is left in charge, still listening to settings, until the tab reloads. */
   if (window.top !== window) return;
   if (window.__wardenOneTwitchRewindReady === WO_GUARD_VERSION) return;
   if (window.__wardenOneTwitchRewindReady) {
-    try {
-      if (typeof window.__wardenOneTwitchRewindDispose === 'function') window.__wardenOneTwitchRewindDispose();
-    } catch (_) {}
+    const previous = window.__wardenOneTwitchRewindDispose;
+    if (typeof previous !== 'function' || previous.__woReleases !== true) return;
+    try { window.__wardenOneTwitchRewindDispose(); } catch (_) {}
   }
   window.__wardenOneTwitchRewindReady = WO_GUARD_VERSION;
 
@@ -106,8 +107,9 @@
      not stop a later copy recording the same <video>: Twitch's player is captured through the
      element capturer, where each captureStream() is independent (measured in Edge 150). Only a
      MediaStream-backed element -- the local harness -- cannot be captured again once a capture of
-     it is stopped. `disposed` keeps a late settings reply from starting it again. Chained rather
-     than folded into the registry, which every guard shares byte for byte. */
+     it is stopped. `disposed` keeps a late settings reply from starting it again. The disposer is
+     marked __woReleases so a newer copy knows it may take this one's place. Chained rather than
+     folded into the registry, which every guard shares byte for byte. */
   let disposed = false;
   const woRewindResourceDispose = window.__wardenOneTwitchRewindDispose;
   window.__wardenOneTwitchRewindDispose = () => {
@@ -116,6 +118,7 @@
     try { shutdown(); } catch (_) {}
     woRewindResourceDispose();
   };
+  Object.defineProperty(window.__wardenOneTwitchRewindDispose, '__woReleases', { value: true });
 
   const isHarness = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
   const DEFAULT_BUFFER_SECONDS = 300;
