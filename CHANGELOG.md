@@ -9,6 +9,9 @@
   everything it held (its network and player hooks, its page styles, Rewind's recorder and
   controls) instead of running on beside it. Repair doesn't re-run them itself: it reloads any
   tab whose protection stops answering, which starts it fresh.
+- SteamRIP (steamrip.com) is no longer blocked, or labelled "On a malware and scam blocklist" in
+  search results. One security feed listed it by mistake. The fake copies of the site that other
+  feeds list are still blocked.
 
 ## 1.0.1 — 2026-08-21
 
