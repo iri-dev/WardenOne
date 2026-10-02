@@ -44,10 +44,16 @@ class EventTargetHarness {
     this.listeners = new Map();
   }
 
-  addEventListener(type, callback) {
+  /* Honours { signal } as a browser does. Teardown releases every listener through one abort, so
+     a harness that ignored it would keep a released copy listening to settings and hide exactly
+     the stale-state failures the replacement tests are there to catch. */
+  addEventListener(type, callback, options) {
+    const signal = options && typeof options === 'object' ? options.signal : null;
+    if (signal && signal.aborted) return;
     const list = this.listeners.get(type) || [];
     list.push(callback);
     this.listeners.set(type, list);
+    if (signal) signal.addEventListener('abort', () => this.removeEventListener(type, callback), { once: true });
   }
 
   removeEventListener(type, callback) {
@@ -122,6 +128,19 @@ class ElementHarness extends EventTargetHarness {
     node.isConnected = this.isConnected;
     this.children.push(node);
     return node;
+  }
+
+  removeChild(node) {
+    const index = this.children.indexOf(node);
+    if (index < 0) throw new Error('removeChild: the node is not a child of this element');
+    this.children.splice(index, 1);
+    node.parentElement = null;
+    node.isConnected = false;
+    return node;
+  }
+
+  remove() {
+    if (this.parentElement) this.parentElement.removeChild(this);
   }
 
   setAttribute(name, value) {
@@ -414,8 +433,18 @@ function createPageHarness(config, harnessOptions) {
   });
   const root = new ElementHarness('html');
   root.isConnected = true;
-  document.head = root;
-  document.documentElement = root;
+  /* rootless starts the module before the document has a root, as at the earliest document_start;
+     attachRoot() then supplies it. */
+  const attachRoot = () => {
+    document.head = root;
+    document.documentElement = root;
+  };
+  if (harnessOptions.rootless) {
+    document.head = null;
+    document.documentElement = null;
+  } else {
+    attachRoot();
+  }
   document.createElement = (tagName) => {
     const node = new ElementHarness(tagName);
     node.id = '';
@@ -503,15 +532,24 @@ function createPageHarness(config, harnessOptions) {
     console,
   };
 
+  const natives = {
+    fetch: nativeFetch,
+    xhrOpen: HarnessXHR.prototype.open,
+    workerDescriptor: Object.getOwnPropertyDescriptor(window, 'Worker'),
+  };
+
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
-  vm.runInContext(MODULE_SOURCE, sandbox, { filename: 'twitch-adblock.js' });
+  vm.runInContext(harnessOptions.moduleSource || MODULE_SOURCE, sandbox, { filename: 'twitch-adblock.js' });
   return {
     sandbox,
     window,
     document,
     state,
+    natives,
     NativeWorker,
+    root,
+    attachRoot,
     createVideo(options) {
       const video = new HarnessVideoElement(options);
       video.inPlayer = !!(options && options.inPlayer);
@@ -3645,19 +3683,19 @@ test('10-second prune pauses then restores a detached ad before blob-video reuse
    with under one segment buffered through every ad break and stalled on any hiccup; with Low
    Latency off the same breaks held a 3 s floor. Twitch reads IG.get('lowLatencyModeEnabled', true)
    from localStorage, so only an unset value is answered 'false', and nothing is ever written. */
-function storageHarness(config) {
+function storageHarness(config, harnessOptions) {
   class HarnessStorage {
     constructor() { this.data = new Map(); }
     getItem(key) { return this.data.has(String(key)) ? this.data.get(String(key)) : null; }
     setItem(key, value) { this.data.set(String(key), String(value)); }
   }
   const nativeGetItem = HarnessStorage.prototype.getItem;
-  const harness = createPageHarness(config, {
+  const harness = createPageHarness(config, Object.assign({}, harnessOptions, {
     configureWindow(window) {
       window.Storage = HarnessStorage;
       window.localStorage = new HarnessStorage();
     },
-  });
+  }));
   return { harness, window: harness.window, nativeGetItem, other: new HarnessStorage() };
 }
 
@@ -3670,6 +3708,53 @@ function loadReplacementTwitchModule(harness) {
   assert(source !== MODULE_SOURCE, 'replacement Twitch module did not receive a newer version');
   vm.runInContext(source, harness.sandbox, { filename: 'replacement-twitch-adblock.js' });
   return replacementVersion;
+}
+
+/* What 1.0.0 and 1.0.1 shipped: a teardown that released listeners and timers but left fetch, XHR
+   open, Worker and getItem installed and live, bound to settings the copy no longer heard, and left
+   its stylesheets mounted. Built from the current source with only the hook and stylesheet release
+   taken out, so the hooks and sheets are the real ones. */
+const LEGACY_TWITCH_VERSION = '0.0.0-legacy-teardown';
+function legacyTwitchSource() {
+  const hookRelease = '    woDisposed = true;\n' +
+    '    for (const restore of woRestore.splice(0, woRestore.length)) {\n' +
+    '      try { restore(); } catch (_) {}\n' +
+    '    }\n';
+  const styleRelease = '  woHold({ disconnect() { unmountStyle(adCss); unmountStyle(adChromeCss); } });\n';
+  assert(MODULE_SOURCE.includes(hookRelease), 'legacy fixture could not find the hook release to remove');
+  assert(MODULE_SOURCE.includes(styleRelease), 'legacy fixture could not find the stylesheet release to remove');
+  return MODULE_SOURCE.replace(hookRelease, '').replace(styleRelease, '').replace(/const VERSION = '[^']+';/,
+    "const VERSION = '" + LEGACY_TWITCH_VERSION + "';");
+}
+
+/* The <style> elements a Twitch copy mounts, in the places it mounts them. */
+const TWITCH_STYLE_IDS = ['wo-twitch-adblock-css', 'wo-twitch-ad-chrome'];
+function mountedTwitchStyles(harness) {
+  return harness.root.children.filter((node) => node.tagName === 'STYLE' && TWITCH_STYLE_IDS.includes(node.id));
+}
+
+/* Starts a clean ad break on a fresh player worker, which is what mounts the ad-chrome sheet. */
+function startCleanAdBreak(harness, url) {
+  const worker = new harness.window.Worker(url);
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: harness.window.__wardenOneTwitchAdblockReady, type: 'ad-state', state: 'blocked-clean' },
+    stopImmediatePropagation() {},
+  });
+  return worker;
+}
+
+function announceWorkerReady(worker, version) {
+  worker.dispatchEvent({
+    type: 'message',
+    data: { __woTwitchAdblock: version, type: 'ready' },
+    stopImmediatePropagation() {},
+  });
+}
+
+function setTwitchConfig(harness, patch) {
+  harness.window.__WO_CONFIG__ = Object.assign({}, harness.window.__WO_CONFIG__, patch);
+  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
 }
 
 test('steadier playback answers an unset Twitch Low Latency preference with off', () => {
@@ -3766,6 +3851,257 @@ test('steadier playback does not restore a hook replaced by the page', () => {
   window.__wardenOneTwitchAdblockDispose();
   assert(window.Storage.prototype.getItem === pageGetItem,
     'module teardown overwrote a later page replacement');
+});
+
+/* A newer copy releases the older one before installing. The release used to cover listeners,
+   timers and getItem but not fetch, XHR open or Worker -- and the newer copy, finding a Twitch
+   hook where it expected the browser's, declined to install its own. The tab then ran the old
+   hooks on frozen settings while reporting the new version as ready. */
+const STANDARD_VIDEO_AD_URL = 'https://edge.ads.twitch.tv/ads/format?afmt=STANDARD_VIDEO&bp=preroll';
+
+test('teardown hands fetch, XHR open and Worker back exactly as it found them', () => {
+  const harness = createPageHarness();
+  const { window, natives } = harness;
+  const XHR = harness.sandbox.XMLHttpRequest;
+  assert(window.fetch !== natives.fetch && XHR.prototype.open !== natives.xhrOpen &&
+    window.Worker !== harness.NativeWorker, 'precondition: all three hooks are installed');
+
+  window.__wardenOneTwitchAdblockDispose();
+  assert(window.fetch === natives.fetch, 'teardown left the Twitch fetch hook installed');
+  assert(XHR.prototype.open === natives.xhrOpen, 'teardown left the Twitch XHR open hook installed');
+  equal(Object.getOwnPropertyDescriptor(window, 'Worker'), natives.workerDescriptor,
+    'teardown did not restore the original Worker property');
+  assert(window.Worker === harness.NativeWorker, 'teardown left the Twitch Worker accessor installed');
+});
+
+test('a newer copy replaces the fetch, XHR and Worker hooks of the copy it releases', async () => {
+  const harness = createPageHarness();
+  const { window, state } = harness;
+  const XHR = harness.sandbox.XMLHttpRequest;
+  const released = { fetch: window.fetch, open: XHR.prototype.open, Worker: window.Worker };
+
+  const replacementVersion = loadReplacementTwitchModule(harness);
+  assert(window.__wardenOneTwitchAdblockReady === replacementVersion, 'replacement Twitch module did not install');
+  for (const [name, hook, old] of [
+    ['fetch', window.fetch, released.fetch],
+    ['XHR open', XHR.prototype.open, released.open],
+    ['Worker', window.Worker, released.Worker],
+  ]) {
+    assert(hook !== old, name + ' still runs the released copy\'s hook');
+    assert(hook.__woTwitchCurrent === replacementVersion, name + ' hook did not come from the replacement copy');
+  }
+
+  /* Each new hook wraps the browser's own, not the released copy's. */
+  await window.fetch('https://www.twitch.tv/fixture-ordinary.json');
+  assert(state.fetchCalls.length === 1, 'an ordinary request did not reach native fetch exactly once');
+  const worker = new window.Worker('blob:https://www.twitch.tv/replacement-player');
+  const wrapper = state.blobSources.get(worker.url) || '';
+  assert(worker instanceof harness.NativeWorker && state.blobSources.size === 1,
+    'the player worker was wrapped more than once');
+  assert(wrapper.includes(JSON.stringify(replacementVersion)) && !wrapper.includes(JSON.stringify(MANIFEST.version)),
+    'the player worker was wrapped by the released copy');
+
+  /* The replacement's settings are the ones in force. The released copy stopped listening, so any
+     hook of its still in the chain would keep answering ads after the switch-off. */
+  announceWorkerReady(worker, replacementVersion);
+  const warnings = () => worker.messages.filter((message) => message && message.type === 'ad-imminent').length;
+  const xhr = new XHR();
+  xhr.open('GET', STANDARD_VIDEO_AD_URL, true);
+  assert(warnings() === 1, 'the replacement copy did not hear an ad-service XHR');
+  assert((await window.fetch(STANDARD_VIDEO_AD_URL)).status === 204 && state.fetchCalls.length === 1,
+    'the replacement copy did not answer the ad request locally');
+
+  setTwitchConfig(harness, { twitchAdBlock: false });
+  const passed = await window.fetch(STANDARD_VIDEO_AD_URL);
+  assert(passed.status === 200 && state.fetchCalls.length === 2,
+    'switching the ad blocker off left an ad request answered by a stale hook');
+  const offWorker = new window.Worker('blob:https://www.twitch.tv/replacement-player-off');
+  assert(offWorker.url === 'blob:https://www.twitch.tv/replacement-player-off',
+    'switching the ad blocker off left player workers wrapped by a stale hook');
+  const opens = state.xhrOpens.length;
+  const warned = warnings();
+  new XHR().open('GET', STANDARD_VIDEO_AD_URL, true);
+  assert(state.xhrOpens.length === opens + 1 && warnings() === warned,
+    'a switched-off ad-service XHR did not pass straight through to native open');
+});
+
+/* A released copy stops hearing settings, so a stylesheet it left mounted kept hiding and reshaping
+   the page after the ad blocker was switched off in that tab, until the page was reloaded. */
+test('a newer copy takes the stylesheets of the copy it releases out of the page', () => {
+  const harness = createPageHarness();
+  startCleanAdBreak(harness, 'blob:https://www.twitch.tv/released-styles-player');
+  const released = mountedTwitchStyles(harness);
+  equal(released.map((node) => node.id).sort(), TWITCH_STYLE_IDS.slice().sort(),
+    'precondition: the first copy mounted both of its stylesheets');
+
+  const replacementVersion = loadReplacementTwitchModule(harness);
+  assert(harness.window.__wardenOneTwitchAdblockReady === replacementVersion, 'replacement Twitch module did not install');
+  assert(released.every((node) => !node.isConnected && node.parentElement === null),
+    'the released copy left a stylesheet mounted');
+  const current = mountedTwitchStyles(harness);
+  assert(current.length === 1 && current[0].id === 'wo-twitch-adblock-css' && !released.includes(current[0]),
+    'the replacement did not mount exactly its own ad stylesheet');
+
+  setTwitchConfig(harness, { twitchAdBlock: false });
+  const off = mountedTwitchStyles(harness);
+  assert(off.length === 1 && off.every((node) => node.disabled),
+    'switching the ad blocker off left a WardenOne Twitch stylesheet applied');
+
+  /* The replacement's own ad-chrome sheet arrives with its own first clean break, and goes with it. */
+  setTwitchConfig(harness, { twitchAdBlock: true });
+  startCleanAdBreak(harness, 'blob:https://www.twitch.tv/replacement-styles-player');
+  const chrome = mountedTwitchStyles(harness).filter((node) => node.id === 'wo-twitch-ad-chrome');
+  assert(chrome.length === 1 && !released.includes(chrome[0]),
+    'the replacement\'s clean break did not mount exactly one ad-chrome stylesheet of its own');
+  harness.window.__wardenOneTwitchAdblockDispose();
+  assert(mountedTwitchStyles(harness).length === 0, 'teardown left a stylesheet the copy mounted');
+});
+
+test('a newer copy clears the stylesheets an older copy left behind, and nothing of the page\'s', () => {
+  const harness = createPageHarness(null, { moduleSource: legacyTwitchSource() });
+  const { document, root } = harness;
+  startCleanAdBreak(harness, 'blob:https://www.twitch.tv/legacy-styles-player');
+  const legacy = mountedTwitchStyles(harness);
+  assert(legacy.length === 2, 'precondition: the legacy copy mounted both of its stylesheets');
+
+  /* A page stylesheet, a page element that happens to share the id, and a same-id sheet the page
+     placed somewhere no copy mounts one. */
+  const pageSheet = root.appendChild(document.createElement('style'));
+  pageSheet.id = 'page-theme';
+  const namesake = root.appendChild(document.createElement('div'));
+  namesake.id = 'wo-twitch-adblock-css';
+  const body = root.appendChild(document.createElement('body'));
+  const nestedSheet = body.appendChild(document.createElement('style'));
+  nestedSheet.id = 'wo-twitch-ad-chrome';
+
+  vm.runInContext(MODULE_SOURCE, harness.sandbox, { filename: 'twitch-adblock.js' });
+  assert(harness.window.__wardenOneTwitchAdblockReady === MANIFEST.version, 'current Twitch module did not install');
+  assert(legacy.every((node) => !node.isConnected && node.parentElement === null),
+    'the current copy left a legacy stylesheet mounted');
+  const current = mountedTwitchStyles(harness);
+  assert(current.length === 1 && current[0].id === 'wo-twitch-adblock-css' && !legacy.includes(current[0]),
+    'the current copy did not mount exactly its own ad stylesheet');
+  assert(pageSheet.parentElement === root && namesake.parentElement === root &&
+    body.parentElement === root && nestedSheet.parentElement === body,
+  'clearing legacy stylesheets removed an element the page owns');
+
+  setTwitchConfig(harness, { twitchAdBlock: false });
+  const off = mountedTwitchStyles(harness);
+  assert(off.length === 1 && off.every((node) => node.disabled),
+    'switching the ad blocker off left a WardenOne Twitch stylesheet applied');
+});
+
+test('a released copy cannot mount its stylesheet once the document gains a root', () => {
+  const harness = createPageHarness(null, { rootless: true });
+  const { document } = harness;
+  const releasedMount = (document.listeners.get('readystatechange') || []).slice();
+  assert(releasedMount.length === 1, 'precondition: the first copy waits on readystatechange to mount its stylesheet');
+
+  loadReplacementTwitchModule(harness);
+  assert(!(document.listeners.get('readystatechange') || []).includes(releasedMount[0]),
+    'teardown left the released copy listening for readystatechange');
+
+  /* Called directly, as a browser would run an event it had already queued for the listener. */
+  harness.attachRoot();
+  releasedMount[0].call(document, { type: 'readystatechange', target: document });
+  assert(mountedTwitchStyles(harness).length === 0, 'the released copy mounted its stylesheet after teardown');
+
+  document.dispatchEvent({ type: 'readystatechange', target: document });
+  const current = mountedTwitchStyles(harness);
+  assert(current.length === 1 && current[0].id === 'wo-twitch-adblock-css' && !current[0].disabled,
+    'the replacement did not mount its own stylesheet once the document had a root');
+});
+
+test('a released copy goes inert where the page has wrapped over its hooks', async () => {
+  const harness = createPageHarness();
+  const { window, state } = harness;
+  const XHR = harness.sandbox.XMLHttpRequest;
+  const released = { fetch: window.fetch, open: XHR.prototype.open, Worker: window.Worker };
+  const pageFetch = function fetch() { return released.fetch.apply(this, arguments); };
+  const pageOpen = function open() { return released.open.apply(this, arguments); };
+  const pageWorker = { configurable: true, enumerable: false, get() { return released.Worker; } };
+  window.fetch = pageFetch;
+  XHR.prototype.open = pageOpen;
+  Object.defineProperty(window, 'Worker', pageWorker);
+
+  window.__wardenOneTwitchAdblockDispose();
+  assert(window.fetch === pageFetch, 'teardown overwrote a later page fetch wrapper');
+  assert(XHR.prototype.open === pageOpen, 'teardown overwrote a later page XHR open wrapper');
+  assert(Object.getOwnPropertyDescriptor(window, 'Worker').get === pageWorker.get,
+    'teardown overwrote a later page Worker accessor');
+
+  /* Still reachable through the page's wrappers, the released hooks now only pass through. */
+  const response = await window.fetch(STANDARD_VIDEO_AD_URL);
+  assert(response.status === 200 && state.fetchCalls.length === 1,
+    'a released fetch hook still answered an ad request');
+  const url = 'blob:https://www.twitch.tv/cached-released-constructor';
+  const worker = new window.Worker(url);
+  assert(worker instanceof harness.NativeWorker && worker.url === url && state.blobSources.size === 0,
+    'a released Worker hook still wrapped a player worker');
+});
+
+test('teardown hands a late Worker wrapper back as the page\'s Worker', () => {
+  const harness = createPageHarness();
+  const { window, state } = harness;
+  const Inner = window.Worker;
+  const lateCalls = [];
+  function LateWorker(url, options) {
+    lateCalls.push(String(url));
+    return new Inner(url, options);
+  }
+  window.Worker = LateWorker;
+  assert(window.Worker !== LateWorker, 'precondition: the accessor took the late wrapper as its delegate');
+
+  window.__wardenOneTwitchAdblockDispose();
+  assert(window.Worker === LateWorker, 'teardown dropped the page\'s late Worker wrapper');
+  const url = 'blob:https://www.twitch.tv/late-wrapper-after-teardown';
+  const worker = new window.Worker(url);
+  assert(lateCalls.length === 1 && worker.url === url && state.workerInstances.length === 1,
+    'the late wrapper did not reach the native Worker exactly once through the released hook');
+});
+
+test('a newer copy takes over from an older one whose teardown left its hooks live', async () => {
+  const { harness, window, nativeGetItem } = storageHarness(null, { moduleSource: legacyTwitchSource() });
+  const { state } = harness;
+  const XHR = harness.sandbox.XMLHttpRequest;
+  const LegacyWorker = window.Worker;
+  assert(LegacyWorker.__woTwitchCurrent === LEGACY_TWITCH_VERSION, 'precondition: the legacy copy hooked Worker');
+
+  vm.runInContext(MODULE_SOURCE, harness.sandbox, { filename: 'twitch-adblock.js' });
+  const current = MANIFEST.version;
+  assert(window.__wardenOneTwitchAdblockReady === current, 'current Twitch module did not install');
+  assert(LegacyWorker.__woTwitchCurrent !== current && window.fetch.__woTwitchCurrent === current &&
+    XHR.prototype.open.__woTwitchCurrent === current && window.Storage.prototype.getItem.__woTwitchCurrent === current &&
+    window.Worker.__woTwitchCurrent === current,
+  'the current copy declined to hook a surface the legacy copy left behind');
+  assert(window.Storage.prototype.getItem !== nativeGetItem, 'precondition: getItem is hooked');
+
+  /* The legacy accessor's page handlers died with its listeners, so its constructor must not stay
+     in the chain: the current copy steps back to the browser's Worker instead of wrapping it. */
+  const worker = new window.Worker('blob:https://www.twitch.tv/after-legacy-player');
+  const wrapper = state.blobSources.get(worker.url) || '';
+  assert(state.blobSources.size === 1 && state.workerInstances.length === 1,
+    'the player worker went through the legacy constructor as well');
+  assert(wrapper.includes(JSON.stringify(current)) && !wrapper.includes(JSON.stringify(LEGACY_TWITCH_VERSION)),
+    'the player worker carries the legacy runtime');
+  announceWorkerReady(worker, current);
+  assert(worker.messages.some((message) => message && message.type === 'config' &&
+    message.__woTwitchAdblock === current), 'the current copy did not answer its own worker');
+
+  /* A page that cached window.Worker before Repair and assigns it back must not slip the legacy
+     constructor in as a delegate. The switched-off and teardown checks below are what would see
+     it: harness blob URLs are not Twitch-origin, so the legacy constructor only shows itself on a
+     player URL it is handed directly, or when teardown hands it back as the page's Worker. */
+  window.Worker = LegacyWorker;
+
+  setTwitchConfig(harness, { twitchAdBlock: false });
+  const offUrl = 'blob:https://www.twitch.tv/after-legacy-player-off';
+  assert(new window.Worker(offUrl).url === offUrl,
+    'with the ad blocker off, a player worker was still wrapped through the legacy constructor');
+
+  window.__wardenOneTwitchAdblockDispose();
+  assert(window.Worker === harness.NativeWorker,
+    'teardown handed back the legacy accessor instead of the browser\'s Worker');
 });
 
 test('dedicated module installs no React/reload/polling recovery', () => {
