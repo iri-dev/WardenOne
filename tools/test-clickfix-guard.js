@@ -364,11 +364,14 @@ async function check(name, fn) {
   /* WardenOne's own README, rendered on github.com, explains ClickFix in one paragraph:
      the verification phrase and the Win+R step, in quotation marks, inside a long block.
      It was reported as the scam it describes on every visit to the repo. */
-  const README_PARAGRAPH = cmd('ClickFix scams turn the victim into the malware launcher: "prove you are human", press ',
-    WIN_RUN(), ', paste a command, or open DevTools and type what the page prepared. WardenOne recognises',
-    ' the instruction shapes, reads what the page puts on the clipboard, and blocks the write when the two',
-    ' line up. The instruction reading -- the fake CAPTCHA wording, the "press ', WIN_RUN(), '" steps -- runs',
-    ' on the top-level page only, and embedded frames get the clipboard half of the guard.');
+  const README_PARAGRAPH = cmd('ClickFix scams get you to install the malware yourself. The page tells you to "prove you are',
+    ' human", then press ', WIN_RUN(), ' and paste a command. Or open DevTools and type something it prepared.',
+    ' WardenOne recognises those instructions and stops the page quietly putting a suspicious command on',
+    ' your clipboard. It warns you if you copy something dangerous yourself too. And it treats it as more',
+    ' serious when the instructions and the command turn up together. Reading the instructions (the fake',
+    ' CAPTCHA wording, the "press ', WIN_RUN(), '" steps) runs on the top-level page only. Embedded frames',
+    ' get the clipboard half. So if a frame tries to put a command-shaped string on your clipboard the',
+    ' write gets refused and the same warning shows over the page, but the frame\'s text isn\'t read.');
   await check('a paragraph that describes ClickFix is not ClickFix, on a docs host', () => {
     const runtime = run({ body: 'WardenOne\nOne extension. Every defence.\n' + README_PARAGRAPH, page: 'https://github.com/iri-dev/WardenOne' });
     assert.strictEqual(runtime.activities().length, 0, JSON.stringify(runtime.activities()));
