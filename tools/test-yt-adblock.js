@@ -555,25 +555,30 @@ async function main() {
 
   {
     /* The appendChild proxy hands every about:blank iframe our fetch, so ad code
-       inside one still goes through the hooks. YouTube also makes SANDBOXED
-       about:blank frames, and reaching into the contentWindow of one that cannot
-       run scripts is what Chrome reports as "Blocked script execution in
-       'about:blank' because the document's frame is sandboxed" -- a console full
-       of warnings about a write that could never have helped.
+       that borrows one still goes through the hooks. A frame sandboxed without
+       allow-scripts but with allow-same-origin is the one that matters most: no
+       content script can patch it from inside, so this write from the parent is
+       the only thing that reaches it. Skipping it, on the belief that the write
+       caused Chrome's "Blocked script execution in 'about:blank'" warning, left
+       YouTube's own such frame with a clean fetch. The write does not cause that
+       warning (it is Chrome declining to inject WardenOne's MAIN-world scripts);
+       only an opaque-origin frame, which the parent cannot reach into, is skipped.
 
        Read out of the shipped guard rather than restated, so a rewrite of the
        condition is what gets tested. */
-    const guard = /var scriptsBlocked = ([^;]+);/.exec(src);
+    const guard = /var opaqueOrigin = ([^;]+);/.exec(src);
     ok("the sandbox guard is in the iframe proxy", !!guard);
+    ok("the old allow-scripts skip is gone", !/var scriptsBlocked =/.test(src));
     if (guard) {
       const skips = new Function("sandboxAttr", "return " + guard[1] + ";");
       ok("an ordinary about:blank frame still gets our fetch", skips(null) === false);
-      ok("a frame allowed to run scripts still gets it", skips("allow-scripts") === false);
-      ok("and when allow-scripts is not first", skips("allow-popups allow-scripts") === false);
-      ok("a fully sandboxed frame is left alone", skips("") === true);
-      ok("so is one sandboxed without allow-scripts", skips("allow-forms allow-modals") === true);
-      /* Substring matching would read allow-scripts-extra as permission. */
-      ok("a lookalike token does not count as permission", skips("allow-scripts-extra") === true);
+      ok("a same-origin frame that cannot run scripts gets it too", skips("allow-same-origin") === false);
+      ok("and when allow-same-origin is not first", skips("allow-forms allow-same-origin") === false);
+      ok("a same-origin frame that can run scripts gets it", skips("allow-scripts allow-same-origin") === false);
+      ok("a fully sandboxed frame is left alone: its origin is opaque", skips("") === true);
+      ok("so is one that may run scripts but is not same-origin", skips("allow-scripts allow-popups") === true);
+      /* Substring matching would read allow-same-origin-extra as permission. */
+      ok("a lookalike token does not count as permission", skips("allow-same-origin-extra") === true);
       /* Unreadable attribute must fall toward hooking: failing the other way
          silently stops hooking every about:blank frame, which is the thing this
          proxy exists for. Two suite checks caught exactly that. */

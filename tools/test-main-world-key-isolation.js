@@ -38,7 +38,8 @@ const ROOT = path.resolve(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const BRIDGE = read('bridge.js');
 const CONTENT = read('src/content.js');
-const MAIN_FILES = ['src/content.js', 'anti-redirect.js', 'cryptominer-detect.js', 'permission-chain.js', 'spotify-adblock.js'];
+// yt-adblock.js holds the key too: AdShield signs the ad breaks it reports to the Site Dashboard.
+const MAIN_FILES = ['src/content.js', 'anti-redirect.js', 'cryptominer-detect.js', 'permission-chain.js', 'spotify-adblock.js', 'yt-adblock.js'];
 
 let failed = 0;
 function check(name, condition, extra) {

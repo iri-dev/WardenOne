@@ -101,6 +101,10 @@ function rewriteStoreRuntime(name, source) {
     text = text.replaceAll('rewind-drop', 'foldout-drop');
   } else if (name === 'popup-settings-search.js') {
     text = text.replaceAll('rewind-drop', 'foldout-drop');
+  } else if (name === 'settings.js' || name === 'settings-data.js') {
+    /* The Settings page keeps Twitch Rewind's switches and its length in one marked block per file
+       (settings-data.js's is written by tools/build-settings-data.js); the page folds in whatever is left. */
+    text = stripMarked(text, '/* STORE-OMIT-TWITCH-BEGIN */\n', '/* STORE-OMIT-TWITCH-END */\n', name);
   } else if (name === 'popup.html') {
     text = stripMarked(text, '<!-- STORE-OMIT-TWITCH-BEGIN -->\n', '<!-- STORE-OMIT-TWITCH-END -->\n', name);
     text = text.replaceAll('rewind-drop', 'foldout-drop').replaceAll('rewind-caret', 'foldout-caret');
@@ -119,7 +123,7 @@ function rewriteStoreRuntime(name, source) {
   return text;
 }
 
-const STORE_REWRITE_FILES = ['background.js', 'popup.js', 'popup-settings-search.js', 'popup.html', 'permissions.html', 'eyeshield.js', 'PRIVACY.md'];
+const STORE_REWRITE_FILES = ['background.js', 'popup.js', 'popup-settings-search.js', 'popup.html', 'permissions.html', 'eyeshield.js', 'PRIVACY.md', 'settings.js', 'settings-data.js'];
 const DEAD_STORE_REWIND = /twitch(?:Vod)?Rewind|twitch[-_]vod[-_]rewind|twitch[-_]rewind|Twitch (?:local )?rewind|ad-blocking and rewind|tr-minutes|data-wardenone-replay|rewind-drop/i;
 
 function omittedFilesFor(build, ids) {
@@ -402,5 +406,5 @@ function main() {
   console.log('  left out ' + (tree.removed.length - tree.omittedFiles.length) + ' non-runtime files; ' + tree.kept.length + ' files in the package');
 }
 
-module.exports = { loadProfile, storeOmitted, rewriteProfile, rewriteManifest, referencedFiles, buildStoreTree, writeZip, featureTable, renderDoc, popupSections, defaultConfigKeys, NON_RUNTIME };
+module.exports = { loadProfile, storeOmitted, rewriteProfile, rewriteManifest, rewriteStoreRuntime, referencedFiles, buildStoreTree, writeZip, featureTable, renderDoc, popupSections, defaultConfigKeys, NON_RUNTIME, DEAD_STORE_REWIND };
 if (require.main === module) main();

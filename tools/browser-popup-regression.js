@@ -58,6 +58,167 @@ async function run() {
     }
 
     await openPopup();
+    const dashboardState = await value(`(() => {
+      const base = { host: 'youtube.com', web: true, since: Date.now(), total: 0,
+        cats: Object.fromEntries(SITE_DASH_CATEGORIES.map(c => [c.id, 0])), noticed: 0,
+        net: { available: true, sources: [] }, events: [], tallies: [], typeCounts: {},
+        recent: { day: {}, week: {} }, retained: { total: 0 } };
+      renderSiteDashboard(base);
+      const zero = {
+        label: document.getElementById('site-dash-label').textContent,
+        categoriesHidden: getComputedStyle(document.getElementById('site-dash-cats')).display === 'none',
+        sourcesHidden: getComputedStyle(document.getElementById('site-dash-sources')).display === 'none',
+        protections: document.querySelectorAll('#site-dash-protections .site-dash-check').length,
+        note: document.getElementById('site-dash-note').textContent,
+      };
+      renderSiteDashboard({ ...base, total: 3, cats: { ...base.cats, trackers: 2, ads: 1 },
+        net: { available: true, sources: [{ name: 'Tracker list', count: 2 }, { name: 'AdShield', count: 1 }] } });
+      const active = {
+        categories: document.querySelectorAll('#site-dash-cats .site-dash-line').length,
+        sources: [...document.querySelectorAll('#site-dash-sources .site-dash-line')].map(el => el.textContent),
+        logger: document.getElementById('site-dash-logger').textContent,
+      };
+      renderSiteDashboard(base);
+      return { zero, active };
+    })()`);
+    assert.equal(dashboardState.zero.label, 'no WardenOne actions recorded');
+    assert(dashboardState.zero.categoriesHidden && dashboardState.zero.sourcesHidden,
+      'zero activity must not become rows of zero counts');
+    assert(dashboardState.zero.protections > 0, 'zero activity should still show protection status');
+    assert.match(dashboardState.zero.note, /does not say the page had nothing to block/);
+    assert.equal(dashboardState.active.categories, 2);
+    assert.deepEqual(dashboardState.active.sources, ['Tracker list2', 'AdShield1']);
+    assert.equal(dashboardState.active.logger, 'Inspect new requests');
+    if (process.env.WARDENONE_DASHBOARD_SCREENSHOT) {
+      await value("document.getElementById('site-dash').hidden = false; document.body.classList.add('wo-site-view'); scrollTo(0, 0)");
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 348, height: 800, deviceScaleFactor: 1, mobile: false }, page.sessionId);
+      await sleep(300);
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'png', clip: { x: 0, y: 0, width: 348, height: 1000, scale: 1 }, captureBeyondViewport: true,
+      }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_DASHBOARD_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+      await value("document.body.classList.remove('wo-site-view'); document.getElementById('site-dash').hidden = true");
+      await cdp.send('Emulation.clearDeviceMetricsOverride', {}, page.sessionId);
+    }
+    await value("document.getElementById('arrange-open').click()");
+    const initialArrangeOrder = await value("[...document.querySelectorAll('#arrange-list .arrange-item')].map(el => el.dataset.id)");
+    assert(initialArrangeOrder.length > 2, 'arrange view should list sections');
+    await value("document.querySelector('#arrange-list .arrange-item .arrange-move[data-dir=\"1\"]').click()");
+    const arrowOrder = await value("[...document.querySelectorAll('#arrange-list .arrange-item')].map(el => el.dataset.id)");
+    assert.deepEqual(arrowOrder.slice(0, 2), initialArrangeOrder.slice(0, 2).reverse(),
+      'the down arrow still moves one section');
+    await value(`document.querySelector('#arrange-list .arrange-item[data-id=${JSON.stringify(initialArrangeOrder[0])}] .arrange-move[data-dir="-1"]').click()`);
+    const rowPoints = await value(`(() => {
+      const rows = [...document.querySelectorAll('#arrange-list .arrange-item')];
+      const name = rows[0].querySelector('.arrange-name').getBoundingClientRect();
+      const next = rows[1].getBoundingClientRect();
+      return { x: Math.round(name.left + name.width / 2), from: Math.round(name.top + name.height / 2), to: Math.round(next.bottom - 5) };
+    })()`);
+    await cdp.send('Page.bringToFront', {}, page.sessionId);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rowPoints.x, y: rowPoints.from, button: 'left', buttons: 1, clickCount: 1 }, page.sessionId);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowPoints.x, y: rowPoints.to, button: 'left', buttons: 1 }, page.sessionId);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rowPoints.x, y: rowPoints.to, button: 'left', buttons: 0, clickCount: 1 }, page.sessionId);
+    await until(`document.querySelector('#arrange-list .arrange-item').dataset.id === ${JSON.stringify(initialArrangeOrder[1])}`,
+      'immediate row drag to reorder');
+    await value("document.getElementById('arrange-reset').click()");
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 }, page.sessionId);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: rowPoints.x, y: rowPoints.from, id: 1 }] }, page.sessionId);
+    await sleep(140);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: rowPoints.x, y: rowPoints.to, id: 1 }] }, page.sessionId);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, page.sessionId);
+    await until(`document.querySelector('#arrange-list .arrange-item').dataset.id === ${JSON.stringify(initialArrangeOrder[1])}`,
+      'held touch drag to reorder');
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }, page.sessionId);
+    await value("document.getElementById('arrange-reset').click(); document.getElementById('arrange-done').click()");
+    const cardGeometry = await value(`(() => {
+      const section = document.getElementById('site-card');
+      const stats = document.getElementById('site-card-stats');
+      const caption = document.getElementById('site-card-caption');
+      const fold = document.getElementById('site-card-fold');
+      section.hidden = false;
+      section.dataset.layout = 'B';
+      stats.hidden = false;
+      caption.hidden = false;
+      caption.textContent = 'Recent site activity';
+      const expanded = section.getBoundingClientRect().height;
+      fold.click();
+      const folded = section.getBoundingClientRect().height;
+      const countsHidden = getComputedStyle(stats).display === 'none'
+        && getComputedStyle(caption).display === 'none';
+      section.dataset.layout = 'A';
+      const row = section.querySelector('.site-card-top').getBoundingClientRect();
+      const toggle = fold.getBoundingClientRect();
+      const statusVisible = getComputedStyle(document.getElementById('site-card-state')).display !== 'none';
+      const shield = document.querySelector('.head .shield').getBoundingClientRect();
+      const header = document.querySelector('.head').getBoundingClientRect();
+      return { expanded, folded, countsHidden, statusVisible,
+        toggleOffset: Math.abs((toggle.top + toggle.bottom - row.top - row.bottom) / 2),
+        logoTop: shield.top - header.top };
+    })()`);
+    assert(cardGeometry.expanded - cardGeometry.folded > 40, 'folded counts card should lose its counts and caption');
+    assert(cardGeometry.countsHidden && cardGeometry.statusVisible, 'folded card should keep the site status');
+    assert(cardGeometry.toggleOffset < 2, 'fold toggle should be centered on the one-line row');
+    assert(Math.abs(cardGeometry.logoTop - 19) < 1, 'header logo should sit 19px from its top');
+    await until("new Promise(resolve => chrome.storage.local.get('wardenone_site_card_folded', data => resolve(data.wardenone_site_card_folded === true)))", 'saved site card fold');
+    await cdp.send('Target.closeTarget', { targetId: page.targetId });
+    await openPopup();
+    await until("document.getElementById('site-card').classList.contains('is-folded')", 'restored site card fold');
+    await value("document.getElementById('site-card-fold').click()");
+    const onboardingTarget = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/onboarding.html` });
+    const onboarding = await cdp.send('Target.attachToTarget', { targetId: onboardingTarget.targetId, flatten: true });
+    await cdp.send('Page.enable', {}, onboarding.sessionId);
+    await cdp.send('Runtime.enable', {}, onboarding.sessionId);
+    const onboardingValue = async (expression) => {
+      const result = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, onboarding.sessionId);
+      if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+      return result.result && result.result.value;
+    };
+    const onboardingReady = Date.now() + 10000;
+    while (!(await onboardingValue("document.readyState === 'complete' && !!document.querySelector('[data-site-card-layout=B]')"))) {
+      if (Date.now() > onboardingReady) throw new Error('Onboarding did not load');
+      await sleep(100);
+    }
+    await onboardingValue("document.querySelector('[data-go=\"3\"]').click()");
+    assert.equal(await onboardingValue('document.body.dataset.step'), 'explore', 'site card choice belongs on Explore');
+    if (process.env.WARDENONE_ONBOARDING_SCREENSHOT) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 800, deviceScaleFactor: 1, mobile: false }, onboarding.sessionId);
+      await sleep(600);
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, onboarding.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_ONBOARDING_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 800, deviceScaleFactor: 1, mobile: false }, onboarding.sessionId);
+    const narrow = await onboardingValue(`(() => {
+      const first = document.querySelector('[data-site-card-layout=A]').getBoundingClientRect();
+      const second = document.querySelector('[data-site-card-layout=B]').getBoundingClientRect();
+      return { overflow: document.documentElement.scrollWidth > innerWidth, stacked: second.top >= first.bottom };
+    })()`);
+    assert(!narrow.overflow && narrow.stacked, 'site card previews should stack without horizontal overflow on narrow windows');
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 800, deviceScaleFactor: 1, mobile: false }, onboarding.sessionId);
+    await onboardingValue("document.querySelector('[data-site-card-layout=B]').click()");
+    await until("document.querySelector('[data-site-card-layout=B]').getAttribute('aria-pressed') === 'true'", 'popup follows onboarding site card choice');
+    await cdp.send('Page.reload', {}, onboarding.sessionId);
+    const savedChoice = Date.now() + 10000;
+    while (!(await onboardingValue("document.readyState === 'complete' && document.querySelector('[data-site-card-layout=B]')?.getAttribute('aria-pressed') === 'true'"))) {
+      if (Date.now() > savedChoice) throw new Error('Onboarding did not restore the site card choice');
+      await sleep(100);
+    }
+    await onboardingValue("document.querySelector('[data-go=\"1\"]').click()");
+    assert.equal(await onboardingValue("!!document.querySelector('.pin-arrow')"), false,
+      'pin guidance should not guess the toolbar icon position');
+    const pinSettings = await onboardingValue("typeof chrome.action.getUserSettings === 'function' ? chrome.action.getUserSettings() : null");
+    if (pinSettings && typeof pinSettings.isOnToolbar === 'boolean') {
+      const pinReady = Date.now() + 10000;
+      while (!(await onboardingValue(`document.getElementById('pin-steps').hidden === ${pinSettings.isOnToolbar}`))) {
+        if (Date.now() > pinReady) throw new Error('Pin guidance did not follow the browser state');
+        await sleep(100);
+      }
+    }
+    if (process.env.WARDENONE_PIN_SCREENSHOT) {
+      await sleep(600);
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, onboarding.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_PIN_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    await cdp.send('Target.closeTarget', { targetId: onboardingTarget.targetId });
     const browserName = process.env.WARDENONE_BROWSER_NAME || 'Microsoft Edge';
     const expectedBrowser = { 'Microsoft Edge': 'Edge', 'Google Chrome': 'Chrome' }[browserName] || browserName;
     await until(`document.getElementById('ug-name').textContent === ${JSON.stringify(expectedBrowser)}`, 'Update Guardian browser detection');
@@ -165,13 +326,33 @@ async function run() {
     await value("scrollTo(0,0); restorePopupScrollPosition()");
     await until(`Math.abs(scrollY - ${savedY}) < 2`, 'saved popup scroll position');
     const restoredY = await value('scrollY');
+    /* Count the popup's own scroll writes. Comparing scrollY alone flaked on CI: sections such as
+       Script Shield and the extension alerts fill in from async data for seconds after load, and
+       when one grows above the viewport the browser's scroll anchoring moves scrollY to keep the
+       view still. That is not restoration pulling back, and no script writes it. */
+    await value(`(() => {
+      window.__woScrollWrites = 0;
+      const count = (target, name) => {
+        const original = target[name];
+        target[name] = function () { window.__woScrollWrites++; return original.apply(this, arguments); };
+      };
+      for (const name of ['scrollTo', 'scroll', 'scrollBy']) { count(window, name); count(Element.prototype, name); }
+      count(Element.prototype, 'scrollIntoView');
+      const top = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+      Object.defineProperty(Element.prototype, 'scrollTop', {
+        configurable: true, get: top.get, set(v) { window.__woScrollWrites++; top.set.call(this, v); },
+      });
+      return true;
+    })()`);
     const wheelDelta = maxScroll - restoredY >= restoredY ? 420 : -420;
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 300, deltaX: 0, deltaY: wheelDelta }, page.sessionId);
-    /* The wheel lands asynchronously; compare from where it landed, not from a fixed delay. */
+    /* The wheel lands asynchronously; count from where it landed, not from a fixed delay. */
     await until(`scrollY !== ${restoredY}`, 'the wheel scroll to land');
-    const userScrollY = await value('scrollY');
+    const writesAtLanding = await value('window.__woScrollWrites');
     await sleep(600);
-    assert(Math.abs((await value('scrollY')) - userScrollY) < 5, 'restoration must not pull against user scrolling');
+    const writesAfter = await value('window.__woScrollWrites');
+    assert.equal(writesAfter, writesAtLanding,
+      `restoration must not pull against user scrolling: the popup scrolled itself ${writesAfter - writesAtLanding} time(s) after the wheel`);
     console.log('[ok] real popup search, health, diagnostics, updates, scroll, reopen and master-switch checks passed');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }

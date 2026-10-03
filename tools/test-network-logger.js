@@ -128,6 +128,7 @@ check('a block is claimed only for ERR_BLOCKED_BY_CLIENT',
   'a DNS failure reported as "WardenOne blocked this" would send people hunting a rule that does not exist');
 
 /* ---- 4. rule attribution is exact, and honest when it cannot be --------- */
+let staticRulesCheck = null;
 const sourceRegion = region('let __logRuleBases = null;', '/* Anything that could be a credential');
 check('the attribution map is liftable', !!sourceRegion);
 if (sourceRegion) {
@@ -165,6 +166,45 @@ if (sourceRegion) {
     canBlock(bases.LOGIN_COMPAT_RULE_BASE + 1, '_dynamic') === false);
   check('a never-block allowance may not explain a block',
     canBlock(bases.NEVER_BLOCK_ALLOW_RULE_BASE + 1, '_dynamic') === false);
+
+  /* A dynamic range names its owner, not what each rule does: "A protection setting" holds a few
+     hundred allow rules beside its blocks. When the rule's real action is known, it wins. */
+  const optionId = bases.OPTION_RULE_BASE + 5;
+  check('an allow rule inside a blocking range may not explain a block',
+    canBlock(optionId, '_dynamic', new Map([['_dynamic:' + optionId, 'allow']])) === false,
+    'every request such a rule let through was counted as a block');
+  check('a block rule there still may', canBlock(optionId, '_dynamic', new Map([['_dynamic:' + optionId, 'block']])) === true);
+  check('a session allow rule likewise may not',
+    canBlock(optionId, '_session', new Map([['_session:' + optionId, 'allowAllRequests']])) === false);
+  check('the poll reads the matched rules\' actions before attributing',
+    /const actions = await matchedRuleActions\(matched\);/.test(region('async function logPollMatchedRules(', 'function logAttach()')));
+
+  /* A static ruleset is not all blocks. rules.json, the IP-logger list, carries allow rules --
+     one lets github.com's own requests through -- and on GitHub every page request matched it,
+     so the Site Dashboard counted hundreds of "IP-logger blocks". The real loader, run against
+     the shipped files. */
+  staticRulesCheck = (async () => {
+    const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+    box2.chrome = { runtime: { getManifest: () => manifest, getURL: (p) => p } };
+    box2.fetch = async (p) => ({ json: async () => JSON.parse(fs.readFileSync(p, 'utf8')) });
+    await vm.runInContext('loadStaticNonStoppingRules()', box2);
+    const grabbers = JSON.parse(fs.readFileSync('rules.json', 'utf8'));
+    const githubAllow = grabbers.find((r) => r.action.type === 'allow'
+      && (r.condition.initiatorDomains || []).includes('github.com'));
+    const grabberBlock = grabbers.find((r) => r.action.type === 'block');
+    const exception = JSON.parse(fs.readFileSync('rules-adshield.json', 'utf8'))
+      .find((r) => r.action.type === 'allow' || r.action.type === 'allowAllRequests');
+    const spotifyRedirect = JSON.parse(fs.readFileSync('rules-spotify-media.json', 'utf8'))
+      .find((r) => r.action.type === 'redirect');
+    check('GitHub\'s own allowance in the IP-logger list may not explain a block',
+      !!githubAllow && canBlock(githubAllow.id, 'grabbers') === false,
+      'every request a GitHub page made matched it, and was counted as an IP-logger block');
+    check('an IP-logger block still may', !!grabberBlock && canBlock(grabberBlock.id, 'grabbers') === true);
+    check('an AdShield exception may not explain a block',
+      !!exception && canBlock(exception.id, 'adshield_easylist') === false);
+    check('a Spotify ad-clip redirect counts as stopping a request',
+      !!spotifyRedirect && canBlock(spotifyRedirect.id, 'spotify_media') === true);
+  })();
 }
 
 /* Chrome reports matched rules to a PACKAGED build too: getMatchedRules is gated on a
@@ -185,7 +225,7 @@ check('the poll runs only when the exact feed is missing',
 check('the poll timer is cleared when the last logger closes',
   /clearInterval\(LOG_MATCH_TIMER\)/.test(BG));
 check('the poll asks whether the rule could block before naming a row',
-  /logRuleCanBlock\(rule\.ruleId, rule\.rulesetId\)[\s\S]{0,120}logSoleBlockedNear\(/
+  /logRuleCanBlock\(rule\.ruleId, rule\.rulesetId, actions\)[\s\S]{0,120}logSoleBlockedNear\(/
     .test(region('async function logPollMatchedRules(', 'function logAttach()')),
   'a correct blocking check that nothing calls is the same as not having one');
 check('the matched-list tally dies with the buffer',
@@ -297,8 +337,12 @@ check('rows merge by id rather than duplicating',
   /const seen = BY_ID\.get\(e\.id\);/.test(JS),
   'a request is reported twice -- when it starts and when it settles');
 
-if (failed) {
-  console.error('network logger: ' + failed + ' failed');
-  process.exit(1);
-}
-console.log('network logger: all checks passed');
+Promise.resolve(staticRulesCheck).catch((error) => {
+  check('the static-rule loader ran', false, error && error.message);
+}).then(() => {
+  if (failed) {
+    console.error('network logger: ' + failed + ' failed');
+    process.exit(1);
+  }
+  console.log('network logger: all checks passed');
+});

@@ -198,7 +198,7 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
     check('the count reported is a count of switches, named so', r.configuredShields === 99 && /configuredShields/.test(DECISION) && !/activeShields/.test(DECISION));
   }
   /* The failed state must become a top-level warning in the builder itself. */
-  check('a failed page is raised as a top-level setup warning', /if \(tabEvidence\.state === 'failed'\) addIssue\('warn', tabEvidence\.text, true\);/.test(BG));
+  check('a failed page is raised as a top-level setup warning', /if \(tabEvidence\.state === 'failed'\) addIssue\('warn', tabEvidence\.text, true(?:, \{ fix: '[a-z:]+' \})?\);/.test(BG));
   check('and no other evidence state adds an issue', (BG.match(/tabEvidence\.state === '[a-z]+'\) addIssue/g) || []).length === 1);
 
   /* ---- 3. the popup: the count is labelled as switches, the page line is shown -------- */

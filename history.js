@@ -40,6 +40,7 @@ const LABELS = {
   warned_redirect_param: 'Redirecting link',
   stripped_link_ping: 'Click-tracking beacon removed',
   cleaned_history_url: 'Tracking added to the address, removed',
+  cleaned_copied_link: 'Tracking removed from a link you copied',
   purged_bounce_storage: 'Redirect tracker’s leftovers cleared',
   warned_logger_api: 'Possible tracker request',
   warned_abuseipdb_server: 'Suspicious IP server',
@@ -558,6 +559,44 @@ function render(hist) {
 // write, on start and daily; this page applies the same line when it reads, so an entry past it is
 // never shown in the gap before the worker's next prune.
 const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/* Opened from the popup's site dashboard as history.html#site=example.com: the timeline shows that
+   one site, says so, and links back to everything. Hosts are compared the way the dashboard counts
+   them (no www.), and the log's bare host/path entries are read as https. */
+function activitySiteFilter() {
+  const m = /(?:^#|&)site=([^&]+)/.exec(location.hash || '');
+  if (!m) return '';
+  try { return decodeURIComponent(m[1]).replace(/^www\./, '').toLowerCase(); } catch (_) { return ''; }
+}
+function activityEntryHost(u) {
+  const raw = String(u || '').trim();
+  if (!raw) return '';
+  const full = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : 'https://' + raw;
+  try { return new URL(full).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) { return ''; }
+}
+function paintActivitySiteFilter(site, shown) {
+  let bar = document.getElementById('site-filter');
+  if (!site) { if (bar) bar.remove(); return; }
+  const rows = document.getElementById('rows');
+  if (!bar && rows && rows.parentNode) {
+    bar = document.createElement('div');
+    bar.id = 'site-filter';
+    bar.className = 'panel-note';
+    rows.parentNode.insertBefore(bar, rows);
+  }
+  if (!bar) return;
+  bar.textContent = '';
+  bar.appendChild(document.createTextNode('Showing ' + shown + ' event' + (shown === 1 ? '' : 's') + ' for '));
+  const name = document.createElement('strong');
+  name.textContent = site;
+  bar.appendChild(name);
+  bar.appendChild(document.createTextNode(' only. '));
+  const all = document.createElement('a');
+  all.href = '#activity';
+  all.textContent = 'Show everything';
+  bar.appendChild(all);
+}
+
 function load() {
   chrome.storage.local.get('wardenone_history', (x) => {
     // A truthy non-array reached render() and threw on forEach, so one corrupt stored value took
@@ -565,8 +604,18 @@ function load() {
     // page's job is to stay usable, and the writer rebuilds the array on its next flush.
     const raw = x && x.wardenone_history;
     const live = (Array.isArray(raw) ? raw : []).filter((e) => Date.now() - Number(e && e.at) <= HISTORY_RETENTION_MS);
-    render(live);
+    const site = activitySiteFilter();
+    const shown = site ? live.filter((e) => activityEntryHost(e && e.url) === site) : live;
+    paintActivitySiteFilter(site, shown.length);
+    render(shown);
   });
+}
+window.addEventListener('hashchange', load);
+if (activitySiteFilter()) {
+  window.addEventListener('load', () => {
+    const section = document.getElementById('activity');
+    if (section) section.scrollIntoView({ block: 'start' });
+  }, { once: true });
 }
 
 function checkedLocalSet(obj, done) {
