@@ -92,8 +92,12 @@ for (const g of GUARDS) {
   } else {
     check(g.file + ': guard compares a version',
       src.includes('if (window.' + g.flag + ' === ' + v + ')'));
-    check(g.file + ': older copy is disposed before installing',
-      new RegExp('if \\(window\\.' + g.flag + '\\) \\{[\\s\\S]{0,160}window\\.' + g.dispose + '\\(\\)').test(src));
+    // The two Twitch guards call the disposer they checked for the release mark, and a throw
+    // from it keeps them out; the rest call the published dispose directly.
+    check(g.file + ': older copy is disposed before installing', g.releaseMark
+      ? new RegExp('if \\(window\\.' + g.flag + '\\) \\{\\s*const previous = window\\.' + g.dispose + ';[\\s\\S]{0,120}' +
+        'try \\{ previous\\(\\); \\} catch \\(_\\) \\{ return; \\}').test(src)
+      : new RegExp('if \\(window\\.' + g.flag + '\\) \\{[\\s\\S]{0,160}window\\.' + g.dispose + '\\(\\)').test(src));
     check(g.file + ': no bare-truthiness early return survives',
       !new RegExp('if \\(window\\.' + g.flag + '\\) return;').test(src));
   }
@@ -371,22 +375,37 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
       ['a stale flag reinstalls and disposes the old copy', 'wo-stale', true, true],
       ['an unset flag installs cleanly', undefined, true, false],
     ].concat(g.releaseMark
-      ? [['a stale copy that cannot release its holdings is left in charge, undisposed', 'wo-stale', false, false, 'unmarked']]
+      ? [
+        ['a stale copy that cannot release its holdings is left in charge, undisposed', 'wo-stale', false, false, 'unmarked'],
+        ['a marked disposer that throws keeps the newer copy out', 'wo-stale', false, true, 'throws'],
+        ['the disposer called is the one checked, even if the global changes in between', 'wo-stale', true, true, 'swapped'],
+      ]
       : []);
   for (const [label, flagValue, expectRan, expectDisposed, variant] of cases) {
     const win = {};
     let disposed = false;
+    let swappedCalled = false;
     if (flagValue !== undefined) win[g.flag] = flagValue;
-    win[g.dispose] = () => { disposed = true; };
-    if (g.releaseMark && variant !== 'unmarked') win[g.dispose].__woReleases = true;
+    const checked = () => { disposed = true; if (variant === 'throws') throw new Error('teardown failed'); };
+    if (g.releaseMark && variant !== 'unmarked') checked.__woReleases = true;
+    if (variant === 'swapped') {
+      // A page-visible global can hand back something else on its next read.
+      const other = () => { swappedCalled = true; };
+      other.__woReleases = true;
+      let reads = 0;
+      Object.defineProperty(win, g.dispose, { configurable: true, get: () => (reads++ ? other : checked) });
+    } else {
+      win[g.dispose] = checked;
+    }
     const sandbox = { window: win, top: win };
     sandbox.window.top = g.topFrameOnly ? win : win;
     vm.createContext(sandbox);
     vm.runInContext(decision, sandbox, { filename: g.file + ':guard-decision' });
     const ran = vm.runInContext('__ran', sandbox);
     check(g.file + ': ' + label,
-      ran === expectRan && disposed === expectDisposed,
-      'ran=' + ran + ' (want ' + expectRan + ') disposed=' + disposed + ' (want ' + expectDisposed + ')');
+      ran === expectRan && disposed === expectDisposed && !swappedCalled,
+      'ran=' + ran + ' (want ' + expectRan + ') disposed=' + disposed + ' (want ' + expectDisposed + ')' +
+      (swappedCalled ? ' and a disposer that was never checked ran' : ''));
   }
 }
 

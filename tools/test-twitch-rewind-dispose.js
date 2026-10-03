@@ -480,6 +480,28 @@ test('a newer copy leaves an older one that cannot release its recorder in charg
   }
 });
 
+/* A disposer can carry the mark and still fail. Whatever it did not release may still be
+   recording, so the newer copy must not start a second recorder beside it. */
+test('a marked disposer that throws keeps the newer copy out', () => {
+  const page = createPage();
+  page.load(SOURCE);
+  const recorder = page.recording()[0];
+  assert(page.recording().length === 1, 'fixture: Rewind did not start a recorder');
+  let attempts = 0;
+  const failing = () => { attempts++; throw new Error('teardown failed'); };
+  Object.defineProperty(failing, '__woReleases', { value: true });
+  page.window.__wardenOneTwitchRewindDispose = failing;
+
+  page.load(SOURCE, '999.0.0-replacement');
+  assert(attempts === 1, 'the newer copy did not try the marked disposer exactly once');
+  assert(page.window.__wardenOneTwitchRewindReady !== '999.0.0-replacement', 'the newer copy installed after a failed teardown');
+  const running = page.recording();
+  assert(running.length === 1 && running[0] === recorder, 'the page does not hold exactly one recorder, the running copy\'s');
+  for (const id of ['wardenone-twitch-rewind', 'wardenone-twitch-playback-style']) {
+    assert(page.byId(id).length === 1, 'the page holds ' + page.byId(id).length + ' copies of #' + id);
+  }
+});
+
 let failed = 0;
 for (const item of tests) {
   try {

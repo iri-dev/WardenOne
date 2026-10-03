@@ -84,12 +84,14 @@
      the browser's own functions in a closure, and once their listeners were released those hooks
      went on answering ad requests and Low Latency whatever the switches said. Such a copy is left
      in charge, still listening to settings, until the tab reloads. Stacking on it looked like a
-     replacement while the old hooks still decided. */
+     replacement while the old hooks still decided. A marked disposer that throws is treated the
+     same way: whatever it failed to release is still live, so this copy stays out. The function
+     called is the one checked, not the page-visible global read a second time. */
   if (window.__wardenOneTwitchAdblockReady === VERSION) return;
   if (window.__wardenOneTwitchAdblockReady) {
     const previous = window.__wardenOneTwitchAdblockDispose;
     if (typeof previous !== 'function' || previous.__woReleases !== true) return;
-    try { window.__wardenOneTwitchAdblockDispose(); } catch (_) {}
+    try { previous(); } catch (_) { return; }
   }
   window.__wardenOneTwitchAdblockReady = VERSION;
 
