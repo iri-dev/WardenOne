@@ -517,10 +517,13 @@ function renderPrefs() {
   $('pref-preview').disabled = !s.soundEnabled;
 }
 
+/* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept. */
 async function save() {
-  const stored = await storageGet('wardenone_config');
-  const config = (stored.wardenone_config && typeof stored.wardenone_config === 'object') ? stored.wardenone_config : {};
-  await storageSet({ wardenone_config: Object.assign({}, config, { notificationSettings: NC.settings }) });
+  await withConfigLock(async () => {
+    const stored = await storageGet('wardenone_config');
+    const config = (stored.wardenone_config && typeof stored.wardenone_config === 'object') ? stored.wardenone_config : {};
+    await storageSet({ wardenone_config: Object.assign({}, config, { notificationSettings: NC.settings }) });
+  });
 }
 
 /* The page never writes the notification store (M47). It asks the worker, which owns the store,

@@ -35,14 +35,20 @@ const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'u
 let passed = 0;
 let failed = 0;
 
+/* A test may return a promise; the summary waits for every one. */
+const pending = [];
 function test(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log('[ok] ' + name);
-  } catch (error) {
+  const pass = () => { passed++; console.log('[ok] ' + name); };
+  const fail = (error) => {
     failed++;
     console.error('[fail] ' + name + ': ' + (error && error.message ? error.message : error));
+  };
+  try {
+    const out = fn();
+    if (out && typeof out.then === 'function') pending.push(out.then(pass, fail));
+    else pass();
+  } catch (error) {
+    fail(error);
   }
 }
 
@@ -91,7 +97,7 @@ function readDefaults(source, marker) {
   return vm.runInNewContext('(' + objectLiteralAfter(source, marker) + ')', Object.create(null));
 }
 
-function runInstallScenario(initialConfig, reason) {
+async function runInstallScenario(initialConfig, reason) {
   const start = BACKGROUND.indexOf('chrome.runtime.onInstalled.addListener');
   const end = BACKGROUND.indexOf('chrome.runtime.onStartup', start);
   if (start < 0 || end < 0) throw new Error('could not isolate onInstalled handler');
@@ -115,6 +121,7 @@ function runInstallScenario(initialConfig, reason) {
       },
       tabs: { create() {} },
     },
+    localGet: async () => (stored === undefined ? {} : { wardenone_config: stored }),
     localSet(value) {
       writes.push(value);
       if (value && value.wardenone_config) stored = value.wardenone_config;
@@ -128,9 +135,11 @@ function runInstallScenario(initialConfig, reason) {
     refreshExtensionState() {},
     Object,
   };
-  vm.runInNewContext(BACKGROUND.slice(start, end), sandbox, { filename: 'background.js:onInstalled' });
+  /* The handler writes through the worker's config write path, which is asynchronous. */
+  vm.runInNewContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ + BACKGROUND.slice(start, end), sandbox, { filename: 'background.js:onInstalled' });
   assert(typeof installedHandler === 'function', 'onInstalled listener was not registered');
   installedHandler({ reason: reason || 'update' });
+  await new Promise((resolve) => setImmediate(resolve));
   return { stored, writes };
 }
 
@@ -340,11 +349,11 @@ test('strict popup shield is on in every fresh-install/runtime default', () => {
   assert(readDefaults(CONTENT, 'DEFAULTS=').strictPopupShield === true, 'content runtime default is not on');
 });
 
-test('fresh install enables strict shield but an explicitly stored false survives update', () => {
-  const fresh = runInstallScenario(undefined, 'install');
+test('fresh install enables strict shield but an explicitly stored false survives update', async () => {
+  const fresh = await runInstallScenario(undefined, 'install');
   assert(fresh.stored && fresh.stored.strictPopupShield === true, 'fresh install did not save strictPopupShield=true');
 
-  const existing = runInstallScenario({ strictPopupShield: false, blockForcedPopups: true }, 'update');
+  const existing = await runInstallScenario({ strictPopupShield: false, blockForcedPopups: true }, 'update');
   assert(existing.stored && existing.stored.strictPopupShield === false, 'update overwrote the explicit false setting');
 });
 
@@ -698,9 +707,10 @@ test('page code cannot replace or unregister the protected core popup policy', (
   assert(popup && popup.closed === true && h.state.opened.length === 0, 'page code replaced the core popup policy');
 });
 
-if (failed) {
-  console.error('[fail] script/ad popup shield: ' + failed + ' failed, ' + passed + ' passed');
-  process.exit(1);
-}
-
-console.log('[ok] script/ad popup shield checks passed (' + passed + ')');
+Promise.all(pending).then(() => {
+  if (failed) {
+    console.error('[fail] script/ad popup shield: ' + failed + ' failed, ' + passed + ' passed');
+    process.exit(1);
+  }
+  console.log('[ok] script/ad popup shield checks passed (' + passed + ')');
+});

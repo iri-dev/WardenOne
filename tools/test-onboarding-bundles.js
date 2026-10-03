@@ -49,8 +49,8 @@ HARDENED.forEach((k) => ok('recommended leaves hardened untouched: ' + k, !(k in
 // --- handler wiring ---
 ok('recommended handler present', src.includes("msg.kind === 'apply-onboarding-recommended'"));
 ok('max-privacy handler present', src.includes("msg.kind === 'apply-onboarding-max-privacy'"));
-ok('recommended handler uses shared constant (no inline drift)', src.includes('DEFAULT_CONFIG, current, ONBOARDING_RECOMMENDED'));
-ok('max handler uses shared constant', src.includes('DEFAULT_CONFIG, current, ONBOARDING_MAX_PRIVACY'));
+ok('recommended handler uses shared constant (no inline drift)', src.includes('DEFAULT_CONFIG, cfg, ONBOARDING_RECOMMENDED'));
+ok('max handler uses shared constant', src.includes('DEFAULT_CONFIG, cfg, ONBOARDING_MAX_PRIVACY'));
 
 // --- PI-06: onboarding is a page in the product, not a one-off --------------------------
 // It opened once on install and nothing linked to it again, so the Maximum privacy bundle could

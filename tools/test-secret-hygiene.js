@@ -148,7 +148,7 @@ check('the OpenPhish feed test takes no token, and no longer tells the reader on
       update migration deletes, by pattern, every secret-shaped field this build has no default
       for -- and leaves the keys the build does have alone. Driven for real: the shipped
       onInstalled handler runs against a scripted storage. */
-function runUpdate(initial) {
+async function runUpdate(initial) {
   const start = background.indexOf('chrome.runtime.onInstalled.addListener');
   const end = background.indexOf('chrome.runtime.onStartup', start);
   if (start < 0 || end < 0) return null;
@@ -165,37 +165,42 @@ function runUpdate(initial) {
       storage: { local: { get(_k, cb) { cb({ wardenone_config: stored }); } } },
       tabs: { create() {} },
     },
+    localGet: async () => ({ wardenone_config: stored }),
     localSet(value) { writes.push(value); if (value && value.wardenone_config) stored = value.wardenone_config; return resolved; },
     markBrowserSessionStart() {}, scheduleUpdates() {}, pruneStorageIfNeeded() { return resolved; },
     updateRemoteListsWithRetry() {}, applyScriptShieldRules() {}, refreshExtensionState() {},
   };
-  vm.runInNewContext(background.slice(start, end), sandbox, { filename: 'background.js:onInstalled' });
+  /* The handler writes through the worker's config write path, which is asynchronous. */
+  vm.runInNewContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ + background.slice(start, end), sandbox, { filename: 'background.js:onInstalled' });
   if (typeof handler !== 'function') return null;
   handler({ reason: 'update' });
+  await new Promise((resolve) => setImmediate(resolve));
   return { stored, writes };
 }
 /* A config every earlier migration has already touched, so the only reason to write is ours. */
 const settled = { __locationPrivacyV344Enabled: true, googleSearchResultCleanup: false, phishTank: true, phishTankKey: 'keep-me', openPhish: true };
+(async () => {
 {
-  const r = runUpdate(Object.assign({}, settled, { openPhishKey: 'pasted-once-never-read' }));
+  const r = await runUpdate(Object.assign({}, settled, { openPhishKey: 'pasted-once-never-read' }));
   check('the update handler could be driven', !!r);
   check('a stored OpenPhish token is deleted on update', !!r && !('openPhishKey' in r.stored), r && JSON.stringify(Object.keys(r.stored)));
   check('a key the build does use is left alone', !!r && r.stored.phishTankKey === 'keep-me' && r.stored.phishTank === true);
   check('the purge is written back to storage', !!r && r.writes.length === 1 && r.writes[0].wardenone_config && !('openPhishKey' in r.writes[0].wardenone_config));
 }
 {
-  const r = runUpdate(Object.assign({}, settled, { someFutureProviderKey: 'orphan', legitimateKey: 'x' }));
+  const r = await runUpdate(Object.assign({}, settled, { someFutureProviderKey: 'orphan', legitimateKey: 'x' }));
   check('the purge is by pattern: any secret-shaped field without a default goes',
     !!r && !('someFutureProviderKey' in r.stored) && !('legitimateKey' in r.stored), r && JSON.stringify(Object.keys(r.stored)));
 }
 {
-  const r = runUpdate(Object.assign({}, settled));
+  const r = await runUpdate(Object.assign({}, settled));
   check('a config with nothing to purge is not rewritten', !!r && r.writes.length === 0, r && r.writes.length + ' writes');
 }
 {
-  const r = runUpdate(Object.assign({}, settled, { openPhishKey: '' }));
+  const r = await runUpdate(Object.assign({}, settled, { openPhishKey: '' }));
   check('an empty leftover field is removed too', !!r && !('openPhishKey' in r.stored));
 }
 
 if (failed) { console.error('\n' + failed + ' failed'); process.exit(1); }
 console.log('\nsecret hygiene checks passed (' + keys.length + ' provider keys audited)');
+})().catch((error) => { console.error(error); process.exit(1); });

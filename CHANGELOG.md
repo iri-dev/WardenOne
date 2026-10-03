@@ -51,6 +51,10 @@
 
 ### Fixed
 
+- A setting changed at the same moment as another could be lost: a switch flipped in Settings
+  while the popup saved, or just as WardenOne remembered or muted a notification, was sometimes
+  undone by the other save. Changes to your settings are now saved one at a time, so both stay.
+  If your settings ever can't be read, the popup now says so instead of saving over them.
 - The Twitch ad blocker and Twitch Rewind now carry the extension's version. From this version
   on, if a newer copy is ever run in a tab that still holds an older one, the old copy lets go of
   everything it held (its network and player hooks, its page styles, Rewind's recorder and
