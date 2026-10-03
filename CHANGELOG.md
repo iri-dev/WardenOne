@@ -38,6 +38,10 @@
 
 ### Changed
 
+- University and school sites (.edu, .ac.uk and similar) now get WardenOne's page protections.
+  They used to skip them entirely so sign-in kept working; now phishing, skimmer, scam and
+  form-trap checks run there, and only the protections that can get in the way of signing in, a
+  class or an exam are paused. The Site Dashboard says which ones are paused there.
 - The Site Dashboard now shows only recorded activity categories, names the WardenOne rulesets
   that matched, and brings protection status forward when nothing was recorded. A live request
   logger link helps inspect new requests; zero counts no longer claim a page had nothing to block.
