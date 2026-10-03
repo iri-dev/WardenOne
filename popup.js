@@ -777,6 +777,7 @@ function load() {
     loadExtensionAlerts();
     loadStartupReport();
     renderProtectionHealth();
+    refreshSiteDashboard();
     restorePopupSearch(() => restoreAdvancedProvidersState(restorePopupScrollPosition));
   });
 }
@@ -2878,10 +2879,10 @@ renderListMeta();
 renderProtectionHealth();
 renderNotificationUnread();
 
+/* Its own page, not the options page: "Extension options" is Settings now. */
 $('open-activity').addEventListener('click', (e) => {
   e.preventDefault();
-  if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
-  else window.open(chrome.runtime.getURL('history.html'));
+  window.open(chrome.runtime.getURL('history.html'));
 });
 $('open-network').addEventListener('click', (e) => {
   e.preventDefault();
@@ -5466,3 +5467,1081 @@ if (permissionsLink) permissionsLink.addEventListener('click', (event) => {
     chrome.tabs.create({ url: chrome.runtime.getURL('permissions.html') });
   } catch (_) {}
 });
+
+/* ---- Site Dashboard ----------------------------------------------------------------------------
+   The current site as the popup's centre: a card under the master switch with what WardenOne
+   stopped on this page, and a view behind it with the detail. The numbers come from the worker
+   (site-dashboard: the network rules Chrome matched in this tab, and the Activity Centre's own log
+   cut to this site and this page load); the switch states come from this popup's config. Nothing
+   here changes a setting. */
+/* label: the dashboard's row. a / many: how the one-line card names one of them, or several. */
+const SITE_DASH_CATEGORIES = [
+  { id: 'trackers', label: 'Trackers', a: 'a tracker', many: 'trackers' },
+  { id: 'ads', label: 'Ads', a: 'an ad', many: 'ads' },
+  { id: 'popups', label: 'Pop-ups & redirects', a: 'a pop-up or redirect', many: 'pop-ups and redirects' },
+  { id: 'cleaned', label: 'Tracking cleaned from links', a: 'a tracking link', many: 'tracking links' },
+  { id: 'annoyances', label: 'Overlays & clutter removed', a: 'an overlay', many: 'overlays' },
+  { id: 'consent', label: 'Cookie banners rejected', a: 'a cookie banner', many: 'cookie banners' },
+  { id: 'security', label: 'Threats & risky requests', a: 'a threat', many: 'threats' },
+  /* A token-shaped value kept from leaving the page. On big sites that is often an ordinary
+     embedded-service call (the worker says so on the event), so it is never counted as a threat. */
+  { id: 'sensitive', label: 'Sensitive requests protected', a: 'a sensitive request', many: 'sensitive requests' },
+  { id: 'privacy', label: 'Camera, mic & device requests', a: 'a device request', many: 'device requests' },
+  { id: 'yours', label: 'Your own rules', a: 'a request your rules block', many: 'requests your rules block' },
+  { id: 'other', label: 'Other protection rules', a: 'one other request', many: 'other requests' },
+];
+/* The card's layout, chosen under Interface: 'A' one row like Protection Health, 'B' trackers, ads
+   and other as three counts. A display preference, so it is kept on its own key rather than in
+   the protection config. */
+const SITE_CARD_LAYOUT_KEY = 'wardenone_site_card_layout';
+const SITE_CARD_FOLD_KEY = 'wardenone_site_card_folded';
+let siteCardLayout = 'A';
+/* The protections the engine pauses on YouTube so videos play (YT_COMPAT_PAUSED in
+   src/content.js). Only used to say "paused here" instead of "on". */
+const SITE_DASH_YT_PAUSED = new Set([
+  'removeOverlays', 'autoRejectConsent', 'blockAutoplay', 'blockAutoplayMedia', 'mediaShield', 'fullscreenGuard',
+  'lazyLoadMedia', 'throttleBackgroundTabs', 'blockGesturelessNav', 'blockForcedPopups', 'strictPopupShield',
+  'blockMetaRefresh', 'detectRedirectChains', 'backTrapGuard', 'oneOpenPerGesture', 'gateAdultSites',
+  'adultHeuristics', 'blockSupercookies', 'notificationAbuseGuard', 'antiClickjacking',
+]);
+const SITE_DASH_PROTECTIONS = [
+  { key: 'adShield', label: 'AdShield' },
+  { key: 'blockTrackers', label: 'Tracker blocking' },
+  { key: 'blockFingerprintScripts', label: 'Fingerprinting-script blocking' },
+  { key: 'blockMalwareSites', label: 'Malware & scam site blocking' },
+  { key: 'detectPhishing', label: 'Phishing detection' },
+  { key: 'blockForcedPopups', label: 'Pop-up & redirect guard' },
+  { key: 'blockThirdPartyCookies', label: 'Third-party cookie blocking' },
+  { key: 'stripTrackingParams', label: 'Link cleaning' },
+  { key: 'blockTokenExfil', label: 'Sign-in & token protection' },
+];
+const SITE_DASH_EVENT_LABELS = {
+  blocked_popup: 'Blocked a pop-up',
+  blocked_gestureless_nav: 'Stopped a redirect you didn’t click',
+  blocked_meta_refresh: 'Stopped an automatic redirect',
+  blocked_form_submit: 'Stopped a forced form submit',
+  blocked_redirect_chain: 'Stopped a redirect chain',
+  blocked_forced_redirect: 'Stopped the page sending you elsewhere',
+  blocked_frame_top_redirect: 'Stopped a frame redirecting the tab',
+  blocked_ad_auction_redirect: 'Stopped a forced ad click',
+  cleaned_history_url: 'Removed tracking from the address',
+  stripped_link_ping: 'Removed click-tracking from links',
+  cleaned_copied_link: 'Cleaned a link you copied',
+  consent_rejected: 'Rejected a cookie banner for you',
+  google_search_cleanup: 'Hid search clutter',
+  scriptlet_mutator_blocked: 'Stopped a script setting a cookie',
+  youtube_ads_removed: 'Removed ad breaks from YouTube’s player',
+  purged_bounce_storage: 'Cleared a redirect tracker’s leftovers',
+  cleaned_site_cookies: 'Cleared cookies after you left',
+  cleaned_site_storage: 'Cleared tracking IDs as you left',
+  blocked_overlay: 'Hid an overlay or nag',
+  blocked_confirm_bait: 'Removed a fake confirm box',
+  blocked_overlay_ad_frame: 'Removed a floating ad frame',
+  blocked_autoplay_media: 'Stopped autoplaying media',
+  blocked_hidden_media: 'Stopped hidden media',
+  blocked_tracker_request: 'Blocked a first-party tracker',
+  blocked_thirdparty_cookie: 'Blocked a third-party cookie',
+  blocked_token_exfil: 'Protected a sensitive request',
+  blocked_skimmer_exfil: 'Blocked card or password theft',
+  blocked_phishing: 'Blocked a phishing look-alike',
+  blocked_clipboard_hijack: 'Blocked a clipboard hijack',
+  blocked_cryptominer: 'Stopped a cryptominer',
+  blocked_grabber_fetch: 'Blocked an IP-grabber request',
+  blocked_grabber_xhr: 'Blocked an IP-grabber request',
+  blocked_grabber_beacon: 'Blocked an IP-grabber beacon',
+  blocked_grabber_pixel: 'Blocked a tracking pixel',
+  blocked_safe_browsing_link: 'Blocked a dangerous link',
+  blocked_safe_browsing_form: 'Blocked a dangerous form',
+  blocked_media_capture: 'Blocked camera or mic access',
+  blocked_screen_capture: 'Blocked screen capture',
+  detected_thirdparty_tracker: 'Noticed a third-party tracker',
+  detected_beacon: 'Noticed data sent in the background',
+  detected_download_gate: 'Noticed a download-gate ad',
+  warned_back_trap: 'Noticed a back-button trap',
+  warned_logger_api: 'Noticed a possible tracker request',
+  warned_shortener: 'Noticed a shortened link',
+  warned_redirect_param: 'Noticed a redirecting link',
+  warned_service_worker: 'Noticed a service worker being installed',
+  warned_idle_watch: 'Noticed presence tracking',
+  warned_media_capture: 'Noticed a camera or mic request',
+  warned_phishing: 'Warned: possibly a fake or phishing site',
+  warned_insecure_login: 'Warned about an insecure sign-in',
+  warned_notification_bait: 'Warned about notification bait',
+  behavioral_risk: 'Site reputation warning',
+};
+let siteDashLast = null;
+/* Brave Shields runs before any extension's network rules: measured in Brave 154, it served its
+   own stand-ins for Google Analytics, Tag Manager, DoubleClick and AdSense and blocked the Facebook
+   pixel outright, so WardenOne's rules never saw a request to count. A low number there is true,
+   and the dashboard says why rather than leaving a bare zero. */
+let siteDashIsBrave = false;
+let siteDashScrollY = 0;
+let siteDashTimelineOpen = false;
+let siteDashRefreshTimer = 0;
+
+function siteDashIsYouTube(host) {
+  return /(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(String(host || ''));
+}
+
+/* Which bucket a logged page event counts in. '' leaves it out: tab housekeeping (sleeping,
+   tab limits) is logged against the tab's site but is not something done on the page. */
+function siteDashEventKind(type) {
+  const t = String(type || '');
+  if (/^(memory_|tab_limit_|forget_me|extension_change|search_junk|youtube_ad_diag|download_|reload_loop)/.test(t)) return '';
+  if (/^(warned_|detected_|proposed_|learned_|gated_|session_token_|login_thirdparty|skimmer_suspected|behavioral_risk)/.test(t)) return 'noticed';
+  // The site tally's routine actions (counted, never logged).
+  if (t === 'consent_rejected') return 'consent';
+  if (t === 'google_search_cleanup') return 'annoyances';
+  if (t === 'scriptlet_mutator_blocked') return 'trackers';
+  if (t === 'youtube_ads_removed') return 'ads';
+  if (/^(cleaned_|stripped_|purged_)/.test(t)) return 'cleaned';
+  if (/popup|redirect|gestureless_nav|meta_refresh|form_submit|frame_top|ad_auction/.test(t)) return 'popups';
+  if (/overlay|confirm_bait|autoplay|hidden_media/.test(t)) return 'annoyances';
+  if (/tracker|thirdparty_cookie|grabber_pixel|beacon|fingerprint|supercookie/.test(t)) return 'trackers';
+  if (/capture|webrtc|geolocation|camera|device_/.test(t)) return 'privacy';
+  if (/token_exfil/.test(t)) return 'sensitive';
+  if (/^blocked_/.test(t)) return 'security';
+  return '';
+}
+
+function siteDashSummarize(res) {
+  const cats = {};
+  SITE_DASH_CATEGORIES.forEach((c) => { cats[c.id] = 0; });
+  const net = (res && res.network) || {};
+  if (net.available) {
+    for (const key of Object.keys(net.byCategory || {})) cats[key] = (cats[key] || 0) + Number(net.byCategory[key] || 0);
+  }
+  let noticed = 0;
+  const typeCounts = (res.page && res.page.typeCounts) || {};
+  for (const type of Object.keys(typeCounts)) {
+    const kind = siteDashEventKind(type);
+    const n = Number(typeCounts[type]) || 0;
+    if (!kind) continue;
+    if (kind === 'noticed') noticed += n;
+    else cats[kind] = (cats[kind] || 0) + n;
+  }
+  const events = ((res.page && res.page.events) || [])
+    .map((e) => Object.assign({}, e, { kind: siteDashEventKind(e.type) }))
+    .filter((e) => e.kind);
+  const total = Object.keys(cats).reduce((sum, key) => sum + cats[key], 0);
+  return {
+    host: res.host || '',
+    web: !!res.web,
+    since: Number(res.since) || 0,
+    net,
+    cats,
+    events,
+    typeCounts,
+    tallies: (res.page && res.page.tallies) || [],
+    recent: res.recent || { day: {}, week: {} },
+    noticed,
+    total,
+    retained: res.retained || null,
+  };
+}
+
+function siteDashState(host) {
+  if (config.enabled === false) return { cls: 'is-off', text: 'Off', line: 'WardenOne is switched off everywhere.' };
+  if ((config.allowlist || []).includes(host)) return { cls: 'is-paused', text: 'Allowlisted', line: 'You allowlisted this site, so WardenOne steps back here.' };
+  const until = pausedUntilFor(host);
+  if (until) return { cls: 'is-paused', text: 'Paused', line: 'Paused here for another ' + describeRemaining(until - Date.now()) + '.' };
+  return { cls: '', text: 'Protected', line: '' };
+}
+
+/* What a protection is doing on this site, in the same order the engine decides it. */
+function siteDashProtectionState(key, host, state) {
+  if (state.cls === 'is-off') return { cls: 'is-off', text: 'WardenOne is off' };
+  if (state.cls === 'is-paused') return { cls: 'is-paused', text: state.text + ' here' };
+  if (config[key] === false) return { cls: 'is-off', text: 'Off in settings' };
+  const overrides = siteOverridesFor(host);
+  if (overrides && overrides[key] === false) {
+    return { cls: 'is-off', text: SITE_OVERRIDE_MIXED.has(key) ? 'Page part off on this site' : 'Off on this site' };
+  }
+  if (SITE_DASH_YT_PAUSED.has(key) && siteDashIsYouTube(host)) return { cls: 'is-paused', text: 'Paused here so videos play' };
+  return { cls: '', text: 'On' };
+}
+
+/* Why a page's count is lower than what was actually kept off it, when that is known. */
+function siteDashCountNotes(summary) {
+  const notes = [];
+  if (siteDashIsBrave) {
+    notes.push('Brave Shields may stop ads or trackers before WardenOne sees them. Its own counts are in the Shields panel.');
+  }
+  return notes;
+}
+
+// A no-break space keeps a number on the same line as the thing it counts.
+function siteDashCount(n, cat) {
+  return n === 1 ? cat.a : fmtCount(n) + ' ' + cat.many;
+}
+
+/* Layout A's detail line: the total, then the three biggest kinds -- or, for one kind, just that. */
+function siteDashDetailLine(summary, state) {
+  if (state.cls) return state.line;
+  if (!summary.total) {
+    if (siteDashIsBrave) return 'No WardenOne actions recorded · Brave Shields may block first';
+    return 'No WardenOne actions recorded';
+  }
+  const kinds = SITE_DASH_CATEGORIES.filter((c) => summary.cats[c.id] > 0)
+    .sort((a, b) => summary.cats[b.id] - summary.cats[a.id]);
+  if (kinds.length === 1) return 'Stopped ' + siteDashCount(summary.cats[kinds[0].id], kinds[0]);
+  // In a list, digits scan better than words: "5 trackers, 1 ad", not "5 trackers, an ad".
+  const named = kinds.slice(0, 3).map((c) => {
+    const n = summary.cats[c.id];
+    return fmtCount(n) + ' ' + (n === 1 ? c.a.replace(/^(?:an?|one) /, '') : c.many);
+  });
+  const rest = kinds.slice(3).reduce((sum, c) => sum + summary.cats[c.id], 0);
+  if (rest) named.push(fmtCount(rest) + ' more');
+  return fmtCount(summary.total) + ' actions · ' + named.join(', ');
+}
+
+function siteDashTime(at) {
+  try { return new Date(Number(at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  catch (_) { return ''; }
+}
+
+function siteDashEl(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined && text !== null) el.textContent = String(text);
+  return el;
+}
+
+function paintSiteCard(summary) {
+  const section = $('site-card');
+  if (!section) return;
+  section.hidden = false;
+  section.dataset.layout = siteCardLayout;
+  const button = $('site-card-open');
+  const host = $('site-card-host');
+  const status = $('site-card-state');
+  const stats = $('site-card-stats');
+  const caption = $('site-card-caption');
+  const icon = $('site-card-ico');
+  const detail = $('site-card-detail');
+  const layoutA = siteCardLayout === 'A';
+  /* A's one detail line takes what B puts in its caption. */
+  const say = (text) => {
+    if (layoutA) {
+      detail.textContent = text || '';
+      caption.hidden = true;
+      return;
+    }
+    caption.hidden = !text;
+    caption.textContent = text || '';
+  };
+  const setStat = (id, n) => {
+    const el = $(id);
+    el.textContent = fmtCount(n);
+    el.parentElement.classList.toggle('is-zero', !n);
+  };
+  if (!summary || summary.error || !summary.web) {
+    const failed = !summary || summary.error;
+    host.textContent = failed ? 'This site' : (summary.host ? 'Browser page' : 'No website open');
+    host.title = '';
+    status.className = 'site-card-status is-idle';
+    status.textContent = failed ? 'Unknown' : 'Not a website';
+    icon.className = 'site-card-ico is-idle';
+    stats.hidden = true;
+    say(failed ? 'Couldn’t read this page’s activity.' : 'WardenOne works on websites, not browser pages.');
+    button.disabled = true;
+    return;
+  }
+  const state = siteDashState(summary.host);
+  host.textContent = summary.host;
+  host.title = summary.host;
+  status.className = 'site-card-status' + (state.cls ? ' ' + state.cls : '');
+  status.textContent = state.text;
+  icon.className = 'site-card-ico' + (state.cls ? ' ' + state.cls : '');
+  button.disabled = false;
+  if (layoutA) {
+    stats.hidden = true;
+    say(siteDashDetailLine(summary, state));
+    button.setAttribute('aria-label', summary.host + ', ' + state.text + '. ' + detail.textContent + '. View site activity');
+    return;
+  }
+  stats.hidden = false;
+  /* Trackers and ads are the two everyone looks for; everything else WardenOne stopped here --
+     pop-ups, cleaned links, overlays, threats, sensitive requests -- is Other, and the dashboard
+     breaks it down. */
+  const trackers = summary.cats.trackers || 0;
+  const ads = summary.cats.ads || 0;
+  const other = Math.max(0, summary.total - trackers - ads);
+  setStat('site-stat-trackers', trackers);
+  setStat('site-stat-ads', ads);
+  setStat('site-stat-other', other);
+  let note = '';
+  if (state.cls) note = state.line;
+  else if (siteDashIsBrave && !summary.total) note = 'Brave Shields may have blocked things before WardenOne saw them.';
+  say(note);
+  button.disabled = false;
+  button.setAttribute('aria-label', summary.host + ', ' + state.text + ': ' + trackers + ' trackers, ' + ads + ' ads, '
+    + other + ' other stopped on this page. View site activity');
+}
+
+function renderSiteDashboard(summary) {
+  if (!summary || summary.error || !summary.web) return;
+  const host = summary.host;
+  const state = siteDashState(host);
+  $('site-dash-host').textContent = host;
+  $('site-dash-host').title = host;
+  const stateEl = $('site-dash-state');
+  stateEl.className = 'site-state' + (state.cls ? ' ' + state.cls : '');
+  stateEl.textContent = state.text;
+  $('site-dash-since').textContent = state.line
+    || (summary.since ? 'Counting since this tab loaded the site at ' + siteDashTime(summary.since) : 'The last ten minutes on this site');
+  $('site-dash-total').textContent = fmtCount(summary.total);
+  $('site-dash-label').textContent = summary.total ? 'WardenOne actions on this page' : 'no WardenOne actions recorded';
+
+  const note = $('site-dash-note');
+  const net = summary.net || {};
+  const notes = [];
+  if (!net.available) {
+    notes.push(net.reason === 'busy'
+      ? 'Chrome limits how often extensions can read network blocks, so request counts are missing for a minute. Page actions are still counted.'
+      : 'This browser doesn’t report network blocks to extensions, so only page actions are counted.');
+  }
+  if (!summary.total) notes.push('A zero means WardenOne recorded no block or page action on this load; it does not say the page had nothing to block.');
+  notes.push(...siteDashCountNotes(summary));
+  note.hidden = !notes.length;
+  note.textContent = notes.join(' ');
+
+  const cats = $('site-dash-cats');
+  cats.textContent = '';
+  SITE_DASH_CATEGORIES.forEach((c) => {
+    const n = summary.cats[c.id] || 0;
+    if (!n) return;
+    const line = siteDashEl('div', 'site-dash-line');
+    line.appendChild(siteDashEl('span', '', c.label));
+    line.appendChild(siteDashEl('b', '', fmtCount(n)));
+    cats.appendChild(line);
+  });
+  if (summary.noticed) {
+    const line = siteDashEl('div', 'site-dash-line');
+    line.appendChild(siteDashEl('span', '', 'Warnings and things noticed'));
+    line.appendChild(siteDashEl('b', '', fmtCount(summary.noticed)));
+    cats.appendChild(line);
+  }
+  $('site-dash-cats-title').hidden = !cats.children.length;
+  cats.hidden = !cats.children.length;
+
+  renderSiteDashSources(summary);
+  renderSiteDashTimeline(summary);
+  renderSiteDashRecent(summary);
+  renderSiteDashChecks(summary, state);
+
+  const listed = (config.allowlist || []).includes(host);
+  const allow = $('site-dash-allowlist');
+  if (allow) allow.textContent = listed ? 'Take off' : 'Allowlist';
+  const allowDesc = $('site-dash-allowlist-desc');
+  if (allowDesc) {
+    allowDesc.textContent = listed
+      ? 'WardenOne is passive on ' + host + '. Take it off the list to protect this site again.'
+      : 'WardenOne stays passive here until you take it off the list. For a site you trust completely.';
+  }
+
+  const prot = $('site-dash-protections');
+  prot.textContent = '';
+  SITE_DASH_PROTECTIONS.forEach((p) => {
+    const s = siteDashProtectionState(p.key, host, state);
+    const row = siteDashEl('div', 'site-dash-check' + (s.cls ? ' ' + s.cls : ''));
+    row.appendChild(siteDashEl('i', '', s.cls ? '–' : '✓'));
+    const text = siteDashEl('span', '', p.label);
+    text.appendChild(siteDashEl('small', '', s.text));
+    row.appendChild(text);
+    prot.appendChild(row);
+  });
+
+  const foot = $('site-dash-foot');
+  const retained = summary.retained;
+  foot.textContent = 'Counts WardenOne’s matched blocking rules and logged page actions. Exact request addresses are not available from the browser’s matched-rule count. '
+    + 'Hidden page elements and Twitch’s in-player ad handling aren’t counted.'
+    + (retained && retained.total ? ' ' + fmtCount(retained.total) + ' event' + (retained.total === 1 ? '' : 's') + ' logged on ' + host + ' in the last 30 days.' : '');
+}
+
+function renderSiteDashSources(summary) {
+  const box = $('site-dash-sources');
+  const title = $('site-dash-sources-title');
+  box.textContent = '';
+  const sources = summary.net && summary.net.available && Array.isArray(summary.net.sources) ? summary.net.sources : [];
+  title.hidden = !sources.length;
+  box.hidden = !sources.length;
+  if (!sources.length) return;
+  sources.forEach((source) => {
+    const row = siteDashEl('div', 'site-dash-line');
+    row.appendChild(siteDashEl('span', '', source.name));
+    row.appendChild(siteDashEl('b', '', fmtCount(source.count)));
+    box.appendChild(row);
+  });
+  box.appendChild(siteDashEl('div', 'site-dash-source-note', 'Shows which WardenOne lists or rules matched, not the request addresses.'));
+}
+
+function renderSiteDashTimeline(summary) {
+  const box = $('site-dash-timeline');
+  box.textContent = '';
+  const items = summary.events.map((e) => {
+    const d = e.detail || {};
+    let base = SITE_DASH_EVENT_LABELS[e.type];
+    /* A warning or an observation is never given a category name like "Tracker or beacon
+       blocked": that would claim a block that did not happen. */
+    if (!base && e.kind === 'noticed') {
+      base = 'Noticed: ' + String(e.type || '').replace(/^(warned|detected|proposed|learned|gated)_/, '').replace(/_/g, ' ');
+    }
+    if (!base && typeof wardenNotificationRuleForType === 'function' && typeof wardenNotificationDefinition === 'function') {
+      base = wardenNotificationDefinition(wardenNotificationRuleForType(e.type)).label;
+    }
+    let sub = '';
+    if (Array.isArray(d.params) && d.params.length) sub = d.params.join(', ');
+    else if (d.host && d.host !== summary.host) sub = d.host;
+    return { at: e.at, text: base || e.type, sub };
+  });
+  /* Routine actions from the site tally: one line each, with how many times, at the latest. */
+  (summary.tallies || []).forEach((t) => {
+    if (!siteDashEventKind(t.type)) return;
+    const sub = t.type === 'youtube_ads_removed' ? fmtCount(t.n) + (t.n === 1 ? ' ad break' : ' ad breaks')
+      : t.n > 1 ? fmtCount(t.n) + ' times on this page' : '';
+    items.push({ at: t.last, text: SITE_DASH_EVENT_LABELS[t.type] || t.type, sub });
+  });
+  items.sort((a, b) => Number(b.at) - Number(a.at));
+  if (!items.length) {
+    box.appendChild(siteDashEl('div', 'site-dash-empty', 'No page actions or notices recorded on this load.'));
+    return;
+  }
+  const shown = siteDashTimelineOpen ? items : items.slice(0, 8);
+  shown.forEach((item) => {
+    const row = siteDashEl('div', 'site-dash-event');
+    const time = siteDashEl('time', '', siteDashTime(item.at));
+    try { time.dateTime = new Date(Number(item.at)).toISOString(); } catch (_) {}
+    row.appendChild(time);
+    const text = siteDashEl('span', '', item.text);
+    if (item.sub) text.appendChild(siteDashEl('small', '', item.sub));
+    row.appendChild(text);
+    box.appendChild(row);
+  });
+  if (items.length > 8) {
+    const toggle = siteDashEl('button', 'site-dash-more', siteDashTimelineOpen ? 'Show less' : 'Show all ' + items.length);
+    toggle.type = 'button';
+    toggle.addEventListener('click', () => {
+      siteDashTimelineOpen = !siteDashTimelineOpen;
+      renderSiteDashTimeline(summary);
+    });
+    box.appendChild(toggle);
+  }
+}
+
+/* A zero is only shown as "checked" when the protection behind it ran on this page; a check that
+   did not run says so instead of passing quietly. And nothing here ever says "safe". */
+/* The site over the past 24 hours and 7 days, by kind. Network blocks arrive as "net:<kind>"
+   from the site tally; everything else is an event type, sorted the same way the page is. */
+function renderSiteDashRecent(summary) {
+  const box = $('site-dash-recent');
+  if (!box) return;
+  box.textContent = '';
+  const bucket = (counts) => {
+    const out = {};
+    for (const key of Object.keys(counts || {})) {
+      const kind = key.indexOf('net:') === 0 ? key.slice(4) : siteDashEventKind(key);
+      if (!kind) continue;
+      out[kind] = (out[kind] || 0) + (Number(counts[key]) || 0);
+    }
+    return out;
+  };
+  const day = bucket(summary.recent && summary.recent.day);
+  const week = bucket(summary.recent && summary.recent.week);
+  const kinds = SITE_DASH_CATEGORIES.filter((c) => week[c.id] > 0);
+  if (week.noticed > 0) kinds.push({ id: 'noticed', label: 'Warnings and things noticed' });
+  if (!kinds.length) {
+    box.appendChild(siteDashEl('div', 'site-dash-empty', 'Nothing recorded on this site in the past week.'));
+  } else {
+    const head = siteDashEl('div', 'site-dash-recent-row is-head');
+    head.appendChild(siteDashEl('span', '', 'Activity'));
+    head.appendChild(siteDashEl('span', '', '24 hours'));
+    head.appendChild(siteDashEl('span', '', '7 days'));
+    box.appendChild(head);
+    kinds.forEach((c) => {
+      const row = siteDashEl('div', 'site-dash-recent-row');
+      row.appendChild(siteDashEl('span', '', c.label));
+      const d = day[c.id] || 0;
+      row.appendChild(siteDashEl('b', d ? '' : 'is-zero', fmtCount(d)));
+      row.appendChild(siteDashEl('b', '', fmtCount(week[c.id] || 0)));
+      box.appendChild(row);
+    });
+  }
+  box.appendChild(siteDashEl('div', 'site-dash-note', 'Counted while WardenOne was running. Chrome keeps a closed page’s network blocks for only a few minutes, so one left behind while the browser sat idle can be missed.'));
+}
+
+function renderSiteDashChecks(summary, state) {
+  const box = $('site-dash-clear');
+  box.textContent = '';
+  const host = summary.host;
+  const seen = (re) => Object.keys(summary.typeCounts || {}).some((t) => re.test(t));
+  const netOk = !!(summary.net && summary.net.available);
+  const checks = [
+    { key: 'blockMalwareSites', needsNet: true, hit: summary.cats.security > 0, text: 'Threat blocklists recorded no match' },
+    { key: 'detectPhishing', hit: seen(/phish|techsupport|clickfix|command_paste|fake_update|fake_window|fullscreen_spoof|form_trap/), text: 'No phishing or scam warning recorded' },
+    { key: 'blockTokenExfil', hit: seen(/token_exfil|skimmer|honeytoken|paste_protection/), text: 'No sensitive-request alert recorded' },
+    { key: 'blockForcedPopups', hit: summary.cats.popups > 0, text: 'No pop-up or redirect block recorded' },
+    { key: 'blockTrackers', needsNet: true, hit: summary.cats.trackers > 0, text: 'Tracker blocker recorded no match' },
+  ];
+  let shown = 0;
+  checks.forEach((c) => {
+    if (c.hit) return;
+    const s = siteDashProtectionState(c.key, host, state);
+    if (!s.cls && c.needsNet && !netOk) return;
+    const row = siteDashEl('div', 'site-dash-check' + (s.cls ? ' ' + s.cls : ''));
+    if (s.cls) {
+      row.appendChild(siteDashEl('i', '', '–'));
+      const text = siteDashEl('span', '', 'Not checked here');
+      text.appendChild(siteDashEl('small', '', siteDashProtectionName(c.key) + ': ' + s.text.toLowerCase()));
+      row.appendChild(text);
+    } else {
+      row.appendChild(siteDashEl('i', 'is-neutral', '–'));
+      const text = siteDashEl('span', '', c.text);
+      if (c.sub) text.appendChild(siteDashEl('small', '', c.sub));
+      row.appendChild(text);
+    }
+    box.appendChild(row);
+    shown++;
+  });
+  if (!shown) box.appendChild(siteDashEl('div', 'site-dash-empty', 'Every check here had something to act on. It’s all listed above.'));
+  box.appendChild(siteDashEl('div', 'site-dash-note', 'Nothing found means these checks didn’t trigger on this page. It doesn’t mean the site is safe.'));
+}
+
+function siteDashProtectionName(key) {
+  const p = SITE_DASH_PROTECTIONS.find((item) => item.key === key);
+  return p ? p.label : protectionLabel(key);
+}
+
+function refreshSiteDashboard() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    void chrome.runtime.lastError;
+    const tab = tabs && tabs[0];
+    if (!tab || typeof tab.id !== 'number') { siteDashLast = { error: true }; paintSiteCard(siteDashLast); return; }
+    chrome.runtime.sendMessage({ kind: 'site-dashboard', tabId: tab.id }, (res) => {
+      void chrome.runtime.lastError;
+      siteDashLast = res && res.ok ? siteDashSummarize(res) : { error: true };
+      paintSiteCard(siteDashLast);
+      const view = $('site-dash');
+      if (view && !view.hidden) renderSiteDashboard(siteDashLast);
+    });
+  });
+}
+
+/* New log entries and settings changes repaint, at most once a second: a busy page can log many
+   events in a burst, and the worker caches Chrome's network count for fifteen seconds anyway. */
+function scheduleSiteDashRefresh() {
+  if (siteDashRefreshTimer) return;
+  siteDashRefreshTimer = setTimeout(() => { siteDashRefreshTimer = 0; refreshSiteDashboard(); }, 1000);
+}
+
+function openSiteDashboard() {
+  if (!siteDashLast || siteDashLast.error || !siteDashLast.web) return;
+  siteDashScrollY = window.scrollY || 0;
+  siteDashTimelineOpen = false;
+  renderSiteDashboard(siteDashLast);
+  $('site-dash').hidden = false;
+  document.body.classList.add('wo-site-view');
+  window.scrollTo(0, 0);
+  const back = $('site-dash-back');
+  if (back) back.focus();
+  refreshSiteDashboard();
+}
+
+function closeSiteDashboard() {
+  const view = $('site-dash');
+  if (!view || view.hidden) return;
+  document.body.classList.remove('wo-site-view');
+  view.hidden = true;
+  window.scrollTo(0, siteDashScrollY);
+  const card = $('site-card-open');
+  if (card) card.focus();
+}
+
+function wireSiteDashboard() {
+  try {
+    if (navigator.brave && typeof navigator.brave.isBrave === 'function') {
+      navigator.brave.isBrave().then((isBrave) => {
+        siteDashIsBrave = isBrave === true;
+        if (siteDashLast) {
+          paintSiteCard(siteDashLast);
+          const view = $('site-dash');
+          if (view && !view.hidden) renderSiteDashboard(siteDashLast);
+        }
+      }, () => {});
+    }
+  } catch (_) {}
+  const card = $('site-card-open');
+  if (card) card.addEventListener('click', openSiteDashboard);
+  const back = $('site-dash-back');
+  if (back) back.addEventListener('click', closeSiteDashboard);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('wo-site-view')) {
+      e.preventDefault();
+      closeSiteDashboard();
+    }
+  });
+  const activity = $('site-dash-activity');
+  if (activity) activity.addEventListener('click', () => {
+    const host = siteDashLast && siteDashLast.host;
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('history.html') + (host ? '#site=' + encodeURIComponent(host) : '') }); } catch (_) {}
+  });
+  const logger = $('site-dash-logger');
+  if (logger) logger.addEventListener('click', () => {
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('logger.html') }); } catch (_) {}
+  });
+  /* The site's own controls now live in the dashboard (moved from the settings list, ids kept, so
+     pauseSite / setSiteOverride work as they always did). The list keeps a pointer row to here. */
+  const allow = $('site-dash-allowlist');
+  if (allow) allow.addEventListener('click', allowlistCurrent);
+  const pointer = $('site-pointer-open');
+  if (pointer) pointer.addEventListener('click', openSiteDashboard);
+  /* Interface > Site card: two buttons choose the card's layout, kept on its own key. The card
+     stays hidden until the first summary arrives, which is after this read in practice, so it
+     does not flash the other layout first. */
+  const layoutButtons = Array.from(document.querySelectorAll('[data-site-card-layout]'));
+  const useLayout = (layout) => {
+    siteCardLayout = layout === 'B' ? 'B' : 'A';
+    layoutButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.siteCardLayout === siteCardLayout)));
+    if (siteDashLast) paintSiteCard(siteDashLast);
+  };
+  layoutButtons.forEach((b) => b.addEventListener('click', () => {
+    useLayout(b.dataset.siteCardLayout);
+    try { chrome.storage.local.set({ [SITE_CARD_LAYOUT_KEY]: siteCardLayout }); } catch (_) {}
+  }));
+  const fold = $('site-card-fold');
+  const useFold = (folded) => {
+    const on = folded === true;
+    const section = $('site-card');
+    if (section) section.classList.toggle('is-folded', on);
+    if (!fold) return;
+    fold.setAttribute('aria-expanded', String(!on));
+    fold.setAttribute('aria-label', on ? 'Show the whole site card' : 'Minimise the site card');
+    fold.title = on ? 'Show more' : 'Minimise';
+  };
+  if (fold) fold.addEventListener('click', () => {
+    const next = !$('site-card').classList.contains('is-folded');
+    useFold(next);
+    try { chrome.storage.local.set({ [SITE_CARD_FOLD_KEY]: next }); } catch (_) {}
+  });
+  try {
+    chrome.storage.local.get([SITE_CARD_LAYOUT_KEY, SITE_CARD_FOLD_KEY], (stored) => {
+      void chrome.runtime.lastError;
+      useLayout(stored && stored[SITE_CARD_LAYOUT_KEY]);
+      useFold(stored && stored[SITE_CARD_FOLD_KEY]);
+    });
+  } catch (_) {}
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.wardenone_config || changes.wardenone_history)) scheduleSiteDashRefresh();
+    if (area === 'local' && changes[SITE_CARD_LAYOUT_KEY]) useLayout(changes[SITE_CARD_LAYOUT_KEY].newValue);
+    if (area === 'local' && changes[SITE_CARD_FOLD_KEY]) useFold(changes[SITE_CARD_FOLD_KEY].newValue);
+  });
+}
+
+// The first read happens in load(), once the config it describes has arrived.
+document.addEventListener('DOMContentLoaded', wireSiteDashboard, { once: true });
+
+// ----- Section order -----
+/* The reader decides the order of the popup's sections. A section is a run of #groups'
+   children: its heading and everything up to the next heading.
+   Runs move whole and stay flat, never wrapped, because the search hides a heading by
+   looking at the sibling right before each card group. Only placement is stored; no
+   switch changes when a section moves. */
+const POPUP_SECTION_ORDER_KEY = 'wardenone_popup_section_order';
+/* A saved order names sections by these ids, not by what the heading says, so a heading the
+   Store build relabels (Memory Shield shows as Resource Saver there) keeps its place. A heading
+   that is not listed still works under an id made from its text; renaming one only sends that
+   section back to its default place. */
+const POPUP_SECTION_IDS = {
+  'script shield': 'script-shield', 'redirects & popups': 'redirects', 'ip protection': 'ip-protection',
+  'download shield': 'downloads', 'privacy': 'privacy', 'adshield': 'adshield', 'memory shield': 'memory',
+  'resource saver': 'memory', 'forget me & logins': 'forget-me', 'media shield': 'media', 'adult-site safety': 'adult',
+  'advanced detection (catches rotating/custom domains)': 'advanced-detection',
+  'sessionshield \u2014 login & session protection': 'sessionshield', 'blocklist (auto-updating)': 'blocklist',
+  'eyeshield': 'eyeshield', 'what wardenone watches': 'watches', 'interface': 'interface',
+  'settings backup': 'backup', 'privacy cleaner': 'cleaner'
+};
+function popupSectionId(heading) {
+  const text = (heading.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return POPUP_SECTION_IDS[text] || text.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function popupSectionRuns() {
+  const box = $('groups');
+  if (!box) return [];
+  const runs = [];
+  let run = null;
+  Array.from(box.childNodes).forEach((node) => {
+    if (node.nodeType === 1 && node.tagName === 'H2' && popupSectionId(node)) {
+      run = { id: popupSectionId(node), heading: node, nodes: [node] };
+      runs.push(run);
+    } else if (run) {
+      run.nodes.push(node);
+    }
+  });
+  return runs;
+}
+
+const POPUP_SECTION_DEFAULT = popupSectionRuns().map((run) => run.id);
+
+/* A saved order may predate a section (an update added one) or name one this build
+   leaves out. Unknown ids are dropped, and a section the order does not mention goes
+   back beside the section it follows by default. */
+function resolvePopupSectionOrder(saved, present, defaults) {
+  const known = new Set(present);
+  const order = [];
+  (Array.isArray(saved) ? saved : []).forEach((id) => {
+    if (typeof id === 'string' && known.has(id) && order.indexOf(id) === -1) order.push(id);
+  });
+  const base = defaults.filter((id) => known.has(id)).concat(present.filter((id) => defaults.indexOf(id) === -1));
+  base.forEach((id, i) => {
+    if (order.indexOf(id) !== -1) return;
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const k = order.indexOf(base[j]);
+      if (k !== -1) { at = k + 1; break; }
+    }
+    order.splice(at, 0, id);
+  });
+  return order;
+}
+
+function applyPopupSectionOrder(saved) {
+  const box = $('groups');
+  const runs = popupSectionRuns();
+  if (!box || !runs.length) return [];
+  const byId = new Map(runs.map((run) => [run.id, run]));
+  const order = resolvePopupSectionOrder(saved, runs.map((run) => run.id), POPUP_SECTION_DEFAULT);
+  const current = runs.map((run) => run.id);
+  if (order.every((id, i) => id === current[i])) return order;
+  const frag = document.createDocumentFragment();
+  order.forEach((id) => byId.get(id).nodes.forEach((node) => frag.appendChild(node)));
+  box.appendChild(frag);
+  return order;
+}
+
+function savePopupSectionOrder(order) {
+  const isDefault = order.length === POPUP_SECTION_DEFAULT.length && order.every((id, i) => id === POPUP_SECTION_DEFAULT[i]);
+  try {
+    if (isDefault) chrome.storage.local.remove(POPUP_SECTION_ORDER_KEY);
+    else chrome.storage.local.set({ [POPUP_SECTION_ORDER_KEY]: order });
+  } catch (_) {}
+}
+
+const ARRANGE_SVG = {
+  grip: [['circle', { cx: 9, cy: 6.5, r: 1.5 }], ['circle', { cx: 15, cy: 6.5, r: 1.5 }], ['circle', { cx: 9, cy: 12, r: 1.5 }],
+    ['circle', { cx: 15, cy: 12, r: 1.5 }], ['circle', { cx: 9, cy: 17.5, r: 1.5 }], ['circle', { cx: 15, cy: 17.5, r: 1.5 }]],
+  up: [['path', { d: 'm6 14.5 6-6 6 6' }]],
+  down: [['path', { d: 'm6 9.5 6 6 6-6' }]]
+};
+function arrangeIcon(name) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const filled = name === 'grip';
+  svg.setAttribute('fill', filled ? 'currentColor' : 'none');
+  if (!filled) {
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2.2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+  }
+  ARRANGE_SVG[name].forEach(([tag, attrs]) => {
+    const el = document.createElementNS(ns, tag);
+    Object.keys(attrs).forEach((k) => el.setAttribute(k, String(attrs[k])));
+    svg.appendChild(el);
+  });
+  return svg;
+}
+
+function popupSectionTitle(run) {
+  return (run.heading.textContent || run.id).replace(/\s+/g, ' ').trim();
+}
+
+let arrangeScrollY = 0;
+function renderArrangeList(focus) {
+  const list = $('arrange-list');
+  if (!list) return;
+  const runs = popupSectionRuns();
+  list.textContent = '';
+  runs.forEach((run, i) => {
+    const title = popupSectionTitle(run);
+    const li = document.createElement('li');
+    li.className = 'arrange-item';
+    li.dataset.id = run.id;
+    const grip = document.createElement('button');
+    grip.type = 'button';
+    grip.className = 'arrange-grip';
+    grip.setAttribute('aria-label', 'Move ' + title + '. Drag, or press the up and down arrow keys.');
+    grip.appendChild(arrangeIcon('grip'));
+    const num = document.createElement('span');
+    num.className = 'arrange-num';
+    num.textContent = String(i + 1);
+    num.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.className = 'arrange-name';
+    name.textContent = title;
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'arrange-move';
+    up.dataset.dir = '-1';
+    up.disabled = i === 0;
+    up.setAttribute('aria-label', 'Move ' + title + ' up');
+    up.appendChild(arrangeIcon('up'));
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.className = 'arrange-move';
+    down.dataset.dir = '1';
+    down.disabled = i === runs.length - 1;
+    down.setAttribute('aria-label', 'Move ' + title + ' down');
+    down.appendChild(arrangeIcon('down'));
+    li.append(grip, num, name, up, down);
+    list.appendChild(li);
+  });
+  if (focus && focus.id) {
+    const item = list.querySelector('.arrange-item[data-id="' + focus.id + '"]');
+    if (item) {
+      let target = item.querySelector(focus.what === 'grip' ? '.arrange-grip' : '.arrange-move[data-dir="' + focus.what + '"]');
+      if (target && target.disabled) target = item.querySelector('.arrange-move:not(:disabled)') || item.querySelector('.arrange-grip');
+      if (target) target.focus();
+      if (focus.flash) {
+        item.classList.add('is-dropped');
+        setTimeout(() => item.classList.remove('is-dropped'), 650);
+      }
+    }
+  }
+}
+
+function arrangeStatus(text) {
+  const el = $('arrange-status');
+  if (el) el.textContent = text;
+}
+
+function commitArrangeOrder(order, movedId, focusWhat) {
+  const applied = applyPopupSectionOrder(order);
+  savePopupSectionOrder(applied);
+  renderArrangeList({ id: movedId, what: focusWhat, flash: true });
+  const run = popupSectionRuns().find((r) => r.id === movedId);
+  if (run) arrangeStatus(popupSectionTitle(run) + ' is now ' + (applied.indexOf(movedId) + 1) + ' of ' + applied.length + '.');
+}
+
+function moveArrangeSection(id, delta, focusWhat) {
+  const order = popupSectionRuns().map((run) => run.id);
+  const from = order.indexOf(id);
+  const to = from + delta;
+  if (from === -1 || to < 0 || to >= order.length) return;
+  order.splice(to, 0, order.splice(from, 1)[0]);
+  commitArrangeOrder(order, id, focusWhat);
+}
+
+function openArrangeView() {
+  const view = $('arrange-view');
+  if (!view) return;
+  if (document.body.classList.contains('wo-site-view') && typeof closeSiteDashboard === 'function') closeSiteDashboard();
+  arrangeScrollY = window.scrollY || 0;
+  arrangeStatus('');
+  renderArrangeList();
+  view.hidden = false;
+  document.body.classList.add('wo-arrange-view');
+  window.scrollTo(0, 0);
+  const back = $('arrange-back');
+  if (back) back.focus();
+}
+
+function closeArrangeView() {
+  const view = $('arrange-view');
+  if (!view || view.hidden) return;
+  document.body.classList.remove('wo-arrange-view');
+  view.hidden = true;
+  window.scrollTo(0, arrangeScrollY);
+  const entry = $('arrange-open');
+  if (entry) entry.focus({ preventScroll: true });
+}
+
+/* Touch rows keep native scrolling until the hold completes; the dots still drag immediately. */
+let arrangeDrag = null;
+function wireArrangeDrag(list) {
+  const holdMs = 120;
+  const start = (item, source, options) => {
+    const d = { item, source, ...options, active: false, moved: false, timer: null };
+    arrangeDrag = d;
+    if (source === 'touch') d.timer = setTimeout(() => activate(d), holdMs);
+    return d;
+  };
+  const activate = (d) => {
+    if (arrangeDrag !== d || d.active) return;
+    d.active = true;
+    d.timer = null;
+    d.item.classList.add('is-dragging');
+    document.body.classList.add('wo-arranging');
+  };
+  const clear = (d) => {
+    clearTimeout(d.timer);
+    arrangeDrag = null;
+    document.body.classList.remove('wo-arranging');
+    d.item.classList.remove('is-dragging');
+    if (d.source === 'pointer') {
+      try { (d.grip || d.item).releasePointerCapture(d.pointer); } catch (_) {}
+    }
+  };
+  const move = (d, x, y) => {
+    d.moved = true;
+    /* The popup is shorter than the list, so dragging near its top or bottom edge scrolls it. */
+    if (y < 48) window.scrollBy(0, -14);
+    else if (y > window.innerHeight - 48) window.scrollBy(0, 14);
+    const hit = document.elementFromPoint(x, y);
+    const over = hit && hit.closest('.arrange-item');
+    if (!over || over.parentElement !== list) {
+      /* Past either end of the list (a quick flick overshoots it): first or last place. */
+      const items = list.querySelectorAll('.arrange-item');
+      const first = items[0], last = items[items.length - 1];
+      if (first && first !== d.item && y < first.getBoundingClientRect().top) list.insertBefore(d.item, first);
+      else if (last && last !== d.item && y > last.getBoundingClientRect().bottom) list.appendChild(d.item);
+      return;
+    }
+    if (over === d.item) return;
+    const box = over.getBoundingClientRect();
+    list.insertBefore(d.item, y > box.top + box.height / 2 ? over.nextSibling : over);
+  };
+  const finish = (d, cancelled) => {
+    clear(d);
+    if (cancelled) { if (d.moved) renderArrangeList(); return; }
+    if (!d.moved) return;
+    const order = Array.from(list.querySelectorAll('.arrange-item')).map((li) => li.dataset.id);
+    if (order.every((id, i) => id === popupSectionRuns()[i].id)) return;
+    commitArrangeOrder(order, d.item.dataset.id, 'grip');
+  };
+  list.addEventListener('pointerdown', (e) => {
+    if (arrangeDrag || e.button !== 0) return;
+    const grip = e.target.closest('.arrange-grip');
+    const item = e.target.closest('.arrange-item');
+    if (!item || item.parentElement !== list || e.target.closest('.arrange-move')) return;
+    if (e.pointerType === 'touch' && !grip) return;
+    if (grip) e.preventDefault();
+    start(item, 'pointer', { grip, pointer: e.pointerId, x: e.clientX, y: e.clientY });
+    try { (grip || item).setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  /* Moving the dragged row out and back into the list drops its pointer capture, so the rest of
+     the drag is heard on the document: the pointer may be over the header when it lets go. */
+  document.addEventListener('pointermove', (e) => {
+    const d = arrangeDrag;
+    if (!d || d.source !== 'pointer' || e.pointerId !== d.pointer) return;
+    if (!d.active) {
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
+      activate(d);
+    }
+    move(d, e.clientX, e.clientY);
+  });
+  const end = (e) => {
+    const d = arrangeDrag;
+    if (!d || d.source !== 'pointer' || e.pointerId !== d.pointer) return;
+    finish(d, e.type === 'pointercancel');
+  };
+  document.addEventListener('pointerup', end);
+  document.addEventListener('pointercancel', end);
+  list.addEventListener('touchstart', (e) => {
+    if (arrangeDrag || e.touches.length !== 1) return;
+    const item = e.target.closest('.arrange-item');
+    if (!item || item.parentElement !== list || e.target.closest('.arrange-move, .arrange-grip')) return;
+    const touch = e.changedTouches[0];
+    start(item, 'touch', { touch: touch.identifier, x: touch.clientX, y: touch.clientY });
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    const d = arrangeDrag;
+    if (!d || d.source !== 'touch') return;
+    if (e.touches.length !== 1) { finish(d, true); return; }
+    const touch = Array.from(e.changedTouches).find((t) => t.identifier === d.touch);
+    if (!touch) return;
+    if (!d.active) {
+      if (Math.hypot(touch.clientX - d.x, touch.clientY - d.y) > 12) clear(d);
+      return;
+    }
+    e.preventDefault();
+    move(d, touch.clientX, touch.clientY);
+  }, { passive: false });
+  const touchEnd = (e) => {
+    const d = arrangeDrag;
+    if (!d || d.source !== 'touch' || !Array.from(e.changedTouches).some((t) => t.identifier === d.touch)) return;
+    if (d.active) e.preventDefault();
+    finish(d, e.type === 'touchcancel');
+  };
+  document.addEventListener('touchend', touchEnd, { passive: false });
+  document.addEventListener('touchcancel', touchEnd, { passive: false });
+  list.addEventListener('contextmenu', (e) => {
+    if (arrangeDrag && arrangeDrag.active && e.target.closest('.arrange-item') === arrangeDrag.item) e.preventDefault();
+  });
+}
+
+(function initPopupSectionOrder() {
+  const box = $('groups');
+  if (!box || !POPUP_SECTION_DEFAULT.length) return;
+  /* Hidden for the moment it takes to read the saved order, so a custom order never
+     flashes the default one first. The timer makes sure it can never stay hidden. */
+  box.classList.add('sec-order-pending');
+  let revealed = false;
+  const reveal = () => { if (revealed) return; revealed = true; box.classList.remove('sec-order-pending'); };
+  const fallback = setTimeout(reveal, 400);
+  try {
+    chrome.storage.local.get(POPUP_SECTION_ORDER_KEY, (res) => {
+      try {
+        const saved = res && res[POPUP_SECTION_ORDER_KEY];
+        if (Array.isArray(saved) && saved.length) applyPopupSectionOrder(saved);
+      } catch (_) {}
+      clearTimeout(fallback);
+      reveal();
+    });
+  } catch (_) {
+    clearTimeout(fallback);
+    reveal();
+  }
+
+  /* Settings opens the Settings page, which is also the browser's "Extension options" page, so the
+     browser reuses a Settings tab that is already open rather than opening a second. */
+  const settingsBtn = $('open-settings');
+  if (settingsBtn) settingsBtn.addEventListener('click', () => {
+    try {
+      chrome.runtime.openOptionsPage(() => { void chrome.runtime.lastError; window.close(); });
+    } catch (_) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
+      window.close();
+    }
+  });
+  ['arrange-open', 'arrange-open-interface'].forEach((id) => {
+    const btn = $(id);
+    if (btn) btn.addEventListener('click', openArrangeView);
+  });
+  const back = $('arrange-back');
+  if (back) back.addEventListener('click', closeArrangeView);
+  const done = $('arrange-done');
+  if (done) done.addEventListener('click', closeArrangeView);
+  const reset = $('arrange-reset');
+  if (reset) reset.addEventListener('click', () => {
+    applyPopupSectionOrder(POPUP_SECTION_DEFAULT);
+    savePopupSectionOrder(POPUP_SECTION_DEFAULT);
+    renderArrangeList();
+    arrangeStatus('Back to the original order.');
+  });
+  const list = $('arrange-list');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const btn = e.target.closest('.arrange-move');
+      if (!btn || btn.disabled) return;
+      const item = btn.closest('.arrange-item');
+      moveArrangeSection(item.dataset.id, Number(btn.dataset.dir), btn.dataset.dir);
+    });
+    list.addEventListener('keydown', (e) => {
+      const grip = e.target.closest('.arrange-grip');
+      if (!grip || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      e.preventDefault();
+      moveArrangeSection(grip.closest('.arrange-item').dataset.id, e.key === 'ArrowUp' ? -1 : 1, 'grip');
+    });
+    wireArrangeDrag(list);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('wo-arrange-view')) {
+      e.preventDefault();
+      closeArrangeView();
+    }
+  });
+})();

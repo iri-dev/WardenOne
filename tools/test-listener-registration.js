@@ -136,7 +136,7 @@ if (start >= 0 && end > start) {
 /* ---- Protection Health says so --------------------------------------------------------------- */
 check('Protection Health reports a listener that could not register as a top-level danger',
   /if \(LISTENERS_NOT_REGISTERED\.length\) \{\s*addIssue\('danger', 'Could not start in this browser session: ' \+ LISTENERS_NOT_REGISTERED\.slice\(0, 6\)\.join\(', '\)/.test(BG)
-    && /restarting the browser usually clears this\.', true\);/.test(BG));
+    && /restarting the browser usually clears this\.', true(?:, \{ fix: '[a-z:]+' \})?\);/.test(BG));
 
 console.log('');
 if (failures.length) {

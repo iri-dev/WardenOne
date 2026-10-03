@@ -70,51 +70,6 @@
     50% { transform: translate3d(26px,-30px,0) scale(1.08); }
   }
 
-  /* ---------- pin-me arrow (points up at the extensions puzzle) ----------
-     The SVG is 232px wide over a 0 0 232 150 viewBox, so one viewBox unit is one
-     pixel, and the arrowhead tip sits at x=214 -- i.e. 18px in from the graphic's
-     right edge. Whatever `right` is set to here, the tip lands (right + 18)px from
-     the window edge, so this value is what actually aims the arrow.
-
-     It used to be 18px, putting the tip 36px from the edge: that is the three-dot
-     menu, not the puzzle. Chrome's toolbar runs, right to left, [menu] [profile]
-     [puzzle] at roughly 30px per icon, which puts the puzzle near 90px in. So
-     72 + 18 = 90.
-
-     One honest caveat: a page cannot see the browser's own toolbar, so no value is
-     right for everyone -- someone with several pinned extensions has the puzzle much
-     further left. That is why the bubble carries the puzzle glyph itself: the arrow
-     points at the right neighbourhood, and the icon says what to look for. */
-  .pin-arrow {
-    position: fixed;
-    top: 0;
-    right: 72px;
-    z-index: 40;
-    width: 232px;
-    pointer-events: none;
-    opacity: 0;
-    transform: translateY(-14px);
-    transition: opacity .5s ease, transform .5s ease;
-  }
-  body[data-step="pin"] .pin-arrow { opacity: 1; transform: translateY(0); }
-  .pin-arrow svg { display: block; width: 100%; height: auto; overflow: visible; animation: bob 2.4s ease-in-out infinite; }
-  @keyframes bob {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(10px); }
-  }
-  .pin-arrow .bubble-text { font: 900 15px/1.1 var(--display); fill: #fff; }
-  /* Opaque, not a translucent white wash. The bubble is positioned against the top-right of the
-     window, and whether that lands on the purple backdrop or on the white scene card depends
-     entirely on how wide the window is -- a wide window leaves the card short of it, a narrower
-     one puts the card right underneath. At rgba(255,255,255,.16) with white text it simply
-     disappeared in the second case. A solid plum pill reads on both. */
-  .pin-arrow .bubble-bg { fill: #5f2779; stroke: rgba(255,255,255,.55); stroke-width: 1.4; }
-  .pin-arrow .bubble-icon path { fill: none; stroke: #fff; stroke-width: 1.7; stroke-linejoin: round; }
-  .pin-arrow .stroke { fill: none; stroke: #fff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round;
-    filter: drop-shadow(0 6px 14px rgba(20,8,34,.5));
-    stroke-dasharray: 320; stroke-dashoffset: 320; animation: draw 1.1s ease forwards .25s; }
-  @keyframes draw { to { stroke-dashoffset: 0; } }
-
   /* ---------- stage ---------- */
   .stage {
     position: relative;
@@ -251,6 +206,8 @@
 
   /* pin step layout */
   .pin-steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-top: 6px; }
+  .pin-steps[hidden] { display: none; }
+  .pin-state { margin: 16px 0 0; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: rgba(46,158,91,.1); color: var(--ink); font-weight: 800; }
   .pin-card {
     border: 1px solid var(--line); border-radius: 18px; padding: 18px;
     background: #fff; box-shadow: var(--soft-shadow);
@@ -285,6 +242,31 @@
   .link-card h3 { margin: 0 0 3px; font: 900 16px/1.1 var(--display); color: var(--ink); }
   .link-card p { margin: 0; color: var(--ink-soft); font-size: 13px; }
   .link-card .chev { margin-left: auto; color: var(--ink-faint); flex: none; }
+
+  .site-layout-choice { margin: 24px 0; }
+  .site-layout-choice h3 { margin: 0 0 4px; font: 900 19px/1.2 var(--display); color: var(--ink); }
+  .site-layout-choice > p { margin: 0; color: var(--ink-soft); font-size: 13.5px; }
+  .site-layout-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }
+  .site-layout-option { display: flex; flex-direction: column; min-width: 0; padding: 13px; border: 2px solid var(--line); border-radius: 18px; background: var(--paper-2); color: var(--ink); cursor: pointer; text-align: left; }
+  .site-layout-option:hover { border-color: var(--line-strong); }
+  .site-layout-option[aria-pressed="true"] { border-color: var(--plum); box-shadow: 0 0 0 3px rgba(139,63,176,.13); }
+  .site-layout-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .site-layout-label strong { font: 900 14px/1.2 var(--display); }
+  .site-layout-label small { color: var(--ink-soft); font: 700 11px/1.2 var(--body); }
+  .site-layout-option[aria-pressed="true"] .site-layout-label strong::after { content: ' ✓'; color: var(--plum); }
+  .site-layout-preview { display: block; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--soft-shadow); }
+  .site-layout-preview.compact { display: flex; align-items: center; gap: 10px; margin: auto 0; }
+  .site-layout-icon { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: linear-gradient(135deg, var(--violet), var(--pink)); color: #fff; font-size: 17px; }
+  .site-layout-host { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--plum); font: 900 13px/1.2 var(--display); }
+  .site-layout-detail { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 11px; line-height: 1.3; }
+  .site-layout-chevron { margin-left: auto; color: var(--plum); font-size: 20px; }
+  .site-layout-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .site-layout-status { color: var(--green); font: 900 10px/1.2 var(--display); white-space: nowrap; }
+  .site-layout-status::before { content: '●'; margin-right: 4px; }
+  .site-layout-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+  .site-layout-counts span { display: block; min-width: 0; padding: 5px 2px; border: 1px solid var(--line); border-radius: 10px; text-align: center; color: var(--ink-soft); font: 800 10px/1.2 var(--display); }
+  .site-layout-counts b { display: block; color: var(--plum); font-size: 16px; }
+  .site-layout-example-note { margin-top: 7px !important; color: var(--ink-faint) !important; font-size: 11.5px !important; }
 
   /* mode toggle */
   .mode-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
@@ -477,7 +459,7 @@
     .mark svg { width: 86px; height: 86px; }
     .feature-grid, .pin-steps { grid-template-columns: 1fr; }
     .link-grid { grid-template-columns: 1fr; }
-    .pin-arrow { display: none; }
+    .site-layout-options { grid-template-columns: 1fr; }
     .brand-sub { display: none; }
     .controls { flex-direction: column-reverse; align-items: stretch; }
     .controls .left { text-align: center; }
@@ -485,8 +467,7 @@
     .scene-actions, .hero-actions { flex-direction: column; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .orb, .mark .ring, .mark .pulse, .pin-arrow svg, .pin-arrow .stroke, .scene.enter, .done-badge { animation: none !important; }
-    .pin-arrow .stroke { stroke-dashoffset: 0; }
+    .orb, .mark .ring, .mark .pulse, .scene.enter, .done-badge { animation: none !important; }
   }
 </style>
 <link rel="stylesheet" href="theme.css">
@@ -497,27 +478,6 @@
     <span class="orb a"></span>
     <span class="orb b"></span>
     <span class="orb c"></span>
-  </div>
-
-  <!-- arrow that points up to the toolbar during the pin step -->
-  <div class="pin-arrow" aria-hidden="true">
-    <!-- The bubble sits at y=78 rather than y=70 so it clears the "Skip setup" button, whose
-         bottom edge is at 65px. At y=70 the two pills sat 5px apart and read as a single
-         washed-out shape. -->
-    <svg viewBox="0 0 232 158" xmlns="http://www.w3.org/2000/svg">
-      <g class="bubble">
-        <rect class="bubble-bg" x="6" y="78" width="178" height="48" rx="16"></rect>
-        <!-- The same puzzle glyph as the card below, so the bubble names its own target.
-             The arrow can only ever point at roughly the right place; this cannot be
-             misread. -->
-        <g class="bubble-icon" transform="translate(18,90) scale(1.2)">
-          <path d="M9 4h2a1.5 1.5 0 1 1 3 0h2v3a1.5 1.5 0 1 0 0 3v3h-3a1.5 1.5 0 1 0-3 0H6v-3a1.5 1.5 0 1 1 0-3V4h3Z"></path>
-        </g>
-        <text class="bubble-text" x="50" y="108">Pin it here</text>
-      </g>
-      <path class="stroke" d="M150 104 C 196 94, 214 60, 214 16"></path>
-      <path class="stroke" d="M196 28 L214 10 L226 32"></path>
-    </svg>
   </div>
 
   <div class="stage">
@@ -588,15 +548,16 @@
       <!-- ===== Scene 2: Pin ===== -->
       <section class="scene" data-scene="pin" hidden tabindex="-1">
         <div class="eyebrow"><span class="pip"></span> Step 1 of 3 &middot; Pin</div>
-        <h2>Pin WardenOne to your toolbar.</h2>
-        <p class="lead">Open the extensions menu at the top-right of your browser, find WardenOne in the list, and click the pin. It stays one click away from then on.</p>
-        <div class="pin-steps">
+        <h2 id="pin-title">Pin WardenOne to your toolbar.</h2>
+        <p class="lead" id="pin-lead">Open the extensions menu at the top-right of your browser, find WardenOne in the list, and click the pin. It stays one click away from then on.</p>
+        <p class="pin-state" id="pin-state" role="status" hidden>WardenOne is already pinned. Click its shield icon in your toolbar to open the controls.</p>
+        <div class="pin-steps" id="pin-steps">
           <div class="pin-card">
             <span class="puzzle-illo">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4h2a1.5 1.5 0 1 1 3 0h2v3a1.5 1.5 0 1 0 0 3v3h-3a1.5 1.5 0 1 0-3 0H6v-3a1.5 1.5 0 1 1 0-3V4h3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
             </span>
             <h3>Click the puzzle piece</h3>
-            <p>It lives at the top-right of your browser, beside the address bar.</p>
+            <p>Match this puzzle shape in your browser toolbar. Other buttons can move it, so its exact spot may differ.</p>
           </div>
           <div class="pin-card">
             <span class="pin-num">2</span>
@@ -735,6 +696,29 @@
       <section class="scene" data-scene="explore" hidden tabindex="-1">
         <div class="eyebrow"><span class="pip"></span> Step 3 of 3 &middot; Explore</div>
         <h2>You're all set.</h2>
+        <p class="lead">Here is what you'll see when you open WardenOne from the toolbar.</p>
+        <div class="site-layout-choice" aria-labelledby="onboarding-site-card-title">
+          <h3 id="onboarding-site-card-title">Choose your site card</h3>
+          <p>The top card shows what WardenOne has done on the website you're visiting. Pick the view you prefer.</p>
+          <div class="site-layout-options" role="group" aria-labelledby="onboarding-site-card-title">
+            <button type="button" class="site-layout-option" data-site-card-layout="A" aria-pressed="true">
+              <span class="site-layout-label"><strong>One line</strong><small>Compact summary</small></span>
+              <span class="site-layout-preview compact" aria-hidden="true">
+                <span class="site-layout-icon">✓</span>
+                <span><span class="site-layout-host">example.com</span><span class="site-layout-detail">3 trackers, 2 ads, 1 other stopped</span></span>
+                <span class="site-layout-chevron">›</span>
+              </span>
+            </button>
+            <button type="button" class="site-layout-option" data-site-card-layout="B" aria-pressed="false">
+              <span class="site-layout-label"><strong>Counts</strong><small>Activity breakdown</small></span>
+              <span class="site-layout-preview" aria-hidden="true">
+                <span class="site-layout-top"><span class="site-layout-host">example.com</span><span class="site-layout-status">Protected</span></span>
+                <span class="site-layout-counts"><span><b>3</b>Trackers</span><span><b>2</b>Ads</span><span><b>1</b>Other</span></span>
+              </span>
+            </button>
+          </div>
+          <p class="site-layout-example-note">Example numbers. You can change this choice later in the popup settings.</p>
+        </div>
         <p class="lead">Open any of these whenever you need them.</p>
         <div class="link-grid">
           <button class="link-card" id="open-popup-explore" type="button">

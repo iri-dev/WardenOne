@@ -346,7 +346,7 @@
      bridge handed out at document_start, over a number that only moves forward -- one counter per
      sender -- and its content; a page can still dispatch all of them, and none of them counts. */
   const KEY_PADS = KEY ? __woAuth.key(KEY) : null;
-  const EVENT_SOURCES = new Set(['engine', 'hardener', 'miner', 'bridge']);
+  const EVENT_SOURCES = new Set(['engine', 'hardener', 'miner', 'bridge', 'adshield']);
   const eventSeqSeen = Object.create(null);
   const eventSigned = (d) => {
     const src = String((d && d.src) || '');
@@ -2375,6 +2375,24 @@
     }
     const securitySignal = type === 'behavioral_risk'
       || /^warned_(?:potential_)?xss_|^warned_potential_(?:dom_xss|xss_)|^warned_clickfix_|^warned_command_paste$/.test(type);
+    /* Routine page actions the Activity log never takes -- cleaned addresses and copied links,
+       stripped pings, cookie banners rejected, search clutter hidden, script cookie writes
+       stopped. They go to the Site Dashboard's count only (rg-tally): no log entry, no badge.
+       Signed like a finding, so a page cannot inflate them. */
+    if (/^(?:cleaned_history_url|stripped_link_ping|cleaned_copied_link|consent_rejected|google_search_cleanup|scriptlet_mutator_blocked|youtube_ads_removed)$/.test(type)) {
+      if (!eventSigned(d) || d.src === 'bridge') return;
+      if (window !== window.top || !bridgeRateOk('wo-tally', 240, 60000)) return;
+      const hidden = Number(d.detail && d.detail.hidden);
+      const count = Number(d.detail && d.detail.count);
+      const n = type === 'google_search_cleanup' && hidden > 0 ? Math.min(200, Math.floor(hidden))
+        : type === 'youtube_ads_removed' && count > 0 ? Math.min(20, Math.floor(count)) : 1;
+      let pageStart = 0;
+      try { pageStart = Math.round(performance.timeOrigin); } catch (_) {}
+      try {
+        chrome.runtime.sendMessage({ kind: 'rg-tally', type, n, pageStart }, () => { void chrome.runtime.lastError; });
+      } catch (_) {}
+      return;
+    }
     if (/^blocked_|^detected_|^gated_|^warned_/.test(type) || type === 'behavioral_risk') {
       /* Only a signed event is a finding (see eventSigned). The bridge's own notices are for the
          page's notice card and are not findings to record. */

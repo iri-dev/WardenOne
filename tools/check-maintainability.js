@@ -391,6 +391,14 @@ function checkContentBuild() {
   'tools/test-fake-window-guard.js',
   'tools/test-fullscreen-guard.js',
   'tools/test-site-controls.js',
+  'tools/test-site-dashboard-presentation.js',
+  'tools/test-site-card-fold.js',
+  'tools/test-arrange-drag.js',
+  'tools/test-onboarding-site-card.js',
+  'tools/test-onboarding-pin-guidance.js',
+  'tools/test-settings-change-log.js',
+  'tools/test-settings-page.js',
+  'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
   'tools/test-download-links.js',
   'tools/test-health-honesty.js',
@@ -434,6 +442,8 @@ function checkContentBuild() {
   'safe-browsing-block.js',
   'yt-adblock.js',
   'spotify-adblock.js',
+  'settings.js',
+  'settings-data.js',
 ].forEach(checkSyntax);
 
 [
@@ -653,6 +663,14 @@ checkCommand('capability guard tests', ['tools/test-capability-guards.js']);
 checkCommand('fake-window guard tests', ['tools/test-fake-window-guard.js']);
 checkCommand('full-screen guard tests', ['tools/test-fullscreen-guard.js']);
 checkCommand('site control tests', ['tools/test-site-controls.js']);
+checkCommand('site dashboard presentation tests', ['tools/test-site-dashboard-presentation.js']);
+checkCommand('site card fold tests', ['tools/test-site-card-fold.js']);
+checkCommand('arrange drag tests', ['tools/test-arrange-drag.js']);
+checkCommand('onboarding site card tests', ['tools/test-onboarding-site-card.js']);
+checkCommand('onboarding pin guidance tests', ['tools/test-onboarding-pin-guidance.js']);
+checkCommand('settings change log tests', ['tools/test-settings-change-log.js']);
+checkCommand('settings-data.js is current with the popup and the worker', ['tools/build-settings-data.js', '--check']);
+checkCommand('Settings page tests', ['tools/test-settings-page.js']);
 checkCommand('toast dedupe tests', ['tools/test-toast-dedupe.js']);
 checkCommand('download link tests', ['tools/test-download-links.js']);
 checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
