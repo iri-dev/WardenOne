@@ -398,6 +398,7 @@ function checkContentBuild() {
   'tools/test-onboarding-pin-guidance.js',
   'tools/test-settings-change-log.js',
   'tools/test-settings-page.js',
+  'tools/test-security-scan-coverage.js',
   'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
   'tools/test-download-links.js',
@@ -671,6 +672,7 @@ checkCommand('onboarding pin guidance tests', ['tools/test-onboarding-pin-guidan
 checkCommand('settings change log tests', ['tools/test-settings-change-log.js']);
 checkCommand('settings-data.js is current with the popup and the worker', ['tools/build-settings-data.js', '--check']);
 checkCommand('Settings page tests', ['tools/test-settings-page.js']);
+checkCommand('security scan coverage tests', ['tools/test-security-scan-coverage.js']);
 checkCommand('toast dedupe tests', ['tools/test-toast-dedupe.js']);
 checkCommand('download link tests', ['tools/test-download-links.js']);
 checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
