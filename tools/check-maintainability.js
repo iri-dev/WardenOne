@@ -400,6 +400,7 @@ function checkContentBuild() {
   'tools/test-settings-page.js',
   'tools/test-security-scan-coverage.js',
   'tools/test-config-write-lock.js',
+  'tools/test-workflow-pinning.js',
   'tools/config-write-harness.js',
   'tools/browser-config-race.js',
   'tools/build-settings-data.js',
@@ -678,6 +679,7 @@ checkCommand('settings-data.js is current with the popup and the worker', ['tool
 checkCommand('Settings page tests', ['tools/test-settings-page.js']);
 checkCommand('security scan coverage tests', ['tools/test-security-scan-coverage.js']);
 checkCommand('config write lock tests', ['tools/test-config-write-lock.js']);
+checkCommand('workflow action pinning tests', ['tools/test-workflow-pinning.js']);
 checkCommand('toast dedupe tests', ['tools/test-toast-dedupe.js']);
 checkCommand('download link tests', ['tools/test-download-links.js']);
 checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
