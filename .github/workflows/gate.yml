@@ -100,6 +100,59 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-config-race.js
 
+  # The manifest's minimum_chrome_version, proven in that Chrome rather than assumed: Chrome for
+  # Testing at the minimum, pinned by version and SHA-256, runs the popup and Settings suites.
+  # tools/test-download-links.js keeps the version here at the manifest's minimum. The tests only
+  # run once that Chrome is in place, so a failed download cannot fall back to Edge and pass.
+  browser-minimum:
+    name: minimum-chrome-regression
+    runs-on: windows-2025
+    timeout-minutes: 20
+    concurrency:
+      group: gate-${{ github.ref }}-minimum
+      cancel-in-progress: true
+    env:
+      CHROME_MINIMUM_VERSION: '121.0.6167.184'
+      CHROME_MINIMUM_SHA256: 'b400e16bec567f676e83ff33719b5657dd26113fb54a6e2ec875709363428e9b'
+      WARDENONE_HEADLESS: '1'
+      WARDENONE_BROWSER_NAME: 'Google Chrome'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install Chrome for Testing at the minimum version
+        id: chrome
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'chrome-minimum.zip'
+          Invoke-WebRequest -Uri "https://storage.googleapis.com/chrome-for-testing-public/$env:CHROME_MINIMUM_VERSION/win64/chrome-win64.zip" -OutFile $zip
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($hash -ne $env:CHROME_MINIMUM_SHA256) { throw "chrome-win64.zip has SHA-256 $hash, expected $env:CHROME_MINIMUM_SHA256" }
+          Expand-Archive -Path $zip -DestinationPath $env:RUNNER_TEMP -Force
+          $exe = Join-Path $env:RUNNER_TEMP 'chrome-win64\chrome.exe'
+          $version = (Get-Item $exe).VersionInfo.ProductVersion
+          if ($version -ne $env:CHROME_MINIMUM_VERSION) { throw "chrome.exe is $version, expected $env:CHROME_MINIMUM_VERSION" }
+          "WARDENONE_BROWSER_PATH=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Output "Chrome $version at $exe"
+
+      - name: Test the popup in Chrome at the minimum version
+        run: node tools/browser-popup-regression.js
+
+      - name: Test Settings data, search and reset in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-settings-data.js
+
+      - name: Test Settings arrangement, sites, Help and About in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-settings-arrange.js
+
+      - name: Test simultaneous config writes in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-config-race.js
+
   # Every push that passes the gate rebuilds the rolling `latest-build` release and
   # replaces the package attached to it, so the ordinary download always matches
   # main. It is the only release: the old versioned ones were removed on
@@ -107,7 +160,7 @@ jobs:
   # only ever something to download by mistake.
   rolling-build:
     name: publish-latest-build
-    needs: [gate, browser-popup, browser-settings]
+    needs: [gate, browser-popup, browser-settings, browser-minimum]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # One publish at a time, and none cancelled once started: it moves the tag, then replaces the

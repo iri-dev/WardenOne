@@ -31,7 +31,7 @@ async function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-config-race-'));
   let cdp;
   try {
-    const browser = await profile.launch(profile.edgePath(), 'on', root, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
@@ -80,7 +80,7 @@ async function run() {
       if (!(cfg.toastMutes && cfg.toastMutes[muteType(i)])) lost.worker.push(i);
     }
     assert.deepEqual(lost, { settings: [], popup: [], worker: [] }, 'a change made at the same moment as another was lost, by trial: ' + JSON.stringify(lost));
-    console.log('[ok] config writes from Settings, the popup and the worker all survived ' + TRIALS + ' simultaneous tries in Edge');
+    console.log('[ok] config writes from Settings, the popup and the worker all survived ' + TRIALS + ' simultaneous tries in ' + browser.Browser);
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const resolved = path.resolve(dir);
