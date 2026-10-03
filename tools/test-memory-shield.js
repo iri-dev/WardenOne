@@ -152,6 +152,8 @@ function loadMemoryShield(options = {}) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync('background-memory.js', 'utf8'), sandbox, { filename: 'background-memory.js' });
+  // The worker's config write path, which the never-sleep toggle now goes through.
+  vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   return { memory: sandbox.__woMemoryTest, sandbox, state };
 }
 

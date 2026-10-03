@@ -343,10 +343,13 @@
 
   async function setSilentMode(isSilent) {
     setStatus('');
-    const store = await storageGet('wardenone_config');
-    const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
-    const next = Object.assign({}, current, { silentMode: !!isSilent, showDownloadBar: true });
-    const ok = await storageSet({ wardenone_config: next });
+    /* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept. */
+    const ok = await withConfigLock(async () => {
+      const store = await storageGet('wardenone_config');
+      const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
+      const next = Object.assign({}, current, { silentMode: !!isSilent, showDownloadBar: true });
+      return storageSet({ wardenone_config: next });
+    });
     if (!ok) { setStatus('Could not save your notification choice.', 'bad'); return; }
     paintMode(!!isSilent);
     setStatus(isSilent ? 'Silent Mode saved.' : 'Normal notifications saved.', 'good');

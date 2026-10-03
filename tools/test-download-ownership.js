@@ -273,6 +273,7 @@ function loadInstalledListener() {
   const sandbox = {
     console, Object, Date,
     DEFAULT_CONFIG: {},
+    localGet: async () => ({ wardenone_config: { enabled: true } }),
     localSet: async () => {},
     markBrowserSessionStart: () => { state.stamps++; },
     scheduleUpdates: () => {},
@@ -290,6 +291,8 @@ function loadInstalledListener() {
     },
   };
   vm.createContext(sandbox);
+  /* The handler writes through the worker's config write path. */
+  vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   vm.runInContext(liftBetween(BACKGROUND, 'chrome.runtime.onInstalled.addListener((details) => {', '\nchrome.runtime.onStartup'),
     sandbox, { filename: 'background.js' });
   return state;

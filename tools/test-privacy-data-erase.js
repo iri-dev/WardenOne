@@ -52,7 +52,9 @@ function harness(initialLocal, initialSession, options = {}) {
     setTimeout: (fn) => { timers.push(fn); },
   };
   vm.createContext(sandbox);
-  vm.runInContext('const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'
+  /* The reset clears and rewrites the config under the config lock (config-lock.js). */
+  vm.runInContext(require('./config-write-harness.js').LOCK_SOURCE + '\n'
+    + 'const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'
     + 'const PRIVACY_ERASE_REBUILD_KEY = "wardenone_erase_rebuild";'
     + 'let __privacyEraseInProgress = false;' + bg.slice(start, end)
     + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
