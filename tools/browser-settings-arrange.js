@@ -6,7 +6,9 @@
    with the date, and to keep these notices intact. */
 /* The Settings page in Edge: the popup's section order (shared with the popup), saved sites,
    the recent-site card, and the Help and About pages.
-   Run: node tools/browser-settings-arrange.js */
+   Run: node tools/browser-settings-arrange.js
+   Like tools/browser-settings-data.js it drives Edge, so it runs in CI's real-settings-regression
+   job rather than the local gate. */
 'use strict';
 
 const assert = require('assert/strict');

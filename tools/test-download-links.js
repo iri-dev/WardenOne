@@ -122,13 +122,30 @@ function bareIndexLinks(text) {
 // ---------------------------------------------------------------------------
 {
   const rolling = WORKFLOW.split(/\n  rolling-build:/)[1] || '';
-  const browser = (WORKFLOW.split(/\n  browser-popup:/)[1] || '').split(/\n  rolling-build:/)[0];
+  const job = (id) => (WORKFLOW.split(new RegExp('\\n  ' + id + ':\\n'))[1] || '').split(/\n  [\w-]+:\n/)[0];
+  const browser = job('browser-popup');
   check('the real popup runs in Edge on a Windows runner',
     /runs-on: windows-2025/.test(browser)
       && /WARDENONE_HEADLESS: '1'/.test(browser)
       && /run: node tools\/browser-popup-regression\.js/.test(browser));
-  check('the rolling build waits for the real popup',
-    /needs: \[gate, browser-popup\]/.test(rolling));
+  const settings = job('browser-settings');
+  check('the Settings page runs in Edge on a Windows runner, every suite',
+    /runs-on: windows-2025/.test(settings)
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 3
+      && /run: node tools\/browser-settings-data\.js/.test(settings)
+      && /run: node tools\/browser-settings-arrange\.js/.test(settings)
+      && /run: node tools\/browser-config-race\.js/.test(settings));
+  /* A publish stopped halfway leaves the tag on one commit and the ZIP from another, so nothing may
+     cancel it once started: no workflow-wide concurrency, and its own group never cancels. */
+  const head = WORKFLOW.split(/\njobs:\n/)[0];
+  check('no workflow-wide concurrency can cancel the publish job', !/^concurrency:/m.test(head));
+  check('the publish job is serialised and never cancelled once started',
+    /concurrency:\s*\n\s*group: publish-latest-build\s*\n\s*cancel-in-progress: false/.test(rolling));
+  check('each test job still cancels its own stale run',
+    ['gate', 'browser-popup', 'browser-settings'].every((id) => /concurrency:\s*\n\s*group: gate-\$\{\{ github\.ref \}\}-[a-z]+\s*\n\s*cancel-in-progress: true/.test(job(id))));
+  const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
+  check('the rolling build waits for the gate, the real popup and the real Settings page',
+    ['gate', 'browser-popup', 'browser-settings'].every((n) => needs.includes(n)), needs.join(', '));
   check('the publishing job may issue a GitHub attestation',
     /contents: write/.test(rolling) && /id-token: write/.test(rolling)
       && /attestations: write/.test(rolling));
