@@ -988,31 +988,46 @@ function importSettingsFromFile(file) {
 //
 // onSaved receives the keys that arrived from the other writer, so the caller can
 // repaint just those controls.
+//
+// The read and the write hold the config lock (config-lock.js), so Settings, another page or the
+// worker writing at the same moment waits for this one and then reads its result. The lock is let
+// go before either callback runs, since a callback may save again.
 function persistConfig(onSaved, onError) {
   const changedKeys = popupChangedKeys();
-  chrome.storage.local.get('wardenone_config', (store) => {
-    void chrome.runtime.lastError;
-    const raw = store && store.wardenone_config;
-    const stored = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
-    const next = Object.assign({}, DEFAULTS, stored);
-    changedKeys.forEach((k) => { next[k] = config[k]; });
-    // Applied to the merged result, not just to `config`: this decides what is
-    // actually written, and a provider switched off in either copy must not leave
-    // its key behind in storage.
-    normalizeStoredProviderKeys(next);
-    const adopted = Object.keys(next).filter((k) => changedKeys.indexOf(k) < 0
-      && configValuesDiffer(next[k], savedConfigSnapshot[k]));
-    chrome.storage.local.set({ wardenone_config: next }, () => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        if (typeof onError === 'function') onError(err);
-        return;
-      }
-      config = next;
-      savedConfigSnapshot = configClone(next);
-      if (typeof onSaved === 'function') onSaved(adopted);
-    });
-  });
+  withConfigLock(() => new Promise((release) => {
+    // Whatever goes wrong lets the lock go and is reported. A read that failed is not an empty
+    // config: writing defaults plus this change over it would reset every other setting.
+    const fail = (err) => { release(); if (typeof onError === 'function') onError(err); };
+    try {
+      chrome.storage.local.get('wardenone_config', (store) => {
+        try {
+          const readError = chrome.runtime.lastError;
+          if (readError) { fail(readError); return; }
+          const raw = store && store.wardenone_config;
+          const stored = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+          const next = Object.assign({}, DEFAULTS, stored);
+          changedKeys.forEach((k) => { next[k] = config[k]; });
+          // Applied to the merged result, not just to `config`: this decides what is
+          // actually written, and a provider switched off in either copy must not leave
+          // its key behind in storage.
+          normalizeStoredProviderKeys(next);
+          const adopted = Object.keys(next).filter((k) => changedKeys.indexOf(k) < 0
+            && configValuesDiffer(next[k], savedConfigSnapshot[k]));
+          chrome.storage.local.set({ wardenone_config: next }, () => {
+            const err = chrome.runtime.lastError;
+            if (err) { fail(err); return; }
+            try {
+              config = next;
+              savedConfigSnapshot = configClone(next);
+            } finally {
+              release();
+            }
+            if (typeof onSaved === 'function') onSaved(adopted);
+          });
+        } catch (e) { fail(e); }
+      });
+    } catch (e) { fail(e); }
+  }));
 }
 
 // An external change landed while the popup was open. Repaint only the controls for

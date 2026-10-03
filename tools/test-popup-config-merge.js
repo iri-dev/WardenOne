@@ -128,6 +128,12 @@ function makeHarness(storedConfig) {
     $: () => null,
   };
   const ctx = vm.createContext(sandbox);
+  /* A synchronous stand-in for withConfigLock (config-lock.js): this suite runs storage callbacks
+     by hand, and what it tests is the merge. It counts every take and release, so a save that
+     keeps the lock shows up below. The real lock, across pages and the worker, is exercised in
+     Edge by tools/browser-config-race.js. */
+  vm.runInContext('globalThis.__lock = { taken: 0, released: 0 };'
+    + 'function withConfigLock(task) { __lock.taken++; const held = task(); held.then(() => { __lock.released++; }); return held; }', ctx);
   vm.runInContext(DEFAULTS_SRC + '\nlet config = Object.assign({}, DEFAULTS);\nlet savedConfigSnapshot;\n' + LIFTED, ctx);
   // Mirror load(): config is DEFAULTS + stored, and the snapshot is what storage holds.
   vm.runInContext(
@@ -294,18 +300,68 @@ function check(name, cond) {
 {
   const writes = POPUP_JS.match(/storage\.local\.set\(\{\s*wardenone_config:/g) || [];
   check('exactly one place writes wardenone_config (inside persistConfig)', writes.length === 1);
+  check('and it reads and writes under the config lock',
+    /function persistConfig[\s\S]{0,200}withConfigLock\(/.test(POPUP_JS));
   check('that write uses the merged object, not the popup\'s copy',
     /storage\.local\.set\(\{\s*wardenone_config:\s*next\s*\}/.test(POPUP_JS));
   check('persistConfig re-reads storage before writing',
-    /function persistConfig[\s\S]{0,400}storage\.local\.get\('wardenone_config'/.test(POPUP_JS));
+    /function persistConfig[\s\S]{0,800}storage\.local\.get\('wardenone_config'/.test(POPUP_JS));
   check('saveConfig routes through persistConfig',
     /function saveConfig[\s\S]{0,200}persistConfig\(/.test(POPUP_JS));
   check('the popup adopts external config changes',
     /changes\.wardenone_config\)\s*adoptExternalConfigChange/.test(POPUP_JS));
 }
 
-if (failures) {
-  console.error('[fail] popup config merge tests: ' + failures + ' failure(s)');
-  process.exit(1);
-}
-console.log('[ok] popup config merge tests');
+
+// ---------------------------------------------------------------------------
+// 10. A read that fails is not an empty config: nothing is written, the caller hears of it, and
+//     the change stays pending. Every save, whatever happens, lets the config lock go.
+// ---------------------------------------------------------------------------
+const lockChecks = (async () => {
+  const harnesses = [];
+  {
+    const h = makeHarness({ adShield: false, blockTrackers: true });
+    harnesses.push(['a save that writes', h]);
+    h.run('config.adShield = true; persistConfig(function () {});');
+    h.drain(); h.drain();
+  }
+  {
+    const h = makeHarness({ adShield: false });
+    harnesses.push(['a save whose write fails', h]);
+    h.run('chrome.storage.local.set = function (items, cb) { chrome.runtime.lastError = { message: "QUOTA_BYTES quota exceeded" }; cb(); chrome.runtime.lastError = undefined; };');
+    h.run('config.adShield = true; persistConfig(function () {}, function () {});');
+    h.drain(); h.drain();
+  }
+  {
+    const h = makeHarness({ adShield: false, blockTrackers: true });
+    harnesses.push(['a save whose read fails', h]);
+    h.run('chrome.storage.local.get = function (keys, cb) { chrome.runtime.lastError = { message: "read failed" }; cb(undefined); chrome.runtime.lastError = undefined; };');
+    h.run('globalThis.__err = null; globalThis.__wrote = false; var __set = chrome.storage.local.set; chrome.storage.local.set = function (i, cb) { globalThis.__wrote = true; __set(i, cb); };');
+    h.run('config.adShield = true; persistConfig(function () { globalThis.__saved = true; }, function (e) { globalThis.__err = e; });');
+    h.drain(); h.drain();
+    check('a failed read writes nothing over the stored config', h.run('globalThis.__wrote') === false && h.store.wardenone_config.blockTrackers === true);
+    check('and the caller is told', !!h.run('globalThis.__err') && h.run('globalThis.__saved') === undefined);
+    check('and the change is still pending', h.run('popupChangedKeys().indexOf("adShield") >= 0'));
+  }
+  {
+    const h = makeHarness({ adShield: false });
+    harnesses.push(['a save that throws while merging', h]);
+    h.run('normalizeStoredProviderKeys = function () { throw new Error("boom"); }; globalThis.__err = null;');
+    h.run('config.adShield = true; persistConfig(function () {}, function (e) { globalThis.__err = e; });');
+    h.drain(); h.drain();
+    check('a merge that throws is reported, not swallowed', !!h.run('globalThis.__err'));
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  for (const [name, h] of harnesses) {
+    const lock = h.run('__lock');
+    check(name + ' lets the config lock go (' + lock.taken + ' taken, ' + lock.released + ' released)', lock.taken === 1 && lock.released === 1);
+  }
+})();
+
+lockChecks.then(() => {
+  if (failures) {
+    console.error('[fail] popup config merge tests: ' + failures + ' failure(s)');
+    process.exit(1);
+  }
+  console.log('[ok] popup config merge tests');
+}, (error) => { console.error(error); process.exit(1); });

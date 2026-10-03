@@ -15,6 +15,7 @@
   "cert-error.html",
   "cert-error.js",
   "command-palette.js",
+  "config-lock.js",
   "consent-reject.js",
   "consent-wall.js",
   "content.min.js",
