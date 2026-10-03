@@ -32,13 +32,15 @@
      can hand back everything it holds, which its disposer says by carrying __woReleases. Copies up
      to 1.0.1 cannot: their disposer released listeners and timers but left the recorder, its
      capture and the controls running, so replacing one put a second recorder on the same video.
-     Such a copy is left in charge, still listening to settings, until the tab reloads. */
+     Such a copy is left in charge, still listening to settings, until the tab reloads. A marked
+     disposer that throws is treated the same way: whatever it failed to release is still live, so
+     this copy stays out. The function called is the one checked, not the global read again. */
   if (window.top !== window) return;
   if (window.__wardenOneTwitchRewindReady === WO_GUARD_VERSION) return;
   if (window.__wardenOneTwitchRewindReady) {
     const previous = window.__wardenOneTwitchRewindDispose;
     if (typeof previous !== 'function' || previous.__woReleases !== true) return;
-    try { window.__wardenOneTwitchRewindDispose(); } catch (_) {}
+    try { previous(); } catch (_) { return; }
   }
   window.__wardenOneTwitchRewindReady = WO_GUARD_VERSION;
 
