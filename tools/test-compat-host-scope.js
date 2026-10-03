@@ -11,10 +11,11 @@
  * __woStartRuntime returned before installing anything, and __woSyncConfig turned
  * every boolean in the config off. Both exits still stamped __wardenOneInstalled
  * and __wardenOneReadyVersion, so a tab that took one went on reporting itself
- * protected to the popup and to Repair. Those exits are GONE -- YouTube is now
- * the only host that pauses anything, and it pauses only the names in
- * YT_COMPAT_PAUSED. Section 0 pins that, because a site-wide off switch is the
- * most valuable thing an attacker could get back.
+ * protected to the popup and to Repair. Those exits are GONE -- the only hosts
+ * that pause anything are YouTube and university and school sites, and each
+ * pauses only the names in its own list (YT_COMPAT_PAUSED, EDU_COMPAT_PAUSED).
+ * Section 0 pins that, because a site-wide off switch is the most valuable thing
+ * an attacker could get back.
  *
  * __woAmazonHost itself survives, for Amazon-specific URL cleaning (/ref= and
  * friends). The host test still has to be tight. It was /(^|\.)amazon\.[a-z.]+$/i,
@@ -83,12 +84,16 @@ try {
     !/for\(const k of Object\.keys\(safe\)\)"boolean"==typeof safe\[k\]&&\(safe\[k\]=!1\)/.test(MIN),
     'the blanket kill is a site-wide off switch');
   check('the Amazon compatibility mode is gone', !/__amazonCompatibilityMode/.test(MIN));
-  check('YouTube is the only derived config left',
+  check('there is one derived config, not one per site',
     (MIN.match(/const safe=Object\.assign\(\{\},cfg\);/g) || []).length === 1,
     'a second derived copy means another site is being quietly stripped');
-  check('and it pauses only the names it lists',
-    /const YT_COMPAT_PAUSED=\[/.test(MIN)
-      && /i<YT_COMPAT_PAUSED\.length/.test(MIN));
+  /* It pauses names from a list, and the only lists are YouTube's and the education one, each
+     chosen by its own host test. A third list, or a loop over anything else, fails here. */
+  check('and it pauses only the names in a named list',
+    /const YT_COMPAT_PAUSED=\[/.test(MIN) && /EDU_COMPAT_PAUSED=\[/.test(MIN)
+      && /paused=youtube\?YT_COMPAT_PAUSED:EDU_COMPAT_HOST\.test\(host\)\?EDU_COMPAT_PAUSED:null;/.test(MIN)
+      && /i<paused\.length/.test(MIN)
+      && (MIN.match(/_COMPAT_PAUSED=\[/g) || []).length === 2);
 }
 
 // ---------------------------------------------------------------------------

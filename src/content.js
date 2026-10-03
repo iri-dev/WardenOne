@@ -1592,30 +1592,76 @@
       /* The embedded player is a legitimate frame. */
       "antiClickjacking"
     ],
+    /* University and school sites, by suffix. The manifest used to keep the whole engine off every
+    page under these, which left them without phishing, skimmer, scam-lock and form-trap checks. It
+    now runs there with these named protections paused. Each can break signing in, a class or an
+    exam: sign-in runs through redirects, posted forms and pop-up windows between the university,
+    its identity provider and its course tools; classes, exams and proctoring use the camera,
+    microphone, screen, location and full screen; and course tools sit in frames. The fingerprint
+    realm stays out of these sites in the manifest, because identity providers read browser signals
+    to decide when to ask for a second sign-in step. The reader is told in popup.js
+    (SITE_DASH_EDU_PAUSED), and tools/test-education-compat.js keeps the two lists in step. */
+    EDU_COMPAT_HOST=/(^|\.)(edu|edu\.au|edu\.sg|edu\.hk|ac\.uk|ac\.nz|ac\.za|ac\.in|ucas\.com)$/i,
+    EDU_COMPAT_PAUSED=[
+      /* Sign-in prompts and course notices look like overlays and banners. */
+      "removeOverlays",
+      "autoRejectConsent",
+      /* Moving between the university, its identity provider and its course tools: meta
+      refreshes, chains of redirects and sign-in windows are how it works. The pop-up and redirect
+      guards themselves are in anti-redirect.js, which has always run here with its own sign-in
+      allowances, and still does; only names the engine reads belong in this list. */
+      "blockMetaRefresh",
+      "detectRedirectChains",
+      "backTrapGuard",
+      "fakeWindowGuard",
+      /* Sign-in sessions and the tokens handed from the identity provider to each tool. The engine's
+      half of blockTokenExfil is paused; anti-redirect.js keeps its own. */
+      "sessionShield",
+      "blockTokenExfil",
+      "continuousTokenScan",
+      /* Classes, exams and proctoring: camera, microphone, screen sharing, attendance by location,
+      full-screen exams, lecture recordings. */
+      "blockCameraMic",
+      "blockScreenCapture",
+      "blockGeolocation",
+      "deviceAccessGuard",
+      "capabilityGuard",
+      "notificationAbuseGuard",
+      "blockAutoplayMedia",
+      "mediaShield",
+      "fullscreenGuard",
+      /* Health, biology and medicine courses would meet an adult-content interstitial. */
+      "gateAdultSites",
+      "adultHeuristics",
+      /* Course tools and lecture recordings are embedded in frames. */
+      "antiClickjacking"
+    ],
     WO={},
     __woSyncConfig=()=>{
       const cfg=__woConfigStore,
       host=String(location.hostname||"").replace(/^www\./,
       "").toLowerCase();
       let next=cfg;
-      /* YouTube is the ONLY host that pauses anything, and it pauses only the
-      names in YT_COMPAT_PAUSED. Amazon and Shopify used to take a far larger
-      exit: __woStartRuntime returned before installing anything, and this
-      function turned every boolean off -- while both still stamped
-      __wardenOneInstalled, so the tab went on reporting itself protected to the
-      popup and to Repair. Removed; there is no site-wide off switch left. */
-      if(/(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(location.hostname)){
+      /* Two kinds of host pause anything, each only the names in its own list: YouTube, so videos
+      play, and university and school sites, so sign-in and classes work. Amazon and Shopify used
+      to take a far larger exit: __woStartRuntime returned before installing anything, and this
+      function turned every boolean off -- while both still stamped __wardenOneInstalled, so the
+      tab went on reporting itself protected to the popup and to Repair. Removed;
+      there is no site-wide off switch left. */
+      const youtube=/(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(location.hostname),
+      paused=youtube?YT_COMPAT_PAUSED:EDU_COMPAT_HOST.test(host)?EDU_COMPAT_PAUSED:null;
+      if(paused){
         const safe=Object.assign({
 
         },
         cfg);
         for(let i=0;
-        i<YT_COMPAT_PAUSED.length;
+        i<paused.length;
         i++){
-          const k=YT_COMPAT_PAUSED[i];
+          const k=paused[i];
           "boolean"==typeof safe[k]&&(safe[k]=!1)
         }
-        safe.__youtubeCompatibilityMode=!0,
+        youtube?safe.__youtubeCompatibilityMode=!0:safe.__educationCompatibilityMode=!0;
         next=safe
       }
       /* Keys the new config no longer carries are dropped, or a setting turned off upstream would

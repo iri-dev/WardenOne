@@ -128,7 +128,8 @@ check('nothing turns every boolean off wholesale any more',
 check('the branch marks itself for the popup',
   /safe\.__youtubeCompatibilityMode=!0/.test(MIN));
 
-/* YouTube is the only host that pauses anything. Amazon and Shopify used to
+/* Only YouTube and university and school sites pause anything, each by its own
+   named list (tools/test-education-compat.js covers the second). Amazon and Shopify used to
    take a much larger exit -- the runtime returned before installing, and the
    config derivation turned every boolean off -- while both still stamped
    __wardenOneInstalled, so the tab reported itself protected. Removed. */
@@ -136,7 +137,7 @@ check('no host takes a whole-engine compatibility exit',
   !/__amazonCompatibilityMode/.test(MIN)
     && !/if\(__woAmazonHost\.test\(location\.hostname\)\|\|\/\(\^\|\\.\)shopify/.test(MIN),
   'a site-wide off switch is exactly what this file exists to prevent');
-check('and the config derivation has only the YouTube branch',
+check('and there is one derived config, not one per site',
   (MIN.match(/const safe=Object\.assign\(\{\},cfg\);/g) || []).length === 1,
   'a second derived copy means a second site is being quietly stripped');
 
