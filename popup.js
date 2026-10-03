@@ -5710,8 +5710,14 @@ function siteDashEl(tag, cls, text) {
 function paintSiteCard(summary) {
   const section = $('site-card');
   if (!section) return;
+  /* A layout chosen while the card is on screen is applied with the card hidden for a moment,
+     as on first paint. Edge 153 could keep the fold toggle styled for the old layout, 7px out
+     of place, when the attribute changed on a card that was already visible. */
+  if (section.dataset.layout !== siteCardLayout) {
+    if (!section.hidden) { section.hidden = true; void section.offsetHeight; }
+    section.dataset.layout = siteCardLayout;
+  }
   section.hidden = false;
-  section.dataset.layout = siteCardLayout;
   const button = $('site-card-open');
   const host = $('site-card-host');
   const status = $('site-card-state');
