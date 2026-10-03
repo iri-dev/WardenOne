@@ -130,37 +130,39 @@ async function run() {
       'held touch drag to reorder');
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }, page.sessionId);
     await value("document.getElementById('arrange-reset').click(); document.getElementById('arrange-done').click()");
-    /* Each change to the card is measured on the next frame, the way the popup paints it: a layout
-       or text switched and read back inside one script can find the toggle where it last was. */
+    /* The card is shown in each layout the way the popup shows it: layout set while hidden, then
+       shown, and measured on the next frame. Edge 153 can leave the toggle's style on the old
+       layout when the layout attribute changes on a card already on screen. */
     const nextFrame = () => value("new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve('frame'))); setTimeout(() => resolve('timer'), 250); })");
+    const showCard = async (layout) => {
+      await value("(() => { const section = document.getElementById('site-card'); section.hidden = true; void section.offsetHeight;"
+        + " section.dataset.layout = " + JSON.stringify(layout) + "; section.hidden = false; return true; })()");
+      await nextFrame();
+    };
     const cardBox = "(() => { const section = document.getElementById('site-card'); const fold = document.getElementById('site-card-fold');"
       + " const top = section.getBoundingClientRect().top; const row = section.querySelector('.site-card-top').getBoundingClientRect(); const toggle = fold.getBoundingClientRect();"
       + " return { offset: Math.abs((toggle.top + toggle.bottom - row.top - row.bottom) / 2), row: [row.top - top, row.height], toggle: [toggle.top - top, toggle.height],"
       + " top: getComputedStyle(fold).top, layout: section.dataset.layout, folded: section.classList.contains('is-folded') }; })()";
+    await value("(() => { const section = document.getElementById('site-card'); if (section.classList.contains('is-folded')) document.getElementById('site-card-fold').click();"
+      + " document.getElementById('site-card-stats').hidden = false; const caption = document.getElementById('site-card-caption'); caption.hidden = false;"
+      + " caption.textContent = 'Recent site activity'; return true; })()");
+    await showCard('B');
     const cardGeometry = await value(`(() => {
       const section = document.getElementById('site-card');
       const stats = document.getElementById('site-card-stats');
       const caption = document.getElementById('site-card-caption');
-      const fold = document.getElementById('site-card-fold');
-      section.hidden = false;
-      section.dataset.layout = 'B';
-      stats.hidden = false;
-      caption.hidden = false;
-      caption.textContent = 'Recent site activity';
       const expanded = section.getBoundingClientRect().height;
-      fold.click();
+      document.getElementById('site-card-fold').click();
       const folded = section.getBoundingClientRect().height;
       const countsHidden = getComputedStyle(stats).display === 'none'
         && getComputedStyle(caption).display === 'none';
-      section.dataset.layout = 'A';
       const shield = document.querySelector('.head .shield').getBoundingClientRect();
       const header = document.querySelector('.head').getBoundingClientRect();
       return { expanded, folded, countsHidden, logoTop: shield.top - header.top, browser: navigator.userAgent.replace(/^.*\\) /, '') };
     })()`);
     assert(cardGeometry.expanded - cardGeometry.folded > 40, 'folded counts card should lose its counts and caption');
-    const paced = await nextFrame();
+    await showCard('A');
     const oneLine = await value(cardBox);
-    console.log('[info] site card measured after a ' + paced + ', page ' + await value('document.visibilityState') + ': ' + JSON.stringify(oneLine));
     assert(await value("getComputedStyle(document.getElementById('site-card-state')).display !== 'none'") && cardGeometry.countsHidden,
       'folded card should keep the site status');
     assert(oneLine.offset < 2, 'fold toggle should be centered on the one-line row: ' + JSON.stringify(Object.assign({ browser: cardGeometry.browser }, oneLine)));
