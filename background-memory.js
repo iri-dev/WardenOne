@@ -149,23 +149,25 @@ async function memoryNeverSleepList() {
   } catch (_) { return []; }
 }
 
-// Add or remove one host. Read-modify-write against storage rather than against a cached
-// copy, so a popup save that landed in between is not reverted by this one.
+// Add or remove one host. Read-modify-write against storage, under the config lock
+// (updateStoredConfig), so a popup or Settings save that landed in between is not reverted.
 async function memoryToggleNeverSleep(host) {
   const h = normalizeAllowlistHost(host);
   if (!h) return { ok: false, error: 'WardenOne could not read a site from this page.' };
   try {
-    const store = await localGet('wardenone_config');
-    const cfg = (store && store.wardenone_config) || {};
-    const list = normalizeAllowlistHosts(cfg.memoryNeverSleepHosts || [], MEMORY_NEVER_SLEEP_MAX);
-    const on = list.indexOf(h) >= 0;
-    if (!on && list.length >= MEMORY_NEVER_SLEEP_MAX) {
-      return { ok: false, error: 'Your never-sleep list is full at ' + MEMORY_NEVER_SLEEP_MAX
-        + ' sites. Take one off it before adding another.' };
-    }
-    cfg.memoryNeverSleepHosts = on ? list.filter((d) => d !== h) : list.concat([h]);
-    await localSet({ wardenone_config: cfg });
-    return { ok: true, on: !on, host: h, shieldOn: cfg.memoryShield !== false };
+    let result = null;
+    await updateStoredConfig((cfg) => {
+      const list = normalizeAllowlistHosts(cfg.memoryNeverSleepHosts || [], MEMORY_NEVER_SLEEP_MAX);
+      const on = list.indexOf(h) >= 0;
+      if (!on && list.length >= MEMORY_NEVER_SLEEP_MAX) {
+        result = { ok: false, error: 'Your never-sleep list is full at ' + MEMORY_NEVER_SLEEP_MAX
+          + ' sites. Take one off it before adding another.' };
+        return false;
+      }
+      cfg.memoryNeverSleepHosts = on ? list.filter((d) => d !== h) : list.concat([h]);
+      result = { ok: true, on: !on, host: h, shieldOn: cfg.memoryShield !== false };
+    });
+    return result;
   } catch (e) { return { ok: false, error: String(e) }; }
 }
 

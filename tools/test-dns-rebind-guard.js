@@ -98,6 +98,8 @@ function harness(options) {
   }, resourceTypes.resolveAll(BG));
 
   vm.createContext(sandbox);
+  /* Publishing the quarantine writes through the worker's config write path. */
+  vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   vm.runInContext(
     /* The shared IPv6 classifier the rebinding check now calls (tools/test-ip-classifier-agreement.js). */
     between('function ipv4FromMappedIpv6(', '\nfunction normalizeIpLiteral(')
@@ -367,6 +369,7 @@ function sessionHarness(sessionMarked, durableHosts) {
     },
   }, resourceTypes.resolveAll(BG));
   vm.createContext(sandbox);
+  vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   /* The region ends with the top-level restoreRebindQuarantine() call: that IS the worker-start
      restore, launched on evaluation exactly as the real worker launches it. */
   vm.runInContext(

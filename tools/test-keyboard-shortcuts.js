@@ -115,6 +115,8 @@ function makeRunner(world) {
   const resolverFrom = BG.indexOf('function sitePausedUntil(cfg, host) {');
   const resolverTo = BG.indexOf('function hostMatchesAllowlist(', resolverFrom);
   vm.createContext(sandbox);
+  /* The pause shortcut writes through the worker's config write path. */
+  vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   vm.runInContext(BG.slice(resolverFrom, resolverTo) + BLOCK
     + ';globalThis.__run = runWardenCommandOnActiveTab;', sandbox,
     { filename: 'background.js:shortcuts' });

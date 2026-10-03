@@ -816,10 +816,22 @@ function allowedItemsFromStore(store) {
 function removeAllowedItem(item, done) {
   if (!item || !item.host) { if (done) done(); return; }
   if (item.kind === 'main') {
-    chrome.storage.local.get('wardenone_config', (store) => {
-      const cfg = Object.assign({}, (store && store.wardenone_config) || {});
-      cfg.allowlist = (Array.isArray(cfg.allowlist) ? cfg.allowlist : []).filter((host) => host !== item.host);
-      checkedLocalSet({ wardenone_config: cfg }, () => { if (done) done(); });
+    /* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is
+       kept. A read that fails writes nothing, and the lock is let go before any alert. */
+    let failure = null;
+    withConfigLock(() => new Promise((release) => {
+      chrome.storage.local.get('wardenone_config', (store) => {
+        failure = chrome.runtime.lastError || null;
+        if (failure) { release(); return; }
+        const cfg = Object.assign({}, (store && store.wardenone_config) || {});
+        cfg.allowlist = (Array.isArray(cfg.allowlist) ? cfg.allowlist : []).filter((host) => host !== item.host);
+        try {
+          chrome.storage.local.set({ wardenone_config: cfg }, () => { failure = chrome.runtime.lastError || null; release(); });
+        } catch (e) { failure = e; release(); }
+      });
+    })).then(() => {
+      if (failure) { try { alert('WardenOne could not save this change: ' + (failure.message || String(failure))); } catch (_) {} }
+      if (done) done();
     });
     return;
   }

@@ -95,9 +95,11 @@ function tidyConfig(next, before, patch) {
 }
 let writeChain = Promise.resolve();
 /* Read-modify-write, one at a time. The stored config is read again at the moment of writing and
-   only the keys changed here are laid on top, so a change the popup made a second ago survives. */
+   only the keys changed here are laid on top, so a change the popup made a second ago survives;
+   the read and the write hold the config lock (config-lock.js), so one made at the same moment
+   does too. */
 function writeConfig(patch) {
-  const run = writeChain.then(async () => {
+  const run = writeChain.then(() => withConfigLock(async () => {
     const stored = await localRead(CONFIG_KEY);
     const before = isObj(stored[CONFIG_KEY]) ? stored[CONFIG_KEY] : {};
     /* A function patch is worked out from what is stored now, for maps another page may be editing. */
@@ -105,6 +107,8 @@ function writeConfig(patch) {
     const next = Object.assign({}, before, delta);
     tidyConfig(next, before, delta);
     await localWrite({ [CONFIG_KEY]: next });
+    return next;
+  })).then((next) => {
     adoptConfig(next);
     return next;
   });

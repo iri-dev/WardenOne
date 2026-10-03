@@ -25,6 +25,9 @@ importScripts('psl-private.js');
 // below that reads woFeatureOmitted() is what lets this worker run without them.
 importScripts('build-profile.js');
 importScripts('notification-manager.js');
+// One change to wardenone_config at a time across this worker and every extension page; see
+// updateStoredConfig below.
+importScripts('config-lock.js');
 
 /* Content scripts are untrusted extension contexts: they execute beside arbitrary pages and
    should never be able to enumerate local configuration, provider credentials, history, or
@@ -2643,11 +2646,9 @@ const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
 });
 
 chrome.runtime.onInstalled.addListener((details) => {
-  chrome.storage.local.get('wardenone_config', (res) => {
-    if (!res || !res.wardenone_config) {
-      localSet({ wardenone_config: Object.assign({}, DEFAULT_CONFIG) }).catch(() => {});
-    } else if (details && details.reason === 'update') {
-      const cfg = Object.assign({}, res.wardenone_config || {});
+  updateStoredConfig((cfg, stored) => {
+    if (!stored) return Object.assign({}, DEFAULT_CONFIG);
+    if (details && details.reason === 'update') {
       let changed = false;
       if (cfg.__locationPrivacyV344Enabled !== true) {
         // Preserve an explicit user choice from older releases. The migration is
@@ -2675,9 +2676,10 @@ chrome.runtime.onInstalled.addListener((details) => {
           changed = true;
         }
       }
-      if (changed) localSet({ wardenone_config: cfg }).catch(() => {});
+      return changed ? cfg : false;
     }
-  });
+    return false;
+  }).catch(() => {});
   if (details && details.reason === 'install') {
     try { chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') }); } catch (_) {}
   }
@@ -7216,6 +7218,27 @@ function localSet(obj) {
     } catch (e) {
       reject(e);
     }
+  });
+}
+
+/* The one way this worker changes wardenone_config. Under the config lock (config-lock.js) it
+   reads what is stored now, straight from storage rather than the cache above, which can trail a
+   page's write by one onChanged; hands a copy to `mutate`; and writes what that leaves. `mutate`
+   gets the copy and the stored value as it was read (null when there is none or it is not an
+   object), and either edits the copy and returns nothing, returns a whole config to write
+   instead, or returns false to write nothing. It must not wait on anything that may want the lock.
+   A failed read writes nothing and rejects. Resolves with what was written, or null. */
+function updateStoredConfig(mutate) {
+  return withConfigLock(async () => {
+    const res = await localGetStrict('wardenone_config');
+    const raw = res.wardenone_config;
+    const stored = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
+    const cfg = __cfgClone(stored);
+    const out = await mutate(cfg, stored);
+    if (out === false) return null;
+    const next = out && typeof out === 'object' ? out : cfg;
+    await localSet({ wardenone_config: next });
+    return next;
   });
 }
 
@@ -16691,10 +16714,7 @@ async function publishRebindQuarantine() {
     // their hostnames into the shared, durable config store.
     if (INCOGNITO_CONTEXT) return;
     const hosts = Array.from(REBIND_QUARANTINED.keys()).slice(0, REBIND_QUARANTINE_MAX);
-    const stored = await localGet('wardenone_config');
-    const cfg = Object.assign({}, (stored && stored.wardenone_config) || {});
-    cfg.rebindQuarantine = hosts;
-    await localSet({ wardenone_config: cfg });
+    await updateStoredConfig((cfg) => { cfg.rebindQuarantine = hosts; });
   } catch (_) {}
 }
 
@@ -18735,13 +18755,13 @@ async function runWardenCommandOnActiveTab(command) {
     if (command === WO_COMMAND_SCAN_SITE) { await runWardenManualCheck(url, tab); return; }
 
     if (command === WO_COMMAND_PAUSE_SITE) {
-      const store = await localGet('wardenone_config');
-      const cfg = (store && store.wardenone_config) || {};
-      /* Both through the resolver. Working the map out here would be a second reading of
-         "is this site paused", and the two would eventually disagree. */
-      const paused = sitePausedUntil(cfg, host) > 0;
-      cfg.allowlistUntil = withSitePause(cfg, host, paused ? 0 : WO_SHORTCUT_PAUSE_MINUTES);
-      await localSet({ wardenone_config: cfg });
+      let paused = false;
+      await updateStoredConfig((cfg) => {
+        /* Both through the resolver. Working the map out here would be a second reading of
+           "is this site paused", and the two would eventually disagree. */
+        paused = sitePausedUntil(cfg, host) > 0;
+        cfg.allowlistUntil = withSitePause(cfg, host, paused ? 0 : WO_SHORTCUT_PAUSE_MINUTES);
+      });
       /* Deliberately no reload. A keystroke that throws away a half-filled form is a
          worse surprise than one more keypress, and the popup says the same thing. */
       await wardenManualNotice(host, paused
@@ -20383,12 +20403,14 @@ if (!/^[a-z_]{3,60}$/.test(type)) return;
 const key = toastMemoryKey(type, url);
 if (!key) return;
 const stored = await localGet('wardenone_config');
-const cfg = Object.assign({}, (stored && stored.wardenone_config) || {});
-const memory = Object.assign({}, cfg.toastMemory || {});
-const now = Date.now();
+const seen = ((stored && stored.wardenone_config) || {}).toastMemory || {};
 /* Already remembered and still inside the window: nothing to write. This is
      what keeps a busy page from turning every notice into a storage write. */
-if (memory[key] && now - Number(memory[key]) < TOAST_MEMORY_WINDOW_MS) return;
+if (seen[key] && Date.now() - Number(seen[key]) < TOAST_MEMORY_WINDOW_MS) return;
+await updateStoredConfig((cfg) => {
+const memory = Object.assign({}, cfg.toastMemory || {});
+const now = Date.now();
+if (memory[key] && now - Number(memory[key]) < TOAST_MEMORY_WINDOW_MS) return false;
 memory[key] = now;
 Object.keys(memory).forEach((k) => {
     if (now - Number(memory[k]) >= TOAST_MEMORY_WINDOW_MS) delete memory[k];
@@ -20399,15 +20421,14 @@ if (keys.length > TOAST_MEMORY_MAX) {
       .forEach((old) => { delete memory[old]; });
 }
 cfg.toastMemory = memory;
-await localSet({ wardenone_config: cfg });
+});
 }
 async function muteToastType(rawType, rawMinutes) {
 const type = String(rawType || "");
 if (!/^[a-z_]{3,60}$/.test(type)) return;
 const minutes = Number(rawMinutes);
 if (![60, 120, 480, 0].includes(minutes)) return;
-const stored = await localGet("wardenone_config");
-const cfg = Object.assign({}, (stored && stored.wardenone_config) || {});
+await updateStoredConfig((cfg) => {
 const mutes = Object.assign({}, cfg.toastMutes || {});
 /* 0 means forever. A timestamp means until then. */
 mutes[type] = minutes ? Date.now() + minutes * 60000 : 0;
@@ -20418,7 +20439,7 @@ Object.keys(mutes).forEach((key) => {
     if (mutes[key] !== 0 && Number(mutes[key]) <= now) delete mutes[key];
 });
 cfg.toastMutes = mutes;
-await localSet({ wardenone_config: cfg });
+});
 }
 
 async function maybeClearOnLeave(domain) {
@@ -20735,7 +20756,6 @@ async function eraseWardenOneData(mode) {
   ]);
   const pending = Object.assign({}, (local || {}).wardenone_pending_downloads || {}, (session || {}).wardenone_pending_downloads || {});
   if (Object.keys(pending).length) return { ok: false, error: 'Finish or cancel active Download Shield reviews before erasing WardenOne data.' };
-  const preserved = preservedPrivacyConfig((local || {}).wardenone_config, mode);
   __privacyEraseInProgress = true;
   try {
     const [dynamic, sessionRules] = await Promise.all([
@@ -20744,9 +20764,13 @@ async function eraseWardenOneData(mode) {
     ]);
     if (dynamic.length) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
     if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
-    await chrome.storage.local.clear();
-    if (chrome.storage.session) await chrome.storage.session.clear();
-    if (preserved) await chrome.storage.local.set({ wardenone_config: preserved });
+    await withConfigLock(async () => {
+      const latest = await chrome.storage.local.get('wardenone_config');
+      const preserved = preservedPrivacyConfig(latest && latest.wardenone_config, mode);
+      await chrome.storage.local.clear();
+      if (chrome.storage.session) await chrome.storage.session.clear();
+      if (preserved) await chrome.storage.local.set({ wardenone_config: preserved });
+    });
     if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true });
     setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
     return { ok: true, kept: mode === 'all' ? 'nothing' : (mode === 'settings' ? 'global switches' : 'global switches and API keys') };
@@ -21090,10 +21114,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'apply-onboarding-recommended' && messageSenderIsExtensionPage(sender)) {
     respond((async () => {
-      const store = await localGet('wardenone_config');
-      const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
-      const merged = Object.assign({}, DEFAULT_CONFIG, current, ONBOARDING_RECOMMENDED);
-      await localSet({ wardenone_config: merged });
+      await updateStoredConfig((cfg) => Object.assign({}, DEFAULT_CONFIG, cfg, ONBOARDING_RECOMMENDED));
       try { refreshExtensionState(); } catch (_) {}
       return { ok: true };
     })(), sendResponse);
@@ -21101,10 +21122,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'apply-onboarding-max-privacy' && messageSenderIsExtensionPage(sender)) {
     respond((async () => {
-      const store = await localGet('wardenone_config');
-      const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
-      const merged = Object.assign({}, DEFAULT_CONFIG, current, ONBOARDING_MAX_PRIVACY);
-      await localSet({ wardenone_config: merged });
+      await updateStoredConfig((cfg) => Object.assign({}, DEFAULT_CONFIG, cfg, ONBOARDING_MAX_PRIVACY));
       try { refreshExtensionState(); } catch (_) {}
       return { ok: true };
     })(), sendResponse);
@@ -23102,7 +23120,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const report = { checks: [], repaired: [], ok: true };
           const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
-            'settings.html', 'settings.js', 'settings-data.js');
+            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.
           for (const omitted of woOmittedFiles()) {
@@ -23137,42 +23155,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       // 3. saved config is a sane object; if corrupted, reset to defaults
-      await new Promise((resolve) => {
-        chrome.storage.local.get('wardenone_config', (x) => {
-          const cfg = x && x.wardenone_config;
-          const valid = cfg && typeof cfg === 'object' && !Array.isArray(cfg);
-          if (!valid) {
-            localSet({ wardenone_config: Object.assign({}, DEFAULT_CONFIG) }).then(() => {
-              report.repaired.push('Reset corrupted settings to safe defaults');
-              report.checks.push({ name: 'Saved settings valid', ok: false });
-              resolve();
-            }).catch((e) => {
-              report.checks.push({ name: 'Saved settings repair write', ok: false, error: String(e) });
-              report.ok = false;
-              resolve();
-            });
-          } else {
-            // Restore missing defaults and remove malformed host-list entries.
-            const merged = Object.assign({}, DEFAULT_CONFIG, cfg);
-            merged.allowlist = normalizeAllowlistHosts(merged.allowlist || []);
-            merged.forgetMeList = normalizeAllowlistHosts(merged.forgetMeList || []);
-            if (JSON.stringify(merged) !== JSON.stringify(cfg)) {
-              localSet({ wardenone_config: merged }).then(() => {
-                report.repaired.push('Restored missing setting fields and cleaned saved site lists');
-                report.checks.push({ name: 'Saved settings valid', ok: true });
-                resolve();
-              }).catch((e) => {
-                report.checks.push({ name: 'Saved settings repair write', ok: false, error: String(e) });
-                report.ok = false;
-                resolve();
-              });
-            } else {
-              report.checks.push({ name: 'Saved settings valid', ok: true });
-              resolve();
-            }
-          }
+      try {
+        let outcome = 'valid';
+        await updateStoredConfig((cfg, stored) => {
+          if (!stored) { outcome = 'reset'; return Object.assign({}, DEFAULT_CONFIG); }
+          // Restore missing defaults and remove malformed host-list entries.
+          const merged = Object.assign({}, DEFAULT_CONFIG, cfg);
+          merged.allowlist = normalizeAllowlistHosts(merged.allowlist || []);
+          merged.forgetMeList = normalizeAllowlistHosts(merged.forgetMeList || []);
+          if (JSON.stringify(merged) === JSON.stringify(cfg)) return false;
+          outcome = 'restored';
+          return merged;
         });
-      });
+        if (outcome === 'reset') {
+          report.repaired.push('Reset corrupted settings to safe defaults');
+          report.checks.push({ name: 'Saved settings valid', ok: false });
+        } else if (outcome === 'restored') {
+          report.repaired.push('Restored missing setting fields and cleaned saved site lists');
+          report.checks.push({ name: 'Saved settings valid', ok: true });
+        } else {
+          report.checks.push({ name: 'Saved settings valid', ok: true });
+        }
+      } catch (e) {
+        report.checks.push({ name: 'Saved settings repair write', ok: false, error: String(e) });
+        report.ok = false;
+      }
 
       try {
         const hostStore = await localGet([DOWNLOAD_TRUSTED_KEY]);

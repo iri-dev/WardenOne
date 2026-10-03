@@ -150,7 +150,7 @@ function runStoredConfigUpdateMigration(config) {
   installEngineAmbient(sandbox);
   vm.runInContext(
     'let changed = false;\n'
-      + sourceBetween("if (cfg.__locationPrivacyV344Enabled !== true)", '\n      if (changed) localSet')
+      + sourceBetween("if (cfg.__locationPrivacyV344Enabled !== true)", '\n      return changed ? cfg : false;')
       + '\nthis.__result = { cfg, changed };',
     sandbox,
   );
