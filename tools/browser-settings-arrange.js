@@ -25,7 +25,7 @@ async function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-settings-arrange-'));
   let cdp;
   try {
-    const browser = await profile.launch(profile.edgePath(), 'on', root, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
@@ -179,7 +179,7 @@ async function run() {
       fs.writeFileSync(path.join(process.env.WARDENONE_SETTINGS_FIX_DIR, 'preview-current.png'), Buffer.from(shot.data, 'base64'));
     }
     await cdp.send('Target.closeTarget', { targetId: website.targetId });
-    console.log('[ok] Settings uses saved sites and recent website activity; Help and About work in Edge');
+    console.log('[ok] Settings uses saved sites and recent website activity; Help and About work in ' + browser.Browser);
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const resolved = path.resolve(dir);
