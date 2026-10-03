@@ -153,8 +153,8 @@ function seed(t, config) {
   // Amazon and Shopify used to take a whole-engine exit: the runtime returned
   // before installing anything and this derivation turned every boolean off,
   // while both still stamped __wardenOneInstalled so the tab reported itself
-  // protected. Removed -- YouTube is now the only host that pauses anything, and
-  // it pauses only the names in YT_COMPAT_PAUSED.
+  // protected. Removed -- YouTube and university and school sites are the only hosts that pause
+  // anything, each only the names in its own list (YT_COMPAT_PAUSED, EDU_COMPAT_PAUSED).
   const az = boot('www.amazon.co.uk');
   seed(az, full);
   check('Amazon gets the ordinary config like any other site',
@@ -183,6 +183,31 @@ function seed(t, config) {
   check('a carve-out site re-derives on every config change',
     yt.WO.adShield === false && yt.WO.removeOverlays === false,
     'derived config went stale');
+
+  // University and school sites pause their own list (EDU_COMPAT_PAUSED) so sign-in and classes
+  // work, and nothing else: the warning checks, link cleaning and ad blocking run there. The
+  // manifest kept the whole engine off them before.
+  const full2 = Object.assign({}, full, { blockCameraMic: true, blockMetaRefresh: true });
+  for (const host of ['www.ox.ac.uk', 'cs.stanford.edu', 'www.unimelb.edu.au', 'www.ucas.com']) {
+    const uni = boot(host);
+    seed(uni, full2);
+    check(host + ' pauses only what the education list names',
+      uni.WO.enabled === true && uni.WO.removeOverlays === false && uni.WO.sessionShield === false
+        && uni.WO.blockCameraMic === false && uni.WO.blockMetaRefresh === false
+        && uni.WO.detectPhishing === true && uni.WO.cleanCopyLinks === true && uni.WO.adShield === true
+        && uni.WO.__educationCompatibilityMode === true && uni.WO.__youtubeCompatibilityMode === undefined,
+      'see tools/test-education-compat.js for the full list and the reasoning');
+  }
+  check('YouTube does not take the education list',
+    yt.WO.sessionShield === true && yt.WO.__educationCompatibilityMode === undefined);
+  // The host test is anchored on the suffix: a name that only contains one is an ordinary site.
+  for (const host of ['edu.example.com', 'ac.uk.example.com', 'notedu', 'example.education', 'stanford.edu.attacker.net']) {
+    const other = boot(host);
+    seed(other, full2);
+    check(host + ' is not taken for a university site',
+      other.WO.removeOverlays === true && other.WO.sessionShield === true && other.WO.blockCameraMic === true
+        && other.WO.__educationCompatibilityMode === undefined);
+  }
 }
 
 // ---------------------------------------------------------------------------

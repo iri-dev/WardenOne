@@ -5519,6 +5519,16 @@ const SITE_DASH_YT_PAUSED = new Set([
   'blockMetaRefresh', 'detectRedirectChains', 'backTrapGuard', 'oneOpenPerGesture', 'gateAdultSites',
   'adultHeuristics', 'blockSupercookies', 'notificationAbuseGuard', 'antiClickjacking',
 ]);
+/* The protections the engine pauses on university and school sites so sign-in and classes work
+   (EDU_COMPAT_PAUSED in src/content.js; tools/test-education-compat.js keeps the two in step).
+   blockTokenExfil is only partly paused there: anti-redirect.js keeps its own half. */
+const SITE_DASH_EDU_PAUSED = new Set([
+  'removeOverlays', 'autoRejectConsent', 'blockMetaRefresh', 'detectRedirectChains', 'backTrapGuard', 'fakeWindowGuard',
+  'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'blockCameraMic', 'blockScreenCapture',
+  'blockGeolocation', 'deviceAccessGuard', 'capabilityGuard', 'notificationAbuseGuard', 'blockAutoplayMedia', 'mediaShield',
+  'fullscreenGuard', 'gateAdultSites', 'adultHeuristics', 'antiClickjacking',
+]);
+const SITE_DASH_EDU_PARTLY = new Set(['blockTokenExfil']);
 const SITE_DASH_PROTECTIONS = [
   { key: 'adShield', label: 'AdShield' },
   { key: 'blockTrackers', label: 'Tracker blocking' },
@@ -5597,6 +5607,10 @@ let siteDashRefreshTimer = 0;
 function siteDashIsYouTube(host) {
   return /(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(String(host || ''));
 }
+/* The engine's own test (EDU_COMPAT_HOST in src/content.js). */
+function siteDashIsEducation(host) {
+  return /(^|\.)(edu|edu\.au|edu\.sg|edu\.hk|ac\.uk|ac\.nz|ac\.za|ac\.in|ucas\.com)$/i.test(String(host || '').replace(/^www\./, ''));
+}
 
 /* Which bucket a logged page event counts in. '' leaves it out: tab housekeeping (sleeping,
    tab limits) is logged against the tab's site but is not something done on the page. */
@@ -5673,6 +5687,9 @@ function siteDashProtectionState(key, host, state) {
     return { cls: 'is-off', text: SITE_OVERRIDE_MIXED.has(key) ? 'Page part off on this site' : 'Off on this site' };
   }
   if (SITE_DASH_YT_PAUSED.has(key) && siteDashIsYouTube(host)) return { cls: 'is-paused', text: 'Paused here so videos play' };
+  if (SITE_DASH_EDU_PAUSED.has(key) && siteDashIsEducation(host)) {
+    return { cls: 'is-paused', text: (SITE_DASH_EDU_PARTLY.has(key) ? 'Partly paused' : 'Paused') + ' here so sign-in and classes work' };
+  }
   return { cls: '', text: 'On' };
 }
 
