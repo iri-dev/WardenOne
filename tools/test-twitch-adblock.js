@@ -4093,6 +4093,34 @@ test('a legacy copy left in charge still follows the switches', async () => {
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'switching steadier playback back on was not heard');
 });
 
+/* A disposer can carry the mark and still fail. Whatever it did not release is still live, so the
+   newer copy must not stack on it: the running copy stays in charge, hooks and settings intact. */
+test('a marked disposer that throws keeps the newer copy out', async () => {
+  const { harness, window } = storageHarness();
+  const { state } = harness;
+  const XHR = harness.sandbox.XMLHttpRequest;
+  const running = {
+    fetch: window.fetch, open: XHR.prototype.open, Worker: window.Worker, getItem: window.Storage.prototype.getItem,
+  };
+  let attempts = 0;
+  const failing = () => { attempts++; throw new Error('teardown failed'); };
+  Object.defineProperty(failing, '__woReleases', { value: true });
+  window.__wardenOneTwitchAdblockDispose = failing;
+
+  loadReplacementTwitchModule(harness);
+  equal(attempts, 1, 'the newer copy did not try the marked disposer exactly once');
+  equal(window.__wardenOneTwitchAdblockReady, MANIFEST.version, 'the newer copy installed after a failed teardown');
+  assert(window.fetch === running.fetch && XHR.prototype.open === running.open && window.Worker === running.Worker &&
+    window.Storage.prototype.getItem === running.getItem, 'the newer copy stacked a hook after a failed teardown');
+
+  assert((await window.fetch(STANDARD_VIDEO_AD_URL)).status === 204 && state.fetchCalls.length === 0,
+    'the running copy stopped answering ad requests');
+  setTwitchConfig(harness, { twitchAdBlock: false, twitchSteadyPlayback: false });
+  assert((await window.fetch(STANDARD_VIDEO_AD_URL)).status === 200 && state.fetchCalls.length === 1,
+    'the running copy stopped following the ad blocker switch');
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null, 'the running copy stopped following steadier playback');
+});
+
 test('dedicated module installs no React/reload/polling recovery', () => {
   const harness = createPageHarness();
   assert(harness.state.intervals === 0, 'module installed a setInterval watchdog');
