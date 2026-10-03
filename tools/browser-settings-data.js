@@ -50,7 +50,7 @@ async function run() {
   const files = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-settings-file-'));
   let cdp;
   try {
-    const browser = await profile.launch(profile.edgePath(), 'on', root, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const manifest = JSON.parse(read('manifest.json'));
@@ -544,7 +544,7 @@ async function run() {
     ok(!kept.allowlist || !kept.allowlist.length, 'site exceptions were erased');
     same(await stored('wardenone_settings_favorites'), undefined, 'favorites were erased');
 
-    console.log('[ok] Settings data management, overview and navigation: ' + checks + ' checks in Edge');
+    console.log('[ok] Settings data management, overview and navigation: ' + checks + ' checks in ' + browser.Browser);
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     for (const tmp of [dir, files]) {
