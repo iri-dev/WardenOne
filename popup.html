@@ -761,6 +761,194 @@
   .list-publisher-fetch { color:var(--ink-faint); }
   .list-update-action { padding:0 0 12px; }
   .list-update-action .btn { display:block; width:100%; }
+
+  /* Site Dashboard: the current site as the popup's centre. The card is the entry; the view
+     behind it replaces the settings list until Back. Class names stay clear of .row and
+     .card-group, which the settings search indexes and hides. */
+  .site-card { margin: 8px 16px 4px; position: relative; }
+  /* The fold toggle sits over the card's top-right corner; it cannot live inside the card, which is
+     itself one button. Folded, the card keeps only its top line. */
+  .site-card-fold { position: absolute; top: 9px; right: 8px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--plum); cursor: pointer; }
+  .site-card-fold:hover, .site-card-fold:focus-visible { background: var(--wo-surface-wash); }
+  .site-card-fold:focus-visible { outline: 2px solid var(--wo-focus); outline-offset: 2px; }
+  .site-card-fold svg { width: 15px; height: 15px; transition: transform .15s ease; }
+  .site-card.is-folded .site-card-fold svg { transform: rotate(180deg); }
+  .site-card[data-layout="A"] .site-card-fold { top: 16px; }
+  .site-card .site-card-top { padding-right: 24px; }
+  .site-card.is-folded .site-card-stats, .site-card.is-folded .site-card-caption, .site-card.is-folded .site-card-detail { display: none !important; }
+  .site-card.is-folded[data-layout="A"] .site-card-status { display: inline-flex; }
+  .site-card-open {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    padding: 12px 13px; border-radius: 16px;
+    background: linear-gradient(160deg, #faf3fe 0%, #f3e7fb 100%);
+    border: 1px solid var(--line-2); box-shadow: var(--shadow-sm);
+    color: var(--ink); font: inherit;
+    transition: box-shadow .15s ease, transform .15s ease;
+  }
+  .site-card-open:hover { box-shadow: var(--shadow); }
+  .site-card-open:focus-visible { outline: 2px solid var(--wo-focus); outline-offset: 2px; }
+  .site-card-top { display: flex; align-items: center; gap: 8px; }
+  .site-card-main { flex: 1; min-width: 0; }
+  .site-card-host {
+    display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--display); font-weight: 700; font-size: 14px; color: var(--ink);
+  }
+  /* Layout A: one row in the Protection Health card's own shape -- icon tile, title, one detail
+     line, chevron -- so the two read as one family. The tile's colour carries the site's state. */
+  .site-card-ico {
+    flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #b06fd6, #e07aae); box-shadow: 0 3px 9px rgba(176, 106, 212, 0.34);
+  }
+  .site-card-ico svg { width: 17px; height: 17px; display: block; }
+  .site-card-ico.is-paused { background: linear-gradient(135deg, #e0a86a, #e07a5f); box-shadow: 0 3px 9px rgba(217, 139, 74, 0.32); }
+  .site-card-ico.is-off { background: linear-gradient(135deg, #d76a9a, #c0392b); box-shadow: 0 3px 9px rgba(200, 79, 139, 0.32); }
+  .site-card-ico.is-idle { background: var(--wo-surface-muted); box-shadow: none; }
+  .site-card-ico.is-idle path:first-child { fill: var(--ink-faint); }
+  .site-card-detail { display: block; margin-top: 2px; color: var(--ink-soft); font-size: 10.6px; font-weight: 600; line-height: 1.3; }
+  .site-card[data-layout="A"] .site-card-top { gap: 10px; }
+  .site-card[data-layout="A"] .site-card-host { font-size: 13px; color: var(--plum); line-height: 1.1; }
+  .site-card[data-layout="A"] .site-card-status { display: none; }
+  .site-card:not([data-layout="A"]) .site-card-ico,
+  .site-card:not([data-layout="A"]) .site-card-detail { display: none; }
+  .site-card-status {
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    font: 700 10.5px/1.2 var(--display); color: var(--wo-success);
+  }
+  .site-card-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .site-card-status.is-paused { color: var(--wo-warning); }
+  .site-card-status.is-off { color: var(--rose); }
+  .site-card-status.is-idle { color: var(--ink-faint); }
+  .site-card-chev { flex: none; color: var(--plum); font-size: 17px; line-height: 1; margin-left: 2px; }
+  .site-card-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
+  .site-card-stats[hidden] { display: none; }
+  .site-stat {
+    min-width: 0; text-align: center; padding: 7px 4px; border-radius: 12px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.6), rgba(240, 229, 250, 0.32));
+    border: 1px solid var(--line-2);
+  }
+  .site-stat b { display: block; font-family: var(--display); font-size: 17px; font-weight: 700; line-height: 1.1; color: var(--plum); }
+  .site-stat span { display: block; margin-top: 1px; font-size: 10.5px; font-weight: 700; color: var(--ink-faint); }
+  .site-stat.is-zero b { color: var(--ink-faint); font-weight: 600; }
+  .site-card-caption { display: block; margin-top: 8px; font-size: 10.5px; font-weight: 600; line-height: 1.4; color: var(--ink-faint); }
+  .site-card-caption[hidden] { display: none; }
+  /* The Interface row that picks the card's layout: the theme switch's buttons, two of them. */
+  .site-card-layout-options { grid-template-columns: repeat(2, 1fr); width: 132px; }
+  .site-state {
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 999px;
+    font: 700 9.4px/1.2 var(--display); letter-spacing: .05em; text-transform: uppercase;
+    color: var(--wo-success); background: var(--wo-success-bg); border: 1px solid var(--wo-success-line);
+  }
+  .site-state::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .site-state.is-paused { color: var(--wo-warning); background: var(--wo-warning-bg, rgba(217,139,74,.12)); border-color: rgba(217,139,74,.3); }
+  .site-state.is-off { color: var(--rose); background: var(--wo-popup-soft-danger-bg); border-color: var(--wo-popup-soft-danger-line); }
+  .site-state.is-idle { color: var(--ink-faint); background: var(--wo-surface-muted); border-color: var(--line-2); }
+
+  body.wo-site-view > :not(#site-dash):not(script) { display: none !important; }
+  body.wo-arrange-view > :not(#arrange-view):not(script) { display: none !important; }
+  #groups.sec-order-pending { visibility: hidden; }
+  /* A second row of the same 22px boxes as the quick theme buttons, under the last two of them
+     (those sit at 35px, 14px from the right, 3px apart). The header grows just enough to hold it. */
+  .head { padding-top: 19px; padding-bottom: 25px; }
+  .head-actions { position: absolute; top: 60px; right: 14px; display: flex; gap: 3px; }
+  .head-action { width: 22px; height: 22px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--wo-surface-wash); color: var(--ink-soft); cursor: pointer; }
+  .head-action:hover, .head-action:focus-visible { background: var(--wo-control-hover); color: var(--ink); }
+  .head-action svg { width: 12px; height: 12px; }
+  /* Script Shield sat outside the list with its card tucked under its heading; it keeps that look. */
+  #groups > #js-shield { margin-top: 4px; }
+  .arrange-view { padding: 14px 16px 18px; }
+  .arrange-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+  .arrange-back { width: 32px; height: 32px; flex: none; border: 0; border-radius: 10px; background: var(--card); color: var(--plum); display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow-sm); }
+  .arrange-back svg { width: 18px; height: 18px; }
+  .arrange-title { font: 700 17px/1.2 var(--display); color: var(--ink); margin: 3px 0 3px; }
+  .arrange-sub { font-size: 11.5px; color: var(--ink-soft); line-height: 1.45; }
+  .arrange-list { list-style: none; display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; }
+  .arrange-item { display: flex; align-items: center; gap: 4px; padding: 5px 5px 5px 3px; background: var(--card); border-radius: 12px; box-shadow: var(--shadow-sm); cursor: grab; user-select: none; -webkit-user-select: none; }
+  .arrange-item.is-dragging { opacity: .65; box-shadow: 0 0 0 2px var(--plum); }
+  .arrange-item.is-dropped { box-shadow: 0 0 0 2px var(--plum); }
+  .arrange-grip { width: 26px; height: 30px; flex: none; border: 0; border-radius: 8px; background: none; color: var(--ink-faint); display: grid; place-items: center; cursor: grab; touch-action: none; }
+  .arrange-grip:hover, .arrange-grip:focus-visible { background: var(--card-2); color: var(--plum); }
+  .arrange-num { width: 18px; flex: none; text-align: right; font: 700 11px/1 var(--display); color: var(--ink-faint); }
+  .arrange-name { flex: 1; min-width: 0; padding-left: 6px; font: 700 13px/1.25 var(--display); color: var(--ink); }
+  .arrange-move { width: 28px; height: 28px; flex: none; border: 0; border-radius: 8px; background: none; color: var(--plum); display: grid; place-items: center; cursor: pointer; }
+  .arrange-move:hover, .arrange-move:focus-visible { background: var(--card-2); }
+  .arrange-move:disabled { opacity: .3; cursor: default; background: none; }
+  .arrange-grip svg, .arrange-move svg { width: 16px; height: 16px; }
+  .arrange-status { min-height: 15px; margin: 10px 2px 0; font-size: 11px; color: var(--ink-soft); }
+  .arrange-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .arrange-actions .btn { flex: 1; }
+  body.wo-arranging, body.wo-arranging * { cursor: grabbing !important; user-select: none; }
+  .site-dash { padding: 12px 16px 18px; }
+  .site-dash-back {
+    display: inline-flex; align-items: center; gap: 4px; padding: 6px 11px 6px 8px; border-radius: 999px;
+    border: 1px solid var(--line-2); background: var(--wo-surface-wash); color: var(--plum);
+    font: 700 11.5px/1 var(--display); cursor: pointer;
+  }
+  .site-dash-back b { font-size: 16px; line-height: .8; }
+  .site-dash-head { margin-top: 12px; }
+  .site-dash-host-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .site-dash-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--display); font-size: 19px; font-weight: 700; color: var(--ink); }
+  .site-dash-since { margin-top: 3px; color: var(--ink-faint); font-size: 11px; font-weight: 700; }
+  .site-dash-hero {
+    margin-top: 12px; padding: 16px 12px 14px; text-align: center; border-radius: 16px;
+    background: linear-gradient(160deg, #faf3fe 0%, #f3e7fb 100%); border: 1px solid var(--line-2); box-shadow: var(--shadow-sm);
+  }
+  .site-dash-hero strong {
+    display: block; font-family: var(--display); font-size: 42px; font-weight: 700; line-height: 1;
+    background: linear-gradient(135deg, var(--grad-a), var(--grad-b)); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .site-dash-hero span { display: block; margin-top: 5px; color: var(--ink-soft); font: 700 10.5px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; }
+  .site-dash-note { margin-top: 8px; color: var(--ink-faint); font-size: 10.5px; line-height: 1.45; }
+  .site-dash-h {
+    margin: 16px 2px 6px; font-family: var(--display); font-size: 11px; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--plum); font-weight: 700;
+  }
+  .site-dash-box {
+    padding: 4px 12px; border-radius: 14px; background: var(--wo-card-gradient);
+    border: 1px solid var(--line-2);
+  }
+  .site-dash-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 12px; }
+  .site-dash-line:first-child { border-top: 0; }
+  .site-dash-line > span:first-child { min-width: 0; color: var(--ink-soft); font-weight: 600; }
+  .site-dash-line > b { flex: none; font-family: var(--display); color: var(--ink); }
+  .site-dash-line.is-zero > b { color: var(--ink-faint); font-weight: 600; }
+  .site-dash-source-note { padding: 7px 0 4px; color: var(--ink-faint); font-size: 10.5px; line-height: 1.4; }
+  .site-dash-live { margin-top: 10px; }
+  .site-dash-live .btn { width: 100%; }
+  .site-dash-live p { margin: 5px 1px 0; color: var(--ink-faint); font-size: 10.5px; line-height: 1.4; }
+  .site-dash-checks { margin-top: 15px; }
+  .site-dash-checks > summary { color: var(--plum); font: 700 11px/1.3 var(--display); letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+  .site-dash-checks > .site-dash-box { margin-top: 7px; }
+  .site-dash-event { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 6px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.35; }
+  .site-dash-event:first-child { border-top: 0; }
+  .site-dash-event time { color: var(--ink-faint); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 10.5px; padding-top: 1px; white-space: nowrap; }
+  .site-dash-event span { color: var(--ink); overflow-wrap: anywhere; }
+  .site-dash-event small { display: block; color: var(--ink-faint); font-size: 10.5px; }
+  .site-dash-recent-row { display: grid; grid-template-columns: minmax(0, 1fr) 58px 58px; gap: 6px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); font-size: 12px; }
+  .site-dash-recent-row:first-child { border-top: 0; }
+  .site-dash-recent-row > span:first-child { min-width: 0; color: var(--ink-soft); font-weight: 600; }
+  .site-dash-recent-row > b { text-align: right; font-family: var(--display); color: var(--ink); }
+  .site-dash-recent-row > b.is-zero { color: var(--ink-faint); font-weight: 600; }
+  .site-dash-recent-row.is-head { padding: 8px 0 4px; }
+  .site-dash-recent-row.is-head > span { color: var(--ink-faint); font: 700 9.6px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; text-align: right; }
+  .site-dash-recent-row.is-head > span:first-child { text-align: left; }
+  .site-dash-check { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 7px; padding: 6px 0; font-size: 11.5px; line-height: 1.35; color: var(--ink-soft); }
+  .site-dash-check i { font-style: normal; font-weight: 800; color: var(--wo-success); }
+  .site-dash-check i.is-neutral { color: var(--ink-faint); }
+  .site-dash-check.is-off i { color: var(--ink-faint); }
+  .site-dash-check.is-paused i { color: var(--wo-warning); }
+  .site-dash-check small { display: block; color: var(--ink-faint); font-size: 10.5px; }
+  .site-dash-empty { padding: 9px 0; color: var(--ink-faint); font-size: 11.5px; }
+  .site-dash-more { display: block; width: 100%; margin: 2px 0 6px; padding: 6px; border: 0; background: none; color: var(--plum); font: 700 11px/1 var(--display); cursor: pointer; }
+  .site-dash-actions { display: flex; gap: 7px; margin-top: 14px; }
+  .site-dash-actions .btn { flex: 1; padding: 9px 8px; font-size: 11px; }
+  .site-dash-foot { margin-top: 10px; color: var(--ink-faint); font-size: 10.5px; line-height: 1.45; text-align: center; }
+  :root[data-wardenone-theme-resolved="dark"] .site-card-open,
+  :root[data-wardenone-theme-resolved="dark"] .site-dash-hero { background: var(--wo-card-gradient); }
+  /* The brand gradient is dark in dark mode; the big number takes its light pair instead. */
+  :root[data-wardenone-theme-resolved="dark"] .site-dash-hero strong { background-image: linear-gradient(135deg, var(--wo-plum-deep), var(--wo-rose-text)); }
+  :root[data-wardenone-theme-resolved="dark"] .site-stat { background: var(--wo-surface-wash); }
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
@@ -778,6 +966,10 @@
       <button type="button" class="wo-theme-option" data-wardenone-theme="system" aria-pressed="false" aria-label="Follow the system theme" title="System theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"></path></svg>
       </button>
+    </div>
+    <div class="head-actions">
+      <button type="button" class="head-action" id="open-settings" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.40 5.08L10.69 2.69L13.31 2.69L13.60 5.08L15.76 5.98L17.66 4.49L19.51 6.34L18.02 8.24L18.92 10.40L21.31 10.69L21.31 13.31L18.92 13.60L18.02 15.76L19.51 17.66L17.66 19.51L15.76 18.02L13.60 18.92L13.31 21.31L10.69 21.31L10.40 18.92L8.24 18.02L6.34 19.51L4.49 17.66L5.98 15.76L5.08 13.60L2.69 13.31L2.69 10.69L5.08 10.40L5.98 8.24L4.49 6.34L6.34 4.49L8.24 5.98Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button type="button" class="head-action" id="arrange-open" aria-label="Rearrange sections" title="Rearrange sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 4v16M3.5 7.5 7 4l3.5 3.5M17 20V4M13.5 16.5 17 20l3.5-3.5"/></svg></button>
     </div>
     <div class="shield">
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -803,6 +995,27 @@
     <button class="btn primary" id="all-on" type="button">Turn on recommended protections</button>
     <div class="all-on-note" id="all-on-note" hidden></div>
   </div>
+
+  <section class="site-card" id="site-card" aria-label="This site" hidden>
+    <button type="button" class="site-card-open" id="site-card-open">
+      <span class="site-card-top">
+        <span class="site-card-ico" id="site-card-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M12 3.2l6.5 2.6v4.8c0 4.1-2.8 7.2-6.5 8.4-3.7-1.2-6.5-4.3-6.5-8.4V5.8L12 3.2z" fill="#fff" opacity=".95"/><path d="M9 12l2 2 4-4.4" stroke="#b06fd6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="site-card-main">
+          <span class="site-card-host" id="site-card-host">This site</span>
+          <span class="site-card-detail" id="site-card-detail"></span>
+        </span>
+        <span class="site-card-status is-idle" id="site-card-state">Checking</span>
+        <b class="site-card-chev" aria-hidden="true">&rsaquo;</b>
+      </span>
+      <span class="site-card-stats" id="site-card-stats">
+        <span class="site-stat"><b id="site-stat-trackers">&ndash;</b><span>Trackers</span></span>
+        <span class="site-stat"><b id="site-stat-ads">&ndash;</b><span>Ads</span></span>
+        <span class="site-stat"><b id="site-stat-other">&ndash;</b><span>Other</span></span>
+      </span>
+      <span class="site-card-caption" id="site-card-caption" hidden></span>
+    </button>
+    <button type="button" class="site-card-fold" id="site-card-fold" aria-expanded="true" aria-controls="site-card-stats site-card-caption site-card-detail" aria-label="Minimise the site card" title="Minimise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 14.5 6-6 6 6"/></svg></button>
+  </section>
   <div class="palette-shortcut-note" id="palette-shortcut-note" role="status" hidden>
     <strong>Command palette shortcut is not set.</strong> Your browser did not assign the suggested key. You can still open the palette, or choose a key in the browser's shortcut settings.
     <div class="palette-shortcut-actions">
@@ -856,8 +1069,10 @@
   </div>
   <div class="wo-noresult" id="wo-noresult"><strong>No matches yet</strong><span>Try download, tracker, cookie, login, or phishing.</span></div>
 
-  <h2 style="margin:14px 18px 4px;font-family:var(--display);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--plum);font-weight:700;">Script Shield</h2>
-  <div class="card-group" id="js-shield" style="margin:0 16px 4px;padding:4px 14px;">
+  <div class="group" id="groups">
+
+  <h2>Script Shield</h2>
+  <div class="card-group" id="js-shield">
     <div class="row" style="display:block;padding:8px 0 6px;border-bottom:none;">
       <div class="desc" id="js-shield-desc">Blocks JavaScript, WebAssembly startup, inline scripts, and script-driven active content. Smart uses trusted script hosts below; Lockdown only allows sites you trust. Reload after changing.</div>
     </div>
@@ -890,7 +1105,6 @@
     </div>
   </div>
 
-  <div class="group" id="groups">
 
     <h2>Redirects & popups</h2>
     <div class="card-group">
@@ -1803,6 +2017,17 @@
       </div>
     </div>
     <div class="row">
+      <div><div class="name" id="site-card-layout-title">Site card</div><div class="desc">The card at the top for the site you&rsquo;re on: one line, or three counts.</div></div>
+      <div class="wo-theme-options wo-interface-theme-options site-card-layout-options" role="group" aria-labelledby="site-card-layout-title">
+        <button type="button" class="wo-theme-option" data-site-card-layout="A" aria-pressed="true">One line</button>
+        <button type="button" class="wo-theme-option" data-site-card-layout="B" aria-pressed="false">Counts</button>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="name">Section order</div><div class="desc">Put the sections in the order you use them. Only the order changes; every switch stays as it is.</div></div>
+      <button class="btn" id="arrange-open-interface" type="button">Arrange</button>
+    </div>
+    <div class="row">
       <div><div class="name">Show block notifications</div><div class="desc">Pop-up toast when something is blocked, with the reason</div></div>
       <label class="tg"><input type="checkbox" data-key="showToasts"><span class="track"></span><span class="knob"></span></label>
     </div>
@@ -2007,35 +2232,12 @@
     </div>
 </div>
 
-  <section class="group site-controls-section" id="site-controls-group" aria-labelledby="site-controls-title">
-  <h2 id="site-controls-title">This site</h2>
-  <div class="card-group" id="site-controls" aria-labelledby="site-controls-title">
-    <div class="row site-pause-row">
-      <div>
-        <div class="name">Pause everything here</div>
-        <div class="desc" id="site-pause-desc">Turns WardenOne off on this site for a while, then turns it back on by itself. Use this instead of the allowlist when something is in your way right now. The browser-level blocks WardenOne holds for you step back too: location goes back to Chrome&rsquo;s own prompt, never to automatic access.</div>
-      </div>
-      <div class="site-pause-actions">
-        <button class="btn" id="site-pause-15">15m</button>
-        <button class="btn" id="site-pause-60">1h</button>
-        <button class="btn" id="site-pause-480">8h</button>
-      </div>
-    </div>
-    <div class="row site-pause-active-row" id="site-pause-active-row" hidden>
-      <div><div class="name" id="site-pause-active">Paused</div><div class="desc">Protection comes back on its own — no need to remember.</div></div>
-      <button class="btn" id="site-pause-cancel">Resume now</button>
-    </div>
-    <div class="row site-override-row">
-      <div>
-        <div class="name">Turn off one protection here</div>
-        <div class="desc">Keeps everything else running. For when a single guard misreads one site rather than being wrong everywhere. Only protections that run in the page are listed; one marked <em>page part only</em> also has a network part that keeps working here. Popup guards also have a worker backstop that turns off here.</div>
-        <div class="site-override-actions">
-          <select class="api-field" id="site-off-pick"></select>
-          <button class="btn" id="site-off-add">Turn off</button>
-        </div>
-        <div id="site-off-list" class="site-override-list"></div>
-        <div id="site-off-stale" class="desc" hidden></div>
-      </div>
+  <section class="group" id="site-pointer-group" aria-labelledby="site-pointer-title">
+  <h2 id="site-pointer-title">This site</h2>
+  <div class="card-group">
+    <div class="row">
+      <div><div class="name">Pause or adjust this site</div><div class="desc">Pause WardenOne here for a while, turn off one protection on this site, or allowlist it. These live in the site dashboard, behind the site card at the top.</div></div>
+      <button class="btn" id="site-pointer-open" type="button">Open</button>
     </div>
   </div>
   </section>
@@ -2099,8 +2301,95 @@
       <span class="wo-footer-copy"><strong>Set-up guide</strong><small>Pick Recommended or Maximum privacy again</small></span>
     </a>
   </div>
+<section class="site-dash" id="site-dash" aria-labelledby="site-dash-host" hidden>
+  <button type="button" class="site-dash-back" id="site-dash-back"><b aria-hidden="true">&lsaquo;</b> Back</button>
+  <div class="site-dash-head">
+    <div class="site-dash-host-line">
+      <h2 class="site-dash-host" id="site-dash-host">This site</h2>
+      <span class="site-state is-idle" id="site-dash-state">Checking</span>
+    </div>
+    <div class="site-dash-since" id="site-dash-since"></div>
+  </div>
+  <div class="site-dash-hero"><strong id="site-dash-total">&ndash;</strong><span id="site-dash-label">stopped on this page</span></div>
+  <div class="site-dash-note" id="site-dash-note" hidden></div>
+  <div class="site-dash-live">
+    <button class="btn" id="site-dash-logger" type="button">Inspect new requests</button>
+    <p>Open this, then reload the site to see individual requests.</p>
+  </div>
+  <h3 class="site-dash-h" id="site-dash-cats-title">On this page</h3>
+  <div class="site-dash-box" id="site-dash-cats"></div>
+  <h3 class="site-dash-h" id="site-dash-sources-title" hidden>Blocking rules that matched</h3>
+  <div class="site-dash-box" id="site-dash-sources" hidden></div>
+  <h3 class="site-dash-h">Actions &amp; notices</h3>
+  <div class="site-dash-box" id="site-dash-timeline"></div>
+  <h3 class="site-dash-h">Protection settings here</h3>
+  <div class="site-dash-box" id="site-dash-protections"></div>
+  <h3 class="site-dash-h">On this site lately</h3>
+  <div class="site-dash-box" id="site-dash-recent"></div>
+  <details class="site-dash-checks">
+    <summary>Checks with no recorded alert</summary>
+    <div class="site-dash-box" id="site-dash-clear"></div>
+  </details>
+  <div class="site-dash-controls" id="site-controls-group">
+  <h3 class="site-dash-h" id="site-controls-title">Settings for this site</h3>
+  <div class="card-group" id="site-controls" aria-labelledby="site-controls-title">
+    <div class="row site-pause-row">
+      <div>
+        <div class="name">Pause everything here</div>
+        <div class="desc" id="site-pause-desc">Turns WardenOne off on this site for a while, then turns it back on by itself. Use this instead of the allowlist when something is in your way right now. The browser-level blocks WardenOne holds for you step back too: location goes back to Chrome&rsquo;s own prompt, never to automatic access.</div>
+      </div>
+      <div class="site-pause-actions">
+        <button class="btn" id="site-pause-15">15m</button>
+        <button class="btn" id="site-pause-60">1h</button>
+        <button class="btn" id="site-pause-480">8h</button>
+      </div>
+    </div>
+    <div class="row site-pause-active-row" id="site-pause-active-row" hidden>
+      <div><div class="name" id="site-pause-active">Paused</div><div class="desc">Protection comes back on its own — no need to remember.</div></div>
+      <button class="btn" id="site-pause-cancel">Resume now</button>
+    </div>
+    <div class="row site-override-row">
+      <div>
+        <div class="name">Turn off one protection here</div>
+        <div class="desc">Keeps everything else running. For when a single guard misreads one site rather than being wrong everywhere. Only protections that run in the page are listed; one marked <em>page part only</em> also has a network part that keeps working here. Popup guards also have a worker backstop that turns off here.</div>
+        <div class="site-override-actions">
+          <select class="api-field" id="site-off-pick"></select>
+          <button class="btn" id="site-off-add">Turn off</button>
+        </div>
+        <div id="site-off-list" class="site-override-list"></div>
+        <div id="site-off-stale" class="desc" hidden></div>
+      </div>
+    </div>
+    <div class="row site-allowlist-row">
+      <div><div class="name">Allowlist this site</div><div class="desc" id="site-dash-allowlist-desc">WardenOne stays passive here until you take it off the list. For a site you trust completely.</div></div>
+      <button class="btn" id="site-dash-allowlist" type="button">Allowlist</button>
+    </div>
+  </div>
+  <div class="site-dash-note">Changes apply when you reload the page.</div>
+  </div>
+  <div class="site-dash-actions">
+    <button class="btn" id="site-dash-activity" type="button">All activity for this site</button>
+  </div>
+  <div class="site-dash-foot" id="site-dash-foot"></div>
+</section>
 <script src="build-profile.js"></script>
 <script src="notification-schema.js"></script>
+<section class="arrange-view" id="arrange-view" aria-labelledby="arrange-title" hidden>
+  <div class="arrange-head">
+    <button type="button" class="arrange-back" id="arrange-back" aria-label="Back to settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m14.5 6-6 6 6 6"/></svg></button>
+    <div>
+      <p class="arrange-title" id="arrange-title" role="heading" aria-level="2">Arrange sections</p>
+      <p class="arrange-sub">Drag a section to move it. On touch, hold briefly first. The dots and arrows also work. Only the order changes; every switch stays as it is.</p>
+    </div>
+  </div>
+  <ol class="arrange-list" id="arrange-list" aria-labelledby="arrange-title"></ol>
+  <p class="arrange-status" id="arrange-status" role="status" aria-live="polite"></p>
+  <div class="arrange-actions">
+    <button type="button" class="btn" id="arrange-reset">Original order</button>
+    <button type="button" class="btn primary" id="arrange-done">Done</button>
+  </div>
+</section>
+
 <script src="popup-health.js"></script>
 <script src="popup-scroll-memory.js"></script>
 <script src="popup.js"></script>

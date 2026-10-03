@@ -615,7 +615,18 @@ beginBadgeCountRecovery();
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!sender || !sender.tab || sender.tab.id == null) return;
   const tabId = sender.tab.id;
+  /* The Site Dashboard's count of routine page actions (see "Site tally"). Top frame only: that
+     is the page the dashboard describes, and frames report through it. */
+  if (msg && msg.kind === 'rg-tally') {
+    const tallyLimit = TAB_CONTEXT_RATE_LIMITS['rg-tally'] || { max: 300, windowMs: 60000 };
+    if (!allowTabMessageRate(tabId, 'rg-tally', tallyLimit.max, tallyLimit.windowMs)) return;
+    if (Number(sender.frameId) !== 0) return;
+    void recordPageTally(sender.tab, String(msg.type || ''), msg.n, msg.pageStart);
+    void maybePollTallyNetwork();
+    return;
+  }
   if (msg && msg.kind === 'rg-block') {
+    void maybePollTallyNetwork();
     // The ceiling comes from TAB_CONTEXT_RATE_LIMITS so there is one number for this
     // kind rather than two that can drift apart -- this call site used to hardcode a
     // different, lower one. The bucket is deliberately NOT the same as the router's
@@ -2092,6 +2103,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   removeBadge(tabId);
   clearTabMessageRates(tabId);
   clearSmartScriptRecoveryForTab(tabId);
+  void forgetTabTally(tabId);
 });
 
 // On install, set a default config in storage so the options page has a base.
@@ -5026,13 +5038,72 @@ function logAllowingRuleBases() {
   ].filter((base) => typeof base === 'number'));
   return __logAllowingBases;
 }
+/* Static rulesets are mostly block lists, but not only. rules.json (the IP-logger list) carries
+   five allow rules -- one lets github.com's own requests through, so every request a GitHub page
+   made matched it, and the Site Dashboard counted hundreds of "IP-logger blocks" -- and the
+   AdShield list carries hundreds of exceptions and allow-the-whole-frame rules. The feed names the
+   rule, never its action, so the action is read from the shipped files, once, and kept: the ids in
+   each static ruleset that do not stop a request. A redirect does (Spotify's ad clips are swapped
+   for silence), so only block and redirect count. */
+const STATIC_NON_STOPPING_RULES = new Map();
+let staticNonStoppingLoad = null;
+function loadStaticNonStoppingRules() {
+  if (staticNonStoppingLoad) return staticNonStoppingLoad;
+  staticNonStoppingLoad = (async () => {
+    let resources = [];
+    try { resources = (chrome.runtime.getManifest().declarative_net_request || {}).rule_resources || []; } catch (_) {}
+    for (const res of resources) {
+      try {
+        const rules = await (await fetch(chrome.runtime.getURL(res.path))).json();
+        const ids = new Set();
+        for (const rule of Array.isArray(rules) ? rules : []) {
+          const type = rule && rule.action && rule.action.type;
+          if (type !== 'block' && type !== 'redirect') ids.add(Number(rule.id));
+        }
+        STATIC_NON_STOPPING_RULES.set(res.id, ids);
+      } catch (_) {}
+    }
+    return STATIC_NON_STOPPING_RULES;
+  })();
+  return staticNonStoppingLoad;
+}
+/* What each matched dynamic or session rule does, asked of Chrome for exactly the ids in hand.
+   Filtered by id, so it never pulls the whole dynamic table (22k rules) onto the UI thread. */
+async function matchedRuleActions(matches) {
+  const ids = { _dynamic: new Set(), _session: new Set() };
+  for (const info of matches || []) {
+    const rule = info && info.rule;
+    if (rule && ids[rule.rulesetId]) ids[rule.rulesetId].add(Number(rule.ruleId));
+  }
+  const actions = new Map();
+  const read = async (area, getter) => {
+    if (!ids[area].size) return;
+    try {
+      const rules = await getter({ ruleIds: Array.from(ids[area]) });
+      for (const rule of rules || []) actions.set(area + ':' + Number(rule.id), rule.action && rule.action.type);
+    } catch (_) { /* unknown actions fall back to the ranges */ }
+  };
+  const dnr = chrome.declarativeNetRequest;
+  await read('_dynamic', (filter) => dnr.getDynamicRules(filter));
+  await read('_session', (filter) => dnr.getSessionRules(filter));
+  return actions;
+}
 /* Chrome's matched-rule feed says WHICH rule matched, never what it did. So a match
    sitting next to a blocked request may be an allowance that had nothing to do with
    the block, and writing "blocked by: your allowlist" onto that row would be a wrong
    answer wearing an exact answer's clothes. Only a rule that can block gets to claim
-   one. Static rulesets are block lists, so they all can. */
-function logRuleCanBlock(ruleId, rulesetId) {
-  if (rulesetId && rulesetId !== '_dynamic' && rulesetId !== '_session') return true;
+   one. A static rule can unless its file says otherwise (above); until the files have
+   been read, static rules are taken as blocks, which is what they nearly all are. */
+function logRuleCanBlock(ruleId, rulesetId, actions) {
+  if (rulesetId && rulesetId !== '_dynamic' && rulesetId !== '_session') {
+    const nonStopping = STATIC_NON_STOPPING_RULES.get(rulesetId);
+    return !(nonStopping && nonStopping.has(Number(ruleId)));
+  }
+  /* A dynamic or session rule's range says who owns it, not what it does: "A protection setting"
+     holds a few hundred allow rules beside its blocks. When the caller has read the matched
+     rules' actions (matchedRuleActions), that answer wins. */
+  const known = actions && actions.get(String(rulesetId) + ':' + Number(ruleId));
+  if (known) return known === 'block' || known === 'redirect';
   const id = Number(ruleId);
   if (!Number.isFinite(id)) return false;
   const allowing = logAllowingRuleBases();
@@ -5275,6 +5346,7 @@ function logSendMatchedLists() {
 
 async function logPollMatchedRules() {
   if (!LOG_PORTS.size || !logMatchedRulesAvailable()) return;
+  await loadStaticNonStoppingRules();
   const since = LOG_MATCH_SINCE;
   LOG_MATCH_SINCE = Date.now();
   let matched = [];
@@ -5286,12 +5358,13 @@ async function logPollMatchedRules() {
     /* Over quota, or the permission is gone. Say nothing rather than guess. */
     return;
   }
+  const actions = await matchedRuleActions(matched);
   let changed = false;
   for (const info of matched) {
     const rule = info && info.rule;
     if (!rule) continue;
     const source = logRuleSource(rule.ruleId, rule.rulesetId);
-    const owner = logRuleCanBlock(rule.ruleId, rule.rulesetId)
+    const owner = logRuleCanBlock(rule.ruleId, rule.rulesetId, actions)
       ? logSoleBlockedNear(typeof info.tabId === 'number' ? info.tabId : -1, info.timeStamp)
       : null;
     if (owner) {
@@ -12447,6 +12520,51 @@ try {
   console.warn('[WardenOne] certificate guard listener failed', e);
 }
 
+/* Recently changed settings, for the Settings page. Recorded here rather than by each page,
+   so a switch flipped in the popup, in Settings, by a preset or by an import all land in the
+   same list. Newest first, one entry per setting, the latest 40 for 30 days.
+   Only on/off switches and three named choices are kept. Never an API key, a host map or a
+   timestamp, so the list can say what changed without saying where you have been. Nothing is
+   recorded when there was no config before (a fresh install, or the write after an erase),
+   and a key that was missing and arrives at its default is a default being filled in, not a
+   change anybody made. */
+const SETTINGS_RECENT_KEY = 'wardenone_settings_recent';
+const SETTINGS_RECENT_MAX = 40;
+const SETTINGS_RECENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const SETTINGS_RECENT_CHOICES = new Set(['forgetMeMode', 'eyeShieldMode', 'memoryMode']);
+/* Folded or rewritten on every popup save; they are bookkeeping, not choices. */
+const SETTINGS_RECENT_IGNORED = new Set(['antiFingerprint', 'googleSearchResultCleanup', 'showDownloadBar']);
+function settingsChangesBetween(oldValue, newValue, at) {
+  const isConfig = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
+  if (!isConfig(oldValue) || !isConfig(newValue)) return [];
+  const out = [];
+  const keys = new Set(Object.keys(oldValue).concat(Object.keys(newValue)));
+  for (const key of keys) {
+    if (key.startsWith('__') || /(?:Key|At)$/.test(key) || SETTINGS_RECENT_IGNORED.has(key)) continue;
+    const to = newValue[key];
+    const from = oldValue[key] === undefined ? DEFAULT_CONFIG[key] : oldValue[key];
+    if (from === undefined || from === to) continue;
+    const isSwitch = typeof to === 'boolean' && typeof from === 'boolean';
+    const isChoice = SETTINGS_RECENT_CHOICES.has(key) && typeof to === 'string' && typeof from === 'string' && to.length <= 40;
+    if (isSwitch || isChoice) out.push({ key, from, to, at });
+  }
+  return out;
+}
+let __settingsRecentChain = Promise.resolve();
+function recordSettingsChanges(entries) {
+  if (!Array.isArray(entries) || !entries.length) return __settingsRecentChain;
+  __settingsRecentChain = __settingsRecentChain.then(async () => {
+    const store = await localGet(SETTINGS_RECENT_KEY);
+    const prior = Array.isArray(store && store[SETTINGS_RECENT_KEY]) ? store[SETTINGS_RECENT_KEY] : [];
+    const fresh = new Set(entries.map((entry) => entry.key));
+    const cutoff = Date.now() - SETTINGS_RECENT_MAX_AGE_MS;
+    const kept = prior.filter((entry) => entry && typeof entry.key === 'string'
+      && !fresh.has(entry.key) && Number(entry.at) > cutoff);
+    await localSet({ [SETTINGS_RECENT_KEY]: entries.concat(kept).slice(0, SETTINGS_RECENT_MAX) });
+  }).catch(() => {});
+  return __settingsRecentChain;
+}
+
 // Re-apply when the user changes settings (session rules are cleared on browser
 // restart, so we also call this on startup below).
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -12454,6 +12572,22 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // other extension contexts, or our own localSet). newValue is the full post-write config.
   if (area === 'local' && changes.wardenone_config) {
     __cfgCacheSet(__cfgClone(changes.wardenone_config.newValue) || {});
+  }
+  if (area === 'local' && (changes.wardenone_config || changes[SCRIPT_SHIELD_MODE_KEY])) {
+    try {
+      const at = Date.now();
+      const config = changes.wardenone_config;
+      const entries = config ? settingsChangesBetween(config.oldValue, config.newValue, at) : [];
+      /* Script Shield's level is kept outside the config. A missing old value is Normal; a
+         removed one (an erase) is not a choice and is left out. */
+      const mode = changes[SCRIPT_SHIELD_MODE_KEY];
+      if (mode && mode.newValue !== undefined) {
+        const from = normalizeScriptShieldMode(mode.oldValue);
+        const to = normalizeScriptShieldMode(mode.newValue);
+        if (from !== to) entries.push({ key: 'scriptShieldMode', from, to, at });
+      }
+      recordSettingsChanges(entries);
+    } catch (_) {}
   }
   if (area === 'local' && (changes.wardenone_config
       || changes.wardenone_learned
@@ -12889,6 +13023,10 @@ try {
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     const newHost = forgetHostFromUrl((tab && tab.url) || change.url || '');
     if (!newHost) return;
+    /* The Site Dashboard's tally follows the same navigations (see "Site tally"): which site a
+       tab was on when, and a chance to read the matched-rule feed while the worker is awake. */
+    if (change && change.url) void noteTallyTabSite(tabId, change.url, !!(tab && tab.incognito));
+    if (change && change.status === 'complete') void maybePollTallyNetwork();
     const prev = FORGET_TAB_HOSTS[tabId];
     const prevHost = prev && prev.host;
     noteForgetTabHost(tabId, newHost);
@@ -16107,6 +16245,10 @@ async function updateRemoteLists(reason) {
 // destructive or browser-wide stays extension-page only.
 const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'rg-block',
+  /* The Site Dashboard's count of routine page actions (cleaned links, stripped pings, cookie
+     banners rejected). The bridge relays only engine-signed events, and it is counted, never
+     logged: the Activity log and the badge do not move. */
+  'rg-tally',
   'content-config-get',
   'redirect-bootstrap-get',
   /* Silencing a notice, and reporting that one was shown. Both carry a warning
@@ -16171,6 +16313,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
   // count: the page can bypass its own limiter. Set high enough that a genuinely
   // ad-heavy page reporting real blocks is never cut off.
   'rg-block': { max: 300, windowMs: 60000 },
+  'rg-tally': { max: 300, windowMs: 60000 },
   /* One bridge runs in every frame and the smaller isolated guards each request their own
      least-privilege snapshot. Keep enough room for frame-heavy applications while still
      preventing a compromised tab from turning configuration reads into a storage flood. */
@@ -16916,24 +17059,26 @@ async function buildProtectionHealthSummary(tab) {
   );
   const list = healthListCounts(meta, auxMeta, publisherSources);
   const listAge = list.updated ? now - list.updated : 0;
+  /* `fix` says where each one is put right, for the Settings overview: a switch, a page, or Verify &
+     repair. The popup reads only severity and text. Startup findings are reviewed in the popup. */
   const issues = [];
   const addIssue = (severity, text, topLevel, extra) => {
     if (text) issues.push(Object.assign({ severity, text, topLevel: topLevel === true }, extra || {}));
   };
 
-  if (cfg.enabled === false) addIssue('danger', 'Master switch is off, so page and network protections are paused.');
-  if (cfg.blockMalwareSites === false) addIssue('danger', 'Known malicious-site blocking is turned off.');
-  if (cfg.paymentCardGuard === false) addIssue('danger', 'Payment Card Guard is off; card-entry scam warnings are disabled.');
-  if (cfg.detectSkimmers === false) addIssue('warn', 'Skimmer detection is off, so third-party card/password theft checks are reduced.');
-  if (cfg.autoUpdateLists === false) addIssue('info', 'Auto-updating lists are off; built-in rules still work, but new threats will not arrive daily.');
-  if (cfg.silentMode === true) addIssue('info', 'Silent mode is hiding most popups and badge feedback.');
-  if (cfg.watchExtensionPermissions === false) addIssue('info', 'Extension permission-change alerts are off.');
-  if (!list.updated && cfg.autoUpdateLists !== false) addIssue('info', 'Remote lists have not updated yet; built-in rules are active.');
-  else if (listAge > 7 * 24 * 60 * 60 * 1000) addIssue('info', 'WardenOne last fetched remote lists more than 7 days ago.');
-  else if (listAge > 72 * 60 * 60 * 1000) addIssue('info', 'WardenOne has not fetched remote lists recently.');
+  if (cfg.enabled === false) addIssue('danger', 'Master switch is off, so page and network protections are paused.', false, { fix: 'master' });
+  if (cfg.blockMalwareSites === false) addIssue('danger', 'Known malicious-site blocking is turned off.', false, { fix: 'setting:blockMalwareSites' });
+  if (cfg.paymentCardGuard === false) addIssue('danger', 'Payment Card Guard is off; card-entry scam warnings are disabled.', false, { fix: 'setting:paymentCardGuard' });
+  if (cfg.detectSkimmers === false) addIssue('warn', 'Skimmer detection is off, so third-party card/password theft checks are reduced.', false, { fix: 'setting:detectSkimmers' });
+  if (cfg.autoUpdateLists === false) addIssue('info', 'Auto-updating lists are off; built-in rules still work, but new threats will not arrive daily.', false, { fix: 'setting:autoUpdateLists' });
+  if (cfg.silentMode === true) addIssue('info', 'Silent mode is hiding most popups and badge feedback.', false, { fix: 'setting:silentMode' });
+  if (cfg.watchExtensionPermissions === false) addIssue('info', 'Extension permission-change alerts are off.', false, { fix: 'setting:watchExtensionPermissions' });
+  if (!list.updated && cfg.autoUpdateLists !== false) addIssue('info', 'Remote lists have not updated yet; built-in rules are active.', false, { fix: 'page:lists' });
+  else if (listAge > 7 * 24 * 60 * 60 * 1000) addIssue('info', 'WardenOne last fetched remote lists more than 7 days ago.', false, { fix: 'page:lists' });
+  else if (listAge > 72 * 60 * 60 * 1000) addIssue('info', 'WardenOne has not fetched remote lists recently.', false, { fix: 'page:lists' });
   if (list.publisher.stale) {
     addIssue('info', list.publisher.stale + (list.publisher.stale === 1 ? ' feed has' : ' feeds have')
-      + ' a publisher date over 30 days old. Downloaded rules remain active; daily checks continue while Auto-update is on. See Blocklist > Publisher dates for the sources.');
+      + ' a publisher date over 30 days old. Downloaded rules remain active; daily checks continue while Auto-update is on. See Blocklist > Publisher dates for the sources.', false, { fix: 'page:lists' });
   }
   // A feed that did not answer is not a problem you have. Updates merge sources and never wipe
   // on a failed fetch, so the copy already downloaded stays active and nothing is unprotected --
@@ -16946,10 +17091,10 @@ async function buildProtectionHealthSummary(tab) {
     const totalFeeds = Number(list.sources.total || 0);
     const staleNow = listAge > 72 * 60 * 60 * 1000;
     if (totalFeeds > 0 && failedFeeds >= totalFeeds) {
-      addIssue('warn', 'No filter list could be reached on the last update. The copies already downloaded are still active, so nothing is unprotected, but new threats have stopped arriving.');
+      addIssue('warn', 'No filter list could be reached on the last update. The copies already downloaded are still active, so nothing is unprotected, but new threats have stopped arriving.', false, { fix: 'page:lists' });
     } else if (staleNow) {
       addIssue('info', failedFeeds + (failedFeeds === 1 ? ' filter list keeps' : ' filter lists keep')
-        + ' failing to update, which is why the rest are behind. What was already downloaded is still active.');
+        + ' failing to update, which is why the rest are behind. What was already downloaded is still active.', false, { fix: 'page:lists' });
     }
   }
 
@@ -16966,6 +17111,7 @@ async function buildProtectionHealthSummary(tab) {
     addIssue(criticalExtensionAlerts.length ? 'danger' : 'warn', unreadExtensionAlerts.length
       + ' important extension change' + (unreadExtensionAlerts.length === 1 ? ' needs' : 's need') + ' review.', false, {
       kind: 'extension-alerts',
+      fix: 'page:extensions',
       total: unreadExtensionAlerts.length,
       alerts: unreadExtensionAlerts.slice(0, 5).map((event) => ({
         name: short(event.name || '(unknown extension)', 80),
@@ -16981,7 +17127,7 @@ async function buildProtectionHealthSummary(tab) {
   }
   const extensionWatchStatusValue = store && store[EXT_WATCH_STATUS_KEY];
   if (cfg.watchExtensionPermissions !== false && extensionWatchStatusValue && extensionWatchStatusValue.state === 'error') {
-    addIssue('warn', 'Extension Watch could not complete its last inventory check.');
+    addIssue('warn', 'Extension Watch could not complete its last inventory check.', false, { fix: 'page:extensions' });
   }
   const startupReport = store && store[typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'wardenone_startup_report'];
   const startupFindings = (startupReport && Array.isArray(startupReport.tabs) ? startupReport.tabs.length : 0)
@@ -17001,7 +17147,7 @@ async function buildProtectionHealthSummary(tab) {
     }
   } catch (_) {}
   if (__blocklistRulesetError) {
-    addIssue('danger', 'WardenOne could not apply its blocking rulesets, so network blocking may be off.');
+    addIssue('danger', 'WardenOne could not apply its blocking rulesets, so network blocking may be off.', false, { fix: 'repair' });
   }
   // The reconciler's own record of what did not reach Chrome. A switch that is on in settings
   // and missing from the browser is the one state this summary must not call healthy (MV3-01).
@@ -17014,7 +17160,7 @@ async function buildProtectionHealthSummary(tab) {
       : 'Could not apply to the browser: ' + named.join(', ') + '. Those settings are on but not in effect.')
       + (exhausted
         ? ' Automatic retries are used up; change any setting or run Repair to try again.'
-        : ' WardenOne will retry.'), true);
+        : ' WardenOne will retry.'), true, { fix: 'repair' });
   }
   // The scraper pass's seed list is read by the worker (BUG-10); a switch that is on while its list
   // could not be read is on and doing nothing, and used to say nothing about it.
@@ -17023,7 +17169,7 @@ async function buildProtectionHealthSummary(tab) {
       const seed = await searchJunkSeed();
       if (!seed.ok) {
         addIssue('warn', 'Flag scraper results is on, but its packaged list of scraper sites could not be read (' + seed.error
-          + '). Only lists you added yourself apply; Repair or a reinstall restores the file.', true);
+          + '). Only lists you added yourself apply; Repair or a reinstall restores the file.', true, { fix: 'repair' });
       }
     } catch (_) {}
   }
@@ -17031,22 +17177,22 @@ async function buildProtectionHealthSummary(tab) {
   // switch says, so it is reported the way a failed applier is (LIFE-04).
   if (LISTENERS_NOT_REGISTERED.length) {
     addIssue('danger', 'Could not start in this browser session: ' + LISTENERS_NOT_REGISTERED.slice(0, 6).join(', ')
-      + '. Those protections are on but not running; restarting the browser usually clears this.', true);
+      + '. Those protections are on but not running; restarting the browser usually clears this.', true, { fix: 'repair' });
   }
   if (!enabledRulesets) {
     // Reachable on a cold start: the popup wakes the worker and asks immediately. Saying so is
     // the honest answer -- claiming health on the strength of a check that did not run is not.
-    addIssue('warn', 'WardenOne could not check which blocking rulesets are active.', true);
+    addIssue('warn', 'WardenOne could not check which blocking rulesets are active.', true, { fix: 'repair' });
   } else if (cfg.enabled !== false) {
     // With the master switch off, every ruleset being disabled is the correct state and is
     // already reported above, so the empty case only means something while WardenOne is on.
     if (!enabledRulesets.length) {
-      addIssue('danger', 'No blocking rulesets are enabled, so ads, trackers and known malicious domains are not being blocked.');
+      addIssue('danger', 'No blocking rulesets are enabled, so ads, trackers and known malicious domains are not being blocked.', false, { fix: 'repair' });
     } else {
-      if (cfg.blockMalwareSites !== false && !enabledRulesets.includes('grabbers')) addIssue('danger', 'Core malicious-domain ruleset is not enabled.');
-      if (cfg.adShield !== false && !enabledRulesets.includes('adshield_easylist')) addIssue('warn', 'AdShield network ruleset is not enabled.', true);
-      if (cfg.adShield !== false && !enabledRulesets.includes('spotify_media')) addIssue('warn', 'Spotify ad-media ruleset is not enabled.', true);
-      if (cfg.blockTrackers !== false && !enabledRulesets.includes('trackers')) addIssue('warn', 'Tracker ruleset is not enabled.', true);
+      if (cfg.blockMalwareSites !== false && !enabledRulesets.includes('grabbers')) addIssue('danger', 'Core malicious-domain ruleset is not enabled.', false, { fix: 'repair' });
+      if (cfg.adShield !== false && !enabledRulesets.includes('adshield_easylist')) addIssue('warn', 'AdShield network ruleset is not enabled.', true, { fix: 'repair' });
+      if (cfg.adShield !== false && !enabledRulesets.includes('spotify_media')) addIssue('warn', 'Spotify ad-media ruleset is not enabled.', true, { fix: 'repair' });
+      if (cfg.blockTrackers !== false && !enabledRulesets.includes('trackers')) addIssue('warn', 'Tracker ruleset is not enabled.', true, { fix: 'repair' });
     }
   }
 
@@ -17057,7 +17203,7 @@ async function buildProtectionHealthSummary(tab) {
   // a page Chrome keeps extensions out of, a paused site, an excluded one, a sleeping tab or
   // one that has not answered yet is reported as what it is, and lowers nothing.
   const tabEvidence = await tabProtectionEvidence(tab, cfg);
-  if (tabEvidence.state === 'failed') addIssue('warn', tabEvidence.text, true);
+  if (tabEvidence.state === 'failed') addIssue('warn', tabEvidence.text, true, { fix: 'repair' });
   const componentFailures = (degraded && Array.isArray(degraded.failed) ? degraded.failed.length : 0)
     + LISTENERS_NOT_REGISTERED.length + (__blocklistRulesetError ? 1 : 0);
 
@@ -17101,6 +17247,379 @@ async function buildProtectionHealthSummary(tab) {
     list,
     needsAttention: issues.slice(0, 6),
   };
+}
+
+/* ---- Site Dashboard -------------------------------------------------------------------------
+   What WardenOne did on the page open in one tab, for the popup's site card and dashboard. Two
+   sources it already keeps, read and never added to: the network rules Chrome matched in that tab
+   (getMatchedRules names the list that fired, never the request it stopped) and the Activity
+   Centre's own log, cut to this site. Both are scoped to the page load by the document's own
+   time origin, so a count never carries over from the previous page in the same tab. */
+const SITE_DASH_MATCH_TTL_MS = 15000;
+const SITE_DASH_MATCH_CACHE = new Map();
+const SITE_DASH_SOURCE_CATEGORY = {
+  'Tracker list': 'trackers',
+  'EasyPrivacy': 'trackers',
+  'Tracker blocking': 'trackers',
+  'Fingerprint-script block': 'trackers',
+  'AdShield / EasyList': 'ads',
+  'Spotify web player media': 'ads',
+  'IP-logger list': 'security',
+  'IP-logger feed': 'security',
+  'Cryptominer feed': 'security',
+  'Blocklist': 'security',
+  'Blocked sites': 'security',
+  'IP-lookup block': 'security',
+  'DNS-rebind quarantine': 'security',
+  'Intranet guard': 'security',
+  'My rules': 'yours',
+  'Script Shield': 'yours',
+};
+// The log keeps some entries as a bare host/path (safeUrlForLog's fallback), so those are read as https.
+function siteDashHost(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const full = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : 'https://' + raw;
+  try { return new URL(full).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) { return ''; }
+}
+/* Only the fields a timeline line can use, and short: the log already holds no secrets, but the
+   popup has no reason to carry more than it shows. */
+function siteDashDetail(detail) {
+  const d = detail && typeof detail === 'object' ? detail : {};
+  const out = {};
+  const host = d.matched || d.targetHost || d.dest || d.host || d.domain;
+  if (typeof host === 'string' && host) out.host = siteDashHost(/:\/\//.test(host) ? host : 'https://' + host) || '';
+  if (Array.isArray(d.params)) out.params = d.params.filter((p) => typeof p === 'string').slice(0, 6).map((p) => p.slice(0, 40));
+  if (Number.isFinite(Number(d.count))) out.count = Math.max(0, Math.floor(Number(d.count)));
+  return out;
+}
+async function siteDashPageSince(tabId) {
+  try {
+    const res = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] },
+      func: () => performance.timeOrigin,
+    });
+    const at = Number(res && res[0] && res[0].result);
+    return Number.isFinite(at) && at > 0 ? Math.floor(at) : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+async function siteDashNetwork(tabId, since) {
+  if (!logMatchedRulesAvailable()) return { available: false, reason: 'unsupported' };
+  // The dashboard counts blocks, so it waits for the list of static rules that only allow.
+  await loadStaticNonStoppingRules();
+  const cached = SITE_DASH_MATCH_CACHE.get(tabId);
+  let matches = null;
+  if (cached && cached.since === since && Date.now() - cached.at < SITE_DASH_MATCH_TTL_MS) {
+    matches = cached.matches;
+  } else {
+    try {
+      const filter = { tabId };
+      if (since) filter.minTimeStamp = since;
+      const res = await chrome.declarativeNetRequest.getMatchedRules(filter);
+      matches = (res && res.rulesMatchedInfo) || [];
+      SITE_DASH_MATCH_CACHE.set(tabId, { at: Date.now(), since, matches });
+      if (SITE_DASH_MATCH_CACHE.size > 40) SITE_DASH_MATCH_CACHE.delete(SITE_DASH_MATCH_CACHE.keys().next().value);
+    } catch (_) {
+      /* Over Chrome's quota of 20 reads per 10 minutes, most likely. Say so; never guess. */
+      if (cached && cached.since === since) matches = cached.matches;
+      else return { available: false, reason: 'busy' };
+    }
+  }
+  const actions = await matchedRuleActions(matches);
+  const byCategory = { trackers: 0, ads: 0, security: 0, yours: 0, other: 0 };
+  const sources = new Map();
+  let total = 0;
+  for (const info of matches) {
+    const rule = info && info.rule;
+    if (!rule || !logRuleCanBlock(rule.ruleId, rule.rulesetId, actions)) continue;
+    if (since && Number(info.timeStamp) < since) continue;
+    const name = logRuleSource(rule.ruleId, rule.rulesetId) || 'A network rule';
+    const category = SITE_DASH_SOURCE_CATEGORY[name] || 'other';
+    byCategory[category]++;
+    total++;
+    const row = sources.get(name) || { name, category, count: 0, last: 0 };
+    row.count++;
+    row.last = Math.max(row.last, Number(info.timeStamp) || 0);
+    sources.set(name, row);
+  }
+  return {
+    available: true,
+    total,
+    byCategory,
+    sources: Array.from(sources.values()).sort((a, b) => b.count - a.count),
+  };
+}
+async function buildSiteDashboard(tab) {
+  if (!tab || !Number.isInteger(tab.id)) return { ok: false, error: 'No tab.' };
+  const url = String(tab.url || '');
+  const host = siteDashHost(url);
+  const web = /^https?:/i.test(url) && !!host;
+  if (!web) return { ok: true, host, web: false };
+  const since = await siteDashPageSince(tab.id);
+  const [network, store] = await Promise.all([
+    siteDashNetwork(tab.id, since),
+    localGet('wardenone_history'),
+  ]);
+  const stored = Array.isArray(store && store.wardenone_history) ? store.wardenone_history : [];
+  const now = Date.now();
+  const all = stored.concat(__histBuffer).filter((e) => e && siteDashHost(e.url) === host
+    && Number.isFinite(Number(e.at)) && now - Number(e.at) <= HISTORY_RETENTION_MS);
+  /* A page load with no readable start (a page the script could not reach) is not given every
+     event the site ever had: only the last ten minutes, and the popup says the window it used. */
+  const pageStart = since || (now - 10 * 60 * 1000);
+  /* A tally type's log entry is a once-per-page marker for the Activity Centre; its count comes
+     from the tally, so the dashboard skips the marker rather than count it twice. */
+  const pageEvents = all.filter((e) => Number(e.at) >= pageStart - 1000 && !SITE_TALLY_TYPES.has(String(e.type || '')))
+    .sort((a, b) => Number(b.at) - Number(a.at));
+  // Every event is counted by type; only the newest forty travel whole, for the timeline.
+  const typeCounts = {};
+  for (const e of pageEvents) {
+    const type = String(e.type || '');
+    typeCounts[type] = (typeCounts[type] || 0) + 1;
+  }
+  /* This page's routine actions (the site tally), when the tally is for this very page load. */
+  const tallies = [];
+  const tally = (await tallyState()).tabs[tab.id];
+  if (since && tally && tally.host === host && Math.abs(Number(tally.start) - since) < 2000) {
+    for (const type of Object.keys(tally.counts || {})) {
+      const n = Number(tally.counts[type]) || 0;
+      if (!n) continue;
+      typeCounts[type] = (typeCounts[type] || 0) + n;
+      tallies.push({ type, n, last: Number(tally.last && tally.last[type]) || 0 });
+    }
+  }
+  /* The site over the past day and week: the hourly site tally (network blocks and routine
+     actions) plus the Activity log's own entries for this site, which the tally never holds. */
+  const recent = { day: {}, week: {} };
+  const dayCut = now - 24 * SITE_TALLY_HOUR_MS;
+  const weekCut = now - SITE_TALLY_KEEP_MS;
+  const hours = await siteTallyFor(host);
+  for (const hour of Object.keys(hours)) {
+    const end = (Number(hour) + 1) * SITE_TALLY_HOUR_MS;
+    for (const key of Object.keys(hours[hour] || {})) {
+      const n = Number(hours[hour][key]) || 0;
+      if (end > weekCut) recent.week[key] = (recent.week[key] || 0) + n;
+      if (end > dayCut) recent.day[key] = (recent.day[key] || 0) + n;
+    }
+  }
+  for (const e of all) {
+    const at = Number(e.at);
+    const type = String(e.type || '');
+    if (SITE_TALLY_TYPES.has(type)) continue;   // counted in the hourly tally above
+    if (at >= weekCut) recent.week[type] = (recent.week[type] || 0) + 1;
+    if (at >= dayCut) recent.day[type] = (recent.day[type] || 0) + 1;
+  }
+  return {
+    ok: true,
+    host,
+    web: true,
+    since,
+    network,
+    page: {
+      total: pageEvents.length,
+      typeCounts,
+      events: pageEvents.slice(0, 40).map((e) => ({ type: String(e.type || ''), at: Number(e.at), detail: siteDashDetail(e.detail) })),
+      tallies,
+    },
+    recent,
+    retained: {
+      total: all.length,
+      oldest: all.reduce((min, e) => Math.min(min, Number(e.at)), now),
+    },
+  };
+}
+
+/* ---- Site tally ------------------------------------------------------------------------------
+   What WardenOne did, counted per page and per site, for the Site Dashboard. It is not the
+   Activity log, which stays the audit trail (200 events) and is read on its own. Two inputs:
+     - routine page actions the engine signs but the log never takes -- cleaned addresses and
+       copied links, stripped pings, cookie banners rejected, search clutter hidden, script cookie
+       writes stopped -- relayed by the bridge as rg-tally once the signature checks out;
+     - network blocks, read from Chrome's matched-rule feed for every tab at once, only while the
+       worker is already awake for something else and at most once a minute. Chrome allows 20
+       reads in 10 minutes, shared with the dashboard and the network logger, and forgets a
+       closed page's matches after about five minutes, so a quiet worker can miss some.
+   Per page it lives in session storage and goes with the tab. Per site it is kept by the hour
+   for seven days, at most 300 sites, registered in PRIVACY_STORE_POLICY and pruned by site erase.
+   Nothing is recorded from a private window. */
+const SITE_TALLY_KEY = 'wardenone_site_tally';
+const TALLY_SESSION_KEY = '__wardenone_tally_state';
+const SITE_TALLY_TYPES = new Set([
+  'cleaned_history_url', 'stripped_link_ping', 'cleaned_copied_link',
+  'consent_rejected', 'google_search_cleanup', 'scriptlet_mutator_blocked',
+  'youtube_ads_removed',
+]);
+const SITE_TALLY_LOGGED_TYPES = new Set(['cleaned_history_url', 'stripped_link_ping', 'cleaned_copied_link']);
+const SITE_TALLY_HOUR_MS = 60 * 60 * 1000;
+const SITE_TALLY_KEEP_MS = 7 * 24 * SITE_TALLY_HOUR_MS;
+const SITE_TALLY_MAX_SITES = 300;
+const SITE_TALLY_POLL_MS = 60000;
+let tallyStatePromise = null;
+let tallyStateWriteTimer = 0;
+const SITE_TALLY_PENDING = [];
+let siteTallyWriteTimer = 0;
+let siteTallyWriting = Promise.resolve();
+let siteTallyPolling = false;
+
+/* { tabs: { tabId: { start, host, counts, last } }, trail: { tabId: [{ host, since }] }, lastPoll } */
+function tallyState() {
+  if (!tallyStatePromise) {
+    tallyStatePromise = (async () => {
+      let stored = null;
+      try { stored = ((await chrome.storage.session.get(TALLY_SESSION_KEY)) || {})[TALLY_SESSION_KEY]; } catch (_) {}
+      const state = stored && typeof stored === 'object' ? stored : {};
+      state.tabs = state.tabs && typeof state.tabs === 'object' ? state.tabs : {};
+      state.trail = state.trail && typeof state.trail === 'object' ? state.trail : {};
+      state.lastPoll = Number(state.lastPoll) || 0;
+      return state;
+    })();
+  }
+  return tallyStatePromise;
+}
+function persistTallyState() {
+  if (tallyStateWriteTimer) return;
+  tallyStateWriteTimer = setTimeout(async () => {
+    tallyStateWriteTimer = 0;
+    try { await chrome.storage.session.set({ [TALLY_SESSION_KEY]: await tallyState() }); } catch (_) {}
+  }, 500);
+}
+
+function siteTallyAdd(host, at, key, n) {
+  if (INCOGNITO_CONTEXT || !host || !key) return;
+  SITE_TALLY_PENDING.push([host, Number(at) || Date.now(), key, Math.max(1, Math.floor(Number(n) || 1))]);
+  if (!siteTallyWriteTimer) siteTallyWriteTimer = setTimeout(() => { siteTallyWriteTimer = 0; flushSiteTally(); }, 2000);
+}
+/* One writer at a time: read, fold the pending counts in by the hour, drop what is over seven
+   days old, keep the 300 most recently active sites, write. */
+function flushSiteTally() {
+  siteTallyWriting = siteTallyWriting.then(async () => {
+    if (!SITE_TALLY_PENDING.length) return;
+    const pending = SITE_TALLY_PENDING.splice(0, SITE_TALLY_PENDING.length);
+    let store = {};
+    try { store = ((await localGet(SITE_TALLY_KEY)) || {})[SITE_TALLY_KEY] || {}; } catch (_) {}
+    if (!store || typeof store !== 'object' || Array.isArray(store)) store = {};
+    for (const [host, at, key, n] of pending) {
+      const site = store[host] && typeof store[host] === 'object' ? store[host] : { h: {} };
+      const hour = String(Math.floor(at / SITE_TALLY_HOUR_MS));
+      const bucket = site.h[hour] || {};
+      bucket[key] = (Number(bucket[key]) || 0) + n;
+      site.h[hour] = bucket;
+      store[host] = site;
+    }
+    const oldest = Math.floor((Date.now() - SITE_TALLY_KEEP_MS) / SITE_TALLY_HOUR_MS);
+    const recency = [];
+    for (const host of Object.keys(store)) {
+      const hours = store[host] && store[host].h ? store[host].h : {};
+      for (const hour of Object.keys(hours)) if (Number(hour) < oldest) delete hours[hour];
+      const newest = Math.max(0, ...Object.keys(hours).map(Number));
+      if (!newest) delete store[host];
+      else recency.push([host, newest]);
+    }
+    recency.sort((a, b) => b[1] - a[1]);
+    for (const [host] of recency.slice(SITE_TALLY_MAX_SITES)) delete store[host];
+    try { await localSet({ [SITE_TALLY_KEY]: store }); } catch (_) {}
+  }).catch(() => {});
+  return siteTallyWriting;
+}
+async function siteTallyFor(host) {
+  await flushSiteTally();
+  try {
+    const store = ((await localGet(SITE_TALLY_KEY)) || {})[SITE_TALLY_KEY] || {};
+    return store[host] && store[host].h ? store[host].h : {};
+  } catch (_) { return {}; }
+}
+
+async function noteTallyTabSite(tabId, url, incognito) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  const state = await tallyState();
+  const host = incognito ? '' : siteDashHost(url);
+  const trail = Array.isArray(state.trail[tabId]) ? state.trail[tabId] : [];
+  if (!host) { delete state.trail[tabId]; persistTallyState(); return; }
+  if (!trail.length || trail[trail.length - 1].host !== host) trail.push({ host, since: Date.now() });
+  state.trail[tabId] = trail.slice(-4);
+  persistTallyState();
+}
+function tallyHostAt(state, tabId, at) {
+  const trail = Array.isArray(state.trail[tabId]) ? state.trail[tabId] : [];
+  let host = '';
+  for (const step of trail) if (Number(step.since) <= at) host = step.host;
+  return host || (trail[0] && trail[0].host) || '';
+}
+
+async function recordPageTally(tab, type, n, pageStart) {
+  if (INCOGNITO_CONTEXT || !tab || tab.incognito || !SITE_TALLY_TYPES.has(type)) return;
+  const host = siteDashHost(tab.url);
+  if (!host) return;
+  const state = await tallyState();
+  const start = Math.round(Number(pageStart) || 0);
+  let entry = state.tabs[tab.id];
+  if (!entry || entry.start !== start || entry.host !== host) entry = { start, host, counts: {}, last: {} };
+  const count = Math.max(1, Math.min(500, Math.floor(Number(n) || 1)));
+  /* The Activity Centre has always had labels for these and never received one: the bridge
+     relayed only blocked_/detected_/gated_/warned_ events. They reach it now, once per kind
+     per page -- the first time it happens -- so a page full of pinged links is one line in the
+     200-entry log, not twenty. The exact count stays here, in the tally. */
+  if (SITE_TALLY_LOGGED_TYPES.has(type) && !entry.counts[type]) {
+    queueHistory({ type, detail: {}, url: String(tab.url || '').slice(0, 200), at: Date.now() });
+  }
+  entry.counts[type] = (Number(entry.counts[type]) || 0) + count;
+  entry.last[type] = Date.now();
+  state.tabs[tab.id] = entry;
+  persistTallyState();
+  siteTallyAdd(host, Date.now(), type, count);
+}
+
+async function maybePollTallyNetwork() {
+  if (INCOGNITO_CONTEXT || siteTallyPolling || !logMatchedRulesAvailable()) return;
+  const state = await tallyState();
+  const now = Date.now();
+  if (now - state.lastPoll < SITE_TALLY_POLL_MS) return;
+  siteTallyPolling = true;
+  try {
+    const since = state.lastPoll || (now - 5 * 60 * 1000);
+    let matches = [];
+    try {
+      const res = await chrome.declarativeNetRequest.getMatchedRules({ minTimeStamp: since });
+      matches = (res && res.rulesMatchedInfo) || [];
+    } catch (_) { return; }   // over the shared quota: the next wake tries again
+    state.lastPoll = now;
+    persistTallyState();
+    await loadStaticNonStoppingRules();
+    const actions = await matchedRuleActions(matches);
+    for (const info of matches) {
+      const rule = info && info.rule;
+      const tabId = Number(info && info.tabId);
+      if (!rule || !Number.isInteger(tabId) || tabId < 0) continue;
+      if (!logRuleCanBlock(rule.ruleId, rule.rulesetId, actions)) continue;
+      const at = Number(info.timeStamp) || now;
+      if (at < since) continue;
+      let host = tallyHostAt(state, tabId, at);
+      if (!host && !state.trail[tabId]) {
+        // A tab open from before this worker woke has no trail yet; its current site is the
+        // best attribution there is for a match from the last minute or so.
+        const tab = await new Promise((resolve) => chrome.tabs.get(tabId, (t) => { void chrome.runtime.lastError; resolve(t || null); }));
+        if (tab && !tab.incognito) { await noteTallyTabSite(tabId, tab.url, false); host = tallyHostAt(state, tabId, at); }
+      }
+      if (!host) continue;
+      const category = SITE_DASH_SOURCE_CATEGORY[logRuleSource(rule.ruleId, rule.rulesetId)] || 'other';
+      siteTallyAdd(host, at, 'net:' + category, 1);
+    }
+  } finally {
+    siteTallyPolling = false;
+  }
+}
+
+/* Wired into the worker's existing listeners rather than new ones: rg-tally and the rg-block poll
+   in the tab-message listener, the navigation trail in the forget-me tabs.onUpdated listener, and
+   this cleanup in the badge's tabs.onRemoved listener. */
+async function forgetTabTally(tabId) {
+  const state = await tallyState();
+  if (!(tabId in state.tabs) && !(tabId in state.trail)) return;
+  delete state.tabs[tabId];
+  delete state.trail[tabId];
+  persistTallyState();
 }
 
 // Browser Abuse Guard removed (perf, weak machines): page-abuse signal labels,
@@ -19989,6 +20508,9 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Notification Centre', sensitivity: 'security records', area: 'local', maxAgeDays: null, maxItems: 300, retention: 'Reader choice: unlimited, 1, 7 or 30 days; latest 300 notices', siteErase: 'prune', keys: [
     'wardenone_notifications',
   ] },
+  { owner: 'Site Dashboard counts', sensitivity: 'browsing records', area: 'local', maxAgeDays: 7, maxItems: 300, retention: '7 days by the hour; up to 300 sites; never from a private window', siteErase: 'prune', keys: [
+    'wardenone_site_tally',
+  ] },
   { owner: 'Tracker learning', sensitivity: 'derived browsing evidence', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Candidates expire after 30 days without a new sighting; user decisions stay until erased', siteErase: 'reset', keys: [
     'wardenone_tracker_learner',
   ] },
@@ -20021,7 +20543,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   ] },
   { owner: 'Temporary operation state', sensitivity: 'session state', area: 'session', maxAgeDays: null, maxItems: null, retention: 'Browser or extension session', siteErase: 'prune', keys: [
     '__wardenone_badge_counts', '__wardenone_ext_scan_done', '__wardenone_hist_buffer',
-    '__wardenone_menu_built', '__wardenone_sb_bypass',
+    '__wardenone_menu_built', '__wardenone_sb_bypass', '__wardenone_tally_state',
     'wardenone_block_offer', 'wardenone_blocklist_session', 'wardenone_download_handled',
     'wardenone_erase_rebuild', 'wardenone_manual_check_jobs', 'wardenone_palette_grant',
     'wardenone_rebind_session', 'wardenone_tracker_session', 'wardenone_sw_registered',
@@ -20032,8 +20554,11 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     'wardenone_consent_accepted', 'wardenone_location_previous_setting',
     'wardenone_onboarding_done_at', 'wardenone_onboarding_maxprivacy_at',
     'wardenone_onboarding_recommended_at', 'wardenone_popup_scroll_memory',
-    'wardenone_popup_search_memory', 'wardenone_script_shield_mode', 'wardenone_theme',
-    'wardenone_warning',
+    'wardenone_popup_search_memory', 'wardenone_script_shield_mode', 'wardenone_site_card_layout', 'wardenone_site_card_folded', 'wardenone_popup_section_order',
+    'wardenone_settings_density', 'wardenone_settings_favorites', 'wardenone_settings_last_page', 'wardenone_theme', 'wardenone_warning',
+  ] },
+  { owner: 'Settings change list', sensitivity: 'settings', area: 'local', maxAgeDays: 30, maxItems: 40, retention: '30 days; latest 40 switch changes', siteErase: 'keep', keys: [
+    'wardenone_settings_recent',
   ] },
 ]);
 const PRIVACY_STORE_BY_KEY = new Map();
@@ -20302,6 +20827,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try { tab = await new Promise((resolve) => chrome.tabs.get(tabId, (t) => { void chrome.runtime.lastError; resolve(t || null); })); } catch (_) { tab = null; }
       }
       return buildProtectionHealthSummary(tab);
+    })(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'site-dashboard') {
+    if (!messageSenderIsExtensionPage(sender)) {
+      try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+      return true;
+    }
+    // As with protection-health: the message picks the tab, and Chrome says what is in it.
+    respond((async () => {
+      const tabId = Number(msg.tabId);
+      if (!Number.isInteger(tabId) || tabId < 0) return { ok: false, error: 'No tab.' };
+      const tab = await new Promise((resolve) => chrome.tabs.get(tabId, (t) => { void chrome.runtime.lastError; resolve(t || null); }));
+      return buildSiteDashboard(tab);
     })(), sendResponse);
     return true;
   }
@@ -22562,7 +23101,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
           const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
-          CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js');
+          CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
+            'settings.html', 'settings.js', 'settings-data.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.
           for (const omitted of woOmittedFiles()) {

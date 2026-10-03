@@ -2,6 +2,53 @@
 
 ## 1.0.2 — 2026-10-02
 
+### Added
+
+- A Settings page, opened from the gear in the popup or from the browser's Extension options
+  (which used to open Activity history; the popup's Activity link still goes there). It has every
+  switch the popup has, grouped by what it protects, and search results that say where each setting
+  lives and whether it is on. The overview says whether protection is on, how many of the 108
+  protections are enabled, how many settings differ from Recommended and how many that are on may
+  affect site compatibility, with the latest changes underneath. Favorites and Recently changed sit
+  in the sidebar, and each category shows how many of its settings differ from Recommended.
+- Settings can back up your switches together with your blocked and trusted sites, firewall
+  decisions, hidden elements, your own filter rules and your subscriptions. Importing shows what
+  will change first and only ever adds to your lists. From the same page you can clear browsing
+  data and WardenOne's activity history, reset WardenOne, see its browser permissions, add, test or
+  remove optional API keys, and see when the protection lists last updated and which sources
+  could not be reached.
+- Settings also covers what is not a switch: the tab limit's numbers, how soon Memory Shield puts
+  tabs to sleep, the Twitch Rewind length, EyeShield's brightness and colour sliders, and how
+  notification cards look, last and sound.
+- Sites & exceptions in Settings lists every exception you have made: paused sites, protections
+  turned off for one site, blocked sites, trusted script and download sites, hidden elements, tabs
+  kept awake and firewall rules. Each list can be added to from there, by typing a site, including
+  a pause that ends by itself.
+- The Settings overview shows what Protection Health says needs attention, the same check the
+  popup runs, with a way to put each one right: the setting to change, the page to open, or
+  Verify & repair, which is also on the Clean-up page.
+- Settings search understands the words people actually use: "ads" finds AdShield, "vpn" finds
+  the WebRTC leak protection, "dark mode" finds EyeShield, and small typos like "cokie" still
+  find cookie settings, saying which word it searched for instead. Words can come in any order,
+  the best match comes first, and quick filters narrow the results to settings that are on, off,
+  changed from Recommended, may break sites, or are in your Favorites.
+- A Keyboard shortcuts page in Settings lists WardenOne's shortcuts as your browser has them set
+  right now, says when a suggested key was not given because something else uses it, and opens
+  the browser's shortcuts page to change them.
+
+### Changed
+
+- The Site Dashboard now shows only recorded activity categories, names the WardenOne rulesets
+  that matched, and brings protection status forward when nothing was recorded. A live request
+  logger link helps inspect new requests; zero counts no longer claim a page had nothing to block.
+- Sections in the popup can now be dragged directly with a mouse or after a brief touch hold. The
+  dots still drag immediately, and the up and down arrows remain available.
+- The popup's logo and title sit near their original header position. The current-site card can
+  fold down to its site and status line, and remembers whether it was folded. Its one-line or
+  counts layout can be chosen from visual examples in setup's Explore step or in popup settings.
+- The setup guide now checks whether WardenOne is already pinned and shows the puzzle icon without
+  a fixed arrow that can point at the wrong toolbar button.
+
 ### Fixed
 
 - The Twitch ad blocker and Twitch Rewind now carry the extension's version. From this version

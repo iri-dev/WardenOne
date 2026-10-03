@@ -92,7 +92,8 @@
 
     // Index controls and section headings once.
     var rows=[];
-    document.querySelectorAll('.row').forEach(function(row){rows.push(buildKeywords(row));});
+    // The site dashboard's own controls live in a separate view; search is for the settings list.
+    document.querySelectorAll('.row').forEach(function(row){if(row.closest&&row.closest('#site-dash'))return;rows.push(buildKeywords(row));});
     // EyeShield is one control; hiding its children separately breaks the mode selector.
     var eyePanel=$('eyeshield-panel');
     if(eyePanel)rows.push(buildKeywords(eyePanel));
@@ -187,6 +188,7 @@
         if(ok)shown++;
       }
       document.querySelectorAll('.card-group').forEach(function(g){
+        if(g.closest&&g.closest('#site-dash'))return;
         var hide=!!q&&!g.querySelector('.row:not(.wo-hidden)');
         g.classList.toggle('wo-hidden',hide);
         var hh=g.previousElementSibling;
