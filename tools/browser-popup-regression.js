@@ -147,6 +147,7 @@ async function run() {
       + " document.getElementById('site-card-stats').hidden = false; const caption = document.getElementById('site-card-caption'); caption.hidden = false;"
       + " caption.textContent = 'Recent site activity'; return true; })()");
     await showCard('B');
+    const freshB = await value(cardBox);
     const cardGeometry = await value(`(() => {
       const section = document.getElementById('site-card');
       const stats = document.getElementById('site-card-stats');
@@ -166,6 +167,17 @@ async function run() {
     assert(await value("getComputedStyle(document.getElementById('site-card-state')).display !== 'none'") && cardGeometry.countsHidden,
       'folded card should keep the site status');
     assert(oneLine.offset < 2, 'fold toggle should be centered on the one-line row: ' + JSON.stringify(Object.assign({ browser: cardGeometry.browser }, oneLine)));
+    /* The popup also switches layout with the card on screen, from Interface > Site card. Through
+       that control, the toggle has to land where a card shown fresh in the layout has it. */
+    await until('siteDashLast !== null', 'the site card summary');
+    for (const [layout, fresh] of [['B', freshB], ['A', oneLine]]) {
+      await value(`document.querySelector('[data-site-card-layout=${layout}]').click(); true`);
+      await nextFrame();
+      const live = await value(cardBox);
+      assert(live.layout === layout && Math.abs(live.toggle[0] - fresh.toggle[0]) < 0.5,
+        'switching to layout ' + layout + ' on screen should put the fold toggle where a fresh card has it: '
+        + JSON.stringify({ browser: cardGeometry.browser, live, fresh }));
+    }
     assert(Math.abs(cardGeometry.logoTop - 19) < 1, 'header logo should sit 19px from its top');
     await until("new Promise(resolve => chrome.storage.local.get('wardenone_site_card_folded', data => resolve(data.wardenone_site_card_folded === true)))", 'saved site card fold');
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
