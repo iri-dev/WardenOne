@@ -371,7 +371,7 @@ const NAV_LABELS = ['', 'Protection', 'Manage', 'Help'];
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (id, cls) => '<svg class="i' + (cls ? ' ' + cls : '') + '"><use href="#' + id + '"/></svg>';
 const badge = (b) => (b ? '<span class="badge ' + b + '">' + BADGES[b] + '</span>' : '');
 const groupsOf = (p) => (typeof p.groups === 'function' ? p.groups() : p.groups || [])
@@ -890,7 +890,7 @@ function ago(at) {
 /* The worker records config fields; the page shows rows. Script Shield's level and Forget Me's
    mode are choices in the config but switches here. */
 function changeRow(entry) {
-  if (!entry || typeof entry.key !== 'string' || !Number.isFinite(Number(entry.at))) return null;
+  if (!entry || typeof entry.key !== 'string' || !(Math.abs(Number(entry.at)) <= 8.64e15)) return null;
   let key = ROW_OF_FIELD[entry.key] || entry.key;
   let on = entry.to === true;
   if (entry.key === 'forgetMeMode') {
@@ -1295,7 +1295,7 @@ function previewCard() {
     body = '<div class="live"><div class="live-top">' + icon('i-globe') + '<span>' + esc(p.host) + '</span>' +
       '<button class="btn" data-preview-activity>Activity</button></div>' +
       (rows.length ? '<div class="live-note">Network blocks on this tab</div>' + rows.map(([tone, symbol, label, n]) =>
-        '<div class="stat"><span class="si ' + tone + '">' + icon(symbol) + '</span>' + esc(label) + '<b>' + n + '</b></div>').join('')
+        '<div class="stat"><span class="si ' + tone + '">' + icon(symbol) + '</span>' + esc(label) + '<b>' + esc(fmtCount(Number(n) || 0)) + '</b></div>').join('')
         : '<div class="live-note">Network counts are unavailable for this tab.</div>') + '</div>';
   }
   return '<section class="rcard">' + cardHead('i-eye', 'Recent site', 'Activity from the last website you used in this window.') + body + '</section>';

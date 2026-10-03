@@ -7,7 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const root = path.resolve(__dirname, '..');
+// WARDENONE_POSTURE_ROOT points the check at another tree; tools/test-security-scan-coverage.js
+// uses it to prove each way a script can ship is scanned.
+const root = path.resolve(process.env.WARDENONE_POSTURE_ROOT || path.join(__dirname, '..'));
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const exists = (name) => fs.existsSync(path.join(root, name));
 
@@ -155,43 +157,68 @@ function declaredScripts() {
   return out;
 }
 
-// The extension pages and worker modules, which are not content scripts and so are not derivable.
-const PAGE_AND_WORKER_JS = [
-  'background.js',
-  'background-startup.js',
-  'background-extension-watch.js',
-  'background-extension-reputation.js',
-  'background-memory.js',
-  'background-downloads.js',
-  'download-review.js',
-  'popup.js',
-  'popup-health.js',
-  'popup-scroll-memory.js',
-  'popup-diagnostics.js',
-  'popup-settings-search.js',
-  'extensions.js',
-  'history.js',
-  'network.js',
-  'onboarding.js',
-  'cert-error.js',
-  'safe-browsing-block.js',
-  'redirect-warning.js',
-  'src/content.js',
-];
+// Extension pages and worker modules used to be a hand-kept list here, and it fell behind: ten
+// packaged pages, Settings among them, shipped scripts the scan never read. Now every script is
+// found where it is used: each packaged page's <script src>, the service worker and everything it
+// imports, and on top of those every .js file the package ships at all, so a script loaded some
+// other way is still read.
+function packagedScripts() {
+  try {
+    return JSON.parse(read('tools/package-allowlist.json')).filter((f) => /\.js$/i.test(f));
+  } catch (e) {
+    fail('could not read tools/package-allowlist.json: ' + e.message);
+    return [];
+  }
+}
+
+function pageScripts() {
+  const out = new Set();
+  let pages = [];
+  try {
+    pages = JSON.parse(read('tools/package-allowlist.json')).filter((f) => /\.html$/i.test(f));
+  } catch (_) { /* reported by packagedScripts */ }
+  if (!pages.length) fail('no packaged pages found in tools/package-allowlist.json');
+  for (const page of pages) {
+    if (!exists(page)) { fail('packaged page missing from disk: ' + page); continue; }
+    for (const m of read(page).matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+      const src = m[1].split(/[?#]/)[0];
+      if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(src)) { fail(page + ' loads a script from outside the package: ' + src); continue; }
+      out.add(path.posix.normalize(path.posix.join(path.posix.dirname(page), src)));
+    }
+  }
+  return out;
+}
+
+function workerScripts() {
+  const out = new Set();
+  const queue = [manifest.background && manifest.background.service_worker].filter(Boolean);
+  if (!queue.length) fail('manifest names no service worker');
+  while (queue.length) {
+    const file = queue.shift();
+    if (out.has(file)) continue;
+    out.add(file);
+    if (!exists(file)) continue;
+    for (const call of read(file).matchAll(/\bimportScripts\s*\(([^)]*)\)/g)) {
+      for (const q of call[1].matchAll(/['"]([^'"]+\.js)['"]/g)) queue.push(q[1]);
+    }
+  }
+  return out;
+}
 
 const declared = declaredScripts();
-const readableJs = Array.from(new Set(
-  PAGE_AND_WORKER_JS.concat(Array.from(declared)),
-)).filter((f) => f !== 'content.min.js' && exists(f));
+const pages = pageScripts();
+const worker = workerScripts();
+const used = new Set([...declared, ...pages, ...worker, 'src/content.js']);
+const readableJs = Array.from(new Set([...used, ...packagedScripts()])).filter((f) => f !== 'content.min.js' && exists(f));
 
 // The point of deriving the list is that nothing can quietly fall out of it, so say plainly when
 // something does rather than scanning a shorter list without comment.
 {
-  const unscanned = Array.from(declared).filter((f) => f !== 'content.min.js' && !exists(f));
-  if (unscanned.length) fail('declared script missing from disk, so unscanned: ' + unscanned.join(', '));
-  else ok('dynamic-code scan covers every declared script (' + readableJs.length + ' files)');
+  const unscanned = Array.from(used).filter((f) => f !== 'content.min.js' && !exists(f));
+  if (unscanned.length) fail('script in use but missing from disk, so unscanned: ' + unscanned.join(', '));
+  else ok('dynamic-code scan covers every packaged script, page script, worker import and content script ('
+    + readableJs.length + ' files: ' + pages.size + ' from pages, ' + worker.size + ' in the worker)');
 }
-;
 const dynamic = scanDynamicCode(readableJs);
 if (dynamic.severe.length) fail('dynamic code sinks found: ' + dynamic.severe.join('; '));
 else ok('no eval/new Function/document.write sinks in readable JS files');
