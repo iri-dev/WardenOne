@@ -142,10 +142,27 @@ function bareIndexLinks(text) {
   check('the publish job is serialised and never cancelled once started',
     /concurrency:\s*\n\s*group: publish-latest-build\s*\n\s*cancel-in-progress: false/.test(rolling));
   check('each test job still cancels its own stale run',
-    ['gate', 'browser-popup', 'browser-settings'].every((id) => /concurrency:\s*\n\s*group: gate-\$\{\{ github\.ref \}\}-[a-z]+\s*\n\s*cancel-in-progress: true/.test(job(id))));
+    ['gate', 'browser-popup', 'browser-settings', 'browser-minimum'].every((id) => /concurrency:\s*\n\s*group: gate-\$\{\{ github\.ref \}\}-[a-z]+\s*\n\s*cancel-in-progress: true/.test(job(id))));
+  /* The manifest's minimum Chrome, proven in that Chrome. */
+  const minimum = job('browser-minimum');
+  const MANIFEST = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
+  const pinnedVersion = (/CHROME_MINIMUM_VERSION: '(\d+)\.\d+\.\d+\.\d+'/.exec(minimum) || [])[1];
+  check('the minimum-Chrome job tests the manifest\'s minimum_chrome_version (' + pinnedVersion + ' vs ' + MANIFEST.minimum_chrome_version + ')',
+    !!pinnedVersion && pinnedVersion === String(MANIFEST.minimum_chrome_version));
+  check('its Chrome download is pinned by SHA-256 and checked before use',
+    /CHROME_MINIMUM_SHA256: '[0-9a-f]{64}'/.test(minimum)
+      && /Get-FileHash -Algorithm SHA256/.test(minimum) && /-ne \$env:CHROME_MINIMUM_SHA256\) \{ throw/.test(minimum)
+      && /-ne \$env:CHROME_MINIMUM_VERSION\) \{ throw/.test(minimum));
+  check('it runs the popup, both Settings suites and the config race in that Chrome',
+    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race']
+      .every((t) => new RegExp('run: node tools/' + t + '\\.js').test(minimum))
+      && /WARDENONE_BROWSER_NAME: 'Google Chrome'/.test(minimum) && /WARDENONE_HEADLESS: '1'/.test(minimum));
+  check('no test there can run without that Chrome in place and pass on Edge instead',
+    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 3
+      && /id: chrome/.test(minimum));
   const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
-  check('the rolling build waits for the gate, the real popup and the real Settings page',
-    ['gate', 'browser-popup', 'browser-settings'].every((n) => needs.includes(n)), needs.join(', '));
+  check('the rolling build waits for the gate, the real popup, the real Settings page and the minimum Chrome',
+    ['gate', 'browser-popup', 'browser-settings', 'browser-minimum'].every((n) => needs.includes(n)), needs.join(', '));
   check('the publishing job may issue a GitHub attestation',
     /contents: write/.test(rolling) && /id-token: write/.test(rolling)
       && /attestations: write/.test(rolling));
