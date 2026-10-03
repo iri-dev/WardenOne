@@ -130,6 +130,13 @@ async function run() {
       'held touch drag to reorder');
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }, page.sessionId);
     await value("document.getElementById('arrange-reset').click(); document.getElementById('arrange-done').click()");
+    /* Each change to the card is measured on the next frame, the way the popup paints it: a layout
+       or text switched and read back inside one script can find the toggle where it last was. */
+    const nextFrame = () => value("new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve('frame'))); setTimeout(() => resolve('timer'), 250); })");
+    const cardBox = "(() => { const section = document.getElementById('site-card'); const fold = document.getElementById('site-card-fold');"
+      + " const top = section.getBoundingClientRect().top; const row = section.querySelector('.site-card-top').getBoundingClientRect(); const toggle = fold.getBoundingClientRect();"
+      + " return { offset: Math.abs((toggle.top + toggle.bottom - row.top - row.bottom) / 2), row: [row.top - top, row.height], toggle: [toggle.top - top, toggle.height],"
+      + " top: getComputedStyle(fold).top, layout: section.dataset.layout, folded: section.classList.contains('is-folded') }; })()";
     const cardGeometry = await value(`(() => {
       const section = document.getElementById('site-card');
       const stats = document.getElementById('site-card-stats');
@@ -146,18 +153,17 @@ async function run() {
       const countsHidden = getComputedStyle(stats).display === 'none'
         && getComputedStyle(caption).display === 'none';
       section.dataset.layout = 'A';
-      const row = section.querySelector('.site-card-top').getBoundingClientRect();
-      const toggle = fold.getBoundingClientRect();
-      const statusVisible = getComputedStyle(document.getElementById('site-card-state')).display !== 'none';
       const shield = document.querySelector('.head .shield').getBoundingClientRect();
       const header = document.querySelector('.head').getBoundingClientRect();
-      return { expanded, folded, countsHidden, statusVisible,
-        toggleOffset: Math.abs((toggle.top + toggle.bottom - row.top - row.bottom) / 2),
-        logoTop: shield.top - header.top };
+      return { expanded, folded, countsHidden, logoTop: shield.top - header.top, browser: navigator.userAgent.replace(/^.*\\) /, '') };
     })()`);
     assert(cardGeometry.expanded - cardGeometry.folded > 40, 'folded counts card should lose its counts and caption');
-    assert(cardGeometry.countsHidden && cardGeometry.statusVisible, 'folded card should keep the site status');
-    assert(cardGeometry.toggleOffset < 2, 'fold toggle should be centered on the one-line row');
+    const paced = await nextFrame();
+    const oneLine = await value(cardBox);
+    console.log('[info] site card measured after a ' + paced + ', page ' + await value('document.visibilityState') + ': ' + JSON.stringify(oneLine));
+    assert(await value("getComputedStyle(document.getElementById('site-card-state')).display !== 'none'") && cardGeometry.countsHidden,
+      'folded card should keep the site status');
+    assert(oneLine.offset < 2, 'fold toggle should be centered on the one-line row: ' + JSON.stringify(Object.assign({ browser: cardGeometry.browser }, oneLine)));
     assert(Math.abs(cardGeometry.logoTop - 19) < 1, 'header logo should sit 19px from its top');
     await until("new Promise(resolve => chrome.storage.local.get('wardenone_site_card_folded', data => resolve(data.wardenone_site_card_folded === true)))", 'saved site card fold');
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
