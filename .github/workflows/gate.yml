@@ -16,14 +16,17 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: gate-${{ github.ref }}
-  cancel-in-progress: true
-
+# No workflow-wide concurrency. One that cancels in progress cancels the whole run, the publish
+# job included, and a publish stopped halfway leaves the latest-build tag on one commit and the
+# ZIP from another. So each test job cancels its own stale copy when a newer push arrives, and
+# the publish job is serialised and never cancelled once it has started (see rolling-build).
 jobs:
   gate:
     name: check-maintainability
     runs-on: ubuntu-latest
+    concurrency:
+      group: gate-${{ github.ref }}-maintainability
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +50,9 @@ jobs:
     name: real-popup-regression
     runs-on: windows-2025
     timeout-minutes: 10
+    concurrency:
+      group: gate-${{ github.ref }}-popup
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +65,41 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-popup-regression.js
 
+  # The Settings page in Edge: switches, search, backup and import, clean-up, permissions, keys,
+  # list status and a full reset, then section order, saved sites, Help and About, then Settings,
+  # the popup and the worker writing the config at the same moment. Each step runs even when one
+  # before it fails, so one run reports them all.
+  browser-settings:
+    name: real-settings-regression
+    runs-on: windows-2025
+    timeout-minutes: 15
+    concurrency:
+      group: gate-${{ github.ref }}-settings
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Test Settings data, search and reset in Edge
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-settings-data.js
+
+      - name: Test Settings arrangement, sites, Help and About in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-settings-arrange.js
+
+      - name: Test simultaneous config writes from Settings, the popup and the worker in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-config-race.js
+
   # Every push that passes the gate rebuilds the rolling `latest-build` release and
   # replaces the package attached to it, so the ordinary download always matches
   # main. It is the only release: the old versioned ones were removed on
@@ -66,9 +107,16 @@ jobs:
   # only ever something to download by mistake.
   rolling-build:
     name: publish-latest-build
-    needs: [gate, browser-popup]
+    needs: [gate, browser-popup, browser-settings]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # One publish at a time, and none cancelled once started: it moves the tag, then replaces the
+    # ZIP and checksum, then checks them, and stopping between those steps would leave them
+    # describing different commits. A newer push's publish waits its turn; while it waits, a
+    # still newer one replaces it, so the last to run is always the newest.
+    concurrency:
+      group: publish-latest-build
+      cancel-in-progress: false
     permissions:
       contents: write
       id-token: write

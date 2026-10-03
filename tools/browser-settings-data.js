@@ -8,8 +8,9 @@
    Favorites, search, the backup with your lists, clean-up, permissions, API keys, list status,
    number and list settings, and a full reset.
    Run: node tools/browser-settings-data.js
-   It drives the unpacked extension in Edge (tools/perf-profile.js), so it is not in the gate;
-   tools/test-settings-page.js and tools/build-settings-data.js --check are. */
+   It drives the unpacked extension in Edge (tools/perf-profile.js), so it runs in CI's
+   real-settings-regression job rather than the local gate; tools/test-settings-page.js and
+   tools/build-settings-data.js --check are in the gate. */
 'use strict';
 
 const assert = require('assert/strict');
