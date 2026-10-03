@@ -9,39 +9,6 @@
 
   const $ = (id) => document.getElementById(id);
 
-  // ---- aim the pin arrow at the extensions puzzle ---------------------------
-  // A page cannot see the browser's own toolbar, so the arrow's target has to be inferred. The
-  // graphic is 232px wide over a 232-unit viewBox and its arrowhead sits 18 units in from the
-  // right, so the tip lands (right + 18)px from the window edge -- `right` is the aim.
-  //
-  // Chrome's toolbar ends [puzzle] [profile] [menu], and pinned extensions stack to the LEFT of
-  // the puzzle, so the puzzle stays put no matter how many are pinned: about 90px in.
-  //
-  // Brave is the case that breaks that assumption. It adds its own buttons to the RIGHT of the
-  // puzzle -- downloads, sidebar, wallet, rewards, shields, then the menu -- pushing the puzzle
-  // out to roughly 230px. Aiming at 90px there lands on the rewards icon, which is worse than not
-  // pointing at all.
-  //
-  // Brave is the one Chromium fork that reliably identifies itself, via navigator.brave.isBrave().
-  // Everything else keeps the Chrome figure: Edge and Opera also add buttons to the right, but
-  // how many depends on settings this page cannot see, and a wrong guess is no better than the
-  // default. The bubble carries the puzzle glyph precisely because none of this is exact -- the
-  // arrow gets the neighbourhood, the icon says what to look for.
-  const PIN_ARROW_RIGHT = { chromium: 72, brave: 212 };
-  function aimPinArrow() {
-    const arrow = document.querySelector('.pin-arrow');
-    if (!arrow) return;
-    const set = (px) => { arrow.style.right = px + 'px'; };
-    set(PIN_ARROW_RIGHT.chromium);
-    try {
-      const brave = navigator.brave;
-      if (brave && typeof brave.isBrave === 'function') {
-        brave.isBrave().then((yes) => { if (yes) set(PIN_ARROW_RIGHT.brave); }).catch(() => {});
-      }
-    } catch (_) { /* not Brave, or the probe is unavailable; the default already applies */ }
-  }
-  aimPinArrow();
-
   // ---- stepper state -------------------------------------------------------
   const STEPS = ['welcome', 'pin', 'protect', 'explore'];
   const scenes = {};
@@ -110,6 +77,7 @@
   function render() {
     phase = 'wizard';
     const name = STEPS[index];
+    if (name === 'pin') refreshPinState();
     document.body.dataset.step = name;
     showScene(name);
 
@@ -212,6 +180,36 @@
     });
   }
 
+  const pinTitle = $('pin-title');
+  const pinLead = $('pin-lead');
+  const pinState = $('pin-state');
+  const pinSteps = $('pin-steps');
+  function paintPinState(pinned) {
+    const on = pinned === true;
+    pinTitle.textContent = on ? 'WardenOne is already pinned.' : 'Pin WardenOne to your toolbar.';
+    pinLead.textContent = on
+      ? 'Its shield icon is in your browser toolbar, ready whenever you want to open the controls.'
+      : 'Open the extensions menu at the top-right of your browser, find WardenOne in the list, and click the pin. It stays one click away from then on.';
+    pinState.hidden = !on;
+    pinSteps.hidden = on;
+  }
+
+  async function refreshPinState() {
+    if (!hasChromeApi() || !chrome.action || typeof chrome.action.getUserSettings !== 'function') return;
+    try {
+      const settings = await chrome.action.getUserSettings();
+      paintPinState(settings && settings.isOnToolbar === true);
+    } catch (_) {}
+  }
+
+  const SITE_CARD_LAYOUT_KEY = 'wardenone_site_card_layout';
+  const siteCardButtons = Array.from(document.querySelectorAll('[data-site-card-layout]'));
+  let siteCardChoiceTouched = false;
+  function paintSiteCardLayout(value) {
+    const layout = value === 'B' ? 'B' : 'A';
+    siteCardButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.siteCardLayout === layout)));
+  }
+
   // ---- apply recommended ---------------------------------------------------
   const applyBtn = $('apply');
 
@@ -265,30 +263,12 @@
   }
 
   // ---- open controls -------------------------------------------------------
-  // Open the real popup as the anchored toolbar dropdown (top-right) via
-  // chrome.action.openPopup(). We never open a separate pop-out window. When the
-  // browser won't anchor the popup (commonly before the icon is pinned), we point
-  // the pin arrow at the toolbar instead of spawning a window. A short debounce
-  // makes sure a double-press can't trigger two opens.
+  // Open the real popup as the anchored toolbar dropdown. A short debounce keeps
+  // a double-press from triggering two opens.
   let lastOpenAt = 0;
-  let pinFlashTimer = 0;
-
-  function currentStepName() {
-    return phase === 'wizard' ? STEPS[index] : phase; // 'done' | 'closed'
-  }
-
-  function flashPinArrow() {
-    // briefly resurface the "pin it here" arrow toward the toolbar as a visual cue
-    document.body.dataset.step = 'pin';
-    if (pinFlashTimer) window.clearTimeout(pinFlashTimer);
-    pinFlashTimer = window.setTimeout(() => {
-      document.body.dataset.step = currentStepName();
-    }, 2800);
-  }
 
   function guideToToolbar() {
-    setStatus('Click the WardenOne shield in your toolbar to open the controls — pin it first if you don\'t see it.', 'good');
-    flashPinArrow();
+    setStatus('Click the WardenOne shield in your toolbar. If it is hidden, open the Extensions puzzle menu and select WardenOne.', 'good');
   }
 
   function openControls() {
@@ -415,6 +395,20 @@
     applyMaxBtn?.addEventListener('click', applyMaxPrivacy);
     normalMode?.addEventListener('click', () => setSilentMode(false));
     silentMode?.addEventListener('click', () => setSilentMode(true));
+    siteCardButtons.forEach((button) => button.addEventListener('click', async () => {
+      const layout = button.dataset.siteCardLayout;
+      siteCardChoiceTouched = true;
+      paintSiteCardLayout(layout);
+      if (!(await storageSet({ [SITE_CARD_LAYOUT_KEY]: layout }))) {
+        setStatus('Could not save the site card choice. Try again from the popup settings.', 'bad');
+      }
+    }));
+    try {
+      chrome.action.onUserSettingsChanged?.addListener(refreshPinState);
+    } catch (_) {}
+    window.addEventListener('focus', () => {
+      if (phase === 'wizard' && STEPS[index] === 'pin') refreshPinState();
+    });
 
     // keyboard: left/right arrows move through the flow
     document.addEventListener('keydown', (e) => {
@@ -424,13 +418,19 @@
     });
 
     // restore prior state
-    storageGet(['wardenone_config', 'wardenone_onboarding_recommended_at', 'wardenone_onboarding_maxprivacy_at', 'wardenone_onboarding_done_at'])
+    storageGet(['wardenone_config', 'wardenone_onboarding_recommended_at', 'wardenone_onboarding_maxprivacy_at', 'wardenone_onboarding_done_at', SITE_CARD_LAYOUT_KEY])
       .then((store) => {
         const cfg = (store && store.wardenone_config) || {};
+        if (!siteCardChoiceTouched) paintSiteCardLayout(store && store[SITE_CARD_LAYOUT_KEY]);
         paintMode(cfg.silentMode === true);
         if (store && store.wardenone_onboarding_maxprivacy_at) markMaxApplyDone();
         else if (store && store.wardenone_onboarding_recommended_at) markApplyDone();
       });
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes[SITE_CARD_LAYOUT_KEY]) paintSiteCardLayout(changes[SITE_CARD_LAYOUT_KEY].newValue);
+      });
+    } catch (_) {}
 
     render();
   }

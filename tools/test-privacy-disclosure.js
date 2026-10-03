@@ -59,6 +59,7 @@ const NOT_A_DESTINATION = {
   'myaccount.google.com': 'a link the OAuth guard offers so you can review that provider\'s authorised apps',
   'account.live.com': 'the same, for Microsoft',
   'github.com': 'the same for GitHub, and the source-repository link in every file header',
+  'iri-dev.github.io': 'the project website, a link on the Settings page\'s About section that you open yourself',
   'discord.com': 'the same, for Discord',
   'platform.twitter.com': 'the original src of an embed WardenOne replaced with a placeholder; the page loads it again only if you click through',
   'connect.facebook.net': 'the same, for Facebook embeds',
