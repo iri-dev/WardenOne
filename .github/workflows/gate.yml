@@ -276,7 +276,7 @@ jobs:
             fi
           else
             gh release create "$BUILD_TAG" WardenOne-latest.zip WardenOne-latest.zip.sha256 \
-              --target "$GITHUB_SHA" --title "Build $(git rev-parse --short HEAD)" \
+              --target "$GITHUB_SHA" --title "WardenOne Build $(git rev-parse --short HEAD)" \
               --notes-file notes.md --draft
           fi
 
@@ -301,8 +301,12 @@ jobs:
             echo "main advanced to $MAIN_SHA; keeping $BUILD_TAG without changing Latest"
             exit 0
           fi
-          gh release edit "$BUILD_TAG" --draft=false --latest
+          PREV_TAG="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          gh release edit "$BUILD_TAG" --draft=false --latest --title "WardenOne Latest"
           test "$(gh release view --json tagName --jq .tagName)" = "$BUILD_TAG"
+          if [ "$PREV_TAG" != "$BUILD_TAG" ] && [[ "$PREV_TAG" =~ ^build-[0-9a-f]{40}$ ]]; then
+            gh release edit "$PREV_TAG" --title "WardenOne Build ${PREV_TAG:6:7}"
+          fi
           # The old fixed-tag asset URL would otherwise keep serving a stale ZIP.
           if gh release view latest-build >/dev/null 2>&1; then
             gh release delete latest-build --cleanup-tag --yes
