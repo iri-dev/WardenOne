@@ -102,6 +102,8 @@ function bareIndexLinks(text) {
   if (editLine) {
     check('the complete release is published and explicitly marked Latest',
       editLine.includes('--draft=false') && editLine.includes('--latest'), editLine.trim());
+    check('the GitHub sidebar names the current release WardenOne Latest',
+      editLine.includes('--title "WardenOne Latest"'), editLine.trim());
   }
 
   const createMatch = /gh release create "\$BUILD_TAG"[\s\S]*?\n\s*fi\b/.exec(WORKFLOW);
@@ -109,7 +111,11 @@ function bareIndexLinks(text) {
   if (createMatch) {
     check('a new release is a draft tied to the exact source commit',
       /--target "\$GITHUB_SHA"/.test(createMatch[0]) && /--draft\b/.test(createMatch[0]), createMatch[0].trim());
+    check('a draft keeps its commit in the release title until publication',
+      /--title "WardenOne Build \$\(git rev-parse --short HEAD\)"/.test(createMatch[0]));
   }
+  check('the previous Latest is renamed to its commit after the new release is verified',
+    /test "\$\(gh release view --json tagName --jq \.tagName\)" = "\$BUILD_TAG"[\s\S]*?gh release edit "\$PREV_TAG" --title "WardenOne Build \$\{PREV_TAG:6:7\}"/.test(WORKFLOW));
 }
 
 // ---------------------------------------------------------------------------
