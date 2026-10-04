@@ -11,6 +11,7 @@
    Then the same with a private window: split incognito mode gives it its own worker and pages, with
    their own Web Locks, over the same storage. There the save record and its check (config-lock.js)
    are what keep a change: without them a regular Settings change was lost in 19 of 40 tries.
+   The final case pauses a private Settings save through Erase All and checks storage after reload.
    Run: node tools/browser-config-race.js
    It drives the unpacked extension in Edge (tools/perf-profile.js), so it runs in CI's
    real-settings-regression job rather than the local gate; tools/test-config-write-lock.js,
@@ -161,9 +162,36 @@ async function run() {
     const late = await evaluate(privateSettings, "chrome.storage.local.get('wardenone_config').then((got) => ({ deAmp: got.wardenone_config.deAmp, capReferrer: got.wardenone_config.capReferrer }))");
     console.log('[known boundary] private write held for 2.1 seconds: ' + JSON.stringify(late));
 
-    await evaluate(regularSettings, "writeConfig({ deAmp: false, capReferrer: false, __resetProbe: 'stale-before-reset' }).then(() => true)");
+    const erasedKey = 'erase-race-synthetic-api-key';
+    const erasedSite = 'erase-race-probe.example';
+    await evaluate(regularSettings, `writeConfig({
+      deAmp: false, capReferrer: false, downloadSafeBrowsingKey: ${JSON.stringify(erasedKey)},
+      allowlist: [${JSON.stringify(erasedSite)}],
+      siteOverrides: { [${JSON.stringify(erasedSite)}]: { adShield: false } },
+    }).then(() => true)`);
     const stale = await evaluate(privateSettings, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY])");
+    assert.equal(stale.wardenone_config.downloadSafeBrowsingKey, erasedKey);
+    assert(stale.wardenone_config.allowlist.includes(erasedSite));
+    assert.equal(stale.wardenone_config.siteOverrides[erasedSite].adShield, false);
+    await evaluate(privateSettings, `(() => {
+      const area = chrome.storage.local;
+      const originalSet = area.set.bind(area);
+      let held = false;
+      area.set = (items, callback) => {
+        if (!held && Object.prototype.hasOwnProperty.call(items, 'wardenone_config')) {
+          held = true;
+          globalThis.__resumePrivateWrite = () => { area.set = originalSet; originalSet(items, callback); };
+          return;
+        }
+        return originalSet(items, callback);
+      };
+      globalThis.__privateWriteDone = writeConfig({ capReferrer: true });
+      return true;
+    })()`);
+    await until(privateSettings, "typeof __resumePrivateWrite === 'function'", 'private Settings save paused after its read');
     assert.equal((await evaluate(regularSettings, "new Promise((r) => chrome.runtime.sendMessage({kind:'privacy-data-erase',mode:'all'},r))")).ok, true);
+    assert.equal(await evaluate(privateSettings, "(__resumePrivateWrite(), __privateWriteDone.then(() => true))"), true,
+      'the paused private Settings save completed after Erase all');
     await sleep(2100);
     extension = await profile.extensionReady(cdp, port, version);
     const { browserContextId: afterResetContext } = await cdp.send('Target.createBrowserContext', {});
@@ -171,13 +199,29 @@ async function run() {
     const afterReset = await attach(afterResetId);
     await until(afterReset, "typeof stampConfigWrite === 'function' && typeof localWrite === 'function'", 'private extension page after erase');
     assert.equal(await evaluate(afterReset, 'chrome.extension.inIncognitoContext'), true);
+    const cleanStorage = `chrome.storage.local.get(null).then((items) => {
+      const cfg = items.wardenone_config || {};
+      const text = JSON.stringify(items);
+      return {
+        apiKey: cfg.downloadSafeBrowsingKey === ${JSON.stringify(erasedKey)},
+        allowlisted: Array.isArray(cfg.allowlist) && cfg.allowlist.includes(${JSON.stringify(erasedSite)}),
+        siteException: !!(cfg.siteOverrides && cfg.siteOverrides[${JSON.stringify(erasedSite)}]),
+        elsewhere: text.includes(${JSON.stringify(erasedKey)}) || text.includes(${JSON.stringify(erasedSite)}),
+        epochValid: !!(items[WO_CONFIG_RESET_KEY] && items[WO_CONFIG_WRITES_KEY]
+          && items[WO_CONFIG_WRITES_KEY].epoch === items[WO_CONFIG_RESET_KEY].epoch),
+      };
+    })`;
+    const expectedClean = { apiKey: false, allowlisted: false, siteException: false, elsewhere: false, epochValid: true };
+    const cleanPredicate = `(${cleanStorage}).then((state) => !state.apiKey && !state.allowlisted && !state.siteException && !state.elsewhere && state.epochValid)`;
+    await until(afterReset, cleanPredicate, 'paused private Settings save to be removed after reload');
+    assert.deepEqual(await evaluate(afterReset, cleanStorage), expectedClean, 'Erase all must survive the paused private Settings save and reload');
     await evaluate(afterReset, `(() => { const old = ${JSON.stringify(stale)}; const stamp = stampConfigWrite(old[WO_CONFIG_WRITES_KEY], ['capReferrer']); return localWrite({ wardenone_config: Object.assign({}, old.wardenone_config, { capReferrer: true }), [WO_CONFIG_WRITES_KEY]: stamp.record }).then(() => true); })()`);
-    await until(afterReset, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_RESET_KEY, WO_CONFIG_WRITES_KEY]).then((got) => got[WO_CONFIG_RESET_KEY] && got[WO_CONFIG_WRITES_KEY].epoch === got[WO_CONFIG_RESET_KEY].epoch && (!got.wardenone_config || !got.wardenone_config.__resetProbe))",
+    await until(afterReset, cleanPredicate,
       'pre-reset private write to be removed');
     await sleep(1300);
-    assert.equal(await evaluate(afterReset, "chrome.storage.local.get('wardenone_config').then((got) => got.wardenone_config && got.wardenone_config.__resetProbe)"), undefined,
-      'a delayed pre-reset private snapshot must not reappear');
-    console.log('[ok] Erase all rejects a private config write that read before reset and landed 2.1 seconds later');
+    assert.deepEqual(await evaluate(afterReset, cleanStorage), expectedClean,
+      'a delayed pre-reset private snapshot must not restore the API key or site exceptions');
+    console.log('[ok] Erase all survives a paused private Settings save and a delayed private replay after reload');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const resolved = path.resolve(dir);

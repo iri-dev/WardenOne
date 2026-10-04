@@ -58,7 +58,7 @@ function grabFn(src, name) {
 /* the popup's tables and the two functions, as shipped */
 const TABLES = between(POPUP, 'const DEFAULTS = {', '\nconst SITE_OVERRIDE_SCOPE = {', 'the popup tables');
 const SECRET = between(POPUP, 'const SECRET_FIELD_RE', '\n', 'the secret pattern');
-const ctx = { Object, Array, Number, String, JSON, RegExp };
+const ctx = { Object, Array, Number, String, JSON, RegExp, WOEyeShieldProfiles: require('../eyeshield-profiles.js') };
 vm.createContext(ctx);
 vm.runInContext(TABLES + '\n' + SECRET + '\n' + grabFn(POPUP, 'sanitizeSiteOverrides') + '\n' + grabFn(POPUP, 'exportableSettings') + '\n'
   + grabFn(POPUP, 'sanitizeImportedSettings') + '\nglobalThis.api = { DEFAULTS, IMPORT_SCHEMA, IMPORT_ONLY_DEFAULTS, exportableSettings, sanitizeImportedSettings, sanitizeSiteOverrides };', ctx);
@@ -80,6 +80,7 @@ const live = Object.assign({}, WORKER_DEFAULTS, {
   allowlist: ['paused.example'],
   allowlistUntil: { 'paused.example': 1800000000000 },
   siteOverrides: { 'shop.example': { mediaShield: false, blockPopupTricks: false }, 'bank.example': { detectSkimmers: false } },
+  eyeShieldSites: { 'github.com': { mode: 'off' }, 'youtube.com': { mode: 'custom', theme: 'dark', eyeShieldBrightness: 85, eyeShieldContrast: 95, eyeShieldSaturation: 100, eyeShieldWarmth: 20, eyeShieldGrayscale: 0 } },
   downloadSafeBrowsingKey: 'sb-secret-key',
   logThirdPartyBeacons: false,
   downloadHashCheck: false,

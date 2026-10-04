@@ -112,6 +112,7 @@ function worker({ session, config, fault }) {
     scheduleSitePauseExpiry: () => {},
     eyeShieldThemingActive: () => false,
     eyeShieldPreloadFile: () => '',
+    eyeShieldRegistrationScope: () => ({ matches: ['<all_urls>'], excludeMatches: [] }),
     consentRejectActive: () => false,
     searchSponsoredCleanupActive: () => false,
   };

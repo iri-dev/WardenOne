@@ -167,6 +167,7 @@ function checkContentBuild() {
   'onboarding.js',
   'download-review.js',
   'eyeshield.js',
+  'eyeshield-profiles.js',
   'eyeshield-sites.js',
   'eyeshield-preload-dark.js',
   'eyeshield-preload-ultra.js',
@@ -269,6 +270,7 @@ function checkContentBuild() {
   'tools/test-eyeshield-yt-player.js',
   'tools/test-eyeshield-native-site-themes.js',
   'tools/test-eyeshield-preload-hint.js',
+  'tools/test-eyeshield-profiles.js',
   'tools/test-protection-health.js',
   'tools/test-diagnostics-export.js',
   'tools/test-list-publisher-dates.js',
@@ -531,6 +533,7 @@ checkCommand('Fraud-vendor script tests', ['tools/test-fraud-vendor-scripts.js']
 checkCommand('Fake Window scan-cost tests', ['tools/test-fake-window-scan-cost.js']);
 checkCommand('Eye Shield site-split tests', ['tools/test-eyeshield-site-split.js']);
 checkCommand('Eye Shield preload-hint tests', ['tools/test-eyeshield-preload-hint.js']);
+checkCommand('Eye Shield site-profile tests', ['tools/test-eyeshield-profiles.js']);
 checkCommand('Engine allowlist honesty tests', ['tools/test-engine-allowlist-honesty.js']);
 checkCommand('Logger reconnect tests', ['tools/test-logger-reconnect.js']);
 checkCommand('Script Drift storage tests', ['tools/test-script-drift-storage.js']);

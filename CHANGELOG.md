@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- EyeShield site profiles can inherit global settings, save custom theme and colour adjustments,
+  or turn EyeShield off for a site. The popup keeps the main EyeShield controls visible and
+  uses a small scope menu to autosave global or current-site settings. Settings manages
+  global defaults and all saved profiles. Off sites are excluded from
+  EyeShield's content-script registration.
+
+### Fixed
+
+- Restored the pause and single-protection controls to the popup's bottom This site panel.
+- EyeShield's YouTube light theme keeps the feed's Next button readable without showing
+  clipped topics through it. AdShield collapses empty feed cards left by blocked ads.
+
 ## 1.0.2 — 2026-10-02
 
 ### Added
