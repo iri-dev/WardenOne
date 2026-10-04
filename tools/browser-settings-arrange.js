@@ -163,7 +163,7 @@ async function run() {
     await value(settings, "document.querySelector('#pane [data-site-source=trusted][data-site-action=remove]').click()");
     await until(settings, "document.querySelector('#pane').textContent.includes('No trusted script sites saved.')", 'trusted site removal');
     await value(settings, "(async () => { const stored = await localRead('wardenone_config'); await localWrite({ wardenone_config: { ...(stored.wardenone_config || {}), allowlist: ['example.com'] } }); await loadSites(); })()");
-    assert(await value(settings, "document.querySelector('#pane [data-site-source=paused]')?.dataset.siteId === 'example.com'"));
+    await until(settings, "document.querySelector('#pane [data-site-source=paused]')?.dataset.siteId === 'example.com'", 'paused site row');
     await value(settings, "document.querySelector('#pane [data-site-source=paused][data-site-action=remove]').click()");
     await until(settings, "document.querySelector('#pane').textContent.includes('No sites paused.')", 'paused site removal');
     const website = await cdp.send('Target.createTarget', { url: 'https://www.twitch.tv/' });

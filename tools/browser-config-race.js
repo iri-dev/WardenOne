@@ -165,9 +165,12 @@ async function run() {
     const stale = await evaluate(privateSettings, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY])");
     assert.equal((await evaluate(regularSettings, "new Promise((r) => chrome.runtime.sendMessage({kind:'privacy-data-erase',mode:'all'},r))")).ok, true);
     await sleep(2100);
-    const { targetId: afterResetId } = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/settings.html`, browserContextId: privateContext });
+    extension = await profile.extensionReady(cdp, port, version);
+    const { browserContextId: afterResetContext } = await cdp.send('Target.createBrowserContext', {});
+    const { targetId: afterResetId } = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/settings.html`, browserContextId: afterResetContext });
     const afterReset = await attach(afterResetId);
-    await until(afterReset, "typeof loaded !== 'undefined' && loaded === true", 'private Settings after erase');
+    await until(afterReset, "typeof stampConfigWrite === 'function' && typeof localWrite === 'function'", 'private extension page after erase');
+    assert.equal(await evaluate(afterReset, 'chrome.extension.inIncognitoContext'), true);
     await evaluate(afterReset, `(() => { const old = ${JSON.stringify(stale)}; const stamp = stampConfigWrite(old[WO_CONFIG_WRITES_KEY], ['capReferrer']); return localWrite({ wardenone_config: Object.assign({}, old.wardenone_config, { capReferrer: true }), [WO_CONFIG_WRITES_KEY]: stamp.record }).then(() => true); })()`);
     await until(afterReset, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_RESET_KEY, WO_CONFIG_WRITES_KEY]).then((got) => got[WO_CONFIG_RESET_KEY] && got[WO_CONFIG_WRITES_KEY].epoch === got[WO_CONFIG_RESET_KEY].epoch && (!got.wardenone_config || !got.wardenone_config.__resetProbe))",
       'pre-reset private write to be removed');
