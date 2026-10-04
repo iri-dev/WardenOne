@@ -92,6 +92,8 @@ function confirmConfigWrite(id, again, triesLeft, changedKeys) {
 /* A full erase leaves a random epoch. Old private writes can still land after clear(),
    even after the worker reloads, so every live config context checks the shared store. */
 async function repairConfigAfterReset(changes) {
+  const marker = await chrome.storage.local.get(WO_CONFIG_RESET_KEY);
+  if (!marker[WO_CONFIG_RESET_KEY] || typeof marker[WO_CONFIG_RESET_KEY].epoch !== 'string') return;
   await withConfigLock(async () => {
     const stored = await chrome.storage.local.get([WO_CONFIG_RESET_KEY, WO_CONFIG_WRITES_KEY, 'wardenone_config']);
     const guard = stored[WO_CONFIG_RESET_KEY];
