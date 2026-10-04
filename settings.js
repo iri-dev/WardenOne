@@ -101,20 +101,22 @@ let writeChain = Promise.resolve();
    this change without seeing it, the same patch is applied again (confirmConfigWrite). */
 function writeConfig(patch, triesLeft) {
   let id = '';
+  let changedKeys = [];
   const run = writeChain.then(() => withConfigLock(async () => {
     const stored = await localRead([CONFIG_KEY, WO_CONFIG_WRITES_KEY]);
     const before = isObj(stored[CONFIG_KEY]) ? stored[CONFIG_KEY] : {};
     /* A function patch is worked out from what is stored now, for maps another page may be editing. */
     const delta = typeof patch === 'function' ? patch(before) : patch;
+    changedKeys = Object.keys(delta);
     const next = Object.assign({}, before, delta);
     tidyConfig(next, before, delta);
-    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY]);
+    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY], changedKeys);
     id = stamp.id;
     await localWrite({ [CONFIG_KEY]: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
     return next;
   })).then((next) => {
     adoptConfig(next);
-    confirmConfigWrite(id, (left) => { writeConfig(patch, left).catch(() => {}); }, triesLeft);
+    confirmConfigWrite(id, (left) => { writeConfig(patch, left).catch(() => {}); }, triesLeft, changedKeys);
     return next;
   });
   writeChain = run.catch(() => {});

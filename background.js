@@ -20595,6 +20595,9 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Settings save record', sensitivity: 'random ids', area: 'local', maxAgeDays: null, maxItems: 64, retention: 'Ids of the latest 64 settings saves; replaced on every save', siteErase: 'keep', keys: [
     'wardenone_config_writes',
   ] },
+  { owner: 'Settings reset guard', sensitivity: 'random id', area: 'local', maxAgeDays: null, maxItems: 1, retention: 'Until the next full reset or extension removal', siteErase: 'keep', keys: [
+    'wardenone_config_reset',
+  ] },
 ]);
 const PRIVACY_STORE_BY_KEY = new Map();
 for (const policy of PRIVACY_STORE_POLICY) {
@@ -20784,7 +20787,13 @@ async function eraseWardenOneData(mode) {
       await chrome.storage.local.clear();
       if (chrome.storage.session) await chrome.storage.session.clear();
       if (preserved) await chrome.storage.local.set({ wardenone_config: preserved });
+      if (mode === 'all') {
+        const epoch = configWriteId();
+        await chrome.storage.local.set({ [WO_CONFIG_RESET_KEY]: { epoch }, [WO_CONFIG_WRITES_KEY]: { epoch, ids: [] } });
+        await chrome.storage.local.remove('wardenone_config');
+      }
     });
+    if (mode === 'all') await repairConfigAfterReset();
     if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true });
     setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
     return { ok: true, kept: mode === 'all' ? 'nothing' : (mode === 'settings' ? 'global switches' : 'global switches and API keys') };
