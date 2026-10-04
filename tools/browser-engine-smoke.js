@@ -11,8 +11,8 @@
        that switch off in storage it is left alone, which the engine's built-in defaults alone
        could not do;
      - its signed report crosses the bridge to the worker, which counts it for the Site Dashboard;
-     - a shipped network rule blocks a listed tracker before the request leaves the browser, while
-       an unlisted host on the same page still loads.
+     - a shipped network rule matches a listed tracker, whose live request is blocked before it
+       leaves the browser, while an unlisted host on the same page still loads.
    The page is served locally; --host-resolver-rules points the test host names at it.
    Run: node tools/browser-engine-smoke.js
    It drives the unpacked extension in a browser (tools/perf-profile.js), so it runs in CI's
@@ -120,19 +120,23 @@ async function run() {
     assert(Number.isInteger(tabId), 'the page has a tab');
     const tallied = `chrome.runtime.sendMessage({ kind: 'site-dashboard', tabId: ${tabId} }).then((d) => JSON.stringify(d || {}).includes('stripped_link_ping'))`;
     await until(settings, tallied, 'the worker to count the stripped ping for the Site Dashboard');
-
-    /* 4. A shipped network rule blocks a listed tracker before it leaves the browser; an unlisted
-       host on the same page still loads. */
+    /* 4. An unlisted host loads, while a listed one is blocked. Edge can stop known trackers
+       before DNR records a match, so testMatchOutcome also checks the shipped rule itself. */
+    await until(worker, "chrome.declarativeNetRequest.getEnabledRulesets().then((ids) => ids.includes('trackers'))", 'the shipped tracker ruleset to activate');
     const probe = async (host) => evaluate(page, `fetch('http://${host}:${serverPort}/probe-' + Date.now()).then((r) => 'loaded ' + r.status, (e) => 'blocked')`);
     assert.equal(await probe(CONTROL_HOST), 'loaded 200', 'an unlisted host still loads, so the test can tell a block from a broken page');
     let blocked = '';
+    let matchedRule;
     for (const tracker of trackers) {
-      if ((await probe(tracker)) === 'blocked') { blocked = tracker; break; }
+      const outcome = await evaluate(worker, `chrome.declarativeNetRequest.testMatchOutcome({ url: 'http://${tracker}:${serverPort}/probe-rule', initiator: ${JSON.stringify(pageUrl)}, type: 'xmlhttprequest', tabId: ${tabId} }).then((r) => r.matchedRules)`);
+      const rule = outcome.find((item) => item.rulesetId === 'trackers');
+      if (!rule || (await probe(tracker)) !== 'blocked') continue;
+      blocked = tracker;
+      matchedRule = rule;
+      break;
     }
-    assert(blocked, 'a domain the tracker list names was blocked: tried ' + trackers.join(', '));
+    assert(blocked, 'a listed tracker was blocked by the browser and matched by the shipped ruleset: tried ' + trackers.join(', '));
     assert(!hits.some((h) => h.startsWith(blocked + '/')), 'the blocked request never reached the server');
-    const matched = await evaluate(worker, `chrome.declarativeNetRequest.getMatchedRules({ tabId: ${tabId} }).then((r) => r.rulesMatchedInfo.map((m) => m.rule.rulesetId))`);
-    assert(matched.some((id) => id !== '_dynamic' && id !== '_session'), 'a shipped ruleset made the block: ' + JSON.stringify(matched));
 
     /* 2b. The config the engine acts on is the one the bridge delivers, not its built-in defaults:
        switched off in Settings, the change reaches this open page, and a tracked link added after it
@@ -142,17 +146,17 @@ async function run() {
     const addLink = (id) => evaluate(page, `(() => { const a = document.createElement('a'); a.id = ${JSON.stringify(id)}; a.href = '/next'; a.setAttribute('ping', '/ping-beacon'); a.textContent = 'More'; document.body.appendChild(a); return true; })()`);
     const kept = (id) => evaluate(page, `document.getElementById(${JSON.stringify(id)}).hasAttribute('ping')`);
     await evaluate(settings, "writeConfig({ unshimLinks: false }).then(() => true)");
-    await sleep(2500);
+    await until(page, 'window.__WO_CONFIG__ && window.__WO_CONFIG__.unshimLinks === false', 'the off switch to reach the page');
     await addLink('added-off');
     await sleep(800);
     assert(await kept('added-off'), 'with the switch off in Settings the engine still stripped a new link\'s ping, so the change never reached it');
     await evaluate(settings, "writeConfig({ unshimLinks: true }).then(() => true)");
-    await sleep(2500);
+    await until(page, 'window.__WO_CONFIG__ && window.__WO_CONFIG__.unshimLinks === true', 'the on switch to reach the page');
     await addLink('added-on');
     await until(page, "!document.getElementById('added-on').hasAttribute('ping')", 'the switch turned back on to reach the page');
 
     console.log('[ok] the page engine, the bridge, the worker and a shipped network rule all work on a real page in ' + browser.Browser
-      + ' (blocked ' + blocked + ', ruleset ' + matched.filter((id) => id !== '_dynamic' && id !== '_session')[0] + ')');
+      + ' (blocked ' + blocked + ', ruleset ' + matchedRule.rulesetId + ')');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     server.close();
