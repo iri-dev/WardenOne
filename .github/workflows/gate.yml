@@ -162,14 +162,14 @@ jobs:
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-engine-smoke.js
 
-  # Each passing push gets a commit-tagged release. The stable /releases/latest/download URL
-  # follows only a complete release, while a draft and its assets remain invisible to readers.
+  # A passing push stages a commit-tagged draft, then makes it the sole rolling release
+  # after both assets are verified. /releases/latest/download follows the complete build.
   rolling-build:
     name: publish-latest-build
     needs: [gate, browser-popup, browser-settings, browser-minimum]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # A draft can be retried safely; an already published commit release is never overwritten.
+    # A draft can be retried safely; published assets are never overwritten.
     concurrency:
       group: publish-latest-build
       cancel-in-progress: false
@@ -301,13 +301,16 @@ jobs:
             echo "main advanced to $MAIN_SHA; keeping $BUILD_TAG without changing Latest"
             exit 0
           fi
-          PREV_TAG="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
           gh release edit "$BUILD_TAG" --draft=false --latest --title "WardenOne Latest"
           test "$(gh release view --json tagName --jq .tagName)" = "$BUILD_TAG"
-          if [ "$PREV_TAG" != "$BUILD_TAG" ] && [[ "$PREV_TAG" =~ ^build-[0-9a-f]{40}$ ]]; then
-            gh release edit "$PREV_TAG" --title "WardenOne Build ${PREV_TAG:6:7}"
-          fi
+          for OLD_TAG in $(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName'); do
+            if [ "$OLD_TAG" != "$BUILD_TAG" ] && [[ "$OLD_TAG" =~ ^build-[0-9a-f]{40}$ ]]; then
+              gh release delete "$OLD_TAG" --cleanup-tag --yes
+            fi
+          done
           # The old fixed-tag asset URL would otherwise keep serving a stale ZIP.
           if gh release view latest-build >/dev/null 2>&1; then
             gh release delete latest-build --cleanup-tag --yes
           fi
+          ROLLING_TAGS="$(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName' | grep -E '^build-[0-9a-f]{40}$' || true)"
+          test "$ROLLING_TAGS" = "$BUILD_TAG"

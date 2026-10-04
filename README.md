@@ -1707,7 +1707,7 @@ you extra evidence about the exact ZIP you downloaded:
 - **GitHub build attestation.** A record that ties those exact ZIP bytes to a build run by this
   repository's GitHub Actions workflow from `main`.
 
-To check the hash, download [WardenOne-latest.zip.sha256](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip.sha256) from the same release page as the ZIP. Each published build has its own commit tag and fixed assets. The Latest link moves to a new release only after both files have been uploaded and checked. If the hashes don't match, open the release page and download both files again from that same commit. Don't load a ZIP that still fails. The release notes show the ZIP's SHA-256 and link to its attestation too.
+To check the hash, download [WardenOne-latest.zip.sha256](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip.sha256) from the same release page as the ZIP. The Latest link moves to a new, verified commit build only after both files have been uploaded and checked; the previous rolling release is then removed. If the hashes don't match, open the current release page and download both files again together. Don't load a ZIP that still fails. The release notes show the ZIP's SHA-256 and link to its attestation too.
 
 On Windows PowerShell, in the directory containing both files:
 
