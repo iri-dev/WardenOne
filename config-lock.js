@@ -35,6 +35,7 @@ function withConfigLock(task) {
 /* Beside the config, not in it: the config reaches page worlds through the bridge, and a list of
    write ids there would only be something for a page to read. */
 const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';
+const WO_CONFIG_RESET_KEY = 'wardenone_config_reset';
 const WO_CONFIG_WRITES_KEPT = 64;
 
 function configWriteId() {
@@ -47,18 +48,21 @@ function configWriteId() {
 
 /* A new write's id, and the record to store with it: that id, then the ids the stored config
    already descends from. `stored` is what was read for WO_CONFIG_WRITES_KEY with the config. */
-function stampConfigWrite(stored) {
-  const id = configWriteId();
+function stampConfigWrite(stored, changedKeys) {
+  const epoch = stored && typeof stored.epoch === 'string' ? stored.epoch : '';
+  const id = (epoch ? epoch + ':' : '') + configWriteId();
   const prior = stored && Array.isArray(stored.ids) ? stored.ids.filter((x) => typeof x === 'string') : [];
-  return { id, record: { ids: [id].concat(prior).slice(0, WO_CONFIG_WRITES_KEPT) } };
+  const keys = Array.isArray(changedKeys) ? changedKeys.filter((key) => typeof key === 'string').slice(0, 32) : [];
+  return { id, record: { epoch, ids: [id].concat(prior).slice(0, WO_CONFIG_WRITES_KEPT), keys } };
 }
 
 /* After the lock is let go: is the stored config still descended from this write? Checked twice,
    since a writer elsewhere may be slower than the first look. A later write that read this one
    carries its id; one that read before it does not, and wrote over it. Then `again` makes the
    change once more on what is stored now, and confirms that write in turn -- at most twice in all.
-   No record at all means the store has been reset since: there is nothing to put back. */
-function confirmConfigWrite(id, again, triesLeft) {
+   A new reset epoch stops any pre-reset retry. A later single-key Settings edit to the
+   same key wins; an earlier different-key edit can still be replayed. */
+function confirmConfigWrite(id, again, triesLeft, changedKeys) {
   if (!id || typeof again !== 'function' || typeof setTimeout !== 'function') return;
   if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
   const left = triesLeft === undefined ? 2 : triesLeft;
@@ -66,12 +70,16 @@ function confirmConfigWrite(id, again, triesLeft) {
     try {
       chrome.storage.local.get(WO_CONFIG_WRITES_KEY, (got) => {
         if (chrome.runtime && chrome.runtime.lastError) return;
-        const ids = got && got[WO_CONFIG_WRITES_KEY] && got[WO_CONFIG_WRITES_KEY].ids;
+        const record = got && got[WO_CONFIG_WRITES_KEY];
+        const ids = record && record.ids;
         if (!Array.isArray(ids)) return;
+        if ((record.epoch || '') !== (id.includes(':') ? id.slice(0, id.indexOf(':')) : '')) return;
         if (ids.includes(id)) {
           if (!last) look(1200, true);
           return;
         }
+        if (Array.isArray(changedKeys) && changedKeys.length === 1
+            && Array.isArray(record.keys) && record.keys.includes(changedKeys[0])) return;
         if (left > 0) {
           try { again(left - 1); } catch (_) {}
         }
@@ -79,4 +87,33 @@ function confirmConfigWrite(id, again, triesLeft) {
     } catch (_) {}
   }, delay);
   look(300, false);
+}
+
+/* A full erase leaves a random epoch. Old private writes can still land after clear(),
+   even after the worker reloads, so every live config context checks the shared store. */
+async function repairConfigAfterReset(changes) {
+  await withConfigLock(async () => {
+    const stored = await chrome.storage.local.get([WO_CONFIG_RESET_KEY, WO_CONFIG_WRITES_KEY, 'wardenone_config']);
+    const guard = stored[WO_CONFIG_RESET_KEY];
+    const epoch = guard && guard.epoch;
+    if (typeof epoch !== 'string' || !epoch) return;
+    const record = stored[WO_CONFIG_WRITES_KEY];
+    if (record && record.epoch === epoch) return;
+    const priorRecord = changes && changes[WO_CONFIG_WRITES_KEY] && changes[WO_CONFIG_WRITES_KEY].oldValue;
+    const priorConfig = changes && changes.wardenone_config && changes.wardenone_config.oldValue;
+    if (priorRecord && priorRecord.epoch === epoch && priorConfig !== undefined) {
+      await chrome.storage.local.set({ wardenone_config: priorConfig, [WO_CONFIG_WRITES_KEY]: priorRecord });
+    } else {
+      await chrome.storage.local.remove('wardenone_config');
+      await chrome.storage.local.set({ [WO_CONFIG_WRITES_KEY]: { epoch, ids: [] } });
+    }
+  });
+}
+
+if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || (!changes.wardenone_config && !changes[WO_CONFIG_WRITES_KEY])) return;
+    repairConfigAfterReset(changes).catch(() => {});
+  });
+  repairConfigAfterReset().catch(() => {});
 }

@@ -63,6 +63,9 @@
 
 ### Fixed
 
+- A full reset now rejects a late private-window settings save made from the old config, including
+  one that lands after WardenOne restarts. When regular and private Settings edit the same single
+  switch together, the later saved edit wins.
 - New HTML insertion points now fail the security gate until their exact source lines are reviewed;
   the existing Settings and Twitch Rewind insertion points are recorded as the baseline.
 - A setting changed at the same moment as another could be lost: a switch flipped in Settings
