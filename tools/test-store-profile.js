@@ -147,7 +147,7 @@ section('the Store tree', () => {
   TREE = tool.buildStoreTree({ treeish: staged.stdout.trim() });
   check('the replay files are gone', ['twitch-rewind.js', 'twitch-vod-rewind.js'].every((f) => TREE.removed.includes(f) && !TREE.files.has(f)), TREE.omittedFiles);
   check('the Memory Shield module remains', TREE.files.has('background-memory.js') && !TREE.removed.includes('background-memory.js'));
-  check('EyeShield and its preload files remain', ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((f) => TREE.files.has(f) && !TREE.removed.includes(f)));
+  check('EyeShield and its preload files remain', ['eyeshield.js', 'eyeshield-profiles.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((f) => TREE.files.has(f) && !TREE.removed.includes(f)));
   check('tooling, sources, docs, the site and the workflow are not in the package', !Array.from(TREE.files.keys()).some((f) => /^(?:tools|src|docs|site|\.github)\//.test(f)));
   check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'NOTICE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
   /* Every document in the package is there on purpose (REL-03): the repository's own notes are not. */
@@ -183,6 +183,7 @@ function workerRealm(store, extra) {
     localGet: async () => ({ wardenone_config: { enabled: true, eyeShield: true, eyeShieldMode: 'dark' } }),
     EYESHIELD_SCRIPT_ID: 'wo-eyeshield-dynamic', EYESHIELD_SITES_SCRIPT_ID: 'wo-eyeshield-sites-dynamic',
     eyeShieldThemingActive: () => true,
+    WOEyeShieldProfiles: require('../eyeshield-profiles.js'),
     injectEyeShieldIntoOpenTabs: () => { state.injected = true; },
     WO_MENU_ZAP: 'zap', WO_MENU_COPY_LINK: 'copy', WO_MENU_LINK: 'link', WO_MENU_SELECTION: 'sel', WO_MENU_MEDIA: 'media', WO_MENU_FRAME: 'frame',
     WO_MENU_SLEEP_TAB: 'sleep', WO_MENU_NEVER_SLEEP: 'never', WO_MENU_CLOSE_TAB: 'close', WO_MENU_BLOCK: 'block',
@@ -197,6 +198,7 @@ function workerRealm(store, extra) {
   parts.push(between(workerText, 'const EYESHIELD_PRELOAD_MODES = [', ';', 'the preload mode list') + ';');
   parts.push(grabFn(workerText, 'eyeShieldPreloadFile'));
   parts.push(grabFn(workerText, 'eyeShieldScriptFiles'));
+  parts.push(grabFn(workerText, 'eyeShieldRegistrationScope'));
   parts.push(grabFn(workerText, 'eraseEyeShieldSiteMarkerFromOpenTabs'));
   parts.push(grabFn(workerText, 'reconcileEyeShieldInjection'));
   // The integrity list, as the repair handler assembles it, up to the loop that fetches it.
@@ -258,7 +260,7 @@ section('the worker source', () => {
   const settings = between(BG, 'if (MODULE_LOADED.memory && n.tabLimitGuard', 'reconcileMemorySweepAlarm();', 'the settings guards');
   check('settings changes reach the module only when it loaded', /MODULE_LOADED\.memory && \(o\.memoryShield !== n\.memoryShield/.test(settings));
   check('the worker imports the profile before the modules it gates', BG.indexOf("importScripts('build-profile.js')") > 0 && BG.indexOf("importScripts('build-profile.js')") < BG.indexOf('importScripts("background-memory.js")'));
-  check('injectEyeShieldIntoOpenTabs is a no-op without EyeShield', /function injectEyeShieldIntoOpenTabs\(\) \{\s*if \(woFeatureOmitted\('eyeShield'\)\) return;/.test(BG));
+  check('injectEyeShieldIntoOpenTabs is a no-op without EyeShield', /function injectEyeShieldIntoOpenTabs\(cfg\) \{\s*if \(woFeatureOmitted\('eyeShield'\)\) return;/.test(BG));
 });
 
 /* ---- 4. the popup ----------------------------------------------------------------------- */
@@ -330,7 +332,7 @@ section('determinism', () => {
     const names = zipEntries(fs.readFileSync(a));
     const zippedText = zipTextEntries(fs.readFileSync(a));
     check('the archive carries EyeShield and Memory Shield and excludes replay', names.includes('manifest.json') && names.includes('build-profile.js') && names.includes('background.js') && names.includes('background-memory.js')
-      && ['eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((n) => names.includes(n))
+      && ['eyeshield.js', 'eyeshield-profiles.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((n) => names.includes(n))
       && !names.some((n) => ['twitch-rewind.js', 'twitch-vod-rewind.js'].includes(n)), names.filter((n) => /eyeshield|memory|rewind/.test(n)));
     check('...and no tooling, sources or docs', !names.some((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)), names.filter((n) => /^(?:tools|src|docs|site|\.github)\//.test(n)).slice(0, 5));
     check('manifest.json sits at the root of the archive', names.includes('manifest.json') && !names.some((n) => /\/manifest\.json$/.test(n)));

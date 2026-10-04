@@ -113,6 +113,7 @@ function worker({ session, config, configUnreadable, behaviour }) {
     scheduleSitePauseExpiry: () => {},
     eyeShieldThemingActive: () => false,
     eyeShieldPreloadFile: () => '',
+    eyeShieldRegistrationScope: () => ({ matches: ['<all_urls>'], excludeMatches: [] }),
     consentRejectActive: () => false,
     searchSponsoredCleanupActive: () => false,
     /* the failure paths used to run a second list of appliers through these (BUG-08); they are

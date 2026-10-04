@@ -96,6 +96,17 @@ function adsGone(r) {
 }
 
 async function main() {
+  {
+    const ctx = newCtx('{}');
+    let css = '';
+    ctx.document.createElement = () => ({ set textContent(value) { css = value; } });
+    vm.runInContext(src, ctx);
+    ok('ad-only rich-grid wrappers collapse without hiding video cards',
+      css.includes('ytd-rich-item-renderer:has(> #content > :is(ytd-ad-slot-renderer,')
+        && css.includes('ytd-promoted-video-renderer):only-child)')
+        && css.includes('ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer'));
+  }
+
   console.log("1) Cold-load trap (set before script runs):");
   {
     const ctx = newCtx("{}");

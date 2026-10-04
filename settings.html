@@ -370,6 +370,10 @@
   .row.block.custom { padding: var(--row-pad) 0; }
   .wide-in { display: grid; grid-template-columns: var(--name-col) minmax(0, 1fr) auto; align-items: center; gap: 0 14px; min-height: 26px; }
   .wide-in .r-desc { -webkit-line-clamp: unset; display: block; }
+  .eye-site-pick { flex-wrap: wrap; }
+  .eye-site-pick input { min-width: 160px; max-width: 230px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--raised); padding: 0 8px; }
+  .eye-site-fields { display: grid; gap: 9px; margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .eye-site-saved { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .msg { margin-top: 6px; font-size: 12.5px; font-weight: 700; line-height: 1.45; color: var(--ink-soft); }
   .msg[hidden] { display: none; }
   .msg.ok { color: var(--ok); } .msg.err { color: var(--bad); } .msg.warn { color: var(--warn); }
@@ -581,6 +585,7 @@
 <input type="file" id="import-file" accept="application/json,.json" hidden aria-label="Choose a settings file to import">
 
 <script src="build-profile.js"></script>
+<script src="eyeshield-profiles.js"></script>
 <script src="notification-schema.js"></script>
 <script src="popup-diagnostics.js"></script>
 <script src="settings-data.js"></script>

@@ -221,6 +221,22 @@ function rules(css) {
   return out;
 }
 
+for (const [mode, chip, text, background] of [['light', '#f1f1f1', '#0f0f0f', '#ffffff'], ['dark', '#272727', '#f1f1f1', '#0f0f0f']]) {
+  const css = themeFor('youtube.com', mode).css;
+  const arrow = rules(css).find((rule) => rule.sel.includes('ytd-feed-filter-chip-bar-renderer :is(#left-arrow-button,#right-arrow-button) > ytd-button-renderer')
+    && rule.body.includes('background:' + chip + ' !important'));
+  check('YouTube ' + mode + ' matches the Next circle to its chip palette',
+    !!arrow && arrow.body.includes('color:' + text + ' !important'));
+  check('YouTube ' + mode + ' keeps the Next glyph readable',
+    rules(css).some((rule) => rule.sel.includes('#right-arrow-button) > ytd-button-renderer svg')
+      && rule.body.includes('color:' + text + ' !important')));
+  check('YouTube ' + mode + ' masks chips behind the Next control',
+    rules(css).some((rule) => rule.sel.includes('#right-arrow #right-arrow-button')
+      && rule.body.includes('background:' + background + ' !important'))
+    && rules(css).some((rule) => rule.sel.includes('#right-arrow::before')
+      && rule.body.includes('linear-gradient(to right,transparent,' + background + ')')));
+}
+
 /* ---- GitHub: its own theme, not a repaint ----------------------------------------- */
 
 console.log('GitHub');
@@ -782,7 +798,7 @@ chatgptSignedInDone.then(() => new Promise((resolve) => {
   console.log('all Eye Shield native site theme checks passed');
 });
 check('the popup refreshes a tab with the per-site themes too, top frame, before the core',
-  /files: \['eyeshield-sites\.js'\][\s\S]{0,400}files: \['eyeshield\.js'\]/.test(fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8'))
+  /files: \['eyeshield-sites\.js'\][\s\S]{0,400}files: \['eyeshield-profiles\.js', 'eyeshield\.js'\]/.test(fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8'))
     && /target: \{ tabId: tab\.id, frameIds: \[0\] \}, files: \['eyeshield-sites\.js'\]/.test(fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8')),
   'a tab opened before theming was on had the core but no GitHub or YouTube Music profile');
 check('a missing per-site file is not remembered as missing',
@@ -796,4 +812,3 @@ check('the version records the changes',
     'github-loads-theme-sheet', 'chatgpt-native-theme', 'ytmusic-native-light', 'chatgpt-flips-every-scope', 'chatgpt-pins-color-scheme', 'chatgpt-data-theme',
     'chatgpt-dark-surfaces', 'native-theme-fallback']
     .every((m) => CORE.indexOf(m) >= 0));
-

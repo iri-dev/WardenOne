@@ -256,11 +256,21 @@
   function youtubeChipRailCSS(p) {
     const rail = 'ytd-feed-filter-chip-bar-renderer,ytd-feed-filter-chip-bar-renderer #chips-wrapper,ytd-feed-filter-chip-bar-renderer #chips-content,ytd-feed-filter-chip-bar-renderer #chips,yt-chip-cloud-renderer,yt-chip-cloud-renderer #chips,yt-chip-cloud-renderer #chips-wrapper,yt-chip-cloud-renderer #scroll-container,[class*="ytChipCloudRenderer" i],[class*="ytHorizontalListRenderer" i]';
     const arrows = 'ytd-feed-filter-chip-bar-renderer #left-arrow,ytd-feed-filter-chip-bar-renderer #right-arrow,ytd-feed-filter-chip-bar-renderer #left-arrow-button,ytd-feed-filter-chip-bar-renderer #right-arrow-button,yt-chip-cloud-renderer #left-arrow,yt-chip-cloud-renderer #right-arrow,yt-chip-cloud-renderer #left-arrow-button,yt-chip-cloud-renderer #right-arrow-button,yt-chip-cloud-renderer yt-icon-button,ytd-feed-filter-chip-bar-renderer yt-icon-button,[class*="leftArrow" i],[class*="rightArrow" i],[class*="chipCloudArrow" i]';
-    const beforeAfter = 'ytd-feed-filter-chip-bar-renderer #left-arrow::before,ytd-feed-filter-chip-bar-renderer #left-arrow:before,ytd-feed-filter-chip-bar-renderer #right-arrow::before,ytd-feed-filter-chip-bar-renderer #right-arrow:before,yt-chip-cloud-renderer #left-arrow::before,yt-chip-cloud-renderer #left-arrow:before,yt-chip-cloud-renderer #right-arrow::before,yt-chip-cloud-renderer #right-arrow:before';
+    const arrowButtonSelectors = ['ytd-feed-filter-chip-bar-renderer :is(#left-arrow-button,#right-arrow-button) > ytd-button-renderer', 'yt-chip-cloud-renderer :is(#left-arrow-button,#right-arrow-button) > ytd-button-renderer'];
+    const arrowButtons = arrowButtonSelectors.join(',');
+    const arrowIcons = arrowButtonSelectors.flatMap((selector) => [selector + ' button', selector + ' svg', selector + ' path']).join(',');
+    /* YouTube leaves a gap between its 50px fade and the circular arrow. */
+    const arrowBackplates = 'ytd-feed-filter-chip-bar-renderer #left-arrow #left-arrow-button,ytd-feed-filter-chip-bar-renderer #right-arrow #right-arrow-button,yt-chip-cloud-renderer #left-arrow #left-arrow-button,yt-chip-cloud-renderer #right-arrow #right-arrow-button';
+    const leftFade = 'ytd-feed-filter-chip-bar-renderer #left-arrow::before,yt-chip-cloud-renderer #left-arrow::before';
+    const rightFade = 'ytd-feed-filter-chip-bar-renderer #right-arrow::before,yt-chip-cloud-renderer #right-arrow::before';
     return rail + '{background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
       + arrows + '{background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
       + arrows + ' *,ytd-feed-filter-chip-bar-renderer #left-arrow svg,ytd-feed-filter-chip-bar-renderer #right-arrow svg,yt-chip-cloud-renderer #left-arrow svg,yt-chip-cloud-renderer #right-arrow svg{background:transparent !important;color:' + p.text + ' !important;fill:currentColor !important;stroke:currentColor !important;}'
-      + beforeAfter + '{background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;box-shadow:none !important;}';
+      + arrowBackplates + '{background:' + p.bg + ' !important;background-color:' + p.bg + ' !important;}'
+      + arrowButtons + '{background:' + p.chip + ' !important;background-color:' + p.chip + ' !important;color:' + p.text + ' !important;border-radius:50% !important;}'
+      + arrowIcons + '{color:' + p.text + ' !important;fill:currentColor !important;stroke:currentColor !important;}'
+      + leftFade + '{background:linear-gradient(to right,' + p.bg + ',transparent) !important;box-shadow:none !important;}'
+      + rightFade + '{background:linear-gradient(to right,transparent,' + p.bg + ') !important;box-shadow:none !important;}';
   }
 
   function youtubeWatchPageCSS(p) {

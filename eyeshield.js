@@ -1261,9 +1261,8 @@
   function currentHost() { return String(location.hostname || '').replace(/^www\./, '').toLowerCase(); }
   function normalizeMode(m) { return m === 'light' || m === 'dark' || m === 'ultra' ? m : 'off'; }
   function clampBrightness(v) { const n = Math.round(Number(v)); if (!Number.isFinite(n)) return 100; return Math.max(0, Math.min(200, n)); }
-  // EyeShield brightness / contrast / saturation / warmth / grayscale are GLOBAL
-  // (apply to all sites). The per-host maps are no longer consulted — kept in the
-  // config shape only so old saved data doesn't error. `dflt` is the neutral value.
+  // Site profiles resolve into cfg before these getters. Legacy ByHost maps stay ignored;
+  // they remain in the config shape for old saved data. `dflt` is neutral.
   function getBrightness() {
     return clampBrightness(cfg.eyeShieldBrightness == null ? 100 : cfg.eyeShieldBrightness);
   }
@@ -2852,8 +2851,20 @@
     removePreload(); // real theme is in place now
   }
 
+  function eyeShieldProfileHost() {
+    /* Chrome lists ancestor origins from parent to top, including cross-origin frames. */
+    try {
+      if (window !== window.top && location.ancestorOrigins?.length) {
+        const host = new URL(location.ancestorOrigins[location.ancestorOrigins.length - 1]).hostname;
+        if (host) return host;
+      }
+    } catch (_) {}
+    return location.hostname;
+  }
   function setConfig(raw) {
-    cfg = Object.assign({}, DEFAULTS, raw || {});
+    const saved = Object.assign({}, DEFAULTS, raw || {});
+    cfg = typeof WOEyeShieldProfiles === 'object'
+      ? WOEyeShieldProfiles.resolve(saved, eyeShieldProfileHost()).config : saved;
     if (document.readyState === 'loading') {
       apply();
       woOn(document, 'DOMContentLoaded', apply, { once: true });

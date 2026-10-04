@@ -56,6 +56,7 @@ const DEFAULTS = {
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
   eyeShieldWarmth: 0, eyeShieldWarmthByHost: {}, eyeShieldGrayscale: 0, eyeShieldGrayscaleByHost: {},
+  eyeShieldSites: {},
   warnRedirectParams: true, warnShorteners: true, monitorLoggerApi: true,
   detectPhishing: true, blockHighConfidencePhishing: false, behavioralScan: true, xssBehaviorGuard: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, cryptominerCpuWatch: false, autoUpdateLists: true,
   showToasts: true, showBadge: true, showDownloadBar: true, silentMode: false, elementZapper: true,
@@ -139,6 +140,8 @@ let config = Object.assign({}, DEFAULTS);
 let savedConfigSnapshot = configClone(DEFAULTS);
 let eyeShieldHost = '';
 let eyeShieldSaveTimer = 0;
+let eyeShieldEditGeneration = 0;
+let eyeShieldStatusTimer = 0;
 
 function configClone(value) {
   try {
@@ -458,6 +461,8 @@ function reflectMasterDisable() {
   if (scriptTrust) scriptTrust.disabled = !on;
   const eyePanel = $('eyeshield-panel');
   if (eyePanel) eyePanel.classList.toggle('is-disabled', !on);
+  const eyeScope = $('eyeshield-scope-button');
+  if (eyeScope) eyeScope.disabled = !on || !eyeShieldHost;
   document.querySelectorAll('.eyeshield-mode').forEach((btn) => { btn.disabled = !on; });
   document.querySelectorAll('.eyeshield-range').forEach((r) => { r.disabled = !on; });
 }
@@ -740,12 +745,15 @@ function syncProviderStatus() {
   syncReputationProviderStatuses();
 }
 
-function publicConfig(cfg) {
+function publicConfig(cfg, tabUrl) {
   const out = Object.assign({}, cfg || {});
   delete out.downloadSafeBrowsingKey;
   delete out.downloadVirusTotalKey;
   delete out.forgetMeAllConfirmedAt;
   REPUTATION_PROVIDERS.forEach((p) => { if (p.keyField) delete out[p.keyField]; });
+  let host = '';
+  try { host = new URL(tabUrl).hostname; } catch (_) {}
+  out.eyeShieldSites = WOEyeShieldProfiles.forHost(out.eyeShieldSites, host);
   return out;
 }
 
@@ -801,7 +809,7 @@ function setSavedTick(text, isError) {
   if (text) {
     const dwell = isError ? Math.min(12000, Math.max(6000, 2000 + 60 * String(text).length)) : 2600;
     clearTimeout(savedTickTimer);
-    savedTickTimer = setTimeout(() => { tick.textContent = ''; tick.style.color = ''; }, dwell);
+    savedTickTimer = setTimeout(() => { tick.textContent = 'Changes save automatically'; tick.style.color = ''; }, dwell);
   }
 }
 
@@ -867,7 +875,8 @@ function exportableSettings(cfg) {
   const out = {};
   Object.keys(cfg || {}).forEach((key) => {
     if (SECRET_FIELD_RE.test(key)) return;
-    out[key] = key === 'siteOverrides' ? sanitizeSiteOverrides(cfg[key]).map : cfg[key];
+    out[key] = key === 'siteOverrides' ? sanitizeSiteOverrides(cfg[key]).map
+      : key === 'eyeShieldSites' ? WOEyeShieldProfiles.cleanSites(cfg[key]) : cfg[key];
   });
   return out;
 }
@@ -913,6 +922,13 @@ function sanitizeImportedSettings(raw) {
       const result = sanitizeSiteOverrides(val);
       if (Object.keys(val).length && !Object.keys(result.map).length) { ignored++; return; }
       settings[key] = result.map;
+      return;
+    }
+    if (key === 'eyeShieldSites') {
+      if (!val || typeof val !== 'object' || Array.isArray(val)) { ignored++; return; }
+      const sites = WOEyeShieldProfiles.cleanSites(val);
+      if (Object.keys(val).length && !Object.keys(sites).length) { ignored++; return; }
+      settings[key] = sites;
       return;
     }
     if (key === 'notificationSettings') {
@@ -1064,6 +1080,7 @@ function repaintExternalConfigKeys(keys) {
   }
   reflectSilentMode();
   syncBreachVisibility();
+  if ((keys || []).some((key) => key === 'eyeShieldSites' || key === 'eyeShieldMode' || key.startsWith('eyeShield'))) paintEyeShield();
 }
 
 // Keep `config` in step with a change another surface just made, so the popup stops
@@ -1089,7 +1106,7 @@ function adoptExternalConfigChange(newValue) {
   if (adopted.length) repaintExternalConfigKeys(adopted);
 }
 
-function saveConfig(label, afterSave) {
+function saveConfig(label, afterSave, onError) {
   normalizeStoredProviderKeys(config);
   persistConfig((adopted) => {
     // notify any open tabs so the change relays into their page (next load applies fully)
@@ -1098,7 +1115,7 @@ function saveConfig(label, afterSave) {
         // the callback reads lastError so tabs without our content script
         // (chrome:// pages, tabs from before install) don't reject a promise
         // and spam the console -- a bare try/catch can't catch that async error
-        try { chrome.tabs.sendMessage(t.id, { kind: 'config-update', overrides: publicConfig(config) }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+        try { chrome.tabs.sendMessage(t.id, { kind: 'config-update', overrides: publicConfig(config, t.url) }, () => { void chrome.runtime.lastError; }); } catch (_) {}
       });
     });
     if (adopted.length) repaintExternalConfigKeys(adopted);
@@ -1106,7 +1123,10 @@ function saveConfig(label, afterSave) {
     syncProviderStatus();
     renderProtectionHealth();
     if (typeof afterSave === 'function') afterSave();
-  }, () => setSavedTick('Save failed', true));
+  }, (error) => {
+    setSavedTick('Save failed', true);
+    if (typeof onError === 'function') onError(error);
+  });
 }
 
 function reloadActiveHttpTab() {
@@ -1138,12 +1158,14 @@ function injectEyeShieldActiveTab() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs && tabs[0];
       if (!tab || tab.id == null || !/^https?:/i.test(tab.url || '') || !chrome.scripting) return;
+      const profile = WOEyeShieldProfiles.profileFor(config.eyeShieldSites, new URL(tab.url).hostname);
+      if (profile?.mode === 'off' || (!eyeShieldIsActive() && profile?.mode !== 'custom')) return;
       // The per-site themes first, into the top frame where they are registered: a tab opened
       // before theming was on (or before an update) has the core but not them, and refreshing
       // it with the core alone left GitHub, YouTube Music and the other profiled sites generic.
       chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, files: ['eyeshield-sites.js'] }, () => {
         void chrome.runtime.lastError;
-        chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['eyeshield.js'] }, () => {
+        chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['eyeshield-profiles.js', 'eyeshield.js'] }, () => {
           void chrome.runtime.lastError;
         });
       });
@@ -2004,7 +2026,10 @@ function activeTabHost(callback) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
     if (!tab || !tab.url) { callback(''); return; }
-    try { callback(new URL(tab.url).hostname.replace(/^www\./, '').toLowerCase()); }
+    try {
+      const url = new URL(tab.url);
+      callback(/^https?:$/.test(url.protocol) ? WOEyeShieldProfiles.hostOf(url.hostname) : '');
+    }
     catch { callback(''); }
   });
 }
@@ -2020,8 +2045,42 @@ function normalizeEyeShieldMode(mode) {
 }
 
 function getEyeShieldBrightness() {
-  // Global (all sites) — per-host map no longer consulted.
   return clampEyeShieldBrightness(config.eyeShieldBrightness == null ? 100 : config.eyeShieldBrightness);
+}
+
+function currentEyeShieldProfile() {
+  return WOEyeShieldProfiles.profileFor(config.eyeShieldSites, eyeShieldHost);
+}
+
+function eyeShieldSiteValue(key) {
+  const profile = currentEyeShieldProfile();
+  const limits = WOEyeShieldProfiles.ADJUSTMENTS[key];
+  const value = profile?.mode === 'custom' ? profile[key] : config[key];
+  return clampEyeShieldPct(value == null ? limits[2] : value, limits[0], limits[1], limits[2]);
+}
+
+function eyeShieldScopeName() {
+  return currentEyeShieldProfile()?.mode === 'custom' ? eyeShieldHost : 'All sites';
+}
+
+function setEyeShieldScopeMenu(open) {
+  const button = $('eyeshield-scope-button');
+  const menu = $('eyeshield-scope-menu');
+  if (!button || !menu) return;
+  menu.hidden = !open;
+  button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) menu.querySelector('[aria-checked="true"]')?.focus();
+}
+
+function setEyeShieldSiteStatus(message, error = false, transient = false) {
+  const status = $('eyeshield-site-status');
+  if (!status) return;
+  clearTimeout(eyeShieldStatusTimer);
+  status.textContent = message;
+  status.classList.toggle('is-error', error);
+  if (transient) eyeShieldStatusTimer = setTimeout(() => {
+    if (status.textContent === message) status.textContent = '';
+  }, 2400);
 }
 
 function paintEyeShieldValue(valueId, pct, lo, hi, enabled, label) {
@@ -2048,109 +2107,109 @@ function paintEyeShield() {
   const panel = $('eyeshield-panel');
   if (!panel) return;
   const masterOn = config.enabled !== false;
-  const mode = normalizeEyeShieldMode(config.eyeShieldMode);
-  const effectsOn = masterOn;
+  const profile = currentEyeShieldProfile();
+  const siteMode = profile ? profile.mode : 'inherit';
+  const scopeLabel = siteMode === 'custom' ? eyeShieldHost : siteMode === 'off' ? 'Off on ' + eyeShieldHost : 'All sites';
+  $('eyeshield-scope-label').textContent = scopeLabel;
+  $('eyeshield-scope-button').setAttribute('aria-label', 'EyeShield scope: ' + scopeLabel);
+  $('eyeshield-scope-button').disabled = !masterOn || !eyeShieldHost;
+  document.querySelectorAll('.eyeshield-scope-host').forEach((el) => { el.textContent = eyeShieldHost || 'this site'; });
+  document.querySelectorAll('[data-eyeshield-site]').forEach((btn) => {
+    btn.setAttribute('aria-checked', btn.dataset.eyeshieldSite === siteMode ? 'true' : 'false');
+    btn.disabled = !eyeShieldHost && btn.dataset.eyeshieldSite !== 'inherit';
+  });
+  $('eyeshield-controls').hidden = siteMode === 'off';
+  $('eyeshield-off-summary').hidden = siteMode !== 'off';
+  $('eyeshield-off-summary').textContent = 'EyeShield is off on ' + eyeShieldHost + '.';
+  const mode = normalizeEyeShieldMode(siteMode === 'custom' ? profile.theme : config.eyeShieldMode);
+  const effectsOn = masterOn && siteMode !== 'off';
   document.querySelectorAll('.eyeshield-mode').forEach((btn) => {
     const on = btn.getAttribute('data-eyeshield-mode') === mode;
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.disabled = !masterOn;
+    btn.disabled = !effectsOn;
   });
-  const brightness = getEyeShieldBrightness();
+  const brightness = eyeShieldSiteValue('eyeShieldBrightness');
   const range = $('eyeshield-brightness');
   if (range) {
     range.value = String(brightness);
     range.disabled = !effectsOn;
     range.setAttribute('aria-valuetext', brightness + '%');
   }
-  paintEyeShieldValue('eyeshield-value', brightness, 0, 200, effectsOn, 'EyeShield brightness');
-  const host = $('eyeshield-host');
-  if (host) host.textContent = 'All sites brightness';
-  paintEyeShieldPct('eyeShieldContrast', 'eyeShieldContrastByHost', 0, 300, 100, 'eyeshield-contrast', 'eyeshield-contrast-value', 'eyeshield-contrast-host', 'contrast', effectsOn);
-  paintEyeShieldPct('eyeShieldSaturation', 'eyeShieldSaturationByHost', 0, 300, 100, 'eyeshield-saturation', 'eyeshield-saturation-value', 'eyeshield-saturation-host', 'saturation', effectsOn);
-  paintEyeShieldPct('eyeShieldWarmth', 'eyeShieldWarmthByHost', 0, 100, 0, 'eyeshield-warmth', 'eyeshield-warmth-value', 'eyeshield-warmth-host', 'warmth', effectsOn);
-  paintEyeShieldPct('eyeShieldGrayscale', 'eyeShieldGrayscaleByHost', 0, 100, 0, 'eyeshield-grayscale', 'eyeshield-grayscale-value', 'eyeshield-grayscale-host', 'grayscale', effectsOn);
+  const scope = eyeShieldScopeName();
+  $('eyeshield-host').textContent = scope + ' brightness';
+  paintEyeShieldValue('eyeshield-value', brightness, 0, 200, effectsOn, scope + ' brightness');
+  paintEyeShieldPct('eyeShieldContrast', 0, 300, 'eyeshield-contrast', 'eyeshield-contrast-value', 'contrast', effectsOn);
+  paintEyeShieldPct('eyeShieldSaturation', 0, 300, 'eyeshield-saturation', 'eyeshield-saturation-value', 'saturation', effectsOn);
+  paintEyeShieldPct('eyeShieldWarmth', 0, 100, 'eyeshield-warmth', 'eyeshield-warmth-value', 'warmth', effectsOn);
+  paintEyeShieldPct('eyeShieldGrayscale', 0, 100, 'eyeshield-grayscale', 'eyeshield-grayscale-value', 'grayscale', effectsOn);
+  $('eyeshield-reset').textContent = siteMode === 'custom' ? 'Reset site adjustments' : 'Reset global adjustments';
   panel.classList.toggle('is-disabled', !masterOn);
 }
 
-function paintEyeShieldPct(globalKey, mapKey, lo, hi, dflt, rangeId, valueId, hostId, label, masterOn) {
-  const pct = getEyeShieldPct(globalKey, mapKey, lo, hi, dflt);
+function paintEyeShieldPct(key, lo, hi, rangeId, valueId, label, enabled) {
+  const pct = eyeShieldSiteValue(key);
   const range = $(rangeId);
-  if (range) { range.value = String(pct); range.disabled = !masterOn; range.setAttribute('aria-valuetext', pct + '%'); }
-  paintEyeShieldValue(valueId, pct, lo, hi, masterOn, 'EyeShield ' + label);
-  const host = $(hostId);
-  if (host) host.textContent = 'All sites ' + label;
+  if (range) { range.value = String(pct); range.disabled = !enabled; range.setAttribute('aria-valuetext', pct + '%'); }
+  const scope = eyeShieldScopeName();
+  $(rangeId + '-host').textContent = scope + ' ' + label;
+  paintEyeShieldValue(valueId, pct, lo, hi, enabled, scope + ' ' + label);
 }
 
-function saveEyeShieldSoon(label) {
+function saveEyeShieldSoon() {
   clearTimeout(eyeShieldSaveTimer);
+  eyeShieldEditGeneration++;
+  setEyeShieldSiteStatus(currentEyeShieldProfile()?.mode === 'custom' ? 'Saving for ' + eyeShieldHost + '…' : 'Saving globally…');
+  $('eyeshield-site-status').dataset.pending = '1';
   eyeShieldSaveTimer = setTimeout(() => {
     eyeShieldSaveTimer = 0;
-    saveConfig(label || 'EyeShield', injectEyeShieldActiveTab);
+    saveEyeShieldNow();
   }, 140);
 }
 
-function clearEyeShieldAdjustments() {
-  config.eyeShieldBrightness = 100;
-  config.eyeShieldContrast = 100;
-  config.eyeShieldSaturation = 100;
-  config.eyeShieldWarmth = 0;
-  config.eyeShieldGrayscale = 0;
-  config.eyeShieldBrightnessByHost = {};
-  config.eyeShieldContrastByHost = {};
-  config.eyeShieldSaturationByHost = {};
-  config.eyeShieldWarmthByHost = {};
-  config.eyeShieldGrayscaleByHost = {};
+function updateEyeShieldSetting(change) {
+  const profile = currentEyeShieldProfile();
+  if (config.enabled === false || profile?.mode === 'off') return false;
+  if (profile?.mode === 'custom') {
+    const sites = WOEyeShieldProfiles.cleanSites(config.eyeShieldSites);
+    sites[eyeShieldHost] = Object.assign({}, profile, change);
+    config.eyeShieldSites = sites;
+  } else {
+    Object.assign(config, change);
+    config.eyeShield = eyeShieldIsActive();
+  }
+  paintEyeShield();
+  previewEyeShieldActiveTab();
+  return true;
 }
 
 function setEyeShieldMode(mode) {
-  if (config.enabled === false) {
-    paintEyeShield();
-    return;
-  }
-  const normalized = normalizeEyeShieldMode(mode);
-  config.eyeShieldMode = normalized;
-  if (normalized === 'off') clearEyeShieldAdjustments();
-  config.eyeShield = eyeShieldIsActive();
-  paintEyeShield();
-  clearTimeout(eyeShieldSaveTimer);
-  eyeShieldSaveTimer = 0;
-  saveConfig('EyeShield', injectEyeShieldActiveTab);
+  const key = currentEyeShieldProfile()?.mode === 'custom' ? 'theme' : 'eyeShieldMode';
+  if (updateEyeShieldSetting({ [key]: normalizeEyeShieldMode(mode) })) saveEyeShieldNow();
 }
 
 function setEyeShieldBrightness(value) {
-  const brightness = clampEyeShieldBrightness(value);
-  config.eyeShieldBrightness = brightness; // global (all sites)
-  config.eyeShield = eyeShieldIsActive();
-  paintEyeShield();
-  saveEyeShieldSoon('EyeShield');
+  if (updateEyeShieldSetting({ eyeShieldBrightness: clampEyeShieldBrightness(value) })) saveEyeShieldSoon();
 }
 
-// Generic per-site percentage controls (contrast, saturation) — same shape as the
-// brightness control above: a global default plus a per-host override map.
 function eyeShieldIsActive() {
   const mode = normalizeEyeShieldMode(config.eyeShieldMode);
   return mode !== 'off'
     || getEyeShieldBrightness() !== 100
-    || getEyeShieldPct('eyeShieldContrast', 'eyeShieldContrastByHost', 0, 300, 100) !== 100
-    || getEyeShieldPct('eyeShieldSaturation', 'eyeShieldSaturationByHost', 0, 300, 100) !== 100
-    || getEyeShieldPct('eyeShieldWarmth', 'eyeShieldWarmthByHost', 0, 100, 0) !== 0
-    || getEyeShieldPct('eyeShieldGrayscale', 'eyeShieldGrayscaleByHost', 0, 100, 0) !== 0;
+    || getEyeShieldPct('eyeShieldContrast', 0, 300, 100) !== 100
+    || getEyeShieldPct('eyeShieldSaturation', 0, 300, 100) !== 100
+    || getEyeShieldPct('eyeShieldWarmth', 0, 100, 0) !== 0
+    || getEyeShieldPct('eyeShieldGrayscale', 0, 100, 0) !== 0;
 }
 function clampEyeShieldPct(value, lo, hi, dflt) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return dflt;
   return Math.max(lo, Math.min(hi, n));
 }
-function getEyeShieldPct(globalKey, mapKey, lo, hi, dflt) {
-  // Global (all sites) — per-host map no longer consulted.
+function getEyeShieldPct(globalKey, lo, hi, dflt) {
   return clampEyeShieldPct(config[globalKey] == null ? dflt : config[globalKey], lo, hi, dflt);
 }
-function setEyeShieldPct(globalKey, mapKey, lo, hi, dflt, value) {
-  const pct = clampEyeShieldPct(value, lo, hi, dflt);
-  config[globalKey] = pct; // global (all sites)
-  config.eyeShield = eyeShieldIsActive();
-  paintEyeShield();
-  saveEyeShieldSoon('EyeShield');
+function setEyeShieldPct(key, lo, hi, dflt, value) {
+  if (updateEyeShieldSetting({ [key]: clampEyeShieldPct(value, lo, hi, dflt) })) saveEyeShieldSoon();
 }
 
 function selectEyeShieldValueText(el) {
@@ -2188,7 +2247,36 @@ function sanitizeEyeShieldTypedValue(el) {
 function saveEyeShieldNow() {
   clearTimeout(eyeShieldSaveTimer);
   eyeShieldSaveTimer = 0;
-  saveConfig('EyeShield', injectEyeShieldActiveTab);
+  const generation = ++eyeShieldEditGeneration;
+  const host = eyeShieldHost;
+  const scope = currentEyeShieldProfile()?.mode;
+  const status = $('eyeshield-site-status');
+  if (status) status.dataset.pending = '1';
+  setEyeShieldSiteStatus(scope === 'off' ? 'Turning off on ' + host + '…'
+    : scope === 'custom' ? 'Saving for ' + host + '…' : 'Saving globally…');
+  saveConfig('EyeShield', () => {
+    if (generation !== eyeShieldEditGeneration) return;
+    if (status) delete status.dataset.pending;
+    paintEyeShield();
+    injectEyeShieldActiveTab();
+    setEyeShieldSiteStatus(scope === 'off' ? 'EyeShield off on ' + host + ' ✓'
+      : scope === 'custom' ? 'Saved for ' + host + ' ✓' : 'Saved globally ✓', false, true);
+  }, (error) => {
+    if (generation !== eyeShieldEditGeneration) return;
+    if (status) delete status.dataset.pending;
+    setEyeShieldSiteStatus('Could not save EyeShield: ' + (error?.message || 'try again.'), true);
+  });
+}
+
+function previewEyeShieldActiveTab() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (!tab || tab.id == null || !/^https?:/i.test(tab.url || '')) return;
+    try {
+      if (WOEyeShieldProfiles.hostOf(new URL(tab.url).hostname) !== eyeShieldHost) return;
+      chrome.tabs.sendMessage(tab.id, { kind: 'config-update', overrides: publicConfig(config, tab.url) }, () => { void chrome.runtime.lastError; });
+    } catch (_) {}
+  });
 }
 
 function wireEyeShieldValueEditor(valueId, lo, hi, dflt, readValue, applyValue) {
@@ -2270,52 +2358,74 @@ function initEyeShield() {
     eyeShieldHost = host || '';
     paintEyeShield();
   });
+  $('eyeshield-scope-button')?.addEventListener('click', () => {
+    const button = $('eyeshield-scope-button');
+    if (!button.disabled) setEyeShieldScopeMenu(button.getAttribute('aria-expanded') !== 'true');
+  });
+  $('eyeshield-scope-menu')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      setEyeShieldScopeMenu(false);
+      $('eyeshield-scope-button').focus();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const options = [...document.querySelectorAll('#eyeshield-scope-menu [data-eyeshield-site]:not(:disabled)')];
+      const index = options.indexOf(document.activeElement);
+      options[(index + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length]?.focus();
+    } else return;
+    event.preventDefault();
+  });
+  document.addEventListener('click', (event) => {
+    if (!$('eyeshield-scope')?.contains(event.target)) setEyeShieldScopeMenu(false);
+  });
+  document.querySelectorAll('[data-eyeshield-site]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setEyeShieldScopeMenu(false);
+      if (!eyeShieldHost || config.enabled === false) return;
+      const mode = btn.dataset.eyeshieldSite;
+      const current = currentEyeShieldProfile();
+      if ((current ? current.mode : 'inherit') === mode) return;
+      const sites = WOEyeShieldProfiles.cleanSites(config.eyeShieldSites);
+      if (mode === 'custom') sites[eyeShieldHost] = WOEyeShieldProfiles.customFromGlobal(config);
+      else if (mode === 'off') sites[eyeShieldHost] = { mode: 'off' };
+      else delete sites[eyeShieldHost];
+      config.eyeShieldSites = sites;
+      paintEyeShield();
+      previewEyeShieldActiveTab();
+      saveEyeShieldNow();
+      $('eyeshield-scope-button').focus();
+    });
+  });
   document.querySelectorAll('.eyeshield-mode').forEach((btn) => {
     btn.addEventListener('click', () => setEyeShieldMode(btn.getAttribute('data-eyeshield-mode')));
   });
   const range = $('eyeshield-brightness');
   if (range) {
     range.addEventListener('input', () => setEyeShieldBrightness(range.value));
-    range.addEventListener('change', () => {
-      setEyeShieldBrightness(range.value);
-      clearTimeout(eyeShieldSaveTimer);
-      eyeShieldSaveTimer = 0;
-      saveConfig('EyeShield', injectEyeShieldActiveTab);
-    });
+    range.addEventListener('change', saveEyeShieldNow);
   }
-  wireEyeShieldValueEditor('eyeshield-value', 0, 200, 100, getEyeShieldBrightness, setEyeShieldBrightness);
-  wireEyeShieldPctRange('eyeshield-contrast', 'eyeShieldContrast', 'eyeShieldContrastByHost', 0, 300, 100);
-  wireEyeShieldPctRange('eyeshield-saturation', 'eyeShieldSaturation', 'eyeShieldSaturationByHost', 0, 300, 100);
-  wireEyeShieldPctRange('eyeshield-warmth', 'eyeShieldWarmth', 'eyeShieldWarmthByHost', 0, 100, 0);
-  wireEyeShieldPctRange('eyeshield-grayscale', 'eyeShieldGrayscale', 'eyeShieldGrayscaleByHost', 0, 100, 0);
-  wireEyeShieldValueEditor('eyeshield-contrast-value', 0, 300, 100, () => getEyeShieldPct('eyeShieldContrast', 'eyeShieldContrastByHost', 0, 300, 100), (v) => setEyeShieldPct('eyeShieldContrast', 'eyeShieldContrastByHost', 0, 300, 100, v));
-  wireEyeShieldValueEditor('eyeshield-saturation-value', 0, 300, 100, () => getEyeShieldPct('eyeShieldSaturation', 'eyeShieldSaturationByHost', 0, 300, 100), (v) => setEyeShieldPct('eyeShieldSaturation', 'eyeShieldSaturationByHost', 0, 300, 100, v));
-  wireEyeShieldValueEditor('eyeshield-warmth-value', 0, 100, 0, () => getEyeShieldPct('eyeShieldWarmth', 'eyeShieldWarmthByHost', 0, 100, 0), (v) => setEyeShieldPct('eyeShieldWarmth', 'eyeShieldWarmthByHost', 0, 100, 0, v));
-  wireEyeShieldValueEditor('eyeshield-grayscale-value', 0, 100, 0, () => getEyeShieldPct('eyeShieldGrayscale', 'eyeShieldGrayscaleByHost', 0, 100, 0), (v) => setEyeShieldPct('eyeShieldGrayscale', 'eyeShieldGrayscaleByHost', 0, 100, 0, v));
+  wireEyeShieldValueEditor('eyeshield-value', 0, 200, 100, () => eyeShieldSiteValue('eyeShieldBrightness'), setEyeShieldBrightness);
+  wireEyeShieldPctRange('eyeshield-contrast', 'eyeShieldContrast', 0, 300, 100);
+  wireEyeShieldPctRange('eyeshield-saturation', 'eyeShieldSaturation', 0, 300, 100);
+  wireEyeShieldPctRange('eyeshield-warmth', 'eyeShieldWarmth', 0, 100, 0);
+  wireEyeShieldPctRange('eyeshield-grayscale', 'eyeShieldGrayscale', 0, 100, 0);
+  wireEyeShieldValueEditor('eyeshield-contrast-value', 0, 300, 100, () => eyeShieldSiteValue('eyeShieldContrast'), (v) => setEyeShieldPct('eyeShieldContrast', 0, 300, 100, v));
+  wireEyeShieldValueEditor('eyeshield-saturation-value', 0, 300, 100, () => eyeShieldSiteValue('eyeShieldSaturation'), (v) => setEyeShieldPct('eyeShieldSaturation', 0, 300, 100, v));
+  wireEyeShieldValueEditor('eyeshield-warmth-value', 0, 100, 0, () => eyeShieldSiteValue('eyeShieldWarmth'), (v) => setEyeShieldPct('eyeShieldWarmth', 0, 100, 0, v));
+  wireEyeShieldValueEditor('eyeshield-grayscale-value', 0, 100, 0, () => eyeShieldSiteValue('eyeShieldGrayscale'), (v) => setEyeShieldPct('eyeShieldGrayscale', 0, 100, 0, v));
   const resetBtn = $('eyeshield-reset');
   if (resetBtn) resetBtn.addEventListener('click', resetEyeShieldDefaults);
 }
 
-// One-click reset of all EyeShield adjustments back to neutral (mode is left as-is).
 function resetEyeShieldDefaults() {
-  clearEyeShieldAdjustments();
-  config.eyeShield = eyeShieldIsActive();
-  paintEyeShield();
-  clearTimeout(eyeShieldSaveTimer);
-  eyeShieldSaveTimer = 0;
-  saveConfig('EyeShield reset', injectEyeShieldActiveTab);
+  const neutral = {};
+  Object.entries(WOEyeShieldProfiles.ADJUSTMENTS).forEach(([key, limits]) => { neutral[key] = limits[2]; });
+  if (updateEyeShieldSetting(neutral)) saveEyeShieldNow();
 }
 
-function wireEyeShieldPctRange(rangeId, globalKey, mapKey, lo, hi, dflt) {
+function wireEyeShieldPctRange(rangeId, key, lo, hi, dflt) {
   const range = $(rangeId);
   if (!range) return;
-  range.addEventListener('input', () => setEyeShieldPct(globalKey, mapKey, lo, hi, dflt, range.value));
-  range.addEventListener('change', () => {
-    setEyeShieldPct(globalKey, mapKey, lo, hi, dflt, range.value);
-    clearTimeout(eyeShieldSaveTimer);
-    eyeShieldSaveTimer = 0;
-    saveConfig('EyeShield', injectEyeShieldActiveTab);
-  });
+  range.addEventListener('input', () => setEyeShieldPct(key, lo, hi, dflt, range.value));
+  range.addEventListener('change', saveEyeShieldNow);
 }
 
 function setScriptTrustResult(text, color) {
@@ -2724,7 +2834,6 @@ $('js-site').addEventListener('change', (e) => {
   setJsShield('site', mode === 'lockdown' ? !e.target.checked : e.target.checked);
 });
 $('script-trust-add-current')?.addEventListener('click', trustCurrentScriptSite);
-$('save').addEventListener('click', save);
 $('allowlist').addEventListener('click', allowlistCurrent);
 $('sb-test-key')?.addEventListener('click', testSafeBrowsingKey);
 $('vt-test-key')?.addEventListener('click', testVirusTotalKey);
@@ -2740,9 +2849,7 @@ $('vt-scan-url')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sc
 $('download-trust-add-current')?.addEventListener('click', trustCurrentDownloadSite);
 $('copy-clean-current-address')?.addEventListener('click', copyCleanCurrentAddressFromPopup);
 
-// Auto-save the moment ANY toggle flips, so settings persist without needing a
-// separate "Save" click (the #1 source of "my toggle didn't stay on"). The Save
-// button remains as an explicit confirmation but is no longer required.
+// Auto-save toggles as they change, so the popup never needs a separate Save action.
 document.querySelectorAll('input[data-key]').forEach((el) => {
   el.addEventListener('change', () => {
     const key = el.getAttribute('data-key');
@@ -6140,12 +6247,8 @@ function wireSiteDashboard() {
   if (logger) logger.addEventListener('click', () => {
     try { chrome.tabs.create({ url: chrome.runtime.getURL('logger.html') }); } catch (_) {}
   });
-  /* The site's own controls now live in the dashboard (moved from the settings list, ids kept, so
-     pauseSite / setSiteOverride work as they always did). The list keeps a pointer row to here. */
   const allow = $('site-dash-allowlist');
   if (allow) allow.addEventListener('click', allowlistCurrent);
-  const pointer = $('site-pointer-open');
-  if (pointer) pointer.addEventListener('click', openSiteDashboard);
   /* Interface > Site card: two buttons choose the card's layout, kept on its own key. The card
      stays hidden until the first summary arrives, which is after this read in practice, so it
      does not flash the other layout first. */
