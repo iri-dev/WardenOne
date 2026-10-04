@@ -52,6 +52,7 @@ function codeOnly(src) {
   return out.join('');
 }
 
+
 /* [start, end) of each withConfigLock( ... ) call's arguments. */
 function lockedRanges(code) {
   const ranges = [];
@@ -68,13 +69,32 @@ function lockedRanges(code) {
 
 const WRITE_RE = /\b(?:set|localSet|storageSet|localWrite|checkedLocalSet)\s*\(\s*\{\s*(?:wardenone_config|\[CONFIG_KEY\])\s*:/g;
 
+/* The argument text of the call whose name ends at `at`. */
+function callArgs(code, at) {
+  const open = code.indexOf('(', at);
+  let depth = 0;
+  for (let k = open; k < code.length; k++) {
+    if (code[k] === '(') depth++;
+    else if (code[k] === ')' && --depth === 0) return code.slice(open, k + 1);
+  }
+  return '';
+}
+
 function unlockedWrites(src) {
   const code = codeOnly(src);
   const ranges = lockedRanges(code);
   const writes = [];
   for (const m of code.matchAll(WRITE_RE)) {
     const line = code.slice(0, m.index).split('\n').length;
-    writes.push({ line, locked: ranges.some(([a, b]) => m.index > a && m.index < b) });
+    writes.push({
+      line,
+      locked: ranges.some(([a, b]) => m.index > a && m.index < b),
+      /* The save record goes in the same set() as the config, or a private window's write over it
+         could not be told from one that saw it. The reset's write follows a clear() of everything,
+         record included, which is how a later check knows there is nothing to put back. */
+      stamped: /\bWO_CONFIG_WRITES_KEY\b/.test(callArgs(code, m.index)),
+      afterClear: /storage\.local\.clear\(\)[\s\S]{0,400}$/.test(code.slice(Math.max(0, m.index - 400), m.index)),
+    });
   }
   return writes;
 }
@@ -88,6 +108,9 @@ function unlockedWrites(src) {
   check('a write after the lock is let go is caught', open.length === 1 && !open[0].locked);
   const configKey = unlockedWrites('await localWrite({ [CONFIG_KEY]: next });');
   check('a write by the Settings key constant is found too', configKey.length === 1 && !configKey[0].locked);
+  const bare = unlockedWrites('withConfigLock(async () => { await localSet({ wardenone_config: c }); });');
+  const recorded = unlockedWrites('withConfigLock(async () => { await localSet({ wardenone_config: c, [WO_CONFIG_WRITES_KEY]: s.record }); });');
+  check('a write without its save record is told from one with it', bare[0].stamped === false && recorded[0].stamped === true);
 }
 
 const packaged = JSON.parse(fs.readFileSync(path.join(root, 'tools/package-allowlist.json'), 'utf8'))
@@ -112,6 +135,23 @@ check('the worker changes the config through updateStoredConfig (' + updates + '
 const open = found.filter((w) => !w.locked);
 check('every write of wardenone_config holds the config lock: '
   + (open.map((w) => w.file + ':' + w.line).join(', ') || 'none outside'), open.length === 0);
+
+/* The lock does not reach a private window, so every write also records itself and checks back. */
+const unstamped = found.filter((w) => !w.stamped && !w.afterClear);
+check('every write stores its save record in the same set(): '
+  + (unstamped.map((w) => w.file + ':' + w.line).join(', ') || 'all do'), unstamped.length === 0);
+check('only the reset writes without one, straight after clearing the store',
+  found.filter((w) => w.afterClear).map((w) => w.file).join() === 'background.js');
+for (const file of ['background.js', 'settings.js', 'popup.js', 'history.js', 'notifications.js', 'onboarding.js']) {
+  const src = fs.readFileSync(path.join(root, file), 'utf8');
+  const asks = (codeOnly(src).match(/\bconfirmConfigWrite\(/g) || []).length;
+  check(file + ' checks back after its writes (' + asks + ')', asks >= 1);
+}
+{
+  const lock = fs.readFileSync(path.join(root, 'config-lock.js'), 'utf8');
+  check('config-lock.js records saves beside the config, not in it',
+    /const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';/.test(lock) && /function stampConfigWrite\(/.test(lock) && /function confirmConfigWrite\(/.test(lock));
+}
 
 const pages = ['settings.html', 'popup.html', 'history.html', 'notifications.html', 'onboarding.html'];
 for (const page of pages) {

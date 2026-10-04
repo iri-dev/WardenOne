@@ -33,9 +33,9 @@ function scanDynamicCode(files) {
     { re: /\bdocument\.write\s*\(/, label: 'document.write(' },
   ];
   const markupPatterns = [
-    { re: /\.innerHTML\s*=/, label: 'innerHTML assignment' },
-    { re: /\.outerHTML\s*=/, label: 'outerHTML assignment' },
-    { re: /\.insertAdjacentHTML\s*\(/, label: 'insertAdjacentHTML(' },
+    { re: /(?:\.innerHTML|\[\s*['"]innerHTML['"]\s*\])\s*(?:\+|\|\||&&|\?\?)?=(?!=)/g, label: 'innerHTML assignment' },
+    { re: /(?:\.outerHTML|\[\s*['"]outerHTML['"]\s*\])\s*(?:\+|\|\||&&|\?\?)?=(?!=)/g, label: 'outerHTML assignment' },
+    { re: /(?:\.insertAdjacentHTML|\[\s*['"]insertAdjacentHTML['"]\s*\])\s*\(/g, label: 'insertAdjacentHTML(' },
   ];
   for (const file of files) {
     if (!exists(file)) continue;
@@ -44,7 +44,11 @@ function scanDynamicCode(files) {
       if (p.re.test(text)) severe.push(file + ': ' + p.label);
     }
     for (const p of markupPatterns) {
-      if (p.re.test(text)) markup.push(file + ': ' + p.label);
+      for (const match of text.matchAll(p.re)) {
+        const line = text.slice(0, match.index).split('\n').length;
+        const source = text.split(/\r?\n/)[line - 1].trim();
+        markup.push({ file, line, label: p.label, source });
+      }
     }
   }
   return { severe, markup };
@@ -222,8 +226,40 @@ const readableJs = Array.from(new Set([...used, ...packagedScripts()])).filter((
 const dynamic = scanDynamicCode(readableJs);
 if (dynamic.severe.length) fail('dynamic code sinks found: ' + dynamic.severe.join('; '));
 else ok('no eval/new Function/document.write sinks in readable JS files');
-if (dynamic.markup.length) warn('markup sinks need static-only review: ' + dynamic.markup.join('; '));
-else ok('no innerHTML/outerHTML/insertAdjacentHTML sinks in readable JS files');
+// A reviewed assignment is tied to its exact source line and occurrence count. Another sink in
+// the same file, or a changed assignment, must be reviewed before the gate can pass.
+let reviewedMarkup = [];
+try {
+  reviewedMarkup = JSON.parse(read('tools/reviewed-markup-sinks.json'));
+  if (!Array.isArray(reviewedMarkup) || reviewedMarkup.some((item) => !item || typeof item.file !== 'string'
+      || typeof item.source !== 'string' || !Number.isInteger(item.count) || item.count < 1)) {
+    throw new Error('expected {file, source, count} entries');
+  }
+} catch (e) {
+  fail('could not read reviewed markup sinks: ' + e.message);
+}
+const sinkKey = (file, source) => JSON.stringify([file, source]);
+const expected = new Map();
+for (const item of reviewedMarkup) {
+  const key = sinkKey(item.file, item.source);
+  if (expected.has(key)) fail('duplicate reviewed markup entry: ' + item.file + ': ' + item.source);
+  expected.set(key, item.count);
+}
+const found = new Map();
+for (const sink of dynamic.markup) {
+  const key = sinkKey(sink.file, sink.source);
+  found.set(key, (found.get(key) || 0) + 1);
+  if (!expected.has(key)) fail('unreviewed markup sink: ' + sink.file + ':' + sink.line + ': ' + sink.label + ': ' + sink.source);
+}
+for (const item of reviewedMarkup) {
+  const count = found.get(sinkKey(item.file, item.source)) || 0;
+  if (count !== item.count) fail('reviewed markup sink count changed: ' + item.file + ': expected '
+    + item.count + ', found ' + count + ': ' + item.source);
+}
+if (!dynamic.markup.length && !reviewedMarkup.length) ok('no innerHTML/outerHTML/insertAdjacentHTML sinks in readable JS files');
+else if (dynamic.markup.length === reviewedMarkup.reduce((sum, item) => sum + item.count, 0)) {
+  ok('all ' + dynamic.markup.length + ' markup sink occurrences match reviewed source lines');
+}
 
 if (exists('content.min.js') && !exists('content.min.js.map') && !exists('src/content.js')) {
   warn('content.min.js has no source map; security review remains harder than it should be');

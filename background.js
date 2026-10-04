@@ -7227,17 +7227,26 @@ function localSet(obj) {
    gets the copy and the stored value as it was read (null when there is none or it is not an
    object), and either edits the copy and returns nothing, returns a whole config to write
    instead, or returns false to write nothing. It must not wait on anything that may want the lock.
-   A failed read writes nothing and rejects. Resolves with what was written, or null. */
-function updateStoredConfig(mutate) {
+   A failed read writes nothing and rejects. Resolves with what was written, or null.
+   If a private window's worker or page wrote over it without seeing it, the same mutation runs
+   again on what is stored then (confirmConfigWrite in config-lock.js), so `mutate` may run more
+   than once; each run starts from a fresh read. */
+function updateStoredConfig(mutate, triesLeft) {
+  let id = '';
   return withConfigLock(async () => {
-    const res = await localGetStrict('wardenone_config');
+    const res = await localGetStrict(['wardenone_config', WO_CONFIG_WRITES_KEY]);
     const raw = res.wardenone_config;
     const stored = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
     const cfg = __cfgClone(stored);
     const out = await mutate(cfg, stored);
     if (out === false) return null;
     const next = out && typeof out === 'object' ? out : cfg;
-    await localSet({ wardenone_config: next });
+    const stamp = stampConfigWrite(res[WO_CONFIG_WRITES_KEY]);
+    id = stamp.id;
+    await localSet({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
+    return next;
+  }).then((next) => {
+    if (next) confirmConfigWrite(id, (left) => { updateStoredConfig(mutate, left).catch(() => {}); }, triesLeft);
     return next;
   });
 }
@@ -20581,6 +20590,11 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Settings change list', sensitivity: 'settings', area: 'local', maxAgeDays: 30, maxItems: 40, retention: '30 days; latest 40 switch changes', siteErase: 'keep', keys: [
     'wardenone_settings_recent',
   ] },
+  /* Random ids only (config-lock.js): which saves the stored settings descend from, so a save a
+     private window wrote over can be made again. Nothing about sites or the reader. */
+  { owner: 'Settings save record', sensitivity: 'random ids', area: 'local', maxAgeDays: null, maxItems: 64, retention: 'Ids of the latest 64 settings saves; replaced on every save', siteErase: 'keep', keys: [
+    'wardenone_config_writes',
+  ] },
 ]);
 const PRIVACY_STORE_BY_KEY = new Map();
 for (const policy of PRIVACY_STORE_POLICY) {
@@ -23273,6 +23287,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         await localSet({ wardenone_last_verification: {
           at: Date.now(), version: chrome.runtime.getManifest().version,
+          build: typeof woSourceCommit === 'function' ? woSourceCommit() : '',
           passed: report.ok === true && report.checks.every((check) => check.ok === true),
         } });
       } catch (_) {}

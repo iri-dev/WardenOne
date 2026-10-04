@@ -15,11 +15,10 @@
  *
  * Three rules come out of that, and this suite holds all three:
  *
- * 1. Download calls to action point straight at the rolling `WardenOne-latest.zip` asset. There is
+ * 1. Download calls to action point straight at the Latest `WardenOne-latest.zip` asset. There is
  *    no release-page choice to get wrong, and the stable version number never enters the URL.
  *
- * 2. The rolling workflow makes `latest-build` a normal release and explicitly marks it Latest.
- *    That keeps GitHub's own /releases/latest route aligned with the asset after every passing push.
+ * 2. The workflow publishes a complete commit-tagged release before marking it Latest.
  *
  * 3. Nothing hardcodes a version number. A link to /releases/tag/v1.0.1 is correct for exactly
  *    as long as it takes to publish v1.0.2, and then it silently becomes the same trap again.
@@ -50,7 +49,7 @@ const WORKFLOW = read('.github/workflows/gate.yml');
 
 const BARE_INDEX = 'https://github.com/iri-dev/WardenOne/releases';
 const LATEST_PAGE = BARE_INDEX + '/latest';
-const LATEST_ASSET = BARE_INDEX + '/download/latest-build/WardenOne-latest.zip';
+const LATEST_ASSET = BARE_INDEX + '/latest/download/WardenOne-latest.zip';
 
 // A link is "bare" when it is the index and not /latest, /tag/... or anything longer.
 function bareIndexLinks(text) {
@@ -98,27 +97,23 @@ function bareIndexLinks(text) {
 // 2. GitHub's own Latest route follows the rolling package too.
 // ---------------------------------------------------------------------------
 {
-  const editLine = WORKFLOW.split(/\r?\n/).find((line) => /gh release edit latest-build/.test(line));
-  check('the rolling release edit is present', !!editLine);
+  const editLine = WORKFLOW.split(/\r?\n/).find((line) => /gh release edit "\$BUILD_TAG"/.test(line));
+  check('the commit release publish step is present', !!editLine);
   if (editLine) {
-    check('an existing rolling release is not left as a prerelease',
-      editLine.includes('--prerelease=false'), editLine.trim());
-    check('an existing rolling release is explicitly marked Latest',
-      editLine.includes('--latest'), editLine.trim());
+    check('the complete release is published and explicitly marked Latest',
+      editLine.includes('--draft=false') && editLine.includes('--latest'), editLine.trim());
   }
 
-  const createMatch = /gh release create latest-build[\s\S]*?\n\s*fi\b/.exec(WORKFLOW);
-  check('the rolling release creation is present', !!createMatch);
+  const createMatch = /gh release create "\$BUILD_TAG"[\s\S]*?\n\s*fi\b/.exec(WORKFLOW);
+  check('the commit release creation is present', !!createMatch);
   if (createMatch) {
-    check('a new rolling release is explicitly marked Latest',
-      /--latest\b/.test(createMatch[0]), createMatch[0].trim());
-    check('a new rolling release is not created as a prerelease',
-      !/--prerelease(?:\s|$)/m.test(createMatch[0]), createMatch[0].trim());
+    check('a new release is a draft tied to the exact source commit',
+      /--target "\$GITHUB_SHA"/.test(createMatch[0]) && /--draft\b/.test(createMatch[0]), createMatch[0].trim());
   }
 }
 
 // ---------------------------------------------------------------------------
-// 3. The mutable rolling asset publishes the digest and provenance of its bytes.
+// 3. A complete commit release publishes the digest and provenance of its bytes.
 // ---------------------------------------------------------------------------
 {
   const rolling = WORKFLOW.split(/\n  rolling-build:/)[1] || '';
@@ -131,12 +126,12 @@ function bareIndexLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 3
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 4
       && /run: node tools\/browser-settings-data\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
-      && /run: node tools\/browser-config-race\.js/.test(settings));
-  /* A publish stopped halfway leaves the tag on one commit and the ZIP from another, so nothing may
-     cancel it once started: no workflow-wide concurrency, and its own group never cancels. */
+      && /run: node tools\/browser-config-race\.js/.test(settings)
+      && /run: node tools\/browser-engine-smoke\.js/.test(settings));
+  /* Publication stays serialised while a draft is prepared and promoted. */
   const head = WORKFLOW.split(/\njobs:\n/)[0];
   check('no workflow-wide concurrency can cancel the publish job', !/^concurrency:/m.test(head));
   check('the publish job is serialised and never cancelled once started',
@@ -154,11 +149,11 @@ function bareIndexLinks(text) {
       && /Get-FileHash -Algorithm SHA256/.test(minimum) && /-ne \$env:CHROME_MINIMUM_SHA256\) \{ throw/.test(minimum)
       && /-ne \$env:CHROME_MINIMUM_VERSION\) \{ throw/.test(minimum));
   check('it runs the popup, both Settings suites and the config race in that Chrome',
-    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race']
+    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-engine-smoke']
       .every((t) => new RegExp('run: node tools/' + t + '\\.js').test(minimum))
       && /WARDENONE_BROWSER_NAME: 'Google Chrome'/.test(minimum) && /WARDENONE_HEADLESS: '1'/.test(minimum));
   check('no test there can run without that Chrome in place and pass on Edge instead',
-    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 3
+    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 4
       && /id: chrome/.test(minimum));
   const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
   check('the rolling build waits for the gate, the real popup, the real Settings page and the minimum Chrome',
@@ -172,9 +167,9 @@ function bareIndexLinks(text) {
     'name: Write and verify the ZIP checksum',
     'name: Attest the ZIP build provenance',
     'name: Write the notes',
-    'name: Move the rolling tag to this commit',
-    'name: Publish or refresh the rolling build',
-    'name: Verify the assets served by GitHub',
+    'name: Prepare the commit release as a draft',
+    'name: Verify both assets before publication',
+    'name: Make the complete release Latest',
   ].map((name) => rolling.indexOf(name));
   check('package inspection, checksum and attestation all finish before publication',
     steps.every((at) => at >= 0) && steps.every((at, index) => index === 0 || at > steps[index - 1]));
@@ -184,14 +179,22 @@ function bareIndexLinks(text) {
   check('the pinned GitHub attestation action signs that same ZIP',
     /uses: actions\/attest@[0-9a-f]{40}/.test(rolling)
       && /subject-path: WardenOne-latest\.zip/.test(rolling));
-  check('both release creation and refresh upload the ZIP and checksum',
-    /gh release upload latest-build WardenOne-latest\.zip WardenOne-latest\.zip\.sha256 --clobber/.test(rolling)
-      && /gh release create latest-build WardenOne-latest\.zip WardenOne-latest\.zip\.sha256/.test(rolling));
-  check('the job downloads and checks the published copies',
-    /gh release download latest-build --pattern 'WardenOne-latest\.zip\*' --dir downloaded-release/.test(rolling)
+  check('the commit tag is unique and both assets are attached before publication',
+    /BUILD_TAG="build-\$GITHUB_SHA"/.test(rolling)
+      && /gh release create "\$BUILD_TAG" WardenOne-latest\.zip WardenOne-latest\.zip\.sha256/.test(rolling)
+      && /gh release upload "\$BUILD_TAG" WardenOne-latest\.zip WardenOne-latest\.zip\.sha256 --clobber/.test(rolling)
+      && /isDraft --jq \.isDraft/.test(rolling));
+  check('the job downloads and checks the draft assets before the Latest switch',
+    /gh release download "\$BUILD_TAG" --pattern 'WardenOne-latest\.zip\*' --dir downloaded-release/.test(rolling)
       && /cmp WardenOne-latest\.zip downloaded-release\/WardenOne-latest\.zip/.test(rolling)
       && /cmp WardenOne-latest\.zip\.sha256 downloaded-release\/WardenOne-latest\.zip\.sha256/.test(rolling)
       && /cd downloaded-release && sha256sum --check WardenOne-latest\.zip\.sha256/.test(rolling));
+  check('the publish step rejects stale pushes and never moves a tag or replaces published assets',
+    /git ls-remote origin refs\/heads\/main/.test(rolling)
+      && !/git tag -f latest-build|git push -f origin latest-build/.test(rolling)
+      && !/gh release upload latest-build/.test(rolling));
+  check('the legacy fixed-tag download is removed only after Latest is verified',
+    /test "\$\(gh release view --json tagName --jq \.tagName\)" = "\$BUILD_TAG"[\s\S]*gh release delete latest-build --cleanup-tag --yes/.test(rolling));
   check('release notes identify the full source commit, ZIP digest and attestation',
     /Source commit:.*\$GITHUB_SHA/.test(rolling)
       && /ZIP SHA-256:.*WardenOne-latest\.zip\.sha256/.test(rolling)
