@@ -141,6 +141,9 @@ extension to rebuild default protections. You can reset everything, keep basic
 settings without API keys, or keep basic settings and API keys. Both keep-options
 remove site exceptions, user-authored rules and learned records. Finish any active
 Download Shield reviews before erasing so a paused download is not stranded.
+After a full reset, WardenOne keeps a random internal reset marker and an empty settings-save
+record. They contain no settings or site data and stop an older private-window save from
+restoring erased settings. Default settings may be recreated when the extension restarts.
 
 **Forget this site now** clears that website's browser data and permissions; it is
 not an erase of all WardenOne records about the site. **Clean browser data** clears
