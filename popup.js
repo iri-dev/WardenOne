@@ -992,37 +992,50 @@ function importSettingsFromFile(file) {
 // The read and the write hold the config lock (config-lock.js), so Settings, another page or the
 // worker writing at the same moment waits for this one and then reads its result. The lock is let
 // go before either callback runs, since a callback may save again.
-function persistConfig(onSaved, onError) {
-  const changedKeys = popupChangedKeys();
+//
+// A private window has its own lock, so a save there can still land over this one without having
+// read it. A moment after saving, confirmConfigWrite (config-lock.js) checks; if this save was
+// written over, the same keys and values are saved again -- `retry` carries them, and the popup's
+// own copy is left alone, since it already counts them as saved.
+function persistConfig(onSaved, onError, retry) {
+  const changedKeys = retry ? Object.keys(retry.changes) : popupChangedKeys();
+  const changes = {};
+  changedKeys.forEach((k) => { changes[k] = retry ? retry.changes[k] : configClone({ v: config[k] }).v; });
+  let writeId = '';
   withConfigLock(() => new Promise((release) => {
     // Whatever goes wrong lets the lock go and is reported. A read that failed is not an empty
     // config: writing defaults plus this change over it would reset every other setting.
     const fail = (err) => { release(); if (typeof onError === 'function') onError(err); };
     try {
-      chrome.storage.local.get('wardenone_config', (store) => {
+      chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY], (store) => {
         try {
           const readError = chrome.runtime.lastError;
           if (readError) { fail(readError); return; }
           const raw = store && store.wardenone_config;
           const stored = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
           const next = Object.assign({}, DEFAULTS, stored);
-          changedKeys.forEach((k) => { next[k] = config[k]; });
+          changedKeys.forEach((k) => { next[k] = changes[k]; });
           // Applied to the merged result, not just to `config`: this decides what is
           // actually written, and a provider switched off in either copy must not leave
           // its key behind in storage.
           normalizeStoredProviderKeys(next);
           const adopted = Object.keys(next).filter((k) => changedKeys.indexOf(k) < 0
             && configValuesDiffer(next[k], savedConfigSnapshot[k]));
-          chrome.storage.local.set({ wardenone_config: next }, () => {
+          const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY]);
+          writeId = stamp.id;
+          chrome.storage.local.set({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record }, () => {
             const err = chrome.runtime.lastError;
             if (err) { fail(err); return; }
             try {
-              config = next;
-              savedConfigSnapshot = configClone(next);
+              if (!retry) {
+                config = next;
+                savedConfigSnapshot = configClone(next);
+              }
             } finally {
               release();
             }
             if (typeof onSaved === 'function') onSaved(adopted);
+            confirmConfigWrite(writeId, (left) => persistConfig(null, null, { changes, left }), retry ? retry.left : undefined);
           });
         } catch (e) { fail(e); }
       });

@@ -245,7 +245,8 @@ class Cdp {
   close() { try { this.ws.close(); } catch (_) {} }
 }
 
-async function launch(edge, variant, extensionDir, port, profileDir) {
+/* extraArgs: further switches for one run, such as --host-resolver-rules for a local test server. */
+async function launch(edge, variant, extensionDir, port, profileDir, extraArgs) {
   const args = [
     '--remote-debugging-port=' + port, '--user-data-dir=' + profileDir, '--no-first-run', '--no-default-browser-check',
     '--window-position=-3000,-3000', '--window-size=1280,900', '--force-device-scale-factor=1',
@@ -255,6 +256,7 @@ async function launch(edge, variant, extensionDir, port, profileDir) {
   if (process.env.WARDENONE_HEADLESS === '1') args.push('--headless=new');
   if (variant === 'off') args.push('--disable-extensions');
   else args.push('--disable-extensions-except=' + extensionDir, '--load-extension=' + extensionDir);
+  if (Array.isArray(extraArgs)) args.push(...extraArgs);
   args.push('about:blank');
   const child = spawn(edge, args, { detached: true, stdio: 'ignore' });
   child.unref();
