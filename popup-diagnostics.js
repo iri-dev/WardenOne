@@ -21,7 +21,7 @@ function diagnosticDate(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 && n <= Date.now() ? new Date(n).toISOString().slice(0, 10) + ' UTC' : 'Unknown';
 }
-function buildDiagnosticsReport({ health, config, dnr, verification, browser, version, now }) {
+function buildDiagnosticsReport({ health, config, dnr, verification, browser, version, build, now }) {
   const h = health && health.ok === true ? health : null;
   const list = h && h.list || {};
   const sources = list.sources || {};
@@ -33,7 +33,9 @@ function buildDiagnosticsReport({ health, config, dnr, verification, browser, ve
   const dated = diagnosticCount(publisher.dated);
   const stale = diagnosticCount(publisher.stale);
   const recent = dated !== null && stale !== null && stale <= dated ? dated - stale : null;
-  const checked = verification && verification.version === version ? verification : null;
+  const commit = /^[0-9a-f]{40}$/.test(String(build)) ? build : '';
+  const checked = verification && verification.version === version
+    && (commit ? verification.build === commit : !verification.build) ? verification : null;
   const verifyStatus = checked && checked.at && diagnosticDate(checked.at) !== 'Unknown'
     ? (checked.passed === true ? 'Passed' : 'Issues found') + ' on ' + diagnosticDate(checked.at)
     : 'Not recorded for this version';
@@ -43,6 +45,7 @@ function buildDiagnosticsReport({ health, config, dnr, verification, browser, ve
     'WardenOne diagnostics',
     'Created: ' + diagnosticDate(now),
     'WardenOne version: ' + (/^\d+\.\d+\.\d+$/.test(String(version)) ? version : 'Unknown'),
+    'Build commit: ' + (commit || 'Unavailable'),
     'Browser: ' + browserLabel,
     'Protection health: ' + level,
     'Protections active: ' + (h ? diagnosticNumber(h.configuredShields) : 'Unknown')
@@ -108,7 +111,8 @@ async function prepareDiagnostics() {
     dnr: { dynamic: Array.isArray(dynamic) ? dynamic.length : null,
       session: Array.isArray(session) ? session.length : null,
       staticSets: Array.isArray(staticSets) ? staticSets.length : null },
-    browser, version: manifest.version, now: Date.now(),
+    browser, version: manifest.version,
+    build: typeof woSourceCommit === 'function' ? woSourceCommit() : '', now: Date.now(),
   });
 }
 

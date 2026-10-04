@@ -517,13 +517,17 @@ function renderPrefs() {
   $('pref-preview').disabled = !s.soundEnabled;
 }
 
-/* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept. */
-async function save() {
-  await withConfigLock(async () => {
-    const stored = await storageGet('wardenone_config');
+/* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept;
+   if a private window wrote over it without seeing it, it is saved again (confirmConfigWrite). */
+async function save(triesLeft) {
+  const writeId = await withConfigLock(async () => {
+    const stored = await storageGet(['wardenone_config', WO_CONFIG_WRITES_KEY]);
     const config = (stored.wardenone_config && typeof stored.wardenone_config === 'object') ? stored.wardenone_config : {};
-    await storageSet({ wardenone_config: Object.assign({}, config, { notificationSettings: NC.settings }) });
+    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY]);
+    await storageSet({ wardenone_config: Object.assign({}, config, { notificationSettings: NC.settings }), [WO_CONFIG_WRITES_KEY]: stamp.record });
+    return stamp.id;
   });
+  confirmConfigWrite(writeId, (left) => { save(left).catch(() => {}); }, triesLeft);
 }
 
 /* The page never writes the notification store (M47). It asks the worker, which owns the store,

@@ -8,11 +8,11 @@ user data in a public issue.
 
 | Version | Security support |
 | --- | --- |
-| Current `main` / [`latest-build`](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip) | Supported |
+| Current `main` / [Latest build](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip) | Supported |
 | Older tagged releases | Not patched separately; reproduce against the current build first |
 | Third-party forks or redistributed builds | Not maintained by this project |
 
-The rolling `latest-build` package is rebuilt from `main` after the repository gate
+The Latest package is built from `main` after the repository gate
 passes. Security fixes land there first unless a separate versioned release is announced.
 
 ## Report a vulnerability privately

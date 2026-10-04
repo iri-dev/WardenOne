@@ -1,6 +1,6 @@
 # Chrome Web Store submission record
 
-Status: **blocked pending upstream rights review (CWS-06)**. The rolling `latest-build`
+Status: **blocked pending upstream rights review (CWS-06)**. The Latest GitHub build
 download is for GitHub users; it is not the Store upload candidate.
 There is no Chrome Web Store Dashboard draft or submitted listing yet (30 September 2026).
 The proposed copy below must be compared with the saved Dashboard fields before submission.
@@ -55,7 +55,7 @@ decide whether this combination meets the single-purpose policy.
 3. Enable GitHub release immutability for future releases in repository Settings.
    Create a **draft** release at a new `store-candidate-<commit>` tag, attach the
    ZIP and JSON, then publish the release. Confirm GitHub marks it Immutable.
-   Never attach the Store ZIP to the mutable `latest-build` release.
+   Never attach the Store ZIP to a GitHub build release.
 4. Download the candidate from its release URL and compare its SHA-256 with the
    JSON record. Upload that same ZIP to the Chrome Web Store without repacking.
    Compare the local upload file's digest again immediately before the upload.

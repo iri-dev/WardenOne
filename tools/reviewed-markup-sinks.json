@@ -1,0 +1,112 @@
+[
+  {
+    "file": "settings.js",
+    "source": "slot.innerHTML = n ? '<span aria-hidden=\"true\">' + n + '</span><span class=\"sr\">, ' + esc(said) + '</span>' : '';",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#nav').innerHTML = PAGES.filter((p) => !p.hidden).map((p) => {",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "else if (p.kind === 'list') $('#pane').innerHTML = listPage(p);",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "else if (p.kind === 'arrange') $('#pane').innerHTML = headHTML(p.title, p.desc) + '<div class=\"arrange-main\">' + sectionsPanel() + '</div>';",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "else if (p.kind === 'help') $('#pane').innerHTML = helpPage();",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "else if (p.kind === 'about') $('#pane').innerHTML = aboutPage();",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "else $('#pane').innerHTML = headHTML(p.title, p.desc, { preset: switchKeysOf(p).length > 0, risky: riskyKeys(p).length > 0, collapsible: true }) + groupsOf(p).map(sectionHTML).join('');",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "box.innerHTML = entries.length ? rowsHTML(entries) : '<div class=\"row block\"><div class=\"r-desc\">' + esc(loaded ? LIST_EMPTY.recent[1] : 'Reading your settings…') + '</div></div>';",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#pane').innerHTML = headHTML('Results for “' + raw + '”', summary) + chips +",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "label.innerHTML = label.textContent.split(/([A-Za-z0-9’'-]+)/).map((part, i) =>",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#pane').innerHTML = headHTML('Overview', 'How WardenOne is set up right now. Pick a category to change it.', { preset: true }) +",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#ov-facts').innerHTML = !loaded ? '' : [",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "if ($('#rail').hidden) { $('#rail').innerHTML = ''; return; }",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#rail').innerHTML = html;",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#warn-line').innerHTML = icon('i-alert') + (riskyOn",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#cats').innerHTML = PAGES.filter((p) => !p.hidden && p.kind !== 'overview' && p.kind !== 'list').map((p) => {",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "$('#checks').innerHTML = CHECKS.filter(([k]) => k in ROWS).map(([k, yes, no]) => '<li class=\"' + (state[k] ? '' : 'off') + '\"><span class=\"ck\">' + icon('i-check') + '</span>' + (state[k] ? yes : no) + '</li>').join('');",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "el.innerHTML = render();",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "button.innerHTML = label;",
+    "count": 2
+  },
+  {
+    "file": "settings.js",
+    "source": "box.innerHTML = health.items.map((item) => {",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "if (errors) errors.innerHTML = ruleErrorsHTML(rules.res);",
+    "count": 1
+  },
+  {
+    "file": "twitch-rewind.js",
+    "source": "controlsShadow.innerHTML = `",
+    "count": 1
+  }
+]

@@ -228,9 +228,13 @@ function bridgeHarness(merged) {
 
 /* ---- the surfaces agree: Silent is stored as one key, on both --------------------------- */
 {
+  /* The write itself sits in writeSilentMode, so a save a private window wrote over can be made
+     again; setSilentMode hands it the reader's choice. */
   const setter = grabFn(ONBOARDING.replace(/^\s*async function setSilentMode/m, 'async function setSilentMode'), 'setSilentMode');
+  const writer = grabFn(ONBOARDING.replace(/^\s*async function writeSilentMode/m, 'async function writeSilentMode'), 'writeSilentMode');
   check('onboarding stores silentMode and nothing about toasts or the badge',
-    /\{ silentMode: !!isSilent, showDownloadBar: true \}/.test(setter) && !/showToasts|showBadge/.test(setter));
+    /writeSilentMode\(!!isSilent\)/.test(setter)
+      && /\{ silentMode: isSilent, showDownloadBar: true \}/.test(writer) && !/showToasts|showBadge/.test(setter + writer));
   const read = grabFn(POPUP, 'readFromUI');
   check('the popup no longer writes the switches false under Silent',
     !/config\.showToasts = false|config\.showBadge = false/.test(read) && /repairSilentModeRewrite\(wasSilent\)/.test(read));

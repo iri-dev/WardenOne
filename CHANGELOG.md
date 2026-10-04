@@ -4,6 +4,9 @@
 
 ### Added
 
+- The About page shows the source build beside the version in GitHub ZIPs, and support diagnostics
+  include the full commit. Verify & Repair results are tied to that build so an earlier 1.0.2 check
+  cannot appear to cover newer code.
 - A Settings page, opened from the gear in the popup or from the browser's Extension options
   (which used to open Activity history; the popup's Activity link still goes there). It has every
   switch the popup has, grouped by what it protects, and search results that say where each setting
@@ -38,6 +41,10 @@
 
 ### Changed
 
+- GitHub Actions now pins current Node 24 releases of checkout, setup-node and upload-artifact.
+- GitHub downloads now move the Latest link to a complete commit-specific release after both the
+  ZIP and checksum are verified. The older fixed `latest-build` URL is retired so it cannot keep
+  serving an outdated package.
 - University and school sites (.edu, .ac.uk and similar) now get WardenOne's page protections.
   They used to skip them entirely so sign-in kept working; now phishing, skimmer, scam and
   form-trap checks run there, and only the protections that can get in the way of signing in, a
@@ -55,9 +62,14 @@
 
 ### Fixed
 
+- New HTML insertion points now fail the security gate until their exact source lines are reviewed;
+  the existing Settings and Twitch Rewind insertion points are recorded as the baseline.
 - A setting changed at the same moment as another could be lost: a switch flipped in Settings
   while the popup saved, or just as WardenOne remembered or muted a notification, was sometimes
   undone by the other save. Changes to your settings are now saved one at a time, so both stay.
+  A private window saves separately from your regular windows, so a change there at the same
+  moment as one in a regular window could still overwrite it; the one that was overwritten is now
+  saved again a moment later.
   If your settings ever can't be read, the popup now says so instead of saving over them.
 - The Twitch ad blocker and Twitch Rewind now carry the extension's version. From this version
   on, if a newer copy is ever run in a tab that still holds an older one, the old copy lets go of

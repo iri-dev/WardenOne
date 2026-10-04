@@ -11,7 +11,7 @@ redirects. It keeps an eye on your other extensions too. And it all runs on your
 
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
-[![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip)
+[![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip)
 ![Protections](https://img.shields.io/badge/protections-108-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Open source](https://img.shields.io/badge/source-open-2ea44f.svg)](LICENSE)
@@ -52,9 +52,12 @@ the page you're looking at. And when it blocks something it shows you why.
 
 # Quick install
 
-1. Download [WardenOne-latest.zip](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip) and unzip it somewhere you intend to keep it.
+1. Download [WardenOne-latest.zip](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip) and unzip it somewhere you intend to keep it.
 2. Open `chrome://extensions` and enable **Developer mode** in the top-right.
 3. Select **Load unpacked**, then choose the unzipped folder containing `manifest.json`.
+
+The About page in Settings shows both the version and the GitHub build ID. Include both when
+reporting a problem; the version stays the same between rolling builds.
 
 ## First run
 
@@ -1647,7 +1650,7 @@ than tidy it away.
 Run `node tools/build-source-bundle.js` from a clean checkout to make a ZIP next to the repo. It has
 every file tracked in the current commit (`src/`, `tools/`, the docs, everything) and leaves out
 local folders like `.git/`, `.store-candidates/` and `.publish/`. That's the source for review. The
-`latest-build` ZIP is the smaller extension package. It won't run on a checkout with uncommitted
+Latest release ZIP is the smaller extension package. It won't run on a checkout with uncommitted
 changes, so nothing gets silently left out. Use `--committed` only if you really do want a ZIP of
 `HEAD` without your uncommitted changes.
 
@@ -1704,7 +1707,7 @@ you extra evidence about the exact ZIP you downloaded:
 - **GitHub build attestation.** A record that ties those exact ZIP bytes to a build run by this
   repository's GitHub Actions workflow from `main`.
 
-To check the hash download [WardenOne-latest.zip.sha256](https://github.com/iri-dev/WardenOne/releases/download/latest-build/WardenOne-latest.zip.sha256) along with the ZIP. `latest-build` gets replaced every time I push something that passes, so grab both files at the same time. If the hashes don't match download both again. Don't load a ZIP that still fails. The release notes show the ZIP's SHA-256 and link to its attestation too.
+To check the hash, download [WardenOne-latest.zip.sha256](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip.sha256) from the same release page as the ZIP. Each published build has its own commit tag and fixed assets. The Latest link moves to a new release only after both files have been uploaded and checked. If the hashes don't match, open the release page and download both files again from that same commit. Don't load a ZIP that still fails. The release notes show the ZIP's SHA-256 and link to its attestation too.
 
 On Windows PowerShell, in the directory containing both files:
 

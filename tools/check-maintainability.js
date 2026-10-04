@@ -404,6 +404,7 @@ function checkContentBuild() {
   'tools/test-education-compat.js',
   'tools/config-write-harness.js',
   'tools/browser-config-race.js',
+  'tools/browser-engine-smoke.js',
   'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
   'tools/test-download-links.js',
@@ -747,6 +748,7 @@ checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('diagnostics export tests', ['tools/test-diagnostics-export.js']);
+checkCommand('build identity tests', ['tools/test-build-identity.js']);
 checkCommand('health card extension-note tests', ['tools/test-health-extension-drop.js']);
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Spotify adblock tests', ['tools/test-spotify-adblock.js']);

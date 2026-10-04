@@ -74,6 +74,12 @@ const WARDENONE_BUILD = Object.freeze({
   }),
 });
 
+/* git archive fills this for GitHub ZIPs; unpacked source and Store packages keep the marker. */
+const WARDENONE_SOURCE_COMMIT = '$Format:%H$';
+function woSourceCommit() {
+  return /^[0-9a-f]{40}$/.test(WARDENONE_SOURCE_COMMIT) ? WARDENONE_SOURCE_COMMIT : '';
+}
+
 function woFeatureOmitted(id) {
   return WARDENONE_BUILD.omitted.indexOf(String(id || '')) !== -1;
 }

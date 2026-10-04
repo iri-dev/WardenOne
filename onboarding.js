@@ -341,15 +341,26 @@
     }
   }
 
+  /* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept;
+     if a private window wrote over it without seeing it, it is saved again (confirmConfigWrite). */
+  async function writeSilentMode(isSilent, triesLeft) {
+    let writeId = '';
+    const ok = await withConfigLock(async () => {
+      const store = await storageGet(['wardenone_config', WO_CONFIG_WRITES_KEY]);
+      const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
+      const next = Object.assign({}, current, { silentMode: isSilent, showDownloadBar: true });
+      const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY]);
+      const written = await storageSet({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
+      if (written) writeId = stamp.id;
+      return written;
+    });
+    confirmConfigWrite(writeId, (left) => { writeSilentMode(isSilent, left); }, triesLeft);
+    return ok;
+  }
+
   async function setSilentMode(isSilent) {
     setStatus('');
-    /* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept. */
-    const ok = await withConfigLock(async () => {
-      const store = await storageGet('wardenone_config');
-      const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
-      const next = Object.assign({}, current, { silentMode: !!isSilent, showDownloadBar: true });
-      return storageSet({ wardenone_config: next });
-    });
+    const ok = await writeSilentMode(!!isSilent);
     if (!ok) { setStatus('Could not save your notification choice.', 'bad'); return; }
     paintMode(!!isSilent);
     setStatus(isSilent ? 'Silent Mode saved.' : 'Normal notifications saved.', 'good');

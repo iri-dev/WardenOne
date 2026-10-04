@@ -97,19 +97,24 @@ let writeChain = Promise.resolve();
 /* Read-modify-write, one at a time. The stored config is read again at the moment of writing and
    only the keys changed here are laid on top, so a change the popup made a second ago survives;
    the read and the write hold the config lock (config-lock.js), so one made at the same moment
-   does too. */
-function writeConfig(patch) {
+   does too. A private window's pages and worker have their own lock; if one of them wrote over
+   this change without seeing it, the same patch is applied again (confirmConfigWrite). */
+function writeConfig(patch, triesLeft) {
+  let id = '';
   const run = writeChain.then(() => withConfigLock(async () => {
-    const stored = await localRead(CONFIG_KEY);
+    const stored = await localRead([CONFIG_KEY, WO_CONFIG_WRITES_KEY]);
     const before = isObj(stored[CONFIG_KEY]) ? stored[CONFIG_KEY] : {};
     /* A function patch is worked out from what is stored now, for maps another page may be editing. */
     const delta = typeof patch === 'function' ? patch(before) : patch;
     const next = Object.assign({}, before, delta);
     tidyConfig(next, before, delta);
-    await localWrite({ [CONFIG_KEY]: next });
+    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY]);
+    id = stamp.id;
+    await localWrite({ [CONFIG_KEY]: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
     return next;
   })).then((next) => {
     adoptConfig(next);
+    confirmConfigWrite(id, (left) => { writeConfig(patch, left).catch(() => {}); }, triesLeft);
     return next;
   });
   writeChain = run.catch(() => {});
@@ -805,8 +810,10 @@ async function addSite(id, button) {
   button.disabled = false;
 }
 function aboutPage() {
+  const commit = typeof woSourceCommit === 'function' ? woSourceCommit() : '';
   return '<div class="about-page"><section class="about-hero"><img src="icons/icon128.png" alt="" class="about-logo">' +
-    '<div><span class="about-eyebrow">ABOUT</span><h2>WardenOne</h2><p class="about-version">Version ' + esc(extensionVersion()) + '</p>' +
+    '<div><span class="about-eyebrow">ABOUT</span><h2>WardenOne</h2><p class="about-version">Version ' + esc(extensionVersion()) +
+    (commit ? ' · Build ' + esc(commit.slice(0, 7)) : '') + '</p>' +
     '<p class="about-tagline">A browser extension that helps block ads and trackers, warns about phishing and scams, checks risky downloads, and gives you control over privacy and page behaviour.</p>' +
     '<p class="about-maker">Built by <a href="' + PROJECT_LINKS.maker + '" target="_blank" rel="noopener noreferrer">iri.dev</a> 💜</p></div></section>' +
     '<section class="info-card"><h3>What WardenOne is</h3><p>WardenOne brings browser protection and wellbeing tools together in one place. You can choose which protections run, see what happened on a site, and change a setting when a page needs it. It works on your device without an account or telemetry.</p></section>' +

@@ -5,6 +5,7 @@ const fs = require('fs');
 const { buildDiagnosticsReport, diagnosticBrowser } = require('../popup-diagnostics.js');
 
 const secret = 'SECRET-DOMAIN.example';
+const commit = '378a104' + 'a'.repeat(33);
 const now = Date.now();
 /* totalShields is the switchable count (HEALTH_SHIELD_KEYS, 105), not the 108 headline, which
    also counts the three watch-only guards that have no switch to be on or off. */
@@ -21,10 +22,11 @@ const base = {
   config: { siteOverrides: { [secret]: { adShield: false }, 'other.example': {} },
     downloadSafeBrowsingKey: secret, history: [{ url: 'https://' + secret }] },
   dnr: { dynamic: 1211, session: 3, staticSets: 4 },
-  verification: { version: '1.0.1', at: now - 3600000, passed: true, url: secret },
-  browser: 'Brave (version unavailable)', version: '1.0.1', now,
+  verification: { version: '1.0.1', build: commit, at: now - 3600000, passed: true, url: secret },
+  browser: 'Brave (version unavailable)', version: '1.0.1', build: commit, now,
 };
 const report = buildDiagnosticsReport(base);
+assert(report.includes('Build commit: ' + commit));
 assert(report.includes('Protections active: 103/105'));
 assert(report.includes('Failed modules: 0'));
 assert(report.includes('Rules loaded: 28,412'));
@@ -36,14 +38,17 @@ assert(!report.includes(secret) && !report.includes('https://') && !report.inclu
 
 const missing = buildDiagnosticsReport({ ...base, health: { ok: false, detail: secret },
   dnr: { dynamic: null, session: -1, staticSets: 'bad' },
-  verification: { version: '0.0.0', passed: true, at: now }, browser: secret });
+  verification: { version: '0.0.0', passed: true, at: now }, browser: secret, build: secret });
 assert(missing.includes('Protection health: unknown'));
 assert(missing.includes('Dynamic DNR rules: Unknown'));
 assert(missing.includes('Session DNR rules: Unknown'));
 assert(missing.includes('Enabled static rulesets: Unknown'));
 assert(missing.includes('Last integrity check (Verify & Repair): Not recorded for this version'));
 assert(missing.includes('Browser: Unknown'));
+assert(missing.includes('Build commit: Unavailable'));
 assert(!missing.includes(secret));
+assert(buildDiagnosticsReport({ ...base, verification: { ...base.verification, build: 'b'.repeat(40) } })
+  .includes('Last integrity check (Verify & Repair): Not recorded for this version'));
 
 const html = fs.readFileSync('popup.html', 'utf8');
 const bg = fs.readFileSync('background.js', 'utf8');
