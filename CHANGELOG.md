@@ -43,9 +43,8 @@
 
 - GitHub Actions now pins current Node 24 releases of checkout, setup-node and upload-artifact.
 - GitHub downloads now move the Latest link to a complete commit-specific release after both the
-  ZIP and checksum are verified. The older fixed `latest-build` URL is retired so it cannot keep
-  serving an outdated package. The current release is titled WardenOne Latest; earlier commit
-  releases keep their build ID in the title.
+  ZIP and checksum are verified. Older rolling releases and the fixed `latest-build` URL are removed,
+  so the Releases page shows one WardenOne Latest build instead of accumulating old builds.
 - University and school sites (.edu, .ac.uk and similar) now get WardenOne's page protections.
   They used to skip them entirely so sign-in kept working; now phishing, skimmer, scam and
   form-trap checks run there, and only the protections that can get in the way of signing in, a

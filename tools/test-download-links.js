@@ -114,8 +114,8 @@ function bareIndexLinks(text) {
     check('a draft keeps its commit in the release title until publication',
       /--title "WardenOne Build \$\(git rev-parse --short HEAD\)"/.test(createMatch[0]));
   }
-  check('the previous Latest is renamed to its commit after the new release is verified',
-    /test "\$\(gh release view --json tagName --jq \.tagName\)" = "\$BUILD_TAG"[\s\S]*?gh release edit "\$PREV_TAG" --title "WardenOne Build \$\{PREV_TAG:6:7\}"/.test(WORKFLOW));
+  check('older rolling releases are removed only after the verified build becomes Latest',
+    /test "\$\(gh release view --json tagName --jq \.tagName\)" = "\$BUILD_TAG"[\s\S]*?for OLD_TAG in \$\(gh release list --limit 1000[\s\S]*?\[ "\$OLD_TAG" != "\$BUILD_TAG" \] && \[\[ "\$OLD_TAG" =~ \^build-\[0-9a-f\]\{40\}\$ \]\][\s\S]*?gh release delete "\$OLD_TAG" --cleanup-tag --yes/.test(WORKFLOW));
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +201,8 @@ function bareIndexLinks(text) {
       && !/gh release upload latest-build/.test(rolling));
   check('the legacy fixed-tag download is removed only after Latest is verified',
     /test "\$\(gh release view --json tagName --jq \.tagName\)" = "\$BUILD_TAG"[\s\S]*gh release delete latest-build --cleanup-tag --yes/.test(rolling));
+  check('publication verifies only one rolling release remains',
+    /ROLLING_TAGS="\$\(gh release list --limit 1000[\s\S]*?grep -E '\^build-\[0-9a-f\]\{40\}\$'[\s\S]*?test "\$ROLLING_TAGS" = "\$BUILD_TAG"/.test(rolling));
   check('release notes identify the full source commit, ZIP digest and attestation',
     /Source commit:.*\$GITHUB_SHA/.test(rolling)
       && /ZIP SHA-256:.*WardenOne-latest\.zip\.sha256/.test(rolling)
