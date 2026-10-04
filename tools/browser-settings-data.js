@@ -429,8 +429,11 @@ async function run() {
     /* Sites & exceptions: every list can be added to from the page, each where the popup writes it. */
     await go('sites');
     await until('!siteState.loading', 'saved sites');
-    const addTo = (id, text, choice) => value(`(() => { const box = document.querySelector('[data-custom="add-${id}"]'); box.querySelector('[data-add-input]').value = ${JSON.stringify(text)};`
-      + (choice ? ` box.querySelector('[data-add-choice]').value = ${JSON.stringify(choice)};` : '') + ` box.querySelector('[data-act=site-add]').click(); return true; })()`);
+    const addTo = async (id, text, choice) => {
+      await until(`(() => { const box = document.querySelector('[data-custom="add-${id}"]'); const button = box && box.querySelector('[data-act=site-add]'); return !siteState.loading && button && !button.disabled; })()`, 'the site adder to finish its previous save');
+      return value(`(() => { const box = document.querySelector('[data-custom="add-${id}"]'); box.querySelector('[data-add-input]').value = ${JSON.stringify(text)};`
+        + (choice ? ` box.querySelector('[data-add-choice]').value = ${JSON.stringify(choice)};` : '') + ` box.querySelector('[data-act=site-add]').click(); return true; })()`);
+    };
     const addSaid = (id) => text(`[data-custom="add-${id}"] .msg`);
     const rowFor = (source, idPart) => `[...document.querySelectorAll('#pane [data-site-source="${source}"]')].find((b) => b.dataset.siteId.includes(${JSON.stringify(idPart)}))`;
     await addTo('paused', 'https://www.Pause-Site.com/some/page', '60');
