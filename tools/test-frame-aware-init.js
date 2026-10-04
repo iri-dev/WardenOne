@@ -178,7 +178,7 @@ check('the config handler names the asking frame\'s host from sender.url (its in
   const SNAP = between(BG, 'function contentConfigInputKeys() {', '\nlet __contentConfigRefreshTimer', 'the snapshot builder');
   const calls = [];
   const ctx = {
-    console: { warn() {} }, Array, Object, String, Promise, Set,
+    console: { warn() {} }, Array, Object, String, Promise, Set, WOEyeShieldProfiles: require('../eyeshield-profiles.js'),
     localGet: async () => ({ wardenone_config: { enabled: true } }),
     SUPPLEMENTAL_LIST_STORAGE_KEY: 'sup',
     emptySupplementalLists: () => ({ adultDomainsExtra: [], grabberDomainsExtra: [], trustedPaymentHostsExtra: [], searchJunkDomainsExtra: [] }),

@@ -228,15 +228,25 @@ function is(name, got, want, extra) {
     'a second copy of the wording would drift from the rows it describes');
   check('only real boolean protections are offered per site',
     /typeof DEFAULTS\[key\] === 'boolean'/.test(POPUP));
-  /* The per-site levers live in the Site Dashboard, the view about the site you are on; the
-     settings list keeps one row pointing there, so searching "pause" or "allowlist" still lands. */
-  check('the per-site panel sits in the site dashboard, its heading inside the part that hides',
-    /<section class="site-dash" id="site-dash"[\s\S]*<div class="site-dash-controls" id="site-controls-group">\s*<h3 class="site-dash-h" id="site-controls-title">Settings for this site<\/h3>\s*<div class="card-group" id="site-controls"(?![^>]*style=)/.test(POPUP_HTML),
-    'a heading outside the hidden part would be left orphaned on a tab with no site');
-  check('the settings list keeps a row that opens the site\'s controls',
-    /id="site-pointer-group"[\s\S]*?Pause or adjust this site[\s\S]*?id="site-pointer-open"/.test(POPUP_HTML)
-      && /\$\('site-pointer-open'\)[\s\S]{0,80}openSiteDashboard/.test(POPUP),
-    'moving the controls must not make them unfindable from the list or its search');
+  const siteSectionStart = POPUP_HTML.indexOf('<section class="group site-controls-section" id="site-controls-group"');
+  const siteSectionEnd = POPUP_HTML.indexOf('</section>', siteSectionStart);
+  const siteSection = POPUP_HTML.slice(siteSectionStart, siteSectionEnd);
+  check('pause and single-protection controls sit in the bottom This site panel',
+    siteSectionStart >= 0 && siteSectionEnd > siteSectionStart
+      && /<h2 id="site-controls-title">This site<\/h2>/.test(siteSection)
+      && /id="site-controls"/.test(siteSection)
+      && /id="site-pause-15"/.test(siteSection)
+      && /id="site-off-pick"/.test(siteSection)
+      && siteSectionEnd < POPUP_HTML.indexOf('<div class="foot">', siteSectionEnd)
+      && siteSectionEnd < POPUP_HTML.indexOf('<section class="site-dash"', siteSectionEnd),
+    'the direct controls should appear before the footer and outside the dashboard');
+  check('the controls have one set of handlers and IDs',
+    !POPUP_HTML.includes('site-pointer-open')
+      && ['site-controls', 'site-pause-15', 'site-pause-60', 'site-pause-480', 'site-off-pick', 'site-off-add']
+        .every((id) => POPUP_HTML.split('id="' + id + '"').length === 2)
+      && /on\('site-pause-15', \(\) => pauseSite\(15\)\)/.test(POPUP)
+      && /on\('site-off-add',/.test(POPUP),
+    'duplicate IDs could wire the hidden dashboard copy instead of the visible panel');
   check('the three pause choices sit below the copy in an equal-width action grid',
     /class="row site-pause-row"[\s\S]*?class="site-pause-actions"/.test(POPUP_HTML)
       && /\.site-pause-actions\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/.test(POPUP_HTML),

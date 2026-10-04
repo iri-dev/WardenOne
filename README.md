@@ -1501,9 +1501,10 @@ These are about performance and they're kept separate from the security side.
 
 ## EyeShield
 
-Remembers a display mode for each site (Normal, Light, Dark, or Ultra which is OLED black) along
-with brightness, contrast, saturation, warmth and greyscale. The extra sliders live under **More
-reading controls** in the popup and they announce their values as percentages. Security warnings
+The popup keeps the mode pills and brightness slider in one card. Its scope chip switches between
+the **All sites** default, custom settings for the current site, and turning EyeShield off there.
+Changes save automatically. Contrast, saturation, warmth and greyscale live under **More reading
+controls**; the sliders announce their values as percentages. Security warnings
 keep their keyboard and screen-reader support whether EyeShield's on or not. The local
 accessibility check (and the spoken screen-reader pass that's still to come) is written up in
 [the accessibility audit](docs/accessibility-audit.md).

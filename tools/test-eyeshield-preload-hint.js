@@ -34,6 +34,7 @@ const ROOT = path.resolve(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const EYESHIELD = read('eyeshield.js');
 const BG = read('background.js');
+const WOEyeShieldProfiles = require('../eyeshield-profiles.js');
 const MODES = ['dark', 'ultra', 'light'];
 const HINT = '__wardenOneEyeShieldPreloadMode';
 const LEGACY_KEY = '__woEyeShieldMode';
@@ -101,6 +102,7 @@ function worker(opts) {
   const state = { registered: [], updated: [], unregistered: [], executed: [], injected: false };
   const sandbox = {
     Object, String, Array, Number, JSON, Promise, Math, RegExp, console,
+    WOEyeShieldProfiles,
     chrome: {
       runtime: { lastError: null },
       scripting: {
@@ -124,6 +126,7 @@ function worker(opts) {
     between(BG, 'const EYESHIELD_PRELOAD_MODES = [', ';', 'the preload mode list') + ';',
     grabFn(BG, 'eyeShieldPreloadFile'),
     grabFn(BG, 'eyeShieldScriptFiles'),
+    grabFn(BG, 'eyeShieldRegistrationScope'),
     grabFn(BG, 'eraseEyeShieldSiteMarkerFromOpenTabs'),
     grabFn(BG, 'reconcileEyeShieldInjection'),
     'this.api = { reconcileEyeShieldInjection, eyeShieldScriptFiles };',
@@ -138,7 +141,7 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
     const w = worker();
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: mode });
     check('mode ' + mode + ' registers the hint file AHEAD of eyeshield.js',
-      JSON.stringify(filesOf(w)) === JSON.stringify(['eyeshield-preload-' + mode + '.js', 'eyeshield.js']), filesOf(w));
+      JSON.stringify(filesOf(w)) === JSON.stringify(['eyeshield-preload-' + mode + '.js', 'eyeshield-profiles.js', 'eyeshield.js']), filesOf(w));
     check('...at document_start in every frame, as before',
       w.state.registered[0].runAt === 'document_start' && w.state.registered[0].allFrames === true && w.state.registered[0].persistAcrossSessions === true);
     check('...and the per-site themes registration is untouched by it',
@@ -148,34 +151,52 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
     /* Theming on for the filters alone: the script runs, paints no backdrop, carries no hint. */
     const w = worker();
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'off', eyeShieldBrightness: 70 });
-    check('mode off with a filter touched registers eyeshield.js alone', JSON.stringify(filesOf(w)) === '["eyeshield.js"]', filesOf(w));
-    check('an unknown mode carries no hint either', JSON.stringify(w.api.eyeShieldScriptFiles({ eyeShieldMode: 'sepia' })) === '["eyeshield.js"]');
+    check('mode off with a filter touched registers EyeShield without a hint', JSON.stringify(filesOf(w)) === '["eyeshield-profiles.js","eyeshield.js"]', filesOf(w));
+    check('an unknown mode carries no hint either', JSON.stringify(w.api.eyeShieldScriptFiles({ eyeShieldMode: 'sepia' })) === '["eyeshield-profiles.js","eyeshield.js"]');
     check('the mode is matched case-insensitively, as eyeShieldThemingActive matches it',
-      JSON.stringify(w.api.eyeShieldScriptFiles({ eyeShieldMode: 'Dark' })) === '["eyeshield-preload-dark.js","eyeshield.js"]');
+      JSON.stringify(w.api.eyeShieldScriptFiles({ eyeShieldMode: 'Dark' })) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield.js"]');
   }
   {
     /* Registered for dark; the reader picks light. */
-    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield.js'] }] });
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js'] }] });
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'light' });
     check('a mode change swaps the hint through updateContentScripts, without re-registering',
       w.state.registered.length === 0 && w.state.updated.length === 1
       && w.state.updated[0].id === 'wo-eyeshield-dynamic'
-      && JSON.stringify(w.state.updated[0].js) === '["eyeshield-preload-light.js","eyeshield.js"]', w.state);
+      && JSON.stringify(w.state.updated[0].js) === '["eyeshield-preload-light.js","eyeshield-profiles.js","eyeshield.js"]', w.state);
     check('...and does not unregister or inject', w.state.unregistered.length === 0 && !w.state.injected);
   }
   {
     /* Registered for dark; nothing changed. Chrome may report the paths with a leading slash. */
-    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['/eyeshield-preload-dark.js', '/eyeshield.js'] }] });
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['/eyeshield-preload-dark.js', '/eyeshield-profiles.js', '/eyeshield.js'] }] });
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark' });
     check('an unchanged mode makes no registration call at all',
       w.state.registered.length === 0 && w.state.updated.length === 0 && w.state.unregistered.length === 0, w.state);
   }
   {
     /* Registered for dark; the reader turns the mode off but leaves brightness: the hint goes. */
-    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield.js'] }] });
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js'] }] });
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'off', eyeShieldBrightness: 70 });
     check('mode off with theming still active drops the hint from the registration',
-      w.state.updated.length === 1 && JSON.stringify(w.state.updated[0].js) === '["eyeshield.js"]', w.state.updated);
+      w.state.updated.length === 1 && JSON.stringify(w.state.updated[0].js) === '["eyeshield-profiles.js","eyeshield.js"]', w.state.updated);
+  }
+  {
+    const w = worker();
+    await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark', eyeShieldSites: { 'github.com': { mode: 'off' } } });
+    check('a site Off profile excludes the host from core and site-theme registration',
+      w.state.registered.length === 2 && w.state.registered.every((r) => r.excludeMatches.includes('*://github.com/*') && r.excludeMatches.includes('*://www.github.com/*')));
+  }
+  {
+    const w = worker();
+    await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'off', eyeShieldSites: { 'youtube.com': { mode: 'custom', theme: 'dark' } } });
+    check('a custom-only setup loads EyeShield only on that host',
+      w.state.registered.length === 2 && w.state.registered.every((r) => JSON.stringify(r.matches) === '["*://youtube.com/*","*://www.youtube.com/*"]'));
+  }
+  {
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js'], matches: ['<all_urls>'] }] });
+    await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark', eyeShieldSites: { 'github.com': { mode: 'off' } } });
+    check('adding Off updates both existing registrations',
+      w.state.updated.length === 2 && w.state.updated.every((r) => r.excludeMatches.includes('*://github.com/*')));
   }
   {
     /* Registered; theming switched off entirely: unregister, and erase the legacy key from open tabs. */

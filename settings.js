@@ -65,6 +65,7 @@ const results = {};
 const cleanPicks = new Set(['cache', 'consentCookies']);
 let eraseMode = 'all';
 let erasePlan = null;
+let eyeSiteHost = '';
 const CUSTOM = {};
 const CONTROLS = {};
 
@@ -328,7 +329,8 @@ const PAGES = [
       slider('eyeShieldSaturation', 'Saturation', 'How strong colours are. 0% is black and white.', 0, 300, 100, 'eyeShield'),
       slider('eyeShieldWarmth', 'Warmth', 'Shifts pages towards amber, easier on the eyes at night.', 0, 100, 0, 'eyeShield'),
       slider('eyeShieldGrayscale', 'Grayscale', 'Drains colour from every page.', 0, 100, 0, 'eyeShield'),
-      tagged(custom('eye-adjust', 'eyeshield reset adjustments brightness contrast', eyeAdjustHTML), 'eyeShield') ]),
+      tagged(custom('eye-adjust', 'eyeshield reset adjustments brightness contrast', eyeAdjustHTML), 'eyeShield'),
+      tagged(custom('eye-sites', 'eyeshield site profile custom inherit off brightness contrast warmth', eyeSitesHTML), 'eyeShield') ]),
     G('i-cursor', 'Page tools', 'Tools you use on a page yourself.', ['elementZapper']) ] },
   { id: 'arrange', title: 'Arrange sections', icon: 'i-tabs', nav: 2, kind: 'arrange', desc: 'Put the popup sections in the order you use them.' },
   { id: 'cleanup', title: 'Clean-up & backup', icon: 'i-archive', nav: 2, desc: 'Keep a copy of your settings, clear browsing data and WardenOne’s history, or start again.', groups: () => [
@@ -1702,6 +1704,8 @@ document.addEventListener('click', (e) => {
   if (t.closest('#theme')) { saveTheme(document.documentElement.dataset.theme === 'dark' ? 'Light' : 'Dark'); return; }
 });
 document.addEventListener('change', (e) => {
+  if (e.target.matches('[data-eye-state]')) void changeEyeSiteState(e.target.value);
+  if (e.target.matches('[data-eye-field]')) void changeEyeSiteField(e.target.dataset.eyeField, e.target.value);
   if (e.target.matches('select[data-choice]')) choices[e.target.dataset.choice] = e.target.value;
   if (e.target.matches('input[name="erase-mode"]')) { eraseMode = e.target.value; refreshCustom(['erase']); }
   if (e.target.matches('[data-include-lists]')) includeLists = e.target.checked;
@@ -1721,6 +1725,9 @@ document.addEventListener('input', (e) => {
   if (e.target.matches('[data-slider]')) sliderMoved(e.target, false);
 });
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-eye-host]')) {
+    e.preventDefault(); selectEyeSite(); return;
+  }
   if (e.key === '/' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); }
   if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-sub-url]')) {
     e.preventDefault();
@@ -1757,6 +1764,7 @@ else if (hash.get('sections')) current = 'arrange';
 else if (knownPage(savedPage)) current = savedPage;
 try { localStorage.setItem(SETTINGS_PAGE_KEY, current); } catch (_) {}
 if (hash.get('theme') === 'dark') setTheme('Dark');
+eyeSiteHost = WOEyeShieldProfiles.hostOf(hash.get('eyeSite'));
 if (hash.get('q')) $('#q').value = hash.get('q');
 if (hash.get('inspect')) inspect = { type: 'setting', key: hash.get('inspect') };
 if (hash.get('presets')) inspect = { type: 'preset' };
@@ -1826,6 +1834,9 @@ function runAction(act, el) {
     if (sec) { sec.open = true; sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   }
   else if (act === 'eye-reset') void resetEyeAdjustments();
+  else if (act === 'eye-site-use') selectEyeSite();
+  else if (act === 'eye-site-edit') selectEyeSite(el.dataset.host);
+  else if (act === 'eye-site-global') void changeEyeSiteState('inherit');
   else if (act === 'unmute') void unmute(el.dataset.type);
   else if (act === 'diag-prepare') void prepareReport();
   else if (act === 'diag-download') downloadReport();
@@ -1877,7 +1888,8 @@ function exportableSettings(cfg) {
   const out = {};
   Object.keys(cfg || {}).forEach((key) => {
     if (SECRET_FIELD_RE.test(key)) return;
-    out[key] = key === 'siteOverrides' ? sanitizeSiteOverrides(cfg[key]).map : cfg[key];
+    out[key] = key === 'siteOverrides' ? sanitizeSiteOverrides(cfg[key]).map
+      : key === 'eyeShieldSites' ? WOEyeShieldProfiles.cleanSites(cfg[key]) : cfg[key];
   });
   return out;
 }
@@ -1893,6 +1905,13 @@ function sanitizeImportedSettings(raw) {
       const result = sanitizeSiteOverrides(val);
       if (Object.keys(val).length && !Object.keys(result.map).length) { ignored++; return; }
       settings[key] = result.map;
+      return;
+    }
+    if (key === 'eyeShieldSites') {
+      if (!isObj(val)) { ignored++; return; }
+      const sites = WOEyeShieldProfiles.cleanSites(val);
+      if (Object.keys(val).length && !Object.keys(sites).length) { ignored++; return; }
+      settings[key] = sites;
       return;
     }
     if (key === 'notificationSettings') {
@@ -2474,6 +2493,71 @@ function eyeAdjustHTML() {
     : 'Brightness, contrast and colour are all at their normal levels.';
   return '<div class="wide-in"><div class="r-name"><span class="r-label">Back to normal</span></div><div class="r-desc">' + esc(line) + '</div>' +
     '<div class="r-act">' + (changed.length ? '<button class="btn" data-act="eye-reset">' + icon('i-refresh') + 'Reset adjustments</button>' : '') + '</div></div>' + msgHTML(results.eye);
+}
+function eyeSitesHTML() {
+  const sites = WOEyeShieldProfiles.cleanSites(config.eyeShieldSites);
+  const profile = WOEyeShieldProfiles.profileFor(sites, eyeSiteHost);
+  const mode = profile ? profile.mode : 'inherit';
+  const host = esc(eyeSiteHost);
+  const choices = [['inherit', 'Global'], ['custom', 'Custom'], ['off', 'Off']];
+  const select = (field, value, items) => '<select data-eye-field="' + esc(field) + '" aria-label="' + esc(field === 'theme' ? 'Site theme' : field) + '">' +
+    items.map(([key, label]) => '<option value="' + esc(key) + '"' + (value === key ? ' selected' : '') + '>' + esc(label) + '</option>').join('') + '</select>';
+  const fields = mode !== 'custom' ? '' :
+    '<div class="eye-site-fields"><div class="wide-in"><div class="r-name"><span class="r-label">Mode</span></div><div class="r-desc">Normal keeps the site’s own colours; adjustments still apply.</div><div class="r-act">' +
+    select('theme', profile.theme, [['off', 'Normal'], ['light', 'Light'], ['dark', 'Dark'], ['ultra', 'Ultra']]) + '</div></div>' +
+    EYE_ADJUST.map(([field, label]) => {
+      const [min, max] = WOEyeShieldProfiles.ADJUSTMENTS[field];
+      return '<div class="wide-in"><div class="r-name"><label class="r-label" for="eye-site-' + esc(field) + '">' + esc(label) + '</label></div><div class="r-desc">Saved for ' + host + '.</div><div class="r-act"><input class="num" id="eye-site-' + esc(field) + '" type="number" min="' + min + '" max="' + max + '" step="1" data-eye-field="' + esc(field) + '" value="' + profile[field] + '"><span class="unit">%</span></div></div>';
+    }).join('') +
+    '<button class="btn" data-act="eye-site-global">Use global settings</button></div>';
+  const saved = Object.keys(sites).sort().map((site) => '<button class="btn" data-act="eye-site-edit" data-host="' + esc(site) + '">' + esc(site) + ' · ' + (sites[site].mode === 'off' ? 'Off' : 'Custom') + '</button>').join('');
+  return '<div class="wide-in"><div class="r-name"><span class="r-label">Site profiles</span></div>' +
+    '<div class="r-desc">Use Global, save custom EyeShield settings, or turn EyeShield off on one site.</div>' +
+    '<div class="r-act eye-site-pick"><input type="text" data-eye-host aria-label="Site address" placeholder="example.com" value="' + host + '"><button class="btn" data-act="eye-site-use">Choose site</button></div></div>' +
+    (eyeSiteHost ? '<div class="wide-in"><div class="r-name"><span class="r-label">' + host + '</span></div><div class="r-desc">EyeShield on this site</div><div class="r-act"><select data-eye-state aria-label="EyeShield on ' + host + '">' +
+      choices.map(([key, label]) => '<option value="' + key + '"' + (mode === key ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></div></div>' + fields : '') +
+    '<div class="eye-site-saved">' + (saved || '<span class="r-desc">No site profiles saved yet.</span>') + '</div>';
+}
+function selectEyeSite(value) {
+  const input = $('[data-eye-host]');
+  let typed = value || (input && input.value) || '';
+  try { if (/^https?:\/\//i.test(typed)) typed = new URL(typed).hostname; } catch (_) { typed = ''; }
+  const host = WOEyeShieldProfiles.hostOf(typed);
+  if (!host) { toast('Enter a valid site address.'); return; }
+  eyeSiteHost = host;
+  renderPage();
+}
+async function changeEyeSiteState(mode) {
+  if (!loaded || !eyeSiteHost || !['inherit', 'custom', 'off'].includes(mode)) return;
+  try {
+    await writeConfig((before) => {
+      const sites = WOEyeShieldProfiles.cleanSites(before.eyeShieldSites);
+      if (mode === 'inherit') delete sites[eyeSiteHost];
+      else if (mode === 'off') sites[eyeSiteHost] = { mode: 'off' };
+      else sites[eyeSiteHost] = WOEyeShieldProfiles.customFromGlobal(before);
+      return { eyeShieldSites: sites };
+    });
+    renderPage();
+    toast(mode === 'inherit' ? eyeSiteHost + ' uses global EyeShield settings.' : 'EyeShield profile saved for ' + eyeSiteHost + '.');
+  } catch (error) { renderPage(); toast('Could not save EyeShield: ' + error.message); }
+}
+async function changeEyeSiteField(field, raw) {
+  if (!loaded || !eyeSiteHost) return;
+  const limits = WOEyeShieldProfiles.ADJUSTMENTS[field];
+  if (field !== 'theme' && !limits) return;
+  const value = field === 'theme' ? (['off', 'light', 'dark', 'ultra'].includes(raw) ? raw : 'off')
+    : Math.max(limits[0], Math.min(limits[1], Math.round(Number(raw))));
+  if (field !== 'theme' && !Number.isFinite(value)) { renderPage(); return; }
+  try {
+    await writeConfig((before) => {
+      const sites = WOEyeShieldProfiles.cleanSites(before.eyeShieldSites);
+      const profile = sites[eyeSiteHost];
+      if (!profile || profile.mode !== 'custom') return {};
+      sites[eyeSiteHost] = Object.assign({}, profile, { [field]: value });
+      return { eyeShieldSites: sites };
+    });
+    renderPage();
+  } catch (error) { renderPage(); toast('Could not save EyeShield: ' + error.message); }
 }
 /* ---------- Keyboard shortcuts ----------
    Straight from chrome.commands.getAll(), as in the popup, never from a table here: you can rebind

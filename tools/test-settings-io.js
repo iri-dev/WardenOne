@@ -56,7 +56,7 @@ const overridesSrc = extractBlock(POPUP_JS, 'function sanitizeSiteOverrides');
 const sanitizeSrc = extractBlock(POPUP_JS, 'function sanitizeImportedSettings');
 const exportableSrc = extractBlock(POPUP_JS, 'function exportableSettings');
 
-const sandbox = new Function(
+const sandbox = new Function('WOEyeShieldProfiles',
   defaultsSrc + ';\n'
   + importOnlySrc + ';\n'
   + 'const IMPORT_SCHEMA = Object.assign({}, IMPORT_ONLY_DEFAULTS, DEFAULTS);\n'
@@ -65,7 +65,7 @@ const sandbox = new Function(
   + sanitizeSrc + ';\n'
   + exportableSrc + ';\n'
   + 'return { DEFAULTS, sanitizeImportedSettings, exportableSettings };'
-)();
+)(require('../eyeshield-profiles.js'));
 
 const { DEFAULTS, sanitizeImportedSettings, exportableSettings } = sandbox;
 

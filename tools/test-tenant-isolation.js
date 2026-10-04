@@ -76,7 +76,7 @@ function section(name, fn) {
     if (result && typeof result.then === 'function') pending.push(result.catch((e) => { check(name, false, 'could not run: ' + (e && e.message || e)); }));
   } catch (e) { check(name, false, 'could not run: ' + (e && e.message || e)); }
 }
-const BASE = { URL, Set, Map, Object, String, Array, Number, RegExp, Date, Math, JSON, Boolean, Error, Promise, console };
+const BASE = { URL, Set, Map, Object, String, Array, Number, RegExp, Date, Math, JSON, Boolean, Error, Promise, console, WOEyeShieldProfiles: require('../eyeshield-profiles.js') };
 
 const VICTIM = 'victim.webflow.io';
 const ATTACKER = 'attacker.webflow.io';

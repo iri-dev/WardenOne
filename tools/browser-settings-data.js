@@ -36,6 +36,7 @@ function between(src, start, end) {
 const popupJs = read('popup.js');
 const popupCtx = {};
 vm.createContext(popupCtx);
+vm.runInContext(read('eyeshield-profiles.js'), popupCtx);
 vm.runInContext(read('notification-schema.js'), popupCtx);
 vm.runInContext(between(popupJs, 'const DEFAULTS = {', 'const IMPORT_SCHEMA').replace(/^const /gm, 'var ') +
   '\nvar IMPORT_SCHEMA = Object.assign({}, IMPORT_ONLY_DEFAULTS, DEFAULTS);\nvar SECRET_FIELD_RE = /Key$/;\n' +
@@ -145,6 +146,8 @@ async function run() {
     await until("new Promise(r => chrome.storage.local.get('wardenone_site_card_layout', d => r(d.wardenone_site_card_layout === 'B')))", 'site card saved where the popup reads it');
     await pick('eyeshield', 'Dark');
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldMode === 'dark' && d.wardenone_config.eyeShield === true)))", 'EyeShield Dark saved');
+    await store({ wardenone_config: Object.assign({}, await stored('wardenone_config'), { eyeShieldSites: { 'github.com': { mode: 'off' } } }) });
+    await until("chrome.scripting.getRegisteredContentScripts({ ids: ['wo-eyeshield-dynamic'] }).then(a => a.length === 1 && a[0].excludeMatches?.includes('*://github.com/*'))", 'Off site excluded from EyeShield injection');
     await store({ wardenone_config: Object.assign({}, await stored('wardenone_config'), { eyeShieldBrightness: 80, eyeShieldWarmth: 30 }) });
     await until("(document.querySelector('[data-custom=eye-adjust]') || {}).textContent.includes('brightness 80%, warmth 30%')", 'values set in the popup are listed');
     ok(await value("document.querySelector('[data-slider=eyeShieldBrightness]').value === '80' && document.querySelector('[data-slider-out=eyeShieldWarmth]').textContent === '30%'"), 'and the sliders follow a change made in the popup');
@@ -152,6 +155,23 @@ async function run() {
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldBrightness === 100 && d.wardenone_config.eyeShieldWarmth === 0 && d.wardenone_config.eyeShieldMode === 'dark' && d.wardenone_config.eyeShield === true)))", 'adjustments reset, mode kept');
     await pick('eyeshield', 'Normal');
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldMode === 'off' && d.wardenone_config.eyeShield === false)))", 'EyeShield off');
+    await value("document.querySelector('[data-eye-host]').value = 'youtube.com'; document.querySelector('[data-act=eye-site-use]').click(); true");
+    ok(await value("!!document.querySelector('[data-eye-state]')"), 'EyeShield site editor opens for a valid host');
+    await value("document.querySelector('[data-eye-state]').value = 'custom'; document.querySelector('[data-eye-state]').dispatchEvent(new Event('change', { bubbles: true })); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['youtube.com']?.mode === 'custom')))", 'custom EyeShield profile saved');
+    await until("chrome.scripting.getRegisteredContentScripts({ ids: ['wo-eyeshield-dynamic'] }).then(a => a.length === 1 && a[0].matches?.includes('*://youtube.com/*') && !a[0].matches?.includes('<all_urls>'))", 'custom-only EyeShield injection scoped to the site');
+    await value("document.querySelector('[data-eye-field=theme]').value = 'dark'; document.querySelector('[data-eye-field=theme]').dispatchEvent(new Event('change', { bubbles: true })); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['youtube.com']?.theme === 'dark')))", 'custom theme saved');
+    await value("document.querySelector('[data-eye-field=eyeShieldBrightness]').value = '85'; document.querySelector('[data-eye-field=eyeShieldBrightness]').dispatchEvent(new Event('change', { bubbles: true })); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['youtube.com']?.eyeShieldBrightness === 85)))", 'custom brightness saved');
+    await value("document.querySelector('[data-eye-host]').value = 'github.com'; document.querySelector('[data-act=eye-site-use]').click(); true");
+    await value("document.querySelector('[data-eye-state]').value = 'off'; document.querySelector('[data-eye-state]').dispatchEvent(new Event('change', { bubbles: true })); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['github.com']?.mode === 'off')))", 'site Off saved');
+    ok((await stored('wardenone_config')).eyeShieldSites['youtube.com'].eyeShieldBrightness === 85, 'editing another site preserves the first profile');
+    await value("document.querySelector('[data-act=eye-site-edit][data-host=\"youtube.com\"]').click(); true");
+    await value("document.querySelector('[data-act=eye-site-global]').click(); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(!d.wardenone_config.eyeShieldSites?.['youtube.com'] && d.wardenone_config.eyeShieldSites?.['github.com']?.mode === 'off')))", 'returning to Global removes only the selected profile');
+    await until("chrome.scripting.getRegisteredContentScripts({ ids: ['wo-eyeshield-dynamic'] }).then(a => a.length === 0)", 'only Off profiles leave no EyeShield injection');
     const muted = { blocked_popup: 0, warned_phishing: Date.now() + 3600e3, warned_shortener: Date.now() - 1000 };
     await store({ wardenone_config: Object.assign({}, await stored('wardenone_config'), { toastMutes: muted }) });
     await until("(document.querySelector('[data-custom=silenced]') || {}).textContent.includes('Possible fake site')", 'silenced notifications listed');

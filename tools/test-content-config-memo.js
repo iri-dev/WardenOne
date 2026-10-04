@@ -131,6 +131,7 @@ function realm(local) {
   const clone = (v) => JSON.parse(JSON.stringify(v));
   const sandbox = {
     console, Promise, Object, Array, String, Number, Boolean, Set, Map, JSON, Math, RegExp, Error, URL, Date, Symbol,
+    WOEyeShieldProfiles: require('../eyeshield-profiles.js'),
     chrome: {
       runtime: { lastError: null, getURL: (p) => 'chrome-extension://wo/' + p },
       storage: { local: {
@@ -162,6 +163,22 @@ function realm(local) {
 const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
 
 (async () => {
+  {
+    const saved = store();
+    saved.wardenone_config.eyeShieldSites = {
+      'a.com': { mode: 'off' },
+      'b.com': { mode: 'custom', theme: 'dark', eyeShieldBrightness: 85 },
+      'private.com': { mode: 'off' },
+    };
+    const r = realm(saved);
+    const a = await r.request('a.com');
+    const b = await r.request('b.com');
+    const child = await r.api.buildContentConfigSnapshot('embed.com', null, 'a.com');
+    check('content config reveals only the page’s EyeShield profile',
+      Object.keys(a.overrides.eyeShieldSites).join() === 'a.com'
+      && Object.keys(b.overrides.eyeShieldSites).join() === 'b.com'
+      && Object.keys(child.overrides.eyeShieldSites).join() === 'a.com');
+  }
   const full = store();
   /* ---- one build per change, however many frames ask ------------------------------------------ */
   {
@@ -271,7 +288,7 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
     /\|\| changes\.wardenone_search_junk_domains\)\) \{\s*invalidateContentConfigMemo\(\);\s*scheduleContentConfigRefresh\(\);/.test(BG));
   check('and the worker\'s own writes clear it before that event can arrive',
     /function localSet\(obj\) \{[\s\S]{0,800}invalidateContentConfigMemo\(\)/.test(BG));
-  check('the handler passes what the caller asked for', /respond\(buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\)\), sendResponse\);/.test(BG));
+  check('the handler passes what the caller asked for and the top site', /respond\(buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\), topHost\), sendResponse\);/.test(BG));
   for (const file of REQUESTERS) {
     const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
     const asks = src.match(/kind: 'content-config-get'[^}]*\}/g) || [];

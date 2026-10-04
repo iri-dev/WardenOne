@@ -64,7 +64,10 @@ async function run() {
   assert.match(popup, /body\s*\{\s*width:\s*348px;/);
   assert.match(popup, /html\.wo-popup-tab body\s*\{\s*width:\s*min\(348px,\s*100%\)/);
   assert.match(popupScript, /chrome\.tabs\.getCurrent\(\(tab\) =>/);
-  assert.match(popup, /<summary>More reading controls<\/summary>/);
+  assert(popup.includes('<summary>More reading controls</summary>'), 'EyeShield keeps the compact reading controls');
+  assert(popup.includes('id="eyeshield-scope-button" aria-haspopup="menu"')
+    && popup.includes('id="eyeshield-scope-menu" role="menu"'), 'EyeShield scope is announced as a menu');
+  assert(popup.includes('id="eyeshield-site-status" role="status" aria-live="polite"'), 'EyeShield autosave is announced');
   assert.match(popupScript, /range\.setAttribute\('aria-valuetext', brightness \+ '%'/);
   assert.match(popupScript, /range\.setAttribute\('aria-valuetext', pct \+ '%'/);
   const download = read('download-review.html');
