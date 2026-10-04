@@ -28,11 +28,17 @@ function harness(initialLocal, initialSession, options = {}) {
     async get() { return Object.assign({}, state); },
     async clear() { for (const key of Object.keys(state)) delete state[key]; },
     async remove(key) { delete state[key]; },
-    async set(values) { Object.assign(state, values); },
+    async set(values) {
+      Object.assign(state, values);
+      if (state === local && options.staleDuringMarker && values.wardenone_config_reset) {
+        state.wardenone_config = options.staleDuringMarker;
+        state.wardenone_config_writes = { ids: ['pre-reset'] };
+      }
+    },
   });
   const sandbox = {
     chrome: {
-      storage: { local: area(local), session: area(session) },
+      storage: { local: area(local), session: area(session), onChanged: { addListener() {} } },
       declarativeNetRequest: {
         async getDynamicRules() { return dynamic.slice(); },
         async getSessionRules() { return sessionRules.slice(); },
@@ -57,7 +63,7 @@ function harness(initialLocal, initialSession, options = {}) {
     + 'const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'
     + 'const PRIVACY_ERASE_REBUILD_KEY = "wardenone_erase_rebuild";'
     + 'let __privacyEraseInProgress = false;' + bg.slice(start, end)
-    + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
+    + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, repairConfigAfterReset, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
   return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, reloaded: () => reloaded };
 }
 
@@ -160,6 +166,32 @@ function harness(initialLocal, initialSession, options = {}) {
   assert.strictEqual((await h.api.eraseWardenOneData('settings-and-keys')).ok, true);
   assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, 'secret');
   assert.strictEqual(h.local.wardenone_config.siteOverrides, undefined);
+
+  h = harness({ wardenone_config: cfg, wardenone_config_writes: { ids: ['old'] } }, {});
+  assert.strictEqual((await h.api.eraseWardenOneData('all')).ok, true);
+  assert.strictEqual(h.local.wardenone_config, undefined);
+  assert.strictEqual(typeof h.local.wardenone_config_reset.epoch, 'string');
+  assert.strictEqual(h.local.wardenone_config_writes.epoch, h.local.wardenone_config_reset.epoch);
+  h = harness({ wardenone_config: cfg }, {}, { staleDuringMarker: cfg });
+  assert.strictEqual((await h.api.eraseWardenOneData('all')).ok, true);
+  assert.strictEqual(h.local.wardenone_config, undefined, 'a stale write during marker installation is erased');
+  assert.strictEqual(h.local.wardenone_config_writes.epoch, h.local.wardenone_config_reset.epoch);
+  h = harness({ wardenone_config: cfg, wardenone_config_writes: { ids: ['old'] } }, {});
+  assert.strictEqual((await h.api.eraseWardenOneData('all')).ok, true);
+  await h.api.repairConfigAfterReset();
+  h.local.wardenone_config = cfg;
+  h.local.wardenone_config_writes = { ids: ['old'] };
+  await h.api.repairConfigAfterReset();
+  assert.strictEqual(h.local.wardenone_config, undefined, 'a pre-reset writer cannot restore erased settings');
+  assert.strictEqual(h.local.wardenone_config_writes.epoch, h.local.wardenone_config_reset.epoch);
+  const savedAfterReset = { enabled: true, deAmp: true };
+  const lineageAfterReset = { epoch: h.local.wardenone_config_reset.epoch, ids: ['new'] };
+  h.local.wardenone_config = cfg;
+  h.local.wardenone_config_writes = { ids: ['old'] };
+  await h.api.repairConfigAfterReset({ wardenone_config: { oldValue: savedAfterReset },
+    wardenone_config_writes: { oldValue: lineageAfterReset } });
+  assert.strictEqual(h.local.wardenone_config.deAmp, true, 'repair restores a valid post-reset edit');
+  assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, undefined);
 
   /* Seed every WardenOne-named runtime storage key found in the shipped scripts.
      This catches an erase implementation that switches from a full store clear to a

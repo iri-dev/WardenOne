@@ -90,8 +90,7 @@ function unlockedWrites(src) {
       line,
       locked: ranges.some(([a, b]) => m.index > a && m.index < b),
       /* The save record goes in the same set() as the config, or a private window's write over it
-         could not be told from one that saw it. The reset's write follows a clear() of everything,
-         record included, which is how a later check knows there is nothing to put back. */
+         could not be told from one that saw it. The partial reset follows clear() directly. */
       stamped: /\bWO_CONFIG_WRITES_KEY\b/.test(callArgs(code, m.index)),
       afterClear: /storage\.local\.clear\(\)[\s\S]{0,400}$/.test(code.slice(Math.max(0, m.index - 400), m.index)),
     });
@@ -123,9 +122,8 @@ for (const file of packaged.concat(['src/content.js'])) {
 }
 const byFile = (name) => found.filter((w) => w.file === name).length;
 /* The writers there are today, so a scanner that stopped seeing them fails instead of passing
-   empty. The worker writes in two places, updateStoredConfig and the reset; everything else in
-   it changes the config through updateStoredConfig. */
-for (const [file, count] of [['background.js', 2], ['settings.js', 1], ['popup.js', 1], ['history.js', 1], ['notifications.js', 1], ['onboarding.js', 1]]) {
+   empty. The worker writes through updateStoredConfig and reset; config-lock.js repairs old saves. */
+for (const [file, count] of [['background.js', 2], ['config-lock.js', 1], ['settings.js', 1], ['popup.js', 1], ['history.js', 1], ['notifications.js', 1], ['onboarding.js', 1]]) {
   check(file + ' has its ' + count + ' config write(s) found, not ' + byFile(file), byFile(file) === count);
 }
 const updates = ['background.js', 'background-memory.js']
@@ -140,7 +138,7 @@ check('every write of wardenone_config holds the config lock: '
 const unstamped = found.filter((w) => !w.stamped && !w.afterClear);
 check('every write stores its save record in the same set(): '
   + (unstamped.map((w) => w.file + ':' + w.line).join(', ') || 'all do'), unstamped.length === 0);
-check('only the reset writes without one, straight after clearing the store',
+check('only the partial reset writes without a save record, straight after clearing the store',
   found.filter((w) => w.afterClear).map((w) => w.file).join() === 'background.js');
 for (const file of ['background.js', 'settings.js', 'popup.js', 'history.js', 'notifications.js', 'onboarding.js']) {
   const src = fs.readFileSync(path.join(root, file), 'utf8');

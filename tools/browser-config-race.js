@@ -143,6 +143,38 @@ async function run() {
       'a change made at the same moment as one in a private window was lost, by trial: ' + JSON.stringify(lostPrivate));
     console.log('[ok] config writes from regular Settings, private Settings and the private window\'s worker all survived '
       + PRIVATE_TRIALS + ' simultaneous tries in ' + browser.Browser);
+    await evaluate(regularSettings, 'writeConfig({ deAmp: false, capReferrer: false }).then(() => true)');
+    await evaluate(privateSettings, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY]).then((got) => { globalThis.__woStale = got; return true; })");
+    await evaluate(regularSettings, 'writeConfig({ deAmp: true }).then(() => true)');
+    await evaluate(privateSettings, "(() => { const got = __woStale; const stamp = stampConfigWrite(got[WO_CONFIG_WRITES_KEY], ['deAmp']); return localWrite({ wardenone_config: Object.assign({}, got.wardenone_config, { deAmp: false }), [WO_CONFIG_WRITES_KEY]: stamp.record }).then(() => true); })()");
+    await sleep(1500);
+    assert.equal(await evaluate(privateSettings, "chrome.storage.local.get('wardenone_config').then((got) => got.wardenone_config.deAmp)"), false,
+      'the last completed same-setting edit wins over an earlier reconciliation');
+    console.log('[ok] a later private edit to the same setting wins');
+
+    await evaluate(regularSettings, 'writeConfig({ deAmp: false, capReferrer: false }).then(() => true)');
+    await evaluate(privateSettings, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY]).then((got) => { globalThis.__woStale = got; return true; })");
+    await evaluate(regularSettings, 'writeConfig({ deAmp: true }).then(() => true)');
+    await sleep(2100);
+    await evaluate(privateSettings, "(() => { const got = __woStale; const stamp = stampConfigWrite(got[WO_CONFIG_WRITES_KEY], ['capReferrer']); return localWrite({ wardenone_config: Object.assign({}, got.wardenone_config, { capReferrer: true }), [WO_CONFIG_WRITES_KEY]: stamp.record }).then(() => true); })()");
+    await sleep(1500);
+    const late = await evaluate(privateSettings, "chrome.storage.local.get('wardenone_config').then((got) => ({ deAmp: got.wardenone_config.deAmp, capReferrer: got.wardenone_config.capReferrer }))");
+    console.log('[known boundary] private write held for 2.1 seconds: ' + JSON.stringify(late));
+
+    await evaluate(regularSettings, "writeConfig({ deAmp: false, capReferrer: false, __resetProbe: 'stale-before-reset' }).then(() => true)");
+    const stale = await evaluate(privateSettings, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY])");
+    assert.equal((await evaluate(regularSettings, "new Promise((r) => chrome.runtime.sendMessage({kind:'privacy-data-erase',mode:'all'},r))")).ok, true);
+    await sleep(2100);
+    const { targetId: afterResetId } = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/settings.html`, browserContextId: privateContext });
+    const afterReset = await attach(afterResetId);
+    await until(afterReset, "typeof loaded !== 'undefined' && loaded === true", 'private Settings after erase');
+    await evaluate(afterReset, `(() => { const old = ${JSON.stringify(stale)}; const stamp = stampConfigWrite(old[WO_CONFIG_WRITES_KEY], ['capReferrer']); return localWrite({ wardenone_config: Object.assign({}, old.wardenone_config, { capReferrer: true }), [WO_CONFIG_WRITES_KEY]: stamp.record }).then(() => true); })()`);
+    await until(afterReset, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_RESET_KEY, WO_CONFIG_WRITES_KEY]).then((got) => got[WO_CONFIG_RESET_KEY] && got[WO_CONFIG_WRITES_KEY].epoch === got[WO_CONFIG_RESET_KEY].epoch && (!got.wardenone_config || !got.wardenone_config.__resetProbe))",
+      'pre-reset private write to be removed');
+    await sleep(1300);
+    assert.equal(await evaluate(afterReset, "chrome.storage.local.get('wardenone_config').then((got) => got.wardenone_config && got.wardenone_config.__resetProbe)"), undefined,
+      'a delayed pre-reset private snapshot must not reappear');
+    console.log('[ok] Erase all rejects a private config write that read before reset and landed 2.1 seconds later');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const resolved = path.resolve(dir);
