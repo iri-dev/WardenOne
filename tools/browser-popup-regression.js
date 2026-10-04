@@ -39,7 +39,7 @@ async function run() {
       const result = await cdp.send('Runtime.evaluate', {
         expression, returnByValue: true, awaitPromise: true,
       }, page.sessionId);
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
       return result.result && result.result.value;
     }
     async function until(expression, label, timeout = 15000) {
@@ -58,6 +58,68 @@ async function run() {
     }
 
     await openPopup();
+    const sitePanel = await value(`(() => {
+      const section = document.getElementById('site-controls-group');
+      return {
+        heading: section.querySelector('h2')?.textContent,
+        beforeFooter: section.nextElementSibling?.classList.contains('foot'),
+        inDashboard: document.getElementById('site-dash').contains(section),
+        pauseChoices: [...section.querySelectorAll('.site-pause-actions button')].map((button) => button.textContent),
+        override: !!section.querySelector('#site-off-pick'),
+      };
+    })()`);
+    assert.deepEqual(sitePanel, {
+      heading: 'This site', beforeFooter: true, inDashboard: false,
+      pauseChoices: ['15m', '1h', '8h'], override: true,
+    }, 'the bottom popup panel should offer the per-site controls directly');
+    await value("eyeShieldHost = 'example.com'; paintEyeShield(); true");
+    assert.equal(await value("document.querySelector('#eyeshield-scope-label').textContent"), 'All sites');
+    assert.equal(await value("document.querySelector('#eyeshield-controls').hidden"), false);
+    assert.equal(await value("document.querySelector('#eyeshield-host').textContent"), 'All sites brightness');
+    if (process.env.WARDENONE_EYESHIELD_SCREENSHOT) {
+      await value("document.getElementById('eyeshield-panel').scrollIntoView({block:'center'}); true");
+      await cdp.send('Page.bringToFront', {}, page.sessionId);
+      const top = await value("document.getElementById('eyeshield-title').getBoundingClientRect().top + scrollY");
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'png', clip: { x: 0, y: Math.max(0, top - 6), width: 348, height: 215, scale: 1 }, captureBeyondViewport: true,
+      }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_EYESHIELD_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    assert.equal(await value("document.querySelector('.eyeshield-site-choice')"), null);
+    assert.equal(await value("document.querySelector('#save')"), null);
+    await value("(() => { document.querySelector('[data-eyeshield-mode=light]').click(); const range = document.querySelector('#eyeshield-brightness'); range.value = '95'; range.dispatchEvent(new Event('input', { bubbles: true })); range.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldMode === 'light' && d.wardenone_config.eyeShieldBrightness === 95 && !d.wardenone_config.eyeShieldSites?.['example.com'])))", 'popup global controls autosaved');
+    const globalEyeShield = await value("JSON.stringify({ mode: config.eyeShieldMode, brightness: config.eyeShieldBrightness, warmth: config.eyeShieldWarmth, contrast: config.eyeShieldContrast })");
+    await value("document.querySelector('#eyeshield-scope-button').click(); true");
+    assert.equal(await value("document.querySelector('#eyeshield-scope-menu').hidden"), false);
+    if (process.env.WARDENONE_EYESHIELD_MENU_SCREENSHOT) {
+      await cdp.send('Page.bringToFront', {}, page.sessionId);
+      const top = await value("document.getElementById('eyeshield-title').getBoundingClientRect().top + scrollY");
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'png', clip: { x: 0, y: Math.max(0, top - 6), width: 348, height: 235, scale: 1 }, captureBeyondViewport: true,
+      }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_EYESHIELD_MENU_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    await value("document.querySelector('[data-eyeshield-site=custom]').click(); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['example.com']?.mode === 'custom')))", 'popup site Custom saved');
+    assert.equal(await value("document.querySelector('#eyeshield-controls').hidden"), false);
+    assert.equal(await value("document.querySelector('#eyeshield-scope-label').textContent"), 'example.com');
+    assert.equal(await value("document.querySelector('#eyeshield-host').textContent"), 'example.com brightness');
+    await value("(() => { document.querySelector('[data-eyeshield-mode=dark]').click(); const range = document.querySelector('#eyeshield-brightness'); range.value = '85'; range.dispatchEvent(new Event('input', { bubbles: true })); range.dispatchEvent(new Event('change', { bubbles: true })); const warmth = document.querySelector('#eyeshield-warmth'); warmth.value = '20'; warmth.dispatchEvent(new Event('input', { bubbles: true })); warmth.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['example.com']?.theme === 'dark' && d.wardenone_config.eyeShieldSites['example.com'].eyeShieldBrightness === 85 && d.wardenone_config.eyeShieldSites['example.com'].eyeShieldWarmth === 20)))", 'popup custom controls autosaved');
+    assert.equal(await value("JSON.stringify({ mode: config.eyeShieldMode, brightness: config.eyeShieldBrightness, warmth: config.eyeShieldWarmth, contrast: config.eyeShieldContrast })"), globalEyeShield);
+    await until("document.querySelector('#eyeshield-site-status').textContent === 'Saved for example.com ✓'", 'popup site save confirmation');
+    await value("document.querySelector('#eyeshield-scope-button').click(); true");
+    await value("document.querySelector('[data-eyeshield-site=off]').click(); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['example.com']?.mode === 'off')))", 'popup site Off saved');
+    assert.equal(await value("document.querySelector('#eyeshield-controls').hidden"), true);
+    assert.equal(await value("document.querySelector('#eyeshield-off-summary').hidden"), false);
+    assert.equal(await value("document.querySelector('#eyeshield-scope-label').textContent"), 'Off on example.com');
+    await value("document.querySelector('#eyeshield-scope-button').click(); true");
+    await value("document.querySelector('[data-eyeshield-site=inherit]').click(); true");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(!d.wardenone_config.eyeShieldSites?.['example.com'])))", 'popup site Global restored');
+    assert.equal(await value("document.querySelector('#eyeshield-controls').hidden"), false);
+    assert.equal(await value("document.querySelector('#eyeshield-host').textContent"), 'All sites brightness');
     const dashboardState = await value(`(() => {
       const base = { host: 'youtube.com', web: true, since: Date.now(), total: 0,
         cats: Object.fromEntries(SITE_DASH_CATEGORIES.map(c => [c.id, 0])), noticed: 0,

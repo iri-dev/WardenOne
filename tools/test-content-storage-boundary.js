@@ -49,7 +49,7 @@ check('local and session storage are restricted to trusted extension contexts', 
 const configStart = BG.indexOf('const DEFAULT_CONFIG =');
 const configEnd = BG.indexOf('// ---- Onboarding protection bundles', configStart);
 assert(configStart >= 0 && configEnd > configStart, 'content config sanitizer moved in background.js');
-const sandbox = { Set, Object, String, Number, Array, JSON, Promise, setTimeout, clearTimeout };
+const sandbox = { Set, Object, String, Number, Array, JSON, Promise, setTimeout, clearTimeout, WOEyeShieldProfiles: require('../eyeshield-profiles.js') };
 vm.createContext(sandbox);
 vm.runInContext(BG.slice(configStart, configEnd) + '\nglobalThis.__configBoundary = { DEFAULT_CONFIG, sanitizeContentConfig };', sandbox,
   { filename: 'background.js:content-config' });
@@ -94,7 +94,7 @@ check('the content configuration channel is tab-only, rate-limited, and handled'
   assert(/msg\.kind === 'content-config-get' && messageSenderIsTab\(sender\)/.test(BG), 'handler does not require a tab sender');
   /* the snapshot takes the asking frame's host so the reader's hidden-element rules ride along
      with the config instead of costing every frame a second channel (PERF-02) */
-  assert(/respond\(buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\)\), sendResponse\)/.test(BG), 'handler does not use the sanitizer snapshot');
+  assert(/respond\(buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\), topHost\), sendResponse\)/.test(BG), 'handler does not use the sanitizer snapshot');
 });
 
 check('all manifest isolated-world scripts remain free of direct storage access', () => {
