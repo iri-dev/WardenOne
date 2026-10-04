@@ -16,10 +16,8 @@ on:
 permissions:
   contents: read
 
-# No workflow-wide concurrency. One that cancels in progress cancels the whole run, the publish
-# job included, and a publish stopped halfway leaves the latest-build tag on one commit and the
-# ZIP from another. So each test job cancels its own stale copy when a newer push arrives, and
-# the publish job is serialised and never cancelled once it has started (see rolling-build).
+# Each test job cancels its own stale run. Publication is serialised and never cancelled once
+# started; a complete commit-tagged release becomes Latest only after both assets are verified.
 jobs:
   gate:
     name: check-maintainability
@@ -28,9 +26,9 @@ jobs:
       group: gate-${{ github.ref }}-maintainability
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
@@ -40,7 +38,7 @@ jobs:
       - name: Record package footprint
         run: node tools/check-performance-budget.js --out performance-metrics.json
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-footprint-${{ github.sha }}
           path: performance-metrics.json
@@ -54,9 +52,9 @@ jobs:
       group: gate-${{ github.ref }}-popup
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
@@ -67,8 +65,8 @@ jobs:
 
   # The Settings page in Edge: switches, search, backup and import, clean-up, permissions, keys,
   # list status and a full reset, then section order, saved sites, Help and About, then Settings,
-  # the popup and the worker writing the config at the same moment. Each step runs even when one
-  # before it fails, so one run reports them all.
+  # the popup and the worker writing the config at the same moment, then the page engine on a real
+  # page. Each step runs even when one before it fails, so one run reports them all.
   browser-settings:
     name: real-settings-regression
     runs-on: windows-2025
@@ -77,9 +75,9 @@ jobs:
       group: gate-${{ github.ref }}-settings
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
@@ -100,8 +98,15 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-config-race.js
 
+      - name: Test the page engine, the bridge and a network rule on a real page in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-engine-smoke.js
+
   # The manifest's minimum_chrome_version, proven in that Chrome rather than assumed: Chrome for
-  # Testing at the minimum, pinned by version and SHA-256, runs the popup and Settings suites.
+  # Testing at the minimum, pinned by version and SHA-256, runs the popup and Settings suites and
+  # the page engine on a real page.
   # tools/test-download-links.js keeps the version here at the manifest's minimum. The tests only
   # run once that Chrome is in place, so a failed download cannot fall back to Edge and pass.
   browser-minimum:
@@ -117,9 +122,9 @@ jobs:
       WARDENONE_HEADLESS: '1'
       WARDENONE_BROWSER_NAME: 'Google Chrome'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
@@ -153,20 +158,18 @@ jobs:
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-config-race.js
 
-  # Every push that passes the gate rebuilds the rolling `latest-build` release and
-  # replaces the package attached to it, so the ordinary download always matches
-  # main. It is the only release: the old versioned ones were removed on
-  # 2026-09-04 because nothing linked to them and a stale copy on the page is
-  # only ever something to download by mistake.
+      - name: Test the page engine, the bridge and a network rule in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-engine-smoke.js
+
+  # Each passing push gets a commit-tagged release. The stable /releases/latest/download URL
+  # follows only a complete release, while a draft and its assets remain invisible to readers.
   rolling-build:
     name: publish-latest-build
     needs: [gate, browser-popup, browser-settings, browser-minimum]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # One publish at a time, and none cancelled once started: it moves the tag, then replaces the
-    # ZIP and checksum, then checks them, and stopping between those steps would leave them
-    # describing different commits. A newer push's publish waits its turn; while it waits, a
-    # still newer one replaces it, so the last to run is always the newest.
+    # A draft can be retried safely; an already published commit release is never overwritten.
     concurrency:
       group: publish-latest-build
       cancel-in-progress: false
@@ -175,11 +178,11 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
@@ -210,9 +213,10 @@ jobs:
       - name: Write the notes
         env:
           ATTESTATION_URL: ${{ steps.provenance.outputs.attestation-url }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Summarise commits since the previous rolling tag before moving it.
-          PREV="$(git rev-parse -q --verify refs/tags/latest-build || true)"
+          PREV_TAG="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          PREV="$(git rev-parse -q --verify "$PREV_TAG" 2>/dev/null || true)"
           if [ -n "$PREV" ] && [ "$PREV" != "$GITHUB_SHA" ]; then
             git log --no-merges --format='- %s' "$PREV..HEAD" > changes.txt
           else
@@ -243,8 +247,7 @@ jobs:
             echo
             echo '---'
             echo
-            echo "This is WardenOne's rolling build: the current state of \`main\`, repackaged after every"
-            echo 'change that passes the gate, so the download here is never behind the code.'
+            echo "This is WardenOne's build from \`main\`, packaged after the gate passed."
             echo
             echo "Version \`$(node -p "require('./manifest.json').version")\` · commit \`$(git rev-parse --short HEAD)\`"
             echo
@@ -262,33 +265,45 @@ jobs:
             echo '</details>'
           } > notes.md
 
-      - name: Move the rolling tag to this commit
-        run: |
-          git tag -f latest-build "$GITHUB_SHA"
-          git push -f origin latest-build
-
-      - name: Publish or refresh the rolling build
+      - name: Prepare the commit release as a draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Updated in place rather than recreated, so watchers are not notified of a
-          # new release on every push.
-          if gh release view latest-build >/dev/null 2>&1; then
-            gh release upload latest-build WardenOne-latest.zip WardenOne-latest.zip.sha256 --clobber
-            gh release edit latest-build --notes-file notes.md --prerelease=false --latest
+          BUILD_TAG="build-$GITHUB_SHA"
+          if gh release view "$BUILD_TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$BUILD_TAG" --json isDraft --jq .isDraft)" = true ]; then
+              gh release upload "$BUILD_TAG" WardenOne-latest.zip WardenOne-latest.zip.sha256 --clobber
+            fi
           else
-            gh release create latest-build WardenOne-latest.zip WardenOne-latest.zip.sha256 \
-              --title "Latest build (main)" \
-              --notes-file notes.md \
-              --latest
+            gh release create "$BUILD_TAG" WardenOne-latest.zip WardenOne-latest.zip.sha256 \
+              --target "$GITHUB_SHA" --title "Build $(git rev-parse --short HEAD)" \
+              --notes-file notes.md --draft
           fi
 
-      - name: Verify the assets served by GitHub
+      - name: Verify both assets before publication
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          BUILD_TAG="build-$GITHUB_SHA"
           mkdir -p downloaded-release
-          gh release download latest-build --pattern 'WardenOne-latest.zip*' --dir downloaded-release
+          gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.zip*' --dir downloaded-release
           cmp WardenOne-latest.zip downloaded-release/WardenOne-latest.zip
           cmp WardenOne-latest.zip.sha256 downloaded-release/WardenOne-latest.zip.sha256
           (cd downloaded-release && sha256sum --check WardenOne-latest.zip.sha256)
+
+      - name: Make the complete release Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BUILD_TAG="build-$GITHUB_SHA"
+          MAIN_SHA="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$MAIN_SHA" != "$GITHUB_SHA" ]; then
+            echo "main advanced to $MAIN_SHA; keeping $BUILD_TAG without changing Latest"
+            exit 0
+          fi
+          gh release edit "$BUILD_TAG" --draft=false --latest
+          test "$(gh release view --json tagName --jq .tagName)" = "$BUILD_TAG"
+          # The old fixed-tag asset URL would otherwise keep serving a stale ZIP.
+          if gh release view latest-build >/dev/null 2>&1; then
+            gh release delete latest-build --cleanup-tag --yes
+          fi

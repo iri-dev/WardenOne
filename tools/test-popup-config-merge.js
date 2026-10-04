@@ -132,8 +132,12 @@ function makeHarness(storedConfig) {
      by hand, and what it tests is the merge. It counts every take and release, so a save that
      keeps the lock shows up below. The real lock, across pages and the worker, is exercised in
      Edge by tools/browser-config-race.js. */
+  /* The real save record (stampConfigWrite, WO_CONFIG_WRITES_KEY) from config-lock.js; the lock and
+     the later check are stand-ins, the check recording what it was asked so a test can run it. */
+  vm.runInContext(require('./config-write-harness.js').LOCK_SOURCE, ctx, { filename: 'config-lock.js' });
   vm.runInContext('globalThis.__lock = { taken: 0, released: 0 };'
-    + 'function withConfigLock(task) { __lock.taken++; const held = task(); held.then(() => { __lock.released++; }); return held; }', ctx);
+    + 'function withConfigLock(task) { __lock.taken++; const held = task(); held.then(() => { __lock.released++; }); return held; }'
+    + 'globalThis.__confirms = []; function confirmConfigWrite(id, again, left) { __confirms.push({ id, again, left }); }', ctx);
   vm.runInContext(DEFAULTS_SRC + '\nlet config = Object.assign({}, DEFAULTS);\nlet savedConfigSnapshot;\n' + LIFTED, ctx);
   // Mirror load(): config is DEFAULTS + stored, and the snapshot is what storage holds.
   vm.runInContext(
@@ -301,17 +305,46 @@ function check(name, cond) {
   const writes = POPUP_JS.match(/storage\.local\.set\(\{\s*wardenone_config:/g) || [];
   check('exactly one place writes wardenone_config (inside persistConfig)', writes.length === 1);
   check('and it reads and writes under the config lock',
-    /function persistConfig[\s\S]{0,200}withConfigLock\(/.test(POPUP_JS));
-  check('that write uses the merged object, not the popup\'s copy',
-    /storage\.local\.set\(\{\s*wardenone_config:\s*next\s*\}/.test(POPUP_JS));
+    /function persistConfig[\s\S]{0,900}withConfigLock\(/.test(POPUP_JS));
+  check('that write uses the merged object, not the popup\'s copy, with its save record beside it',
+    /storage\.local\.set\(\{\s*wardenone_config:\s*next,\s*\[WO_CONFIG_WRITES_KEY\]:\s*stamp\.record\s*\}/.test(POPUP_JS));
+  check('and asks to be confirmed once the lock is let go',
+    /release\(\);\s*\}\s*if \(typeof onSaved === 'function'\) onSaved\(adopted\);\s*confirmConfigWrite\(writeId,/.test(POPUP_JS));
   check('persistConfig re-reads storage before writing',
-    /function persistConfig[\s\S]{0,800}storage\.local\.get\('wardenone_config'/.test(POPUP_JS));
+    /function persistConfig[\s\S]{0,1500}storage\.local\.get\(\['wardenone_config'/.test(POPUP_JS));
   check('saveConfig routes through persistConfig',
     /function saveConfig[\s\S]{0,200}persistConfig\(/.test(POPUP_JS));
   check('the popup adopts external config changes',
     /changes\.wardenone_config\)\s*adoptExternalConfigChange/.test(POPUP_JS));
 }
 
+
+// ---------------------------------------------------------------------------
+// 11. A private window has its own lock, so a save there can land over this one without having
+//     read it. The save is then made again: the same keys and values, on what is stored now, and
+//     the popup's own copy -- which already counts them as saved -- is left alone.
+// ---------------------------------------------------------------------------
+{
+  const h = makeHarness({ adShield: false, blockTrackers: true });
+  h.run('config.adShield = true; persistConfig(function () {});');
+  h.drain(); h.drain();
+  check('a save asks to be confirmed, with its own id',
+    h.run('__confirms.length === 1 && typeof __confirms[0].again === "function" && /^[0-9a-z]{8,}$/.test(__confirms[0].id)'));
+  check('and records that id beside the config',
+    !!h.store.wardenone_config_writes && h.store.wardenone_config_writes.ids[0] === h.run('__confirms[0].id'));
+  /* A private window writes over it without having read it, then the popup gets a new pending edit. */
+  h.store.wardenone_config = Object.assign({}, h.store.wardenone_config, { adShield: false, forceHttps: true });
+  h.store.wardenone_config_writes = { ids: ['someone-else'] };
+  h.run('config.removeOverlays = false;');
+  h.run('__confirms[0].again(1);');
+  h.drain(); h.drain();
+  check('the retry makes the same change again', h.store.wardenone_config.adShield === true);
+  check('on top of what the other window wrote', h.store.wardenone_config.forceHttps === true);
+  check('and only that change, not an edit made since', h.store.wardenone_config.removeOverlays !== false);
+  check('it is recorded as following the other window\'s save', h.store.wardenone_config_writes.ids[1] === 'someone-else');
+  check('and asks to be confirmed in turn, with one try fewer', h.run('__confirms.length === 2 && __confirms[1].left === 1'));
+  check('the popup\'s own copy is left alone by the retry', h.run('config.removeOverlays === false'));
+}
 
 // ---------------------------------------------------------------------------
 // 10. A read that fails is not an empty config: nothing is written, the caller hears of it, and

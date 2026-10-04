@@ -8,6 +8,9 @@
    popup turns another, and the worker mutes a notification type. Before the config lock
    (config-lock.js) the Settings change was lost in 20 of 40 tries, the popup's in 3 and the
    worker's in 34. Every change must now survive every try.
+   Then the same with a private window: split incognito mode gives it its own worker and pages, with
+   their own Web Locks, over the same storage. There the save record and its check (config-lock.js)
+   are what keep a change: without them a regular Settings change was lost in 19 of 40 tries.
    Run: node tools/browser-config-race.js
    It drives the unpacked extension in Edge (tools/perf-profile.js), so it runs in CI's
    real-settings-regression job rather than the local gate; tools/test-config-write-lock.js,
@@ -23,6 +26,7 @@ const profile = require('./perf-profile.js');
 const root = path.resolve(__dirname, '..');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const TRIALS = Number(process.env.WARDENONE_RACE_TRIALS || 40);
+const PRIVATE_TRIALS = Number(process.env.WARDENONE_PRIVATE_RACE_TRIALS || 15);
 /* Mute types are letters and underscores only. */
 const muteType = (i) => 'race_' + i.toString(26).split('').map((c) => String.fromCharCode(97 + parseInt(c, 26))).join('');
 
@@ -35,7 +39,7 @@ async function run() {
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
-    const extension = await profile.extensionReady(cdp, port, version);
+    let extension = await profile.extensionReady(cdp, port, version);
     await profile.closeExtensionTabs(cdp, port, extension.id);
     const evaluate = async (sessionId, expression) => {
       const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
@@ -81,6 +85,64 @@ async function run() {
     }
     assert.deepEqual(lost, { settings: [], popup: [], worker: [] }, 'a change made at the same moment as another was lost, by trial: ' + JSON.stringify(lost));
     console.log('[ok] config writes from Settings, the popup and the worker all survived ' + TRIALS + ' simultaneous tries in ' + browser.Browser);
+
+    /* ---- A private window ----
+       A DevTools browser context is an off-the-record profile, as a private window's is, and
+       WardenOne runs there once it is allowed in incognito: its own worker, its own pages, the same
+       storage. Allowing it goes through the browser's own extensions page, and reloads WardenOne. */
+    const attach = async (targetId) => {
+      const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+      await cdp.send('Runtime.enable', {}, sessionId);
+      return sessionId;
+    };
+    const { targetId: extensionsPage } = await cdp.send('Target.createTarget', { url: 'chrome://extensions/' });
+    const extensionsSession = await attach(extensionsPage);
+    await until(extensionsSession, "!!(chrome.developerPrivate && chrome.developerPrivate.updateExtensionConfiguration)", 'the extensions page');
+    assert.equal(await evaluate(extensionsSession, `new Promise((resolve) => chrome.developerPrivate.updateExtensionConfiguration({ extensionId: ${JSON.stringify(extension.id)}, incognitoAccess: true }, () => resolve(chrome.runtime.lastError ? chrome.runtime.lastError.message : 'allowed')))`),
+      'allowed', 'WardenOne allowed in incognito');
+    await cdp.send('Target.closeTarget', { targetId: extensionsPage });
+    await sleep(2000);
+    extension = await profile.extensionReady(cdp, port, version);
+    const { browserContextId: privateContext } = await cdp.send('Target.createBrowserContext', {});
+    const { targetId: privateSettingsId } = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/settings.html`, browserContextId: privateContext });
+    const regularSettings = await open('settings.html');
+    const privateSettings = await attach(privateSettingsId);
+    await until(regularSettings, "typeof loaded !== 'undefined' && loaded === true", 'regular Settings to load');
+    await until(privateSettings, "typeof loaded !== 'undefined' && loaded === true", 'private Settings to load');
+    assert.equal(await evaluate(regularSettings, 'chrome.extension.inIncognitoContext'), false, 'the regular page is not incognito');
+    assert.equal(await evaluate(privateSettings, 'chrome.extension.inIncognitoContext'), true, 'the private page runs in WardenOne\'s incognito context');
+    let privateWorker = null;
+    for (const deadline = Date.now() + 15000; !privateWorker && Date.now() < deadline; await sleep(200)) {
+      privateWorker = (await cdp.send('Target.getTargets')).targetInfos.find((t) => t.type === 'service_worker'
+        && t.url === `chrome-extension://${extension.id}/background.js` && t.browserContextId === privateContext) || null;
+    }
+    assert(privateWorker, 'the private window has its own WardenOne worker');
+    const privateWorkerSession = await attach(privateWorker.targetId);
+    await evaluate(regularSettings, "new Promise((r) => chrome.storage.local.set({ wardenone_race_probe: 'regular' }, r))");
+    assert.equal(await evaluate(privateSettings, "new Promise((r) => chrome.storage.local.get('wardenone_race_probe', (d) => r(d.wardenone_race_probe)))"), 'regular',
+      'the private window shares the regular storage, which is what makes this a race');
+    await evaluate(regularSettings, "new Promise((r) => chrome.storage.local.remove('wardenone_race_probe', r))");
+
+    const lostPrivate = { regular: [], privatePage: [], privateWorker: [] };
+    for (let i = 0; i < PRIVATE_TRIALS; i++) {
+      const want = i % 2 === 0;
+      const type = muteType(1000 + i);
+      await Promise.all([
+        evaluate(regularSettings, `writeConfig({ deAmp: ${want} }).then(() => true)`),
+        evaluate(privateSettings, `writeConfig({ capReferrer: ${want} }).then(() => true)`),
+        evaluate(privateWorkerSession, `muteToastType('${type}', 60).then(() => true)`),
+      ]);
+      /* Long enough for each write's two checks, and a write made again if one was lost. */
+      await sleep(2500);
+      const cfg = await evaluate(regularSettings, "new Promise((r) => chrome.storage.local.get('wardenone_config', (d) => r(d.wardenone_config)))");
+      if (cfg.deAmp !== want) lostPrivate.regular.push(i);
+      if (cfg.capReferrer !== want) lostPrivate.privatePage.push(i);
+      if (!(cfg.toastMutes && cfg.toastMutes[type])) lostPrivate.privateWorker.push(i);
+    }
+    assert.deepEqual(lostPrivate, { regular: [], privatePage: [], privateWorker: [] },
+      'a change made at the same moment as one in a private window was lost, by trial: ' + JSON.stringify(lostPrivate));
+    console.log('[ok] config writes from regular Settings, private Settings and the private window\'s worker all survived '
+      + PRIVATE_TRIALS + ' simultaneous tries in ' + browser.Browser);
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const resolved = path.resolve(dir);
