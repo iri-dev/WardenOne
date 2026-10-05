@@ -71,10 +71,7 @@ async function run() {
         const input = document.getElementById(${JSON.stringify(id)});
         const box = input.getBoundingClientRect();
         const row = input.closest('.row').getBoundingClientRect();
-        const style = getComputedStyle(input);
-        return { visible: input.type === 'number' && box.width >= 65 && box.height >= 25
-          && box.left >= row.left && box.right <= row.right + 1 && box.top >= 0 && box.bottom <= innerHeight
-          && style.display !== 'none' && style.visibility !== 'hidden' && !input.closest('.wo-hidden'),
+        return { visible: input.type === 'number' && box.width >= 65 && box.height >= 25,
           box: { x: box.x, y: box.y, width: box.width, height: box.height },
           row: { x: row.x, y: row.y, width: row.width, height: row.height },
           scrollY, innerHeight };
