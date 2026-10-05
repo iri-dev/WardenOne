@@ -151,7 +151,7 @@ async function memoryNeverSleepList() {
 
 // Add or remove one host. Read-modify-write against storage, under the config lock
 // (updateStoredConfig), so a popup or Settings save that landed in between is not reverted.
-async function memoryToggleNeverSleep(host) {
+async function memoryChangeNeverSleep(host, desired) {
   const h = normalizeAllowlistHost(host);
   if (!h) return { ok: false, error: 'WardenOne could not read a site from this page.' };
   try {
@@ -159,23 +159,30 @@ async function memoryToggleNeverSleep(host) {
     await updateStoredConfig((cfg) => {
       const list = normalizeAllowlistHosts(cfg.memoryNeverSleepHosts || [], MEMORY_NEVER_SLEEP_MAX);
       const on = list.indexOf(h) >= 0;
-      if (!on && list.length >= MEMORY_NEVER_SLEEP_MAX) {
+      const next = desired == null ? !on : desired;
+      if (next && !on && list.length >= MEMORY_NEVER_SLEEP_MAX) {
         result = { ok: false, error: 'Your never-sleep list is full at ' + MEMORY_NEVER_SLEEP_MAX
           + ' sites. Take one off it before adding another.' };
         return false;
       }
-      cfg.memoryNeverSleepHosts = on ? list.filter((d) => d !== h) : list.concat([h]);
-      result = { ok: true, on: !on, host: h, shieldOn: cfg.memoryShield !== false };
+      result = { ok: true, on: next, host: h, shieldOn: cfg.memoryShield !== false };
+      if (next === on) return false;
+      cfg.memoryNeverSleepHosts = next ? list.concat([h]) : list.filter((d) => d !== h);
     });
     return result;
   } catch (e) { return { ok: false, error: String(e) }; }
+}
+function memoryToggleNeverSleep(host) { return memoryChangeNeverSleep(host, null); }
+function memorySetNeverSleep(host, on) {
+  return typeof on === 'boolean' ? memoryChangeNeverSleep(host, on)
+    : Promise.resolve({ ok: false, error: 'Expected an on or off choice.' });
 }
 
 // Is a tab safe to put to sleep? Returns null if safe, else a reason it was kept.
 function tabKeepReason(tab, cfg) {
   if (!tab || tab.discarded) return 'already asleep';
   if (tab.active) return 'active tab';
-  if (tab.audible) return 'playing audio';
+  if (cfg.memoryNeverAudio && tab.audible) return 'playing audio';
   if (cfg.memoryNeverPinned && tab.pinned) return 'pinned';
   const url = tab.url || tab.pendingUrl || '';
   if (!/^https?:\/\//i.test(url)) return 'browser/internal page'; // chrome://, about:, extension pages, new tab
@@ -193,7 +200,7 @@ function tabKeepReason(tab, cfg) {
     const host = new URL(url).hostname;
     if (hostMatchesAllowlist(host, cfg._allowlist || [])) return 'allowlisted';
   } catch (_) {}
-  return null; // safe to discard (audio/camera covered by audible + the content-side form check below is best-effort)
+  return null; // Audio follows its switch; camera/mic and forms use the live check below.
 }
 
 // Ask a tab's bridge whether it has unsaved form input or active camera/mic.

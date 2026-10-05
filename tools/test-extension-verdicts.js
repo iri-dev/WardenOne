@@ -18,6 +18,7 @@ const SOURCE = fs.readFileSync(path.join(ROOT, 'background-extension-reputation.
 const DB = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension-reputation.json'), 'utf8'));
 
 const BITWARDEN = 'nngceckbapebfimnlniiiahkandclblb';
+const VOLUME_MASTER = 'jghecgabfgfdldnmbfkhmffcabddioke';
 const UBLOCK = Object.keys(DB.entries).find((id) => /uBlock/i.test(DB.entries[id].name));
 const NORDVPN = Object.keys(DB.entries).find((id) => /NordVPN/i.test(DB.entries[id].name));
 const GREAT_SUSPENDER = Object.keys(DB.entries).find((id) => /Great Suspender/i.test(DB.entries[id].name));
@@ -100,6 +101,47 @@ function assess(id, overrides) {
     a.recommendedAction);
   check('the powerful access is still listed, just not as a warning',
     a.capabilities.expected.length >= 2, JSON.stringify(a.capabilities.expected.map((s) => s.id)));
+}());
+
+(function volumeMasterGetsOnlyItsObservedAudioContract() {
+  const permissions = ['activeTab', 'offscreen', 'tabCapture', 'tabs', 'storage'];
+  const current = assess(VOLUME_MASTER, { version: '2.4.0', permissions });
+  check('the official Volume Master install is not an attention warning',
+    current.verdict.code === 'recognized_expected' && !current.verdict.needsAttention,
+    current.verdict.code + ' / ' + current.recommendedAction);
+  check('only tab capture is contracted as powerful access',
+    JSON.stringify(current.capabilities.expected.map((item) => item.id)) === '["tab-media-capture"]'
+      && current.capabilities.unexpected.length === 0,
+    JSON.stringify(current.capabilities));
+  check('the audio purpose is explained without calling the extension safe',
+    /capture audio.*tab/i.test(current.recommendedAction) && !/safe|clean/i.test(current.recommendedAction),
+    current.recommendedAction);
+
+  const addedAccess = [
+    ['all-site access', { hostPermissions: ['<all_urls>'] }, 'all-site-data'],
+    ['history', { permissions: permissions.concat('history') }, 'history-access'],
+    ['screen capture', { permissions: permissions.concat('desktopCapture') }, 'screen-capture-request'],
+    ['debugger', { permissions: permissions.concat('debugger') }, 'debugger-control'],
+  ];
+  addedAccess.forEach(([label, extra, signature]) => {
+    const result = assess(VOLUME_MASTER, Object.assign({ version: '2.4.0', permissions }, extra));
+    check('Volume Master gaining ' + label + ' still warns',
+      result.verdict.code === 'unexpected_capability' && result.verdict.needsAttention
+        && result.capabilities.unexpected.some((item) => item.id === signature),
+      result.verdict.code + ' / ' + JSON.stringify(result.capabilities.unexpected.map((item) => item.id)));
+  });
+  const wrongName = assess(VOLUME_MASTER, { name: 'Unrelated Recorder', permissions });
+  check('a different name at the same ID does not inherit recognition',
+    wrongName.reputation.status === 'no_record' && wrongName.verdict.needsAttention,
+    wrongName.reputation.status + ' / ' + wrongName.verdict.code);
+  const copiedName = assess('abcdefghijklmnopabcdefghijklmnop', { name: 'Volume Master', permissions });
+  check('a copied name at another ID does not inherit recognition',
+    copiedName.reputation.status !== 'recognized_identity' && copiedName.verdict.needsAttention,
+    copiedName.reputation.status + ' / ' + copiedName.verdict.code);
+  const sideloaded = assess(VOLUME_MASTER, { permissions, installType: 'development' });
+  check('an unpacked copy with the official ID still warns',
+    sideloaded.verdict.code === 'identity_source_mismatch' && sideloaded.verdict.needsAttention,
+    sideloaded.verdict.code);
 }());
 
 (function theOtherRecognisedKindsAreAlsoQuiet() {
@@ -197,6 +239,7 @@ function assess(id, overrides) {
   const profiles = DB.capabilityProfiles || {};
   const known = new Set((DB.capabilitySignatures || []).map((signature) => signature.id).concat([
     'all-site-data', 'tab-metadata', 'history-access', 'cookie-access', 'network-observation',
+    'tab-media-capture',
     'blocking-web-request', 'declarative-network-control', 'traffic-proxy', 'debugger-control',
     'extension-management', 'native-program-bridge', 'clipboard-read', 'downloads-control',
     'script-injection', 'script-everywhere', 'session-data-everywhere', 'wide-finite-host-set',

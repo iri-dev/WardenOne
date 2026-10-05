@@ -147,7 +147,7 @@ section('the Store tree', () => {
   TREE = tool.buildStoreTree({ treeish: staged.stdout.trim() });
   check('the replay files are gone', ['twitch-rewind.js', 'twitch-vod-rewind.js'].every((f) => TREE.removed.includes(f) && !TREE.files.has(f)), TREE.omittedFiles);
   check('the Memory Shield module remains', TREE.files.has('background-memory.js') && !TREE.removed.includes('background-memory.js'));
-  check('EyeShield and its preload files remain', ['eyeshield.js', 'eyeshield-profiles.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((f) => TREE.files.has(f) && !TREE.removed.includes(f)));
+  check('EyeShield and its preload files remain', ['eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js'].every((f) => TREE.files.has(f) && !TREE.removed.includes(f)));
   check('tooling, sources, docs, the site and the workflow are not in the package', !Array.from(TREE.files.keys()).some((f) => /^(?:tools|src|docs|site|\.github)\//.test(f)));
   check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'NOTICE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
   /* Every document in the package is there on purpose (REL-03): the repository's own notes are not. */
@@ -199,6 +199,9 @@ function workerRealm(store, extra) {
   parts.push(grabFn(workerText, 'eyeShieldPreloadFile'));
   parts.push(grabFn(workerText, 'eyeShieldScriptFiles'));
   parts.push(grabFn(workerText, 'eyeShieldRegistrationScope'));
+  parts.push(grabFn(workerText, 'eyeShieldUsesBootstrap'));
+  parts.push(grabFn(workerText, 'eyeShieldActiveProfileHosts'));
+  parts.push("let eyeShieldBootstrapCatchupKey = '';");
   parts.push(grabFn(workerText, 'eraseEyeShieldSiteMarkerFromOpenTabs'));
   parts.push(grabFn(workerText, 'reconcileEyeShieldInjection'));
   // The integrity list, as the repair handler assembles it, up to the loop that fetches it.

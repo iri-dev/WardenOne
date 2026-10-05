@@ -101,9 +101,14 @@ async function main() {
     let css = '';
     ctx.document.createElement = () => ({ set textContent(value) { css = value; } });
     vm.runInContext(src, ctx);
-    ok('ad-only rich-grid wrappers collapse without hiding video cards',
-      css.includes('ytd-rich-item-renderer:has(> #content > :is(ytd-ad-slot-renderer,')
-        && css.includes('ytd-promoted-video-renderer):only-child)')
+    const wrapperSelector = css.slice(0, css.indexOf(',ytd-ad-slot-renderer'));
+    ok('ad rich-grid wrappers collapse when a menu sibling remains',
+      wrapperSelector.includes('ytd-rich-item-renderer:has(> #content > :is(ytd-ad-slot-renderer,')
+        && wrapperSelector.includes('ytd-promoted-video-renderer))')
+        && !wrapperSelector.includes(':only-child'));
+    ok('ordinary video cards stay outside the wrapper selector',
+      wrapperSelector.includes('> #content > :is(')
+        && !wrapperSelector.includes('ytd-rich-grid-media')
         && css.includes('ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer'));
   }
 

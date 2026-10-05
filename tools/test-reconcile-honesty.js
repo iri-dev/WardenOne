@@ -114,6 +114,8 @@ function worker({ session, config, configUnreadable, behaviour }) {
     eyeShieldThemingActive: () => false,
     eyeShieldPreloadFile: () => '',
     eyeShieldRegistrationScope: () => ({ matches: ['<all_urls>'], excludeMatches: [] }),
+    eyeShieldUsesBootstrap: () => false,
+    eyeShieldActiveProfileHosts: () => [],
     consentRejectActive: () => false,
     searchSponsoredCleanupActive: () => false,
     /* the failure paths used to run a second list of appliers through these (BUG-08); they are

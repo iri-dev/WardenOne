@@ -1,13 +1,18 @@
 {
   "schema": 1,
-  "datasetVersion": "2026.09.30.476",
-  "generatedAt": "2026-09-30T13:48:26Z",
+  "datasetVersion": "2026.10.04.477",
+  "generatedAt": "2026-10-04T18:20:42Z",
   "description": "Local exact-ID extension intelligence with three deliberately separate states: documented incidents, publisher-verified identities with explicit capability contracts, and catalogue-only Chrome Web Store listings. A catalogue match identifies a listing name only; it never proves safety or excuses access. Runtime lookups and reviews stay on this device.",
   "sources": {
     "chatgpt-chrome-official": {
       "label": "OpenAI ChatGPT Chrome Web Store listing",
       "reference": "https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg",
       "retrievedAt": "2026-09-30"
+    },
+    "volume-master-official": {
+      "label": "Volume Master Chrome Web Store listing by Peta Sittek",
+      "reference": "https://chromewebstore.google.com/detail/volume-master/jghecgabfgfdldnmbfkhmffcabddioke",
+      "retrievedAt": "2026-10-04"
     },
     "great-suspender-incident": {
       "label": "The Great Suspender security incident record",
@@ -440,6 +445,13 @@
         "script-everywhere",
         "all-site-data",
         "script-injection"
+      ]
+    },
+    "audio_tool": {
+      "label": "a tab audio volume tool",
+      "needs": "capture audio from a tab you select to adjust its volume",
+      "expected": [
+        "tab-media-capture"
       ]
     },
     "keyboard_navigation": {
@@ -2402,16 +2414,26 @@
     },
     "jghecgabfgfdldnmbfkhmffcabddioke": {
       "name": "Volume Master",
-      "status": "catalogued_listing",
-      "reason": "This exact ID appears in the local Chrome Web Store catalogue as Volume Master. It establishes the listing name only; publisher identity and safety are not verified, and no capability is excused by this record.",
+      "status": "recognized_identity",
+      "reason": "This exact ID matches Peta Sittek's Volume Master Chrome Web Store listing. Tab capture fits its audio-volume purpose; this identity match does not certify future updates or excuse additional access.",
       "categories": [
         "accessibility"
       ],
       "affected": {
         "kind": "all_versions"
       },
-      "source": "webstore-reference-2024",
-      "reviewedAt": "2026-08-30"
+      "source": "volume-master-official",
+      "reviewedAt": "2026-10-04",
+      "capabilityProfile": "audio_tool",
+      "capabilityContract": {
+        "expectedMode": "replace",
+        "expected": [
+          "tab-media-capture"
+        ],
+        "needs": "capture audio from a tab you select to adjust its volume",
+        "evidence": "The exact-ID Chrome Web Store listing identifies Peta Sittek and describes volume control for tabs. The installed 2.4.0 manifest declares tabCapture, tabs, activeTab, offscreen and storage, with no host permissions; additional powerful access remains outside this contract.",
+        "reference": "https://chromewebstore.google.com/detail/volume-master/jghecgabfgfdldnmbfkhmffcabddioke"
+      }
     },
     "jhhjdfldilccfllhlbjdlhknlfbhpgeg": {
       "name": "Night Theme - Dark Mode",
