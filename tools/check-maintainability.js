@@ -168,6 +168,7 @@ function checkContentBuild() {
   'download-review.js',
   'eyeshield.js',
   'eyeshield-profiles.js',
+  'eyeshield-bootstrap.js',
   'eyeshield-sites.js',
   'eyeshield-preload-dark.js',
   'eyeshield-preload-ultra.js',

@@ -94,6 +94,10 @@ for (const mode of MODES) {
 {
   const keyBlock = between(BG, "cfg.blockAllCookies === true ? 1 : 0,", "].join('|');", 'the refresh state key');
   check('the refresh state key includes the preload file, not only on/off', /eyeShieldThemingActive\(cfg\) \? 1 : 0,[\s\S]*?eyeShieldPreloadFile\(cfg\),/.test(keyBlock));
+  check('adding a profile under active global theming changes the registration key',
+    /eyeShieldUsesBootstrap\(cfg\) \? 1 : 0/.test(keyBlock));
+  check('a Custom profile becoming active on an open site changes the registration key',
+    /eyeShieldActiveProfileHosts\(cfg\)\.join\(','\)/.test(keyBlock));
 }
 
 /* ---- 3. the worker: hint first, swapped on change, dropped for off, erased on exit ------- */
@@ -109,7 +113,12 @@ function worker(opts) {
         registerContentScripts: async (list) => { state.registered.push(...list); },
         updateContentScripts: async (list) => { state.updated.push(...list); },
         unregisterContentScripts: async (q) => { state.unregistered.push(...(q.ids || [])); },
-        getRegisteredContentScripts: async () => o.registered || [],
+        getRegisteredContentScripts: async () => {
+          const registered = (o.registered || []).map((r) => r.id === 'wo-eyeshield-dynamic'
+            ? Object.assign({ matches: ['<all_urls>'], excludeMatches: [] }, r) : r);
+          return registered.some((r) => r.id === 'wo-eyeshield-dynamic') && !registered.some((r) => r.id === 'wo-eyeshield-sites-dynamic') && !o.omitSites
+            ? [...registered, { id: 'wo-eyeshield-sites-dynamic', matches: ['<all_urls>'], excludeMatches: [] }] : registered;
+        },
         executeScript: (spec, cb) => { state.executed.push(spec); cb && cb(); },
       },
       tabs: { query: (q, cb) => cb(o.tabs || []) },
@@ -127,6 +136,9 @@ function worker(opts) {
     grabFn(BG, 'eyeShieldPreloadFile'),
     grabFn(BG, 'eyeShieldScriptFiles'),
     grabFn(BG, 'eyeShieldRegistrationScope'),
+    grabFn(BG, 'eyeShieldUsesBootstrap'),
+    grabFn(BG, 'eyeShieldActiveProfileHosts'),
+    "let eyeShieldBootstrapCatchupKey = '';",
     grabFn(BG, 'eraseEyeShieldSiteMarkerFromOpenTabs'),
     grabFn(BG, 'reconcileEyeShieldInjection'),
     'this.api = { reconcileEyeShieldInjection, eyeShieldScriptFiles };',
@@ -183,20 +195,39 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
   {
     const w = worker();
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark', eyeShieldSites: { 'github.com': { mode: 'off' } } });
-    check('a site Off profile excludes the host from core and site-theme registration',
-      w.state.registered.length === 2 && w.state.registered.every((r) => r.excludeMatches.includes('*://github.com/*') && r.excludeMatches.includes('*://www.github.com/*')));
+    check('a site Off profile registers only the small frame bootstrap',
+      w.state.registered.length === 1 && JSON.stringify(filesOf(w)) === '["eyeshield-bootstrap.js"]'
+      && JSON.stringify(w.state.registered[0].matches) === '["<all_urls>"]');
   }
   {
     const w = worker();
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'off', eyeShieldSites: { 'youtube.com': { mode: 'custom', theme: 'dark' } } });
-    check('a custom-only setup loads EyeShield only on that host',
-      w.state.registered.length === 2 && w.state.registered.every((r) => JSON.stringify(r.matches) === '["*://youtube.com/*","*://www.youtube.com/*"]'));
+    check('a custom-only setup sends the bootstrap to every frame origin',
+      w.state.registered.length === 1 && JSON.stringify(filesOf(w)) === '["eyeshield-bootstrap.js"]'
+      && w.state.registered[0].allFrames === true && JSON.stringify(w.state.registered[0].matches) === '["<all_urls>"]');
   }
   {
     const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js'], matches: ['<all_urls>'] }] });
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark', eyeShieldSites: { 'github.com': { mode: 'off' } } });
-    check('adding Off updates both existing registrations',
-      w.state.updated.length === 2 && w.state.updated.every((r) => r.excludeMatches.includes('*://github.com/*')));
+    check('adding Off swaps the core for the bootstrap and removes direct site themes',
+      w.state.updated.length === 1 && JSON.stringify(w.state.updated[0].js) === '["eyeshield-bootstrap.js"]'
+      && w.state.unregistered.includes('wo-eyeshield-sites-dynamic'));
+  }
+  {
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-bootstrap.js'], matches: ['<all_urls>'] }], omitSites: true });
+    await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark' });
+    check('removing the last profile restores direct document-start injection and top-frame themes',
+      w.state.updated.length === 1 && JSON.stringify(w.state.updated[0].js) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield.js"]'
+      && w.state.registered.some((script) => script.id === 'wo-eyeshield-sites-dynamic') && w.state.injected);
+  }
+  {
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-bootstrap.js'], matches: ['<all_urls>'] }], omitSites: true });
+    const profile = (theme) => ({ enabled: true, eyeShieldMode: 'off', eyeShieldSites: { 'youtube.com': { mode: 'custom', theme } } });
+    await w.api.reconcileEyeShieldInjection(profile('off'));
+    w.state.injected = false;
+    await w.api.reconcileEyeShieldInjection(profile('dark'));
+    check('activating Custom on an open tab triggers catch-up without changing registration',
+      w.state.injected && w.state.updated.length === 0);
   }
   {
     /* Registered; theming switched off entirely: unregister, and erase the legacy key from open tabs. */

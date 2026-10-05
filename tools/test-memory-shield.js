@@ -231,6 +231,7 @@ async function main() {
   await testDuplicateCloseSafety();
   await testSweepAlarmFollowsTheSetting();
   await testColdStartsKeepTheSweepDeadline();
+  await testAudioExemptionFollowsSwitch();
   await testNeverSleepIsExactAndHonoured();
   await testTabActionsByHand();
 
@@ -748,6 +749,20 @@ async function testColdStartsKeepTheSweepDeadline() {
 // awake by an example.test entry, and taking that entry away would silently
 // change every other tab on the domain too.
 // ---------------------------------------------------------------------------
+async function testAudioExemptionFollowsSwitch() {
+  for (const [neverAudio, expected] of [[true, 0], [false, 1]]) {
+    const run = loadMemoryShield({
+      config: { memoryShield: true, memoryMode: 'balanced', memoryNeverAudio: neverAudio },
+      tabs: [sleepableTab(1, 120, { audible: true })],
+    });
+    const config = await run.sandbox.getMemoryConfig();
+    assert.strictEqual(run.memory.tabKeepReason(run.state.tabs[0], config), neverAudio ? 'playing audio' : null);
+    const result = await run.sandbox.memorySweep('alarm');
+    assert.strictEqual(result.slept, expected, 'the audio switch must govern the timed sweep');
+    assert.deepStrictEqual(run.state.discarded, expected ? [1] : []);
+  }
+}
+
 async function testNeverSleepIsExactAndHonoured() {
   const { memory } = loadMemoryShield();
   const base = Object.assign({}, memory.MEMORY_DEFAULTS, {
@@ -774,6 +789,15 @@ async function testNeverSleepIsExactAndHonoured() {
   const off = await store.sandbox.memoryToggleNeverSleep('ordinary.example');
   assert.strictEqual(off.on, false, 'the same entry did not take the mark back off');
   assert.deepStrictEqual(Array.from(await store.sandbox.memoryNeverSleepList()), []);
+  assert.strictEqual((await store.sandbox.memorySetNeverSleep('https://www.youtube.com/watch?v=abc', true)).host,
+    'youtube.com', 'the manager reports the host it actually saved');
+  assert.strictEqual((await store.sandbox.memorySetNeverSleep('youtube.com', true)).on, true);
+  assert.deepStrictEqual(Array.from(await store.sandbox.memoryNeverSleepList()), ['youtube.com'],
+    'adding an already saved site must not toggle it off');
+  assert.strictEqual((await store.sandbox.memorySetNeverSleep('youtube.com', false)).on, false);
+  assert.deepStrictEqual(Array.from(await store.sandbox.memoryNeverSleepList()), []);
+  assert.strictEqual((await store.sandbox.memorySetNeverSleep('youtube.com', 'true')).ok, false,
+    'the worker rejects a non-boolean change');
 
   // And the sweep -- the thing the mark exists to stop -- actually honours it.
   const marked = loadMemoryShield({

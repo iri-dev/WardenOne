@@ -4900,6 +4900,93 @@ function featureOmitted(id) { return OMITTED_FEATURES.indexOf(id) !== -1; }
   if (featureOmitted('memoryShield')) return;
   const modeWrap = $('mem-modes');
   if (!modeWrap) return;
+  const siteInput = $('mem-site-input');
+  const siteAdd = $('mem-site-add');
+  const siteList = $('mem-site-list');
+  const siteCurrent = $('mem-site-add-current');
+  const siteStatus = $('mem-site-status');
+  let currentHost = '';
+  let savedHosts = [];
+  let siteRequest = 0;
+  let siteBusy = false;
+  const showSiteStatus = (message) => { siteStatus.textContent = message; siteStatus.hidden = false; };
+  const paintCurrent = () => {
+    siteCurrent.disabled = siteBusy || !currentHost || savedHosts.includes(currentHost);
+    siteCurrent.title = currentHost ? currentHost : 'Open a website first';
+  };
+  const paintSites = () => {
+    siteList.replaceChildren();
+    if (!savedHosts.length) {
+      const empty = document.createElement('div');
+      empty.className = 'desc';
+      empty.textContent = 'No saved sites yet.';
+      siteList.appendChild(empty);
+    }
+    savedHosts.forEach((host) => {
+      const row = document.createElement('div');
+      row.className = 'memory-sites-list-item';
+      const name = document.createElement('span');
+      name.textContent = host;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', 'Remove ' + host + ' from never-sleep sites');
+      remove.disabled = siteBusy;
+      remove.addEventListener('click', () => changeSite(host, false));
+      row.append(name, remove);
+      siteList.appendChild(row);
+    });
+    paintCurrent();
+  };
+  const refreshSites = () => {
+    const request = ++siteRequest;
+    chrome.runtime.sendMessage({ kind: 'memory-never-sleep-list' }, (result) => {
+      if (request !== siteRequest) return;
+      if (chrome.runtime.lastError || !result || !result.ok || !Array.isArray(result.hosts)) {
+        showSiteStatus('Could not load never-sleep sites.');
+        return;
+      }
+      savedHosts = result.hosts;
+      paintSites();
+    });
+  };
+  const changeSite = (host, on) => {
+    if (siteBusy) return;
+    siteBusy = true;
+    siteAdd.disabled = true;
+    paintSites();
+    chrome.runtime.sendMessage({ kind: 'memory-never-sleep-set', host, on }, (result) => {
+      siteBusy = false;
+      siteAdd.disabled = false;
+      const error = chrome.runtime.lastError;
+      if (error || !result || !result.ok) showSiteStatus((result && result.error) || (error && error.message) || 'Could not save this site.');
+      else {
+        if (on) siteInput.value = '';
+        showSiteStatus(result.host + (on ? ' is kept awake.' : ' can sleep again.'));
+      }
+      refreshSites();
+    });
+  };
+  siteAdd.addEventListener('click', () => changeSite(siteInput.value.trim(), true));
+  siteInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); siteAdd.click(); }
+  });
+  siteCurrent.addEventListener('click', () => { if (currentHost) changeSite(currentHost, true); });
+  const refreshCurrent = () => activeTabHost((host) => {
+    chrome.runtime.sendMessage({ kind: 'memory-never-sleep-state', host }, (result) => {
+      currentHost = chrome.runtime.lastError || !result || !result.ok ? '' : result.host;
+      paintCurrent();
+    });
+  });
+  chrome.tabs.onActivated.addListener(refreshCurrent);
+  chrome.tabs.onUpdated.addListener((_tabId, change, tab) => {
+    if (change.url && tab.active) refreshCurrent();
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.wardenone_config) refreshSites();
+  });
+  refreshCurrent();
+  refreshSites();
   const paintModes = paintMemoryModes; // hoisted; also called by applyToUI on load
   document.querySelectorAll('.mem-mode').forEach((b) => {
     b.addEventListener('click', () => {

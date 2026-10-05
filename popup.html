@@ -403,6 +403,25 @@
   .interface-order-row > div { flex: 1; min-width: 0; }
   .interface-order-row .btn { flex: none; width: 70px; padding: 11px 8px; }
   .row:last-child { border-bottom: none; }
+  .memory-break { margin-top: 7px; padding-top: 15px; }
+  .memory-sites { display: block; }
+  .memory-sites summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; list-style: none; cursor: pointer; }
+  .memory-sites summary::-webkit-details-marker { display: none; }
+  .memory-sites summary > div { min-width: 0; }
+  .memory-sites .desc { max-width: none; }
+  .memory-sites .memory-manage { flex: none; color: var(--plum); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .memory-sites-body { display: grid; gap: 9px; padding-top: 12px; }
+  .memory-sites-add { display: flex; gap: 6px; }
+  .memory-sites-add .api-field { min-width: 0; flex: 1; }
+  .memory-sites-list { display: grid; gap: 5px; max-height: 150px; overflow-y: auto; }
+  .memory-sites-list-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
+  .memory-sites-list-item span { overflow-wrap: anywhere; }
+  .memory-sites-list-item button, .memory-sites-current { border: 0; background: none; color: var(--plum); font: 700 11px var(--body); cursor: pointer; }
+  .memory-sites-current { justify-self: start; padding: 2px 0; }
+  .memory-sites-list-item button:hover, .memory-sites-current:hover { text-decoration: underline; }
+  .tab-limit-number { display: grid; grid-template-columns: minmax(0, 1fr) 72px; align-items: center; gap: 12px; }
+  .tab-limit-number > div { min-width: 0; }
+  .tab-limit-number .api-field { width: 72px; min-width: 72px; text-align: center; font-size: 12px; }
   /* Watch-only entries. No toggle, so the text takes the full width instead of leaving a
      gap where a control used to be, and the lead-in reads as a note rather than a setting. */
   .row.watch, .row.watch-lead { display: block; }
@@ -1574,7 +1593,7 @@
       <label class="tg"><input type="checkbox" data-key="memoryShield"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div data-feature="memoryShield" class="row" style="display:block;">
-      <div class="name" style="margin-bottom:7px;">Mode</div>
+      <div class="name" style="margin-bottom:7px;">Sleep timing</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;" id="mem-modes">
         <button class="btn mem-mode" data-mode="gentle" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Gentle<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">2 hours</span></button>
         <button class="btn mem-mode" data-mode="balanced" style="flex:1;min-width:70px;padding:7px;font-size:11px;">Balanced<br><span style="font-weight:400;font-size:9.5px;opacity:.7;">30 min</span></button>
@@ -1598,17 +1617,26 @@
       <div><div class="name" style="font-size:12px;">Never sleep login / payment pages</div></div>
       <label class="tg"><input type="checkbox" data-key="memoryNeverPayment"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div data-feature="tabLimit" class="row">
+    <details data-feature="memoryShield" class="row memory-sites" id="mem-sites">
+      <summary><div><div class="name">Never-sleep sites</div><div class="desc">Choose sites Memory Shield should always keep awake.</div></div><span class="memory-manage">Manage sites ›</span></summary>
+      <div class="memory-sites-body">
+        <div class="memory-sites-add"><input class="api-field" type="text" id="mem-site-input" placeholder="example.com" aria-label="Domain to keep awake" spellcheck="false"><button class="btn" type="button" id="mem-site-add">Add</button></div>
+        <div class="memory-sites-list" id="mem-site-list" aria-label="Sites kept awake"></div>
+        <button type="button" class="memory-sites-current" id="mem-site-add-current" disabled>+ Add current site</button>
+        <div class="desc" id="mem-site-status" role="status" aria-live="polite" hidden></div>
+      </div>
+    </details>
+    <div data-feature="tabLimit" class="row memory-break">
       <div><div class="name" style="font-size:12px;">Tab Limit</div><div class="desc">Over your limit, sleeps (or closes) the oldest unused tab. Skips active, pinned, audio, form, login, and allowlisted tabs.</div></div>
       <label class="tg"><input type="checkbox" id="tl-guard"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div data-feature="tabLimit" class="row">
+    <div data-feature="tabLimit" class="row tab-limit-number">
       <div><div class="name" style="font-size:12px;">Maximum tabs</div><div class="desc">Acts when a new tab pushes the window past this count.</div></div>
-      <input class="api-field" type="number" id="tl-max" min="2" max="200" step="1" style="width:66px;flex:none;text-align:center;">
+      <input class="api-field" type="number" id="tl-max" min="2" max="200" step="1">
     </div>
-    <div data-feature="tabLimit" class="row">
+    <div data-feature="tabLimit" class="row tab-limit-number">
       <div><div class="name" style="font-size:12px;">Minimum inactive time</div><div class="desc">Minutes a tab must be idle before it's put to sleep (sleep mode only). Close mode is a hard cap — it always closes your least-recently-used tabs to stay under the limit. Active, pinned, audio, and unsaved-form tabs are never touched.</div></div>
-      <input class="api-field" type="number" id="tl-idle" min="0" max="1440" step="5" style="width:66px;flex:none;text-align:center;">
+      <input class="api-field" type="number" id="tl-idle" min="0" max="1440" step="5">
     </div>
     <div data-feature="tabLimit" class="row">
       <div><div class="name" style="font-size:12px;">Close instead of sleeping (aggressive)</div><div class="desc">Off = sleep the oldest tab (reversible — it reloads on click). On = actually close it.</div></div>
@@ -1618,7 +1646,7 @@
       <div><div class="name" style="font-size:12px;">Notify me when a tab is closed</div><div class="desc">A heads-up so a closed tab is never a surprise.</div></div>
       <label class="tg"><input type="checkbox" id="tl-warn"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <div data-feature="memoryShield" class="row" style="display:block;">
+    <div data-feature="memoryShield" class="row memory-break" style="display:block;">
       <div id="mem-score" style="font-size:12px;color:var(--ink-soft,#534064);line-height:1.6;margin-bottom:9px;">Checking memory usage…</div>
       <button class="btn" id="mem-free" style="width:100%;background:linear-gradient(135deg,#b06ad4,#e07ab0);color:#fff;border:none;">Free RAM now</button>
       <div id="mem-free-result" style="margin-top:7px;font-size:11px;color:var(--ink-faint,#665674);display:none;"></div>

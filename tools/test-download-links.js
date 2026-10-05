@@ -132,11 +132,12 @@ function bareIndexLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 4
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 5
       && /run: node tools\/browser-settings-data\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
       && /run: node tools\/browser-config-race\.js/.test(settings)
-      && /run: node tools\/browser-engine-smoke\.js/.test(settings));
+      && /run: node tools\/browser-engine-smoke\.js/.test(settings)
+      && /run: node tools\/browser-eyeshield-frames\.js/.test(settings));
   /* Publication stays serialised while a draft is prepared and promoted. */
   const head = WORKFLOW.split(/\njobs:\n/)[0];
   check('no workflow-wide concurrency can cancel the publish job', !/^concurrency:/m.test(head));
@@ -155,11 +156,11 @@ function bareIndexLinks(text) {
       && /Get-FileHash -Algorithm SHA256/.test(minimum) && /-ne \$env:CHROME_MINIMUM_SHA256\) \{ throw/.test(minimum)
       && /-ne \$env:CHROME_MINIMUM_VERSION\) \{ throw/.test(minimum));
   check('it runs the popup, both Settings suites and the config race in that Chrome',
-    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-engine-smoke']
+    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-engine-smoke', 'browser-eyeshield-frames']
       .every((t) => new RegExp('run: node tools/' + t + '\\.js').test(minimum))
       && /WARDENONE_BROWSER_NAME: 'Google Chrome'/.test(minimum) && /WARDENONE_HEADLESS: '1'/.test(minimum));
   check('no test there can run without that Chrome in place and pass on Edge instead',
-    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 4
+    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 5
       && /id: chrome/.test(minimum));
   const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
   check('the rolling build waits for the gate, the real popup, the real Settings page and the minimum Chrome',

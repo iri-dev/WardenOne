@@ -3,6 +3,7 @@
 
 const assert = require('assert/strict');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
@@ -11,12 +12,19 @@ const ROOT = path.resolve(__dirname, '..');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function run() {
+  const sitePort = await profile.freePort();
+  const siteServer = http.createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<!doctype html><title>Memory site</title><p>Open tab</p>');
+  });
+  await new Promise((resolve) => siteServer.listen(sitePort, '127.0.0.1', resolve));
   const port = await profile.freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-popup-regression-'));
   let cdp;
   let page;
   try {
-    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir,
+      ['--host-resolver-rules=MAP music-site.wardenone-smoke.com 127.0.0.1']);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
@@ -58,6 +66,31 @@ async function run() {
     }
 
     await openPopup();
+    for (const id of ['tl-max', 'tl-idle']) {
+      await value(`document.getElementById(${JSON.stringify(id)}).scrollIntoView({ block: 'center' })`);
+      const visibleNumber = await value(`(() => {
+        const input = document.getElementById(${JSON.stringify(id)});
+        const box = input.getBoundingClientRect();
+        const row = input.closest('.row').getBoundingClientRect();
+        const style = getComputedStyle(input);
+        return input.type === 'number' && box.width >= 65 && box.height >= 25
+          && box.left >= row.left && box.right <= row.right + 1 && box.top >= 0 && box.bottom <= innerHeight
+          && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > .9
+          && document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2) === input;
+      })()`);
+      assert(visibleNumber, `${id} must be a visible, reachable number input inside its row`);
+    }
+    if (process.env.WARDENONE_MEMORY_SCREENSHOT) {
+      const top = await value("document.querySelector('h2[data-feature=memoryShield]').getBoundingClientRect().top + scrollY");
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'png', clip: { x: 0, y: Math.max(0, top - 5), width: 348, height: 1120, scale: 1 }, captureBeyondViewport: true,
+      }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_MEMORY_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    await value("(() => { const input = document.getElementById('tl-max'); input.value = '27'; input.dispatchEvent(new Event('change', { bubbles: true })); })()");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config?.tabLimitMax === 27)))", 'maximum tabs to save');
+    await value("(() => { const input = document.getElementById('tl-idle'); input.value = '45'; input.dispatchEvent(new Event('change', { bubbles: true })); })()");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config?.tabLimitMinIdleMinutes === 45)))", 'minimum inactive time to save');
     const sitePanel = await value(`(() => {
       const section = document.getElementById('site-controls-group');
       return {
@@ -343,12 +376,20 @@ async function run() {
       ['WebAssembly', '#js-shield .row'],
       ['brightness', '#eyeshield-panel'],
       ['Sleep inactive tabs', 'input[data-key="memoryShield"]'],
+      ['Maximum tabs', '#tl-max'],
+      ['Minimum inactive time', '#tl-idle'],
       ['fake phishing', 'input[data-key="detectPhishing"]'],
       ['forced popups', 'input[data-key="blockForcedPopups"]'],
     ];
     for (const [query, selector] of searches) {
       await search(query);
       assert(await visible(selector), `${query} must reveal ${selector}`);
+      const hiddenControls = await value(`[...document.querySelectorAll('.row')]
+        .filter(row => !row.closest('#site-dash, .wo-hidden'))
+        .flatMap(row => [...row.querySelectorAll('input, select, textarea, button, [role="switch"]')]
+          .filter(control => control.closest('.wo-hidden'))
+          .map(control => control.id || control.getAttribute('data-key') || control.tagName))`);
+      assert.deepEqual(hiddenControls, [], `${query} must keep every matching row's controls visible`);
     }
     await search('WebAssembly startup');
     assert(await visible('#js-shield'), 'a matching Script Shield row must keep its section visible');
@@ -435,9 +476,24 @@ async function run() {
     const writesAfter = await value('window.__woScrollWrites');
     assert.equal(writesAfter, writesAtLanding,
       `restoration must not pull against user scrolling: the popup scrolled itself ${writesAfter - writesAtLanding} time(s) after the wheel`);
-    console.log('[ok] real popup search, health, diagnostics, updates, scroll, reopen and master-switch checks passed');
+    await value(`chrome.tabs.create({ url: 'http://music-site.wardenone-smoke.com:${sitePort}/', active: true }).then(tab => tab.id)`);
+    assert.equal(await value("document.querySelectorAll('.memory-group-heading, #mem-site-never').length"), 0,
+      'Memory Shield should not recreate the former mini-headings or large current-site toggle');
+    await value("document.getElementById('mem-sites').open = true");
+    await until("!document.getElementById('mem-site-add-current').disabled && document.getElementById('mem-site-add-current').title === 'music-site.wardenone-smoke.com'", 'current-site add action');
+    await value("document.getElementById('mem-site-add-current').click()");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r((d.wardenone_config?.memoryNeverSleepHosts || []).includes('music-site.wardenone-smoke.com'))))", 'site kept awake');
+    await until("[...document.querySelectorAll('#mem-site-list .memory-sites-list-item')].some(row => row.textContent.includes('music-site.wardenone-smoke.com'))", 'saved site in popup manager');
+    await value("[...document.querySelectorAll('#mem-site-list .memory-sites-list-item')].find(row => row.textContent.includes('music-site.wardenone-smoke.com')).querySelector('button').click()");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(!(d.wardenone_config?.memoryNeverSleepHosts || []).includes('music-site.wardenone-smoke.com'))))", 'site allowed to sleep again');
+    await value("document.getElementById('mem-site-input').value = 'https://www.youtube.com/watch?v=abc'; document.getElementById('mem-site-add').click()");
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r((d.wardenone_config?.memoryNeverSleepHosts || []).includes('youtube.com'))))", 'typed URL normalised to its saved host');
+    assert((await value("document.getElementById('mem-site-status').textContent")).includes('youtube.com'),
+      'the manager must show the host it actually saved');
+    console.log('[ok] real popup controls, search, health, diagnostics, updates, scroll, reopen and master-switch checks passed');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
+    siteServer.close();
     const resolved = path.resolve(dir);
     if (path.dirname(resolved) === path.resolve(os.tmpdir()) && path.basename(resolved).startsWith('wo-popup-regression-')) {
       /* Edge's helper processes can hold profile files briefly after the DevTools endpoint closes. */

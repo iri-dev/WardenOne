@@ -33,6 +33,9 @@ assert.deepStrictEqual(custom, {
 });
 assert.strictEqual(profiles.hostOf('WWW.YouTube.com.'), 'youtube.com');
 assert.strictEqual(profiles.hostOf('__proto__'), '');
+assert.strictEqual(profiles.hostOf('[::1]'), '[::1]');
+assert.strictEqual(profiles.hostOf('[0:0:0:0:0:0:0:1]'), '[::1]');
+assert.strictEqual(profiles.hostOf('[not-ipv6]'), '');
 assert.strictEqual(profiles.hostOf('evil.com"><img'), '');
 const sites = profiles.cleanSites({
   'www.youtube.com': Object.assign({}, custom, { theme: 'light', eyeShieldBrightness: 85, eyeShieldWarmth: 20 }),
@@ -82,7 +85,8 @@ assert.strictEqual(core.read().eyeShieldMode, 'dark');
 
 const background = read('background.js');
 const worker = vm.createContext({ WOEyeShieldProfiles: profiles });
-vm.runInContext(functionSource(background, 'eyeShieldThemingActive') + '\n' + functionSource(background, 'eyeShieldRegistrationScope') + '\nthis.scope = eyeShieldRegistrationScope; this.active = eyeShieldThemingActive;', worker);
+vm.runInContext(functionSource(background, 'eyeShieldThemingActive') + '\n' + functionSource(background, 'eyeShieldRegistrationScope')
+  + '\n' + functionSource(background, 'eyeShieldActiveProfileHosts') + '\nthis.scope = eyeShieldRegistrationScope; this.active = eyeShieldThemingActive;', worker);
 const globalScope = worker.scope(Object.assign({}, globalConfig, { eyeShieldSites: sites }));
 assert.deepStrictEqual(Array.from(globalScope.matches), ['<all_urls>']);
 assert(globalScope.excludeMatches.includes('*://github.com/*'));
@@ -106,3 +110,43 @@ vm.runInContext(functionSource(background, 'injectEyeShieldIntoOpenTabs') + '\nt
 worker.inject({ enabled: true, eyeShieldMode: 'off', eyeShieldSites: sites });
 assert(injected.length > 0 && injected.every((spec) => spec.target.tabId === 1), 'open tabs outside a custom-only scope are skipped');
 console.log('[ok] EyeShield site profiles resolve, validate and scope injection');
+
+(async () => {
+  const injectedFrames = [];
+  let currentConfig = {};
+  const frameWorker = vm.createContext({
+    WOEyeShieldProfiles: profiles, URL, Number, Object, String,
+    DEFAULT_CONFIG: { enabled: true, eyeShield: false, eyeShieldMode: 'off' },
+    woFeatureOmitted: () => false,
+    localGet: async () => ({ wardenone_config: currentConfig }),
+    chrome: { scripting: { executeScript: async (spec) => { injectedFrames.push(spec); } } },
+  });
+  vm.runInContext([
+    "const EYESHIELD_PRELOAD_MODES = ['dark', 'ultra', 'light'];",
+    functionSource(background, 'eyeShieldThemingActive'),
+    functionSource(background, 'eyeShieldPreloadFile'),
+    functionSource(background, 'eyeShieldScriptFiles'),
+    functionSource(background, 'eyeShieldUsesBootstrap'),
+    'async ' + functionSource(background, 'injectEyeShieldFrame'),
+    'this.injectFrame = injectEyeShieldFrame;',
+  ].join('\n'), frameWorker);
+  const sender = (top, frame, frameId = 3) => ({
+    tab: { id: 9, url: top }, url: frame, frameId, documentId: 'document-9-' + frameId,
+  });
+  currentConfig = { enabled: true, eyeShieldMode: 'off', eyeShieldSites: { 'youtube.com': { mode: 'custom', theme: 'dark' } } };
+  assert.strictEqual(await frameWorker.injectFrame(sender('https://youtube.com/', 'https://embed.example/')), true);
+  assert.deepStrictEqual(Array.from(injectedFrames[0].target.documentIds), ['document-9-3']);
+  assert(injectedFrames[0].files.includes('eyeshield.js') && injectedFrames[0].files.includes('eyeshield-preload-dark.js'));
+  assert(!injectedFrames[0].files.includes('eyeshield-sites.js'));
+  assert.strictEqual(await frameWorker.injectFrame(sender('https://youtube.com/', 'https://youtube.com/', 0)), true);
+  assert(injectedFrames[1].files.includes('eyeshield-sites.js'));
+  assert.strictEqual(await frameWorker.injectFrame(sender('https://unrelated.example/', 'https://youtube.com/')), false);
+  currentConfig = { enabled: true, eyeShieldMode: 'dark', eyeShieldSites: { 'github.com': { mode: 'off' } } };
+  assert.strictEqual(await frameWorker.injectFrame(sender('https://github.com/', 'https://embed.example/')), false);
+  assert.strictEqual(injectedFrames.length, 2, 'Off site does not parse the full EyeShield script in cross-origin frames');
+  currentConfig = { enabled: true, eyeShieldMode: 'off', eyeShieldSites: { '[::1]': { mode: 'custom', theme: 'light' } } };
+  assert.strictEqual(await frameWorker.injectFrame(sender('http://[::1]:8080/', 'https://embed.example/')), true);
+  assert(injectedFrames[2].files.includes('eyeshield-preload-light.js'));
+  assert.strictEqual(await frameWorker.injectFrame({ ...sender('https://youtube.com/', 'https://embed.example/'), documentId: '' }), false);
+  console.log('[ok] EyeShield bootstrap loads only frames of active top sites, including IPv6 profiles');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
