@@ -67,18 +67,28 @@ async function run() {
 
     await openPopup();
     for (const id of ['tl-max', 'tl-idle']) {
-      await value(`document.getElementById(${JSON.stringify(id)}).scrollIntoView({ block: 'center' })`);
-      const visibleNumber = await value(`(() => {
+      const inspectNumber = () => value(`(() => {
         const input = document.getElementById(${JSON.stringify(id)});
         const box = input.getBoundingClientRect();
         const row = input.closest('.row').getBoundingClientRect();
         const style = getComputedStyle(input);
-        return input.type === 'number' && box.width >= 65 && box.height >= 25
+        const hit = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2);
+        return { visible: input.type === 'number' && box.width >= 65 && box.height >= 25
           && box.left >= row.left && box.right <= row.right + 1 && box.top >= 0 && box.bottom <= innerHeight
           && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > .9
-          && document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2) === input;
+          && hit === input, box: { x: box.x, y: box.y, width: box.width, height: box.height },
+          row: { x: row.x, y: row.y, width: row.width, height: row.height },
+          hit: hit && (hit.id || hit.tagName), scrollY, innerHeight };
       })()`);
-      assert(visibleNumber, `${id} must be a visible, reachable number input inside its row`);
+      let inspection;
+      const deadline = Date.now() + 5000;
+      do {
+        await value(`document.getElementById(${JSON.stringify(id)}).scrollIntoView({ block: 'center' })`);
+        inspection = await inspectNumber();
+        if (inspection.visible) break;
+        await sleep(100);
+      } while (Date.now() < deadline);
+      assert(inspection.visible, `${id} must be a visible, reachable number input inside its row: ${JSON.stringify(inspection)}`);
     }
     if (process.env.WARDENONE_MEMORY_SCREENSHOT) {
       const top = await value("document.querySelector('h2[data-feature=memoryShield]').getBoundingClientRect().top + scrollY");
@@ -486,10 +496,10 @@ async function run() {
     await until("[...document.querySelectorAll('#mem-site-list .memory-sites-list-item')].some(row => row.textContent.includes('music-site.wardenone-smoke.com'))", 'saved site in popup manager');
     await value("[...document.querySelectorAll('#mem-site-list .memory-sites-list-item')].find(row => row.textContent.includes('music-site.wardenone-smoke.com')).querySelector('button').click()");
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(!(d.wardenone_config?.memoryNeverSleepHosts || []).includes('music-site.wardenone-smoke.com'))))", 'site allowed to sleep again');
+    await until("!document.getElementById('mem-site-add').disabled", 'never-sleep manager to finish removing the site');
     await value("document.getElementById('mem-site-input').value = 'https://www.youtube.com/watch?v=abc'; document.getElementById('mem-site-add').click()");
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r((d.wardenone_config?.memoryNeverSleepHosts || []).includes('youtube.com'))))", 'typed URL normalised to its saved host');
-    assert((await value("document.getElementById('mem-site-status').textContent")).includes('youtube.com'),
-      'the manager must show the host it actually saved');
+    await until("document.getElementById('mem-site-status').textContent.includes('youtube.com')", 'the manager to show the host it actually saved');
     console.log('[ok] real popup controls, search, health, diagnostics, updates, scroll, reopen and master-switch checks passed');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
