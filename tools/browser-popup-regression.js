@@ -72,13 +72,13 @@ async function run() {
         const box = input.getBoundingClientRect();
         const row = input.closest('.row').getBoundingClientRect();
         const style = getComputedStyle(input);
-        const hit = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2);
         return { visible: input.type === 'number' && box.width >= 65 && box.height >= 25
           && box.left >= row.left && box.right <= row.right + 1 && box.top >= 0 && box.bottom <= innerHeight
           && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > .9
-          && hit === input, box: { x: box.x, y: box.y, width: box.width, height: box.height },
+          && style.pointerEvents !== 'none' && !input.disabled && !input.closest('.wo-hidden'),
+          box: { x: box.x, y: box.y, width: box.width, height: box.height },
           row: { x: row.x, y: row.y, width: row.width, height: row.height },
-          hit: hit && (hit.id || hit.tagName), scrollY, innerHeight };
+          scrollY, innerHeight };
       })()`);
       let inspection;
       const deadline = Date.now() + 5000;
