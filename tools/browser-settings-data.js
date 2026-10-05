@@ -147,7 +147,7 @@ async function run() {
     await pick('eyeshield', 'Dark');
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldMode === 'dark' && d.wardenone_config.eyeShield === true)))", 'EyeShield Dark saved');
     await store({ wardenone_config: Object.assign({}, await stored('wardenone_config'), { eyeShieldSites: { 'github.com': { mode: 'off' } } }) });
-    await until("chrome.scripting.getRegisteredContentScripts({ ids: ['wo-eyeshield-dynamic'] }).then(a => a.length === 1 && a[0].excludeMatches?.includes('*://github.com/*'))", 'Off site excluded from EyeShield injection');
+    await until("chrome.scripting.getRegisteredContentScripts({ ids: ['wo-eyeshield-dynamic'] }).then(a => a.length === 1 && a[0].js?.includes('eyeshield-bootstrap.js'))", 'EyeShield site profiles use frame bootstrap');
     await store({ wardenone_config: Object.assign({}, await stored('wardenone_config'), { eyeShieldBrightness: 80, eyeShieldWarmth: 30 }) });
     await until("(document.querySelector('[data-custom=eye-adjust]') || {}).textContent.includes('brightness 80%, warmth 30%')", 'values set in the popup are listed');
     ok(await value("document.querySelector('[data-slider=eyeShieldBrightness]').value === '80' && document.querySelector('[data-slider-out=eyeShieldWarmth]').textContent === '30%'"), 'and the sliders follow a change made in the popup');
@@ -159,7 +159,7 @@ async function run() {
     ok(await value("!!document.querySelector('[data-eye-state]')"), 'EyeShield site editor opens for a valid host');
     await value("document.querySelector('[data-eye-state]').value = 'custom'; document.querySelector('[data-eye-state]').dispatchEvent(new Event('change', { bubbles: true })); true");
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['youtube.com']?.mode === 'custom')))", 'custom EyeShield profile saved');
-    await until("chrome.scripting.getRegisteredContentScripts({ ids: ['wo-eyeshield-dynamic'] }).then(a => a.length === 1 && a[0].matches?.includes('*://youtube.com/*') && !a[0].matches?.includes('<all_urls>'))", 'custom-only EyeShield injection scoped to the site');
+    await until("chrome.scripting.getRegisteredContentScripts({ ids: ['wo-eyeshield-dynamic'] }).then(a => a.length === 1 && a[0].js?.includes('eyeshield-bootstrap.js') && a[0].matches?.includes('<all_urls>'))", 'custom-only EyeShield uses frame bootstrap');
     await value("document.querySelector('[data-eye-field=theme]').value = 'dark'; document.querySelector('[data-eye-field=theme]').dispatchEvent(new Event('change', { bubbles: true })); true");
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.eyeShieldSites?.['youtube.com']?.theme === 'dark')))", 'custom theme saved');
     await value("document.querySelector('[data-eye-field=eyeShieldBrightness]').value = '85'; document.querySelector('[data-eye-field=eyeShieldBrightness]').dispatchEvent(new Event('change', { bubbles: true })); true");
@@ -491,6 +491,14 @@ async function run() {
     await until(`!!${rowFor('neversleep', 'music-site.com')}`, 'its row');
     await value(`${rowFor('neversleep', 'music-site.com')}.click(); true`);
     await until(cfgIs("c => !(c.memoryNeverSleepHosts || []).includes('music-site.com')"), 'never-sleep removed');
+    await go('speed');
+    await until("!!document.querySelector('[data-custom=add-neversleep]') && !!document.querySelector('.sec .g-title')", 'never-sleep manager inside Speed & memory');
+    await addTo('neversleep', 'awake-site.com');
+    await until(cfgIs("c => (c.memoryNeverSleepHosts || []).includes('awake-site.com')"), 'site kept awake from Memory Shield settings');
+    await until(`!!${rowFor('neversleep', 'awake-site.com')}`, 'saved site appears inside Memory Shield settings');
+    await value(`${rowFor('neversleep', 'awake-site.com')}.click(); true`);
+    await until(cfgIs("c => !(c.memoryNeverSleepHosts || []).includes('awake-site.com')"), 'Memory Shield site exemption removed');
+    await go('sites');
     ok(!!(await value("ask({ kind: 'hidden-add', hostname: 'zap-site.com', selector: '.cookie-nag' })")).ok, 'seeded a hidden element');
     await until(`!!${rowFor('hidden', 'zap-site.com')}`, 'the hidden-elements row');
     ok((await value(`${rowFor('hidden', 'zap-site.com')}.closest('.row').textContent`)).includes('1 hidden element: .cookie-nag'), 'it names what is hidden');

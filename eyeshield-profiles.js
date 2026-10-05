@@ -13,6 +13,9 @@
   const MODES = new Set(['off', 'light', 'dark', 'ultra']);
   const hostOf = (value) => {
     const host = String(value || '').trim().toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
+    if (/^\[[0-9a-f:.]+\]$/.test(host)) {
+      try { return new URL('http://' + host + '/').hostname; } catch (_) { return ''; }
+    }
     if (host.length > 253 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/.test(host)) return '';
     return host;
   };

@@ -30,6 +30,7 @@
   "extensions.html",
   "extensions.js",
   "eyeshield-preload-dark.js",
+  "eyeshield-bootstrap.js",
   "eyeshield-preload-light.js",
   "eyeshield-preload-ultra.js",
   "eyeshield-profiles.js",

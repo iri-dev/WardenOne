@@ -136,6 +136,23 @@
       return true;
     });
 
+    // A matching result owns its controls; keep child keywords without filtering children apart.
+    var indexedEls=rows.map(function(row){return row.el;});
+    rows=rows.filter(function(row){
+      var owner=null;
+      for(var p=row.el.parentElement;p;p=p.parentElement){
+        var at=indexedEls.indexOf(p);
+        if(at>=0)owner=rows[at];
+      }
+      if(!owner)return true;
+      owner.raw+=' '+row.raw;
+      owner.attrs+=' '+row.attrs;
+      owner.parentIds+=' '+row.parentIds;
+      row.words.forEach(function(word){if(owner.words.indexOf(word)<0)owner.words.push(word);});
+      owner.text=' '+owner.words.join(' ')+' ';
+      return false;
+    });
+
     function dist(a,b){
       var al=a.length,bl=b.length;
       if(!al)return bl;if(!bl)return al;

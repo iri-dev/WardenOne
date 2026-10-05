@@ -128,6 +128,10 @@ const interfaceGroup = new FakeElement({ classes: ['card-group'] });
 interfaceGroup.previousElementSibling = interfaceHeading;
 const interfaceTheme = interfaceGroup.append(new FakeElement({ classes: ['row'], text: 'Theme Light Dark' }));
 
+const tabGroup = new FakeElement({ classes: ['card-group'] });
+const tabRow = tabGroup.append(new FakeElement({ classes: ['row'], text: 'Maximum tabs Acts when a new tab pushes the window past this count.' }));
+const tabInput = tabRow.append(new FakeElement({ id: 'tl-max', tagName: 'INPUT' }));
+
 const scriptHeading = new FakeElement({ tagName: 'H2', text: 'Script Shield' });
 const scriptGroup = new FakeElement({ id: 'js-shield', classes: ['card-group'] });
 scriptGroup.previousElementSibling = scriptHeading;
@@ -155,6 +159,7 @@ const byId = new Map([
   [brightnessRange.id, brightnessRange],
   [extras.id, extras],
   [scriptGroup.id, scriptGroup],
+  [tabInput.id, tabInput],
 ]);
 
 const document = {
@@ -166,8 +171,8 @@ const document = {
     return null;
   },
   querySelectorAll(selector) {
-    if (selector === '.row') return [rewindRow, interfaceTheme, micRow, webAssemblyRow, trustedScriptRow];
-    if (selector === '.card-group') return [rewindGroup, interfaceGroup, micGroup, scriptGroup];
+    if (selector === '.row') return [rewindRow, interfaceTheme, tabRow, micRow, webAssemblyRow, trustedScriptRow];
+    if (selector === '.card-group') return [rewindGroup, interfaceGroup, tabGroup, micGroup, scriptGroup];
     if (selector === '.group>h2, .eyeshield-panel+h2, #js-shield+h2') return [eyeHeading, interfaceHeading, scriptHeading];
     if (selector.indexOf('.eyeshield-mode') >= 0) return eyeSearchChildren.slice();
     return [];
@@ -204,6 +209,15 @@ assert(rewindDetails.classList.contains('wo-hidden'), 'an unmatched rewind summa
 searchInput.value = 'eyeshield';
 searchInput.emit('input');
 assert.strictEqual(resultCount.textContent, '1 result', 'EyeShield must not be double-counted through its heading');
+
+searchInput.value = 'maximum tabs';
+searchInput.emit('input');
+assert(!tabRow.classList.contains('wo-hidden'), 'the matching number setting must remain visible');
+assert(!tabInput.classList.contains('wo-hidden'), 'search must not hide its input separately');
+searchInput.value = 'tl max';
+searchInput.emit('input');
+assert(!tabRow.classList.contains('wo-hidden') && !tabInput.classList.contains('wo-hidden'),
+  'a control-specific keyword must reveal the whole interactive row');
 
 searchInput.value = 'WebAssembly';
 searchInput.emit('input');

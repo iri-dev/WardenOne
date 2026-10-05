@@ -1128,8 +1128,8 @@
     if (!masterEnabled() || cosmeticStyle) return;
     try {
     var css =
-      /* YouTube's rich grid keeps an empty card when only its ad child is hidden. */
-      "ytd-rich-item-renderer:has(> #content > :is(ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-display-ad-renderer,ytd-promoted-sparkles-web-renderer,ytd-promoted-video-renderer):only-child)," +
+      /* An ad card can keep a menu beside its hidden ad renderer; collapse the card too. */
+      "ytd-rich-item-renderer:has(> #content > :is(ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-display-ad-renderer,ytd-promoted-sparkles-web-renderer,ytd-promoted-video-renderer))," +
       "ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-display-ad-renderer," +
       "ytd-promoted-sparkles-web-renderer,ytd-promoted-video-renderer," +
       "ytd-companion-slot-renderer,ytd-action-companion-ad-renderer," +

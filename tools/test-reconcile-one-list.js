@@ -113,6 +113,8 @@ function worker({ session, config, fault }) {
     eyeShieldThemingActive: () => false,
     eyeShieldPreloadFile: () => '',
     eyeShieldRegistrationScope: () => ({ matches: ['<all_urls>'], excludeMatches: [] }),
+    eyeShieldUsesBootstrap: () => false,
+    eyeShieldActiveProfileHosts: () => [],
     consentRejectActive: () => false,
     searchSponsoredCleanupActive: () => false,
   };

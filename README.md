@@ -1475,13 +1475,14 @@ somewhere else.
 
 ## Memory Shield
 
-Puts inactive tabs to sleep, with Gentle, Balanced, Aggressive or Emergency profiles. You can stop
-pinned tabs, tabs playing audio and tabs with forms, logins or payments from ever sleeping. It can
+Puts inactive tabs to sleep, with Gentle, Balanced, Aggressive or Emergency profiles. You can keep
+pinned tabs, tabs playing audio and tabs with forms, logins or payments awake. It can
 find duplicate and zombie tabs too, and free up memory whenever you ask.
 
-From the right-click menu you can also put a tab to sleep straight away, or mark a site
-never-sleep. That mark is your call, not a judgement about the site, so it beats every rule above.
-A tab on a marked host never gets slept. Whatever the profile would've done.
+From the right-click menu you can put a tab to sleep straight away, or mark a site never-sleep.
+The popup's Never-sleep sites control also lets you add a domain or the current site and remove
+saved hosts. The choice applies to the saved host, not every subdomain. A marked host stays awake
+regardless of the sleep profile.
 
 <details>
 <summary><strong>See Memory Shield's safeguards and profiles</strong></summary>
@@ -1497,7 +1498,6 @@ A tab on a marked host never gets slept. Whatever the profile would've done.
 ## Resource Saver
 
 Controls for autoplaying media, background throttling, lazy-loading images, prefetch and preload.
-These are about performance and they're kept separate from the security side.
 
 ## EyeShield
 

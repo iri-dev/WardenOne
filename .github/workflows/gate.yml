@@ -104,6 +104,12 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-engine-smoke.js
 
+      - name: Test EyeShield site profiles in cross-origin frames in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-eyeshield-frames.js
+
   # The manifest's minimum_chrome_version, proven in that Chrome rather than assumed: Chrome for
   # Testing at the minimum, pinned by version and SHA-256, runs the popup and Settings suites and
   # the page engine on a real page.
@@ -161,6 +167,10 @@ jobs:
       - name: Test the page engine, the bridge and a network rule in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-engine-smoke.js
+
+      - name: Test EyeShield site profiles in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-eyeshield-frames.js
 
   # A passing push stages a commit-tagged draft, then makes it the sole rolling release
   # after both assets are verified. /releases/latest/download follows the complete build.
