@@ -4,6 +4,7 @@
 
 ### Added
 
+- Memory Shield's popup has a compact never-sleep site manager for adding a domain or the current site, seeing saved hosts, and removing them. The same list is available in Speed & memory settings.
 - EyeShield site profiles can inherit global settings, save custom theme and colour adjustments,
   or turn EyeShield off for a site. The popup keeps the main EyeShield controls visible and
   uses a small scope menu to autosave global or current-site settings. Settings manages
@@ -12,6 +13,13 @@
 
 ### Fixed
 
+- Simplified Memory Shield's popup layout by removing its repeated mini-headings.
+- Popup search keeps the controls inside every matching settings row visible.
+- Memory Shield's playing-audio exemption now follows its switch.
+- Kept the popup's Maximum tabs and Minimum inactive time inputs visible beside their labels, with a browser visibility check.
+- EyeShield site profiles now reach cross-origin child frames, while Off sites avoid loading the full EyeShield engine in those frames. IPv6 literal hosts can have site profiles.
+- Extension Security Centre recognises Volume Master's exact Store identity and expected tab-audio access while still warning about added powerful permissions.
+- AdShield also collapses YouTube ad cards that leave a menu or placeholder beside the hidden ad.
 - Restored the pause and single-protection controls to the popup's bottom This site panel.
 - EyeShield's YouTube light theme keeps the feed's Next button readable without showing
   clipped topics through it. AdShield collapses empty feed cards left by blocked ads.

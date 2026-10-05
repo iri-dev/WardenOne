@@ -217,6 +217,11 @@ const SITE_ADDERS = {
   neversleep: { label: 'Keep a site’s tabs awake', placeholder: 'example.com', button: 'Keep awake' },
   firewall: { label: 'Set firewall rules for a site', placeholder: 'example.com', button: 'Open its firewall' }
 };
+function neverSleepGroup() {
+  const pending = siteState.loading ? 'Loading saved sites…' : siteState.error ? siteState.error : '';
+  const rows = pending ? [{ type: 'note', label: pending }] : siteRows(siteState.neverSleep, 'No sites kept awake.');
+  return G('i-moon-tab', 'Tabs that never sleep', 'Memory Shield never puts tabs from these sites to sleep.', [adder('neversleep')].concat(rows));
+}
 function sitesGroups() {
   const pending = siteState.loading ? 'Loading saved sites…' : siteState.error ? siteState.error : '';
   const items = (rows, empty) => pending ? [{ type: 'note', label: pending }] : siteRows(rows, empty);
@@ -228,7 +233,7 @@ function sitesGroups() {
     G('i-download', 'Trusted download sites', 'Files from these sites are graded more gently. Critical filename tricks and known-bad sources still get a review.', [adder('downloads')].concat(items(siteState.downloads, 'No trusted download sites saved.'))),
     G('i-eye-off', 'Hidden elements', 'Parts of pages you hid with the Element Zapper, by site.', items(siteState.hidden, 'Nothing hidden on any site.').concat(
       action('Every hidden element', 'See each one on its own and bring back just that one.', [{ label: 'Open', icon: 'i-external', act: 'open-hidden' }]))),
-    G('i-moon-tab', 'Tabs that never sleep', 'Memory Shield never puts tabs from these sites to sleep.', [adder('neversleep')].concat(items(siteState.neverSleep, 'No sites kept awake.'))),
+    neverSleepGroup(),
     G('i-sliders', 'Site firewall', 'Your per-site request rules.', [adder('firewall')].concat(items(siteState.firewall, 'No per-site firewall rules saved.')))
   ];
   /* As in the popup: a package without Memory Shield has no never-sleep list to show. */
@@ -281,16 +286,17 @@ const PAGES = [
   { id: 'media', title: 'Camera, mic & media', icon: 'i-camera', nav: 1, desc: 'Device access, screen capture, and media tricks like fake full-screen windows.', groups: [
     G('i-mic', 'Camera, mic & location', 'Who gets to ask.', ['blockCameraMic', 'blockScreenCapture', 'blockGeolocation']),
     G('i-play', 'Media Shield', 'Fake windows, full-screen traps and notification spam.', ['mediaShield', 'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockAutoplayMedia']) ] },
-  { id: 'speed', title: 'Speed & memory', icon: 'i-gauge', nav: 1, desc: 'Memory Shield: sleeping tabs, a tab limit, and lighter page loads.', groups: [
+  { id: 'speed', title: 'Speed & memory', icon: 'i-gauge', nav: 1, desc: 'Memory Shield: sleeping tabs, a tab limit, and lighter page loads.', groups: () => [
     G('i-moon-tab', 'Sleeping tabs', 'Unused tabs sleep and wake when you click them.', [
       ...sw('memoryShield'),
-      tagged(choice('memoryMode', 'How soon', 'How long a tab sits unused before it sleeps: about 2 hours, 30 minutes, 10 minutes or 1 minute.', ['Gentle', 'Balanced', 'Aggressive', 'Emergency']), 'memoryShield'),
-      ...sw('memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment') ]),
+      tagged(choice('memoryMode', 'How soon', 'How long a tab sits unused before it sleeps: about 2 hours, 30 minutes, 10 minutes or 1 minute.', ['Gentle', 'Balanced', 'Aggressive', 'Emergency']), 'memoryShield') ]),
+    ...(OMITTED_FEATURES.has('memoryShield') ? [] : [neverSleepGroup()]),
+    G('i-shield', 'Safety', 'Tabs Memory Shield leaves awake automatically.', sw('memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment')),
     G('i-tabs', 'Tab limit', 'Over your limit, the oldest unused tab sleeps or closes.', [
       ...sw('tl-guard', 'tl-close', 'tl-warn'),
       num('tabLimitMax', 'Maximum tabs', 'Acts when a new tab pushes the window past this count.', 2, 200, 1, 'tabs', 'tabLimit'),
       num('tabLimitMinIdleMinutes', 'Minimum inactive time', 'Minutes a tab must be idle before it is put to sleep. Close mode is a hard cap and does not wait.', 0, 1440, 5, 'minutes', 'tabLimit') ]),
-    G('i-bolt', 'Page loading', 'Load less, and only when you need it.', ['blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia']) ] },
+    G('i-bolt', 'Resource Saver', 'Optional controls for unnecessary page work.', ['blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia']) ] },
   { id: 'sites', title: 'Sites & exceptions', icon: 'i-list', nav: 2, desc: 'Every site you made an exception for: pauses, protections off on one site, blocks, trusted sites, hidden elements, tabs kept awake and firewall rules.', groups: sitesGroups },
   { id: 'look', title: 'Look & reading', icon: 'i-palette', nav: 2, desc: 'Theme, notifications, and how WardenOne shows itself on pages.', groups: () => [
     G('i-palette', 'Appearance', 'Applies to the popup and every WardenOne page.', [
@@ -690,7 +696,7 @@ async function loadSites() {
     if (number !== siteLoadNumber) return;
     siteState = { loading: false, error: 'Could not load saved sites: ' + error.message, paused: [], overrides: [], blocked: [], trusted: [], downloads: [], hidden: [], neverSleep: [], firewall: [] };
   }
-  if (current === 'sites' || $('#q').value.trim()) keepTyping(renderPage);
+  if (current === 'sites' || current === 'speed' || $('#q').value.trim()) keepTyping(renderPage);
 }
 async function siteAction(button) {
   const { siteSource: source, siteId: id, siteAction: verb } = button.dataset;

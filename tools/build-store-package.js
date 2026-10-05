@@ -24,7 +24,7 @@ const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, 
 /* Omitted-file references are allowed only behind the checked profile guards. */
 const GUARDED_REFERENCES = {
   // Loaders and integrity checks drop omitted files at run time.
-  'background.js': ['background-memory.js', 'eyeshield.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'],
+  'background.js': ['background-memory.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-sites.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'twitch-rewind.js', 'twitch-vod-rewind.js'],
   'popup.js': ['eyeshield.js', 'eyeshield-sites.js'],
 };
 function guardedReference(file, target) {

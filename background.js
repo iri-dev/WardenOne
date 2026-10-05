@@ -11137,6 +11137,8 @@ function refreshExtensionState() {
         cfg.blockTrackers !== false ? 1 : 0,
         cfg.blockAllCookies === true ? 1 : 0,
         eyeShieldThemingActive(cfg) ? 1 : 0,
+        eyeShieldUsesBootstrap(cfg) ? 1 : 0,
+        eyeShieldActiveProfileHosts(cfg).join(','),
         // The registration now carries the mode as its preload file (PRIV-12), so a change of
         // mode with theming staying on must reach the reconciler too, or the next page paints
         // the old backdrop.
@@ -11418,19 +11420,14 @@ async function reconcileGoogleCleanupCssInjection(cfgArg) {
 
 // ===== EyeShield lazy injection (PERF: weak machines) =====
 // EyeShield (~179KB) is a cosmetic theming feature that is OFF by default. Static
-// all_frames injection parsed it into EVERY frame of EVERY page even for the huge
-// majority of users who never theme. Instead we register it as a dynamic content
-// script ONLY while theming is actually active, and tear it down otherwise. When
-// active it is the SAME file at document_start (registered with persistAcrossSessions
-// so it runs even while the service worker is asleep -- no flash, no SW wake).
+// Without site profiles, the full script runs at document_start only while theming is active.
+// With profiles, a small bootstrap runs in each frame and the worker loads the full script
+// only when that tab's top site needs it, including cross-origin child frames.
 const EYESHIELD_SCRIPT_ID = 'wo-eyeshield-dynamic';
-/* The ten hand-tuned per-site themes, registered separately and TOP FRAME ONLY.
-   They were inside eyeshield.js, which every frame of every site receives, so an
-   ordinary page compiled Reddit's and Google's stylesheets in each of its iframes and
-   never called them -- themeFooter() picks by hostname and returns '' otherwise
-   (COST-03). Registered as its own script rather than appended to the list above,
-   because the point is the different frame scope. */
+/* Hand-tuned site themes run only in top frames, via registration without profiles
+   or with the core's on-demand injection when profiles exist (COST-03). */
 const EYESHIELD_SITES_SCRIPT_ID = 'wo-eyeshield-sites-dynamic';
+let eyeShieldBootstrapCatchupKey = '';
 function eyeShieldThemingActive(cfg) {
   cfg = cfg || {};
   if (cfg.enabled === false) return false;
@@ -11457,6 +11454,7 @@ function eyeShieldThemingActive(cfg) {
 function injectEyeShieldIntoOpenTabs(cfg) {
   if (woFeatureOmitted('eyeShield')) return;
   const globalActive = eyeShieldThemingActive(Object.assign({}, cfg, { eyeShieldSites: {} }));
+  const activeCustom = new Set(eyeShieldActiveProfileHosts(cfg));
   try {
     chrome.tabs.query({}, (tabs) => {
       for (const t of (tabs || [])) {
@@ -11464,7 +11462,7 @@ function injectEyeShieldIntoOpenTabs(cfg) {
         let hostname = '';
         try { hostname = new URL(t.url).hostname; } catch (_) { continue; }
         const profile = WOEyeShieldProfiles.profileFor(cfg && cfg.eyeShieldSites, hostname);
-        if (profile?.mode === 'off' || (!globalActive && profile?.mode !== 'custom')) continue;
+        if (profile?.mode === 'off' || (!globalActive && !activeCustom.has(WOEyeShieldProfiles.hostOf(hostname)))) continue;
         try {
           chrome.scripting.executeScript(
             { target: { tabId: t.id, allFrames: true }, world: 'ISOLATED', files: ['eyeshield-profiles.js', 'eyeshield.js'] },
@@ -11624,6 +11622,34 @@ function eyeShieldRegistrationScope(cfg) {
     ? { matches: ['<all_urls>'], excludeMatches: off }
     : { matches: custom.length ? custom : ['<all_urls>'], excludeMatches: [] };
 }
+function eyeShieldUsesBootstrap(cfg) {
+  return Object.keys(WOEyeShieldProfiles.cleanSites(cfg && cfg.eyeShieldSites)).length > 0;
+}
+function eyeShieldActiveProfileHosts(cfg) {
+  const sites = WOEyeShieldProfiles.cleanSites(cfg && cfg.eyeShieldSites);
+  return Object.keys(sites).filter((host) => sites[host].mode === 'custom'
+    && eyeShieldThemingActive(Object.assign({}, WOEyeShieldProfiles.resolve(cfg, host).config, { eyeShieldSites: {} })));
+}
+async function injectEyeShieldFrame(sender) {
+  if (woFeatureOmitted('eyeShield') || !sender || !sender.tab || !Number.isInteger(sender.tab.id)
+      || typeof sender.documentId !== 'string' || !sender.documentId) return false;
+  let topHost = '';
+  try {
+    const url = new URL(sender.tab.url);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    topHost = url.hostname;
+    if (sender.frameId === 0 && new URL(sender.url).hostname !== topHost) return false;
+  } catch (_) { return false; }
+  const stored = await localGet('wardenone_config');
+  const cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {});
+  if (!eyeShieldUsesBootstrap(cfg)) return false;
+  const effective = WOEyeShieldProfiles.resolve(cfg, topHost).config;
+  if (!eyeShieldThemingActive(Object.assign({}, effective, { eyeShieldSites: {} }))) return false;
+  const files = eyeShieldScriptFiles(effective);
+  if (sender.frameId === 0) files.push('eyeshield-sites.js');
+  await chrome.scripting.executeScript({ target: { tabId: sender.tab.id, documentIds: [sender.documentId] }, world: 'ISOLATED', files });
+  return true;
+}
 /* Earlier builds left the mode under __woEyeShieldMode in the localStorage of every site they
    themed. eyeshield.js removes it wherever it still runs; this covers the tabs that are open when
    theming is switched off, after which the script no longer runs anywhere. */
@@ -11646,8 +11672,6 @@ function eraseEyeShieldSiteMarkerFromOpenTabs() {
 }
 async function reconcileEyeShieldInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
-  // A build that omits EyeShield must remove any registration persisted by an earlier build,
-  // so Chrome does not ask for a missing file on every page.
   if (woFeatureOmitted('eyeShield')) {
     try { await chrome.scripting.unregisterContentScripts({ ids: [EYESHIELD_SCRIPT_ID, EYESHIELD_SITES_SCRIPT_ID] }); } catch (_) {}
     return;
@@ -11657,21 +11681,27 @@ async function reconcileEyeShieldInjection(cfgArg) {
     try { cfg = ((await localGet('wardenone_config')).wardenone_config || {}); } catch (_) { cfg = {}; }
   }
   const want = eyeShieldThemingActive(cfg);
-  const files = eyeShieldScriptFiles(cfg);
-  const scope = eyeShieldRegistrationScope(cfg);
-  let have = false;
-  let haveFiles = null;
-  let haveMatches = null;
-  let haveExcluded = null;
+  const bootstrap = eyeShieldUsesBootstrap(cfg);
+  const files = bootstrap ? ['eyeshield-bootstrap.js'] : eyeShieldScriptFiles(cfg);
+  const scope = bootstrap ? { matches: ['<all_urls>'], excludeMatches: [] } : eyeShieldRegistrationScope(cfg);
+  let core = null;
+  let sites = null;
   try {
-    const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [EYESHIELD_SCRIPT_ID] });
-    have = Array.isArray(reg) && reg.length > 0;
-    haveFiles = have && Array.isArray(reg[0].js) ? reg[0].js.map((f) => String(f).replace(/^\/+/, '')) : null;
-    haveMatches = have && Array.isArray(reg[0].matches) ? reg[0].matches : null;
-    haveExcluded = have && Array.isArray(reg[0].excludeMatches) ? reg[0].excludeMatches : [];
-  } catch (_) { have = false; }
+    const reg = await chrome.scripting.getRegisteredContentScripts({ ids: [EYESHIELD_SCRIPT_ID, EYESHIELD_SITES_SCRIPT_ID] });
+    core = Array.isArray(reg) ? reg.find((script) => script.id === EYESHIELD_SCRIPT_ID) : null;
+    sites = Array.isArray(reg) ? reg.find((script) => script.id === EYESHIELD_SITES_SCRIPT_ID) : null;
+  } catch (_) {}
   try {
-    if (want && !have) {
+    if (!want) {
+      eyeShieldBootstrapCatchupKey = '';
+      const ids = [core && EYESHIELD_SCRIPT_ID, sites && EYESHIELD_SITES_SCRIPT_ID].filter(Boolean);
+      if (ids.length) {
+        await chrome.scripting.unregisterContentScripts({ ids });
+        eraseEyeShieldSiteMarkerFromOpenTabs();
+      }
+      return;
+    }
+    if (!core) {
       await chrome.scripting.registerContentScripts([{
         id: EYESHIELD_SCRIPT_ID,
         matches: scope.matches,
@@ -11681,8 +11711,21 @@ async function reconcileEyeShieldInjection(cfgArg) {
         allFrames: true,
         matchOriginAsFallback: true,
         persistAcrossSessions: true,
-        // ISOLATED world (default) -- EyeShield needs chrome.storage/runtime access.
-      }, {
+      }]);
+      if (!bootstrap) injectEyeShieldIntoOpenTabs(cfg);
+    } else {
+      const oldFiles = Array.isArray(core.js) ? core.js.map((file) => String(file).replace(/^\/+/, '')) : [];
+      const changedScope = (core.matches || []).join(',') !== scope.matches.join(',')
+        || (core.excludeMatches || []).join(',') !== scope.excludeMatches.join(',');
+      const changed = oldFiles.join(',') !== files.join(',')
+        || changedScope;
+      if (changed) {
+        await chrome.scripting.updateContentScripts([{ id: EYESHIELD_SCRIPT_ID, js: files, matches: scope.matches, excludeMatches: scope.excludeMatches }]);
+        if (!bootstrap && (changedScope || oldFiles.includes('eyeshield-bootstrap.js') !== bootstrap)) injectEyeShieldIntoOpenTabs(cfg);
+      }
+    }
+    if (bootstrap && sites) await chrome.scripting.unregisterContentScripts({ ids: [EYESHIELD_SITES_SCRIPT_ID] });
+    if (!bootstrap && !sites) await chrome.scripting.registerContentScripts([{
         id: EYESHIELD_SITES_SCRIPT_ID,
         matches: scope.matches,
         excludeMatches: scope.excludeMatches,
@@ -11694,27 +11737,23 @@ async function reconcileEyeShieldInjection(cfgArg) {
         allFrames: false,
         persistAcrossSessions: true,
       }]);
-      // Apply live to already-open tabs so enabling theming doesn't need a reload.
-      injectEyeShieldIntoOpenTabs(cfg);
-    } else if (want && have && (haveFiles && haveFiles.join(',') !== files.join(',')
-        || haveMatches && haveMatches.join(',') !== scope.matches.join(',')
-        || haveExcluded.join(',') !== scope.excludeMatches.join(','))
-        && typeof chrome.scripting.updateContentScripts === 'function') {
-      // The mode changed while theming stayed on: swap the preload file so the next page
-      // paints the new backdrop. Open tabs already re-theme from the config-update message.
-      const changedScope = (haveMatches && haveMatches.join(',') !== scope.matches.join(','))
-        || haveExcluded.join(',') !== scope.excludeMatches.join(',');
-      await chrome.scripting.updateContentScripts([{ id: EYESHIELD_SCRIPT_ID, js: files, matches: scope.matches, excludeMatches: scope.excludeMatches }]);
-      if (changedScope) {
+    if (!bootstrap && sites) {
+      const siteScopeChanged = (sites.matches || []).join(',') !== scope.matches.join(',')
+        || (sites.excludeMatches || []).join(',') !== scope.excludeMatches.join(',');
+      if (siteScopeChanged) {
         await chrome.scripting.updateContentScripts([{ id: EYESHIELD_SITES_SCRIPT_ID, matches: scope.matches, excludeMatches: scope.excludeMatches }]);
-        injectEyeShieldIntoOpenTabs(cfg);
       }
-    } else if (!want && have) {
-      await chrome.scripting.unregisterContentScripts({ ids: [EYESHIELD_SCRIPT_ID, EYESHIELD_SITES_SCRIPT_ID] });
-      // Open tabs keep their (now off-mode, cheap) instance until reload; the
-      // config-update message already tells EyeShield to tear down any active theme.
-      eraseEyeShieldSiteMarkerFromOpenTabs();
     }
+    if (bootstrap) {
+      const catchupKey = JSON.stringify([
+        eyeShieldThemingActive(Object.assign({}, cfg, { eyeShieldSites: {} })),
+        eyeShieldActiveProfileHosts(cfg),
+      ]);
+      if (catchupKey !== eyeShieldBootstrapCatchupKey) {
+        injectEyeShieldIntoOpenTabs(cfg);
+        eyeShieldBootstrapCatchupKey = catchupKey;
+      }
+    } else eyeShieldBootstrapCatchupKey = '';
   } catch (_) { return false; }
 }
 
@@ -16325,6 +16364,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
      logged: the Activity log and the badge do not move. */
   'rg-tally',
   'content-config-get',
+  'eyeshield-bootstrap',
   'redirect-bootstrap-get',
   /* Silencing a notice, and reporting that one was shown. Both carry a warning
      type and nothing else; the host is taken from the sending tab. Missing from
@@ -16393,6 +16433,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
      least-privilege snapshot. Keep enough room for frame-heavy applications while still
      preventing a compromised tab from turning configuration reads into a storage flood. */
   'content-config-get': { max: 500, windowMs: 60000 },
+  'eyeshield-bootstrap': { max: 500, windowMs: 60000 },
   'redirect-bootstrap-get': { max: 500, windowMs: 60000 },
   /* A results page asks once per batch of hosts it has not asked about, and remembers the
      answers -- so a search plus several "more results" is a handful of calls, not one per
@@ -17006,7 +17047,7 @@ const CONTROL_KINDS = {
   comfort: [
     'blockAutoplay', 'killPrefetch', 'lazyLoadMedia', 'twitchSteadyPlayback',
     'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk',
-    'memoryShield', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverPinned', 'throttleBackgroundTabs',
+  'memoryShield', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverPinned', 'throttleBackgroundTabs',
   ],
   compatibility: ['loginCompatibility'],
 };
@@ -21021,6 +21062,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  if (msg && msg.kind === 'eyeshield-bootstrap' && messageSenderIsTab(sender)) {
+    respond(injectEyeShieldFrame(sender).then((injected) => ({ ok: true, injected })), sendResponse);
+    return true;
+  }
   if (msg && msg.kind === 'content-config-get' && messageSenderIsTab(sender)) {
     // Return hidden rules with the config, scoped to this frame's origin, including about:blank.
     const frameHost = contentConfigFrameHost(sender);
@@ -22210,6 +22255,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(memoryScore(), sendResponse);
     return true;
   }
+  if (msg && msg.kind === 'memory-never-sleep-state' && messageSenderIsExtensionPage(sender)) {
+    const host = normalizeAllowlistHost(msg.host);
+    respond(memoryNeverSleepList().then((list) => ({ ok: true, host, on: !!host && list.includes(host) })), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'memory-never-sleep-list' && messageSenderIsExtensionPage(sender)) {
+    respond(memoryNeverSleepList().then((hosts) => ({ ok: true, hosts })), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'memory-never-sleep-set' && messageSenderIsExtensionPage(sender)) {
+    respond(memorySetNeverSleep(msg.host, msg.on).then(async (result) => {
+      if (result && result.ok) await refreshWardenNeverSleepMenuTitle(result.host);
+      return result;
+    }), sendResponse);
+    return true;
+  }
   if (msg && msg.kind === 'memory-free-ram') {
     respond(freeRamNow(), sendResponse);
     return true;
@@ -23186,7 +23247,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
             'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
