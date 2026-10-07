@@ -85,9 +85,8 @@ async function run() {
       'a manually started card video is left alone');
     await until("!document.querySelector('#manual-card').paused", 'manual card playback');
     await setPreferences(true, false);
-    assert.equal(await value("document.querySelector('#card-preview').play().then(() => true, () => false)"), true,
-      'a card preview can play when the setting is off');
-    await until("!document.querySelector('#card-preview').paused", 'general preview playback after live reversal');
+    await until("document.querySelector('#card-preview').play().then(() => new Promise(resolve => setTimeout(() => resolve(!document.querySelector('#card-preview').paused), 120)), () => false)",
+      'general preview playback after live reversal');
     await setPreferences(true, true);
     await value("document.querySelector('#card-preview').play().catch(() => {})");
     await until("document.querySelector('#card-preview').paused", 'the general preview control to return live');

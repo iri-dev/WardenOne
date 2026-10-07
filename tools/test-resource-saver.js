@@ -24,6 +24,7 @@ assert.equal(entry.match_about_blank, true);
 
 let reply;
 let update;
+let stateRequests = 0;
 const listeners = {};
 const styles = [];
 const makeVideo = (kind, options = {}) => ({
@@ -62,6 +63,7 @@ const chrome = {
     lastError: null,
     sendMessage(message, callback) {
       assert.deepEqual(JSON.parse(JSON.stringify(message)), { kind: 'resource-saver-state' });
+      stateRequests++;
       reply = callback;
     },
     onMessage: { addListener(callback) { update = callback; } },
@@ -107,6 +109,7 @@ listeners.play({ target: restored });
 assert.equal(restored.pauses, 0, 'preview playback is left alone again after live reversal');
 update({ kind: 'unrelated', ambient: true, previews: true });
 assert.equal(styles[0].isConnected, false, 'unrelated worker messages are ignored');
+assert.equal(stateRequests, 1, 'the runtime reads trusted state once and receives later changes from the worker');
 
 const background = read('background.js');
 const popup = read('popup.html') + read('popup.js');
