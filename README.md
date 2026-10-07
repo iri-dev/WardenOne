@@ -1498,6 +1498,17 @@ regardless of the sleep profile.
 ## Resource Saver
 
 Controls for autoplaying media, background throttling, lazy-loading images, prefetch and preload.
+An optional YouTube control hides Ambient Mode's decorative watch-page glow and stops the home
+header blurring thumbnail colours into its background. It may reduce rendering work on some
+systems. It leaves playback and YouTube's own preference alone.
+
+Another optional control stops recognised muted card and hover previews across sites. It leaves
+normal players, videos with controls and manually started inline videos alone. On YouTube it also
+hides the inline-preview layer so the static thumbnail remains visible.
+
+The advanced WebGL saver can disable hardware-accelerated 3D graphics on selected sites or
+everywhere except an allowlist. It is off by default because games, maps, CAD tools and 3D viewers
+can stop working without WebGL. The popup has a current-site action; Settings manages both lists.
 
 ## EyeShield
 

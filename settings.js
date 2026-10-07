@@ -202,7 +202,7 @@ const PROVIDERS = [
   { id: 'whoisXml', label: 'WhoisXML API', field: 'whoisXmlKey', switches: ['whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel'], test: (key) => ({ kind: 'test-reputation-provider-key', provider: 'whoisXml', key }), use: 'How old a domain is, who owns it, its reputation and threat reports.' }
 ];
 
-let siteState = { loading: true, error: '', paused: [], overrides: [], blocked: [], trusted: [], downloads: [], hidden: [], neverSleep: [], firewall: [] };
+let siteState = { loading: true, error: '', paused: [], overrides: [], blocked: [], trusted: [], downloads: [], hidden: [], neverSleep: [], webglBlocked: [], webglAllowed: [], firewall: [] };
 const siteRows = (rows, empty) => rows.length ? rows : [{ type: 'note', label: empty }];
 /* A row for adding a site to the list under it. Each writes where the popup writes. */
 const adder = (id) => custom('add-' + id, '', () => adderHTML(id));
@@ -215,6 +215,8 @@ const SITE_ADDERS = {
   trusted: { label: 'Trust a site’s script files', placeholder: 'cdn.example.com', button: 'Trust' },
   downloads: { label: 'Trust a download site', placeholder: 'downloads.example.com', button: 'Trust' },
   neversleep: { label: 'Keep a site’s tabs awake', placeholder: 'example.com', button: 'Keep awake' },
+  webglblock: { label: 'Disable WebGL on a site', placeholder: 'example.com', button: 'Disable WebGL' },
+  webglallow: { label: 'Allow WebGL on a site', placeholder: 'example.com', button: 'Allow WebGL' },
   firewall: { label: 'Set firewall rules for a site', placeholder: 'example.com', button: 'Open its firewall' }
 };
 function neverSleepGroup() {
@@ -234,6 +236,8 @@ function sitesGroups() {
     G('i-eye-off', 'Hidden elements', 'Parts of pages you hid with the Element Zapper, by site.', items(siteState.hidden, 'Nothing hidden on any site.').concat(
       action('Every hidden element', 'See each one on its own and bring back just that one.', [{ label: 'Open', icon: 'i-external', act: 'open-hidden' }]))),
     neverSleepGroup(),
+    G('i-gauge', 'WebGL disabled sites', 'Used when Disable WebGL is set to On selected sites.', [adder('webglblock')].concat(items(siteState.webglBlocked, 'No sites have WebGL disabled.'))),
+    G('i-gauge', 'WebGL allowed sites', 'Exceptions used when Disable WebGL is set to Everywhere.', [adder('webglallow')].concat(items(siteState.webglAllowed, 'No WebGL exceptions saved.'))),
     G('i-sliders', 'Site firewall', 'Your per-site request rules.', [adder('firewall')].concat(items(siteState.firewall, 'No per-site firewall rules saved.')))
   ];
   /* As in the popup: a package without Memory Shield has no never-sleep list to show. */
@@ -296,7 +300,12 @@ const PAGES = [
       ...sw('tl-guard', 'tl-close', 'tl-warn'),
       num('tabLimitMax', 'Maximum tabs', 'Acts when a new tab pushes the window past this count.', 2, 200, 1, 'tabs', 'tabLimit'),
       num('tabLimitMinIdleMinutes', 'Minimum inactive time', 'Minutes a tab must be idle before it is put to sleep. Close mode is a hard cap and does not wait.', 0, 1440, 5, 'minutes', 'tabLimit') ]),
-    G('i-bolt', 'Resource Saver', 'Optional controls for unnecessary page work.', ['blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia']) ] },
+    G('i-bolt', 'Resource Saver', 'Optional controls for unnecessary page work.', [
+      ...sw('blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews'),
+      pick('webglSaverMode', 'Disable WebGL', 'Advanced. Stops hardware-accelerated 3D graphics and can break games, maps, 3D viewers and some web apps.',
+        [['off', 'Off'], ['selected', 'On selected sites'], ['everywhere', 'Everywhere except allowed sites']],
+        () => /^(?:selected|everywhere)$/.test(String(config.webglSaverMode || '')) ? config.webglSaverMode : 'off',
+        (value) => writeConfig({ webglSaverMode: /^(?:selected|everywhere)$/.test(String(value || '')) ? value : 'off' })) ]) ] },
   { id: 'sites', title: 'Sites & exceptions', icon: 'i-list', nav: 2, desc: 'Every site you made an exception for: pauses, protections off on one site, blocks, trusted sites, hidden elements, tabs kept awake and firewall rules.', groups: sitesGroups },
   { id: 'look', title: 'Look & reading', icon: 'i-palette', nav: 2, desc: 'Theme, notifications, and how WardenOne shows itself on pages.', groups: () => [
     G('i-palette', 'Appearance', 'Applies to the popup and every WardenOne page.', [
@@ -685,16 +694,20 @@ async function loadSites() {
       });
     const neverSleep = (Array.isArray(config.memoryNeverSleepHosts) ? config.memoryNeverSleepHosts : []).slice(0, 300)
       .filter(savedHost).map((host) => site(host, 'Never put to sleep', 'neversleep', host));
+    const webglBlocked = (Array.isArray(config.webglSaverBlockHosts) ? config.webglSaverBlockHosts : []).slice(0, 300)
+      .filter(savedHost).map((host) => site(host, 'WebGL disabled here in Selected sites mode', 'webglblock', host));
+    const webglAllowed = (Array.isArray(config.webglSaverAllowHosts) ? config.webglSaverAllowHosts : []).slice(0, 300)
+      .filter(savedHost).map((host) => site(host, 'WebGL allowed here in Everywhere mode', 'webglallow', host));
     const matrix = stored.wardenone_firewall && typeof stored.wardenone_firewall === 'object' ? stored.wardenone_firewall : {};
     const firewall = Object.entries(matrix).slice(0, 500).filter(([host, rules]) => savedHost(host) && rules && typeof rules === 'object')
       .map(([host, rules]) => {
         const count = Object.values(rules).reduce((sum, columns) => sum + (columns && typeof columns === 'object' ? Object.values(columns).filter((value) => value && value !== 'default').length : 0), 0);
         return site(host, count + ' saved ' + (count === 1 ? 'decision' : 'decisions'), 'firewall', host);
       }).filter((row) => !row.line.startsWith('0 saved'));
-    siteState = { loading: false, error: '', paused: pauses, overrides, blocked, trusted: scriptHosts, downloads: downloadHosts, hidden, neverSleep, firewall };
+    siteState = { loading: false, error: '', paused: pauses, overrides, blocked, trusted: scriptHosts, downloads: downloadHosts, hidden, neverSleep, webglBlocked, webglAllowed, firewall };
   } catch (error) {
     if (number !== siteLoadNumber) return;
-    siteState = { loading: false, error: 'Could not load saved sites: ' + error.message, paused: [], overrides: [], blocked: [], trusted: [], downloads: [], hidden: [], neverSleep: [], firewall: [] };
+    siteState = { loading: false, error: 'Could not load saved sites: ' + error.message, paused: [], overrides: [], blocked: [], trusted: [], downloads: [], hidden: [], neverSleep: [], webglBlocked: [], webglAllowed: [], firewall: [] };
   }
   if (current === 'sites' || current === 'speed' || $('#q').value.trim()) keepTyping(renderPage);
 }
@@ -728,6 +741,9 @@ async function siteAction(button) {
       });
     } else if (source === 'neversleep') {
       await writeConfig((before) => ({ memoryNeverSleepHosts: (Array.isArray(before.memoryNeverSleepHosts) ? before.memoryNeverSleepHosts : []).filter((host) => host !== id) }));
+    } else if (source === 'webglblock' || source === 'webglallow') {
+      const field = source === 'webglblock' ? 'webglSaverBlockHosts' : 'webglSaverAllowHosts';
+      await writeConfig((before) => ({ [field]: (Array.isArray(before[field]) ? before[field] : []).filter((host) => host !== id) }));
     }
     await loadSites();
   } catch (error) { toast('Could not change ' + row.host + ': ' + error.message); }
@@ -807,6 +823,14 @@ async function addSite(id, button) {
         return { memoryNeverSleepHosts: list.concat(host) };
       });
       said = 'Tabs from ' + host + ' are never put to sleep.';
+    } else if (id === 'webglblock' || id === 'webglallow') {
+      const field = id === 'webglblock' ? 'webglSaverBlockHosts' : 'webglSaverAllowHosts';
+      await writeConfig((before) => {
+        const list = Array.isArray(before[field]) ? before[field].filter((h) => typeof h === 'string' && h !== host) : [];
+        if (list.length >= 300) throw new Error('this WebGL site list is full at 300 sites');
+        return { [field]: list.concat(host) };
+      });
+      said = id === 'webglblock' ? 'WebGL is disabled on ' + host + ' in Selected sites mode.' : 'WebGL is allowed on ' + host + ' in Everywhere mode.';
     } else if (id === 'firewall') {
       openPage('firewall.html?site=' + encodeURIComponent(host));
       said = 'Opened the firewall for ' + host + ' in a new tab.';

@@ -16,7 +16,7 @@ const REALM_SRC = path.join(ROOT, 'src', 'fingerprint-realm.js');
 const REALM_OUT = path.join(ROOT, 'fingerprint-realm.js');
 // Each region is delimited in src/content.js by a block comment opening with NAME-BEGIN and one
 // reading exactly NAME-END; the bootstrap names it in an @wardenone-include line.
-const REALM_REGIONS = ['AUTH', 'FINGERPRINT-NOISE'];
+const REALM_REGIONS = ['AUTH', 'WEBGL-SAVER', 'FINGERPRINT-NOISE'];
 
 function read(file) {
   return fs.readFileSync(file, 'utf8');

@@ -41,11 +41,12 @@ const WARDENONE_BUILD = Object.freeze({
     memoryShield: Object.freeze({
       label: 'Memory Shield',
       store: 'include',
-      goal: 'Resource protection: discard eligible idle tabs to release RAM, with safeguards for active work and media; find duplicate and long-idle tabs.',
-      files: Object.freeze(['background-memory.js']),
+      goal: 'Resource protection: discard eligible idle tabs, reduce optional page work, and keep safeguards for active work and media.',
+      files: Object.freeze(['background-memory.js', 'resource-saver.js']),
       keys: Object.freeze([
         'memoryShield', 'memoryMode', 'memoryMinutesOverride', 'memoryNeverPinned', 'memoryNeverAudio',
-        'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverSleepHosts',
+        'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverSleepHosts', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews',
+        'webglSaverMode', 'webglSaverBlockHosts', 'webglSaverAllowHosts',
       ]),
       messages: Object.freeze(['memory-']),
       popupSections: Object.freeze(['Memory Shield']),
