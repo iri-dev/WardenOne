@@ -1130,6 +1130,8 @@
     var css =
       /* An ad card can keep a menu beside its hidden ad renderer; collapse the card too. */
       "ytd-rich-item-renderer:has(> #content > :is(ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-display-ad-renderer,ytd-promoted-sparkles-web-renderer,ytd-promoted-video-renderer))," +
+      /* YouTube's membership promo is full-width; hiding only its content leaves a split row and a large blank shelf. */
+      "ytd-rich-section-renderer:has(ytd-brand-video-singleton-renderer),ytd-brand-video-singleton-renderer," +
       "ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-display-ad-renderer," +
       "ytd-promoted-sparkles-web-renderer,ytd-promoted-video-renderer," +
       "ytd-companion-slot-renderer,ytd-action-companion-ad-renderer," +

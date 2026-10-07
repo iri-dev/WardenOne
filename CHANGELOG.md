@@ -5,6 +5,9 @@
 ### Added
 
 - Memory Shield's popup has a compact never-sleep site manager for adding a domain or the current site, seeing saved hosts, and removing them. The same list is available in Speed & memory settings.
+- Resource Saver has an optional YouTube Ambient Mode control. It hides the decorative watch-page glow without changing video playback or YouTube's saved preference.
+- Resource Saver can stop recognised muted card and hover video previews across sites. Normal players, videos with controls and manually started inline videos are left alone, and the option is off by default.
+- Resource Saver has an advanced WebGL control with Off, selected-site and everywhere modes, a current-site shortcut, and separate disabled and allowed site lists. It remains off by default because 3D sites can break without WebGL.
 - EyeShield site profiles can inherit global settings, save custom theme and colour adjustments,
   or turn EyeShield off for a site. The popup keeps the main EyeShield controls visible and
   uses a small scope menu to autosave global or current-site settings. Settings manages
@@ -20,6 +23,8 @@
 - EyeShield site profiles now reach cross-origin child frames, while Off sites avoid loading the full EyeShield engine in those frames. IPv6 literal hosts can have site profiles.
 - Extension Security Centre recognises Volume Master's exact Store identity and expected tab-audio access while still warning about added powerful permissions.
 - AdShield also collapses YouTube ad cards that leave a menu or placeholder beside the hidden ad.
+- AdShield collapses YouTube's full-width members-only promotion so it no longer leaves a half-filled row or a wide blank area in the feed.
+- Disabling YouTube Ambient Mode also removes the home feed's frosted-header colour bleed while preserving the active YouTube or EyeShield theme colour.
 - Restored the pause and single-protection controls to the popup's bottom This site panel.
 - EyeShield's YouTube light theme keeps the feed's Next button readable without showing
   clipped topics through it. AdShield collapses empty feed cards left by blocked ads.

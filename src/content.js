@@ -69,6 +69,28 @@
     }
 
   };
+  /* WEBGL-SAVER-BEGIN
+     Installed before configuration arrives, but initially passes every request through. The
+     signed bridge verdict only changes future WebGL context creation; a reload is the reliable
+     way to release a context a page already created. Shared with the child-frame realm bootstrap. */
+  function __woWebGLSaver(){
+    let blocked=!1;
+    const patch=proto=>{
+      if(!proto||"function"!=typeof proto.getContext||proto.getContext.__wardenoneWebGLSaver)return;
+      const real=proto.getContext;
+      function getContext(kind,...args){
+        const type=String(kind||"").toLowerCase();
+        return blocked&&/^(?:webgl|webgl2|experimental-webgl)$/.test(type)?null:real.call(this,kind,...args)
+      }
+      try{Object.defineProperty(getContext,"__wardenoneWebGLSaver",{value:!0})}catch(_){}
+      try{proto.getContext=getContext}catch(_){}
+    };
+    try{patch(window.HTMLCanvasElement&&HTMLCanvasElement.prototype)}catch(_){}
+    try{patch(window.OffscreenCanvas&&OffscreenCanvas.prototype)}catch(_){}
+    return Object.freeze({set:value=>{blocked=!0===value}})
+  }
+  /* WEBGL-SAVER-END */
+  const __woWebGLControl=__woWebGLSaver();
   /* The window that opened this one, captured now rather than when the noise gate runs: `opener`
      is replaceable, and a same-origin opener could point it at an object of its own choosing in
      the meantime. A popup a page opens onto its own site is a second top-level realm the page
@@ -638,6 +660,7 @@
     throttleBackgroundTabs:!1,
     killPrefetch:!1,
     lazyLoadMedia:!1,
+    webglDisabled:!1,
     deAmp:!1,
     capReferrer:!1,
     autoRejectConsent:!0,
@@ -828,6 +851,7 @@
       throttleBackgroundTabs:gate(cfg.throttleBackgroundTabs),
       killPrefetch:gate(cfg.killPrefetch),
       lazyLoadMedia:gate(cfg.lazyLoadMedia),
+      webglDisabled:gate(!0===cfg.webglDisabled),
       deAmp:gate(cfg.deAmp),
       capReferrer:gate(cfg.capReferrer),
       autoRejectConsent:gate(cfg.autoRejectConsent),
@@ -1668,7 +1692,12 @@
          survive here forever. The derived Amazon and YouTube copies are rebuilt on every sync for
          the same reason -- deriving once would leave them stale the moment the config changed. */
       for(const k of Object.keys(WO))k in next||delete WO[k];
-      Object.assign(WO,next)
+      Object.assign(WO,next),
+      __woWebGLControl.set(!0===next.webglDisabled);
+      if(__woRealmRecord){
+        __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===next.webglDisabled})),
+        __woRealmSettled()
+      }
       /* No "protection is on" marker on window any more. __wardenOneReadyVersion means "the
       script ran" and is stamped unconditionally (the watchdog must not loop on a paused
       site); the marker that once carried masterOn beside it (BUG-01) had no reader left --
@@ -16927,8 +16956,11 @@
     }
     __woRealmRecord||(__woRealmRecord=Object.freeze({
       v:1,
-      noise:!1
+      noise:!1,
+      webglBlocked:!1
     })),
+    __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===WO.webglDisabled})),
+    __woWebGLControl.set(!0===WO.webglDisabled),
     __woRealmSettled();
     /* FINGERPRINT-NOISE-BEGIN
        Everything between this marker and FINGERPRINT-NOISE-END is copied verbatim into

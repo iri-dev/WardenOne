@@ -2171,6 +2171,11 @@ const DEFAULT_CONFIG = {
   throttleBackgroundTabs: false,
   killPrefetch: false,
   lazyLoadMedia: false,
+  disableYouTubeAmbientMode: false,
+  stopAnimatedVideoPreviews: false,
+  webglSaverMode: 'off',
+  webglSaverBlockHosts: [],
+  webglSaverAllowHosts: [],
   deAmp: false,
   clientHintProtection: true,
   capReferrer: false,
@@ -2351,6 +2356,14 @@ function sanitizeContentConfig(raw) {
     }
     if (field === 'eyeShieldSites') {
       out[field] = WOEyeShieldProfiles.cleanSites(source[field]);
+      continue;
+    }
+    if (field === 'webglSaverMode') {
+      out[field] = /^(?:off|selected|everywhere)$/.test(String(source[field] || '')) ? String(source[field]) : 'off';
+      continue;
+    }
+    if (field === 'webglSaverBlockHosts' || field === 'webglSaverAllowHosts') {
+      out[field] = normalizeAllowlistHosts(source[field], 300);
       continue;
     }
     try { out[field] = JSON.parse(JSON.stringify(source[field])); } catch (_) {}
@@ -2671,6 +2684,14 @@ chrome.runtime.onInstalled.addListener((details) => {
         if (typeof cfg.blockSponsoredSearchResults === 'undefined') cfg.blockSponsoredSearchResults = true;
         cfg.googleSearchResultCleanup = false;
         cfg.__searchCleanupSplitV352Enabled = true;
+        changed = true;
+      }
+      if (typeof cfg.stopAnimatedVideoPreviews === 'undefined' && typeof cfg.stopYouTubeVideoPreviews === 'boolean') {
+        cfg.stopAnimatedVideoPreviews = cfg.stopYouTubeVideoPreviews;
+        changed = true;
+      }
+      if (Object.prototype.hasOwnProperty.call(cfg, 'stopYouTubeVideoPreviews')) {
+        delete cfg.stopYouTubeVideoPreviews;
         changed = true;
       }
       // A secret-shaped field this build has no setting for is a credential nothing can read.
@@ -12766,6 +12787,19 @@ chrome.storage.onChanged.addListener((changes, area) => {
       if (MODULE_LOADED.memory && (o.memoryShield !== n.memoryShield || o.enabled !== n.enabled)) {
         reconcileMemorySweepAlarm();
       }
+      const resourceSaverState = (cfg) => ({
+        ambient: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.disableYouTubeAmbientMode === true,
+        previews: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.stopAnimatedVideoPreviews === true,
+      });
+      const beforeResourceSaver = resourceSaverState(o);
+      const afterResourceSaver = resourceSaverState(n);
+      if (beforeResourceSaver.ambient !== afterResourceSaver.ambient || beforeResourceSaver.previews !== afterResourceSaver.previews) {
+        chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }, (tabs) => {
+          for (const tab of (tabs || [])) {
+            chrome.tabs.sendMessage(tab.id, { kind: 'resource-saver-update', ambient: afterResourceSaver.ambient, previews: afterResourceSaver.previews }, () => { void chrome.runtime.lastError; });
+          }
+        });
+      }
     } catch (_) {}
   }
   if (area === 'local' && (changes[SCRIPT_SHIELD_MODE_KEY] || changes[SCRIPT_TRUSTED_KEY])) {
@@ -16365,6 +16399,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'rg-tally',
   'content-config-get',
   'eyeshield-bootstrap',
+    'resource-saver-state',
   'redirect-bootstrap-get',
   /* Silencing a notice, and reporting that one was shown. Both carry a warning
      type and nothing else; the host is taken from the sending tab. Missing from
@@ -16434,6 +16469,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
      preventing a compromised tab from turning configuration reads into a storage flood. */
   'content-config-get': { max: 500, windowMs: 60000 },
   'eyeshield-bootstrap': { max: 500, windowMs: 60000 },
+    'resource-saver-state': { max: 240, windowMs: 60000 },
   'redirect-bootstrap-get': { max: 500, windowMs: 60000 },
   /* A results page asks once per batch of hosts it has not asked about, and remembers the
      answers -- so a search plus several "more results" is a handful of calls, not one per
@@ -17045,7 +17081,7 @@ const CONTROL_KINDS = {
   presentation: ['showBadge', 'showToasts', 'silentMode'],
   tool: ['elementZapper', 'twitchRewind', 'twitchVodRewind'],
   comfort: [
-    'blockAutoplay', 'killPrefetch', 'lazyLoadMedia', 'twitchSteadyPlayback',
+    'blockAutoplay', 'killPrefetch', 'lazyLoadMedia', 'twitchSteadyPlayback', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews',
     'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk',
   'memoryShield', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverPinned', 'throttleBackgroundTabs',
   ],
@@ -21066,6 +21102,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(injectEyeShieldFrame(sender).then((injected) => ({ ok: true, injected })), sendResponse);
     return true;
   }
+  if (msg && msg.kind === 'resource-saver-state' && messageSenderIsTab(sender)) {
+    let page = null;
+    try { page = new URL(sender.url || ''); } catch (_) {}
+    if (!page || (page.protocol !== 'http:' && page.protocol !== 'https:')) {
+      sendResponse({ ok: false });
+      return true;
+    }
+    respond(localGet('wardenone_config').then((stored) => {
+      const cfg = (stored && stored.wardenone_config) || {};
+      const on = !woFeatureOmitted('memoryShield') && cfg.enabled !== false;
+      return {
+        ok: true,
+        ambient: on && cfg.disableYouTubeAmbientMode === true,
+        previews: on && cfg.stopAnimatedVideoPreviews === true,
+      };
+    }), sendResponse);
+    return true;
+  }
   if (msg && msg.kind === 'content-config-get' && messageSenderIsTab(sender)) {
     // Return hidden rules with the config, scoped to this frame's origin, including about:blank.
     const frameHost = contentConfigFrameHost(sender);
@@ -23247,7 +23301,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
             'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them

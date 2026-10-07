@@ -90,7 +90,7 @@ _Do not edit this block by hand; the gate rebuilds and checks it._
 | Utility | Store decision | Its goal | Files omitted | Settings omitted |
 | --- | --- | --- | --- | --- |
 | EyeShield (`eyeShield`) | Included | Reader-controlled page presentation for readability and visual comfort: brightness, contrast, warmth, saturation and grayscale. | — | — |
-| Memory Shield (`memoryShield`) | Included | Resource protection: discard eligible idle tabs to release RAM, with safeguards for active work and media; find duplicate and long-idle tabs. | — | — |
+| Memory Shield (`memoryShield`) | Included | Resource protection: discard eligible idle tabs, reduce optional page work, and keep safeguards for active work and media. | — | — |
 | Tab Limit (`tabLimit`) | Included | Memory Shield control: when an optional tab cap is reached, sleep an eligible idle tab or close one if the reader opts in. | — | — |
 | Twitch Rewind (`twitchRewind`) | Omitted | Local replay of a live Twitch stream: a rewind buffer and a jump to the in-progress recording. | `twitch-rewind.js`, `twitch-vod-rewind.js` | `twitchRewind`, `twitchRewindMinutes`, `twitchVodRewind` |
 
