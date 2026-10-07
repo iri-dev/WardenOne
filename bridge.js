@@ -1995,6 +1995,20 @@
     } catch (_) { return false; }
   }
 
+  /* WebGL is a page-tree choice: a cross-origin game or viewer embedded by a selected site
+     follows the top page, rather than escaping because its own frame has another hostname. */
+  function bridgeFrameWebGLDisabled(clean) {
+    try {
+      if (!clean || clean.enabled === false) return false;
+      const mode = /^(?:selected|everywhere)$/.test(String(clean.webglSaverMode || '')) ? String(clean.webglSaverMode) : 'off';
+      const host = bridgeTopHost() || bridgeOwnHost();
+      if (!host || mode === 'off') return false;
+      if (bridgeHostMatchesList(host, clean.allowlist)) return false;
+      if (mode === 'selected') return bridgeHostMatchesList(host, sanitizeBridgeHostList(clean.webglSaverBlockHosts, 300));
+      return !bridgeHostMatchesList(host, sanitizeBridgeHostList(clean.webglSaverAllowHosts, 300));
+    } catch (_) { return false; }
+  }
+
   const SEARCH_AI_PREPAINT_CSS = [
     ':is(.MjjYud,div[data-hveid],div[jscontroller],div[jsname],g-section-with-header,section,aside):has(#m-x-content):not(:has(#rso,#search,#res,#center_col,.related-question-pair))',
     ':is(#m-x-content):not(:has(#rso,#search,#res,#center_col))',
@@ -2193,6 +2207,10 @@
     // Decided while siteOverrides is still here to consult for the top host (SEC-05). The engine
     // in the top frame ignores this field and decides for itself, as it always has.
     clean.frameNoise = bridgeFrameNoiseAllowed(clean);
+    clean.webglDisabled = bridgeFrameWebGLDisabled(clean);
+    delete clean.webglSaverMode;
+    delete clean.webglSaverBlockHosts;
+    delete clean.webglSaverAllowHosts;
     delete clean.siteOverrides;
     // Silent mode is a gate over presentation, not a rewrite of it. The engine reads
     // showToasts and showBadge and nothing else, so Silent has to reach it as those two

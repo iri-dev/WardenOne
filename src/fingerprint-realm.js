@@ -46,7 +46,7 @@
   try { if (Object.getOwnPropertyDescriptor(window, '__wardenOneRealm')) return; } catch (_) {}
 
   /* ---- 2. This realm's record, for the realms a page can reach from here ------------------- */
-  const OFF = Object.freeze({ v: 1, noise: false });
+  const OFF = Object.freeze({ v: 1, noise: false, webglBlocked: false });
   let record = null;
   try {
     Object.defineProperty(window, '__wardenOneRealm', {
@@ -64,12 +64,20 @@
      does; __woFingerprintNoise installs the noise and returns the record to publish. Both are the
      engine's own text, spliced in by the build. */
   /* @wardenone-include AUTH */
+  /* @wardenone-include WEBGL-SAVER */
   /* @wardenone-include FINGERPRINT-NOISE */
+  const webglControl = __woWebGLSaver();
 
   /* ---- 4. Settling ---------------------------------------------------------------------------
      A realm settles once. `inherited` is a parent's record (its seed is reused) or null. */
   let settled = false;
-  const settle = (noise, inherited) => {
+  const publishWebGL = (blocked) => {
+    webglControl.set(blocked === true);
+    if (!record) return;
+    record = Object.freeze(Object.assign({}, record, { webglBlocked: blocked === true }));
+    settledHere();
+  };
+  const settle = (noise, blocked, inherited) => {
     if (settled) return;
     settled = true;
     if (noise) {
@@ -77,6 +85,8 @@
     } else {
       record = OFF;
     }
+    record = Object.freeze(Object.assign({}, record, { webglBlocked: blocked === true }));
+    webglControl.set(blocked === true);
     settledHere();
   };
   const validRecord = (r) => !!(r && typeof r === 'object' && r.v === 1 && typeof r.noise === 'boolean');
@@ -105,15 +115,16 @@
     return null;
   };
   const early = adopt();
-  if (early) { settle(early.noise, early); return; }
+  if (early) settle(early.noise, early.webglBlocked === true, early);
 
   /* Not decided upstream yet -- the parent's own config has not landed. Listen on every
      same-origin source for the moment it settles, and adopt then. A page can dispatch this
      event too; hearing it only makes this realm re-read the record. */
   const adoptLater = () => {
-    if (settled) return;
     const late = adopt();
-    if (late) settle(late.noise, late);
+    if (!late) return;
+    if (settled) publishWebGL(late.webglBlocked === true);
+    else settle(late.noise, late.webglBlocked === true, late);
   };
   SOURCES.forEach((w) => {
     try { w.document.addEventListener('wo-realm-settled', adoptLater, true); } catch (_) {}
@@ -164,7 +175,7 @@
     key = __woAuth.key(d.key);
   }, true);
   window.addEventListener('message', (event) => {
-    if (settled || event.source !== window) return;
+    if (event.source !== window) return;
     const m = event.data || {};
     if (m.source !== 'wardenone' || m.kind !== 'config' || token === null || m.token !== token) return;
     if (!m.overrides || typeof m.overrides !== 'object') return;
@@ -172,9 +183,14 @@
     /* The parent's answer normally lands before this frame's own. Mirroring it keeps the realms
        a page can compare agreeing on the numbers, so adoption is tried once more first. */
     const late = adopt();
-    if (late) { settle(late.noise, late); return; }
-    settle(m.overrides.frameNoise === true, null);
+    if (late) {
+      if (settled) publishWebGL(late.webglBlocked === true);
+      else settle(late.noise, late.webglBlocked === true, late);
+      return;
+    }
+    if (settled) publishWebGL(m.overrides.webglDisabled === true);
+    else settle(m.overrides.frameNoise === true, m.overrides.webglDisabled === true, null);
   }, true);
   /* The bridge may have run first, and handed its key to a document with no listener yet. */
-  try { document.dispatchEvent(new CustomEvent('wo-bridge-replay')); } catch (_) {}
+  if (!early) try { document.dispatchEvent(new CustomEvent('wo-bridge-replay')); } catch (_) {}
 }());

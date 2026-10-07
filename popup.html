@@ -1678,6 +1678,25 @@
       <div><div class="name" style="font-size:12px;">Lazy-load offscreen images</div><div class="desc">Only load images and embeds as you scroll to them, instead of all at once. Saves data and memory. May rarely affect image-heavy sites.</div></div>
       <label class="tg"><input type="checkbox" data-key="lazyLoadMedia"><span class="track"></span><span class="knob"></span></label>
     </div>
+    <div data-feature="memoryShield" class="row">
+      <div><div class="name" style="font-size:12px;">Disable YouTube Ambient Mode</div><div class="desc">Removes the decorative glow around videos and colour bleed in YouTube's blurred home header. Playback and your YouTube preference stay unchanged.</div></div>
+      <label class="tg"><input type="checkbox" data-key="disableYouTubeAmbientMode"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div data-feature="memoryShield" class="row">
+      <div><div class="name" style="font-size:12px;">Stop animated video previews</div><div class="desc">Stops recognised muted card and hover previews across sites. Normal players and videos with controls still work.</div></div>
+      <label class="tg"><input type="checkbox" data-key="stopAnimatedVideoPreviews"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <details data-feature="memoryShield" class="row memory-sites" id="webgl-saver">
+      <summary><div><div class="name">Advanced: Disable WebGL</div><div class="desc">Stops hardware-accelerated 3D graphics. May reduce GPU use, but can break games, maps, 3D viewers and some web apps.</div></div><span class="memory-manage">Configure ›</span></summary>
+      <div class="memory-sites-body">
+        <label><span class="name" style="font-size:12px;">Where</span><select class="api-field" id="webgl-saver-mode" aria-label="Where to disable WebGL" style="width:100%;margin-top:5px;"><option value="off">Off</option><option value="selected">On selected sites</option><option value="everywhere">Everywhere except allowed sites</option></select></label>
+        <div class="desc" id="webgl-saver-explain"></div>
+        <button type="button" class="memory-sites-current" id="webgl-saver-current" disabled></button>
+        <div class="memory-sites-add"><input class="api-field" type="text" id="webgl-saver-input" placeholder="example.com" aria-label="WebGL site" spellcheck="false"><button class="btn" type="button" id="webgl-saver-add">Add</button></div>
+        <div class="memory-sites-list" id="webgl-saver-list" aria-label="Saved WebGL sites"></div>
+        <div class="desc" id="webgl-saver-status" role="status" aria-live="polite">Reload an affected page to close WebGL contexts it already created.</div>
+      </div>
+    </details>
     </div>
 <h2>Forget Me &amp; Logins</h2>
     <div class="card-group">

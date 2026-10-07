@@ -42,7 +42,7 @@ const KEYS = [
   'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
   'showToasts', 'showBadge', 'silentMode', 'elementZapper',
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
-  'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia',
+  'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews',
   'deAmp', 'clientHintProtection', 'capReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
   'trackerLearner', 'unshimLinks', 'stripTrackingParams', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
 ];
@@ -64,7 +64,9 @@ const DEFAULTS = {
   memoryShield: true, memoryMode: 'balanced', memoryMinutesOverride: 0,
   memoryNeverPinned: true, memoryNeverAudio: true, memoryNeverForms: true, memoryNeverPayment: true,
   tabLimitGuard: false, tabLimitMax: 20, tabLimitClose: false, tabLimitMinIdleMinutes: 30, tabLimitWarn: true,
-  blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: false, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
+  blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, disableYouTubeAmbientMode: false, stopAnimatedVideoPreviews: false,
+  webglSaverMode: 'off', webglSaverBlockHosts: [], webglSaverAllowHosts: [],
+  deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: false, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
   trackerLearner: true, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
   forgetMeMode: 'off', forgetMeList: [], forgetMeHistory: false, forgetMeAllConfirmedAt: 0,
   oneOpenPerGesture: true, stripTrackingParams: true, gestureWindowMs: 2400, allowlist: [],
@@ -203,6 +205,7 @@ function applyToUI() {
   paintTabLimitUI();
   paintForgetMe();
   paintMemoryModes();
+  paintWebGLSaver();
   paintTwitchRewindUI();
 }
 
@@ -1081,6 +1084,7 @@ function repaintExternalConfigKeys(keys) {
   reflectSilentMode();
   syncBreachVisibility();
   if ((keys || []).some((key) => key === 'eyeShieldSites' || key === 'eyeShieldMode' || key.startsWith('eyeShield'))) paintEyeShield();
+  if ((keys || []).some((key) => key.startsWith('webglSaver'))) paintWebGLSaver();
 }
 
 // Keep `config` in step with a change another surface just made, so the popup stops
@@ -4873,6 +4877,145 @@ function reconcileForgetHistoryPermission() {
     });
   });
 })();
+
+// ----- Advanced WebGL Resource Saver -----
+let webglSaverCurrentHost = '';
+
+function webglSaverMode() {
+  return /^(?:selected|everywhere)$/.test(String(config.webglSaverMode || '')) ? config.webglSaverMode : 'off';
+}
+
+function webglSaverHost(raw) {
+  let value = String(raw || '').trim();
+  if (!value) return '';
+  try {
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = 'https://' + value;
+    const url = new URL(value);
+    if (!/^https?:$/.test(url.protocol)) return '';
+    return WOEyeShieldProfiles.hostOf(url.hostname);
+  } catch (_) { return ''; }
+}
+
+function webglSaverListKey() {
+  return webglSaverMode() === 'everywhere' ? 'webglSaverAllowHosts' : 'webglSaverBlockHosts';
+}
+
+function webglSaverHosts(key) {
+  const seen = new Set();
+  return (Array.isArray(config[key]) ? config[key] : []).map(webglSaverHost).filter((host) => {
+    if (!host || seen.has(host) || seen.size >= 300) return false;
+    seen.add(host);
+    return true;
+  });
+}
+
+function setWebglSaverStatus(text, error) {
+  const status = $('webgl-saver-status');
+  if (!status) return;
+  status.textContent = text;
+  status.style.color = error ? 'var(--wo-danger)' : '';
+}
+
+function paintWebGLSaver() {
+  const select = $('webgl-saver-mode');
+  const explain = $('webgl-saver-explain');
+  const current = $('webgl-saver-current');
+  const input = $('webgl-saver-input');
+  const add = $('webgl-saver-add');
+  const list = $('webgl-saver-list');
+  if (!select || !explain || !current || !input || !add || !list) return;
+  const mode = webglSaverMode();
+  const key = webglSaverListKey();
+  const hosts = webglSaverHosts(key);
+  config[key] = hosts;
+  select.value = mode;
+  input.disabled = mode === 'off';
+  add.disabled = mode === 'off';
+  list.replaceChildren();
+  if (mode === 'off') {
+    explain.textContent = 'WebGL works normally on every site.';
+    current.textContent = 'Choose a mode to use a current-site action';
+    current.disabled = true;
+  } else if (mode === 'selected') {
+    explain.textContent = 'WebGL is disabled only on the sites listed below. Other sites keep normal 3D graphics.';
+    const listed = hosts.includes(webglSaverCurrentHost);
+    current.textContent = webglSaverCurrentHost ? (listed ? 'Use WebGL on ' : 'Disable WebGL on ') + webglSaverCurrentHost : 'Open a website to change it';
+    current.disabled = !webglSaverCurrentHost;
+  } else {
+    explain.textContent = 'WebGL is disabled on every site except the allowed sites listed below.';
+    const listed = hosts.includes(webglSaverCurrentHost);
+    current.textContent = webglSaverCurrentHost ? (listed ? 'Disable WebGL on ' : 'Allow WebGL on ') + webglSaverCurrentHost : 'Open a website to change it';
+    current.disabled = !webglSaverCurrentHost;
+  }
+  if (mode === 'off') {
+    const empty = document.createElement('div');
+    empty.className = 'desc';
+    empty.textContent = 'Your saved site lists are kept while this is off.';
+    list.appendChild(empty);
+    return;
+  }
+  if (!hosts.length) {
+    const empty = document.createElement('div');
+    empty.className = 'desc';
+    empty.textContent = mode === 'selected' ? 'No sites have WebGL disabled.' : 'No sites are allowed as exceptions.';
+    list.appendChild(empty);
+  }
+  hosts.forEach((host) => {
+    const row = document.createElement('div');
+    row.className = 'memory-sites-list-item';
+    const name = document.createElement('span');
+    name.textContent = host;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', 'Remove ' + host + ' from this WebGL list');
+    remove.addEventListener('click', () => changeWebglSaverHost(host, false));
+    row.append(name, remove);
+    list.appendChild(row);
+  });
+}
+
+function changeWebglSaverHost(raw, addHost) {
+  const mode = webglSaverMode();
+  if (mode === 'off') return;
+  const host = webglSaverHost(raw);
+  if (!host) { setWebglSaverStatus('Enter a website such as example.com.', true); return; }
+  const key = webglSaverListKey();
+  const hosts = webglSaverHosts(key).filter((item) => item !== host);
+  if (addHost) hosts.push(host);
+  config[key] = hosts.slice(0, 300);
+  const input = $('webgl-saver-input');
+  if (input && addHost) input.value = '';
+  paintWebGLSaver();
+  save(() => setWebglSaverStatus((mode === 'selected' ? 'WebGL is ' + (addHost ? 'disabled on ' : 'available again on ') : 'WebGL is ' + (addHost ? 'allowed on ' : 'disabled again on ')) + host + '. Reload that site to apply fully.', false));
+}
+
+(function initWebGLSaver() {
+  const select = $('webgl-saver-mode');
+  const input = $('webgl-saver-input');
+  const add = $('webgl-saver-add');
+  const current = $('webgl-saver-current');
+  if (!select || !input || !add || !current) return;
+  select.addEventListener('change', () => {
+    config.webglSaverMode = /^(?:selected|everywhere)$/.test(select.value) ? select.value : 'off';
+    paintWebGLSaver();
+    save(() => setWebglSaverStatus('WebGL mode saved. Reload affected pages to apply fully.', false));
+  });
+  add.addEventListener('click', () => changeWebglSaverHost(input.value, true));
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); add.click(); }
+  });
+  current.addEventListener('click', () => {
+    if (!webglSaverCurrentHost) return;
+    const listed = webglSaverHosts(webglSaverListKey()).includes(webglSaverCurrentHost);
+    changeWebglSaverHost(webglSaverCurrentHost, !listed);
+  });
+  const refreshCurrent = () => activeTabHost((host) => { webglSaverCurrentHost = webglSaverHost(host); paintWebGLSaver(); });
+  chrome.tabs.onActivated.addListener(refreshCurrent);
+  chrome.tabs.onUpdated.addListener((_tabId, change, tab) => { if (change.url && tab.active) refreshCurrent(); });
+  refreshCurrent();
+  paintWebGLSaver();
+}());
 
 // ----- Memory Shield UI -----
 /* The build profile (CWS-03). The Store package includes EyeShield, Memory Shield and Tab Limit;

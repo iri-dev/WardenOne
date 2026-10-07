@@ -209,6 +209,7 @@ function checkContentBuild() {
   'tools/test-dns-rebind-guard.js',
   'tools/test-ip-classifier-agreement.js',
   'tools/test-webgpu-shield.js',
+  'tools/test-webgl-saver.js',
   'tools/test-storage-access-guard.js',
   'tools/test-worker-realm-guard.js',
   'tools/test-keyboard-lock-guard.js',
@@ -407,6 +408,7 @@ function checkContentBuild() {
   'tools/test-education-compat.js',
   'tools/config-write-harness.js',
   'tools/browser-config-race.js',
+  'tools/browser-resource-saver.js',
   'tools/browser-engine-smoke.js',
   'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
@@ -451,6 +453,7 @@ function checkContentBuild() {
   'redirect-warning.js',
   'safe-browsing-block.js',
   'yt-adblock.js',
+  'resource-saver.js',
   'spotify-adblock.js',
   'settings.js',
   'settings-data.js',
@@ -601,6 +604,7 @@ checkCommand('transport shield tests', ['tools/test-transport-shield.js']);
 checkCommand('DNS rebind guard tests', ['tools/test-dns-rebind-guard.js']);
 checkCommand('IP classifier agreement tests', ['tools/test-ip-classifier-agreement.js']);
 checkCommand('WebGPU shield tests', ['tools/test-webgpu-shield.js']);
+checkCommand('WebGL Resource Saver tests', ['tools/test-webgl-saver.js']);
 checkCommand('storage access guard tests', ['tools/test-storage-access-guard.js']);
 checkCommand('worker realm guard tests', ['tools/test-worker-realm-guard.js']);
 checkCommand('keyboard lock guard tests', ['tools/test-keyboard-lock-guard.js']);
@@ -773,6 +777,7 @@ checkCommand('clear-on-leave tests', ['tools/test-clear-on-leave.js']);
 checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js']);
 checkCommand('X compatibility tests', ['tools/test-x-compatibility.js']);
 checkCommand('YouTube adblock tests', ['tools/test-yt-adblock.js']);
+checkCommand('Resource Saver media tests', ['tools/test-resource-saver.js']);
 checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);
 
 // ---------------------------------------------------------------------------
