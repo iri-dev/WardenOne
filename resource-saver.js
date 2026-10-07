@@ -11,6 +11,7 @@
   let previewStyle = null;
   let ambientEnabled = false;
   let previewsEnabled = false;
+  let refreshNumber = 0;
 
   const EXPLICIT_PREVIEW = [
     'ytd-video-preview',
@@ -103,7 +104,9 @@
   }
 
   function refresh() {
+    const number = ++refreshNumber;
     chrome.runtime.sendMessage({ kind: 'resource-saver-state' }, (result) => {
+      if (number !== refreshNumber) return;
       apply(!chrome.runtime.lastError && result && result.ok === true ? result : null);
     });
   }
@@ -112,6 +115,7 @@
   document.addEventListener('play', (event) => stopPreviewVideo(event && event.target), true);
   chrome.runtime.onMessage.addListener((message) => {
     if (!message || message.kind !== 'resource-saver-update') return;
+    refreshNumber++;
     apply(message);
   });
   refresh();

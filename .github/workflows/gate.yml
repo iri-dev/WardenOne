@@ -110,7 +110,7 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-eyeshield-frames.js
 
-      - name: Test YouTube Resource Saver and playback in Edge
+      - name: Test Resource Saver previews and YouTube playback in Edge
         if: success() || failure()
         env:
           WARDENONE_HEADLESS: '1'
