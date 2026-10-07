@@ -12700,6 +12700,23 @@ function recordSettingsChanges(entries) {
   return __settingsRecentChain;
 }
 
+let resourceSaverBroadcastNumber = 0;
+function broadcastResourceSaverState(state) {
+  const number = ++resourceSaverBroadcastNumber;
+  const deliver = () => {
+    if (number !== resourceSaverBroadcastNumber) return;
+    chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }, (tabs) => {
+      if (number !== resourceSaverBroadcastNumber) return;
+      for (const tab of (tabs || [])) {
+        chrome.tabs.sendMessage(tab.id, { kind: 'resource-saver-update', ambient: state.ambient, previews: state.previews }, () => { void chrome.runtime.lastError; });
+      }
+    });
+  };
+  deliver();
+  setTimeout(deliver, 250);
+  setTimeout(deliver, 1200);
+}
+
 // Re-apply when the user changes settings (session rules are cleared on browser
 // restart, so we also call this on startup below).
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -12794,11 +12811,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       const beforeResourceSaver = resourceSaverState(o);
       const afterResourceSaver = resourceSaverState(n);
       if (beforeResourceSaver.ambient !== afterResourceSaver.ambient || beforeResourceSaver.previews !== afterResourceSaver.previews) {
-        chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }, (tabs) => {
-          for (const tab of (tabs || [])) {
-            chrome.tabs.sendMessage(tab.id, { kind: 'resource-saver-update', ambient: afterResourceSaver.ambient, previews: afterResourceSaver.previews }, () => { void chrome.runtime.lastError; });
-          }
-        });
+        broadcastResourceSaverState(afterResourceSaver);
       }
     } catch (_) {}
   }
