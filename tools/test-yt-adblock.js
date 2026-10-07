@@ -110,6 +110,11 @@ async function main() {
       wrapperSelector.includes('> #content > :is(')
         && !wrapperSelector.includes('ytd-rich-grid-media')
         && css.includes('ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer'));
+    ok('the full-width membership promotion collapses with its reserved feed space',
+      css.includes('ytd-rich-section-renderer:has(ytd-brand-video-singleton-renderer),ytd-brand-video-singleton-renderer,'));
+    ok('ordinary rich shelves stay outside the membership-promotion selector',
+      !css.includes('ytd-rich-section-renderer{display:none')
+        && !css.includes('ytd-rich-shelf-renderer'));
   }
 
   console.log("1) Cold-load trap (set before script runs):");

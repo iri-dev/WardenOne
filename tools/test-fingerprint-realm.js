@@ -163,7 +163,7 @@ section('engine', () => {
   check('a cross-origin opener throws and lends nothing', inherited(crossOrigin()) === null);
   check('no opener, nothing', inherited(null) === null);
   check('and settles an off record when the switch is off or the noise failed',
-    /__woRealmRecord\|\|\(__woRealmRecord=Object\.freeze\(\{v:1,noise:!1\}\)\),__woRealmSettled\(\);/.test(CONTENT));
+    /__woRealmRecord\|\|\(__woRealmRecord=Object\.freeze\(\{v:1,noise:!1,webglBlocked:!1\}\)\),__woRealmRecord=Object\.freeze/.test(CONTENT));
   check('settling tells the document, so a child that arrived early can catch up',
     /const __woRealmSettled=\(\)=>\{try\{document\.dispatchEvent\(new CustomEvent\("wo-realm-settled"\)\)\}catch\(_\)\{\}\};/.test(CONTENT));
   check('the engine still has no framed-only branch (tools/test-known-limits.js premise)',
@@ -260,7 +260,7 @@ function realm(opts) {
     measureText(t) { return { width: 100 + String(t).length }; }
   }
   class HTMLCanvasElement {
-    getContext(kind) { if (kind !== '2d') return null; this.__ctx = this.__ctx || new CanvasRenderingContext2D(); return this.__ctx; }
+    getContext(kind) { if (kind !== '2d') return { kind }; this.__ctx = this.__ctx || new CanvasRenderingContext2D(); return this.__ctx; }
     toDataURL() { return 'data:clean:' + (this.__ctx && this.__ctx.__put ? Array.from(this.__ctx.__put.data).join(',') : 'none'); }
     toBlob(cb) { cb('blob'); }
   }
@@ -358,6 +358,16 @@ section('same-origin child adopts synchronously', () => {
   try { Object.defineProperty(c, '__wardenOneRealm', { value: { v: 1, noise: false } }); redefined = true; } catch (_) { redefined = false; }
   check('the page cannot redefine the record', !redefined && c.__wardenOneRealm.noise === true);
   check('nor delete it', (() => { try { return !(delete c.__wardenOneRealm) || !!accessor(c); } catch (_) { return true; } })());
+});
+
+section('same-origin child inherits the WebGL verdict', () => {
+  const parent = ancestor(Object.freeze({ v: 1, noise: false, webglBlocked: false }));
+  const c = run(realm({ parent, top: parent }));
+  const canvas = c.document.createElement('canvas');
+  check('an initially allowed parent leaves WebGL available', !!canvas.getContext('webgl'));
+  parent.set(Object.freeze({ v: 1, noise: false, webglBlocked: true }));
+  check('a later blocked parent makes future WebGL contexts unavailable in the child realm', canvas.getContext('webgl') === null && canvas.getContext('webgl2') === null);
+  check('the targeted wrapper leaves Canvas 2D available', !!canvas.getContext('2d'));
 });
 
 section('realms sharing a seed agree', () => {
@@ -552,6 +562,14 @@ section('a cross-origin child waits for its own signed verdict', () => {
   giveKey(noField, TOKEN, KEY);
   post(noField, configMsg(KEY, TOKEN, 1, { antiFingerprintNoise: true }));
   check('a config without the verdict field settles off', !wrapped(noField) && noField.__wardenOneRealm.noise === false);
+  const gpu = mk();
+  giveKey(gpu, TOKEN, KEY);
+  post(gpu, configMsg(KEY, TOKEN, 1, { frameNoise: false, webglDisabled: true }));
+  const canvas = gpu.document.createElement('canvas');
+  check('a signed WebGL verdict blocks WebGL and WebGL2 in a cross-origin child', canvas.getContext('webgl') === null && canvas.getContext('webgl2') === null && gpu.__wardenOneRealm.webglBlocked === true);
+  check('the same verdict leaves Canvas 2D alone', !!canvas.getContext('2d'));
+  post(gpu, configMsg(KEY, TOKEN, 2, { frameNoise: false, webglDisabled: false }));
+  check('a later signed config restores future WebGL contexts without changing the settled noise decision', !!canvas.getContext('webgl') && gpu.__wardenOneRealm.webglBlocked === false && gpu.__wardenOneRealm.noise === false);
 });
 
 section('forged or replayed config is refused', () => {
