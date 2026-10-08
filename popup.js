@@ -6826,25 +6826,16 @@ function wireArrangeDrag(list) {
 (function initPopupSectionOrder() {
   const box = $('groups');
   if (!box || !POPUP_SECTION_DEFAULT.length) return;
-  /* Hidden for the moment it takes to read the saved order, so a custom order never
-     flashes the default one first. The timer makes sure it can never stay hidden. */
-  box.classList.add('sec-order-pending');
-  let revealed = false;
-  const reveal = () => { if (revealed) return; revealed = true; box.classList.remove('sec-order-pending'); };
-  const fallback = setTimeout(reveal, 400);
+  /* Storage can answer after the popup is already being measured. Keep the controls usable while
+     the saved order arrives; a brief default-order paint is safer than an invisible popup. */
   try {
     chrome.storage.local.get(POPUP_SECTION_ORDER_KEY, (res) => {
       try {
         const saved = res && res[POPUP_SECTION_ORDER_KEY];
         if (Array.isArray(saved) && saved.length) applyPopupSectionOrder(saved);
       } catch (_) {}
-      clearTimeout(fallback);
-      reveal();
     });
-  } catch (_) {
-    clearTimeout(fallback);
-    reveal();
-  }
+  } catch (_) {}
 
   /* Settings opens the Settings page, which is also the browser's "Extension options" page, so the
      browser reuses a Settings tab that is already open rather than opening a second. */
