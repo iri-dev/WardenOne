@@ -49,20 +49,25 @@ function arrayConstant(name) {
 }
 
 function loadNetworkParsers() {
+  const yields = { count: 0 };
   const sandbox = {
     URL,
     isMediaCompatFilter: () => false,
     isMediaCompatDomain: () => false,
     isNeverBlockDomain: () => false,
+    setTimeout(callback, ms) {
+      yields.count++;
+      return setTimeout(callback, ms);
+    },
   };
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('const UBO_TYPE_MAP', '\nfunction getListMeta')
-      + '\nthis.__api = { parseList, parseNetworkRules };',
+      + '\nthis.__api = { parseList, parseListInSlices, parseNetworkRules };',
     sandbox,
   );
-  return sandbox.__api;
+  return Object.assign({ yields }, sandbox.__api);
 }
 
 function loadRedirectPolicy() {
@@ -254,6 +259,42 @@ test('a single-feed listing is dropped for the domain and www only, and everythi
 
   const fromJson = Array.from(parseList(JSON.stringify({ blocklist: ['steamrip.com', 'steamrip.us.com'] })));
   assert.deepStrictEqual(fromJson, ['steamrip.us.com']);
+});
+
+/* Parsing a whole feed in one task held the service worker for seconds after a fresh install, and
+   a settings change made meanwhile reached open tabs only after it. The update path now parses a
+   feed in slices of lines and gives the worker back between them; what comes out must be exactly
+   parseList's answer, including repeats that straddle a slice and slices that open with "[". */
+test('a long feed parsed in slices gives the worker back and yields exactly parseList\'s hosts', async () => {
+  const { parseList, parseListInSlices, yields } = loadNetworkParsers();
+  const lines = ['﻿[Adblock Plus 2.0]', '! Title: fixture feed'];
+  for (let i = 0; i < 12000; i++) {
+    if (i === 3998) lines.push('[section opening the second slice]');
+    else if (i === 7998) lines.push('{"looks":"like json"}');
+    else if (i % 997 === 0) lines.push('0.0.0.0 hosts-' + i + '.example hosts-b' + i + '.example');
+    else if (i % 499 === 0) lines.push('||abp-' + i + '.example^');
+    else if (i % 333 === 0) lines.push('https://url-' + i + '.example/path');
+    else if (i % 101 === 0) lines.push('repeat-' + (i % 7) + '.example');
+    else lines.push('host-' + i + '.example # trailing comment');
+  }
+  const text = lines.join('\n');
+  yields.count = 0;
+  const sliced = Array.from(await parseListInSlices(text));
+  assert(yields.count >= 3, 'a 12,000-line feed was parsed without giving the worker back: ' + yields.count + ' yields');
+  assert.deepStrictEqual(sliced, Array.from(parseList(text)), 'slicing changed the hosts or their order');
+  assert(sliced.includes('hosts-b997.example') && sliced.includes('repeat-0.example'), 'fixture hosts were not parsed');
+
+  yields.count = 0;
+  const json = JSON.stringify({ blocklist: ['json-a.example', 'json-b.example'] });
+  assert.deepStrictEqual(Array.from(await parseListInSlices(json)), Array.from(parseList(json)), 'a JSON feed changed');
+  /* Pretty-printed, a JSON feed runs to thousands of lines, and cut at a line it is not JSON. */
+  const longJson = JSON.stringify({ blocklist: Array.from({ length: 6000 }, (_, i) => 'json-' + i + '.example') }, null, 1);
+  const longJsonHosts = Array.from(await parseListInSlices(longJson));
+  assert.deepStrictEqual(longJsonHosts, Array.from(parseList(longJson)), 'a long JSON feed was cut into lines');
+  assert.strictEqual(longJsonHosts.length, 6000, 'the long JSON fixture did not parse');
+  const short = 'one.example\ntwo.example';
+  assert.deepStrictEqual(Array.from(await parseListInSlices(short)), Array.from(parseList(short)), 'a short feed changed');
+  assert.strictEqual(yields.count, 0, 'a JSON or short feed was sliced');
 });
 
 test('JSON list parsing does not broaden URLs, options, or allowlist entries', () => {

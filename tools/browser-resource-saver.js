@@ -22,6 +22,47 @@ async function run() {
     const version = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
     const extension = await profile.extensionReady(cdp, port, version);
     await profile.closeExtensionTabs(cdp, port, extension.id);
+    /* A timeout reports where a settings change stopped: when the test wrote it, what the worker
+       saw and sent (and to which tabs), and whether the page applied anything. */
+    const marks = [];
+    const mark = (label) => marks.push([Date.now() % 100000, label]);
+    async function workerValue(expression) {
+      if (!extension.attachedSession) return 'no worker session';
+      const result = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, extension.attachedSession);
+      if (result.exceptionDetails) return 'worker error: ' + (result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+      return result.result.value;
+    }
+    mark('instrument ' + await workerValue(`(() => {
+      const log = self.__woRsDiag = [];
+      const now = () => Date.now() % 100000;
+      const push = (entry) => { log.push(entry); if (log.length > 80) log.shift(); };
+      const send = chrome.tabs.sendMessage;
+      chrome.tabs.sendMessage = function (tabId, message, ...rest) {
+        if (message && message.kind === 'resource-saver-update') {
+          const entry = { t: now(), send: tabId, previews: message.previews };
+          push(entry);
+          const last = rest.length - 1;
+          if (last >= 0 && typeof rest[last] === 'function') {
+            const callback = rest[last];
+            rest[last] = function () { entry.done = now(); entry.error = chrome.runtime.lastError ? chrome.runtime.lastError.message : ''; return callback.apply(this, arguments); };
+          }
+        }
+        return send.call(this, tabId, message, ...rest);
+      };
+      const query = chrome.tabs.query;
+      chrome.tabs.query = function (filter, callback) {
+        const note = (tabs) => push({ t: now(), query: (tabs || []).map((tab) => tab.id + ' ' + String(tab.url || '').slice(0, 40) + ' ' + tab.status) });
+        if (typeof callback === 'function') return query.call(this, filter, (tabs) => { note(tabs); return callback(tabs); });
+        return query.call(this, filter).then((tabs) => { note(tabs); return tabs; });
+      };
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !changes.wardenone_config) return;
+        const before = changes.wardenone_config.oldValue || {};
+        const after = changes.wardenone_config.newValue || {};
+        push({ t: now(), change: [before.stopAnimatedVideoPreviews, after.stopAnimatedVideoPreviews] });
+      });
+      return 'ok';
+    })()`).catch((error) => 'failed ' + error.message));
     const extTarget = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/popup.html` });
     const ext = await cdp.send('Target.attachToTarget', { targetId: extTarget.targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, ext.sessionId);
@@ -43,10 +84,17 @@ async function run() {
       }
       const state = await value("({ url: location.href, generic: !!window.__woGenericFixture, youtube: !!window.__woYouTubeFixture, frames: !!window.__woFrameFixture, ambient: document.querySelector('#cinematics') && getComputedStyle(document.querySelector('#cinematics')).display, blur: document.querySelector('#frosted-glass') && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter, preview: document.querySelector('ytd-video-preview') && getComputedStyle(document.querySelector('ytd-video-preview')).display, previewPaused: document.querySelector('#preview-video') && document.querySelector('#preview-video').paused, cardPaused: document.querySelector('#card-preview') && document.querySelector('#card-preview').paused, cardAutoplay: document.querySelector('#card-preview') && document.querySelector('#card-preview').autoplay, cardAutoplayAttribute: document.querySelector('#card-preview') && document.querySelector('#card-preview').hasAttribute('autoplay'), cardEnded: document.querySelector('#card-preview') && document.querySelector('#card-preview').ended, blankFramePaused: document.querySelector('#blank-frame')?.contentDocument?.querySelector('#frame-preview')?.paused, srcdocFramePaused: document.querySelector('#srcdoc-frame')?.contentDocument?.querySelector('#frame-preview')?.paused })").catch(() => null);
       const config = await value("chrome.storage.local.get('wardenone_config').then(data => ({ enabled: data.wardenone_config?.enabled, ambient: data.wardenone_config?.disableYouTubeAmbientMode, previews: data.wardenone_config?.stopAnimatedVideoPreviews }))", ext.sessionId).catch(() => null);
-      throw new Error('Timed out waiting for ' + label + ': ' + JSON.stringify({ state, config }));
+      const pageStyle = await value("!!document.querySelector('style[data-wardenone-resource-saver=\"previews\"]')").catch(() => null);
+      const worker = await workerValue('JSON.stringify(self.__woRsDiag || null)').catch((error) => 'unreadable ' + error.message);
+      const tabs = await workerValue("chrome.tabs.query({}).then((tabs) => tabs.map((tab) => tab.id + ' ' + String(tab.url || '').slice(0, 40) + ' ' + tab.status)).then(JSON.stringify)").catch(() => null);
+      mark('timeout');
+      throw new Error('Timed out waiting for ' + label + ': ' + JSON.stringify({ state, config, pageStyle, marks, tabs, worker }));
     }
-    const setPreferences = (ambient, previews, master = true) => value(`chrome.storage.local.get('wardenone_config').then(data =>
+    const setPreferences = (ambient, previews, master = true) => {
+      mark('set previews=' + previews);
+      return value(`chrome.storage.local.get('wardenone_config').then(data =>
       chrome.storage.local.set({ wardenone_config: { ...data.wardenone_config, enabled: ${master}, disableYouTubeAmbientMode: ${ambient}, stopAnimatedVideoPreviews: ${previews} } }).then(() => true))`, ext.sessionId);
+    };
     await until.call(null, "document.readyState === 'complete'", 'blank page');
     await setPreferences(true, true);
 
@@ -136,6 +184,9 @@ async function run() {
     assert.equal(await value("!document.querySelector('#watch-video').paused"), true,
       'the ordinary watch player remains active through resource-setting changes');
     off();
+    if (process.env.WO_RS_DIAG === '1') {
+      console.log(JSON.stringify({ marks, worker: await workerValue('JSON.stringify(self.__woRsDiag || null)') }));
+    }
     console.log('[ok] Edge Resource Saver fixture: inherited frames, general previews, player compatibility, YouTube Ambient Mode and live reversal');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
