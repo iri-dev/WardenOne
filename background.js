@@ -12731,9 +12731,12 @@ function broadcastResourceSaverState(state) {
   const number = ++resourceSaverBroadcastNumber;
   const deliver = () => {
     if (number !== resourceSaverBroadcastNumber) return;
-    chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }, (tabs) => {
+    /* Query all tabs and filter URLs here. Older Chrome builds have been less consistent about
+       URL-pattern queries while a synthetic or just-navigated tab is still settling. */
+    chrome.tabs.query({}, (tabs) => {
       if (number !== resourceSaverBroadcastNumber) return;
-      for (const tab of (tabs || [])) {
+      for (const tab of (tabs || []).filter((candidate) => candidate && candidate.id != null
+          && /^https?:\/\//i.test(String(candidate.url || '')))) {
         chrome.tabs.sendMessage(tab.id, { kind: 'resource-saver-update', ambient: state.ambient, previews: state.previews }, () => { void chrome.runtime.lastError; });
       }
     });
