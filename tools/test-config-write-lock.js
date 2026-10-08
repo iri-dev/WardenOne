@@ -149,6 +149,8 @@ for (const file of ['background.js', 'settings.js', 'popup.js', 'history.js', 'n
   const lock = fs.readFileSync(path.join(root, 'config-lock.js'), 'utf8');
   check('config-lock.js records saves beside the config, not in it',
     /const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';/.test(lock) && /function stampConfigWrite\(/.test(lock) && /function confirmConfigWrite\(/.test(lock));
+  check('save ancestry keeps delayed confirmations long enough to repair',
+    /const WO_CONFIG_WRITES_KEPT = (\d+);/.test(lock) && Number(lock.match(/const WO_CONFIG_WRITES_KEPT = (\d+);/)[1]) >= 256);
 }
 
 const pages = ['settings.html', 'popup.html', 'history.html', 'notifications.html', 'onboarding.html'];

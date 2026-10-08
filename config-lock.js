@@ -36,7 +36,10 @@ function withConfigLock(task) {
    write ids there would only be something for a page to read. */
 const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';
 const WO_CONFIG_RESET_KEY = 'wardenone_config_reset';
-const WO_CONFIG_WRITES_KEPT = 64;
+/* Keep enough ancestry for delayed confirmation callbacks on slower browsers. The record is
+   tiny compared with the storage quota, while a short list can evict a write before its second
+   check gets a chance to repair a cross-context overwrite. */
+const WO_CONFIG_WRITES_KEPT = 256;
 
 function configWriteId() {
   try {
