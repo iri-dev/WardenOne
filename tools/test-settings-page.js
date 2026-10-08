@@ -56,9 +56,11 @@ check('the exempt list names only switches that still exist', Object.keys(POPUP_
 check('no table is copied into settings.js by hand',
   !/^const (?:DATA|POPUP_DEFAULTS|IMPORT_ONLY_DEFAULTS|TOAST_TITLES|SHIELD_KEYS|WATCH_ONLY_KEYS) = [{[]/m.test(settingsJs));
 check('nothing on the page is a placeholder', !/\bmock|data-mock|Would (?:open|save|list|clear|build|fetch|pause|ask)\b/i.test(settingsJs + settingsHtml));
+check('Memory Shield explains its unconditional video and camera/mic protections',
+  settingsJs.includes('Video/live platforms and active camera/mic sessions are always protected.'));
 
 const scripts = Array.from(settingsHtml.matchAll(/<script src="([^"]+)"><\/script>/g)).map((m) => m[1]);
-assert.deepStrictEqual(scripts, ['build-profile.js', 'eyeshield-profiles.js', 'notification-schema.js', 'popup-diagnostics.js', 'settings-data.js', 'config-lock.js', 'settings.js'], 'settings.html loads what settings.js uses, before it');
+assert.deepStrictEqual(scripts, ['build-profile.js', 'eyeshield-profiles.js', 'notification-schema.js', 'popup-diagnostics.js', 'settings-data.js', 'site-dashboard-shared.js', 'config-lock.js', 'settings.js'], 'settings.html loads what settings.js uses, before it');
 check('the page loads nothing from outside the package', !/(?:src|href)="(?:https?:)?\/\//.test(settingsHtml.replace(/<a [^>]*>/g, '')) && !settingsHtml.includes('../'));
 check('the browser’s Extension options is Settings', manifest.options_page === 'settings.html');
 check('the popup’s Settings button opens it as the options page', /settingsBtn\.addEventListener\('click', \(\) => \{\s*try \{\s*chrome\.runtime\.openOptionsPage\(/.test(popupJs));

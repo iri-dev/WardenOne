@@ -231,6 +231,7 @@ async function main() {
   await testDuplicateCloseSafety();
   await testSweepAlarmFollowsTheSetting();
   await testColdStartsKeepTheSweepDeadline();
+  await testSafetySwitchParity();
   await testAudioExemptionFollowsSwitch();
   await testNeverSleepIsExactAndHonoured();
   await testTabActionsByHand();
@@ -760,6 +761,36 @@ async function testAudioExemptionFollowsSwitch() {
     const result = await run.sandbox.memorySweep('alarm');
     assert.strictEqual(result.slept, expected, 'the audio switch must govern the timed sweep');
     assert.deepStrictEqual(run.state.discarded, expected ? [1] : []);
+  }
+}
+
+async function testSafetySwitchParity() {
+  const cases = [
+    ['pinned tabs', 'memoryNeverPinned', { pinned: true }, 'pinned', () => ({ formDirty: false, mediaActive: false })],
+    ['audio tabs', 'memoryNeverAudio', { audible: true }, 'playing audio', () => ({ formDirty: false, mediaActive: false })],
+    ['login/payment tabs', 'memoryNeverPayment', { url: 'https://ordinary.example/login' }, 'login/payment page', () => ({ formDirty: false, mediaActive: false })],
+    ['unsaved-form tabs', 'memoryNeverForms', {}, null, () => ({ formDirty: true, mediaActive: false })],
+  ];
+
+  for (const [label, key, extra, reason, liveReply] of cases) {
+    for (const on of [true, false]) {
+      const run = loadMemoryShield({
+        config: { memoryShield: true, memoryMode: 'balanced', [key]: on },
+        tabs: [sleepableTab(1, 120, extra)],
+        liveReply,
+      });
+      const config = await run.sandbox.getMemoryConfig();
+      const tab = run.state.tabs[0];
+      if (reason) {
+        assert.strictEqual(run.memory.tabKeepReason(tab, config), on ? reason : null,
+          label + ' keep reason did not follow its switch (' + (on ? 'on' : 'off') + ')');
+      }
+      const result = await run.sandbox.memorySweep('alarm');
+      assert.strictEqual(result.slept, on ? 0 : 1,
+        label + ' sweep did not follow its switch (' + (on ? 'on' : 'off') + ')');
+      assert.deepStrictEqual(run.state.discarded, on ? [] : [1],
+        label + ' discard result did not follow its switch (' + (on ? 'on' : 'off') + ')');
+    }
   }
 }
 

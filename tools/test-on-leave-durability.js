@@ -98,6 +98,7 @@ function worker(session, options) {
     FORGET_TAB_HOSTS_TTL_MS: DAY,
     REDIRECT_CHAINS: {}, POPUP_OPENED_AT: {},
     forgetNavSignals() {}, forgetRebindTab() {}, forgetWarningRecordsForTab() {}, maybeBlockForcedTopRedirect() {},
+    navigationIsFileDownload() { return false; }, frameDrivenRedirectContext() { return null; }, maybeFlagFrameDrivenRedirect() {},
     registerListener: (name, register) => register(),
     chrome: {
       runtime: { lastError: null },

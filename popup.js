@@ -58,7 +58,7 @@ const DEFAULTS = {
   eyeShieldWarmth: 0, eyeShieldWarmthByHost: {}, eyeShieldGrayscale: 0, eyeShieldGrayscaleByHost: {},
   eyeShieldSites: {},
   warnRedirectParams: true, warnShorteners: true, monitorLoggerApi: true,
-  detectPhishing: true, blockHighConfidencePhishing: false, behavioralScan: true, xssBehaviorGuard: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, cryptominerCpuWatch: false, autoUpdateLists: true,
+  detectPhishing: true, blockHighConfidencePhishing: true, behavioralScan: true, xssBehaviorGuard: true, removeOverlays: true, autoSkipDownloadAds: true, blockMalwareSites: true, blockCryptominers: true, cryptominerCpuWatch: false, autoUpdateLists: true,
   showToasts: true, showBadge: true, showDownloadBar: true, silentMode: false, elementZapper: true,
   notificationSettings: typeof wardenNotificationDefaultSettings === 'function' ? wardenNotificationDefaultSettings() : { version: 4, defaultDuration: 'reading', position: 'top-right', retentionDays: 30, groupSimilar: true, badgeEnabled: false, soundEnabled: false, soundMode: 'important', volume: 0.55, rules: {} },
   memoryShield: true, memoryMode: 'balanced', memoryMinutesOverride: 0,
@@ -5962,59 +5962,25 @@ function siteDashIsEducation(host) {
   return /(^|\.)(edu|edu\.au|edu\.sg|edu\.hk|ac\.uk|ac\.nz|ac\.za|ac\.in|ucas\.com)$/i.test(String(host || '').replace(/^www\./, ''));
 }
 
-/* Which bucket a logged page event counts in. '' leaves it out: tab housekeeping (sleeping,
-   tab limits) is logged against the tab's site but is not something done on the page. */
-function siteDashEventKind(type) {
-  const t = String(type || '');
-  if (/^(memory_|tab_limit_|forget_me|extension_change|search_junk|youtube_ad_diag|download_|reload_loop)/.test(t)) return '';
-  if (/^(warned_|detected_|proposed_|learned_|gated_|session_token_|login_thirdparty|skimmer_suspected|behavioral_risk)/.test(t)) return 'noticed';
-  // The site tally's routine actions (counted, never logged).
-  if (t === 'consent_rejected') return 'consent';
-  if (t === 'google_search_cleanup') return 'annoyances';
-  if (t === 'scriptlet_mutator_blocked') return 'trackers';
-  if (t === 'youtube_ads_removed') return 'ads';
-  if (/^(cleaned_|stripped_|purged_)/.test(t)) return 'cleaned';
-  if (/popup|redirect|gestureless_nav|meta_refresh|form_submit|frame_top|ad_auction/.test(t)) return 'popups';
-  if (/overlay|confirm_bait|autoplay|hidden_media/.test(t)) return 'annoyances';
-  if (/tracker|thirdparty_cookie|grabber_pixel|beacon|fingerprint|supercookie/.test(t)) return 'trackers';
-  if (/capture|webrtc|geolocation|camera|device_/.test(t)) return 'privacy';
-  if (/token_exfil/.test(t)) return 'sensitive';
-  if (/^blocked_/.test(t)) return 'security';
-  return '';
-}
-
 function siteDashSummarize(res) {
-  const cats = {};
-  SITE_DASH_CATEGORIES.forEach((c) => { cats[c.id] = 0; });
+  const counted = wardenSiteDashSummarize(res);
   const net = (res && res.network) || {};
-  if (net.available) {
-    for (const key of Object.keys(net.byCategory || {})) cats[key] = (cats[key] || 0) + Number(net.byCategory[key] || 0);
-  }
-  let noticed = 0;
   const typeCounts = (res.page && res.page.typeCounts) || {};
-  for (const type of Object.keys(typeCounts)) {
-    const kind = siteDashEventKind(type);
-    const n = Number(typeCounts[type]) || 0;
-    if (!kind) continue;
-    if (kind === 'noticed') noticed += n;
-    else cats[kind] = (cats[kind] || 0) + n;
-  }
   const events = ((res.page && res.page.events) || [])
-    .map((e) => Object.assign({}, e, { kind: siteDashEventKind(e.type) }))
+    .map((e) => Object.assign({}, e, { kind: wardenSiteDashEventKind(e.type) }))
     .filter((e) => e.kind);
-  const total = Object.keys(cats).reduce((sum, key) => sum + cats[key], 0);
   return {
     host: res.host || '',
     web: !!res.web,
     since: Number(res.since) || 0,
     net,
-    cats,
+    cats: counted.cats,
     events,
     typeCounts,
     tallies: (res.page && res.page.tallies) || [],
     recent: res.recent || { day: {}, week: {} },
-    noticed,
-    total,
+    noticed: counted.noticed,
+    total: counted.total,
     retained: res.retained || null,
   };
 }
@@ -6285,7 +6251,7 @@ function renderSiteDashTimeline(summary) {
   });
   /* Routine actions from the site tally: one line each, with how many times, at the latest. */
   (summary.tallies || []).forEach((t) => {
-    if (!siteDashEventKind(t.type)) return;
+    if (!wardenSiteDashEventKind(t.type)) return;
     const sub = t.type === 'youtube_ads_removed' ? fmtCount(t.n) + (t.n === 1 ? ' ad break' : ' ad breaks')
       : t.n > 1 ? fmtCount(t.n) + ' times on this page' : '';
     items.push({ at: t.last, text: SITE_DASH_EVENT_LABELS[t.type] || t.type, sub });
@@ -6328,7 +6294,7 @@ function renderSiteDashRecent(summary) {
   const bucket = (counts) => {
     const out = {};
     for (const key of Object.keys(counts || {})) {
-      const kind = key.indexOf('net:') === 0 ? key.slice(4) : siteDashEventKind(key);
+      const kind = key.indexOf('net:') === 0 ? key.slice(4) : wardenSiteDashEventKind(key);
       if (!kind) continue;
       out[kind] = (out[kind] || 0) + (Number(counts[key]) || 0);
     }
