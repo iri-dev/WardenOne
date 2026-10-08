@@ -51,6 +51,7 @@ const GLOBALS = {
   __wardenOneCleanCopyUrl: 'the "copy clean link" menu entry asks the engine to clean a URL through it; the worker re-checks the host it gets back',
   __wardenOnePopupMatchers: 'scriptlet no-window-open matchers handed to the redirect guard; non-writable, non-configurable',
   __wardenOneRealm: 'the anti-fingerprint realm record for child frames and openers (SEC-05); a non-configurable accessor',
+  __wardenOnePlayerPressAt: 'when the reader last pressed a player here, for the redirect guard in the frames around this one, which cannot see the click; a non-configurable getter, and a faked value only makes those guards stop more',
   /* Install-once flags: a second copy must not install beside a live one. Page-writable, and
      therefore never trusted for health -- the bridge\'s signed challenge is (SEC-03). */
   __wardenOneInstalled: 'engine install-once flag; cleared on dispose so re-injection can take',

@@ -60,6 +60,12 @@ const attempt = (w, overrides = {}, armed = true) => {
   await attempt(w);
   assert.deepStrictEqual(w.removed, [12], 'the escaped embedded-player popup is closed');
   assert.strictEqual(w.history[0]?.type, 'blocked_popup');
+  w = world();
+  await attempt(w, { url: 'https://eu2.glaza-bolyat.online/click/?campaign_id=4' });
+  assert.deepStrictEqual(w.removed, [12], 'an embedded-player click broker popup is closed without relying on its TLD');
+  w = world();
+  await attempt(w, { url: 'https://example.online/watch/episode' });
+  assert.deepStrictEqual(w.removed, [], 'an ordinary online-domain popup is not classified by its TLD alone');
   w = world(); await attempt(w, {}, false);
   assert.deepStrictEqual(w.removed, [], 'a domain ending alone cannot close an embedded-site popup');
   w = world(); w.sandbox.PLAYER_GESTURE_AT[11] = Date.now() - 9000; await attempt(w, {}, false);

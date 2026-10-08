@@ -132,13 +132,14 @@ function bareIndexLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 6
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 7
       && /run: node tools\/browser-settings-data\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
       && /run: node tools\/browser-config-race\.js/.test(settings)
       && /run: node tools\/browser-engine-smoke\.js/.test(settings)
       && /run: node tools\/browser-eyeshield-frames\.js/.test(settings)
-      && /run: node tools\/browser-resource-saver\.js/.test(settings));
+      && /run: node tools\/browser-resource-saver\.js/.test(settings)
+      && /run: node tools\/browser-player-ad-layers\.js/.test(settings));
   /* Publication stays serialised while a draft is prepared and promoted. */
   const head = WORKFLOW.split(/\njobs:\n/)[0];
   check('no workflow-wide concurrency can cancel the publish job', !/^concurrency:/m.test(head));

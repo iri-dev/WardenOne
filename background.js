@@ -1138,10 +1138,21 @@ const REDIRECT_CHAIN_RECENT_MAX = 80;
 function chainAbuseTld(host) {
   return /\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|mom|hair|tattoo)$/i.test(String(host || ''));
 }
+function embeddedPlayerAdTarget(rawUrl) {
+  let target;
+  try { target = new URL(String(rawUrl || '')); } catch (_) { return false; }
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
+  const host = target.hostname.toLowerCase();
+  if (chainAbuseTld(host)) return true;
+  if (/(^|\.)(popads|popcash|propellerads|adsterra|hilltopads|exoclick|juicyads|trafficjunky|adcash|clickadu|ad-maven|admaven|onclickads|onclicka|popmyads|bidvertiser|clickaine|galaksion)\.[a-z.]+$/i.test(host)) return true;
+  if (/(?:^|\/)(?:click|onclick|popunder|pre-?land(?:er|ing)?|redirect)(?:\.php)?(?:\/|$)/i.test(target.pathname)) return true;
+  const fields = target.search.match(/(?:^|[?&])(?:publisher_id|zone_id|campaign_id|placement_id|banner_id|creative_id|aff_id|affiliate_id|click_?id)=/ig);
+  return !!(fields && fields.length >= 2);
+}
 /* A page can open a popup through a form target or a fresh frame's Window.open,
    bypassing the player frame's MAIN-world hook. Chrome still reports the source
-   frame and first destination here. A risky domain ending is not proof of abuse:
-   require a recent signed player or overlay signal from the source tab too. */
+   frame and first destination here. A suspicious destination is not proof of
+   abuse: require a recent signed player or overlay signal from the source tab too. */
 async function maybeCloseSuspiciousFramePopup(details) {
   if (!details || !Number.isInteger(details.tabId) || details.tabId < 0
       || !Number.isInteger(details.sourceTabId) || details.sourceTabId < 0
@@ -1152,7 +1163,7 @@ async function maybeCloseSuspiciousFramePopup(details) {
     if (target.protocol !== 'https:' && target.protocol !== 'http:') return;
     targetHost = target.hostname.toLowerCase();
   } catch (_) { return; }
-  if (!chainAbuseTld(targetHost)) return;
+  if (!embeddedPlayerAdTarget(details.url)) return;
   const signalAt = Math.max(PLAYER_GESTURE_AT[details.sourceTabId] || 0, POPUP_OVERLAY_AT[details.sourceTabId] || 0);
   if (!signalAt || Date.now() - signalAt > 8000) return;
   let cfg = {};
@@ -1566,7 +1577,8 @@ async function purgeTrackingBounces(chain, finalUrl, cfg) {
 // cross-site without our own hooks claiming it. An anchor wrapped around a
 // thumbnail sets intentWasExplicit and never raises the gesture signal, which is
 // what keeps ordinary navigation out of this.
-// Interstitial, never a silent cancel: a wrong call here must stay recoverable.
+// Ambiguous destinations stay recoverable behind an interstitial. Distinctive
+// ad-click brokers return to the source page so a player control remains usable.
 const PLAYER_GESTURE_AT = Object.create(null);
 const POPUP_OVERLAY_AT = Object.create(null);
 const TOP_NAV_OWNED_AT = Object.create(null);
@@ -1929,6 +1941,12 @@ async function maybeFlagFrameDrivenRedirect(details, candidate) {
     url: String(details.url || '').slice(0, 300),
     at: now,
   });
+  if (embeddedPlayerAdTarget(details.url)) {
+    try {
+      await chrome.tabs.update(tabId, { url: String(fromUrl).slice(0, 1200) });
+      return true;
+    } catch (_) {}
+  }
   try {
     await chrome.tabs.update(tabId, {
       url: await redirectWarningPageUrl({
