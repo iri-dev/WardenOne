@@ -100,8 +100,9 @@ let writeChain = Promise.resolve();
    the read and the write hold the config lock (config-lock.js), so one made at the same moment
    does too. A private window's pages and worker have their own lock; if one of them wrote over
    this change without seeing it, the same patch is applied again (confirmConfigWrite). */
-function writeConfig(patch, triesLeft) {
+function writeConfig(patch, triesLeft, operationOrder) {
   let id = '';
+  let order = operationOrder;
   let changedKeys = [];
   const run = writeChain.then(() => withConfigLock(async () => {
     const stored = await localRead([CONFIG_KEY, WO_CONFIG_WRITES_KEY]);
@@ -111,13 +112,14 @@ function writeConfig(patch, triesLeft) {
     changedKeys = Object.keys(delta);
     const next = Object.assign({}, before, delta);
     tidyConfig(next, before, delta);
-    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY], changedKeys);
+    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY], changedKeys, order);
     id = stamp.id;
+    order = stamp.order;
     await localWrite({ [CONFIG_KEY]: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
     return next;
   })).then((next) => {
     adoptConfig(next);
-    confirmConfigWrite(id, (left) => { writeConfig(patch, left).catch(() => {}); }, triesLeft, changedKeys);
+    confirmConfigWrite(id, (left) => { writeConfig(patch, left, order).catch(() => {}); }, triesLeft, changedKeys, order);
     return next;
   });
   writeChain = run.catch(() => {});

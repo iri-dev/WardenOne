@@ -1021,6 +1021,7 @@ function persistConfig(onSaved, onError, retry) {
   const changes = {};
   changedKeys.forEach((k) => { changes[k] = retry ? retry.changes[k] : configClone({ v: config[k] }).v; });
   let writeId = '';
+  let writeOrder = retry && retry.order;
   withConfigLock(() => new Promise((release) => {
     // Whatever goes wrong lets the lock go and is reported. A read that failed is not an empty
     // config: writing defaults plus this change over it would reset every other setting.
@@ -1040,8 +1041,9 @@ function persistConfig(onSaved, onError, retry) {
           normalizeStoredProviderKeys(next);
           const adopted = Object.keys(next).filter((k) => changedKeys.indexOf(k) < 0
             && configValuesDiffer(next[k], savedConfigSnapshot[k]));
-          const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY]);
+          const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY], changedKeys, writeOrder);
           writeId = stamp.id;
+          writeOrder = stamp.order;
           chrome.storage.local.set({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record }, () => {
             const err = chrome.runtime.lastError;
             if (err) { fail(err); return; }
@@ -1054,7 +1056,8 @@ function persistConfig(onSaved, onError, retry) {
               release();
             }
             if (typeof onSaved === 'function') onSaved(adopted);
-            confirmConfigWrite(writeId, (left) => persistConfig(null, null, { changes, left }), retry ? retry.left : undefined);
+            confirmConfigWrite(writeId, (left) => persistConfig(null, null, { changes, left, order: writeOrder }),
+              retry ? retry.left : undefined, changedKeys, writeOrder);
           });
         } catch (e) { fail(e); }
       });

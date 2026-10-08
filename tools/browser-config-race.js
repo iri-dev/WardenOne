@@ -12,6 +12,8 @@
    their own Web Locks, over the same storage. There the save record and its check (config-lock.js)
    are what keep a change: without them a regular Settings change was lost in 19 of 40 tries.
    The final case pauses a private Settings save through Erase All and checks storage after reload.
+   A deterministic same-key case also holds an older private write until a later regular edit has
+   completed, then proves the later user edit is recovered after the stale write lands.
    Run: node tools/browser-config-race.js
    It drives the unpacked extension in Edge (tools/perf-profile.js), so it runs in CI's
    real-settings-regression job rather than the local gate; tools/test-config-write-lock.js,
@@ -152,6 +154,31 @@ async function run() {
     assert.equal(await evaluate(privateSettings, "chrome.storage.local.get('wardenone_config').then((got) => got.wardenone_config.deAmp)"), false,
       'the last completed same-setting edit wins over an earlier reconciliation');
     console.log('[ok] a later private edit to the same setting wins');
+
+    await evaluate(regularSettings, 'writeConfig({ deAmp: false }).then(() => true)');
+    await evaluate(privateSettings, `(() => {
+      const area = chrome.storage.local;
+      const originalSet = area.set.bind(area);
+      let held = false;
+      area.set = (items, callback) => {
+        if (!held && Object.prototype.hasOwnProperty.call(items, 'wardenone_config')) {
+          held = true;
+          globalThis.__resumeOlderSameKeyWrite = () => { area.set = originalSet; originalSet(items, callback); };
+          return;
+        }
+        return originalSet(items, callback);
+      };
+      globalThis.__olderSameKeyWrite = writeConfig({ deAmp: true });
+      return true;
+    })()`);
+    await until(privateSettings, "typeof __resumeOlderSameKeyWrite === 'function'", 'older private same-key write to pause after stamping');
+    await evaluate(regularSettings, 'writeConfig({ deAmp: false }).then(() => true)');
+    assert.equal(await evaluate(privateSettings, "(__resumeOlderSameKeyWrite(), __olderSameKeyWrite.then(() => true))"), true,
+      'the older private same-key write completed after the later regular edit');
+    await sleep(2100);
+    assert.equal(await evaluate(regularSettings, "chrome.storage.local.get('wardenone_config').then((got) => got.wardenone_config.deAmp)"), false,
+      'the later regular same-key edit was discarded by the delayed older write');
+    console.log('[ok] a later same-setting edit is recovered after an older private write lands late');
 
     await evaluate(regularSettings, 'writeConfig({ deAmp: false, capReferrer: false }).then(() => true)');
     await evaluate(privateSettings, "chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY]).then((got) => { globalThis.__woStale = got; return true; })");

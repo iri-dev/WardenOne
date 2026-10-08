@@ -590,6 +590,13 @@
       .slice(0, 50)));
   }
 
+  function requestedOAuthScopes(u) {
+    return splitScopes([
+      u.searchParams.get('scope') || '',
+      u.searchParams.get('user_scope') || '',
+    ].join(' '));
+  }
+
   function bodyText() {
     try {
       return String((document.body && document.body.innerText) || '').replace(/\s+/g, ' ').slice(0, 12000);
@@ -619,14 +626,16 @@
     const text = bodyText();
     if (!text) return false;
     const actions = consentActionText();
-    const hasGrantAction = /\b(allow|accept|authorize|approve|grant|continue)\b/i.test(actions);
+    const hasGrantAction = /(?:^|[\s|])(?:allow|accept|authorize|approve|grant|continue|autoriser|accepter|approuver|permettre|continuer|permitir|aceptar|autorizar|aprobar|continuar)(?:$|[\s|.,:;!?])/i.test(actions);
     if (!hasGrantAction) return false;
+
+    const permissionLanguage = /\b(?:permissions?|scopes?|access(?:\s+to)?|can\s+(?:read|edit|manage|send)|autorisations?|acc[eè]s|acc[eé]der|lire|modifier|g[eé]rer|envoyer|permisos?|acceso|acceder|leer|editar|administrar|gestionar|enviar)\b/i;
 
     let positive = false;
     if (provider.id === 'google') {
-      positive = /wants (?:to )?(?:access|use)[^.]{0,120}(?:google account|account data)|(?:choose|select) what [^.]{0,100} can access|this will allow [^.]{0,100} to|already has (?:some )?access/i.test(text);
+      positive = /wants (?:to )?(?:access|use)[^.]{0,120}(?:google account|account data)|(?:choose|select) what [^.]{0,100} can access|this will allow [^.]{0,100} to|already has (?:some )?access|souhaite acc[eé]der [^.]{0,120}(?:compte google|donn[eé]es du compte)|(?:choisissez|s[eé]lectionnez) ce que [^.]{0,100} peut|quiere acceder [^.]{0,120}(?:cuenta de google|datos de la cuenta)|selecciona (?:a )?qu[eé] [^.]{0,100} puede acceder/i.test(text);
     } else if (provider.id === 'microsoft') {
-      positive = /permissions requested|would like to(?: access|:)|accepting these permissions|maintain access to data you have given it access to|consent on behalf of/i.test(text);
+      positive = /permissions requested|would like to(?: access|:)|accepting these permissions|maintain access to data you have given it access to|consent on behalf of|autorisations demand[eé]es|souhaite acc[eé]der|accepter ces autorisations|permisos solicitados|desea acceder|aceptar estos permisos/i.test(text);
     } else if (provider.id === 'github') {
       positive = /would like permission to|wants to access|review and authorize|requesting access to|authorize [^.]{0,100}(?:application|app)/i.test(text);
     } else if (provider.id === 'discord') {
@@ -635,12 +644,11 @@
       positive = provider.consent.test(text);
     }
 
-    // Provider markup changes occasionally. Keep a narrow generic fallback for
-    // explicit consent/grant routes, but still require permission language and
-    // an affirmative grant control in the rendered page.
-    if (!positive && /(?:^|\/)(?:consent|grant|permissions?)(?:\/|$)/i.test(u.pathname || '')) {
-      positive = /\b(permission|scope|access to|can read|can edit|can manage|can send)\b/i.test(text);
-    }
+    /* Provider wording varies by locale. The provider-specific authorization
+       route and requested scopes keep translated permission text from turning
+       an ordinary localized sign-in page into a grant warning. */
+    if (!positive && provider.likely(u) && requestedOAuthScopes(u).length) positive = permissionLanguage.test(text);
+    if (!positive && /(?:^|\/)(?:consent|grant|permissions?)(?:\/|$)/i.test(u.pathname || '')) positive = permissionLanguage.test(text);
     if (!positive) return false;
 
     // Account selection, credential entry and account recovery are not grant
@@ -843,10 +851,7 @@
   }
 
   function scoreGrant(provider, u) {
-    const rawScopes = splitScopes([
-      u.searchParams.get('scope') || '',
-      u.searchParams.get('user_scope') || '',
-    ].join(' '));
+    const rawScopes = requestedOAuthScopes(u);
     const risks = [];
     rawScopes.forEach((s) => scoreScope(provider, s, risks));
     if (provider.id === 'discord') addDiscordPermissionRisks(u, risks);

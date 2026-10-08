@@ -4343,6 +4343,307 @@ test('a failed cursorless native poll retries the exact LL-HLS request once and 
     'failed modified request did not clear the visible intervention state');
 });
 
+/* Splice markers. Measured against Twitch's player: a switch onto media from another session or
+   encoder without EXT-X-DISCONTINUITY put that media at its own timestamps, and the player paused,
+   jumped, then froze for 15 s -- while the same switch carrying the marker played straight
+   through. The worker sees which segments the player downloads, so the marker goes on the first
+   entry whose predecessor came from another session, and nowhere else. */
+
+function withSegmentDownloads(route) {
+  return async (url, init, state) => {
+    if (/\.(?:ts|m4s|mp4)(?:[?#]|$)/i.test(url)) return new Response('segment', { status: 200 });
+    return route(url, init, state);
+  };
+}
+
+function markerTargets(body) {
+  const lines = String(body).split('\n');
+  const targets = [];
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index] !== '#EXT-X-DISCONTINUITY') continue;
+    const uri = lines.slice(index + 1).find((line) => line && line[0] !== '#');
+    targets.push(String(uri || '').replace(/^https:\/\/video-edge-fixture\.ttvnw\.net\//, ''));
+  }
+  return targets;
+}
+
+async function download(runtime, path) {
+  const response = await runtime.fetch('https://video-edge-fixture.ttvnw.net/' + path);
+  assert(response.ok, 'fixture segment download failed: ' + path);
+}
+
+test('a switch onto the clean alternate is marked where the next downloaded segment changes session', async () => {
+  let poll = 0;
+  let backupPoll = 0;
+  const adMarker = '#EXT-X-DATERANGE:ID="stitched-ad-splice",CLASS="twitch-stitched-ad",DURATION=30.0';
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => poll === 0
+        ? liveSequencePlaylist({ sequence: 100, liveSequence: 1000, startMs: SEQUENCE_BASE_TIME, path: 'splice-native' })
+        : sequencedPlaylist({ sequence: 100 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+          title: 'advertisement', path: 'splice-ad', marker: adMarker }),
+      backupMedia: () => {
+        const index = backupPoll++;
+        return liveSequencePlaylist({ sequence: 9001 + index, liveSequence: 1001 + index,
+          startMs: SEQUENCE_BASE_TIME + (1 + index) * 2000, path: 'splice-backup' });
+      },
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  const native = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  equal(markerTargets(native), [], 'untouched native media was marked');
+  await download(runtime, 'splice-native/100.ts');
+  await download(runtime, 'splice-native/101.ts');
+  poll = 1;
+  const swapped = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(swapped.includes('/splice-backup/') && servedSequence(swapped) === 101,
+    'fixture did not swap onto the aligned clean alternate: ' + servedSequence(swapped));
+  equal(markerTargets(swapped), ['splice-backup/9002.ts'],
+    'the marker was not on the first alternate entry after the downloaded native media');
+  await download(runtime, 'splice-backup/9002.ts');
+  poll = 2;
+  const refreshed = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(refreshed.includes('/splice-backup/9004.ts'), 'fixture did not refresh the alternate');
+  equal(markerTargets(refreshed), ['splice-backup/9002.ts'],
+    'a refresh of the same window moved, dropped or duplicated the marker');
+  runtime.configure(false);
+});
+
+test('a fragmented-MP4 switch restates the init segment after its marker, as Twitch\'s own boundaries do', async () => {
+  let poll = 0;
+  let backupPoll = 0;
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => poll === 0
+        ? fmp4SequencedPlaylist({ sequence: 100, startMs: SEQUENCE_BASE_TIME, path: 'fmp4-splice-native' })
+        : fmp4SequencedPlaylist({ sequence: 101, startMs: SEQUENCE_BASE_TIME + 2000, title: 'advertisement',
+          path: 'fmp4-splice-ad', marker: '#EXT-X-DATERANGE:ID="stitched-ad-fmp4-splice",CLASS="twitch-stitched-ad",DURATION=30.0' }),
+      backupMedia: () => {
+        const index = backupPoll++;
+        return fmp4SequencedPlaylist({ sequence: 9001 + index, startMs: SEQUENCE_BASE_TIME + (1 + index) * 2000,
+          path: 'fmp4-splice-backup' });
+      },
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  await download(runtime, 'fmp4-splice-native/100.m4s');
+  await download(runtime, 'fmp4-splice-native/101.m4s');
+  poll = 1;
+  const swapped = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(swapped.includes('/fmp4-splice-backup/') && servedSequence(swapped) === 101,
+    'fixture did not swap onto the aligned fragmented-MP4 alternate: ' + servedSequence(swapped));
+  equal(markerTargets(swapped), ['fmp4-splice-backup/9002.m4s'], 'the fragmented-MP4 switch was not marked');
+  const lines = swapped.split('\n');
+  const at = lines.indexOf('#EXT-X-DISCONTINUITY');
+  equal(lines[at + 1], '#EXT-X-MAP:URI="https://video-edge-fixture.ttvnw.net/fmp4-splice-backup/init.mp4"',
+    'the marker did not restate the alternate\'s init segment');
+  assert(lines.filter((line) => line === '#EXT-X-DISCONTINUITY').length === 1, 'the switch was marked more than once');
+  runtime.configure(false);
+});
+
+test('a marker follows the player when it is behind the live edge at the switch', async () => {
+  let poll = 0;
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => poll === 0
+        ? liveSequencePlaylist({ sequence: 100, liveSequence: 1000, startMs: SEQUENCE_BASE_TIME, path: 'lag-native' })
+        : sequencedPlaylist({ sequence: 101, startMs: SEQUENCE_BASE_TIME + 2000, title: 'advertisement',
+          path: 'lag-ad', marker: '#EXT-X-DATERANGE:ID="stitched-ad-lag",CLASS="twitch-stitched-ad",DURATION=30.0' }),
+      backupMedia: () => liveSequencePlaylist({ sequence: 9001, liveSequence: 1001,
+        startMs: SEQUENCE_BASE_TIME + 2000, path: 'lag-backup' }),
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  await download(runtime, 'lag-native/100.ts');
+  poll = 1;
+  const swapped = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(swapped.includes('/lag-backup/') && servedSequence(swapped) === 101,
+    'fixture did not swap onto the aligned clean alternate: ' + servedSequence(swapped));
+  equal(markerTargets(swapped), ['lag-backup/9001.ts'],
+    'the marker was not placed after the last segment the player actually downloaded');
+  runtime.configure(false);
+});
+
+test('recovery hands back to Twitch\'s session behind a marker', async () => {
+  let poll = 0;
+  const nativeBody = () => sequencedPlaylist({
+    sequence: 400 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+    marker: '#EXT-X-DATERANGE:ID="stitched-ad-splice-recovery",CLASS="twitch-stitched-ad",DURATION=60.0',
+    title: 'advertisement', path: 'splice-recovery-ad',
+  });
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: nativeBody,
+      backupMedia: () => sequencedPlaylist({ sequence: 9400, startMs: SEQUENCE_BASE_TIME, path: 'splice-recovery-backup' }),
+    })),
+    gqlRoute(message) { return jsonResponse(nestedToken(message.body.variables.playerType)); },
+  });
+  await mapMaster(runtime);
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(servedSequence(first) === 9400 && first.includes('/splice-recovery-backup/'),
+    'fixture did not enter the alternate timeline');
+  equal(markerTargets(first), [], 'the first playlist of a session was marked with nothing before it');
+  await download(runtime, 'splice-recovery-backup/9400.ts');
+  await download(runtime, 'splice-recovery-backup/9401.ts');
+  runtime.configure(false, true);
+  poll = 1;
+  const handedBack = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(handedBack.includes('/splice-recovery-ad/') && servedSequence(handedBack) === 9401,
+    'recovery did not keep the established numbering');
+  equal(markerTargets(handedBack), ['splice-recovery-ad/402.ts'],
+    'recovery switched the player back to Twitch\'s session without a marker');
+  runtime.configure(false);
+  const disabled = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(disabled === nativeBody(), 'an explicit switch-off no longer passes Twitch\'s playlist through byte for byte');
+});
+
+test('untouched native playback is never marked, with or without downloads', async () => {
+  let poll = 0;
+  const body = () => liveSequencePlaylist({ sequence: 700 + poll, liveSequence: 7000 + poll,
+    startMs: SEQUENCE_BASE_TIME + poll * 2000, path: 'untouched-native' });
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({ originalMedia: body })),
+  });
+  await mapMaster(runtime);
+  for (poll = 0; poll < 6; poll++) {
+    const served = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    equal(served, body(), 'untouched native playback was rewritten at poll ' + poll);
+    await download(runtime, 'untouched-native/' + (700 + poll) + '.ts');
+  }
+});
+
+test('a late older native response keeps the numbering this player was given after a pod', async () => {
+  let nativePolls = 0;
+  let releaseLate = null;
+  const lateBody = (index) => sequencedPlaylist({ sequence: 110 + index, startMs: SEQUENCE_BASE_TIME + index * 2000,
+    title: 'live', path: 'late-native' });
+  const runtime = createRuntime({
+    fetchRoute: standardFetchRoute({
+      originalMedia() {
+        const index = nativePolls++;
+        if (index === 7) return new Promise((resolve) => { releaseLate = () => resolve(lateBody(6)); });
+        const inAd = index === 1 || index === 2;
+        if (inAd) {
+          return sequencedPlaylist({ sequence: 100 + index, startMs: SEQUENCE_BASE_TIME + index * 2000,
+            marker: '#EXT-X-DATERANGE:ID="stitched-ad-late-' + index + '",CLASS="twitch-stitched-ad",DURATION=4.0',
+            title: 'advertisement', path: 'late-ad' });
+        }
+        return index < 3 ? sequencedPlaylist({ sequence: 100 + index, startMs: SEQUENCE_BASE_TIME + index * 2000,
+          title: 'live', path: 'late-native' }) : lateBody(index);
+      },
+      backupMedia() {
+        const index = Math.max(1, nativePolls - 1);
+        return sequencedPlaylist({ sequence: 4999 + index, startMs: SEQUENCE_BASE_TIME + index * 2000,
+          title: 'live', path: 'late-backup' });
+      },
+    }),
+    gqlRoute(message) { return jsonResponse(nestedToken(message.body.variables.playerType)); },
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+  const bodies = [];
+  for (let poll = 1; poll <= 6; poll++) bodies.push(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text());
+  equal(bodies.map(servedSequence), [101, 102, 103, 104, 105, 106],
+    'fixture did not settle on a translated native mapping after the pod');
+  assert(bodies[5].includes('/late-native/'), 'fixture did not return to native media');
+  const latePending = runtime.fetch(ORIGINAL_MEDIA_URL);
+  assert(typeof releaseLate === 'function', 'fixture did not hold the late native response');
+  const newest = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(servedSequence(newest) === 108, 'the poll after the held one was not translated: ' + servedSequence(newest));
+  releaseLate();
+  const late = await (await latePending).text();
+  assert(late.includes('/late-native/116.ts'), 'fixture did not deliver the late older window');
+  assert(servedSequence(late) === 106,
+    'a late older native response reached the player under Twitch\'s raw numbering: ' + servedSequence(late));
+});
+
+/* The shape of a real Twitch pod, captured live 2026-10-08: twitch-trigger is listed in every
+   playlist from the start of the session, a twitch-maf-ad notice opens before the stitched ad and
+   stays listed after its window closes, and the ad itself arrives behind EXT-X-DISCONTINUITY as
+   2.002 s Amazon segments. */
+function twitchPodPlaylist(options) {
+  const iso = (ms) => new Date(SEQUENCE_BASE_TIME + ms).toISOString();
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:6',
+    '#EXT-X-MEDIA-SEQUENCE:' + options.sequence,
+    '#EXT-X-DATERANGE:ID="trigger-1",CLASS="twitch-trigger",START-DATE="' + iso(-3600000) +
+      '",END-ON-NEXT=YES,X-TV-TWITCH-TRIGGER-URL="https://video-weaver-fixture.ttvnw.net/trigger"'];
+  for (const range of options.ranges || []) lines.push(range(iso));
+  for (const segment of options.segments) {
+    if (segment.discontinuity) lines.push('#EXT-X-DISCONTINUITY');
+    lines.push('#EXT-X-PROGRAM-DATE-TIME:' + iso(segment.at));
+    lines.push('#EXTINF:' + (segment.ad ? '2.002,Amazon|587283541343781338' : '4.000,live'));
+    lines.push('https://video-edge-fixture.ttvnw.net/' + options.path + '/' + segment.name + '.ts');
+  }
+  return lines.concat('').join('\n');
+}
+
+test('a pod releases to Twitch\'s own stream once only lingering markers remain', async () => {
+  const maf = (start, seconds) => (iso) => '#EXT-X-DATERANGE:ID="maf-ad-' + start + '",CLASS="twitch-maf-ad",START-DATE="' +
+    iso(start) + '",PLANNED-DURATION=' + seconds + '.000,END-ON-NEXT=YES,X-TTV-MAF-AD-AD-SESSION-ID="fixture"';
+  const stitched = (iso) => '#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",START-DATE="' + iso(12000) +
+    '",DURATION=4.004,X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"';
+  for (const variant of ['lingering', 'upcoming']) {
+    let poll = 0;
+    const native = () => {
+      if (poll === 0) {
+        return twitchPodPlaylist({ sequence: 200, path: 'pod-native', segments: [
+          { name: 200, at: 0 }, { name: 201, at: 4000 }, { name: 202, at: 8000 }] });
+      }
+      if (poll === 1) {
+        return twitchPodPlaylist({ sequence: 201, path: 'pod-native', ranges: [maf(8000, 8), stitched], segments: [
+          { name: 201, at: 4000 }, { name: 202, at: 8000 },
+          { name: 'ad-203', at: 12000, ad: true, discontinuity: true }, { name: 'ad-204', at: 14002, ad: true }] });
+      }
+      if (poll === 2) {
+        return twitchPodPlaylist({ sequence: 203, path: 'pod-native', ranges: [maf(8000, 8), stitched], segments: [
+          { name: 'ad-203', at: 12000, ad: true }, { name: 'ad-204', at: 14002, ad: true },
+          { name: 205, at: 16000, discontinuity: true }] });
+      }
+      const first = 205 + (poll - 3);
+      const ranges = [maf(8000, 8)];
+      if (variant === 'upcoming') ranges.push(maf(16000 + (poll - 3) * 4000 + 16000, 60));
+      return twitchPodPlaylist({ sequence: first, path: 'pod-native', ranges: ranges, segments: [0, 1, 2].map((index) => ({
+        name: first + index, at: 16000 + (poll - 3 + index) * 4000 })) });
+    };
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({
+        originalMedia: native,
+        backupMedia: () => twitchPodPlaylist({ sequence: 9000 + poll, path: 'pod-backup', segments: [0, 1, 2].map((index) => ({
+          name: 9000 + poll + index, at: (poll + index) * 4000 })) }),
+      }),
+      gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+    });
+    await mapMaster(runtime);
+    const bodies = [];
+    for (poll = 0; poll <= 6; poll++) bodies.push(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text());
+    assert(bodies[0].includes('/pod-native/'), variant + ': fixture did not start on Twitch\'s stream');
+    assert(bodies[1].includes('/pod-backup/') && bodies[2].includes('/pod-backup/'),
+      variant + ': the pod was not played from the clean alternate');
+    const numbers = bodies.map(servedSequence);
+    for (let index = 1; index < numbers.length; index++) {
+      assert(numbers[index] >= numbers[index - 1], variant + ': served numbering went backwards: ' + numbers.join(','));
+    }
+    if (variant === 'lingering') {
+      /* Released by the pod's own length (sequencePast) or three advancing marker-free refreshes,
+         whichever comes first -- both were unreachable while these markers counted as live. */
+      assert(bodies[5].includes('/pod-native/') && bodies[6].includes('/pod-native/'),
+        'a stale twitch-maf-ad notice and the session-long twitch-trigger kept the player on the alternate after the pod');
+      assert(bodies[3].includes('/pod-backup/'),
+        'the first marker-free refresh after the pod released the player before the pod was over');
+    } else {
+      assert(bodies[5].includes('/pod-backup/') && bodies[6].includes('/pod-backup/'),
+        'an upcoming ad notice released the player into the next pod');
+    }
+    runtime.configure(false);
+  }
+});
+
 (async () => {
   let passed = 0;
   let failed = 0;

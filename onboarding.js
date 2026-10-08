@@ -343,18 +343,21 @@
 
   /* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept;
      if a private window wrote over it without seeing it, it is saved again (confirmConfigWrite). */
-  async function writeSilentMode(isSilent, triesLeft) {
+  async function writeSilentMode(isSilent, triesLeft, operationOrder) {
     let writeId = '';
+    let writeOrder = operationOrder;
     const ok = await withConfigLock(async () => {
       const store = await storageGet(['wardenone_config', WO_CONFIG_WRITES_KEY]);
       const current = (store && store.wardenone_config && typeof store.wardenone_config === 'object') ? store.wardenone_config : {};
       const next = Object.assign({}, current, { silentMode: isSilent, showDownloadBar: true });
-      const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY]);
+      const changedKeys = ['silentMode', 'showDownloadBar'];
+      const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY], changedKeys, writeOrder);
       const written = await storageSet({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
-      if (written) writeId = stamp.id;
+      if (written) { writeId = stamp.id; writeOrder = stamp.order; }
       return written;
     });
-    confirmConfigWrite(writeId, (left) => { writeSilentMode(isSilent, left); }, triesLeft);
+    confirmConfigWrite(writeId, (left) => { writeSilentMode(isSilent, left, writeOrder); }, triesLeft,
+      ['silentMode', 'showDownloadBar'], writeOrder);
     return ok;
   }
 

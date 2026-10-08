@@ -40,6 +40,17 @@ const WO_CONFIG_RESET_KEY = 'wardenone_config_reset';
    tiny compared with the storage quota, while a short list can evict a write before its second
    check gets a chance to repair a cross-context overwrite. */
 const WO_CONFIG_WRITES_KEPT = 256;
+let __woConfigWriteOrder = 0;
+
+function configWriteOrder() {
+  let now = Date.now();
+  try {
+    if (typeof performance !== 'undefined' && Number.isFinite(performance.timeOrigin)
+        && typeof performance.now === 'function') now = performance.timeOrigin + performance.now();
+  } catch (_) {}
+  __woConfigWriteOrder = Math.max(Number.isFinite(now) ? now : Date.now(), __woConfigWriteOrder + 0.001);
+  return __woConfigWriteOrder;
+}
 
 function configWriteId() {
   try {
@@ -51,21 +62,23 @@ function configWriteId() {
 
 /* A new write's id, and the record to store with it: that id, then the ids the stored config
    already descends from. `stored` is what was read for WO_CONFIG_WRITES_KEY with the config. */
-function stampConfigWrite(stored, changedKeys) {
+function stampConfigWrite(stored, changedKeys, operationOrder) {
   const epoch = stored && typeof stored.epoch === 'string' ? stored.epoch : '';
   const id = (epoch ? epoch + ':' : '') + configWriteId();
   const prior = stored && Array.isArray(stored.ids) ? stored.ids.filter((x) => typeof x === 'string') : [];
   const keys = Array.isArray(changedKeys) ? changedKeys.filter((key) => typeof key === 'string').slice(0, 32) : [];
-  return { id, record: { epoch, ids: [id].concat(prior).slice(0, WO_CONFIG_WRITES_KEPT), keys } };
+  const supplied = Number(operationOrder);
+  const order = Number.isFinite(supplied) && supplied > 0 ? supplied : configWriteOrder();
+  return { id, order, record: { epoch, ids: [id].concat(prior).slice(0, WO_CONFIG_WRITES_KEPT), keys, order } };
 }
 
 /* After the lock is let go: is the stored config still descended from this write? Checked twice,
    since a writer elsewhere may be slower than the first look. A later write that read this one
    carries its id; one that read before it does not, and wrote over it. Then `again` makes the
    change once more on what is stored now, and confirms that write in turn -- at most twice in all.
-   A new reset epoch stops any pre-reset retry. A later single-key Settings edit to the
-   same key wins; an earlier different-key edit can still be replayed. */
-function confirmConfigWrite(id, again, triesLeft, changedKeys) {
+   A new reset epoch stops any pre-reset retry. For the same key, the operation order tells a
+   delayed older write from a later user edit; retries retain their original order. */
+function confirmConfigWrite(id, again, triesLeft, changedKeys, operationOrder) {
   if (!id || typeof again !== 'function' || typeof setTimeout !== 'function') return;
   if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
   const left = triesLeft === undefined ? 2 : triesLeft;
@@ -82,7 +95,11 @@ function confirmConfigWrite(id, again, triesLeft, changedKeys) {
           return;
         }
         if (Array.isArray(changedKeys) && changedKeys.length === 1
-            && Array.isArray(record.keys) && record.keys.includes(changedKeys[0])) return;
+            && Array.isArray(record.keys) && record.keys.includes(changedKeys[0])) {
+          const ours = Number(operationOrder);
+          const current = Number(record.order);
+          if (!Number.isFinite(ours) || !Number.isFinite(current) || current >= ours) return;
+        }
         if (left > 0) {
           try { again(left - 1); } catch (_) {}
         }

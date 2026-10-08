@@ -94,7 +94,7 @@ function worker(opts) {
           if (!state.exists || state.closing) throw new Error('Could not establish connection. Receiving end does not exist.');
           if (state.sendDelay) await new Promise((r) => time.setTimeout(r, state.sendDelay));
           state.messages.push(payload);
-          return { ok: true };
+          return Object.prototype.hasOwnProperty.call(o, 'soundResponse') ? o.soundResponse : { ok: true };
         },
       },
       offscreen: {
@@ -139,10 +139,13 @@ function documentRealm() {
   }
   FakeAudioContext.prototype.createOscillator = function () {
     this.oscillators++;
-    return { type: '', frequency: { setValueAtTime() {} }, connect() {}, start() {}, stop() {} };
+    return { type: '', frequency: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {}, start() {}, stop() {} };
   };
   FakeAudioContext.prototype.createGain = function () {
     return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} };
+  };
+  FakeAudioContext.prototype.createBiquadFilter = function () {
+    return { type: '', frequency: { setValueAtTime() {} }, Q: { setValueAtTime() {} }, connect() {} };
   };
   FakeAudioContext.prototype.resume = async function () { this.state = 'running'; };
   FakeAudioContext.prototype.close = async function () { this.state = 'closed'; };
@@ -270,11 +273,27 @@ function documentRealm() {
     check('the retry for a listener that is not up yet is still there', /Receiving end does not exist\|Could not establish connection/.test(MANAGER) && /setTimeout\(resolve, 150\)/.test(MANAGER));
   }
 
-  /* ---- 8. the document releases its AudioContext when idle ------------------------------- */
+  /* ---- 8. playback failures reach the page instead of looking successful ----------------- */
+  {
+    const w = worker({ soundResponse: { ok: false, error: 'Audio is unavailable.' } });
+    let message = '';
+    try { await w.play('soft'); } catch (error) { message = String(error && error.message || error); }
+    check('the worker rejects a sound the offscreen document could not play', /Audio is unavailable/.test(message));
+
+    const d = documentRealm();
+    d.ctx.AudioContext = undefined;
+    const response = await d.play('soft');
+    check('the offscreen document reports unavailable audio honestly', response && response.ok === false && /unavailable/i.test(response.error));
+  }
+
+  /* ---- 9. the document releases its AudioContext when idle ------------------------------- */
   {
     const d = documentRealm();
     const r = await d.play('critical');
-    check('the document plays the tune', r && r.ok === true && d.contexts.length === 1 && d.contexts[0].oscillators === 3);
+    const critical = d.ctx.wardenNotificationSound('critical');
+    const criticalVoices = critical.notes.length * critical.layers.length;
+    check('the document plays every layer of the tune', r && r.ok === true && d.contexts.length === 1 && d.contexts[0].oscillators === criticalVoices,
+      d.contexts[0].oscillators + ' oscillators for ' + criticalVoices + ' voices');
     check('the context is open while the tune sounds', d.live() === 1);
     await d.time.advance(400);
     check('and still open at the end of the longest tune (420 ms)', d.live() === 1);
@@ -290,9 +309,9 @@ function documentRealm() {
     check('which is released after the burst', d.live() === 0);
   }
 
-  /* ---- 9. the wiring ---------------------------------------------------------------------- */
+  /* ---- 10. the wiring --------------------------------------------------------------------- */
   check('the manager has a close path', /chrome\.offscreen\.closeDocument\(\)/.test(MANAGER));
-  check('the document has a release path', /function releaseAudioContextWhenIdle\(/.test(OFFSCREEN) && /context\.close\(\)/.test(OFFSCREEN) && /releaseAudioContextWhenIdle\(0\.02 \+ spec\.notes\.length \* gap\)/.test(OFFSCREEN));
+  check('the document has a release path', /function releaseAudioContextWhenIdle\(/.test(OFFSCREEN) && /context\.close\(\)/.test(OFFSCREEN) && /releaseAudioContextWhenIdle\(0\.04 \+ \(spec\.notes\.length - 1\) \* gap \+ length\)/.test(OFFSCREEN));
   check('the creation hardening is unchanged in shape', /wardenOffscreenCreating = chrome\.offscreen\.createDocument\(\{/.test(MANAGER) && /single offscreen document/i.test(MANAGER));
 
   console.log('');
