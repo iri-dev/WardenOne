@@ -4469,6 +4469,66 @@ test('a marker follows the player when it is behind the live edge at the switch'
   runtime.configure(false);
 });
 
+/* The player takes an entry from the moment it asks for it, so a playlist refreshed while that
+   request is in flight must already count it -- but a request that failed delivered nothing, and
+   the player asks for that entry again from whatever is listed by then. */
+test('a segment request counts as media the player holds from when it is made until it fails', async () => {
+  for (const failure of ['status', 'network', 'in-flight']) {
+    let poll = 0;
+    let backupPoll = 0;
+    let release = null;
+    const path = 'failed-' + failure;
+    const requested = 'https://video-edge-fixture.ttvnw.net/' + path + '-native/101.ts';
+    const route = withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => poll === 0
+        ? liveSequencePlaylist({ sequence: 100, liveSequence: 1000, startMs: SEQUENCE_BASE_TIME, path: path + '-native' })
+        : sequencedPlaylist({ sequence: 100 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+          title: 'advertisement', path: path + '-ad',
+          marker: '#EXT-X-DATERANGE:ID="stitched-ad-' + path + '",CLASS="twitch-stitched-ad",DURATION=30.0' }),
+      backupMedia: () => {
+        const index = backupPoll++;
+        return liveSequencePlaylist({ sequence: 9001 + index, liveSequence: 1001 + index,
+          startMs: SEQUENCE_BASE_TIME + (1 + index) * 2000, path: path + '-backup' });
+      },
+    }));
+    const runtime = createRuntime({
+      fetchRoute: async (url, init, state) => {
+        if (url !== requested) return route(url, init, state);
+        if (failure === 'in-flight') {
+          return new Promise((resolve) => { release = () => resolve(new Response('segment', { status: 200 })); });
+        }
+        return failure === 'status' ? new Response('', { status: 503 }) : { error: new TypeError('Failed to fetch') };
+      },
+      gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+    });
+    await mapMaster(runtime);
+    await runtime.fetch(ORIGINAL_MEDIA_URL);
+    await download(runtime, path + '-native/100.ts');
+    const delivered = runtime.fetch(requested).then((response) => response.ok, () => false);
+    if (failure !== 'in-flight') assert(!(await delivered), failure + ': fixture did not fail the segment request');
+    poll = 1;
+    const swapped = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(swapped.includes('/' + path + '-backup/') && servedSequence(swapped) === 101,
+      failure + ': fixture did not swap onto the aligned clean alternate: ' + servedSequence(swapped));
+    /* Failed: the player still needs 101 and takes it from the alternate, straight after the
+       native 100 it holds. In flight: it is taking native 101, so the alternate starts at 102. */
+    const splice = path + '-backup/' + (failure === 'in-flight' ? 9002 : 9001) + '.ts';
+    equal(markerTargets(swapped), [splice], failure + ': the splice was not marked where the player crosses it');
+    if (failure === 'in-flight') {
+      assert(typeof release === 'function', 'fixture did not hold the segment request');
+      release();
+      assert(await delivered, 'fixture did not complete the held segment request');
+    }
+    await download(runtime, splice);
+    poll = 2;
+    const refreshed = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(refreshed.includes('/' + path + '-backup/9002.ts'), failure + ': fixture did not refresh the alternate');
+    equal(markerTargets(refreshed), failure === 'in-flight' ? [splice] : [],
+      failure + ': a refresh after the player crossed the splice moved, dropped or added a marker');
+    runtime.configure(false);
+  }
+});
+
 test('recovery hands back to Twitch\'s session behind a marker', async () => {
   let poll = 0;
   const nativeBody = () => sequencedPlaylist({
@@ -4500,6 +4560,188 @@ test('recovery hands back to Twitch\'s session behind a marker', async () => {
   runtime.configure(false);
   const disabled = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
   assert(disabled === nativeBody(), 'an explicit switch-off no longer passes Twitch\'s playlist through byte for byte');
+});
+
+/* Twitch writes no EXT-X-DISCONTINUITY-SEQUENCE, and its own pod markers leave by sliding off the
+   head of the window (captured live 2026-10-08: both markers of a pod went at once as MEDIA-SEQUENCE
+   jumped 4955 -> 4972), so its player already copes with markers leaving uncounted on every native
+   ad break. What a marker must do is stay on the same media, under the same number, for as long as
+   that media is listed: never dropped early, never moved, never put back. */
+function listedSegments(body) {
+  const head = servedSequence(body);
+  return String(body).split('\n').filter((line) => line && line[0] !== '#')
+    .map((line, index) => ({ name: line.replace(/^https:\/\/video-edge-fixture\.ttvnw\.net\//, ''), number: head + index }));
+}
+
+test('an inserted marker rides the rolling window and leaves only off its head, across switches', async () => {
+  let poll = 0;
+  let backupPoll = 0;
+  const adMarker = '#EXT-X-DATERANGE:ID="stitched-ad-roll",CLASS="twitch-stitched-ad",DURATION=60.0';
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => poll === 0
+        ? liveSequencePlaylist({ sequence: 100, liveSequence: 1000, startMs: SEQUENCE_BASE_TIME, path: 'roll-native' })
+        : sequencedPlaylist({ sequence: 100 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+          title: 'advertisement', path: 'roll-ad', marker: adMarker }),
+      backupMedia: () => {
+        const index = backupPoll++;
+        return liveSequencePlaylist({ sequence: 9001 + index, liveSequence: 1001 + index,
+          startMs: SEQUENCE_BASE_TIME + (1 + index) * 2000, path: 'roll-backup' });
+      },
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  let taken = -Infinity;
+  const bodies = [];
+  async function refresh() {
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    bodies.push(body);
+    /* The player takes the next number after the last one it played, one per refresh. */
+    const next = listedSegments(body).find((segment) => segment.number > taken);
+    if (next) {
+      await download(runtime, next.name);
+      taken = next.number;
+    }
+  }
+  await refresh();
+  await download(runtime, 'roll-native/101.ts');
+  taken = 101;
+  for (poll = 1; poll <= 4; poll++) await refresh();
+  runtime.configure(false, true);
+  for (poll = 5; poll <= 8; poll++) await refresh();
+  runtime.configure(false);
+
+  assert(bodies[1].includes('/roll-backup/') && bodies[4].includes('/roll-backup/'),
+    'fixture did not play the pod from the clean alternate');
+  assert(bodies[5].includes('/roll-ad/') && bodies[8].includes('/roll-ad/'),
+    'fixture did not hand back to Twitch\'s session');
+  const spliced = ['roll-backup/9002.ts', 'roll-ad/106.ts'];
+  const numbers = new Map();
+  const windows = new Map(spliced.map((name) => [name, 0]));
+  bodies.forEach((body, at) => {
+    assert(!/EXT-X-DISCONTINUITY-SEQUENCE/i.test(body),
+      'refresh ' + at + ' wrote an EXT-X-DISCONTINUITY-SEQUENCE Twitch never writes');
+    const targets = markerTargets(body);
+    for (const segment of listedSegments(body)) {
+      const expected = spliced.includes(segment.name);
+      assert(targets.includes(segment.name) === expected, 'refresh ' + at + (expected
+        ? ' dropped the marker while ' + segment.name + ' was still listed'
+        : ' marked ' + segment.name + ', which continues the media before it'));
+      if (expected) windows.set(segment.name, windows.get(segment.name) + 1);
+      if (!numbers.has(segment.name)) numbers.set(segment.name, segment.number);
+      assert(numbers.get(segment.name) === segment.number, 'refresh ' + at + ' renumbered ' + segment.name +
+        ' from ' + numbers.get(segment.name) + ' to ' + segment.number);
+    }
+  });
+  for (const name of spliced) {
+    assert(windows.get(name) >= 2, name + ' was listed in ' + windows.get(name) +
+      ' refresh(es); the fixture did not roll a marker through the window');
+  }
+  equal(markerTargets(bodies[4]), [], 'the alternate\'s marker outlived its segment');
+  equal(markerTargets(bodies[8]), [], 'the hand-back\'s marker outlived its segment');
+});
+
+/* The worker keeps bounded history: 8 playlists, 64 entries back from the newest in each, 512
+   segment addresses in all. Every refresh touches the playlist being played and every address it
+   lists, so only what nobody is playing any more falls out. A long session in live shape -- a
+   15-entry window, the player 6 segments behind its edge, and other renditions polled between a
+   refresh and the downloads that follow it -- has to mark exactly the segments where the player
+   crosses from one stream to the other, and nothing else, with far more than 512 segments and 8
+   playlists behind it. */
+function windowPlaylist(options) {
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:2', '#EXT-X-MEDIA-SEQUENCE:' + options.sequence];
+  if (options.marker) lines.push(options.marker);
+  for (let index = 0; index < options.length; index++) {
+    lines.push('#EXT-X-PROGRAM-DATE-TIME:' + new Date(options.startMs + index * 2000).toISOString());
+    if (index === 0 && options.liveSequence !== undefined) lines.push('#EXT-X-TWITCH-LIVE-SEQUENCE:' + options.liveSequence);
+    lines.push('#EXTINF:2.000,' + (options.title || 'live'));
+    lines.push('https://video-edge-fixture.ttvnw.net/' + options.path + '/' + (options.sequence + index) + '.ts');
+  }
+  return lines.concat('').join('\n');
+}
+
+test('bounded splice history still marks every switch in a long session with many playlists', async () => {
+  let poll = 0;
+  const WINDOW = 15;
+  const LAG = 6;
+  const SWITCH = 600;
+  const HAND_BACK = 640;
+  const END = 700;
+  const at = (offset) => ({ sequence: 100 + poll + offset, startMs: SEQUENCE_BASE_TIME + (poll + offset) * 2000, length: WINDOW });
+  const adMarker = '#EXT-X-DATERANGE:ID="stitched-ad-long",CLASS="twitch-stitched-ad",DURATION=150.0';
+  const route = withSegmentDownloads(standardFetchRoute({
+    originalMedia: () => poll < SWITCH
+      ? windowPlaylist(Object.assign(at(0), { liveSequence: 1000 + poll, path: 'long-native' }))
+      : windowPlaylist(Object.assign(at(0), { title: 'advertisement', path: 'long-ad', marker: adMarker })),
+    backupMedia: () => windowPlaylist({ sequence: 9000 + poll, liveSequence: 1000 + poll,
+      startMs: SEQUENCE_BASE_TIME + poll * 2000, length: WINDOW, path: 'long-backup' }),
+  }));
+  const runtime = createRuntime({
+    fetchRoute: (url, init, state) => {
+      const variant = /\/(variant-\d+-\d+)\/index\.m3u8$/.exec(url);
+      if (variant) return hlsResponse(windowPlaylist(Object.assign(at(0), { path: variant[1] })));
+      return route(url, init, state);
+    },
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  let taken = -Infinity;
+  const takenNames = [];
+  const bodies = [];
+  const distinct = new Set();
+  const playlists = new Set();
+  for (poll = 0; poll < END; poll++) {
+    if (poll === HAND_BACK) runtime.configure(false, true);
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    bodies.push(body);
+    const listed = listedSegments(body);
+    listed.forEach((segment) => distinct.add(segment.name));
+    /* Other renditions polled between this refresh and the downloads it leads to, each round under
+       new addresses: far more playlists than are kept, but never more at once than the player
+       could have besides the one it plays. Not mid-break: addresses the master never listed
+       would move the clean-stream choice there. */
+    if (poll % 3 === 0 && (poll < SWITCH || poll >= HAND_BACK)) {
+      for (let k = 0; k < 7; k++) {
+        const url = 'https://video-edge-fixture.ttvnw.net/variant-' + poll + '-' + k + '/index.m3u8';
+        playlists.add(url);
+        listedSegments(await (await runtime.fetch(url)).text()).forEach((segment) => distinct.add(segment.name));
+      }
+    }
+    /* The player keeps LAG segments behind the newest one listed. */
+    const edge = listed[listed.length - 1].number;
+    for (const segment of listed) {
+      if (segment.number <= taken || segment.number > edge - LAG) continue;
+      await download(runtime, segment.name);
+      taken = segment.number;
+      takenNames.push(segment.name);
+    }
+  }
+  runtime.configure(false);
+  assert(distinct.size > 5000 && playlists.size > 100,
+    'the session did not go far past the bounds: ' + distinct.size + ' addresses, ' + playlists.size + ' other playlists');
+  assert(bodies[SWITCH - 1].includes('/long-native/') && bodies[SWITCH + 5].includes('/long-backup/') &&
+    bodies[END - 1].includes('/long-ad/'), 'fixture did not play native, then the alternate, then Twitch\'s session again');
+  /* Where the player actually crossed from one stream to another, from what it took. */
+  const stream = (name) => name.split('/')[0];
+  const splices = takenNames.filter((name, index) => index > 0 && stream(name) !== stream(takenNames[index - 1]));
+  equal(splices.map(stream), ['long-backup', 'long-ad'],
+    'fixture did not cross into the alternate and back exactly once each: ' + splices.join(', '));
+  let listedMarks = 0;
+  bodies.forEach((body, refresh) => {
+    const targets = markerTargets(body);
+    for (const segment of listedSegments(body)) {
+      const expected = splices.includes(segment.name);
+      if (expected) listedMarks++;
+      assert(targets.includes(segment.name) === expected, 'refresh ' + refresh + (expected
+        ? ' left the switch at ' + segment.name + ' unmarked'
+        : ' marked ' + segment.name + ', which continues the media before it'));
+    }
+  });
+  assert(listedMarks >= 2 * LAG, 'the markers were not listed across the refreshes before the player reached them: ' + listedMarks);
+  for (let refresh = 0; refresh < SWITCH; refresh++) {
+    assert(!/EXT-X-DISCONTINUITY/.test(bodies[refresh]), 'native refresh ' + refresh + ' of a long session was marked');
+  }
 });
 
 test('untouched native playback is never marked, with or without downloads', async () => {
