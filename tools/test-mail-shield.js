@@ -254,23 +254,83 @@ for (const label of ['top frame', 'reading-pane iframe']) {
 const mailWorkerSource = BG.slice(BG.indexOf('const MAIL_SHIELD_SCRIPT_ID'),
   BG.indexOf('const CONSENT_WALL_SCRIPT_ID'));
 const injected = [];
+const registrationCalls = [];
+const updateCalls = [];
+const unregisterCalls = [];
+const stateMessages = [];
+const registeredScripts = new Map();
 const workerBox = { URL, chrome: {
   runtime: { lastError: null },
-  tabs: { query: (_query, cb) => cb([{ id: 12, url: 'https://mail.google.com/' }]) },
+  tabs: {
+    query: (_query, cb) => cb([{ id: 12, url: 'https://mail.google.com/' }]),
+    sendMessage: (tabId, message, cb) => { stateMessages.push({ tabId, message }); if (cb) cb(); },
+  },
   webNavigation: { getAllFrames: (_target, cb) => cb([
     { frameId: 0, url: 'https://mail.google.com/' },
     { frameId: 4, url: 'https://mail.google.com/reading-pane' },
     { frameId: 9, url: 'https://advertiser.example/widget' },
   ]) },
-  scripting: { executeScript: (details, cb) => { injected.push(details); cb(); } },
+  scripting: {
+    executeScript: (details, cb) => { injected.push(details); cb(); },
+    getRegisteredContentScripts: async ({ ids }) => ids.map((id) => registeredScripts.get(id)).filter(Boolean),
+    registerContentScripts: async (definitions) => {
+      registrationCalls.push(definitions);
+      for (const definition of definitions) registeredScripts.set(definition.id, definition);
+    },
+    updateContentScripts: async (definitions) => {
+      updateCalls.push(definitions);
+      for (const definition of definitions) registeredScripts.set(definition.id,
+        Object.assign({}, registeredScripts.get(definition.id) || {}, definition));
+    },
+    unregisterContentScripts: async ({ ids }) => {
+      unregisterCalls.push(ids.slice());
+      for (const id of ids) registeredScripts.delete(id);
+    },
+  },
 } };
 vm.createContext(workerBox);
 vm.runInContext(mailWorkerSource + '\ninjectMailShieldIntoOpenTabs();', workerBox);
 check('existing top and matching iframe receive injection without unrelated frames',
   injected.length === 1 && injected[0].target.frameIds.join(',') === '0,4');
 
-if (failed) {
-  console.error('mail shield: ' + failed + ' failed');
+(async () => {
+  injected.length = 0;
+  await workerBox.reconcileMailShieldInjection({ enabled: true, mailTrackingShield: true });
+  const definition = registeredScripts.get('wo-mail-shield-dynamic');
+  check('enabling Mail Shield creates its real dynamic content-script registration',
+    registrationCalls.length === 1 && !!definition);
+  check('the registered script is the shipped Mail Shield at document_start',
+    definition && definition.js.join(',') === 'mail-shield.js' && definition.runAt === 'document_start');
+  check('future webmail loads include reading-pane frames and survive worker restarts',
+    definition && definition.allFrames === true && definition.persistAcrossSessions === true);
+  check('the live registration is limited to the supported webmail origins',
+    definition && definition.matches.includes('*://mail.google.com/*')
+      && definition.matches.includes('*://outlook.live.com/*')
+      && definition.matches.includes('*://mail.proton.me/*')
+      && !definition.matches.includes('<all_urls>'));
+  check('enabling catches up already-open matching frames as well',
+    injected.length === 1 && injected[0].target.frameIds.join(',') === '0,4');
+  check('the startup/settings reconciliation list actually invokes Mail Shield',
+    /run\('mailShield', \(\) => reconcileMailShieldInjection\(cfg\)\)/.test(BG));
+
+  await workerBox.reconcileMailShieldInjection({ enabled: true, mailTrackingShield: true });
+  check('an existing registration is refreshed rather than duplicated',
+    registrationCalls.length === 1 && updateCalls.length === 1 && registeredScripts.size === 1);
+
+  await workerBox.reconcileMailShieldInjection({ enabled: true, mailTrackingShield: false });
+  check('disabling Mail Shield removes the persisted registration',
+    unregisterCalls.some((ids) => ids.join(',') === 'wo-mail-shield-dynamic')
+      && !registeredScripts.has('wo-mail-shield-dynamic'));
+  check('open mail frames are told immediately when the protection is disabled',
+    stateMessages.some((entry) => entry.tabId === 12
+      && entry.message.kind === 'mail-shield-state' && entry.message.enabled === false));
+
+  if (failed) {
+    console.error('mail shield: ' + failed + ' failed');
+    process.exit(1);
+  }
+  console.log('mail shield: all checks passed');
+})().catch((error) => {
+  console.error(error);
   process.exit(1);
-}
-console.log('mail shield: all checks passed');
+});
