@@ -69,11 +69,16 @@ async function run() {
     for (const id of ['tl-max', 'tl-idle']) {
       const inspectNumber = () => value(`(() => {
         const input = document.getElementById(${JSON.stringify(id)});
+        const style = getComputedStyle(input);
         const box = input.getBoundingClientRect();
         const row = input.closest('.row').getBoundingClientRect();
-        return { visible: input.type === 'number' && box.width >= 65 && box.height >= 25,
+        return { visible: input.type === 'number'
+            && style.display !== 'none' && style.visibility !== 'hidden'
+            && box.width >= 65 && box.height >= 25
+            && box.left >= row.left - 1 && box.right <= row.right + 1,
           box: { x: box.x, y: box.y, width: box.width, height: box.height },
           row: { x: row.x, y: row.y, width: row.width, height: row.height },
+          display: style.display, visibility: style.visibility,
           scrollY, innerHeight };
       })()`);
       let inspection;

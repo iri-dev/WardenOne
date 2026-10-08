@@ -122,6 +122,14 @@ check('every toggle input carries an id or data-key to build its label id from',
 check('most toggles also have a description to expose', withDesc >= toggles.length * 0.8,
   withDesc + ' of ' + toggles.length);
 
+check('Tab Limit copy makes conditional safety switches explicit',
+  html.includes('Pinned, audio, unsaved-form, and login/payment tabs follow the Safety switches above.')
+  && html.includes('Active tabs and camera/mic sessions are always protected.'));
+check('Tab Limit copy does not promise conditional protections are unconditional',
+  !html.includes('Active, pinned, audio, and unsaved-form tabs are never touched.'));
+check('Memory Shield explains its unconditional video and camera/mic protections',
+  html.includes('Video/live platforms and active camera/mic sessions are always protected'));
+
 // The labels the runtime pass generates must not collide with ids already in the markup.
 const existingIds = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
 const collisions = [...existingIds].filter((id) => /^wo-(lbl|desc)-/.test(id));

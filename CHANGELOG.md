@@ -4,6 +4,7 @@
 
 ### Added
 
+- OAuth Grant Guard now covers Apple, Meta, Spotify, Slack, Dropbox, GitLab, Atlassian, LinkedIn and Twitch consent screens while keeping ordinary sign-in and basic profile grants quiet.
 - Memory Shield's popup has a compact never-sleep site manager for adding a domain or the current site, seeing saved hosts, and removing them. The same list is available in Speed & memory settings.
 - Resource Saver has an optional YouTube Ambient Mode control. It hides the decorative watch-page glow without changing video playback or YouTube's saved preference.
 - Resource Saver can stop recognised muted card and hover video previews across sites. Normal players, videos with controls and manually started inline videos are left alone, and the option is off by default.
@@ -14,12 +15,32 @@
   global defaults and all saved profiles. Off sites are excluded from
   EyeShield's content-script registration.
 
+### Changed
+
+- Fresh installs and the Recommended profile now stop WardenOne's narrow high-confidence
+  phishing tier by default. Medium-confidence address heuristics still warn without blocking,
+  and the blocking screen keeps its explicit option to continue.
+
 ### Fixed
 
+- Browser Back and Forward navigation from a video page no longer triggers the frame redirect
+  warning when returning to a search page.
+- Closeable media adverts placed over a site's video player are now removed by the in-page popup
+  cleaner while the player itself remains protected.
+- Settings' Recent site card now includes page-level actions such as YouTube player ad removals,
+  so its ad count agrees with the popup instead of showing network-rule matches alone.
+- Phishing lookalike detection now derives 1,792 ASCII-brand mappings from Unicode 18.0 UTS #39 data, covering many more Latin, Greek, Armenian, Coptic, Lisu, Cherokee and other script confusables without warning merely because a domain is internationalised.
+- Resource Saver's initial-state allowance now matches WardenOne's other frame-heavy bootstrap mechanisms.
+- Resource Saver ignores repeated state broadcasts, avoiding duplicate full-page video scans during a single setting change.
+- Resource Saver now reads its initial state inside `about:blank`, `srcdoc` and other permitted child frames.
+- Muted videos started by the user are no longer treated as previews merely because they use `playsinline` or `loop`.
+- Turning video-preview blocking off restores each affected video's original autoplay state and resumes previews WardenOne stopped.
 - Simplified Memory Shield's popup layout by removing its repeated mini-headings.
 - Popup search keeps the controls inside every matching settings row visible.
 - Memory Shield's playing-audio exemption now follows its switch.
 - Kept the popup's Maximum tabs and Minimum inactive time inputs visible beside their labels, with a browser visibility check.
+- Corrected Tab Limit's popup safety copy so pinned, audio, unsaved-form, and login/payment protections are described as following their Safety switches.
+- Explained that video/live platforms and active camera/mic sessions remain protected independently of the Memory Shield Safety switches.
 - EyeShield site profiles now reach cross-origin child frames, while Off sites avoid loading the full EyeShield engine in those frames. IPv6 literal hosts can have site profiles.
 - Extension Security Centre recognises Volume Master's exact Store identity and expected tab-audio access while still warning about added powerful permissions.
 - AdShield also collapses YouTube ad cards that leave a menu or placeholder beside the hidden ad.

@@ -295,7 +295,7 @@ const PAGES = [
       ...sw('memoryShield'),
       tagged(choice('memoryMode', 'How soon', 'How long a tab sits unused before it sleeps: about 2 hours, 30 minutes, 10 minutes or 1 minute.', ['Gentle', 'Balanced', 'Aggressive', 'Emergency']), 'memoryShield') ]),
     ...(OMITTED_FEATURES.has('memoryShield') ? [] : [neverSleepGroup()]),
-    G('i-shield', 'Safety', 'Tabs Memory Shield leaves awake automatically.', sw('memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment')),
+    G('i-shield', 'Safety', 'Tabs Memory Shield leaves awake automatically. Video/live platforms and active camera/mic sessions are always protected.', sw('memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment')),
     G('i-tabs', 'Tab limit', 'Over your limit, the oldest unused tab sleeps or closes.', [
       ...sw('tl-guard', 'tl-close', 'tl-warn'),
       num('tabLimitMax', 'Maximum tabs', 'Acts when a new tab pushes the window past this count.', 2, 200, 1, 'tabs', 'tabLimit'),
@@ -1331,17 +1331,18 @@ function previewCard() {
   const p = previewState;
   let body = '<div class="live-note">' + esc(p.status === 'loading' ? 'Looking for your last website…' : p.status === 'empty' ? 'Visit a website to see its activity here.' : p.status === 'error' ? 'Site activity is unavailable right now.' : '') + '</div>';
   if (p.status === 'ready') {
-    const counts = p.network;
-    const rows = counts && counts.available ? [
+    const counts = p.activity;
+    const rows = counts ? [
       ['t1', 'i-radar', 'Trackers blocked', counts.trackers],
       ['t2', 'i-megaphone', 'Ads blocked', counts.ads],
-      ['t3', 'i-shield', 'Other network blocks', counts.other]
+      ['t3', 'i-shield', 'Other actions', counts.other]
     ] : [];
     body = '<div class="live"><div class="live-top">' + icon('i-globe') + '<span>' + esc(p.host) + '</span>' +
       '<button class="btn" data-preview-activity>Activity</button></div>' +
-      (rows.length ? '<div class="live-note">Network blocks on this tab</div>' + rows.map(([tone, symbol, label, n]) =>
+      (rows.length ? '<div class="live-note">WardenOne actions on this page</div>' + rows.map(([tone, symbol, label, n]) =>
         '<div class="stat"><span class="si ' + tone + '">' + icon(symbol) + '</span>' + esc(label) + '<b>' + esc(fmtCount(Number(n) || 0)) + '</b></div>').join('')
-        : '<div class="live-note">Network counts are unavailable for this tab.</div>') + '</div>';
+        + (counts.networkAvailable ? '' : '<div class="live-note">Network-rule counts are unavailable; page actions are still included.</div>')
+        : '<div class="live-note">Site activity is unavailable for this tab.</div>') + '</div>';
   }
   return '<section class="rcard">' + cardHead('i-eye', 'Recent site', 'Activity from the last website you used in this window.') + body + '</section>';
 }
@@ -1364,10 +1365,11 @@ async function loadPreview() {
       if (!report.web || !report.host) previewState = { status: 'empty' };
       else {
         const net = report.network || {};
-        const categories = net.byCategory || {};
-        const trackers = countOf(categories.trackers), ads = countOf(categories.ads);
+        const counted = wardenSiteDashSummarize(report);
+        const trackers = countOf(counted.cats.trackers), ads = countOf(counted.cats.ads);
         previewState = { status: 'ready', host: report.host, tabId: tab.id,
-          network: { available: !!net.available, trackers, ads, other: Math.max(0, countOf(net.total) - trackers - ads) } };
+          activity: { networkAvailable: !!net.available, trackers, ads,
+            other: Math.max(0, countOf(counted.total) - trackers - ads) } };
       }
     }
   } catch (_) {

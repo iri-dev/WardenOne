@@ -18,6 +18,7 @@ const vm = require('vm');
 const { installPlatformGlobals } = require('./lib/engine-ambient.js');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'oauth-guard.js'), 'utf8');
+const MANIFEST = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
 
 function element(text) {
   return {
@@ -283,6 +284,123 @@ for (const impostor of [
   });
   check('H8 a redirect to a lookalike domain is not the provider',
     state.modals.length === 1 && state.reports.length > 0, state);
+}
+
+const additionalProviders = [
+  {
+    name: 'Apple',
+    match: 'https://appleid.apple.com/auth/authorize*',
+    lowUrl: 'https://appleid.apple.com/auth/authorize?client_id=app.example&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=name%20email',
+    lowBody: 'Sign in to Example App with your Apple Account Share your name and email',
+    riskyUrl: 'https://appleid.apple.com/auth/authorize?client_id=app.example&redirect_uri=http%3A%2F%2Fevil.example%2Fcallback&response_type=code&scope=name%20email',
+    riskyBody: 'Sign in to Example App with your Apple Account Share your name and email',
+  },
+  {
+    name: 'Meta',
+    match: 'https://www.facebook.com/*/dialog/oauth*',
+    lowUrl: 'https://www.facebook.com/v24.0/dialog/oauth?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&scope=public_profile%2Cemail',
+    lowBody: 'Continue as Jamie Choose what you allow Example App to receive Basic profile details',
+    riskyUrl: 'https://www.facebook.com/v24.0/dialog/oauth?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&scope=pages_manage_posts',
+    riskyBody: 'Example App would like to access your Pages Choose what you allow',
+  },
+  {
+    name: 'Spotify',
+    match: 'https://accounts.spotify.com/authorize*',
+    lowUrl: 'https://accounts.spotify.com/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=user-read-private%20user-read-email',
+    lowBody: 'Example App wants to access your Spotify account View your basic profile',
+    riskyUrl: 'https://accounts.spotify.com/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=playlist-modify-private%20user-library-modify',
+    riskyBody: 'Example App wants to access your Spotify account Change saved music and playlists',
+  },
+  {
+    name: 'Slack',
+    match: 'https://slack.com/oauth/v2/authorize*',
+    lowUrl: 'https://slack.com/oauth/v2/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&scope=commands',
+    lowBody: 'Example App is requesting permission to access your workspace Run slash commands',
+    riskyUrl: 'https://slack.com/oauth/v2/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&scope=commands&user_scope=channels%3Ahistory%20chat%3Awrite',
+    riskyBody: 'Example App is requesting permission to access your workspace Message history and posting',
+  },
+  {
+    name: 'Dropbox',
+    match: 'https://www.dropbox.com/oauth2/authorize*',
+    lowUrl: 'https://www.dropbox.com/oauth2/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=account_info.read',
+    lowBody: 'Example App would like access to basic Dropbox account information',
+    riskyUrl: 'https://www.dropbox.com/oauth2/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=files.content.write',
+    riskyBody: 'Example App would like access to change Dropbox content',
+  },
+  {
+    name: 'GitLab',
+    match: 'https://gitlab.com/oauth/authorize*',
+    lowUrl: 'https://gitlab.com/oauth/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=openid%20profile%20email',
+    lowBody: 'Authorize Example App to use your account Basic profile',
+    riskyUrl: 'https://gitlab.com/oauth/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=api%20sudo',
+    riskyBody: 'Authorize Example App to use your account Full API and administrator access',
+  },
+  {
+    name: 'Atlassian',
+    match: 'https://auth.atlassian.com/authorize*',
+    lowUrl: 'https://auth.atlassian.com/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=read%3Ame',
+    lowBody: 'Example App wants to access your Atlassian account Basic profile',
+    riskyUrl: 'https://auth.atlassian.com/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=write%3Ajira-work%20manage%3Ajira-project',
+    riskyBody: 'Example App wants to access your Atlassian account Change and manage Jira projects',
+  },
+  {
+    name: 'LinkedIn',
+    match: 'https://www.linkedin.com/oauth/v2/authorization*',
+    lowUrl: 'https://www.linkedin.com/oauth/v2/authorization?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=openid%20profile%20email',
+    lowBody: 'Example App would like to access your basic LinkedIn profile',
+    riskyUrl: 'https://www.linkedin.com/oauth/v2/authorization?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=w_member_social%20rw_organization_admin',
+    riskyBody: 'Example App would like to publish and administer your LinkedIn organization',
+  },
+  {
+    name: 'Twitch',
+    match: 'https://id.twitch.tv/oauth2/authorize*',
+    lowUrl: 'https://id.twitch.tv/oauth2/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=user%3Aread%3Aemail',
+    lowBody: 'Authorize Example App to use your account View basic profile details',
+    riskyUrl: 'https://id.twitch.tv/oauth2/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=channel%3Amanage%3Abroadcast%20moderator%3Amanage%3Abanned_users',
+    riskyBody: 'Authorize Example App to use your account Manage your channel and moderation',
+  },
+];
+
+const oauthScript = MANIFEST.content_scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('oauth-guard.js'));
+check('P1 the manifest ships OAuth Grant Guard on every added provider route',
+  !!oauthScript && additionalProviders.every((provider) => oauthScript.matches.includes(provider.match)),
+  oauthScript && oauthScript.matches);
+
+const compatibilitySensitiveScripts = MANIFEST.content_scripts.filter((entry) => Array.isArray(entry.js)
+  && (entry.js.includes('fingerprint-realm.js') || entry.js.includes('content.min.js')));
+check('P2 authorization routes remain excluded from compatibility-sensitive main-world scripts',
+  compatibilitySensitiveScripts.length === 2 && compatibilitySensitiveScripts.every((entry) => additionalProviders.every((provider) => {
+    if (provider.name === 'Apple') return entry.exclude_matches.includes('https://appleid.apple.com/*');
+    return entry.exclude_matches.includes(provider.match);
+  })), compatibilitySensitiveScripts.map((entry) => entry.exclude_matches));
+
+for (const provider of additionalProviders) {
+  const signIn = runCase({
+    url: provider.lowUrl,
+    body: 'Sign in to continue Email or username Password Forgot password?',
+    actions: ['Sign in', 'Next'],
+    headings: ['Sign in'],
+  });
+  check(provider.name + ' credential entry stays quiet',
+    signIn.modals.length === 0 && signIn.reports.length === 0, signIn);
+
+  const low = runCase({
+    url: provider.lowUrl,
+    body: provider.lowBody,
+    actions: ['Cancel', 'Allow', 'Continue', 'Authorize'],
+    headings: ['Review access'],
+  });
+  check(provider.name + ' basic identity grant stays quiet',
+    low.modals.length === 0 && low.reports.length === 0, low);
+
+  const risky = runCase({
+    url: provider.riskyUrl,
+    body: provider.riskyBody,
+    actions: ['Cancel', 'Allow', 'Continue', 'Authorize'],
+    headings: ['Review access'],
+  });
+  check(provider.name + ' risky consent grant warns',
+    risky.modals.length === 1 && risky.reports.length > 0, risky);
 }
 
 console.log('');
