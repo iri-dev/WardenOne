@@ -322,6 +322,13 @@ function sendWardenOffscreenMessage(payload) {
   });
 }
 
+async function deliverWardenOffscreenSound(payload) {
+  var response = await sendWardenOffscreenMessage(payload);
+  if (!response || response.ok !== true) {
+    throw new Error(String(response && response.error || 'Notification audio did not play.'));
+  }
+}
+
 async function playWardenNotificationSound(sound, volume) {
   /* One list, from the schema. Hardcoding the names here is what let the page
      offer a sound this rejected -- the reader picks it, nothing plays, and
@@ -345,7 +352,7 @@ async function playWardenNotificationSound(sound, volume) {
   try {
     await ensureWardenOffscreenDocument();
     try {
-      await sendWardenOffscreenMessage(payload);
+      await deliverWardenOffscreenSound(payload);
     } catch (error) {
       /* createDocument resolves when the document EXISTS, not when its scripts
          have run -- so a message sent immediately after can arrive before
@@ -357,7 +364,7 @@ async function playWardenNotificationSound(sound, volume) {
       if (!/Receiving end does not exist|Could not establish connection/i.test(message)) throw error;
       await new Promise(function (resolve) { setTimeout(resolve, 150); });
       await ensureWardenOffscreenDocument();
-      await sendWardenOffscreenMessage(payload);
+      await deliverWardenOffscreenSound(payload);
     }
   } finally {
     wardenOffscreenBusy--;

@@ -128,7 +128,8 @@
               <div class="panel-head"><h2>Sound <span class="sub">off until you turn it on</span></h2></div>
               <div class="note">WardenOne is silent by default. A security tool that pings on every tracker is one people mute and then stop hearing when it matters.</div>
               <div class="row">
-                <div class="grow"><div class="name">Play sounds</div><div class="desc">Uses a short bundled clip. Nothing is streamed.</div></div>
+                <div class="grow"><div class="name">Play sounds</div><div class="desc">Uses a short bundled clip. Nothing is streamed. You can preview sounds while this is off.</div></div>
+                <span class="count" id="pref-sound-state">Off</span>
                 <label class="sw"><input type="checkbox" id="pref-sound"><span></span></label>
               </div>
               <div class="row">
@@ -144,6 +145,7 @@
                 <input type="range" id="pref-volume" min="0" max="100" step="5">
                 <span id="pref-volume-label" style="min-width:38px;text-align:right;color:var(--guide-faint);font-size:12px"></span>
                 <button class="act" id="pref-preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.7 7.1l7 4.9-7 4.9z"></path></svg><span>Preview</span></button>
+                <span class="meta" id="pref-sound-feedback" role="status" aria-live="polite"></span>
               </div>
             </div>
 

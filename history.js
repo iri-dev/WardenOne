@@ -813,7 +813,7 @@ function allowedItemsFromStore(store) {
   return items.filter((item) => item.host).sort((a, b) => String(a.host).localeCompare(String(b.host)) || String(a.kind).localeCompare(String(b.kind)));
 }
 
-function removeAllowedItem(item, done, triesLeft) {
+function removeAllowedItem(item, done, triesLeft, operationOrder) {
   if (!item || !item.host) { if (done) done(); return; }
   if (item.kind === 'main') {
     /* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is
@@ -821,17 +821,18 @@ function removeAllowedItem(item, done, triesLeft) {
        private window wrote over it without seeing it, it is made again (confirmConfigWrite). */
     let failure = null;
     let writeId = '';
+    let writeOrder = operationOrder;
     withConfigLock(() => new Promise((release) => {
       chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY], (store) => {
         failure = chrome.runtime.lastError || null;
         if (failure) { release(); return; }
         const cfg = Object.assign({}, (store && store.wardenone_config) || {});
         cfg.allowlist = (Array.isArray(cfg.allowlist) ? cfg.allowlist : []).filter((host) => host !== item.host);
-        const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY]);
+        const stamp = stampConfigWrite(store && store[WO_CONFIG_WRITES_KEY], ['allowlist'], writeOrder);
         try {
           chrome.storage.local.set({ wardenone_config: cfg, [WO_CONFIG_WRITES_KEY]: stamp.record }, () => {
             failure = chrome.runtime.lastError || null;
-            if (!failure) writeId = stamp.id;
+            if (!failure) { writeId = stamp.id; writeOrder = stamp.order; }
             release();
           });
         } catch (e) { failure = e; release(); }
@@ -839,7 +840,8 @@ function removeAllowedItem(item, done, triesLeft) {
     })).then(() => {
       if (failure) { try { alert('WardenOne could not save this change: ' + (failure.message || String(failure))); } catch (_) {} }
       if (done) done();
-      confirmConfigWrite(writeId, (left) => removeAllowedItem(item, null, left), triesLeft);
+      confirmConfigWrite(writeId, (left) => removeAllowedItem(item, null, left, writeOrder), triesLeft,
+        ['allowlist'], writeOrder);
     });
     return;
   }

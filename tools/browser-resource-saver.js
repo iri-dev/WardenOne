@@ -61,7 +61,7 @@ async function run() {
       + '<a href="/manual"><video id="manual-card" muted src="data:video/mp4;base64,' + video + '"></video></a>'
       + '<a href="/manual-inline"><video id="manual-inline-card" muted playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
       + '<a href="/manual-loop"><video id="manual-loop-card" muted loop src="data:video/mp4;base64,' + video + '"></video></a><script>window.__woGenericFixture = true</script>';
-    const youtubeFixture = '<!doctype html><title>YouTube resource fixture</title><ytd-app style="--yt-spec-base-background:#17131c"><div id="frosted-glass" style="background:rgba(15,15,15,.8);backdrop-filter:blur(48px)"></div><ytd-watch-flexy><div id="cinematics"></div></ytd-watch-flexy><ytd-video-preview-loader><ytd-video-preview><ytd-player id="inline-player" context="WEB_PLAYER_CONTEXT_CONFIG_ID_KEVLAR_INLINE_PREVIEW">'
+    const youtubeFixture = '<!doctype html><title>YouTube resource fixture</title><ytd-app style="--yt-spec-base-background:#17131c"><div id="frosted-glass" style="background:rgba(15,15,15,.8);backdrop-filter:blur(48px)"></div><ytd-watch-flexy><div id="cinematics-container"><div id="cinematics"></div></div></ytd-watch-flexy><ytd-video-preview-loader><ytd-video-preview><ytd-player id="inline-player" context="WEB_PLAYER_CONTEXT_CONFIG_ID_KEVLAR_INLINE_PREVIEW">'
       + '<video id="preview-video" muted loop autoplay src="data:video/mp4;base64,' + video + '"></video></ytd-player></ytd-video-preview></ytd-video-preview-loader>'
       + '<div id="player"><video id="watch-video" muted loop controls src="data:video/mp4;base64,' + video + '"></video></div></ytd-app><script>window.__woYouTubeFixture = true</script>';
     const off = cdp.on((event) => {
@@ -113,7 +113,7 @@ async function run() {
     await until("document.querySelector('#card-preview').paused", 'the general preview control to return live');
 
     await cdp.send('Page.navigate', { url: 'https://www.youtube.com/watch?v=wardenone-test' }, page.sessionId);
-    await until("window.__woYouTubeFixture && getComputedStyle(document.querySelector('#cinematics')).display === 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter === 'none' && getComputedStyle(document.querySelector('ytd-video-preview')).display === 'none'", 'YouTube resource styles');
+    await until("window.__woYouTubeFixture && getComputedStyle(document.querySelector('#cinematics')).display === 'none' && getComputedStyle(document.querySelector('#cinematics-container')).display === 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter === 'none' && getComputedStyle(document.querySelector('ytd-video-preview')).display === 'none'", 'YouTube resource styles');
     assert.equal(await value("getComputedStyle(document.querySelector('#frosted-glass')).backgroundColor"), 'rgb(23, 19, 28)',
       'the frosted header follows the active YouTube or EyeShield background');
     assert.equal(await value("document.querySelector('#watch-video').play().then(() => true, () => false)"), true,
@@ -122,8 +122,10 @@ async function run() {
     await value("document.querySelector('#preview-video').play().catch(() => {})");
     await until("document.querySelector('#preview-video').paused", 'an inline preview play attempt to be stopped');
 
+    assert.equal(await value("(() => { const active = document.querySelector('style[data-wardenone-resource-saver=\"ambient\"]'); if (!active) return false; const legacy = active.cloneNode(true); legacy.removeAttribute('data-wardenone-resource-saver'); const duplicate = active.cloneNode(true); document.documentElement.append(legacy, duplicate); window.__woLegacyAmbientStyle = legacy; window.__woDuplicateAmbientStyle = duplicate; return true; })()"), true,
+      'the active Ambient Mode rule is marked for reliable live removal');
     await setPreferences(false, false);
-    await until("getComputedStyle(document.querySelector('#cinematics')).display !== 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter !== 'none'", 'YouTube Ambient Mode styles to return');
+    await until("getComputedStyle(document.querySelector('#cinematics')).display !== 'none' && getComputedStyle(document.querySelector('#cinematics-container')).display !== 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter !== 'none' && !window.__woLegacyAmbientStyle.isConnected && !window.__woDuplicateAmbientStyle.isConnected && !document.querySelector('style[data-wardenone-resource-saver=\"ambient\"]')", 'all YouTube Ambient Mode styles to be removed and the original styling to return');
     await until("getComputedStyle(document.querySelector('ytd-video-preview')).display !== 'none'", 'the preview layer to return when its setting is off');
     await until("document.querySelector('#preview-video').autoplay && document.querySelector('#preview-video').hasAttribute('autoplay') && !document.querySelector('#preview-video').paused",
       'YouTube preview playback and autoplay state to restore without page help');

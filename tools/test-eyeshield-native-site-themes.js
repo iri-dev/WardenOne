@@ -235,6 +235,8 @@ for (const [mode, chip, text, background] of [['light', '#f1f1f1', '#0f0f0f', '#
       && rule.body.includes('background:' + background + ' !important'))
     && rules(css).some((rule) => rule.sel.includes('#right-arrow::before')
       && rule.body.includes('linear-gradient(to right,transparent,' + background + ')')));
+  check('YouTube ' + mode + ' leaves Ambient Mode to its dedicated Resource Saver control',
+    !css.includes('#cinematics-container'));
 }
 
 /* ---- GitHub: its own theme, not a repaint ----------------------------------------- */

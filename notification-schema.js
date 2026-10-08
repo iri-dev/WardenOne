@@ -22,19 +22,34 @@ var WARDEN_NOTIFICATION_SECTIONS = [
  */
 var WARDEN_NOTIFICATION_SOUNDS = [
   { id: 'none', label: 'Silent', notes: [], wave: 'sine', gap: 0 },
-  /* One short high note. The least interruptive thing that is still audible. */
-  { id: 'blip', label: 'Blip', notes: [880], wave: 'sine', gap: 0.13 },
-  /* Two rising notes -- the current default, kept under its own name. */
-  { id: 'soft', label: 'Soft', notes: [660, 880], wave: 'sine', gap: 0.14 },
-  /* A major triad going up. Reads as "something finished", not "something is wrong". */
-  { id: 'chime', label: 'Chime', notes: [523, 659, 784], wave: 'sine', gap: 0.12 },
-  /* Two falling notes. Falling is the whole signal: it reads as a problem. */
-  { id: 'warning', label: 'Warning', notes: [440, 370], wave: 'sine', gap: 0.14 },
-  /* Three falling notes on a harder waveform -- more insistent than warning,
-     short of the alarm. */
-  { id: 'alert', label: 'Alert', notes: [587, 494, 415], wave: 'triangle', gap: 0.13 },
-  /* Square wave, down and back up. Deliberately the least pleasant one here. */
-  { id: 'critical', label: 'Critical', notes: [310, 246, 310], wave: 'square', gap: 0.14 },
+  /* A polished tap: one rising tone with a quiet upper harmonic. */
+  { id: 'blip', label: 'Blip', notes: [783.99], wave: 'sine', gap: 0.1,
+    length: 0.16, attack: 0.008, level: 0.14, glide: 1.055, filterHz: 4400,
+    layers: [{ wave: 'sine', ratio: 1, gain: 1 }, { wave: 'sine', ratio: 2, gain: 0.09 }] },
+  /* Warm overlapping major-third notes: noticeable without sounding urgent. */
+  { id: 'soft', label: 'Soft', notes: [659.25, 830.61], wave: 'sine', gap: 0.105,
+    length: 0.25, attack: 0.012, level: 0.13, filterHz: 4000, noteLevels: [0.78, 1],
+    layers: [{ wave: 'sine', ratio: 1, gain: 1 }, { wave: 'triangle', ratio: 2, gain: 0.065 }] },
+  /* A gently overlapping C-major arpeggio for completed and positive events. */
+  { id: 'chime', label: 'Chime', notes: [523.25, 659.25, 783.99], wave: 'sine', gap: 0.09,
+    length: 0.34, attack: 0.009, level: 0.105, filterHz: 4600, noteLevels: [0.68, 0.82, 1],
+    layers: [{ wave: 'sine', ratio: 1, gain: 1 }, { wave: 'sine', ratio: 2, gain: 0.07 },
+      { wave: 'triangle', ratio: 0.5, gain: 0.035 }] },
+  /* Two rounded falling notes: caution without an alarm. */
+  { id: 'warning', label: 'Warning', notes: [466.16, 392], wave: 'triangle', gap: 0.13,
+    length: 0.23, attack: 0.009, level: 0.12, glide: 0.985, filterHz: 3200, noteLevels: [1, 0.82],
+    layers: [{ wave: 'triangle', ratio: 1, gain: 0.68 }, { wave: 'sine', ratio: 1, gain: 0.48 },
+      { wave: 'sine', ratio: 0.5, gain: 0.08 }] },
+  /* A quick descending signal with enough edge for an action that needs attention. */
+  { id: 'alert', label: 'Alert', notes: [587.33, 493.88, 392], wave: 'triangle', gap: 0.105,
+    length: 0.19, attack: 0.006, level: 0.12, filterHz: 3000, noteLevels: [1, 0.9, 0.8],
+    layers: [{ wave: 'triangle', ratio: 1, gain: 0.72 }, { wave: 'sine', ratio: 2, gain: 0.12 },
+      { wave: 'sine', ratio: 0.5, gain: 0.08 }] },
+  /* Down then back up, with a restrained square harmonic rather than a harsh square lead. */
+  { id: 'critical', label: 'Critical', notes: [349.23, 261.63, 349.23], wave: 'triangle', gap: 0.09,
+    length: 0.17, attack: 0.004, level: 0.13, filterHz: 2500, noteLevels: [1, 0.82, 1],
+    layers: [{ wave: 'triangle', ratio: 1, gain: 0.72 }, { wave: 'square', ratio: 2, gain: 0.07 },
+      { wave: 'sine', ratio: 0.5, gain: 0.12 }] },
 ];
 
 function wardenNotificationSoundIds() {
