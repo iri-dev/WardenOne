@@ -40,6 +40,13 @@
   more than half of the time they watched, exposed to every hiccup on it.
 - Twitch playlists that arrive late or briefly cover a break now keep the numbering the player was
   already given, instead of Twitch's raw numbers, which run ahead after every ad break.
+- Updating the block lists no longer freezes WardenOne's background work for seconds at a time.
+  Each downloaded list was checked host by host against the never-block list the slow way and
+  parsed in one go, so right after install, and at each daily update, a settings change, the
+  popup and newly opened pages all waited behind it -- up to 2.75 seconds at a stretch on a fast
+  desktop, much longer on slower machines. Lists are now parsed a slice at a time with the
+  checks made cheap, and the longest wait measured dropped to about half a second. The lists
+  that come out are exactly the same.
 - Steadier Twitch playback now reliably keeps Low Latency off. Twitch reads that preference as its
   player starts, often before WardenOne's settings reach the page, and a player started that way
   stayed in Low Latency for the whole visit, running its buffer dry at every ad break. WardenOne now
