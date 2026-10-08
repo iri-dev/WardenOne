@@ -14759,8 +14759,10 @@ function isMediaCompatDomain(domain) {
   const d = String(domain || '').replace(/^www\./, '').toLowerCase();
   if (!d) return false;
   if (MEDIA_COMPAT_DOMAINS.has(d)) return true;
-  for (const safe of MEDIA_COMPAT_DOMAINS) {
-    if (d.endsWith('.' + safe)) return true;
+  /* Each parent at a label boundary, the same answer as endsWith('.' + entry) for every entry
+     (see isNeverBlockDomain for why it matters). */
+  for (let dot = d.indexOf('.'); dot !== -1; dot = d.indexOf('.', dot + 1)) {
+    if (MEDIA_COMPAT_DOMAINS.has(d.slice(dot + 1))) return true;
   }
   return false;
 }
@@ -14822,8 +14824,13 @@ function isNeverBlockDomain(domain) {
   if (isGithubUploadInfraDomain(d)) return true;
   if (NEVER_BLOCK_PUBLIC_SUFFIXES.has(d)) return true;
   if (NEVER_BLOCK_DOMAINS.has(d)) return true;
-  for (const safe of NEVER_BLOCK_DOMAINS) {
-    if (d.endsWith('.' + safe)) return true;
+  /* The host's parents at each label boundary: the same answer as testing endsWith('.' + entry)
+     against every entry, in a few lookups. List updates ask this of every downloaded host, and
+     the pass over the whole set (a new string per entry) held the service worker for up to
+     2.75 s at a time on a fresh install; settings changes, page configuration and the popup
+     all waited behind it. */
+  for (let dot = d.indexOf('.'); dot !== -1; dot = d.indexOf('.', dot + 1)) {
+    if (NEVER_BLOCK_DOMAINS.has(d.slice(dot + 1))) return true;
   }
   return false;
 }
@@ -15159,10 +15166,7 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
 const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com']);
 function isFeedFalsePositiveDomain(host) {
   const d = String(host || '').toLowerCase();
-  for (const listed of FEED_FALSE_POSITIVE_DOMAINS) {
-    if (d === listed || d === 'www.' + listed) return true;
-  }
-  return false;
+  return FEED_FALSE_POSITIVE_DOMAINS.has(d) || (d.startsWith('www.') && FEED_FALSE_POSITIVE_DOMAINS.has(d.slice(4)));
 }
 
 // Extract only unambiguous whole-host entries: a plain hostname, a hosts-file
@@ -15252,6 +15256,35 @@ function parseList(text) {
       continue;
     }
     addCandidate(line);
+  }
+  return out;
+}
+
+/* parseList for a downloaded feed, a slice of lines at a time, giving the service worker back
+   between slices. A feed runs to hundreds of thousands of lines, and parsing one in a single task
+   held the worker for seconds after a fresh install (gaps of 1.9 s with the per-host checks made
+   cheap, 2.75 s before) -- a settings change made then reached open tabs only after it, which on
+   a slower machine took longer than the change itself. Same hosts, same order: each slice goes
+   through parseList and repeats are dropped across slices as parseList drops them within one.
+   A genuine JSON feed is still parsed whole, since it cannot be cut at a line. */
+const LIST_PARSE_SLICE_LINES = 4000;
+async function parseListInSlices(text) {
+  const source = String(text || '');
+  const trimmed = source.trim();
+  if (trimmed.startsWith('{') || /^\[\s*(?:["[{\]\d-]|true|false|null)/.test(trimmed)) return parseList(source);
+  const lines = source.split(/\r?\n/);
+  if (lines.length <= LIST_PARSE_SLICE_LINES) return parseList(source);
+  const out = [];
+  const seen = new Set();
+  for (let at = 0; at < lines.length; at += LIST_PARSE_SLICE_LINES) {
+    /* The leading comment keeps a slice that happens to open with "[" or "{" from being tried
+       as JSON: parseList skips it like any other comment line. */
+    for (const host of parseList('!\n' + lines.slice(at, at + LIST_PARSE_SLICE_LINES).join('\n'))) {
+      if (seen.has(host)) continue;
+      seen.add(host);
+      out.push(host);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
   return out;
 }
@@ -15653,7 +15686,7 @@ async function fetchListSource(url, reason, integrity) {
   try {
     const text = fetched.text || '';
     const byteLength = fetched.byteLength || utf8ByteLength(text);
-    const domains = parseList(text);
+    const domains = await parseListInSlices(text);
     const optionRules = parseNetworkRules(text, 0, OPTION_RULES_PER_SOURCE_CAP);
     const hash = await sha256TextHex(text);
     const verdict = evaluateListSourceIntegrity(
@@ -15812,6 +15845,16 @@ function parseSupplementalListText(source, text) {
   return sanitizeSupplementalLists(out);
 }
 
+/* The same, giving the worker back between slices of a long list (see parseListInSlices). */
+async function parseSupplementalListTextInSlices(source, text) {
+  const out = emptySupplementalLists();
+  if (source && source.manifest) return parseSupplementalManifestText(text);
+  const bucket = source && source.bucket;
+  if (!bucket || !Object.prototype.hasOwnProperty.call(out, bucket)) return out;
+  out[bucket] = await parseListInSlices(text);
+  return sanitizeSupplementalLists(out);
+}
+
 function supplementalSourceDomains(lists) {
   const clean = sanitizeSupplementalLists(lists);
   const out = [];
@@ -15866,7 +15909,7 @@ async function fetchSupplementalListSource(source, reason, previousRecord, seed)
       if (!res || !res.ok) return { ok: false, source, url, error: 'Bundled source unavailable' };
       const text = await res.text();
       const byteLength = utf8ByteLength(text);
-      const lists = parseSupplementalListText(source, text);
+      const lists = await parseSupplementalListTextInSlices(source, text);
       const hash = await sha256TextHex(text);
       const record = supplementalSourceRecord(source, hash, byteLength, lists, seed);
       return { ok: true, source, url, lists, integrityRecord: record };
@@ -15887,7 +15930,7 @@ async function fetchSupplementalListSource(source, reason, previousRecord, seed)
   try {
     const text = fetched.text || '';
     const byteLength = fetched.byteLength || utf8ByteLength(text);
-    const lists = parseSupplementalListText(source, text);
+    const lists = await parseSupplementalListTextInSlices(source, text);
     const hash = await sha256TextHex(text);
     const verdict = evaluateSupplementalSourceIntegrity(source, previousRecord, hash, byteLength, lists, seed, parseListPublisherDate(text));
     if (!verdict.ok) {
