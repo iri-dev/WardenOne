@@ -123,8 +123,9 @@ for (const file of packaged.concat(['src/content.js'])) {
 }
 const byFile = (name) => found.filter((w) => w.file === name).length;
 /* The writers there are today, so a scanner that stopped seeing them fails instead of passing
-   empty. The worker writes through updateStoredConfig and reset; config-lock.js repairs old saves. */
-for (const [file, count] of [['background.js', 2], ['config-lock.js', 1], ['settings.js', 1], ['popup.js', 1], ['history.js', 1], ['notifications.js', 1], ['onboarding.js', 1]]) {
+   empty. The worker writes through updateStoredConfig and reset; config-lock.js repairs old saves
+   after an erase and saves written over by a private window. */
+for (const [file, count] of [['background.js', 2], ['config-lock.js', 2], ['settings.js', 1], ['popup.js', 1], ['history.js', 1], ['notifications.js', 1], ['onboarding.js', 1]]) {
   check(file + ' has its ' + count + ' config write(s) found, not ' + byFile(file), byFile(file) === count);
 }
 const updates = ['background.js', 'background-memory.js']
@@ -134,6 +135,8 @@ check('the worker changes the config through updateStoredConfig (' + updates + '
 const open = found.filter((w) => !w.locked);
 check('every write of wardenone_config holds the config lock: '
   + (open.map((w) => w.file + ':' + w.line).join(', ') || 'none outside'), open.length === 0);
+
+let overwriteChecks = Promise.resolve();
 
 /* The lock does not reach a private window, so every write also records itself and checks back. */
 const unstamped = found.filter((w) => !w.stamped && !w.afterClear);
@@ -150,6 +153,8 @@ for (const file of ['background.js', 'settings.js', 'popup.js', 'history.js', 'n
   const lock = fs.readFileSync(path.join(root, 'config-lock.js'), 'utf8');
   check('config-lock.js records saves beside the config, not in it',
     /const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';/.test(lock) && /function stampConfigWrite\(/.test(lock) && /function confirmConfigWrite\(/.test(lock));
+  check('every context that loads config-lock.js repairs a write that landed over another',
+    /onChanged\.addListener\([\s\S]*?repairOverwrittenConfig\(changes\)/.test(lock));
   check('save ancestry keeps delayed confirmations long enough to repair',
     /const WO_CONFIG_WRITES_KEPT = (\d+);/.test(lock) && Number(lock.match(/const WO_CONFIG_WRITES_KEPT = (\d+);/)[1]) >= 256);
 
@@ -187,6 +192,183 @@ for (const file of ['background.js', 'settings.js', 'popup.js', 'history.js', 'n
   check('a genuinely later same-key edit is not overwritten by reconciliation', genuinelyLater.retries.length === 0);
   const unrelated = confirmation(100, { ids: ['other'], keys: ['capReferrer'], order: 200 }, ['deAmp']);
   check('a missing edit is still recovered when the current write changed another key', unrelated.retries.length === 1);
+
+  /* A write that lands after both looks are over. Held 2.1 s in Edge, a private write that had
+     read before a regular change to another setting wrote that change away for good; the final
+     stored config is what is checked here, not the record. */
+  function overwriteHarness() {
+    const state = { stored: {}, sets: 0, written: [] };
+    let calls = 0;
+    const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+    const sandbox = {
+      crypto: { getRandomValues(bytes) { calls++; for (let i = 0; i < bytes.length; i++) bytes[i] = (calls * 31 + i * 7) & 255; return bytes; } },
+      setTimeout() { return 0; },
+      /* No mutual exclusion here, which is what two lock domains (regular and private) give. */
+      withConfigLock: (task) => Promise.resolve().then(task),
+      chrome: { runtime: { lastError: null }, storage: { local: {
+        async get(keys) {
+          const out = {};
+          for (const key of [].concat(keys)) if (key in state.stored) out[key] = clone(state.stored[key]);
+          return out;
+        },
+        async set(items) { state.sets++; state.written.push(clone(items)); Object.assign(state.stored, clone(items)); },
+      } } },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(lifted + '\nthis.__api={stampConfigWrite,configOverwritePlan,repairOverwrittenConfig};', sandbox);
+    const api = sandbox.__api;
+    const read = () => ({ config: clone(state.stored.wardenone_config), record: clone(state.stored.wardenone_config_writes) });
+    /* A writer's read-modify-write, made from `base` (what it read) and landed whenever it is. */
+    const write = (base, keys, patch, order) => {
+      const stamp = api.stampConfigWrite(base.record, keys, order);
+      return { config: Object.assign({}, base.config, patch), record: clone(stamp.record) };
+    };
+    const land = (written) => {
+      const changes = {
+        wardenone_config: { oldValue: clone(state.stored.wardenone_config), newValue: clone(written.config) },
+        wardenone_config_writes: { oldValue: clone(state.stored.wardenone_config_writes), newValue: clone(written.record) },
+      };
+      state.stored.wardenone_config = clone(written.config);
+      state.stored.wardenone_config_writes = clone(written.record);
+      return changes;
+    };
+    const plan = (changes) => {
+      const p = api.configOverwritePlan(changes.wardenone_config_writes.oldValue, changes.wardenone_config_writes.newValue,
+        changes.wardenone_config.oldValue, changes.wardenone_config.newValue);
+      return p ? Array.from(p.restore) : null;
+    };
+    return { api, state, read, write, land, plan, config: () => state.stored.wardenone_config };
+  }
+  const json = (value) => JSON.stringify(value);
+
+  overwriteChecks = Promise.resolve().then(async () => {
+    {
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false, capReferrer: false } }, ['deAmp', 'capReferrer'], {}, 100));
+      const stale = h.read();
+      h.land(h.write(h.read(), ['deAmp'], { deAmp: true }, 200));
+      const changes = h.land(h.write(stale, ['capReferrer'], { capReferrer: true }, 300));
+      check('the late private write is caught with the regular change it wrote away', json(h.plan(changes)) === json(['deAmp']));
+      await h.api.repairOverwrittenConfig(changes);
+      check('a regular change to another setting survives a private write that lands after both looks',
+        json(h.config()) === json({ deAmp: true, capReferrer: true }));
+      const record = h.state.stored.wardenone_config_writes;
+      check('the repaired config descends from both writes, so neither check-back replays',
+        record.ids.includes(changes.wardenone_config_writes.oldValue.ids[0]) && record.ids.includes(changes.wardenone_config_writes.newValue.ids[0]));
+
+      const beforeRepair = { config: changes.wardenone_config.newValue, record: changes.wardenone_config_writes.newValue };
+      const over = h.land(h.write(beforeRepair, ['allowlist'], { allowlist: ['example.com'] }, 400));
+      check('a write over the repair itself is caught in turn', json(h.plan(over)) === json(['deAmp']));
+      await h.api.repairOverwrittenConfig(over);
+      check('the restored change survives a second stale write',
+        json(h.config()) === json({ deAmp: true, capReferrer: true, allowlist: ['example.com'] }));
+      const sets = h.state.sets;
+      await h.api.repairOverwrittenConfig(over);
+      check('a repair already made is not made again', h.state.sets === sets);
+    }
+    {
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false } }, ['deAmp'], {}, 100));
+      const stale = h.read();
+      h.land(h.write(h.read(), ['deAmp'], { deAmp: true }, 300));
+      const olderLanding = h.land(h.write(stale, ['deAmp'], { deAmp: false }, 200));
+      check('a later edit to the same setting is put back over an older one that landed late', json(h.plan(olderLanding)) === json(['deAmp']));
+      await h.api.repairOverwrittenConfig(olderLanding);
+      check('the later same-setting edit is what stays stored', h.config().deAmp === true);
+    }
+    {
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false } }, ['deAmp'], {}, 100));
+      const stale = h.read();
+      h.land(h.write(h.read(), ['deAmp'], { deAmp: true }, 200));
+      const laterLanding = h.land(h.write(stale, ['deAmp'], { deAmp: false }, 300));
+      await h.api.repairOverwrittenConfig(laterLanding);
+      check('a genuinely later edit to the same setting is not undone', json(h.plan(laterLanding)) === json([]) && h.config().deAmp === false);
+    }
+    {
+      /* Three sides: the overwriting side has a change the overwritten one never saw. Only what
+         the overwritten writes changed goes back; the rest of the overwriting side stands. */
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false, capReferrer: false, allowlist: [] } }, ['deAmp', 'capReferrer', 'allowlist'], {}, 100));
+      const base = h.read();
+      const sideways = h.write(base, ['allowlist'], { allowlist: ['kept.example'] }, 150);
+      h.land(h.write(base, ['deAmp'], { deAmp: true }, 200));
+      const changes = h.land(h.write(sideways, ['capReferrer'], { capReferrer: true }, 300));
+      await h.api.repairOverwrittenConfig(changes);
+      check('a change only the overwriting side made is not undone',
+        json(h.config()) === json({ deAmp: true, capReferrer: true, allowlist: ['kept.example'] }));
+    }
+    {
+      /* The overwriting side changed the same key later than the overwritten write did, in a write
+         before the one that landed; and it carries a value neither side's writes listed (a page
+         filling in its defaults). Both stand. */
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false, capReferrer: false } }, ['deAmp', 'capReferrer'], {}, 100));
+      const base = h.read();
+      h.land(h.write(base, ['deAmp'], { deAmp: true }, 200));
+      const laterSameKey = h.write(base, ['deAmp'], { deAmp: false }, 250);
+      const changes = h.land(h.write(laterSameKey, ['capReferrer'], { capReferrer: true, filledDefault: true }, 300));
+      await h.api.repairOverwrittenConfig(changes);
+      check('a same-key change made later on the overwriting side, and an unlisted default, both stand',
+        json(h.config()) === json({ deAmp: false, capReferrer: true, filledDefault: true }));
+    }
+    {
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false, capReferrer: false } }, ['deAmp', 'capReferrer'], {}, 100));
+      const stale = h.read();
+      h.land(h.write(h.read(), ['deAmp'], { deAmp: true }, 200));
+      const changes = h.land(h.write(stale, ['capReferrer'], { capReferrer: true }, 300));
+      h.land(h.write(h.read(), ['deAmp'], { deAmp: false }, 400));
+      await h.api.repairOverwrittenConfig(changes);
+      check('a key changed again after the overwrite keeps that later change', h.config().deAmp === false);
+    }
+    {
+      /* A regular and a private worker repairing at once, each under its own lock. */
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false, capReferrer: false } }, ['deAmp', 'capReferrer'], {}, 100));
+      const stale = h.read();
+      h.land(h.write(h.read(), ['deAmp'], { deAmp: true }, 200));
+      const changes = h.land(h.write(stale, ['capReferrer'], { capReferrer: true }, 300));
+      await Promise.all([h.api.repairOverwrittenConfig(changes), h.api.repairOverwrittenConfig(changes)]);
+      check('two repairs at once both land the same config',
+        h.state.sets === 2 && json(h.config()) === json({ deAmp: true, capReferrer: true }));
+      const [first, second] = h.state.written;
+      const again = h.api.configOverwritePlan(first.wardenone_config_writes, second.wardenone_config_writes,
+        first.wardenone_config, second.wardenone_config);
+      check('one repair landing over the other finds nothing to put back, so they cannot chase each other',
+        again !== null && again.restore.length === 0);
+    }
+    {
+      const h = overwriteHarness();
+      h.land(h.write({ config: { deAmp: false, capReferrer: false } }, ['deAmp', 'capReferrer'], {}, 100));
+      const stale = h.read();
+      const many = Array.from({ length: 40 }, (_, i) => 'k' + i);
+      h.land(h.write(h.read(), many.concat('deAmp'), { deAmp: true }, 200));
+      const cut = h.land(h.write(stale, ['capReferrer'], { capReferrer: true }, 300));
+      check('a write whose key list was cut short is left to the check-backs, not guessed at', h.plan(cut) === null);
+
+      /* A save from before per-write keys were kept, as a page still open across an update makes. */
+      const legacy = overwriteHarness();
+      legacy.land({ config: { deAmp: false, capReferrer: false }, record: { epoch: '', ids: ['old'], keys: [], order: 1 } });
+      const legacyStale = legacy.read();
+      legacy.land({ config: { deAmp: true, capReferrer: false }, record: { epoch: '', ids: ['unlisted', 'old'], keys: ['deAmp'], order: 200 } });
+      const fromLegacy = legacy.land(legacy.write(legacyStale, ['capReferrer'], { capReferrer: true }, 300));
+      check('a record without per-write keys is left alone', legacy.plan(fromLegacy) === null);
+
+      const epochs = overwriteHarness();
+      epochs.land(epochs.write({ config: { deAmp: true } }, ['deAmp'], {}, 100));
+      const preReset = epochs.read();
+      epochs.land({ config: {}, record: { epoch: 'fresh', ids: [] } });
+      epochs.land(epochs.write(epochs.read(), ['deAmp'], { deAmp: false }, 200));
+      const across = epochs.land(epochs.write(preReset, ['capReferrer'], { capReferrer: true }, 300));
+      check('a write across an erase is left to the reset guard', epochs.plan(across) === null);
+
+      const ordinary = overwriteHarness();
+      ordinary.land(ordinary.write({ config: { deAmp: false } }, ['deAmp'], {}, 100));
+      const descends = ordinary.land(ordinary.write(ordinary.read(), ['deAmp'], { deAmp: true }, 200));
+      check('an ordinary write that read the one before it is not touched', ordinary.plan(descends) === null);
+    }
+  });
 }
 
 const pages = ['settings.html', 'popup.html', 'history.html', 'notifications.html', 'onboarding.html'];
@@ -199,4 +381,9 @@ for (const page of pages) {
 check('the worker imports config-lock.js', /importScripts\('config-lock\.js'\)/.test(fs.readFileSync(path.join(root, 'background.js'), 'utf8')));
 check('config-lock.js ships', packaged.includes('config-lock.js'));
 
-console.log('[ok] config write lock: ' + checks + ' checks, ' + found.length + ' config writes found, all locked');
+overwriteChecks.then(() => {
+  console.log('[ok] config write lock: ' + checks + ' checks, ' + found.length + ' config writes found, all locked');
+}).catch((error) => {
+  console.error(error && error.stack || error);
+  process.exit(1);
+});

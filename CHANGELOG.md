@@ -43,6 +43,10 @@
 - A Twitch video segment that fails to download no longer counts as one the player has. When the
   player asked for it again from the other stream after a switch, the switch went unmarked and
   the mark landed one segment late.
+- A setting changed in a normal window is no longer lost when a private window saves a different
+  setting more than a second and a half later, from what it read before your change. The late
+  save is caught as it lands and your change is put back, unless that same setting was changed
+  again since.
 - Updating the block lists no longer freezes WardenOne's background work for seconds at a time.
   Each downloaded list was checked host by host against the never-block list the slow way and
   parsed in one go, so right after install, and at each daily update, a settings change, the

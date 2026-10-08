@@ -13,7 +13,9 @@
    are what keep a change: without them a regular Settings change was lost in 19 of 40 tries.
    The final case pauses a private Settings save through Erase All and checks storage after reload.
    A deterministic same-key case also holds an older private write until a later regular edit has
-   completed, then proves the later user edit is recovered after the stale write lands.
+   completed, then proves the later user edit is recovered after the stale write lands. Another
+   lands a private write 2.1 s late, after the regular write's own checks are over, and requires
+   the final stored config to keep both changes.
    Run: node tools/browser-config-race.js
    It drives the unpacked extension in Edge (tools/perf-profile.js), so it runs in CI's
    real-settings-regression job rather than the local gate; tools/test-config-write-lock.js,
@@ -187,7 +189,11 @@ async function run() {
     await evaluate(privateSettings, "(() => { const got = __woStale; const stamp = stampConfigWrite(got[WO_CONFIG_WRITES_KEY], ['capReferrer']); return localWrite({ wardenone_config: Object.assign({}, got.wardenone_config, { capReferrer: true }), [WO_CONFIG_WRITES_KEY]: stamp.record }).then(() => true); })()");
     await sleep(1500);
     const late = await evaluate(privateSettings, "chrome.storage.local.get('wardenone_config').then((got) => ({ deAmp: got.wardenone_config.deAmp, capReferrer: got.wardenone_config.capReferrer }))");
-    console.log('[known boundary] private write held for 2.1 seconds: ' + JSON.stringify(late));
+    /* Before repairOverwrittenConfig this ended { deAmp: false, capReferrer: true }: both of the
+       regular write's checks had passed, and the late private write took its change away for good. */
+    assert.deepEqual(late, { deAmp: true, capReferrer: true },
+      'a regular change to another setting was lost to a private write that landed 2.1 s late: ' + JSON.stringify(late));
+    console.log('[ok] a private write that lands 2.1 s late keeps the regular change to another setting');
 
     const erasedKey = 'erase-race-synthetic-api-key';
     const erasedSite = 'erase-race-probe.example';
