@@ -25,6 +25,7 @@
 
 - Browser Back and Forward navigation from a video page no longer triggers the frame redirect
   warning when returning to a search page.
+- Popup controls stay visible while a saved section order is being read from extension storage.
 - Closeable media adverts placed over a site's video player are now removed by the in-page popup
   cleaner while the player itself remains protected.
 - Settings' Recent site card now includes page-level actions such as YouTube player ad removals,
