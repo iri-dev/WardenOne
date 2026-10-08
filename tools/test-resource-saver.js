@@ -169,6 +169,12 @@ assert(/messageSenderIsTab\(sender\)/.test(resourceStateHandler) && !/sender\.ur
   'trusted content scripts in inherited and non-HTTP frames receive the initial Resource Saver state');
 assert(/'resource-saver-state': \{ max: 500, windowMs: 60000 \}/.test(background),
   'the per-tab limit leaves room for frame-heavy pages to read their initial state');
+{
+  const listener = background.slice(background.indexOf('chrome.storage.onChanged.addListener'));
+  assert(listener.indexOf('broadcastResourceSaverState(afterResourceSaver)') >= 0
+    && listener.indexOf('broadcastResourceSaverState(afterResourceSaver)') < listener.indexOf('scheduleContentConfigRefresh()'),
+    'live Resource Saver state is sent before unrelated refresh work can fail on an older browser');
+}
 assert(/data-key="disableYouTubeAmbientMode"/.test(popup), 'the popup exposes the Ambient Mode control');
 assert(/data-key="stopAnimatedVideoPreviews"/.test(popup), 'the popup exposes the general preview control');
 assert(/sw\([^\n]+disableYouTubeAmbientMode[^\n]+stopAnimatedVideoPreviews/.test(settings), 'Settings exposes both resource controls');
