@@ -447,6 +447,78 @@
       settings: 'https://discord.com/settings/authorized-apps',
       likely: (u) => /\/(api\/)?oauth2\/authorize/i.test(u.pathname) || (u.searchParams.has('client_id') && (u.searchParams.has('scope') || u.searchParams.has('permissions'))),
     },
+    {
+      id: 'apple',
+      name: 'Apple',
+      hosts: ['appleid.apple.com'],
+      settings: 'https://appleid.apple.com/account/manage',
+      likely: (u) => /^\/auth\/authorize/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /sign in to [^.]{0,100} with (?:your )?apple|share (?:your )?(?:name|email)|continue to [^.]{0,100} using (?:your )?apple/i,
+    },
+    {
+      id: 'meta',
+      name: 'Meta',
+      hosts: ['facebook.com'],
+      settings: 'https://www.facebook.com/settings?tab=applications',
+      likely: (u) => /\/dialog\/oauth\b/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /would like to access|continue as [^.]{0,80}|choose what you allow|edit (?:the )?access|(?:app|application) will receive/i,
+    },
+    {
+      id: 'spotify',
+      name: 'Spotify',
+      hosts: ['accounts.spotify.com'],
+      settings: 'https://www.spotify.com/account/apps/',
+      likely: (u) => /^\/authorize\/?$/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /wants to access your spotify account|allow [^.]{0,100} to access|this app (?:can|will be able to)|permissions requested/i,
+    },
+    {
+      id: 'slack',
+      name: 'Slack',
+      hosts: ['slack.com', 'slack-gov.com'],
+      settings: 'https://slack.com/apps/manage',
+      likely: (u) => /^\/oauth\/(?:v2\/)?authorize/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /requesting permission to access|would like to access|allow [^.]{0,100} to access|install [^.]{0,100}(?:workspace|organization)|app will be able to/i,
+    },
+    {
+      id: 'dropbox',
+      name: 'Dropbox',
+      hosts: ['dropbox.com'],
+      settings: 'https://www.dropbox.com/account/connected_apps',
+      likely: (u) => /^\/oauth2\/authorize/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /would like access to|allow [^.]{0,100} to access|wants to access (?:your )?dropbox|app will be able to/i,
+    },
+    {
+      id: 'gitlab',
+      name: 'GitLab',
+      hosts: ['gitlab.com'],
+      settings: 'https://gitlab.com/-/profile/applications',
+      likely: (u) => /^\/oauth\/authorize/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /authorize [^.]{0,100} to use your account|application will be able to|requests access to your gitlab account|would like permission to/i,
+    },
+    {
+      id: 'atlassian',
+      name: 'Atlassian',
+      hosts: ['auth.atlassian.com'],
+      settings: 'https://id.atlassian.com/manage-profile/apps',
+      likely: (u) => /^\/authorize\/?$/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /wants to access|allow access to|will be able to|grant [^.]{0,100} access|permissions requested/i,
+    },
+    {
+      id: 'linkedin',
+      name: 'LinkedIn',
+      hosts: ['linkedin.com'],
+      settings: 'https://www.linkedin.com/psettings/permitted-services',
+      likely: (u) => /^\/oauth\/v2\/authorization/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /would like to|allow [^.]{0,100} access|will be able to|requests? permission/i,
+    },
+    {
+      id: 'twitch',
+      name: 'Twitch',
+      hosts: ['id.twitch.tv'],
+      settings: 'https://www.twitch.tv/settings/connections',
+      likely: (u) => /^\/oauth2\/authorize/i.test(u.pathname) && u.searchParams.has('client_id'),
+      consent: /authorize [^.]{0,100} to use your account|wants to access your twitch account|will be able to|requests? permission/i,
+    },
   ];
 
   function oauthOn() {
@@ -559,6 +631,8 @@
       positive = /would like permission to|wants to access|review and authorize|requesting access to|authorize [^.]{0,100}(?:application|app)/i.test(text);
     } else if (provider.id === 'discord') {
       positive = /wants to access your discord account|this will allow [^.]{0,120}(?:discord|server|account)|authorize [^.]{0,100}(?:bot|app|application)/i.test(text);
+    } else if (provider.consent) {
+      positive = provider.consent.test(text);
     }
 
     // Provider markup changes occasionally. Keep a narrow generic fallback for
@@ -697,6 +771,42 @@
       if (s === 'webhook.incoming') addRisk(risks, 'Webhook access', s, 4, 'can create incoming webhooks');
       if (s === 'messages.read') addRisk(risks, 'Message access', s, 5, 'can read messages where authorized');
       if (s === 'connections' || s === 'email') addRisk(risks, 'Profile/contact data', s, 2, 'can read personal account details');
+    } else if (provider.id === 'meta') {
+      if (matchScope(s, /^(?:pages_manage|instagram_manage|business_management|ads_management|whatsapp_business_management)/i)) addRisk(risks, 'Business/page administration', s, 7, 'can administer pages, business assets, ads, or messages');
+      else if (matchScope(s, /^(?:pages_messaging|instagram_content_publish|publish_video|pages_manage_posts)/i)) addRisk(risks, 'Publishing or messaging access', s, 6, 'can publish content or send messages');
+      else if (matchScope(s, /^(?:ads_read|pages_read_engagement|pages_read_user_content|groups_access_member_info|user_posts|user_photos|user_videos)/i)) addRisk(risks, 'Social content access', s, 4, 'can read page, group, advertising, or personal content');
+    } else if (provider.id === 'spotify') {
+      if (matchScope(s, /^(?:playlist-modify-|user-library-modify|user-follow-modify|ugc-image-upload)/i)) addRisk(risks, 'Spotify library or playlist changes', s, 4, 'can change saved music, followed artists, playlists, or images');
+      else if (matchScope(s, /^(?:streaming|app-remote-control|user-modify-playback-state)/i)) addRisk(risks, 'Playback control', s, 3, 'can control Spotify playback');
+      else if (matchScope(s, /^(?:playlist-read-private|playlist-read-collaborative)/i)) addRisk(risks, 'Private playlist access', s, 3, 'can read private or collaborative playlists');
+    } else if (provider.id === 'slack') {
+      if (matchScope(s, /^admin[.:]/i)) addRisk(risks, 'Slack organization administration', s, 8, 'can administer a Slack organization or workspace');
+      else if (matchScope(s, /^(?:chat:write|files:write|calls:write|canvases:write)/i)) addRisk(risks, 'Slack content changes', s, 5, 'can post messages or change workspace content');
+      else if (matchScope(s, /^(?:channels|groups|im|mpim):history|^search:read/i)) addRisk(risks, 'Slack message history', s, 5, 'can read messages or search workspace content');
+      else if (matchScope(s, /^(?:users:read\.email|remote_files:write|reactions:write|pins:write|incoming-webhook)/i)) addRisk(risks, 'Slack member or posting access', s, 4, 'can read member email or create content in Slack');
+    } else if (provider.id === 'dropbox') {
+      if (matchScope(s, /^files\.content\.write$/i)) addRisk(risks, 'Dropbox file changes', s, 6, 'can add, change, or delete Dropbox files');
+      else if (matchScope(s, /^files\.content\.read$/i)) addRisk(risks, 'Dropbox file access', s, 5, 'can read Dropbox file contents');
+      else if (matchScope(s, /^(?:sharing\.write|file_requests\.write|team_data\.member)/i)) addRisk(risks, 'Dropbox sharing or team changes', s, 5, 'can change sharing, file requests, or team data');
+      else if (matchScope(s, /^(?:sharing\.read|files\.metadata\.read)/i)) addRisk(risks, 'Dropbox sharing metadata', s, 3, 'can read file or sharing metadata');
+    } else if (provider.id === 'gitlab') {
+      if (matchScope(s, /^(?:sudo|admin_mode)$/i)) addRisk(risks, 'GitLab administrator access', s, 8, 'can act with administrator privileges');
+      else if (s === 'api') addRisk(risks, 'Full GitLab API access', s, 7, 'can read and change projects, groups, packages, and registries');
+      else if (matchScope(s, /^(?:write_repository|write_registry|write_virtual_registry|manage_runner|create_runner|k8s_proxy|write_observability)$/i)) addRisk(risks, 'GitLab write or infrastructure access', s, 6, 'can change repositories, registries, runners, or infrastructure');
+      else if (matchScope(s, /^(?:read_api|read_repository|read_registry|read_virtual_registry|read_observability)$/i)) addRisk(risks, 'GitLab project data access', s, 4, 'can read private project, registry, or observability data');
+    } else if (provider.id === 'atlassian') {
+      if (matchScope(s, /^(?:manage|admin):|:admin$|^manage-/i)) addRisk(risks, 'Atlassian administration', s, 7, 'can manage Atlassian projects, sites, or access');
+      else if (matchScope(s, /^(?:delete:|delete-)/i)) addRisk(risks, 'Atlassian content deletion', s, 6, 'can delete Atlassian content');
+      else if (matchScope(s, /^(?:write:|write-)|^write_(?:jira|confluence)/i)) addRisk(risks, 'Atlassian content changes', s, 5, 'can create or change Jira or Confluence content');
+      else if (matchScope(s, /^(?:read:jira-work|read:confluence-|read:jira-)/i)) addRisk(risks, 'Atlassian work data access', s, 3, 'can read Jira or Confluence work data');
+    } else if (provider.id === 'linkedin') {
+      if (matchScope(s, /^(?:rw_organization_admin|rw_ads|rw_dmp_segments|rw_conversions)/i)) addRisk(risks, 'LinkedIn administration or ads access', s, 7, 'can administer organizations, advertising, or marketing data');
+      else if (matchScope(s, /^(?:w_organization_social|w_member_social)/i)) addRisk(risks, 'LinkedIn publishing access', s, 6, 'can publish on behalf of a member or organization');
+      else if (matchScope(s, /^(?:r_organization_social|r_ads|r_ads_reporting|r_sales_nav_)/i)) addRisk(risks, 'LinkedIn organization or advertising data', s, 4, 'can read organization, advertising, or Sales Navigator data');
+    } else if (provider.id === 'twitch') {
+      if (matchScope(s, /^(?:channel|moderator|user):manage:/i)) addRisk(risks, 'Twitch channel or moderation control', s, 7, 'can manage a channel, users, or moderation');
+      else if (matchScope(s, /^(?:chat:edit|whispers:edit|channel:edit:commercial|clips:edit)/i)) addRisk(risks, 'Twitch posting or channel changes', s, 5, 'can send messages or change channel content');
+      else if (matchScope(s, /^(?:channel|moderator):read:|^user:read:(?:broadcast|blocked_users|chat|follows|subscriptions)/i)) addRisk(risks, 'Twitch channel data access', s, 3, 'can read private channel, moderation, or subscription data');
     }
     if (/offline_access/i.test(s)) addRisk(risks, 'Offline access', s, 3, 'can keep access after you leave');
   }
@@ -733,7 +843,10 @@
   }
 
   function scoreGrant(provider, u) {
-    const rawScopes = splitScopes(u.searchParams.get('scope') || '');
+    const rawScopes = splitScopes([
+      u.searchParams.get('scope') || '',
+      u.searchParams.get('user_scope') || '',
+    ].join(' '));
     const risks = [];
     rawScopes.forEach((s) => scoreScope(provider, s, risks));
     if (provider.id === 'discord') addDiscordPermissionRisks(u, risks);
@@ -744,7 +857,8 @@
     let score = risks.reduce((sum, r) => sum + r.weight, 0);
     const critical = risks.some((r) => r.weight >= 6);
     if (rawScopes.length >= 5) { score += 2; reasons.push('many OAuth scopes requested at once'); }
-    if (u.searchParams.get('access_type') === 'offline' || rawScopes.some((s) => /offline_access/i.test(s))) {
+    if (u.searchParams.get('access_type') === 'offline' || u.searchParams.get('token_access_type') === 'offline'
+        || rawScopes.some((s) => /offline[_.:]?access/i.test(s))) {
       score += 2;
       reasons.push('requests offline/refresh-token access');
     }

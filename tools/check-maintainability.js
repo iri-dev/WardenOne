@@ -158,6 +158,7 @@ function checkContentBuild() {
   'popup-scroll-memory.js',
   'popup-diagnostics.js',
   'popup-settings-search.js',
+  'site-dashboard-shared.js',
   'notifications.js',
   'notification-schema.js',
   'notification-manager.js',
@@ -309,6 +310,7 @@ function checkContentBuild() {
   'tools/test-blocker-teardown.js',
   'tools/build-source-inventory.js',
   'tools/build-psl.js',
+  'tools/build-idn-confusables.js',
   'tools/build-store-package.js',
   'tools/test-safe-search.js',
   'tools/test-search-junk.js',
@@ -395,6 +397,7 @@ function checkContentBuild() {
   'tools/test-fake-window-guard.js',
   'tools/test-fullscreen-guard.js',
   'tools/test-site-controls.js',
+  'tools/test-site-dashboard-counts.js',
   'tools/test-site-dashboard-presentation.js',
   'tools/test-site-card-fold.js',
   'tools/test-arrange-drag.js',
@@ -634,6 +637,7 @@ checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure
 checkCommand('frame credential guard tests', ['tools/test-frame-credential-guard.js']);
 checkCommand('shared-host site identity tests', ['tools/test-site-identity.js']);
 checkCommand('psl-private.js is well-formed and current', ['tools/build-psl.js', '--check']);
+checkCommand('UTS #39 IDN confusable data is well-formed and current', ['tools/build-idn-confusables.js', '--check']);
 checkCommand('tenant isolation tests', ['tools/test-tenant-isolation.js']);
 checkCommand('tracker learner minimisation tests', ['tools/test-tracker-learner-minimisation.js']);
 checkCommand('the Store package profile, guards and record agree', ['tools/build-store-package.js', '--check']);
@@ -679,6 +683,7 @@ checkCommand('capability guard tests', ['tools/test-capability-guards.js']);
 checkCommand('fake-window guard tests', ['tools/test-fake-window-guard.js']);
 checkCommand('full-screen guard tests', ['tools/test-fullscreen-guard.js']);
 checkCommand('site control tests', ['tools/test-site-controls.js']);
+checkCommand('site dashboard count tests', ['tools/test-site-dashboard-counts.js']);
 checkCommand('site dashboard presentation tests', ['tools/test-site-dashboard-presentation.js']);
 checkCommand('site card fold tests', ['tools/test-site-card-fold.js']);
 checkCommand('arrange drag tests', ['tools/test-arrange-drag.js']);

@@ -1617,6 +1617,9 @@
       <div><div class="name" style="font-size:12px;">Never sleep login / payment pages</div></div>
       <label class="tg"><input type="checkbox" data-key="memoryNeverPayment"><span class="track"></span><span class="knob"></span></label>
     </div>
+    <div data-feature="memoryShield" class="row watch-lead">
+      <div class="desc">Video/live platforms and active camera/mic sessions are always protected, even when the switches above are off.</div>
+    </div>
     <details data-feature="memoryShield" class="row memory-sites" id="mem-sites">
       <summary><div><div class="name">Never-sleep sites</div><div class="desc">Choose sites Memory Shield should always keep awake.</div></div><span class="memory-manage">Manage sites ›</span></summary>
       <div class="memory-sites-body">
@@ -1627,7 +1630,7 @@
       </div>
     </details>
     <div data-feature="tabLimit" class="row memory-break">
-      <div><div class="name" style="font-size:12px;">Tab Limit</div><div class="desc">Over your limit, sleeps (or closes) the oldest unused tab. Skips active, pinned, audio, form, login, and allowlisted tabs.</div></div>
+      <div><div class="name" style="font-size:12px;">Tab Limit</div><div class="desc">Over your limit, sleeps (or closes) the oldest eligible unused tab. Active tabs, camera/mic sessions, and allowlisted tabs are always protected. Pinned, audio, unsaved-form, and login/payment tabs follow the Safety switches above.</div></div>
       <label class="tg"><input type="checkbox" id="tl-guard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div data-feature="tabLimit" class="row tab-limit-number">
@@ -1635,7 +1638,7 @@
       <input class="api-field" type="number" id="tl-max" min="2" max="200" step="1">
     </div>
     <div data-feature="tabLimit" class="row tab-limit-number">
-      <div><div class="name" style="font-size:12px;">Minimum inactive time</div><div class="desc">Minutes a tab must be idle before it's put to sleep (sleep mode only). Close mode is a hard cap — it always closes your least-recently-used tabs to stay under the limit. Active, pinned, audio, and unsaved-form tabs are never touched.</div></div>
+      <div><div class="name" style="font-size:12px;">Minimum inactive time</div><div class="desc">Minutes a tab must be idle before it's put to sleep (sleep mode only). Close mode is a hard cap — it does not wait for the minimum inactive time. Active tabs and camera/mic sessions are always protected. Pinned, audio, unsaved-form, and login/payment tabs follow the Safety switches above.</div></div>
       <input class="api-field" type="number" id="tl-idle" min="0" max="1440" step="5">
     </div>
     <div data-feature="tabLimit" class="row">
@@ -1787,7 +1790,7 @@
       <label class="tg"><input type="checkbox" data-key="loginAgeCheck"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block high-confidence look-alikes</div><div class="desc">For the clearest fakes (visual look-alikes like g00gle, keyboard typos, brand-on-wrong-TLD, homographs), show a full blocking screen instead of just a warning. Opt-in.</div></div>
+      <div><div class="name">Block high-confidence look-alikes</div><div class="desc">For the clearest fakes (visual look-alikes like g00gle, keyboard typos, brand-on-wrong-TLD and homographs), show a blocking screen with options to leave, visit the real site or continue at your own risk. On by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockHighConfidencePhishing"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1890,7 +1893,7 @@
       <label class="tg"><input type="checkbox" data-key="fakeUpdateDetector"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">OAuth grant guard</div><div class="desc">Warns on risky Google, Microsoft, GitHub, or Discord consent grants, like email, contacts, repositories, admin, offline access, or unsafe redirect combinations. On by default.</div></div>
+      <div><div class="name">OAuth grant guard</div><div class="desc">Warns on risky consent grants from major account, work, developer, social, and media providers &mdash; such as email, files, repositories, admin, posting, messaging, or offline access. Ordinary sign-in and basic profile access stay quiet. On by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="oauthGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -2467,6 +2470,7 @@
 
 <script src="popup-health.js"></script>
 <script src="popup-scroll-memory.js"></script>
+<script src="site-dashboard-shared.js"></script>
 <script src="config-lock.js"></script>
 <script src="popup.js"></script>
 <script src="popup-settings-search.js"></script>

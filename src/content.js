@@ -641,7 +641,7 @@
     detectPhishing:!0,
     behavioralScan:!0,
     xssBehaviorGuard:!0,
-    blockHighConfidencePhishing:!1,
+    blockHighConfidencePhishing:!0,
     customBrands:{
 
     },
@@ -20936,6 +20936,40 @@
         return null
       },
       PLAYER_CONTROL=/\b(play|pause|volume|mute|unmute|fullscreen|controls?|seek|progress|caption|subtitle|settings|quality|episodes?|servers?|next|previous)\b/i,
+      /* Keep the player shell, but let Undo-backed cleanup remove a smaller closeable
+         play creative that the site has positioned inside it. */
+      closeMarkedPlayerPopup=(el,
+      r,
+      pos)=>{
+        try{
+          if(!el||!el.querySelector||!el.querySelectorAll||!/^fixed$|^sticky$|^absolute$/.test(pos))return!1;
+          if(r.width<160||r.height<90||r.width>760||r.height>520||r.width*r.height>innerWidth*innerHeight*.55)return!1;
+          const shell=playerShellFor(el);
+          if(!shell||shell===el||playerFrameworkShellFor(el)===el)return!1;
+          if(!el.querySelector('video,iframe,embed,object,picture,canvas,[class*="play" i],[id*="play" i],[aria-label*="play" i]'))return!1;
+          const controls=el.querySelectorAll('button,a,[role="button"],[aria-label],[title],[class*="close" i],[id*="close" i],[class*="dismiss" i],[id*="dismiss" i],svg,img,span,div');
+          let inspected=0;
+          for(const c of controls){
+            if(inspected++>=80)break;
+            const label=String(c.innerText||c.textContent||c.getAttribute&&c.getAttribute("aria-label")||c.getAttribute&&c.getAttribute("title")||"").replace(/\s+/g,
+            " ").trim(),
+            named=String(c.className||"")+" "+String(c.id||"");
+            if(!(label.length<=32&&/^(?:x|×|✕|✖|❌|close|dismiss|hide)(?:\s+(?:ad|advert|popup|overlay|video))?$/i.test(label))&&!/(^|[-_\s])(close|dismiss)([-_\s]|$)/i.test(named))continue;
+            const cr=c.getBoundingClientRect&&c.getBoundingClientRect();
+            if(!cr||cr.width<10||cr.height<10||cr.width>72||cr.height>72)continue;
+            const nearTop=cr.top>=r.top-24&&cr.top<=r.top+Math.min(72,
+            r.height*.32),
+            nearRight=cr.right>=r.right-Math.min(88,
+            r.width*.3)&&cr.right<=r.right+32;
+            if(nearTop&&nearRight)return!0
+          }
+          return!1
+        }
+        catch(_){
+          return!1
+        }
+
+      },
       mediaUiProtected=(el,
       blob)=>{
         try{
@@ -21064,6 +21098,9 @@
           el.getAttribute("data-test"),
           el.getAttribute("data-role")].filter(Boolean).join(" "),
           blob=text+" "+attrs+" "+(el.className||"")+" "+(el.id||"");
+          if(closeMarkedPlayerPopup(el,
+          r,
+          pos))return!0;
           if(mediaUiProtected(el,
           blob))return!1;
           if(PROTECT.test(text))return!1;

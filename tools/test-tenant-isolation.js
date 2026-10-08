@@ -232,10 +232,11 @@ section('worker: navigation ownership binds to the tenant', () => {
   check('...and does not cover the sibling tenant', worker.topNavOwnedFor(7, worker.siteIdentityBg ? worker.siteIdentityBg(ATTACKER) : worker.registrableDomainBg(ATTACKER), now, 10000) === false);
   const forced = grabFn(BG, 'maybeBlockForcedTopRedirect');
   check('the forced top-redirect check compares site identities', /const fromHost = siteIdentityBg\(fromParsed\.hostname\)/.test(forced) && /const toHost = siteIdentityBg\(toUrl\.hostname\)/.test(forced) && !/registrableDomainBg\(/.test(forced));
+  const frameContext = grabFn(BG, 'frameDrivenRedirectContext');
   const frame = grabFn(BG, 'maybeFlagFrameDrivenRedirect');
   /* Two site identities (from, to); the allowlist goes through the shared helper, which matches
      the exact host or its parents rather than any sibling on the same domain (BUG-03). */
-  check('the frame-driven redirect check compares site identities', (frame.match(/siteIdentityBg\(/g) || []).length >= 2 && !/registrableDomain(?:Bg)?\(/.test(frame)
+  check('the frame-driven redirect check compares site identities', (frameContext.match(/siteIdentityBg\(/g) || []).length >= 2 && !/registrableDomain(?:Bg)?\(/.test(frameContext)
     && /hostMatchesAllowlist\(new URL\(fromUrl\)\.hostname, activeAllowlist\(cfg\)\)/.test(frame));
 });
 

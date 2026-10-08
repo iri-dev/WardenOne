@@ -723,6 +723,52 @@ test('login compatibility DNR covers Google and university federation plumbing',
   }
 });
 
+test('expanded OAuth providers get narrow authorization-route compatibility', () => {
+  const filters = extractArrayLiteral(BACKGROUND, 'LOGIN_COMPAT_FILTERS').map(String);
+  for (const token of [
+    'facebook.com/*/dialog/oauth',
+    'slack.com/oauth/v2/authorize',
+    'slack-gov.com/oauth/v2/authorize',
+    'dropbox.com/oauth2/authorize',
+    'gitlab.com/oauth/authorize',
+    'auth.atlassian.com/authorize',
+    'linkedin.com/oauth/v2/authorization',
+    'id.twitch.tv/oauth2/authorize',
+  ]) {
+    if (!filters.some((value) => value.includes(token))) {
+      throw new Error('login allow rules are missing ' + token);
+    }
+  }
+
+  const start = BACKGROUND.indexOf('function isLoginCompatibilityUrl(');
+  const end = BACKGROUND.indexOf('\nfunction isYouTubeFrameUrl(', start);
+  if (start < 0 || end < 0) throw new Error('could not lift isLoginCompatibilityUrl');
+  const sandbox = { URL };
+  vm.createContext(sandbox);
+  vm.runInContext(BACKGROUND.slice(start, end) + ';globalThis.__isLoginCompatibilityUrl=isLoginCompatibilityUrl;', sandbox);
+  for (const url of [
+    'https://www.facebook.com/v24.0/dialog/oauth?client_id=client',
+    'https://slack.com/oauth/v2/authorize?client_id=client',
+    'https://slack-gov.com/oauth/v2/authorize?client_id=client',
+    'https://www.dropbox.com/oauth2/authorize?client_id=client',
+    'https://gitlab.com/oauth/authorize?client_id=client',
+    'https://auth.atlassian.com/authorize?client_id=client',
+    'https://www.linkedin.com/oauth/v2/authorization?client_id=client',
+    'https://id.twitch.tv/oauth2/authorize?client_id=client',
+  ]) {
+    if (!sandbox.__isLoginCompatibilityUrl(url)) throw new Error('OAuth route is not recognised: ' + url);
+  }
+  for (const url of [
+    'https://slack.com/client/workspace/channel',
+    'https://www.dropbox.com/home',
+    'https://gitlab.com/example/project',
+    'https://www.linkedin.com/feed/',
+    'https://www.twitch.tv/directory',
+  ]) {
+    if (sandbox.__isLoginCompatibilityUrl(url)) throw new Error('unrelated provider page was broadly allowlisted: ' + url);
+  }
+});
+
 (async () => {
   let passed = 0;
   let failed = 0;

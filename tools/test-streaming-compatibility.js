@@ -333,6 +333,38 @@ function frameworkOverlayNode(frameworkSelector) {
   return node;
 }
 
+function closeablePlayerPopup(options) {
+  const o = options || {};
+  const shell = {};
+  const node = overlayNode('div');
+  node.className = 'floating-creative';
+  node.innerText = '';
+  node.textContent = '';
+  node.getBoundingClientRect = () => ({ left: 420, top: 180, right: 780, bottom: 390, width: 360, height: 210 });
+  node.closest = (selector) => String(selector || '').includes('[data-player]')
+    ? (o.playerRoot ? node : shell)
+    : null;
+  const close = {
+    nodeType: 1,
+    tagName: 'BUTTON',
+    id: '',
+    className: 'creative-close',
+    innerText: '\u00d7',
+    textContent: '\u00d7',
+    getAttribute() { return null; },
+    getBoundingClientRect() {
+      return o.misplacedClose
+        ? { left: 430, top: 350, right: 458, bottom: 378, width: 28, height: 28 }
+        : { left: 758, top: 168, right: 786, bottom: 196, width: 28, height: 28 };
+    },
+  };
+  node.querySelector = (selector) => String(selector || '').includes('[class*="play" i]') ? {} : null;
+  node.querySelectorAll = (selector) => String(selector || '').includes('[class*="close" i]')
+    ? (o.noClose ? [] : [close])
+    : [];
+  return node;
+}
+
 function hiddenVideoNode(frameworkSelector) {
   const node = {
     tagName: 'VIDEO',
@@ -725,6 +757,18 @@ test('overlay cleanup never removes supported framework infrastructure', () => {
   }
   assert.strictEqual(isOverlay(overlayNode('div')), true,
     'ordinary high-confidence ad overlays stopped being removable');
+});
+
+test('a closeable media advert inside a player is removable without treating the player as an advert', () => {
+  const isOverlay = loadOverlayClassifier();
+  assert.strictEqual(isOverlay(closeablePlayerPopup()), true,
+    'a positioned play advert with its own top-right close control survived over the player');
+  assert.strictEqual(isOverlay(closeablePlayerPopup({ noClose: true })), false,
+    'ordinary player artwork was treated as a popup without a close control');
+  assert.strictEqual(isOverlay(closeablePlayerPopup({ misplacedClose: true })), false,
+    'an unrelated control elsewhere in the player was mistaken for a popup close control');
+  assert.strictEqual(isOverlay(closeablePlayerPopup({ playerRoot: true })), false,
+    'the player container itself was classified as a removable popup');
 });
 
 test('overlay cleanup never takes ownership of body/html overflow', () => {
