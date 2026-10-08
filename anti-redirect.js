@@ -249,6 +249,15 @@
   // ...and is temporarily revoked after a hijack attempt. A short TTL stops
   // retry bursts without permanently breaking a site's later legitimate UI.
   let pageHostileUntil = 0;
+  // Sticky, unlike pageHostileUntil: this document has tried to spend a press on its
+  // video player for an advert (an ad layer was confirmed, or a popup or redirect
+  // that followed a press on the player was stopped). Read by the empty-trap sweep
+  // and by the guard that keeps presses on the player's controls for the player.
+  let playerAdEvidence = false;
+  // When the reader last pressed a player in this document: the video itself, or in
+  // a page, whatever sat over a player frame. Published read-only below, for the
+  // copies of this script in the frames around this one.
+  let lastPlayerPressAt = 0;
   // Snapshot of the link under the pointer at press time, to catch pages that
   // swap a link's destination between mousedown and click.
   let pressAnchor = null;
@@ -476,6 +485,22 @@
   // "click Allow" to "to view / to continue" that makes this what it is.
   const BAIT_PERMISSION_COERCION = /\b(?:click|press|tap|choose|select|hit)\s*(?:on\s*)?["'\u2018\u2019\u201c\u201d]?allow["'\u2018\u2019\u201c\u201d]?[^.]{0,40}?\b(?:to\s+)?(?:view|continue|watch|access|enter|download|proceed|see|play)\b/i;
 
+  const PLAYER_PROMOTION = /\b(?:try(?:\s+it)?\s+free|free\s+trial|limited[- ]time\s+offer|sponsored|advertisement|upgrade\s+now)\b/i;
+  const PLAYER_PROMOTION_GENERIC_ACCEPT = /^(?:ok|okay|continue|yes|proceed|go|next)$/i;
+  const PLAYER_PROMOTION_DISMISS = /^(?:cancel|close|no(?:\s+thanks)?|not\s+now)$/i;
+  function playerPromotionOverlay(overlay, text) {
+    try {
+      if (!text || text.length > 500 || !PLAYER_PROMOTION.test(text) || !playerDocument()) return null;
+      if (overlay.querySelector('input,textarea,select')) return false;
+      const controls = overlayControls(overlay);
+      if (controls.length < 2 || controls.length > 4) return false;
+      return controls.some((c) => PLAYER_PROMOTION_DISMISS.test(c.text))
+        && controls.some((c) => PLAYER_PROMOTION_GENERIC_ACCEPT.test(c.text) && !c.href && !c.linked);
+    } catch (_) {
+      return null;
+    }
+  }
+
   // anonymousFrame means this box arrived in a frame the page BUILT -- no address
   // of its own, nothing for a filter list to match. That matters because it is the
   // only thing separating this from a real age gate.
@@ -494,6 +519,10 @@
     try {
       if (!overlay) return false;
       const text = String(overlay.innerText || '').replace(/\s+/g, ' ').trim();
+      /* A long player advert can explain itself and still harvest a generic OK.
+         Require both the promotion language and the Cancel/OK shape. */
+      const playerPromotion = playerPromotionOverlay(overlay, text);
+      if (playerPromotion !== null) return playerPromotion;
       if (text && text.length <= 140 && BAIT_PERMISSION_COERCION.test(text)) {
         // The words are the whole tell here, so the controls are not asked to
         // identify themselves -- this one's buttons were a red cross and a green
@@ -847,10 +876,11 @@
   }
 
   function frameTopRedirectEnabled() {
-    return TOP_FRAME && masterEnabled() && cfg().blockPopupTricks !== false;
+    return masterEnabled() && cfg().blockPopupTricks !== false;
   }
 
   let lastGestureBeacon = 0;
+  let lastPopupOverlayBeacon = 0;
   let navSignalSeq = 0;
   // A navigation signal is what stands between the worker's forced-redirect interstitial and
   // a navigation the reader actually asked for -- so it must not be something a page can
@@ -907,6 +937,14 @@
 
   function markHostile() {
     pageHostileUntil = Date.now() + HOSTILE_TTL_MS;
+    if (!playerAdEvidence && lastGestureTainted && playerDocument()) notePlayerAdEvidence();
+  }
+
+  function notePlayerAdEvidence() {
+    if (playerAdEvidence) return;
+    playerAdEvidence = true;
+    // Traps the page parked before it gave itself away.
+    try { woTimeout(sweepClickLayers, 0); } catch (_) {}
   }
 
   function gestureWindowMs() {
@@ -1212,7 +1250,7 @@
     // edge case, so the decoded form has to be tested as well as the raw one.
     let decoded = raw;
     try { decoded = decodeURIComponent(raw); } catch (_) { decoded = raw; }
-    if (/(adurl|popunder|onclickad|campaign|aff_id|affiliate|clickid|utm_source=ad|doubleclick|adservice|taboola|outbrain)/i.test(raw + ' ' + decoded)) return true;
+    if (/(adurl|popunder|onclickad|invoke[_-]?layer|campaign|aff_id|affiliate|clickid|utm_source=ad|doubleclick|adservice|taboola|outbrain)/i.test(raw + ' ' + decoded)) return true;
     if (fakeInstallLander(targetHost, raw)) return true;
     return false;
   }
@@ -1327,12 +1365,23 @@
     const explicitUrl = explicitUrlFromElement(target);
     intendedHost = explicitUrl ? hostOf(explicitUrl) : regHost(location.hostname);
     intentWasExplicit = !!(explicitUrl && intendedHost);
+    if (isPress && lastGestureTainted && !intentWasExplicit && playerDocument()) lastPlayerPressAt = Date.now();
     // Only when the click landed on a player AND targeted no URL of its own. A
     // thumbnail that is genuinely a link around an iframe sets intentWasExplicit,
     // so it never raises this -- which is the whole reason the worker can act on
     // it without cancelling ordinary navigation.
     if (frameTopRedirectEnabled()) {
       if (lastGestureTainted && !intentWasExplicit) signal('player-gesture');
+      // The worker closes a blank window opened from a press on a confirmed ad layer
+      // (maybeCloseOverlaySpawnedPopup). Once the layer is disarmed before anyone
+      // presses it, the press reaches the player instead and the page opens the same
+      // popunder from there -- so in a document that has shown its layer, a press on
+      // the player carries the same beacon.
+      if (isPress && clickLayerConfirmed && lastGestureTainted && !intentWasExplicit
+          && Date.now() - lastPopupOverlayBeacon > 500) {
+        lastPopupOverlayBeacon = Date.now();
+        signal('popup-overlay');
+      }
       // Separately, and regardless of what was clicked: the worker cannot tell a
       // forced redirect from one the user asked for, and "did anything at all
       // happen in this tab just now" is the difference.
@@ -1343,14 +1392,19 @@
       // button inside an overlay still does, because it names where it goes -- and
       // a genuine navigation the page drives still announces itself separately
       // through top-nav-authorized, so nothing legitimate depends on this beacon.
-      const overlay = intentWasExplicit ? null : gestureOnOverlay(target);
-      if (!overlay) signal('gesture');
-      // Not on a media app, where the box under a click is the site's own player (MEDIA_APP_HOST).
-      else if (!MEDIA_APP_HOST && !DISCORD_APP_HOST && confirmBaitOverlay(overlay)) {
-        emit('warned_confirm_bait', {
-          matched: String(lastIntentText || '').slice(0, 40),
-          silent: true,
-        });
+      /* A child player must report its own media click because that event never
+         crosses the frame boundary. General gesture authorization remains top
+         frame only so an unrelated advert frame cannot authorize a later jump. */
+      if (TOP_FRAME) {
+        const overlay = intentWasExplicit ? null : gestureOnOverlay(target);
+        if (!overlay) signal('gesture');
+        // Not on a media app, where the box under a click is the site's own player (MEDIA_APP_HOST).
+        else if (!MEDIA_APP_HOST && !DISCORD_APP_HOST && confirmBaitOverlay(overlay)) {
+          emit('warned_confirm_bait', {
+            matched: String(lastIntentText || '').slice(0, 40),
+            silent: true,
+          });
+        }
       }
     }
     lastIntentStructural = false;
@@ -1657,28 +1711,337 @@
     }
   }
 
+  // The click-hijack layer an ad network lays over an embedded player: a box fixed
+  // over (nearly) the whole frame, all but invisible, holding a link to the ad.
+  // Playmogo's player carries Monetag's "invoke layer" -- position:fixed, inset:0,
+  // z-index 2147483647, opacity 0.01, one target=_blank link -- so every press on
+  // the player lands on the link and not on the control drawn underneath it.
+  // Returns the outermost such box above `start`, or null. Opacity multiplies down
+  // the tree, so the link's own computed opacity of 1 says nothing; the product
+  // over its ancestors is what the reader sees.
+  function transparentClickLayer(start) {
+    try {
+      const vw = Math.max(1, window.innerWidth || 1);
+      const vh = Math.max(1, window.innerHeight || 1);
+      let layer = null;
+      let opacity = 1;
+      for (let el = start, depth = 0; el && el.nodeType === 1 && depth < 12; el = el.parentElement, depth++) {
+        const cs = getComputedStyle(el);
+        const own = Number(cs && cs.opacity);
+        if (own >= 0) opacity *= own;
+        if (el === document.body || el === document.documentElement) continue;
+        if (depth > 6 || (cs.position !== 'fixed' && cs.position !== 'absolute')) continue;
+        const r = el.getBoundingClientRect();
+        if (!r || !(r.width > 0) || !(r.height > 0)) continue;
+        const cover = (Math.min(r.width, vw) * Math.min(r.height, vh)) / (vw * vh);
+        if (cover >= 0.6) layer = el;
+      }
+      if (!layer || opacity >= 0.05 || popupAnchorOwnsPlayer(layer)) return null;
+      return layer;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Making the layer click-through is the whole fix: the press then reaches the
+  // timeline or button underneath on the first try, and the ad link is never hit.
+  // pointer-events only -- the node stays where the ad script put it, so a script
+  // that checks its layer is still there has nothing to rebuild.
+  const disarmedClickLayers = new WeakSet();
+  let clickLayerReports = 0;
+  // Set once this document has carried a confirmed layer. The press beacon in
+  // markIntent relies on it; confirming one also sets playerAdEvidence.
+  let clickLayerConfirmed = false;
+  function disarmClickLayer(layer, link, quiet) {
+    if (!layer || disarmedClickLayers.has(layer)) return false;
+    disarmedClickLayers.add(layer);
+    clickLayerConfirmed = true;
+    notePlayerAdEvidence();
+    for (const el of [layer, link]) {
+      if (!el) continue;
+      try {
+        el.style.setProperty('pointer-events', 'none', 'important');
+        el.setAttribute('data-wardenone-blocked-popup-overlay', 'true');
+      } catch (_) {}
+    }
+    // Monetag re-arms its layer after each click; one page should not fill the
+    // history with the same layer coming back.
+    if (!quiet && clickLayerReports < 3) {
+      clickLayerReports += 1;
+      let raw = '';
+      try { raw = String((link && (link.href || link.getAttribute('href'))) || ''); } catch (_) {}
+      emit('blocked_popup', {
+        kind: 'click-layer',
+        url: raw.slice(0, 500),
+        matched: hostOf(raw),
+        why: 'an invisible advertising link covered the video player',
+        silent: true,
+      });
+    }
+    return true;
+  }
+
+  // The same pages add empty boxes beside the layer. Playmogo's player had a
+  // 120x120 square at z-index 2147483647 over the big play button, which ate the
+  // press that should have started the video, a hidden full-frame box at 9999999,
+  // and a transparent full-frame box at 300000 that took the first press of every
+  // visit. No text, no children, no class and nothing painted: only a place for a
+  // press to land. On its own that shape proves little, so these are disarmed only
+  // in a document that has already tried to spend a press on its player.
+  function emptyClickTrap(el) {
+    try {
+      if (!el || el.nodeType !== 1 || !/^(?:DIV|SPAN|INS|SECTION)$/.test(el.tagName)) return false;
+      if ((el.children && el.children.length) || String(el.textContent || '').trim()) return false;
+      if (String((el.getAttribute && el.getAttribute('class')) || '').trim()) return false;
+      const cs = getComputedStyle(el);
+      if (cs.position !== 'fixed' || !(Number(cs.zIndex) >= 10000)) return false;
+      const painted = String(cs.backgroundImage || 'none') !== 'none'
+        || !/^(?:transparent|rgba\(0,\s*0,\s*0,\s*0\))$/i.test(String(cs.backgroundColor || 'transparent').trim());
+      return !painted || Number(cs.opacity) < 0.05;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // A full-screen shell with nothing in it. On some Playmogo loads the page itself
+  // got <div data-shb="1" style="position:fixed; inset:0; z-index:2147483647"> on
+  // <html>: an interstitial advert whose content never arrived, leaving a box the
+  // size of the window that took every press meant for the player under it. Also
+  // the transparent full-frame box at z-index 300000 inside the player. Unlike the
+  // small square, a box that covers the whole window, paints nothing, holds nothing
+  // a reader could see or use, and sits over a player is disarmed on its shape
+  // alone: a page's own backdrops are painted or sit far lower than 10000.
+  const SHELL_VISIBLE = 'img,picture,svg,canvas,video,audio,iframe,embed,object,input,button,select,textarea,a[href],[contenteditable]';
+  function plausibleShell(node) {
+    try {
+      return /^(?:DIV|SPAN|SECTION|INS|ASIDE)$/.test(node.tagName)
+        && node.getElementsByTagName('*').length <= 40 && !node.querySelector(SHELL_VISIBLE);
+    } catch (_) {
+      return false;
+    }
+  }
+  function unpainted(cs) {
+    return String(cs.backgroundImage || 'none') === 'none'
+      && /^(?:transparent|rgba\(0,\s*0,\s*0,\s*0\))$/i.test(String(cs.backgroundColor || 'transparent').trim());
+  }
+  function visiblePlayerInView() {
+    const vw = Math.max(1, window.innerWidth || 1);
+    const vh = Math.max(1, window.innerHeight || 1);
+    for (const tag of ['video', 'iframe', 'embed', 'object']) {
+      let els;
+      try { els = document.getElementsByTagName(tag); } catch (_) { continue; }
+      const max = Math.min((els && els.length) || 0, 12);
+      for (let i = 0; i < max; i++) {
+        let r;
+        try { r = els[i].getBoundingClientRect(); } catch (_) { continue; }
+        if (r && r.width >= 200 && r.height >= 150 && r.right > 0 && r.bottom > 0 && r.left < vw && r.top < vh) return true;
+      }
+    }
+    return false;
+  }
+  function emptyFullScreenShell(el) {
+    try {
+      if (!el || el.nodeType !== 1 || !plausibleShell(el)) return false;
+      const cs = getComputedStyle(el);
+      if (cs.position !== 'fixed' || !(Number(cs.zIndex) >= 10000)) return false;
+      const vw = Math.max(1, window.innerWidth || 1);
+      const vh = Math.max(1, window.innerHeight || 1);
+      const r = el.getBoundingClientRect();
+      if (!r || (Math.min(r.width, vw) * Math.min(r.height, vh)) / (vw * vh) < 0.9) return false;
+      const seeThrough = Number(cs.opacity) < 0.05;
+      const nodes = [el];
+      const all = el.getElementsByTagName('*');
+      for (let i = 0; i < all.length; i++) nodes.push(all[i]);
+      for (const n of nodes) {
+        if (/^(?:STYLE|SCRIPT|TEMPLATE|NOSCRIPT)$/.test(n.tagName)) continue;
+        for (const c of n.childNodes) if (c.nodeType === 3 && /\S/.test(c.nodeValue || '')) return false;
+        if (!seeThrough && !unpainted(n === el ? cs : getComputedStyle(n))) return false;
+      }
+      return visiblePlayerInView();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // The cross-site link an added element is or holds, if any. Node-local, so most
+  // of what a page appends is dismissed here before anything reads the document,
+  // styles or layout.
+  function crossSiteLinkIn(node) {
+    try {
+      const link = node.tagName === 'A' ? node : (node.querySelector ? node.querySelector('a[href]') : null);
+      if (!link) return null;
+      const host = hostOf(link.href || link.getAttribute('href') || '');
+      return host && !sameParty(host, location.hostname) && !isTrustedHost(host) ? link : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Look at one element the page added: is it (or does it hold) a cross-site
+  // link inside a transparent layer, on a page that has a player to protect?
+  function considerClickLayer(node) {
+    try {
+      if (!node || node.nodeType !== 1 || disarmedClickLayers.has(node)) return false;
+      const link = crossSiteLinkIn(node);
+      const shellShape = !link && plausibleShell(node);
+      if (!link && !playerAdEvidence && !shellShape) return false;
+      if (!strictPopupEnabled() || !playerDocument()) return false;
+      if (!link) {
+        const shell = shellShape && emptyFullScreenShell(node);
+        if (!shell && !(playerAdEvidence && emptyClickTrap(node))) return false;
+        disarmedClickLayers.add(node);
+        let before = '';
+        try { before = node.style.getPropertyValue('pointer-events'); } catch (_) {}
+        try { node.style.setProperty('pointer-events', 'none', 'important'); } catch (_) {}
+        try { node.setAttribute('data-wardenone-blocked-popup-overlay', 'true'); } catch (_) {}
+        // Judged on being empty, so it gets its presses back the moment it is not:
+        // an app that mounts into a full-screen root must not be left click-through.
+        if (shell) {
+          try {
+            const watch = woObserver(() => {
+              if (emptyFullScreenShell(node)) return;
+              watch.disconnect();
+              try {
+                if (before) node.style.setProperty('pointer-events', before);
+                else node.style.removeProperty('pointer-events');
+                node.removeAttribute('data-wardenone-blocked-popup-overlay');
+              } catch (_) {}
+            });
+            watch.observe(node, { childList: true, subtree: true, characterData: true });
+          } catch (_) {}
+        }
+        return true;
+      }
+      const layer = transparentClickLayer(link);
+      return layer ? disarmClickLayer(layer, link) : false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  const CLICK_LAYER_SKIP = /^(?:SCRIPT|STYLE|LINK|META|NOSCRIPT|TEMPLATE|IFRAME|FRAME|IMG|PICTURE|VIDEO|AUDIO|SOURCE|TRACK|BR|HR|HEAD|BODY|svg)$/;
+  function sweepClickLayers() {
+    try {
+      const roots = [document.body, document.documentElement];
+      for (const root of roots) {
+        const kids = root && root.children;
+        const max = Math.min((kids && kids.length) || 0, 200);
+        for (let i = 0; i < max; i++) {
+          const kid = kids[i];
+          if (kid && !CLICK_LAYER_SKIP.test(kid.tagName || '')) considerClickLayer(kid);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // The layers are appended straight to <body> (or <html>), so this watches only
+  // those two child lists -- never a subtree -- which keeps it out of the PERF-02
+  // cost of observing every node a frame builds. The config arrives after this
+  // script starts and a layer can be styled after it is inserted, so a candidate
+  // is looked at again shortly after it lands, and the whole body once the
+  // config is in.
+  let clickLayerWatchInstalled = false;
+  function watchForClickLayers() {
+    if (clickLayerWatchInstalled || MEDIA_APP_HOST || DISCORD_APP_HOST) return;
+    clickLayerWatchInstalled = true;
+    try {
+      let bodyWatched = null;
+      const onAdded = (records) => {
+        for (const rec of records) {
+          const added = rec.addedNodes || [];
+          for (let i = 0; i < added.length && i < 40; i++) {
+            const node = added[i];
+            if (!node || node.nodeType !== 1) continue;
+            if (node === document.body) { watchBody(); continue; }
+            if (CLICK_LAYER_SKIP.test(node.tagName || '')) continue;
+            if (considerClickLayer(node)) continue;
+            // Looked at again only if it could still turn out to be one.
+            if (!playerAdEvidence && !crossSiteLinkIn(node) && !plausibleShell(node)) continue;
+            woTimeout(() => considerClickLayer(node), 300);
+            woTimeout(() => considerClickLayer(node), 1500);
+          }
+        }
+      };
+      const observer = woObserver(onAdded);
+      const watchBody = () => {
+        const body = document.body;
+        if (!body || bodyWatched === body) return;
+        bodyWatched = body;
+        observer.observe(body, { childList: true });
+      };
+      observer.observe(document.documentElement || document, { childList: true });
+      watchBody();
+      woOn(document, 'DOMContentLoaded', () => { watchBody(); sweepClickLayers(); });
+    } catch (_) {}
+  }
+  watchForClickLayers();
+
+  function timelineControlOf(el) {
+    try {
+      return el && el.closest
+        ? el.closest('[role="slider"],input[type="range"],.jw-slider-time,.vjs-progress-control,.plyr__progress,.dplayer-bar,.art-progress')
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function isTimelineControl(control) {
+    try {
+      const role = String(control.getAttribute('role') || '').toLowerCase();
+      const type = String(control.getAttribute('type') || '').toLowerCase();
+      const cls = typeof control.className === 'string' ? control.className : '';
+      /* A volume slider is a slider too; it is not the timeline. */
+      if (/volume/i.test(cls) || /volume/i.test(String(control.getAttribute('aria-label') || ''))) return false;
+      return role === 'slider' || (control.tagName === 'INPUT' && type === 'range')
+        || /(?:^|\s)(?:jw-slider-time|vjs-progress-control|vjs-progress-holder|plyr__progress|dplayer-bar|art-progress)(?:\s|$)/.test(cls);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Seek the video to where the press landed along the timeline. Returns false
+  // when the media has no duration yet, so the caller can fall back to a click.
+  function seekAlongTimeline(control, pt, stack) {
+    let rail = null;
+    try { rail = control.getBoundingClientRect(); } catch (_) {}
+    let media = (stack || []).find((node) => node && node.tagName === 'VIDEO');
+    if (!media) { try { media = document.querySelector('video'); } catch (_) {} }
+    const duration = Number(media && media.duration);
+    if (!rail || !(rail.width > 0) || !Number.isFinite(duration) || !(duration > 0)) return false;
+    const ratio = Math.max(0, Math.min(1, (pt.x - rail.left) / rail.width));
+    try { media.currentTime = duration * ratio; } catch (_) { return false; }
+    return true;
+  }
+
   function neutralizePopupOverlay(anchor, event) {
     if (!anchor) return;
     try {
       if (anchor.style && anchor.style.setProperty) anchor.style.setProperty('pointer-events', 'none', 'important');
       if (anchor.setAttribute) anchor.setAttribute('data-wardenone-blocked-popup-overlay', 'true');
     } catch (_) {}
+    // Disarming only the link left its transparent box catching every later press:
+    // the next click on the timeline hit the box, found no link and went nowhere.
+    const layer = transparentClickLayer(anchor);
+    /* Quiet: the click guard that called this records the block itself. */
+    if (layer) disarmClickLayer(layer, anchor, true);
 
     // When the ad link sat over a real control, preserve this same activation
-    // instead of making the user click twice.  Links/iframes are deliberately
-    // excluded: only an underlying button or native media element is invoked.
+    // instead of making the user click twice. Links and frames stay excluded.
     const pt = coordsOf(event);
     if (!pt || typeof document.elementsFromPoint !== 'function') return;
     let stack = [];
     try { stack = document.elementsFromPoint(pt.x, pt.y).slice(0, 16); } catch (_) { return; }
     for (const el of stack) {
-      if (!el || el === anchor) continue;
+      if (!el || el === anchor || el === layer) continue;
       try { if (anchor.contains && anchor.contains(el)) continue; } catch (_) {}
       let control = null;
       try {
         control = el.closest ? el.closest('button,[role="button"],video,audio,[tabindex]') : null;
+        if (!control) control = timelineControlOf(el);
       } catch (_) {}
       if (!control || control === anchor || typeof control.click !== 'function') continue;
+      if (isTimelineControl(control) && seekAlongTimeline(control, pt, stack)) break;
       try { control.click(); } catch (_) {}
       break;
     }
@@ -1695,9 +2058,18 @@
     if (!pt || !pointOnVideo(pt.x, pt.y) || typeof document.elementsFromPoint !== 'function') return;
     let stack = [];
     try { stack = document.elementsFromPoint(pt.x, pt.y).slice(0, 16); } catch (_) { return; }
-    const playerButton = stack.find((el) => el && el.tagName === 'BUTTON' &&
-      el.closest && el.closest('.video-js,.jwplayer,.plyr,[data-player],#player'));
-    if (!playerButton) return;
+    const inPlayer = (el) => !!(el && el.closest && el.closest('.video-js,.jwplayer,.plyr,[data-player],#player'));
+    const playerButton = stack.find((el) => el && el.tagName === 'BUTTON' && inPlayer(el));
+    // The timeline is the control this layer costs the most: a seek happens on the
+    // press, so a press that lands on the layer is a seek that never happens.
+    let timeline = null;
+    if (!playerButton) {
+      for (const el of stack) {
+        const control = inPlayer(el) ? timelineControlOf(el) : null;
+        if (control && isTimelineControl(control)) { timeline = control; break; }
+      }
+    }
+    if (!playerButton && !timeline) return;
     const baitAnchor = stack.find((el) => {
       if (!el || el.tagName !== 'A') return false;
       const host = hostOf(el.href || (el.getAttribute && el.getAttribute('href')) || '');
@@ -1740,6 +2112,11 @@
       kind: 'player-overlay', url: baitUrl, matched: hostOf(baitUrl),
       why: 'a transparent cross-site link covered a player control', silent: true,
     });
+    if (cover) disarmedClickLayers.add(cover);
+    if (timeline) {
+      seekAlongTimeline(timeline, pt, stack);
+      return;
+    }
     const media = stack.find((el) => el && el.tagName === 'VIDEO' && typeof el.play === 'function');
     if (media) {
       try {
@@ -1919,12 +2296,214 @@
       if (cover >= 0.6) return cancel('a link covering the page pointed at a different site', false, false);
       const pt = coordsOf(event);
       if (pt && suspicious && pointOnVideo(pt.x, pt.y)) {
+        try { event.stopImmediatePropagation(); } catch (_) {}
+        neutralizePopupOverlay(a, event);
         return cancel('a suspicious link was layered over the video player', true, false);
       }
     }
   }
   try { woOn(window, 'click', guardClick, true); } catch (_) {}
   try { woOn(window, 'auxclick', guardClick, true); } catch (_) {}
+
+  // ---- a press on the player's controls is the player's ----
+  //
+  // Measured on Playmogo (2026-10-08), why a seek still took two or three presses
+  // once the layers were click-through: the script that sends the player frame to an
+  // advert (dd.gillyspencie.com) listens at the top of the document, ahead of the
+  // player, and calls preventDefault and stopImmediatePropagation on every mousedown
+  // and click. video.js seeks on mousedown and plays on click, so the player never
+  // heard the press. The script holds presses until its advert has been shown; with
+  // the advert stopped it simply kept holding them.
+  //
+  // So in a document that has already tried to spend a press on its player
+  // (playerAdEvidence), a listener at the top of the document -- window, document,
+  // <html> or <body>, in the capture phase -- can no longer cancel or stop a trusted
+  // press that lands on the player's own controls. The player's handlers further
+  // down the tree keep every power they had. Links and forms are left out: their own
+  // guards stop those on purpose. And this listener is registered after WardenOne's
+  // click guards above, so anything they stop never reaches it.
+  const PLAYER_CHROME = '.video-js,.jwplayer,.plyr,.dplayer,.art-video-player,.shaka-video-container,video';
+  const NATIVE_CANCEL_BUBBLE = (() => {
+    try { return Object.getOwnPropertyDescriptor(Event.prototype, 'cancelBubble') || null; } catch (_) { return null; }
+  })();
+  const NATIVE_RETURN_VALUE = (() => {
+    try { return Object.getOwnPropertyDescriptor(Event.prototype, 'returnValue') || null; } catch (_) { return null; }
+  })();
+  function topOfDocument(node) {
+    return node === window || node === document || node === document.documentElement || node === document.body;
+  }
+  function keepPressForPlayer(event) {
+    try {
+      if (!playerAdEvidence || MEDIA_APP_HOST || DISCORD_APP_HOST || !event || event.isTrusted !== true) return;
+      if (!strictPopupEnabled()) return;
+      const target = event.target && event.target.nodeType === 1 ? event.target : null;
+      if (!target || !target.closest || !target.closest(PLAYER_CHROME)) return;
+      if (target.closest('a[href],area[href],form,input:not([type="range"]),textarea,select')) return;
+      // Asked at call time: only a listener at the top of the document, before the
+      // press has reached the player, loses the power to stop it.
+      const harvesting = (ev) => ev.eventPhase === 1 && topOfDocument(ev.currentTarget);
+      for (const name of ['stopImmediatePropagation', 'stopPropagation', 'preventDefault']) {
+        const prior = event[name];
+        if (typeof prior !== 'function') continue;
+        Object.defineProperty(event, name, {
+          configurable: true,
+          value: function () { return harvesting(this) ? undefined : prior.apply(this, arguments); },
+        });
+      }
+      for (const [name, desc] of [['cancelBubble', NATIVE_CANCEL_BUBBLE], ['returnValue', NATIVE_RETURN_VALUE]]) {
+        if (!desc || typeof desc.get !== 'function' || typeof desc.set !== 'function') continue;
+        Object.defineProperty(event, name, {
+          configurable: true,
+          get() { return desc.get.call(this); },
+          set(value) {
+            /* cancelBubble = true and returnValue = false are the old spellings of the two calls. */
+            if (harvesting(this) && (name === 'cancelBubble' ? !!value : value === false)) return;
+            desc.set.call(this, value);
+          },
+        });
+      }
+    } catch (_) {}
+  }
+  for (const name of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'touchstart', 'touchend']) {
+    try { woOn(window, name, keepPressForPlayer, true); } catch (_) {}
+  }
+
+  // ---- an embedded player replaced by an advert ----
+  //
+  // Measured on Playmogo (2026-10-08), with and without WardenOne: the first press
+  // on the video, a script inside the player's own frame (dd.gillyspencie.com)
+  // sent that frame through an ad hop -- newsboydurance.cfd, then a .qpon landing
+  // page, then onward -- and the video was gone. Nothing else here sees that. The
+  // frame's own Location cannot be wrapped (its members are unforgeable), the
+  // same-tab link checks above are top-frame only, and the worker's backstop is
+  // for a frame moving the whole tab.
+  //
+  // The Navigation API's navigate event does see it. It fires, cancellably, before
+  // the frame leaves, for location.href / assign / replace, window.open(_self), a
+  // scripted link or form, meta refresh and a same-origin parent setting src
+  // (each checked in a live browser), and only a real press on a real link
+  // arrives with userInitiated set. Listening from document_start puts this
+  // listener ahead of anything the page adds.
+  //
+  // Narrow on purpose, because a player frame moving itself is also how an embed
+  // switches mirror or server: only a navigation to another site that follows a
+  // press on the video within a few seconds. A redirect with no press, a parent
+  // switching servers from its own buttons, and a click on a visible link the
+  // reader chose all pass.
+  //
+  // "A press on the video" includes one the page took instead. On some Playmogo
+  // loads the same ad network's scripts in the page itself (zj.prabblenutrify.com,
+  // oo.weldssantar.com) laid a box over the player frame, so the press landed in the
+  // page, never reached this frame, and the page sent this frame to the advert. A
+  // same-origin parent publishes its own player presses, and those count here too.
+  const PLAYER_FRAME_HIJACK_MS = 6000;
+  function parentPlayerPressAt() {
+    try { return Number(window.parent.__wardenOnePlayerPressAt) || 0; } catch (_) { return 0; }
+  }
+  function guardPlayerFrameNavigation(event) {
+    try {
+      if (TOP_FRAME || MEDIA_APP_HOST || !frameTopRedirectEnabled()) return;
+      if (!event || !event.cancelable || event.hashChange || event.downloadRequest) return;
+      if (event.navigationType !== 'push' && event.navigationType !== 'replace') return;
+      const url = String((event.destination && event.destination.url) || '');
+      const host = hostOf(url);
+      if (!host || sameParty(host, location.hostname) || isTrustedHost(host) || federationUrlShape(url)) return;
+      const pressedHere = lastGestureTainted && Date.now() - lastGestureAt <= PLAYER_FRAME_HIJACK_MS;
+      const parentAt = pressedHere ? 0 : parentPlayerPressAt();
+      if (!pressedHere && !(parentAt && Date.now() - parentAt <= PLAYER_FRAME_HIJACK_MS)) return;
+      if (!playerDocument()) return;
+      if (event.userInitiated) {
+        // The reader pressed a link. It counts when it named this destination and
+        // was something they could see -- not the invisible layer's link.
+        const source = event.sourceElement || pressAnchor;
+        const hidden = !!(source && transparentClickLayer(source));
+        if (!hidden && intentWasExplicit && intendedHost && sameParty(host, intendedHost)) return;
+      }
+      event.preventDefault();
+      markHostile();
+      emit('blocked_gestureless_nav', {
+        kind: 'frame',
+        url: url.slice(0, 500),
+        matched: host,
+        why: 'a script tried to replace the video player with another site',
+        silent: true,
+      });
+    } catch (_) {}
+  }
+  if (!TOP_FRAME && !MEDIA_APP_HOST) {
+    try {
+      const nav = window.navigation;
+      if (nav && typeof nav.addEventListener === 'function') woOn(nav, 'navigate', guardPlayerFrameNavigation);
+    } catch (_) {}
+  }
+  // The press, published for the copies of this script in the frames around this
+  // one, which cannot see clicks outside their own document. A getter on a
+  // non-configurable property: the page can read it but not replace it. A page that
+  // fakes one in a frame of its own can only make these guards stop more of its own
+  // redirects.
+  if (!MEDIA_APP_HOST) {
+    try {
+      Object.defineProperty(window, '__wardenOnePlayerPressAt', {
+        configurable: false,
+        enumerable: false,
+        get() { return lastPlayerPressAt; },
+      });
+    } catch (_) {}
+  }
+
+  // ---- an embedded player moving the whole tab ----
+  //
+  // The other half, measured on Playmogo once presses reached the player again: an
+  // ad SDK in the player frame (cdn.tsyndicate.com engine.js) answered the press on
+  // play by sending the whole tab to an ad click broker (tsyndicate.com/api/v1/direct
+  // -> eu2.glaza-bolyat.online/click). The worker's backstop sent the tab back to the
+  // video, but only after it had left, so the page reloaded and the press was lost.
+  // The player frame is same-origin with the page, so the top document's navigate
+  // event sees that navigation before it starts and can cancel it.
+  //
+  // Narrow on purpose: a navigation to another site that no real link press asked
+  // for, with no press in the top document itself, within a few seconds of a press
+  // on the video in a same-origin child frame. A cross-origin player cannot raise
+  // this event here at all; the worker still covers those.
+  function childPlayerPressedRecently() {
+    try {
+      const max = Math.min((window.frames && window.frames.length) || 0, 40);
+      for (let i = 0; i < max; i++) {
+        let at = 0;
+        try { at = Number(window.frames[i].__wardenOnePlayerPressAt) || 0; } catch (_) { continue; }
+        if (at && Date.now() - at < PLAYER_FRAME_HIJACK_MS) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+  function guardTopFromPlayerFrame(event) {
+    try {
+      if (!TOP_FRAME || MEDIA_APP_HOST || DISCORD_APP_HOST || !frameTopRedirectEnabled()) return;
+      if (!event || !event.cancelable || event.hashChange || event.downloadRequest || event.userInitiated) return;
+      if (event.navigationType !== 'push' && event.navigationType !== 'replace') return;
+      const url = String((event.destination && event.destination.url) || '');
+      const host = hostOf(url);
+      if (!host || sameParty(host, location.hostname) || isTrustedHost(host) || federationUrlShape(url)) return;
+      // A press in the top document is the top page's own business, as before.
+      if (freshGesture()) return;
+      if (!childPlayerPressedRecently()) return;
+      event.preventDefault();
+      markHostile();
+      emit('blocked_gestureless_nav', {
+        kind: 'frame-top',
+        url: url.slice(0, 500),
+        matched: host,
+        why: 'an embedded player tried to send the whole tab to another site',
+        silent: true,
+      });
+    } catch (_) {}
+  }
+  if (TOP_FRAME && !MEDIA_APP_HOST) {
+    try {
+      const nav = window.navigation;
+      if (nav && typeof nav.addEventListener === 'function') woOn(nav, 'navigate', guardTopFromPlayerFrame);
+    } catch (_) {}
+  }
 
   try {
     const realOpen = window.open;
@@ -3299,6 +3878,7 @@
         && msg.overrides && typeof msg.overrides === 'object'
         && woVerify('redirect-bootstrap', JSON.stringify(msg.overrides), msg)) {
       if (!configReady()) popupBootstrapConfig = msg.overrides;
+      sweepClickLayers();
       return;
     }
     if (msg.source === 'wardenone' && msg.kind === 'config' && token && msg.token === token
@@ -3317,6 +3897,7 @@
       }, msg.overrides, { __configReady: true });
       popupBootstrapConfig = null;
       clearTrackerFrameStorage();
+      sweepClickLayers();
     }
   }, true);
   /* In case the bridge ran first and its key found no listener here: ask once, now that the

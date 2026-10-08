@@ -130,6 +130,9 @@ function workerRealm(options) {
   const from = BG.indexOf(START);
   const to = BG.indexOf(END, from + START.length);
   assert(from >= 0 && to > from, 'the forced-redirect guard moved in background.js');
+  const adTargetFrom = BG.indexOf('function chainAbuseTld(host) {');
+  const adTargetTo = BG.indexOf('/* A page can open a popup through a form target', adTargetFrom);
+  assert(adTargetFrom >= 0 && adTargetTo > adTargetFrom, 'the player ad-target classifier moved in background.js');
   const updates = [];
   const history = [];
   const sandbox = {
@@ -146,7 +149,8 @@ function workerRealm(options) {
     URL, Object, Date, String, Number, Promise, RegExp,
   };
   const ctx = vm.createContext(sandbox);
-  vm.runInContext(grabFn(BG, 'messageCleanHost') + '\n' + BG.slice(from, to)
+  vm.runInContext(BG.slice(adTargetFrom, adTargetTo) + '\n'
+    + grabFn(BG, 'messageCleanHost') + '\n' + BG.slice(from, to)
     + '\nthis.__state = { PLAYER_GESTURE_AT, TOP_NAV_OWNED_AT, LAST_TOP_URL, LAST_GESTURE_AT, TOP_NAV_OWNED_HOST: typeof TOP_NAV_OWNED_HOST !== "undefined" ? TOP_NAV_OWNED_HOST : null };',
     ctx, { filename: 'worker-guard.js' });
   return {
