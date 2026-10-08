@@ -238,10 +238,13 @@ async function run() {
     await value("document.getElementById('arrange-reset').click(); document.getElementById('arrange-done').click()");
     /* The card is shown in each layout the way the popup shows it: layout set while hidden, then
        shown, and measured on the next frame. Edge 153 can leave the toggle's style on the old
-       layout when the layout attribute changes on a card already on screen. */
+       layout when the layout attribute changes on a card already on screen. The popup's own
+       choice is set as well: every site-card repaint re-applies it, and with only the attribute
+       changed, one landing before the measurement put the card back in layout A. */
     const nextFrame = () => value("new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve('frame'))); setTimeout(() => resolve('timer'), 250); })");
     const showCard = async (layout) => {
-      await value("(() => { const section = document.getElementById('site-card'); section.hidden = true; void section.offsetHeight;"
+      await value("(() => { const section = document.getElementById('site-card'); siteCardLayout = " + JSON.stringify(layout) + ";"
+        + " section.hidden = true; void section.offsetHeight;"
         + " section.dataset.layout = " + JSON.stringify(layout) + "; section.hidden = false; return true; })()");
       await nextFrame();
     };
@@ -254,10 +257,19 @@ async function run() {
       + " caption.textContent = 'Recent site activity'; return true; })()");
     await showCard('B');
     const freshB = await value(cardBox);
+    assert(freshB.layout === 'B', 'the fresh layout B card was measured in another layout: ' + JSON.stringify(freshB));
+    /* Opened, filled and measured in one task. The card is repainted from storage -- a site-card
+       refresh a second after any config or history change, the stored fold state on arrival --
+       and on a slow runner one landed between the steps above and this measurement, hiding the
+       counts again or folding the card, so the fold had nothing left to take away. */
     const cardGeometry = await value(`(() => {
       const section = document.getElementById('site-card');
       const stats = document.getElementById('site-card-stats');
       const caption = document.getElementById('site-card-caption');
+      if (section.classList.contains('is-folded')) document.getElementById('site-card-fold').click();
+      stats.hidden = false;
+      caption.hidden = false;
+      caption.textContent = 'Recent site activity';
       const expanded = section.getBoundingClientRect().height;
       document.getElementById('site-card-fold').click();
       const folded = section.getBoundingClientRect().height;
@@ -265,11 +277,13 @@ async function run() {
         && getComputedStyle(caption).display === 'none';
       const shield = document.querySelector('.head .shield').getBoundingClientRect();
       const header = document.querySelector('.head').getBoundingClientRect();
-      return { expanded, folded, countsHidden, logoTop: shield.top - header.top, browser: navigator.userAgent.replace(/^.*\\) /, '') };
+      return { expanded, folded, countsHidden, layout: section.dataset.layout, logoTop: shield.top - header.top, browser: navigator.userAgent.replace(/^.*\\) /, '') };
     })()`);
-    assert(cardGeometry.expanded - cardGeometry.folded > 40, 'folded counts card should lose its counts and caption');
+    assert(cardGeometry.expanded - cardGeometry.folded > 40,
+      'folded counts card should lose its counts and caption: ' + JSON.stringify(cardGeometry));
     await showCard('A');
     const oneLine = await value(cardBox);
+    assert(oneLine.layout === 'A', 'the fresh layout A card was measured in another layout: ' + JSON.stringify(oneLine));
     assert(await value("getComputedStyle(document.getElementById('site-card-state')).display !== 'none'") && cardGeometry.countsHidden,
       'folded card should keep the site status');
     assert(oneLine.offset < 2, 'fold toggle should be centered on the one-line row: ' + JSON.stringify(Object.assign({ browser: cardGeometry.browser }, oneLine)));
