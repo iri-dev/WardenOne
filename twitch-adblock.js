@@ -4271,7 +4271,19 @@
        play just before it -- the one it already downloaded, or else the one listed before it --
        came from another session. Decisions are kept, so a later refresh of the same window
        carries the same markers. Nothing is added when nothing switched, so native playback
-       stays byte for byte. Twitch writes no EXT-X-DISCONTINUITY-SEQUENCE, so neither does this. */
+       stays byte for byte. Twitch writes no EXT-X-DISCONTINUITY-SEQUENCE, so neither does this:
+       its own pod markers leave by sliding off the head of the window, uncounted (captured live,
+       both of a pod's markers went at once as MEDIA-SEQUENCE jumped 4955 -> 4972), so its player
+       copes with that on every native ad break -- and with ours, measured sliding out after six
+       switches with nothing frozen. A count kept here would start wherever this worker first saw
+       each rendition, so two renditions would give the same media different numbers. */
+    /* Bounded, oldest touched out first. The player polls the rendition it plays (and the next
+       while it switches), and every refresh re-lists that playlist and every address in it, so
+       only what nobody plays falls out: a live window is 7-23 entries, far inside 64 and 512.
+       History is lost only if more than 7 other playlists, or some 500 other segment addresses,
+       pass between a refresh of the playing one and the downloads after it. A switch then goes
+       unmarked, as before markers existed, or is marked a few segments off, on media that
+       continues -- which measured harmless. Tested in that shape well past all three bounds. */
     const SPLICE_TRACKS_MAX = 8;
     const SPLICE_HISTORY = 64;
     const SPLICE_SEGMENTS_MAX = 512;
@@ -4302,10 +4314,29 @@
       return track;
     }
 
+    /* Noted when the player asks, not when the bytes land: a playlist refreshed while the request
+       is in flight must already treat that entry as the one the player is taking. */
     function noteSpliceDownload(url) {
       const entry = spliceSegments.get(url);
-      if (!entry || entry.track.downloaded.has(entry.number)) return;
+      if (!entry || entry.track.downloaded.has(entry.number)) return null;
       entry.track.downloaded.set(entry.number, entry.source);
+      return entry;
+    }
+
+    /* A request that failed delivered nothing. The player asks for that entry again from whatever
+       the playlist lists by then -- after a switch, the other session -- so the failed one must not
+       stand in for it: kept, it hid the real splice and put the marker one entry late. */
+    function settleSpliceDownload(entry, pending) {
+      const forget = () => {
+        if (entry.track.downloaded.get(entry.number) === entry.source) entry.track.downloaded.delete(entry.number);
+      };
+      return Promise.resolve(pending).then((response) => {
+        if (!response || !response.ok) forget();
+        return response;
+      }, (error) => {
+        forget();
+        throw error;
+      });
     }
 
     function spliceEntries(text) {
@@ -4893,9 +4924,14 @@
       }
     });
 
-    self.fetch = async function twitchWorkerFetch(input, init) {
+    self.fetch = function twitchWorkerFetch(input, init) {
       const url = urlOf(input);
-      if (active || nativeRecovery) noteSpliceDownload(url);
+      const download = active || nativeRecovery ? noteSpliceDownload(url) : null;
+      const pending = routeWorkerFetch(input, init, url);
+      return download ? settleSpliceDownload(download, pending) : pending;
+    };
+
+    async function routeWorkerFetch(input, init, url) {
       if (!active) {
         if (nativeRecovery && masterPlaylistUrl(url)) return handleMaster(input, init, url);
         if (nativeRecovery && playlistUrl(url) && !masterPlaylistUrl(url) &&
@@ -4929,7 +4965,7 @@
         }
       }
       return realFetch(input, init);
-    };
+    }
 
     try {
       Object.defineProperty(self.fetch, 'name', { value: 'fetch' });
