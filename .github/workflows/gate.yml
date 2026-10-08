@@ -66,7 +66,8 @@ jobs:
   # The Settings page in Edge: switches, search, backup and import, clean-up, permissions, keys,
   # list status and a full reset, then section order, saved sites, Help and About, then Settings,
   # the popup and the worker writing the config at the same moment, then the page engine on a real
-  # page. Each step runs even when one before it fails, so one run reports them all.
+  # page, then an embedded player's ad layers pressed with real input. Each step runs even when one
+  # before it fails, so one run reports them all.
   browser-settings:
     name: real-settings-regression
     runs-on: windows-2025
@@ -115,6 +116,12 @@ jobs:
         env:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-resource-saver.js
+
+      - name: Test an embedded player's ad layers and frame hijack in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-player-ad-layers.js
 
   # The manifest's minimum_chrome_version, proven in that Chrome rather than assumed: Chrome for
   # Testing at the minimum, pinned by version and SHA-256, runs the popup and Settings suites and

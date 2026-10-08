@@ -52,6 +52,30 @@
   stayed in Low Latency for the whole visit, running its buffer dry at every ad break. WardenOne now
   remembers which way the setting last arrived and applies it from the first moment of the next
   visit. A first-ever visit, and anyone who has turned the setting off, are unchanged.
+- Player controls inside embedded frames now reach the forced-navigation backstop. Child-frame
+  advert popups are closed, and identifiable ad-click redirects return to the video without
+  replacing it with a review screen; ambiguous destinations still remain recoverable.
+- Advertising links layered over a video timeline are disabled before their click handler can
+  open another tab, while the original timeline press is forwarded as a seek.
+- Player promotions that pair a dismiss action with a generic `OK` click are now removed from
+  the video surface, while dialogs with a specific playback or subscription action remain.
+- An embedded video player can no longer be swapped for an advert. On some video hosts a script
+  inside the player sends the player's own frame to an ad page the moment you press the video, and
+  the video is gone; on Playmogo it ran through an ad hop to an adult landing page. WardenOne now
+  stops that navigation before the frame leaves, when it follows a press on the video. The same
+  goes for a player that tries to send the whole tab away when you press play, and for a page that
+  lays its own box over the player and sends the player away from there. A visible link you press
+  in the player, a player moving within its own site, and an embed that switches mirror on its
+  own all still work. Part of "Block popup and redirect tricks".
+- Pressing a video player's timeline or play button now works on the first try on ad-heavy video
+  hosts. Four things were taking those presses: an all-but-invisible advertising link stretched
+  over the whole player, empty boxes parked over the play button, an empty full-screen advert
+  shell left on the page, and an ad script that cancels every press at the top of the page until
+  its advert has been shown. The boxes are now made click-through as soon as they appear, and on
+  a page that has already tried to spend a press on its player, the page can no longer cancel a
+  press on the player's own controls. The player's own handlers are unchanged, and links and
+  forms are left to the guards that check them. On Playmogo every press on play and on the
+  timeline, 64 in 10 visits, reached the player the first time.
 - Resource Saver periodically releases detached video previews it changed, avoiding indefinite DOM
   retention on long-lived pages while keeping live reversal available for active previews.
 - OAuth Grant Guard now recognises French and Spanish consent actions and permission wording on

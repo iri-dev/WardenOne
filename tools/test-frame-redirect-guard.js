@@ -15,7 +15,8 @@
  * attribution and this file tests that the two halves agree.
  *
  * The risk here is a false positive cancelling ordinary navigation, so most of
- * these checks are about what must NOT fire.
+ * these checks are about what must NOT fire. Only distinctive ad-click targets
+ * return directly to the source; ambiguous destinations retain the interstitial.
  *
  * Run: node tools/test-frame-redirect-guard.js
  */
@@ -44,7 +45,11 @@ assert(from >= 0 && to > from, 'the frame-redirect guard moved in background.js'
 const cleanFrom = BG.indexOf('function messageCleanHost(');
 const cleanTo = BG.indexOf('\n}\n', cleanFrom);
 assert(cleanFrom >= 0 && cleanTo > cleanFrom, 'messageCleanHost moved in background.js');
-const SLICE = BG.slice(cleanFrom, cleanTo + 2) + '\n' + BG.slice(from, to);
+const adTargetFrom = BG.indexOf('function chainAbuseTld(host) {');
+const adTargetTo = BG.indexOf('/* A page can open a popup through a form target', adTargetFrom);
+assert(adTargetFrom >= 0 && adTargetTo > adTargetFrom, 'embedded-player ad target classifier moved in background.js');
+const SLICE = BG.slice(adTargetFrom, adTargetTo) + '\n'
+  + BG.slice(cleanFrom, cleanTo + 2) + '\n' + BG.slice(from, to);
 
 let passed = 0;
 let failed = 0;
@@ -137,6 +142,28 @@ async function main() {
       w.history[0].detail);
     check('the reason says the click did not go to that site',
       /did not click a link/i.test(decodeURIComponent(w.updates[0].props.url)), w.updates[0].props.url);
+  }
+
+  {
+    const w = world();
+    w.committed(1, 'https://playmogo.com/d/gk49gvu4can6');
+    w.signal(1, 'player-gesture');
+    await w.navigate(1, 'https://s.pemsrv.com/redirected-ad');
+    check('an iframe player cannot send the top tab to an ordinary blocked advert domain',
+      w.updates.length === 1 && /redirect-warning\.html/.test((w.updates[0] || {}).props?.url || ''), w.updates);
+  }
+
+  {
+    const w = world();
+    w.committed(1, 'https://playmogo.com/d/gk49gvu4can6');
+    w.signal(1, 'player-gesture');
+    await w.navigate(1, 'https://eu2.glaza-bolyat.online/click/?campaign_id=4');
+    check('an identifiable player ad-click redirect returns to the video without an interstitial',
+      w.updates.length === 1
+        && w.updates[0].props.url === 'https://playmogo.com/d/gk49gvu4can6'
+        && !/redirect-warning\.html/.test(w.updates[0].props.url), w.updates);
+    check('the silently rejected ad click is still recorded',
+      w.history.length === 1 && w.history[0].type === 'blocked_frame_top_redirect', w.history);
   }
 
   {
@@ -339,10 +366,16 @@ async function main() {
     'gating it on taint would leave every ordinary click unable to authorise anything');
   check('and it is throttled rather than sent on every click',
     /if \(kind === 'gesture'\)/.test(GUARD) && /lastGestureBeacon < 500/.test(GUARD));
-  check('the gesture signal is top-frame only',
-    /function frameTopRedirectEnabled\(\)\s*\{\s*return TOP_FRAME &&/.test(GUARD));
+  check('the player signal is available inside the child frame that owns the player click',
+    /function frameTopRedirectEnabled\(\)\s*\{\s*return masterEnabled\(\)/.test(GUARD)
+      && !/function frameTopRedirectEnabled\(\)\s*\{\s*return TOP_FRAME/.test(GUARD),
+    'iframe clicks do not bubble into the parent document, so a top-only signal leaves the worker blind');
+  const intentSignals = GUARD.slice(GUARD.indexOf('function markIntent('), GUARD.indexOf('function intentTextAllows('));
+  check('general click authorization remains top-frame only',
+    /if \(TOP_FRAME\) \{[\s\S]*?if \(!overlay\) signal\('gesture'\);/.test(intentSignals),
+    'an unrelated child frame must not authorize a later top-level jump');
   check('it honours the master switch and the allowlist',
-    /frameTopRedirectEnabled\(\)\s*\{\s*return TOP_FRAME && masterEnabled\(\)/.test(GUARD),
+    /frameTopRedirectEnabled\(\)\s*\{\s*return masterEnabled\(\)/.test(GUARD),
     'masterEnabled() is what folds in the user allowlist');
   check('it can be turned off on its own',
     /cfg\(\)\.blockPopupTricks !== false/.test(GUARD));
@@ -667,6 +700,7 @@ async function main() {
      code -- and this one is judged on shape, so it has to be handed shapes. */
   const baitSrc = GUARD.slice(GUARD.indexOf('const BAIT_CONTROL'), GUARD.indexOf('function confirmBaitEnabled'));
   const isBaitBox = vm.runInNewContext(baitSrc + ';confirmBaitOverlay', {});
+  const isPlayerBaitBox = vm.runInNewContext(baitSrc + ';confirmBaitOverlay', { playerDocument: () => true });
   const box = (text, buttons, opts) => ({
     innerText: text,
     querySelector: () => ((opts && opts.field) ? {} : null),
@@ -699,6 +733,18 @@ async function main() {
     check((want ? 'bait: removes ' : 'bait: allows  ') + why,
       isBaitBox(box(text, buttons, opts)) === want, text);
   }
+
+  const openArtPromotion = 'Director by OpenArt: Describe a Story, Get a 5-Minute Film '
+    + 'Vibe directing turns conversation into cinematic video with synced voices, music, '
+    + 'and consistent characters. Try free. Cancel OK';
+  check('player promotion: removes a long advert that harvests a generic OK click',
+    isPlayerBaitBox(box(openArtPromotion, ['Cancel', 'OK'])) === true);
+  check('player promotion: the same words outside a player remain ordinary page content',
+    isBaitBox(box(openArtPromotion, ['Cancel', 'OK'])) === false);
+  check('player promotion: a named trial action remains available',
+    isPlayerBaitBox(box('Try free for 30 days', ['Cancel', 'Start trial'])) === false);
+  check('player promotion: a real playback recovery dialog remains available',
+    isPlayerBaitBox(box('Playback failed. Try again or reload the video.', ['Cancel', 'Reload video'])) === false);
 
   check('bait: nothing is matched on a confirmation phrase any more',
     !/BAIT_PROMPT/.test(GUARD),
