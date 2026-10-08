@@ -40,6 +40,9 @@
   more than half of the time they watched, exposed to every hiccup on it.
 - Twitch playlists that arrive late or briefly cover a break now keep the numbering the player was
   already given, instead of Twitch's raw numbers, which run ahead after every ad break.
+- A Twitch video segment that fails to download no longer counts as one the player has. When the
+  player asked for it again from the other stream after a switch, the switch went unmarked and
+  the mark landed one segment late.
 - Updating the block lists no longer freezes WardenOne's background work for seconds at a time.
   Each downloaded list was checked host by host against the never-block list the slow way and
   parsed in one go, so right after install, and at each daily update, a settings change, the
