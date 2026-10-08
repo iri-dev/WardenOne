@@ -36,6 +36,8 @@
 - Resource Saver now reads its initial state inside `about:blank`, `srcdoc` and other permitted child frames.
 - Muted videos started by the user are no longer treated as previews merely because they use `playsinline` or `loop`.
 - Turning video-preview blocking off restores each affected video's original autoplay state and resumes previews WardenOne stopped.
+- Resource Saver live broadcasts now find just-navigated HTTP(S) tabs reliably on older Chrome builds.
+- Config-write ancestry keeps enough delayed confirmations to repair a slower cross-context write before its record is evicted.
 - Simplified Memory Shield's popup layout by removing its repeated mini-headings.
 - Popup search keeps the controls inside every matching settings row visible.
 - Memory Shield's playing-audio exemption now follows its switch.
