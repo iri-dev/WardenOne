@@ -8,11 +8,11 @@
  * What "high confidence" is allowed to mean.
  * Run: node tools/test-phishing-confidence.js
  *
- * blockHighConfidencePhishing turns a warning into a block, so the tier it reads
- * is load-bearing in a way the other tiers are not: a wrong "high" takes a site
- * away from someone with no way round it.
+ * blockHighConfidencePhishing turns a warning into an interstitial, so the tier
+ * it reads is load-bearing in a way the other tiers are not: a wrong "high"
+ * interrupts an ordinary visit even though the reader can choose to continue.
  *
- * It was not safe to switch on. Run against real hostnames, the old rule rated
+ * It was once unsafe to switch on. Run against real hostnames, the old rule rated
  * nine of fifteen ordinary sites high -- apple.stackexchange.com, sony.co.uk,
  * crypto.stanford.edu, target.scene7.com -- for two reasons:
  *
@@ -36,6 +36,8 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
+const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 const idnStart = DOMAIN.indexOf('const WARDENONE_IDN_CONFUSABLES');
 const idnEnd = DOMAIN.indexOf('function regDomain(', idnStart);
@@ -164,16 +166,32 @@ const PHISHING = [
     !!corroborated && corroborated.confidence === 'high', corroborated && corroborated.confidence);
 }());
 
-(function theBlockIsReachableFromAGuidedPath() {
-  /* The switch existed and did something useful and no guided path ever set it,
-     so in practice it protected nobody. It is in the maximum-privacy bundle
-     rather than the recommended one because blocking is the one action here a
-     reader cannot work around. */
-  const at = BG.indexOf('const ONBOARDING_MAX_PRIVACY');
-  const bundle = BG.slice(at, BG.indexOf('\n});', at));
-  check('maximum privacy switches the block on',
+(function theNarrowBlockIsTheDefaultWithAnEscapePath() {
+  const configAt = BG.indexOf('const DEFAULT_CONFIG = {');
+  const backgroundDefaults = BG.slice(configAt, BG.indexOf('\n};', configAt));
+  const defaults = [
+    ['background', backgroundDefaults, /blockHighConfidencePhishing:\s*true/],
+    ['popup', POPUP_JS, /detectPhishing:\s*true,\s*blockHighConfidencePhishing:\s*true/],
+    ['page engine', SRC, /blockHighConfidencePhishing:!0/],
+  ];
+  defaults.forEach(([surface, source, pattern]) => {
+    check(surface + ' defaults high-confidence blocking on', pattern.test(source),
+      surface + ' can briefly disagree with the saved fresh-install value');
+  });
+
+  const at = BG.indexOf('const ONBOARDING_RECOMMENDED');
+  const bundle = BG.slice(at, BG.indexOf('\n};', at));
+  check('Recommended switches the narrow block on',
     /blockHighConfidencePhishing:\s*true/.test(bundle),
-    'the strongest anti-phishing action is unreachable from onboarding again');
+    'applying Recommended can silently weaken the fresh-install phishing default');
+
+  check('the interstitial keeps an explicit continue path',
+    /"I understand the risk, continue",\s*\(\)=>\{\s*teardown&&teardown\(\)/.test(SRC)
+      && /go back, or continue at your own risk/i.test(SRC),
+    'a false positive could leave the reader with no safe, explicit bypass');
+  check('the setting remains exposed so the default can be disabled',
+    /data-key="blockHighConfidencePhishing"/.test(POPUP_HTML),
+    'the new default cannot be changed in the popup');
 
   /* And the warning stays unconditional, for everyone, whatever the bundle. */
   check('the warning does not depend on the block being on',

@@ -41,7 +41,7 @@ async function run() {
         try { if (await value(expression)) return; } catch (_) {}
         await sleep(80);
       }
-      const state = await value("({ url: location.href, generic: !!window.__woGenericFixture, youtube: !!window.__woYouTubeFixture, ambient: document.querySelector('#cinematics') && getComputedStyle(document.querySelector('#cinematics')).display, blur: document.querySelector('#frosted-glass') && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter, preview: document.querySelector('ytd-video-preview') && getComputedStyle(document.querySelector('ytd-video-preview')).display, previewPaused: document.querySelector('#preview-video') && document.querySelector('#preview-video').paused, cardPaused: document.querySelector('#card-preview') && document.querySelector('#card-preview').paused })").catch(() => null);
+      const state = await value("({ url: location.href, generic: !!window.__woGenericFixture, youtube: !!window.__woYouTubeFixture, frames: !!window.__woFrameFixture, ambient: document.querySelector('#cinematics') && getComputedStyle(document.querySelector('#cinematics')).display, blur: document.querySelector('#frosted-glass') && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter, preview: document.querySelector('ytd-video-preview') && getComputedStyle(document.querySelector('ytd-video-preview')).display, previewPaused: document.querySelector('#preview-video') && document.querySelector('#preview-video').paused, cardPaused: document.querySelector('#card-preview') && document.querySelector('#card-preview').paused, cardAutoplay: document.querySelector('#card-preview') && document.querySelector('#card-preview').autoplay, cardAutoplayAttribute: document.querySelector('#card-preview') && document.querySelector('#card-preview').hasAttribute('autoplay'), cardEnded: document.querySelector('#card-preview') && document.querySelector('#card-preview').ended, blankFramePaused: document.querySelector('#blank-frame')?.contentDocument?.querySelector('#frame-preview')?.paused, srcdocFramePaused: document.querySelector('#srcdoc-frame')?.contentDocument?.querySelector('#frame-preview')?.paused })").catch(() => null);
       const config = await value("chrome.storage.local.get('wardenone_config').then(data => ({ enabled: data.wardenone_config?.enabled, ambient: data.wardenone_config?.disableYouTubeAmbientMode, previews: data.wardenone_config?.stopAnimatedVideoPreviews }))", ext.sessionId).catch(() => null);
       throw new Error('Timed out waiting for ' + label + ': ' + JSON.stringify({ state, config }));
     }
@@ -51,16 +51,24 @@ async function run() {
     await setPreferences(true, true);
 
     const video = fs.readFileSync(path.join(root, 'spotify-silent-1s.mp4')).toString('base64');
-    const genericFixture = '<!doctype html><title>General preview fixture</title><a href="/opened"><video id="card-preview" muted autoplay playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
+    const childFixture = '<!doctype html><a href="/child"><video id="frame-preview" muted autoplay loop playsinline src="data:video/mp4;base64,' + video + '"></video></a>';
+    const escapedChildFixture = childFixture.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const frameFixture = '<!doctype html><title>Inherited frame fixture</title><iframe id="blank-frame" src="about:blank"></iframe><iframe id="srcdoc-frame" srcdoc="' + escapedChildFixture + '"></iframe><script>'
+      + 'const frame=document.querySelector("#blank-frame");setTimeout(()=>{const doc=frame.contentDocument;const link=doc.createElement("a");link.href="/child";const preview=doc.createElement("video");preview.id="frame-preview";preview.muted=true;preview.autoplay=true;preview.loop=true;preview.playsInline=true;preview.src=' + JSON.stringify('data:video/mp4;base64,' + video) + ';link.appendChild(preview);doc.body.appendChild(link);window.__woBlankReady=true},250);window.__woFrameFixture=true;</script>';
+    const genericFixture = '<!doctype html><title>General preview fixture</title><a href="/opened"><video id="card-preview" muted autoplay loop playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
       + '<div class="video-player"><video id="normal-player" muted controls loop src="data:video/mp4;base64,' + video + '"></video></div>'
       + '<a href="/audible"><video id="audible-card" autoplay playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
-      + '<a href="/manual"><video id="manual-card" muted src="data:video/mp4;base64,' + video + '"></video></a><script>window.__woGenericFixture = true</script>';
+      + '<a href="/manual"><video id="manual-card" muted src="data:video/mp4;base64,' + video + '"></video></a>'
+      + '<a href="/manual-inline"><video id="manual-inline-card" muted playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
+      + '<a href="/manual-loop"><video id="manual-loop-card" muted loop src="data:video/mp4;base64,' + video + '"></video></a><script>window.__woGenericFixture = true</script>';
     const youtubeFixture = '<!doctype html><title>YouTube resource fixture</title><ytd-app style="--yt-spec-base-background:#17131c"><div id="frosted-glass" style="background:rgba(15,15,15,.8);backdrop-filter:blur(48px)"></div><ytd-watch-flexy><div id="cinematics"></div></ytd-watch-flexy><ytd-video-preview-loader><ytd-video-preview><ytd-player id="inline-player" context="WEB_PLAYER_CONTEXT_CONFIG_ID_KEVLAR_INLINE_PREVIEW">'
       + '<video id="preview-video" muted loop autoplay src="data:video/mp4;base64,' + video + '"></video></ytd-player></ytd-video-preview></ytd-video-preview-loader>'
       + '<div id="player"><video id="watch-video" muted loop controls src="data:video/mp4;base64,' + video + '"></video></div></ytd-app><script>window.__woYouTubeFixture = true</script>';
     const off = cdp.on((event) => {
       if (event.sessionId !== page.sessionId || event.method !== 'Fetch.requestPaused') return;
-      const fixture = event.params.request.url.includes('www.youtube.com') ? youtubeFixture : genericFixture;
+      const requestUrl = event.params.request.url;
+      const fixture = requestUrl.includes('www.youtube.com') ? youtubeFixture
+        : requestUrl.includes('frames.example') ? frameFixture : genericFixture;
       void cdp.send('Fetch.fulfillRequest', {
         requestId: event.params.requestId,
         responseCode: 200,
@@ -70,11 +78,18 @@ async function run() {
     });
     await cdp.send('Fetch.enable', { patterns: [
       { urlPattern: '*://preview.example/*', resourceType: 'Document' },
+      { urlPattern: '*://frames.example/*', resourceType: 'Document' },
       { urlPattern: '*://www.youtube.com/*', resourceType: 'Document' },
     ] }, page.sessionId);
 
+    await sleep(1500);
+    await cdp.send('Page.navigate', { url: 'https://frames.example/children' }, page.sessionId);
+    await until("window.__woFrameFixture && window.__woBlankReady && document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').paused && !document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').autoplay && !document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').hasAttribute('autoplay') && document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').paused && !document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').autoplay && !document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').hasAttribute('autoplay')", 'about:blank and srcdoc frames to receive their initial Resource Saver state');
+    await setPreferences(true, false);
     await cdp.send('Page.navigate', { url: 'https://preview.example/feed' }, page.sessionId);
-    await until("window.__woGenericFixture && document.querySelector('#card-preview').paused", 'a general muted card preview to stop');
+    await until("window.__woGenericFixture && !document.querySelector('#card-preview').paused && document.querySelector('#card-preview').autoplay && document.querySelector('#card-preview').hasAttribute('autoplay')", 'the original general preview to autoplay');
+    await setPreferences(true, true);
+    await until("document.querySelector('#card-preview').paused && !document.querySelector('#card-preview').autoplay && !document.querySelector('#card-preview').hasAttribute('autoplay')", 'a general muted card preview to stop');
     assert.equal(await value("document.querySelector('#normal-player').play().then(() => true, () => false)"), true,
       'a normal player with controls can start');
     await until("!document.querySelector('#normal-player').paused", 'normal controlled playback');
@@ -84,9 +99,15 @@ async function run() {
     assert.equal(await value("document.querySelector('#manual-card').play().then(() => true, () => false)"), true,
       'a manually started card video is left alone');
     await until("!document.querySelector('#manual-card').paused", 'manual card playback');
+    assert.equal(await value("document.querySelector('#manual-inline-card').play().then(() => true, () => false)"), true,
+      'playsinline alone does not make a user-started card video a preview');
+    await until("!document.querySelector('#manual-inline-card').paused", 'manual playsinline card playback');
+    assert.equal(await value("document.querySelector('#manual-loop-card').play().then(() => true, () => false)"), true,
+      'loop alone does not make a user-started card video a preview');
+    await until("!document.querySelector('#manual-loop-card').paused", 'manual looping card playback');
     await setPreferences(true, false);
-    await until("document.querySelector('#card-preview').play().then(() => new Promise(resolve => setTimeout(() => resolve(!document.querySelector('#card-preview').paused), 120)), () => false)",
-      'general preview playback after live reversal');
+    await until("document.querySelector('#card-preview').autoplay && document.querySelector('#card-preview').hasAttribute('autoplay') && !document.querySelector('#card-preview').paused",
+      'the general preview autoplay state to restore without page help');
     await setPreferences(true, true);
     await value("document.querySelector('#card-preview').play().catch(() => {})");
     await until("document.querySelector('#card-preview').paused", 'the general preview control to return live');
@@ -104,9 +125,8 @@ async function run() {
     await setPreferences(false, false);
     await until("getComputedStyle(document.querySelector('#cinematics')).display !== 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter !== 'none'", 'YouTube Ambient Mode styles to return');
     await until("getComputedStyle(document.querySelector('ytd-video-preview')).display !== 'none'", 'the preview layer to return when its setting is off');
-    assert.equal(await value("document.querySelector('#preview-video').play().then(() => true, () => false)"), true,
-      'preview playback can resume when the setting is off');
-    await until("!document.querySelector('#preview-video').paused", 'preview playback after live reversal');
+    await until("document.querySelector('#preview-video').autoplay && document.querySelector('#preview-video').hasAttribute('autoplay') && !document.querySelector('#preview-video').paused",
+      'YouTube preview playback and autoplay state to restore without page help');
     await setPreferences(true, true, false);
     await until("getComputedStyle(document.querySelector('#cinematics')).display !== 'none' && getComputedStyle(document.querySelector('ytd-video-preview')).display !== 'none'", 'the disabled master switch to leave YouTube unchanged');
     await setPreferences(true, true, true);
@@ -114,7 +134,7 @@ async function run() {
     assert.equal(await value("!document.querySelector('#watch-video').paused"), true,
       'the ordinary watch player remains active through resource-setting changes');
     off();
-    console.log('[ok] Edge Resource Saver fixture: general previews, player compatibility, YouTube Ambient Mode and live reversal');
+    console.log('[ok] Edge Resource Saver fixture: inherited frames, general previews, player compatibility, YouTube Ambient Mode and live reversal');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     if (path.dirname(path.resolve(dir)) === path.resolve(os.tmpdir()) && path.basename(dir).startsWith('wo-resource-saver-')) {

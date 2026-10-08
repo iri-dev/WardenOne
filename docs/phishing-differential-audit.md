@@ -117,17 +117,32 @@ marker also checks examples with two substituted digits.
 
 The [RFC 3492 Punycode decoder](https://www.rfc-editor.org/info/rfc3492/)
 in `domain-utils.js` lets both the worker and page detector compare encoded
-IDN labels with protected brands. A small, explicit cross-script character
-map covers the tested Cyrillic and Greek lookalikes; it is not the full
-[Unicode UTS #39 confusable data](https://unicode.org/reports/tr39/). The gate
-compares the decoder with the platform's IDN conversion, checks six named
-spoofs (including a brand in a subdomain), and substitutes a confusable
-character in every one of the 21 worker brand profiles. Exact matches warn
-as homographs. Three ordinary IDNs remain clear.
+IDN labels with protected brands. `tools/build-idn-confusables.js` now derives
+a compact table from Unicode 18.0.0's official
+[UTS #39 confusable data](https://unicode.org/reports/tr39/). It retains all
+1,792 non-ASCII source characters whose complete prototype is made from ASCII
+letters or digits, because those are the mappings capable of becoming one of
+WardenOne's protected ASCII brand names. The earlier reviewed Cyrillic and
+Greek additions remain where Unicode deliberately chooses a non-ASCII
+prototype. Normalisation uses NFD and removes default-ignorable characters in
+the same order as the UTS #39 internal-skeleton algorithm.
+
+The generated table is expanded only when a Punycode label is inspected. Its
+version, source date, SHA-256, mapping count, ordering and cross-script sentinel
+entries are checked offline by the gate; updating it fetches the current
+Unicode file or accepts a reviewed local copy. The behavioural matrix compares
+the decoder with the platform's IDN conversion and checks thirteen named
+spoofs across Cyrillic, Greek, Latin, Armenian, Coptic, Lisu and Cherokee. It
+also substitutes a confusable character in every one of the 21 worker brand
+profiles. Exact matches warn as homographs, while seven ordinary IDNs remain
+clear.
 
 Previously the worker hard-blocked **every** Punycode sign-in host, and search
 results marked every Punycode name suspicious. That included unrelated
 internationalized domains. The warning now requires a protected-brand
 lookalike, a separate domain-age signal, or another independent protection.
-Unmapped Unicode confusables can still evade this particular name comparison;
-the curated map must not be described as complete Unicode confusable detection.
+This remains an ASCII-brand detector rather than a general implementation of
+the UTS #39 bidirectional skeleton: prototypes that cannot become an ASCII
+brand are omitted, and bidirectional display reordering is not reproduced.
+Those boundaries must not be described as complete Unicode confusable
+detection.

@@ -1036,7 +1036,9 @@ chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
     noteHttpNavigationAttempt(details);
     handleSafeBrowsingNavigation(details);
     resetRedirectChain(details.tabId, details.url);
-    maybeFlagFrameDrivenRedirect(details);
+    /* Ordinary pages are judged at onCommitted, where Chrome exposes forward_back.
+       Downloads may never commit, so keep their existing early hand-off here. */
+    if (navigationIsFileDownload(details.url)) maybeFlagFrameDrivenRedirect(details);
     // Tab-under signature: this tab spawned a popup moments ago and is now itself navigating
     // (the opener being driven). Log-only -- no blocking, so no false-positive breakage.
     const popAt = POPUP_OPENED_AT[details.tabId];
@@ -1652,6 +1654,7 @@ async function maybeBlockForcedTopRedirect(details) {
   // client_redirect means "the page did this to you"; typed, link, bookmark,
   // generated and reload never reach here now.
   const why = Array.isArray(details && details.transitionQualifiers) ? details.transitionQualifiers : [];
+  if (why.includes('forward_back')) return;
   if (!why.includes('client_redirect')) return;
   let toUrl;
   try { toUrl = new URL(String(details.url || '')); } catch (_) { return; }
@@ -1874,36 +1877,45 @@ function navigationIsFileDownload(rawUrl) {
   return DOWNLOAD_TARGET_RE.test(u.search);
 }
 
-async function maybeFlagFrameDrivenRedirect(details) {
+function frameDrivenRedirectContext(details) {
   const tabId = details && details.tabId;
-  if (tabId == null || tabId < 0) return;
+  if (tabId == null || tabId < 0) return null;
+  const qualifiers = Array.isArray(details && details.transitionQualifiers) ? details.transitionQualifiers : [];
+  if (qualifiers.includes('forward_back')) return null;
   const gestureAt = PLAYER_GESTURE_AT[tabId];
-  if (!gestureAt) return;
+  if (!gestureAt) return null;
   const now = Date.now();
-  if (now - gestureAt > FRAME_REDIRECT_WINDOW_MS) return;
+  if (now - gestureAt > FRAME_REDIRECT_WINDOW_MS) return null;
   const fromUrl = LAST_TOP_URL[tabId] || '';
-  if (!fromUrl) return;
+  if (!fromUrl) return null;
   let fromHost = '';
   let toHost = '';
-  try { fromHost = siteIdentityBg(new URL(fromUrl).hostname); } catch (_) { return; }
-  try { toHost = siteIdentityBg(new URL(String(details.url || '')).hostname); } catch (_) { return; }
-  if (!fromHost || !toHost || fromHost === toHost) return;
+  try { fromHost = siteIdentityBg(new URL(fromUrl).hostname); } catch (_) { return null; }
+  try { toHost = siteIdentityBg(new URL(String(details.url || '')).hostname); } catch (_) { return null; }
+  if (!fromHost || !toHost || fromHost === toHost) return null;
   // Our own top-frame hooks announce everything they let through, so if one just
   // did -- to this host -- the page navigated itself and the click layer has already
   // judged it.
-  if (topNavOwnedFor(tabId, toHost, now, FRAME_REDIRECT_WINDOW_MS + 1)) return;
+  if (topNavOwnedFor(tabId, toHost, now, FRAME_REDIRECT_WINDOW_MS + 1)) return null;
+  return { tabId, now, fromUrl, fromHost, toHost };
+}
+
+async function maybeFlagFrameDrivenRedirect(details, candidate) {
+  const hit = candidate || frameDrivenRedirectContext(details);
+  if (!hit) return false;
+  const { tabId, now, fromUrl, fromHost, toHost } = hit;
   let cfg = {};
   try { const st = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, (st && st.wardenone_config) || {}); } catch (_) {}
-  if (cfg.enabled === false || cfg.blockPopupTricks === false) return;
+  if (cfg.enabled === false || cfg.blockPopupTricks === false) return true;
   // Hand a download to the guard that grades downloads. See navigationIsFileDownload above.
   // The signals are cleared as well, so the one gesture cannot be spent again on the next
   // navigation -- a download and then a real hijack would otherwise share the same click.
   if (cfg.downloadReputation !== false && navigationIsFileDownload(details.url)) {
     forgetNavSignals(tabId);
-    return;
+    return true;
   }
   try {
-    if (hostMatchesAllowlist(new URL(fromUrl).hostname, activeAllowlist(cfg))) return;
+    if (hostMatchesAllowlist(new URL(fromUrl).hostname, activeAllowlist(cfg))) return true;
   } catch (_) {}
   // One shot per gesture: a page that keeps trying must not stack interstitials.
   forgetNavSignals(tabId);
@@ -1929,6 +1941,7 @@ async function maybeFlagFrameDrivenRedirect(details) {
       }),
     });
   } catch (_) {}
+  return true;
 }
 
 async function evaluateRedirectChain(details) {
@@ -2077,7 +2090,9 @@ registerListener('forced-redirect guard', () => {
     // transitionQualifiers only exists on this event. Everything it reads from the
     // old state is read synchronously, ahead of its first await, so the two lines
     // below cannot race it.
-    maybeBlockForcedTopRedirect(details);
+    const frameRedirect = navigationIsFileDownload(details.url) ? null : frameDrivenRedirectContext(details);
+    if (frameRedirect) maybeFlagFrameDrivenRedirect(details, frameRedirect);
+    else maybeBlockForcedTopRedirect(details);
     const left = domainOfTab(details.tabId);
     LAST_TOP_URL[details.tabId] = String(details.url || '');
     forgetNavSignals(details.tabId);
@@ -2151,7 +2166,7 @@ const DEFAULT_CONFIG = {
   detectPhishing: true,
   behavioralScan: true,
   xssBehaviorGuard: true,
-  blockHighConfidencePhishing: false,
+  blockHighConfidencePhishing: true,
   removeOverlays: true,
   autoSkipDownloadAds: true,
   blockTrackers: true,
@@ -2628,6 +2643,10 @@ const ONBOARDING_RECOMMENDED = {
   fakeUpdateDetector: true,
   permissionChainGuard: true,
   oauthGuard: true,
+  /* Only the detector's narrow high-confidence tier reaches the blocking screen:
+     exact-brand TLD swaps, strong visual or keyboard typos, homographs, and
+     corroborated brand-subdomain lures. The screen always offers a continue path. */
+  blockHighConfidencePhishing: true,
   scriptDriftGuard: true,
   watchExtensionPermissions: true,
   startupCheck: true,
@@ -2639,18 +2658,6 @@ const ONBOARDING_RECOMMENDED = {
   xssBehaviorGuard: true,
 };
 const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
-  /* Acting on the detector rather than only narrating it.
-     A high-confidence verdict is a tld-swap (paypal.tk), a visual typosquat
-     (paypa1.com), a homograph, or a brand subdomain with a phishing word or a
-     throwaway TLD beside it. Those are worth stopping, and until now nothing
-     stopped them: the switch existed but sat off in the defaults, off in
-     Recommended and off here, so the strongest anti-phishing action shipped
-     unreachable from any guided path.
-     It goes in this bundle and not Recommended because blocking is the one
-     action here that can be wrong in a way the reader cannot work around, and
-     someone who chose maximum privacy has said which way they want that call
-     to go. The warning still fires for everyone either way. */
-  blockHighConfidencePhishing: true,
   /* Only the switch the popup shows. This also set the legacy antiFingerprint alias, which the
      engine ORs with it and nothing lets the reader turn off, so the noise could not be switched
      off again after choosing this bundle (PI-06). */
@@ -4023,8 +4030,21 @@ const LOGIN_COMPAT_FILTERS = [
   '||open.spotify.com/get_access_token',
   'facebook.com/dialog/oauth',
   'www.facebook.com/dialog/oauth',
+  'facebook.com/*/dialog/oauth',
+  'www.facebook.com/*/dialog/oauth',
+  'm.facebook.com/dialog/oauth',
+  'm.facebook.com/*/dialog/oauth',
   '||connect.facebook.net',
   '||graph.facebook.com/oauth',
+  '||slack.com/oauth/authorize',
+  '||slack.com/oauth/v2/authorize',
+  '||slack-gov.com/oauth/authorize',
+  '||slack-gov.com/oauth/v2/authorize',
+  '||www.dropbox.com/oauth2/authorize',
+  '||gitlab.com/oauth/authorize',
+  '||auth.atlassian.com/authorize',
+  '||www.linkedin.com/oauth/v2/authorization',
+  '||id.twitch.tv/oauth2/authorize',
   '||appleid.cdn-apple.com',
   '||cdn.auth0.com',
   '||global.oktacdn.com',
@@ -4142,7 +4162,13 @@ function isLoginCompatibilityUrl(rawUrl) {
     if (authPageDomains.some((domain) => host === domain || host.endsWith('.' + domain))) return true;
     if (host === 'github.com' && path.indexOf('/login/oauth') === 0) return true;
     if ((host === 'discord.com' || host === 'discordapp.com') && /^\/(api\/)?oauth2\//.test(path)) return true;
-    if ((host === 'facebook.com' || host === 'www.facebook.com') && path.indexOf('/dialog/oauth') === 0) return true;
+    if ((host === 'facebook.com' || host === 'm.facebook.com') && /\/dialog\/oauth\b/.test(path)) return true;
+    if ((host === 'slack.com' || host === 'slack-gov.com') && /^\/oauth\/(?:v2\/)?authorize\b/.test(path)) return true;
+    if (host === 'dropbox.com' && /^\/oauth2\/authorize\b/.test(path)) return true;
+    if (host === 'gitlab.com' && /^\/oauth\/authorize\b/.test(path)) return true;
+    if (host === 'auth.atlassian.com' && /^\/authorize\b/.test(path)) return true;
+    if (host === 'linkedin.com' && /^\/oauth\/v2\/authorization\b/.test(path)) return true;
+    if (host === 'id.twitch.tv' && /^\/oauth2\/authorize\b/.test(path)) return true;
     if ((host === 'paypal.com' || host === 'www.paypal.com') && /\/(signin|checkout)\b/.test(path)) return true;
     return false;
   } catch (_) {
@@ -16412,7 +16438,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'rg-tally',
   'content-config-get',
   'eyeshield-bootstrap',
-    'resource-saver-state',
+  'resource-saver-state',
   'redirect-bootstrap-get',
   /* Silencing a notice, and reporting that one was shown. Both carry a warning
      type and nothing else; the host is taken from the sending tab. Missing from
@@ -16482,7 +16508,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
      preventing a compromised tab from turning configuration reads into a storage flood. */
   'content-config-get': { max: 500, windowMs: 60000 },
   'eyeshield-bootstrap': { max: 500, windowMs: 60000 },
-    'resource-saver-state': { max: 240, windowMs: 60000 },
+  'resource-saver-state': { max: 500, windowMs: 60000 },
   'redirect-bootstrap-get': { max: 500, windowMs: 60000 },
   /* A results page asks once per batch of hosts it has not asked about, and remembers the
      answers -- so a search plus several "more results" is a handful of calls, not one per
@@ -21116,12 +21142,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'resource-saver-state' && messageSenderIsTab(sender)) {
-    let page = null;
-    try { page = new URL(sender.url || ''); } catch (_) {}
-    if (!page || (page.protocol !== 'http:' && page.protocol !== 'https:')) {
-      sendResponse({ ok: false });
-      return true;
-    }
     respond(localGet('wardenone_config').then((stored) => {
       const cfg = (stored && stored.wardenone_config) || {};
       const on = !woFeatureOmitted('memoryShield') && cfg.enabled !== false;

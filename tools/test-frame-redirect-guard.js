@@ -104,8 +104,8 @@ function world(options) {
       if (state.TOP_NAV_OWNED_AT[tabId]) state.TOP_NAV_OWNED_AT[tabId] -= ms;
       if (state.LAST_GESTURE_AT[tabId]) state.LAST_GESTURE_AT[tabId] -= ms;
     },
-    navigate(tabId, url) {
-      return sandbox.maybeFlagFrameDrivenRedirect({ tabId, frameId: 0, url });
+    navigate(tabId, url, qualifiers) {
+      return sandbox.maybeFlagFrameDrivenRedirect({ tabId, frameId: 0, url, transitionQualifiers: qualifiers || [] });
     },
     /* Every real forced redirect arrives as a client_redirect. Tests that want
        any OTHER transition pass it explicitly. */
@@ -144,6 +144,24 @@ async function main() {
     w.committed(1, 'https://yomi.to/watch/x');
     await w.navigate(1, 'https://elsewhere.example/');
     check('a navigation with no player click behind it is ordinary browsing',
+      w.updates.length === 0 && w.history.length === 0, w.updates);
+  }
+
+  {
+    const w = world();
+    w.committed(1, 'https://www.bilibili.com/video/BV1example');
+    w.signal(1, 'player-gesture');
+    await w.navigate(1, 'https://www.google.com/search?q=bilibili', ['forward_back']);
+    check('browser Back from a player to search results is never a frame redirect',
+      w.updates.length === 0 && w.history.length === 0, w.updates);
+  }
+
+  {
+    const w = world();
+    w.committed(1, 'https://www.bilibili.com/video/BV1example');
+    w.signal(1, 'player-gesture');
+    await w.forced(1, 'https://www.google.com/search?q=bilibili', ['client_redirect', 'forward_back']);
+    check('forward/back evidence also wins over a client-redirect qualifier',
       w.updates.length === 0 && w.history.length === 0, w.updates);
   }
 
@@ -384,10 +402,14 @@ async function main() {
      guard needs the page being LEFT, so it has to run before LAST_TOP_URL moves on. */
   check('the guard runs before the previous page is forgotten', (() => {
     const body = BG.slice(BG.indexOf('onCommitted?.addListener'));
+    const frameAt = body.indexOf('frameDrivenRedirectContext(details)');
     const guardAt = body.indexOf('maybeBlockForcedTopRedirect(details)');
     const overwriteAt = body.indexOf('LAST_TOP_URL[details.tabId] =');
-    return guardAt >= 0 && overwriteAt > guardAt;
+    return frameAt >= 0 && guardAt > frameAt && overwriteAt > guardAt;
   })(), 'running it after the overwrite would compare the new page against itself');
+  check('onBeforeNavigate handles only download-shaped frame targets',
+    /if \(navigationIsFileDownload\(details\.url\)\) maybeFlagFrameDrivenRedirect\(details\)/.test(BG),
+    'ordinary pages are being judged before Chrome exposes forward/back evidence');
   check('per-tab state is dropped when the tab closes',
     /delete LAST_TOP_URL\[tabId\];\s*forgetNavSignals\(tabId\);/.test(BG));
 

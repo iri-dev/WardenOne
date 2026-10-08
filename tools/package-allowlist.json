@@ -96,6 +96,7 @@
   "settings-data.js",
   "settings.html",
   "settings.js",
+  "site-dashboard-shared.js",
   "spotify-adblock.js",
   "spotify-silent-1s.mp4",
   "supplemental-manifest.json",

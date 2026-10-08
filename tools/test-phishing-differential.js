@@ -257,6 +257,11 @@ function runHomographMatrix() {
   const helperWorld = {};
   vm.createContext(helperWorld);
   IDN_SCRIPT.runInContext(helperWorld);
+  assert.strictEqual(vm.runInContext('wardenOneUts39AsciiMap === null', helperWorld), true,
+    'the generated confusable table must start lazy');
+  helperWorld.wardenOneIdnLabels('ordinary.example');
+  assert.strictEqual(vm.runInContext('wardenOneUts39AsciiMap === null', helperWorld), true,
+    'an ASCII hostname must not expand the generated confusable table');
   const ascii = [
     ['6oo6le.example', 'google'],
     ['9oo9le.example', 'google'],
@@ -281,6 +286,13 @@ function runHomographMatrix() {
     ['mіcrоsoft.example', 'microsoft'],
     ['steаmpowered.example', 'steam'],
     ['раураl.evil.example', 'paypal'],
+    ['mıcrosoft.example', 'microsoft'],
+    ['ɡoogle.example', 'google'],
+    ['ցoogle.example', 'google'],
+    ['ⲣaypal.example', 'paypal'],
+    ['cσinbase.example', 'coinbase'],
+    ['ꓐinance.example', 'binance'],
+    ['Ꭰiscord.example', 'discord'],
   ];
   for (const [unicode, brand] of idn) {
     const host = domainToASCII(unicode);
@@ -297,7 +309,18 @@ function runHomographMatrix() {
     assert.strictEqual(hit.kind, 'homograph', host + ' page detector must explain its IDN finding');
     assert.strictEqual(hit.confidence, 'high', host + ' exact IDN skeleton must rate high');
   }
-  for (const unicode of ['bücher.example', 'münchen.example', 'δοκιμή.example']) {
+  helperWorld.wardenOneIdnLabels(domainToASCII('mıcrosoft.example'));
+  assert.strictEqual(vm.runInContext('wardenOneUts39AsciiMap !== null', helperWorld), true,
+    'an inspected IDN must expand the generated confusable table');
+  for (const unicode of [
+    'bücher.example',
+    'münchen.example',
+    'δοκιμή.example',
+    'ցանկ.example',
+    'σχολή.example',
+    'ⲣⲱⲙⲉ.example',
+    'kıtab.example',
+  ]) {
     const host = domainToASCII(unicode);
     assert(host && host.includes('xn--'), unicode + ' must be an encoded IDN');
     assert.strictEqual(helperWorld.wardenOnePunycodeDecode(host.split('.')[0]), unicode.split('.')[0],
@@ -338,7 +361,8 @@ function runHomographMatrix() {
   assert(helperAt >= 0 && engineAt > helperAt,
     'the shared IDN helper must load before the MAIN-world page detector');
   console.log('[ok] visual and IDN matrix: ' + ascii.length + ' ASCII lookalikes, '
-    + idn.length + ' encoded brand spoofs, ' + broadCount + ' profile substitutions, three ordinary IDNs');
+    + idn.length + ' encoded brand spoofs, ' + broadCount + ' profile substitutions, '
+    + 'seven ordinary IDNs');
 }
 
 if (process.argv.includes('--compare-ref')) {

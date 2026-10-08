@@ -91,6 +91,7 @@ function boot(options) {
     },
     noteRedirectHop() {}, evaluateRedirectChain() {}, domainOfTab() { return ''; }, forgetNavSignals() {}, forgetRebindTab() {},
     forgetWarningRecordsForTab() {}, maybeClearOnLeave() {}, maybeClearServiceWorkersOnLeave() {}, maybeBlockForcedTopRedirect() {},
+    navigationIsFileDownload() { return false; }, frameDrivenRedirectContext() { return null; }, maybeFlagFrameDrivenRedirect() {},
     leftSiteOfTab: async () => '',   // the durable read the two tab listeners make since LIFE-01
     POPUP_OPENED_AT: {}, REDIRECT_CHAINS: {}, LAST_TOP_URL: {},
   };

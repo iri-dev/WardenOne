@@ -12,6 +12,7 @@
   let ambientEnabled = false;
   let previewsEnabled = false;
   let refreshNumber = 0;
+  const changedPreviews = new Map();
 
   const EXPLICIT_PREVIEW = [
     'ytd-video-preview',
@@ -50,23 +51,66 @@
     return style;
   }
 
-  function previewVideo(video) {
+  function previewVideo(video, remembered) {
     if (!video || String(video.tagName || '').toUpperCase() !== 'VIDEO') return false;
     try {
       if (video.closest(EXPLICIT_PREVIEW)) return true;
       if (video.controls || video.closest(FULL_PLAYER)) return false;
       const muted = video.muted || video.defaultMuted || video.hasAttribute('muted');
-      const automatic = video.autoplay || video.loop || video.playsInline
-        || video.hasAttribute('autoplay') || video.hasAttribute('loop') || video.hasAttribute('playsinline');
+      const automatic = remembered || video.autoplay || video.hasAttribute('autoplay');
       return !!(muted && automatic && video.closest('a[href],button,[role="link"],[role="button"]'));
     } catch (_) { return false; }
   }
 
   function stopPreviewVideo(video) {
-    if (!previewsEnabled || !previewVideo(video)) return;
+    let original = changedPreviews.get(video);
+    if (!previewsEnabled || !previewVideo(video, !!original)) return;
+    if (!original) {
+      if (changedPreviews.size && changedPreviews.size % 64 === 0) {
+        changedPreviews.forEach((state, changed) => {
+          if (changed.isConnected !== false) return;
+          changedPreviews.delete(changed);
+          restorePreview(changed, state);
+        });
+      }
+      let hadAutoplayAttribute = false;
+      let autoplayAttribute = '';
+      try {
+        hadAutoplayAttribute = video.hasAttribute('autoplay');
+        if (hadAutoplayAttribute) autoplayAttribute = video.getAttribute('autoplay') || '';
+      } catch (_) {}
+      original = {
+        autoplay: !!video.autoplay,
+        hadAutoplayAttribute,
+        autoplayAttribute,
+        wasPlaying: video.paused === false,
+      };
+      changedPreviews.set(video, original);
+    } else if (video.paused === false) {
+      original.wasPlaying = true;
+    }
     try { video.autoplay = false; } catch (_) {}
     try { video.removeAttribute('autoplay'); } catch (_) {}
     try { if (!video.paused && typeof video.pause === 'function') video.pause(); } catch (_) {}
+  }
+
+  function restorePreview(video, original) {
+    try { video.autoplay = original.autoplay; } catch (_) {}
+    try {
+      if (original.hadAutoplayAttribute) video.setAttribute('autoplay', original.autoplayAttribute);
+      else video.removeAttribute('autoplay');
+    } catch (_) {}
+    if (!original.wasPlaying || video.isConnected === false || typeof video.play !== 'function') return;
+    try {
+      const started = video.play();
+      if (started && typeof started.catch === 'function') started.catch(() => {});
+    } catch (_) {}
+  }
+
+  function restorePreviews() {
+    const changed = Array.from(changedPreviews.entries());
+    changedPreviews.clear();
+    changed.forEach(([video, original]) => restorePreview(video, original));
   }
 
   function sweepPreviews(root) {
@@ -78,6 +122,7 @@
   function paintPreviews() {
     if (!previewsEnabled) {
       if (previewStyle) previewStyle.remove();
+      restorePreviews();
       return;
     }
     previewStyle = attachStyle(previewStyle,
@@ -97,10 +142,14 @@
   }
 
   function apply(state) {
-    ambientEnabled = !!state && state.ambient === true;
-    previewsEnabled = !!state && state.previews === true;
-    paintAmbient();
-    paintPreviews();
+    const nextAmbient = !!state && state.ambient === true;
+    const nextPreviews = !!state && state.previews === true;
+    const ambientChanged = nextAmbient !== ambientEnabled;
+    const previewsChanged = nextPreviews !== previewsEnabled;
+    ambientEnabled = nextAmbient;
+    previewsEnabled = nextPreviews;
+    if (ambientChanged) paintAmbient();
+    if (previewsChanged) paintPreviews();
   }
 
   function refresh() {

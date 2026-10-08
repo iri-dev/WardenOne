@@ -25,12 +25,14 @@ assert.equal(entry.match_about_blank, true);
 let reply;
 let update;
 let stateRequests = 0;
+let videoQueries = 0;
 const listeners = {};
 const styles = [];
 const makeVideo = (kind, options = {}) => ({
-  tagName: 'VIDEO', paused: false, autoplay: options.autoplay !== false, loop: !!options.loop,
+  tagName: 'VIDEO', paused: options.paused === true, autoplay: options.autoplay !== false, loop: !!options.loop,
   playsInline: !!options.playsInline, muted: options.muted !== false, defaultMuted: false,
-  controls: !!options.controls, pauses: 0, removed: [], attrs: new Set(options.attrs || ['autoplay', 'muted']),
+  controls: !!options.controls, isConnected: options.isConnected !== false, pauses: 0, plays: 0,
+  removed: [], attrs: new Map((options.attrs || ['autoplay', 'muted']).map((name) => [name, ''])),
   closest(selector) {
     if (kind === 'explicit' && selector.includes('ytd-video-preview')) return {};
     if (kind === 'player' && selector.includes('ytd-watch-flexy #player')) return {};
@@ -38,14 +40,20 @@ const makeVideo = (kind, options = {}) => ({
     return null;
   },
   hasAttribute(name) { return this.attrs.has(name); },
+  getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; },
+  setAttribute(name, value) { this.attrs.set(name, String(value)); },
   removeAttribute(name) { this.removed.push(name); this.attrs.delete(name); },
   pause() { this.paused = true; this.pauses++; },
+  play() { this.paused = false; this.plays++; return Promise.resolve(); },
 });
 const youtubePreview = makeVideo('explicit');
 const cardPreview = makeVideo('card', { playsInline: true });
 const watchVideo = makeVideo('player', { controls: true });
 const audibleCardVideo = makeVideo('card', { muted: false, attrs: ['autoplay'] });
 const manualCardVideo = makeVideo('card', { autoplay: false, muted: true, attrs: ['muted'] });
+const manualInlineCardVideo = makeVideo('card', { autoplay: false, muted: true, paused: true, playsInline: true, attrs: ['muted', 'playsinline'] });
+const manualLoopCardVideo = makeVideo('card', { autoplay: false, muted: true, paused: true, loop: true, attrs: ['muted', 'loop'] });
+const queuedCardPreview = makeVideo('card', { playsInline: true, paused: true });
 const document = {
   documentElement: { appendChild(node) { node.isConnected = true; styles.push(node); } },
   createElement(tag) {
@@ -55,7 +63,9 @@ const document = {
   addEventListener(type, callback) { listeners[type] = callback; },
   querySelectorAll(selector) {
     assert.equal(selector, 'video');
-    return [youtubePreview, cardPreview, watchVideo, audibleCardVideo, manualCardVideo];
+    videoQueries++;
+    return [youtubePreview, cardPreview, watchVideo, audibleCardVideo, manualCardVideo,
+      manualInlineCardVideo, manualLoopCardVideo, queuedCardPreview];
   },
 };
 const chrome = {
@@ -71,11 +81,13 @@ const chrome = {
 };
 vm.runInNewContext(source, { chrome, document, String });
 assert.equal(styles.length, 0, 'nothing changes before the worker answers');
-reply({ ok: true, ambient: false, previews: false });
-assert.equal(styles.length, 0, 'the preview control defaults to leaving pages alone');
-
 update({ kind: 'resource-saver-update', ambient: true, previews: true });
 assert.equal(styles.length, 2);
+reply({ ok: true, ambient: false, previews: false });
+assert.equal(styles[0].isConnected, true, 'a stale initial reply cannot undo a newer Ambient Mode update');
+assert.equal(styles[1].isConnected, true, 'a stale initial reply cannot undo newer preview blocking');
+assert.equal(cardPreview.paused, true, 'a stale initial reply cannot restore a preview stopped by the live update');
+assert.equal(videoQueries, 1, 'a stale initial reply is discarded without another document sweep');
 assert.match(styles[0].textContent, /ytd-watch-flexy #cinematics \{ display: none !important; \}/,
   'the watch-page Ambient Mode glow is hidden');
 assert.match(styles[0].textContent, /#frosted-glass \{[^}]*backdrop-filter: none !important;/,
@@ -86,13 +98,31 @@ assert.match(styles[0].textContent, /:root\[dark\][^}]*#0f0f0f/,
   'native dark mode has a safe background fallback');
 assert.equal(styles[1].textContent, 'ytd-video-preview,ytd-video-preview-loader { display: none !important; }',
   'the preview layer is hidden while static thumbnails remain outside it');
+assert.equal(videoQueries, 1, 'enabling preview blocking performs one document video sweep');
+update({ kind: 'resource-saver-update', ambient: true, previews: true });
+assert.equal(videoQueries, 1, 'reliable duplicate broadcasts do not repeat the document video sweep');
 assert.equal(youtubePreview.pauses, 1, 'an existing YouTube inline preview is stopped');
 assert.equal(cardPreview.pauses, 1, 'a muted automatic preview inside a navigation card is stopped');
 assert.equal(youtubePreview.autoplay, false);
+assert.equal(youtubePreview.hasAttribute('autoplay'), false);
 assert.deepEqual(youtubePreview.removed, ['autoplay']);
 assert.equal(watchVideo.pauses, 0, 'a normal player is not stopped');
 assert.equal(audibleCardVideo.pauses, 0, 'an audible inline video is not guessed to be a preview');
 assert.equal(manualCardVideo.pauses, 0, 'a manually started card video is left alone');
+manualInlineCardVideo.play();
+listeners.play({ target: manualInlineCardVideo });
+assert.equal(manualInlineCardVideo.paused, false, 'playsinline alone does not turn a user-started card video into a preview');
+assert.equal(manualInlineCardVideo.pauses, 0);
+manualLoopCardVideo.play();
+listeners.play({ target: manualLoopCardVideo });
+assert.equal(manualLoopCardVideo.paused, false, 'loop alone does not turn a user-started card video into a preview');
+assert.equal(manualLoopCardVideo.pauses, 0);
+assert.equal(queuedCardPreview.pauses, 0, 'a preview that was already paused is not paused again');
+assert.equal(queuedCardPreview.autoplay, false, 'a queued autoplay preview is still neutralised');
+cardPreview.play();
+listeners.play({ target: cardPreview });
+assert.equal(cardPreview.paused, true, 'a recognised preview stays blocked after WardenOne removes its autoplay marker');
+assert.equal(cardPreview.pauses, 2);
 
 const replay = makeVideo('card', { playsInline: true });
 listeners.play({ target: replay });
@@ -104,6 +134,18 @@ assert.equal(watchVideo.pauses, 0, 'a normal YouTube video play event passes thr
 update({ kind: 'resource-saver-update', ambient: false, previews: false });
 assert.equal(styles[0].isConnected, false, 'turning Ambient Mode blocking off restores YouTube styling immediately');
 assert.equal(styles[1].isConnected, false, 'turning preview blocking off restores the preview layer immediately');
+assert.equal(youtubePreview.autoplay, true, 'the original autoplay property is restored');
+assert.equal(youtubePreview.hasAttribute('autoplay'), true, 'the original autoplay attribute is restored');
+assert.equal(youtubePreview.paused, false, 'a preview WardenOne stopped resumes without a page reload');
+assert.equal(youtubePreview.plays, 1, 'a stopped preview is resumed once');
+assert.equal(cardPreview.autoplay, true);
+assert.equal(cardPreview.paused, false);
+assert.equal(replay.autoplay, true);
+assert.equal(replay.paused, false, 'a later preview stopped from its play event is restored too');
+assert.equal(queuedCardPreview.autoplay, true, 'a paused preview regains its original autoplay configuration');
+assert.equal(queuedCardPreview.hasAttribute('autoplay'), true);
+assert.equal(queuedCardPreview.paused, true, 'a preview that was already paused is not unexpectedly started');
+assert.equal(queuedCardPreview.plays, 0);
 const restored = makeVideo('card', { playsInline: true });
 listeners.play({ target: restored });
 assert.equal(restored.pauses, 0, 'preview playback is left alone again after live reversal');
@@ -115,10 +157,18 @@ const background = read('background.js');
 const popup = read('popup.html') + read('popup.js');
 const settings = read('settings.js');
 const profile = read('build-profile.js');
+const resourceStateHandler = background.slice(
+  background.indexOf("if (msg && msg.kind === 'resource-saver-state'"),
+  background.indexOf("if (msg && msg.kind === 'content-config-get'"),
+);
 assert(/stopAnimatedVideoPreviews: false/.test(background), 'the worker default is off');
 assert(/disableYouTubeAmbientMode: false/.test(background), 'the Ambient Mode control defaults off');
 assert(/kind === 'resource-saver-state'/.test(background) && /disableYouTubeAmbientMode === true/.test(background) && /stopAnimatedVideoPreviews === true/.test(background),
   'the worker derives both resource preferences from trusted storage');
+assert(/messageSenderIsTab\(sender\)/.test(resourceStateHandler) && !/sender\.url|page\.protocol/.test(resourceStateHandler),
+  'trusted content scripts in inherited and non-HTTP frames receive the initial Resource Saver state');
+assert(/'resource-saver-state': \{ max: 500, windowMs: 60000 \}/.test(background),
+  'the per-tab limit leaves room for frame-heavy pages to read their initial state');
 assert(/data-key="disableYouTubeAmbientMode"/.test(popup), 'the popup exposes the Ambient Mode control');
 assert(/data-key="stopAnimatedVideoPreviews"/.test(popup), 'the popup exposes the general preview control');
 assert(/sw\([^\n]+disableYouTubeAmbientMode[^\n]+stopAnimatedVideoPreviews/.test(settings), 'Settings exposes both resource controls');

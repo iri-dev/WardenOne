@@ -173,7 +173,7 @@ async function run() {
     await until(settings, "previewState.status === 'ready' && previewState.host.includes('twitch.tv')", 'Twitch preview');
     assert(await value(settings, "document.querySelector('#rail').textContent.includes('twitch.tv')"));
     assert(await value(settings, "!document.querySelector('#rail').textContent.includes('youtube.com')"));
-    assert(await value(settings, "[...document.querySelectorAll('#rail .stat b')].every((el, i) => Number(el.textContent) === [previewState.network.trackers, previewState.network.ads, previewState.network.other][i])"));
+    assert(await value(settings, "[...document.querySelectorAll('#rail .stat b')].every((el, i) => Number(el.textContent) === [previewState.activity.trackers, previewState.activity.ads, previewState.activity.other][i])"));
     if (process.env.WARDENONE_SETTINGS_FIX_DIR) {
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, settings.sessionId);
       fs.writeFileSync(path.join(process.env.WARDENONE_SETTINGS_FIX_DIR, 'preview-current.png'), Buffer.from(shot.data, 'base64'));
