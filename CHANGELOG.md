@@ -43,6 +43,9 @@
 - A Twitch video segment that fails to download no longer counts as one the player has. When the
   player asked for it again from the other stream after a switch, the switch went unmarked and
   the mark landed one segment late.
+- A notification sound preview no longer says the sound "played". WardenOne can tell the browser
+  took it, not whether your device is muted, so it now says the sound was sent to your speakers.
+  At 0% volume it says there is nothing to hear, instead of reporting a sound nobody could hear.
 - A setting changed in a normal window is no longer lost when a private window saves a different
   setting more than a second and a half later, from what it read before your change. The late
   save is caught as it lands and your change is put back, unless that same setting was changed
