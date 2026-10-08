@@ -231,14 +231,17 @@ async function run() {
     const soundPalette = await value("[...document.getElementById('pref-soundpick').options].map(option => ({ id: option.value, label: option.textContent }))");
     for (const sound of soundPalette) {
       await value(`(() => { const pick = document.getElementById('pref-soundpick'); pick.value = ${JSON.stringify(sound.id)}; document.getElementById('pref-preview').click(); return true; })()`);
-      await until(`document.getElementById('pref-sound-feedback').textContent === ${JSON.stringify(sound.label + ' played.')}`, sound.label + ' preview to play');
+      await until(`document.getElementById('pref-sound-feedback').textContent.startsWith(${JSON.stringify(sound.label + ' sent to your speakers.')})`, sound.label + ' preview to play');
     }
     ok(await value("chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(items => items.some(item => /offscreen\\.html$/.test(item.documentUrl)))"),
       'the preview reaches the real offscreen audio document');
     await value("document.getElementById('pref-sound').click(); true");
     await until(cfgIs('c => c.notificationSettings.soundEnabled === true'), 'Notification Centre sound switch saved');
-    await until("document.getElementById('pref-sound-state').textContent === 'On' && /played\\.$/.test(document.getElementById('pref-sound-feedback').textContent)",
+    await until("document.getElementById('pref-sound-state').textContent === 'On' && /sent to your speakers\\./.test(document.getElementById('pref-sound-feedback').textContent)",
       'enabling notification sounds to confirm playback');
+    /* At 0% the preview says there is nothing to hear instead of claiming a sound played. */
+    await value("(() => { const range = document.getElementById('pref-volume'); range.value = '0'; range.dispatchEvent(new Event('input')); document.getElementById('pref-preview').click(); return true; })()");
+    await until("/^Volume is at 0%/.test(document.getElementById('pref-sound-feedback').textContent)", 'a 0% preview to say there is nothing to hear');
     same(await value('window.__errors'), [], 'no Notification Centre errors');
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
     page = settingsPage;
