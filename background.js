@@ -12727,6 +12727,13 @@ function recordSettingsChanges(entries) {
 }
 
 let resourceSaverBroadcastNumber = 0;
+function resourceSaverState(config) {
+  const cfg = config || {};
+  return {
+    ambient: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.disableYouTubeAmbientMode === true,
+    previews: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.stopAnimatedVideoPreviews === true,
+  };
+}
 function broadcastResourceSaverState(state) {
   const number = ++resourceSaverBroadcastNumber;
   const deliver = () => {
@@ -12753,6 +12760,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // other extension contexts, or our own localSet). newValue is the full post-write config.
   if (area === 'local' && changes.wardenone_config) {
     __cfgCacheSet(__cfgClone(changes.wardenone_config.newValue) || {});
+    /* Deliver this before broader refresh work. An older browser missing one of those APIs must
+       not prevent Resource Saver controls from reaching the tab that is already running them. */
+    try {
+      const beforeResourceSaver = resourceSaverState(changes.wardenone_config.oldValue);
+      const afterResourceSaver = resourceSaverState(changes.wardenone_config.newValue);
+      if (beforeResourceSaver.ambient !== afterResourceSaver.ambient
+          || beforeResourceSaver.previews !== afterResourceSaver.previews) {
+        broadcastResourceSaverState(afterResourceSaver);
+      }
+    } catch (_) {}
   }
   if (area === 'local' && (changes.wardenone_config || changes[SCRIPT_SHIELD_MODE_KEY])) {
     try {
@@ -12832,15 +12849,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
       // five-minute wake-ups rather than leaving them running to do nothing.
       if (MODULE_LOADED.memory && (o.memoryShield !== n.memoryShield || o.enabled !== n.enabled)) {
         reconcileMemorySweepAlarm();
-      }
-      const resourceSaverState = (cfg) => ({
-        ambient: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.disableYouTubeAmbientMode === true,
-        previews: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.stopAnimatedVideoPreviews === true,
-      });
-      const beforeResourceSaver = resourceSaverState(o);
-      const afterResourceSaver = resourceSaverState(n);
-      if (beforeResourceSaver.ambient !== afterResourceSaver.ambient || beforeResourceSaver.previews !== afterResourceSaver.previews) {
-        broadcastResourceSaverState(afterResourceSaver);
       }
     } catch (_) {}
   }
