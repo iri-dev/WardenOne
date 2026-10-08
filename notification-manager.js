@@ -340,6 +340,8 @@ async function playWardenNotificationSound(sound, volume) {
   var level = Number(volume);
   if (!Number.isFinite(level)) level = 0.55;
   level = Math.max(0, Math.min(1, level));
+  /* Silent at 0%: no player document opened for it, and not reported as played. */
+  if (level <= 0) return false;
   var payload = {
     target: 'wardenone-offscreen',
     type: 'play-notification-sound',

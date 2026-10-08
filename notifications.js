@@ -143,6 +143,12 @@ function playSound(id) {
     soundFeedback('Choose a sound to preview.');
     return;
   }
+  /* At 0% the notes would be scheduled and nobody would hear them, so "played" would be the one
+     answer known to be wrong. */
+  if (!(Number(NC.settings.volume) > 0)) {
+    soundFeedback('Volume is at 0%, so there is nothing to hear. Turn it up to preview.');
+    return;
+  }
   soundFeedback('Playing…');
   try {
     chrome.runtime.sendMessage({
@@ -155,8 +161,9 @@ function playSound(id) {
         soundFeedback('Could not play the preview.');
         return;
       }
+      /* The browser took the notes; whether the device is muted is something no page can see. */
       const choice = soundChoices().find((entry) => entry.id === sound);
-      soundFeedback((choice ? choice.label : 'Sound') + ' played.');
+      soundFeedback((choice ? choice.label : 'Sound') + ' sent to your speakers. Heard nothing? Check your device volume.');
     });
   } catch (_) { soundFeedback('Could not play the preview.'); }
 }

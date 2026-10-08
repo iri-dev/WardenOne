@@ -63,6 +63,12 @@ async function main() {
   assert(/response\.ok !== true[\s\S]{0,180}Could not play the preview/.test(pageJs)
     && /played === true \? \{ ok: true \}/.test(background),
     'sound previews still report success when the audio player did not play');
+  /* No page can tell a muted device from one playing, so success is reported as what is known --
+     the notes went to the speakers -- and a preview at 0% says so instead of "played". */
+  assert(!/' played\.'/.test(pageJs) && /sent to your speakers\. Heard nothing\? Check your device volume\./.test(pageJs),
+    'a sound preview claims it was heard when only the browser is known to have taken it');
+  assert(/if \(!\(Number\(NC\.settings\.volume\) > 0\)\) \{\s*soundFeedback\('Volume is at 0%/.test(pageJs),
+    'a preview at 0% volume reports a sound nobody could hear');
 
   /* Every mode the reader can pick has to be one the worker honours. */
   ['off', 'history', 'toast', 'persistent'].forEach((mode) => {
@@ -706,6 +712,11 @@ async function main() {
   const beforeJunk = calls.messages;
   await context.playWardenNotificationSound('airhorn', 0.5);
   assert.strictEqual(calls.messages, beforeJunk, 'an unknown sound must not fall back to an audible one');
+
+  /* At 0% volume the player would schedule notes nobody hears and report them played. */
+  const beforeSilent = calls.messages;
+  const silent = await context.playWardenNotificationSound('soft', 0);
+  assert(silent === false && calls.messages === beforeSilent, 'a sound at 0% volume was sent to the player and reported as played');
 
   /* The tunes have to be distinguishable by contour and timbre, not only pitch.
      Every audible sound uses at least two restrained voices rather than falling
