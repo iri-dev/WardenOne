@@ -28,7 +28,10 @@ const PREDS = {
   'form[action]': (el) => el.tagName === 'FORM' && el.attrs.action != null,
   'a,button,input,[role="button"],[tabindex]': (el) => ['A', 'BUTTON', 'INPUT'].indexOf(el.tagName) >= 0 || el.attrs.role === 'button' || el.attrs.tabindex != null,
   'video,audio': (el) => el.tagName === 'VIDEO' || el.tagName === 'AUDIO',
+  '[role="slider"],input[type="range"],.jw-slider-time,.vjs-progress-control,.plyr__progress,.dplayer-bar,.art-progress': (el) => el.attrs.role === 'slider' || (el.tagName === 'INPUT' && el.attrs.type === 'range') || /\b(?:jw-slider-time|vjs-progress-control|plyr__progress|dplayer-bar|art-progress)\b/.test(el.className),
   '.video-js,.jwplayer,.plyr,[data-player],#player': (el) => /\bvideo-js\b|\bjwplayer\b|\bplyr\b/.test(el.className) || el.id === 'player' || el.attrs['data-player'] != null,
+  '.video-js,.jwplayer,.plyr,.dplayer,.art-video-player,.shaka-video-container,video': (el) => /\b(?:video-js|jwplayer|plyr|dplayer|art-video-player|shaka-video-container)\b/.test(el.className) || el.tagName === 'VIDEO',
+  'a[href],area[href],form,input:not([type="range"]),textarea,select': (el) => ((el.tagName === 'A' || el.tagName === 'AREA') && (el.attrs.href != null || el.href)) || el.tagName === 'FORM' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.attrs.type !== 'range'),
 };
 
 function makeEl(props) {
@@ -46,14 +49,35 @@ function makeEl(props) {
     formAction: props.formAction,
     action: props.action,
     target: props.target || '',
-    style: Object.assign({ setProperty(name, value) { this[name] = value; } }, props.style || {}),
+    duration: props.duration,
+    currentTime: props.currentTime || 0,
+    style: Object.assign({
+      setProperty(name, value) { this[name] = value; },
+      getPropertyValue(name) { return this[name] || ''; },
+      removeProperty(name) { delete this[name]; },
+    }, props.style || {}),
     children: props.children || [],
+    childNodes: props.childNodes || [],
     rect: props.rect || { left: 0, top: 0, width: 10, height: 10, right: 10, bottom: 10 },
     containsVideo: !!props.containsVideo,
     getAttribute(n) { return this.attrs[n] != null ? this.attrs[n] : null; },
     hasAttribute(n) { return this.attrs[n] != null; },
+    setAttribute(n, v) { this.attrs[n] = String(v); },
+    removeAttribute(n) { delete this.attrs[n]; },
+    getElementsByTagName(tag) {
+      const out = [];
+      (function walk(list) { for (const c of list) { if (tag === '*' || c.tagName === String(tag).toUpperCase()) out.push(c); walk(c.children || []); } })(this.children);
+      return out;
+    },
     getBoundingClientRect() { return this.rect; },
-    querySelector(sel) { return sel === 'video' && this.containsVideo ? makeEl({ tag: 'video' }) : null; },
+    querySelector(sel) {
+      const parts = String(sel).split(',').map((p) => p.trim());
+      if (parts.includes('a[href]')) {
+        const link = this.getElementsByTagName('A').find((c) => c.href || c.attrs.href != null);
+        if (link) return link;
+      }
+      return parts.includes('video') && this.containsVideo ? makeEl({ tag: 'video' }) : null;
+    },
     click() { if (props.onClick) props.onClick(); },
     play() { if (props.onPlay) return props.onPlay(); },
     closest(sel) {
@@ -71,7 +95,7 @@ function makeEl(props) {
 
 function build(opts) {
   opts = opts || {};
-  const state = { opened: [], popupNavigations: [], handles: [], assigned: [], replaced: [], hrefSets: [], submitted: [], emits: [] };
+  const state = { opened: [], popupNavigations: [], handles: [], assigned: [], replaced: [], hrefSets: [], submitted: [], emits: [], navSignals: [] };
   const listeners = {};
   const sandbox = {};
   let clockNow = Number.isFinite(opts.now) ? Number(opts.now) : Date.now();
@@ -121,7 +145,29 @@ function build(opts) {
     opacity: String(el && el.style && el.style.opacity != null ? el.style.opacity : '1'),
     position: String(el && el.style && el.style.position || 'static'),
     zIndex: String(el && el.style && el.style.zIndex || 'auto'),
+    backgroundColor: String(el && el.style && el.style.backgroundColor || 'rgba(0, 0, 0, 0)'),
+    backgroundImage: String(el && el.style && el.style.backgroundImage || 'none'),
   });
+  /* The Navigation API, so the player-frame guard can be handed navigate events. */
+  const navListeners = [];
+  if (opts.navigationApi !== false) {
+    sandbox.navigation = { addEventListener(type, fn) { if (type === 'navigate') navListeners.push(fn); } };
+  }
+  const timers = [];
+  if (opts.timers) sandbox.setTimeout = (fn) => { timers.push(fn); return timers.length; };
+  /* Child frames as the top frame sees them: same-origin ones carry the published press time. */
+  if (opts.childFrames) sandbox.frames = opts.childFrames;
+  /* And the parent, as a child frame sees it. */
+  if (opts.parentFrame) sandbox.parent = opts.parentFrame;
+  /* A MutationObserver the test can fire by hand. */
+  const observers = [];
+  if (opts.mutationObserver) {
+    sandbox.MutationObserver = class {
+      constructor(fn) { this.fn = fn; this.targets = []; observers.push(this); }
+      observe(target) { this.targets.push(target); }
+      disconnect() { this.targets = []; }
+    };
+  }
   sandbox.Location = function Location() {};
   const nativeAssign = function (u) { state.assigned.push(String(u)); };
   const nativeReplace = function (u) { state.replaced.push(String(u)); };
@@ -147,9 +193,14 @@ function build(opts) {
   loc.pathname = opts.pathname || '/page';
   sandbox.location = loc;
   sandbox.document = {
+    body: opts.bodyChildren || opts.htmlChildren ? { nodeType: 1, tagName: 'BODY', children: opts.bodyChildren || [] } : undefined,
+    documentElement: opts.bodyChildren || opts.htmlChildren ? { nodeType: 1, tagName: 'HTML', children: opts.htmlChildren || [] } : undefined,
     activeElement: null,
     elementsFromPoint: opts.elementStack ? () => opts.elementStack : undefined,
-    dispatchEvent(ev) { if (ev && ev.type === 'wo-event') state.emits.push(ev.detail); },
+    dispatchEvent(ev) {
+      if (ev && ev.type === 'wo-event') state.emits.push(ev.detail);
+      if (ev && ev.type === 'wo-nav-signal') state.navSignals.push(ev.detail);
+    },
     getElementsByTagName(tag) {
       tag = String(tag || '').toLowerCase();
       if (tag === 'video') return videos;
@@ -198,8 +249,10 @@ function build(opts) {
       ev.type = type;
       if (ev.isTrusted === undefined) ev.isTrusted = true;
       ev.defaultPrevented = false;
+      ev.immediatePropagationStopped = false;
       ev.preventDefault = () => { ev.defaultPrevented = true; };
-      ev.stopImmediatePropagation = () => {};
+      ev.stopImmediatePropagation = () => { ev.immediatePropagationStopped = true; };
+      ev.stopPropagation = () => { ev.propagationStopped = true; };
       (listeners[type] || []).forEach((fn) => fn(ev));
       return ev;
     },
@@ -207,6 +260,21 @@ function build(opts) {
       api.fire('pointerdown', { target: el, clientX: x, clientY: y });
       return api.fire('click', { target: el, clientX: x, clientY: y });
     },
+    navListeners,
+    /* A navigate event the way Chrome builds one; returns it so a test can read defaultPrevented. */
+    navigate(url, extra) {
+      const ev = Object.assign({
+        cancelable: true, hashChange: false, downloadRequest: null, navigationType: 'push',
+        userInitiated: false, sourceElement: null, destination: { url },
+        defaultPrevented: false,
+      }, extra || {});
+      ev.preventDefault = () => { ev.defaultPrevented = true; };
+      navListeners.forEach((fn) => fn(ev));
+      return ev;
+    },
+    runTimers() { while (timers.length) timers.shift()(); },
+    /* Fire every observer watching this node, the way a mutation inside it would. */
+    mutate(node) { observers.filter((o) => o.targets.includes(node)).forEach((o) => o.fn([{ addedNodes: [] }])); },
     open(u, name, features) { return sandbox.open(u, name, features); },
     advanceTime(ms) { clockNow += Number(ms) || 0; },
     assign(u) { sandbox.Location.prototype.assign.call(loc, u); },
@@ -287,6 +355,16 @@ function check(name, cond, extra) {
   t.userClick(t.videos[0], 300, 300);
   t.open('https://randomapp.com/dash');
   check('T3 popup from video click blocked', t.state.opened.length === 0, t.state.opened);
+}
+
+{
+  const t = build({ framed: true,
+    videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
+  t.userClick(t.videos[0], 300, 300);
+  check('T3 child-frame player click reports the signed attribution needed by the top-navigation backstop',
+    t.state.navSignals.some((entry) => entry.kind === 'player-gesture'), t.state.navSignals);
+  check('T3 child frames cannot grant general top-navigation authorization',
+    !t.state.navSignals.some((entry) => entry.kind === 'gesture'), t.state.navSignals);
 }
 
 // A cold worker must not leave the first player click unguarded. The bridge
@@ -520,6 +598,345 @@ function check(name, cond, extra) {
   const a = makeEl({ tag: 'a', href: 'https://adult-lander.com/a', attrs: { href: 'https://adult-lander.com/a' }, rect: { left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 } });
   const ev = t.userClick(a, 300, 300);
   check('T13f ordinary link over iframe player stays native', ev.defaultPrevented === false, ev);
+}
+
+// T13g: Playmogo's timeline layer uses an ordinary same-tab link, then opens
+// the advert from its click handler. Stop that handler and retain the seek.
+{
+  const video = makeEl({ tag: 'video', duration: 600, rect: { left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 } });
+  const slider = makeEl({ attrs: { role: 'slider' }, rect: { left: 100, top: 440, width: 600, height: 20, right: 700, bottom: 460 } });
+  const a = makeEl({ tag: 'a', href: 'https://dadgah.org/4/52106d0b?sub3=invoke_layer', attrs: { href: 'https://dadgah.org/4/52106d0b?sub3=invoke_layer' } });
+  const t = build({ elementStack: [a, slider, video] });
+  const ev = t.userClick(a, 400, 450);
+  check('T13g timeline advertising layer is cancelled before its click handler runs',
+    ev.defaultPrevented && ev.immediatePropagationStopped && a.style['pointer-events'] === 'none', ev);
+  check('T13g the same timeline press still seeks the underlying video', video.currentTime === 300, video.currentTime);
+}
+
+// T13h-T13p: Playmogo's player, measured live (2026-10-08). Monetag's "invoke layer" is a
+// position:fixed, inset:0, z-index 2147483647, opacity 0.01 box holding one target=_blank link to
+// the ad; beside it sit an empty 120x120 square over the big play button and a hidden
+// full-frame box. Every press on the player landed on one of them instead of the control.
+const FULL = { left: 0, top: 0, width: 1000, height: 800, right: 1000, bottom: 800 };
+const VIDEO_RECT = { left: 0, top: 0, width: 1000, height: 560, right: 1000, bottom: 560 };
+function invokeLayer(href) {
+  const link = makeEl({ tag: 'a', href, attrs: { href, target: '_blank' }, target: '_blank', rect: FULL });
+  const cover = makeEl({ id: 'khz2y9w', style: { position: 'fixed', zIndex: '2147483647', opacity: '0.01' }, rect: FULL, children: [link] });
+  link.parent = cover;
+  link.parentElement = cover;
+  return { link, cover };
+}
+const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%2Fd%2F7qftyd95nnrj&sub3=invoke_layer';
+{
+  const { link, cover } = invokeLayer(MONETAG);
+  const square = makeEl({ style: { position: 'fixed', zIndex: '2147483647' }, rect: { left: 440, top: 220, width: 120, height: 120, right: 560, bottom: 340 } });
+  const t = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [cover, square] });
+  check('T13h the invisible ad layer is made click-through before anyone presses it',
+    cover.style['pointer-events'] === 'none' && link.style['pointer-events'] === 'none', cover.style);
+  check('T13h it is reported once, silently, as a blocked popup',
+    t.state.emits.some((e) => e.type === 'blocked_popup' && e.detail.kind === 'click-layer' && e.detail.silent === true), t.state.emits);
+  check('T13h the empty square over the play button goes with it once the layer is confirmed',
+    square.style['pointer-events'] === 'none', square.style);
+}
+{
+  /* A trap that arrived before the layer is caught by the follow-up sweep. */
+  const { cover } = invokeLayer(MONETAG);
+  const hidden = makeEl({ style: { position: 'fixed', zIndex: '9999999' }, rect: { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 } });
+  const t = build({ framed: true, timers: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [hidden, cover] });
+  check('T13i a trap seen before the layer is not judged on its own', hidden.style['pointer-events'] !== 'none', hidden.style);
+  t.runTimers();
+  check('T13i the follow-up sweep disarms it once the layer has shown what the page is',
+    hidden.style['pointer-events'] === 'none' && cover.style['pointer-events'] === 'none', hidden.style);
+}
+{
+  /* Without a confirmed layer an empty max-z box is left alone: on its own the shape proves little. */
+  const square = makeEl({ style: { position: 'fixed', zIndex: '2147483647' }, rect: { left: 440, top: 220, width: 120, height: 120, right: 560, bottom: 340 } });
+  build({ framed: true, timers: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [square] });
+  check('T13j an empty box with no ad layer beside it stays as the page drew it', square.style['pointer-events'] !== 'none', square.style);
+}
+{
+  /* A visible link, a same-site layer, and a page with no player are not this shape. */
+  const visible = makeEl({ tag: 'a', href: MONETAG, attrs: { href: MONETAG }, rect: FULL });
+  const box = makeEl({ style: { position: 'fixed', zIndex: '2147483647', opacity: '1' }, rect: FULL, children: [visible] });
+  visible.parent = box; visible.parentElement = box;
+  const same = invokeLayer('https://playmogo.com/d/other');
+  const t = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [box, same.cover] });
+  check('T13k a visible cross-site banner and a same-site layer are left alone',
+    box.style['pointer-events'] !== 'none' && same.cover.style['pointer-events'] !== 'none', [box.style, same.cover.style]);
+  const off = invokeLayer(MONETAG);
+  build({ framed: true, hostname: 'example-news.com', bodyChildren: [off.cover] });
+  check('T13k a page with no player is not touched', off.cover.style['pointer-events'] !== 'none', off.cover.style);
+  const strictOff = invokeLayer(MONETAG);
+  build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [strictOff.cover], config: { strictPopupShield: false } });
+  check('T13k it follows the strict ad-popup shield switch', strictOff.cover.style['pointer-events'] !== 'none', strictOff.cover.style);
+}
+{
+  /* The press-time path: disarming only the link left its box catching the next press. */
+  const video = makeEl({ tag: 'video', duration: 600, rect: VIDEO_RECT });
+  const slider = makeEl({ attrs: { role: 'slider' }, rect: { left: 0, top: 520, width: 1000, height: 20, right: 1000, bottom: 540 } });
+  const { link, cover } = invokeLayer(MONETAG);
+  const t = build({ hostname: 'playmogo.com', elementStack: [link, cover, slider, video], deferConfig: true });
+  t.handshake();
+  const ev = t.userClick(link, 250, 530);
+  check('T13l a pressed ad link disarms its transparent box as well as itself',
+    ev.defaultPrevented && link.style['pointer-events'] === 'none' && cover.style['pointer-events'] === 'none', cover.style);
+  check('T13l and the press still seeks', video.currentTime === 150, video.currentTime);
+}
+{
+  /* A press on the layer over the timeline is answered with the seek it was meant to be. */
+  const video = makeEl({ tag: 'video', duration: 1200, rect: VIDEO_RECT });
+  const player = makeEl({ className: 'video-js', rect: VIDEO_RECT });
+  const holder = makeEl({ className: 'vjs-progress-holder vjs-slider', attrs: { role: 'slider' }, parent: player, rect: { left: 100, top: 520, width: 800, height: 12, right: 900, bottom: 532 } });
+  const played = makeEl({ className: 'vjs-play-progress', parent: holder, rect: holder.rect });
+  const { link, cover } = invokeLayer(MONETAG);
+  const t = build({ hostname: 'playmogo.com', videoRects: [VIDEO_RECT], elementStack: [link, cover, played, holder, video] });
+  const ev = t.fire('pointerdown', { target: link, clientX: 700, clientY: 526 });
+  check('T13m the layered press is stopped before the ad script sees it', ev.defaultPrevented && ev.immediatePropagationStopped, ev);
+  check('T13m and becomes a seek to that point of the timeline', video.currentTime === 900, video.currentTime);
+  check('T13m the box is click-through for every press after it', cover.style['pointer-events'] === 'none', cover.style);
+}
+{
+  /* The volume bar is a slider too; a press there is not a seek. */
+  const video = makeEl({ tag: 'video', duration: 600, currentTime: 42, rect: VIDEO_RECT });
+  const volume = makeEl({ className: 'vjs-volume-bar vjs-slider-bar vjs-slider', attrs: { role: 'slider', 'aria-label': 'Volume Level' }, rect: { left: 100, top: 520, width: 80, height: 12, right: 180, bottom: 532 } });
+  const { link, cover } = invokeLayer(MONETAG);
+  const t = build({ hostname: 'playmogo.com', elementStack: [link, cover, volume, video] });
+  t.userClick(link, 150, 526);
+  check('T13n a press on the volume bar under the layer does not move the video', video.currentTime === 42, video.currentTime);
+}
+{
+  /* The player frame replaced by an advert: a press on the video, then the frame's own script
+     sends the frame to another site (dd.gillyspencie.com -> newsboydurance.cfd on Playmogo). */
+  const HOP = 'https://newsboydurance.cfd/iHLdjudwSFBYBrucp/70849/?scontext_r=Gi&nrb=1&param_3=nortb_fallback';
+  const t = build({ framed: true, fakeClock: true, hostname: 'playmogo.com', pathname: '/e/7qftyd95nnrj', videoRects: [VIDEO_RECT] });
+  check('T13o the guard listens for navigations of a child frame', t.navListeners.length === 1, t.navListeners.length);
+  t.userClick(t.videos[0], 500, 280);
+  t.advanceTime(800);
+  const ev = t.navigate(HOP);
+  check('T13o a script sending the player frame to another site after a press on the video is cancelled', ev.defaultPrevented === true, ev);
+  check('T13o it is recorded as a silent forced-redirect block',
+    t.state.emits.some((e) => e.type === 'blocked_gestureless_nav' && e.detail.kind === 'frame' && e.detail.silent === true), t.state.emits);
+  check('T13o replace() is the same navigation', t.navigate(HOP, { navigationType: 'replace' }).defaultPrevented === true);
+  check('T13o the player frame may still move within its own site', t.navigate('https://playmogo.com/e/other').defaultPrevented === false);
+  check('T13o and to a trusted sign-in host', t.navigate('https://accounts.google.com/signin').defaultPrevented === false);
+  check('T13o a reload or back/forward is never touched',
+    t.navigate(HOP, { navigationType: 'reload' }).defaultPrevented === false
+      && t.navigate(HOP, { navigationType: 'traverse' }).defaultPrevented === false);
+  check('T13o a navigation the browser will not let anyone cancel is left alone', t.navigate(HOP, { cancelable: false }).defaultPrevented === false);
+  t.advanceTime(6500);
+  check('T13o long after the press, a frame moving itself is an embed switching mirror, not this', t.navigate(HOP).defaultPrevented === false);
+}
+{
+  const HOP = 'https://deforcejackmen.qpon/lp/PyGaSbyv2lFDFbqG';
+  /* No press at all: a redirect an embed does on its own (mirror, region, expiry) is not judged here. */
+  const quiet = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  check('T13p a player frame moving itself with no press in it fails open', quiet.navigate(HOP).defaultPrevented === false);
+  /* A press beside the video (a server list under the player) is the reader choosing, not the trap. */
+  const beside = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  beside.userClick(makeEl({ tag: 'button' }), 500, 700);
+  check('T13p a press outside the video does not arm the guard', beside.navigate(HOP).defaultPrevented === false);
+  /* A visible link in the player that names where it goes. */
+  const linked = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  const visible = makeEl({ tag: 'a', href: 'https://mirror-host.example/e/7qftyd95nnrj', attrs: { href: 'https://mirror-host.example/e/7qftyd95nnrj' }, rect: { left: 10, top: 10, width: 200, height: 40, right: 210, bottom: 50 } });
+  linked.userClick(visible, 50, 30);
+  check('T13p a real press on a visible link over the video still goes where it says',
+    linked.navigate('https://mirror-host.example/e/7qftyd95nnrj', { userInitiated: true, sourceElement: visible }).defaultPrevented === false);
+  check('T13p but that press cannot carry a script to a different site',
+    linked.navigate(HOP, { userInitiated: false }).defaultPrevented === true);
+  /* The top frame, a page with no player, and the switch. */
+  const top = build({ hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  top.userClick(top.videos[0], 500, 280);
+  check('T13p the child-frame guard never judges the top frame\'s own navigations',
+    top.navListeners.length === 1 && top.navigate(HOP).defaultPrevented === false, top.navListeners.length);
+  const noPlayer = build({ framed: true, hostname: 'example-news.com' });
+  noPlayer.userClick(makeEl({}), 500, 280);
+  check('T13p a frame with no player is not judged', noPlayer.navigate(HOP).defaultPrevented === false);
+  const off = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], config: { blockPopupTricks: false } });
+  off.userClick(off.videos[0], 500, 280);
+  check('T13p it follows "Block popup and redirect tricks"', off.navigate(HOP).defaultPrevented === false);
+  const yt = build({ framed: true, hostname: 'www.youtube.com', pathname: '/embed/abc', videoRects: [VIDEO_RECT] });
+  check('T13p media apps are not wired in at all', yt.navListeners.length === 0, yt.navListeners.length);
+  const old = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], navigationApi: false });
+  old.userClick(old.videos[0], 500, 280);
+  check('T13p a browser without the Navigation API keeps every other guard', old.navListeners.length === 0 && typeof old.open === 'function');
+}
+{
+  /* Once a layer has been confirmed, a press on the player carries the beacon the worker uses to
+     close the blank popunder the page then opens (it used to ride the press on the layer). */
+  const { cover } = invokeLayer(MONETAG);
+  const t = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [cover] });
+  t.userClick(t.videos[0], 500, 280);
+  check('T13q a press on the player of a confirmed ad page reports the overlay beacon',
+    t.state.navSignals.some((s) => s.kind === 'popup-overlay'), t.state.navSignals);
+  const clean = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  clean.userClick(clean.videos[0], 500, 280);
+  check('T13q an ordinary player page does not', !clean.state.navSignals.some((s) => s.kind === 'popup-overlay'), clean.state.navSignals);
+}
+
+{
+  /* The interstitial shell on <html> whose advert never arrived: fixed, inset 0, z-index
+     2147483647, holding only empty boxes and a <style>. Over the player iframe it took every press. */
+  const IFRAME_RECT = { left: 65, top: 32, width: 1110, height: 624, right: 1175, bottom: 656 };
+  const shellOf = (style, kidsText) => {
+    const inner = makeEl({ className: 'notranslate', childNodes: kidsText ? [{ nodeType: 3, nodeValue: kidsText }] : [] });
+    const box = makeEl({ className: 'D1BnW', children: [inner] });
+    inner.parent = inner.parentElement = box;
+    const sheet = makeEl({ tag: 'style', childNodes: [{ nodeType: 3, nodeValue: '.D1BnW { position: relative }' }] });
+    const shell = makeEl({ attrs: { 'data-shb': '1', dir: 'ltr' }, style: Object.assign({ position: 'fixed', zIndex: '2147483647' }, style || {}), rect: FULL, children: [box, sheet] });
+    box.parent = box.parentElement = shell;
+    sheet.parent = sheet.parentElement = shell;
+    return shell;
+  };
+  const shell = shellOf();
+  const t = build({ hostname: 'playmogo.com', iframeRects: [IFRAME_RECT], htmlChildren: [shell], mutationObserver: true });
+  check('T13w an empty full-screen shell over the player frame is made click-through on its shape alone',
+    shell.style['pointer-events'] === 'none', shell.style);
+  const painted = shellOf({ backgroundColor: 'rgba(0, 0, 0, 0.5)' });
+  const low = shellOf({ zIndex: '1300' });
+  const worded = shellOf(null, 'Sign in to keep watching');
+  build({ hostname: 'playmogo.com', iframeRects: [IFRAME_RECT], htmlChildren: [painted, low, worded] });
+  check('T13w a dimmed backdrop, a framework-level one and one that says something are left alone',
+    [painted, low, worded].every((s) => s.style['pointer-events'] !== 'none'), [painted.style, low.style, worded.style]);
+  const nothingToCover = shellOf();
+  build({ hostname: 'example-news.com', htmlChildren: [nothingToCover] });
+  check('T13w with no player under it, an empty box is the page\'s own business', nothingToCover.style['pointer-events'] !== 'none');
+  /* An app that mounts into a full-screen root gets its presses back once it has content. */
+  shell.children[0].children[0].childNodes.push({ nodeType: 3, nodeValue: 'Now showing' });
+  t.mutate(shell);
+  check('T13w the moment the shell holds something, it is given its presses back',
+    shell.style['pointer-events'] === undefined && shell.attrs['data-wardenone-blocked-popup-overlay'] === undefined, shell.style);
+}
+{
+  /* The player frame publishes when the video was pressed, read-only, for the top frame. */
+  const t = build({ framed: true, fakeClock: true, now: 5000000, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  const read = () => vm.runInContext('window.__wardenOnePlayerPressAt', t.sandbox);
+  check('T13u nothing is published before a press', read() === 0, read());
+  t.userClick(t.videos[0], 500, 280);
+  check('T13u a press on the video is published', read() === 5000000, read());
+  vm.runInContext('try { window.__wardenOnePlayerPressAt = 1; } catch (e) {} try { Object.defineProperty(window, "__wardenOnePlayerPressAt", { value: 1 }); } catch (e) {}', t.sandbox);
+  check('T13u and the page cannot rewrite it', read() === 5000000, read());
+  t.userClick(makeEl({ tag: 'button' }), 500, 700);
+  check('T13u a press beside the video does not move it', read() === 5000000, read());
+}
+{
+  /* The press the page took: on some loads the same network's scripts in the page laid a box over
+     the player frame, the press landed in the page, and the page sent the player frame away. */
+  const HOP = 'https://newsboydurance.cfd/ilJqwqXxBqPOXyrOWWzAzor/70849/?scontext_r=G';
+  const NOW = 7000000;
+  const page = build({ fakeClock: true, now: NOW, hostname: 'playmogo.com', iframeRects: [{ left: 65, top: 32, width: 1110, height: 624, right: 1175, bottom: 656 }] });
+  page.userClick(makeEl({}), 600, 340);
+  check('T13x a press the page took over its player frame is published by the page',
+    vm.runInContext('window.__wardenOnePlayerPressAt', page.sandbox) === NOW);
+  page.userClick(makeEl({ tag: 'button' }), 600, 720);
+  check('T13x a press beside the player frame is not', vm.runInContext('window.__wardenOnePlayerPressAt', page.sandbox) === NOW);
+  const child = (parentAt, extra) => build(Object.assign({ framed: true, fakeClock: true, now: NOW, hostname: 'playmogo.com', pathname: '/e/7qftyd95nnrj',
+    videoRects: [VIDEO_RECT], parentFrame: { __wardenOnePlayerPressAt: parentAt } }, extra || {}));
+  check('T13x the player frame treats that press as its own and refuses to be sent away', child(NOW - 900).navigate(HOP).defaultPrevented === true);
+  check('T13x a press long ago in the page does not count', child(NOW - 9000).navigate(HOP).defaultPrevented === false);
+  check('T13x nor does a page that never pressed anything', child(0).navigate(HOP).defaultPrevented === false);
+  const crossOriginParent = build({ framed: true, fakeClock: true, now: NOW, hostname: 'playmogo.com', videoRects: [VIDEO_RECT],
+    parentFrame: Object.defineProperty({}, '__wardenOnePlayerPressAt', { get() { throw new Error('SecurityError'); } }) });
+  check('T13x a cross-origin parent, which cannot be read, arms nothing', crossOriginParent.navigate(HOP).defaultPrevented === false);
+}
+{
+  /* The top frame: an ad SDK in a same-origin player frame (tsyndicate engine.js on Playmogo)
+     answers the press on play by sending the whole tab to an ad click broker. */
+  const BROKER = 'https://tsyndicate.com/api/v1/direct/ed85951b219e49ffa74b7b74a3c8089c?param3=p.js';
+  const NOW = 9000000;
+  const make = (pressedAgo, extra) => build(Object.assign({ fakeClock: true, now: NOW, hostname: 'playmogo.com',
+    childFrames: [{ __wardenOnePlayerPressAt: pressedAgo == null ? 0 : NOW - pressedAgo }] }, extra || {}));
+  const t = make(700);
+  const ev = t.navigate(BROKER);
+  check('T13v a script sending the whole tab away just after a press in the player frame is cancelled', ev.defaultPrevented === true, ev);
+  check('T13v it is recorded silently',
+    t.state.emits.some((e) => e.type === 'blocked_gestureless_nav' && e.detail.kind === 'frame-top' && e.detail.silent === true), t.state.emits);
+  check('T13v a real link press in the page is still the reader\'s choice', make(700).navigate(BROKER, { userInitiated: true }).defaultPrevented === false);
+  check('T13v the tab may still move within its own site', make(700).navigate('https://playmogo.com/d/other').defaultPrevented === false);
+  check('T13v and to a trusted sign-in host', make(700).navigate('https://accounts.google.com/o/oauth2/auth').defaultPrevented === false);
+  check('T13v with no press in any player frame, the top frame\'s navigations are untouched', make(null).navigate(BROKER).defaultPrevented === false);
+  check('T13v long after the press it is untouched too', make(7000).navigate(BROKER).defaultPrevented === false);
+  const pressedTop = make(700);
+  pressedTop.userClick(makeEl({ tag: 'button' }), 50, 50);
+  check('T13v a press in the top document leaves the decision where it was', pressedTop.navigate(BROKER).defaultPrevented === false);
+  const crossOrigin = build({ fakeClock: true, now: NOW, hostname: 'playmogo.com',
+    childFrames: [Object.defineProperty({}, '__wardenOnePlayerPressAt', { get() { throw new Error('SecurityError'); } })] });
+  check('T13v a cross-origin frame, which cannot be read, changes nothing', crossOrigin.navigate(BROKER).defaultPrevented === false);
+  check('T13v it follows "Block popup and redirect tricks"', make(700, { config: { blockPopupTricks: false } }).navigate(BROKER).defaultPrevented === false);
+  check('T13v reload and back/forward are never touched',
+    make(700).navigate(BROKER, { navigationType: 'reload' }).defaultPrevented === false
+      && make(700).navigate(BROKER, { navigationType: 'traverse' }).defaultPrevented === false);
+}
+{
+  /* The transparent full-frame box at z-index 300000 that took the first press of every visit
+     covers the whole frame and paints nothing, so it goes on its shape. The 120x120 square over
+     the play button does not prove itself that way: on a load with no link layer it is armed by
+     the first popup a press on the player tried to open. */
+  const box = makeEl({ style: { position: 'fixed', zIndex: '300000' }, rect: FULL });
+  const square = makeEl({ style: { position: 'fixed', zIndex: '2147483647' }, rect: { left: 440, top: 220, width: 120, height: 120, right: 560, bottom: 340 } });
+  const t = build({ framed: true, timers: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [box, square] });
+  t.runTimers();
+  check('T13r the full-frame box is made click-through as soon as it is seen', box.style['pointer-events'] === 'none', box.style);
+  check('T13r the small square is not judged before the page has shown anything', square.style['pointer-events'] !== 'none', square.style);
+  t.userClick(t.videos[0], 500, 280);
+  t.open('https://deforcejackmen.qpon/lp/x');
+  t.runTimers();
+  check('T13r once a press on the player has been spent on a popup, the square goes too',
+    square.style['pointer-events'] === 'none', square.style);
+}
+{
+  /* The press itself. dd.gillyspencie.com listens at the top of the document and calls
+     preventDefault and stopImmediatePropagation on every mousedown and click, so video.js
+     (seek on mousedown, play on click) never heard it. Here a listener at the top of the
+     document is modelled by calling the event's methods with it as currentTarget, in capture. */
+  const player = makeEl({ className: 'video-js', rect: VIDEO_RECT });
+  const holder = makeEl({ className: 'vjs-progress-holder', attrs: { role: 'slider' }, parent: player, rect: { left: 100, top: 520, width: 800, height: 12, right: 900, bottom: 532 } });
+  const { cover } = invokeLayer(MONETAG);
+  const t = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [cover] });
+  const harvest = (ev) => {
+    ev.eventPhase = 1;
+    ev.currentTarget = t.sandbox.document;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    ev.stopPropagation();
+    return ev;
+  };
+  const down = harvest(t.fire('mousedown', { target: holder, clientX: 500, clientY: 526 }));
+  check('T13s a listener at the top of the document can no longer stop a press on the player\'s timeline',
+    down.immediatePropagationStopped === false && down.defaultPrevented === false, down);
+  const click = harvest(t.fire('click', { target: holder, clientX: 500, clientY: 526 }));
+  check('T13s nor the click that follows it', click.immediatePropagationStopped === false && click.defaultPrevented === false, click);
+  const own = t.fire('click', { target: holder, clientX: 500, clientY: 526 });
+  own.eventPhase = 3;
+  own.currentTarget = holder;
+  own.stopImmediatePropagation();
+  own.preventDefault();
+  check('T13s the player\'s own handlers, down the tree, keep every power they had',
+    own.immediatePropagationStopped === true && own.defaultPrevented === true, own);
+  const link = makeEl({ tag: 'a', href: 'https://elsewhere.example/', attrs: { href: 'https://elsewhere.example/' }, parent: player });
+  const onLink = harvest(t.fire('mousedown', { target: link, clientX: 20, clientY: 20 }));
+  check('T13s a link inside the player is left to the guards that stop links on purpose', onLink.immediatePropagationStopped === true, onLink);
+  const page = harvest(t.fire('mousedown', { target: makeEl({}), clientX: 500, clientY: 700 }));
+  check('T13s a press outside the player is untouched', page.immediatePropagationStopped === true && page.defaultPrevented === true, page);
+  const synthetic = harvest(t.fire('mousedown', { target: holder, isTrusted: false, clientX: 500, clientY: 526 }));
+  check('T13s and so is a press the page made up', synthetic.immediatePropagationStopped === true, synthetic);
+}
+{
+  /* Without any sign the page spends presses on adverts, a page keeps its listeners' powers:
+     a first-party login or age gate may stop a press on purpose. */
+  const player = makeEl({ className: 'video-js', rect: VIDEO_RECT });
+  const button = makeEl({ tag: 'button', className: 'vjs-big-play-button', parent: player, rect: { left: 440, top: 240, width: 120, height: 80, right: 560, bottom: 320 } });
+  const t = build({ framed: true, hostname: 'example-video.com', videoRects: [VIDEO_RECT] });
+  const ev = t.fire('click', { target: button, clientX: 500, clientY: 280 });
+  ev.eventPhase = 1;
+  ev.currentTarget = t.sandbox.document;
+  ev.stopImmediatePropagation();
+  check('T13t an ordinary player page keeps its own capture listeners as they were', ev.immediatePropagationStopped === true, ev);
+  const off = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [invokeLayer(MONETAG).cover], config: { strictPopupShield: false } });
+  const ev2 = off.fire('click', { target: button, clientX: 500, clientY: 280 });
+  ev2.eventPhase = 1;
+  ev2.currentTarget = off.sandbox.document;
+  ev2.stopImmediatePropagation();
+  check('T13t and it follows the strict ad-popup shield switch', ev2.immediatePropagationStopped === true, ev2);
 }
 
 // T14: same-site nav always allowed, even gestureless
