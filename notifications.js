@@ -132,15 +132,33 @@ function soundChoices() {
   return [{ id: 'none', label: 'Silent' }];
 }
 
+function soundFeedback(message) {
+  const status = $('pref-sound-feedback');
+  if (status) status.textContent = String(message || '');
+}
+
 function playSound(id) {
-  if (!id || id === 'none') return;
+  const sound = String(id || '');
+  if (!sound || sound === 'none') {
+    soundFeedback('Choose a sound to preview.');
+    return;
+  }
+  soundFeedback('Playing…');
   try {
     chrome.runtime.sendMessage({
       kind: 'notification-sound-preview',
-      sound: id,
+      sound,
       volume: NC.settings.volume,
-    }, () => { void chrome.runtime.lastError; });
-  } catch (_) {}
+    }, (response) => {
+      const error = chrome.runtime.lastError;
+      if (error || !response || response.ok !== true) {
+        soundFeedback('Could not play the preview.');
+        return;
+      }
+      const choice = soundChoices().find((entry) => entry.id === sound);
+      soundFeedback((choice ? choice.label : 'Sound') + ' played.');
+    });
+  } catch (_) { soundFeedback('Could not play the preview.'); }
 }
 
 /* ---- time ---------------------------------------------------------------- */
@@ -381,8 +399,8 @@ function renderRules() {
            that mode has no duration by definition. */
         const silent = mode.value === 'off';
         dur.disabled = silent || mode.value === 'persistent';
-        snd.disabled = silent || !NC.settings.soundEnabled;
-        hear.disabled = snd.disabled || snd.value === 'none';
+        snd.disabled = silent;
+        hear.disabled = silent || snd.value === 'none';
         timeIt.disabled = silent;
       };
       sync();
@@ -499,6 +517,8 @@ function renderPrefs() {
   $('pref-badge').checked = s.badgeEnabled;
   $('pref-retention').value = String(s.retentionDays);
   $('pref-sound').checked = s.soundEnabled;
+  $('pref-sound').setAttribute('aria-label', 'Play sounds: ' + (s.soundEnabled ? 'on' : 'off'));
+  $('pref-sound-state').textContent = s.soundEnabled ? 'On' : 'Off';
   $('pref-soundmode').value = s.soundMode;
   const pick = $('pref-soundpick');
   if (pick && !pick.options.length) {
@@ -509,25 +529,22 @@ function renderPrefs() {
     });
     pick.value = 'soft';
   }
-  if (pick) pick.disabled = !s.soundEnabled;
   $('pref-volume').value = Math.round(s.volume * 100);
   $('pref-volume-label').textContent = Math.round(s.volume * 100) + '%';
-  $('pref-soundmode').disabled = !s.soundEnabled;
-  $('pref-volume').disabled = !s.soundEnabled;
-  $('pref-preview').disabled = !s.soundEnabled;
 }
 
 /* Under the config lock (config-lock.js), so a change saved elsewhere at the same moment is kept;
    if a private window wrote over it without seeing it, it is saved again (confirmConfigWrite). */
-async function save(triesLeft) {
-  const writeId = await withConfigLock(async () => {
+async function save(triesLeft, operationOrder) {
+  const write = await withConfigLock(async () => {
     const stored = await storageGet(['wardenone_config', WO_CONFIG_WRITES_KEY]);
     const config = (stored.wardenone_config && typeof stored.wardenone_config === 'object') ? stored.wardenone_config : {};
-    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY]);
+    const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY], ['notificationSettings'], operationOrder);
     await storageSet({ wardenone_config: Object.assign({}, config, { notificationSettings: NC.settings }), [WO_CONFIG_WRITES_KEY]: stamp.record });
-    return stamp.id;
+    return stamp;
   });
-  confirmConfigWrite(writeId, (left) => { save(left).catch(() => {}); }, triesLeft);
+  confirmConfigWrite(write.id, (left) => { save(left, write.order).catch(() => {}); }, triesLeft,
+    ['notificationSettings'], write.order);
 }
 
 /* The page never writes the notification store (M47). It asks the worker, which owns the store,
@@ -716,6 +733,8 @@ function bindPrefs() {
   on('pref-sound', 'change', (e) => {
     NC.settings.soundEnabled = e.target.checked;
     save(); renderPrefs(); renderRules();
+    if (e.target.checked) playSound($('pref-soundpick') ? $('pref-soundpick').value : 'soft');
+    else soundFeedback('Notification sounds are off. Previews still work.');
   });
   on('pref-soundmode', 'change', (e) => { NC.settings.soundMode = e.target.value; save(); });
   on('pref-volume', 'input', (e) => {

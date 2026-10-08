@@ -11,6 +11,7 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 let checks = 0;
@@ -151,6 +152,41 @@ for (const file of ['background.js', 'settings.js', 'popup.js', 'history.js', 'n
     /const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';/.test(lock) && /function stampConfigWrite\(/.test(lock) && /function confirmConfigWrite\(/.test(lock));
   check('save ancestry keeps delayed confirmations long enough to repair',
     /const WO_CONFIG_WRITES_KEPT = (\d+);/.test(lock) && Number(lock.match(/const WO_CONFIG_WRITES_KEPT = (\d+);/)[1]) >= 256);
+
+  const orderStart = lock.indexOf("const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';");
+  const orderEnd = lock.indexOf('/* A full erase leaves a random epoch.', orderStart);
+  check('the ordering harness can lift the shipped confirmation functions', orderStart >= 0 && orderEnd > orderStart);
+  const lifted = lock.slice(orderStart, orderEnd);
+  function confirmation(ownOrder, currentRecord, ownKeys) {
+    const timers = [];
+    const retries = [];
+    const sandbox = {
+      Array, Date, Math, Number, Object, String, Uint8Array,
+      crypto: { getRandomValues(bytes) { for (let i = 0; i < bytes.length; i++) bytes[i] = i + 1; return bytes; } },
+      setTimeout(fn, delay) { timers.push({ fn, delay }); return timers.length; },
+      chrome: {
+        runtime: { lastError: null },
+        storage: { local: { get(_key, callback) { callback({ wardenone_config_writes: currentRecord }); } } },
+      },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(lifted + '\nthis.__api={stampConfigWrite,confirmConfigWrite};', sandbox);
+    const stamp = sandbox.__api.stampConfigWrite({ ids: [] }, ownKeys, ownOrder);
+    sandbox.__api.confirmConfigWrite(stamp.id, (left) => retries.push(left), 2, ownKeys, stamp.order);
+    check('a confirmation schedules its first ancestry check', timers.length === 1 && timers[0].delay === 300);
+    timers.shift().fn();
+    return { retries, stamp };
+  }
+
+  const delayedOlder = confirmation(200, { ids: ['older'], keys: ['deAmp'], order: 100 }, ['deAmp']);
+  check('a delayed older same-key write cannot discard the newer edit',
+    delayedOlder.retries.length === 1 && delayedOlder.retries[0] === 1);
+  check('the supplied operation order is kept in the write record',
+    delayedOlder.stamp.order === 200 && delayedOlder.stamp.record.order === 200);
+  const genuinelyLater = confirmation(100, { ids: ['later'], keys: ['deAmp'], order: 200 }, ['deAmp']);
+  check('a genuinely later same-key edit is not overwritten by reconciliation', genuinelyLater.retries.length === 0);
+  const unrelated = confirmation(100, { ids: ['other'], keys: ['capReferrer'], order: 200 }, ['deAmp']);
+  check('a missing edit is still recovered when the current write changed another key', unrelated.retries.length === 1);
 }
 
 const pages = ['settings.html', 'popup.html', 'history.html', 'notifications.html', 'onboarding.html'];

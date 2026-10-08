@@ -17,12 +17,48 @@
 
 ### Changed
 
+- Notification sounds now use layered, filtered tones with shaped attacks, decays and gentle
+  overlap, giving routine, warning and critical notices distinct earcons without adding media files.
 - Fresh installs and the Recommended profile now stop WardenOne's narrow high-confidence
   phishing tier by default. Medium-confidence address heuristics still warn without blocking,
   and the blocking screen keeps its explicit option to continue.
 
 ### Fixed
 
+- Twitch no longer freezes, spins or ends on Error #3000 when AdShield moves the player between
+  Twitch's stream and the clean stream it plays through an ad break. Twitch marks its own ad
+  breaks so the player can line up the new video and set its decoder up again; AdShield's
+  switches carried no such mark, so video from the other stream landed at the wrong point on the
+  timeline. In Twitch's own player that froze the picture for 15 seconds with nothing buffered.
+  Every switch is now marked, at the exact segment where the player changes stream, including the
+  hand-back to Twitch's stream when playback recovery takes over mid-break. Playback AdShield
+  does not touch is left exactly as Twitch sends it.
+- After a Twitch ad break, playback returns to Twitch's own stream within seconds instead of
+  staying on the clean stream for two more minutes. Twitch now leaves an ad notice and a
+  session-long trigger listed in every playlist, which AdShield read as an ad still running, so
+  each break only ended on a timeout. On one channel that kept viewers on the clean stream for
+  more than half of the time they watched, exposed to every hiccup on it.
+- Twitch playlists that arrive late or briefly cover a break now keep the numbering the player was
+  already given, instead of Twitch's raw numbers, which run ahead after every ad break.
+- Steadier Twitch playback now reliably keeps Low Latency off. Twitch reads that preference as its
+  player starts, often before WardenOne's settings reach the page, and a player started that way
+  stayed in Low Latency for the whole visit, running its buffer dry at every ad break. WardenOne now
+  remembers which way the setting last arrived and applies it from the first moment of the next
+  visit. A first-ever visit, and anyone who has turned the setting off, are unchanged.
+- Resource Saver periodically releases detached video previews it changed, avoiding indefinite DOM
+  retention on long-lived pages while keeping live reversal available for active previews.
+- OAuth Grant Guard now recognises French and Spanish consent actions and permission wording on
+  supported authorization routes while keeping localized account sign-in screens quiet.
+- Split-incognito configuration reconciliation now orders same-setting edits, so a delayed older
+  write cannot silently discard a later user change while a genuinely later edit still wins.
+- Facebook OAuth compatibility allowances are now bounded to Facebook request domains, so an
+  OAuth-looking string in an unrelated URL cannot bypass WardenOne's network rules.
+- Turning YouTube Ambient Mode suppression off now restores YouTube's glow and frosted header
+  even while EyeShield is active, and removes legacy or duplicate Resource Saver styles without
+  requiring a reload.
+- Notification Centre sound choices and previews remain usable while notification audio is muted,
+  enabling sounds plays an immediate confirmation, and playback failures are reported instead of
+  silently pretending a preview succeeded.
 - Browser Back and Forward navigation from a video page no longer triggers the frame redirect
   warning when returning to a search page.
 - Popup controls stay visible while a saved section order is being read from extension storage.

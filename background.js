@@ -4028,12 +4028,7 @@ const LOGIN_COMPAT_FILTERS = [
   '||login.spotify.com',
   '||login5.spotify.com',
   '||open.spotify.com/get_access_token',
-  'facebook.com/dialog/oauth',
-  'www.facebook.com/dialog/oauth',
-  'facebook.com/*/dialog/oauth',
-  'www.facebook.com/*/dialog/oauth',
-  'm.facebook.com/dialog/oauth',
-  'm.facebook.com/*/dialog/oauth',
+  { requestDomains: ['facebook.com'], urlFilter: '/dialog/oauth' },
   '||connect.facebook.net',
   '||graph.facebook.com/oauth',
   '||slack.com/oauth/authorize',
@@ -7286,8 +7281,19 @@ function localSet(obj) {
    If a private window's worker or page wrote over it without seeing it, the same mutation runs
    again on what is stored then (confirmConfigWrite in config-lock.js), so `mutate` may run more
    than once; each run starts from a fresh read. */
-function updateStoredConfig(mutate, triesLeft) {
+function storedConfigChangedKeys(before, after) {
+  const prior = before && typeof before === 'object' ? before : {};
+  const next = after && typeof after === 'object' ? after : {};
+  return Array.from(new Set(Object.keys(prior).concat(Object.keys(next)))).filter((key) => {
+    if (prior[key] === next[key]) return false;
+    try { return JSON.stringify(prior[key]) !== JSON.stringify(next[key]); } catch (_) { return true; }
+  });
+}
+
+function updateStoredConfig(mutate, triesLeft, operationOrder) {
   let id = '';
+  let order = operationOrder;
+  let changedKeys = [];
   return withConfigLock(async () => {
     const res = await localGetStrict(['wardenone_config', WO_CONFIG_WRITES_KEY]);
     const raw = res.wardenone_config;
@@ -7296,12 +7302,15 @@ function updateStoredConfig(mutate, triesLeft) {
     const out = await mutate(cfg, stored);
     if (out === false) return null;
     const next = out && typeof out === 'object' ? out : cfg;
-    const stamp = stampConfigWrite(res[WO_CONFIG_WRITES_KEY]);
+    changedKeys = storedConfigChangedKeys(stored, next);
+    const stamp = stampConfigWrite(res[WO_CONFIG_WRITES_KEY], changedKeys, order);
     id = stamp.id;
+    order = stamp.order;
     await localSet({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
     return next;
   }).then((next) => {
-    if (next) confirmConfigWrite(id, (left) => { updateStoredConfig(mutate, left).catch(() => {}); }, triesLeft);
+    if (next) confirmConfigWrite(id, (left) => { updateStoredConfig(mutate, left, order).catch(() => {}); },
+      triesLeft, changedKeys, order);
     return next;
   });
 }
@@ -10523,6 +10532,13 @@ async function applyMediaCompatibilityRules(enabled, readRules, submitRules) {
 
 let __loginCompatibilityRulesEnabled = null;
 function loginCompatibilityRuleCondition(filter) {
+  if (filter && typeof filter === 'object') {
+    return {
+      requestDomains: Array.from(filter.requestDomains || []),
+      urlFilter: String(filter.urlFilter || ''),
+      resourceTypes: LOGIN_COMPAT_RESOURCE_TYPES,
+    };
+  }
   const value = String(filter || '');
   const exactDomain = value.match(/^\|\|([a-z0-9.-]+)\^?$/i);
   return Object.assign(
@@ -21252,7 +21268,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     playWardenNotificationSound(msg.sound, msg.volume).then(
-      () => sendResponse({ ok: true }),
+      (played) => sendResponse(played === true ? { ok: true } : { ok: false, error: 'Sound is unavailable.' }),
       (error) => sendResponse({ ok: false, error: String(error && error.message || error) })
     );
     return true;

@@ -904,10 +904,50 @@
     playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, playbackFailOpenUntil - Date.now());
   }
 
+  /* Twitch reads its Low Latency preference while its player starts, and this page's settings
+     arrive from the extension asynchronously -- often after that read. An unset preference read
+     before they arrive starts the player in Low Latency for the rest of its life. Measured live: of
+     two tabs opened together, one ran Low Latency for its whole session and ran its buffer dry at
+     each switch to the clean stream (0.06 s, two stalls in 20 s); the other never did. So the last
+     setting that did arrive is kept under WardenOne's own key in Twitch's storage and stands in
+     until this load's settings come. With nothing kept -- a first visit -- the preference stays
+     native until they come, as before. The key only decides how an unset Low Latency preference
+     reads, so a page writing it changes nothing else. */
+  const STEADY_PLAYBACK_MEMORY_KEY = '__woTwitchSteadyPlayback';
+  let nativeStorageGetItem = null;
+  let nativeStorageSetItem = null;
+  try {
+    nativeStorageGetItem = window.Storage && window.Storage.prototype.getItem;
+    nativeStorageSetItem = window.Storage && window.Storage.prototype.setItem;
+  } catch (_) {}
+
+  function rememberedSteadyPlayback() {
+    try {
+      const value = nativeStorageGetItem.call(window.localStorage, STEADY_PLAYBACK_MEMORY_KEY);
+      return value === '1' ? true : value === '0' ? false : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function rememberSteadyPlayback(value) {
+    const next = value ? '1' : '0';
+    try {
+      if (nativeStorageGetItem.call(window.localStorage, STEADY_PLAYBACK_MEMORY_KEY) !== next) {
+        nativeStorageSetItem.call(window.localStorage, STEADY_PLAYBACK_MEMORY_KEY, next);
+      }
+    } catch (_) {}
+  }
+
   function updateEnabled() {
     const config = window.__WO_CONFIG__;
     enabled = !config || (config.enabled !== false && config.twitchAdBlock !== false);
-    steadyPlayback = !!(config && config.__configReady === true && config.twitchSteadyPlayback !== false);
+    if (config && config.__configReady === true) {
+      steadyPlayback = config.twitchSteadyPlayback !== false;
+      rememberSteadyPlayback(steadyPlayback);
+    } else {
+      steadyPlayback = rememberedSteadyPlayback() === true;
+    }
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
     setTwitchVisibilityGuardEnabled(enabled);
@@ -932,6 +972,7 @@
     const config = message.overrides || {};
     enabled = config.enabled !== false && config.twitchAdBlock !== false;
     steadyPlayback = config.twitchSteadyPlayback !== false;
+    rememberSteadyPlayback(steadyPlayback);
     adCss.disabled = !enabled;
     setIndependentAdGuardEnabled(enabled);
     setTwitchVisibilityGuardEnabled(enabled);
@@ -1408,7 +1449,8 @@
   // breaks held a 3.0 s floor (4.7 s average) and nothing stalled. Twitch reads the preference as
   // IG.get('lowLatencyModeEnabled', true) from localStorage, so only an UNSET value is answered
   // 'false': a viewer who switches Low Latency on in Twitch's own settings writes 'true' and keeps
-  // it. Nothing is written, so turning this off restores Twitch's default on the next player load.
+  // it. Twitch's key is never written, so turning this off restores Twitch's default on the next
+  // player load; the only thing kept is which way this setting last arrived (see updateEnabled).
   const LOW_LATENCY_KEY = 'lowLatencyModeEnabled';
   function installSteadyPlaybackPreference() {
     let proto = null;
@@ -1955,6 +1997,11 @@
     const warmedBackupResources = new Map();
     const warmedBackupHistory = new Map();
     const sequenceStates = new Map();
+    /* Which session each playlist entry came from, per playlist the player polls, and which
+       entries the player has actually downloaded. See markSplices. */
+    const spliceTracks = new Map();
+    const spliceSegments = new Map();
+    const servedSources = new WeakMap();
     let backupEpoch = 0;
     let activeChannel = '';
     let activeMediaProfile = null;
@@ -1982,7 +2029,13 @@
       pendingBackupPolls.clear();
       clearWarmedBackupResources();
       warmedBackupHistory.clear();
-      if (clearSequences) sequenceStates.clear();
+      if (clearSequences) {
+        sequenceStates.clear();
+        /* Recovery keeps these: it continues the timeline the player already has, and its
+           hand-back to Twitch's own session is exactly the switch that must be marked. */
+        spliceTracks.clear();
+        spliceSegments.clear();
+      }
     }
 
     function interventionCurrent(info, epoch) {
@@ -2812,8 +2865,22 @@
       return !!latest && latest.pdt === observation.tail.pdt && latest.number === observation.tail.number;
     }
 
-    function sequenceStaleResponse(state, observation, response) {
-      return response;
+    /* A late, older native response keeps its own content, but not Twitch's raw numbering once
+       this player's numbering for that playlist has moved: after an ad pod the native session runs
+       ahead of the broadcast (9 entries in a measured 30 s pod), and the raw numbers would tell the
+       player its timeline jumped. Translate by the mapping last served for that playlist. */
+    async function sequenceStaleResponse(state, observation, response) {
+      const offset = state && observation ? Number(state.nativeOffsets[observation.key]) : NaN;
+      if (!Number.isFinite(offset) || !offset || !response || !response.ok) return response;
+      try {
+        const text = await response.clone().text();
+        const head = sequenceRead(text);
+        if (head === null || head + offset < 0) return response;
+        const translated = sequenceWrite(text, head + offset);
+        return translated ? responseWithText(response, translated, 'application/vnd.apple.mpegurl') : response;
+      } catch (_) {
+        return response;
+      }
     }
 
     function sequenceResetToNative(state, url, text) {
@@ -2873,10 +2940,21 @@
       if (!cleanEvidence || cleanEvidence.confirmed > 0 || cleanEvidence.hasMarker ||
           cleanEvidence.strongMetadata || cleanEvidence.fullPlayable < 1) return '';
       if (!state.adEpisodeId || state.bridgeEpisodeId === state.adEpisodeId) return '';
-      state.bridgeEpisodeId = state.adEpisodeId;
-      return canonical(snapshot.url) === canonical(currentUrl)
+      /* The snapshot is the raw native body. Hand it over under the numbering this player was
+         given for it, or not at all: raw numbers after an earlier pod read as a timeline jump. */
+      const bridge = canonical(snapshot.url) === canonical(currentUrl)
         ? snapshot.text
         : absolutizeMediaPlaylist(snapshot.text, snapshot.url);
+      const offset = Number(state.nativeOffsets[canonical(snapshot.url)] || 0);
+      let served = bridge;
+      if (offset) {
+        const head = sequenceRead(bridge);
+        if (head === null || head + offset < 0) return '';
+        served = sequenceWrite(bridge, head + offset);
+        if (!served) return '';
+      }
+      state.bridgeEpisodeId = state.adEpisodeId;
+      return served;
     }
 
     function sequenceNativeBreak(state, url, text) {
@@ -3033,10 +3111,52 @@
       }
     }
 
+    /* Twitch now lists two DATERANGEs that the ad matchers count but that describe no ad media in
+       the window: twitch-trigger, present in every playlist from the start of the session, and the
+       twitch-maf-ad notice, which stays listed after its window has closed. Counted as live
+       markers they meant no native refresh was ever marker-free, so a pod's quarantine could only
+       end on its two-minute timeout: measured live, the player stayed on the alternate for over
+       three minutes per break, on one channel more than half the time it was watched -- every
+       alternate hiccup, token renewal and thin Low Latency buffer included. A refresh whose only
+       ad markers are those -- the trigger, or timed ranges that ended before its first segment
+       began -- is marker-free for release. Anything untimed, current or still to come is not. */
+    function lingeringAdMarkersOnly(evidence) {
+      if (!evidence || evidence.confirmed > 0 || !Array.isArray(evidence.lines)) return false;
+      let windowStart = NaN;
+      for (const raw of evidence.lines) {
+        const line = String(raw || '').trim();
+        if (/^#EXT-X-PROGRAM-DATE-TIME:/i.test(line)) {
+          windowStart = Date.parse(line.replace(/^#EXT-X-PROGRAM-DATE-TIME:/i, '').trim());
+          break;
+        }
+        if (/^#EXTINF:/i.test(line)) break;
+      }
+      if (!Number.isFinite(windowStart)) return false;
+      for (const raw of evidence.lines) {
+        const line = String(raw || '').trim();
+        if (/^#EXT-X-CUE-(?:OUT|IN)\b/i.test(line)) return false;
+        const range = /^#EXT-X-DATERANGE:/i.test(line);
+        const signal = AD_MARKER_RE.test(line) || STRONG_AD_METADATA_RE.test(line) || /stitched-ad/i.test(line) ||
+          (range && /\bSCTE35-OUT=/i.test(line));
+        if (!signal) continue;
+        if (!range) return false;
+        const attrs = parseAttributes(line);
+        if (/^twitch-trigger$/i.test(String(attrs.CLASS || ''))) continue;
+        const start = Date.parse(String(attrs['START-DATE'] || ''));
+        let end = Date.parse(String(attrs['END-DATE'] || ''));
+        if (!Number.isFinite(end)) {
+          const duration = Number(attrs.DURATION || attrs['PLANNED-DURATION'] || 0);
+          if (duration > 0) end = start + duration * 1000;
+        }
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end > windowStart) return false;
+      }
+      return true;
+    }
+
     function nativeAdQuarantineState(info, evidence, url) {
       const state = sequenceStateFor(info);
       if (!state || !state.adActive) return { active: false, release: false, state: state };
-      const markerFree = !evidence.hasMarker && !evidence.strongMetadata;
+      const markerFree = (!evidence.hasMarker && !evidence.strongMetadata) || lingeringAdMarkersOnly(evidence);
       const explicitlyLive = markerFree && evidence.fullPlayable > 0 &&
         evidence.explicitLive === evidence.fullPlayable;
       const tail = explicitlyLive ? sequenceTail(evidence.lines.join('\n')) : null;
@@ -4065,7 +4185,8 @@
             warmBackupResources(current.text, !(state && state.backupActive));
             if (activate !== false && state) state.backupActive = true;
             if (current.tail) cached.servedTail = current.tail;
-            return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
+            return markServedSource(responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl'),
+              backupSource(cached));
           }
           backups.delete(key);
         } catch (_) {
@@ -4127,7 +4248,172 @@
       if (state) state.backupActive = true;
       const servedTail = candidate.lastTail || sequenceTail(candidate.text);
       if (servedTail) candidate.servedTail = servedTail;
-      return responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl');
+      return markServedSource(responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl'),
+        backupSource(candidate));
+    }
+
+    /* Splice markers. The player cannot tell where the worker switched it from one stream to
+       another, and its own playlists only ever mark Twitch's switches: an ad pod arrives behind an
+       EXT-X-DISCONTINUITY, which is what makes the player re-anchor its timeline and set the decoder
+       up again for media from a different encoder. The worker's own switches carried no marker --
+       into the clean alternate, back to Twitch's session, into a native ad that passed through
+       because no alternate was ready, out of one when it was. Measured against Twitch's real
+       player: an unmarked switch onto media from another encoder put the new segments at that
+       encoder's timestamps (9311 s against a timeline at 50 s), the player paused, jumped there,
+       then found the stream's own media behind it and sat frozen for 15 s with nothing buffered --
+       the spinner, and the state Twitch ends with a decode error and "please reload". Two segments
+       of one stream's content missing at a switch -- a sequence alignment one segment out --
+       drained the buffer and paused playback until the player seeked over the hole. The same
+       switches carrying EXT-X-DISCONTINUITY played straight through, and a marker between two
+       pieces of continuous media cost nothing measurable.
+       So every playlist handed to the player passes through here with the session it came from.
+       Each entry number the player has not downloaded yet gets a marker when the entry it will
+       play just before it -- the one it already downloaded, or else the one listed before it --
+       came from another session. Decisions are kept, so a later refresh of the same window
+       carries the same markers. Nothing is added when nothing switched, so native playback
+       stays byte for byte. Twitch writes no EXT-X-DISCONTINUITY-SEQUENCE, so neither does this. */
+    const SPLICE_TRACKS_MAX = 8;
+    const SPLICE_HISTORY = 64;
+    const SPLICE_SEGMENTS_MAX = 512;
+    const SPLICE_SEGMENT_TAG_RE = /^#(?:EXTINF:|EXT-X-(?:PROGRAM-DATE-TIME|DISCONTINUITY(?!-)|BYTERANGE|KEY|MAP|GAP|BITRATE)\b)/i;
+
+    function markServedSource(response, source) {
+      try {
+        if (response && typeof response === 'object' && source) servedSources.set(response, String(source));
+      } catch (_) {}
+      return response;
+    }
+
+    function backupSource(entry) {
+      return 'backup:' + canonical(String(entry && entry.url || ''));
+    }
+
+    function spliceTrack(url) {
+      const key = canonical(url);
+      let track = spliceTracks.get(key);
+      if (track) {
+        spliceTracks.delete(key);
+      } else {
+        track = { listed: new Map(), downloaded: new Map(), marked: new Set(), newest: -Infinity,
+          epochs: new Map() };
+      }
+      spliceTracks.set(key, track);
+      while (spliceTracks.size > SPLICE_TRACKS_MAX) spliceTracks.delete(spliceTracks.keys().next().value);
+      return track;
+    }
+
+    function noteSpliceDownload(url) {
+      const entry = spliceSegments.get(url);
+      if (!entry || entry.track.downloaded.has(entry.number)) return;
+      entry.track.downloaded.set(entry.number, entry.source);
+    }
+
+    function spliceEntries(text) {
+      const head = sequenceRead(text);
+      const skipped = sequenceSkippedSegments(text);
+      if (head === null || skipped === null) return null;
+      const lines = String(text).split('\n');
+      const entries = [];
+      let number = head + skipped;
+      let groupAt = -1;
+      let marked = false;
+      let mapped = false;
+      let map = '';
+      for (let index = 0; index < lines.length; index++) {
+        const line = String(lines[index] || '').trim();
+        if (!line) continue;
+        if (line[0] === '#') {
+          if (/^#EXT-X-TWITCH-PREFETCH:/i.test(line)) {
+            entries.push({ number: number++, uri: line.replace(/^#EXT-X-TWITCH-PREFETCH:/i, '').trim(),
+              at: -1, marked: false, prefetch: true });
+            groupAt = -1;
+            marked = false;
+            mapped = false;
+          } else if (SPLICE_SEGMENT_TAG_RE.test(line)) {
+            if (groupAt < 0) groupAt = index;
+            if (/^#EXT-X-DISCONTINUITY$/i.test(line)) marked = true;
+            if (/^#EXT-X-MAP:/i.test(line)) {
+              mapped = true;
+              map = line;
+            }
+          }
+          continue;
+        }
+        /* A fragmented-MP4 entry carries the init segment in force for it, so a marker can
+           restate it the way Twitch's own boundaries do (EXT-X-DISCONTINUITY, then EXT-X-MAP). */
+        entries.push({ number: number++, uri: line, at: groupAt >= 0 ? groupAt : index, marked: marked,
+          map: mapped ? '' : map, prefetch: false });
+        groupAt = -1;
+        marked = false;
+        mapped = false;
+      }
+      return { lines: lines, entries: entries };
+    }
+
+    function markSplices(url, text, servedFrom) {
+      const parsed = spliceEntries(text);
+      if (!parsed || !parsed.entries.length) return text;
+      const track = spliceTrack(url);
+      /* A session renumbered mid-play -- the native offset after an ad pod, or a reset when an
+         alignment cannot be proven -- lists media it already listed under other numbers. From
+         the player's side that is a switch like any other, so it starts a new epoch. */
+      let epoch = Number(track.epochs.get(servedFrom) || 0);
+      for (const entry of parsed.entries) {
+        const known = spliceSegments.get(absoluteUrl(entry.uri, url));
+        if (known && known.track === track && known.number !== entry.number) {
+          epoch++;
+          track.epochs.set(servedFrom, epoch);
+          break;
+        }
+      }
+      const source = servedFrom + '#' + epoch;
+      const insertAt = [];
+      for (let index = 0; index < parsed.entries.length; index++) {
+        const entry = parsed.entries[index];
+        if (entry.prefetch) continue;
+        const number = entry.number;
+        if (!track.downloaded.has(number) && !track.marked.has(number)) {
+          let before = track.downloaded.get(number - 1);
+          if (before === undefined) before = index > 0 ? source : track.listed.get(number - 1);
+          if (before !== undefined && before !== source) track.marked.add(number);
+        }
+        if (track.marked.has(number) && !entry.marked) insertAt.push(entry);
+      }
+      for (const entry of parsed.entries) {
+        track.listed.set(entry.number, source);
+        if (entry.number > track.newest) track.newest = entry.number;
+        const segmentUrl = absoluteUrl(entry.uri, url);
+        if (!segmentUrl) continue;
+        spliceSegments.delete(segmentUrl);
+        spliceSegments.set(segmentUrl, { track: track, number: entry.number, source: source });
+      }
+      while (spliceSegments.size > SPLICE_SEGMENTS_MAX) spliceSegments.delete(spliceSegments.keys().next().value);
+      const oldest = track.newest - SPLICE_HISTORY;
+      for (const map of [track.listed, track.downloaded]) {
+        for (const number of Array.from(map.keys())) if (number < oldest) map.delete(number);
+      }
+      for (const number of Array.from(track.marked)) if (number < oldest) track.marked.delete(number);
+      if (!insertAt.length) return text;
+      const ending = /\r\n/.test(text) ? '\r' : '';
+      const lines = parsed.lines.slice();
+      for (const entry of insertAt.sort((left, right) => right.at - left.at)) {
+        const marker = ['#EXT-X-DISCONTINUITY' + ending];
+        if (entry.map) marker.push(entry.map + ending);
+        lines.splice(entry.at, 0, ...marker);
+      }
+      return lines.join('\n');
+    }
+
+    async function withSpliceMarkers(url, response) {
+      if (!response || !response.ok) return response;
+      let text;
+      try { text = await response.clone().text(); } catch (_) { return response; }
+      if (!mediaPlaylistEnvelope(text)) return response;
+      const source = servedSources.get(response) || 'native';
+      let marked = text;
+      try { marked = markSplices(url, text, source); } catch (_) { return response; }
+      if (marked === text) return response;
+      return markServedSource(responseWithText(response, marked, 'application/vnd.apple.mpegurl'), source);
     }
 
     async function alignRecoveryMedia(response, info, state, url) {
@@ -4139,7 +4425,7 @@
       if (!current() || !mediaPlaylistEnvelope(text) ||
           sequenceSkippedSegments(text) === null) return response;
       const observation = sequenceObserveNative(state, url, text);
-      if (observation.stale) return response;
+      if (observation.stale) return sequenceStaleResponse(state, observation, response);
       const aligned = sequenceNativeBreak(state, url, text);
       if (aligned === null) return response;
       state.backupActive = false;
@@ -4609,11 +4895,12 @@
 
     self.fetch = async function twitchWorkerFetch(input, init) {
       const url = urlOf(input);
+      if (active || nativeRecovery) noteSpliceDownload(url);
       if (!active) {
         if (nativeRecovery && masterPlaylistUrl(url)) return handleMaster(input, init, url);
         if (nativeRecovery && playlistUrl(url) && !masterPlaylistUrl(url) &&
             (twitchMediaUrl(url) || media.has(url) || media.has(canonical(url)))) {
-          return handleRecoveryMedia(input, init, url);
+          return withSpliceMarkers(url, await handleRecoveryMedia(input, init, url));
         }
         return realFetch(input, init);
       }
@@ -4633,9 +4920,12 @@
              Cancellation must not leak its unaligned numbering to the player. */
           if (nativeRecovery && generation === activeMasterGeneration) {
             const info = media.get(url) || media.get(canonical(url));
-            return alignRecoveryMedia(response, info, sequenceStateFor(info), url);
+            const recovered = await alignRecoveryMedia(response, info, sequenceStateFor(info), url);
+            if (recovered !== response) markServedSource(recovered, servedSources.get(response));
+            return withSpliceMarkers(url, recovered);
           }
-          return response;
+          /* After a user switch-off the worker is plain pass-through, byte for byte. */
+          return active || nativeRecovery ? withSpliceMarkers(url, response) : response;
         }
       }
       return realFetch(input, init);

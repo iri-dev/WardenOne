@@ -30,8 +30,10 @@ async function main() {
     ['pref-group', 'grouping'],
     ['pref-soundmode', 'sound mode'],
     ['pref-sound', 'the sound switch'],
+    ['pref-sound-state', 'the sound state'],
     ['pref-volume', 'volume'],
     ['pref-preview', 'sound preview'],
+    ['pref-sound-feedback', 'sound preview feedback'],
     ['pref-duration', 'default duration'],
     ['pref-position', 'toast position'],
     ['pref-badge', 'the badge switch'],
@@ -49,6 +51,18 @@ async function main() {
     'sound must be off until the reader turns it on');
   assert(/off until you turn it on|silent by default/i.test(page),
     'the page should say plainly that it is silent by default');
+  /* Muting actual notices must not disable setup. Preview is an explicit click,
+     so it is safe while the master switch is off and is how a reader decides
+     whether to opt in. */
+  assert(!/pick\.disabled = !s\.soundEnabled|pref-soundmode'\)\.disabled = !s\.soundEnabled|pref-volume'\)\.disabled = !s\.soundEnabled|pref-preview'\)\.disabled = !s\.soundEnabled/.test(pageJs),
+    'muting notification audio disables its setup and preview controls');
+  assert(/snd\.disabled = silent;[\s\S]{0,80}hear\.disabled = silent \|\| snd\.value === 'none';/.test(pageJs),
+    'per-notice sounds cannot be chosen and previewed while notification audio is muted');
+  assert(/if \(e\.target\.checked\) playSound\(/.test(pageJs),
+    'turning notification sound on gives no audible confirmation');
+  assert(/response\.ok !== true[\s\S]{0,180}Could not play the preview/.test(pageJs)
+    && /played === true \? \{ ok: true \}/.test(background),
+    'sound previews still report success when the audio player did not play');
 
   /* Every mode the reader can pick has to be one the worker honours. */
   ['off', 'history', 'toast', 'persistent'].forEach((mode) => {
@@ -693,12 +707,21 @@ async function main() {
   await context.playWardenNotificationSound('airhorn', 0.5);
   assert.strictEqual(calls.messages, beforeJunk, 'an unknown sound must not fall back to an audible one');
 
-  /* The tunes have to be distinguishable by shape, not only pitch -- six sounds
-     that differ only in frequency are six sounds nobody can tell apart. */
+  /* The tunes have to be distinguishable by contour and timbre, not only pitch.
+     Every audible sound uses at least two restrained voices rather than falling
+     back to the old thin single-oscillator beeps. */
   const specs = context.WARDEN_NOTIFICATION_SOUNDS.filter((entry) => entry.notes.length);
   const shapes = new Set(specs.map((entry) => entry.notes.length + '/' + entry.wave
-    + '/' + (entry.notes[0] < (entry.notes[entry.notes.length - 1]) ? 'up' : 'down')));
+    + '/' + (entry.notes[0] < entry.notes[entry.notes.length - 1] ? 'up'
+      : (entry.notes[0] > entry.notes[entry.notes.length - 1] ? 'down' : 'return'))
+    + '/' + entry.layers.map((layer) => layer.wave + ':' + layer.ratio).join(',')));
   assert(shapes.size >= 4, 'the sounds are too alike: only ' + shapes.size + ' distinct shapes');
+  assert(specs.every((entry) => Array.isArray(entry.layers) && entry.layers.length >= 2
+    && Number(entry.length) >= 0.12 && Number(entry.level) <= 0.14),
+  'an audible sound lost its layered envelope or became too loud');
+  assert(specs.some((entry) => entry.layers.some((layer) => layer.ratio === 0.5))
+    && specs.some((entry) => Number(entry.glide) !== 1),
+  'the palette lost its warm lower voices or shaped pitch movement');
 
   const historyOnly = await context.showWardenSystemNotification('activity', { type: 'basic' }, 'activity_cleanup');
   assert.strictEqual(historyOnly, false, 'history-only category must not create a tray notification');

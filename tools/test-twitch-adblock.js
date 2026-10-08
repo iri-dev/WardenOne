@@ -3690,10 +3690,12 @@ function storageHarness(config, harnessOptions) {
     setItem(key, value) { this.data.set(String(key), String(value)); }
   }
   const nativeGetItem = HarnessStorage.prototype.getItem;
+  const seed = (harnessOptions && harnessOptions.seedStorage) || {};
   const harness = createPageHarness(config, Object.assign({}, harnessOptions, {
     configureWindow(window) {
       window.Storage = HarnessStorage;
       window.localStorage = new HarnessStorage();
+      for (const key of Object.keys(seed)) window.localStorage.setItem(key, seed[key]);
     },
   }));
   return { harness, window: harness.window, nativeGetItem, other: new HarnessStorage() };
@@ -3809,6 +3811,33 @@ test('steadier playback stays native until authoritative config arrives', () => 
   harness.document.dispatchEvent({ type: 'wo-config-change' });
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), null,
     'authoritative disabled setting did not restore native preference behavior');
+});
+
+/* Twitch reads the preference while its player starts, often before this load's settings arrive.
+   Measured live: of two tabs opened together one ran Low Latency for its whole session and stalled
+   at each switch to the clean stream. The last setting that did arrive stands in until they come. */
+test('steadier playback remembers the last setting that arrived for the next start-up', () => {
+  const { harness, window } = storageHarness({ __configReady: false, twitchSteadyPlayback: true });
+  equal(window.localStorage.getItem('__woTwitchSteadyPlayback'), null, 'a placeholder setting was remembered');
+  setTwitchConfig(harness, { __configReady: true, twitchSteadyPlayback: true });
+  equal(window.localStorage.getItem('__woTwitchSteadyPlayback'), '1', 'an arrived on setting was not remembered');
+  setTwitchConfig(harness, { twitchSteadyPlayback: false });
+  equal(window.localStorage.getItem('__woTwitchSteadyPlayback'), '0', 'an arrived off setting was not remembered');
+  equal(window.localStorage.data.has('lowLatencyModeEnabled'), false, 'Twitch\'s own preference was written');
+});
+
+test('a remembered setting answers Twitch\'s start-up read before this load\'s settings arrive', () => {
+  for (const [remembered, expected] of [['1', 'false'], ['0', null]]) {
+    const { harness, window } = storageHarness({ __configReady: false, twitchSteadyPlayback: true }, {
+      seedStorage: { __woTwitchSteadyPlayback: remembered },
+    });
+    equal(window.localStorage.getItem('lowLatencyModeEnabled'), expected,
+      'start-up read did not follow the remembered setting ' + remembered);
+    setTwitchConfig(harness, { __configReady: true, twitchSteadyPlayback: remembered !== '1' });
+    equal(window.localStorage.getItem('lowLatencyModeEnabled'), remembered === '1' ? null : 'false',
+      'the arrived setting did not take over from the remembered one');
+    equal(window.localStorage.data.has('lowLatencyModeEnabled'), false, 'Twitch\'s own preference was written');
+  }
 });
 
 test('steadier playback follows a live settings change and keeps a native-looking hook', () => {

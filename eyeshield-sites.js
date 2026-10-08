@@ -370,7 +370,6 @@
       + 'yt-icon-button,ytd-menu-renderer yt-icon-button,ytd-menu-renderer button,#button.yt-icon-button,#button.ytd-menu-renderer,ytd-rich-grid-media ytd-menu-renderer,ytd-video-renderer ytd-menu-renderer{background:transparent !important;color:#0f0f0f !important;border-color:transparent !important;box-shadow:none !important;}'
       + 'ytd-rich-grid-media #details *,ytd-video-renderer #details *,ytd-video-meta-block *{background:transparent !important;}'
       + youtubePlayerCSS('#ffffff')
-      + '#cinematics-container,#cinematics-container *{display:none !important;opacity:0 !important;background:transparent !important;}'
       + 'video,.html5-video-player,.ytp-player-content,.ytp-chrome-bottom,.ytp-gradient-top,.ytp-gradient-bottom{filter:none !important;}';
   }
 
@@ -407,7 +406,6 @@
       + 'yt-icon-button,ytd-menu-renderer yt-icon-button,ytd-menu-renderer button,#button.yt-icon-button,#button.ytd-menu-renderer,ytd-rich-grid-media ytd-menu-renderer,ytd-video-renderer ytd-menu-renderer{background:transparent !important;color:' + p.text + ' !important;border-color:transparent !important;box-shadow:none !important;}'
       + 'ytd-rich-grid-media #details *,ytd-video-renderer #details *,ytd-video-meta-block *{background:transparent !important;}'
       + youtubePlayerCSS(p.text)
-      + '#cinematics-container,#cinematics-container *{display:none !important;opacity:0 !important;background:transparent !important;}'
       + 'video,.html5-video-player,.ytp-player-content,.ytp-chrome-bottom,.ytp-gradient-top,.ytp-gradient-bottom{filter:none !important;}';
   }
 

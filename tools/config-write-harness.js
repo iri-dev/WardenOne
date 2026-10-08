@@ -24,7 +24,8 @@ const background = read('background.js');
 const LOCK_SOURCE = read('config-lock.js');
 const LOCAL_GET_STRICT_FROM_MOCK = 'function localGetStrict(key) { return Promise.resolve(localGet(key)).then((r) => r || {}); }\n';
 /* withConfigLock, plus the worker's updateStoredConfig and the clone it uses. */
-const WORKER_WRITE_SOURCE = LOCK_SOURCE + '\n' + sliceFunction(background, '__cfgClone') + sliceFunction(background, 'updateStoredConfig');
+const WORKER_WRITE_SOURCE = LOCK_SOURCE + '\n' + sliceFunction(background, '__cfgClone')
+  + sliceFunction(background, 'storedConfigChangedKeys') + sliceFunction(background, 'updateStoredConfig');
 
 module.exports = {
   LOCK_SOURCE,

@@ -26,8 +26,31 @@ let reply;
 let update;
 let stateRequests = 0;
 let videoQueries = 0;
+let nextTimerId = 1;
+let previewStates = null;
 const listeners = {};
 const styles = [];
+const timers = new Map();
+class PreviewStateMap extends Map {
+  constructor() {
+    super();
+    previewStates = this;
+  }
+}
+function runTimer(delay) {
+  const found = Array.from(timers.entries()).find((entry) => entry[1].active && entry[1].delay === delay);
+  assert(found, 'expected a pending ' + delay + 'ms timer');
+  found[1].active = false;
+  found[1].callback();
+}
+const makeStyle = () => ({
+  isConnected: false,
+  textContent: '',
+  attrs: new Map(),
+  getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; },
+  setAttribute(name, value) { this.attrs.set(name, String(value)); },
+  remove() { this.isConnected = false; },
+});
 const makeVideo = (kind, options = {}) => ({
   tagName: 'VIDEO', paused: options.paused === true, autoplay: options.autoplay !== false, loop: !!options.loop,
   playsInline: !!options.playsInline, muted: options.muted !== false, defaultMuted: false,
@@ -58,10 +81,11 @@ const document = {
   documentElement: { appendChild(node) { node.isConnected = true; styles.push(node); } },
   createElement(tag) {
     assert.equal(tag, 'style');
-    return { isConnected: false, textContent: '', remove() { this.isConnected = false; } };
+    return makeStyle();
   },
   addEventListener(type, callback) { listeners[type] = callback; },
   querySelectorAll(selector) {
+    if (selector === 'style') return styles.filter((style) => style.isConnected);
     assert.equal(selector, 'video');
     videoQueries++;
     return [youtubePreview, cardPreview, watchVideo, audibleCardVideo, manualCardVideo,
@@ -79,7 +103,21 @@ const chrome = {
     onMessage: { addListener(callback) { update = callback; } },
   },
 };
-vm.runInNewContext(source, { chrome, document, String });
+vm.runInNewContext(source, {
+  chrome,
+  document,
+  Map: PreviewStateMap,
+  String,
+  setTimeout(callback, delay) {
+    const id = nextTimerId++;
+    timers.set(id, { callback, delay, active: true });
+    return id;
+  },
+  clearTimeout(id) {
+    const timer = timers.get(id);
+    if (timer) timer.active = false;
+  },
+});
 assert.equal(styles.length, 0, 'nothing changes before the worker answers');
 update({ kind: 'resource-saver-update', ambient: true, previews: true });
 assert.equal(styles.length, 2);
@@ -88,7 +126,7 @@ assert.equal(styles[0].isConnected, true, 'a stale initial reply cannot undo a n
 assert.equal(styles[1].isConnected, true, 'a stale initial reply cannot undo newer preview blocking');
 assert.equal(cardPreview.paused, true, 'a stale initial reply cannot restore a preview stopped by the live update');
 assert.equal(videoQueries, 1, 'a stale initial reply is discarded without another document sweep');
-assert.match(styles[0].textContent, /ytd-watch-flexy #cinematics \{ display: none !important; \}/,
+assert.match(styles[0].textContent, /ytd-watch-flexy #cinematics,ytd-watch-flexy #cinematics-container \{ display: none !important; \}/,
   'the watch-page Ambient Mode glow is hidden');
 assert.match(styles[0].textContent, /#frosted-glass \{[^}]*backdrop-filter: none !important;/,
   'the home header stops blurring thumbnail colours');
@@ -96,6 +134,10 @@ assert.match(styles[0].textContent, /background-color: var\(--yt-spec-base-backg
   'the cleared header follows the active YouTube or EyeShield background');
 assert.match(styles[0].textContent, /:root\[dark\][^}]*#0f0f0f/,
   'native dark mode has a safe background fallback');
+assert.equal(styles[0].getAttribute('data-wardenone-resource-saver'), 'ambient',
+  'the Ambient Mode style is identifiable for complete live removal');
+assert.equal(styles[1].getAttribute('data-wardenone-resource-saver'), 'previews',
+  'the preview style is identifiable for complete live removal');
 assert.equal(styles[1].textContent, 'ytd-video-preview,ytd-video-preview-loader { display: none !important; }',
   'the preview layer is hidden while static thumbnails remain outside it');
 assert.equal(videoQueries, 1, 'enabling preview blocking performs one document video sweep');
@@ -127,12 +169,36 @@ assert.equal(cardPreview.pauses, 2);
 const replay = makeVideo('card', { playsInline: true });
 listeners.play({ target: replay });
 assert.equal(replay.pauses, 1, 'a later preview or restart is paused from its play event');
+
+const detachedPreviews = Array.from({ length: 8 }, () => makeVideo('card'));
+const retainedBeforeDetach = previewStates.size;
+detachedPreviews.forEach((video) => {
+  listeners.play({ target: video });
+  video.isConnected = false;
+});
+assert.equal(previewStates.size, retainedBeforeDetach + 8, 'the fixture records each changed detached preview before cleanup');
+runTimer(15000);
+assert(detachedPreviews.every((video) => video.autoplay && video.hasAttribute('autoplay')),
+  'periodic cleanup restores and releases detached preview videos without waiting for more insertions');
+assert.equal(previewStates.size, retainedBeforeDetach, 'detached preview references are removed by the scheduled cleanup');
 watchVideo.paused = false;
 listeners.play({ target: watchVideo });
 assert.equal(watchVideo.pauses, 0, 'a normal YouTube video play event passes through');
 
+const legacyAmbientStyle = makeStyle();
+legacyAmbientStyle.textContent = styles[0].textContent.replace(
+  'ytd-watch-flexy #cinematics,ytd-watch-flexy #cinematics-container',
+  'ytd-watch-flexy #cinematics',
+);
+document.documentElement.appendChild(legacyAmbientStyle);
+const duplicateAmbientStyle = makeStyle();
+duplicateAmbientStyle.textContent = 'stale Ambient Mode rule';
+duplicateAmbientStyle.setAttribute('data-wardenone-resource-saver', 'ambient');
+document.documentElement.appendChild(duplicateAmbientStyle);
 update({ kind: 'resource-saver-update', ambient: false, previews: false });
 assert.equal(styles[0].isConnected, false, 'turning Ambient Mode blocking off restores YouTube styling immediately');
+assert.equal(legacyAmbientStyle.isConnected, false, 'the off path removes an unmarked legacy copy of WardenOne\'s exact Ambient Mode rule');
+assert.equal(duplicateAmbientStyle.isConnected, false, 'the off path removes duplicate marked Ambient Mode rules');
 assert.equal(styles[1].isConnected, false, 'turning preview blocking off restores the preview layer immediately');
 assert.equal(youtubePreview.autoplay, true, 'the original autoplay property is restored');
 assert.equal(youtubePreview.hasAttribute('autoplay'), true, 'the original autoplay attribute is restored');
@@ -180,6 +246,8 @@ assert(/data-key="stopAnimatedVideoPreviews"/.test(popup), 'the popup exposes th
 assert(/sw\([^\n]+disableYouTubeAmbientMode[^\n]+stopAnimatedVideoPreviews/.test(settings), 'Settings exposes both resource controls');
 assert(profile.includes("'disableYouTubeAmbientMode'") && profile.includes("'stopAnimatedVideoPreviews'") && profile.includes("'resource-saver.js'"),
   'the Store profile carries both settings and their runtime');
+assert(!read('eyeshield-sites.js').includes('#cinematics-container'),
+  'EyeShield leaves Ambient Mode ownership to the dedicated Resource Saver control');
 assert(!/HTMLMediaElement\.prototype/.test(source), 'the targeted feature does not replace the global media API');
 assert(!/MutationObserver/.test(source), 'the saver does not trade previews for a page-wide DOM observer');
 

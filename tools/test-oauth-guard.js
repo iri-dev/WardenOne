@@ -155,6 +155,26 @@ const googleUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=client
   check('G3 actual Google grant surface warns', state.modals.length === 1 && state.reports.length > 0, state);
 }
 
+{
+  const state = runCase({
+    url: googleUrl,
+    body: 'Example App souhaite accéder à votre compte Google Sélectionnez ce que Example App peut utiliser Lire, modifier, créer et supprimer vos fichiers Google Drive',
+    actions: ['Annuler', 'Autoriser'],
+    headings: ['Example App souhaite accéder à votre compte Google'],
+  });
+  check('G4 French Google consent surface warns', state.modals.length === 1 && state.reports.length > 0, state);
+}
+
+{
+  const state = runCase({
+    url: googleUrl,
+    body: 'Connectez-vous avec Google Utilisez votre compte Google Adresse e-mail ou téléphone Mot de passe oublié ?',
+    actions: ['Continuer'],
+    headings: ['Connexion'],
+  });
+  check('G5 French Google credential surface stays quiet', state.modals.length === 0 && state.reports.length === 0, state);
+}
+
 const microsoftUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=Mail.Read';
 
 {
@@ -175,6 +195,26 @@ const microsoftUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/autho
     headings: ['Permissions requested'],
   });
   check('M2 actual Microsoft consent surface warns', state.modals.length === 1 && state.reports.length > 0, state);
+}
+
+{
+  const state = runCase({
+    url: microsoftUrl,
+    body: 'Permisos solicitados Example App desea acceder a tus datos Leer tu correo Aceptar estos permisos permite que esta aplicación use tus datos',
+    actions: ['Cancelar', 'Aceptar'],
+    headings: ['Permisos solicitados'],
+  });
+  check('M3 Spanish Microsoft consent surface warns', state.modals.length === 1 && state.reports.length > 0, state);
+}
+
+{
+  const state = runCase({
+    url: microsoftUrl,
+    body: 'Iniciar sesión Correo electrónico, teléfono o Skype Escribe tu contraseña ¿Olvidaste tu contraseña?',
+    actions: ['Continuar'],
+    headings: ['Iniciar sesión'],
+  });
+  check('M4 Spanish Microsoft credential surface stays quiet', state.modals.length === 0 && state.reports.length === 0, state);
 }
 
 /*
