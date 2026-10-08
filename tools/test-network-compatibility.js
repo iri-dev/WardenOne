@@ -403,6 +403,19 @@ test('whole-domain DNR generators use bounded requestDomains conditions', () => 
   assert(!Object.prototype.hasOwnProperty.call(pathLogin, 'requestDomains'),
     'path-scoped login rule was incorrectly broadened into a domain allow');
 
+  const facebookOAuth = loginCompatibilityRuleCondition({
+    requestDomains: ['facebook.com'],
+    urlFilter: '/dialog/oauth',
+  });
+  assert.deepStrictEqual(Array.from(facebookOAuth.requestDomains || []), ['facebook.com']);
+  assert.strictEqual(facebookOAuth.urlFilter, '/dialog/oauth');
+  assert(requestDomainsMatchHost(facebookOAuth, 'www.facebook.com'));
+  assert(requestDomainsMatchHost(facebookOAuth, 'm.facebook.com'));
+  assert(!requestDomainsMatchHost(facebookOAuth, 'unrelated.example'),
+    'an OAuth-looking query on an unrelated host matched the Facebook allowance');
+  assert(new URL('https://www.facebook.com/v24.0/dialog/oauth?client_id=client').pathname.includes(facebookOAuth.urlFilter),
+    'Facebook\'s versioned OAuth path is not covered by the bounded rule');
+
   assert(!/urlFilter:\s*['"]\|\|['"]\s*\+/.test(BACKGROUND),
     'a generated whole-domain rule still uses an unbounded ||domain URL filter');
 });

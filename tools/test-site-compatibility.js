@@ -724,9 +724,14 @@ test('login compatibility DNR covers Google and university federation plumbing',
 });
 
 test('expanded OAuth providers get narrow authorization-route compatibility', () => {
-  const filters = extractArrayLiteral(BACKGROUND, 'LOGIN_COMPAT_FILTERS').map(String);
+  const entries = extractArrayLiteral(BACKGROUND, 'LOGIN_COMPAT_FILTERS');
+  const filters = entries.filter((value) => typeof value === 'string').map(String);
+  const facebook = entries.find((value) => value && typeof value === 'object'
+    && Array.from(value.requestDomains || []).includes('facebook.com'));
+  if (!facebook || facebook.urlFilter !== '/dialog/oauth') {
+    throw new Error('Facebook OAuth compatibility is not bounded to facebook.com');
+  }
   for (const token of [
-    'facebook.com/*/dialog/oauth',
     'slack.com/oauth/v2/authorize',
     'slack-gov.com/oauth/v2/authorize',
     'dropbox.com/oauth2/authorize',
@@ -759,6 +764,7 @@ test('expanded OAuth providers get narrow authorization-route compatibility', ()
     if (!sandbox.__isLoginCompatibilityUrl(url)) throw new Error('OAuth route is not recognised: ' + url);
   }
   for (const url of [
+    'https://unrelated.example/collect?next=facebook.com/v24.0/dialog/oauth',
     'https://slack.com/client/workspace/channel',
     'https://www.dropbox.com/home',
     'https://gitlab.com/example/project',

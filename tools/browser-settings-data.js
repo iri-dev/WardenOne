@@ -214,6 +214,35 @@ async function run() {
     const notices = await stored('wardenone_config');
     ok(Object.keys(notices.notificationSettings.rules || {}).length > 5 && notices.notificationSettings.position === 'bottom-left', 'each change keeps the rest of the notification settings');
 
+    /* Notification Centre remains configurable while globally muted. Preview is
+       an explicit user action, and enabling sound confirms the offscreen player
+       immediately instead of leaving the reader to wait for a future warning. */
+    const settingsPage = page;
+    await store({ wardenone_config: Object.assign({}, notices, {
+      notificationSettings: Object.assign({}, notices.notificationSettings, { soundEnabled: false }),
+    }) });
+    page = await open('notifications.html#preferences');
+    await until("typeof NC !== 'undefined' && !!NC.settings", 'Notification Centre to load');
+    await prepare();
+    ok(await value("!document.getElementById('pref-soundmode').disabled && !document.getElementById('pref-soundpick').disabled && !document.getElementById('pref-volume').disabled && !document.getElementById('pref-preview').disabled"),
+      'muted notification audio keeps its setup and preview controls available');
+    ok(await value("[...document.querySelectorAll('.rulerow .cell:last-child select')].every(control => !control.disabled)"),
+      'muted notification audio keeps each active notice sound editable');
+    const soundPalette = await value("[...document.getElementById('pref-soundpick').options].map(option => ({ id: option.value, label: option.textContent }))");
+    for (const sound of soundPalette) {
+      await value(`(() => { const pick = document.getElementById('pref-soundpick'); pick.value = ${JSON.stringify(sound.id)}; document.getElementById('pref-preview').click(); return true; })()`);
+      await until(`document.getElementById('pref-sound-feedback').textContent === ${JSON.stringify(sound.label + ' played.')}`, sound.label + ' preview to play');
+    }
+    ok(await value("chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(items => items.some(item => /offscreen\\.html$/.test(item.documentUrl)))"),
+      'the preview reaches the real offscreen audio document');
+    await value("document.getElementById('pref-sound').click(); true");
+    await until(cfgIs('c => c.notificationSettings.soundEnabled === true'), 'Notification Centre sound switch saved');
+    await until("document.getElementById('pref-sound-state').textContent === 'On' && /played\\.$/.test(document.getElementById('pref-sound-feedback').textContent)",
+      'enabling notification sounds to confirm playback');
+    same(await value('window.__errors'), [], 'no Notification Centre errors');
+    await cdp.send('Target.closeTarget', { targetId: page.targetId });
+    page = settingsPage;
+
     const epoch = await value('performance.timeOrigin');
     await cdp.send('Page.reload', {}, page.sessionId);
     await until(`performance.timeOrigin > ${epoch} && typeof loaded !== 'undefined' && loaded === true`, 'reload');
