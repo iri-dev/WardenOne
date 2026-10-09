@@ -727,6 +727,37 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
   check('T13o long after the press, a frame moving itself is an embed switching mirror, not this', t.navigate(HOP).defaultPrevented === false);
 }
 {
+  /* Before the full config. Measured on a slow runner: a press on the player a moment after the
+     frame loaded was counted as one, and the frame's own script still sent it to the advert half
+     a second later -- the guard was waiting for the full config. The popup switches the bridge
+     sends first decide until it arrives, as they do for the popup guards. */
+  const HOP = 'https://newsboydurance.cfd/iHLdjudwSFBYBrucp/70849/';
+  const boot = { enabled: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, allowlist: [] };
+  const frame = (bootstrap, forged) => {
+    const t = build({ framed: true, fakeClock: true, deferConfig: true, hostname: 'playmogo.com', pathname: '/e/7qftyd95nnrj', videoRects: [VIDEO_RECT] });
+    if (bootstrap && forged) t.forgeBootstrap(bootstrap);
+    else if (bootstrap) t.sendBootstrap(bootstrap);
+    t.userClick(t.videos[0], 500, 280);
+    t.advanceTime(500);
+    return t;
+  };
+  const early = frame(boot);
+  check('T13r a frame hijack right after load is cancelled on the switches the bridge sends first',
+    early.navigate(HOP).defaultPrevented === true);
+  check('T13r with nothing from the bridge yet, the frame still fails open', frame(null).navigate(HOP).defaultPrevented === false);
+  check('T13r the popup-tricks switch turned off is honoured before the full config',
+    frame(Object.assign({}, boot, { blockPopupTricks: false })).navigate(HOP).defaultPrevented === false);
+  check('T13r a bootstrap that does not carry the switch does not arm the guard',
+    frame({ enabled: true, blockForcedPopups: true, strictPopupShield: true, allowlist: [] }).navigate(HOP).defaultPrevented === false);
+  check('T13r an allowed site is left alone before the full config',
+    frame(Object.assign({}, boot, { allowlist: ['playmogo.com'] })).navigate(HOP).defaultPrevented === false);
+  check('T13r the master switch off is left alone before the full config',
+    frame(Object.assign({}, boot, { enabled: false })).navigate(HOP).defaultPrevented === false);
+  check('T13r a bootstrap the page forged does not arm the guard', frame(boot, true).navigate(HOP).defaultPrevented === false);
+  early.handshake({ blockPopupTricks: false });
+  check('T13r the full config replaces the bootstrap', early.navigate(HOP).defaultPrevented === false);
+}
+{
   const HOP = 'https://deforcejackmen.qpon/lp/PyGaSbyv2lFDFbqG';
   /* No press at all: a redirect an embed does on its own (mirror, region, expiry) is not judged here. */
   const quiet = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });

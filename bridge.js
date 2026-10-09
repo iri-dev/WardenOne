@@ -2486,8 +2486,9 @@
   //    need the switches, do not make a second round trip at all.
   // The full snapshot gathers several datasets and can arrive after a first
   // player click. Ask the worker for only the popup switches in parallel;
-  // storage remains private to trusted extension contexts. No other MAIN-world
-  // guard is enabled until the full content-config-get reply arrives.
+  // storage remains private to trusted extension contexts. Apart from the popup
+  // guards and the player-frame guards these switches cover, no MAIN-world guard
+  // is enabled until the full content-config-get reply arrives.
   try {
     chrome.runtime.sendMessage({ kind: 'redirect-bootstrap-get' }, (res) => {
       if (chrome.runtime.lastError || !res || !res.ok || !res.overrides) return;

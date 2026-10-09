@@ -366,17 +366,21 @@ async function main() {
     'gating it on taint would leave every ordinary click unable to authorise anything');
   check('and it is throttled rather than sent on every click',
     /if \(kind === 'gesture'\)/.test(GUARD) && /lastGestureBeacon < 500/.test(GUARD));
+  /* Two paths since the bootstrap: the full config once it is in, the bridge's first popup
+     switches before it. Both must stay out of top-frame-only territory and keep the user's switches. */
+  const frameGateAt = GUARD.indexOf('function frameTopRedirectEnabled()');
+  const frameGate = GUARD.slice(frameGateAt, GUARD.indexOf('\n  }\n', frameGateAt));
   check('the player signal is available inside the child frame that owns the player click',
-    /function frameTopRedirectEnabled\(\)\s*\{\s*return masterEnabled\(\)/.test(GUARD)
-      && !/function frameTopRedirectEnabled\(\)\s*\{\s*return TOP_FRAME/.test(GUARD),
+    frameGateAt >= 0 && /masterEnabled\(\)/.test(frameGate) && !/TOP_FRAME/.test(frameGate),
     'iframe clicks do not bubble into the parent document, so a top-only signal leaves the worker blind');
   const intentSignals = GUARD.slice(GUARD.indexOf('function markIntent('), GUARD.indexOf('function intentTextAllows('));
   check('general click authorization remains top-frame only',
     /if \(TOP_FRAME\) \{[\s\S]*?if \(!overlay\) signal\('gesture'\);/.test(intentSignals),
     'an unrelated child frame must not authorize a later top-level jump');
   check('it honours the master switch and the allowlist',
-    /frameTopRedirectEnabled\(\)\s*\{\s*return masterEnabled\(\)/.test(GUARD),
-    'masterEnabled() is what folds in the user allowlist');
+    /if \(configReady\(\)\) return masterEnabled\(\)/.test(frameGate)
+      && /c\.enabled !== false && !hostAllowedByUser\(c\)/.test(frameGate),
+    'masterEnabled() folds in the allowlist once the config is in; before it, the bootstrap\'s own switch and allowlist do');
   check('it can be turned off on its own',
     /cfg\(\)\.blockPopupTricks !== false/.test(GUARD));
   /* Every path out of blockNavigation that lets a cross-site target through has

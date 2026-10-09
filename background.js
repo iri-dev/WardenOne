@@ -2602,6 +2602,7 @@ async function buildRedirectBootstrapSnapshot(sender) {
     enabled: cfg.enabled !== false && siteOff.enabled !== false,
     blockForcedPopups: cfg.blockForcedPopups !== false && siteOff.blockForcedPopups !== false,
     strictPopupShield: cfg.strictPopupShield !== false && siteOff.strictPopupShield !== false,
+    blockPopupTricks: cfg.blockPopupTricks !== false && siteOff.blockPopupTricks !== false,
     allowlist: activeAllowlist(cfg),
   } };
 }
