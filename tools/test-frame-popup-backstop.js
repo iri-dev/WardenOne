@@ -131,5 +131,11 @@ const attempt = (w, overrides = {}, armed = true) => {
     'the fast reply respects a per-site switch');
   assert.strictEqual((await bootstrap({ allowlist: ['playmogo.com'] })).allowlist[0], 'playmogo.com',
     'the fast reply carries the site pause');
+  /* The player-frame guards run on it until the full config arrives, so it carries their switch. */
+  assert.strictEqual((await bootstrap({})).blockPopupTricks, true, 'the fast reply arms the player-frame guards by default');
+  assert.strictEqual((await bootstrap({ blockPopupTricks: false })).blockPopupTricks, false,
+    'the fast reply keeps the player-frame guards off when they are turned off');
+  assert.strictEqual((await bootstrap({ siteOverrides: { 'playmogo.com': { blockPopupTricks: false } } })).blockPopupTricks, false,
+    'the fast reply respects a per-site player-frame switch');
   console.log('frame popup backstop tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

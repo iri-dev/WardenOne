@@ -875,8 +875,14 @@
     return out;
   }
 
+  /* Until the full config arrives, the popup switches the bridge hands over first decide, as they
+     do for the popup guards. Measured on a slow runner, a press on a player frame a moment after
+     it loaded was counted as a press on the player, and the frame was still sent to the advert
+     half a second later: these guards were waiting for the full config. */
   function frameTopRedirectEnabled() {
-    return masterEnabled() && cfg().blockPopupTricks !== false;
+    if (configReady()) return masterEnabled() && cfg().blockPopupTricks !== false;
+    const c = popupBootstrapConfig;
+    return !!c && c.enabled !== false && !hostAllowedByUser(c) && c.blockPopupTricks === true;
   }
 
   let lastGestureBeacon = 0;

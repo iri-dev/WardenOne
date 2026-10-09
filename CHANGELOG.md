@@ -43,6 +43,9 @@
 - A Twitch video segment that fails to download no longer counts as one the player has. When the
   player asked for it again from the other stream after a switch, the switch went unmarked and
   the mark landed one segment late.
+- A video player embedded in a page can no longer be swapped for an advert by a press in the
+  first moments after it loads. Its guard waited for WardenOne's full settings to reach the
+  frame; it now starts on the quick first answer the popup guards already use.
 - A notification sound preview no longer says the sound "played". WardenOne can tell the browser
   took it, not whether your device is muted, so it now says the sound was sent to your speakers.
   At 0% volume it says there is nothing to hear, instead of reporting a sound nobody could hear.
