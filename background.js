@@ -1138,16 +1138,33 @@ const REDIRECT_CHAIN_RECENT_MAX = 80;
 function chainAbuseTld(host) {
   return /\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|mom|hair|tattoo)$/i.test(String(host || ''));
 }
-function embeddedPlayerAdTarget(rawUrl) {
+/* An ad-click destination distinctive enough to act on without asking: a known ad network, an
+   endpoint named in ad-industry jargon (onclick, popunder, preland), a click or redirect endpoint
+   that also carries an ad field, or two ad fields. A domain ending, or a bare /click/ or
+   /redirect/ path, is not: plenty of ordinary sites live on .xyz or .link, and sign-in hops and
+   newsletter links use those paths. Those still count as weak evidence below, but a navigation
+   they flag keeps the recoverable warning instead of being silently undone. */
+const PLAYER_AD_FIELD_RE = /(?:^|[?&])(?:publisher_id|zone_id|campaign_id|placement_id|banner_id|creative_id|aff_id|affiliate_id|click_?id)=/ig;
+function embeddedPlayerAdBroker(rawUrl) {
   let target;
   try { target = new URL(String(rawUrl || '')); } catch (_) { return false; }
   if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
   const host = target.hostname.toLowerCase();
-  if (chainAbuseTld(host)) return true;
   if (/(^|\.)(popads|popcash|propellerads|adsterra|hilltopads|exoclick|juicyads|trafficjunky|adcash|clickadu|ad-maven|admaven|onclickads|onclicka|popmyads|bidvertiser|clickaine|galaksion)\.[a-z.]+$/i.test(host)) return true;
-  if (/(?:^|\/)(?:click|onclick|popunder|pre-?land(?:er|ing)?|redirect)(?:\.php)?(?:\/|$)/i.test(target.pathname)) return true;
-  const fields = target.search.match(/(?:^|[?&])(?:publisher_id|zone_id|campaign_id|placement_id|banner_id|creative_id|aff_id|affiliate_id|click_?id)=/ig);
-  return !!(fields && fields.length >= 2);
+  if (/(?:^|\/)(?:onclick|popunder|pre-?land(?:er|ing)?)(?:\.php)?(?:\/|$)/i.test(target.pathname)) return true;
+  const fields = (target.search.match(PLAYER_AD_FIELD_RE) || []).length;
+  if (fields >= 2) return true;
+  return fields >= 1 && /(?:^|\/)(?:click|redirect)(?:\.php)?(?:\/|$)/i.test(target.pathname);
+}
+/* Weaker evidence, enough to close a popup a player press opened (with the press as the other half
+   of the evidence), never enough on its own to undo a navigation silently. */
+function embeddedPlayerAdTarget(rawUrl) {
+  if (embeddedPlayerAdBroker(rawUrl)) return true;
+  let target;
+  try { target = new URL(String(rawUrl || '')); } catch (_) { return false; }
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
+  if (chainAbuseTld(target.hostname.toLowerCase())) return true;
+  return /(?:^|\/)(?:click|redirect)(?:\.php)?(?:\/|$)/i.test(target.pathname);
 }
 /* A page can open a popup through a form target or a fresh frame's Window.open,
    bypassing the player frame's MAIN-world hook. Chrome still reports the source
@@ -1445,33 +1462,9 @@ function redirectChainShouldInterrupt(chain, finalUrl) {
   return !redirectChainContainsKnownAuth(chain, finalUrl);
 }
 
-// ---- Bounce-tracking storage purge -----------------------------------------
-//
-// A tracker gets one moment as a FIRST party during a redirect: site A sends you to
-// tracker.example, which sends you on to site B. The visit lasts a fraction of a second
-// and you never see it, but while it lasted the tracker could set its own cookies and
-// storage as a first party -- which is precisely the state third-party cookie blocking
-// does not touch. Next time it gets the same fraction of a second, it reads them back and
-// joins the two visits up.
-//
-// The redirect chain is already recorded here for other reasons, so the intermediary is
-// known. What is added is clearing what it left behind.
-//
-// THE ENTIRE DESIGN IS THE RESTRAINT. Wiping storage for every intermediary would break
-// exactly the flows that legitimately bounce you across domains -- SSO, OAuth callbacks,
-// 3-D Secure, checkout handoffs -- and it would break them in the least debuggable way
-// possible, by silently deleting the session halfway through. So a hop is purged only
-// when every one of these holds:
-//   - it was passed THROUGH: never the site asked for, never the site landed on, and
-//     never the last hop;
-//   - it is already on a blocklist. A domain WardenOne would refuse requests to is not
-//     one the reader has an account with;
-//   - nothing anywhere in the chain looks like login or payment plumbing. Not "this hop"
-//     -- the whole chain, because a checkout that routes through an ad network is still
-//     a checkout;
-//   - and it is not a never-block domain or on the reader's allowlist.
-// Anything that fails one of those is left completely alone. A tracker whose state
-// survives is the acceptable failure here; a sign-in destroyed mid-flight is not.
+// Purge storage only for blocklisted pass-through hops, never endpoints or
+// chains resembling login or payment. Preserve user and infrastructure allows;
+// missing a tracker is safer than breaking a sign-in or checkout.
 
 /* Payment and 3-D Secure plumbing, on top of isLoginCompatibilityUrl (which covers
    identity providers and CAPTCHA but, of payments, only PayPal). These bounce you across
@@ -1636,27 +1629,9 @@ function adAuctionClickUrl(rawUrl) {
   return false;
 }
 
-// Matching trackers was always going to lose. yomi.to handed out migullexte.com
-// /click.php one day and rm358.com/4/11216888?var=..&ymid=..&var_3=.. the next --
-// a different network with none of the same parameters. The redirect broker
-// rotates the tracker as readily as the destination, so any signature written
-// today describes yesterday.
-//
-// What does not rotate is the shape of the event: a page you were already on
-// sends the whole tab to another site, and you never touched it. That is true of
-// every one of these regardless of which network is being paid, and it does not
-// need the URL to look like anything in particular.
-//
-// So the rule is about ATTRIBUTION, not reputation. Anything the user did in this
-// tab authorises the jump -- a click, a keypress, or our own in-page hooks saying
-// they allowed it. Federated login is excluded because it legitimately moves you
-// to another domain without a click on the page you leave. And this runs on the
-// navigation event itself, which fires once per navigation rather than once per
-// redirect hop, so a server-side shortener resolving inside a single navigation
-// never reaches it -- only "the page loaded, then threw me somewhere" does.
-//
-// It raises the interstitial rather than cancelling, so the cost of being wrong
-// is one click on Continue.
+// Attribute a cross-site top-level hop to a real tab gesture instead of a
+// rotating tracker URL. Federated login remains exempt, and a mistaken match
+// raises a continue-able interstitial rather than cancelling navigation.
 async function maybeBlockForcedTopRedirect(details) {
   const tabId = details && details.tabId;
   if (tabId == null || tabId < 0) return;
@@ -1856,27 +1831,9 @@ async function verifyEngineInTab(sender, msg) {
   return { ok: true, reason: 'reloaded' };
 }
 
-// A navigation that resolves to a file is not a tab hijack, and the interstitial below was
-// firing on them.
-//
-// The reasoning the frame-redirect guard rests on is "this tab was sent somewhere you did not
-// ask to go". That harm does not happen for a download: Chrome turns the navigation into a
-// download and the page you were on stays exactly where it is. Nothing was hijacked. What the
-// interstitial actually prevented was the FILE -- and whether a file is safe to have is
-// Download Shield's decision, not this one's. It grades every download, blocks the known-bad
-// outright and holds the risky for a review you can cancel, and it says why. Cancelling the
-// navigation here took that judgement away and left someone with neither the file nor a
-// reason, on a site that was behaving normally.
-//
-// Executable extensions are exempted too, deliberately. An .exe arriving after a click on a
-// player is exactly the case Download Shield grades worst and holds; it is better handled
-// there, where the answer comes with an explanation, than here, where it arrives as a wall.
-//
-// The exemption is conditional on Download Shield actually being on, so this hands the
-// decision over rather than dropping it. With Download Shield off, the old behaviour stands.
-//
-// Only this guard needs it. maybeBlockForcedTopRedirect and evaluateRedirectChain run on
-// onCommitted and onCompleted, and a navigation that becomes a download reaches neither.
+// File navigations leave the page in place. When Download Shield is enabled,
+// let it grade the download instead of treating it as a frame redirect;
+// retain this guard's prior behavior when Download Shield is off.
 const DOWNLOAD_TARGET_RE = /\.(?:7z|aab|apk|appx|appxbundle|avi|bat|bin|bz2|cab|cmd|crx|csv|deb|dmg|docx?|docm|epub|exe|flac|flv|gz|img|iso|jar|m4a|m4v|mkv|mobi|mov|mp3|mp4|msi|msix|msp|msu|odp|ods|odt|ogg|pdf|pkg|pptx?|pptm|ps1|psd|rar|rpm|run|scr|sh|sit|tar|tgz|torrent|txz|vhd|wav|webm|wmv|xlsx?|xlsm|xlsb|xpi|xz|zip|zst)(?:$|[?#])/i;
 function navigationIsFileDownload(rawUrl) {
   let u;
@@ -1941,7 +1898,9 @@ async function maybeFlagFrameDrivenRedirect(details, candidate) {
     url: String(details.url || '').slice(0, 300),
     at: now,
   });
-  if (embeddedPlayerAdTarget(details.url)) {
+  // Silently undone only for a destination that is unmistakably an ad click; anything less
+  // keeps the interstitial, so a wrong call can still be walked back.
+  if (embeddedPlayerAdBroker(details.url)) {
     try {
       await chrome.tabs.update(tabId, { url: String(fromUrl).slice(0, 1200) });
       return true;
@@ -2206,6 +2165,7 @@ const DEFAULT_CONFIG = {
   lazyLoadMedia: false,
   disableYouTubeAmbientMode: false,
   stopAnimatedVideoPreviews: false,
+  pauseAnimatedImages: false,
   webglSaverMode: 'off',
   webglSaverBlockHosts: [],
   webglSaverAllowHosts: [],
@@ -9630,34 +9590,9 @@ function safeBrowsingThreatLabel(verdict) {
   return threats.map((t) => String(t || '').replace(/_/g, ' ').toLowerCase()).join(', ');
 }
 
-// ---- Warning-page hand-off records (PRIV-04) ----
-//
-// An interstitial needs the exact address it is warning about: to say where the reader was
-// going, and to take them there if they decide to continue anyway. The three pages used to
-// receive that address in their own query string -- ?to=, ?u= -- which put every redirect
-// target, blocked page and certificate-failed URL, query string and all, into the TAB's URL.
-// A tab URL is not short-lived state. It goes into browser history, session restore,
-// screenshots, crash reports and anything allowed to read tab URLs, and it stays there for as
-// long as the tab does, long after the ten-minute redirect mirror has forgotten the chain.
-// Redirect chains are exactly where OAuth codes and reset tokens travel, so this was a
-// durable copy of the most sensitive URLs the browser sees.
-//
-// The exact URL now lives only here: a record in storage.session keyed by a random handle,
-// and the handle is the only thing the page URL carries. storage.session is memory-only and
-// cleared when the browser closes, content scripts cannot read it (TRUSTED_CONTEXTS, set at
-// the top of this file), and it survives worker suspension -- so the page resolves its own
-// handle without the worker being awake, and "continue" still works after an eviction.
-// A record is consumed when the reader continues, dropped when its tab closes, and expires
-// after a backstop TTL. A page whose record is gone says so and offers only the way back.
-//
-// What the page SHOWS is built here too, by the same rule the activity log uses: scheme,
-// host and a path with token-shaped segments starred out, no query, no userinfo -- plus a
-// marker when a query was cut, so the reader can see there was one.
-// One storage key per record, not one map under one key. Two navigations stopped in the same
-// instant would otherwise both read the map, both write it, and the second write would drop
-// the first record -- and that page would open to "this warning has expired". A record that
-// is its own key is created with one set and consumed with one remove, and nothing can
-// clobber it.
+// Keep exact warning destinations in per-record storage.session entries, not
+// tab URLs that persist in history and crash reports. Pages carry only random
+// handles; displayed addresses are redacted, and records expire or are consumed.
 const WARNING_RECORD_PREFIX = 'wardenone_warning:';
 const WARNING_RECORD_TTL_MS = 6 * 60 * 60 * 1000;
 const WARNING_RECORD_MAX = 40;
@@ -9842,33 +9777,10 @@ function reputationWarningText(verdict) {
   return provider + ' reported a suspicious URL';
 }
 
-// A reputation block is the one screen with no way forward, and reputation feeds do
-// get things wrong. Blocking a university login, a bank, or a download someone needs
-// with no escape is its own kind of harm, so there is a deliberate way through.
-//
-// It is NOT the site allowlist. That stays unable to quiet malware and phishing
-// verdicts, as noted below. This is a separate, explicit, per-host decision the user
-// makes on the block screen while looking at the evidence, and it lives in session
-// storage so it dies with the browser. A permanent malware exemption is not something
-// to grant from a single click.
-// ---- Site permissions granted to websites, swept in one go -------------------------------------
-//
-// Camera, microphone, location and notification grants accumulate exactly the way consent cookies
-// do: you allow one for a video call or a map, and it stays allowed forever because nothing ever
-// brings it back up. Chrome buries them one site at a time behind chrome://settings/content, so in
-// practice nobody revisits them.
-//
-// contentSettings cannot ENUMERATE which sites hold a grant -- the list-site-permissions handler
-// already says so, and that is a Chrome limitation rather than an omission here. What it CAN do is
-// clear a type back to 'ask', which is the useful half: the standing grants go, and a site that
-// genuinely needs the camera simply prompts again. Reset to ASK, never to BLOCK -- this is a
-// tidy-up, not a lockdown.
-//
-// Declared at module scope on purpose. The first version lived inside the message listener and read
-// SITE_PERMISSION_TYPES and contentSettingApi, two consts declared LATER in that same function --
-// so calling it from the clean-browser branch above them threw ReferenceError before it ran a line.
-// A `typeof` guard does not help there either: typeof on a const still in its temporal dead zone
-// throws as well. Self-contained here, with nothing to be in the dead zone of.
+// Reputation blocks offer an explicit, session-only per-host escape on their
+// evidence screen; the ordinary allowlist cannot waive malware or phishing.
+// contentSettings cannot enumerate grants, so the permission sweep resets
+// supported types to ask. Keep definitions at module scope to avoid TDZ.
 const SWEEPABLE_SITE_PERMISSIONS = [
   { key: 'camera', label: 'Camera' },
   { key: 'microphone', label: 'Microphone' },
@@ -11042,24 +10954,9 @@ function userBlocklistBandStep() {
   }
 }
 
-// ---- Reconciliation honesty (MV3-01) ----
-//
-// Desired state lives in wardenone_config; actual state is Chrome's -- session and dynamic DNR
-// rules, content-script registrations, content settings -- and the two are joined only by the
-// appliers below. Every applier catches its own Chrome error and logs it, which is right for
-// the callers that run one in isolation, but it meant the orchestrator never saw a failure:
-// allSettled saw twenty-four fulfilled promises, committed the state key, and from then on
-// treated that desired state as applied. A rule that never reached Chrome stayed missing for
-// the rest of the worker's life while the popup reported the switch as on. And because the key
-// is RAM, a worker that died took the claim with it -- but no ordinary wake ever ran this
-// again, so the gap outlived the worker as well.
-//
-// Three things close that. An applier that swallowed a failure now returns false, and the
-// orchestrator treats false like a rejection. A failed run leaves the key alone AND writes a
-// compact marker to storage.session naming what failed. And a cold worker that finds the
-// marker schedules one bounded retry, so convergence is attempted on the next wake rather than
-// at the next browser start. Protection Health reads the same marker, so a switch that is on
-// in settings and absent in Chrome is reported rather than presented as healthy.
+// Reconcile must treat an applier's false result as failure, not success.
+// Keep the desired-state key unchanged, persist a degraded marker, and retry
+// once on a cold wake so Protection Health reports unapplied settings.
 const RECONCILE_DEGRADED_KEY = 'wardenone_reconcile_degraded';
 const RECONCILE_RETRY_MAX = 6;
 const RECONCILE_RETRY_MIN_MS = 60 * 1000;
@@ -12767,6 +12664,7 @@ function resourceSaverState(config) {
   return {
     ambient: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.disableYouTubeAmbientMode === true,
     previews: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.stopAnimatedVideoPreviews === true,
+    images: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.pauseAnimatedImages === true,
   };
 }
 function broadcastResourceSaverState(state) {
@@ -12779,7 +12677,7 @@ function broadcastResourceSaverState(state) {
       if (number !== resourceSaverBroadcastNumber) return;
       for (const tab of (tabs || []).filter((candidate) => candidate && candidate.id != null
           && /^https?:\/\//i.test(String(candidate.url || '')))) {
-        chrome.tabs.sendMessage(tab.id, { kind: 'resource-saver-update', ambient: state.ambient, previews: state.previews }, () => { void chrome.runtime.lastError; });
+        chrome.tabs.sendMessage(tab.id, { kind: 'resource-saver-update', ambient: state.ambient, previews: state.previews, images: state.images }, () => { void chrome.runtime.lastError; });
       }
     });
   };
@@ -12801,7 +12699,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
       const beforeResourceSaver = resourceSaverState(changes.wardenone_config.oldValue);
       const afterResourceSaver = resourceSaverState(changes.wardenone_config.newValue);
       if (beforeResourceSaver.ambient !== afterResourceSaver.ambient
-          || beforeResourceSaver.previews !== afterResourceSaver.previews) {
+          || beforeResourceSaver.previews !== afterResourceSaver.previews
+          || beforeResourceSaver.images !== afterResourceSaver.images) {
         broadcastResourceSaverState(afterResourceSaver);
       }
     } catch (_) {}
@@ -13226,32 +13125,10 @@ function forgetTabHostsReady() {
   return __forgetTabHostsReady;
 }
 
-/* The tabs.onUpdated census, and the worker lifetime it decides.
-
-   tabs.onUpdated cannot be filtered: Chrome fires it for every property it touches on
-   any tab -- title, favicon, audible, muted, status, url -- and a tab playing media
-   changes those all the time. There are three listeners for it in this worker: this
-   one, Memory Shield's activity marker (background-memory.js, which needs `audible`,
-   a signal no other event carries) and Download Guard's review-page cleanup
-   (background-downloads.js). tools/test-listener-census.js pins that number, so a
-   fourth is a decision and not a drift.
-
-   How Chrome dispatches, because a comment here once got it wrong and a design choice
-   was made against the wrong model: one event wakes a stopped worker ONCE and is then
-   delivered to every listener registered for it. The wake, and the parse of three
-   quarters of a megabyte of script that comes with it, is paid by the first listener;
-   the second and third add a callback each, not a wake. Folding a consumer into an
-   existing listener therefore saves a function call, never a worker start, and
-   splitting one out costs the same. The only thing that would stop the wakes is
-   registering no tabs.onUpdated listener at all, and Memory Shield's `audible` need
-   rules that out while it is on (its default).
-
-   So the lifetime is decided, not incidental: while any tab is loading or playing
-   media this worker stays resident, because every tick of that tab resets its idle
-   timer; after thirty quiet seconds it stops as usual. Both regimes are real and the
-   cold-start paths still earn their keep. Every listener discards, on its first line,
-   any event that carries nothing it reads, so the resident worker does no work on the
-   ticks it cannot avoid receiving. */
+/* tabs.onUpdated wakes the worker once per event, then calls every listener.
+   Memory Shield needs its audible signal, so folding the other consumers together
+   would not prevent wakes. Each listener discards updates it does not use;
+   tools/test-listener-census.js pins the intentional listener count. */
 try {
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     const newHost = forgetHostFromUrl((tab && tab.url) || change.url || '');
@@ -14854,27 +14731,9 @@ function isNeverBlockDomain(domain) {
   return false;
 }
 
-// High-priority DNR allow rules for the trusted-infrastructure (NEVER_BLOCK) domains, so a
-// false-positive in the 28k-rule EasyList/adshield pack -- or a learned/grabber rule -- cannot
-// break a FUNCTIONAL subresource (script/stylesheet/font/xhr/websocket/sub_frame) on a major SaaS
-// app (figma, notion, slack, dropbox, ...). Scoped to functional resource types ONLY: image / ping /
-// beacon are deliberately NOT allowed, so tracking pixels served from these domains stay
-// blockable. Priority sits above our block rules (static 1, tracker/easyprivacy 1000, learned/
-// grabber 2000) but below the media-compat (90000) and user-allowlist (100000) rules. Per-URL
-// reputation / SafeBrowsing is a separate JS-side layer and is unaffected by these DNR allows.
-//
-// websocket belongs here and was missing. A downloaded rule that names no resourceTypes matches
-// EVERY type, so leaving websocket out allowed the xhr and blocked the socket on the same host --
-// which does not look like a block from the page, it looks like a feature quietly not working.
-// Reported as: the Spotify WEB PLAYER plays normally but Discord never shows what you are
-// listening to. Discord's servers poll Spotify for that, and the web player publishes its state
-// over wss://dealer.spotify.com; with the socket dropped there is nothing for Discord to read.
-// The desktop app is unaffected, which is why it looks like a Discord bug rather than ours.
-// NEVER_BLOCK domains that ALSO host their own first-party ad / conversion / telemetry SCRIPTS
-// (EasyList/our tracker list deliberately block paths like google.com/pagead/*, youtube.com/
-// pagead/*, google.com/ccm/collect). They must NOT get a blanket script/xhr allow or those ads
-// get un-blocked. They stay in the JS-side isNeverBlockDomain false-positive shield; they just
-// don't get the DNR allow rule (these giants are never broken by an EasyList false-positive).
+// Allow functional resources on trusted infrastructure above blocklists, but
+// keep image, ping and beacon requests blockable. Exclude hosts that serve
+// first-party ads, and include WebSocket so apps do not fail silently.
 const NEVER_BLOCK_ALLOW_EXCLUDE = new Set([
   'google.com', 'youtube.com', 'youtube-nocookie.com',
   'microsoft.com', 'live.com', 'office.com', 'office365.com',
@@ -16761,31 +16620,9 @@ function isDefaultPortHttpUrl(raw) {
 }
 
 // ---------------------------------------------------------------------------
-// Intranet Guard, network layer.
-//
-// Everything Intranet Guard did lived in the page: fetch, XHR, WebSocket,
-// EventSource, WebTransport, beacons, forms and element sources, all rewritten
-// in the MAIN world. That is a complete list of the page's networking, and it is
-// worth nothing to a Worker.
-//
-// A worker gets its own JavaScript realm with a pristine fetch and a pristine
-// WebSocket. Two lines of script inside one reaches the LAN with every in-page
-// hook still sitting there, untouched, on an object the worker never sees. The
-// same is true of a service worker, and of anything else that escapes the page
-// realm.
-//
-// The tempting fix is to instrument workers too, by fetching their source and
-// re-serving it from a blob with a shim in front. That is what the Twitch
-// blocker does for one known script, and it does not generalise: a site whose
-// CSP omits worker-src blob: stops constructing workers at all, a module worker
-// loses the base URL its relative imports resolve against, and a service worker
-// cannot be registered from a blob URL at all -- the spec forbids it. Chasing
-// realms means breaking pages to protect them.
-//
-// So the guarantee moves to the layer every realm already shares. A request to a
-// private address is refused by declarativeNetRequest whether it came from the
-// page, a dedicated worker, a shared worker, a service worker, or something that
-// has not been invented yet. No realm to instrument, nothing to keep in step.
+// Workers have separate networking realms that page hooks cannot cover.
+// DNR blocks private-address requests from every realm without rewriting
+// worker scripts, which would break CSP, module imports and service workers.
 const INTRANET_NET_RULE_BASE = 932200;
 const INTRANET_NET_RULES_BUDGET = 16;
 
@@ -17209,7 +17046,7 @@ const CONTROL_KINDS = {
   presentation: ['showBadge', 'showToasts', 'silentMode'],
   tool: ['elementZapper', 'twitchRewind', 'twitchVodRewind'],
   comfort: [
-    'blockAutoplay', 'killPrefetch', 'lazyLoadMedia', 'twitchSteadyPlayback', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews',
+    'blockAutoplay', 'killPrefetch', 'lazyLoadMedia', 'twitchSteadyPlayback', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews', 'pauseAnimatedImages',
     'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk',
   'memoryShield', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverPinned', 'throttleBackgroundTabs',
   ],
@@ -18608,26 +18445,9 @@ async function handleScriptDriftScan(sender, msg) {
   return { ok: true, warnings: warnings.slice(0, 3) };
 }
 
-// Let the popup trigger a manual refresh.
-// ---- Hidden elements: the reader's own cosmetic rules ---------------------
-//
-// Everything else AdShield hides comes from a list somebody else maintains.
-// These are the ones the reader picked by hand, on a page in front of them, and
-// they are treated differently in three ways:
-//
-//   - they survive AdShield being off or the site being allowlisted, because
-//     "I do not want ad blocking here" and "I do not want to see that box" are
-//     different sentences
-//   - they are listed and reversible per site, because a thing you hid and
-//     cannot bring back is worse than the thing you hid
-//   - the selector is validated before it is ever stored, not before it is used
-//
-// That last one is the security-relevant part. A selector goes on to be joined
-// with commas and pasted into a stylesheet, so a value containing a brace ends
-// the rule and starts writing CSS of its own. Nothing today can put an arbitrary
-// string in here -- they come from the picker, which builds them out of the DOM
-// -- but "nothing can reach it today" is a property of the current code, not of
-// this store, and the check is one function.
+// Reader-hidden elements survive AdShield switches and remain reversible.
+// Validate selectors before storage: they are later joined into CSS rules,
+// where an injected brace could escape the intended selector.
 const HIDDEN_STORE_KEY = 'wardenone_hidden_elements';
 const HIDDEN_MAX_HOSTS = 500;
 const HIDDEN_MAX_PER_HOST = 100;
@@ -21238,6 +21058,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         ok: true,
         ambient: on && cfg.disableYouTubeAmbientMode === true,
         previews: on && cfg.stopAnimatedVideoPreviews === true,
+        images: on && cfg.pauseAnimatedImages === true,
       };
     }), sendResponse);
     return true;
@@ -21578,29 +21399,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // ---- Verify & Repair ----
-  // Honest about scope: this is a health-check-and-repair, not a cryptographic
-  // tamper check (Chrome itself signs/verifies the extension package). It checks
-  // the realistic failure modes -- missing/unparseable core files, corrupted
-  // saved settings, stale/empty blocklist, broken DNR rules -- and repairs them
-  // (reset bad config to defaults, re-fetch lists, re-register rules).
-  // ---- SessionShield: clear all data for a site ----
-  // Wipes cookies, localStorage, sessionStorage, IndexedDB, cache, etc. for a
-  // given origin. This is the user clearing THEIR OWN data -- a safe, powerful
-  // "log me out / forget me everywhere on this site" action.
-  // ---- SessionShield: password breach check (k-anonymity, opt-in) ----
-  // The popup hashes the password with SHA-1 locally and sends ONLY the first 5
-  // hex chars of the hash. HaveIBeenPwned returns all hash suffixes in that bucket;
-  // the popup matches locally. The full password and full hash NEVER leave the
-  // device -- this is the standard, privacy-preserving "Pwned Passwords" protocol.
-  // ---- SessionShield: real cookie flag audit ----
-  // A content script CAN'T read Secure/HttpOnly/SameSite (HttpOnly cookies are
-  // invisible to JS by design). The cookies API in the background CAN, so the
-  // cookie grade is computed from REAL flags here, not guessed from the page.
-  // ---- SessionShield: has THIS SITE been breached? ----
-  // Uses HIBP's public breaches endpoint filtered by domain (no auth needed for
-  // the domain list). Returns breach names + dates so the user gets real context
-  // about the site they're on. Fails gracefully if the API is unavailable.
+  // Verify & Repair checks files, settings, lists and DNR state; Chrome verifies
+  // package signatures. SessionShield uses background APIs for site-data erasure,
+  // real cookie flags and optional breach checks; passwords stay in the popup.
 
 
   // ---- Browser cleaning: clear selected data types globally ----
@@ -23423,7 +23224,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
             'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them

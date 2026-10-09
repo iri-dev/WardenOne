@@ -46,7 +46,7 @@ function check(label, condition, extra) {
 }
 
 const START = 'const ENGINE_RELOADS = Object.create(null);';
-const END = '\n// A navigation that resolves to a file is not a tab hijack';
+const END = '\nconst DOWNLOAD_TARGET_RE = ';
 const from = BG.indexOf(START);
 const to = BG.indexOf(END, from + START.length);
 assert(from >= 0 && to > from, 'the engine watchdog moved in background.js');

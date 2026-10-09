@@ -4,40 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Who can claim Amazon-specific handling (C1).
- *
- * The engine USED to take a whole-engine exit on Amazon and Shopify:
- * __woStartRuntime returned before installing anything, and __woSyncConfig turned
- * every boolean in the config off. Both exits still stamped __wardenOneInstalled
- * and __wardenOneReadyVersion, so a tab that took one went on reporting itself
- * protected to the popup and to Repair. Those exits are GONE -- the only hosts
- * that pause anything are YouTube and university and school sites, and each
- * pauses only the names in its own list (YT_COMPAT_PAUSED, EDU_COMPAT_PAUSED).
- * Section 0 pins that, because a site-wide off switch is the most valuable thing
- * an attacker could get back.
- *
- * __woAmazonHost itself survives, for Amazon-specific URL cleaning (/ref= and
- * friends). The host test still has to be tight. It was /(^|\.)amazon\.[a-z.]+$/i,
- * which anchors the label but not the suffix: it accepted any run of letters and
- * dots after a label called "amazon", and the attacker chooses their own
- * hostname. amazon.attacker.com matched, and so did amazon.com.evil.tld -- the
- * shape Amazon credential phishing actually uses. That is less severe now that it
- * only governs link rewriting rather than the whole engine, but a page still must
- * not be able to claim it.
- *
- * This suite pins:
- *   0. no host takes a whole-engine exit any more,
- *   1. real Amazon storefronts still get their URL cleaning,
- *   2. attacker-controlled hosts do not,
- *   3. the loose pattern has not come back anywhere, and every call site shares
- *      one binding.
- *
- * The regex is lifted from content.min.js -- the artifact the browser actually loads --
- * rather than from src/content.js, so a source fix that never reached the build cannot pass.
- *
- * Run: node tools/test-compat-host-scope.js
- */
+/* No host may disable the whole engine. Amazon URL cleanup applies only to
+   genuine storefront hosts; attacker-controlled lookalikes must not qualify.
+   Read the shipped content.min.js so an unreconstructed source fix cannot pass. */
 'use strict';
 
 const fs = require('fs');

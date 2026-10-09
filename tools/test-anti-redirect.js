@@ -31,6 +31,10 @@ const PREDS = {
   '[role="slider"],input[type="range"],.jw-slider-time,.vjs-progress-control,.plyr__progress,.dplayer-bar,.art-progress': (el) => el.attrs.role === 'slider' || (el.tagName === 'INPUT' && el.attrs.type === 'range') || /\b(?:jw-slider-time|vjs-progress-control|plyr__progress|dplayer-bar|art-progress)\b/.test(el.className),
   '.video-js,.jwplayer,.plyr,[data-player],#player': (el) => /\bvideo-js\b|\bjwplayer\b|\bplyr\b/.test(el.className) || el.id === 'player' || el.attrs['data-player'] != null,
   '.video-js,.jwplayer,.plyr,.dplayer,.art-video-player,.shaka-video-container,video': (el) => /\b(?:video-js|jwplayer|plyr|dplayer|art-video-player|shaka-video-container)\b/.test(el.className) || el.tagName === 'VIDEO',
+  'button,[role="button"],[role="menuitem"],[role="menuitemradio"],[role="option"],[role="tab"],input[type="button"],input[type="submit"],[onclick],[data-link],[data-src],[data-server],[data-embed]': (el) =>
+    el.tagName === 'BUTTON' || ['button', 'menuitem', 'menuitemradio', 'option', 'tab'].includes(el.attrs.role)
+      || (el.tagName === 'INPUT' && ['button', 'submit'].includes(el.attrs.type))
+      || ['onclick', 'data-link', 'data-src', 'data-server', 'data-embed'].some((a) => el.attrs[a] != null),
   'a[href],area[href],form,input:not([type="range"]),textarea,select': (el) => ((el.tagName === 'A' || el.tagName === 'AREA') && (el.attrs.href != null || el.href)) || el.tagName === 'FORM' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.attrs.type !== 'range'),
 };
 
@@ -52,8 +56,15 @@ function makeEl(props) {
     duration: props.duration,
     currentTime: props.currentTime || 0,
     style: Object.assign({
-      setProperty(name, value) { this[name] = value; },
+      /* A plain assignment (style['pointer-events'] = 'auto'), like the CSSOM one a page makes,
+         replaces the declaration and its !important; setProperty records the priority. */
+      setProperty(name, value, priority) {
+        this[name] = value;
+        Object.defineProperty(this, '__val_' + name, { value, writable: true, configurable: true });
+        Object.defineProperty(this, '__prio_' + name, { value: priority || '', writable: true, configurable: true });
+      },
       getPropertyValue(name) { return this[name] || ''; },
+      getPropertyPriority(name) { return this[name] === this['__val_' + name] ? (this['__prio_' + name] || '') : ''; },
       removeProperty(name) { delete this[name]; },
     }, props.style || {}),
     children: props.children || [],
@@ -64,6 +75,7 @@ function makeEl(props) {
     hasAttribute(n) { return this.attrs[n] != null; },
     setAttribute(n, v) { this.attrs[n] = String(v); },
     removeAttribute(n) { delete this.attrs[n]; },
+    get attributes() { return Object.keys(this.attrs).map((name) => ({ name, value: this.attrs[name] })); },
     getElementsByTagName(tag) {
       const out = [];
       (function walk(list) { for (const c of list) { if (tag === '*' || c.tagName === String(tag).toUpperCase()) out.push(c); walk(c.children || []); } })(this.children);
@@ -836,6 +848,88 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
   t.mutate(shell);
   check('T13w the moment the shell holds something, it is given its presses back',
     shell.style['pointer-events'] === undefined && shell.attrs['data-wardenone-blocked-popup-overlay'] === undefined, shell.style);
+}
+{
+  /* A neutralized layer the ad script hands its presses back, on the same DOM node. Remembering
+     the node as done skipped it from then on, so the next press landed on the advert again. */
+  const { link, cover } = invokeLayer(MONETAG);
+  const t = build({ framed: true, fakeClock: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [cover], mutationObserver: true });
+  const neutral = (el) => el.style['pointer-events'] === 'none' && el.style.getPropertyPriority('pointer-events') === 'important';
+  check('T13z the layer starts neutralized', neutral(cover) && neutral(link), cover.style);
+  cover.style['pointer-events'] = 'auto';
+  t.mutate(cover);
+  check('T13z style.pointerEvents = "auto" on the same node is undone', neutral(cover), cover.style);
+  link.style['pointer-events'] = 'auto';
+  t.mutate(cover);
+  check('T13z and so is re-arming the link inside it', neutral(link), link.style);
+  delete cover.style['pointer-events'];
+  t.mutate(cover);
+  check('T13z and a cssText rewrite that drops the declaration', neutral(cover), cover.style);
+  check('T13z the layer coming back is reported once, not each time',
+    t.state.emits.filter((e) => e.type === 'blocked_popup' && e.detail.kind === 'click-layer').length === 1, t.state.emits);
+  for (let i = 0; i < 25; i++) { cover.style['pointer-events'] = 'auto'; t.mutate(cover); }
+  check('T13z a page that fights back in a tight loop is left to the press-time guards, not fought forever',
+    cover.style['pointer-events'] === 'auto', cover.style);
+  t.advanceTime(5000);
+  t.handshake();
+  check('T13z a later look at the page takes the node up again', neutral(cover), cover.style);
+}
+{
+  /* Without an observer to see the style change, the next look at the page judges the node on its
+     actual state rather than on having been seen before. */
+  const { link, cover } = invokeLayer(MONETAG);
+  const t = build({ framed: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT], bodyChildren: [cover] });
+  cover.style['pointer-events'] = 'auto';
+  link.style['pointer-events'] = 'auto';
+  t.handshake();
+  check('T13z a re-armed node is neutralized again when it is looked at again',
+    cover.style['pointer-events'] === 'none' && link.style['pointer-events'] === 'none', [cover.style, link.style]);
+}
+{
+  /* The site's own controls over the video. A visible "Switch server" button that moves the
+     player with location.assign is the reader's choice; the hijack it resembles is not. */
+  const SERVER2 = 'https://another-video-server.example/embed/123';
+  const HOP = 'https://newsboydurance.cfd/iXnuzrgAKPULKgXUy/70849/';
+  const button = (props) => makeEl(Object.assign({ tag: 'button', rect: { left: 860, top: 12, width: 120, height: 32, right: 980, bottom: 44 } }, props));
+  const pressAndClick = (t, el, during) => {
+    t.fire('pointerdown', { target: el, clientX: 900, clientY: 28 });
+    let navigated = null;
+    if (during) t.sandbox.addEventListener('click', () => { navigated = navigated || t.navigate(during); });
+    t.fire('click', { target: el, clientX: 900, clientY: 28 });
+    return navigated;
+  };
+  const switchServer = button({ text: 'Switch server' });
+  const t = build({ framed: true, timers: true, fakeClock: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  const ev = pressAndClick(t, switchServer, SERVER2);
+  check('T13y a visible server switch over the video may move the player from its own click', ev && ev.defaultPrevented === false, ev);
+  check('T13y and that press is not published as a press on the video', vm.runInContext('window.__wardenOnePlayerPressAt', t.sandbox) === 0);
+  t.runTimers();
+  t.advanceTime(400);
+  check('T13y a timer that sends the player elsewhere after it is still stopped', t.navigate(HOP).defaultPrevented === true);
+
+  const named = button({ text: 'Server 2', attrs: { 'data-link': SERVER2 } });
+  const tn = build({ framed: true, timers: true, fakeClock: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  pressAndClick(tn, named);
+  tn.runTimers();
+  tn.advanceTime(700);
+  check('T13y a control that names its destination may be followed there a moment later', tn.navigate(SERVER2).defaultPrevented === false);
+  check('T13y but not anywhere else', tn.navigate(HOP).defaultPrevented === true);
+
+  for (const [label, el] of [
+    ['the player\'s own play button', button({ className: 'vjs-big-play-button', text: 'Play Video', attrs: { title: 'Play Video' } })],
+    ['a control whose label is a media action', button({ text: 'Mute' })],
+    ['a bare bait word', button({ text: 'Continue' })],
+    ['an icon-only control', button({ text: '' })],
+    ['a control too small to see', button({ text: 'Switch server', rect: { left: 900, top: 20, width: 4, height: 4, right: 904, bottom: 24 } })],
+  ]) {
+    const tb = build({ framed: true, timers: true, fakeClock: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+    check('T13y ' + label + ' grants nothing: the player frame is still not sent away', pressAndClick(tb, el, HOP).defaultPrevented === true);
+  }
+  const ghost = button({ text: 'Switch server' });
+  const veil = makeEl({ style: { opacity: '0.01' }, children: [ghost] });
+  ghost.parent = ghost.parentElement = veil;
+  const tg = build({ framed: true, timers: true, fakeClock: true, hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
+  check('T13y nor does one the reader could not see', pressAndClick(tg, ghost, HOP).defaultPrevented === true);
 }
 {
   /* The player frame publishes when the video was pressed, read-only, for the top frame. */

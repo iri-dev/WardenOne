@@ -404,24 +404,8 @@
       else l = l0 > 0.60 ? Math.max(l0, 0.84) : 0.82 + l0 * 0.12; // subtle light borders
     } else { // dark or ultra: text always bright, surfaces always dark
       if (role === 'fg') {
-        // Prominence is DISTANCE FROM MID-TONE, not raw lightness.
-        //
-        // The old map was one upward line (0.68 + l0*0.22). It only ordered text
-        // correctly on a page that started dark. On a light page it ran backwards:
-        // Google's body text #202124 (l0 .13, the most important text there is)
-        // came out at .71 while its throwaway snippet grey #70757a (l0 .46) came
-        // out at .78 -- the least important text rendered BRIGHTER than the most
-        // important. It also topped out at .90, so pure white text could never be
-        // white; it painted #e5e5e5, which is the "white but not white" that makes
-        // a page tiring to read on OLED black.
-        //
-        // A page's prominent text sits far from its mid-tone: near-black on a
-        // light page, near-white on a dark one. Both should land near-white here,
-        // and mid-greys -- secondary text either way -- should stay secondary. So
-        // the curve is a V: brightest at both ends, dimmest in the middle. That
-        // orders text correctly whichever kind of page it came from, and roughly
-        // doubles the spread between a page's brightest and dimmest text, which is
-        // the hierarchy that was collapsing into one flat wash of grey.
+        // Prominent text sits at either lightness extreme. This V-shaped mapping
+        // keeps hierarchy on both light and dark source pages.
         const top = mode === 'ultra' ? 0.98 : 0.95; // ultra can go brighter: its background is true black
         const mid = mode === 'ultra' ? 0.78 : 0.76;
         const slope = (top - mid) * 2;
@@ -1540,23 +1524,9 @@
       foreignEls.push(st);
     } catch (e) {}
   }
-  // The sheet text is fetched HERE, from the page's context, and not by the service
-  // worker. It used to be the worker, fetching with the extension's own permissions --
-  // which reach addresses no page may: a router, a NAS, a service on the reader's own
-  // network. The only thing standing between a page and that reach was a check of the
-  // hostname STRING, and a string cannot see what a public-looking name RESOLVES to.
-  // A page that listed a stylesheet on such a name could have the extension fetch from
-  // inside the reader's network and hand the response back into the page's own DOM
-  // (SEC-11). Chrome cannot tell an extension where a name will resolve before the
-  // request is made, so there was no version of that proxy that could be made safe.
-  //
-  // This fetch is made as the page itself would make it: mode 'cors', no credentials.
-  // So it is subject to everything the page's own requests are -- CORS, and Chrome's
-  // private-network rules -- and a page gains nothing from it that it did not already
-  // have. A host that lets pages read its stylesheets (every CDN that serves web fonts
-  // does) is recoloured; a host that does not simply keeps its own colours, which is
-  // what the computed-background fallback below is for. Nothing privileged is asked
-  // for any more, so there is nothing for a page to steer.
+  // Fetch foreign stylesheets in the page's context with CORS and no credentials.
+  // Worker permissions could reach private networks on a page's behalf; page
+  // fetch rules keep that privilege boundary intact.
   const FOREIGN_CSS_MAX_BYTES = 4000000;
   const FOREIGN_CSS_TIMEOUT_MS = 8000;
   function isStylesheetContentType(value) {

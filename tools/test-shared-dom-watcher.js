@@ -6,15 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// Smart Script Shield, Script Drift and the Login Page Age check used to run three
-// separate whole-document subtree MutationObservers on every top-level page, two of
-// them for a full 60 seconds. They now share one.
-//
-// The bug that sharing invites is one subscriber's teardown killing the others: the
-// login-age watcher unsubscribes from inside its own callback as soon as it has
-// checked, and Script Drift unsubscribes on a 60s timer, but Smart Script Shield
-// re-arms on popstate long afterwards and must still get its notifications. Most of
-// this file exists to pin that.
+// Shared DOM watcher subscribers have independent lifetimes. An unsubscribe during
+// a callback or timeout must not stop later popstate notifications.
 
 const assert = require('assert');
 const fs = require('fs');

@@ -4,33 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * An answer to a question the reader asked must always be shown.
- *
- * The four right-click entries -- "Check this link", "Check the selected text",
- * "Where is this image from?" and "What is this frame?" -- all report through
- * wardenManualNotice, which raises a detected_manual_check toast in the page.
- *
- * They appeared to do nothing. Five separate gates in showToast could swallow
- * the answer, and every one of them exists to stop WardenOne interrupting
- * people who did NOT ask:
- *
- *   1. WO.enabled            (forced false on YouTube until the compat fix)
- *   2. WO.showToasts         (same, and the reader can switch it off)
- *   3. shouldQuietToast      -- remembers each type per host for THIRTY MINUTES
- *   4. notificationPreference -- 'off' or 'history' mode
- *   5. toastSeen             -- per-page dedup on the card's wording
- *
- * Gate 3 is the one that made it look broken: after the first check on a site,
- * every later check on that site was silent for half an hour. Someone trying
- * the feature out -- clicking several entries in a row to see what they do --
- * hits it immediately and concludes none of them work.
- *
- * A manual check is not a notification. It is the answer to a request made a
- * second ago, so it bypasses all five.
- *
- * Run: node tools/test-manual-check-toast.js
- */
+/* Right-click checks are requested answers, not ambient notifications.
+   Their result must bypass quieting, deduplication and toast preferences
+   that would otherwise make repeated manual checks appear to do nothing. */
 'use strict';
 
 const fs = require('fs');

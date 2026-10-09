@@ -4,57 +4,11 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Deep cryptominer detection (toggle: cryptominerCpuWatch, OFF by default).
- *
- * The network guard (blockCryptominers) stops miners that fetch a payload from a
- * mining service or phone a pool. It cannot see a miner a site hosts on its own
- * origin and proxies through its own backend. This is the layer for that case.
- *
- * How it decides: it reads the source of the workers a page starts and looks for
- * mining code. A miner has to run its hashing loop somewhere, and on the web that
- * means a Worker whose script contains recognisable mining vocabulary.
- *
- * What it does about it: terminates that worker, and keeps terminating the ones
- * the miner starts to replace it. Detection alone would just be a notification
- * that your battery is being spent. Because this DOES act, it acts only on the
- * evidence it can actually stand behind -- a worker whose own code contains
- * mining routines -- and it never acts on an allowlisted site.
- *
- * The surgical part matters: only workers whose source matched are terminated.
- * A mining page that also runs a legitimate worker keeps the legitimate one.
- *
- * ---------------------------------------------------------------------------
- * Why there is no CPU measurement here, having tried it.
- *
- * The obvious design is "notice a worker on every core, then confirm the CPU is
- * pegged". Measured on a 12-core machine against a spinning worker per core:
- *
- *   main-thread benchmark         1.03-1.21x slower   -- the scheduler keeps the
- *                                                        main thread on its own
- *                                                        core, so an all-core
- *                                                        miner is nearly invisible
- *   probe worker, clean baseline  1.63x slower        -- usable, BUT the baseline
- *                                                        has to be taken before the
- *                                                        miner starts, and by the
- *                                                        time a fleet is worth
- *                                                        investigating it already has
- *   worker-vs-main ratio          1.21x separation    -- baseline-free, but too
- *                                                        close to noise to threshold
- *
- * Every variant either cannot fire or fires on anything busy. And even at its
- * best it could only say "something is using your CPU", which is equally true of
- * a video export, a WASM build, or a game. So load is not measured, and the word
- * cryptominer is only used when the code says so.
- * ---------------------------------------------------------------------------
- *
- * Known limits, stated rather than hidden:
- *   - Top frame only.
- *   - Cross-origin worker scripts cannot be read, so they are never scanned. The
- *     network layer is what covers those.
- *   - An obfuscated or pure-WASM miner with no recognisable strings is not caught.
- *     This narrows the gap the network layer leaves; it does not close it.
- */
+/* Deep miner detection covers same-origin workers that network blocklists miss.
+   Terminate only workers whose readable source contains mining routines, including
+   replacements; allowlisted sites are untouched. CPU load alone cannot identify
+   mining reliably. Cross-origin, obfuscated and pure-WASM workers remain outside
+   this detector's scope. */
 (function () {
   'use strict';
   const WO_GUARD_VERSION = '1.0.2';

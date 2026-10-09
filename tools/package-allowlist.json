@@ -106,5 +106,6 @@
   "twitch-rewind.js",
   "twitch-vod-rewind.js",
   "yt-adblock.js",
-  "resource-saver.js"
+  "resource-saver.js",
+  "animated-image-saver.js"
 ]
