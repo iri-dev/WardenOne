@@ -658,7 +658,20 @@ async function main() {
   process.exit(failed ? 1 : 0);
 }
 
-module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, releaseWorker, closeExtensionTabs, freePort, edgePath };
+/* Runs a browser test and fails it if Node exits first. A browser call that is never answered --
+   an evaluate awaited on a page the test then saw torn down -- leaves nothing to run, and Node
+   exits 0 mid-test: on CI, browser-config-race.js "passed" that way without its last checks. */
+function mustFinish(run, name) {
+  let settled = false;
+  process.on('exit', (code) => {
+    if (settled || code !== 0) return;
+    console.error(name + ' stopped before it finished: a browser call it was waiting on was never answered.');
+    process.exitCode = 1;
+  });
+  return Promise.resolve().then(run).finally(() => { settled = true; });
+}
+
+module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, releaseWorker, closeExtensionTabs, freePort, edgePath, mustFinish };
 
 if (require.main === module) {
   main().catch((e) => { console.error('perf profile: ' + (e && e.stack || e)); process.exit(2); });

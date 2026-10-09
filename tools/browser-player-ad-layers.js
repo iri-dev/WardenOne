@@ -298,4 +298,4 @@ async function run() {
     }
   }
 }
-run().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
+profile.mustFinish(run, 'browser-player-ad-layers').catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
