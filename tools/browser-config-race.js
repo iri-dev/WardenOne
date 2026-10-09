@@ -263,4 +263,4 @@ async function run() {
     }
   }
 }
-run().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
+profile.mustFinish(run, 'browser-config-race').catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
