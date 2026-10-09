@@ -40,7 +40,13 @@ async function run() {
       await cdp.send('Page.enable', {}, sessionId);
       await cdp.send('Runtime.enable', {}, sessionId);
       page = { targetId, sessionId };
-      await until("document.readyState === 'complete' && !!document.getElementById('wo-settings-search')", 'popup load');
+      await cdp.send('Page.bringToFront', {}, sessionId);
+      try {
+        await until("document.readyState === 'complete' && !!document.getElementById('wo-settings-search')", 'popup load', 30000);
+      } catch (error) {
+        const state = await value("({ url: location.href, readyState: document.readyState, hasSearch: !!document.getElementById('wo-settings-search') })").catch(() => null);
+        throw new Error(error.message + ': ' + JSON.stringify(state));
+      }
       return page;
     }
     async function value(expression) {
