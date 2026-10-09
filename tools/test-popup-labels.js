@@ -6,20 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// Every toggle in the popup is an <input type="checkbox"> inside a <label class="tg">
-// that contains only the track and knob spans. A label takes its accessible name from
-// its own text content, so all 115 had none: a screen reader announced "checkbox, not
-// checked" with nothing to say what it controlled, across the entire settings surface.
-//
-// popup.js fixes that at runtime by walking each label's PRECEDING siblings for the
-// .name (or .lbl) that carries the visible text and pointing aria-labelledby at it. That
-// only works while the markup keeps putting a name there, so this file checks the
-// precondition: for every toggle, a name must be reachable the same way the runtime walk
-// reaches it. If someone adds a toggle with no name, or moves the name after the label,
-// the build fails instead of the control silently going unlabelled.
-//
-// The runtime behaviour itself was verified in a browser: 115 of 115 toggles resolve to
-// a name, 110 also carry a description, and no id collides.
+// Each toggle needs a preceding visible name for popup.js to set aria-labelledby.
+// Changing that markup would silently remove its accessible name.
 
 const assert = require('assert');
 const fs = require('fs');

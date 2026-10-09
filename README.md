@@ -1506,6 +1506,15 @@ Another optional control stops recognised muted card and hover previews across s
 normal players, videos with controls and manually started inline videos alone. On YouTube it also
 hides the inline-preview layer so the static thumbnail remains visible.
 
+An optional GIF control shows a still frame for visible, loaded URL-backed GIF images. It also
+handles GIPHY images served as animated WebP with a matching GIF fallback. Click a still frame to
+play its image. The page's image element stays in place so source changes can be followed. Canvases
+are released after they leave the viewport and their memory is capped; on an unusually dense page,
+some images may keep playing once the cap is reached. Tiny images and embedded data GIFs are left
+alone because sites often use them as loading placeholders. Video previews and animations drawn
+into canvas are handled separately. The control is off by default. It does not save the initial
+image download.
+
 The advanced WebGL saver can disable hardware-accelerated 3D graphics on selected sites or
 everywhere except an allowlist. It is off by default because games, maps, CAD tools and 3D viewers
 can stop working without WebGL. The popup has a current-site action; Settings manages both lists.

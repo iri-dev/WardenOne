@@ -4,34 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Everything the extension loads at runtime has to be in the package (H14).
- *
- * The code was correct, the manifest was correct, and `git archive` was correct -- and the staged
- * store ZIP was still missing cosmetic-rules.json, because it had been built before that file
- * entered the tree. Nothing noticed, and nothing could have: no suite compares what the extension
- * asks for against what the package contains.
- *
- * The failure that made it dangerous is that it is silent. getPackagedCosmetics wraps its fetch in
- * a try/catch and falls back to empty scriptlet and procedural sets, so a package missing that file
- * runs with a chunk of cosmetic filtering quietly switched off. No error, no health signal, and the
- * popup still reports protection as active.
- *
- * So this derives the asset list from the code rather than restating it. A hand-written list would
- * drift exactly the way the ZIP did. Five real load paths are scanned:
- *
- *   1. chrome.runtime.getURL('literal')            -- runtime fetches and page navigations
- *   2. manifest declarations                        -- content scripts, rulesets, icons, pages
- *   3. importScripts('literal')                     -- service-worker modules
- *   4. executeScript/insertCSS/registerContentScripts -- on-demand injection
- *   5. <script src> / <link href> in shipped HTML   -- extension page assets
- *
- * Deliberately NOT a blanket scan for filename-shaped strings. background.js carries
- * 'clientjs.min.js' in a list of fingerprinting libraries to DETECT, and the settings export is
- * named wardenone-settings.json; neither is a packaged asset, and a looser matcher reports both.
- *
- * Run: node tools/test-package-completeness.js
- */
+/* Derive runtime assets from manifest, imports, injections, extension URLs and
+   HTML references; verify the staged package contains them. Ignore filenames
+   mentioned only as detection data or export names. */
 'use strict';
 
 const fs = require('fs');

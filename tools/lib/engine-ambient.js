@@ -6,19 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// Most engine tests do not load the engine. They find a region of src/content.js by string
-// marker, slice it out, and eval the slice in a hand-built sandbox. That keeps them fast and
-// focused, but a lifted fragment can only reference what its sandbox provides -- so the
-// moment the engine gains a shared helper and calls it from scattered places, every suite
-// whose slice contains a call dies with "<helper> is not defined". It is not the engine that
-// is wrong in that situation; the fragment simply cannot see it.
-//
-// This module is the one place that answers for those helpers. A suite that lifts engine
-// source calls installEngineAmbient(sandbox) before running the slice, and the helpers
-// resolve to shims that behave like the native they wrap, minus the bookkeeping the engine
-// does for its own teardown. tools/test-engine-ambient.js asserts this list still covers
-// every helper the engine declares, so adding one produces a clear failure here rather than
-// a confusing one somewhere unrelated.
+// Tests that lift engine fragments need shims for ambient helpers. Keep this list
+// aligned with the engine; test-engine-ambient checks coverage.
 
 const fs = require('fs');
 const path = require('path');

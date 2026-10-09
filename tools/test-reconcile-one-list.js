@@ -59,7 +59,7 @@ const CONFIG_CACHE = between('let __cfgCache = null;', '\n/* These stores are de
 const BAND_READ = between('async function getDynamicRulesInBand(', '\nconst MEDIA_COMPAT_RULE_BASE', 'the band read');
 /* The dynamic readers and the band each asks for, as the real appliers do. */
 const DYNAMIC_BANDS = { fingerprintScripts: [931500, 80], searchSponsoredAllow: [931700, 20] };
-const ORCHESTRATOR = between('// ---- Reconciliation honesty (MV3-01) ----', '\nfunction searchAiCleanupActive', 'the reconciler');
+const ORCHESTRATOR = between('const RECONCILE_DEGRADED_KEY = ', '\nfunction searchAiCleanupActive', 'the reconciler');
 const REFRESH = balancedFrom(ORCHESTRATOR, ORCHESTRATOR.indexOf('function refreshExtensionState() {'));
 
 /* The one list, read from the source: run('name', () => applier(...)) or the older run('name', applier(...)). */

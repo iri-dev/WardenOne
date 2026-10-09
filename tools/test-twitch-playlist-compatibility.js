@@ -4,15 +4,7 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Behavioral compatibility harness for twitch-adblock.js's worker runtime.
- *
- * The runtime is extracted from the dedicated MAIN-world module and executed
- * in a VM with Twitch-shaped HLS/GQL traffic. No legacy content-script hook is
- * used by this suite.
- *
- * Run: node tools/test-twitch-playlist-compatibility.js
- */
+/* Exercise the MAIN-world Twitch runtime with HLS and GQL fixtures in a VM. */
 'use strict';
 
 const fs = require('fs');
@@ -4526,6 +4518,106 @@ test('a segment request counts as media the player holds from when it is made un
     equal(markerTargets(refreshed), failure === 'in-flight' ? [splice] : [],
       failure + ': a refresh after the player crossed the splice moved, dropped or added a marker');
     runtime.configure(false);
+  }
+});
+
+/* The player can ask for an entry again while an earlier request for it is still in flight -- a
+   retry -- or ask for the same number from the other session across a switch. Whichever request
+   delivers is the media it holds. One record per number let an older request's failure wipe out a
+   newer one's success, and the switch was then marked one entry early, on media that continues.
+   [outcome of the first request, outcome of the second, the order they settle in]. */
+const OVERLAPPING_REQUESTS = [
+  ['the first fails, then the second delivers', ['fail', 'ok'], [0, 1]],
+  ['the second delivers, then the first fails', ['fail', 'ok'], [1, 0]],
+  ['the first delivers, then the second fails', ['ok', 'fail'], [0, 1]],
+  ['the second fails, then the first delivers', ['ok', 'fail'], [1, 0]],
+  ['the second delivers, then the first loses its connection', ['network', 'ok'], [1, 0]],
+  ['both fail', ['fail', 'fail'], [1, 0]],
+];
+
+test('two overlapping requests for one segment: the one that delivers decides, in either order', async () => {
+  let n = 0;
+  for (const [label, outcomes, order] of OVERLAPPING_REQUESTS) {
+    let poll = 0;
+    let backupPoll = 0;
+    const path = 'overlap-' + (n++);
+    const requested = 'https://video-edge-fixture.ttvnw.net/' + path + '-native/101.ts';
+    const held = [];
+    const route = withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => poll === 0
+        ? liveSequencePlaylist({ sequence: 100, liveSequence: 1000, startMs: SEQUENCE_BASE_TIME, path: path + '-native' })
+        : sequencedPlaylist({ sequence: 100 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+          title: 'advertisement', path: path + '-ad',
+          marker: '#EXT-X-DATERANGE:ID="stitched-ad-' + path + '",CLASS="twitch-stitched-ad",DURATION=30.0' }),
+      backupMedia: () => {
+        const index = backupPoll++;
+        return liveSequencePlaylist({ sequence: 9001 + index, liveSequence: 1001 + index,
+          startMs: SEQUENCE_BASE_TIME + (1 + index) * 2000, path: path + '-backup' });
+      },
+    }));
+    const runtime = createRuntime({
+      fetchRoute: async (url, init, state) => (url === requested
+        ? new Promise((resolve) => held.push(resolve))
+        : route(url, init, state)),
+      gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+    });
+    await mapMaster(runtime);
+    await runtime.fetch(ORIGINAL_MEDIA_URL);
+    await download(runtime, path + '-native/100.ts');
+    const requests = [0, 1].map(() => runtime.fetch(requested).then((response) => response.ok, () => false));
+    for (let wait = 0; wait < 100 && held.length < 2; wait++) await new Promise((resolve) => setTimeout(resolve, 0));
+    assert(held.length === 2, label + ': fixture did not hold both requests in flight');
+    for (const which of order) {
+      const outcome = outcomes[which];
+      held[which](outcome === 'ok' ? new Response('segment', { status: 200 })
+        : outcome === 'network' ? { error: new TypeError('Failed to fetch') } : new Response('', { status: 503 }));
+      assert((await requests[which]) === (outcome === 'ok'), label + ': fixture did not settle request ' + which + ' as ' + outcome);
+    }
+    poll = 1;
+    const swapped = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(swapped.includes('/' + path + '-backup/') && servedSequence(swapped) === 101,
+      label + ': fixture did not swap onto the aligned clean alternate: ' + servedSequence(swapped));
+    /* Delivered: the player holds native 101, so the alternate starts at 102. Both failed: it
+       still needs 101 and takes it from the alternate, straight after the native 100. */
+    const splice = path + '-backup/' + (outcomes.includes('ok') ? 9002 : 9001) + '.ts';
+    equal(markerTargets(swapped), [splice], label + ': the splice was not marked where the player crosses it');
+    runtime.configure(false);
+  }
+});
+
+/* The same, across a switch: the first request is for the entry from Twitch's session, the second
+   for the same number from the clean alternate. Which session the player holds that entry from is
+   what the next marker is decided on, so it is checked on the record itself. */
+test('overlapping requests for one entry from two sessions keep the session that delivered', async () => {
+  const from = MODULE_SOURCE.indexOf('const SPLICE_ATTEMPTS_MAX');
+  const to = MODULE_SOURCE.indexOf('function spliceEntries(', from);
+  assert(from >= 0 && to > from, 'the splice download tracking moved in twitch-adblock.js');
+  const box = { Promise, Map };
+  vm.createContext(box);
+  vm.runInContext('const spliceSegments = new Map();\n' + MODULE_SOURCE.slice(from, to)
+    + '\nthis.api = { spliceSegments, noteSpliceDownload, settleSpliceDownload };', box);
+  const api = box.api;
+  const NATIVE = 'native-session#0';
+  const BACKUP = 'backup:https://usher.example/clean.m3u8#0';
+  for (const [label, outcomes, order] of OVERLAPPING_REQUESTS) {
+    const track = { downloaded: new Map(), attempts: new Map() };
+    api.spliceSegments.set('native/101.ts', { track, number: 101, source: NATIVE });
+    api.spliceSegments.set('backup/9001.ts', { track, number: 101, source: BACKUP });
+    const deferred = [0, 1].map(() => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; });
+    const first = api.noteSpliceDownload('native/101.ts');
+    const settled = [api.settleSpliceDownload(first, deferred[0].promise).then(() => {}, () => {})];
+    equal(track.downloaded.get(101), NATIVE, label + ': a request in flight already counts as held');
+    const second = api.noteSpliceDownload('backup/9001.ts');
+    settled.push(api.settleSpliceDownload(second, deferred[1].promise).then(() => {}, () => {}));
+    for (const which of order) {
+      const outcome = outcomes[which];
+      if (outcome === 'network') deferred[which].resolve(Promise.reject(new TypeError('Failed to fetch')));
+      else deferred[which].resolve({ ok: outcome === 'ok' });
+      await settled[which];
+    }
+    const expected = outcomes[0] === 'ok' ? NATIVE : outcomes[1] === 'ok' ? BACKUP : undefined;
+    equal(track.downloaded.get(101), expected, label + ': the record does not name the session that delivered');
+    if (expected === undefined) assert(!track.attempts.has(101), label + ': a number with nothing in flight and nothing delivered kept its attempts');
   }
 });
 

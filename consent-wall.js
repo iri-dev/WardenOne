@@ -5,54 +5,10 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 
-/*
- * Full-screen consent walls.
- *
- * Auto-reject (consent-reject.js) answers a banner by clicking its "reject" control.
- * When a banner offers no way to say no -- consent-or-pay, or "accept to continue" --
- * there is nothing to click, and the page sits behind a sheet that covers the viewport
- * and freezes the scroll. This lifts that sheet without answering it. Nothing is
- * consented to, and no consent cookie is written, because nothing is clicked.
- *
- * Everything below is shaped by a 101-site live sweep (85 measured). The findings that
- * matter, in the order they bite:
- *
- * 1. SIZE ALONE IS DESTRUCTIVE. Matching on "covers the viewport" took out 84 elements
- *    on one site, and still ate a site's own hero carousel at a correct viewport. The
- *    carousel is absolutely positioned and full-bleed but sits at z-index auto. Adding
- *    a z-index floor of 100000 cut it to exactly the real wall on every site tested.
- *
- * 2. NEVER ACT WITHOUT A MATCH. An earlier build released the scroll lock unconditionally
- *    and unlocked etsy.com -- which runs no consent manager at all -- by stripping the
- *    site's own wt-html-no-scroll. Releasing the lock is a consequence of having removed
- *    a wall, never an independent step.
- *
- * 3. THE LOCK IS A CLASS ON <html>, NOT AN INLINE STYLE. Sourcepoint uses
- *    html.sp-message-open, Didomi didomi-popup-open, others a plain noScroll. Clearing
- *    body.style.overflow does nothing against any of them, because there was never an
- *    inline style to clear. Removing the class restored one site from a collapsed 900px
- *    to its real 27,967px. Of the sites that were locked: 16 needed the class removed,
- *    1 needed !important, and the rest were never locked at all.
- *
- * 4. SOMETIMES THE PAGE IS NOT BEHIND THE WALL. On derstandard.at the sheet lifts
- *    cleanly and leaves 334 characters and zero articles -- the article HTML was never
- *    sent. Removing the wall there hands someone a blank page, which is worse than the
- *    wall. So the page is measured after removal and the wall goes back if there is
- *    nothing behind it. Text length alone cannot make that call: vg.no reads as 1,819
- *    characters and is a complete, healthy front page of short Norwegian headlines.
- *    Scroll height separates them cleanly -- ~1 viewport against tens of thousands.
- *
- * 5. IDENTITY IS OFTEN NOT IN id OR class. Six of the walls found carried nothing
- *    matchable there and every one was real: an iframe title="Consent window", a parent
- *    div#appconsent, an obfuscated class="o6ugt3n" identifiable only by its Polish body
- *    text. So identity is read from the whole element -- title, src, srcdoc, parent --
- *    and a wall that is still anonymous is accepted only when a consent manager is
- *    demonstrably running on the page.
- *
- * Not reachable from here, and not attempted: sites that navigate to a consent gate on
- * another origin before rendering anything (the DPG Media group does this), and managers
- * that render inside a closed shadow root.
- */
+/* Lift only identified, high-layer consent walls without accepting consent.
+   Release scroll locks only after a wall is removed, and restore the wall when
+   the page has no usable content behind it. Pre-render gates and closed shadow
+   roots are outside this content script's reach. */
 (function () {
   'use strict';
 

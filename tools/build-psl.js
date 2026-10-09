@@ -4,33 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Generates psl-private.js from the Public Suffix List (SEC-07).
- *
- * "Which hosts belong to one owner" is a security boundary: the token-exfiltration blocker, the
- * forced-navigation interstitials and the Forget-Me wipe all ask it. domain-utils.js answered
- * with a hand-written table of 26 shared-hosting suffixes, and every platform the table did not
- * name collapsed to its last two labels -- so alice.webflow.io and attacker.webflow.io were one
- * site, and a token sent from one tenant to the other was "same party". A changing global list
- * cannot be a shortlist somebody remembers to extend; it has to be the list itself, generated,
- * versioned and reviewed when it changes.
- *
- * This writes the PRIVATE section of the list (the platform half: github.io, webflow.io,
- * *.compute.amazonaws.com ...) as one string constant. The ICANN half stays on the country-code
- * rule in domain-utils.js, deliberately: adding private rules can only ever make a site identity
- * narrower, and narrower is the safe direction for a trust record. Rules are stored in punycode,
- * because that is how hostnames arrive from the URL parser.
- *
- * Only the service worker imports the file (69 KB is nothing there and far too much to inject
- * into every frame); frames are told their own site by the worker. See siteIdentity() in
- * domain-utils.js.
- *
- *   node tools/build-psl.js                  # fetch the current list, rewrite psl-private.js,
- *                                            # print what changed for review
- *   node tools/build-psl.js --from list.dat  # build from a downloaded copy instead
- *   node tools/build-psl.js --check          # gate: the shipped file is well-formed and current
- *                                            # enough (no network)
- */
+/* Build the private-domain Public Suffix List used for tenant isolation.
+   Private rules narrow site identity; the ICANN handling stays in
+   domain-utils.js. --check validates the shipped generated file offline. */
 'use strict';
 
 const fs = require('fs');

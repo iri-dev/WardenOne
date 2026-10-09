@@ -91,18 +91,16 @@ async function run() {
       mark('timeout');
       throw new Error('Timed out waiting for ' + label + ': ' + JSON.stringify({ state, config, pageStyle, marks, tabs, worker }));
     }
-    /* Saved the way every WardenOne surface saves: under the config lock, with its save record.
-       Written straight to storage, the change raced the extension's own locked saves and could be
-       wiped 18 ms later by one that had read before it. */
+    /* Use the config lock: a concurrent extension save can overwrite an unlocked test write. */
     for (const deadline = Date.now() + 12000; Date.now() < deadline; await sleep(80)) {
       if (await value("document.readyState === 'complete' && typeof withConfigLock === 'function' && typeof stampConfigWrite === 'function'", ext.sessionId).catch(() => false)) break;
     }
-    const setPreferences = (ambient, previews, master = true) => {
+    const setPreferences = (ambient, previews, master = true, images = false) => {
       mark('set previews=' + previews);
       return value(`withConfigLock(async () => {
         const data = await chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY]);
-        const stamp = stampConfigWrite(data[WO_CONFIG_WRITES_KEY], ['enabled', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews']);
-        await chrome.storage.local.set({ wardenone_config: { ...data.wardenone_config, enabled: ${master}, disableYouTubeAmbientMode: ${ambient}, stopAnimatedVideoPreviews: ${previews} },
+        const stamp = stampConfigWrite(data[WO_CONFIG_WRITES_KEY], ['enabled', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews', 'pauseAnimatedImages']);
+        await chrome.storage.local.set({ wardenone_config: { ...data.wardenone_config, enabled: ${master}, disableYouTubeAmbientMode: ${ambient}, stopAnimatedVideoPreviews: ${previews}, pauseAnimatedImages: ${images} },
           [WO_CONFIG_WRITES_KEY]: stamp.record });
         return true;
       })`, ext.sessionId);
@@ -111,11 +109,16 @@ async function run() {
     await setPreferences(true, true);
 
     const video = fs.readFileSync(path.join(root, 'spotify-silent-1s.mp4')).toString('base64');
+    const gif = Buffer.from('R0lGODlhCwALAIAAAAAA3pn/ZiH5BAEAAAEALAAAAAALAAsAAAIUhA+hkcuO4lmNVindo7qyrIXiGBYAOw==', 'base64');
+    gif.writeUInt16LE(32, 6);
+    gif.writeUInt16LE(32, 8);
+    const webp = Buffer.from('UklGRoQAAABXRUJQVlA4WAoAAAACAAAAHwAAHwAAQU5JTQYAAAAAAAAAAABBTk1GKAAAAAAAAAAAAB8AAB8AAHgAAAJWUDhMDwAAAC8fwAcABxD9j/4HIqL/AQBBTk1GKAAAAAAAAAAAAB8AAB8AAHgAAABWUDhMDwAAAC8fwAcABxDR//4HIqL/AQA=', 'base64');
+    assert(webp.includes(Buffer.from('ANIM')) && webp.includes(Buffer.from('ANMF')), 'the fixture contains animated WebP frames');
     const childFixture = '<!doctype html><a href="/child"><video id="frame-preview" muted autoplay loop playsinline src="data:video/mp4;base64,' + video + '"></video></a>';
     const escapedChildFixture = childFixture.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     const frameFixture = '<!doctype html><title>Inherited frame fixture</title><iframe id="blank-frame" src="about:blank"></iframe><iframe id="srcdoc-frame" srcdoc="' + escapedChildFixture + '"></iframe><script>'
       + 'const frame=document.querySelector("#blank-frame");setTimeout(()=>{const doc=frame.contentDocument;const link=doc.createElement("a");link.href="/child";const preview=doc.createElement("video");preview.id="frame-preview";preview.muted=true;preview.autoplay=true;preview.loop=true;preview.playsInline=true;preview.src=' + JSON.stringify('data:video/mp4;base64,' + video) + ';link.appendChild(preview);doc.body.appendChild(link);window.__woBlankReady=true},250);window.__woFrameFixture=true;</script>';
-    const genericFixture = '<!doctype html><title>General preview fixture</title><a href="/opened"><video id="card-preview" muted autoplay loop playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
+    const genericFixture = '<!doctype html><title>General preview fixture</title><img id="animated-image" alt="Demo" style="width:100px;height:100px" src="/animated.gif"><div id="giphy-box" style="width:100px;height:100px"><picture><source type="image/webp" srcset="https://media2.giphy.com/media/fixture/200.webp"><img id="giphy-animation" alt="GIPHY demo" width="100%" height="100%" src="https://media2.giphy.com/media/fixture/200.gif"></picture></div><img id="loading-placeholder" style="width:100px;height:100px" src="data:image/gif;base64,R0lGODlhCwALAIAAAAAA3pn/ZiH5BAEAAAEALAAAAAALAAsAAAIUhA+hkcuO4lmNVindo7qyrIXiGBYAOw=="><a href="/opened"><video id="card-preview" muted autoplay loop playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
       + '<div class="video-player"><video id="normal-player" muted controls loop src="data:video/mp4;base64,' + video + '"></video></div>'
       + '<a href="/audible"><video id="audible-card" autoplay playsinline src="data:video/mp4;base64,' + video + '"></video></a>'
       + '<a href="/manual"><video id="manual-card" muted src="data:video/mp4;base64,' + video + '"></video></a>'
@@ -127,6 +130,16 @@ async function run() {
     const off = cdp.on((event) => {
       if (event.sessionId !== page.sessionId || event.method !== 'Fetch.requestPaused') return;
       const requestUrl = event.params.request.url;
+      if (event.params.resourceType === 'Image') {
+        const isWebp = requestUrl.endsWith('.webp');
+        void cdp.send('Fetch.fulfillRequest', {
+          requestId: event.params.requestId,
+          responseCode: 200,
+          responseHeaders: [{ name: 'Content-Type', value: isWebp ? 'image/webp' : 'image/gif' }],
+          body: (isWebp ? webp : gif).toString('base64'),
+        }, page.sessionId);
+        return;
+      }
       const fixture = requestUrl.includes('www.youtube.com') ? youtubeFixture
         : requestUrl.includes('frames.example') ? frameFixture : genericFixture;
       void cdp.send('Fetch.fulfillRequest', {
@@ -138,6 +151,8 @@ async function run() {
     });
     await cdp.send('Fetch.enable', { patterns: [
       { urlPattern: '*://preview.example/*', resourceType: 'Document' },
+      { urlPattern: '*://preview.example/animated.gif*', resourceType: 'Image' },
+      { urlPattern: '*://media2.giphy.com/media/fixture/*', resourceType: 'Image' },
       { urlPattern: '*://frames.example/*', resourceType: 'Document' },
       { urlPattern: '*://www.youtube.com/*', resourceType: 'Document' },
     ] }, page.sessionId);
@@ -171,6 +186,26 @@ async function run() {
     await setPreferences(true, true);
     await value("document.querySelector('#card-preview').play().catch(() => {})");
     await until("document.querySelector('#card-preview').paused", 'the general preview control to return live');
+    await setPreferences(true, true, true, true);
+    await until("document.querySelector('#animated-image') && getComputedStyle(document.querySelector('#animated-image')).display === 'none' && !!document.querySelector('canvas[aria-label=\"Play animated image: Demo\"]')",
+      'a loaded GIF to receive a still canvas while keeping its image element');
+    await until("document.querySelector('#giphy-animation')?.currentSrc.endsWith('.webp') && getComputedStyle(document.querySelector('#giphy-animation')).display === 'none' && !!document.querySelector('picture canvas[aria-label=\"Play animated image: GIPHY demo\"]')",
+      'a real animated GIPHY WebP with a matching GIF fallback to pause');
+    assert.equal(await value("(() => { document.querySelector('#giphy-box').style.width = '180px'; return Math.round(document.querySelector('picture canvas').getBoundingClientRect().width); })()"), 180,
+      'the still canvas follows the card width when it changes');
+    await value("window.__giphyImage = document.querySelector('#giphy-animation'); window.__giphyCanvas = document.querySelector('picture canvas'); document.querySelector('picture source').srcset = 'https://media2.giphy.com/media/fixture/next.webp'; window.__giphyImage.src = 'https://media2.giphy.com/media/fixture/next.gif'");
+    await until("document.querySelector('#giphy-animation') === window.__giphyImage && document.querySelector('#giphy-animation').currentSrc.endsWith('/next.webp') && document.querySelector('picture canvas') !== window.__giphyCanvas && getComputedStyle(window.__giphyImage).display === 'none'",
+      'a page source change to refresh the still frame without losing its image element');
+    assert.equal(await value("!!document.querySelector('#loading-placeholder')"), true,
+      'a stretched embedded loading GIF remains available for the page to replace');
+    await value("document.querySelector('canvas[aria-label=\"Play animated image: Demo\"]').click()");
+    await until("getComputedStyle(document.querySelector('#animated-image')).display !== 'none' && !document.querySelector('canvas[aria-label=\"Play animated image: Demo\"]')", 'click-to-play to restore the GIF');
+    await value("document.body.insertAdjacentHTML('beforeend', '<img id=\"late-gif\" alt=\"Later\" style=\"width:100px;height:100px\" src=\"/animated.gif?late=1\">')");
+    await until("getComputedStyle(document.querySelector('#late-gif')).display === 'none' && !!document.querySelector('canvas[aria-label=\"Play animated image: Later\"]')",
+      'a later GIF to be replaced');
+    await setPreferences(true, true);
+    await until("getComputedStyle(document.querySelector('#late-gif')).display !== 'none' && !document.querySelector('canvas[aria-label=\"Play animated image: Later\"]')", 'turning the image setting off to restore the GIF');
+    await until("getComputedStyle(document.querySelector('#giphy-animation')).display !== 'none' && !document.querySelector('picture canvas')", 'turning the image setting off to restore the GIPHY image');
 
     await cdp.send('Page.navigate', { url: 'https://www.youtube.com/watch?v=wardenone-test' }, page.sessionId);
     await until("window.__woYouTubeFixture && getComputedStyle(document.querySelector('#cinematics')).display === 'none' && getComputedStyle(document.querySelector('#cinematics-container')).display === 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter === 'none' && getComputedStyle(document.querySelector('ytd-video-preview')).display === 'none'", 'YouTube resource styles');
@@ -199,7 +234,7 @@ async function run() {
     if (process.env.WO_RS_DIAG === '1') {
       console.log(JSON.stringify({ marks, worker: await workerValue('JSON.stringify(self.__woRsDiag || null)') }));
     }
-    console.log('[ok] Edge Resource Saver fixture: inherited frames, general previews, player compatibility, YouTube Ambient Mode and live reversal');
+    console.log('[ok] Edge Resource Saver fixture: inherited frames, video previews, GIF replacement, player compatibility and live reversal');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     if (path.dirname(path.resolve(dir)) === path.resolve(os.tmpdir()) && path.basename(dir).startsWith('wo-resource-saver-')) {

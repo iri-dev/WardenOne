@@ -4,35 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Disclosure contract (M13, PRIV-07).
- *
- * The privacy policy described a password k-anonymity lookup the shipped extension never
- * offered, and omitted the one network call its breach feature actually makes. Nobody noticed
- * because nothing compared the two: the policy was prose, the endpoints were code, and they
- * drifted independently for as long as they liked.
- *
- * So this enumerates the hosts WardenOne really reaches and asserts each is disclosed. It is
- * deliberately built from the code rather than from any list of strings, because a list would
- * be a second copy of the same knowledge and would drift the same way.
- *
- * The first version of that enumeration only looked at seven background files for two literal
- * patterns, which is how it came to pass while the policy was silent about the whole network
- * self-test -- a feature that fetches from two adult sites and a malware test host, from
- * network.js, a file this test never opened. It also missed gql.twitch.tv, which carries the
- * reader's own Twitch Authorization header. Discovery now covers EVERY shipped root script and
- * every URL literal in it, so a new destination cannot hide in a file nobody listed (PRIV-07).
- *
- * Two rules keep that honest rather than merely broad:
- *   - a host counts as disclosed only when the policy names it in a code span. "It appears
- *     somewhere in the prose" passed github.com purely because the policy links to the source
- *     repository.
- *   - a host that is NOT a destination has to say why, in NOT_A_DESTINATION below, and an
- *     entry there that no longer matches any code is itself a failure. A silent skip list is
- *     how the last gap stayed open.
- *
- * Run: node tools/test-privacy-disclosure.js
- */
+/* Derive outbound hosts from every shipped root script and require explicit
+   privacy-policy disclosure. Exceptions must explain why a URL literal is
+   not a destination and fail when no longer used. */
 'use strict';
 
 const fs = require('fs');

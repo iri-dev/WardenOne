@@ -149,8 +149,7 @@ check('the replacement is a transparent pixel, not a removal',
   /const PIXEL = 'data:image\/gif;base64,/.test(SRC) && !/\.remove\(\)/.test(SRC),
   'a refused request leaves broken-image icons through a newsletter');
 check('a wrong guess is harmless by construction',
-  /FALSE\s*\n?\s*\*?\s*POSITIVE IS HARMLESS BY CONSTRUCTION/i.test(SRC)
-    || /spacer GIFs/i.test(SRC),
+  /Same declared size, so a spacer GIF keeps spacing/.test(SRC),
   'the substitute is the same declared size, so even a mistake is invisible');
 check('the decision is made from markup, never the rendered box',
   !/getBoundingClientRect|offsetWidth|naturalWidth|getComputedStyle/.test(SRC),
@@ -193,7 +192,7 @@ check('the popup admits the limit when a provider leaves no trace',
    already in src shows as ERR_ABORTED. Claiming nothing is ever requested would
    be wrong for the second case. */
 check('the file records the prevented-versus-cancelled distinction',
-  /PREVENTED versus CANCELLED/.test(SRC) && /ERR_ABORTED/.test(SRC));
+  /in-flight\s+request may show ERR_ABORTED rather than be prevented/.test(SRC));
 check('the popup does not claim nothing is requested',
   !/nothing is requested/.test(popupRow) && /cancelled mid-flight/.test(popupRow), popupRow.slice(0,140));
 check('the popup admits a provider may have fetched it server-side',

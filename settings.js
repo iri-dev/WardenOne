@@ -303,7 +303,7 @@ const PAGES = [
       num('tabLimitMax', 'Maximum tabs', 'Acts when a new tab pushes the window past this count.', 2, 200, 1, 'tabs', 'tabLimit'),
       num('tabLimitMinIdleMinutes', 'Minimum inactive time', 'Minutes a tab must be idle before it is put to sleep. Close mode is a hard cap and does not wait.', 0, 1440, 5, 'minutes', 'tabLimit') ]),
     G('i-bolt', 'Resource Saver', 'Optional controls for unnecessary page work.', [
-      ...sw('blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews'),
+      ...sw('blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews', 'pauseAnimatedImages'),
       pick('webglSaverMode', 'Disable WebGL', 'Advanced. Stops hardware-accelerated 3D graphics and can break games, maps, 3D viewers and some web apps.',
         [['off', 'Off'], ['selected', 'On selected sites'], ['everywhere', 'Everywhere except allowed sites']],
         () => /^(?:selected|everywhere)$/.test(String(config.webglSaverMode || '')) ? config.webglSaverMode : 'off',

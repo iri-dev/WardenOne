@@ -6,19 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// Verify & Repair used to report "Re-armed full protection on N open tab(s)" for any tab
-// where chrome.scripting.executeScript merely RESOLVED, and then to read a MAIN-world version
-// marker back to decide it had worked -- a marker the page can write (SEC-03). For a recovery
-// button on a security extension, reporting success while doing nothing is the worst way to
-// be wrong.
-//
-// It now asks the tab's ISOLATED bridge, which holds the key the engine was handed at
-// document_start, whether the engine answers a signed challenge. A tab that answers is left
-// as it is. A tab that does not -- the engine is gone, or the bridge belongs to a previous
-// extension lifetime and cannot answer at all -- is reloaded, which is a fresh document_start
-// hand-off; nothing is injected into a live document any more, because no channel into one is
-// private. This drives verify-repair against tabs that behave like the real cases and checks
-// what it says about each.
+// Repair trusts a signed challenge through the isolated bridge, not a page-writable
+// MAIN-world marker. These cases check when it reports success or reloads a tab.
 
 const assert = require('assert');
 const fs = require('fs');

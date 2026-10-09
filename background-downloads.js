@@ -151,22 +151,9 @@ function downloadLooksRisky(item) {
 }
 const DOWNLOAD_SAFE_LOGGED = new Set();
 
-// Browser-session boundary. Set on browser launch (onStartup) and on FIRST INSTALL only. Chrome
-// restores paused/interrupted downloads when it reopens, which used to re-pop a
-// Download Guard review for every leftover risky download ("it comes back after
-// the browser reopens and shows all of them"). We stamp the session start so a
-// scan can tell a download began in THIS session vs a previous one.
-//
-// Deliberately NOT on extension update (M25). Chrome updates extensions in the background while
-// the browser stays open, so stamping there declared a new session the user never started: a
-// download from minutes earlier became "previous session", lost its pending record, was marked
-// handled, and had its review panel closed -- left paused with nothing to explain it.
-//
-// The cold read carries a generation (MV3-08). It starts on worker evaluation and onStartup can
-// stamp the new session before it answers; the late answer used to overwrite the new stamp with
-// yesterday's, so the startup jobs 800/1500 ms later treated restored downloads as this
-// session's. A stamp now bumps the generation and a read that began before it is discarded, and
-// every decision that depends on the boundary waits for the read to settle first.
+// Session stamps exclude downloads restored from a previous browser run.
+// Never stamp an extension update. Generation-check cold reads so a late
+// previous-session value cannot overwrite a fresh startup stamp.
 let SESSION_STARTED_AT = 0;
 let sessionMarkGeneration = 0;
 const downloadSessionMarkReady = (() => {

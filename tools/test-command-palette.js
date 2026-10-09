@@ -4,33 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The command palette.
- *
- * It adds no protection -- every entry is a faster route to something that already
- * exists -- but it does add a channel, and that is what this suite is about.
- *
- * The overlay lives IN THE PAGE. So the page can rewrite it, and a message arriving from
- * it is a message from somewhere a hostile script may already be. "Pause WardenOne on
- * this site" is exactly what such a script would reach for, and it is on the list.
- *
- * Three gates, and none of them trusts the sender:
- *   1. the command must be one the background knows;
- *   2. the pick must carry the nonce the shortcut handed THIS tab's palette -- opening is
- *      something only the shortcut can do, and the nonce lives on the isolated world's window;
- *   3. that grant is consumed, so one press buys one action.
- *
- * The grant lives in storage.session, not worker memory (MV3-06): the two minutes a palette
- * stays valid are two minutes in which Chrome routinely tears the worker down, and the pick
- * used to wake a new worker with an empty map, which refused it. The gate is driven here
- * with two worker realms sharing one mocked session store.
- *
- * The other half is that a message kind sent from a tab has to be on
- * TAB_CONTEXT_ALLOWED_MESSAGES or it never reaches its handler at all -- the bug that
- * killed the search-result warnings silently while every unit test passed.
- *
- * Run: node tools/test-command-palette.js
- */
+/* Treat a palette pick as page-origin input. The worker must recognize the
+   command, verify a per-tab nonce, consume the grant once, and preserve it
+   across MV3 worker restarts in storage.session. */
 'use strict';
 
 const fs = require('fs');

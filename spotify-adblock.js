@@ -4,39 +4,11 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne Spotify Web Player ad blocker.
- *
- * The state machine Spotify sends is server-authoritative. Repointing one of its transitions
- * or changing an ad state's position can look seamless for a few skips, but eventually the
- * server and player disagree and the web player falls into an empty Advertisement state that
- * only a reload repairs. WardenOne therefore leaves every state, transition, reference and
- * playback position exactly as Spotify sent it.
- *
- * Three layers, all on the reader's side of the wire, in the order they get their chance:
- *
- * 1. The player's own loader. Spotify's player resolves every track into a content object
- *    whose `_uri` is the track's Spotify URI and whose `_url` (or, for a manifest-delivered
- *    ad, `_playableContentSorted[].url`) is the media it will hand the media element. Right
- *    before the loader's completion callback runs, an object whose URI is `spotify:ad:` has
- *    that URL replaced by a one-second silent clip. Nothing about the ad is fetched; the clip
- *    plays out, ends on its own, and the player moves on exactly as it would after a real ad.
- *    This is the AdGuard Base technique for open.spotify.com, and it does not care which host
- *    Spotify serves the ad from.
- * 2. The network. A declarativeNetRequest ruleset redirects media requests to the known ad
- *    hosts (uBlock Origin's open.spotify.com list) to the same packaged clip, and lets media
- *    through on the web player where a tracker list would otherwise cut a podcast off.
- * 3. This module's fallback for an ad that reached the media element unchanged: recognized
- *    from Spotify's own state machine, muted before play(), then sought near its end once
- *    Spotify confirms it is current. Short replacement media is never sought; seeking it
- *    can race Spotify's transition.
- *
- * Playback responses and media URLs are observed, never edited. Ordinary tracks, episodes
- * and podcast media keep their files. The ad chrome Spotify renders is hidden by stylesheet.
- * No request is made on the account's behalf. Songs travel as encrypted MP4 over fetch and
- * a MediaSource on a detached VIDEO element, which is why a document query cannot find the
- * real player.
- */
+/* Keep Spotify's server-owned playback states and positions intact. The loader and
+   network layers replace ad media with a short silent clip; this module mutes and
+   seeks only ads that reach the media element unchanged. Do not seek replacement
+   clips: that can race Spotify's transition. Ordinary track and podcast media
+   remain untouched. */
 (function wardenOneSpotifyAdblock() {
   'use strict';
 

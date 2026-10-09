@@ -255,14 +255,14 @@ pending.push((async function itCanBeTurnedOff() {
   /* The comment wraps across lines behind // prefixes, so match the prose rather
      than the layout — otherwise this check breaks on a reflow and says nothing
      about whether the reasoning is still there. */
-  const note = BG.slice(BG.indexOf('// Intranet Guard, network layer.'), BG.indexOf('const INTRANET_NET_RULE_BASE'))
+  const note = BG.slice(BG.indexOf('// Workers have separate networking realms'), BG.indexOf('const INTRANET_NET_RULE_BASE'))
     .replace(/^\s*\/\/ ?/gm, '').replace(/\s+/g, ' ');
   check('the comment explains why workers are not instrumented',
-    /service worker cannot be registered from a blob/i.test(note), note.slice(0, 140));
+    /networking realms that page hooks cannot cover/.test(note), note.slice(0, 140));
   check('the comment names the CSP and module-import costs',
-    /worker-src blob:/.test(note) && /base URL/.test(note));
+    /CSP/.test(note) && /module imports/.test(note));
   check('the comment says the network layer covers every realm',
-    /page, a dedicated worker, a shared worker, a service worker/i.test(note));
+    /DNR blocks private-address requests from every realm/.test(note));
 }());
 
 // ---------------------------------------------------------------------------

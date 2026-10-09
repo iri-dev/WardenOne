@@ -4,34 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Can the blocked page remove its own block screen (H15)?
- *
- * mountBlocker draws the four full-page blockers -- rg-phish-block, rg-adult-gate,
- * rg-interstitial, rg-grabber-warn. content.min.js is world:MAIN, so those live in the page's own
- * DOM under hardcoded ids and the site being blocked can reach them. Three separate ways in:
- *
- *   1. Remove the overlay repeatedly. The self-heal used to give up after 60 repairs
- *      (`if(remounts++>60) obs.disconnect()`), and `check` had no other caller, so ~1s of
- *      removing in a loop ended the protection permanently.
- *   2. Wait. An unconditional `setTimeout(..., 1e4)` disconnected the observer ten seconds after
- *      mount whatever had happened, after which a single remove() was enough. No race to win.
- *   3. Ship a decoy. `ensureOverlay` asked `document.getElementById(id)` whether the overlay was
- *      there, so a page carrying <div id="rg-phish-block"> in its own markup answered yes: paint
- *      never ran, but the page-hiding stylesheet went up anyway -- leaving the attacker's element
- *      as the only visible thing on screen, with WardenOne doing the hiding. That is worse than
- *      suppression; it is the extension rendering the attacker's idea of a block screen.
- *
- * The fix is identity plus persistence: hold the node buildOverlay actually created, re-place that
- * same node when it goes missing, and keep watching for as long as the blocker is mounted. It is
- * the arrangement bridge.js already ships for its interstitials (woOwnedOverlay + domWatch, no cap
- * and no timer); this suite exists so the MAIN-world copy cannot drift back.
- *
- * The function is lifted from src/content.js by brace-matching, so the code under test is the
- * shipped code, not a description of it.
- *
- * Run: node tools/test-blocker-durability.js
- */
+/* A blocked page may remove or spoof MAIN-world overlay nodes. Verify each
+   blocker retains its own node identity and remounts without a timer or retry
+   cap. Exercise the shipped function rather than a copied implementation. */
 'use strict';
 
 const fs = require('fs');
