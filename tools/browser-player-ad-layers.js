@@ -203,9 +203,17 @@ async function run() {
       .filter((url) => !/^(about:blank|chrome-extension:|edge:|chrome:)/.test(url) || url === 'about:blank#popup');
     const awayHits = () => hits.filter((h) => h.startsWith(ELSEWHERE + '/') && !/\/favicon\.ico$/.test(h));
 
+    /* Headless Edge can defer preload without requesting the source. Start loading
+       explicitly so the seek check still uses real media duration. */
+    const startMedia = async () => {
+      await until("!!d.getElementById('v') && !!d.getElementById('square')", 'the player fixture to appear', 8000);
+      await inPlayer("(d.getElementById('v').load(), true)");
+    };
+    await startMedia();
     /* Each half reported on its own, with what the server was asked for, so a stall says which. */
     const loading = "(() => { const v = d.getElementById('v'); return { square: !!d.getElementById('square'), cover: !!d.getElementById('khz2y9w'),"
-      + " readyState: v && v.readyState, networkState: v && v.networkState, error: v && v.error && v.error.code, path: w.location.pathname }; })()";
+      + " readyState: v && v.readyState, networkState: v && v.networkState, error: v && v.error && v.error.code,"
+      + " currentSrc: v && v.currentSrc, canPlayWav: v && v.canPlayType('audio/wav'), path: w.location.pathname }; })()";
     let loaded;
     for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100)) {
       loaded = await inPlayer(loading).catch((error) => 'unreadable: ' + error.message);
@@ -302,6 +310,7 @@ async function run() {
           with location.assign. On a fresh load, so the ad layers, the harvester and the
           hijack timer are all back in place around it. */
     await cdp.send('Page.reload', { ignoreCache: true }, page);
+    await startMedia();
     for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100)) {
       const again = await inPlayer(loading).catch(() => null);
       if (again && again.square && again.readyState >= 1 && again.path === '/e/7qftyd95nnrj') break;
