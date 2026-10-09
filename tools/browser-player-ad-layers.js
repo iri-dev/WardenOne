@@ -234,11 +234,22 @@ async function run() {
         'the empty interstitial shell the page laid over the player frame is click-through');
     }
 
-    /* 2. The first press on the timeline is a seek. */
+    /* 2. The first press on the timeline is a seek. Every navigation the player frame starts is
+          noted on the page, which outlives the frame if it leaves, so a frame that got away says
+          how: listening after WardenOne's guard, this sees whether the guard cancelled it. */
+    if (!CONTROL) {
+      await inPlayer("(w.navigation.addEventListener('navigate', (e) => { (window.__woFrameNavigations = window.__woFrameNavigations || []).push({"
+        + " at: Date.now(), url: e.destination && e.destination.url, type: e.navigationType, cancelable: e.cancelable,"
+        + " cancelled: e.defaultPrevented, userInitiated: e.userInitiated, activation: !!(w.navigator.userActivation && w.navigator.userActivation.isActive),"
+        + " playerPressAt: Number(w.__wardenOnePlayerPressAt) || 0 }); }), true)");
+    }
     const rail = await inPlayer("(() => { const r = d.getElementById('rail').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()");
+    const pressedAt = await evaluate('Date.now()');
     await press(rail[0] + rail[2] * 0.75, rail[1] + rail[3] / 2);
     await sleep(1500);
     const seek = await inPlayer("({ seeks: w.__seeks, at: w.document.getElementById('v').currentTime, adPresses: w.__adPresses, where: w.location.pathname })");
+    const frameStory = async () => JSON.stringify({ seek, rail, pressedAt, browser: browser.Browser,
+      navigations: await evaluate('window.__woFrameNavigations || []'), awayHits: awayHits() });
     if (CONTROL) {
       /* Either the frame has already been sent away (and is unreadable) or the press hit the layer. */
       assert(typeof seek === 'string' || seek.seeks === 0, 'control: without WardenOne the timeline press never reached the timeline: ' + JSON.stringify(seek));
@@ -247,7 +258,7 @@ async function run() {
       console.log('[ok] control: without WardenOne the page reproduces the tricks (' + awayHits().length + ' advert requests, ' + strays().length + ' advert tabs)');
       return;
     }
-    assert.equal(seek.seeks, 1, 'the first press on the timeline reached it: ' + JSON.stringify(seek));
+    if (typeof seek === 'string' || seek.seeks !== 1) assert.fail('the first press on the timeline reached it: ' + await frameStory());
     assert(Math.abs(seek.at - MEDIA_SECONDS * 0.75) < 1, 'and seeked to where it was pressed: ' + JSON.stringify(seek));
     assert.equal(seek.adPresses, 0, 'no press reached the advert link or square: ' + JSON.stringify(seek));
 
@@ -256,7 +267,9 @@ async function run() {
     await press(440, 247);
     await sleep(1500);
     const play = await inPlayer("({ play: w.__playPresses, adPresses: w.__adPresses, where: w.location.pathname })");
-    assert.equal(play.play, 1, 'the press on the big play button reached it: ' + JSON.stringify(play));
+    if (typeof play === 'string' || play.play !== 1) {
+      assert.fail('the press on the big play button reached it: ' + JSON.stringify(play) + ' ' + await frameStory());
+    }
     assert.equal(play.adPresses, 0, 'the square over the play button did not take it: ' + JSON.stringify(play));
     assert.equal(await evaluate('location.pathname'), '/d/7qftyd95nnrj', 'the tab is still on the video page');
     assert.equal(await evaluate('window.__shellPresses || 0'), 0, 'no press landed on the page\'s shell');
