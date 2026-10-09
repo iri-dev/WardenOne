@@ -216,7 +216,17 @@ async function run() {
       .filter((url) => !/^(about:blank|chrome-extension:|edge:|chrome:)/.test(url) || url === 'about:blank#popup');
     const awayHits = () => hits.filter((h) => h.startsWith(ELSEWHERE + '/') && !/\/favicon\.ico$/.test(h));
 
-    await until("!!d.getElementById('square') && w.document.getElementById('v').readyState >= 1", 'the player to load its media and the ad layers to arrive');
+    /* Each half reported on its own, with what the server was asked for, so a stall says which. */
+    const loading = "(() => { const v = d.getElementById('v'); return { square: !!d.getElementById('square'), cover: !!d.getElementById('khz2y9w'),"
+      + " readyState: v && v.readyState, networkState: v && v.networkState, error: v && v.error && v.error.code, path: w.location.pathname }; })()";
+    let loaded;
+    for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100)) {
+      loaded = await inPlayer(loading).catch((error) => 'unreadable: ' + error.message);
+      if (loaded && loaded.square && loaded.readyState >= 1) break;
+    }
+    if (!loaded || !loaded.square || !(loaded.readyState >= 1)) {
+      assert.fail('the player to load its media and the ad layers to arrive: ' + JSON.stringify({ loaded, browser: browser.Browser, requests: hits.slice(-12) }));
+    }
     const duration = await inPlayer("w.document.getElementById('v').duration");
     assert(Math.abs(duration - MEDIA_SECONDS) < 0.5, 'the test media has the duration it was built with: ' + duration);
     const tabsAtStart = pages.size;
