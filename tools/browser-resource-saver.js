@@ -59,7 +59,8 @@ async function run() {
         if (area !== 'local' || !changes.wardenone_config) return;
         const before = changes.wardenone_config.oldValue || {};
         const after = changes.wardenone_config.newValue || {};
-        push({ t: now(), change: [before.stopAnimatedVideoPreviews, after.stopAnimatedVideoPreviews] });
+        const record = changes.wardenone_config_writes && changes.wardenone_config_writes.newValue;
+        push({ t: now(), change: [before.stopAnimatedVideoPreviews, after.stopAnimatedVideoPreviews], by: record ? record.keys : 'unrecorded' });
       });
       return 'ok';
     })()`).catch((error) => 'failed ' + error.message));
@@ -90,10 +91,21 @@ async function run() {
       mark('timeout');
       throw new Error('Timed out waiting for ' + label + ': ' + JSON.stringify({ state, config, pageStyle, marks, tabs, worker }));
     }
+    /* Saved the way every WardenOne surface saves: under the config lock, with its save record.
+       Written straight to storage, the change raced the extension's own locked saves and could be
+       wiped 18 ms later by one that had read before it. */
+    for (const deadline = Date.now() + 12000; Date.now() < deadline; await sleep(80)) {
+      if (await value("document.readyState === 'complete' && typeof withConfigLock === 'function' && typeof stampConfigWrite === 'function'", ext.sessionId).catch(() => false)) break;
+    }
     const setPreferences = (ambient, previews, master = true) => {
       mark('set previews=' + previews);
-      return value(`chrome.storage.local.get('wardenone_config').then(data =>
-      chrome.storage.local.set({ wardenone_config: { ...data.wardenone_config, enabled: ${master}, disableYouTubeAmbientMode: ${ambient}, stopAnimatedVideoPreviews: ${previews} } }).then(() => true))`, ext.sessionId);
+      return value(`withConfigLock(async () => {
+        const data = await chrome.storage.local.get(['wardenone_config', WO_CONFIG_WRITES_KEY]);
+        const stamp = stampConfigWrite(data[WO_CONFIG_WRITES_KEY], ['enabled', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews']);
+        await chrome.storage.local.set({ wardenone_config: { ...data.wardenone_config, enabled: ${master}, disableYouTubeAmbientMode: ${ambient}, stopAnimatedVideoPreviews: ${previews} },
+          [WO_CONFIG_WRITES_KEY]: stamp.record });
+        return true;
+      })`, ext.sessionId);
     };
     await until.call(null, "document.readyState === 'complete'", 'blank page');
     await setPreferences(true, true);
