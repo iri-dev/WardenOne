@@ -73,7 +73,10 @@ async function run() {
     await until(settings, `new Promise(resolve => chrome.storage.local.get('wardenone_popup_section_order', data => resolve(data.wardenone_popup_section_order?.[0] === ${JSON.stringify(defaults[1])})))`, 'saved arrow move');
     const popupEpoch = await value(popup, 'performance.timeOrigin');
     await cdp.send('Page.reload', {}, popup.sessionId);
-    await until(popup, `performance.timeOrigin > ${popupEpoch} && document.readyState === 'complete' && !!document.getElementById('arrange-open')`, 'reopened popup');
+    /* The popup lays out its default order first and applies the saved one when storage answers;
+       on a slow runner the list was opened before it had. */
+    await until(popup, `performance.timeOrigin > ${popupEpoch} && document.readyState === 'complete' && !!document.getElementById('arrange-open')`
+      + ` && popupSectionRuns()[0] && popupSectionRuns()[0].id === ${JSON.stringify(defaults[1])}`, 'reopened popup in the saved order');
     await value(popup, "document.getElementById('arrange-open').click()");
     assert.equal(await value(popup, "document.querySelector('#arrange-list .arrange-item').dataset.id"), defaults[1], 'popup follows Settings order');
     const settingsEpoch = await value(settings, 'performance.timeOrigin');
