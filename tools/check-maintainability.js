@@ -413,6 +413,7 @@ function checkContentBuild() {
   'tools/config-write-harness.js',
   'tools/browser-config-race.js',
   'tools/browser-resource-saver.js',
+  'tools/test-animated-image-saver.js',
   'tools/browser-engine-smoke.js',
   'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
@@ -458,6 +459,7 @@ function checkContentBuild() {
   'safe-browsing-block.js',
   'yt-adblock.js',
   'resource-saver.js',
+  'animated-image-saver.js',
   'spotify-adblock.js',
   'settings.js',
   'settings-data.js',
@@ -785,6 +787,7 @@ checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js
 checkCommand('X compatibility tests', ['tools/test-x-compatibility.js']);
 checkCommand('YouTube adblock tests', ['tools/test-yt-adblock.js']);
 checkCommand('Resource Saver media tests', ['tools/test-resource-saver.js']);
+checkCommand('Animated image saver tests', ['tools/test-animated-image-saver.js']);
 checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);
 
 // ---------------------------------------------------------------------------

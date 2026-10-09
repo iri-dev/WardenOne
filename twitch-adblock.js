@@ -1384,25 +1384,9 @@
     return { at: lastAdImminentAt, channel: lastAdImminentChannel || currentChannel || '' };
   }
 
-  // Refusing the ad request is what strands a break. The player will not leave
-  // its ad state until that request settles, so a blocked one leaves the picture
-  // frozen behind an ad that never arrives -- which is what the media
-  // compatibility rules mean by needing to "advance the ad lifecycle", and why
-  // this is answered on the page rather than blocked at the network layer.
-  //
-  // 204 specifically, because that is Twitch's OWN no-fill path rather than a
-  // convention we hope it honours. Its ad SDK branches on the status first:
-  // 204 resolves the request immediately with an empty result and reports
-  // available_impressions: 0, while any 200 is content-type sniffed, parsed and
-  // run through a bid validator that throws on anything it does not recognise.
-  // So a 204 is the one answer that cannot become an exception, and it carries
-  // no body to get the shape wrong with. Answering here also means the request
-  // is never issued, so there is no CORS surface and no extension resource for
-  // a page to probe.
-  //
-  // Fetch can be settled locally with a real Response. XHR is deliberately left
-  // native below because throwing from open() strands the SDK lifecycle, while a
-  // partial synthetic XHR is observably incompatible with Twitch's player.
+  // Blocking the request strands Twitch's ad lifecycle. A local 204 follows
+  // its no-fill path without parsing an ad body; leave XHR native because a
+  // partial synthetic XHR can break the player.
   function emptyAdResponse() {
     return new Response(null, { status: 204, statusText: 'No Content' });
   }
@@ -4252,31 +4236,11 @@
         backupSource(candidate));
     }
 
-    /* Splice markers. The player cannot tell where the worker switched it from one stream to
-       another, and its own playlists only ever mark Twitch's switches: an ad pod arrives behind an
-       EXT-X-DISCONTINUITY, which is what makes the player re-anchor its timeline and set the decoder
-       up again for media from a different encoder. The worker's own switches carried no marker --
-       into the clean alternate, back to Twitch's session, into a native ad that passed through
-       because no alternate was ready, out of one when it was. Measured against Twitch's real
-       player: an unmarked switch onto media from another encoder put the new segments at that
-       encoder's timestamps (9311 s against a timeline at 50 s), the player paused, jumped there,
-       then found the stream's own media behind it and sat frozen for 15 s with nothing buffered --
-       the spinner, and the state Twitch ends with a decode error and "please reload". Two segments
-       of one stream's content missing at a switch -- a sequence alignment one segment out --
-       drained the buffer and paused playback until the player seeked over the hole. The same
-       switches carrying EXT-X-DISCONTINUITY played straight through, and a marker between two
-       pieces of continuous media cost nothing measurable.
-       So every playlist handed to the player passes through here with the session it came from.
-       Each entry number the player has not downloaded yet gets a marker when the entry it will
-       play just before it -- the one it already downloaded, or else the one listed before it --
-       came from another session. Decisions are kept, so a later refresh of the same window
-       carries the same markers. Nothing is added when nothing switched, so native playback
-       stays byte for byte. Twitch writes no EXT-X-DISCONTINUITY-SEQUENCE, so neither does this:
-       its own pod markers leave by sliding off the head of the window, uncounted (captured live,
-       both of a pod's markers went at once as MEDIA-SEQUENCE jumped 4955 -> 4972), so its player
-       copes with that on every native ad break -- and with ours, measured sliding out after six
-       switches with nothing frozen. A count kept here would start wherever this worker first saw
-       each rendition, so two renditions would give the same media different numbers. */
+    /* Mark a segment when its predecessor came from another stream session.
+       Twitch's player needs EXT-X-DISCONTINUITY to reset its timeline and decoder;
+       an unmarked switch can freeze or end playback. Keep decisions across playlist
+       refreshes, but do not add a discontinuity sequence: Twitch's own sliding
+       windows omit it and renditions would otherwise disagree. */
     /* Bounded, oldest touched out first. The player polls the rendition it plays (and the next
        while it switches), and every refresh re-lists that playlist and every address in it, so
        only what nobody plays falls out: a live window is 7-23 entries, far inside 64 and 512.
@@ -4306,8 +4270,8 @@
       if (track) {
         spliceTracks.delete(key);
       } else {
-        track = { listed: new Map(), downloaded: new Map(), marked: new Set(), newest: -Infinity,
-          epochs: new Map() };
+        track = { listed: new Map(), downloaded: new Map(), attempts: new Map(), marked: new Set(),
+          newest: -Infinity, epochs: new Map() };
       }
       spliceTracks.set(key, track);
       while (spliceTracks.size > SPLICE_TRACKS_MAX) spliceTracks.delete(spliceTracks.keys().next().value);
@@ -4315,20 +4279,49 @@
     }
 
     /* Noted when the player asks, not when the bytes land: a playlist refreshed while the request
-       is in flight must already treat that entry as the one the player is taking. */
+       is in flight must already treat that entry as the one the player is taking.
+       Each request is its own attempt. The player can ask for an entry again while an earlier
+       request for it is still in flight -- a retry, or the same number from the other session
+       across a switch -- and the media it holds is the earliest attempt that has not failed. One
+       record per number let an older request's failure wipe out a newer one's success. */
+    const SPLICE_ATTEMPTS_MAX = 8;
     function noteSpliceDownload(url) {
       const entry = spliceSegments.get(url);
-      if (!entry || entry.track.downloaded.has(entry.number)) return null;
-      entry.track.downloaded.set(entry.number, entry.source);
-      return entry;
+      if (!entry) return null;
+      const track = entry.track;
+      let attempts = track.attempts.get(entry.number);
+      if (!attempts) {
+        attempts = [];
+        track.attempts.set(entry.number, attempts);
+      }
+      if (attempts.length >= SPLICE_ATTEMPTS_MAX) return null;
+      const attempt = { track: track, number: entry.number, source: entry.source };
+      attempts.push(attempt);
+      syncSpliceDownload(track, entry.number);
+      return attempt;
+    }
+
+    function syncSpliceDownload(track, number) {
+      const attempts = track.attempts.get(number);
+      if (attempts && attempts.length) {
+        track.downloaded.set(number, attempts[0].source);
+      } else {
+        track.attempts.delete(number);
+        track.downloaded.delete(number);
+      }
     }
 
     /* A request that failed delivered nothing. The player asks for that entry again from whatever
        the playlist lists by then -- after a switch, the other session -- so the failed one must not
-       stand in for it: kept, it hid the real splice and put the marker one entry late. */
-    function settleSpliceDownload(entry, pending) {
+       stand in for it: kept, it hid the real splice and put the marker one entry late. Only that
+       attempt goes; one that is still in flight or has delivered keeps the entry. */
+    function settleSpliceDownload(attempt, pending) {
       const forget = () => {
-        if (entry.track.downloaded.get(entry.number) === entry.source) entry.track.downloaded.delete(entry.number);
+        const attempts = attempt.track.attempts.get(attempt.number);
+        const at = attempts ? attempts.indexOf(attempt) : -1;
+        if (at < 0) return;
+        attempts.splice(at, 1);
+        syncSpliceDownload(attempt.track, attempt.number);
       };
       return Promise.resolve(pending).then((response) => {
         if (!response || !response.ok) forget();
@@ -4420,7 +4413,7 @@
       }
       while (spliceSegments.size > SPLICE_SEGMENTS_MAX) spliceSegments.delete(spliceSegments.keys().next().value);
       const oldest = track.newest - SPLICE_HISTORY;
-      for (const map of [track.listed, track.downloaded]) {
+      for (const map of [track.listed, track.downloaded, track.attempts]) {
         for (const number of Array.from(map.keys())) if (number < oldest) map.delete(number);
       }
       for (const number of Array.from(track.marked)) if (number < oldest) track.marked.delete(number);

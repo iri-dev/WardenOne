@@ -102,7 +102,7 @@ function fakeSession() {
 const LOG_HELPERS = between(BG, 'const LOG_URL_MAX = 300;', '\n// Details carry URLs too', 'the log URL helpers');
 const SESSION_HELPERS = between(BG, 'function sessionArea() {', '\nconst REDIRECT_CHAINS = Object.create(null);', 'the session helpers');
 const MIRROR = between(BG, 'const REDIRECT_CHAINS = Object.create(null);', '\nfunction resetRedirectChain', 'the redirect mirror');
-const RECORDS = between(BG, '// ---- Warning-page hand-off records (PRIV-04) ----', '\nasync function showRedirectWarning', 'the warning records');
+const RECORDS = between(BG, 'const WARNING_RECORD_PREFIX = ', '\nasync function showRedirectWarning', 'the warning records');
 const TRUST = between(BG, 'async function trustErrorPageUrl', '\nasync function handleTrustError', 'the trust builder');
 
 function workerSandbox() {

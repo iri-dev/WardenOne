@@ -693,27 +693,9 @@
     }
   }
 
-  // Signing in to a provider's OWN app is not a third-party grant. "GitHub CLI
-  // by GitHub", GitHub Desktop, GitHub Mobile and Codespaces all land on the same
-  // /login/oauth/authorize page as any other app, and asking for `repo` there
-  // scored High -- so the guard warned every time someone signed in to GitHub
-  // with GitHub's own tooling. There is no third party to be warned about.
-  //
-  // Two independent signals, either sufficient:
-  //
-  //  1. The redirect sends the code back to the provider's own domain. An
-  //     attacker cannot register their app against github.com's redirect, so
-  //     this one cannot be spoofed -- but the authorize URL usually omits
-  //     redirect_uri and falls back to the app's registered default, so it is
-  //     often simply absent.
-  //  2. The provider's own page names itself as the publisher. This text is
-  //     rendered by the provider, not by the app; the app only supplies the name
-  //     the provider prints after "by". The trailing guard matters: without it
-  //     an app published by "GitHub-Support" would read as first-party, which is
-  //     exactly the impersonation an attacker would try.
-  //
-  // This suppresses the warning rather than lowering it, because a first-party
-  // scope set is what the user just asked for by starting the sign-in.
+  // Suppress grants to a provider's own app when the redirect stays on its host
+  // or its provider-rendered publisher is an exact first-party match. Reject
+  // lookalike names; an omitted redirect_uri proves nothing.
   function isFirstPartyGrant(provider, u) {
     try {
       const redirect = redirectInfo(u);

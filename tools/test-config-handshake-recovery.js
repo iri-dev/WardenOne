@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The config handshake survives a worker that dies mid-reply (MV3-04).
- *
- * Every content document asked the worker for its settings once. The first request of a new
- * document is what wakes a cold worker, and a worker that dies before answering -- reload,
- * update, crash, the message port closing -- hands the callback runtime.lastError and nothing
- * else. The bridge returned there, so the engine started on compiled defaults at 1.5 s and every
- * isolated script that had asked once ran without its settings for the life of the document.
- * Nothing short of a settings change repaired it.
- *
- * Now the bridge owns acquisition: a failed, malformed or missing answer is retried on a bounded
- * exponential schedule; a document shown again or made visible re-asks if it was never answered;
- * every answer carries the worker's revision so a late reply from an earlier request cannot undo
- * a newer one; and the other isolated scripts in the frame ask the bridge instead of the worker,
- * so they inherit the retry and skip the round trip when the bridge already holds the answer.
- *
- * Driven here with the shipped acquisition block lifted out of bridge.js, a scripted
- * chrome.runtime and fake timers.
- *
- * Run: node tools/test-config-handshake-recovery.js
- * Control: WARDENONE_BRIDGE=<pre-fix bridge.js> -- the block does not exist there.
- */
+/* MV3 worker failures must not strand a document on default config. Exercise bridge
+   retries, revision ordering, visibility recovery, and shared frame acquisition. */
 'use strict';
 
 const fs = require('fs');
@@ -58,11 +38,15 @@ check('the acquisition block is in bridge.js', BLOCK.length > 1000, BLOCK.length
 
 /* A bridge world: fake timers, a scripted runtime, and stubs for the bridge helpers the block
    calls. Every timer is explicit -- nothing runs until the test advances the clock. */
-function world() {
+function world(options) {
+  const opts = options || {};
   const timers = [];
   let now = 0;
   let nextId = 1;
-  const outbox = [];        // sendMessage calls, in order: { msg, cb, answered }
+  const outbox = [];        // content-config-get calls, in order: { msg, cb, answered }
+  const boots = [];         // redirect-bootstrap-get calls, kept apart so the snapshot's indices hold
+  const order = [];         // every request's kind, in the order it went out
+  const posted = [];        // what the bridge posted to the page
   const sent = [];          // sendConfig calls
   const listeners = {};
   const applied = { learned: [], supplemental: [], hidden: [] };
@@ -75,7 +59,13 @@ function world() {
     woOn: (target, type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
     window: {},
     document: { visibilityState: 'visible' },
-    chrome: { runtime: { lastError: undefined, sendMessage: (msg, cb) => { outbox.push({ msg, cb, answered: 0 }); } } },
+    chrome: { runtime: { lastError: undefined, sendMessage: (msg, cb) => {
+      order.push(msg && msg.kind);
+      (msg && msg.kind === 'redirect-bootstrap-get' ? boots : outbox).push({ msg, cb, answered: 0 });
+    } } },
+    postToPage: (m) => posted.push(m),
+    signed: (kind, text, fields) => Object.assign({ signedAs: kind, signedText: text }, fields),
+    TOKEN: 'tok',
     bridgeConfigReady: false,
     bridgeFrameSite: '',
     setLearnedGrabberDomains: (v) => applied.learned.push(v),
@@ -88,7 +78,7 @@ function world() {
   vm.createContext(sandbox);
   vm.runInContext(BLOCK, sandbox, { filename: 'bridge.js:acquisition' });
   const api = {
-    sandbox, outbox, sent, listeners, applied,
+    sandbox, outbox, boots, order, posted, sent, listeners, applied,
     now: () => now,
     pending: () => timers.map((t) => t.at - now).sort((x, y) => x - y),
     /* Advance the clock, running every timer that comes due, in order. */
@@ -112,13 +102,25 @@ function world() {
       sandbox.chrome.runtime.lastError = err ? { message: err } : undefined;
       try { entry.cb(res); } finally { sandbox.chrome.runtime.lastError = undefined; }
     },
+    /* Answer the nth bootstrap request (0-based). */
+    replyBoot(n, res, err) {
+      const entry = boots[n];
+      if (!entry) throw new Error('no bootstrap request #' + n);
+      entry.answered++;
+      sandbox.chrome.runtime.lastError = err ? { message: err } : undefined;
+      try { entry.cb(res); } finally { sandbox.chrome.runtime.lastError = undefined; }
+    },
     fire(type, event) { (listeners[type] || []).forEach((fn) => fn(event || {})); },
     request: () => vm.runInContext('requestContentConfig()', sandbox),
     snapshot: () => sandbox.window.__wardenOneContentConfig(),
     ask: (need, cb) => sandbox.window.__wardenOneContentConfigRequest(need, cb),
   };
+  /* Most sections are about the full snapshot: their bootstrap is answered at once, which leaves
+     no timer of its own behind. */
+  if (!opts.holdBootstrap && boots[0]) api.replyBoot(0, BOOT_OK);
   return api;
 }
+const BOOT_OK = { ok: true, overrides: { enabled: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true } };
 const ok = (rev, extra) => Object.assign({ ok: true, rev, overrides: { enabled: true, marker: 'rev' + rev }, learned: {}, supplemental: {}, hidden: [], site: 'example.com' }, extra || {});
 
 if (BLOCK) {
@@ -310,6 +312,72 @@ if (BLOCK) {
       w.advance(5000);
     }
     check('four attempts, then null: a default-on protection does not wait half a minute', got === null && mine().length === 4, mine().length + ' requests, got=' + JSON.stringify(got));
+  });
+
+  /* The quick popup-switch bootstrap. It arms the popup guards and the player-frame guards before
+     the full snapshot lands, and it was asked for once: a cold worker answered that one request
+     with lastError and a freshly loaded player frame stayed unguarded until the full snapshot. It
+     is asked until answered now, on a short budget, and only for as long as it can still matter.
+     It never arms anything by itself: until an answer says what the reader chose, nothing does. */
+  section('the bootstrap is asked for first, and posted once answered', () => {
+    const w = world({ holdBootstrap: true });
+    check('the bootstrap goes out before the full snapshot, so it stays the quick one',
+      JSON.stringify(w.order) === JSON.stringify(['redirect-bootstrap-get', 'content-config-get']), JSON.stringify(w.order));
+    check('nothing is posted to the page before an answer', w.posted.length === 0);
+    w.replyBoot(0, BOOT_OK);
+    check('an answer is posted to the page, signed, once',
+      w.posted.length === 1 && w.posted[0].signedAs === 'redirect-bootstrap' && w.posted[0].kind === 'redirect-bootstrap'
+        && w.posted[0].overrides.blockPopupTricks === true && w.posted[0].token === 'tok', JSON.stringify(w.posted));
+    w.advance(60000);
+    check('and it is not asked for again', w.boots.length === 1, w.boots.length);
+  });
+
+  section('THE CARD: a cold worker fails the bootstrap', () => {
+    const w = world({ holdBootstrap: true });
+    w.replyBoot(0, undefined, 'Could not establish connection. Receiving end does not exist.');
+    check('lastError does not end it: a retry is scheduled at 150 ms', w.pending().includes(150), JSON.stringify(w.pending()));
+    w.advance(150);
+    check('the second request goes out', w.boots.length === 2);
+    w.replyBoot(1, BOOT_OK);
+    check('and its answer reaches the page', w.posted.length === 1 && w.posted[0].overrides.blockPopupTricks === true);
+  });
+
+  section('a bootstrap reply that never comes, or comes without the switches, is asked again', () => {
+    const w = world({ holdBootstrap: true });
+    w.advance(1999);
+    check('it waits two seconds for an answer', w.boots.length === 1);
+    w.advance(1 + 150);
+    check('then asks again', w.boots.length === 2);
+    w.replyBoot(1, { ok: true });
+    w.advance(300);
+    check('an answer without the switches does not count', w.boots.length === 3 && w.posted.length === 0, w.boots.length + ' requests');
+  });
+
+  section('the bootstrap\'s budget is short, and the full snapshot keeps its own', () => {
+    const w = world({ holdBootstrap: true });
+    for (let i = 0; i < 8; i++) {
+      const open = w.boots.find((e) => !e.answered);
+      if (open) w.replyBoot(w.boots.indexOf(open), undefined, 'dead');
+      w.advance(1500);
+    }
+    check('five attempts, then it stops', w.boots.length === 5, w.boots.length + ' requests');
+    check('and nothing was posted on a guess', w.posted.length === 0);
+    /* Twelve seconds in, the full snapshot is on its own retry by now: answer the request still open. */
+    w.reply(w.outbox.length - 1, ok(7));
+    check('the full snapshot still arrives and is applied', w.sent.length === 1 && w.sent[0].marker === 'rev7',
+      w.outbox.length + ' snapshot requests, sent=' + JSON.stringify(w.sent));
+  });
+
+  section('once the full snapshot is in, the bootstrap stops', () => {
+    const w = world({ holdBootstrap: true });
+    w.replyBoot(0, undefined, 'dead');
+    w.reply(0, ok(3));
+    w.advance(10000);
+    check('no further bootstrap is asked for after the full snapshot', w.boots.length === 1, w.boots.length + ' requests');
+    const late = world({ holdBootstrap: true });
+    late.reply(0, ok(4));
+    late.replyBoot(0, BOOT_OK);
+    check('and a late bootstrap is not posted over it', late.posted.length === 0, JSON.stringify(late.posted));
   });
 }
 

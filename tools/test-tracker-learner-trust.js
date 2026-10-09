@@ -4,34 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Who decides what the Tracker Learner blocks (M42)?
- *
- * A `learned` entry becomes a dynamic DNR rule with no initiatorDomains, so it blocks that domain
- * as a third party on EVERY site the user visits, rebuilt from storage on every worker start. The
- * only thing that feeds the learner is noteTrackerObservation, reached from the rg-block listener
- * -- and rg-block arrives over a forgeable MAIN-world event. The file says the rule fifteen lines
- * earlier: "a malicious page can FORGE them. Never learn an attacker-supplied domain." learnDomain
- * obeys it; this path did not, taking the third-party domain straight from `detail.domain`.
- *
- * Two things made that cheap to exploit:
- *
- *   1. looksLikeKnownTrackerHost dropped the thresholds to 1 hit / 1 site. It matches on the NAME
- *      -- anything under analytics., metrics., telemetry., beacon., adservice. -- and the name is
- *      a page-supplied string. One forged event naming analytics.<anything> was enough.
- *   2. The "three different sites" corroboration is counted with a two-label registrable-domain
- *      heuristic that is not public-suffix aware, so three free subdomains on three shared hosts
- *      are three distinct keys at no cost, reachable in a single visit through two redirects.
- *
- * The fix keeps the learner but takes the shortcut away and adds an axis the claimant does not
- * control: distinct browser sessions. It also protects the extension's own provider hosts, derived
- * from the manifest -- learning a block rule against our own reputation or breach endpoints would
- * let a page switch off the checks that protect the user.
- *
- * The real function is lifted from background.js and driven with forged events.
- *
- * Run: node tools/test-tracker-learner-trust.js
- */
+/* Forged MAIN-world observations must not create global DNR blocks.
+   Require corroboration across sites and browser sessions, protect the
+   extension's provider hosts, and exercise the shipped learner function. */
 'use strict';
 
 const fs = require('fs');

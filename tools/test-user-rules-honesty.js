@@ -4,40 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The reader's own rules: what they say is what Chrome does, and what the page says is what
- * happened (H17, H18, H19, H20, PI-02, BUG-06).
- *
- * Five findings, one pipeline. The Site Firewall and My Rules / Custom Lists are the two
- * places a person writes network policy by hand, and each had the same two faults in its own
- * shape: the rules Chrome ended up with did not match the cells or lines, and the interface
- * reported success without asking Chrome.
- *
- *   H17  Every firewall cell was emitted at one priority, and Chrome breaks a tie between an
- *        allow and a block in favour of the allow -- so All = allow with Script = block loaded
- *        the scripts. A specific column now outranks All, a cookie strip outranks an allow in
- *        its row, and a session allowance outranks everything stored.
- *   H18  The firewall applier returned 0 for "empty" and for "Chrome refused", and both write
- *        handlers said ok:true either way. They apply first and store only what Chrome took.
- *   H19  ||*abc parsed as a rule Chrome refuses; the atomic update rejected -- leaving every
- *        OLD rule live -- and a fallback added the new rules one at a time onto the old ids,
- *        so nothing changed while the editor text was already stored. The parser refuses it
- *        by line; a refused batch is a refused batch; every write commits through Chrome.
- *   H20  Custom lists promised HTTPS and accepted http://, plus https->http redirects, for
- *        text that carries priority-98000 exceptions. HTTPS only, at the start and through
- *        every redirect; a stored http:// list reads as off, with the reason.
- *   PI-02 "Allow once" -- the design's own argument for exposing a site-breaking matrix --
- *        had a handler, a rule band, a budget and a test, and no control. It has one, and
- *        the allocator underneath it (BUG-06) no longer overwrites the oldest allowance
- *        once the band is full.
- *
- * Everything below runs the shipped functions and handler bodies against a model of
- * declarativeNetRequest that keeps Chrome's contracts: an update is all-or-nothing, a
- * rejected update changes nothing, and a request is decided by the highest-priority
- * matching rule with allow beating block on a tie.
- *
- * Run: node tools/test-user-rules-honesty.js
- */
+/* Exercise the shipped firewall and custom-rule handlers against Chrome-like
+   atomic DNR updates. Specific rules outrank broad ones, rejected writes stay
+   rejected, HTTPS lists remain HTTPS, and UI success reflects applied state. */
 'use strict';
 
 const fs = require('fs');

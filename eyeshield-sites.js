@@ -647,46 +647,11 @@
       + twitchChatAndPlayerCSS(bg, surface, raised, border, text, muted, accent);
   }
 
-  /* ChatGPT is themed with its OWN light and dark themes: the core switches the `dark`/`light`
-     class and the `data-theme` attribute (applyChatGPTNativeTheme), so the composer, the sidebar,
-     its conversations and the white send and voice discs keep the colours ChatGPT gave them. The
-     profile that stood here painted over the app with selectors written for an older one: in Light the
-     composer stayed dark and the conversations stayed near-white on a light sidebar, and in the
-     dark modes every button's glyph was forced white onto ChatGPT's white discs.
-
-     What is left: ChatGPT picks light or dark colours three ways, and the class only reaches one.
-       - Tokens declared on `.dark`/`.light` scopes: the class switch (the core flips every scope).
-       - lightningcss's polyfilled light-dark(): two variables, `--lightningcss-light` and
-         `--lightningcss-dark`, which its components set per element. Pinned to the mode on every
-         element.
-       - The browser's own light-dark(), which resolves against each element's color-scheme --
-         and ChatGPT's components set `color-scheme: dark` on themselves, which the core header's
-         `html{color-scheme}` cannot reach. A signed-in page in Light kept its dark sidebar, panels
-         and composer with the tokens' dark text on top: flipping the class and pinning the
-         variables left exactly this out. color-scheme is pinned on every element too.
-       The core leaves the page background to ChatGPT (ownsPageBackground).
-
-     Dark is ChatGPT's own dark theme and nothing more. That theme is now true black (page and
-     sidebar #000, composer #1b1b1b), so where ChatGPT already shows it, Dark looks the same as Eye
-     Shield off. A charcoal Dark (#212121) was tried so the two would differ, and read as Eye
-     Shield making the page LIGHTER -- the one thing a dark mode must not do.
-
-     Ultra has to be visibly deeper than ChatGPT's own black, and the canvas cannot go further,
-     so it takes the rest: the composer goes black with a crisp outline in place of its grey fill,
-     buttons, menus and cards sink to near-black, and body text and icons go to pure white, as
-     Ultra's text does on every other site. Sinking the composer only to #111 was measured on the
-     reader's screen as indistinguishable from ChatGPT's own dark. The accent and the message
-     colours stay ChatGPT's and the reader's own.
-
-     The signed-in app takes these from its appearance theme (`--app-color-*`, computed per
-     account and declared on <html> and on any inner [data-theme] scope), so they are set where
-     it sets them and inherited from there. The signed-out app still uses the older
-     `--main-surface-*` set, and declares it again on EVERY element (`html.dark :not(.light …)`),
-     so a value set on <html> alone reaches nothing -- measured: <html> changed, the body under it
-     did not. Only that set goes on every element, and only on the signed-out app (the signed-in
-     one carries data-codex-window-type): declaring all of it on every element of a signed-in
-     page cost ~10% more style recalculation and ~17% more to add content, measured on 20,000
-     elements, for variables nothing there reads. */
+  /* Use ChatGPT's native light and dark themes; nested color-scheme and
+     lightningcss variables need the same mode as the root. Signed-in pages use
+     --app-color-* tokens, while signed-out pages redeclare --main-surface-* on
+     each element. Limit the broad override to signed-out pages because it adds
+     measurable style-recalculation cost. Ultra deepens native dark surfaces. */
   const CHATGPT_ULTRA = {
     app: {
       '--app-color-background-surface-under': '#000000', '--app-color-background-surface': '#000000',

@@ -6,19 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// The popup is the whole settings surface, and its status text is the highest-stakes
-// text the extension shows: "Could not reach the breach database", "3 known
-// breach(es)", "Not installed from the Web Store". Those all used to fail WCAG AA.
-//
-// A blunt "every colour must clear 4.5:1 on the card" check is wrong here, because
-// several colours sit on their OWN background (a pink danger button, a tinted health
-// chip) and a couple are icon glyphs rather than text, which WCAG 1.4.11 holds to
-// 3:1 rather than 1.4.3's 4.5:1. So this file pairs each colour with the surface it
-// is actually painted on.
-//
-// The important property is the last check: any NEW colour that reaches a `color:`
-// declaration must either clear 4.5:1 on the darkest page surface or be listed in
-// EXEMPT with a reason. A colour cannot quietly appear and fail.
+// Check text against its actual painted surface; icons use a different threshold.
+// New text colours must pass the default contrast check or have a reason in EXEMPT.
 
 const assert = require('assert');
 const fs = require('fs');

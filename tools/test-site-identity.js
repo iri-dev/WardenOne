@@ -94,7 +94,7 @@ const ordinaryCookies = Array.from(patternSandbox.api.cookieContentSettingPatter
 assert(ordinaryCookies.includes('https://*.example.com/*'));
 
 const neverStart = BACKGROUND.indexOf('const NEVER_BLOCK_DOMAINS');
-const neverEnd = BACKGROUND.indexOf('// High-priority DNR allow rules', neverStart);
+const neverEnd = BACKGROUND.indexOf('const NEVER_BLOCK_ALLOW_EXCLUDE', neverStart);
 assert(neverStart >= 0 && neverEnd > neverStart, 'never-block policy markers moved');
 const neverSandbox = { URL, Set, Object, String, Array };
 vm.createContext(neverSandbox);

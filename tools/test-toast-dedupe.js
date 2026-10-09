@@ -4,39 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * How often may the same warning appear, and which warnings should not appear at all?
- *
- * Two separate problems, both reported from a real build.
- *
- * 1. The toast guard remembered only the LAST key, for 1200ms. So a page beaconing on a timer
- *    produced the same popup every 1.2 seconds for as long as it kept going, and an A,B,A sequence
- *    showed A twice. A stream of identical warnings is how someone learns to dismiss WardenOne
- *    without reading it -- which costs more than the warning ever bought.
- *
- *    That was fixed with a per-page set keyed on type + the matched value, described at the time
- *    as "one toast per distinct thing per page". It was still wrong, and reported again from a
- *    real build: a page loading five trackers is five distinct things, so it produced five cards
- *    carrying the same title, the same explanation, the same severity and the same advice,
- *    differing only in the small monospace host underneath. That is one warning shown five times.
- *
- *    The rule now: one toast per distinct WARNING per page, where a warning is identified by what
- *    it says -- type, explanation, severity, advice -- and not by what set it off. The matched
- *    value is a detail printed on the card, not part of its identity. Every occurrence still
- *    reaches the Activity Center, which is where the full list belongs; the toast only has to say
- *    a thing happened, once.
- *
- *    Distinct warnings arriving together are staggered rather than dropped, because dropping one
- *    loses the only notice a person gets of it. Navigating or reloading starts fresh, because a
- *    set that never cleared would go on suppressing warnings for a page the user left minutes ago.
- *
- * 2. "Possible tracker" was firing for region1.google-analytics.com -- a host the network rules
- *    already block. The detector hooks fetch/XHR in the page and sees the ATTEMPT;
- *    declarativeNetRequest kills the request itself, and the two never talk. So the popup described
- *    something that had not happened, on a page where WardenOne had already done its job silently.
- *
- * Run: node tools/test-toast-dedupe.js
- */
+/* One toast per distinct warning wording per page; changed matched hosts
+   still reach Activity Center. Distinct warnings queue, navigation resets
+   deduplication, and blocked tracker attempts do not claim a fetch succeeded. */
 'use strict';
 
 const fs = require('fs');

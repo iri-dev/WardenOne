@@ -143,27 +143,10 @@
     } catch (_) { return String(Math.random()) + Date.now().toString(36); }
   })();
 
-  // ---- The key beside the nonce (SEC-01, SEC-02, SEC-03) ----
-  //
-  // The nonce above is public by construction: it travels by postMessage, and a page script
-  // that registers a listener early enough reads it. Every consumer in the MAIN world then
-  // treated "carries the nonce" as "came from the bridge", so a page that had the nonce could
-  // post {kind:"config", overrides:{enabled:false}} and switch the engine off, answer a
-  // reputation request with a clean verdict before the worker did, or call the engine's own
-  // published dispose and put the ready markers back.
-  //
-  // KEY is different in one way that matters: it is handed over exactly once, as a SYNCHRONOUS
-  // DOM event, at document_start, before the parser has built anything and before any page
-  // script exists to listen. After that moment it is never sent again -- not by replay, not on
-  // request -- so the page has no way to obtain it. Everything the engine must trust from here
-  // is signed with it (an HMAC over a sequence number and the payload), and the engine proves
-  // it is alive by answering a challenge with the same key. The page still sees every message
-  // and can dispatch every event; it can no longer make any of them count.
-  //
-  // What this cannot do is deliver a key to a MAIN script injected after the page has run,
-  // because by then no channel into that world is private. The worker no longer injects into a
-  // live document for that reason: when the engine is missing or has been switched off, the
-  // tab is reloaded and the document_start hand-off happens again.
+  // The postMessage nonce is public. MAIN-world authority instead uses a key
+  // handed off synchronously at document_start and never replayed. Signed
+  // sequence payloads prevent forgery; late engine injection reloads the tab
+  // because no private MAIN-world hand-off remains after page scripts run.
   /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
      asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
      reference it needs is captured here, before the page runs, so a page that rewrites
@@ -765,27 +748,9 @@
     return false;
   }
 
-  // WardenOne's warnings, and its one privileged control, used to be ordinary elements in the
-  // page's DOM that we found again by id or CSS selector. Both halves of that were page-owned
-  // data:
-  //
-  //   * Any page can build an element matching a selector. The cookie escape hatch identified
-  //     its own button with closest('#rg-reload-loop [data-wo-cookie-allow="1"]'), so a page
-  //     could plant that exact structure, label it "Play video", and turn one genuine user click
-  //     into contentSettings.cookies -> allow for itself. The trusted-click check passed, because
-  //     the click really was the user's -- what was forged was the element, not the gesture.
-  //   * Any page can delete an element by id. The login-age warning exists to say "this site is
-  //     probably phishing", and the site it accuses could remove it with one call.
-  //
-  // Both are answered by owning the nodes instead of describing them. A CLOSED shadow root's
-  // handle exists only here, in the isolated world: `host.shadowRoot` is null from the page, so
-  // the page cannot read the contents, inject into them, or hand us a lookalike. And because we
-  // keep direct references to what we built, "is this ours?" is an object comparison instead of a
-  // selector match, and listeners bind to the exact node rather than to the document.
-  //
-  // The host still carries an id and data-wo-ui="1". Those are labels, not credentials -- the
-  // engine's overlay cleaner and EyeShield both skip WardenOne's own UI by them, and that has to
-  // keep working. Nothing trusts them any more.
+  // Page-owned selectors and IDs cannot authorize WardenOne controls.
+  // Keep direct node references in closed shadow roots; public host markers
+  // remain labels for styling and exclusions, never credentials.
   const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
     + 'z-index:2147483647!important;';
 
@@ -1354,25 +1319,9 @@
     } catch (_) {}
     return '';
   }
-  // The deadlock (H13). Every signal smartPlayerStrongEvidence() looks for -- a player root, a
-  // <video>, a library script tag -- is built by the page's own JavaScript, which is precisely what
-  // Smart Script Shield just blocked. On a site that constructs its player entirely in script none
-  // of them ever appears, so the evidence test never passes, the recovery never runs, and the player
-  // area stays empty with nothing naming the cause.
-  //
-  // Reporting the *absence* breaks the circle. This is deliberately not evidence of a player, and
-  // background does not treat it as any: it acts only where it has independently observed a blocked
-  // script in this frame, which comes from webRequest and no page can manufacture. A page may put
-  // itself on a watch route and render nothing -- that earns it a look, not an allowance. And
-  // recovery still refuses hosts known for tracking or fingerprinting, so tripping this on purpose
-  // cannot un-block anything a page would want un-blocked.
-  //
-  // What makes it a deadlock report rather than an impatience report is elapsed time, and it must
-  // be time rather than a scan count. smartPlayerScanCount only climbs when domWatch fires, and
-  // domWatch fires on DOM mutations -- which are produced by the very scripts that were blocked. A
-  // scan-count threshold would therefore never be reached on precisely the pages this exists for:
-  // the same circular dependency H13 describes, one level up. A timer does not ask the page's
-  // permission to advance.
+  // Blocked scripts may have been required to build every player signal.
+  // Report timed absence only when the worker independently saw a blocked script;
+  // a page cannot turn this report into an allowlist decision.
   const SMART_PLAYER_DEADLOCK_MS = 4000;
   const SMART_PLAYER_LATE_SCAN_MS = 1500;
   let smartPlayerDeadlockDue = false;
@@ -2464,40 +2413,9 @@
     } catch (_) {}
   });
 
-  // 2. Request the bounded content-script snapshot from the trusted worker. storage.local also
-  //    holds provider credentials and private activity, so content scripts are deliberately
-  //    denied direct access to it even though this isolated world cannot be read by page JS.
-  //
-  //    Asked until answered, not once (MV3-04). The first request of a new document is what
-  //    wakes a cold worker, and a worker that dies mid-reply -- reload, update, crash, a
-  //    message port closed before the response -- hands the callback runtime.lastError and
-  //    nothing else. This used to return there, so the engine started on compiled defaults
-  //    at 1.5 s and every isolated script that asked once ran without its settings for the
-  //    life of the document: a paused or customised page got default protections, an enabled
-  //    one could miss them, and nothing short of a settings change repaired it. Now a failed
-  //    or malformed answer is retried on a bounded exponential schedule, a document brought
-  //    back from the cache or made visible asks again if it was never answered, and every
-  //    answer carries the worker's revision so a late reply from an earlier request cannot
-  //    undo a newer one.
-  //
-  //    The same machinery is offered to the other isolated scripts in this frame (consent,
-  //    Eye Shield, Mail Shield, OAuth Guard, the search marker, the Twitch tools) through the
-  //    isolated window, so they stop making one-shot requests of their own and, when they only
-  //    need the switches, do not make a second round trip at all.
-  // The full snapshot gathers several datasets and can arrive after a first
-  // player click. Ask the worker for only the popup switches in parallel;
-  // storage remains private to trusted extension contexts. Apart from the popup
-  // guards and the player-frame guards these switches cover, no MAIN-world guard
-  // is enabled until the full content-config-get reply arrives.
-  try {
-    chrome.runtime.sendMessage({ kind: 'redirect-bootstrap-get' }, (res) => {
-      if (chrome.runtime.lastError || !res || !res.ok || !res.overrides) return;
-      const bootstrap = res.overrides;
-      postToPage(signed('redirect-bootstrap', JSON.stringify(bootstrap), {
-        source: 'wardenone', kind: 'redirect-bootstrap', token: TOKEN, overrides: bootstrap,
-      }));
-    });
-  } catch (_) {}
+  // Content scripts cannot read storage.local: worker snapshots omit credentials.
+  // Retry failed or malformed MV3 replies with bounded backoff, and apply only
+  // newer revisions so a late response cannot roll back settings.
   const CONTENT_CONFIG_NEED = ['overrides', 'learned', 'supplemental', 'hidden'];
   const CONFIG_RETRY_BASE_MS = 300;
   const CONFIG_RETRY_MAX_MS = 5000;
@@ -2507,11 +2425,16 @@
   let bridgeSnapshot = null;
   let bridgeConfigRev = 0;
   // A retrying request: `cb(res)` once with a usable answer, or `cb(null)` once the budget is
-  // spent. Failures retry at 300 ms doubling to 5 s, eight attempts (~30 s), so a worker that
-  // is briefly gone is asked again while a worker that is really gone is not asked forever.
-  const bridgeFetchContentConfig = (need, cb, budget) => {
-    const wanted = Array.isArray(need) && need.length ? need.slice(0, 8) : CONTENT_CONFIG_NEED.slice();
-    const maxAttempts = Number(budget) > 0 ? Math.min(CONFIG_RETRY_ATTEMPTS, Number(budget)) : CONFIG_RETRY_ATTEMPTS;
+  // spent or `stop()` says the answer is no longer needed. By default failures retry at 300 ms
+  // doubling to 5 s, eight attempts (~30 s), so a worker that is briefly gone is asked again
+  // while a worker that is really gone is not asked forever.
+  const bridgeAskUntilAnswered = (message, usable, cb, options) => {
+    const o = options || {};
+    const maxAttempts = Number(o.attempts) > 0 ? Number(o.attempts) : CONFIG_RETRY_ATTEMPTS;
+    const baseMs = Number(o.baseMs) > 0 ? Number(o.baseMs) : CONFIG_RETRY_BASE_MS;
+    const maxMs = Number(o.maxMs) > 0 ? Number(o.maxMs) : CONFIG_RETRY_MAX_MS;
+    const deadlineMs = Number(o.deadlineMs) > 0 ? Number(o.deadlineMs) : 8000;
+    const stop = typeof o.stop === 'function' ? o.stop : () => false;
     let attempts = 0;
     let settled = false;
     const finish = (res) => {
@@ -2521,11 +2444,12 @@
     };
     const attempt = () => {
       if (settled) return;
+      if (stop()) { finish(null); return; }
       attempts += 1;
       let called = false;
       // A reply that never comes at all is treated like a failed one: nothing in this
       // world can tell a dead worker from a slow one except waiting.
-      const deadline = woTimeout(() => { if (!called) { called = true; retry(); } }, 8000);
+      const deadline = woTimeout(() => { if (!called) { called = true; retry(); } }, deadlineMs);
       const onReply = (res) => {
         if (called) return;
         called = true;
@@ -2533,22 +2457,50 @@
         woPending.delete(deadline);
         const err = chrome.runtime.lastError;
         void err;
-        if (err || !res || !res.ok) { retry(); return; }
+        if (err || !usable(res)) { retry(); return; }
         finish(res);
       };
       try {
-        chrome.runtime.sendMessage({ kind: 'content-config-get', need: wanted }, onReply);
+        chrome.runtime.sendMessage(message, onReply);
       } catch (_) {
         if (!called) { called = true; clearTimeout(deadline); woPending.delete(deadline); retry(); }
       }
     };
     const retry = () => {
       if (settled) return;
-      if (attempts >= maxAttempts) { finish(null); return; }
-      const delay = Math.min(CONFIG_RETRY_MAX_MS, CONFIG_RETRY_BASE_MS * Math.pow(2, attempts - 1));
+      if (attempts >= maxAttempts || stop()) { finish(null); return; }
+      const delay = Math.min(maxMs, baseMs * Math.pow(2, attempts - 1));
       woTimeout(attempt, delay);
     };
     attempt();
+  };
+  const bridgeFetchContentConfig = (need, cb, budget) => {
+    const wanted = Array.isArray(need) && need.length ? need.slice(0, 8) : CONTENT_CONFIG_NEED.slice();
+    const maxAttempts = Number(budget) > 0 ? Math.min(CONFIG_RETRY_ATTEMPTS, Number(budget)) : CONFIG_RETRY_ATTEMPTS;
+    bridgeAskUntilAnswered({ kind: 'content-config-get', need: wanted }, (res) => !!(res && res.ok), cb,
+      { attempts: maxAttempts });
+  };
+  // The full snapshot gathers several datasets and can arrive after a first player click, so the
+  // worker is also asked for only the popup switches (storage stays private to trusted extension
+  // contexts). Apart from the popup guards and the player-frame guards these switches cover, no
+  // MAIN-world guard is enabled until the full content-config-get reply arrives -- and none of
+  // them is enabled before an answer of either kind says what the reader chose.
+  //
+  // Asked until answered, like the full snapshot, but on a short budget: it matters only for the
+  // moments before the full snapshot lands, so it stops as soon as that has. A cold worker -- the
+  // first message of a new document is what wakes it -- used to answer this one request with
+  // runtime.lastError, and a player frame stayed unguarded until the full snapshot arrived, which
+  // on a slow wake was seconds. Retries at 150 ms doubling, five attempts, two seconds' wait per
+  // attempt: well inside the worker's 500-a-minute allowance for this message.
+  const BOOTSTRAP_RETRY = { attempts: 5, baseMs: 150, maxMs: 1200, deadlineMs: 2000, stop: () => bridgeConfigReady };
+  const requestRedirectBootstrap = () => {
+    bridgeAskUntilAnswered({ kind: 'redirect-bootstrap-get' }, (res) => !!(res && res.ok && res.overrides), (res) => {
+      if (!res || bridgeConfigReady) return;
+      const bootstrap = res.overrides;
+      postToPage(signed('redirect-bootstrap', JSON.stringify(bootstrap), {
+        source: 'wardenone', kind: 'redirect-bootstrap', token: TOKEN, overrides: bootstrap,
+      }));
+    }, BOOTSTRAP_RETRY);
   };
   // Apply an answer to this frame. A revision older than the one already applied is a late
   // reply from an earlier request -- the worker has since rebuilt its snapshot -- and is dropped;
@@ -2591,6 +2543,7 @@
       releaseAcquisitionWaiters();
     });
   };
+  requestRedirectBootstrap();
   requestContentConfig();
   // A document restored from the back/forward cache asks again -- the worker may have changed
   // while it slept and could not reach a frozen page -- and a document that was never answered

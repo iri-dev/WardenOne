@@ -6,25 +6,9 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// Chrome does not re-inject content scripts into open tabs when an extension updates, so a
-// tab that outlives an update keeps its old engine. The version guard only stops a
-// SAME-version re-run, which means a version bump used to leave two complete engines live
-// in one MAIN world -- each with its own observers and timers, both charged for every DOM
-// mutation, on exactly the long-lived tabs where it matters most.
-//
-// The engine holds a teardown that releases its observers and timers. Since SEC-03 it is no
-// longer window.__wardenOneDispose -- a published disposer was a page-callable kill switch --
-// and no longer runs at install: nothing injects a second engine into a live document any
-// more (the worker reloads the tab instead) and the guard refuses to run beside any copy.
-// The teardown is a private __woTeardown, reachable only through a signed "dispose"
-// message from the isolated bridge. It deliberately does NOT restore the patched prototypes:
-// unwinding those in the wrong order can hand the page a half-restored API, which is worse
-// than leaving a spare wrapper in the chain. What it releases is the expensive, stateful part.
-//
-// The release path itself needs a real browser to observe (the observer sites sit behind
-// config and lifecycle gates a fake page cannot cheaply reproduce). What this file pins is
-// the wiring, which is what would silently rot: every observer and timer must be created
-// through a registering factory, and dispose must drain the registry.
+// A page-callable disposer would disable protection. The private teardown is reached
+// through the signed bridge and drains registered observers and timers; these tests
+// check that wiring. Browser lifecycle behavior requires a real page.
 
 const assert = require('assert');
 const fs = require('fs');

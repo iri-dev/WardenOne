@@ -4,22 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Frame-driven top navigation -- the redirect neither existing layer could see.
- *
- * A cross-origin iframe setting top.location goes through Chrome's cross-origin
- * path, which never runs a JS accessor the top frame installed, so no in-page
- * hook in any frame can observe it. It is also not an HTTP 30x, so it never
- * becomes a redirect-chain hop. The only place left is the service worker, which
- * sees the navigation but not who caused it -- so the content script supplies the
- * attribution and this file tests that the two halves agree.
- *
- * The risk here is a false positive cancelling ordinary navigation, so most of
- * these checks are about what must NOT fire. Only distinctive ad-click targets
- * return directly to the source; ambiguous destinations retain the interstitial.
- *
- * Run: node tools/test-frame-redirect-guard.js
- */
+/* A cross-origin frame can navigate the top page without hitting its JS hooks.
+   Test worker navigation decisions with content-script attribution, including
+   ordinary navigation that must remain allowed. */
 'use strict';
 
 const assert = require('assert');
@@ -164,6 +151,36 @@ async function main() {
         && !/redirect-warning\.html/.test(w.updates[0].props.url), w.updates);
     check('the silently rejected ad click is still recorded',
       w.history.length === 1 && w.history[0].type === 'blocked_frame_top_redirect', w.history);
+  }
+
+  /* A domain ending, or a bare /click/ or /redirect/ path, is not proof of an advert: plenty of
+     ordinary sites live on .xyz or .link, and sign-in hops and newsletter links use those paths.
+     After a player click those still go to the recoverable warning, never silently back. */
+  for (const [label, url] of [
+    ['a legitimate .xyz project', 'https://legitimate-project.xyz/'],
+    ['a .link page', 'https://notes.example-team.link/watch-later'],
+    ['a bare /redirect/ hop', 'https://sso.example-video.org/redirect/?to=home'],
+    ['a bare /click/ path', 'https://news.example-video.org/click/42'],
+  ]) {
+    const w = world();
+    w.committed(1, 'https://playmogo.com/d/gk49gvu4can6');
+    w.signal(1, 'player-gesture');
+    await w.navigate(1, url);
+    check('after a player click, ' + label + ' gets the recoverable warning, not a silent return',
+      w.updates.length === 1 && /redirect-warning\.html/.test((w.updates[0] || {}).props?.url || ''), w.updates);
+  }
+  /* And what is distinctive enough to undo without asking. */
+  for (const [label, url] of [
+    ['a known ad network', 'https://www.popads.net/serve/landing'],
+    ['an ad-jargon endpoint', 'https://deforcejackmen.qpon/preland/x'],
+    ['two ad fields', 'https://track.example-media.org/go?zone_id=70849&campaign_id=213781'],
+  ]) {
+    const w = world();
+    w.committed(1, 'https://playmogo.com/d/gk49gvu4can6');
+    w.signal(1, 'player-gesture');
+    await w.navigate(1, url);
+    check('after a player click, ' + label + ' returns straight to the video',
+      w.updates.length === 1 && w.updates[0].props.url === 'https://playmogo.com/d/gk49gvu4can6', w.updates);
   }
 
   {
@@ -460,7 +477,7 @@ async function main() {
   const landerSrc = BG.slice(BG.indexOf('function chainFakeInstallLander'), BG.indexOf('function noteRedirectHop'));
   const lander = vm.runInNewContext(landerSrc + ';chainFakeInstallLander', { URL });
   const auctionSrc = BG.slice(BG.indexOf('function adAuctionClickUrl'),
-    BG.indexOf('// Matching trackers was always going to lose'));
+    BG.indexOf('async function maybeBlockForcedTopRedirect(details) {'));
   const adAuction = vm.runInNewContext(auctionSrc + ';adAuctionClickUrl', { URL });
   const LANDERS = [
     ['https://boost-you-browser.com/preland/storage/sf/operaone/5/index.html?p1=x', true, 'the real one'],

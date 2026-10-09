@@ -5,16 +5,8 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 'use strict';
-// Standalone unit test of the YouTube prune logic copied verbatim from the
-// content script. Proves the deep-walk actually removes the ad SCHEDULE (the
-// fields the player reads to decide when to insert an ad) from realistic
-// player-response shapes -- not just that the file parses.
-//
-// v3.18.x update: the walker now HARD-EXCLUDES the streaming/SABR subtree
-// (YT_PRUNE_EXCLUDE) so an ad-named token nested under streamingData can never
-// corrupt serverAbrStreamingUrl / adaptiveFormats (the black-screen/spinner
-// root cause). cleanPlayerText is now fail-safe: on JSON.parse failure it
-// returns the body UNCHANGED instead of a blind global key-rename.
+// The YouTube walker removes ad schedules while leaving streaming/SABR fields
+// intact. Parse failures must return the original player response.
 
 const YT_AD_FIELDS = ["playerAds", "adPlacements", "adPlacementsV2", "adSlots", "adBreaks", "adBreakHeartbeatParams", "adBreakServiceParams", "adParams", "playerAdParams", "adSignalsInfo", "adTrackingParams", "adSafetyReason", "adTag", "adUrl", "adVideoId", "adCuePoints", "adCues", "linearAdSequence", "instreamAd", "companionAd", "mediaAd"];
 const YT_AD_RENDERER_RE = /^(adPlacementRenderer|instreamVideoAdRenderer|inStreamAdLayoutRenderer|playerLegacyDesktopWatchAdsRenderer|companionAdRenderer|adSlotRenderer|promotedSparklesWebRenderer|promotedVideoRenderer|compactPromotedVideoRenderer|displayAdRenderer|statementBannerRenderer|mealbarPromoRenderer)$/i;

@@ -5,65 +5,11 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 
-/*
- * Mail Shield — tracking pixels in webmail.
- *
- * A marketing email carries a 1x1 image with your address encoded in its URL.
- * Loading it tells the sender you opened the message, when, roughly where from,
- * and on what. Ordinary tracker blocking misses these for one specific reason:
- *
- *   THE PROVIDER PROXIES THE IMAGE. Gmail rewrites every remote <img> to
- *   ci3.googleusercontent.com, so at the network layer there is no tracker
- *   domain left to match. A domain blocklist has nothing to bite on.
- *
- * But the information is not gone -- it moved. Gmail keeps the original URL in
- * the FRAGMENT of the proxy URL it writes into the DOM:
- *
- *   https://ci3.googleusercontent.com/meips/AAAA=s0-d-e1-ft#https://click.example/o/abc123
- *                                                          ^ the real tracker
- *
- * A fragment is never sent to a server, which is exactly why the network layer
- * cannot see it and why this has to happen in the page. That is the whole
- * argument for this file existing: it is not that blocking is impossible, it is
- * that it has to be done one layer up.
- *
- * Three decisions worth keeping:
- *
- * 1. NEUTRALISE, DO NOT BLOCK. The pixel's source is replaced with a transparent
- *    1x1 data: URI rather than the request being refused. Refusing leaves broken
- *    image icons through a newsletter and makes the mail client look faulty. A
- *    same-size transparent substitute is invisible -- which also means a FALSE
- *    POSITIVE IS HARMLESS BY CONSTRUCTION: old HTML email uses 1x1 spacer GIFs
- *    for layout, and swapping one for another transparent 1x1 changes nothing.
- *
- * 2. DECIDE FROM THE MARKUP, NEVER FROM THE RENDERED SIZE. By the time an image
- *    has a measurable box it has already loaded, and the tracker has already
- *    fired. So the signals are declared attributes, inline style and URL shape.
- *
- * 3. LAZY ATTRIBUTES COUNT. Webmail commonly parks the real URL in data-src and
- *    swaps it in later. Cleaning src alone would be undone a moment later.
- *
- * PREVENTED versus CANCELLED, measured rather than assumed. Driving this against
- * a local server and watching the request log:
- *
- *   - a pixel parked in data-src never appears in the log at all. Prevented.
- *   - a pixel already in src when the client renders the message appears as
- *     net::ERR_ABORTED. The swap cancels it, but the fetch had already been
- *     started, so whether any bytes reached the server is a race no content
- *     script can settle. What does NOT go either way is the part that identifies
- *     you: the fragment is never transmitted, and the aborted URL carries no
- *     query string.
- *
- * Webmail defers remote images behind a "show images" step often enough that the
- * first case is the common one, but the honest claim is "stopped before it
- * finishes", not "nothing is ever sent".
- *
- * What it also cannot do: if a provider fully rewrites an image and keeps no
- * trace of where it came from, only the shape signals are left. And stopping the
- * browser from fetching a proxied image says nothing about whether the provider
- * already fetched it server-side -- that happens outside the browser and no
- * extension can see it. The popup copy says all of this.
- */
+/* Mail Shield checks webmail pixels before loading. Gmail proxy URLs can preserve
+   the original tracker URL in a fragment that network rules never see. Replace
+   declared 1x1 pixels and lazy sources with transparent images; an in-flight
+   request may show ERR_ABORTED rather than be prevented. Provider-side proxy
+   fetches remain outside the browser's control. */
 (() => {
   'use strict';
   const MAIL_SHIELD_VERSION = '1.0.2';

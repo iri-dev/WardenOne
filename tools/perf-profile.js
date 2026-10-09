@@ -4,39 +4,10 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The release performance profile: the real extension, loaded, against the same browser with
- * no extension, on local synthetic pages, several runs each, medians and tails.
- *
- *   node tools/perf-profile.js                      # off vs on, 5 runs, writes docs/perf/profile-<commit>.json
- *   node tools/perf-profile.js --runs 7 --throttle 4  # CPU throttled 4x, as a slow laptop
- *   node tools/perf-profile.js --variants off,on,regress:mutation-dedup --expect-regression
- *                                                   # prove the harness sees a known regression
- *   node tools/perf-profile.js --assert-overhead-ms 40 # fail if the extension adds more than 40 ms
- *                                                   # of main-thread task time (median) on any page
- *
- * Why this exists (PERF-12). The repository's suites pin structural optimisations and carry
- * historical live numbers, but nothing produced an accepted enabled-versus-disabled profile of
- * a release candidate: CPU, memory after GC, long tasks, first load, in the real browser with
- * the real extension. An earlier automated attempt was discarded because the extension's
- * readiness marker was absent -- the extension had not loaded and the numbers measured nothing.
- * So this harness fails closed: the "on" variants assert, before a single measurement, that the
- * worker is up with the expected version and that the engine stamped its readiness marker in
- * the page; the "off" variant asserts the marker is absent. Chrome 152 no longer honours
- * --load-extension; Microsoft Edge does, so Edge is the browser, and its version is recorded.
- *
- * What is measured, per variant x page x phase (cold = first navigation with the cache cleared,
- * warm = reload), for each of N runs: main-thread task time, script, layout and style time
- * (Performance.getMetrics deltas), long tasks (a PerformanceObserver installed at document
- * start), navigation timing, DOM nodes and listeners, JS heap after a forced GC, and the
- * extension worker's task time. Reported as median, p90 and max; the on-minus-off deltas are
- * the profile. Raw per-run values are kept in the JSON, with the commit, the browser and
- * extension versions, the CPU, the throttle and the date, so a number can always be traced to
- * what produced it. --trace also stores a DevTools trace per variant x page.
- *
- * Nothing leaves the machine: the pages are generated here and served from 127.0.0.1, the
- * profiles are fresh temp directories, and no real site is visited.
- */
+/* Profile the loaded extension against the same browser without it on local
+   synthetic pages. Assert extension and engine readiness before measuring,
+   then retain raw runs, browser/version metadata, medians and tail values.
+   Edge is used because current Chrome ignores --load-extension. */
 'use strict';
 
 const fs = require('fs');

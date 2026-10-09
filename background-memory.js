@@ -493,22 +493,9 @@ async function memoryScore() {
   } catch (e) { return { ok: false, error: String(e) }; }
 }
 
-// The five-minute wake-up exists for Memory Shield, so it should exist only when Memory Shield
-// does. It used to be created at load whatever the setting said, so someone who had turned the
-// feature off still paid for a service-worker wake every five minutes, forever, to look at the
-// config and go back to sleep. Reconciled here and again whenever the setting changes.
-//
-// An unreadable config keeps the alarm rather than dropping it: failing to read storage should not
-// quietly uninstall a feature the user turned on.
-//
-// Chrome replaces a named alarm on create: the one that was there is cancelled and the new one
-// fires a full period from now. Reconciling at every worker start with an unconditional create
-// therefore moved the deadline five minutes forward each time the worker woke -- and a busy
-// session is exactly what keeps waking it (a navigation, a message), so the sweep most wanted
-// during sustained tab activity was the one that activity kept postponing. The alarm Chrome
-// holds is read first and kept when it is the alarm this code would create; a create happens
-// only when there is none, or when its period no longer matches. Switching the feature off still
-// clears it at once. background-extension-watch.js has used this shape all along.
+// Keep the sweep alarm only while Memory Shield is on. Reuse a matching alarm:
+// recreating it on each worker wake postpones the sweep. Preserve it on a
+// storage-read failure rather than silently disabling protection.
 const MEMORY_SWEEP_ALARM = 'wardenone-memory-sweep';
 const MEMORY_SWEEP_PERIOD_MINUTES = 5;
 async function existingMemorySweepAlarm() {

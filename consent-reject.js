@@ -681,33 +681,9 @@
     } catch (_) {}
   }, true);
 
-  // Clearing the tracking IDs a site keeps in localStorage, on the way out.
-  //
-  // This is where the tracking went when third-party cookies started dying: the
-  // analytics vendors keep their client id here now, and nothing was touching it.
-  // It is also where most sites keep the session token, so this can only ever work
-  // by name -- never a wholesale wipe, which is all the browsingData API can do for
-  // an origin and which would sign the user out of everything they visited.
-  //
-  // Three ideas make it safe enough to run unattended:
-  //
-  // 1. Only VENDOR namespaces. A key is removed because it belongs to a company
-  //    whose entire business is measurement, not because it looks tracker-ish. That
-  //    is why the guard below is a list of prefixes rather than a pattern: "_hj"
-  //    is Hotjar's whole namespace and nothing else lives there, whereas anything
-  //    matching /track|analytics|id/ would eventually eat somebody's app state.
-  // 2. Vendor names win over the session guard, deliberately. Several of these
-  //    read as credentials -- _hjSessionUser, _uetsid, ajs_user_id -- and a blanket
-  //    "never touch anything with session in it" rule would quietly cancel the
-  //    feature for exactly the vendors it exists for. They are safe because the
-  //    namespace is known, not because the name looks harmless.
-  // 3. Two vetoes that apply even to a vendor match: a value shaped like a JWT is
-  //    a credential whatever its key is called, and a value over a kilobyte is
-  //    application state rather than an id. Either one and the key is left alone.
-  //
-  // Analytics libraries regenerate a missing client id on their next call -- it is
-  // their ordinary first-visit path -- so this cannot break a page that is still
-  // open in another tab.
+  // Clear only known analytics namespaces on exit, never heuristic key matches.
+  // Vendor keys may contain "session", but JWT-like or large values remain vetoes
+  // because they may be credentials or application state.
   const LS_VENDOR_PREFIX = [
     '_ga', '_gid', '_gat', '__utm',      // Google Analytics, past and present
     '_hj',                                // Hotjar

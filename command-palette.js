@@ -4,42 +4,10 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Type what you want instead of remembering where it lives.
- *
- * WardenOne has more tools than a menu can hold well, and past a certain point FINDING
- * one is the problem rather than lacking one. This is the same answer an editor gives:
- * one key, one box, type a few letters.
- *
- * It is display only. Nothing here decides what a command does, or is trusted about what
- * the reader picked -- the background holds the list and dispatches through exactly the
- * same path the keyboard shortcuts use, and refuses anything not on it. This file could
- * be rewritten by a hostile page and still not be able to reach an action WardenOne would
- * not otherwise have offered.
- *
- * Injected on the shortcut, never standing. There is no reason for a command palette to
- * be resident in every page for the whole of its life, and this way a page cannot even
- * observe that the feature exists until it is asked for.
- *
- * Isolated world, closed shadow root, and every style set on the host: the page cannot
- * read the palette's DOM, cannot restyle it into something misleading, and cannot see
- * what was typed into it.
- *
- * IT KEEPS ITS OWN QUERY STRING RATHER THAN USING AN <input>, and that is not a stylistic
- * choice. A real input needs the keydown to reach it and produce a character, and plenty
- * of pages take single letters for themselves: on YouTube, f j k l and m are fullscreen,
- * seek, play/pause, seek and mute. Its document-level handler sees the key first and
- * calls preventDefault, so those five letters simply never appeared in the box.
- *
- * Stopping propagation does not fix it. This listener runs at window CAPTURE, which is
- * the first step of the journey -- stopping there stops the event reaching the palette's
- * own input as well as the page's handler, so nothing can be typed at all.
- *
- * So the palette reads the keys itself, at the earliest point anything can, keeps the
- * query in a variable and draws it. No page handler can interfere with a string this file
- * owns outright. The cost is that IME composition is not supported; every command here is
- * named in English, so the letters being typed are Latin either way.
- */
+/* The worker owns the command list and dispatch; this page overlay only renders it.
+   It runs in an isolated, closed shadow root when invoked. The palette handles keys
+   at window capture because sites such as YouTube consume letter shortcuts before
+   an input would receive them. IME composition is not supported. */
 (function () {
   'use strict';
 

@@ -4,44 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * YouTube's player chrome must survive EyeShield.
- *
- * The player is black in every mode, so its controls never follow the page theme.
- * The one thing EyeShield has to supply is a text colour -- white -- so the page's
- * own text colour (near-black in light mode) cannot leak into the player. Every
- * surface in the controls belongs to YouTube.
- *
- * That last part is what went wrong. YouTube's player redesign draws each control
- * on a translucent dark pill, and those pills are the only thing between a white
- * icon and a white frame. Measured on a live watch page (ytp-delhi-modern):
- *
- *   play, prev, next, the volume group, the clock, the chapter title and the
- *   right-hand group     background rgba(0,0,0,0.3)
- *   the autoplay knob    background rgb(255,255,255)
- *
- * The earlier rules forced every button, and every div and span in the bottom
- * chrome, transparent -- a guard against a page remap that does not run on
- * YouTube -- and restated a handful of YouTube's old values by hand. With the
- * same video paused on a white frame, measured in Chrome:
- *
- *   old rules   every pill -> rgba(0,0,0,0), the autoplay knob -> rgba(0,0,0,0);
- *               the controls were white on white, which is the report
- *   new rules   every pill and the knob identical to the page with no theme
- *
- * So the invariant is structural: inside the player, only the shell (black) and
- * the video surfaces (transparent, so the black shows round the picture) may be
- * given a background. Anything else is YouTube's to paint.
- *
- * The stylesheet is only half of it. The readability guard writes INLINE
- * !important paint, which no stylesheet can outrank, and its background walk
- * gives up after 8 ancestors -- the clock sits exactly 8 levels under the
- * player's black. Past that the guard assumed the PAGE background, scored
- * white-on-white at 1.00 and repainted the clock near-black. The guard skips
- * player chrome entirely, and the checks below keep it that way.
- *
- * Run: node tools/test-eyeshield-yt-player.js
- */
+/* Keep EyeShield out of YouTube's player chrome. The player shell stays black
+   and its controls keep YouTube's own backgrounds; only text needs a light
+   colour. The readability guard must also skip inline player controls. */
 'use strict';
 
 const fs = require('fs');

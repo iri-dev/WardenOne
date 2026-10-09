@@ -761,26 +761,9 @@
     }),
     host=location.hostname.replace(/^www\./,
     "").toLowerCase(),
-    /* Only what the reader chose. Two hostnames used to be concatenated in front of this
-    list -- a keyboard configurator and a commerce platform, neither of them picked by the
-    reader, both matched by hostMatchesSite so every subdomain came with them. They fed
-    masterOn and therefore every gate() in this file, so on those sites the engine
-    installed itself and then did nothing: phishing blocking, ClickFix, XSS behaviour,
-    Media Shield, clipboard, form-trap, scam-lock, anti-fingerprint, all evaluating false.
-    Worse, the start path was not shortened, so the ready marker was still stamped and the
-    tab reported itself protected to the popup, to Repair and to Protection Health.
-
-    It was a compatibility shim that outlived its cleanup. The comment further down says
-    the earlier whole-host exits were removed and that no site-wide off switch is left --
-    true of the branch that was reviewed, and not of this line. Nothing in the repository
-    justified either host: no comment, no changelog entry, no issue. The guard the
-    configurator would plausibly have needed relief from, deviceAccessGuard on
-    navigator.hid, only logs and calls straight through, so it cannot have broken it.
-
-    A site that genuinely needs relief gets a named entry in the disclosed pause list,
-    naming the keys it pauses -- never a gate that takes the whole engine down. BUG-01.
-    The hostnames are deliberately not repeated here: this file ships, and a grep for them
-    should find nothing at all. */
+    /* Only the reader's allowlist may disable the whole engine. Compatibility
+       relief must name individual paused protections, never silently gate every
+       feature while leaving the ready marker set. */
     onAllowlist=(cfg.allowlist||[]).some(h=>hostMatchesSite(host,h)),
     masterOn=!1!==cfg.enabled&&!onAllowlist,
     gate=v=>!!masterOn&&v,
@@ -1426,27 +1409,9 @@
     window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
     const __woMoConsumers=[];
     let __woMoStarted=!1;
-    /* A page that builds itself appends a container and then appends children
-       INTO it, and each of those arrives as its own mutation record. Every
-       consumer below scans each added node's subtree, so the container's scan
-       and each descendant's scan return overlapping sets -- the same elements
-       found again once per added ancestor. Measured on real pages, 86-97% of
-       added elements sit inside another element added in the SAME batch, and
-       scanning only the outermost ones costs 63-85% less while returning the
-       identical set: any node with an added ancestor is inside that ancestor's
-       subtree, so the ancestor's querySelectorAll already covered it.
-
-       Node-level guards still run on EVERY added node -- only the subtree scans
-       are narrowed. That distinction matters: several guards test a node in a
-       way its ancestor's selector would not repeat (the grabber check reads
-       src off any tag, not just img/script/iframe), so narrowing those too
-       would drop checks rather than duplicates.
-
-       Computed once per batch here rather than inside each consumer, so the
-       ancestor walk is paid once and shared by all of them. The same pass also
-       records whether any element was added or removed, or an input changed type;
-       cosmetic consumers can then ignore slider-label text churn without each
-       walking the records again. */
+    /* Scan only outermost added subtrees once per mutation batch, but still run
+       node-level guards on every added node. Descendant subtree scans would
+       duplicate work without finding new elements. */
     function __woBatchNodes(muts){
       const added=[];
       let structural=!1;
@@ -1563,25 +1528,8 @@
        whether or not the config has arrived, so a plain snapshot taken at bind time would freeze
        the placeholder defaults on exactly the slow tabs least able to report it. That is why the
        obvious fix -- Object.assign({},cfg) -- would have been worse than the bug. */
-    /* The protections paused on YouTube, named.
-    This list used to be the opposite of a list: the YouTube branch below turned
-    EVERY boolean in the config off and switched two back on, which silently
-    paused 64 default-on protections -- detectPhishing, blockTrackers,
-    sessionShield, blockTokenExfil, detectSkimmers, paymentCardGuard,
-    intranetProtection, blockCameraMic and cleanCopyLinks among them -- on all of
-    youtube.com, while the popup went on showing every one of them as enabled.
-    It also set enabled:false, which defeated its own two exemptions: adShield
-    and scriptletEngine were restored on the line above and then killed by
-    scriptletRuntimeOn, which reads WO.enabled first.
-
-    Naming what is paused, rather than what survives, means a protection can only
-    be off here on purpose, and the popup can tell the reader which ones. Each
-    entry below is something that can genuinely break a video page: it rewrites
-    page furniture, intercepts the navigation a single-page app depends on, gates
-    the player, or hooks an API the player needs. Everything else now runs.
-
-    Anything added here must also be listed for the reader -- tools/test-youtube-
-    compat.js fails if the two fall out of step. */
+    /* Pause only named protections that can disrupt YouTube playback or UI.
+       Keep the popup disclosure in sync; tools/test-youtube-compat.js checks it. */
     const YT_COMPAT_PAUSED=[
       /* Rewrites or hides page furniture. The overlay cleaner has hidden real
       controls before -- it drops any sticky, elevated element whose text looks
@@ -2897,24 +2845,8 @@
       }
 
     },
-    /* Warnings that behave as the modals they look like (M20).
-
-       The bridge's interstitials got this from woOwnedOverlay's dialog(). The five built here
-       cannot: they live in the page's own DOM rather than a closed shadow root, so that helper
-       does not reach them. This is the same contract expressed for light-DOM overlays -- one
-       place, not five hand-rolled copies.
-
-       Focus lands on the FIRST control, which every one of these builds as the safe action.
-       That is deliberate: a phishing blocker that opens with "continue anyway" focused is one a
-       reflexive Enter can dismiss.
-
-       Escape does not close them. For all five, dismissing IS the risky choice, so the key
-       people press to make a dialog go away is exactly the one that must not work here; the way
-       out is a button you had to read first.
-
-       The returned release() is the whole teardown -- Tab trap off, focus handed back. A trap
-       that outlives its dialog breaks the page it was warning about, so every close path
-       (button, navigation, self-heal) goes through it. */
+    /* Focus the safe action first and keep Escape from dismissing blocker dialogs.
+       release() removes the Tab trap and restores focus on every close path. */
     woDialog=(host,
     box,
     opts)=>{
@@ -3479,28 +3411,9 @@
     catch(_){
 
     }
-    /* ---- tracking parameters that arrive without a page load -----------------
-    A single-page app changes the address bar with history.pushState and
-    replaceState, and no navigation happens at all. Nothing above this can see it:
-    the reader clicks nothing, no link is followed, and /article quietly becomes
-    /article?utm_source=foo&fbclid=bar while they are reading it.
-
-    Cleaned BEFORE the call goes through rather than after, so the tracking values
-    never enter session history at all -- there is no earlier entry left holding
-    them for the Back button to bring back.
-
-    ONLY parameters from the two global tracking lists, and nothing else about the
-    URL is touched. Both limits matter:
-      - the per-site rules (COPY_CLEAN_SITES) are deliberately not used here. They
-      exist to tidy a link somebody is about to PASTE, and several of them --
-      Amazon's qid/sr/keywords, YouTube's app/persist_app, Spotify's context --
-      are the running app's own state. Deleting those from the clipboard is right;
-      deleting them from the address the app is currently on is how a search page
-      loses its search.
-      - no path rewriting, no redirect following, no hash surgery. cleanCopyUrl
-      does all three, correctly, for a link on its way to the clipboard. None of
-      them belong in the address bar of a page that is still running.
-    A parameter this does not recognise is never removed. */
+    /* Clean SPA history updates before pushState/replaceState records them.
+       Use only global tracking parameters; clipboard-only site rules, path
+       changes and redirects can alter the running app's state. */
     let historyCleanCount=0;
     const cleanHistoryUrl=raw=>{
       try{
@@ -6705,24 +6618,9 @@
           return/^xn--/i.test(h)||/\.(cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol)$/i.test(h)||/^[a-f0-9]{12,}$/i.test(label)||digits>=4&&digits>=.3*label.length||((h.match(/-/g)||[]).length>=3||h.length>=42)&&/\b(pay|checkout|secure|verify|gift|prize|refund|delivery|support|billing|card)\b/i.test(h.replace(/[.-]/g,
           " "))
         },
-        /* Which embedded payment forms on this page come from somewhere they
-           should not.
-
-           The card fields on a checkout are very often not in this document at
-           all: Stripe, Adyen and every other processor render them inside an
-           iframe on their own origin, and that arrangement is exactly what makes
-           them safe. The check this replaces asked the opposite question -- "am I
-           inside an untrusted frame" -- from an engine that is only ever injected
-           into the top of a page, so it could never be true and never once fired.
-
-           Asked from up here it is a better question rather than merely a working
-           one: the top frame can see every embedded payment form at once,
-           including ones whose own script would have kept an injected guard out.
-
-           Only a raw IP address or a host that already looks like a fake payment
-           domain counts. Flagging every third-party frame would flag the
-           advertisement on the page, and a checkout warning that cries wolf is
-           worse than no checkout warning at all. */
+        /* Inspect embedded checkout frames from the top document. Legitimate
+           processors use cross-origin frames; warn only for raw IPs or hosts
+           already shaped like fake payment domains. */
         untrustedPaymentFrames=()=>{
           const out=[];
           try{
@@ -7988,27 +7886,9 @@
         }
 
       });
-      /* This heuristic is for pages whose OWN content is the scam. It has two problems on any
-         surface where the text belongs to other users.
-
-         The first is that it read the whole body as one 20,000-character blob and asked only
-         whether FEAR appeared somewhere and CALL appeared somewhere. On a live chat those two can
-         come from different people, minutes apart, about nothing in particular -- and CALL matches
-         bare product names (teamviewer, remote control) and everyday phrases like "enter this
-         code", which is what a giveaway or a game drop looks like in chat. The result was a
-         full-screen browser-lock warning triggered by two unrelated strangers. They now have to
-         appear within the same short window, so the match means one passage says both things.
-
-         The second is that on a video/chat host essentially ALL body text is user-generated, so
-         even a proximity match is somebody talking rather than the page attacking. Those hosts are
-         skipped, using the established trustedMediaHost list rather than a new one.
-
-         The third is that half of each pattern is a name, or a phrase any how-to uses: Windows
-         Security Center, Remote Desktop, Quick Assist, "contact Microsoft Support", "do not close
-         this window". A list of Windows commands names several of them a line apart ("wscui.cpl:
-         Windows Security Center", "mstsc: Remote Desktop Connection") and was locked as a scam. A scam
-         page also claims the machine is locked or infected, or gives a number to call, so the
-         window has to hold one of those once the ordinary phrases are taken out of it. */
+      /* Require fear and call cues in one short passage, plus a lock/infection or
+         phone cue. Skip trusted media and conversation hosts where unrelated
+         user messages can otherwise combine into a false browser-lock alert. */
       const SCAM_NEAR=600,
       SCAM_ORDINARY=/windows\s+(defender\s+)?security\s+(alert|center)|critical\s+(security\s+)?(alert|warning)\b|your\s+(data|files|identity)\s+(is|are|may be)\s+at\s+risk|do\s+not\s+(close|restart|shut\s?down|turn\s+off)\s+(this\s+)?(window|computer|pc|browser)|contact\s+(microsoft|apple|windows)\s+support|anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|remote\s+(access|assistance|desktop|support|control|connection)|enter\s+(this\s+|the\s+)?(code|key|pin)\b|(install|download|run)\s+(the\s+)?(support|remote|cleanup)\s+(tool|software|app)/gi,
       scamScan=snapshot=>{
@@ -9561,25 +9441,9 @@
       },
       injectedForms=new WeakSet;
       let trapWarned=!1;
-      /* ---- the autofill trap ------------------------------------------------
-      A page can carry a username and password field the reader never sees, marked
-      so a password manager fills them in, and read the result out with script. The
-      reader never knew a password box existed.
-
-      A hidden credential field is NOT evidence on its own. Real logins use them
-      constantly -- a hidden username beside a visible password, a field held for a
-      second step, a framework's shadow input -- so a detector that fires on that
-      alone is a detector nobody can leave switched on. What is evidence is the
-      combination, and the weights below are set so that no part of it reaches
-      TRAP_THRESHOLD by itself:
-
-        invisible password box                     2
-        + marked for the password manager          3
-        + already filled without anyone typing     4
-        + and no login box on the page at all      7   <- warns
-
-      The last step is what separates a trap from an ordinary login: on a real sign-in
-      page there is a password box you can see, which is the one you filled. */
+      /* Hidden fields are common on real logins. Warn only when invisibility,
+         password-manager targeting and unsolicited filling combine without a
+         visible login field. */
       const trapTypedFields=new WeakSet,
       credentialTrapHidden=el=>{
         try{
@@ -17173,37 +17037,10 @@
         }
 
       };
-      /* WebGPU.
-
-         The WebGL spoof above is worth exactly as much as the surfaces that agree
-         with it. navigator.gpu answers the same question with better evidence:
-         adapter.info names the vendor and architecture, and adapter.limits is
-         roughly thirty integers whose combination identifies a GPU model more
-         precisely than UNMASKED_RENDERER ever did. It answers whether or not
-         WebGL has been touched.
-
-         So the failure here is not "WebGPU is unprotected". It is that a page
-         reading "NVIDIA GeForce RTX 3060" from WebGL and a real Radeon from
-         WebGPU has not been handed noise, it has been handed a contradiction --
-         rarer than either true answer, and an announcement that an extension is
-         rewriting one of them. The adapter below is therefore derived from the
-         same seeded pick that WebGL uses, so the two agree by construction rather
-         than by anyone remembering to keep them in step.
-
-         Limits are reported as the WebGPU specification's own required minimums.
-         Noise would be wrong twice over: a random set of thirty integers is a
-         near-unique identifier, and a value below the truth can break a page. The
-         spec defaults are the one set every conformant implementation supports,
-         so every user of this shield reports the same thing, and a page that
-         stays inside them cannot fail. A page that asks for more still gets it --
-         requestDevice validates against the real adapter, not against what was
-         reported here -- so the ceiling is on what is disclosed, not on what is
-         granted.
-
-         features is deliberately left alone. It carries a real signal (bc vs etc2
-         vs astc texture compression splits desktop from mobile) but hiding a
-         feature does not make a page ask for it anyway, it makes the page take
-         its fallback path or fail. That is a visible cost for a partial gain. */
+      /* Keep WebGPU adapter identity aligned with the seeded WebGL identity. Report
+         required minimum limits to reduce fingerprinting without denying real device
+         capabilities; requestDevice still checks the underlying adapter. Features
+         remain truthful because hiding them can break fallback selection. */
       try{
         const woGpuLimits={
           maxTextureDimension1D:8192,
@@ -17347,27 +17184,9 @@
       catch(_){
 
       }
-      /* Media capability answers, flattened.
-      decodingInfo returns three things and they are not equally dangerous.
-        supported      -- can this device play it at all
-        smooth         -- will it keep up
-        powerEfficient -- is the hardware decoder doing it
-      The last two are a description of the machine: which codecs get hardware decode, and
-      at what resolutions it stops keeping up, maps closely onto a GPU generation. The
-      first is what the site needs to pick a format that will actually play.
-      So supported is passed through EXACTLY as the browser answered it, always. Faking it
-      is the one change here that can break playback outright: a page told AV1 is available
-      will send AV1, and then nothing plays. smooth and powerEfficient are reported as
-      false for everyone with this shield on.
-      False rather than true, deliberately, and it is the same choice as reporting the
-      spec-minimum WebGPU limits a few lines up: a fixed answer every user of the shield
-      shares, picked in the direction that can only ever cost quality and never
-      playability. Claiming smooth on a machine that is not invites a site to serve 4K AV1
-      to something that will stutter through it; claiming the opposite invites a smaller
-      rendition, which plays.
-      The cost is real and worth stating plainly: on a strong machine this can mean a site
-      offers a lower quality than it would have. That is why it rides the opt-in noise
-      shield rather than being on for everybody. */
+      /* Preserve supported so sites choose playable codecs. Flatten smooth and
+         powerEfficient to false to reduce hardware fingerprints; this may lower
+         quality, so the behavior belongs to the opt-in noise shield. */
       try{
         const mc=navigator.mediaCapabilities,
         flattenMediaInfo=info=>{
@@ -20677,26 +20496,9 @@
         }
 
       };
-      /* Keyboard lock, and the instruction directly above it.
-
-         The warning this guard raises ends with "Leave full screen before typing
-         anything." navigator.keyboard.lock(["Escape"]) is the page's answer to
-         that sentence: with Escape held by the page, the single keypress the
-         advice depends on stops doing what it says. Chrome's fallback is to hold
-         Escape down for a moment, which works and is discoverable only by someone
-         who already knows it exists -- which is not the person being phished.
-
-         The comment at the top of this guard already allows that the "press Esc"
-         hint fades and the attack is timed around it. This is the same problem
-         one step further on: the hint is gone AND the key is taken.
-
-         Escape is the only key refused. A game locking W, A, S, D and F11 is the
-         reason this API exists, and taking that away would buy nothing -- so an
-         explicit list keeps every key in it except that one. A no-argument call
-         captures the whole keyboard and cannot be filtered, so it is recorded,
-         and refused only once this page has already been caught drawing a fake
-         address bar. Warn, don't block, stays the rule until the page has shown
-         what it is. */
+      /* Keep Escape available when warning about a fake browser window.
+         Preserve other requested keys; refuse whole-keyboard lock only after
+         the page has shown browser-in-the-browser evidence. */
       try{
         const kb=navigator.keyboard;
         if(kb&&"function"==typeof kb.lock){
@@ -22371,70 +22173,9 @@
         token)=>token?total+Math.max(1,
         Math.ceil(token.length/10)):total,
         0),
-        /* Time to READ the card, not a guess. Every token counts as a word, and a
-        long one -- a URL, a hostname, a hyphenated compound -- counts as more than
-        one, because that is how long it takes to get through. Priced at 168 words
-        per minute: an unhurried pace, well under the ~240 wpm adult average, so the
-        wordiest card is still finishable without rushing. Across the shipped cards
-        this lands between roughly 4 and 14 seconds by how much each one actually
-        says, where every single one of them used to get five.
-        The SHAPE of that curve -- the pace, the knee, the taper -- comes from
-        reviewing all the cards on screen, one at a time, over three rounds, not
-        from picking numbers. Against the last round it is out by 0.44s rms, and the
-        widest disagreement between two cards of IDENTICAL length in that review was
-        1.0s, so the pace is sitting on the noise in the judgement rather than on
-        anything a better curve could fix. Do not chase that remainder by retuning
-        the pace; it is not there to be found.
-        The reading curve is then discounted, in two parts, both of them deliberate
-        steps away from the review rather than fits to it.
-        The flat term is the first: negative on purpose, because three seconds have
-        since come off every card in real use, where the short ones were the ones
-        that dragged. It applies uniformly, so the ORDER of the cards never changes.
-        The floor tracks it down, or the shortest card would be the one card that
-        kept the seconds.
-        The second is a band discount, and it is the one part of this model that
-        deliberately breaks the rule above. Cards reading under seven seconds are
-        left exactly where they are. Cards in the seven-second band lose a full
-        second. Cards past eight seconds lose half of one.
-        That ordering IS inverted, on purpose and by direct instruction, and the
-        inversion is real rather than theoretical: a 27-word card reads as 7.2s and
-        now shows for 6.2s, while a 26-word card reads as 6.9s and still shows for
-        6.9s. One word more, seven tenths of a second less. If two of them ever
-        stack, the wordier card goes first.
-        It is one step, at the seven-second edge, and the test suite pins it to
-        exactly one -- a SECOND inversion, or a wider one, would be a mistake
-        rather than a decision, and is still caught. Do not "fix" this step by
-        clamping it; it was asked for twice with this consequence spelled out. The
-        way to remove it, if it is ever unwanted, is to let the cards just under
-        seven seconds come down too.
-        Past 37 words the rate drops, because a card that long stops being read
-        and starts being skimmed: people take the title and the first line, then
-        decide. The review bore that out -- the longest cards were the ones that
-        still felt slow after the rest were right. A taper rather than a cut-off
-        above some number of seconds, because a cut-off is a step: it would leave a
-        45-word card sitting longer on screen than a 50-word one, which is visible
-        and wrong. This way the curve only ever rises with length.
-        Ten cards carry an explicit dwell instead, for three different reasons.
-        A blocked popup and a blocked tracking pixel fire on ordinary pages
-        constantly, and reviewing them on screen put them well below what their
-        word count asks for -- no single pace that also suits a phishing warning
-        can say "this one happens on every page".
-        The other five came out of the last round of on-screen review, where they
-        were each still a few tenths long after the model and the band trims had
-        had their say. Three of them share one title, "IP-grabber blocked", and
-        differ only in which transport was stopped, so they were adjusted as one
-        card even though the reading model sees three.
-        The last three are the first pinned for SEVERITY rather than for length or
-        frequency: a forced redirect is common enough to shorten, while a blocked
-        card skimmer and a blocked card submission both matter far more than their
-        word counts imply and were given a full ten seconds each. That is a real
-        signal the model does not carry -- it prices by reading time alone, so a
-        one-line warning about a stolen card is worth exactly as much as a one-line
-        warning about an autoplaying video.
-        Either way it is a property of the card, so it is written on the card, and
-        everything else stays computed -- including anything added later. But note
-        which direction this is drifting: if severity keeps producing pins, the
-        answer is a severity term in the model, not a longer list of exceptions. */
+        /* Reading time tapers after 37 words. The 7-second band discount intentionally
+           lets some longer cards finish sooner; tests pin that single inversion.
+           Frequent or high-severity cards use an explicit dwell instead. */
         cardWords=readingWords(info.title)+readingWords(detailWhy)+readingWords("Severity: "+severity)+readingWords(action)+readingWords(matched),
         readMs=-2400+357*Math.min(cardWords,
         37)+206*Math.max(0,
@@ -22633,26 +22374,9 @@
         }
 
       },
-      /* The badge must not carry backdrop-filter.
-      It is position:fixed and mounted on EVERY page for the whole visit, so a
-      backdrop-filter makes the compositor capture whatever is painted behind it,
-      blur it and recomposite, once per frame, forever -- and over a playing
-      video it also drags the video off its GPU overlay path, because the blur
-      needs the video's own pixels. It cost this on a YouTube watch page, measured
-      through the long-animation-frame API while scrubbing:
-
-        frames of 55-66ms (about 17fps), with script time ~0, style+layout 0,
-        and blocking only 5-13ms -- the main thread sitting idle while frames
-        could not be produced. Interaction-to-next-paint 120ms, of which 55ms
-        was input delay and 58ms presentation delay, against 7ms of the page's
-        own handler.
-
-      That signature is the giveaway: no script and no layout means the cost is
-      not JavaScript, and every JS optimisation aimed at it changed nothing. The
-      resting badge sits at opacity .28, where a 14px blur is not perceptible
-      anyway, so the background alpha carries the frosted look instead. The panel
-      below keeps its blur: it is display:none until deliberately opened, and an
-      undisplayed element is never composited. */
+      /* A fixed badge blur can force video out of its GPU overlay path and cost
+         frames even with an idle main thread. Keep the resting badge unblurred;
+         its hidden panel may retain blur when opened. */
       buildBadgeShadow=root=>{
         if(!root)return;
         clearNode(root);
@@ -22715,29 +22439,9 @@
         }
         return badgeScrollbarWidth
       },
-      /* The badge transitions ONLY opacity and transform. Both are composited on the
-      GPU; box-shadow and background are not, so transitioning those repaints the badge
-      and everything under it for the whole duration. The corner the badge lives in is
-      the corner a player's volume slider lives in, so moving the pointer quickly across
-      it re-triggered overlapping 0.2s and 0.3s repaint-driving transitions, in exactly
-      the place something else was already repainting. Slow movement crosses it once and
-      is fine; fast movement is not. The hover still changes shadow and background --
-      instantly rather than eased, which at this size is not a difference anyone sees.
-
-      The badge is fixed to the bottom-right corner at the maximum z-index, which
-      is exactly where video players put their controls. In fullscreen it was
-      swallowing the hover and the click that reveal and press YouTube's exit button,
-      so getting back out of fullscreen became a fight with the extension.
-
-      An ambient status chip must never be the thing standing between someone and a
-      control they are trying to press. So when a real page control is underneath it,
-      the badge stops taking input entirely and the click lands where it was aimed.
-      It stays visible -- going invisible on every scroll past a button would flicker,
-      and the reader still wants to see that the guard is running.
-
-      Player shells count as controls, not just buttons: a player's seek bar, its
-      settings menu and its exit-fullscreen affordance are frequently divs with
-      listeners rather than anything a button selector would match. */
+      /* Animate only composited properties to avoid repainting over player controls.
+         When a page control sits underneath the badge, it stops taking pointer input
+         but stays visible. Player shells count as controls. */
       badgeYieldState={at:0,sig:"",route:"",profile:!1},
       /* How long a hover-driven answer stays good while the viewport is unchanged. */
       BADGE_YIELD_CACHE_MS=4000,

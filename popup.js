@@ -42,7 +42,7 @@ const KEYS = [
   'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
   'showToasts', 'showBadge', 'silentMode', 'elementZapper',
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
-  'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews',
+  'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews', 'pauseAnimatedImages',
   'deAmp', 'clientHintProtection', 'capReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
   'trackerLearner', 'unshimLinks', 'stripTrackingParams', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
 ];
@@ -64,7 +64,7 @@ const DEFAULTS = {
   memoryShield: true, memoryMode: 'balanced', memoryMinutesOverride: 0,
   memoryNeverPinned: true, memoryNeverAudio: true, memoryNeverForms: true, memoryNeverPayment: true,
   tabLimitGuard: false, tabLimitMax: 20, tabLimitClose: false, tabLimitMinIdleMinutes: 30, tabLimitWarn: true,
-  blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, disableYouTubeAmbientMode: false, stopAnimatedVideoPreviews: false,
+  blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, disableYouTubeAmbientMode: false, stopAnimatedVideoPreviews: false, pauseAnimatedImages: false,
   webglSaverMode: 'off', webglSaverBlockHosts: [], webglSaverAllowHosts: [],
   deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: false, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
   trackerLearner: true, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
@@ -3067,23 +3067,8 @@ function runSessionScan(isAuto) {
   });
 }
 
-// Compute an overall Session Security grade + risk from real signals.
-//
-// The previous version got two things wrong, and both made it dishonest:
-//
-//  1. Every finding counted the same. A JWT sitting in localStorage and a
-//     40-character analytics blob in a URL cost identical points, even though
-//     one is a credential and the other is how half the web passes page state.
-//     Google Search scored D on the strength of ved= and gs_lp=.
-//  2. It could only ever subtract. A site doing everything right -- HttpOnly,
-//     Secure and SameSite on every session cookie -- landed on exactly the same
-//     100 as a site with no session at all. There was no way to be good, only
-//     ways to be unpunished, and the cookie counts we already collect went
-//     completely unused.
-//
-// So findings now carry a confidence from the scanner, penalties scale with that
-// confidence AND with where the token lives, pages that actually take credentials
-// weigh heavier, and real cookie hygiene earns points back.
+// Grade findings by scanner confidence and context: URL noise weighs less
+// than exposed credentials, and secure cookie attributes earn credit.
 function computeScore(data, cookies) {
   const reasons = [];
   const credits = [];
@@ -3154,22 +3139,8 @@ function computeScore(data, cookies) {
   // are unambiguous: either the browser is told to protect the cookie or it is not.
   if (ck && ck.total > 0 && sessionCookies > 0) {
     if (weakCookies) {
-      // Judge WHICH flag is missing rather than counting cookies. Missing
-      // HttpOnly means any injected script can read the session outright;
-      // missing Secure means it can travel in clear text. They are different
-      // failures and a flat per-cookie number priced both too cheaply -- two
-      // cookies with neither flag used to still earn a B.
-      // Charged ONCE per missing flag, not once per cookie. The comment below
-      // already says a script-readable session is one failure however much
-      // evidence there is -- but the code charged 9 per cookie, so a site that
-      // sets six cookies its own JS can read paid 54 (capped 34) for the same
-      // single decision a site with one cookie paid 9 for. YouTube landed on F /
-      // High Risk that way, which is not a defensible thing to say about the most
-      // visited site on the web: its hygiene is mediocre, not dangerous.
-      //
-      // Flat penalties fix both ends. A site with one weak cookie no longer gets
-      // a B for having only one, and a site with many no longer gets an F for
-      // having many. What is being graded is the decision, and there is one.
+      // Charge once per missing HttpOnly or Secure flag, not per cookie:
+      // the grade reflects distinct hygiene failures rather than cookie count.
       const missing = { httpOnly: 0, secure: 0 };
       ck.weak.forEach((c) => {
         if (!c.httpOnly) missing.httpOnly++;

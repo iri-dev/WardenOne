@@ -4,37 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The confirm-bait guard and a hover overlay that lives inside a link.
- *
- * On YouTube, scrolling past a Mix or a playlist made the badge count a block, with nothing
- * shown. The confirm-bait sweep in anti-redirect.js judges an overlay on shape: an absolutely
- * positioned box, short text, no subject, one to four controls, one of them an affirmative word
- * with no href of its own. A Mix thumbnail carries exactly that box -- YouTube's own stylesheet
- * gives .ytThumbnailHoverOverlayViewModelHost position:absolute, top:0, left:0, width and height
- * 100%, opacity 0 until hovered -- and its only text is "Play all", which matches the guard's
- * affirmative list. The leaf saying "Play all" has no href because the WHOLE card is the link:
- * the lockup renders its content image inside <a href="/watch?v=...&list=RD...">. So the box was
- * removed on sight and reported as blocked_confirm_bait, a quiet event that still bumps the badge.
- *
- * The rail now asks whether the affirmative control goes somewhere on itself OR through the link
- * it sits inside. This suite drives the shipped confirmBaitOverlay with the YouTube shapes (new
- * lockup and classic renderer), the same shapes with the link taken away (still bait), and the
- * dialogs the guard exists for (still bait).
- *
- * Twitch, later: pausing a stream and resuming it left a blank page and a badge reading "1
- * blocked". Turbo and subscriber viewers get a Stream Rewind callout when they pause -- a New
- * pill, the title, one sentence and a dismiss button labelled Close (Twitch's own
- * DVROnboardingCallout) -- and the only button had no visible text, so the controls list came
- * back empty, the leaf fallback took the title for the button, and "Stream Rewind" matched the
- * affirmative list -- as it did for the player overlay around it, whose icon buttons left "LIVE"
- * and the title to stand in for controls. The sweep removed a node React still owned. Two changes,
- * both checked here: a box whose controls are icons is not read through the leaf fallback, and
- * the sweep does not run on the media apps the main engine already treats as trustedMediaHost.
- *
- * Run: node tools/test-confirm-bait-linked-overlay.js
- * Control: WARDENONE_ANTI_REDIRECT=<pre-fix anti-redirect.js> -- the two YouTube cases fail there.
- */
+/* Keep linked YouTube hover cards and Twitch player callouts intact while
+   blocking confirm bait. An affirmative leaf can inherit its link target;
+   icon-only controls must not be guessed from surrounding text. */
 'use strict';
 
 const fs = require('fs');

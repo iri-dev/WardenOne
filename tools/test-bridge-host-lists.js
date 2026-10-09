@@ -6,19 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// sendConfig runs in EVERY frame at EVERY page load, and it used to re-normalise host
-// lists that had already been normalised when they were stored. Skipping that second
-// pass is only sound because of two properties, so both are asserted here rather than
-// assumed:
-//
-//   1. normalizeBridgeHost is idempotent on anything it accepts.
-//   2. sanitizeBridgeHostList's output is therefore a fixed point.
-//
-// The third assertion is the one that matters most. setLearnedGrabberDomains applies a
-// strict bare-hostname regex BEFORE the shared gate, and that order is load-bearing:
-// the gate happily parses a hostname out of "https://evil.example/p" or ".lead.com.",
-// so sanitising first would turn a malformed learned key into a live auto-block. This
-// file pins the acceptance set so that ordering cannot be quietly swapped.
+// Host lists are fixed points after storage normalization. Learned grabber keys must
+// pass the bare-hostname gate first; normalization alone would accept malformed keys.
 
 const assert = require('assert');
 const fs = require('fs');
