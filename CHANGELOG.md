@@ -4,6 +4,8 @@
 
 ### Added
 
+- Resource Saver can show still frames for loaded GIF images and restore playback on click. The separate option is off by default.
+
 - OAuth Grant Guard now covers Apple, Meta, Spotify, Slack, Dropbox, GitLab, Atlassian, LinkedIn and Twitch consent screens while keeping ordinary sign-in and basic profile grants quiet.
 - Memory Shield's popup has a compact never-sleep site manager for adding a domain or the current site, seeing saved hosts, and removing them. The same list is available in Speed & memory settings.
 - Resource Saver has an optional YouTube Ambient Mode control. It hides the decorative watch-page glow without changing video playback or YouTube's saved preference.
@@ -25,6 +27,10 @@
 
 ### Fixed
 
+- Pausing GIFs no longer captures tiny or embedded loading placeholders before image search pages can replace them with thumbnails.
+- GIPHY cards served as animated WebP now pause when their matching GIF fallback is present.
+- Paused images keep their page-owned elements, follow source changes, and release bounded still-frame canvases offscreen.
+
 - Twitch no longer freezes, spins or ends on Error #3000 when AdShield moves the player between
   Twitch's stream and the clean stream it plays through an ad break. Twitch marks its own ad
   breaks so the player can line up the new video and set its decoder up again; AdShield's
@@ -42,10 +48,13 @@
   already given, instead of Twitch's raw numbers, which run ahead after every ad break.
 - A Twitch video segment that fails to download no longer counts as one the player has. When the
   player asked for it again from the other stream after a switch, the switch went unmarked and
-  the mark landed one segment late.
-- A video player embedded in a page can no longer be swapped for an advert by a press in the
-  first moments after it loads. Its guard waited for WardenOne's full settings to reach the
-  frame; it now starts on the quick first answer the popup guards already use.
+  the mark landed one segment late. When the player asks for the same segment twice at once, the
+  request that delivers is the one that counts, whichever finishes first.
+- A video player embedded in a page is guarded against being swapped for an advert from much
+  earlier after it loads. Its guard waited for WardenOne's full settings to reach the frame; it
+  now starts on the quick first answer the popup guards already use, and that answer is asked for
+  again, briefly, when WardenOne is still waking up. Until either answer says how your settings
+  are, the frame is left alone, so a switch you turned off is never overridden.
 - A notification sound preview no longer says the sound "played". WardenOne can tell the browser
   took it, not whether your device is muted, so it now says the sound was sent to your speakers.
   At 0% volume it says there is nothing to hear, instead of reporting a sound nobody could hear.
@@ -78,15 +87,17 @@
   stops that navigation before the frame leaves, when it follows a press on the video. The same
   goes for a player that tries to send the whole tab away when you press play, and for a page that
   lays its own box over the player and sends the player away from there. A visible link you press
-  in the player, a player moving within its own site, and an embed that switches mirror on its
-  own all still work. Part of "Block popup and redirect tricks".
+  in the player, the site's own "Switch server" style buttons over the video, a player moving
+  within its own site, and an embed that switches mirror on its own all still work. Part of
+  "Block popup and redirect tricks".
 - Pressing a video player's timeline or play button now works on the first try on ad-heavy video
   hosts. Four things were taking those presses: an all-but-invisible advertising link stretched
   over the whole player, empty boxes parked over the play button, an empty full-screen advert
   shell left on the page, and an ad script that cancels every press at the top of the page until
-  its advert has been shown. The boxes are now made click-through as soon as they appear, and on
-  a page that has already tried to spend a press on its player, the page can no longer cancel a
-  press on the player's own controls. The player's own handlers are unchanged, and links and
+  its advert has been shown. The boxes are now made click-through as soon as they appear, and stay
+  that way when the ad script hands the same box its presses back. On a page that has already
+  tried to spend a press on its player, the page can no longer cancel a press on the player's own
+  controls. The player's own handlers are unchanged, and links and
   forms are left to the guards that check them. On Playmogo every press on play and on the
   timeline, 64 in 10 visits, reached the player the first time.
 - Resource Saver periodically releases detached video previews it changed, avoiding indefinite DOM

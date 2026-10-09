@@ -353,7 +353,8 @@
         "<all_urls>"
       ],
       "js": [
-        "resource-saver.js"
+        "resource-saver.js",
+        "animated-image-saver.js"
       ],
       "run_at": "document_start",
       "all_frames": true,

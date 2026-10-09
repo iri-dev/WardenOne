@@ -4,35 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What the engine costs per DOM mutation.
- *
- * One shared MutationObserver on document.documentElement fans out to ~18
- * consumers, so everything here runs again every time the page changes. That is
- * fine on a quiet page -- measured on an idle YouTube tab, zero mutations, zero
- * cost -- and it is why the lag people report is intermittent: the bill is
- * proportional to churn, and a YouTube mix page churns hard (a 25-item queue
- * that keeps extending, plus the scrub tooltip moving).
- *
- * Two shapes are expensive and both are guarded here:
- *
- *  1. Whole-document scans per BATCH. collapseLeftovers(document) is a
- *     nine-selector querySelectorAll over the entire page. Measured on a live
- *     mix page (7832 elements): 0.71ms per call -- ~21ms/s at 30 batches a
- *     second, ~71ms/s while a queue rebuilds. The ordinary-page branch always
- *     coalesced it behind collapsePending at 250ms; the video-platform branch
- *     called it directly on every batch, i.e. unthrottled on precisely the pages
- *     that churn most. Both branches must coalesce.
- *
- *  2. Subtree scans per ADDED NODE. Several sweeps run querySelectorAll on each
- *     added node. Measured per added node on a mix page (playlist items average
- *     77 nodes): sweepSocialWidgets 9.8us, sweepLocal 8.8us, sweepMedia 3.3us,
- *     sweepLazy 2.1us, sweepLinks 1.9us. Where the per-element function's first
- *     act is to bail on a flag, that flag belongs ABOVE the traversal -- the
- *     scan could only ever collect work it was about to discard.
- *
- * Run: node tools/test-engine-mutation-cost.js
- */
+/* Guard the shared mutation observer's hot paths. Whole-document sweeps must
+   coalesce on video pages, and disabled consumers must skip traversal before
+   scanning each added subtree. */
 'use strict';
 
 const fs = require('fs');

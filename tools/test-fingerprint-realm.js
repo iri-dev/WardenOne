@@ -4,36 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Fingerprint noise in every realm a page can reach (SEC-05).
- *
- * The noise rewrites the prototypes of the realm it runs in. The engine runs in the top frame
- * only, so a child frame used to be a fresh realm with untouched prototypes -- a hidden
- * same-origin iframe handed the page a clean toDataURL that worked on a top-frame canvas, and a
- * third-party frame measured the real machine and posted the answer up. fingerprint-realm.js
- * runs the engine's own noise function in the frames the engine never reaches.
- *
- * What is pinned here:
- *   - the module is built from the engine's own text: the noise and the HMAC verifier in
- *     fingerprint-realm.js are byte for byte the ones in content.min.js;
- *   - the manifest gives the module the reach the engine lacks (all_frames, about:blank,
- *     origin fallback) and every exclusion the engine has, plus the captcha frames;
- *   - the engine publishes a realm record at document_start on a non-configurable accessor and
- *     settles it whichever way the switch points;
- *   - the shipped module, run in stub realms: a same-origin child adopts the parent's record
- *     synchronously and reproduces its seed (same cores and GPU); a child
- *     of a parent with noise off installs nothing, a cross-origin child waits for its bridge's
- *     signed verdict and refuses forged keys, replays and bad signatures, a top-level http(s)
- *     page is left to the engine, a top-level about:blank window adopts from its opener;
- *   - the bridge's verdict honours the switch, the pause and the per-site choice for both the
- *     frame's host and the page's top host;
- *   - the switch's description says where the noise runs and that workers are not covered.
- *
- * Run: node tools/test-fingerprint-realm.js
- * Control: point WARDENONE_REALM / WARDENONE_CONTENT_MIN / WARDENONE_CONTENT_SRC /
- *          WARDENONE_BRIDGE / WARDENONE_MANIFEST / WARDENONE_BACKGROUND / WARDENONE_POPUP /
- *          WARDENONE_README at pre-fix copies; the module does not exist there.
- */
+/* Pin fingerprint noise across same-origin, cross-origin and inherited frames.
+   The frame module must use the shipped engine's noise and signed verdict,
+   respect exclusions and switches, and reject forged or replayed keys. */
 'use strict';
 
 const fs = require('fs');

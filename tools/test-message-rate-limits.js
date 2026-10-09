@@ -6,15 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// test-message-hardening.js asserts on the SOURCE of the rate-limit tables. That is
-// why the double-charge bug lived here undetected: the tables were correct, the
-// allowlist was correct, every kind had an entry -- and yet rg-block's real ceiling was
-// half its documented one, because two separate listeners each charged the same bucket
-// for the same message. Reading the source can never catch that.
-//
-// So this file loads background.js for real, behind a mocked chrome.*, and drives
-// messages through chrome.runtime.onMessage the way a content script would. It counts
-// what actually gets through rather than what the table says should.
+// Drive the real message listeners: source-only checks missed a double charge
+// that halved the effective rg-block rate limit.
 
 const assert = require('assert');
 const fs = require('fs');

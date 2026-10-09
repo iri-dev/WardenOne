@@ -6,16 +6,9 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// fetchJsonWithTimeout is the single door every reputation provider goes through
-// (VirusTotal, PhishTank, AbuseIPDB, URLhaus, WhoisXML x3). It used to call
-// res.clone() before res.json(): the clone was only consumed when parsing failed,
-// so on the success path -- nearly every call -- the tee'd stream was never drained
-// and the body stayed buffered twice. res.json() also had no size limit.
-//
-// The subtle part is bodySnippet. It must be populated ONLY when parsing fails,
-// because phishTankChallengeText() regex-matches it for /cloudflare/i to spot a
-// Cloudflare interstitial. Filling it on success would make any legitimate JSON
-// answer that merely mentions a cloudflare-hosted URL read as a challenge page.
+// Provider responses have a size limit and avoid cloning successful bodies.
+// bodySnippet is for parse failures only; success text could falsely look like
+// a Cloudflare challenge.
 
 const assert = require('assert');
 const fs = require('fs');

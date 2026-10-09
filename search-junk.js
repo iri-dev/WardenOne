@@ -4,46 +4,11 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Search-result marking. Two independent passes over the same results page, each with
- * its own toggle, sharing one engine table and one way of finding a result block.
- *
- *   1. Search-junk marker  (flagSearchJunk,    OFF by default) -- scraper sites, below.
- *   2. Search-result warnings (warnSearchResults, ON by default) -- results WardenOne
- *      already knows something bad about, warned BEFORE the click rather than blocked
- *      after the navigation.
- *
- * The warning pass never says a result is safe. There is no green badge and no "checked"
- * mark, because the lists behind it cover a rounding error of the web and a tick beside
- * an unexamined result is worse than nothing: it spends trust that was not earned. A
- * result with nothing against it gets no mark at all.
- *
- * It also never hides or reorders anything -- it adds a line above the result and leaves
- * the result intact. Every verdict comes from the background out of lists already on the
- * machine; no result URL is ever sent anywhere to paint a badge. For a deeper answer
- * about one link there is right-click -> Check this link, which is allowed to ask the
- * network because the reader asked it to.
- *
- *
- * Marks search results from sites that rank by republishing other people's work
- * -- Stack Exchange and GitHub scrapers, mostly. It DIMS AND LABELS them. It does
- * not remove them, and that is deliberate:
- *
- *   Ad blocking fails visibly. Block a real image and you see a gap and know
- *   something happened. Search filtering fails INVISIBLY. Hide the one result
- *   that actually answered the question and you never learn it existed -- you
- *   just think the web got worse. That is a worse failure than the problem, and
- *   it is unreportable, so every match keeps a one-click "show anyway".
- *
- * Registered only while the toggle is on, and only on the search engines below.
- *
- * Why it anchors on links rather than result-block classes: Google randomises its
- * class names and reshuffles its DOM constantly. A selector like "div.g" is a
- * maintenance treadmill. A result's LINK, though, has to contain the destination
- * host or the result would not work -- so the host is read from the anchor and the
- * block is found by walking up to the nearest ancestor that looks like one. If
- * that walk fails the result is simply left alone.
- */
+/* Search-junk labels and security warnings share result discovery but have separate
+   toggles. Neither pass hides or reorders results, and unflagged links get no safety
+   mark. Verdicts use local lists; an explicit link check may use the network.
+   Anchor destinations are more stable than search engines' result CSS classes,
+   so an unrecognized result is left alone. */
 (function () {
   'use strict';
   const WO_GUARD_VERSION = '1.0.2';

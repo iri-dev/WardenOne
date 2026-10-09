@@ -4,42 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Eye Shield must not paint over a site's own design where that design is what works.
- *
- * Three reports, one cause -- a site profile repainting components the site already
- * draws correctly:
- *
- *   GitHub     typed text invisible in the search box; file names and commit messages
- *              one washed-out blue; octicons heavy. Measured live: the search <input> is
- *              transparent and the typed text is drawn on a layer BEHIND it, and the
- *              profile painted every input rgb(13,15,20). Links were all forced
- *              #8ab4ff, and every SVG was given stroke:currentColor. GitHub now keeps its
- *              own light/dark theme, switched through data-color-mode on <html>; Ultra
- *              only takes the canvas to black. Measured after: the input transparent,
- *              the typed text rgb(240,246,252), file names in the text colour.
- *              A signed-in page carries only the theme the reader chose, so the switch
- *              waits for GitHub's stylesheet (loaded the way GitHub's picker loads it);
- *              switching without it left every GitHub colour undefined -- the second
- *              report: dark text on black, white buttons, icons gone.
- *
- *   YouTube    every album cover a flat square (black in Ultra, white in Light). The
- *   Music      YouTube theme's bare `#content` matched the overlay div on each cover;
- *              YouTube Music has no ytd- element for the rest of that theme to reach.
- *              It has its own profile. Light: YouTube's shared colours switched through
- *              the `dark` attribute, the app's own variables turned light, and only the
- *              text and icon colours its stylesheets hard-code rewritten (measured live:
- *              895 rules, 70 ms). Ultra sinks its grey bars and panels to near-black.
- *
- *   ChatGPT    the voice button beside the composer "too pale": a white disc with a
- *              white glyph. Every button's text and every SVG's fill was forced to the
- *              theme's near-white; ChatGPT's primary buttons are white discs and pills.
- *              In Light the composer stayed dark and the conversations near-white. The
- *              signed-in app switches with a `dark`/`light` class on <html> and ships
- *              both themes; that class is what is switched now.
- *
- * Run: node tools/test-eyeshield-native-site-themes.js
- */
+/* Pin native-theme compatibility for GitHub, YouTube Music and ChatGPT.
+   Their controls, layered inputs and theme tokens must retain site styling
+   across Light, Dark and Ultra modes. */
 'use strict';
 
 const fs = require('fs');

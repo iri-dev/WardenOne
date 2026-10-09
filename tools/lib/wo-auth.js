@@ -6,26 +6,9 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// The bridge-to-engine authentication contract, for suites that lift a MAIN-world consumer
-// (the engine, anti-redirect.js, permission-chain.js, cryptominer-detect.js) into a sandbox
-// and need to hand it configuration the way the real bridge does (SEC-01).
-//
-// The real bridge hands a key over ONCE, as a synchronous "wo-key" DOM event dispatched at
-// document_start before any page script exists, and then signs every message the consumer
-// must trust: config, reputation and background replies, the frame relay, dispose. The
-// signature is HMAC-SHA256 under that key over `seq + "\n" + kind + "\n" + payload`, where
-// seq is one counter shared by every kind and only ever moves forward. A suite that used to
-// post {source:"wardenone-handshake", token} and then an unsigned config now does this:
-//
-//   const auth = require('./lib/wo-auth');
-//   const dispatchDoc = auth.documentEvents(fakeDocument);   // before the consumer runs
-//   ... run the consumer ...
-//   const link = auth.handshake(dispatchDoc, fireWindowMessage);
-//   link.sendConfig({ enabled: true, ... });
-//
-// The same helper builds forged messages for the adversarial side: anything not produced by
-// link.sign() must be ignored by the consumer, and that is the point of the suite that uses
-// it that way.
+// Model the bridge's one-time synchronous key handoff and signed message sequence
+// for sandboxed MAIN-world consumers. Tests also use this helper to forge messages
+// that consumers must reject.
 
 const crypto = require('crypto');
 

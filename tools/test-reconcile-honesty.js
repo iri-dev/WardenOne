@@ -54,7 +54,7 @@ function between(startMark, endMark, what) {
 }
 
 const CONFIG_CACHE = between('let __cfgCache = null;', '\n/* These stores are derived from sites visited', 'the config cache');
-const ORCHESTRATOR = between('// ---- Reconciliation honesty (MV3-01) ----', '\nfunction searchAiCleanupActive', 'the reconciler');
+const ORCHESTRATOR = between('const RECONCILE_DEGRADED_KEY = ', '\nfunction searchAiCleanupActive', 'the reconciler');
 const HEALTH_BLOCK = between('  let enabledRulesets = null;', '  // The tab the popup is open on, asked rather than assumed (FEAT-02).', 'the health block');
 
 /* the applier names the orchestrator runs, read from the source rather than restated. Each is

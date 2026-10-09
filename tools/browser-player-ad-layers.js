@@ -4,26 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* An embedded player carrying the three ad tricks measured on Playmogo (2026-10-08), rebuilt
-   locally and pressed with real input in a real browser:
-     - Monetag's "invoke layer": a box fixed over the whole frame at z-index 2147483647, opacity
-       0.01, holding one target=_blank link to the ad, so every press lands on the link instead
-       of the control under it;
-     - an empty 120x120 square at the same z-index over the big play button;
-     - a script in the player's own frame that answers a press on the video by sending the frame
-       to another site, replacing the video with a landing page, and that cancels and stops every
-       mousedown and click at the top of the document until its advert has been shown;
-     - an ad SDK that answers the press on play by sending the whole tab away;
-     - an empty full-screen interstitial shell the page itself left over the player frame.
-   With WardenOne loaded, this proves: the layer, the square and the shell are click-through
-   before anyone presses; the first press on the timeline is a seek; the play button gets its
-   press; no advert tab survives; the player frame and the tab stay where they are; and a visible
-   link the reader presses in the player still goes where it says.
-   The page is served locally; --host-resolver-rules points the test host names at it.
-   Run: node tools/browser-player-ad-layers.js
-        node tools/browser-player-ad-layers.js --control   (no extension: the tricks must work,
-                                                            which proves the page reproduces them)
-   Set WARDENONE_HEADLESS=1 as CI does; a headed window on a locked desktop gets no input. */
+/* Reproduces Playmogo's ad overlays, frame hijack, and tab redirect against a
+   real browser player. --control confirms the local fixture triggers them;
+   WARDENONE_HEADLESS=1 permits input on a locked desktop. */
 'use strict';
 
 const assert = require('assert/strict');
@@ -61,6 +44,7 @@ function playerPage(port) {
   <video id="v" preload="auto" src="/media.wav" style="position:absolute;left:0;top:0;width:880px;height:495px"></video>
   <button id="play" class="vjs-big-play-button" type="button" style="position:absolute;left:380px;top:207px;width:120px;height:80px;z-index:10">Play</button>
   <a id="visible" href="${away('/mirror/watch')}" style="position:absolute;left:12px;top:12px;z-index:10;background:#fff;color:#000;padding:6px;font:16px sans-serif">Watch on the mirror</a>
+  <button id="server" type="button" style="position:absolute;right:12px;top:12px;z-index:10;background:#fff;color:#000;padding:6px;font:16px sans-serif">Switch server</button>
   <div class="vjs-control-bar" style="position:absolute;left:0;bottom:0;width:100%;height:40px;z-index:10;background:#222">
     <div class="vjs-progress-control vjs-control" style="position:absolute;left:40px;right:40px;top:0;bottom:0">
       <div id="rail" class="vjs-progress-holder vjs-slider" role="slider" tabindex="0" aria-label="Progress Bar"
@@ -79,6 +63,9 @@ function playerPage(port) {
     window.__seeks++;
   });
   document.getElementById('play').addEventListener('click', () => { window.__playPresses++; });
+  /* The site's own server switch, a visible button over the video that moves the player from
+     script rather than through a link. */
+  document.getElementById('server').addEventListener('click', () => { location.assign('${away('/embed/server2')}'); });
   /* The ad layers, appended to <body> after the player the way the networks do it. */
   setTimeout(() => {
     const cover = document.createElement('div');
@@ -272,6 +259,20 @@ async function run() {
     assert(Math.abs(seek.at - MEDIA_SECONDS * 0.75) < 1, 'and seeked to where it was pressed: ' + JSON.stringify(seek));
     assert.equal(seek.adPresses, 0, 'no press reached the advert link or square: ' + JSON.stringify(seek));
 
+    /* 2b. Monetag re-arms its layer after a click. Done here from the page's own world on the same
+           DOM nodes, both ways a script would: a CSSOM write, and a cssText rewrite that drops
+           WardenOne's declaration. The next press on the timeline must still be a seek. */
+    await inPlayer("(() => { d.getElementById('khz2y9w').style.pointerEvents = 'auto';"
+      + " d.getElementById('lkf8s').style.cssText = 'display:block;height:100%'; return true; })()");
+    await until("['khz2y9w', 'lkf8s'].every((id) => w.getComputedStyle(d.getElementById(id)).pointerEvents === 'none')",
+      'the re-armed layer to be made click-through again', 3000);
+    await press(rail[0] + rail[2] * 0.25, rail[1] + rail[3] / 2);
+    await sleep(1200);
+    const reseek = await inPlayer("({ seeks: w.__seeks, at: w.document.getElementById('v').currentTime, adPresses: w.__adPresses, where: w.location.pathname })");
+    if (typeof reseek === 'string' || reseek.seeks !== 2) assert.fail('a press after the layer was re-armed still reached the timeline: ' + JSON.stringify(reseek));
+    assert(Math.abs(reseek.at - MEDIA_SECONDS * 0.25) < 1, 'and seeked to where it was pressed: ' + JSON.stringify(reseek));
+    assert.equal(reseek.adPresses, 0, 'the re-armed layer did not take the press: ' + JSON.stringify(reseek));
+
     /* 3. The play button gets its press, through the harvester and past the square above it, and
           the redirect of the whole tab that the press sets off is stopped before the tab leaves. */
     await press(440, 247);
@@ -297,8 +298,26 @@ async function run() {
     for (const deadline = Date.now() + 8000; Date.now() < deadline && !awayHits().length; await sleep(100));
     assert.deepEqual(awayHits(), [ELSEWHERE + '/mirror/watch'], 'a visible link pressed in the player still navigates');
 
+    /* 6. So does the site's own "Switch server" button over the video, which moves the player
+          with location.assign. On a fresh load, so the ad layers, the harvester and the
+          hijack timer are all back in place around it. */
+    await cdp.send('Page.reload', { ignoreCache: true }, page);
+    for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100)) {
+      const again = await inPlayer(loading).catch(() => null);
+      if (again && again.square && again.readyState >= 1 && again.path === '/e/7qftyd95nnrj') break;
+    }
+    await until(disarmed, 'the layers on the reloaded player to be made click-through', 5000);
+    const hitsBefore = awayHits().length;
+    const serverButton = await inPlayer("(() => { const r = d.getElementById('server').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()");
+    await press(serverButton[0], serverButton[1]);
+    for (const deadline = Date.now() + 8000; Date.now() < deadline && awayHits().length === hitsBefore; await sleep(100));
+    await sleep(800);
+    const afterSwitch = awayHits().slice(hitsBefore);
+    assert.deepEqual(afterSwitch, [ELSEWHERE + '/embed/server2'],
+      'the server switch button over the video moved the player, and nothing else went anywhere: ' + JSON.stringify({ afterSwitch, story: await frameStory() }));
+
     console.log('[ok] an embedded player\'s ad layers, page shell, press harvester, frame hijack and tab redirect are all stopped in '
-      + browser.Browser + ', while the timeline, the play button and a real link keep working');
+      + browser.Browser + ', while the timeline, the play button, a real link and a server switch keep working');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     server.close();

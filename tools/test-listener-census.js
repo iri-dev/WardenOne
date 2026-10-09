@@ -101,9 +101,9 @@ for (const f of fs.readdirSync(path.join(ROOT, 'tools')).filter((n) => /^test-.*
 }
 const bg = sources['background.js'];
 check('the decided lifetime is written down at the census note',
-  /one event wakes a stopped worker ONCE and is then\s+delivered to every listener/.test(bg)
-    && /while any tab is loading or playing\s+media this worker stays resident/.test(bg)
-    && /tools\/test-listener-census\.js pins that number/.test(bg));
+  /tabs\.onUpdated wakes the worker once per event, then calls every listener/.test(bg)
+    && /Memory Shield needs its audible signal/.test(bg)
+    && /tools\/test-listener-census\.js pins the intentional listener count/.test(bg));
 check('the context-menu note no longer claims its own listener would have cost a wake',
   /A listener of its own would not have cost a worker\s+wake/.test(bg));
 
