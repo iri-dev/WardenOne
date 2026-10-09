@@ -5,7 +5,7 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 /* Reproduces Playmogo's ad overlays, frame hijack, and tab redirect against a
-   real browser player. --control confirms the local fixture triggers them;
+   browser player fixture. --control confirms the local traps trigger;
    WARDENONE_HEADLESS=1 permits input on a locked desktop. */
 'use strict';
 
@@ -24,24 +24,11 @@ const SITE = 'watch.wo-player-test.example';
 const ELSEWHERE = 'pages.wo-elsewhere-test.example';
 const MEDIA_SECONDS = 20;
 
-/* Twenty seconds of silence as an 8 kHz mono WAV: a real media file with a real duration, small
-   enough to build here rather than ship. */
-function silentWav(seconds) {
-  const rate = 8000;
-  const samples = rate * seconds;
-  const buf = Buffer.alloc(44 + samples, 128);
-  buf.write('RIFF', 0); buf.writeUInt32LE(36 + samples, 4); buf.write('WAVE', 8);
-  buf.write('fmt ', 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
-  buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate, 28); buf.writeUInt16LE(1, 32); buf.writeUInt16LE(8, 34);
-  buf.write('data', 36); buf.writeUInt32LE(samples, 40);
-  return buf;
-}
-
 function playerPage(port) {
   const away = (p) => `http://${ELSEWHERE}:${port}${p}`;
   return `<!doctype html><title>Player</title><body style="margin:0;background:#000">
 <div class="video-js" id="video_player" style="position:relative;width:880px;height:495px;background:#111">
-  <video id="v" preload="auto" src="/media.wav" style="position:absolute;left:0;top:0;width:880px;height:495px"></video>
+  <video id="v" style="position:absolute;left:0;top:0;width:880px;height:495px"></video>
   <button id="play" class="vjs-big-play-button" type="button" style="position:absolute;left:380px;top:207px;width:120px;height:80px;z-index:10">Play</button>
   <a id="visible" href="${away('/mirror/watch')}" style="position:absolute;left:12px;top:12px;z-index:10;background:#fff;color:#000;padding:6px;font:16px sans-serif">Watch on the mirror</a>
   <button id="server" type="button" style="position:absolute;right:12px;top:12px;z-index:10;background:#fff;color:#000;padding:6px;font:16px sans-serif">Switch server</button>
@@ -55,6 +42,12 @@ function playerPage(port) {
 <script>
   window.__seeks = 0; window.__playPresses = 0; window.__adPresses = 0;
   const v = document.getElementById('v');
+  /* This fixture tests input delivery. Resource Saver's browser suite checks actual playback. */
+  let seekPosition = 0;
+  Object.defineProperties(v, {
+    duration: { configurable: true, get: () => ${MEDIA_SECONDS} },
+    currentTime: { configurable: true, get: () => seekPosition, set: (value) => { seekPosition = Number(value) || 0; } },
+  });
   const rail = document.getElementById('rail');
   /* The player: like video.js, the timeline seeks on the press itself. */
   rail.addEventListener('mousedown', (e) => {
@@ -124,25 +117,11 @@ function pageAround(port) {
 
 async function run() {
   const hits = [];
-  const wav = silentWav(MEDIA_SECONDS);
   let serverPort = 0;
   const server = http.createServer((req, res) => {
     const host = String(req.headers.host || '').replace(/:\d+$/, '');
     hits.push(host + req.url);
     res.setHeader('cache-control', 'no-store');
-    if (req.url === '/media.wav') {
-      const range = /^bytes=(\d+)-(\d*)$/.exec(String(req.headers.range || ''));
-      if (range) {
-        const start = Number(range[1]);
-        const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
-        res.writeHead(206, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${wav.length}`, 'content-length': end - start + 1 });
-        res.end(wav.subarray(start, end + 1));
-      } else {
-        res.writeHead(200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': wav.length });
-        res.end(wav);
-      }
-      return;
-    }
     res.setHeader('content-type', 'text/html; charset=utf-8');
     if (host === SITE && req.url.startsWith('/d/')) { res.end(pageAround(serverPort)); return; }
     if (host === SITE && req.url.startsWith('/e/')) { res.end(playerPage(serverPort)); return; }
@@ -203,27 +182,19 @@ async function run() {
       .filter((url) => !/^(about:blank|chrome-extension:|edge:|chrome:)/.test(url) || url === 'about:blank#popup');
     const awayHits = () => hits.filter((h) => h.startsWith(ELSEWHERE + '/') && !/\/favicon\.ico$/.test(h));
 
-    /* Headless Edge can defer preload without requesting the source. Start loading
-       explicitly so the seek check still uses real media duration. */
-    const startMedia = async () => {
-      await until("!!d.getElementById('v') && !!d.getElementById('square')", 'the player fixture to appear', 8000);
-      await inPlayer("(d.getElementById('v').load(), true)");
-    };
-    await startMedia();
-    /* Each half reported on its own, with what the server was asked for, so a stall says which. */
+    /* Each half reports its own state so a stalled fixture points to the missing piece. */
     const loading = "(() => { const v = d.getElementById('v'); return { square: !!d.getElementById('square'), cover: !!d.getElementById('khz2y9w'),"
-      + " readyState: v && v.readyState, networkState: v && v.networkState, error: v && v.error && v.error.code,"
-      + " currentSrc: v && v.currentSrc, canPlayWav: v && v.canPlayType('audio/wav'), path: w.location.pathname }; })()";
+      + " video: !!v, duration: v && v.duration, seeks: w.__seeks, path: w.location.pathname }; })()";
     let loaded;
     for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100)) {
       loaded = await inPlayer(loading).catch((error) => 'unreadable: ' + error.message);
-      if (loaded && loaded.square && loaded.readyState >= 1) break;
+      if (loaded && loaded.square && loaded.cover && loaded.video && loaded.duration === MEDIA_SECONDS) break;
     }
-    if (!loaded || !loaded.square || !(loaded.readyState >= 1)) {
-      assert.fail('the player to load its media and the ad layers to arrive: ' + JSON.stringify({ loaded, browser: browser.Browser, requests: hits.slice(-12) }));
+    if (!loaded || !loaded.square || !loaded.cover || !loaded.video || loaded.duration !== MEDIA_SECONDS) {
+      assert.fail('the player and ad layers to arrive: ' + JSON.stringify({ loaded, browser: browser.Browser, requests: hits.slice(-12) }));
     }
     const duration = await inPlayer("w.document.getElementById('v').duration");
-    assert(Math.abs(duration - MEDIA_SECONDS) < 0.5, 'the test media has the duration it was built with: ' + duration);
+    assert.equal(duration, MEDIA_SECONDS, 'the timeline has the expected duration');
     const tabsAtStart = pages.size;
 
     /* 1. The layer and the square are click-through before anyone presses. */
@@ -264,7 +235,7 @@ async function run() {
       return;
     }
     if (typeof seek === 'string' || seek.seeks !== 1) assert.fail('the first press on the timeline reached it: ' + await frameStory());
-    assert(Math.abs(seek.at - MEDIA_SECONDS * 0.75) < 1, 'and seeked to where it was pressed: ' + JSON.stringify(seek));
+    assert(Math.abs(seek.at - MEDIA_SECONDS * 0.75) < 0.5, 'and seeked to where it was pressed: ' + JSON.stringify(seek));
     assert.equal(seek.adPresses, 0, 'no press reached the advert link or square: ' + JSON.stringify(seek));
 
     /* 2b. Monetag re-arms its layer after a click. Done here from the page's own world on the same
@@ -278,7 +249,7 @@ async function run() {
     await sleep(1200);
     const reseek = await inPlayer("({ seeks: w.__seeks, at: w.document.getElementById('v').currentTime, adPresses: w.__adPresses, where: w.location.pathname })");
     if (typeof reseek === 'string' || reseek.seeks !== 2) assert.fail('a press after the layer was re-armed still reached the timeline: ' + JSON.stringify(reseek));
-    assert(Math.abs(reseek.at - MEDIA_SECONDS * 0.25) < 1, 'and seeked to where it was pressed: ' + JSON.stringify(reseek));
+    assert(Math.abs(reseek.at - MEDIA_SECONDS * 0.25) < 0.5, 'and seeked to where it was pressed: ' + JSON.stringify(reseek));
     assert.equal(reseek.adPresses, 0, 'the re-armed layer did not take the press: ' + JSON.stringify(reseek));
 
     /* 3. The play button gets its press, through the harvester and past the square above it, and
@@ -310,10 +281,9 @@ async function run() {
           with location.assign. On a fresh load, so the ad layers, the harvester and the
           hijack timer are all back in place around it. */
     await cdp.send('Page.reload', { ignoreCache: true }, page);
-    await startMedia();
     for (const deadline = Date.now() + 15000; Date.now() < deadline; await sleep(100)) {
       const again = await inPlayer(loading).catch(() => null);
-      if (again && again.square && again.readyState >= 1 && again.path === '/e/7qftyd95nnrj') break;
+      if (again && again.square && again.video && again.duration === MEDIA_SECONDS && again.path === '/e/7qftyd95nnrj') break;
     }
     await until(disarmed, 'the layers on the reloaded player to be made click-through', 5000);
     const hitsBefore = awayHits().length;
