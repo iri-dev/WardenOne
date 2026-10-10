@@ -88,6 +88,17 @@ async function main() {
     'the page regroups already-grouped records instead of showing their counts and samples');
   assert(/it\.summary/.test(pageJs) && !/it\.message\b/.test(pageJs),
     'the page reads a message field the manager never writes');
+  const normalizeStart = pageJs.indexOf('function normalizeItems(raw)');
+  const normalizeEnd = pageJs.indexOf('/* ---- the live timing preview', normalizeStart);
+  assert(normalizeStart >= 0 && normalizeEnd > normalizeStart, 'notification history normalizer is present');
+  const normalizeItems = vm.runInNewContext(pageJs.slice(normalizeStart, normalizeEnd) + '\nnormalizeItems;');
+  const earlier = normalizeItems([{ id: 'old', ruleId: 'ip_privacy', at: Date.now(), count: 2,
+    summary: 'Blocked', samples: [{ summary: 'Block unconfirmed', at: Date.now() }] }]);
+  assert.match(earlier[0].summary, /may contain different outcomes/,
+    'older mixed IP privacy groups cannot present their last summary as a definite outcome');
+  const current = normalizeItems([{ id: 'new', ruleId: 'ip_privacy', outcome: 'blocked',
+    at: Date.now(), count: 2, summary: 'Blocked' }]);
+  assert.strictEqual(current[0].summary, 'Blocked', 'outcome-specific groups retain their summary');
   /* The page never writes the store; the worker does, by id, against the latest copy (M47). */
   assert(!/storageSet\(\{\s*wardenone_notifications/.test(pageJs) && /kind: 'notifications-update'/.test(pageJs),
     'the page writes its own snapshot of the notification store again');
@@ -421,6 +432,34 @@ async function main() {
   };
   vm.createContext(context);
   vm.runInContext(read('notification-manager.js'), context, { filename: 'notification-manager.js' });
+
+  const ipRule = { ruleId: 'ip_privacy', mode: 'toast', settings: { groupSimilar: true },
+    definition: { section: 'privacy', label: 'IP and privacy protection', severity: 'warning' } };
+  const noticeAt = Date.now();
+  const notice = (type, why, status) => ({ type, url: 'https://site.example/', at: noticeAt,
+    detail: { why, status } });
+  let ipItems = [];
+  for (const [type, why, status] of [
+    ['blocked_grabber_network', 'Confirmed block', 'blocked'],
+    ['warned_grabber_image', 'Block unconfirmed', 'observed_unconfirmed'],
+    ['warned_grabber_protection_unavailable', 'Protection unavailable', 'protection_unavailable'],
+    ['blocked_ip_lookup', 'Another confirmed block', 'blocked'],
+  ]) ipItems = context.applyWardenNotificationEntry(ipItems, ipRule, notice(type, why, status), type).items;
+  assert.strictEqual(ipItems.length, 3, 'IP privacy outcomes need separate stored notices');
+  assert.strictEqual(new Set(ipItems.map((item) => item.id)).size, 3,
+    'simultaneous outcome-specific notices need distinct IDs for read and clear actions');
+  const blockedIp = ipItems.find((item) => item.outcome === 'blocked');
+  const unconfirmedIp = ipItems.find((item) => item.outcome === 'observed_unconfirmed');
+  const unavailableIp = ipItems.find((item) => item.outcome === 'protection_unavailable');
+  assert.strictEqual(blockedIp.count, 2, 'confirmed blocks may still group');
+  assert.strictEqual(blockedIp.summary, 'Another confirmed block');
+  assert.strictEqual(unconfirmedIp.count, 1);
+  assert.strictEqual(unconfirmedIp.summary, 'Block unconfirmed');
+  assert.strictEqual(unavailableIp.summary, 'Protection unavailable');
+  assert.strictEqual(context.wardenNotificationFindGroup([
+    { ruleId: 'ip_privacy', host: 'site.example', at: noticeAt, type: 'blocked_grabber_network' },
+  ], 'ip_privacy', 'site.example', noticeAt, { groupSimilar: true }, 'blocked'), -1,
+  'legacy mixed IP groups cannot absorb new outcome-specific notices');
 
   const defaults = context.wardenNotificationDefaultSettings();
   assert.strictEqual(defaults.version, 4, 'notification defaults must carry the toolbar-badge migration version');
