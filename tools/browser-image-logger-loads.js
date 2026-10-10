@@ -83,17 +83,21 @@ async function run() {
         await profile.closeExtensionTabs(cdp, port, extension.id);
       }
       const pageUrl = `http://${PAGE_HOST}:${serverPort}/page?phase=${phase}`;
-      const { targetId } = await cdp.send('Target.createTarget', { url: pageUrl });
+      const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
       await cdp.send('Runtime.enable', {}, sessionId);
+      await cdp.send('Page.enable', {}, sessionId);
       const evaluate = async (session, expression) => {
         const result = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, session);
         if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
         return result.result.value;
       };
+      await cdp.send('Page.navigate', { url: pageUrl }, sessionId);
+      const loaded = `location.href === ${JSON.stringify(pageUrl)} && document.readyState === 'complete'`;
       const deadline = Date.now() + 15000;
-      while (Date.now() < deadline && !(await evaluate(sessionId, "document.readyState === 'complete'"))) await sleep(100);
-      assert(await evaluate(sessionId, "document.readyState === 'complete'"), phase + ' page loaded');
+      while (Date.now() < deadline && !(await evaluate(sessionId, loaded))) await sleep(100);
+      assert(await evaluate(sessionId, loaded), phase + ' page loaded at ' +
+        await evaluate(sessionId, 'location.href'));
       await sleep(1200);
       const arrived = (host, path) => hits.some((hit) => hit.phase === phase && hit.host === host && hit.path === '/' + path);
       assert(arrived(PAGE_HOST, 'page'), phase + ' page reached the local server');
