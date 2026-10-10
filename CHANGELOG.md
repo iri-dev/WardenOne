@@ -30,6 +30,9 @@
 
 ### Fixed
 
+- IP-logger image warnings now cover existing images whose `src` or `srcset` changes, including picture sources.
+- Event-driven logger checks now have their own match-feedback budget, preserving reads for Activity Center polling and the site dashboard during alert bursts.
+- Possible IP-logger image notices now describe a suspicious URL reference without claiming the browser sent a request.
 - IP-logger reports now distinguish confirmed network blocks, unconfirmed image or navigation observations, and unavailable network protection. Match feedback is shared across WardenOne features to stay within Chrome's read limit.
 - IP privacy notices now group by outcome, keeping confirmed blocks, unconfirmed observations, and unavailable protection in separate Notification Centre entries.
 - The fallback IP-logger page warning now says exposure is possible instead of claiming the address was definitely sent, and shows only the hostname.

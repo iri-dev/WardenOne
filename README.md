@@ -588,8 +588,9 @@ direct visits; the rest of the IPLocation site stays available. An ordinary smal
 blocked just for being small.
 
 The Activity Center marks a logger image as blocked only when Chrome reports a matching WardenOne
-network rule. Otherwise it records an unconfirmed observation, or says network protection is
-unavailable when the relevant ruleset is off. A feedback limit or error never counts as proof of a block.
+network rule. A suspicious image URL seen in a page is recorded as a candidate; the URL alone does
+not prove the browser sent a request. Activity says when network protection is unavailable. A
+feedback limit or error never counts as proof of a block.
 
 **IP lookup blocking** (on by default) blocks the common third-party "what is my IP" services, so a
 page can't ask an outside service for your address. It leaves WebRTC itself alone.

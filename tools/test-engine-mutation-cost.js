@@ -529,11 +529,11 @@ check('the shipped engine carries the gate', /SEARCH_CLEANUP_HOST/.test(MIN));
  * img/script/iframe -- so narrowing those would drop checks, not duplicates. */
 check('the batch splitter exists', /function __woBatchNodes\(muts\)\{/.test(SRC));
 check('the dispatcher computes it once and shares it with every consumer',
-  /const batch=__woBatchNodes\(muts\);for\(let i=0;i<__woMoConsumers\.length;i\+\+\)try\{__woMoConsumers\[i\]\(muts,batch\.added,batch\.roots,batch\.structural\)\}/.test(MIN),
+  /const batch=__woBatchNodes\(muts\);const consumers=batch\.sourceOnly\?__woMoSourceConsumers:__woMoConsumers;for\(let i=0;i<consumers\.length;i\+\+\)try\{consumers\[i\]\(muts,batch\.added,batch\.roots,batch\.structural\)\}/.test(MIN),
   'computing it per consumer would pay the ancestor walk once per consumer');
-check('the shared observer narrowly includes input type transitions',
-  /childList:!0,subtree:!0,attributes:!0,attributeFilter:\["type"\]/.test(MIN),
-  'Form Trap must see an existing field become a password without observing noisy UI attributes');
+check('the shared observer limits source attributes to the image warning mode',
+  /attributeFilter:__woMoImageSources\?\["type","src","srcset"\]:\["type"\]/.test(MIN),
+  'ordinary UI attributes must stay outside the shared observer');
 check('the intranet guard still sees every added node',
   /for\(let i=0;i<added\.length;i\+\+\)guardLocalNode\(added\[i\]\);for\(let i=0;i<roots\.length;i\+\+\)sweepLocal\(roots\[i\]\)/.test(MIN),
   'it has to neuter a script pointing at a private address before it loads');
@@ -545,13 +545,47 @@ check('no consumer still walks addedNodes itself',
     && !/for\(const m of muts\)for\(const n of m\.addedNodes/.test(MIN),
   'a consumer left on the old walk keeps paying the duplicate scans');
 
+(() => {
+  const vm = require('vm');
+  const start = SRC.indexOf('const __woMoConsumers=[]');
+  const end = SRC.indexOf('/* The engine\'s authoritative config.', start);
+  check('the shared observer can be tested in isolation', start >= 0 && end > start);
+  if (start < 0 || end <= start) return;
+  const options = [];
+  let deliver;
+  const box = {
+    Set,
+    document: { documentElement: {} },
+    __woObserver(callback) {
+      deliver = callback;
+      return { observe(_target, option) { options.push(option); } };
+    },
+  };
+  vm.runInNewContext(SRC.slice(start, end) + ';globalThis.register=woObserve;', box);
+  let ordinary = 0;
+  let images = 0;
+  box.register(() => ordinary++);
+  check('source attributes are not observed before image warnings start',
+    options.length === 1 && options[0].attributeFilter.join(',') === 'type');
+  box.register(() => images++, true);
+  check('image warnings extend the existing observer',
+    options.length === 2 && options[1].attributeFilter.join(',') === 'type,src,srcset');
+  deliver([{ type: 'attributes', attributeName: 'src', target: { tagName: 'IMG' } }]);
+  deliver([{ type: 'attributes', attributeName: 'srcset', target: { tagName: 'IMG' } }]);
+  check('source-only changes reach just the image consumer', ordinary === 0 && images === 2);
+  deliver([{ type: 'attributes', attributeName: 'type', target: { tagName: 'INPUT' } }]);
+  check('input type transitions still reach all consumers', ordinary === 1 && images === 3);
+  deliver([{ type: 'childList', addedNodes: [{ nodeType: 1, parentElement: null }] }]);
+  check('added nodes still reach all consumers', ordinary === 2 && images === 4);
+})();
+
 /* The root computation, run for real against a tree of the shape that produced
    those numbers. A negative control follows: it must not simply return
    everything, and the roots it returns must cover every added node. */
 (() => {
   const vm = require('vm');
   const s = MIN.indexOf('function __woBatchNodes(muts){');
-  const e = MIN.indexOf('function woObserve(cb){', s);
+  const e = MIN.indexOf('function woObserve(cb,imageSources){', s);
   check('the splitter is where the slice expects it', s >= 0 && e > s);
   if (s < 0 || e < s) return;
   const box = { Set };
