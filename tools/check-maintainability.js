@@ -448,6 +448,7 @@ function checkContentBuild() {
   'domain-utils.js',
   'psl-private.js',
   'build-profile.js',
+  'build-update.js',
   'element-picker.js',
   'history.js',
   'hidden-elements.js',
@@ -603,6 +604,7 @@ checkCommand('engine teardown tests', ['tools/test-engine-teardown.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
 checkCommand('consent wall tests', ['tools/test-consent-wall.js']);
 checkCommand('Update Guardian tests', ['tools/test-update-guardian.js']);
+checkCommand('WardenOne build update tests', ['tools/test-build-update.js']);
 checkCommand('protection count tests', ['tools/test-protection-count.js']);
 checkCommand('engine watchdog tests', ['tools/test-engine-watchdog.js']);
 checkCommand('file access guard tests', ['tools/test-file-access-guard.js']);
