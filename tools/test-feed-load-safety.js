@@ -65,12 +65,12 @@ const orElse = (name, fallback) => (has(BG, name) ? grabFn(BG, name) : fallback)
 const constLine = (name, fallback) => { const m = new RegExp('^const ' + name + ' = [^;]+;', 'm').exec(BG); return m ? m[0] : fallback; };
 
 const LIFTED = [
-  constLine('GRABBER_FEED_RULE_BASE'), constLine('GRABBER_FEED_MAX'),
+  constLine('GRABBER_FEED_RULE_BASE'), constLine('GRABBER_FEED_MAX'), constLine('GRABBER_NAV_RULE_ID'),
   constLine('MINER_FEED_RULE_BASE'), constLine('MINER_FEED_MAX'), constLine('MINER_POOL_RULE_OFFSET'),
   constLine('SUPPLEMENTAL_LIST_STORAGE_KEY'),
   constLine('FEED_LOAD_RETRY_MS', 'const FEED_LOAD_RETRY_MS = [];'),
   constLine('__feedLoadRetries', 'const __feedLoadRetries = new Map();'),
-  'const GRABBER_FEED_DOMAINS = new Set(); const MINER_HOSTS = new Set(); const MINER_POOL_HOSTS = new Set();',
+  'const GRABBER_FEED_DOMAINS = new Set(); const GRABBER_FEED_RULE_HOSTS = new Map(); const MINER_HOSTS = new Set(); const MINER_POOL_HOSTS = new Set();',
   grabFn(BG, 'dnrValueMatches'), grabFn(BG, 'dnrBandUnchanged'),
   orElse('getDynamicRulesInBand', 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }'),
   orElse('localGetStrict', 'function localGetStrict(keys) { return localGet(keys); }'),
@@ -121,7 +121,10 @@ function browser() {
       },
     },
     declarativeNetRequest: {
-      getDynamicRules: async () => [...state.dynamic.values()].map(clone),
+      getDynamicRules: async (filter) => {
+        const ids = filter && Array.isArray(filter.ruleIds) ? new Set(filter.ruleIds) : null;
+        return [...state.dynamic.values()].filter((rule) => !ids || ids.has(rule.id)).map(clone);
+      },
       updateDynamicRules: async (u) => {
         state.counts.writes++;
         for (const id of (u.removeRuleIds || [])) state.dynamic.delete(id);
@@ -188,6 +191,9 @@ async function fire(b) {
   const w1 = await coldStart(b);
   check('a complete load builds the grabber band from every source',
     b.grabberDomains().join(',') === 'grab1.example,grab2.example,grab3.example,grab4.example', b.grabberDomains().join(','));
+  check('the navigation rule follows the same complete feed',
+    b.state.dynamic.get(741000).action.redirect.extensionPath === '/ip-logger-warning.html'
+      && b.state.dynamic.get(741000).condition.requestDomains.length === 4);
   check('and the cryptominer band, miners at the head and pools at the tail',
     b.minerDomains().join(',') === 'm1.example,m2.example,p1.example' && b.minerBand().join(',') === '742000,742001,742700',
     b.minerBand().join(','));
@@ -272,7 +278,8 @@ async function fire(b) {
     b.state.config.blockMalwareSites = false;
     await coldStart(b);
     check('a feature that is off empties its band even when the load could not complete',
-      b.grabberBand().length === 0 && b.minerBand().length === 0, b.grabberBand().length + ' / ' + b.minerBand().length + ' rule(s)');
+      b.grabberBand().length === 0 && !b.state.dynamic.has(741000) && b.minerBand().length === 0,
+      b.grabberBand().length + ' / ' + b.minerBand().length + ' rule(s)');
     b.state.config.blockCryptominers = true;
     b.state.config.blockGrabberResources = true;
     b.state.config.warnGrabberDomains = true;

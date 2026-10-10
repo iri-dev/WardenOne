@@ -121,6 +121,10 @@
     {
       "resources": ["spotify-silent-1s.mp4"],
       "matches": ["https://open.spotify.com/*"]
+    },
+    {
+      "resources": ["ip-logger-warning.html", "ip-logger-warning.css", "ip-logger-warning.js"],
+      "matches": ["<all_urls>"]
     }
   ],
   "content_scripts": [

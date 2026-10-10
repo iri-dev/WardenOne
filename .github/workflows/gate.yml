@@ -105,6 +105,12 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-engine-smoke.js
 
+      - name: Test image logger loads and ordinary pixels in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-image-logger-loads.js
+
       - name: Test EyeShield site profiles in cross-origin frames in Edge
         if: success() || failure()
         env:
@@ -180,6 +186,10 @@ jobs:
       - name: Test the page engine, the bridge and a network rule in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-engine-smoke.js
+
+      - name: Test image logger loads and ordinary pixels in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-image-logger-loads.js
 
       - name: Test EyeShield site profiles in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'

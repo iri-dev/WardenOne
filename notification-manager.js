@@ -80,12 +80,22 @@ async function restoreWardenNotificationBadge() {
   } catch (_) {}
 }
 
-function wardenNotificationFindGroup(items, ruleId, host, at, settings) {
+function wardenNotificationOutcome(type) {
+  if (type === 'warned_grabber_protection_unavailable') return 'protection_unavailable';
+  if (type === 'warned_grabber_image') return 'observed_unconfirmed';
+  if (/^blocked_/.test(type)) return 'blocked';
+  if (/^warned_/.test(type)) return 'warning';
+  if (/^detected_/.test(type)) return 'observed';
+  return 'other';
+}
+
+function wardenNotificationFindGroup(items, ruleId, host, at, settings, outcome) {
   if (!settings || settings.groupSimilar === false) return -1;
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
     if (!item) continue;
     if (item.ruleId !== ruleId) continue;
+    if (ruleId === 'ip_privacy' && item.outcome !== outcome) continue;
     if (String(item.host || '') !== String(host || '')) continue;
     if (Math.abs(wardenNotificationNow(item.at) - at) > WARDEN_NOTIFICATION_GROUP_WINDOW_MS) continue;
     return i;
@@ -158,8 +168,9 @@ function applyWardenNotificationEntry(items, resolved, entry, type) {
   var at = wardenNotificationNow(entry.at);
   var host = wardenNotificationHostFromEntry(entry);
   var summary = wardenNotificationSummary(entry, resolved.definition);
+  var outcome = resolved.ruleId === 'ip_privacy' ? wardenNotificationOutcome(type) : '';
   items = pruneWardenNotificationHistory(items, resolved.settings, at);
-  var groupAt = wardenNotificationFindGroup(items, resolved.ruleId, host, at, resolved.settings);
+  var groupAt = wardenNotificationFindGroup(items, resolved.ruleId, host, at, resolved.settings, outcome);
   var recorded;
 
   if (groupAt >= 0) {
@@ -180,8 +191,9 @@ function applyWardenNotificationEntry(items, resolved, entry, type) {
     items.unshift(recorded);
   } else {
     recorded = {
-      id: 'n-' + at + '-' + resolved.ruleId + '-' + (host || 'local'),
+      id: 'n-' + at + '-' + resolved.ruleId + '-' + (host || 'local') + (outcome ? '-' + outcome : ''),
       type: type,
+      outcome: outcome,
       ruleId: resolved.ruleId,
       section: resolved.definition.section,
       title: resolved.definition.label,

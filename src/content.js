@@ -409,6 +409,7 @@
   "iplogger.cn",
   "iplogger.co",
   "iplogger.com",
+  "iplogger.icu",
   "iplogger.info",
   "iplogger.org",
   "iplogger.ru",
@@ -4022,6 +4023,64 @@
         for(let i=0;
         i<roots.length;
         i++)sweepNodes(roots[i])
+      })
+    }
+    if(WO.warnGrabberDomains){
+      const knownGrabbers=new Set(Array.isArray(WO.grabberDomains)?WO.grabberDomains:[]),
+      imageWarned=new Set(),
+      imageLoggerHost=input=>{
+        try{
+          const url=new URL(String(input||""),location.href),
+          host=url.hostname.toLowerCase(),
+          here=regDomain(location.hostname);
+          if(!/^https?:$/.test(url.protocol)||!host||regDomain(host)===here)return"";
+          for(let part=host;part;){
+            if(knownGrabbers.has(part))return host;
+            const dot=part.indexOf(".");
+            if(dot<0)break;
+            part=part.slice(dot+1)
+          }
+          if(/(^|[.-])(iplogger|ip-logger|grabify)([.-]|$)/i.test(host))return host;
+          return /^\/(?:api\/)?(?:iplogger|ip-logger|grabify)\/(?=[a-z0-9_-]*\d)[a-z0-9_-]{8,}(?:[/.]|$)/i.test(url.pathname)?host:""
+        }
+        catch(_){
+          return""
+        }
+      },
+      warnImage=input=>{
+        const host=imageLoggerHost(input);
+        if(!host||imageWarned.has(host)||imageWarned.size>=8)return;
+        imageWarned.add(host),
+        log("detected_grabber_image_candidate",{
+          matched:host,
+          quiet:!0
+        })
+      },
+      scanImages=root=>{
+        try{
+          root.querySelectorAll&&root.querySelectorAll("img[src]").forEach(img=>warnImage(img.getAttribute("src")))
+        }
+        catch(_){
+
+        }
+      };
+      try{
+        const imageProto=HTMLImageElement.prototype,
+        desc=Object.getOwnPropertyDescriptor(imageProto,"src");
+        desc&&desc.set&&Object.defineProperty(imageProto,"src",{
+          configurable:!0,
+          enumerable:desc.enumerable,
+          get(){return desc.get.call(this)},
+          set(value){warnImage(value),desc.set.call(this,value)}
+        })
+      }
+      catch(_){
+
+      }
+      scanImages(document),
+      woObserve((muts,added,roots)=>{
+        for(const node of added)node.tagName==="IMG"&&warnImage(node.getAttribute("src"));
+        for(const root of roots)scanImages(root)
       })
     }
     {
@@ -16705,11 +16764,10 @@
           ") is a known IP-grabber / logger service. These links exist to record the IP address of whoever clicks them."),
           oDiv(card,
           "background:#2a1414!important;border:1px solid #3a2323!important;border-radius:8px!important;padding:12px!important;font-size:12px!important;color:#e8c5c5!important;margin:10px 0!important;line-height:1.5!important;",
-          "Be aware: simply by loading this page, your IP address has already been sent to this server  -  that is how any web request works, and no browser tool can undo it after the fact. To prevent this entirely, use a VPN so the logger only ever sees the VPN's address, or block these domains at the network/DNS level so the connection never happens."),
+          "WardenOne could not confirm whether this page request was blocked. Your public IP address and request information may already have been exposed. Leaving prevents further requests but cannot undo requests already sent."),
           oTextDiv(card,
           "background:#160b0b!important;border:1px solid #3a2323!important;border-radius:8px!important;padding:10px 12px!important;margin:8px 0!important;word-break:break-all!important;font-family:ui-monospace,monospace!important;font-size:12px!important;color:#e0cdcd!important;",
-          String(location.href).slice(0,
-          300));
+          host);
           const btns=oDiv(card,
           "display:flex!important;gap:10px!important;margin-top:18px!important;flex-wrap:wrap!important;");
           oBtn(btns,
@@ -21586,9 +21644,15 @@
           dwell:5768
         },
         blocked_grabber_pixel:{
-          title:"Tracking pixel blocked",
-          why:"A 1x1 logger pixel was stopped before it loaded.",
+          title:"IP-logging image blocked",
+          why:"An image request to a known logger was stopped before it loaded.",
           dwell:4300
+        },
+        warned_grabber_image:{
+          title:"Possible IP logger detected",
+          why:"An image request looks associated with IP logging. WardenOne could not confirm that it was blocked; your IP address and request information may already have been exposed.",
+          severity:"Warning",
+          action:"Leaving prevents further requests but cannot undo requests already sent."
         },
         blocked_ip_lookup:{
           title:"IP lookup blocked",

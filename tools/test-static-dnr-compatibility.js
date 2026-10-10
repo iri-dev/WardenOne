@@ -86,13 +86,13 @@ function sorted(values) {
 }
 
 const ids = new Set();
-assert.strictEqual(rules.length, 130, 'unexpected static DNR rule count');
+assert.strictEqual(rules.length, 135, 'unexpected static DNR rule count');
 for (const rule of rules) {
   assert(Number.isInteger(rule.id) && rule.id > 0, 'invalid rule id');
   assert(!ids.has(rule.id), 'duplicate rule id ' + rule.id);
   ids.add(rule.id);
   assert(Number.isInteger(rule.priority) && rule.priority > 0, 'invalid priority on rule ' + rule.id);
-  assert(rule.action && ['allow', 'block'].includes(rule.action.type), 'invalid action on rule ' + rule.id);
+  assert(rule.action && ['allow', 'block', 'redirect'].includes(rule.action.type), 'invalid action on rule ' + rule.id);
   assert(rule.condition && typeof rule.condition === 'object', 'missing condition on rule ' + rule.id);
   assert(Array.isArray(rule.condition.resourceTypes) && rule.condition.resourceTypes.length,
     'missing resource types on rule ' + rule.id);
@@ -113,8 +113,17 @@ for (const rule of rules) {
   }
 }
 
-const hostBlocks = rules.filter((rule) => rule.action.type === 'block');
-assert.strictEqual(hostBlocks.length, 125, 'expected exactly 125 static block rules');
+const hostBlocks = rules.filter((rule) => rule.action.type === 'block'
+  && rule.condition.requestDomains && rule.condition.resourceTypes.includes('main_frame'));
+assert.strictEqual(hostBlocks.length, 126, 'expected exactly 126 reviewed whole-host blocks');
+const navRedirect = ruleById(168);
+assert.strictEqual(navRedirect.action.type, 'redirect');
+assert.strictEqual(navRedirect.action.redirect.extensionPath, '/ip-logger-warning.html');
+assert.deepStrictEqual(navRedirect.condition.resourceTypes, ['main_frame']);
+assert(navRedirect.priority > Math.max(...hostBlocks.map((rule) => rule.priority)));
+assert.deepStrictEqual(sorted(navRedirect.condition.requestDomains),
+  sorted(hostBlocks.flatMap((rule) => rule.condition.requestDomains)),
+  'the warning must cover exactly the reviewed grabber domains');
 for (const rule of hostBlocks) {
   assert.deepStrictEqual(Object.keys(rule.condition).sort(), ['requestDomains', 'resourceTypes']);
   assert.strictEqual(rule.condition.requestDomains.length, 1, 'block rule must cover one reviewed host');
@@ -128,6 +137,39 @@ assert.deepStrictEqual(remainingUrlFilters.map((rule) => rule.id), [163],
   'only the reviewed path-specific compatibility filter may remain a URL filter');
 assert.strictEqual(remainingUrlFilters[0].condition.urlFilter,
   '||static.doubleclick.net/instream/ad_status.js');
+
+const trackerHost = 'tracker.iplocation.net';
+const trackerImage = ruleById(170);
+assert.strictEqual(trackerImage.action.type, 'block');
+assert.deepStrictEqual(trackerImage.condition.requestDomains, [trackerHost]);
+assert.deepStrictEqual(trackerImage.condition.resourceTypes, ['image']);
+assert.strictEqual(trackerImage.condition.domainType, 'thirdParty');
+assert(!navRedirect.condition.requestDomains.includes(trackerHost),
+  'the tracker dashboard must not receive a whole-host navigation warning');
+const trackerNav = ruleById(171);
+const trackerRoute = ruleById(172);
+assert.strictEqual(trackerNav.action.type, 'redirect');
+assert.strictEqual(trackerNav.action.redirect.extensionPath, '/ip-logger-warning.html');
+assert.deepStrictEqual(trackerNav.condition.resourceTypes, ['main_frame']);
+assert.strictEqual(trackerRoute.action.type, 'block');
+assert.strictEqual(trackerRoute.condition.domainType, 'thirdParty');
+assert(!trackerRoute.condition.resourceTypes.includes('main_frame'));
+assert.strictEqual(trackerNav.condition.regexFilter, trackerRoute.condition.regexFilter);
+const trackerPath = new RegExp(trackerNav.condition.regexFilter);
+for (const url of ['https://tracker.iplocation.net/t/ABC12345',
+  'https://tracker.iplocation.net/s/abc123?source=chat']) {
+  assert(trackerPath.test(url), 'reviewed tracker route missed: ' + url);
+}
+for (const url of ['https://tracker.iplocation.net/',
+  'https://tracker.iplocation.net/assets/images/logo.png',
+  'https://tracker.iplocation.net/t/',
+  'https://tracker.iplocation.net/t/ABC12345.evil.example/',
+  'https://tracker.iplocation.net.evil.example/t/ABC12345',
+  'https://www.iplocation.net/t/ABC12345']) {
+  assert(!trackerPath.test(url), 'tracker route overmatched: ' + url);
+}
+assert(ruleById(169).condition.requestDomains.includes('iplogger.icu'));
+assert(navRedirect.condition.requestDomains.includes('iplogger.icu'));
 
 const grabifyRule = ruleById(1);
 assert(conditionMatches(grabifyRule, 'sub.grabify.link', 'example.com', 'script'));
@@ -192,4 +234,4 @@ for (const domain of AUTH_CHALLENGE_DOMAINS) {
   assert(covered, domain + ' is not backed by an existing manifest exclusion');
 }
 
-console.log('[ok] 130 static DNR rules validated: 125 bounded blocks, scoped compatibility, and auth/challenge coverage.');
+console.log('[ok] 135 static DNR rules validated: 126 whole-host blocks, scoped tracker rules, navigation warnings, and compatibility coverage.');

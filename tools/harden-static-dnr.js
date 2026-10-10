@@ -148,9 +148,12 @@ hardened.sort((a, b) => a.id - b.id);
 const hardenedBlocks = hardened.filter((rule) =>
   rule.action && rule.action.type === 'block'
     && rule.condition
-    && Array.isArray(rule.condition.requestDomains));
-if (hardenedBlocks.length !== 125) {
-  throw new Error(`Expected 125 bounded block rules after rewrite, found ${hardenedBlocks.length}`);
+    && Array.isArray(rule.condition.requestDomains)
+    && Array.isArray(rule.condition.resourceTypes)
+    && rule.condition.resourceTypes.includes('main_frame')
+    && !rule.condition.regexFilter && !rule.condition.urlFilter);
+if (hardenedBlocks.length !== 126) {
+  throw new Error(`Expected 126 bounded whole-host block rules after rewrite, found ${hardenedBlocks.length}`);
 }
 if (hardened.some((rule) => tldAgnosticLabelFilter.test(String(rule.condition && rule.condition.urlFilter || '')))) {
   throw new Error('TLD-agnostic label filters remain after rewrite');

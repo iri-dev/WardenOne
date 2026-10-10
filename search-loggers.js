@@ -72,6 +72,7 @@ var WO_SEARCH_LOGGERS = [
   'iplogger.cn',
   'iplogger.co',
   'iplogger.com',
+  'iplogger.icu',
   'iplogger.info',
   'iplogger.org',
   'iplogger.ru',
