@@ -52,7 +52,7 @@ check('an empty series is NaN, not zero', Number.isNaN(harness.median([])));
   let error = null;
   try { patched = harness.applyRegression(built, 'mutation-dedup'); } catch (e) { error = e; }
   check('the mutation-dedup regression applies to the built engine exactly once', !error && patched && patched !== built, error && error.message);
-  check('and undoes the outermost-node filter', !!patched && patched.indexOf('if(added.length<2||!0)return{added:added,roots:added,structural:structural};') > 0);
+  check('and undoes the outermost-node filter', !!patched && patched.indexOf('if(added.length<2||!0)return{added:added,roots:added,structural:structural,sourceOnly:sourceOnly};') > 0);
   let threw = false;
   try { harness.applyRegression(built + built, 'mutation-dedup'); } catch (_) { threw = true; }
   check('an anchor that matches twice is refused rather than patched at random', threw);

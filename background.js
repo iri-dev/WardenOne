@@ -4614,6 +4614,7 @@ loadGrabberFeed();
    this snapshot so one feature cannot silently exhaust another's evidence. */
 const DNR_FEEDBACK_WINDOW_MS = 10 * 60 * 1000;
 const DNR_FEEDBACK_CACHE_MS = 1500;
+const DNR_FEEDBACK_READ_LIMITS = { background: 10, dashboard: 5, event: 4 };
 const DNR_FEEDBACK_READS = [];
 let DNR_FEEDBACK_SNAPSHOT = null;
 let DNR_FEEDBACK_PENDING = null;
@@ -4629,10 +4630,9 @@ async function readMatchedRuleEvidence(filter, priority) {
       snapshot = await DNR_FEEDBACK_PENDING.promise;
     } else {
       while (DNR_FEEDBACK_READS.length && DNR_FEEDBACK_READS[0].at <= now - DNR_FEEDBACK_WINDOW_MS) DNR_FEEDBACK_READS.shift();
-      const backgroundReads = DNR_FEEDBACK_READS.filter((read) => read.purpose === 'background').length;
-      const dashboardReads = DNR_FEEDBACK_READS.filter((read) => read.purpose === 'dashboard').length;
-      if (DNR_FEEDBACK_READS.length >= 19 || (priority === 'background' && backgroundReads >= 10)
-          || (priority === 'dashboard' && dashboardReads >= 5)) {
+      const purposeLimit = DNR_FEEDBACK_READ_LIMITS[priority];
+      const purposeReads = DNR_FEEDBACK_READS.filter((read) => read.purpose === priority).length;
+      if (!purposeLimit || DNR_FEEDBACK_READS.length >= 19 || purposeReads >= purposeLimit) {
         return { ok: false, reason: 'quota' };
       }
       const startedAt = Date.now();
@@ -4725,9 +4725,10 @@ function noteGrabberImageCandidate(detail, sender) {
     queueHistory({
       type: unavailable ? 'warned_grabber_protection_unavailable' : 'warned_grabber_image',
       detail: { matched: host, status: unavailable ? 'protection_unavailable' : 'observed_unconfirmed',
+        observation: 'image_url_reference',
         why: unavailable
-          ? 'A possible IP-logging image was observed, but WardenOne network protection is unavailable. The request may have reached its destination.'
-          : 'A possible IP-logging image was observed. WardenOne could not confirm a block; the request may have reached its destination.' },
+          ? 'A page referenced a possible IP-logging image URL. Network protection is unavailable. WardenOne cannot confirm whether the browser sent a request; your IP address may have been exposed if it did.'
+          : 'A page referenced a possible IP-logging image URL. WardenOne cannot confirm whether the browser sent a request or blocked it; your IP address may have been exposed if it was sent.' },
       url: 'https://' + pageHost + '/', at,
     });
   }, 1000);
