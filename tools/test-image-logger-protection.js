@@ -29,11 +29,23 @@ const guardStart = source.indexOf('    if(WO.warnGrabberDomains){\n      const k
 const guardEnd = source.indexOf('    {\n      const REDIRECT_PARAMS=', guardStart);
 assert(guardStart > 0 && guardEnd > guardStart, 'image guard source changed');
 const guard = source.slice(guardStart, guardEnd);
+const toastStart = source.indexOf('warned_grabber_image:{');
+const imageToast = source.slice(toastStart, source.indexOf('blocked_ip_lookup:{', toastStart));
+assert(toastStart > 0 && /cannot confirm whether the browser sent a request/.test(imageToast),
+  'the page warning does not call a URL reference a confirmed request');
 
 function imageRig(blockKnown) {
   const events = [];
   let observe;
-  class ImageElement {}
+  let observesImageSources = false;
+  class ImageElement {
+    constructor() { this.tagName = 'IMG'; this.attrs = {}; }
+    getAttribute(name) { return this.attrs[name] || null; }
+    setAttribute(name, value) {
+      this.attrs[name] = String(value);
+      observe([{ type: 'attributes', attributeName: name, target: this }], [], []);
+    }
+  }
   Object.defineProperty(ImageElement.prototype, 'src', {
     configurable: true, get() { return this.value; }, set(value) { this.value = value; },
   });
@@ -43,12 +55,12 @@ function imageRig(blockKnown) {
     regDomain(host) { return String(host).split('.').slice(-2).join('.'); },
     HTMLImageElement: ImageElement,
     document: { querySelectorAll: () => [] },
-    woObserve(fn) { observe = fn; },
+    woObserve(fn, imageSources) { observe = fn; observesImageSources = !!imageSources; },
     log(type, detail) { events.push({ type, detail }); },
     URL, Set, Object,
   };
   vm.runInNewContext(guard, sandbox);
-  return { events, ImageElement, observe };
+  return { events, ImageElement, observe, observesImageSources };
 }
 
 {
@@ -65,10 +77,32 @@ function imageRig(blockKnown) {
   assert.equal(r.events[1].detail.matched, 'iplogger.suspect.test');
   assert.equal(r.events[1].detail.quiet, true);
   assert(!JSON.stringify(r.events).includes('TOPSECRET'), 'tokens never enter the event');
-  r.observe([], [], [{ querySelectorAll: () => [{ getAttribute: () => 'https://other.test/iplogger/abc1234567' }] }]);
+  r.observe([], [], [{ querySelectorAll: () => [{ tagName: 'IMG', getAttribute: () => 'https://other.test/iplogger/abc1234567' }] }]);
   assert.equal(r.events.length, 3, 'parser-inserted images are checked too');
-  r.observe([], [], [{ querySelectorAll: () => [{ getAttribute: () => 'https://other.test/iplogger/explanation.jpg' }] }]);
+  r.observe([], [], [{ querySelectorAll: () => [{ tagName: 'IMG', getAttribute: () => 'https://other.test/iplogger/explanation.jpg' }] }]);
   assert.equal(r.events.length, 3, 'ordinary explanatory image names do not trigger');
+}
+{
+  const r = imageRig(true);
+  assert(r.observesImageSources, 'the image guard requests source-attribute records from the shared observer');
+  const existing = new r.ImageElement();
+  existing.setAttribute('src', 'https://ordinary.test/pixel.gif');
+  assert.equal(r.events.length, 0, 'an ordinary source change stays quiet');
+  existing.setAttribute('src', 'https://iplogger.attribute.test/pixel.gif?token=PRIVATE');
+  assert.equal(r.events.length, 1, 'an existing image source change is detected');
+  existing.setAttribute('srcset', 'https://ordinary.test/one.png 1x, https://grabify.link/two.png 2x');
+  assert.equal(r.events.length, 2, 'an existing image srcset change is detected');
+  assert(!JSON.stringify(r.events).includes('PRIVATE'), 'changed image URLs are redacted');
+  r.observe([{ type: 'attributes', attributeName: 'srcset', target: {
+    tagName: 'SOURCE', parentElement: { tagName: 'PICTURE' },
+    getAttribute: () => 'https://iplogger.picture.test/asset.png 2x',
+  } }], [], []);
+  assert.equal(r.events.length, 3, 'a picture source change is detected');
+  r.observe([{ type: 'attributes', attributeName: 'srcset', target: {
+    tagName: 'SOURCE', parentElement: { tagName: 'VIDEO' },
+    getAttribute: () => 'https://iplogger.video.test/asset.png 2x',
+  } }], [], []);
+  assert.equal(r.events.length, 3, 'video sources are outside the image guard');
 }
 {
   const r = imageRig(false);
@@ -118,6 +152,29 @@ async function testSharedFeedback() {
   assert.equal((await sandbox.readEvidence({}, 'event')).reason, 'quota', 'all consumers stay below Chrome’s 20-call allowance');
   assert.equal(calls, 19);
   now += 10 * 60 * 1000;
+  for (let i = 0; i < 4; i++) {
+    now += 2000;
+    assert.equal((await sandbox.readEvidence({}, 'event')).ok, true);
+  }
+  now += 2000;
+  assert.equal((await sandbox.readEvidence({}, 'event')).reason, 'quota',
+    'event checks cannot spend reads reserved for the other categories');
+  assert.equal(calls, 23);
+  for (let i = 0; i < 10; i++) {
+    now += 2000;
+    assert.equal((await sandbox.readEvidence({}, 'background')).ok, true,
+      'background reads remain available after an event burst');
+  }
+  for (let i = 0; i < 5; i++) {
+    now += 2000;
+    assert.equal((await sandbox.readEvidence({}, 'dashboard')).ok, true,
+      'dashboard reads remain available after an event burst');
+  }
+  assert.equal(calls, 38, 'the category budgets add up to 19 reads per window');
+  now += 2000;
+  assert.equal((await sandbox.readEvidence({}, 'background')).reason, 'quota',
+    'the shared headroom remains unused');
+  now += 10 * 60 * 1000;
   assert.equal((await sandbox.readEvidence({}, 'background')).ok, true, 'budget recovers after the ten-minute window');
 }
 
@@ -163,7 +220,7 @@ async function testBackground() {
     clearTimeout(timer) { timer.canceled = true; },
     URL, Date, Map, Set, Number, Math, String,
   };
-  vm.runInNewContext(observer + '\nthis.navStatus = grabberNavigationStatus; this.noteCandidate = noteGrabberImageCandidate; this.resetEvidence = () => { DNR_FEEDBACK_SNAPSHOT = null; };', sandbox);
+  vm.runInNewContext(observer + '\nthis.navStatus = grabberNavigationStatus; this.noteCandidate = noteGrabberImageCandidate; this.resetEvidence = () => { DNR_FEEDBACK_SNAPSHOT = null; DNR_FEEDBACK_READS.length = 0; };', sandbox);
   async function runTimers() {
     for (const timer of timers.splice(0)) if (!timer.canceled) await timer.fn();
   }
@@ -201,6 +258,7 @@ async function testBackground() {
   assert.equal(history.length, 3);
   assert.equal(history[2].type, 'blocked_grabber_network');
   assert.equal(history[2].detail.matched, 'grabify.link');
+  assert.equal(history[2].detail.observation, undefined, 'a confirmed network block has separate evidence');
   assert(!JSON.stringify(history).includes('IMAGESECRET') && !JSON.stringify(history).includes('account=SECRET'));
 
   matched = [{ rule: { rulesetId: 'grabbers', ruleId: 170 }, tabId: 10, timeStamp: Date.now() }];
@@ -232,11 +290,14 @@ async function testBackground() {
   await runTimers();
   assert.equal(history.at(-1).type, 'warned_grabber_image', 'an enabled switch without a match remains unconfirmed');
   assert.equal(history.at(-1).detail.status, 'observed_unconfirmed');
+  assert.equal(history.at(-1).detail.observation, 'image_url_reference');
+  assert.match(history.at(-1).detail.why, /cannot confirm whether the browser sent a request/);
 
   enabled = [];
   sandbox.noteCandidate({ matched: 'grabify.link' }, { tab: { id: 14, url: 'https://site.example/' } });
   await runTimers();
   assert.equal(history.at(-1).detail.status, 'protection_unavailable', 'disabled DNR rules are reported as unavailable');
+  assert.equal(history.at(-1).detail.observation, 'image_url_reference');
 
   enabled = ['grabbers'];
   feedbackError = true;
