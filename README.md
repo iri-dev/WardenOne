@@ -582,6 +582,15 @@ WebRTC can leak your local network addresses without a normal page request. Ward
 IP-grabber beacons and logger hosts (Grabify-style links etc). The guard has two levels and each
 one has its own switch.
 
+The packaged rules also stop images from reviewed logger services before they load, including
+third-party images from IPLocation's tracker host. Its tracking-link routes show a warning on
+direct visits; the rest of the IPLocation site stays available. An ordinary small image is not
+blocked just for being small.
+
+The Activity Center marks a logger image as blocked only when Chrome reports a matching WardenOne
+network rule. Otherwise it records an unconfirmed observation, or says network protection is
+unavailable when the relevant ruleset is off. A feedback limit or error never counts as proof of a block.
+
 **IP lookup blocking** (on by default) blocks the common third-party "what is my IP" services, so a
 page can't ask an outside service for your address. It leaves WebRTC itself alone.
 

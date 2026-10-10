@@ -158,7 +158,8 @@ async function wake(b, opts) {
     readUserBlocklist: async () => b.clone(b.state.blocklist),
     pruneExpiredBlocks: (entries) => ({ live: entries, lapsed: [] }),
     userBlockRulesFrom: (entries) => entries.map((e, i) => ({ id: 970000 + i, priority: 99000, action: { type: 'block' }, condition: { requestDomains: [e.domain], resourceTypes: ['main_frame'] } })),
-    GRABBER_FEED_RULE_BASE: 740000, GRABBER_FEED_MAX: 1000, GRABBER_FEED_DOMAINS: new Set(b.state.grabberDomains),
+    GRABBER_FEED_RULE_BASE: 740000, GRABBER_FEED_MAX: 1000, GRABBER_NAV_RULE_ID: 741000,
+    GRABBER_FEED_DOMAINS: new Set(b.state.grabberDomains), GRABBER_FEED_RULE_HOSTS: new Map(),
     MINER_FEED_RULE_BASE: 742000, MINER_FEED_MAX: 1000, MINER_POOL_RULE_OFFSET: 700,
     MINER_HOSTS: new Set(b.state.minerHosts), MINER_POOL_HOSTS: new Set(b.state.minerPools),
     MINER_RESOURCE_TYPES: ['script', 'xmlhttprequest'], MINER_POOL_RESOURCE_TYPES: ['websocket'],
@@ -189,7 +190,11 @@ const quiet = (d) => d.dnrWrites === 0 && d.removeAll === 0 && d.creates === 0 &
   check('the first wake of a session installs every band once and builds the menu once',
     first.delta.dnrWrites === 4 && first.delta.removeAll === 1 && first.delta.creates === 14 && first.delta.inventories === 1 && first.delta.reports === 1,
     JSON.stringify(first.delta));
-  check('the bands hold what was written', b.state.dynamic.size === 1 + 1 + 3 + 3, String(b.state.dynamic.size));
+  check('the bands hold what was written', b.state.dynamic.size === 1 + 1 + 3 + 3 + 1, String(b.state.dynamic.size));
+  check('the feed redirects only top-level visits while images stay blocked',
+    b.state.dynamic.get(741000).action.redirect.extensionPath === '/ip-logger-warning.html'
+      && b.state.dynamic.get(741000).condition.resourceTypes.join(',') === 'main_frame'
+      && b.state.dynamic.get(740000).condition.resourceTypes.includes('image'));
   const rulesAfterFirst = JSON.stringify([...b.state.dynamic.values()]);
   let quietWakes = 0;
   let noisy = null;
@@ -209,7 +214,7 @@ const quiet = (d) => d.dnrWrites === 0 && d.removeAll === 0 && d.creates === 0 &
     for (const id of [...b.state.dynamic.keys()]) if (id >= 740000 && id < 741000) b.state.dynamic.delete(id);
     const w = await wake(b);
     check('a band that went missing outside WardenOne is put back on the next wake, and nothing else is touched',
-      w.delta.dnrWrites === 1 && w.delta.dnrRulesWritten === 3 && b.state.dynamic.size === 8 && w.delta.removeAll === 0 && w.delta.inventories === 0, JSON.stringify(w.delta));
+      w.delta.dnrWrites === 1 && w.delta.dnrRulesWritten === 4 && b.state.dynamic.size === 9 && w.delta.removeAll === 0 && w.delta.inventories === 0, JSON.stringify(w.delta));
     check('the wake after that is quiet again', quiet((await wake(b)).delta));
   }
   {
@@ -226,7 +231,7 @@ const quiet = (d) => d.dnrWrites === 0 && d.removeAll === 0 && d.creates === 0 &
     /* A list grew. */
     b.state.grabberDomains.push('grab4.example');
     const w = await wake(b);
-    check('a feed that gained a domain is written once, as the whole band', w.delta.dnrWrites === 1 && w.delta.dnrRulesWritten === 4, JSON.stringify(w.delta));
+    check('a feed that gained a domain is written once, as the whole band', w.delta.dnrWrites === 1 && w.delta.dnrRulesWritten === 5, JSON.stringify(w.delta));
     check('and is quiet again after', quiet((await wake(b)).delta));
   }
   {

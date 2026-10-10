@@ -577,10 +577,13 @@ function normalizeItems(raw) {
     .map((i) => ({
       id: String(i.id || ''),
       type: String(i.type || 'system'),
+      outcome: String(i.outcome || ''),
       ruleId: String(i.ruleId || ''),
       section: String(i.section || ''),
       title: String(i.title || ''),
-      summary: String(i.summary || i.message || ''),
+      summary: i.ruleId === 'ip_privacy' && !i.outcome && Number(i.count) > 1
+        ? 'Earlier IP privacy notices may contain different outcomes. Review the saved examples below.'
+        : String(i.summary || i.message || ''),
       host: String(i.host || ''),
       at: Number(i.at),
       count: Math.max(1, Math.floor(Number(i.count) || 1)),

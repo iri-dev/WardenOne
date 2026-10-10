@@ -415,6 +415,7 @@ function checkContentBuild() {
   'tools/browser-resource-saver.js',
   'tools/test-animated-image-saver.js',
   'tools/browser-engine-smoke.js',
+  'tools/browser-image-logger-loads.js',
   'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
   'tools/test-download-links.js',
@@ -456,6 +457,7 @@ function checkContentBuild() {
   'oauth-guard.js',
   'permission-chain.js',
   'redirect-warning.js',
+  'ip-logger-warning.js',
   'safe-browsing-block.js',
   'yt-adblock.js',
   'resource-saver.js',
@@ -512,6 +514,7 @@ if (exists('tools/build-toast-harness.js') && exists('tools/toast-harness.html')
   console.log('[skip] toast harness is not present in this checkout');
 }
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
+checkCommand('image-logger protection tests', ['tools/test-image-logger-protection.js']);
 checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
 checkCommand('DNR atomic rule replacement tests', ['tools/test-dnr-atomic-replace.js']);
 checkCommand('tabs.onUpdated listener census', ['tools/test-listener-census.js']);
