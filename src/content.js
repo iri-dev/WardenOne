@@ -1408,15 +1408,20 @@
     __woRuntimeStarted=!0;
     if(window.__wardenOneInstalled===__WO_RUNTIME_VERSION&&window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
     window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
-    const __woMoConsumers=[];
-    let __woMoStarted=!1;
+    const __woMoConsumers=[],
+    __woMoSourceConsumers=[];
+    let __woMoStarted=!1,
+    __woMoImageSources=!1,
+    __woMoObserver=null;
     /* Scan only outermost added subtrees once per mutation batch, but still run
        node-level guards on every added node. Descendant subtree scans would
        duplicate work without finding new elements. */
     function __woBatchNodes(muts){
       const added=[];
-      let structural=!1;
+      let structural=!1,
+      sourceOnly=muts.length>0;
       for(const mu of muts){
+        if(mu.type!=="attributes"||mu.attributeName!=="src"&&mu.attributeName!=="srcset")sourceOnly=!1;
         "attributes"===mu.type&&"type"===mu.attributeName&&mu.target&&"INPUT"===String(mu.target.tagName||"").toUpperCase()&&(structural=!0);
         const a=mu.addedNodes||[];
         for(let i=0;
@@ -1440,7 +1445,8 @@
       if(added.length<2)return{
         added:added,
         roots:added,
-        structural:structural
+        structural:structural,
+        sourceOnly:sourceOnly
       };
       const inBatch=new Set(added),
       /* An outermost node has to climb to the document root before it can be
@@ -1479,20 +1485,35 @@
       return{
         added:added,
         roots:roots,
-        structural:structural
+        structural:structural,
+        sourceOnly:sourceOnly
       }
     }
-    function woObserve(cb){
-      if(__woMoConsumers.push(cb),
-      !__woMoStarted&&document.documentElement){
+    const __woMoOptions=()=>({
+      childList:!0,
+      subtree:!0,
+      attributes:!0,
+      attributeFilter:__woMoImageSources?["type","src","srcset"]:["type"]
+    });
+    function woObserve(cb,imageSources){
+      __woMoConsumers.push(cb);
+      if(imageSources){
+        __woMoSourceConsumers.push(cb);
+        if(!__woMoImageSources){
+          __woMoImageSources=!0;
+          try{__woMoObserver&&__woMoObserver.observe(document.documentElement,__woMoOptions())}catch(_){}
+        }
+      }
+      if(!__woMoStarted&&document.documentElement){
         __woMoStarted=!0;
         try{
-          __woObserver(muts=>{
+          __woMoObserver=__woObserver(muts=>{
             const batch=__woBatchNodes(muts);
+            const consumers=batch.sourceOnly?__woMoSourceConsumers:__woMoConsumers;
             for(let i=0;
-            i<__woMoConsumers.length;
+            i<consumers.length;
             i++)try{
-              __woMoConsumers[i](muts,
+              consumers[i](muts,
               batch.added,
               batch.roots,
               batch.structural)
@@ -1501,13 +1522,8 @@
 
             }
 
-          }).observe(document.documentElement,
-          {
-            childList:!0,
-            subtree:!0,
-            attributes:!0,
-            attributeFilter:["type"]
-          })
+          });
+          __woMoObserver.observe(document.documentElement,__woMoOptions())
         }
         catch(_){
 
@@ -3375,9 +3391,9 @@
 
     }
     /* The sweep above sees ping attributes that are in the markup. It cannot see one
-    ADDED to a link that already exists, because the shared observer watches childList
-    only -- and it has to stay that way: watching attributes across the document is
-    precisely what made dragging a volume slider cost a full scan every frame.
+    ADDED to a link that already exists, because the shared observer's narrow
+    attribute filter excludes ping. Watching all attributes across the document
+    made dragging a volume slider cost a full scan every frame.
 
     So the other half is caught at the click instead. Two listeners, because the last
     one to run wins: a page that re-adds ping from its own mousedown handler runs after
@@ -4056,9 +4072,21 @@
           quiet:!0
         })
       },
+      scanSourceSet=value=>{
+        for(const candidate of String(value||"").split(",")){
+          const url=candidate.trim().split(/\s+/)[0];
+          url&&warnImage(url)
+        }
+      },
+      scanImage=node=>{
+        if(!node||!node.getAttribute)return;
+        if(node.tagName==="IMG")warnImage(node.getAttribute("src"));
+        if(node.tagName==="IMG"||node.tagName==="SOURCE"&&node.parentElement&&node.parentElement.tagName==="PICTURE")
+          scanSourceSet(node.getAttribute("srcset"))
+      },
       scanImages=root=>{
         try{
-          root.querySelectorAll&&root.querySelectorAll("img[src]").forEach(img=>warnImage(img.getAttribute("src")))
+          root.querySelectorAll&&root.querySelectorAll("img[src],img[srcset],picture source[srcset]").forEach(scanImage)
         }
         catch(_){
 
@@ -4079,9 +4107,11 @@
       }
       scanImages(document),
       woObserve((muts,added,roots)=>{
-        for(const node of added)node.tagName==="IMG"&&warnImage(node.getAttribute("src"));
+        for(const mu of muts)if(mu.type==="attributes"&&(mu.attributeName==="src"||mu.attributeName==="srcset"))
+          scanImage(mu.target);
+        for(const node of added)scanImage(node);
         for(const root of roots)scanImages(root)
-      })
+      },!0)
     }
     {
       const REDIRECT_PARAMS=["url",
@@ -21650,7 +21680,7 @@
         },
         warned_grabber_image:{
           title:"Possible IP logger detected",
-          why:"An image request looks associated with IP logging. WardenOne could not confirm that it was blocked; your IP address and request information may already have been exposed.",
+          why:"A page referenced a possible IP-logging image URL. WardenOne cannot confirm whether the browser sent a request or blocked it; your IP address may have been exposed if it was sent.",
           severity:"Warning",
           action:"Leaving prevents further requests but cannot undo requests already sent."
         },

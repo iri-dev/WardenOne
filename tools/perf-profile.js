@@ -65,8 +65,8 @@ function round(x) { return Number.isFinite(x) ? Math.round(x * 100) / 100 : x; }
 const REGRESSIONS = {
   'mutation-dedup': {
     file: 'content.min.js',
-    from: 'if(added.length<2)return{added:added,roots:added,structural:structural};',
-    to: 'if(added.length<2||!0)return{added:added,roots:added,structural:structural};',
+    from: 'if(added.length<2)return{added:added,roots:added,structural:structural,sourceOnly:sourceOnly};',
+    to: 'if(added.length<2||!0)return{added:added,roots:added,structural:structural,sourceOnly:sourceOnly};',
     describe: 'every added node scanned again (the outermost-node dedup undone)',
   },
 };
