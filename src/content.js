@@ -5580,6 +5580,15 @@
           "notion-static.com"]
         },
         {
+          pages:["naturalreaders.com"],
+          destinations:["2poo4vxwjc.execute-api.us-east-1.amazonaws.com",
+          "r0lk19wn54.execute-api.us-east-1.amazonaws.com"]
+        },
+        {
+          pages:["ttsreader.com"],
+          destinations:["us-central1-ttsreader.cloudfunctions.net"]
+        },
+        {
           pages:["dropbox.com"],
           destinations:["dropbox.com",
           "dropboxapi.com",

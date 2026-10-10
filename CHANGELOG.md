@@ -4,6 +4,8 @@
 
 ### Added
 
+- Official GitHub ZIPs now check whether their packaged build is behind the latest complete WardenOne release. A quiet popup notice appears only when GitHub confirms the installed commit is an ancestor; Settings → About WardenOne shows the comparison, manual update steps, and Check again. Source, Store, offline, and unrelated builds are not called outdated.
+
 - Known IP-logger destinations open a WardenOne warning before the page loads. The Activity Center records confirmed logger image blocks and warns about suspicious embedded images when blocking cannot be confirmed, without saving image URL tokens.
 - Packaged logger rules now cover IPLogger.icu and third-party images from IPLocation's tracker host. Reviewed tracker link routes are blocked as embedded requests and open the warning page on direct visits.
 
@@ -29,6 +31,11 @@
   and the blocking screen keeps its explicit option to continue.
 
 ### Fixed
+
+- NaturalReader speech playback works with SessionShield enabled. Its two observed speech service hosts are trusted only when called from NaturalReader pages; other API Gateway projects remain subject to token protection.
+- TTSReader speech playback works with SessionShield enabled. Its observed speech backend is trusted only from TTSReader pages; other Cloud Functions projects remain subject to token protection.
+
+- Twitch recognizes more ad media in live playlists and keeps searching for a clean stream when Twitch drops an ad marker mid-break. Failed searches retry with backoff; if no safe replacement exists, native playback continues and its ad labels stay visible.
 
 - IP-logger image warnings now cover existing images whose `src` or `srcset` changes, including picture sources.
 - Event-driven logger checks now have their own match-feedback budget, preserving reads for Activity Center polling and the site dashboard during alert bursts.

@@ -3428,6 +3428,25 @@ test('gated ad-chrome CSS stays gated and can never hide an ancestor of the live
     'the Turbo/allow-ads overlay probe was dropped');
 });
 
+test('native ad pass-through keeps Twitch ad labels visible', () => {
+  const harness = createPageHarness();
+  const base = harness.document.documentElement.children.find((node) => node.id === 'wo-twitch-adblock-css');
+  const hidden = splitSelectorList(base.textContent.slice(0, base.textContent.indexOf('{display:none!important')));
+  for (const marker of [
+    '[aria-label="Advertisement"]', '[data-a-target="video-ad"]',
+    '[data-a-target="video-ad-label"]', '[data-a-target="video-ad-countdown"]',
+    '[data-a-target="ad-countdown-timer"]', '.tw-ad-label', '.tw-ad-countdown',
+  ]) {
+    assert(!hidden.includes(marker), 'native ad label was hidden before a clean swap: ' + marker);
+  }
+  const sheet = gatedAdChromeSheet();
+  const gate = 'html[data-wo-twitch-adblock="blocked-clean"] ';
+  assert(sheet.includes(gate + '[data-a-target="video-ad-label"]') &&
+    sheet.includes(gate + '.tw-ad-countdown'), 'a clean swap no longer hides known ad chrome');
+  assert(sheet.includes(gate + '[aria-label="Advertisement"]:not(:has(video))'),
+    'the aria-labelled ad wrapper can hide the live video');
+});
+
 test('Turbo house overlay is hidden at startup without ungating generic ad chrome', () => {
   const harness = createPageHarness();
   assert(!harness.document.documentElement.hasAttribute('data-wo-twitch-adblock'),
