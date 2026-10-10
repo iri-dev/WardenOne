@@ -547,6 +547,11 @@
   .ug-open { flex:1; min-width:0; padding:0 12px; display:flex; align-items:center; justify-content:center; line-height:1.2; white-space:nowrap; }
   .ug-refresh { flex:none; width:36px; padding:0; display:grid; place-items:center; }
   .ug-refresh svg { width:16px; height:16px; }
+  .build-update { margin: 9px 12px 0; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--wo-card-gradient); color: var(--ink); }
+  .build-update[hidden] { display: none; }
+  .build-update strong { display: block; color: var(--plum); font: 700 12px/1.3 var(--display); }
+  .build-update p { margin: 4px 0 8px; color: var(--ink-soft); font-size: 11px; line-height: 1.4; }
+  .build-update .btn { font-size: 11px; }
   .nav-btn { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--plum); }
   .nav-btn svg { flex: none; opacity: 0.85; }
   .nav-btn:hover { color: #7d39b8; background: #ecdcf7; }
@@ -1029,6 +1034,12 @@
     </div>
     <label class="tg"><input type="checkbox" id="enabled" checked><span class="track"></span><span class="knob"></span></label>
   </div>
+
+  <aside class="build-update" id="wo-build-update" role="status" aria-live="polite" hidden>
+    <strong>WardenOne update available</strong>
+    <p id="wo-build-update-detail"></p>
+    <button class="btn" id="wo-build-update-open" type="button">See update steps</button>
+  </aside>
 
   <div class="top-quick">
     <button class="btn primary" id="all-on" type="button">Turn on recommended protections</button>
@@ -2453,6 +2464,7 @@
   <div class="site-dash-foot" id="site-dash-foot"></div>
 </section>
 <script src="build-profile.js"></script>
+<script src="build-update.js"></script>
 <script src="eyeshield-profiles.js"></script>
 <script src="notification-schema.js"></script>
 <section class="arrange-view" id="arrange-view" aria-labelledby="arrange-title" hidden>

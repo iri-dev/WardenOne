@@ -12,6 +12,7 @@
   "background.js",
   "bridge.js",
   "build-profile.js",
+  "build-update.js",
   "cert-error.html",
   "cert-error.js",
   "command-palette.js",

@@ -3018,6 +3018,7 @@ initAdvancedProvidersMemory();
 initEyeShield();
 document.addEventListener('DOMContentLoaded', load, { once: true });
 renderUpdateGuardian();
+if (typeof WO_BUILD_UPDATE !== 'undefined') void WO_BUILD_UPDATE.renderPopup();
 renderListMeta();
 renderProtectionHealth();
 renderNotificationUnread();

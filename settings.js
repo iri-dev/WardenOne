@@ -852,6 +852,12 @@ function aboutPage() {
     (commit ? ' · Build ' + esc(commit.slice(0, 7)) : '') + '</p>' +
     '<p class="about-tagline">A browser extension that helps block ads and trackers, warns about phishing and scams, checks risky downloads, and gives you control over privacy and page behaviour.</p>' +
     '<p class="about-maker">Built by <a href="' + PROJECT_LINKS.maker + '" target="_blank" rel="noopener noreferrer">iri.dev</a> 💜</p></div></section>' +
+    '<section class="info-card"><h3>WardenOne updates</h3><p class="about-build-status" id="wo-build-status" role="status" aria-live="polite">Checking the official WardenOne release…</p>' +
+    '<p id="wo-build-detail"></p><ol class="about-build-steps"><li>Download the ZIP from the official GitHub release and unzip it.</li>' +
+    '<li>Replace the contents of your installed WardenOne folder. Keep that folder at the same path.</li>' +
+    '<li>Open your browser’s Extensions page and press Reload on WardenOne.</li></ol>' +
+    '<div class="about-build-actions"><a class="btn primary" href="https://github.com/iri-dev/WardenOne/releases/latest" target="_blank" rel="noopener noreferrer">Open official release</a>' +
+    '<button class="btn" id="wo-build-check" type="button">Check again</button></div></section>' +
     '<section class="info-card"><h3>What WardenOne is</h3><p>WardenOne brings browser protection and wellbeing tools together in one place. You can choose which protections run, see what happened on a site, and change a setting when a page needs it. It works on your device without an account or telemetry.</p></section>' +
     '<section class="info-card"><h3>Project</h3><div class="info-links">' +
     infoLink(PROJECT_LINKS.home, 'Official website', 'News and the current WardenOne download.', 'i-globe') +
@@ -923,6 +929,7 @@ function renderPage() {
     if (p.id === 'cleanup') void loadListsBundle();
   }
   paint();
+  if (!q && current === 'about' && typeof WO_BUILD_UPDATE !== 'undefined') void WO_BUILD_UPDATE.renderAbout();
 }
 
 /* ---------- Recently changed, favorites, and the two overview lists ---------- */

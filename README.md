@@ -24,8 +24,8 @@ redirects. It keeps an eye on your other extensions too. And it all runs on your
 > **No WardenOne backend · Entirely open source · Local-first by design**
 >
 > There's no account and no analytics. Your browsing doesn't go through any server of mine (I don't
-> have one). Everything stays on your device. A few optional checks can ask an outside service
-> something but only if you turn them on, and they tell you exactly what gets sent.
+> have one). Public-list and update checks contact their named sources; optional reputation checks
+> run only if you turn them on. The privacy policy explains exactly what each sends.
 
 > [!WARNING]
 > **Official builds only.** WardenOne is a browser extension, never an `.exe`, installer or setup program. Download it only from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne). If you received another copy, read the [impersonation incident notice](https://iri-dev.github.io/WardenOne/stolen).
@@ -100,6 +100,16 @@ does **not** update itself from GitHub so you have to do it yourself:
 
 Keep the folder in the same place. If the path changes Chromium can treat it as a whole different
 extension and your settings won't come with it.
+
+The popup checks WardenOne's own GitHub build when you open it. If GitHub confirms that your
+installed build is an ancestor of the latest complete release, a small update notice appears near
+the top of the popup. Open **Settings → About WardenOne** to compare the build IDs, check again, and
+follow the update steps. The check uses build commits because the extension version stays the same
+between rolling builds. A source checkout without a packaged build ID, a Store build, a failed
+check, or a build from a different history is never called outdated. GitHub sees the normal request
+from your IP address; the commit comparison also sends your public build ID, not your browsing
+history or the site you are visiting. Results are reused for up to six hours while the browser
+stays open. WardenOne does not install updates for you.
 
 </details>
 

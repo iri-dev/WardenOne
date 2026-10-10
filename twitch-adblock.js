@@ -293,7 +293,6 @@
   const adCss = document.createElement('style');
   adCss.id = 'wo-twitch-adblock-css';
   adCss.textContent = [
-    '[aria-label="Advertisement"]',
     '#player-ads',
     '[data-test-selector="sda-wrapper"]',
     '[data-test-selector="sda-container"]',
@@ -304,10 +303,6 @@
     '[data-test-selector="ad-banner-top"]',
     '[data-test-selector="unmuted-ads-text"]',
     '[data-test-selector="muted-ads-text"]',
-    '[data-a-target="video-ad"]',
-    '[data-a-target="video-ad-label"]',
-    '[data-a-target="video-ad-countdown"]',
-    '[data-a-target="ad-countdown-timer"]',
     '[data-test-selector="sad-overlay"]',
     'video[data-wo-twitch-independent-ad="true"]',
     '[class*="stream-display-ad__wrapper"]',
@@ -320,9 +315,6 @@
     '[class*="vertical-video-ad__frame"]',
     '[class*="vertical-video-ad__iframe"]',
     '[class*="vertical-video-ad__creative"]',
-    '.player-twitch-ad-header',
-    '.tw-ad-label',
-    '.tw-ad-countdown',
     '.audio-ax-overlay-base',
     'button[aria-label="Learn more about this ad"]',
     TWITCH_TURBO_OVERLAY_SELECTOR,
@@ -1698,15 +1690,8 @@
       style.id = 'wo-twitch-ad-chrome';
       adChromeCss = style;
       const gate = 'html[data-wo-twitch-adblock="blocked-clean"] ';
-      // Honest status of this list: the exact-match badge selectors that used to
-      // live here were byte-identical to ungated rules in adCss above, and the
-      // badge was still visible during a live swap, so they demonstrably no
-      // longer match anything. What follows is a better-evidenced replacement,
-      // NOT a verified fix. Neither reported symptom is confirmed closed: the
-      // "Ad" badge is still guesswork, and the "Commercial break in progress"
-      // placeholder is identified by its text, which CSS cannot match at all --
-      // only the Turbo/allow-ads link inside the same overlay is addressable.
-      //
+      // Keep ad labels visible when a clean replacement was unavailable.
+      // The text-only commercial-break placeholder still has no safe selector.
       // Structural rule for everything below: a selector that can match an
       // ANCESTOR of the live <video> carries a :not(:has(video)) guard, because
       // display:none on an ancestor blanks the whole picture for the break --
@@ -1715,14 +1700,20 @@
       // Leaf-shaped ad markers only. Kept free of :has() so an engine without it
       // still applies them.
       const leafSelectors = [
+        '[data-a-target="video-ad-label"]',
+        '[data-a-target="video-ad-countdown"]',
         '[data-a-target*="ad-countdown" i]',
-        '[class*="circle-countdown" i]'
+        '[class*="circle-countdown" i]',
+        '.player-twitch-ad-header',
+        '.tw-ad-label',
+        '.tw-ad-countdown'
       ];
       // Substring supersets of markers Twitch has used, plus the aria-labelled
       // chrome. Each of these can name a wrapper as easily as a badge, so none of
       // them is allowed to match an element that contains a video. The :where()
       // list additionally spares the player's own identities by name.
       const wrapperSelectors = [
+        '[aria-label="Advertisement"]',
         '[data-a-target*="video-ad" i]',
         '[aria-label*="advertisement" i]',
         '.video-player__ad-info-container'
@@ -1908,7 +1899,10 @@
     const AD_IMMINENT_MS = 12000;
     let genericAdImminentUntil = 0;
     const adImminentByChannel = new Map();
-    const AD_URI_RE = /\/(?:adsquared|_404)\/|\/stitched-ad(?:[-_.\/]|$)/i;
+    const AD_URI_RE = /\/(?:adsquared|_404|processing)\/|\/stitched-ad(?:[-_.\/]|$)/i;
+    function knownAdMediaUri(uri) {
+      return AD_URI_RE.test(String(uri || '').split(/[?#]/, 1)[0]);
+    }
     const LOW_LATENCY_TAG_RE = /^#EXT-X-(?:SERVER-CONTROL|PART-INF|PART|PRELOAD-HINT|RENDITION-REPORT|SKIP|TWITCH-PREFETCH)\b/i;
     const GQL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
     const MEDIA_TTL = 5 * 60 * 1000;
@@ -1923,6 +1917,7 @@
     const BACKUP_PRIME_MS = 2 * 1000;
     const BACKUP_SEARCH_TIMEOUT_MS = 2400;
     const NEGATIVE_TTL = 30 * 1000;
+    const AD_RETRY_DELAYS_MS = [6000, 12000, 24000, NEGATIVE_TTL];
     const MEDIA_MAX = 128;
     const BACKUP_MAX = 12;
     const BACKUP_WAIT_MS = 900;
@@ -2513,7 +2508,7 @@
             (!Number.isFinite(programTime) || !ranges.length);
           const markerScoped = hasMarker && !isLiveTitle &&
             (explicitlyNonLive || hasLiveTitle || (strongMetadata && !hasLiveTitle));
-          if (AD_URI_RE.test(uri) || cueActive || markerScoped || authoritativeScoped ||
+          if (knownAdMediaUri(uri) || cueActive || markerScoped || authoritativeScoped ||
               overlapsTimedAd(ranges, programTime, duration)) {
             fullAds.add(index);
             confirmed++;
@@ -2537,7 +2532,7 @@
           const partDuration = Number(parseAttributes(line).DURATION || 0);
           const authoritativeScoped = authoritativeRemaining > 0 &&
             (!Number.isFinite(programTime) || !ranges.length);
-          if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
+          if (knownAdMediaUri(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
               authoritativeScoped || overlapsTimedAd(ranges, programTime, partDuration)) {
             inlineAds.add(index);
             confirmed++;
@@ -2552,7 +2547,7 @@
           const uri = taggedUri(line);
           const authoritativeScoped = authoritativeRemaining > 0 &&
             (!Number.isFinite(programTime) || !ranges.length);
-          if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
+          if (knownAdMediaUri(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
               authoritativeScoped) {
             playable++;
             confirmed++;
@@ -2564,7 +2559,7 @@
           const uri = line.replace(/^#EXT-X-TWITCH-PREFETCH:/i, '').trim();
           const authoritativeScoped = authoritativeRemaining > 0 &&
             (!Number.isFinite(programTime) || !ranges.length);
-          if (AD_URI_RE.test(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
+          if (knownAdMediaUri(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
               authoritativeScoped) {
             playable++;
             confirmed++;
@@ -3795,8 +3790,12 @@
       prune(backups, BACKUP_MAX, BACKUP_TTL);
       if (!full && Number(info.warmRetryAt || 0) > Date.now()) return Promise.resolve(null);
       const cached = backups.get(key);
+      let failedAttempts = 0;
       if (cached && cached.failed) {
-        if (Date.now() - cached.ts < NEGATIVE_TTL) return Promise.resolve(null);
+        failedAttempts = Math.max(1, Math.min(AD_RETRY_DELAYS_MS.length,
+          Number(cached.attempts) || 1));
+        const retryDelay = full ? AD_RETRY_DELAYS_MS[failedAttempts - 1] : NEGATIVE_TTL;
+        if (Date.now() - cached.ts < retryDelay) return Promise.resolve(null);
         backups.delete(key);
       }
       if (cached && !cached.failed && Date.now() - cached.ts < BACKUP_TTL) return Promise.resolve(cached);
@@ -3818,9 +3817,9 @@
           backups.set(key, value);
           prune(backups, BACKUP_MAX, BACKUP_TTL);
         } else if (full) {
-          // Only a full (ad-time) attempt that exhausted every player type sets the
-          // negative sentinel; a light pre-warm failing must not block the ad-time try.
-          backups.set(key, { failed: true, ts: Date.now() });
+          // Retry a missed ad pod once soon, then back off. A failed warm probe never sets this.
+          backups.set(key, { failed: true, ts: Date.now(),
+            attempts: Math.min(failedAttempts + 1, AD_RETRY_DELAYS_MS.length) });
         } else {
           info.warmRetryAt = Date.now() + 60 * 1000;
         }
@@ -4730,7 +4729,11 @@
               return held;
             }
           } catch (_) {}
-          try { getBackup(info, false); } catch (_) {}
+          // The marker can slide away while its ad media remains in this break.
+          // Keep the bounded full search alive without holding native playback.
+          try {
+            if (info) getBackup(info, true).catch(() => {});
+          } catch (_) {}
           if (sequenceState) sequenceState.backupActive = false;
           const nativeText = sequenceNativeBreak(sequenceState, url, text);
           if (nativeText === null) {

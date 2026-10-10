@@ -521,6 +521,31 @@ async function run() {
     await value("document.getElementById('mem-site-input').value = 'https://www.youtube.com/watch?v=abc'; document.getElementById('mem-site-add').click()");
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r((d.wardenone_config?.memoryNeverSleepHosts || []).includes('youtube.com'))))", 'typed URL normalised to its saved host');
     await until("document.getElementById('mem-site-status').textContent.includes('youtube.com')", 'the manager to show the host it actually saved');
+    assert(await value("document.getElementById('wo-build-update').hidden"), 'source copies do not show a stale-build warning');
+    await value(`(() => {
+      woSourceCommit = () => '${'a'.repeat(40)}';
+      fetch = async (url) => ({
+        ok: true, url, headers: new Headers(),
+        text: async () => JSON.stringify(url.includes('/compare/')
+          ? { status: 'ahead', ahead_by: 1, behind_by: 0,
+              base_commit: { sha: '${'a'.repeat(40)}' }, merge_base_commit: { sha: '${'a'.repeat(40)}' } }
+          : { tag_name: 'build-${'b'.repeat(40)}', target_commitish: '${'b'.repeat(40)}',
+              draft: false, prerelease: false, published_at: '2026-10-10T04:01:09Z',
+              assets: [{ name: 'WardenOne-latest.zip', state: 'uploaded', size: 1000 },
+                { name: 'WardenOne-latest.zip.sha256', state: 'uploaded', size: 87 }] }),
+      });
+      return WO_BUILD_UPDATE.renderPopup();
+    })()`);
+    await until("!document.getElementById('wo-build-update').hidden", 'old-build popup notice');
+    assert(await value("document.getElementById('wo-build-update-detail').textContent.includes('Installed aaaaaaa · Latest bbbbbbb')"));
+    assert(await value("document.getElementById('wo-build-update-open').textContent.includes('update steps')"));
+    if (process.env.WARDENONE_BUILD_UPDATE_SCREENSHOT) {
+      await cdp.send('Page.bringToFront', {}, page.sessionId);
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'png', clip: { x: 0, y: 0, width: 348, height: 280, scale: 1 }, captureBeyondViewport: true,
+      }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_BUILD_UPDATE_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
     console.log('[ok] real popup controls, search, health, diagnostics, updates, scroll, reopen and master-switch checks passed');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }

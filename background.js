@@ -20873,7 +20873,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     '__wardenone_badge_counts', '__wardenone_ext_scan_done', '__wardenone_hist_buffer',
     '__wardenone_menu_built', '__wardenone_sb_bypass', '__wardenone_tally_state',
     'wardenone_block_offer', 'wardenone_blocklist_session', 'wardenone_download_handled',
-    'wardenone_erase_rebuild', 'wardenone_manual_check_jobs', 'wardenone_palette_grant',
+    'wardenone_erase_rebuild', 'wardenone_manual_check_jobs', 'wardenone_palette_grant', 'wardenone_build_update_v1',
     'wardenone_rebind_session', 'wardenone_tracker_session', 'wardenone_sw_registered',
     'wardenone_session_started_at',
   ] },
@@ -23460,7 +23460,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const report = { checks: [], repaired: [], ok: true };
           const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
-            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js');
+            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'build-update.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.
           for (const omitted of woOmittedFiles()) {
