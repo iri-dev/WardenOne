@@ -95,6 +95,9 @@ const familyDestinations = [
   ['app.slack.com', 'files.slack-edge.com'],
   ['www.figma.com', 's3-alpha.figmausercontent.com'],
   ['www.notion.so', 'static.notion-static.com'],
+  ['www.naturalreaders.com', '2poo4vxwjc.execute-api.us-east-1.amazonaws.com'],
+  ['www.naturalreaders.com', 'r0lk19wn54.execute-api.us-east-1.amazonaws.com'],
+  ['ttsreader.com', 'us-central1-ttsreader.cloudfunctions.net'],
   ['www.dropbox.com', 'content.dropboxapi.com'],
   ['drive.google.com', 'lh3.googleusercontent.com'],
   ['accounts.google.com', 'oauth2.googleapis.com'],
@@ -127,6 +130,8 @@ const sessionPages = [
   'app.slack.com',
   'www.figma.com',
   'www.notion.so',
+  'www.naturalreaders.com',
+  'ttsreader.com',
   'www.dropbox.com',
   'drive.google.com',
   'accounts.google.com',
@@ -152,6 +157,36 @@ assert.strictEqual(
   isTrustedDestination('figma.com.evil.example', 's3-alpha.figmausercontent.com'),
   false,
   'a spoofed page hostname must not activate a trusted family',
+);
+assert.strictEqual(
+  isTrustedDestination('other-reader.example', '2poo4vxwjc.execute-api.us-east-1.amazonaws.com'),
+  false,
+  'NaturalReader speech service trust must stay on NaturalReader pages',
+);
+assert.strictEqual(
+  isTrustedDestination('naturalreaders.com.evil.example', '2poo4vxwjc.execute-api.us-east-1.amazonaws.com'),
+  false,
+  'a spoofed NaturalReader page must not gain speech service trust',
+);
+assert.strictEqual(
+  isTrustedDestination('www.naturalreaders.com', 'attacker.execute-api.us-east-1.amazonaws.com'),
+  false,
+  'other API Gateway projects must remain foreign to NaturalReader',
+);
+assert.strictEqual(
+  isTrustedDestination('other-reader.example', 'us-central1-ttsreader.cloudfunctions.net'),
+  false,
+  'TTSReader speech service trust must stay on TTSReader pages',
+);
+assert.strictEqual(
+  isTrustedDestination('ttsreader.com.evil.example', 'us-central1-ttsreader.cloudfunctions.net'),
+  false,
+  'a spoofed TTSReader page must not gain speech service trust',
+);
+assert.strictEqual(
+  isTrustedDestination('ttsreader.com', 'us-central1-attacker.cloudfunctions.net'),
+  false,
+  'other Cloud Functions projects must remain foreign to TTSReader',
 );
 /* Spotify is a GLOBAL destination, not a per-app family entry: it is a public OAuth
    API that third-party apps are built on, exactly like YouTube and Google. Scoping it
@@ -191,4 +226,4 @@ assert(!/\bsessionTrusted\b/.test(source), 'blanket sessionTrusted bypass has be
 assert(!/\btrustedFamilyRe\b/.test(source), 'legacy partial family map has been removed');
 assert(!/\bGOOD_DEST\s*=/.test(source), 'brand-prefix destination regex has been removed');
 
-console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 11} assertions)`);
+console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 17} assertions)`);

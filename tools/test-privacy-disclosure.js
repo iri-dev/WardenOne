@@ -256,9 +256,9 @@ check('the policy says the learner keeps a count of sites and never their names'
 check('and says what happened to the names an earlier build kept',
   /80 named sites per tracker/.test(policy) && /the names are gone/.test(policy));
 
-/* 7. The summary at the top counted five ways data leaves and there were seven. */
+/* The summary at the top must account for every automatic and user-started request. */
 check('the short version accounts for the button-pressed checks',
-  /network filtering\s*\n?\s*self-test/.test(policy) && /\(7\)/.test(policy),
+  /network filtering\s*\n?\s*self-test/.test(policy) && /\(8\)/.test(policy),
   'a summary that stops at (5) is where a reader forms their view');
 /* And it said "the only times data leaves your device are" without the browser-release check,
    which runs on its own whenever the popup opens -- the detailed section named it, the summary a
@@ -272,6 +272,14 @@ check('the short version names the automatic browser-release check',
   /only times data leaves your device/.test(shortVersion) && /browser-release check when you open the\s*\n?\s*popup/.test(shortVersion)
     && /update\s*\n?\s*guardian/.test(shortVersion),
   'the summary claims to list every way data leaves; Update Guardian runs on every popup open');
+check('the short version names the automatic WardenOne build check',
+  /wardenone build check when the popup\s*\n?\s*opens/i.test(shortVersion)
+    && /public build ID/i.test(shortVersion),
+  'the installed public commit is sent to GitHub for ancestry checks');
+check('the build check is disclosed with its GitHub destination',
+  /### 1c\. WardenOne build check/.test(POLICY)
+    && /`api\.github\.com`/.test(POLICY)
+    && /public\s+commit IDs/.test(POLICY));
 check('and does not suggest it can be switched off', /it has no off switch/.test(shortVersion),
   'there is no setting for it; if one is added, say so instead');
 /* The six-hour cache lives in storage.session, which Chrome clears on a browser restart and on
@@ -294,7 +302,8 @@ check('the website does not call every outside contact opt-in',
   !/contact an outside service are opt-in/i.test(SITE_HTML) && !/(checks|requests) that contact an outside service[^<.]{0,40}\bopt-in/i.test(SITE_HTML),
   'filter-list downloads and the browser-release check happen without a switch');
 check('and names the automatic browser-release check beside the opt-in lookups',
-  /browser-release check when you open the popup/.test(SITE_HTML) && /lookups that would are opt-in/.test(SITE_HTML));
+  /browser-release check when you open the popup/.test(SITE_HTML)
+    && /WardenOne build check/.test(SITE_HTML) && /lookups that would are opt-in/.test(SITE_HTML));
 
 /* 8. The Permissions page inside the extension has its own "What can leave the browser" list,
       and it is the one a reader actually opens from the popup. It listed only the opt-in
@@ -385,7 +394,7 @@ check('the affirmation is a section a reviewer can find, not a buried clause',
 check('the affirmation states the no-advertising limb explicitly',
   /never.{0,40}transferred or used for advertising/.test(policy));
 check('the policy date was refreshed alongside the content',
-  /last updated: october 1, 2026/.test(policy));
+  /last updated: october 10, 2026/.test(policy));
 
 /* M52: "the complete list" has to be complete about what the reader adds themselves, too. A
    subscribed filter list is fetched from a host the reader chose, so it cannot be named -- it has

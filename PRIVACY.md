@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: October 1, 2026**
+**Last updated: October 10, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -32,11 +32,12 @@ unclear, contact us (see **Contact** below).
   login-page age check that sends a site's domain to a public registration-data service,
   (6) **opt-in** reputation look-ups that you must switch on yourself — and which, once on,
   **send the addresses of pages you open** to the provider automatically, which is why they
-  are off by default and described in full below — (7) four things you start by pressing a
+  are off by default and described in full below — (7) a WardenOne build check when the popup
+  opens; GitHub sees the installed public build ID only if a comparison is needed — (8) four things you start by pressing a
   button — the site breach check, the extension checker, fetching a filter list you added
   yourself, and the network filtering
   self-test, **which deliberately requests a favicon from named adult and malware-test
-  domains and can therefore show up in DNS or filter logs** — and (8) Twitch's own API,
+  domains and can therefore show up in DNS or filter logs** — and (9) Twitch's own API,
   while you are on Twitch, for the ad-blocking and rewind features. Each is described in
   detail below, and the full list of hosts is there rather than here.
 
@@ -192,6 +193,22 @@ are kept in temporary extension storage for up to six hours. That storage is cle
 the browser closes or WardenOne is reloaded or updated, so the first popup after a restart
 asks again even if six hours have not passed. If the check fails, WardenOne does not guess
 that your browser is current.
+
+### 1c. WardenOne build check (when you open the popup)
+
+Official GitHub ZIPs carry the full public source commit. When you open the popup,
+WardenOne asks `api.github.com` for this project's latest published release. If its
+commit differs from your installed build, WardenOne asks GitHub whether that installed
+commit is an ancestor of the release commit. That second request includes both public
+commit IDs in its address. No browsing history, page address, settings, account, or
+cookies are sent. GitHub still sees a normal request from your IP address. The result
+is kept in temporary extension storage for up to six hours, or ten minutes when the
+check fails. **Check again** in Settings → About WardenOne bypasses the cache.
+
+The check does not run for source copies without a packaged build ID or Store packages.
+It never downloads or installs code. It only shows an update notice when GitHub confirms
+the installed commit is older; network errors and unrelated commit histories do not
+become update claims.
 
 ### 2. Script tamper check — "Script Drift Guard" (on by default)
 
@@ -425,8 +442,9 @@ request and your IP address, as it would if you opened the address yourself, and
 else. Which host that is depends entirely on the address you chose, which is why it is
 described here rather than named. An earlier version of this policy left this out.
 
-**That is the complete list of external endpoints WardenOne contacts.** Everything above
-is a public filter list, a browser release check when you open the popup, a check you switched on, or a button you pressed. There is
+**That is the complete list of external endpoints WardenOne contacts.** The requests above
+cover public lists, browser and WardenOne build checks, script re-checks, Twitch while you
+use Twitch, checks you switched on, and actions you started. There is
 no background telemetry, no crash reporting, no usage analytics, and nothing whatsoever is
 sent to WardenOne's developer — there is no WardenOne server to send it to.
 

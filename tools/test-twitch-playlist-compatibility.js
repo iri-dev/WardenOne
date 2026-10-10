@@ -603,6 +603,41 @@ test('known ad URI is blocked even when no Twitch marker is present', async () =
   assertNativeFailOpen(runtime, body, KNOWN_AD_URI_NO_MARKER, 'known ad URI without marker');
 });
 
+test('processing ad segments swap to clean media across channels while similar live paths stay native', async () => {
+  const start = Date.parse('2026-07-23T00:00:00.000Z');
+  const processingAd = sequencedPlaylist({ sequence: 500, startMs: start,
+    title: 'live', path: 'processing' });
+  const clean = sequencedPlaylist({ sequence: 503, startMs: start + 6000,
+    path: 'clean-route' });
+  for (const channel of ['fixturechannel', 'secondchannel']) {
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({ originalMedia: processingAd, backupMedia: clean }),
+    });
+    const masterUrl = MASTER_URL.replace('/' + CHANNEL + '.m3u8', '/' + channel + '.m3u8');
+    await runtime.fetch(masterUrl);
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(body.includes('/clean-route/') && !body.includes('/processing/'),
+      channel + ' did not swap a markerless processing ad URI to clean media');
+    assert(runtime.state.messages.some((message) => message.type === 'ad-state' &&
+      message.state === 'blocked-clean'), channel + ' did not report a clean swap');
+    assert(runtime.state.gqlRequests.some((message) =>
+      message.body.variables.login === channel), channel + ' used another stream token');
+  }
+
+  for (const path of ['processing-live', 'live']) {
+    const live = sequencedPlaylist({ sequence: 500, startMs: start, path: path });
+    const ordinary = path === 'live' ? live.replace(/\.ts/g, ".ts?ref=/processing/") : live;
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({ originalMedia: ordinary, backupMedia: clean }),
+    });
+    await mapMaster(runtime);
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(body === ordinary, 'ordinary ' + path + ' media was treated as a processing ad');
+    assert(runtime.state.gqlRequests.length === 0,
+      'ordinary ' + path + ' media started an ad-time clean-stream search');
+  }
+});
+
 test('stitched-ad media URI is blocked even when EXTINF explicitly says live', async () => {
   const url = 'https://video-edge-fixture.ttvnw.net/unmapped/stitched-ad-uri.m3u8';
   const runtime = createRuntime({
@@ -1846,6 +1881,32 @@ test('prefetch-only Twitch ad snapshots still activate a clean mapped backup', a
   const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
   assert(body === CLEAN_MEDIA,
     'prefetch-only ad snapshot bypassed the clean-stream replacement path');
+});
+
+test('processing ad URLs in low-latency hints do not reach the native player', async () => {
+  const adUrl = 'https://video-weaver-fixture.ttvnw.net/processing/ad-501.m4s';
+  const hints = [
+    '#EXT-X-PART:DURATION=0.500,URI="' + adUrl + '"',
+    '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="' + adUrl + '"',
+    '#EXT-X-TWITCH-PREFETCH:' + adUrl,
+  ];
+  for (const hint of hints) {
+    const media = `#EXTM3U
+#EXT-X-VERSION:9
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:500
+#EXT-X-PROGRAM-DATE-TIME:2026-07-23T00:00:00.000Z
+#EXTINF:2.000,live
+https://video-edge-fixture.ttvnw.net/live/500.ts
+${hint}
+`;
+    const runtime = createRuntime({
+      fetchRoute: standardFetchRoute({ originalMedia: media, backupMedia: CLEAN_MEDIA }),
+    });
+    await mapMaster(runtime);
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(body === CLEAN_MEDIA, 'processing ad hint bypassed the clean swap: ' + hint.split(':')[0]);
+  }
 });
 
 test('relative backup variant URIs are absolutized against the V2 Usher master', async () => {
@@ -3405,11 +3466,112 @@ test('negative backup cache stays bounded and never returns its failed sentinel 
     'failed-cache sentinel became an empty successful playlist');
   assertNativeFailOpen(runtime, retryBody, STITCHED_AD, 'negative-cache retry inside TTL');
 
-  runtime.advance(30001);
+  runtime.advance(5999);
+  const earlyBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(runtime.state.gqlRequests.length === beforeRetry,
+    'failed backup retried before the bounded ad-time delay');
+  assertNativeFailOpen(runtime, earlyBody, STITCHED_AD, 'negative-cache retry before delay');
+
+  runtime.advance(2);
   const expiredBody = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
   assert(runtime.state.gqlRequests.length === beforeRetry + 6,
-    'expired negative sentinel was not deleted and retried exactly once');
-  assertNativeFailOpen(runtime, expiredBody, STITCHED_AD, 'negative-cache retry after TTL');
+    'first ad-time retry did not launch exactly one bounded token flight');
+  assertNativeFailOpen(runtime, expiredBody, STITCHED_AD, 'negative-cache ad-time retry');
+
+  runtime.advance(6001);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  assert(runtime.state.gqlRequests.length === beforeRetry + 6,
+    'second failed backup ignored its longer backoff');
+  runtime.advance(6000);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  assert(runtime.state.gqlRequests.length === beforeRetry + 12,
+    'second ad-time retry did not run after the longer backoff');
+});
+
+test('a later clean route can recover the same ad pod after a transient backup failure', async () => {
+  let available = false;
+  let ad = false;
+  const start = Date.parse('2026-07-23T00:00:00.000Z');
+  const beforeAd = sequencedPlaylist({ sequence: 500, startMs: start, path: 'before-ad' });
+  const adMedia = sequencedPlaylist({ sequence: 503, startMs: start + 6000,
+    marker: '#EXT-X-DATERANGE:ID="stitched-ad-retry",CLASS="twitch-stitched-ad",DURATION=30.0',
+    title: 'advertisement', path: 'commercial' });
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: start + 6000,
+    fetchRoute: standardFetchRoute({
+      originalMedia() { return ad ? adMedia : beforeAd; },
+      backupMedia: sequencedPlaylist({
+        sequence: 506, startMs: start + 12000,
+        path: 'recovered-clean',
+      }),
+    }),
+    gqlRoute(message) {
+      return available
+        ? jsonResponse(nestedToken(message.body.variables.playerType))
+        : jsonResponse({ errors: [{ message: 'temporary fixture failure' }] }, 403);
+    },
+  });
+  await mapMaster(runtime);
+  assert(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text() === beforeAd,
+    'fixture did not establish normal live playback');
+  ad = true;
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assertNativeFailOpen(runtime, first, adMedia, 'first failed backup');
+  available = true;
+  runtime.advance(6001);
+  const recovered = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(recovered.includes('/recovered-clean/') && !recovered.includes('/commercial/'),
+    'retry did not replace the remaining ad with advancing clean media: '
+    + JSON.stringify({ requests: runtime.state.gqlRequests.length, body: recovered.slice(0, 240),
+      logs: runtime.state.messages.filter((message) => message.type === 'log').slice(-12).map((message) => message.m) }));
+  assert(runtime.state.messages.some((message) => message.type === 'ad-state' && message.state === 'blocked-clean'),
+    'successful retry did not report the clean replacement');
+});
+
+test('a slid-out ad marker keeps retrying the full clean search until the break ends', async () => {
+  const start = Date.parse('2026-07-23T00:00:00.000Z');
+  let available = false;
+  let poll = 0;
+  const beforeAd = sequencedPlaylist({ sequence: 500, startMs: start, path: 'before-ad' });
+  const ad = sequencedPlaylist({ sequence: 503, startMs: start + 6000,
+    marker: '#EXT-X-DATERANGE:ID="stitched-ad-slide-retry",CLASS="twitch-stitched-ad",DURATION=30.0',
+    title: 'advertisement', path: 'commercial' });
+  const markerless = [506, 509].map((sequence, index) =>
+    sequencedPlaylist({ sequence: sequence, startMs: start + 12000 + index * 6000,
+      path: 'generic-ad-tail' }).replace(/#EXTINF:2\.000,live/g, '#EXTINF:2.000,'));
+  const runtime = createRuntime({
+    fakeClock: true,
+    now: start + 6000,
+    fetchRoute: standardFetchRoute({
+      originalMedia() { return [beforeAd, ad, ...markerless][poll++]; },
+      backupMedia: sequencedPlaylist({ sequence: 509, startMs: start + 18000,
+        path: 'recovered-clean' }),
+    }),
+    gqlRoute(message) {
+      return available
+        ? jsonResponse(nestedToken(message.body.variables.playerType))
+        : jsonResponse({ errors: [{ message: 'temporary fixture failure' }] }, 403);
+    },
+  });
+  await mapMaster(runtime);
+  assert(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text() === beforeAd,
+    'fixture did not establish live playback before the ad');
+  const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assertNativeFailOpen(runtime, first, ad, 'initial ad-time search failure');
+  const initialTokens = runtime.state.gqlRequests.length;
+  available = true;
+  runtime.advance(6001);
+  const generic = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assertNativeFailOpen(runtime, generic, markerless[0], 'markerless ad tail before retry');
+  for (let i = 0; i < 8; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert(runtime.state.gqlRequests.length > initialTokens,
+    'markerless quarantine did not retry the full clean search');
+  const recovered = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(recovered.includes('/recovered-clean/') && !recovered.includes('/generic-ad-tail/'),
+    'the later clean route did not replace the remaining markerless ad media');
+  assert(runtime.state.messages.some((message) => message.type === 'ad-state' &&
+    message.state === 'blocked-clean'), 'markerless recovery did not report the clean swap');
 });
 
 test('worker config-off is a byte-for-byte pass-through with no backup work', async () => {

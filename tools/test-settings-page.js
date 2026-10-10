@@ -60,7 +60,7 @@ check('Memory Shield explains its unconditional video and camera/mic protections
   settingsJs.includes('Video/live platforms and active camera/mic sessions are always protected.'));
 
 const scripts = Array.from(settingsHtml.matchAll(/<script src="([^"]+)"><\/script>/g)).map((m) => m[1]);
-assert.deepStrictEqual(scripts, ['build-profile.js', 'eyeshield-profiles.js', 'notification-schema.js', 'popup-diagnostics.js', 'settings-data.js', 'site-dashboard-shared.js', 'config-lock.js', 'settings.js'], 'settings.html loads what settings.js uses, before it');
+assert.deepStrictEqual(scripts, ['build-profile.js', 'build-update.js', 'eyeshield-profiles.js', 'notification-schema.js', 'popup-diagnostics.js', 'settings-data.js', 'site-dashboard-shared.js', 'config-lock.js', 'settings.js'], 'settings.html loads what settings.js uses, before it');
 check('the page loads nothing from outside the package', !/(?:src|href)="(?:https?:)?\/\//.test(settingsHtml.replace(/<a [^>]*>/g, '')) && !settingsHtml.includes('../'));
 check('the browser’s Extension options is Settings', manifest.options_page === 'settings.html');
 check('the popup’s Settings button opens it as the options page', /settingsBtn\.addEventListener\('click', \(\) => \{\s*try \{\s*chrome\.runtime\.openOptionsPage\(/.test(popupJs));
