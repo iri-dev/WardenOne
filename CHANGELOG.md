@@ -4,6 +4,9 @@
 
 ### Added
 
+- Known IP-logger destinations open a WardenOne warning before the page loads. The Activity Center records confirmed logger image blocks and warns about suspicious embedded images when blocking cannot be confirmed, without saving image URL tokens.
+- Packaged logger rules now cover IPLogger.icu and third-party images from IPLocation's tracker host. Reviewed tracker link routes are blocked as embedded requests and open the warning page on direct visits.
+
 - Resource Saver can show still frames for loaded GIF images and restore playback on click. The separate option is off by default.
 
 - OAuth Grant Guard now covers Apple, Meta, Spotify, Slack, Dropbox, GitLab, Atlassian, LinkedIn and Twitch consent screens while keeping ordinary sign-in and basic profile grants quiet.
@@ -26,6 +29,10 @@
   and the blocking screen keeps its explicit option to continue.
 
 ### Fixed
+
+- IP-logger reports now distinguish confirmed network blocks, unconfirmed image or navigation observations, and unavailable network protection. Match feedback is shared across WardenOne features to stay within Chrome's read limit.
+- IP privacy notices now group by outcome, keeping confirmed blocks, unconfirmed observations, and unavailable protection in separate Notification Centre entries.
+- The fallback IP-logger page warning now says exposure is possible instead of claiming the address was definitely sent, and shows only the hostname.
 
 - Pausing GIFs no longer captures tiny or embedded loading placeholders before image search pages can replace them with thumbnails.
 - GIPHY cards served as animated WebP now pause when their matching GIF fallback is present.

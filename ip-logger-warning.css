@@ -1,0 +1,17 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: #140f1d; color: #f7f1fb; }
+.card { width: min(100%, 580px); padding: clamp(24px, 5vw, 40px); border: 1px solid #614178; border-radius: 20px; background: #21182d; box-shadow: 0 20px 60px #09060e99; }
+.brand { color: #d6a9f3; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+h1 { margin: 12px 0 16px; font-size: clamp(27px, 5vw, 35px); line-height: 1.15; }
+p { color: #ddd2e7; line-height: 1.55; }
+dl { margin: 24px 0; border-top: 1px solid #5b4569; }
+dl div { display: grid; grid-template-columns: 110px 1fr; gap: 16px; padding: 12px 0; border-bottom: 1px solid #5b4569; }
+dt { color: #c4a8d7; font-size: 13px; }
+dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
+.note { font-size: 13px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+button { padding: 12px 18px; border: 1px solid #b276d2; border-radius: 10px; background: #ac62cf; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+button:hover { filter: brightness(1.1); }
+button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+button.secondary { background: transparent; }

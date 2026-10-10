@@ -211,8 +211,9 @@ if (sourceRegion) {
    permission, not on being unpacked -- it is onRuleMatchedDebug that is dev-only. What
    it will not give is a request id, so the poll may only claim a row it can prove. */
 check('a packaged build still asks Chrome which rules matched',
-  /chrome\.declarativeNetRequest\.getMatchedRules\(/.test(BG)
-    && /function logMatchedRulesAvailable\(\)/.test(BG),
+  /api\.getMatchedRules\(/.test(BG)
+    && /function logMatchedRulesAvailable\(\)/.test(BG)
+    && /async function logPollMatchedRules\([\s\S]{0,360}readMatchedRuleEvidence\(/.test(BG),
   'exact-or-nothing throws away attribution Chrome will give a store build');
 check('the poll runs only when the exact feed is missing',
   /\} else if \(logMatchedRulesAvailable\(\)\) \{/.test(BG),

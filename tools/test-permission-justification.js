@@ -86,7 +86,8 @@ check('every declared permission has a caller in shipped code', unused.length ==
 /* the two that are reached indirectly, asserted by their real call sites so this file
    cannot quietly excuse a permission that stopped being used */
 check('declarativeNetRequestFeedback is actually consumed',
-  /declarativeNetRequest\.getMatchedRules\s*\(/.test(CODE)
+  /api\.getMatchedRules\s*\(/.test(CODE)
+  && /const api = chrome\.declarativeNetRequest/.test(CODE)
   && /declarativeNetRequest\.onRuleMatchedDebug/.test(CODE),
   'if the Logger stops using both, the permission should go with them');
 check('webRequest is actually consumed', /chrome\.webRequest\.[A-Za-z]/.test(CODE));

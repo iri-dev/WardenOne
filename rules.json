@@ -2765,5 +2765,221 @@
         "websocket"
       ]
     }
+  },
+  {
+    "id": 168,
+    "priority": 1500,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/ip-logger-warning.html"
+      }
+    },
+    "condition": {
+      "requestDomains": [
+        "grabify.link",
+        "grabify.com",
+        "grabify.org",
+        "iplogger.org",
+        "iplogger.com",
+        "iplogger.ru",
+        "iplogger.co",
+        "iplogger.info",
+        "iplogger.icu",
+        "iplis.ru",
+        "ipgrabber.ru",
+        "ipgraber.ru",
+        "2no.co",
+        "2no.it",
+        "yip.su",
+        "iplog.network",
+        "blasze.tk",
+        "blasze.com",
+        "ipgun.com",
+        "ezstat.ru",
+        "whatstheirip.com",
+        "gyazo.nl",
+        "stopify.co",
+        "notmy.club",
+        "fvip.info",
+        "trackmyip.cc",
+        "quickmessage.us",
+        "locationtracker.cc",
+        "crxtra.com",
+        "ipsniffer.com",
+        "gl1tch.me",
+        "joingroups.pro",
+        "ip-tracker.org",
+        "catchify.net",
+        "maper.info",
+        "urlto.me",
+        "hd.gd",
+        "onbit.pro",
+        "snifferip.com",
+        "unl.one",
+        "screenshare.pics",
+        "noodshare.pics",
+        "cheapcinema.club",
+        "shhh.lol",
+        "partpicker.shop",
+        "sportshub.bar",
+        "locations.quest",
+        "lovebird.guru",
+        "truelove.guru",
+        "dateing.club",
+        "sherkis.life",
+        "headshot.monster",
+        "gaming-at-my.best",
+        "programming.monster",
+        "yourmy.monster",
+        "imageshare.best",
+        "screenshot.best",
+        "gamingfun.me",
+        "catsnthings.fun",
+        "catsnthings.com",
+        "joinmy.site",
+        "fortnitechat.site",
+        "fortnight.space",
+        "freegiftcards.co",
+        "leancoding.co",
+        "curiouscat.club",
+        "mymassive.yachts",
+        "stonks.boats",
+        "stonks.fun",
+        "toes.beauty",
+        "barefoot.pics",
+        "shareit.pics",
+        "gamer.tattoo",
+        "shipment.website",
+        "imagevault.cloud",
+        "sugma.mom",
+        "yum.mom",
+        "plz.life",
+        "massive.mom",
+        "massive.boats",
+        "mymassive.store",
+        "mymassive.top",
+        "gamer.hair",
+        "myprivate.pics",
+        "grabb.site",
+        "grabify.icu",
+        "grabify.world",
+        "grabifyicu.com",
+        "location.cyou",
+        "mymap.icu",
+        "mymap.quest",
+        "map-s.online",
+        "crypto-o.click",
+        "cryp-o.online",
+        "account.beauty",
+        "photospace.life",
+        "photovault.store",
+        "imagehub.fun",
+        "sharevault.cloud",
+        "xtube.chat",
+        "screensnaps.top",
+        "photovault.pics",
+        "foot.wiki",
+        "gamergirl.pro",
+        "picshost.pics",
+        "pichost.pics",
+        "imghost.pics",
+        "shrekis.life",
+        "iplist.ru",
+        "02ip.ru",
+        "wl.gl",
+        "ed.tc",
+        "bc.ax",
+        "iplog.co",
+        "iplogger.cn",
+        "ps3cfw.com",
+        "goo.by",
+        "ikwyd.com",
+        "ip-trap.com",
+        "ythingy.com",
+        "cob.soy",
+        "iptrackeronline.com",
+        "iptracker.org",
+        "lancremasteredpcps.com",
+        "bmw.gs",
+        "cliip.net"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 169,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket"
+      ],
+      "requestDomains": [
+        "iplogger.icu"
+      ]
+    }
+  },
+  {
+    "id": 170,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "tracker.iplocation.net"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "image"
+      ]
+    }
+  },
+  {
+    "id": 171,
+    "priority": 1500,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/ip-logger-warning.html"
+      }
+    },
+    "condition": {
+      "regexFilter": "^https?://tracker\\.iplocation\\.net/(?:t|s)/[A-Za-z0-9]+(?:[/?#]|$)",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 172,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://tracker\\.iplocation\\.net/(?:t|s)/[A-Za-z0-9]+(?:[/?#]|$)",
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "image",
+        "xmlhttprequest",
+        "script",
+        "ping",
+        "websocket",
+        "other"
+      ]
+    }
   }
 ]

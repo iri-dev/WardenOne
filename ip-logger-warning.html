@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP logger warning — WardenOne</title>
+  <link rel="stylesheet" href="ip-logger-warning.css">
+  <script src="ip-logger-warning.js" defer></script>
+</head>
+<body>
+  <main class="card" aria-labelledby="title">
+    <div class="brand">WardenOne Security Warning</div>
+    <h1 id="title">Possible IP logger detected</h1>
+    <p id="explanation">Checking whether WardenOne stopped this navigation.</p>
+    <dl>
+      <div><dt>Detection</dt><dd>Known IP-logging destination</dd></div>
+      <div><dt>Status</dt><dd id="status" role="status" aria-live="polite">Checking</dd></div>
+      <div id="host-row" hidden><dt>Destination</dt><dd id="host"></dd></div>
+    </dl>
+    <p class="note">Going back prevents more requests. It cannot undo any request that another route already sent.</p>
+    <div class="actions">
+      <button id="back" type="button">Go back</button>
+      <button id="activity" class="secondary" type="button">View Activity Center</button>
+    </div>
+  </main>
+</body>
+</html>
