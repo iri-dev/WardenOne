@@ -2752,7 +2752,7 @@ importScripts('background-startup.js');
 /* ===========================================================================
  * AUTO-UPDATING BLOCKLIST
  * ---------------------------------------------------------------------------
- * The static rules.json is good on day one but goes stale as logger services
+ * The packaged rules derived from rules.json are good on day one but go stale as logger services
  * rotate domains. This fetches a remote, maintained domain list and converts it
  * into DYNAMIC declarativeNetRequest rules (which hard-block at the network
  * layer, same as the static ones), refreshed daily.
@@ -3514,7 +3514,7 @@ const TRACKER_RULES_BUDGET = 1000;
 const ALLOWLIST_RULES_BUDGET = 1000;
 const MEDIA_COMPAT_RULES_BUDGET = 100;
 const LOGIN_COMPAT_RULES_BUDGET = 300;
-const GRABBER_FEED_RULES_BUDGET = 1000;
+const GRABBER_FEED_RULES_BUDGET = 1002;
 const MINER_FEED_RULES_BUDGET = 1000;
 const SAFE_SEARCH_RULES_BUDGET = 40;
 const NEVER_BLOCK_ALLOW_RULES_BUDGET = 200;
@@ -3863,7 +3863,7 @@ const IP_LOOKUP_BLOCK_RESOURCE_TYPES = ['sub_frame', 'script', 'image', 'xmlhttp
 // Allowlist exemption rules live in their own high ID band. When a site is
 // allowlisted we add an `allowAllRequests` rule for it so the user's choice ALSO
 // suspends network-level (DNR) blocking -- not just the content script. Without
-// this, "Allowlist this site" would be a half-measure: rules.json + dynamic
+// this, "Allowlist this site" would be a half-measure: packaged + dynamic
 // rules would keep blocking requests on a site the user explicitly trusts.
 const ALLOWLIST_RULE_BASE = 800000;
 // High-priority allow rules for trusted-infrastructure (NEVER_BLOCK) domains, so an EasyList/
@@ -4430,7 +4430,7 @@ async function wardenBlockRuleLive(host) {
   } catch (_) { return false; }
 }
 // ---- Feed-updatable IP-grabber list -------------------------------------------
-// The static grabber ruleset (rules.json) is frozen at ship time, but grabber operators
+// The packaged grabber rulepacks derived from rules.json are frozen at ship time, but operators
 // rotate domains/TLDs constantly, so the marquee "IP grabbers" protection decays. This adds
 // a DYNAMIC, feed/user-updatable grabber list (bundled grabber-extra.json seed + the
 // chrome.storage.local 'wardenone_grabber_domains' key) applied as dynamic DNR block rules,
@@ -4438,6 +4438,7 @@ async function wardenBlockRuleLive(host) {
 const GRABBER_FEED_RULE_BASE = 740000;
 const GRABBER_FEED_MAX = 1000;
 const GRABBER_NAV_RULE_ID = 741000;
+const GRABBER_MALWARE_NAV_RULE_ID = 741001;
 const GRABBER_STATIC_NAV_RULE_ID = 168;
 const GRABBER_TRACKER_HOST = 'tracker.iplocation.net';
 const GRABBER_TRACKER_IMAGE_RULE_ID = 170;
@@ -4446,13 +4447,9 @@ const GRABBER_TRACKER_ROUTE_RULE_ID = 172;
 const GRABBER_FEED_DOMAINS = new Set();
 const GRABBER_PACKAGED_RULE_HOSTS = new Map();
 const GRABBER_FEED_RULE_HOSTS = new Map();
-/* The packaged IP-logger list, as a set the worker can ask. rules.json is a DNR ruleset --
-   Chrome reads it, the worker never did -- so a logger that was also on a malware feed was
-   described by the feed. Read once, at start.
-   Only a rule that blocks a whole domain outright names a logger. The same file carries
-   ALLOW rules -- google.com, googleapis.com, accounts.google.com, login.microsoftonline.com
-   and the rest of the login-compat set -- and reading every rule's domains labelled Google's
-   own tabs on a Google results page as IP loggers. */
+/* Read canonical rules.json for packaged logger hosts and per-host block IDs.
+   Only whole-domain blocks count; its Google and login allow rules would otherwise
+   label legitimate pages as IP loggers. */
 const GRABBER_PACKAGED_DOMAINS = new Set();
 function packagedGrabberDomainsFrom(rules) {
   const out = new Set();
@@ -4553,30 +4550,41 @@ async function applyGrabberFeedRules() {
     const existing = await getDynamicRulesInBand(GRABBER_FEED_RULE_BASE, GRABBER_FEED_MAX);
     const mine = existing.filter((x) => x.id >= GRABBER_FEED_RULE_BASE && x.id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX);
     const existingNav = await chrome.declarativeNetRequest.getDynamicRules({ ruleIds: [GRABBER_NAV_RULE_ID] });
+    const existingSite = await chrome.declarativeNetRequest.getDynamicRules({ ruleIds: [GRABBER_MALWARE_NAV_RULE_ID] });
     const cfg = await readFeedConfig();
     const domains = grabberFeedDisabled(cfg) ? [] : Array.from(GRABBER_FEED_DOMAINS).slice(0, GRABBER_FEED_MAX);
-    const addRules = domains.map((d, i) => ({
+    const resourcesOn = cfg.enabled !== false && cfg.blockGrabberResources !== false;
+    const warningsOn = cfg.enabled !== false && cfg.warnGrabberDomains !== false;
+    const sitesOn = cfg.enabled !== false && cfg.blockMalwareSites !== false;
+    const addRules = (resourcesOn ? domains : []).map((d, i) => ({
       id: GRABBER_FEED_RULE_BASE + i,
       priority: 2000,
       action: { type: 'block' },
-      condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'media', 'object', 'other'] },
+      condition: { requestDomains: [d], resourceTypes: ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'media', 'object', 'other'] },
     }));
-    const navRules = domains.length ? [{
+    const navRules = warningsOn && domains.length ? [{
       id: GRABBER_NAV_RULE_ID,
       priority: 2001,
       action: { type: 'redirect', redirect: { extensionPath: '/ip-logger-warning.html' } },
       condition: { requestDomains: domains, resourceTypes: ['main_frame'] },
     }] : [];
+    const siteRules = sitesOn && domains.length ? [{
+      id: GRABBER_MALWARE_NAV_RULE_ID,
+      priority: 2000,
+      action: { type: 'block' },
+      condition: { requestDomains: domains, resourceTypes: ['main_frame'] },
+    }] : [];
     // The largest band there is, rebuilt on every worker start: skipped when nothing changed.
-    if (!dnrBandUnchanged(mine, addRules) || !dnrBandUnchanged(existingNav, navRules)) {
+    if (!dnrBandUnchanged(mine, addRules) || !dnrBandUnchanged(existingNav, navRules)
+        || !dnrBandUnchanged(existingSite, siteRules)) {
       await chrome.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds: mine.concat(existingNav).map((x) => x.id),
-        addRules: addRules.concat(navRules),
+        removeRuleIds: mine.concat(existingNav, existingSite).map((x) => x.id),
+        addRules: addRules.concat(navRules, siteRules),
       });
     }
     GRABBER_FEED_RULE_HOSTS.clear();
-    domains.forEach((host, index) => GRABBER_FEED_RULE_HOSTS.set(GRABBER_FEED_RULE_BASE + index, host));
-  } catch (e) { console.warn('[WardenOne] grabber feed rules failed', e); }
+    if (resourcesOn) domains.forEach((host, index) => GRABBER_FEED_RULE_HOSTS.set(GRABBER_FEED_RULE_BASE + index, host));
+  } catch (e) { console.warn('[WardenOne] grabber feed rules failed', e); return false; }
 }
 async function loadGrabberFeed() {
   const next = new Set();
@@ -4614,17 +4622,39 @@ loadGrabberFeed();
    this snapshot so one feature cannot silently exhaust another's evidence. */
 const DNR_FEEDBACK_WINDOW_MS = 10 * 60 * 1000;
 const DNR_FEEDBACK_CACHE_MS = 1500;
+const DNR_FEEDBACK_EVENT_BATCH_MS = 120;
 const DNR_FEEDBACK_READ_LIMITS = { background: 10, dashboard: 5, event: 4 };
 const DNR_FEEDBACK_READS = [];
 let DNR_FEEDBACK_SNAPSHOT = null;
 let DNR_FEEDBACK_PENDING = null;
+let DNR_FEEDBACK_EVENT_BATCH = null;
+function waitForEventFeedbackBatch() {
+  if (!DNR_FEEDBACK_EVENT_BATCH) {
+    const batch = { promise: null };
+    batch.promise = new Promise((resolve) => {
+      setTimeout(() => {
+        if (DNR_FEEDBACK_EVENT_BATCH === batch) DNR_FEEDBACK_EVENT_BATCH = null;
+        resolve();
+      }, DNR_FEEDBACK_EVENT_BATCH_MS);
+    });
+    DNR_FEEDBACK_EVENT_BATCH = batch;
+  }
+  return DNR_FEEDBACK_EVENT_BATCH.promise;
+}
 async function readMatchedRuleEvidence(filter, priority) {
   const api = chrome.declarativeNetRequest;
   if (!api || typeof api.getMatchedRules !== 'function') return { ok: false, reason: 'unsupported' };
-  const now = Date.now();
+  let now = Date.now();
   const since = Math.max(0, Number(filter && filter.minTimeStamp) || 0);
   const requiredAt = Math.max(0, Number(filter && filter.requiredAt) || 0);
   let snapshot = DNR_FEEDBACK_SNAPSHOT;
+  if (priority === 'event' && (!snapshot || now - snapshot.at > DNR_FEEDBACK_CACHE_MS
+      || snapshot.startedAt < requiredAt)
+      && (!DNR_FEEDBACK_PENDING || DNR_FEEDBACK_PENDING.startedAt < requiredAt)) {
+    await waitForEventFeedbackBatch();
+    now = Date.now();
+    snapshot = DNR_FEEDBACK_SNAPSHOT;
+  }
   if (!snapshot || now - snapshot.at > DNR_FEEDBACK_CACHE_MS || snapshot.startedAt < requiredAt) {
     if (DNR_FEEDBACK_PENDING && DNR_FEEDBACK_PENDING.startedAt >= requiredAt) {
       snapshot = await DNR_FEEDBACK_PENDING.promise;
@@ -4686,26 +4716,30 @@ function grabberMatchedRuleHost(rule) {
   return '';
 }
 function grabberRuleIsNavigation(rule) {
-  return !!rule && ((rule.rulesetId === 'grabbers' && rule.ruleId === GRABBER_STATIC_NAV_RULE_ID)
-    || (rule.rulesetId === 'grabbers' && rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID)
+  return !!rule && ((rule.rulesetId === 'grabber_navigation' && rule.ruleId === GRABBER_STATIC_NAV_RULE_ID)
+    || (rule.rulesetId === 'grabber_navigation' && rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID)
     || (rule.rulesetId === '_dynamic' && rule.ruleId === GRABBER_NAV_RULE_ID));
 }
 async function grabberNetworkProtectionUnavailable(host) {
   const api = chrome.declarativeNetRequest;
   if (!api || typeof api.getEnabledRulesets !== 'function') return true;
   if (!GRABBER_PACKAGED_DOMAINS.size) await loadPackagedGrabberDomains();
-  if (![...GRABBER_PACKAGED_DOMAINS].some((domain) => grabberHostMatches(host, domain))
-      && host !== GRABBER_TRACKER_HOST) return false;
+  if ([...GRABBER_PACKAGED_DOMAINS].some((domain) => grabberHostMatches(host, domain))
+      || host === GRABBER_TRACKER_HOST) {
+    try { return !(await api.getEnabledRulesets()).includes('grabbers'); }
+    catch (_) { return false; }
+  }
   for (const domain of GRABBER_FEED_RULE_HOSTS.values()) if (grabberHostMatches(host, domain)) return false;
-  try { return !(await api.getEnabledRulesets()).includes('grabbers'); }
-  catch (_) { return false; }
+  return [...GRABBER_FEED_DOMAINS].some((domain) => grabberHostMatches(host, domain));
 }
 function grabberImageKey(tabId, pageHost, host) {
   return tabId + '|' + pageHost + '|' + host;
 }
 function noteGrabberImageCandidate(detail, sender) {
   const host = detail && typeof detail.matched === 'string' ? detail.matched.toLowerCase() : '';
+  const selected = detail && detail.selected === true;
   const pageHost = grabberHostFromUrl(sender && (sender.url || (sender.tab && sender.tab.url)));
+  const topHost = grabberHostFromUrl(sender && sender.tab && sender.tab.url);
   if (!/^[a-z0-9.-]{1,253}$/.test(host) || host.includes('..') || !host.includes('.')
       || !pageHost || grabberHostMatches(host, pageHost) || grabberHostMatches(pageHost, host)) return;
   const key = grabberImageKey(sender.tab.id, pageHost, host);
@@ -4725,11 +4759,13 @@ function noteGrabberImageCandidate(detail, sender) {
     queueHistory({
       type: unavailable ? 'warned_grabber_protection_unavailable' : 'warned_grabber_image',
       detail: { matched: host, status: unavailable ? 'protection_unavailable' : 'observed_unconfirmed',
-        observation: 'image_url_reference',
+        observation: selected ? 'image_selected_reference' : 'image_url_reference',
         why: unavailable
-          ? 'A page referenced a possible IP-logging image URL. Network protection is unavailable. WardenOne cannot confirm whether the browser sent a request; your IP address may have been exposed if it did.'
-          : 'A page referenced a possible IP-logging image URL. WardenOne cannot confirm whether the browser sent a request or blocked it; your IP address may have been exposed if it was sent.' },
-      url: 'https://' + pageHost + '/', at,
+          ? (selected ? 'The browser selected a possible IP-logging image URL. ' : 'A page referenced a possible IP-logging image URL. ')
+            + 'Network protection is unavailable. WardenOne cannot confirm whether the browser sent a request; your IP address may have been exposed if it did.'
+          : (selected ? 'The browser selected a possible IP-logging image URL. ' : 'A page referenced a possible IP-logging image URL. ')
+            + 'WardenOne cannot confirm whether the browser sent a request or blocked it; your IP address may have been exposed if it was sent.' },
+      url: 'https://' + (topHost || pageHost) + '/', at,
     });
   }, 1000);
   if (GRABBER_IMAGE_PENDING.size > 200) {
@@ -4761,7 +4797,7 @@ async function grabberNavigationStatus(sender) {
   await loadPackagedGrabberDomains();
   const logKey = tabId + '|' + navMatch.rule.rulesetId + '|' + navMatch.rule.ruleId + '|' + navMatch.timeStamp;
   const previous = GRABBER_NAV_LOGGED.get(logKey);
-  const trackerRoute = navMatch.rule.rulesetId === 'grabbers' && navMatch.rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID;
+  const trackerRoute = navMatch.rule.rulesetId === 'grabber_navigation' && navMatch.rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID;
   const validAttempt = attempt && Date.now() - attempt.at < 20000
     && (trackerRoute ? attempt.host === GRABBER_TRACKER_HOST : knownGrabberHost(attempt.host));
   if (!validAttempt && !previous) return { status: 'observed_unconfirmed' };
@@ -5246,6 +5282,9 @@ let LOG_MATCH_SINCE = 0;
 
 const LOG_STATIC_RULESETS = {
   grabbers: 'IP-logger list',
+  grabber_navigation: 'IP-logger warning',
+  grabber_malware_navigation: 'Known logger sites',
+  grabber_compat: 'Site compatibility',
   adshield_easylist: 'AdShield / EasyList',
   spotify_media: 'Spotify web player media',
   trackers: 'Tracker list',
@@ -5304,7 +5343,7 @@ function logAllowingRuleBases() {
   ].filter((base) => typeof base === 'number'));
   return __logAllowingBases;
 }
-/* Static rulesets are mostly block lists, but not only. rules.json (the IP-logger list) carries
+/* Static rulesets are mostly block lists, but not only. The compatibility pack carries
    five allow rules -- one lets github.com's own requests through, so every request a GitHub page
    made matched it, and the Site Dashboard counted hundreds of "IP-logger blocks" -- and the
    AdShield list carries hundreds of exceptions and allow-the-whole-frame rules. The feed names the
@@ -10776,14 +10815,21 @@ async function refreshBlocklistRuleset(cfgOverride) {
       ? cfgOverride
       : ((await localGet('wardenone_config')).wardenone_config || {});
     const on = cfg.enabled !== false;
+    const grabberResourcesOn = on && cfg.blockGrabberResources !== false;
+    const grabberWarningsOn = on && cfg.warnGrabberDomains !== false;
+    const grabberSitesOn = on && cfg.blockMalwareSites !== false;
     // the EasyList static pack follows BOTH the master switch and the AdShield toggle
     const adshieldOn = on && cfg.adShield !== false;
     const trackersOn = on && cfg.blockTrackers !== false;
-    const stateKey = [on ? 1 : 0, adshieldOn ? 1 : 0, trackersOn ? 1 : 0, cfg.trackerLearner !== false ? 1 : 0].join('|');
+    const stateKey = [on, grabberResourcesOn, grabberWarningsOn, grabberSitesOn,
+      adshieldOn, trackersOn, cfg.trackerLearner !== false].map(Number).join('|');
     if (stateKey === __blocklistRulesetStateKey) return;
     const enableRulesetIds = [];
     const disableRulesetIds = [];
-    (on ? enableRulesetIds : disableRulesetIds).push('grabbers');
+    (grabberResourcesOn ? enableRulesetIds : disableRulesetIds).push('grabbers');
+    (grabberWarningsOn ? enableRulesetIds : disableRulesetIds).push('grabber_navigation');
+    (grabberSitesOn ? enableRulesetIds : disableRulesetIds).push('grabber_malware_navigation');
+    (on ? enableRulesetIds : disableRulesetIds).push('grabber_compat');
     (adshieldOn ? enableRulesetIds : disableRulesetIds).push(ADSHIELD_STATIC_RULESET_ID);
     (adshieldOn ? enableRulesetIds : disableRulesetIds).push(SPOTIFY_MEDIA_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(TRACKERS_STATIC_RULESET_ID);
@@ -11202,6 +11248,7 @@ const RECONCILE_COMPONENT_LABELS = {
   loginCompatibility: 'login compatibility rules',
   httpsUpgrade: 'HTTPS upgrade',
   blocklistRulesets: 'blocking rulesets',
+  grabberFeed: 'IP-logger feed rules',
   eyeShield: 'EyeShield injection',
   consentReject: 'consent auto-reject injection',
   consentWall: 'consent wall removal injection',
@@ -11344,6 +11391,9 @@ function refreshExtensionState() {
         cfg.forceHttps === true ? 1 : 0,
         cfg.adShield !== false ? 1 : 0,
         cfg.blockTrackers !== false ? 1 : 0,
+        cfg.blockGrabberResources !== false ? 1 : 0,
+        cfg.warnGrabberDomains !== false ? 1 : 0,
+        cfg.blockMalwareSites !== false ? 1 : 0,
         cfg.blockAllCookies === true ? 1 : 0,
         eyeShieldThemingActive(cfg) ? 1 : 0,
         eyeShieldUsesBootstrap(cfg) ? 1 : 0,
@@ -11445,6 +11495,9 @@ function refreshExtensionState() {
       run('loginCompatibility', () => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules, sessionBatch.submit), String(on && cfg.loginCompatibility !== false));
       run('httpsUpgrade', () => applyHttpsUpgradeRule(on && cfg.forceHttps === true), String(on && cfg.forceHttps === true));
       run('blocklistRulesets', () => refreshBlocklistRuleset(cfg));
+      run('grabberFeed', () => applyGrabberFeedRules(),
+        [on, cfg.blockGrabberResources !== false, cfg.warnGrabberDomains !== false,
+          cfg.blockMalwareSites !== false].map(Number).join(','));
       run('eyeShield', () => reconcileEyeShieldInjection(cfg));
       run('consentReject', () => reconcileConsentRejectInjection(cfg));
       run('consentWall', () => reconcileConsentWallInjection(cfg));
@@ -13453,7 +13506,7 @@ function isWardenOneDynamicRuleId(id) {
     || (id >= LEARNED_RULE_BASE && id < LEARNED_RULE_BASE + LEARNED_MAX)
     || (id >= TRACKER_RULE_BASE && id < TRACKER_RULE_BASE + TRACKER_RULE_MAX)
     || (id >= GRABBER_FEED_RULE_BASE && id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX)
-    || id === GRABBER_NAV_RULE_ID
+    || id === GRABBER_NAV_RULE_ID || id === GRABBER_MALWARE_NAV_RULE_ID
     || (id >= NEVER_BLOCK_ALLOW_RULE_BASE && id < NEVER_BLOCK_ALLOW_RULE_BASE + NEVER_BLOCK_ALLOW_MAX)
     || (id >= SCRIPT_SHIELD_RULE_BASE && id < SCRIPT_SHIELD_RULE_BASE + SCRIPT_SHIELD_RULE_MAX)
     || (id >= FINGERPRINT_SCRIPT_RULE_BASE && id < FINGERPRINT_SCRIPT_RULE_BASE + FINGERPRINT_SCRIPT_RULE_MAX)
@@ -14911,7 +14964,7 @@ const NEVER_BLOCK_DOMAINS = new Set([
   'githubassets.com',
 'mail.google.com', 'accounts.google.com', 'apis.google.com', 'gstatic.com',
   // User-confirmed false-positive exemption: blocked by a downloaded threat feed, not a bundled rule.
-  // Keeps all other shields active; the page navigation is un-blocked via rules.json id166 (priority 3000).
+  // Keeps all other shields active; the page navigation is allowed by grabber_compat id166 (priority 3000).
   'gamedrive.org',
 ]);
 LOGIN_COMPAT_NEVER_BLOCK_DOMAINS.forEach((domain) => NEVER_BLOCK_DOMAINS.add(domain));
@@ -17534,7 +17587,9 @@ async function buildProtectionHealthSummary(tab) {
     if (!enabledRulesets.length) {
       addIssue('danger', 'No blocking rulesets are enabled, so ads, trackers and known malicious domains are not being blocked.', false, { fix: 'repair' });
     } else {
-      if (cfg.blockMalwareSites !== false && !enabledRulesets.includes('grabbers')) addIssue('danger', 'Core malicious-domain ruleset is not enabled.', false, { fix: 'repair' });
+      if (cfg.blockGrabberResources !== false && !enabledRulesets.includes('grabbers')) addIssue('danger', 'IP-logger resource ruleset is not enabled.', false, { fix: 'repair' });
+      if (cfg.warnGrabberDomains !== false && !enabledRulesets.includes('grabber_navigation')) addIssue('warn', 'IP-logger page warnings are not enabled.', true, { fix: 'repair' });
+      if (cfg.blockMalwareSites !== false && !enabledRulesets.includes('grabber_malware_navigation')) addIssue('danger', 'Known logger-site ruleset is not enabled.', false, { fix: 'repair' });
       if (cfg.adShield !== false && !enabledRulesets.includes('adshield_easylist')) addIssue('warn', 'AdShield network ruleset is not enabled.', true, { fix: 'repair' });
       if (cfg.adShield !== false && !enabledRulesets.includes('spotify_media')) addIssue('warn', 'Spotify ad-media ruleset is not enabled.', true, { fix: 'repair' });
       if (cfg.blockTrackers !== false && !enabledRulesets.includes('trackers')) addIssue('warn', 'Tracker ruleset is not enabled.', true, { fix: 'repair' });
@@ -23459,7 +23514,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
           const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
-          CORE_FILES.push('rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
+          CORE_FILES.push('rules-grabber-resources.json', 'rules-grabber-navigation.json',
+            'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
+            'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
             'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'build-update.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.

@@ -16,6 +16,12 @@ const root = path.resolve(__dirname, '..');
 const PAGE_HOST = 'reader.wardenone-smoke.example';
 const CLEAN_HOST = 'metrics.wardenone-smoke.example';
 const SUSPECT_HOST = 'unlisted.wardenone-smoke.example';
+const SELECTED_HOST = 'iplogger.selected-wardenone-smoke.test';
+const UNSELECTED_HOST = 'iplogger.unselected-wardenone-smoke.test';
+const FRAME_HOST = 'widget.cross-origin-wardenone-smoke.example';
+const FRAME_SUSPECT_HOST = 'iplogger.frame-wardenone-smoke.test';
+const FRAME_SRCSET_HOST = 'iplogger.frame-srcset-wardenone-smoke.test';
+const FRAME_UNSELECTED_HOST = 'iplogger.frame-unselected-wardenone-smoke.test';
 const ATTRIBUTE_HOST = 'iplogger.attribute-wardenone-smoke.example';
 const SRCSET_HOST = 'iplogger.srcset-wardenone-smoke.example';
 const LOGGER_HOST = 'iplogger.icu';
@@ -36,11 +42,24 @@ function fixture(port, phase) {
     <img id="redirect" src="${clean('redirect')}">
     <img id="ordinary" src="${clean('pixel.gif')}&uid=ordinary">
     <img id="ordinary-srcset" src="${clean('ordinary-fallback')}" srcset="${clean('ordinary-srcset')} 1x">
+    <img id="responsive-selected" srcset="http://${SELECTED_HOST}:${port}/selected?phase=${phase} 1x, ${clean('selected-2x')} 2x">
+    <img id="responsive-unselected" srcset="${clean('unselected-1x')} 1x, http://${UNSELECTED_HOST}:${port}/unselected?phase=${phase} 2x">
     <img id="ordinary-redirect" src="${clean('ordinary-redirect')}">
     <img id="suspicious" src="${suspicious}">
     <img id="changed" src="${clean('changed-base')}">
     <img id="changed-srcset" src="${clean('srcset-base')}">
-    <div id="ordinary-css"></div>`;
+    <div id="ordinary-css"></div>
+    <iframe id="widget" src="http://${FRAME_HOST}:${port}/frame?phase=${phase}"></iframe>`;
+}
+
+function frameFixture(port, phase) {
+  const suspicious = (host, name) => `http://${host}:${port}/${name}?phase=${phase}&token=PRIVATE`;
+  const clean = `http://${CLEAN_HOST}:${port}/frame-pixel?phase=${phase}`;
+  return `<!doctype html><meta charset="utf-8"><title>Cross-origin image widget</title>
+    <img id="frame-direct" src="${suspicious(FRAME_SUSPECT_HOST, 'frame-direct')}">
+    <picture><source srcset="${suspicious(FRAME_SRCSET_HOST, 'frame-srcset')} 1x"><img src="${clean}"></picture>
+    <img id="frame-unselected" srcset="${clean} 1x, ${suspicious(FRAME_UNSELECTED_HOST, 'frame-unselected')} 2x">
+    <img id="frame-ordinary" src="${clean}">`;
 }
 
 async function run() {
@@ -54,6 +73,9 @@ async function run() {
     if (host === PAGE_HOST && url.pathname === '/page') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       res.end(fixture(serverPort, phase));
+    } else if (host === FRAME_HOST && url.pathname === '/frame') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(frameFixture(serverPort, phase));
     } else if ((host === PAGE_HOST && url.pathname === '/safe')
         || (host === LOGGER_HOST && url.pathname === '/visit')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -72,7 +94,9 @@ async function run() {
     }
   });
   await new Promise((resolve) => server.listen(serverPort, '127.0.0.1', resolve));
-  const mapped = [PAGE_HOST, CLEAN_HOST, SUSPECT_HOST, ATTRIBUTE_HOST, SRCSET_HOST, LOGGER_HOST]
+  const mapped = [PAGE_HOST, CLEAN_HOST, SUSPECT_HOST, SELECTED_HOST, UNSELECTED_HOST,
+    FRAME_HOST, FRAME_SUSPECT_HOST, FRAME_SRCSET_HOST, FRAME_UNSELECTED_HOST,
+    ATTRIBUTE_HOST, SRCSET_HOST, LOGGER_HOST]
     .map((host) => 'MAP ' + host + ' 127.0.0.1').join(', ');
 
   async function pass(variant, phase) {
@@ -166,6 +190,13 @@ async function run() {
         assert(arrived(CLEAN_HOST, path), phase + ' ordinary ' + path + ' loaded');
       }
       assert(arrived(SUSPECT_HOST, 'iplogger/abc1234567'), phase + ' unlisted suspicious image reached the server');
+      assert(arrived(SELECTED_HOST, 'selected'), phase + ' selected 1x image reached the server');
+      assert(!arrived(UNSELECTED_HOST, 'unselected'), phase + ' unused 2x image stayed unrequested');
+      assert(arrived(FRAME_HOST, 'frame'), phase + ' cross-origin widget loaded');
+      assert(arrived(FRAME_SUSPECT_HOST, 'frame-direct'), phase + ' frame image reached the server');
+      assert(arrived(FRAME_SRCSET_HOST, 'frame-srcset'), phase + ' frame srcset reached the server');
+      assert(!arrived(FRAME_UNSELECTED_HOST, 'frame-unselected'), phase + ' unused frame 2x image stayed unrequested');
+      assert(arrived(CLEAN_HOST, 'frame-pixel'), phase + ' ordinary frame pixel loaded');
       assert(await evaluate(sessionId, "document.getElementById('ordinary').naturalWidth === 1"),
         phase + ' ordinary transparent pixel rendered');
       for (const id of ['ordinary-srcset', 'ordinary-redirect']) {
@@ -174,6 +205,9 @@ async function run() {
       }
       assert(await evaluate(sessionId, "document.getElementById('suspicious').naturalWidth === 1"),
         phase + ' unlisted suspicious image rendered');
+      assert(await evaluate(sessionId, `document.getElementById('responsive-selected').currentSrc.includes(${JSON.stringify(SELECTED_HOST)})
+        && !document.getElementById('responsive-unselected').currentSrc.includes(${JSON.stringify(UNSELECTED_HOST)})`),
+      phase + ' browser selected the 1x candidates');
       const changedUrl = `http://${ATTRIBUTE_HOST}:${serverPort}/changed?phase=${phase}`;
       const changedSrcsetUrl = `http://${SRCSET_HOST}:${serverPort}/changed-srcset?phase=${phase}`;
       await evaluate(sessionId, `document.getElementById('changed').setAttribute('src', ${JSON.stringify(changedUrl)});
@@ -205,7 +239,8 @@ async function run() {
         const notices = await evaluate(worker, `chrome.storage.local.get('wardenone_history').then((store) =>
           (store.wardenone_history || []).concat(__histBuffer || []).filter((item) => /grabber/.test(item.type || '')
             && item.detail && typeof item.detail === 'object')
-            .map((item) => ({ type: item.type, matched: item.detail?.matched, status: item.detail?.status })))`);
+            .map((item) => ({ type: item.type, matched: item.detail?.matched,
+              status: item.detail?.status, observation: item.detail?.observation, url: item.url })))`);
         assert(notices.some((item) => item.type === 'blocked_grabber_navigation'
           && item.matched === LOGGER_HOST), 'the intercepted visit has a confirmed-block Activity entry: ' + JSON.stringify(notices));
         assert(notices.some((item) => item.type === 'blocked_grabber_network'
@@ -218,10 +253,22 @@ async function run() {
         assert(notices.some((item) => item.type === 'warned_grabber_image'
           && item.matched === SUSPECT_HOST && item.status === 'observed_unconfirmed'),
         'the unlisted image was observed and reported as unconfirmed, not blocked');
+        assert(notices.some((item) => item.type === 'warned_grabber_image'
+          && item.matched === SELECTED_HOST && item.observation === 'image_selected_reference'),
+        'the selected 1x candidate is recorded as selected');
+        assert(!notices.some((item) => item.matched === UNSELECTED_HOST
+          || item.matched === FRAME_UNSELECTED_HOST), 'unused 2x candidates did not warn');
         for (const host of [ATTRIBUTE_HOST, SRCSET_HOST]) {
           assert(notices.some((item) => item.type === 'warned_grabber_image'
             && item.matched === host && item.status === 'observed_unconfirmed'),
           'an existing image changed to ' + host + ' was reported as unconfirmed');
+        }
+        for (const host of [FRAME_SUSPECT_HOST, FRAME_SRCSET_HOST]) {
+          assert(notices.some((item) => item.type === 'warned_grabber_image'
+            && item.matched === host && item.status === 'observed_unconfirmed'
+            && (host !== FRAME_SRCSET_HOST || item.observation === 'image_selected_reference')
+            && item.url === `https://${PAGE_HOST}/`),
+          'cross-origin frame image ' + host + ' was reported as unconfirmed');
         }
       }
       return browser.Browser;

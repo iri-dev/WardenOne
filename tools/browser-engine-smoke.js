@@ -138,6 +138,28 @@ async function run() {
     assert(blocked, 'a listed tracker was blocked by the browser and matched by the shipped ruleset: tried ' + trackers.join(', '));
     assert(!hits.some((h) => h.startsWith(blocked + '/')), 'the blocked request never reached the server');
 
+    /* Check Chrome's packaged DNR matcher, including priority against the media allow. */
+    await until(worker, "chrome.declarativeNetRequest.getEnabledRulesets().then((ids) => ids.includes('spotify_media'))",
+      'the Spotify media ruleset to activate');
+    const spotifyCases = [
+      ['music', 'https://audio-fa.scdn.co/audio/song', 11],
+      ['music mp3', 'https://audio-fa.scdn.co/mp3/song', 11],
+      ['preview', 'https://audio.spotifycdn.com/audio/preview.mp3', 11],
+      ['podcast', 'https://chtbl.com/track/podcast.mp3', 11],
+      ['podcast CDN', 'https://media.akamaized.net/audio/episode.mp3', 11],
+      ['ad path', 'https://audio-fa.scdn.co/mp3-ad/creative.mp3', 3],
+      ['ad host', 'https://adstudio-assets.scdn.co/creative.mp4', 9],
+    ];
+    for (const [label, url, ruleId] of spotifyCases) {
+      const outcome = await evaluate(worker, `chrome.declarativeNetRequest.testMatchOutcome({
+        url: ${JSON.stringify(url)}, initiator: 'https://open.spotify.com/', type: 'media'
+      }).then((r) => r.matchedRules)`);
+      assert(outcome.some((rule) => rule.rulesetId === 'spotify_media' && rule.ruleId === ruleId),
+        label + ' selected Spotify rule ' + ruleId + ': ' + JSON.stringify(outcome));
+      assert(!outcome.some((rule) => rule.rulesetId === 'spotify_media' && rule.ruleId !== ruleId),
+        label + ' matched another Spotify rule: ' + JSON.stringify(outcome));
+    }
+
     /* 2b. The config the engine acts on is the one the bridge delivers, not its built-in defaults:
        switched off in Settings, the change reaches this open page, and a tracked link added after it
        keeps its ping; switched back on, the next one loses it. Done on the open page because at a
@@ -155,7 +177,7 @@ async function run() {
     await addLink('added-on');
     await until(page, "!document.getElementById('added-on').hasAttribute('ping')", 'the switch turned back on to reach the page');
 
-    console.log('[ok] the page engine, the bridge, the worker and a shipped network rule all work on a real page in ' + browser.Browser
+    console.log('[ok] the page engine, the bridge, Spotify media rules and a shipped network rule work in ' + browser.Browser
       + ' (blocked ' + blocked + ', ruleset ' + matchedRule.rulesetId + ')');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }

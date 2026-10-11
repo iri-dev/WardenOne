@@ -179,25 +179,24 @@ if (sourceRegion) {
   check('the poll reads the matched rules\' actions before attributing',
     /const actions = await matchedRuleActions\(matched\);/.test(region('async function logPollMatchedRules(', 'function logAttach()')));
 
-  /* A static ruleset is not all blocks. rules.json, the IP-logger list, carries allow rules --
-     one lets github.com's own requests through -- and on GitHub every page request matched it,
-     so the Site Dashboard counted hundreds of "IP-logger blocks". The real loader, run against
-     the shipped files. */
+  /* The compatibility pack carries allows, including GitHub's own requests. Check the real
+     loader against the shipped rulepacks so allows cannot be counted as blocks. */
   staticRulesCheck = (async () => {
     const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
     box2.chrome = { runtime: { getManifest: () => manifest, getURL: (p) => p } };
     box2.fetch = async (p) => ({ json: async () => JSON.parse(fs.readFileSync(p, 'utf8')) });
     await vm.runInContext('loadStaticNonStoppingRules()', box2);
-    const grabbers = JSON.parse(fs.readFileSync('rules.json', 'utf8'));
-    const githubAllow = grabbers.find((r) => r.action.type === 'allow'
+    const grabbers = JSON.parse(fs.readFileSync('rules-grabber-resources.json', 'utf8'));
+    const compat = JSON.parse(fs.readFileSync('rules-grabber-compat.json', 'utf8'));
+    const githubAllow = compat.find((r) => r.action.type === 'allow'
       && (r.condition.initiatorDomains || []).includes('github.com'));
     const grabberBlock = grabbers.find((r) => r.action.type === 'block');
     const exception = JSON.parse(fs.readFileSync('rules-adshield.json', 'utf8'))
       .find((r) => r.action.type === 'allow' || r.action.type === 'allowAllRequests');
     const spotifyRedirect = JSON.parse(fs.readFileSync('rules-spotify-media.json', 'utf8'))
       .find((r) => r.action.type === 'redirect');
-    check('GitHub\'s own allowance in the IP-logger list may not explain a block',
-      !!githubAllow && canBlock(githubAllow.id, 'grabbers') === false,
+    check('GitHub\'s own allowance may not explain a block',
+      !!githubAllow && canBlock(githubAllow.id, 'grabber_compat') === false,
       'every request a GitHub page made matched it, and was counted as an IP-logger block');
     check('an IP-logger block still may', !!grabberBlock && canBlock(grabberBlock.id, 'grabbers') === true);
     check('an AdShield exception may not explain a block',

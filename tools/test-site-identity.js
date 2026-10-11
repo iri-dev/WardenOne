@@ -121,7 +121,8 @@ assert(antiEntry, 'anti-redirect content-script entry is missing');
 assert.deepStrictEqual(antiEntry.js.slice(-2), ['domain-utils.js', 'anti-redirect.js']);
 const bridgeEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('bridge.js'));
 assert(bridgeEntry, 'bridge content-script entry is missing');
-assert.deepStrictEqual(bridgeEntry.js.slice(-2), ['domain-utils.js', 'bridge.js']);
+assert.deepStrictEqual(bridgeEntry.js.slice(0, 3),
+  ['domain-utils.js', 'bridge.js', 'frame-image-logger.js']);
 
 // Repair no longer injects files into live tabs (it reloads them, SEC-03), so the manifest is
 // the only place the shared identity helper's ordering is decided.
