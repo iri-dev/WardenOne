@@ -14,10 +14,9 @@ const rules = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-spotify-media.js
 const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const asset = 'spotify-silent-1s.mp4';
 const expected = [
-  '||akamaized.net/audio/', '||scdn.co/audio/', '||scdn.co/mp3-ad/',
-  '||scdn.co/mp3/', '||spotifycdn.com/audio/', '||amillionads.com^',
-  '||2mdn.net^', '||adxcel.com^', '||adstudio-assets.scdn.co^',
-  '||spotify.com/ad-logic/',
+  [3, '||scdn.co/mp3-ad/'], [6, '||amillionads.com^'],
+  [7, '||2mdn.net^'], [8, '||adxcel.com^'],
+  [9, '||adstudio-assets.scdn.co^'], [10, '||spotify.com/ad-logic/'],
 ];
 
 const entry = manifest.declarative_net_request.rule_resources.find((item) => item.id === 'spotify_media');
@@ -26,21 +25,21 @@ const war = (manifest.web_accessible_resources || []).find((item) =>
   item.resources.length === 1 && item.resources[0] === asset);
 assert(war && war.matches.length === 1 && war.matches[0] === 'https://open.spotify.com/*',
   'silent media must be accessible only from Spotify');
-/* The last rule is the one uBlock Origin's list needed podcast exceptions for, generalised:
+/* The media allow preserves playback through generic tracker lists:
    media the web player loads is never cut off by a tracker or ad list. A podcast enclosure
    often travels through an analytics prefix host (chtbl.com, podscribe.com, mgln.ai) that
    the EasyPrivacy pack blocks for every type, and a blocked media request leaves the player
-   stuck rather than silent. It sits above the 1000-point tracker packs and below both the
-   ad-media redirects (1100) and the 2000-point malware blocks, so a redirect still wins and
-   a malicious host is still refused. */
+   stuck rather than silent. It sits above the 1000-point tracker packs and below the
+   dedicated ad-media redirects (1100) and the 2000-point malware blocks. */
 const redirects = rules.filter((rule) => rule.action.type === 'redirect');
 const allows = rules.filter((rule) => rule.action.type === 'allow');
 assert.strictEqual(rules.length, expected.length + 1);
 assert.strictEqual(redirects.length, expected.length);
 assert.strictEqual(allows.length, 1);
-assert.deepStrictEqual(redirects.map((rule) => rule.condition.urlFilter), expected);
-rules.forEach((rule, index) => {
-  assert.strictEqual(rule.id, index + 1);
+assert.deepStrictEqual(redirects.map((rule) => [rule.id, rule.condition.urlFilter]), expected);
+assert.strictEqual(new Set(rules.map((rule) => rule.id)).size, rules.length);
+rules.forEach((rule) => {
+  assert(Number.isInteger(rule.id) && rule.id > 0);
   assert.deepStrictEqual(rule.condition.initiatorDomains, ['open.spotify.com']);
   assert.deepStrictEqual(rule.condition.resourceTypes, ['media']);
 });
@@ -79,6 +78,7 @@ for (const file of ['rules-trackers.json', 'rules-easyprivacy.json', 'rules-adsh
    track-playback path is caught before it reaches a browser. */
 function matches(rule, url, initiator, type) {
   if (initiator !== 'open.spotify.com' || type !== 'media') return false;
+  if (!rule.condition.urlFilter) return true;
   const filter = rule.condition.urlFilter.slice(2);
   const boundary = filter.endsWith('^');
   const hostAndPath = boundary ? filter.slice(0, -1) : filter;
@@ -90,18 +90,33 @@ function matches(rule, url, initiator, type) {
   if (domain !== host && !domain.endsWith('.' + host)) return false;
   return !prefix || parsed.pathname.startsWith(prefix);
 }
-const redirected = (url, initiator = 'open.spotify.com', type = 'media') =>
-  redirects.some((rule) => matches(rule, url, initiator, type));
+const outcome = (url, initiator = 'open.spotify.com', type = 'media') =>
+  rules.filter((rule) => matches(rule, url, initiator, type))
+    .sort((left, right) => right.priority - left.priority)[0]?.action.type || 'none';
 
-assert(redirected('https://audio-fa.scdn.co/audio/ad.mp3'));
-assert(redirected('https://adstudio-assets.scdn.co/creative.mp4'));
-assert(redirected('https://audio.spotify.com/ad-logic/creative.mp4'));
-assert(!redirected('https://gew1-spclient.spotify.com/widevine-license/v1/audio/license'));
-assert(!redirected('https://gew1-spclient.spotify.com/track-playback/v1/state'));
-assert(!redirected('https://audio-fa.scdn.co/audio/ad.mp3', 'example.com'));
-assert(!redirected('https://audio-fa.scdn.co/audio/ad.mp3', 'open.spotify.com', 'xmlhttprequest'));
-assert(!redirected('https://traffic.megaphone.fm/podcast.mp3'));
-assert(!redirected('https://evilscdn.co/audio/ad.mp3'));
+for (const url of [
+  'https://audio-fa.scdn.co/audio/song',
+  'https://audio-fa.scdn.co/audio/ad.mp3',
+  'https://audio-fa.scdn.co/mp3/song',
+  'https://audio-fa.scdn.co/mp3/preview.mp3',
+  'https://audio.spotifycdn.com/audio/song',
+  'https://media.akamaized.net/audio/episode.mp3',
+  'https://traffic.megaphone.fm/podcast.mp3',
+  'https://chtbl.com/track/podcast.mp3',
+  'https://gew1-spclient.spotify.com/widevine-license/v1/audio/license',
+  'https://gew1-spclient.spotify.com/track-playback/v1/state',
+  'https://evilscdn.co/audio/ad.mp3',
+]) assert.strictEqual(outcome(url), 'allow', url + ' must not be redirected');
+for (const url of [
+  'https://audio-fa.scdn.co/mp3-ad/creative.mp3',
+  'https://amillionads.com/creative.mp4',
+  'https://secure.2mdn.net/creative.mp4',
+  'https://adxcel.com/creative.mp4',
+  'https://adstudio-assets.scdn.co/creative.mp4',
+  'https://audio.spotify.com/ad-logic/creative.mp4',
+]) assert.strictEqual(outcome(url), 'redirect', url + ' must reach the silent clip');
+assert.strictEqual(outcome('https://audio-fa.scdn.co/mp3-ad/creative.mp3', 'example.com'), 'none');
+assert.strictEqual(outcome('https://audio-fa.scdn.co/mp3-ad/creative.mp3', 'open.spotify.com', 'xmlhttprequest'), 'none');
 assert(fs.statSync(path.join(ROOT, asset)).size > 1000);
 assert(bg.includes("const SPOTIFY_MEDIA_RULESET_ID = 'spotify_media';"));
 assert(bg.includes('(adshieldOn ? enableRulesetIds : disableRulesetIds).push(SPOTIFY_MEDIA_RULESET_ID);'));

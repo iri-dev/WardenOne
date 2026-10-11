@@ -75,7 +75,8 @@ async function decide({ answer, throws, cfg, rulesetError, unregistered }) {
 }
 
 const ON = { enabled: true, blockMalwareSites: true, adShield: true, blockTrackers: true };
-const ALL = ['grabbers', 'adshield_easylist', 'spotify_media', 'trackers', 'easyprivacy'];
+const ALL = ['grabbers', 'grabber_navigation', 'grabber_malware_navigation', 'grabber_compat',
+  'adshield_easylist', 'spotify_media', 'trackers', 'easyprivacy'];
 
 (async () => {
   // -------------------------------------------------------------------------
@@ -125,7 +126,7 @@ const ALL = ['grabbers', 'adshield_easylist', 'spotify_media', 'trackers', 'easy
   {
     const r = await decide({ answer: ['adshield_easylist', 'trackers'], cfg: ON });
     check('a missing core ruleset is still a danger', r.worst === 'danger');
-    check('and it is named', r.issues.some((i) => /malicious-domain/i.test(i.text)));
+    check('and it is named', r.issues.some((i) => /logger-site/i.test(i.text)));
   }
 
   // -------------------------------------------------------------------------

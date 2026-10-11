@@ -1198,11 +1198,11 @@
 <h2>IP protection</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Block IP-grabber beacons</div><div class="desc">Someone can hide a logger in an ordinary-looking page &mdash; an image or a background request to a grabber service &mdash; and your address is recorded just by the page loading. This stops those requests before they leave, so there is nothing to record.</div></div>
+      <div><div class="name">Block IP-grabber beacons</div><div class="desc">Stops recognized logger images and other embedded requests before they leave. Direct visits have separate page-warning and malicious-site controls.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockGrabberResources"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Warn on IP-logger pages</div><div class="desc">The other half: a link sent to you that goes to the grabber itself &mdash; Grabify, IPLogger and the rest &mdash; usually dressed up as a redirect to somewhere you meant to go. You get told what the page is before you use it. The page still loads; nothing is blocked here.</div></div>
+      <div><div class="name">Warn on IP-logger pages</div><div class="desc">Intercepts direct visits to known logger links with a warning before the destination loads. If this is off, malicious-site blocking may still stop the visit without a warning.</div></div>
       <label class="tg"><input type="checkbox" data-key="warnGrabberDomains"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">

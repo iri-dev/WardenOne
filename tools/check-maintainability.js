@@ -153,6 +153,7 @@ function checkContentBuild() {
   'background-memory.js',
   'background-downloads.js',
   'bridge.js',
+  'frame-image-logger.js',
   'popup.js',
   'popup-health.js',
   'popup-scroll-memory.js',
@@ -189,6 +190,7 @@ function checkContentBuild() {
   'src/content.js',
   'tools/build-content.js',
   'tools/harden-static-dnr.js',
+  'tools/build-grabber-rulepacks.js',
   'tools/check-security-posture.js',
   'tools/check-feeds.js',
   'tools/test-memory-shield.js',
@@ -340,6 +342,7 @@ function checkContentBuild() {
   'tools/test-history-privacy.js',
   'tools/test-privacy-data-erase.js',
   'tools/test-static-dnr-compatibility.js',
+  'tools/test-grabber-switch-matrix.js',
   'tools/test-dnr-budget.js',
   'tools/test-dnr-atomic-replace.js',
   'tools/test-listener-census.js',
@@ -472,6 +475,10 @@ function checkContentBuild() {
 [
   'manifest.json',
   'rules.json',
+  'rules-grabber-resources.json',
+  'rules-grabber-navigation.json',
+  'rules-grabber-malware-navigation.json',
+  'rules-grabber-compat.json',
   'rules-trackers.json',
   'rules-easyprivacy.json',
   'rules-adshield.json',
@@ -499,6 +506,7 @@ checkCommand('package performance budget', ['tools/check-performance-budget.js']
 checkCommand('performance budget tests', ['tools/test-performance-budget.js']);
 checkCommand('memory shield tests', ['tools/test-memory-shield.js']);
 checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--check']);
+checkCommand('grabber rulepack split', ['tools/build-grabber-rulepacks.js', '--check']);
 /* The harness embeds a copy of the shipped toast block so it opens by double-click
    rather than needing a server. A copy can go stale, and nothing was checking this
    one -- so a toast added to the engine could be missing from the page used to test
@@ -515,6 +523,7 @@ if (exists('tools/build-toast-harness.js') && exists('tools/toast-harness.html')
   console.log('[skip] toast harness is not present in this checkout');
 }
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
+checkCommand('grabber switch matrix', ['tools/test-grabber-switch-matrix.js']);
 checkCommand('image-logger protection tests', ['tools/test-image-logger-protection.js']);
 checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
 checkCommand('DNR atomic rule replacement tests', ['tools/test-dnr-atomic-replace.js']);

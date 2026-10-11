@@ -4063,26 +4063,28 @@
           return""
         }
       },
-      warnImage=input=>{
+      warnImage=(input,selected)=>{
         const host=imageLoggerHost(input);
         if(!host||imageWarned.has(host)||imageWarned.size>=8)return;
-        imageWarned.add(host),
-        log("detected_grabber_image_candidate",{
+        imageWarned.add(host);
+        const detail={
           matched:host,
           quiet:!0
-        })
+        };
+        if(selected)detail.selected=!0;
+        log("detected_grabber_image_candidate",detail)
       },
-      scanSourceSet=value=>{
-        for(const candidate of String(value||"").split(",")){
-          const url=candidate.trim().split(/\s+/)[0];
-          url&&warnImage(url)
-        }
+      scanSelectedImage=node=>{
+        if(node&&node.tagName==="IMG"&&node.currentSrc)warnImage(node.currentSrc,!0)
       },
       scanImage=node=>{
         if(!node||!node.getAttribute)return;
-        if(node.tagName==="IMG")warnImage(node.getAttribute("src"));
-        if(node.tagName==="IMG"||node.tagName==="SOURCE"&&node.parentElement&&node.parentElement.tagName==="PICTURE")
-          scanSourceSet(node.getAttribute("srcset"))
+        if(node.tagName==="IMG"){
+          if(node.getAttribute("srcset")||node.parentElement&&node.parentElement.tagName==="PICTURE")scanSelectedImage(node);
+          else warnImage(node.getAttribute("src"))
+        }
+        if(node.tagName==="SOURCE"&&node.parentElement&&node.parentElement.tagName==="PICTURE")
+          scanSelectedImage(node.parentElement.querySelector("img"))
       },
       scanImages=root=>{
         try{
@@ -4105,6 +4107,13 @@
       catch(_){
 
       }
+      const onImageSettled=event=>{
+        const node=event.target;
+        if(node&&node.tagName==="IMG"&&(node.getAttribute("srcset")||node.parentElement&&node.parentElement.tagName==="PICTURE"))
+          scanSelectedImage(node)
+      };
+      woOn(document,"load",onImageSettled,!0),
+      woOn(document,"error",onImageSettled,!0),
       scanImages(document),
       woObserve((muts,added,roots)=>{
         for(const mu of muts)if(mu.type==="attributes"&&(mu.attributeName==="src"||mu.attributeName==="srcset"))

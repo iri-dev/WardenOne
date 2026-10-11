@@ -1,0 +1,144 @@
+[
+  {
+    "id": 163,
+    "priority": 2000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "urlFilter": "||static.doubleclick.net/instream/ad_status.js",
+      "resourceTypes": [
+        "script",
+        "xmlhttprequest"
+      ]
+    }
+  },
+  {
+    "id": 164,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "initiatorDomains": [
+        "github.com"
+      ],
+      "requestDomains": [
+        "github.com",
+        "githubassets.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "avatars.githubusercontent.com",
+        "camo.githubusercontent.com",
+        "media.githubusercontent.com",
+        "user-images.githubusercontent.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  },
+  {
+    "id": 165,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "initiatorDomains": [
+        "google.com"
+      ],
+      "requestDomains": [
+        "google.com",
+        "googleapis.com",
+        "gstatic.com",
+        "googleusercontent.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  },
+  {
+    "id": 166,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "initiatorDomains": [
+        "gamedrive.org"
+      ],
+      "requestDomains": [
+        "gamedrive.org"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  },
+  {
+    "id": 167,
+    "priority": 3000,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "requestDomains": [
+        "accounts.google.com",
+        "oauth2.googleapis.com",
+        "apis.google.com",
+        "login.microsoftonline.com",
+        "login.live.com",
+        "appleid.apple.com",
+        "okta.com",
+        "oktacdn.com",
+        "auth0.com",
+        "onelogin.com",
+        "duosecurity.com",
+        "openathens.net",
+        "shibboleth.net",
+        "pingidentity.com",
+        "pingone.com",
+        "b2clogin.com",
+        "ciamlogin.com",
+        "hcaptcha.com",
+        "recaptcha.net",
+        "challenges.cloudflare.com",
+        "turnstile.cloudflare.com",
+        "amazoncognito.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "media",
+        "websocket"
+      ]
+    }
+  }
+]

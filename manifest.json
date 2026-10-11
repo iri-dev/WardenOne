@@ -93,7 +93,22 @@
       {
         "id": "grabbers",
         "enabled": true,
-        "path": "rules.json"
+        "path": "rules-grabber-resources.json"
+      },
+      {
+        "id": "grabber_navigation",
+        "enabled": true,
+        "path": "rules-grabber-navigation.json"
+      },
+      {
+        "id": "grabber_malware_navigation",
+        "enabled": true,
+        "path": "rules-grabber-malware-navigation.json"
+      },
+      {
+        "id": "grabber_compat",
+        "enabled": true,
+        "path": "rules-grabber-compat.json"
       },
       {
         "id": "adshield_easylist",
@@ -371,7 +386,8 @@
       ],
       "js": [
         "domain-utils.js",
-        "bridge.js"
+        "bridge.js",
+        "frame-image-logger.js"
       ],
       "run_at": "document_start",
       "all_frames": true,
