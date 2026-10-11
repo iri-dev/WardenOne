@@ -32,6 +32,12 @@
 
 ### Fixed
 
+- IP-logger beacon blocking, direct-visit warnings and malicious-site blocking now control separate network rules. Turning off page warnings removes their redirects; turning off beacon blocking removes its embedded-request rules, while malicious-site blocking can still stop a direct visit.
+- Spotify media redirects now cover dedicated ad paths and hosts only. Shared audio CDN paths stay available for tracks, previews and podcasts; the player uses Spotify's ad metadata for those shared paths.
+- Suspicious image URLs in embedded frames now reach the same unconfirmed IP-logger warning path as top-page images. The frame detector respects site pauses and records the visited page in Activity Center.
+- Responsive image warnings now follow the browser-selected image instead of alerting on unused `srcset` candidates. Activity Center distinguishes a selected image from a URL reference without claiming the request was sent.
+- Nearby IP-logger verification events now share one DNR feedback read. Events still need their own matching rule evidence before WardenOne reports a confirmed block.
+
 - NaturalReader speech playback works with SessionShield enabled. Its two observed speech service hosts are trusted only when called from NaturalReader pages; other API Gateway projects remain subject to token protection.
 - TTSReader speech playback works with SessionShield enabled. Its observed speech backend is trusted only from TTSReader pages; other Cloud Functions projects remain subject to token protection.
 

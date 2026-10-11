@@ -34,29 +34,32 @@ async function run() {
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result.value;
     };
-    const enabled = await evaluate("chrome.declarativeNetRequest.getEnabledRulesets().then((ids) => ids.includes('grabbers'))");
-    assert(enabled, 'the packaged grabbers ruleset is enabled');
-    const outcome = async (url, type, initiator) => {
+    const enabled = await evaluate("chrome.declarativeNetRequest.getEnabledRulesets().then((ids) => ids)");
+    assert(enabled.includes('grabbers') && enabled.includes('grabber_navigation')
+      && enabled.includes('grabber_malware_navigation'), 'the packaged grabber rulepacks are enabled');
+    const outcome = async (url, type, initiator, rulesetId = 'grabbers') => {
       const input = { url, type, initiator };
       const matched = await evaluate('chrome.declarativeNetRequest.testMatchOutcome('
         + JSON.stringify(input) + ').then((result) => result.matchedRules)');
-      return matched.filter((rule) => rule.rulesetId === 'grabbers').map((rule) => rule.ruleId);
+      return matched.filter((rule) => rule.rulesetId === rulesetId).map((rule) => rule.ruleId);
     };
     const crossSite = 'https://news.example/article';
     assert((await outcome('https://iplogger.icu/x', 'image', crossSite)).includes(169));
-    assert((await outcome('https://iplogger.icu/x', 'main_frame', crossSite)).includes(168));
+    assert((await outcome('https://iplogger.icu/x', 'main_frame', crossSite, 'grabber_navigation')).includes(168));
     assert((await outcome('https://tracker.iplocation.net/p/ABC123', 'image', crossSite)).includes(170));
     assert(!(await outcome('https://tracker.iplocation.net/assets/logo.png', 'image',
       'https://tracker.iplocation.net/')).includes(170), 'same-site dashboard images remain available');
     for (const route of ['t/ABC12345', 's/abc123']) {
-      assert((await outcome('https://tracker.iplocation.net/' + route, 'main_frame', crossSite)).includes(171));
+      assert((await outcome('https://tracker.iplocation.net/' + route, 'main_frame', crossSite,
+        'grabber_navigation')).includes(171));
       assert((await outcome('https://tracker.iplocation.net/' + route, 'xmlhttprequest', crossSite)).includes(172));
     }
     for (const url of ['https://tracker.iplocation.net/',
       'https://tracker.iplocation.net/t/',
       'https://tracker.iplocation.net.evil.example/t/ABC12345',
       'https://www.iplocation.net/t/ABC12345']) {
-      assert(!(await outcome(url, 'main_frame', crossSite)).includes(171), 'overbroad route: ' + url);
+      assert(!(await outcome(url, 'main_frame', crossSite, 'grabber_navigation')).includes(171),
+        'overbroad route: ' + url);
     }
     assert(!(await outcome('https://images.example/pixel.gif', 'image', crossSite)).includes(170));
     console.log('[ok] packaged image-logger DNR rules match reviewed hosts and routes in ' + browser.Browser);
