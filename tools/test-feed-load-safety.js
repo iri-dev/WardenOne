@@ -66,6 +66,7 @@ const constLine = (name, fallback) => { const m = new RegExp('^const ' + name + 
 
 const LIFTED = [
   constLine('GRABBER_FEED_RULE_BASE'), constLine('GRABBER_FEED_MAX'), constLine('GRABBER_NAV_RULE_ID'),
+  constLine('GRABBER_MALWARE_NAV_RULE_ID'),
   constLine('MINER_FEED_RULE_BASE'), constLine('MINER_FEED_MAX'), constLine('MINER_POOL_RULE_OFFSET'),
   constLine('SUPPLEMENTAL_LIST_STORAGE_KEY'),
   constLine('FEED_LOAD_RETRY_MS', 'const FEED_LOAD_RETRY_MS = [];'),

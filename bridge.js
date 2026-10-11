@@ -1944,6 +1944,21 @@
     } catch (_) { return false; }
   }
 
+  function bridgeFrameGrabberWarningAllowed() {
+    if (!bridgeConfigReady || bridgeConfig.enabled !== true || bridgeConfig.warnGrabberDomains !== true) return false;
+    const own = bridgeOwnHost();
+    if (!own) return false;
+    const allowlist = bridgeActiveAllowlist(bridgeConfig);
+    if (bridgeHostMatchesList(own, allowlist)) return false;
+    const top = bridgeTopHost();
+    if (top && top !== own) {
+      if (bridgeHostMatchesList(top, allowlist)) return false;
+      const off = bridgeSiteOverridesFor(bridgeConfig, top);
+      if (off.enabled === false || off.warnGrabberDomains === false) return false;
+    }
+    return true;
+  }
+
   /* WebGL is a page-tree choice: a cross-origin game or viewer embedded by a selected site
      follows the top page, rather than escaping because its own frame has another hostname. */
   function bridgeFrameWebGLDisabled(clean) {
@@ -2566,6 +2581,10 @@
   const SIBLING_REFRESH_WAIT_MS = 8000;
   try {
     window.__wardenOneContentConfig = () => bridgeSnapshot;
+    window.__wardenOneFrameGrabberConfig = () => ({
+      enabled: bridgeFrameGrabberWarningAllowed(),
+      site: bridgeFrameSite,
+    });
     window.__wardenOneContentConfigRequest = (need, cb) => {
       const wanted = Array.isArray(need) && need.length ? need : CONTENT_CONFIG_NEED;
       const covered = wanted.every((n) => CONTENT_CONFIG_NEED.indexOf(n) >= 0);

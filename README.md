@@ -589,8 +589,10 @@ reuse old permissions and leave stuff running in the background.
 ### WebRTC & IP-logger Protection
 
 WebRTC can leak your local network addresses without a normal page request. WardenOne blocks known
-IP-grabber beacons and logger hosts (Grabify-style links etc). The guard has two levels and each
-one has its own switch.
+IP-grabber beacons and logger hosts (Grabify-style links etc). Block IP-grabber beacons controls
+embedded resource requests. Warn on IP-logger pages controls the warning shown before direct
+visits. The malicious-site switch can still block a known logger visit when page warnings are off;
+other enabled blocklists may independently cover the same destination.
 
 The packaged rules also stop images from reviewed logger services before they load, including
 third-party images from IPLocation's tracker host. Its tracking-link routes show a warning on
@@ -1347,10 +1349,11 @@ player moves on to the next song like it would after a real ad. It's the same tr
 filter uses on open.spotify.com and it doesn't care which host the ad would've come from.
 WardenOne's version also covers ads delivered through Spotify's manifests.
 
-**Second, the network.** Requests to the Spotify ad-media hosts on uBlock Origin's list get
-redirected to the same silent clip. Media requests only, so songs (which load over fetch) never get
-touched. Media the web player loads is also let through the ad and tracker lists, because some
-podcasts deliver their audio through an analytics prefix and those need to play. Not stall.
+**Second, the network.** Media requests to dedicated advertising paths and hosts are redirected
+to the same silent clip. Shared audio CDN paths are left alone: their URLs cannot distinguish an
+ad from a song, preview or podcast. The web player's other media is also let through generic ad
+and tracker lists so podcast audio delivered through an analytics prefix can play; malware rules
+still take priority.
 
 **Third, a fallback** for an ad that still makes it to the player unchanged. It's recognised from
 Spotify's own metadata and muted before it plays, then skipped to near the end. But only once

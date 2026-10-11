@@ -23,6 +23,37 @@ assert.deepEqual(new Set(redirect.condition.requestDomains),
   new Set(blocks.flatMap((rule) => rule.condition.requestDomains)));
 assert(manifest.web_accessible_resources.some((entry) => entry.resources.includes('ip-logger-warning.html')
   && entry.resources.includes('ip-logger-warning.js') && entry.matches.includes('<all_urls>')));
+assert(manifest.content_scripts.some((entry) => entry.js.includes('frame-image-logger.js')
+  && entry.js.indexOf('bridge.js') < entry.js.indexOf('frame-image-logger.js')
+  && entry.all_frames === true && entry.world === 'ISOLATED'),
+'a small isolated frame detector loads after the bridge in every frame');
+
+const bridge = read('bridge.js');
+const frameGateStart = bridge.indexOf('  function bridgeFrameGrabberWarningAllowed() {');
+const frameGateEnd = bridge.indexOf('\n  /* WebGL', frameGateStart);
+assert(frameGateStart > 0 && frameGateEnd > frameGateStart, 'frame warning config gate changed');
+const frameGate = bridge.slice(frameGateStart, frameGateEnd);
+for (const test of [
+  { name: 'enabled frame', want: true },
+  { name: 'master off', enabled: false, want: false },
+  { name: 'warning off', warnGrabberDomains: false, want: false },
+  { name: 'own site paused', allowlist: ['widget.example'], want: false },
+  { name: 'top site paused', allowlist: ['forum.example'], want: false },
+  { name: 'top site override', topOff: { warnGrabberDomains: false }, want: false },
+  { name: 'top site master override', topOff: { enabled: false }, want: false },
+]) {
+  const cfg = { enabled: test.enabled !== false, warnGrabberDomains: test.warnGrabberDomains !== false,
+    allowlist: test.allowlist || [] };
+  const sandbox = {
+    bridgeConfigReady: true, bridgeConfig: cfg,
+    bridgeOwnHost: () => 'widget.example', bridgeTopHost: () => 'forum.example',
+    bridgeActiveAllowlist: (value) => value.allowlist,
+    bridgeHostMatchesList: (host, list) => list.includes(host),
+    bridgeSiteOverridesFor: (_value, host) => host === 'forum.example' ? (test.topOff || {}) : {},
+  };
+  vm.runInNewContext(frameGate + '\nthis.allowed = bridgeFrameGrabberWarningAllowed();', sandbox);
+  assert.equal(sandbox.allowed, test.want, test.name);
+}
 
 const source = read('src/content.js');
 const guardStart = source.indexOf('    if(WO.warnGrabberDomains){\n      const knownGrabbers=');
@@ -36,10 +67,11 @@ assert(toastStart > 0 && /cannot confirm whether the browser sent a request/.tes
 
 function imageRig(blockKnown) {
   const events = [];
+  const listeners = new Map();
   let observe;
   let observesImageSources = false;
   class ImageElement {
-    constructor() { this.tagName = 'IMG'; this.attrs = {}; }
+    constructor() { this.tagName = 'IMG'; this.attrs = {}; this.currentSrc = ''; }
     getAttribute(name) { return this.attrs[name] || null; }
     setAttribute(name, value) {
       this.attrs[name] = String(value);
@@ -55,12 +87,14 @@ function imageRig(blockKnown) {
     regDomain(host) { return String(host).split('.').slice(-2).join('.'); },
     HTMLImageElement: ImageElement,
     document: { querySelectorAll: () => [] },
+    woOn(_target, type, fn) { listeners.set(type, fn); },
     woObserve(fn, imageSources) { observe = fn; observesImageSources = !!imageSources; },
     log(type, detail) { events.push({ type, detail }); },
     URL, Set, Object,
   };
   vm.runInNewContext(guard, sandbox);
-  return { events, ImageElement, observe, observesImageSources };
+  return { events, ImageElement, observe, observesImageSources,
+    settle(type, target) { listeners.get(type)({ target }); } };
 }
 
 {
@@ -77,9 +111,11 @@ function imageRig(blockKnown) {
   assert.equal(r.events[1].detail.matched, 'iplogger.suspect.test');
   assert.equal(r.events[1].detail.quiet, true);
   assert(!JSON.stringify(r.events).includes('TOPSECRET'), 'tokens never enter the event');
-  r.observe([], [], [{ querySelectorAll: () => [{ tagName: 'IMG', getAttribute: () => 'https://other.test/iplogger/abc1234567' }] }]);
+  r.observe([], [], [{ querySelectorAll: () => [{ tagName: 'IMG',
+    getAttribute: (name) => name === 'src' ? 'https://other.test/iplogger/abc1234567' : null }] }]);
   assert.equal(r.events.length, 3, 'parser-inserted images are checked too');
-  r.observe([], [], [{ querySelectorAll: () => [{ tagName: 'IMG', getAttribute: () => 'https://other.test/iplogger/explanation.jpg' }] }]);
+  r.observe([], [], [{ querySelectorAll: () => [{ tagName: 'IMG',
+    getAttribute: (name) => name === 'src' ? 'https://other.test/iplogger/explanation.jpg' : null }] }]);
   assert.equal(r.events.length, 3, 'ordinary explanatory image names do not trigger');
 }
 {
@@ -90,11 +126,19 @@ function imageRig(blockKnown) {
   assert.equal(r.events.length, 0, 'an ordinary source change stays quiet');
   existing.setAttribute('src', 'https://iplogger.attribute.test/pixel.gif?token=PRIVATE');
   assert.equal(r.events.length, 1, 'an existing image source change is detected');
+  existing.currentSrc = 'https://ordinary.test/one.png';
   existing.setAttribute('srcset', 'https://ordinary.test/one.png 1x, https://grabify.link/two.png 2x');
-  assert.equal(r.events.length, 2, 'an existing image srcset change is detected');
+  assert.equal(r.events.length, 1, 'an unused 2x candidate stays quiet');
+  existing.currentSrc = 'https://grabify.link/two.png';
+  r.settle('load', existing);
+  assert.equal(r.events.length, 2, 'a newly selected responsive image is detected');
+  assert.equal(r.events[1].detail.selected, true, 'the selected candidate carries its evidence');
   assert(!JSON.stringify(r.events).includes('PRIVATE'), 'changed image URLs are redacted');
+  const pictureImage = new r.ImageElement();
+  pictureImage.currentSrc = 'https://iplogger.picture.test/asset.png';
+  const picture = { tagName: 'PICTURE', querySelector: () => pictureImage };
   r.observe([{ type: 'attributes', attributeName: 'srcset', target: {
-    tagName: 'SOURCE', parentElement: { tagName: 'PICTURE' },
+    tagName: 'SOURCE', parentElement: picture,
     getAttribute: () => 'https://iplogger.picture.test/asset.png 2x',
   } }], [], []);
   assert.equal(r.events.length, 3, 'a picture source change is detected');
@@ -108,6 +152,74 @@ function imageRig(blockKnown) {
   const r = imageRig(false);
   new r.ImageElement().src = 'https://grabify.link/pixel?token=PRIVATE';
   assert.equal(r.events.length, 1, 'a known image warns when page-side blocking is off');
+}
+
+function frameImageRig() {
+  const events = [];
+  const listeners = new Map();
+  const observers = [];
+  let state = { enabled: false, site: 'widget.example' };
+  const image = (tagName, attrs, parentElement, currentSrc = '') => ({
+    nodeType: 1, tagName, parentElement, currentSrc,
+    getAttribute(name) { return attrs[name] || null; },
+    querySelectorAll() { return []; },
+  });
+  const initial = image('IMG', { src: 'https://iplogger.frame.test/a?token=PRIVATE' });
+  const document = {
+    baseURI: 'https://widget.example/',
+    addEventListener(name, fn) { listeners.set(name, fn); },
+    removeEventListener(name, fn) { if (listeners.get(name) === fn) listeners.delete(name); },
+    querySelectorAll() { return [initial]; },
+  };
+  class Observer {
+    constructor(fn) { this.fn = fn; observers.push(this); this.active = false; }
+    observe(_root, options) { this.active = true; this.options = options; }
+    disconnect() { this.active = false; }
+  }
+  vm.runInNewContext(read('frame-image-logger.js'), {
+    window: { top: {}, __wardenOneFrameGrabberConfig: () => state },
+    document, location: { href: document.baseURI }, MutationObserver: Observer,
+    siteIdentity: (host) => String(host).split('.').slice(-2).join('.'),
+    chrome: { runtime: { lastError: null, sendMessage(message, cb) { events.push(message); cb(); } } },
+    URL, Set,
+  });
+  const refresh = () => listeners.get('wo-bridge-config-ready')();
+  const mutate = (records) => { for (const observer of observers) if (observer.active) observer.fn(records); };
+  return { events, observers, refresh, mutate, image,
+    settle(type, target) { const fn = listeners.get(type); if (fn) fn({ target }); },
+    setState(next) { state = next; refresh(); } };
+}
+
+{
+  const r = frameImageRig();
+  assert.equal(r.events.length, 0, 'the frame detector waits for an enabled config');
+  r.setState({ enabled: true, site: 'widget.example' });
+  assert.equal(r.events.length, 1, 'an existing frame image is checked after config arrives');
+  assert.deepEqual(Object.keys(r.events[0].detail).sort(), ['matched', 'quiet']);
+  assert.equal(r.events[0].detail.matched, 'iplogger.frame.test');
+  assert(!JSON.stringify(r.events).includes('PRIVATE'), 'the frame sends only the hostname');
+  const observer = r.observers[0];
+  assert.deepEqual(Array.from(observer.options.attributeFilter), ['src', 'srcset']);
+  const ordinary = r.image('IMG', { src: 'https://metrics.other.test/pixel.gif' });
+  const sameSite = r.image('IMG', { src: 'https://cdn.widget.example/iplogger/abc1234567' });
+  const changed = r.image('IMG', { srcset: 'https://metrics.other.test/one.png 1x, https://grabify.other.test/two.png 2x' },
+    null, 'https://metrics.other.test/one.png');
+  r.mutate([{ type: 'attributes', target: ordinary }, { type: 'attributes', target: sameSite },
+    { type: 'attributes', target: changed }]);
+  assert.equal(r.events.length, 1, 'unused srcset, ordinary and same-site images stay quiet');
+  changed.currentSrc = 'https://grabify.other.test/two.png';
+  r.settle('load', changed);
+  assert.equal(r.events.length, 2, 'a selected frame candidate is reported');
+  assert.equal(r.events[1].detail.selected, true);
+  const pictureImage = r.image('IMG', {}, null, 'https://iplogger.picture.test/pixel.gif');
+  const picture = { tagName: 'PICTURE', querySelector: () => pictureImage };
+  const source = r.image('SOURCE', { srcset: 'https://iplogger.picture.test/pixel.gif 1x' }, picture);
+  r.mutate([{ type: 'childList', addedNodes: [source] }]);
+  assert.equal(r.events.length, 3, 'new picture sources are checked');
+  r.setState({ enabled: false, site: 'widget.example' });
+  assert.equal(observer.active, false, 'turning the protection off disconnects the observer');
+  r.mutate([{ type: 'attributes', target: r.image('IMG', { src: 'https://iplogger.off.test/x' }) }]);
+  assert.equal(r.events.length, 3, 'disabled frames stay quiet');
 }
 
 const bg = read('background.js');
@@ -125,6 +237,7 @@ async function testSharedFeedback() {
       calls++;
       return { rulesMatchedInfo: [{ tabId: 3, timeStamp: now, rule: { ruleId: 1 } }] };
     } } },
+    setTimeout: (fn) => setTimeout(fn, 0),
     Date: { now: () => now }, Math, Number,
   };
   vm.runInNewContext(feedback + '\nthis.readEvidence = readMatchedRuleEvidence;', sandbox);
@@ -178,7 +291,43 @@ async function testSharedFeedback() {
   assert.equal((await sandbox.readEvidence({}, 'background')).ok, true, 'budget recovers after the ten-minute window');
 }
 
+async function testEventBatch() {
+  let now = 1000000;
+  let calls = 0;
+  const timers = [];
+  const sandbox = {
+    chrome: { declarativeNetRequest: { getMatchedRules: async () => {
+      calls++;
+      return { rulesMatchedInfo: [
+        { tabId: 31, timeStamp: 1000000, rule: { ruleId: 1 } },
+        { tabId: 32, timeStamp: 1000010, rule: { ruleId: 2 } },
+      ] };
+    } } },
+    setTimeout(fn, delay) { assert.equal(delay, 120); timers.push(fn); },
+    Date: { now: () => now }, Math, Number,
+  };
+  vm.runInNewContext(feedback + '\nthis.readEvidence = readMatchedRuleEvidence;', sandbox);
+  const first = sandbox.readEvidence({ tabId: 31, minTimeStamp: now, requiredAt: now }, 'event');
+  now += 10;
+  const second = sandbox.readEvidence({ tabId: 32, minTimeStamp: now, requiredAt: now }, 'event');
+  assert.equal(timers.length, 1, 'nearby events share a short batching timer');
+  assert.equal(calls, 0, 'the evidence read waits until the burst is collected');
+  timers.shift()();
+  const [one, two] = await Promise.all([first, second]);
+  assert.equal(calls, 1, 'both event checks spend one feedback read');
+  assert.deepEqual(Array.from(one.matches, (item) => item.tabId), [31]);
+  assert.deepEqual(Array.from(two.matches, (item) => item.tabId), [32]);
+  assert(one.readStartedAt >= 1000010 && two.readStartedAt >= 1000010,
+    'the shared read starts after both event timestamps');
+  now += 2000;
+  const later = sandbox.readEvidence({ tabId: 31, requiredAt: now }, 'event');
+  timers.shift()();
+  await later;
+  assert.equal(calls, 2, 'a later event needs its own fresh evidence');
+}
+
 async function flush() {
+  await new Promise((resolve) => setTimeout(resolve, 10));
   await new Promise((resolve) => setImmediate(resolve));
 }
 
@@ -216,7 +365,10 @@ async function testBackground() {
     GRABBER_NAV_RULE_ID: 741000,
     loadPackagedGrabberDomains: async () => {},
     queueHistory(entry) { history.push(entry); },
-    setTimeout(fn) { const timer = { fn, canceled: false }; timers.push(timer); return timer; },
+    setTimeout(fn, delay) {
+      if (delay < 1000) return setTimeout(fn, 0);
+      const timer = { fn, canceled: false }; timers.push(timer); return timer;
+    },
     clearTimeout(timer) { timer.canceled = true; },
     URL, Date, Map, Set, Number, Math, String,
   };
@@ -228,7 +380,7 @@ async function testBackground() {
   const wrong = await sandbox.navStatus({ ...sender, url: 'https://site.example/' });
   assert.equal(wrong.status, 'observed_unconfirmed', 'only the extension warning page can request the verdict');
   listeners.before({ tabId: 7, url: 'https://grabify.link/x?token=NAVSECRET' });
-  matched = [{ rule: { rulesetId: 'grabbers', ruleId: 168 }, tabId: 7, timeStamp: Date.now() }];
+  matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 168 }, tabId: 7, timeStamp: Date.now() }];
   const result = await sandbox.navStatus(sender);
   assert.equal(result.status, 'blocked');
   assert.equal(result.host, 'grabify.link');
@@ -238,14 +390,14 @@ async function testBackground() {
   assert.equal(history.length, 1, 'reloading a warning does not duplicate Activity');
 
   listeners.before({ tabId: 9, url: 'https://tracker.iplocation.net/t/ABC12345?token=TRACKERSECRET' });
-  matched = [{ rule: { rulesetId: 'grabbers', ruleId: 171 }, tabId: 9, timeStamp: Date.now() }];
+  matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 171 }, tabId: 9, timeStamp: Date.now() }];
   sandbox.resetEvidence();
   const trackerNav = await sandbox.navStatus({ ...sender, tab: { id: 9 } });
   assert.equal(trackerNav.status, 'blocked', 'a scoped tracker route confirms the redirect');
   assert.equal(trackerNav.host, 'tracker.iplocation.net');
   assert(!JSON.stringify(history).includes('TRACKERSECRET'));
 
-  matched = [{ rule: { rulesetId: 'grabbers', ruleId: 168 }, tabId: 11, timeStamp: Date.now() }];
+  matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 168 }, tabId: 11, timeStamp: Date.now() }];
   sandbox.resetEvidence();
   assert.equal((await sandbox.navStatus({ ...sender, tab: { id: 11 } })).status, 'observed_unconfirmed',
     'a stale rule match does not prove that an unobserved navigation was blocked');
@@ -293,6 +445,14 @@ async function testBackground() {
   assert.equal(history.at(-1).detail.observation, 'image_url_reference');
   assert.match(history.at(-1).detail.why, /cannot confirm whether the browser sent a request/);
 
+  sandbox.noteCandidate({ matched: 'iplogger.selected.test', selected: true },
+    { tab: { id: 16, url: 'https://site.example/' } });
+  await runTimers();
+  assert.equal(history.at(-1).detail.observation, 'image_selected_reference',
+    'currentSrc selection is recorded without claiming a network request');
+  assert.match(history.at(-1).detail.why, /browser selected/);
+  assert.match(history.at(-1).detail.why, /cannot confirm whether the browser sent a request/);
+
   enabled = [];
   sandbox.noteCandidate({ matched: 'grabify.link' }, { tab: { id: 14, url: 'https://site.example/' } });
   await runTimers();
@@ -327,6 +487,7 @@ function warningPageRig(result) {
 
 (async () => {
   await testSharedFeedback();
+  await testEventBatch();
   await testBackground();
   const blocked = warningPageRig({ status: 'blocked', host: 'grabify.link' });
   assert.equal(blocked.get('status').textContent, 'Blocked before connecting');
