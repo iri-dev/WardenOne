@@ -235,12 +235,23 @@ async function run() {
         const matched = await evaluate(worker, `chrome.declarativeNetRequest.getMatchedRules({ tabId: ${tabId} }).then((result) => result.rulesMatchedInfo.map((item) => item.rule))`);
         assert(matched.some((rule) => rule.rulesetId === 'grabbers' && rule.ruleId === 169),
           'Chrome attributes a real image block to the packaged logger rule');
-        await sleep(1200);
-        const notices = await evaluate(worker, `chrome.storage.local.get('wardenone_history').then((store) =>
+        const readNotices = () => evaluate(worker, `chrome.storage.local.get('wardenone_history').then((store) =>
           (store.wardenone_history || []).concat(__histBuffer || []).filter((item) => /grabber/.test(item.type || '')
             && item.detail && typeof item.detail === 'object')
             .map((item) => ({ type: item.type, matched: item.detail?.matched,
               status: item.detail?.status, observation: item.detail?.observation, url: item.url })))`);
+        let notices = [];
+        const expected = [
+          ['blocked_grabber_navigation', LOGGER_HOST], ['blocked_grabber_network', LOGGER_HOST],
+          ...[SUSPECT_HOST, SELECTED_HOST, ATTRIBUTE_HOST, SRCSET_HOST,
+            FRAME_SUSPECT_HOST, FRAME_SRCSET_HOST].map((host) => ['warned_grabber_image', host]),
+        ];
+        const noticeDeadline = Date.now() + 8000;
+        do {
+          notices = await readNotices();
+          if (expected.every(([type, host]) => notices.some((item) => item.type === type && item.matched === host))) break;
+          await sleep(100);
+        } while (Date.now() < noticeDeadline);
         assert(notices.some((item) => item.type === 'blocked_grabber_navigation'
           && item.matched === LOGGER_HOST), 'the intercepted visit has a confirmed-block Activity entry: ' + JSON.stringify(notices));
         assert(notices.some((item) => item.type === 'blocked_grabber_network'
@@ -261,7 +272,7 @@ async function run() {
         for (const host of [ATTRIBUTE_HOST, SRCSET_HOST]) {
           assert(notices.some((item) => item.type === 'warned_grabber_image'
             && item.matched === host && item.status === 'observed_unconfirmed'),
-          'an existing image changed to ' + host + ' was reported as unconfirmed');
+          'an existing image changed to ' + host + ' was reported as unconfirmed: ' + JSON.stringify(notices));
         }
         for (const host of [FRAME_SUSPECT_HOST, FRAME_SRCSET_HOST]) {
           assert(notices.some((item) => item.type === 'warned_grabber_image'
