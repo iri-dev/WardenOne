@@ -359,6 +359,7 @@ function checkContentBuild() {
   'tools/test-logger-redaction.js',
   'tools/test-message-reachability.js',
   'tools/test-list-fetch-broker.js',
+  'tools/test-cosmetic-parser-chunks.js',
   'tools/test-history-retention.js',
   'tools/test-listener-registration.js',
   'tools/test-logger-batch-reset.js',
@@ -647,6 +648,7 @@ checkCommand('owned-UI tests', ['tools/test-owned-ui.js']);
 checkCommand('stale-state tests', ['tools/test-stale-state.js']);
 checkCommand('storage prune ladder tests', ['tools/test-storage-prune-ladder.js']);
 checkCommand('cosmetic provenance tests', ['tools/test-cosmetic-provenance.js']);
+checkCommand('cosmetic source chunk tests', ['tools/test-cosmetic-parser-chunks.js']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
 checkCommand('blocker durability tests', ['tools/test-blocker-durability.js']);
 checkCommand('warning ownership tests', ['tools/test-warning-ownership.js']);

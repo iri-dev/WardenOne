@@ -3092,6 +3092,19 @@ function parseCosmeticFilters(text) {
   const PROC_MAX = 12000;     // procedural is heavier -- its own cap
   const SCRIPTLET_MAX = 12000;
   const GENERIC_HIDE_EXCEPTION_MAX = 20000;
+  function* lines() {
+    const chunks = Array.isArray(text) ? text : [text];
+    for (const chunk of chunks) {
+      const source = String(chunk || '');
+      let start = 0;
+      for (;;) {
+        const end = source.indexOf('\n', start);
+        if (end < 0) { yield source.slice(start); break; }
+        yield source.slice(start, end);
+        start = end + 1;
+      }
+    }
+  }
   // operators that mean "this is a procedural/action rule, not plain CSS"
   const PROC_OPS = /:(?:-abp-contains|-abp-has|has|has-text|contains|matches-css(?:-before|-after)?|matches-attr|matches-path|min-text-length|upward|nth-ancestor|watch-attr|xpath|others|remove|style)\(/i;
 
@@ -3132,11 +3145,10 @@ function parseCosmeticFilters(text) {
     return true;
   };
 
-  const lines = String(text || '').split('\n');
-  lines.forEach(noteGenericHideException);
-  for (let i = 0; i < lines.length; i++) {
+  for (const line of lines()) noteGenericHideException(line);
+  for (const rawLine of lines()) {
     if (count >= ADSHIELD_COSMETIC_MAX && procCount >= PROC_MAX && scriptletCount >= SCRIPTLET_MAX) break;
-    const line = lines[i].trim();
+    const line = rawLine.trim();
     if (!line || line[0] === '!' || line[0] === '[') continue;
 
     // Network-style document exceptions can disable generic element hiding for a
@@ -3238,10 +3250,9 @@ async function updateAdShieldCosmetics() {
       const failed = fetchedSources.filter((source) => !source.text).map((source) => ({ url: source.url }));
       await localSet({ wardenone_adshield_cosmetic_publishers: listSourcePublications(ADSHIELD_COSMETIC_LISTS, records, failed) });
     } catch (e) { console.warn('[WardenOne] cosmetic publisher metadata save failed', e); }
-    const texts = fetchedSources.map((source) => source.text);
-    const combinedText = texts.filter(Boolean).join('\n');
-    if (!combinedText.trim()) return; // keep whatever we had
-    const parsed = parseCosmeticFilters(combinedText);
+    const texts = fetchedSources.map((source) => source.text).filter(Boolean);
+    if (!texts.some((source) => source.trim())) return; // keep whatever we had
+    const parsed = parseCosmeticFilters(texts);
     const hash = await sha256TextHex(JSON.stringify(parsed));
     const old = await localGet(['wardenone_adshield_cosmetic_hash']);
     if (hash && old && old.wardenone_adshield_cosmetic_hash === hash) {
