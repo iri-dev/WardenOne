@@ -12,4 +12,15 @@ No rule uses image dimensions, a generic `/pixel` path, or a label match on an u
 
 ## Local browser load check
 
-`tools/browser-image-logger-loads.js` maps the reviewed logger host and three control hosts to a loopback HTTP server. An extension-off pass proves the logger images are reachable. With WardenOne enabled, the server receives none of the direct `<img>`, selected `srcset`, CSS background, or redirected logger image requests. Ordinary 1×1 tracking pixels, CSS images, `srcset`, and redirected images still arrive and render without IP-logger alerts. An unlisted logger-shaped image also arrives and renders, then records an unconfirmed warning. The test requires Chrome to report the packaged logger image rule as a real match. It runs in the Edge and minimum-version Chrome browser jobs.
+`tools/browser-image-logger-loads.js` maps the reviewed logger host and control hosts to a loopback HTTP server. An extension-off pass proves the logger images are reachable. With WardenOne enabled, the server receives none of the direct `<img>`, selected `srcset`, CSS background, or redirected logger image requests. Ordinary 1×1 tracking pixels, CSS images, `srcset`, and redirected images still arrive and render without IP-logger alerts. An unlisted logger-shaped image also arrives and renders, then records an unconfirmed warning. The test requires Chrome to report the packaged logger image rule as a real match. It runs in the Edge and minimum-version Chrome browser jobs.
+
+The cross-origin frame fixture also loads CSS images. Its known logger background is blocked before
+reaching the server. Its dynamically assigned background on an unlisted logger-shaped host reaches
+the server and does not produce the image-element heuristic warning. This is a coverage boundary,
+not evidence that the request was safe. The frame observer watches image elements and their
+`src`/`srcset` changes; it does not inspect arbitrary CSS or CSSOM changes.
+
+Before adding CSS inspection, measure the frequency of suspicious CSS-only image requests in a
+reviewed site corpus and profile the proposed detector on pages with frequent style changes and
+many frames. The current loopback fixture establishes behavior, not prevalence or acceptable CPU
+cost. Unknown destinations cannot be blocked reliably from image dimensions or a generic pixel path.

@@ -183,10 +183,89 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert.strictEqual(rootReads, 1, 'the added subtree should be read once');
   assert.strictEqual(childReads, 0, 'nested additions should not rebuild their subtree text');
   assert.strictEqual(descendantQueries, 1, 'the consent selector should inspect the outer root once');
-  const late = node({ parentElement: root, childNodes: [{ nodeType: 3, nodeValue: 'Cookie choices' }] });
+  /* DOM-shaped children: the filter walks firstChild/nextSibling, as a real element offers. */
+  const withChildren = (list) => {
+    list.forEach((c, i) => { c.nextSibling = list[i + 1] || null; });
+    return { childNodes: list, firstChild: list[0] || null };
+  };
+  const late = node(Object.assign({ parentElement: root }, withChildren([{ nodeType: 3, nodeValue: 'Cookie choices' }])));
   assert.strictEqual(sandbox.testMutations([
     { type: 'childList', addedNodes: [root, late] },
   ]), true, 'direct consent text in a nested addition should still wake the scanner');
+
+  /* The per-node test must answer exactly as the joined form it replaced, which built a fresh
+     array of identity fields per node and joined the direct text nodes with spaces. That form is
+     kept here as the reference and run in its own realm against random nodes over the fields
+     and words that decide it, nested and not, with and without attributes. */
+  const REFERENCE = [
+    'function mutationNodeMayAffectConsent(node, nested, fullText) {',
+    '  try {',
+    '    if (!node) return false;',
+    "    if (node.nodeType === 3) return hasConsentLanguage(String(node.nodeValue || ''));",
+    '    if (node.nodeType !== 1) return false;',
+    "    const role = node.getAttribute && node.getAttribute('role');",
+    "    const identity = [node.id, typeof node.className === 'string' ? node.className : '', role,",
+    "      node.getAttribute && node.getAttribute('aria-label'), node.getAttribute && node.getAttribute('data-testid'),",
+    "      node.getAttribute && node.getAttribute('data-test')].filter(Boolean).join(' ');",
+    '    if (CONSENT_FRAME_HINT_RE.test(identity)) return true;',
+    "    if (String(node.tagName || '').toLowerCase() === 'dialog' || role === 'dialog'",
+    "        || (node.getAttribute && node.getAttribute('aria-modal') === 'true')) return true;",
+    '    if (!nested && node.matches && node.matches(CONTAINER_SELECTOR)) return true;',
+    '    let text;',
+    '    if (nested && node.childNodes) {',
+    '      const direct = [];',
+    "      for (const child of node.childNodes) if (child.nodeType === 3) direct.push(child.nodeValue || '');",
+    "      text = direct.join(' ');",
+    '    } else {',
+    "      const all = String(node.textContent || '');",
+    '      text = fullText ? all : all.slice(0, 2400);',
+    '    }',
+    '    if (hasConsentLanguage(text)) return true;',
+    '    if (CONSENT_ACTION_TEXT_RE.test(text)) {',
+    "      const parentText = String(node.parentElement && node.parentElement.textContent || '').slice(0, 2400);",
+    '      if (hasConsentLanguage(parentText)) return true;',
+    '    }',
+    '    return !nested && !!(node.querySelector && node.querySelector(CONTAINER_SELECTOR));',
+    '  } catch (_) {',
+    '    return false;',
+    '  }',
+    '}',
+  ].join('\n');
+  const shippedText = consent.slice(consent.indexOf('function mutationNodeMayAffectConsent('), consent.indexOf('function consentHint('));
+  assert(/consentHint\(node\.id\)/.test(shippedText), 'the shipped filter is the per-field form');
+  const referenceRealm = {};
+  vm.createContext(referenceRealm);
+  vm.runInContext(declarations.replace(shippedText, REFERENCE + '\n'), referenceRealm);
+  const reference = vm.runInContext('mutationNodeMayAffectConsent', referenceRealm);
+  const shipped = vm.runInContext('mutationNodeMayAffectConsent', sandbox);
+  assert(/filter\(Boolean\)/.test(String(reference)) && !/filter\(Boolean\)/.test(String(shipped)), 'the two forms are the ones meant');
+  const words = ['', 'card', 'cookie', 'onetrust', 'sp_message', 'privacy-manager', 'Consent', 'privacy', 'settings',
+    'reject all', 'manage', 'partners', 'cookies-x', 'xcookie', 'dialog', 'true', 'item 3', 'do not', 'sell'];
+  let seed = 7;
+  const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return (seed >>> 8) % n; };
+  const pick = () => words[rnd(words.length)];
+  let positives = 0;
+  for (let i = 0; i < 4000; i++) {
+    const attrs = {};
+    for (const name of ['role', 'aria-label', 'data-testid', 'data-test', 'aria-modal']) if (!rnd(3)) attrs[name] = pick();
+    const id = rnd(3) ? '' : pick();
+    const className = rnd(2) ? '' : pick() + (rnd(2) ? ' ' + pick() : '');
+    const texts = Array.from({ length: rnd(4) }, () => (rnd(3) ? { nodeType: 3, nodeValue: pick() } : { nodeType: 1 }));
+    const n = node(Object.assign({
+      id, className, tagName: rnd(12) ? 'DIV' : 'DIALOG',
+      parentElement: { textContent: rnd(2) ? 'we use cookies' : 'ordinary' },
+      textContent: texts.map((t) => t.nodeValue || '').join(''),
+      hasAttributes: () => !!id || !!className || Object.keys(attrs).length > 0,
+      getAttribute: (name) => (Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null),
+    }, withChildren(texts)));
+    for (const nested of [true, false]) {
+      const want = reference(n, nested, !nested);
+      assert.strictEqual(shipped(n, nested, !nested), want,
+        'the per-field filter diverged from the joined form: ' + JSON.stringify({ id, className, attrs, nested }));
+      if (want) positives++;
+    }
+  }
+  assert(positives > 1000 && positives < 7000, 'the random nodes exercise both answers (' + positives + ' of 8000 positive)');
 }
 {
   const declarations = [
@@ -210,8 +289,8 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert.strictEqual(sandbox.visibleControls(roots)[0], reject, 'the same shadow root supplies its controls');
   assert.strictEqual(rootWalks, 1, 'one scan should collect document and shadow roots once');
   const scan = consent.slice(consent.indexOf('function scan()'), consent.indexOf('function queueScan('));
-  assert(/const roots = collectRoots\(document\);\s*const containers = getContainers\(roots\);/.test(scan)
-    && /tryGenericReject\(roots\)/.test(scan), 'scan must pass the shared roots to both searches');
+  assert(/const roots = collectRoots\(document\);\s*const containers = getContainers\(roots(?:, \w+)?\);/.test(scan)
+    && /tryGenericReject\(roots(?:, \w+)?\)/.test(scan), 'scan must pass the shared roots to both searches');
 }
 {
   const declarations = [

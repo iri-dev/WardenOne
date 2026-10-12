@@ -168,6 +168,86 @@ check('the refresh path and the config path share one applier',
   check('and refuses the unsafe ones', !/bad|html\{|xxxx/.test(doc.styles[0].textContent));
 }
 
+/* ---- 4. the engine's host lists stay with the engine ------------------------------ *
+ * Measured on the eight-frame profile with the remote lists loaded: each frame's signed config
+ * was ~56 KB, ~50 KB of it adultDomainsExtra, and every frame re-normalised the lists, signed
+ * them and had anti-redirect and the fingerprint realm hash them -- for the engine, which runs in
+ * the top frame alone. A child frame no longer asks for them, and the top frame's lists ride
+ * beside the config under their own MAC, so only the engine hashes them. */
+{
+  check('a child frame does not ask for the engine\'s host lists',
+    /const BRIDGE_TOP_FRAME = window === window\.top;/.test(BRIDGE)
+    && /const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME \? \['overrides', 'learned', 'supplemental', 'hidden'\] : \['overrides', 'hidden'\];/.test(BRIDGE));
+  const SEND = between(BRIDGE, '  const sendConfig = (overrides) => {', '\n  const bridgeReplay = () => {', 'sendConfig');
+  const run = (top) => {
+    const posted = [];
+    const sanitized = [];
+    const ctx = {
+      JSON, Object, Array, String, console,
+      BRIDGE_TOP_FRAME: top,
+      bridgeConfig: {}, bridgeConfigReady: false, bridgeFrameSite: 'shop.example',
+      sanitizeBridgeHostList: (list) => { sanitized.push(list); return Array.isArray(list) ? list.slice() : []; },
+      bridgeSyncGoogleCleanupCss() {},
+      bridgeActiveAllowlist: () => [],
+      bridgeSiteOverridesFor: () => ({}),
+      bridgeFrameNoiseAllowed: () => false,
+      bridgeFrameWebGLDisabled: () => false,
+      gateSilentPresentation() {},
+      mainWorldConfigForHost: (clean) => clean,
+      mergeNormalizedHostLists: (limit, ...lists) => [].concat(...lists.map((l) => l || [])),
+      learnedGrabberDomains: ['learned.example'],
+      supplementalLists: { adultDomainsExtra: ['adult.example'], grabberDomainsExtra: ['grab.example'], trustedPaymentHostsExtra: ['pay.example'] },
+      postToPage: (m) => posted.push(m),
+      signed: (kind, payload, m) => Object.assign(m, { seq: 7, mac: 'm', signedText: payload }),
+      signedPart: (kind, payload, m) => kind + ':' + m.seq + ':' + payload,
+      TOKEN: 't',
+      location: { hostname: 'shop.example' },
+      document: { dispatchEvent() {} },
+      CustomEvent: function CustomEvent(type) { this.type = type; },
+    };
+    vm.createContext(ctx);
+    vm.runInContext(SEND + '\nsendConfig({ enabled: true, adultDomainsExtra: ["own-adult.example"] });', ctx);
+    return { message: posted[0], sanitized };
+  };
+  const child = run(false);
+  check('a child frame\'s config carries no host lists, inside or beside it',
+    child.message.lists === undefined && child.message.listsMac === undefined
+    && !/adult\.example|grab\.example|pay\.example|learned\.example/.test(JSON.stringify(child.message)), JSON.stringify(child.message));
+  check('...and its bridge normalises none of them', !child.sanitized.some((l) => Array.isArray(l) && l.indexOf('own-adult.example') !== -1));
+  const top = run(true);
+  check('the top frame\'s signed config text leaves the lists out',
+    !/adult\.example|grab\.example|pay\.example|learned\.example/.test(top.message.signedText), top.message.signedText);
+  check('...and they ride beside it, merged, under a MAC bound to the config\'s seq',
+    JSON.stringify(top.message.lists) === JSON.stringify({ grabberDomainsExtra: ['learned.example', 'grab.example'],
+      adultDomainsExtra: ['own-adult.example', 'adult.example'], trustedPaymentHostsExtra: ['pay.example'] })
+    && top.message.listsMac === 'config-lists:7:' + JSON.stringify(top.message.lists), JSON.stringify(top.message));
+}
+
+/* ---- 5. the click-layer sweep asks its document-level gates first ------------------- *
+ * Every frame sweeps <body>'s children at DOMContentLoaded and again when the config lands.
+ * Nothing in considerClickLayer acts without strict popups on and a player in the document,
+ * yet each child had its first link resolved and matched against the trusted hosts before
+ * that was asked: ~2 ms a frame on the eight-frame profile page, which has no player. */
+{
+  const SWEEP = between(AR, '  function sweepClickLayers() {', '\n  // The layers are appended straight to <body>', 'the click-layer sweep');
+  const run = (strict, player) => {
+    const considered = [];
+    const kids = [{ tagName: 'P' }, { tagName: 'SCRIPT' }, { tagName: 'DIV' }];
+    const ctx = {
+      document: { body: { children: kids }, documentElement: { children: [] } },
+      CLICK_LAYER_SKIP: /^(?:SCRIPT|STYLE)$/, Math,
+      strictPopupEnabled: () => strict, playerDocument: () => player,
+      considerClickLayer: (node) => { considered.push(node.tagName); return false; },
+    };
+    vm.createContext(ctx);
+    vm.runInContext(SWEEP + '\nsweepClickLayers();', ctx);
+    return considered.join(',');
+  };
+  check('with no player in the document the sweep looks at no child', run(true, false) === '');
+  check('with strict popups off it looks at none either', run(false, true) === '');
+  check('with both, every eligible child is still considered', run(true, true) === 'P,DIV', run(true, true));
+}
+
 /* ---- 3. the worker answers both in one message ----------------------------------- */
 
 check('the config handler names the asking frame\'s host from sender.url (its inherited origin for an about:blank child)',

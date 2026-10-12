@@ -111,6 +111,12 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-image-logger-loads.js
 
+      - name: Test IP-logger switches against live requests in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-grabber-switches.js
+
       - name: Test EyeShield site profiles in cross-origin frames in Edge
         if: success() || failure()
         env:
@@ -190,6 +196,10 @@ jobs:
       - name: Test image logger navigation, image blocks and Activity in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-image-logger-loads.js
+
+      - name: Test IP-logger switches against live requests in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-grabber-switches.js
 
       - name: Test EyeShield site profiles in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'

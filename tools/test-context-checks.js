@@ -306,7 +306,9 @@ check('a click with no tab falls back to the tab you are looking at',
 {
   const compat = BG.slice(BG.indexOf('const frameAllowRules = ['), BG.indexOf('const pairs = ['));
   const compatPriority = Number((compat.match(/priority: (\d+)/) || [])[1]);
-  const userPriority = Number((BG.match(/userBlocked\) \? (\d+) : 2000/) || [])[1]);
+  const learnedPriority = BG.match(/priority: entry\.userBlocked \? (\d+) : \(grabber && cfg\.warnGrabberDomains !== false \? (\d+) : (\d+)\)/);
+  const userPriority = Number(learnedPriority && learnedPriority[1]);
+  const autoPriority = Number(learnedPriority && learnedPriority[3]);
   check('the YouTube compatibility allow still covers the whole frame',
     /action: \{ type: 'allowAllRequests' \}/.test(compat)
       && /'main_frame'/.test(compat) && compatPriority > 0);
@@ -314,10 +316,11 @@ check('a click with no tab falls back to the tab you are looking at',
     userPriority > compatPriority,
     'a block below the compat allow is saved, reported, and then ignored');
   check('and a block WardenOne worked out on its own does not',
-    /userBlocked\) \? \d+ : 2000/.test(BG),
+    autoPriority > 0 && autoPriority < compatPriority,
     'compatibility should still win over a guess');
   check('the block still covers the top-level navigation',
-    /resourceTypes: \['main_frame', 'sub_frame', 'image'/.test(BG));
+    /: \['main_frame', 'sub_frame', 'image'/.test(BG)
+      && /condition: \{ requestDomains: \[d\], resourceTypes \}/.test(BG));
 }
 
 /* Written to the store the engine's own detections use, so a site blocked here
