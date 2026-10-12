@@ -419,6 +419,7 @@ function checkContentBuild() {
   'tools/test-animated-image-saver.js',
   'tools/browser-engine-smoke.js',
   'tools/browser-image-logger-loads.js',
+  'tools/browser-grabber-switches.js',
   'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
   'tools/test-download-links.js',

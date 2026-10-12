@@ -538,7 +538,7 @@ check('the intranet guard still sees every added node',
   /for\(let i=0;i<added\.length;i\+\+\)guardLocalNode\(added\[i\]\);for\(let i=0;i<roots\.length;i\+\+\)sweepLocal\(roots\[i\]\)/.test(MIN),
   'it has to neuter a script pointing at a private address before it loads');
 check('the grabber src test still sees every added node',
-  /for\(let i=0;i<added\.length;i\+\+\)\{const n=added\[i\],hit=n\.getAttribute&&isGrabberURL\(n\.getAttribute\("src"\)\)/.test(MIN),
+  /for\(let i=0;i<added\.length;i\+\+\)\{const n=added\[i\],src=n\.getAttribute&&n\.getAttribute\("src"\),hit=!!src&&isGrabberURL\(src\)/.test(MIN),
   'it reads src off any tag, which sweepNodes\' selector would not repeat');
 check('no consumer still walks addedNodes itself',
   !/for\(const mu of muts\)for\(const n of mu\.addedNodes\)/.test(MIN)
@@ -726,6 +726,104 @@ check('the session seed still goes into it',
   for (let i = 0; i < 500; i++) offsets.add(wrap({ x: i, y: 0, width: 100, height: 20 }).x - i);
   check('the noise really varies per rect', offsets.size > 400,
     'got ' + offsets.size + ' distinct offsets over 500 rects; a constant would pass the rest');
+})();
+
+/* ---- per-added-node work that answered nothing ---------------------------
+   Measured on the perf profile's churn page (16 batches of 1,093 elements):
+   the grabber watch built a URL for every added element, src or not, and the
+   overlay cleaner serialised innerText for containers that could never answer
+   yes. Both answers are unchanged; only the wasted work is gone. */
+check('the grabber watch skips added nodes with no src before any URL is built',
+  /src=n\.getAttribute&&n\.getAttribute\("src"\),\s*hit=!!src&&isGrabberURL\(src\);/.test(SRC),
+  'isGrabberURL(null) parsed "null" against the page address for every added element');
+(() => {
+  const vm = require('vm');
+  const start = SRC.lastIndexOf('      isOverlay=el=>{');
+  let end = -1;
+  for (let i = SRC.indexOf('{', start), depth = 0; start >= 0 && i < SRC.length; i++) {
+    if (SRC[i] === '{') depth++;
+    else if (SRC[i] === '}' && --depth === 0) { end = i + 1; break; }
+  }
+  const body = start >= 0 && end > start ? SRC.slice(start + 6, end) : '';
+  check('the overlay cleaner\'s isOverlay is where the test expects it',
+    /return!!\(strongAdEvidence&&looksModal&&!tooHuge&&!hasLoginUi\(el\)\)/.test(body));
+  if (!body) return;
+  const box = {
+    innerWidth: 1200, innerHeight: 800, seen: new Set(), position: 'static',
+    getComputedStyle: () => ({ position: box.position, display: 'block', visibility: 'visible', opacity: '1', zIndex: '50' }),
+    closeMarkedPlayerPopup: () => false, mediaUiProtected: () => false, fakeNotifyVisual: () => false, hasLoginUi: () => false,
+    PROTECT: /(?!)/, AD_SIGNAL: /\bad-overlay\b/, NUISANCE: /(?!)/, BAIT_SIGNAL: /(?!)/,
+  };
+  vm.createContext(box);
+  vm.runInContext('const ' + body + ';this.__isOverlay=isOverlay;', box, { filename: 'content.js:isOverlay' });
+  let textReads = 0;
+  const el = {
+    nodeType: 1, id: 'promo', className: 'ad-overlay',
+    getAttribute: () => null, querySelector: () => null,
+    getBoundingClientRect: () => ({ top: 250, bottom: 550, left: 400, right: 800, width: 400, height: 300 }),
+    get innerText() { textReads++; return 'Special offer'; },
+  };
+  box.el = el;
+  check('a box in normal flow is not an overlay, and its text is never read',
+    vm.runInContext('__isOverlay(el)', box) === false && textReads === 0, 'innerText reads: ' + textReads);
+  box.position = 'fixed';
+  check('the same box positioned fixed and centred is still caught',
+    vm.runInContext('__isOverlay(el)', box) === true && textReads === 1, 'innerText reads: ' + textReads);
+})();
+(() => {
+  const vm = require('vm');
+  const arrow = (marker) => {
+    const start = SRC.indexOf(marker);
+    if (start < 0) return '';
+    for (let i = SRC.indexOf('{', start), depth = 0; i < SRC.length; i++) {
+      if (SRC[i] === '{') depth++;
+      else if (SRC[i] === '}' && --depth === 0) return SRC.slice(start, i + 1);
+    }
+    return '';
+  };
+  const sweep = arrow('      sweep=()=>{\n        if(!overlayCleanerOn())return;');
+  const climb = arrow('      overlayCandidate=(el,');
+  check('the overlay sweep and its parent climb are where the test expects them', !!sweep && !!climb);
+  if (!sweep || !climb) return;
+  const asked = [];
+  const box = {
+    WO: {}, NUISANCE: /(?!)/, Map,
+    overlayCleanerOn: () => true, installHardOverlayCss() {}, hide() {},
+    document: { querySelectorAll: () => box.candidates },
+    overlayCandidate: (el) => el.floatParent || el,
+    isOverlay: (el) => { asked.push(el.name); return el.name === box.hit; },
+  };
+  vm.createContext(box);
+  vm.runInContext('const ' + sweep.trim() + ';this.__sweep=sweep;', box, { filename: 'content.js:sweep' });
+  const plain = { name: 'plain' };
+  const floating = { name: 'inner', floatParent: { name: 'bell' } };
+  box.candidates = [plain, floating];
+  box.hit = null;
+  vm.runInContext('__sweep()', box);
+  check('a candidate with no floating parent is asked about once, not twice',
+    asked.join(',') === 'plain,bell,inner', asked.join(','));
+  asked.length = 0;
+  box.hit = 'bell';
+  vm.runInContext('__sweep()', box);
+  check('a floating parent that is an overlay is still the one hidden', asked.join(',') === 'plain,bell', asked.join(','));
+  check('a hide drops the sweep\'s remembered parent verdicts', /hide\(hit,[\s\S]{0,140}climbs\.clear\(\)/.test(sweep));
+
+  let styleReads = 0;
+  const cbox = {
+    document: { body: { name: 'body' }, documentElement: { name: 'html' } },
+    getComputedStyle: () => { styleReads++; return { position: 'static', zIndex: 'auto' }; },
+    Map, parseInt,
+  };
+  vm.createContext(cbox);
+  vm.runInContext('const ' + climb.trim() + ';this.__climb=overlayCandidate;', cbox, { filename: 'content.js:overlayCandidate' });
+  const parent = { className: 'row', id: '', getAttribute: () => null, getBoundingClientRect: () => ({ width: 900, height: 40 }), parentElement: cbox.document.body };
+  cbox.a = { parentElement: parent };
+  cbox.b = { parentElement: parent };
+  vm.runInContext('const climbs = new Map(); this.r = [__climb(a, climbs), __climb(b, climbs)];', cbox);
+  check('siblings share one style read of their parent within a sweep', styleReads === 1 && cbox.r[0] === cbox.a && cbox.r[1] === cbox.b, 'style reads: ' + styleReads);
+  styleReads = 0;
+  vm.runInContext('this.r = [__climb(a), __climb(b)];', cbox);
+  check('without a sweep\'s memo every call still reads for itself', styleReads === 2);
 })();
 
 /* ---- the shipped bundle carries all of it ------------------------------- */

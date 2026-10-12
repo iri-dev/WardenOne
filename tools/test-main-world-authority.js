@@ -164,7 +164,7 @@ function loadBridge(worlds, options) {
   vm.createContext(sandbox);
   vm.runInContext([
     BRIDGE_AUTH, BRIDGE_RATE, BRIDGE_POST,
-    'const sendConfig = (clean) => {\n' + SEND_TAIL + '\n};',
+    'const sendConfig = (clean, hostLists = null) => {\n' + SEND_TAIL + '\n};',
     BRIDGE_REPLAY, BRIDGE_WATCHDOG, BRIDGE_REPUTATION, BRIDGE_RELAY,
     'globalThis.api = { deliverKey, sendConfig, engineAnswers, bridgeVerifyEngine, signed, TOKEN, KEY,'
     + ' seen: () => bridgeEngineSeen, fresh: () => BRIDGE_FRESH, checks: () => bridgeEngineChecks };',
@@ -354,6 +354,55 @@ function holdsKey(pads, hex) {
     check('what the page dispatched in between left the bridge\'s counter alone', page.lastConfig().seq === genuine.seq + 1);
   }
 
+  /* ---- 2b. the host lists: beside the config, their own MAC, the same sequence number ---- */
+  /* Every MAIN-world reader hashes the config's whole signed text, and the lists only the engine
+     reads were ~50 KB of it. They ride outside `overrides` under a MAC bound to the config's seq. */
+  {
+    const worlds = makeWorlds();
+    const engine = loadEngine(worlds);
+    const bridge = loadBridge(worlds);
+    bridge.api.deliverKey();
+    pageHasRun(worlds);
+    const page = attachPage(worlds);
+    const lists = { adultDomainsExtra: ['adult.example'], trustedPaymentHostsExtra: ['pay.example'] };
+    bridge.api.sendConfig({ enabled: true, marker: 1 }, lists);
+    const genuine = page.lastConfig();
+    check('the lists travel beside the signed config, not inside it',
+      !!genuine.lists && !('adultDomainsExtra' in genuine.overrides) && /^[0-9a-f]{64}$/.test(String(genuine.listsMac)), genuine);
+    check('the engine applies genuine lists with the config',
+      engine.api.store.marker === 1 && JSON.stringify(engine.api.store.adultDomainsExtra) === '["adult.example"]'
+      && JSON.stringify(engine.api.store.trustedPaymentHostsExtra) === '["pay.example"]', engine.api.store);
+    const has = (host) => JSON.stringify(engine.api.store.trustedPaymentHostsExtra || []).indexOf(host) !== -1;
+    const signedConfig = (overrides) => bridge.api.signed('config', JSON.stringify(overrides),
+      { source: 'wardenone', kind: 'config', token: bridge.api.TOKEN, overrides });
+
+    const lifted = signedConfig({ enabled: true, marker: 2 });
+    lifted.lists = { trustedPaymentHostsExtra: ['skimmer.example'] };
+    lifted.listsMac = genuine.listsMac;
+    worlds.isolatedWindow.postMessage(lifted);
+    check('lists under a MAC lifted from an earlier message are dropped, and the config still applies',
+      engine.api.store.marker === 2 && !has('skimmer.example'), engine.api.store);
+
+    bridge.api.sendConfig({ enabled: true, marker: 3 }, lists);
+    const fresh = page.lastConfig();
+    const tampered = signedConfig({ enabled: true, marker: 4 });
+    tampered.lists = { trustedPaymentHostsExtra: ['pay.example', 'skimmer.example'] };
+    tampered.listsMac = fresh.listsMac;
+    worlds.isolatedWindow.postMessage(tampered);
+    check('lists changed after signing are dropped', engine.api.store.marker === 4 && !has('skimmer.example'), engine.api.store);
+
+    const unsigned = signedConfig({ enabled: true, marker: 5 });
+    unsigned.lists = { trustedPaymentHostsExtra: ['skimmer.example'] };
+    worlds.isolatedWindow.postMessage(unsigned);
+    check('lists with no MAC are dropped', engine.api.store.marker === 5 && !has('skimmer.example'), engine.api.store);
+
+    page.post(Object.assign({}, fresh, { lists: { trustedPaymentHostsExtra: ['skimmer.example'] } }));
+    check('a genuine message replayed with other lists is refused whole', !has('skimmer.example') && engine.api.store.marker === 5);
+
+    bridge.api.sendConfig({ enabled: true, marker: 6 });
+    check('a config sent without lists carries none', page.lastConfig().lists === undefined && engine.api.store.marker === 6);
+  }
+
   /* ---- 3. SEC-02: a forged verdict never settles the pending request ----------------- */
   {
     const worlds = makeWorlds();
@@ -509,8 +558,9 @@ function holdsKey(pads, hex) {
   const minimised = [...MIN.matchAll(/__woAuth\.hmac\(/g)].length;
   /* verify, installed, pong -- and since every security event and report is signed (bridge.js
      eventSigned): signing an event, signing a report, and checking an event before believing it --
-     and signing the notice mute and shown requests the bridge relays (SEC-14). */
-  check('the shipped engine uses the HMAC exactly seven times: verify, installed, pong, sign event, sign report, check event, sign request', minimised === 7, String(minimised));
+     and signing the notice mute and shown requests the bridge relays (SEC-14) -- and checking the
+     config's host lists, which carry their own MAC under the config's sequence number. */
+  check('the shipped engine uses the HMAC exactly eight times: verify, config lists, installed, pong, sign event, sign report, check event, sign request', minimised === 8, String(minimised));
   check('the other MAIN security consumers take their key from wo-key too',
     ['anti-redirect.js', 'permission-chain.js', 'cryptominer-detect.js'].every((f) => {
       const src = fs.readFileSync(path.join(ROOT, f), 'utf8');

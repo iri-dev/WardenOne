@@ -13,7 +13,7 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'bridge.js'), 'utf8');
 const start = source.indexOf('function mainWorldConfigForHost(');
 const end = source.indexOf('\n  const sendConfig =', start);
 assert(start >= 0 && end > start, 'MAIN config projection moved');
-assert(/postToPage\(signed\('config', JSON\.stringify\(pageConfig\)/.test(source),
+assert(/const message = signed\('config', JSON\.stringify\(pageConfig\), \{[^}]*overrides: pageConfig \}\);[\s\S]{0,400}postToPage\(message\);/.test(source),
   'the signed MAIN message bypasses the projected config');
 const ctx = {
   Object, Array, String,

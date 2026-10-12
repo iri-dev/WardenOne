@@ -185,7 +185,7 @@ function frameImageRig() {
   });
   const refresh = () => listeners.get('wo-bridge-config-ready')();
   const mutate = (records) => { for (const observer of observers) if (observer.active) observer.fn(records); };
-  return { events, observers, refresh, mutate, image,
+  return { document, events, observers, refresh, mutate, image,
     settle(type, target) { const fn = listeners.get(type); if (fn) fn({ target }); },
     setState(next) { state = next; refresh(); } };
 }
@@ -216,10 +216,17 @@ function frameImageRig() {
   const source = r.image('SOURCE', { srcset: 'https://iplogger.picture.test/pixel.gif 1x' }, picture);
   r.mutate([{ type: 'childList', addedNodes: [source] }]);
   assert.equal(r.events.length, 3, 'new picture sources are checked');
+  const relative = r.image('IMG', { src: '/iplogger/abc1234567' });
+  r.mutate([{ type: 'attributes', target: relative }]);
+  assert.equal(r.events.length, 3, 'a same-site relative image stays quiet');
+  r.document.baseURI = 'https://outside.example/';
+  r.mutate([{ type: 'attributes', target: relative }]);
+  assert.equal(r.events.length, 4, 'a changed base URL invalidates the cached decision');
+  assert.equal(r.events[3].detail.matched, 'outside.example');
   r.setState({ enabled: false, site: 'widget.example' });
   assert.equal(observer.active, false, 'turning the protection off disconnects the observer');
   r.mutate([{ type: 'attributes', target: r.image('IMG', { src: 'https://iplogger.off.test/x' }) }]);
-  assert.equal(r.events.length, 3, 'disabled frames stay quiet');
+  assert.equal(r.events.length, 4, 'disabled frames stay quiet');
 }
 
 const bg = read('background.js');
