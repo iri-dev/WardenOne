@@ -34,6 +34,10 @@ function check(name, ok, extra) {
   console.error('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
+check('a trace run can use a separate output directory',
+  harness.parseArgs(['--trace', '--trace-dir', 'docs/perf/traces/startup']).traceDir
+    === 'docs/perf/traces/startup');
+
 /* ---- statistics ---------------------------------------------------------------------------- */
 check('the median of five is the third', harness.median([5, 1, 4, 2, 3]) === 3);
 check('the median of four interpolates', harness.median([1, 2, 3, 4]) === 2.5);
