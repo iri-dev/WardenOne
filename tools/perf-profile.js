@@ -21,7 +21,7 @@ const NODE_MIN = 22;
 
 /* ---- arguments ---------------------------------------------------------------------------- */
 function parseArgs(argv) {
-  const out = { runs: 5, throttle: 1, variants: ['off', 'on'], out: '', edge: '', trace: false, expectRegression: false, assertOverheadMs: 0, keepProfiles: false };
+  const out = { runs: 5, throttle: 1, variants: ['off', 'on'], out: '', edge: '', trace: false, expectRegression: false, assertOverheadMs: 0, keepProfiles: false, imageFrames: false, pairedLogger: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -35,6 +35,9 @@ function parseArgs(argv) {
     else if (a === '--assert-overhead-ms') out.assertOverheadMs = Number(next()) || 0;
     else if (a === '--keep-profiles') out.keepProfiles = true;
     else if (a === '--render') out.render = String(next() || '');
+    else if (a === '--image-frames') out.imageFrames = true;
+    else if (a === '--paired-logger') out.pairedLogger = true;
+    else if (a === '--baseline') out.baseline = path.resolve(String(next() || ''));
     else if (a === '--help' || a === '-h') { out.help = true; }
     else throw new Error('unknown argument ' + a);
   }
@@ -136,11 +139,35 @@ function framesPage() {
     + '<script>let left = 8; document.querySelectorAll("iframe").forEach((f) => f.addEventListener("load", () => { if (--left === 0) setTimeout(() => { window.__done = true; }, 200); }));'
     + 'window.addEventListener("load", () => setTimeout(() => { window.__done = true; }, 3000));</script></body></html>';
 }
+function imageFramePage() {
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Image frame</title></head><body><main id="images"></main>'
+    + '<script>const root = document.getElementById("images"); const images = []; let round = 0; window.__frameBatchMs = 0;'
+    + 'for (let i = 0; i < 64; i++) { const img = document.createElement("img"); img.src = "/pixel.png?v=0"; root.appendChild(img); images.push(img); }'
+    + 'function churn() { const start = performance.now(); for (let i = 0; i < images.length; i++) {'
+    + '  if (i % 2) images[i].setAttribute("src", "/pixel.png?v=" + (round % 2));'
+    + '  else images[i].setAttribute("srcset", "/pixel.png?v=" + (round % 2) + " 1x");'
+    + '}'
+    + 'const subtree = document.createElement("div"); for (let i = 0; i < 16; i++) {'
+    + '  const img = document.createElement("img"); img.src = "/pixel.png?v=" + (round % 2); subtree.appendChild(img);'
+    + '} root.appendChild(subtree); if (root.children.length > 72) root.children[64].remove();'
+    + 'setTimeout(() => { window.__frameBatchMs += performance.now() - start;'
+    + 'if (++round < 12) setTimeout(churn, 16); else setTimeout(() => { window.__frameDone = true; }, 50); }, 0);'
+    + '} setTimeout(churn, 1000);</script></body></html>';
+}
+function imageFramesPage() {
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Image frames</title></head><body>'
+    + Array.from({ length: 8 }, (_, i) => '<iframe src="/image-frame.html?n=' + i + '"></iframe>').join('')
+    + '<script>function check() { const frames = Array.from(document.querySelectorAll("iframe"));'
+    + 'if (frames.every((f) => f.contentWindow && f.contentWindow.__frameDone === true)) window.__done = true;'
+    + 'else setTimeout(check, 25); } check();</script></body></html>';
+}
 const PAGES = {
   '/article.html': articlePage,
   '/churn.html': churnPage,
   '/frames.html': framesPage,
   '/frame.html': framePage,
+  '/image-frames.html': imageFramesPage,
+  '/image-frame.html': imageFramePage,
 };
 const MEASURED_PAGES = ['/article.html', '/churn.html', '/frames.html'];
 
@@ -148,6 +175,11 @@ function serve() {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const url = String(req.url || '/').split('?')[0];
+      if (url === '/pixel.png') {
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=300' });
+        res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'));
+        return;
+      }
       const page = PAGES[url];
       if (!page) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('no'); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'max-age=300' });
@@ -307,6 +339,29 @@ async function releaseWorker(cdp, ext, timeoutMs) {
     await sleep(1000);
   }
 }
+/* The remote supplemental lists arrive some seconds after install, and with them every page's
+   signed config grew from ~6 KB to ~56 KB. A profile taken before they land measures a browser no
+   reader has for long, and one taken while they land mixes the two, so the run waits for them
+   (bounded: offline, they never come) and records what it measured with. */
+const REMOTE_LISTS_WAIT_MS = 90000;
+async function remoteListsLoaded(cdp, workerSession, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const r = await cdp.send('Runtime.evaluate', {
+      expression: 'chrome.storage.local.get("wardenone_aux_lists").then((x) => { const l = (x && x.wardenone_aux_lists) || {};'
+        + ' const out = {}; for (const k of Object.keys(l)) if (Array.isArray(l[k])) out[k] = l[k].length; return out; })',
+      awaitPromise: true, returnByValue: true,
+    }, workerSession).catch(() => null);
+    const counts = (r && r.result && r.result.value) || {};
+    const hosts = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (hosts > 0) {
+      await sleep(2000);  /* let the worker rebuild the snapshot it hands to pages */
+      return { loaded: true, hosts, counts };
+    }
+    if (Date.now() > deadline) return { loaded: false, hosts: 0, counts };
+    await sleep(1000);
+  }
+}
 async function closeExtensionTabs(cdp, port, id) {
   const list = await fetchJson('http://127.0.0.1:' + port + '/json/list');
   for (const t of list) {
@@ -349,7 +404,7 @@ async function measureOnce(cdp, page, workerSession, origin, pagePath, phase, op
   await waitDone(cdp, page, RUN_TIMEOUT_MS);
   await sleep(600);  /* let the extension's post-load work land */
   const wall = Date.now() - t0;
-  const nav = await cdp.send('Runtime.evaluate', { expression: '(() => { const n = performance.getEntriesByType("navigation")[0] || {}; const lt = (window.__wo_perf && window.__wo_perf.longTasks) || []; return { dcl: n.domContentLoadedEventEnd || 0, load: n.loadEventEnd || 0, longTasks: lt.length, longTaskMs: lt.reduce((a, b) => a + b, 0), nodes: document.getElementsByTagName("*").length }; })()', returnByValue: true }, page);
+  const nav = await cdp.send('Runtime.evaluate', { expression: '(() => { const n = performance.getEntriesByType("navigation")[0] || {}; const lt = (window.__wo_perf && window.__wo_perf.longTasks) || []; const frames = Array.from(document.querySelectorAll("iframe")); const frameBatchMs = frames.length && frames.every((f) => Number.isFinite(f.contentWindow.__frameBatchMs)) ? frames.reduce((sum, f) => sum + f.contentWindow.__frameBatchMs, 0) : null; return { dcl: n.domContentLoadedEventEnd || 0, load: n.loadEventEnd || 0, longTasks: lt.length, longTaskMs: lt.reduce((a, b) => a + b, 0), nodes: document.getElementsByTagName("*").length, frameBatchMs }; })()', returnByValue: true }, page);
   const after = await metricsOf(cdp, page);
   await cdp.send('HeapProfiler.collectGarbage', {}, page).catch(() => {});
   await sleep(100);
@@ -366,6 +421,7 @@ async function measureOnce(cdp, page, workerSession, origin, pagePath, phase, op
     dclMs: v.dcl || 0,
     loadMs: v.load || 0,
     wallMs: wall,
+    frameBatchMs: v.frameBatchMs == null ? NaN : Number(v.frameBatchMs),
     heapAfterGcMB: Number(afterGc.JSHeapUsedSize || 0) / (1024 * 1024),
     domNodes: Number(v.nodes || 0),   /* the live document's count; the renderer metric also counts the previous document until it is collected */
     listeners: Number(after.JSEventListeners || 0),
@@ -395,7 +451,7 @@ async function traceOnce(cdp, page, origin, pagePath, outFile) {
 
 /* ---- one variant, start to finish ---------------------------------------------------------- */
 async function runVariant(variant, ctx) {
-  const { edge, runs, throttle, origin, expectedVersion, trace, traceDir } = ctx;
+  const { edge, runs, throttle, origin, expectedVersion, trace, traceDir, pages } = ctx;
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wardenone-perf-' + variant.replace(/[^a-z-]/gi, '_') + '-'));
   let extensionDir = ROOT;
   let cleanupExtensionDir = null;
@@ -410,17 +466,35 @@ async function runVariant(variant, ctx) {
     const target = path.join(extensionDir, r.file);
     fs.writeFileSync(target, applyRegression(fs.readFileSync(target, 'utf8'), name));
   }
+  if (variant === 'base') {
+    /* Another build of the extension -- a checkout of the commit a change is measured against --
+       through the same pages, readiness checks and report as `on`. */
+    if (!ctx.baseline || !fs.existsSync(path.join(ctx.baseline, 'manifest.json'))) throw new Error('the base variant needs --baseline <extension directory>');
+    extensionDir = ctx.baseline;
+  }
   const port = await freePort();
   const version = await launch(edge, variant, extensionDir, port, profileDir);
   const cdp = new Cdp(version.webSocketDebuggerUrl);
   await cdp.connect();
   const result = { variant, browser: version.Browser, userAgent: version['User-Agent'], pages: {}, readiness: null };
+  let control = null;
   try {
     let ext = null;
+    const setFrameLogger = async (warningOn) => {
+      const configured = await cdp.send('Runtime.evaluate', {
+        expression: `updateStoredConfig((cfg) => { cfg.warnGrabberDomains = ${warningOn}; })
+          .then((cfg) => cfg.warnGrabberDomains === ${warningOn})`,
+        awaitPromise: true, returnByValue: true,
+      }, ext.attachedSession);
+      if (configured.exceptionDetails || configured.result.value !== true) throw new Error('could not set iframe logger warning state');
+    };
     if (variant !== 'off') {
       ext = await extensionReady(cdp, port, expectedVersion);
       await closeExtensionTabs(cdp, port, ext.id);
-      result.readiness = { extensionId: ext.id, workerVersion: expectedVersion, workerMetrics: ext.workerMetrics };
+      if (variant === 'on:logger-off' || variant === 'on') await setFrameLogger(variant === 'on');
+      const remoteLists = await remoteListsLoaded(cdp, ext.attachedSession, REMOTE_LISTS_WAIT_MS);
+      process.stdout.write('  remote host lists: ' + (remoteLists.loaded ? remoteLists.hosts + ' hosts' : 'not loaded within ' + (REMOTE_LISTS_WAIT_MS / 1000) + ' s; measuring without them') + '\n');
+      result.readiness = { extensionId: ext.id, workerVersion: expectedVersion, workerMetrics: ext.workerMetrics, remoteLists };
     }
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
     const { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
@@ -442,7 +516,58 @@ async function runVariant(variant, ctx) {
     if (variant !== 'off' && seen !== expectedVersion) throw new Error('the engine did not stamp its readiness marker in the page (saw ' + JSON.stringify(seen) + ', expected ' + expectedVersion + '); refusing to measure an extension that is not running');
     result.readiness = Object.assign({}, result.readiness || {}, { pageMarker: seen === undefined ? null : seen });
 
-    for (const pagePath of MEASURED_PAGES) {
+    const checkFrameLogger = async (fixtureUrl, expected) => {
+      const probe = await cdp.send('Runtime.evaluate', {
+        expression: `chrome.tabs.query({}).then((tabs) => {
+          const tab = tabs.find((item) => item.url === ${JSON.stringify(fixtureUrl)});
+          if (!tab) return null;
+          return chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, world: 'ISOLATED',
+            func: () => typeof window.__wardenOneFrameGrabberConfig === 'function'
+              ? window.__wardenOneFrameGrabberConfig() : null });
+        })`,
+        awaitPromise: true, returnByValue: true,
+      }, ext.attachedSession);
+      const frames = probe.result && probe.result.value && probe.result.value.filter((item) => item.frameId > 0);
+      if (probe.exceptionDetails || !frames || frames.length !== 8
+          || frames.some((item) => !item.result || item.result.enabled !== expected)) {
+        throw new Error('iframe logger control did not reach all eight child frames: ' + JSON.stringify(probe));
+      }
+      return { frames: frames.length, enabled: expected };
+    };
+    if (ext && pages.includes('/image-frames.html')) {
+      const fixtureUrl = origin + '/image-frames.html';
+      await cdp.send('Page.navigate', { url: fixtureUrl }, page);
+      await waitDone(cdp, page, RUN_TIMEOUT_MS);
+      result.readiness.frameLogger = await checkFrameLogger(fixtureUrl, variant !== 'on:logger-off');
+    }
+
+    if (ctx.pairedLogger) {
+      control = { variant: 'on:logger-off', browser: result.browser, userAgent: result.userAgent,
+        pages: {}, readiness: Object.assign({}, result.readiness, { frameLogger: null }) };
+    }
+    for (const pagePath of pages) {
+      if (control) {
+        const records = { on: { cold: [], warm: [] }, 'on:logger-off': { cold: [], warm: [] } };
+        for (let i = 0; i < runs; i++) {
+          const order = i % 2 ? ['on', 'on:logger-off'] : ['on:logger-off', 'on'];
+          for (const state of order) {
+            const warningOn = state === 'on';
+            await setFrameLogger(warningOn);
+            await sleep(400);
+            records[state].cold.push(await measureOnce(cdp, page, ext.workerSession, origin, pagePath, 'cold'));
+            records[state].warm.push(await measureOnce(cdp, page, ext.workerSession, origin, pagePath, 'warm'));
+            const readiness = await checkFrameLogger(origin + pagePath, warningOn);
+            (warningOn ? result : control).readiness.frameLogger = readiness;
+          }
+        }
+        result.pages[pagePath] = records.on;
+        control.pages[pagePath] = records['on:logger-off'];
+        for (const item of [control, result]) {
+          process.stdout.write('  ' + item.variant + ' ' + pagePath + ': ' + runs + ' paired cold + warm runs, cold task median '
+            + round(median(item.pages[pagePath].cold.map((r) => r.taskMs))) + ' ms\n');
+        }
+        continue;
+      }
       const rec = { cold: [], warm: [] };
       for (let i = 0; i < runs; i++) {
         rec.cold.push(await measureOnce(cdp, page, ext && ext.workerSession, origin, pagePath, 'cold'));
@@ -459,7 +584,7 @@ async function runVariant(variant, ctx) {
       await cdp.send('Runtime.enable', {}, tracePage);
       await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: LONGTASK_SCRIPT }, tracePage);
       if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle }, tracePage);
-      for (const pagePath of MEASURED_PAGES) {
+      for (const pagePath of pages) {
         const file = path.join(traceDir, variant.replace(/[^a-z-]/gi, '_') + pagePath.replace(/[^a-z]/gi, '-') + '.trace.json');
         try {
           const n = await traceOnce(cdp, tracePage, origin, pagePath, file);
@@ -476,7 +601,7 @@ async function runVariant(variant, ctx) {
     if (!ctx.keepProfiles) { try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (_) {} }
     if (cleanupExtensionDir) { try { fs.rmSync(cleanupExtensionDir, { recursive: true, force: true }); } catch (_) {} }
   }
-  return result;
+  return ctx.pairedLogger ? [control, result] : result;
 }
 
 /* The shipped files only: what `git ls-files` tracks, minus nothing. An untracked file in the
@@ -496,7 +621,9 @@ function copyExtension(from, to) {
 /* ---- the report ------------------------------------------------------------------------------ */
 const METRICS = [
   ['taskMs', 'main-thread task ms'], ['scriptMs', 'script ms'], ['layoutMs', 'layout ms'], ['styleMs', 'style ms'],
+  ['frameBatchMs', 'frame mutation batches ms'],
   ['longTasks', 'long tasks'], ['longTaskMs', 'long-task ms'], ['dclMs', 'DOMContentLoaded ms'], ['loadMs', 'load ms'],
+  ['wallMs', 'fixture completion ms'],
   ['heapAfterGcMB', 'heap after GC MB'], ['domNodes', 'DOM nodes'], ['listeners', 'listeners'], ['workerTaskMs', 'worker task ms'],
 ];
 function aggregate(results) {
@@ -536,21 +663,37 @@ function markdown(profile) {
   lines.push('- commit `' + profile.meta.commit + (profile.meta.dirty ? '` (working tree modified)' : '`') + ', extension ' + profile.meta.extensionVersion);
   lines.push('- ' + profile.meta.browser + ' on ' + profile.meta.cpu + ' (' + profile.meta.cores + ' cores), CPU throttle x' + profile.meta.throttle + ', ' + profile.meta.runs + ' runs per cell, ' + profile.meta.date);
   lines.push('- variants: ' + profile.meta.variants.join(', ') + '; pages served from 127.0.0.1; nothing left the machine');
+  if (profile.meta.pairedLogger) lines.push('- Iframe logger settings alternated between runs in one browser profile.');
   const workerMetrics = Object.values(profile.meta.readiness || {}).some((r) => r && r.workerMetrics);
-  lines.push('- readiness: ' + Object.entries(profile.meta.readiness || {}).map(([v, r]) => v + ' = ' + (r && r.extensionId ? 'worker ' + r.workerVersion + ' (' + r.extensionId + '), page marker ' + r.pageMarker : 'no extension, page marker absent')).join('; ')
+  lines.push('- readiness: ' + Object.entries(profile.meta.readiness || {}).map(([v, r]) => v + ' = ' + (r && r.extensionId
+    ? 'worker ' + r.workerVersion + ' (' + r.extensionId + '), page marker ' + r.pageMarker
+      + (r.frameLogger ? ', iframe logger ' + (r.frameLogger.enabled ? 'on' : 'off') + ' in ' + r.frameLogger.frames + ' frames' : '')
+      + (r.remoteLists ? ', remote host lists ' + (r.remoteLists.loaded ? r.remoteLists.hosts + ' hosts' : 'not loaded') : '')
+    : 'no extension, page marker absent')).join('; ')
     + (workerMetrics ? '' : '; the worker\'s own task time is not exposed by this browser\'s worker target'), '');
-  for (const pagePath of MEASURED_PAGES) {
+  for (const pagePath of profile.meta.pages || MEASURED_PAGES) {
     lines.push('## ' + pagePath, '');
-    lines.push('| metric | phase | ' + profile.meta.variants.map((v) => v + ' median / p90 / max').join(' | ') + ' | on - off (median) |');
-    lines.push('|---|---|' + profile.meta.variants.map(() => '---').join('|') + '|---|');
+    const hasBaseline = profile.meta.variants.includes('off');
+    lines.push('| metric | phase | ' + profile.meta.variants.map((v) => v + ' median / p90 / max').join(' | ')
+      + ' |' + (hasBaseline ? ' on - off (median) |' : '')
+      + (profile.featureDeltas ? ' on - ' + (profile.featureBase || 'on:logger-off') + ' (median) |' : ''));
+    lines.push('|---|---|' + profile.meta.variants.map(() => '---').join('|') + '|'
+      + (hasBaseline ? '---|' : '') + (profile.featureDeltas ? '---|' : ''));
     for (const [key, label] of METRICS) {
       /* A metric the browser could not provide (the worker's task time in Edge) is left out rather than shown as NaN. */
-      const present = profile.meta.variants.some((v) => { const s = profile.summary[v] && profile.summary[v][pagePath]; return s && ['cold', 'warm'].some((ph) => Number.isFinite(s[ph][key].median)); });
+      const present = profile.meta.variants.some((v) => { const s = profile.summary[v] && profile.summary[v][pagePath]; return s && ['cold', 'warm'].some((ph) => s[ph][key] && Number.isFinite(s[ph][key].median)); });
       if (!present) continue;
       for (const phase of ['cold', 'warm']) {
         const cells = profile.meta.variants.map((v) => { const s = profile.summary[v] && profile.summary[v][pagePath] && profile.summary[v][pagePath][phase][key]; return s && Number.isFinite(s.median) ? s.median + ' / ' + s.p90 + ' / ' + s.max : '-'; });
         const d = profile.deltas.on && profile.deltas.on[pagePath] && profile.deltas.on[pagePath][phase][key];
-        lines.push('| ' + label + ' | ' + phase + ' | ' + cells.join(' | ') + ' | ' + (d ? (d.medianDelta >= 0 ? '+' : '') + d.medianDelta + (d.pct !== null ? ' (' + (d.pct >= 0 ? '+' : '') + d.pct + '%)' : '') : '-') + ' |');
+        const feature = profile.featureDeltas && profile.featureDeltas[pagePath]
+          && profile.featureDeltas[pagePath][phase][key];
+        let row = '| ' + label + ' | ' + phase + ' | ' + cells.join(' | ') + ' |';
+        if (hasBaseline) row += ' ' + (d ? (d.medianDelta >= 0 ? '+' : '') + d.medianDelta
+          + (d.pct !== null ? ' (' + (d.pct >= 0 ? '+' : '') + d.pct + '%)' : '') : '-') + ' |';
+        if (profile.featureDeltas) row += ' ' + (feature ? (feature.medianDelta >= 0 ? '+' : '') + feature.medianDelta
+          + (feature.pct !== null ? ' (' + (feature.pct >= 0 ? '+' : '') + feature.pct + '%)' : '') : '-') + ' |';
+        lines.push(row);
       }
     }
     lines.push('');
@@ -562,6 +705,11 @@ function markdown(profile) {
 /* ---- main ------------------------------------------------------------------------------------- */
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.pairedLogger) {
+    args.imageFrames = true;
+    args.variants = ['on:logger-off', 'on'];
+    if (args.trace || args.expectRegression || args.assertOverheadMs) throw new Error('--paired-logger measures only the iframe warning switch');
+  }
   if (args.help) { console.log(fs.readFileSync(__filename, 'utf8').split('*/')[1].split('\n').slice(0, 30).join('\n')); return; }
   if (args.render) {
     const file = path.resolve(ROOT, args.render);
@@ -573,6 +721,7 @@ async function main() {
   const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
   if (nodeMajor < NODE_MIN || typeof WebSocket !== 'function' || typeof fetch !== 'function') throw new Error('Node ' + NODE_MIN + '+ with built-in fetch and WebSocket is required');
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+  const pages = args.imageFrames ? ['/image-frames.html'] : MEASURED_PAGES;
   const commit = (spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout || '').trim() || 'unknown';
   const dirty = (spawnSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' }).stdout || '').trim().length > 0;
   const edge = edgePath(args.edge);
@@ -586,9 +735,12 @@ async function main() {
   console.log('WardenOne performance profile: ' + args.variants.join(' vs ') + ', ' + args.runs + ' runs, throttle x' + args.throttle + ', pages at ' + origin);
   const results = [];
   try {
-    for (const variant of args.variants) {
+    for (const variant of args.pairedLogger ? ['on'] : args.variants) {
       console.log('variant ' + variant + ':');
-      results.push(await runVariant(variant, { edge, runs: args.runs, throttle: args.throttle, origin, expectedVersion: manifest.version, trace: args.trace, traceDir, keepProfiles: args.keepProfiles }));
+      const measured = await runVariant(variant, { edge, runs: args.runs, throttle: args.throttle, origin,
+        expectedVersion: manifest.version, trace: args.trace, traceDir, keepProfiles: args.keepProfiles,
+        pages, pairedLogger: args.pairedLogger, baseline: args.baseline });
+      results.push(...(Array.isArray(measured) ? measured : [measured]));
     }
   } finally {
     server.close();
@@ -598,11 +750,17 @@ async function main() {
     meta: {
       commit, dirty, extensionVersion: manifest.version, browser: results[0].browser, userAgent: results[0].userAgent,
       cpu: os.cpus()[0].model.trim(), cores: os.cpus().length, memoryGB: Math.round(os.totalmem() / 1e9), platform: os.platform() + ' ' + os.release(),
-      throttle: args.throttle, runs: args.runs, variants: args.variants, date: new Date().toISOString(), pages: MEASURED_PAGES,
+      throttle: args.throttle, runs: args.runs, variants: args.variants, pairedLogger: args.pairedLogger,
+      date: new Date().toISOString(), pages,
       readiness: Object.fromEntries(results.map((r) => [r.variant, r.readiness])),
     },
     summary,
-    deltas: Object.fromEntries(args.variants.filter((v) => v !== 'off').map((v) => [v, deltas(summary, 'off', v)])),
+    deltas: args.variants.includes('off')
+      ? Object.fromEntries(args.variants.filter((v) => v !== 'off').map((v) => [v, deltas(summary, 'off', v)])) : {},
+    /* The on column against a control in the same report: the logger switched off, or a baseline build. */
+    featureBase: summary['on:logger-off'] ? 'on:logger-off' : (summary.base ? 'base' : null),
+    featureDeltas: summary.on && (summary['on:logger-off'] || summary.base)
+      ? deltas(summary, summary['on:logger-off'] ? 'on:logger-off' : 'base', 'on') : null,
     raw: Object.fromEntries(results.map((r) => [r.variant, r.pages])),
   };
   fs.writeFileSync(outBase + '.json', JSON.stringify(profile, null, 1));
@@ -620,7 +778,7 @@ async function main() {
     if (!seen) failed = true;
   }
   if (args.assertOverheadMs > 0 && profile.deltas.on) {
-    for (const pagePath of MEASURED_PAGES) {
+    for (const pagePath of pages) {
       const d = profile.deltas.on[pagePath] && profile.deltas.on[pagePath].cold.taskMs;
       if (d && d.medianDelta > args.assertOverheadMs) { console.log('FAIL: ' + pagePath + ' cold task-time overhead ' + d.medianDelta + ' ms exceeds ' + args.assertOverheadMs + ' ms'); failed = true; }
     }

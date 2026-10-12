@@ -32,6 +32,13 @@
 
 ### Fixed
 
+- Embedded frames no longer receive the engine's host lists. Each frame used to fetch about 50 KB of adult, logger and payment hosts that only the top-page engine reads, then re-check, sign and verify them. On the top page, those lists now carry their own signature beside the settings, so only the engine checks them; the other in-page guards verify a few kilobytes instead of about 56 KB.
+- The overlay cleaner checks whether a box is positioned before reading its text, asks about each candidate once, and reuses its check of shared parent elements. The click-layer sweep checks for a player before examining each page element, and the bridge no longer parses list hosts that are already in canonical form. Consent Auto-Reject's mutation filter does less work per added element.
+- With the remote lists loaded, WardenOne's added main-thread time on the profile pages fell by about 45% with eight frames, 20-26% on a page that rebuilds its DOM, and 10-14% on an ordinary article. Results and the remaining costs are in `docs/perf/README.md`.
+- The IP-logger element check no longer builds a URL for every added element without a `src`. On a page whose own address was a listed logger, that check also logged each such element as blocked.
+- Consent Auto-Reject checks control labels before visibility on its generic fallback and skips repeated fast scans on pages with no banner candidate. Hidden candidates still receive the fast checks needed for CSS-only reveals.
+- Iframe image-logger warnings reuse a small, bounded URL classification cache, reducing work on pages that repeatedly change image attributes.
+- Learned IP-logger blocks now follow the resource and malicious-site switches, while an explicit site block remains in force. Turning off logger page warnings also prevents a late page event from adding a learned block.
 - IP-logger beacon blocking, direct-visit warnings and malicious-site blocking now control separate network rules. Turning off page warnings removes their redirects; turning off beacon blocking removes its embedded-request rules, while malicious-site blocking can still stop a direct visit.
 - Spotify media redirects now cover dedicated ad paths and hosts only. Shared audio CDN paths stay available for tracks, previews and podcasts; the player uses Spotify's ad metadata for those shared paths.
 - Suspicious image URLs in embedded frames now reach the same unconfirmed IP-logger warning path as top-page images. The frame detector respects site pauses and records the visited page in Activity Center.

@@ -28,7 +28,7 @@ function check(name, cond, extra) {
   console.log('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
-function runConsentDialog(dialogText, labels, scheduled) {
+function runConsentDialog(dialogText, labels, scheduled, options = {}) {
   const clicks = [];
   const rect = (width, height) => ({ width, height, top: 40, left: 50, right: 50 + width, bottom: 40 + height });
   let dialog;
@@ -45,7 +45,7 @@ function runConsentDialog(dialogText, labels, scheduled) {
     parentElement: null,
     getAttribute() { return null; },
     hasAttribute() { return false; },
-    getBoundingClientRect() { return rect(180, 48); },
+    getBoundingClientRect() { return options.hidden ? rect(0, 0) : rect(180, 48); },
     querySelectorAll() { return []; },
     closest() { return null; },
     focus() {},
@@ -62,9 +62,9 @@ function runConsentDialog(dialogText, labels, scheduled) {
     id: '',
     isConnected: true,
     parentElement: null,
-    getAttribute(name) { return name === 'role' ? 'dialog' : null; },
+    getAttribute(name) { return name === 'role' && !options.generic ? 'dialog' : null; },
     hasAttribute() { return false; },
-    getBoundingClientRect() { return rect(820, 650); },
+    getBoundingClientRect() { return options.hidden ? rect(0, 0) : rect(820, 650); },
     querySelectorAll(selector) { return String(selector).startsWith('button') ? controls : []; },
   };
   controls.forEach((control) => { control.parentElement = dialog; });
@@ -100,11 +100,14 @@ function runConsentDialog(dialogText, labels, scheduled) {
     body,
     querySelectorAll(selector) {
       const value = String(selector);
-      if (value.includes('[role="dialog"]')) return [dialog];
+      if (value.includes('[role="dialog"]')) return options.generic ? [] : [dialog];
       if (value.startsWith('button')) return controls;
       return [];
     },
-    createTreeWalker() { return { nextNode() { return null; } }; },
+    createTreeWalker() {
+      if (options.stats) options.stats.rootWalks = (options.stats.rootWalks || 0) + 1;
+      return { nextNode() { return null; } };
+    },
     addEventListener() {},
   };
   const window = {};
@@ -124,6 +127,7 @@ function runConsentDialog(dialogText, labels, scheduled) {
     URL,
     CSS: { escape(value) { return String(value); } },
     getComputedStyle(el) {
+      if (options.stats && controls.includes(el)) options.stats.controlStyles++;
       return {
         display: 'block',
         visibility: 'visible',
@@ -152,6 +156,7 @@ function runConsentDialog(dialogText, labels, scheduled) {
     requestAnimationFrame(fn) { fn(); },
     setTimeout(fn, delay) {
       if (scheduled) scheduled.push(delay);
+      if (options.timers) options.timers.push({ fn, delay });
       if (delay === 0) fn();
       return 1;
     },
@@ -227,7 +232,7 @@ check('Twitch consent fast path cannot click navigational legal links',
 check('consent reject has an attribute-agnostic banner fallback for obfuscated bars (e.g. X BottomBar)',
   /function tryGenericReject/.test(consent)
     && /function consentBannerAncestor/.test(consent)
-    && /if \(tryGenericReject\(roots\)\) return;/.test(consent));
+    && /if \(tryGenericReject\(roots, noteCandidate\)\) return;/.test(consent));
 check('generic reject fallback still requires a safe reject control inside a real consent banner',
   /tryGenericReject[\s\S]*safeRejectCandidate\(el\)[\s\S]*consentBannerAncestor\(el\)/.test(consent)
     && /consentBannerAncestor[\s\S]*hasStrongConsentLanguage\(own\)[\s\S]*protectedContainerContext\(n, el\)/.test(consent));
@@ -259,6 +264,32 @@ const sensitiveDialogClicks = runConsentDialog(
 check('sensitive account context remains protected even when reject and accept labels coexist',
   sensitiveDialogClicks.length === 0,
   JSON.stringify(sensitiveDialogClicks));
+
+const genericStats = { controlStyles: 0 };
+const genericClicks = runConsentDialog('We use cookies for advertising. Choose Reject all or Accept all.',
+  Array(150).fill('Visit').concat('Reject all'), null, { generic: true, stats: genericStats });
+check('obfuscated consent banner still rejects after ordinary controls',
+  genericClicks.length === 1 && genericClicks[0] === 'Reject all', JSON.stringify(genericClicks));
+check('generic fallback checks labels before measuring ordinary controls',
+  genericStats.controlStyles < 10, String(genericStats.controlStyles));
+
+const emptyStats = { controlStyles: 0, rootWalks: 0 };
+const emptyTimers = [];
+runConsentDialog('An ordinary page', Array(150).fill('Visit'), null,
+  { generic: true, stats: emptyStats, timers: emptyTimers });
+const emptyWalks = emptyStats.rootWalks;
+emptyTimers.find((timer) => timer.delay === 50).fn();
+check('fast poll skips a full rescan when no banner candidate was present',
+  emptyStats.rootWalks === emptyWalks, String(emptyStats.rootWalks));
+
+for (const generic of [false, true]) {
+  const hidden = { generic, hidden: true, timers: [] };
+  const hiddenClicks = runConsentDialog('We use cookies for advertising.', ['Reject all', 'Accept all'], null, hidden);
+  hidden.hidden = false;
+  hidden.timers.find((timer) => timer.delay === 50).fn();
+  check((generic ? 'obfuscated' : 'named') + ' CSS-only banner reveal still receives a fast poll',
+    hiddenClicks.length === 1 && hiddenClicks[0] === 'Reject all', JSON.stringify(hiddenClicks));
+}
 
 /* Which button counts as "no".
    The matcher had two alternatives that required the adjective and "only" to be

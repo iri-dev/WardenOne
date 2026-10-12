@@ -40,6 +40,7 @@ const SRC = [
   'let learnedGrabberDomains=[];',
   'let supplementalLists={adultDomainsExtra:[],grabberDomainsExtra:[],trustedPaymentHostsExtra:[]};',
   grabFn('bridgePrivateOrLocalHost'),
+  /hostParsesAsItself/.test(BRIDGE) ? grabFn('hostParsesAsItself') : '',
   grabFn('normalizeBridgeHostUncached'),
   grabFn('normalizeBridgeHost'),
   grabFn('sanitizeBridgeHostList'),
@@ -145,6 +146,41 @@ const PROBES = ['example.com', 'WWW.Example.COM', 'https://sub.example.co.uk/p',
   const bounded = /NORMALIZED_HOST_CACHE.size >= NORMALIZED_HOST_CACHE_MAX/.test(BRIDGE)
     && /NORMALIZED_HOST_CACHE\.clear\(\)/.test(BRIDGE);
   check('the memo is bounded', bounded);
+}
+
+// ---------------------------------------------------------------------------
+// 5b. The parse skip must not change any answer either. hostParsesAsItself says a string would
+//     come back from the URL parser unchanged; hold that against the parser itself over the
+//     probes, a generated set leaning on the shapes the parser rewrites (numeric and 0x last
+//     labels, punycode, hyphens, case), and then compare whole answers with the skip disabled.
+// ---------------------------------------------------------------------------
+{
+  check('the bridge has the parse skip', /function hostParsesAsItself\(raw\)/.test(BRIDGE)
+    && /else if \(!hostParsesAsItself\(raw\)\) \{\s*raw = new URL\('https:\/\/' \+ raw\)\.hostname;/.test(BRIDGE));
+  const parts = ['a', 'z9', 'www', 'xn--bcher-kva', 'xn--zz', '0x', '0x1f', '0xg', '08', '010', '255', '4294967296', '1e3',
+    'a-b', '-a', 'b-', 'co', 'uk', 'ab--cd', 'localhost', 'test', '123abc', 'abc123', 'example', 'cdn-1'];
+  const odd = ['Ex', 'ä', '_x', ''];
+  const generated = [];
+  let seed = 12345;
+  const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return (seed >>> 8) % n; };
+  for (let i = 0; i < 6000; i++) {
+    const labels = [];
+    for (let k = 0, n = 1 + rnd(4); k < n; k++) labels.push(rnd(10) ? parts[rnd(parts.length)] : odd[rnd(odd.length)]);
+    generated.push(labels.join('.'));
+  }
+  const inputs = PROBES.concat(generated);
+  ctx.__in = inputs;
+  const wrong = run('(function(){const out=[];for(const p of __in){if(!hostParsesAsItself(p))continue;'
+    + 'let h=null;try{h=new URL("https://"+p).hostname;}catch(e){h="threw";}if(h!==p)out.push(p+" -> "+h);}return out;})()');
+  check('every host the skip passes is one the URL parser returns unchanged', wrong.length === 0, wrong.slice(0, 8).join(' | '));
+  const passed = run('__in.filter((p) => hostParsesAsItself(p)).length');
+  check('and the skip passes ordinary list hosts', passed > 1000 && run('hostParsesAsItself("ads.example-cdn.com")') === true, passed + ' passed');
+  check('a numeric or hex last label and punycode stay on the parser path',
+    run('[hostParsesAsItself("a.b.255"), hostParsesAsItself("a.0x1f"), hostParsesAsItself("xn--bcher-kva.example")].some(Boolean)') === false);
+  const diverged = run('(function(){const fast=__in.map((p)=>normalizeBridgeHostUncached(p));'
+    + 'const keep=hostParsesAsItself;hostParsesAsItself=()=>false;'
+    + 'try{return __in.filter((p,i)=>normalizeBridgeHostUncached(p)!==fast[i]);}finally{hostParsesAsItself=keep;}})()');
+  check('normalizeBridgeHostUncached answers exactly as it does without the skip', diverged.length === 0, diverged.slice(0, 8).join(' | '));
 }
 
 // ---------------------------------------------------------------------------
