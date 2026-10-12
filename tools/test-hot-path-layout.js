@@ -272,13 +272,14 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     consent.slice(consent.indexOf('function getContainers('), consent.indexOf('function getControls(')),
     consent.slice(consent.indexOf('function visibleControlsInDocument('), consent.indexOf('function tryTwitchReject(')),
   ].join('\n');
-  const banner = { id: 'shadow-banner' };
+  const banner = { id: 'shadow-banner', getBoundingClientRect: () => ({ width: 400, height: 120 }) };
   const reject = { id: 'shadow-reject' };
   const documentRoot = { querySelectorAll: () => [] };
   const shadowRoot = { querySelectorAll: (selector) => selector === 'banner' ? [banner] : [reject] };
   let rootWalks = 0;
   const sandbox = {
     document: documentRoot, CONTAINER_SELECTOR: 'banner', CONTROL_SELECTOR: 'button',
+    innerWidth: 1000, innerHeight: 800, CONSENT_ACTION_TEXT_RE: /reject/i, elementText: () => '',
     collectRoots: () => { rootWalks++; return [documentRoot, shadowRoot]; },
     looksLikeConsentContainer: () => true, containerScore: () => 0, isVisible: () => true,
   };

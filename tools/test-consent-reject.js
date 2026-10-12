@@ -64,7 +64,11 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
     parentElement: null,
     getAttribute(name) { return name === 'role' && !options.generic ? 'dialog' : null; },
     hasAttribute() { return false; },
-    getBoundingClientRect() { return options.hidden ? rect(0, 0) : rect(820, 650); },
+    getBoundingClientRect() {
+      if (options.hidden) return rect(0, 0);
+      if (options.offscreen) return { width: 140, height: 24, top: 1200, bottom: 1224, left: 50, right: 190 };
+      return options.small ? rect(140, 24) : rect(820, 650);
+    },
     querySelectorAll(selector) { return String(selector).startsWith('button') ? controls : []; },
   };
   controls.forEach((control) => { control.parentElement = dialog; });
@@ -281,6 +285,30 @@ const emptyWalks = emptyStats.rootWalks;
 emptyTimers.find((timer) => timer.delay === 50).fn();
 check('fast poll skips a full rescan when no banner candidate was present',
   emptyStats.rootWalks === emptyWalks, String(emptyStats.rootWalks));
+
+const footerStats = { rootWalks: 0 };
+const footerTimers = [];
+runConsentDialog('Cookie statement', ['Visit'], null,
+  { small: true, stats: footerStats, timers: footerTimers });
+const footerWalks = footerStats.rootWalks;
+footerTimers.find((timer) => timer.delay === 50).fn();
+check('a visible cookie footer link does not keep full-page fast polling active',
+  footerStats.rootWalks === footerWalks, String(footerStats.rootWalks));
+
+const offscreenStats = { rootWalks: 0 };
+const offscreenTimers = [];
+runConsentDialog('Cookie statement', ['Visit'], null,
+  { offscreen: true, stats: offscreenStats, timers: offscreenTimers });
+const offscreenWalks = offscreenStats.rootWalks;
+offscreenTimers.find((timer) => timer.delay === 50).fn();
+check('an offscreen footer link does not keep full-page fast polling active',
+  offscreenStats.rootWalks === offscreenWalks, String(offscreenStats.rootWalks));
+
+const smallBannerClicks = runConsentDialog('We use cookies for advertising. Reject all Accept all.',
+  ['Reject all', 'Accept all'], null, { small: true });
+check('a compact named banner with a reject action still works',
+  smallBannerClicks.length === 1 && smallBannerClicks[0] === 'Reject all',
+  JSON.stringify(smallBannerClicks));
 
 for (const generic of [false, true]) {
   const hidden = { generic, hidden: true, timers: [] };
