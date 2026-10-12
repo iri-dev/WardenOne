@@ -10,7 +10,7 @@ const path = require('path');
 const vm = require('vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'bridge.js'), 'utf8');
-const start = source.indexOf('function mainWorldConfigForHost(');
+const start = source.indexOf('const FRAME_CONFIG_FIELDS =');
 const end = source.indexOf('\n  const sendConfig =', start);
 assert(start >= 0 && end > start, 'MAIN config projection moved');
 assert(/const message = signed\('config', JSON\.stringify\(pageConfig\), \{[^}]*overrides: pageConfig \}\);[\s\S]{0,400}postToPage\(message\);/.test(source),
@@ -68,6 +68,14 @@ assert.deepStrictEqual(Array.from(frame.allowlist), ['sub.shop.example']);
 assert.strictEqual(frame.blockTokenExfil, false);
 assert.strictEqual(ctx.project(full, 'sub.shop.example').mediaShield, true,
   'the top-frame engine lost its full settings');
+const inherited = Object.create({ downloadSafeBrowsingKey: 'INHERITED-SECRET', adShield: true });
+Object.assign(inherited, sensitive);
+const privateFrame = ctx.project(inherited, 'unrelated.example', true);
+assert.strictEqual(privateFrame.adShield, undefined, 'inherited guard settings crossed into MAIN');
+for (const canary of ['sensitive.bank.example', 'shop.example', 'private.health.example',
+  'private.mail.example', 'internal.router.example', 'SECRET-CREDENTIAL', 'INHERITED-SECRET']) {
+  assert(!JSON.stringify(privateFrame).includes(canary), canary + ' leaked to a child frame');
+}
 assert(/mainWorldConfigForHost\(clean, location\.hostname, !BRIDGE_TOP_FRAME\)/.test(source),
   'the frame-only projection is not used for child frames');
 console.log('MAIN config minimisation tests passed');

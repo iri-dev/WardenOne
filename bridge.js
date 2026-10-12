@@ -2142,9 +2142,27 @@
     }, true);
   } catch (_) {}
 
+  const FRAME_CONFIG_FIELDS = [
+    'enabled', 'allowlist', 'frameSite', 'frameNoise', 'webglDisabled',
+    'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
+    'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
+    'blockThirdPartyCookies', 'blockSupercookies', 'storageAccessGuard',
+    'blockAllStorageAccess', 'commandPasteGuard', 'permissionChainGuard',
+    'adShield', 'twitchAdBlock', 'twitchSteadyPlayback',
+  ];
   function mainWorldConfigForHost(source, host, frameOnly) {
-    const clean = Object.assign({}, source || {});
+    source = source || {};
     const current = normalizeBridgeHost(host);
+    if (frameOnly) {
+      /* A child has no engine; select guard settings without copying private or top-only data. */
+      const frame = {};
+      for (const field of FRAME_CONFIG_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(source, field)) frame[field] = source[field];
+      }
+      frame.allowlist = current && bridgeHostMatchesList(current, source.allowlist) ? [current] : [];
+      return frame;
+    }
+    const clean = Object.assign({}, source || {});
     clean.allowlist = current && bridgeHostMatchesList(current, clean.allowlist) ? [current] : [];
     delete clean.forgetMeList;
     delete clean.allowlistUntil;
@@ -2153,18 +2171,6 @@
     delete clean.rebindQuarantine;
     for (const field of Object.keys(clean)) {
       if (/ByHost$|Key$/.test(field)) delete clean[field];
-    }
-    if (frameOnly) {
-      /* Child frames have no engine. Keep only settings read by their MAIN-world guards. */
-      const fields = new Set([
-        'enabled', 'allowlist', 'frameSite', 'frameNoise', 'webglDisabled',
-        'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
-        'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
-        'blockThirdPartyCookies', 'blockSupercookies', 'storageAccessGuard',
-        'blockAllStorageAccess', 'commandPasteGuard', 'permissionChainGuard',
-        'adShield', 'twitchAdBlock', 'twitchSteadyPlayback',
-      ]);
-      for (const field of Object.keys(clean)) if (!fields.has(field)) delete clean[field];
     }
     return clean;
   }
