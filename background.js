@@ -709,8 +709,12 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       // itself (harmless). Background-side reputation checks still cover cross-domain.
       const tabHost = (() => { try { return new URL(sender.tab.url).hostname; } catch (_) { return ''; } })();
       if (tabHost && msg.type === 'detected_grabber_domain') {
-        // the page itself is the grabber -> learning its own host is correct
-        learnDomain(tabHost, 'known IP-grabber behavior');
+        localGetStrict('wardenone_config').then((store) => {
+          const cfg = (store && store.wardenone_config) || {};
+          if (cfg.enabled !== false && cfg.warnGrabberDomains !== false) {
+            learnDomain(tabHost, 'known IP-grabber behavior');
+          }
+        }).catch(() => {});
       }
       // NOTE: blocked_safe_browsing_* events are about a LINK/TARGET, not the page,
       // and arrive via a forgeable content event -- we deliberately do NOT auto-learn
@@ -4361,8 +4365,17 @@ async function applyLearnedRules() {
     const domains = Object.keys(LEARNED)
       .sort((a, b) => Number((LEARNED[b] && LEARNED[b].hits) || 0) - Number((LEARNED[a] && LEARNED[a].hits) || 0))
       .slice(0, LEARNED_MAX);
-    const addRules = domains.map((d, i) => ({
-      id: LEARNED_RULE_BASE + i,
+    const addRules = domains.map((d, i) => {
+      const entry = LEARNED[d] || {};
+      const grabber = entry.userBlocked !== true && entry.reason === 'known IP-grabber behavior';
+      const resourceTypes = grabber
+        ? (cfg.blockGrabberResources !== false
+          ? ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'] : [])
+          .concat(cfg.blockMalwareSites !== false ? ['main_frame'] : [])
+        : ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'];
+      if (!resourceTypes.length) return null;
+      return {
+        id: LEARNED_RULE_BASE + i,
       /* A site YOU blocked outranks the compatibility allowances; one WardenOne
          worked out for itself does not.
 
@@ -4372,11 +4385,13 @@ async function applyLearnedRules() {
          were never meant to overrule the reader. At 2000 they did exactly that:
          "Block this site" on YouTube saved the rule, said it had blocked it,
          and the page then loaded normally, because a 95000 allow beat it.
-         An automatic block stays at 2000, where compatibility still wins. */
-      priority: (LEARNED[d] && LEARNED[d].userBlocked) ? 99000 : 2000,
-      action: { type: 'block' },
-      condition: { requestDomains: [d], resourceTypes: ['main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'] },
-    }));
+         An automatic block stays below compatibility; a logger block also stays
+         below the page-warning redirect when that switch is on. */
+        priority: entry.userBlocked ? 99000 : (grabber && cfg.warnGrabberDomains !== false ? 1000 : 2000),
+        action: { type: 'block' },
+        condition: { requestDomains: [d], resourceTypes },
+      };
+    }).filter(Boolean);
     // Runs on every wake: an unchanged band must not cost Chrome a rewrite of every dynamic rule.
     if (!dnrBandUnchanged(mine, addRules)) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
     return { ok: true, count: addRules.length };
@@ -10846,7 +10861,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
     if (!on) {
       try { await removeWardenOneDynamicRules(); } catch (_) {}
     } else {
-      try { applyLearnedRules(); } catch (_) {}
+      try { await applyLearnedRules(); } catch (_) {}
       try { applyTrackerLearnerRules(); } catch (_) {}
     }
   } catch (e) {

@@ -107,6 +107,7 @@
   let openSettingsUntil = 0;
   let lastLogAt = 0;
   let scanFinished = false;
+  let needsTimedScan = true;
 
   const clicked = new WeakSet();
   const opened = new WeakSet();
@@ -406,11 +407,12 @@
     }
   }
 
-  function getContainers(roots) {
+  function getContainers(roots, noteCandidate) {
     const out = [];
     roots.forEach((root) => {
       try {
         const list = root.querySelectorAll(CONTAINER_SELECTOR);
+        if (list.length && noteCandidate) noteCandidate();
         for (let i = 0; i < list.length; i++) {
           const el = list[i];
           if (looksLikeConsentContainer(el)) out.push(el);
@@ -552,7 +554,7 @@
     return true;
   }
 
-  function visibleControlsInDocument(roots) {
+  function visibleControlsInDocument(roots, candidate) {
     const out = [];
     const seen = new Set();
     roots = roots || collectRoots(document);
@@ -562,7 +564,7 @@
         const list = root.querySelectorAll(CONTROL_SELECTOR);
         for (let i = 0; i < list.length && out.length < 500; i++) {
           const el = list[i];
-          if (!seen.has(el) && isVisible(el)) {
+          if (!seen.has(el) && (!candidate || candidate(el)) && isVisible(el)) {
             seen.add(el);
             out.push(el);
           }
@@ -591,8 +593,8 @@
   function safeRejectCandidate(el) {
     const label = elementText(el);
     if (!label) return false;
-    if (isUnsafeAutoClickLink(el)) return false;
     if (!REJECT_RE.test(label)) return false;
+    if (isUnsafeAutoClickLink(el)) return false;
     if (PROTECT_RE.test(label)) return false; // never click a control that is also an account/payment/destructive action
     if (ACCEPT_RE.test(label) && !/without\s+accepting|do\s+not\s+consent|don'?t\s+consent|reject|decline|deny|refuse|disable|turn\s+off|opt\s*out/i.test(label)) return false;
     return true;
@@ -624,12 +626,14 @@
   // document-wide for a genuine reject button sitting inside a real consent banner. The
   // safeRejectCandidate + strong-consent-language + PROTECT guards keep this from firing on
   // unrelated "Decline"/"Deny" buttons, and it never clicks an accept-only control.
-  function tryGenericReject(roots) {
+  function tryGenericReject(roots, noteCandidate) {
     try {
-      const controls = visibleControlsInDocument(roots);
+      const controls = visibleControlsInDocument(roots, (el) => {
+        if (clicked.has(el) || !safeRejectCandidate(el)) return false;
+        if (noteCandidate) noteCandidate();
+        return true;
+      });
       for (const el of controls) {
-        if (clicked.has(el)) continue;
-        if (!safeRejectCandidate(el)) continue;
         if (!consentBannerAncestor(el)) continue;
         if (clickControl(el)) {
           logAction('reject', elementText(el));
@@ -813,8 +817,10 @@
 
     if (tryTwitchReject()) return;
 
+    let possibleSurface = everActed || /(^|\.)twitch\.tv$/i.test(location.hostname);
+    const noteCandidate = () => { possibleSurface = true; };
     const roots = collectRoots(document);
-    const containers = getContainers(roots);
+    const containers = getContainers(roots, noteCandidate);
     for (const container of containers) {
       const controls = getControls(container);
       const reject = controls.find(safeRejectCandidate);
@@ -825,7 +831,9 @@
       }
     }
 
-    if (tryGenericReject(roots)) return;
+    if (tryGenericReject(roots, noteCandidate)) return;
+    /* Keep polling hidden candidates for CSS-only reveals; DOM arrivals wake the observer. */
+    needsTimedScan = possibleSurface;
 
     for (const container of containers) {
       const changed = turnOffOptionalToggles(container);
@@ -922,6 +930,7 @@
 
   function queueScan(throttled) {
     if (scanFinished || scanQueued || !active) return;
+    if (throttled !== true && !needsTimedScan) return;
     if (throttled === true) {
       const since = Date.now() - lastScanAt;
       if (since < SCAN_MIN_GAP_MS) {
@@ -942,29 +951,36 @@
   // arrivals made each step buy an 1800-node tree walk. The cheap node-local test
   // preserves late/obfuscated banners: vendor/class/role selectors, consent wording,
   // and reject/settings controls next to consent wording all wake the full scanner.
+  //
+  // It runs on every node a page adds for two minutes, so it is written for that: a node with
+  // no attributes has no identity to read (id and class reflect attributes), each identity
+  // field is tested on its own rather than joined into a fresh array -- no hint word holds a
+  // space, so a match in the space-joined string always lay inside one field -- and the direct
+  // text is joined while walking siblings. The answers are the ones the joined form gave.
   function mutationNodeMayAffectConsent(node, nested, fullText) {
     try {
       if (!node) return false;
       if (node.nodeType === 3) return hasConsentLanguage(String(node.nodeValue || ''));
       if (node.nodeType !== 1) return false;
-      const role = node.getAttribute && node.getAttribute('role');
-      const identity = [
-        node.id,
-        typeof node.className === 'string' ? node.className : '',
-        role,
-        node.getAttribute && node.getAttribute('aria-label'),
-        node.getAttribute && node.getAttribute('data-testid'),
-        node.getAttribute && node.getAttribute('data-test'),
-      ].filter(Boolean).join(' ');
-      if (CONSENT_FRAME_HINT_RE.test(identity)) return true;
+      const attributed = typeof node.hasAttributes !== 'function' || node.hasAttributes();
+      const read = attributed && !!node.getAttribute;
+      const role = read ? node.getAttribute('role') : null;
+      if (attributed && (consentHint(node.id)
+          || consentHint(typeof node.className === 'string' ? node.className : '')
+          || consentHint(role)
+          || (read && (consentHint(node.getAttribute('aria-label'))
+            || consentHint(node.getAttribute('data-testid'))
+            || consentHint(node.getAttribute('data-test')))))) return true;
       if (String(node.tagName || '').toLowerCase() === 'dialog' || role === 'dialog'
-          || (node.getAttribute && node.getAttribute('aria-modal') === 'true')) return true;
+          || (read && node.getAttribute('aria-modal') === 'true')) return true;
       if (!nested && node.matches && node.matches(CONTAINER_SELECTOR)) return true;
       let text;
       if (nested && node.childNodes) {
-        const direct = [];
-        for (const child of node.childNodes) if (child.nodeType === 3) direct.push(child.nodeValue || '');
-        text = direct.join(' ');
+        text = '';
+        let count = 0;
+        for (let child = node.firstChild; child; child = child.nextSibling) {
+          if (child.nodeType === 3) text += (count++ ? ' ' : '') + (child.nodeValue || '');
+        }
       } else {
         const all = String(node.textContent || '');
         text = fullText ? all : all.slice(0, 2400);
@@ -978,6 +994,10 @@
     } catch (_) {
       return false;
     }
+  }
+
+  function consentHint(value) {
+    return !!value && CONSENT_FRAME_HINT_RE.test(value);
   }
 
   function mutationsMayAffectConsent(records) {
@@ -1058,6 +1078,7 @@
           everActed = false;
           firstScanAt = 0;
         }
+        needsTimedScan = true;
         startObserver();
         queueScan();
       } else if (wasActive && observer) {
@@ -1072,6 +1093,7 @@
       if (msg.kind === 'config-update') refreshConfigState(msg.overrides);
       if (msg.kind === 'content-config-refresh') loadConfig(() => {
         if (active) {
+          needsTimedScan = true;
           startObserver();
           queueScan();
         } else if (observer) {

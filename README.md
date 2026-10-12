@@ -604,6 +604,12 @@ network rule. A suspicious image URL seen in a page is recorded as a candidate; 
 not prove the browser sent a request. Activity says when network protection is unavailable. A
 feedback limit or error never counts as proof of a block.
 
+The warning check inside embedded frames covers `<img>` and `<picture>` images, selected `srcset`
+candidates, and changes to their image attributes. It does not inspect CSS background images or
+every other way a frame can request an image. Network rules still block reviewed logger destinations
+regardless of how the request starts. An unknown logger loaded through CSS may reach its destination
+without an image-specific warning.
+
 **IP lookup blocking** (on by default) blocks the common third-party "what is my IP" services, so a
 page can't ask an outside service for your address. It leaves WebRTC itself alone.
 

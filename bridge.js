@@ -316,6 +316,10 @@
     message.mac = KEY ? __woAuth.hmac(KEY, authSeq + '\n' + kind + '\n' + String(payload)) : '';
     return message;
   };
+  // A second MAC on a message signed() has already numbered, over a part only one reader needs,
+  // bound to the same sequence number so it cannot be lifted onto another message. The readers
+  // that ignore the part verify `mac` alone and never hash it.
+  const signedPart = (kind, payload, message) => (KEY ? __woAuth.hmac(KEY, message.seq + '\n' + kind + '\n' + String(payload)) : '');
   const engineMac = (kind, text) => (KEY ? __woAuth.hmac(KEY, kind + '\n' + String(text)) : '');
 
   /* ROUTING TOKEN = ROUTING ONLY; THE KEY = ANYTHING WARDENONE BELIEVES.
@@ -597,6 +601,17 @@
     return computed;
   }
 
+  // A lower-case DNS name -- the form the worker stores every list host in -- comes back from
+  // the URL parser exactly as it went in, so it need not be parsed. Building that URL was most
+  // of the ~10 ms the top frame spent re-checking the ~3,600 remote list hosts on every page
+  // load. Two shapes the parser does rewrite stay on the slow path: a last label it reads as
+  // an IPv4 number (all digits, or 0x hex), and punycode, which it validates. Every check after
+  // the parse still runs. tools/test-bridge-host-lists.js holds this against the parser.
+  function hostParsesAsItself(raw) {
+    if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(raw) || raw.indexOf('xn--') !== -1) return false;
+    return !/^(?:[0-9]+|0x[0-9a-f]*)$/.test(raw.slice(raw.lastIndexOf('.') + 1));
+  }
+
   function normalizeBridgeHostUncached(value) {
     let raw = String(value || '').trim();
     if (!raw || raw.length > 512) return '';
@@ -605,7 +620,7 @@
         const u = new URL(raw);
         if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
         raw = u.hostname;
-      } else {
+      } else if (!hostParsesAsItself(raw)) {
         raw = new URL('https://' + raw).hostname;
       }
     } catch (_) {
@@ -638,6 +653,12 @@
   // first token it sees at document_start and locks it in.
   postToPage({ source: 'wardenone-handshake', token: TOKEN });
 
+  // The host lists below (learned grabbers, the remote supplemental lists, the reader's own
+  // extras) are read by the engine alone, and the engine (content.min.js, all_frames: false)
+  // runs in the top frame alone. A child frame that fetched them paid, in every frame of every
+  // page, to receive ~50 KB of hosts, re-normalise them, sign them and have two MAIN-world
+  // scripts verify them -- and never read one.
+  const BRIDGE_TOP_FRAME = window === window.top;
   let learnedGrabberDomains = [];
   let supplementalLists = { adultDomainsExtra: [], grabberDomainsExtra: [], trustedPaymentHostsExtra: [] };
   let bridgeConfig = {};
@@ -2188,32 +2209,48 @@
     // partial update while Silent is on cannot let a switch back through.
     gateSilentPresentation(clean, bridgeConfig.silentMode === true);
     clean.forgetMeList = sanitizeBridgeHostList(clean.forgetMeList, 1000);
-    // The stored `raw.*Extra` lists are user/remote supplied and still need the full
-    // gate. learnedGrabberDomains and supplementalLists.* already came out of it at the
-    // storage boundary, so they are merged by identity -- re-normalising them was the
-    // bulk of the per-frame cost, paid again on every page load in every frame.
-    const grabberExtras = mergeNormalizedHostLists(1500,
-      sanitizeBridgeHostList(raw.grabberDomainsExtra, 1500),
-      learnedGrabberDomains,
-      supplementalLists.grabberDomainsExtra);
-    if (grabberExtras.length) clean.grabberDomainsExtra = grabberExtras;
-    else delete clean.grabberDomainsExtra;
-    const adultExtras = mergeNormalizedHostLists(3000,
-      sanitizeBridgeHostList(raw.adultDomainsExtra, 3000),
-      supplementalLists.adultDomainsExtra);
-    if (adultExtras.length) clean.adultDomainsExtra = adultExtras;
-    else delete clean.adultDomainsExtra;
-    const paymentExtras = mergeNormalizedHostLists(300,
-      sanitizeBridgeHostList(raw.trustedPaymentHostsExtra, 300),
-      supplementalLists.trustedPaymentHostsExtra);
-    if (paymentExtras.length) clean.trustedPaymentHostsExtra = paymentExtras;
-    else delete clean.trustedPaymentHostsExtra;
+    // The host lists travel beside the config, not inside it. Every MAIN-world reader of the
+    // config (anti-redirect, the fingerprint realm, permission-chain, the engine, ...) hashes
+    // the whole signed text, and with the remote lists loaded ~50 KB of a ~56 KB config was
+    // hosts that only the engine reads. They carry their own MAC now, under the same
+    // sequence number, which only the engine checks. A child frame has no engine and gets
+    // none (BRIDGE_TOP_FRAME).
+    let hostLists = null;
+    if (BRIDGE_TOP_FRAME) {
+      // The stored `raw.*Extra` lists are user/remote supplied and still need the full
+      // gate. learnedGrabberDomains and supplementalLists.* already came out of it at the
+      // storage boundary, so they are merged by identity -- re-normalising them was the
+      // bulk of the per-frame cost, paid again on every page load in every frame.
+      const grabberExtras = mergeNormalizedHostLists(1500,
+        sanitizeBridgeHostList(raw.grabberDomainsExtra, 1500),
+        learnedGrabberDomains,
+        supplementalLists.grabberDomainsExtra);
+      const adultExtras = mergeNormalizedHostLists(3000,
+        sanitizeBridgeHostList(raw.adultDomainsExtra, 3000),
+        supplementalLists.adultDomainsExtra);
+      const paymentExtras = mergeNormalizedHostLists(300,
+        sanitizeBridgeHostList(raw.trustedPaymentHostsExtra, 300),
+        supplementalLists.trustedPaymentHostsExtra);
+      hostLists = {};
+      if (grabberExtras.length) hostLists.grabberDomainsExtra = grabberExtras;
+      if (adultExtras.length) hostLists.adultDomainsExtra = adultExtras;
+      if (paymentExtras.length) hostLists.trustedPaymentHostsExtra = paymentExtras;
+      if (!Object.keys(hostLists).length) hostLists = null;
+    }
+    delete clean.grabberDomainsExtra;
+    delete clean.adultDomainsExtra;
+    delete clean.trustedPaymentHostsExtra;
     // This frame's own site, from the bridge's own state only: an options-page config-update
     // carries no site, and a value that arrived inside overrides would be a second opinion on
     // who this frame is. Inside the signed copy, so the page cannot supply one either (SEC-07).
     clean.frameSite = bridgeFrameSite;
     const pageConfig = mainWorldConfigForHost(clean, location.hostname);
-    postToPage(signed('config', JSON.stringify(pageConfig), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: pageConfig }));
+    const message = signed('config', JSON.stringify(pageConfig), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: pageConfig });
+    if (hostLists) {
+      message.lists = hostLists;
+      message.listsMac = signedPart('config-lists', JSON.stringify(hostLists), message);
+    }
+    postToPage(message);
     try { document.dispatchEvent(new CustomEvent('wo-bridge-config-ready')); } catch (_) {}
   };
   const bridgeReplay = () => {
@@ -2431,7 +2468,9 @@
   // Content scripts cannot read storage.local: worker snapshots omit credentials.
   // Retry failed or malformed MV3 replies with bounded backoff, and apply only
   // newer revisions so a late response cannot roll back settings.
-  const CONTENT_CONFIG_NEED = ['overrides', 'learned', 'supplemental', 'hidden'];
+  // A child frame leaves out 'learned' and 'supplemental': they are the engine's host lists,
+  // and the engine is not in a child frame (BRIDGE_TOP_FRAME).
+  const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME ? ['overrides', 'learned', 'supplemental', 'hidden'] : ['overrides', 'hidden'];
   const CONFIG_RETRY_BASE_MS = 300;
   const CONFIG_RETRY_MAX_MS = 5000;
   const CONFIG_RETRY_ATTEMPTS = 8;

@@ -189,6 +189,8 @@ function bridgeHarness(merged) {
     learnedGrabberDomains: [], supplementalLists: {},
     postToPage: (m) => posted.push(m),
     signed: (kind, payload, m) => m,
+    signedPart: () => '',
+    BRIDGE_TOP_FRAME: true,
     TOKEN: 't',
     location: { hostname: 'shop.example' },
     document: { dispatchEvent() {} },
@@ -244,7 +246,7 @@ function bridgeHarness(merged) {
     /showToasts:cfg\.showToasts/.test(fs.readFileSync(path.join(ROOT, 'src/content.js'), 'utf8'))
       && !/silentMode/.test(fs.readFileSync(path.join(ROOT, 'src/content.js'), 'utf8')));
   check('the page copy is gated in sendConfig after the per-site overrides and before it is posted',
-    /delete clean\.siteOverrides;[\s\S]{0,1400}gateSilentPresentation\(clean, bridgeConfig\.silentMode === true\);[\s\S]{0,2200}postToPage\(signed\('config'/.test(BRIDGE));
+    /delete clean\.siteOverrides;[\s\S]{0,1400}gateSilentPresentation\(clean, bridgeConfig\.silentMode === true\);[\s\S]{0,4000}signed\('config', JSON\.stringify\(pageConfig\)/.test(BRIDGE));
   check('no worker file touches the two switches -- they are page-resolved keys',
     !/(?:cfg|config|out|clean)\.(?:showToasts|showBadge)\s*=/.test(BG));
   check('the popup says the choices come back', /come back the moment Silent is off/.test(fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8')));

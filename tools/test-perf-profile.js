@@ -74,6 +74,24 @@ check('an empty series is NaN, not zero', Number.isNaN(harness.median([])));
     && churn.indexOf('app.appendChild(c)') < churn.indexOf('grow(c, 6'),
     'a subtree built off-document and appended once arrives as one added node and exercises nothing');
   check('the pages fetch nothing off the machine', harness.MEASURED_PAGES.concat(['/frame.html']).every((p) => !/src="https?:/.test(harness.PAGES[p]())));
+  const imageFrames = harness.PAGES['/image-frames.html']();
+  const imageFrame = harness.PAGES['/image-frame.html']();
+  check('the focused image fixture has eight child frames and waits for their churn',
+    (imageFrames.match(/<iframe /g) || []).length === 8 && /__frameDone === true/.test(imageFrames)
+      && /window\.__done = true/.test(imageFrames));
+  check('each child changes src and srcset and adds image subtrees in twelve batches',
+    /i < 64/.test(imageFrame) && /setAttribute\("src"/.test(imageFrame)
+      && /setAttribute\("srcset"/.test(imageFrame) && /subtree\.appendChild\(img\)/.test(imageFrame)
+      && /round < 12/.test(imageFrame) && /__frameBatchMs/.test(imageFrame));
+  check('the image fixture uses only the loopback server',
+    !/src="https?:/.test(imageFrames + imageFrame) && /\/pixel\.png/.test(imageFrame));
+  check('the control variant disables only the logger warning switch',
+    /variant === 'on:logger-off' \|\| variant === 'on'/.test(SRC)
+      && /cfg\.warnGrabberDomains = \$\{warningOn\}/.test(SRC));
+  check('paired runs alternate warning states in one browser profile',
+    /args\.pairedLogger \? \['on'\] : args\.variants/.test(SRC)
+      && /i % 2 \? \['on', 'on:logger-off'\] : \['on:logger-off', 'on'\]/.test(SRC)
+      && /checkFrameLogger\(origin \+ pagePath, warningOn\)/.test(SRC));
   check('the long-task observer is buffered from document start', /buffered: true/.test(harness.LONGTASK_SCRIPT) && /addScriptToEvaluateOnNewDocument/.test(SRC));
 }
 
@@ -91,7 +109,21 @@ check('an empty series is NaN, not zero', Number.isNaN(harness.median([])));
   const md = harness.markdown({ meta: { commit: 'abc', dirty: false, extensionVersion: '1.0.1', browser: 'Edg/150', cpu: 'cpu', cores: 12, throttle: 1, runs: 3, date: 'now', variants: ['off', 'on'], readiness: { off: null, on: { extensionId: 'x'.repeat(32), workerVersion: '1.0.1', pageMarker: '1.0.1', workerMetrics: false } } }, summary, deltas: { on: d } });
   check('the markdown names the commit, the browser, the readiness evidence and the deltas', /commit `abc`/.test(md) && /Edg\/150/.test(md) && /page marker 1\.0\.1/.test(md) && /\+19 \(\+172\.73%\)/.test(md));
   check('a metric the browser could not provide is left out, not printed as NaN', !/NaN/.test(md));
+
+  /* A baseline build in the same report: its own column, and on minus base beside on minus off. */
+  const withBase = harness.aggregate(results.concat([{ variant: 'base', pages: { '/article.html': { cold: [run(40), run(41), run(39)], warm: [run(9), run(9), run(9)] } } }]));
+  const baseMd = harness.markdown({ meta: { commit: 'abc', dirty: true, extensionVersion: '1.0.1', browser: 'Edg/150', cpu: 'cpu', cores: 12, throttle: 1, runs: 3, date: 'now', variants: ['off', 'base', 'on'], pages: ['/article.html'],
+    readiness: { off: null, base: { extensionId: 'y'.repeat(32), workerVersion: '1.0.1', pageMarker: '1.0.1', remoteLists: { loaded: true, hosts: 3636 } }, on: { extensionId: 'x'.repeat(32), workerVersion: '1.0.1', pageMarker: '1.0.1', remoteLists: { loaded: false, hosts: 0 } } } },
+  summary: withBase, deltas: { on: harness.deltas(withBase, 'off', 'on') }, featureBase: 'base', featureDeltas: harness.deltas(withBase, 'base', 'on') });
+  check('a baseline build gets an on - base column', /on - base \(median\)/.test(baseMd) && /\| -10 \(-25%\) \|/.test(baseMd), baseMd.split('\n').filter((l) => /task ms \| cold/.test(l)).join('\n'));
+  check('the readiness line says whether the remote lists were loaded', /remote host lists 3636 hosts/.test(baseMd) && /remote host lists not loaded/.test(baseMd));
 }
+check('--baseline names an extension directory, resolved to an absolute path',
+  path.isAbsolute(harness.parseArgs(['--baseline', 'some/checkout']).baseline || ''));
+check('the base variant refuses to run without a baseline that holds a manifest',
+  /the base variant needs --baseline <extension directory>/.test(SRC));
+check('an "on" variant waits, bounded, for the remote lists and records what it measured with',
+  /remoteListsLoaded\(cdp, ext\.attachedSession, REMOTE_LISTS_WAIT_MS\)/.test(SRC) && /remoteLists \}/.test(SRC));
 
 /* ---- fail closed ---------------------------------------------------------------------------- */
 check('an "on" variant refuses to measure without the readiness marker', /refusing to measure an extension that is not running/.test(SRC) && /seen !== expectedVersion/.test(SRC));

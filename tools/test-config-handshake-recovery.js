@@ -30,7 +30,7 @@ function section(name, fn) {
 }
 
 /* ---- lift the acquisition block ------------------------------------------------------------- */
-const a = BRIDGE.indexOf("  const CONTENT_CONFIG_NEED = ['overrides', 'learned', 'supplemental', 'hidden'];");
+const a = BRIDGE.indexOf("  const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME ? ['overrides', 'learned', 'supplemental', 'hidden'] : ['overrides', 'hidden'];");
 const bMarker = "      bridgeFetchContentConfig(wanted, cb, SIBLING_CONFIG_ATTEMPTS);\n    };\n  } catch (_) {}\n";
 const b = a >= 0 ? BRIDGE.indexOf(bMarker, a) : -1;
 const BLOCK = a >= 0 && b > a ? BRIDGE.slice(a, b + bMarker.length) : '';
@@ -66,6 +66,7 @@ function world(options) {
     postToPage: (m) => posted.push(m),
     signed: (kind, text, fields) => Object.assign({ signedAs: kind, signedText: text }, fields),
     TOKEN: 'tok',
+    BRIDGE_TOP_FRAME: opts.child !== true,
     bridgeConfigReady: false,
     bridgeFrameSite: '',
     setLearnedGrabberDomains: (v) => applied.learned.push(v),
@@ -135,6 +136,24 @@ if (BLOCK) {
     check('the lists reach their setters', w.applied.learned.length === 1 && w.applied.supplemental.length === 1);
     check('the deadline is cleared', w.pending().length === 0);
     check('the snapshot is held for the frame\'s other scripts', w.snapshot() && w.snapshot().rev === 100);
+  });
+
+  /* The host lists feed only the engine, which runs in the top frame alone: a child frame does
+     not ask for them, and a sibling's ask for overrides is still answered from what it holds. */
+  section('a child frame asks for what it uses', () => {
+    const w = world({ child: true });
+    check('a child frame asks for overrides and hidden rules only',
+      JSON.stringify(w.outbox[0].msg) === JSON.stringify({ kind: 'content-config-get', need: ['overrides', 'hidden'] }), JSON.stringify(w.outbox[0].msg));
+    w.reply(0, ok(100));
+    check('its answer is applied', w.sent.length === 1 && w.sent[0].marker === 'rev100');
+    let answered = null;
+    w.ask(['overrides'], (res) => { answered = res; });
+    w.advance(0);
+    check('a sibling asking for overrides is answered from the snapshot, no second request',
+      answered && answered.rev === 100 && w.outbox.length === 1);
+    w.ask(['supplemental'], () => {});
+    check('a sibling that does want the lists asks the worker itself', w.outbox.length === 2
+      && JSON.stringify(w.outbox[1].msg.need) === '["supplemental"]');
   });
 
   section('THE CARD: the worker dies mid-reply', () => {

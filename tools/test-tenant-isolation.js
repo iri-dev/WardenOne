@@ -308,7 +308,7 @@ section('bridge: the site rides in the signed config from the bridge\'s own stat
   check('...validated as a host when the config answer arrives', /bridgeFrameSite = normalizeBridgeHost\(res\.site\) \|\| '';/.test(request));
   const send = BRIDGE.slice(BRIDGE.indexOf('const sendConfig = '), BRIDGE.indexOf('const bridgeReplay = '));
   check('sendConfig attaches it to the copy that gets signed', /clean\.frameSite = bridgeFrameSite;/.test(send));
-  check('...after the copy is taken and before it is signed', send.indexOf('const clean = Object.assign({}, raw);') < send.indexOf('clean.frameSite = bridgeFrameSite;') && send.indexOf('clean.frameSite = bridgeFrameSite;') < send.indexOf("postToPage(signed('config'"));
+  check('...after the copy is taken and before it is signed', send.indexOf('const clean = Object.assign({}, raw);') < send.indexOf('clean.frameSite = bridgeFrameSite;') && send.indexOf('clean.frameSite = bridgeFrameSite;') < send.indexOf("signed('config', JSON.stringify(pageConfig)"));
   check('a config-update from an extension page cannot name the frame\'s site', !/raw\.frameSite|overrides\.frameSite|bridgeConfig\.frameSite/.test(BRIDGE));
 });
 

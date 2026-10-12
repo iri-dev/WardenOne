@@ -22,6 +22,7 @@ const FRAME_HOST = 'widget.cross-origin-wardenone-smoke.example';
 const FRAME_SUSPECT_HOST = 'iplogger.frame-wardenone-smoke.test';
 const FRAME_SRCSET_HOST = 'iplogger.frame-srcset-wardenone-smoke.test';
 const FRAME_UNSELECTED_HOST = 'iplogger.frame-unselected-wardenone-smoke.test';
+const FRAME_CSS_HOST = 'iplogger.frame-css-wardenone-smoke.test';
 const ATTRIBUTE_HOST = 'iplogger.attribute-wardenone-smoke.example';
 const SRCSET_HOST = 'iplogger.srcset-wardenone-smoke.example';
 const LOGGER_HOST = 'iplogger.icu';
@@ -59,7 +60,11 @@ function frameFixture(port, phase) {
     <img id="frame-direct" src="${suspicious(FRAME_SUSPECT_HOST, 'frame-direct')}">
     <picture><source srcset="${suspicious(FRAME_SRCSET_HOST, 'frame-srcset')} 1x"><img src="${clean}"></picture>
     <img id="frame-unselected" srcset="${clean} 1x, ${suspicious(FRAME_UNSELECTED_HOST, 'frame-unselected')} 2x">
-    <img id="frame-ordinary" src="${clean}">`;
+    <img id="frame-ordinary" src="${clean}">
+    <div style="width:20px;height:20px;background-image:url('${suspicious(LOGGER_HOST, 'frame-css-known')}')"></div>
+    <div id="frame-css" style="width:20px;height:20px"></div>
+    <script>setTimeout(() => { document.getElementById('frame-css').style.backgroundImage =
+      "url('${suspicious(FRAME_CSS_HOST, 'frame-css-unlisted')}')"; }, 100);</script>`;
 }
 
 async function run() {
@@ -95,7 +100,7 @@ async function run() {
   });
   await new Promise((resolve) => server.listen(serverPort, '127.0.0.1', resolve));
   const mapped = [PAGE_HOST, CLEAN_HOST, SUSPECT_HOST, SELECTED_HOST, UNSELECTED_HOST,
-    FRAME_HOST, FRAME_SUSPECT_HOST, FRAME_SRCSET_HOST, FRAME_UNSELECTED_HOST,
+    FRAME_HOST, FRAME_SUSPECT_HOST, FRAME_SRCSET_HOST, FRAME_UNSELECTED_HOST, FRAME_CSS_HOST,
     ATTRIBUTE_HOST, SRCSET_HOST, LOGGER_HOST]
     .map((host) => 'MAP ' + host + ' 127.0.0.1').join(', ');
 
@@ -196,6 +201,7 @@ async function run() {
       assert(arrived(FRAME_SUSPECT_HOST, 'frame-direct'), phase + ' frame image reached the server');
       assert(arrived(FRAME_SRCSET_HOST, 'frame-srcset'), phase + ' frame srcset reached the server');
       assert(!arrived(FRAME_UNSELECTED_HOST, 'frame-unselected'), phase + ' unused frame 2x image stayed unrequested');
+      assert(arrived(FRAME_CSS_HOST, 'frame-css-unlisted'), phase + ' unlisted frame CSS image reached the server');
       assert(arrived(CLEAN_HOST, 'frame-pixel'), phase + ' ordinary frame pixel loaded');
       assert(await evaluate(sessionId, "document.getElementById('ordinary').naturalWidth === 1"),
         phase + ' ordinary transparent pixel rendered');
@@ -217,13 +223,13 @@ async function run() {
       assert(arrived(SRCSET_HOST, 'changed-srcset'), phase + ' changed image srcset reached the server');
 
       if (variant === 'off') {
-        for (const path of ['direct', 'srcset', 'css', 'redirect-target']) {
+        for (const path of ['direct', 'srcset', 'css', 'redirect-target', 'frame-css-known']) {
           assert(arrived(LOGGER_HOST, path), 'extension-off ' + path + ' reached the server');
         }
         assert(await evaluate(sessionId, "document.getElementById('srcset').currentSrc.includes('/srcset')"),
           'the browser selected the logger srcset candidate');
       } else {
-        for (const path of ['direct', 'srcset', 'css', 'redirect-target']) {
+        for (const path of ['direct', 'srcset', 'css', 'redirect-target', 'frame-css-known']) {
           assert(!arrived(LOGGER_HOST, path), 'protected ' + path + ' never reached the server');
         }
         const { sessionId: worker } = await cdp.send('Target.attachToTarget', {
@@ -269,6 +275,8 @@ async function run() {
         'the selected 1x candidate is recorded as selected');
         assert(!notices.some((item) => item.matched === UNSELECTED_HOST
           || item.matched === FRAME_UNSELECTED_HOST), 'unused 2x candidates did not warn');
+        assert(!notices.some((item) => item.matched === FRAME_CSS_HOST),
+          'an unlisted frame CSS image did not receive an image-element heuristic warning');
         for (const host of [ATTRIBUTE_HOST, SRCSET_HOST]) {
           assert(notices.some((item) => item.type === 'warned_grabber_image'
             && item.matched === host && item.status === 'observed_unconfirmed'),

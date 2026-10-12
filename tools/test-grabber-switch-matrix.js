@@ -110,10 +110,55 @@ async function check(master, resources, warnings, malware) {
   if (warningOn && siteOn) assert(dynamic.get(741000).priority > dynamic.get(741001).priority);
 }
 
+async function checkLearnedScope() {
+  const learned = { 'iplogger.icu': { reason: 'known IP-grabber behavior', hits: 1 } };
+  const config = { enabled: true, blockGrabberResources: true,
+    warnGrabberDomains: true, blockMalwareSites: true };
+  let installed = [];
+  const context = { LEARNED: learned, LEARNED_RULE_BASE: 700000, LEARNED_MAX: 2000,
+    DEFAULT_CONFIG: config, Object, Array, String, Number, Date, console,
+    localGet: async () => ({ wardenone_config: config }), localSet: async () => {},
+    activeAllowlist: () => [], hostMatchesAllowlist: () => false,
+    normalizeLearnedDomain: (host) => host, normalizeUserBlockDomain: (host) => host,
+    getDynamicRulesInBand: async () => installed,
+    dnrBandUnchanged: () => false,
+    chrome: { declarativeNetRequest: { updateDynamicRules: async ({ addRules }) => { installed = addRules; } } },
+  };
+  vm.runInNewContext(lift('applyLearnedRules') + '\nthis.apply = applyLearnedRules;', context);
+  const variants = [
+    { resources: false, warnings: false, malware: false, types: [], priority: 2000 },
+    { resources: true, warnings: false, malware: false,
+      types: ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'], priority: 2000 },
+    { resources: false, warnings: true, malware: false, types: [], priority: 1000 },
+    { resources: false, warnings: false, malware: true, types: ['main_frame'], priority: 2000 },
+    { resources: true, warnings: true, malware: true,
+      types: ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'main_frame'], priority: 1000 },
+  ];
+  for (const state of variants) {
+    Object.assign(config, { blockGrabberResources: state.resources,
+      warnGrabberDomains: state.warnings, blockMalwareSites: state.malware });
+    assert.equal((await context.apply()).ok, true);
+    assert.equal(installed.length, state.types.length ? 1 : 0, JSON.stringify(state));
+    if (state.types.length) {
+      assert.deepEqual(Array.from(installed[0].condition.resourceTypes), state.types);
+      assert.equal(installed[0].priority, state.priority);
+    }
+  }
+  learned['iplogger.icu'].userBlocked = true;
+  Object.assign(config, { blockGrabberResources: false, warnGrabberDomains: false,
+    blockMalwareSites: false });
+  await context.apply();
+  assert.equal(installed.length, 1, 'an explicit user block still applies');
+  assert.equal(installed[0].priority, 99000);
+  assert(installed[0].condition.resourceTypes.includes('main_frame')
+    && installed[0].condition.resourceTypes.includes('image'));
+}
+
 (async () => {
   for (const master of [false, true])
     for (const resources of [false, true])
       for (const warnings of [false, true])
         for (const malware of [false, true]) await check(master, resources, warnings, malware);
+  await checkLearnedScope();
   console.log('[ok] all 16 master/resource/warning/malware DNR switch combinations');
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

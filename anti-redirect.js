@@ -2042,6 +2042,11 @@
   const CLICK_LAYER_SKIP = /^(?:SCRIPT|STYLE|LINK|META|NOSCRIPT|TEMPLATE|IFRAME|FRAME|IMG|PICTURE|VIDEO|AUDIO|SOURCE|TRACK|BR|HR|HEAD|BODY|svg)$/;
   function sweepClickLayers() {
     try {
+      // considerClickLayer changes nothing unless strict popups are on and the document has a
+      // player, so a sweep asks that once. It used to resolve a link and its trusted-host
+      // match for each child of <body> first, in every frame at DOMContentLoaded and again
+      // when the config arrived, on the many pages that have no player at all.
+      if (!strictPopupEnabled() || !playerDocument()) return;
       const roots = [document.body, document.documentElement];
       for (const root of roots) {
         const kids = root && root.children;

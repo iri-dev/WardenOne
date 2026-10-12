@@ -8,20 +8,30 @@
 
   const selector = 'img[src],img[srcset],picture source[srcset]';
   const warned = new Set();
+  const hostCache = new Map();
   let observer = null;
   let frameSite = '';
 
   function candidateHost(value) {
     if (!value) return '';
+    const base = document.baseURI || location.href;
+    const key = base + '\n' + String(value);
+    if (hostCache.has(key)) return hostCache.get(key);
+    let candidate = '';
     try {
-      const url = new URL(String(value), document.baseURI || location.href);
+      const url = new URL(String(value), base);
       const host = url.hostname.toLowerCase();
-      if (!/^https?:$/.test(url.protocol) || !host || !host.includes('.')) return '';
-      if (frameSite && typeof siteIdentity === 'function' && siteIdentity(host) === frameSite) return '';
-      if (/(^|[.-])(iplogger|ip-logger|grabify)([.-]|$)/i.test(host)) return host;
-      return /^\/(?:api\/)?(?:iplogger|ip-logger|grabify)\/(?=[a-z0-9_-]*\d)[a-z0-9_-]{8,}(?:[/.]|$)/i.test(url.pathname)
-        ? host : '';
-    } catch (_) { return ''; }
+      if (/^https?:$/.test(url.protocol) && host && host.includes('.')
+          && (!frameSite || typeof siteIdentity !== 'function' || siteIdentity(host) !== frameSite)) {
+        if (/(^|[.-])(iplogger|ip-logger|grabify)([.-]|$)/i.test(host)
+            || /^\/(?:api\/)?(?:iplogger|ip-logger|grabify)\/(?=[a-z0-9_-]*\d)[a-z0-9_-]{8,}(?:[/.]|$)/i.test(url.pathname)) {
+          candidate = host;
+        }
+      }
+    } catch (_) {}
+    if (hostCache.size >= 64) hostCache.clear();
+    hostCache.set(key, candidate);
+    return candidate;
   }
 
   function inspectUrl(value, selected) {
@@ -86,9 +96,12 @@
         document.removeEventListener('error', onImageSettled, true);
       }
       observer = null;
+      hostCache.clear();
       return;
     }
-    frameSite = typeof state.site === 'string' ? state.site : '';
+    const nextSite = typeof state.site === 'string' ? state.site : '';
+    if (frameSite !== nextSite) hostCache.clear();
+    frameSite = nextSite;
     if (observer) return;
     inspectTree(document);
     observer = new MutationObserver(onMutations);

@@ -1057,6 +1057,21 @@
     if(!__woAuth.same(m.mac,__woAuth.hmac(__woKey,seq+"\n"+kind+"\n"+String(payload))))return!1;
     return __woLastSeq=seq,!0
   }
+  /* The config's host lists ride beside it under their own MAC, bound to the same sequence
+     number (bridge.js sendConfig), so the frame's other MAIN-world readers, none of which uses
+     them, hash a few KB instead of ~50 KB. Only after __woVerify accepted this message's seq:
+     a MAC lifted from an earlier message names an earlier seq and fails. A part that does not
+     verify is dropped and the config applies without it. */
+  function __woConfigWithLists(m){
+    const out=Object.assign({},m.overrides),
+    lists=m.lists;
+    if(null===__woKey||!lists||"object"!=typeof lists||Number(m.seq)!==__woLastSeq)return out;
+    if(!__woAuth.same(m.listsMac,__woAuth.hmac(__woKey,__woLastSeq+"\nconfig-lists\n"+JSON.stringify(lists))))return out;
+    ["grabberDomainsExtra","adultDomainsExtra","trustedPaymentHostsExtra"].forEach(k=>{
+      Array.isArray(lists[k])&&(out[k]=lists[k])
+    });
+    return out
+  }
   const __woEventQueue=[],
   __woRequestQueue=[],
   __woPendingRequests=new Map;
@@ -1337,7 +1352,7 @@
 
           }
 
-        })(m.overrides)
+        })(__woConfigWithLists(m))
       }
 
     }
@@ -4021,12 +4036,16 @@
       woObserve((muts,added,roots)=>{
         /* The src test runs on every added node and reads src off ANY tag,
            which sweepNodes' img/script/iframe selector would not repeat, so it
-           stays per-node. The subtree scan narrows to the roots. */
+           stays per-node. The subtree scan narrows to the roots. A node with no
+           src loads nothing and is skipped: isGrabberURL(null) parsed "null"
+           against the page address, a URL build per added element, and on a
+           page whose own host is listed it matched every one of them. */
         for(let i=0;
         i<added.length;
         i++){
           const n=added[i],
-          hit=n.getAttribute&&isGrabberURL(n.getAttribute("src"));
+          src=n.getAttribute&&n.getAttribute("src"),
+          hit=!!src&&isGrabberURL(src);
           hit&&(n.removeAttribute("src"),
           n.setAttribute("data-wo-blocked",
           hit),
@@ -20930,7 +20949,8 @@
         }
 
       },
-      overlayCandidate=el=>{
+      overlayCandidate=(el,
+      climbs)=>{
         let best=el;
         try{
           for(let i=0;
@@ -20938,15 +20958,21 @@
           i++){
             const p=best.parentElement;
             if(p===document.body||p===document.documentElement)break;
-            const cs=getComputedStyle(p),
-            pos=cs.position,
-            z=parseInt(cs.zIndex,
-            10)||0,
-            r=p.getBoundingClientRect(),
-            blob=((p.className||"")+" "+(p.id||"")+" "+(p.getAttribute&&p.getAttribute("aria-label")||"")).toLowerCase(),
-            smallFloat=r&&r.width>=48&&r.height>=48&&r.width<=360&&r.height<=360,
-            floaty="fixed"===pos||"sticky"===pos||"absolute"===pos||z>=10||/(bell|notif|notify|push|subscribe|badge)/i.test(blob);
-            if(smallFloat&&floaty)best=p;
+            let climb=climbs&&climbs.get(p);
+            if(void 0===climb){
+              const cs=getComputedStyle(p),
+              pos=cs.position,
+              z=parseInt(cs.zIndex,
+              10)||0,
+              r=p.getBoundingClientRect(),
+              blob=((p.className||"")+" "+(p.id||"")+" "+(p.getAttribute&&p.getAttribute("aria-label")||"")).toLowerCase(),
+              smallFloat=r&&r.width>=48&&r.height>=48&&r.width<=360&&r.height<=360,
+              floaty="fixed"===pos||"sticky"===pos||"absolute"===pos||z>=10||/(bell|notif|notify|push|subscribe|badge)/i.test(blob);
+              climb=!(!smallFloat||!floaty),
+              climbs&&climbs.set(p,
+              climb)
+            }
+            if(climb)best=p;
             else break
           }
 
@@ -20996,6 +21022,12 @@
           if("none"===cs.display||"hidden"===cs.visibility||0===parseFloat(cs.opacity))return!1;
           const r=el.getBoundingClientRect();
           if(r.top>innerHeight||r.bottom<0)return!1;
+          /* Every way below to answer yes needs a fixed, sticky or absolute box:
+             closeMarkedPlayerPopup refuses anything else, and both final answers
+             require looksModal, which requires positioned. Asked first, because
+             the innerText read next serialises the element's whole subtree, and
+             the sweep meets the page's largest containers first. */
+          if("fixed"!==pos&&"sticky"!==pos&&"absolute"!==pos)return!1;
           const z=parseInt(cs.zIndex,
           10)||0,
           text=(el.innerText||el.textContent||"").slice(0,
@@ -21360,12 +21392,19 @@
         const candidates=document.querySelectorAll('div,section,aside,a,button,span,i,svg,img,canvas,[onclick],[role="button"],[style*="position:fixed"],[style*="position: fixed"],[style*="position:absolute"],[style*="position: absolute"],[class*="bell"],[id*="bell"],[class*="notif"],[id*="notif"],[class*="notify"],[id*="notify"],[class*="push"],[id*="push"],[class*="subscribe"],[id*="subscribe"]');
         let count=0,
         inspected=0;
+        /* Siblings share parents, so overlayCandidate's verdict on a parent is kept for the
+           sweep, and dropped after a hide, which changes boxes. When no floating parent was
+           found the target IS el, and isOverlay -- pure within a sweep -- is not asked twice:
+           together those were most of the style and layout reads per candidate. */
+        const climbs=new Map;
         for(const el of candidates){
           if(inspected++>=600||count>=4)break;
-          const target=overlayCandidate(el);
-          const hit=target&&isOverlay(target)?target:isOverlay(el)?el:null;
+          const target=overlayCandidate(el,
+          climbs);
+          const hit=target&&isOverlay(target)?target:target!==el&&isOverlay(el)?el:null;
           hit&&(hide(hit,
           NUISANCE.test((hit.innerText||"")+hit.className+hit.id)?"nuisance overlay":"fake notification / overlay"),
+          climbs.clear(),
           count++)
         }
 
