@@ -1,8 +1,7 @@
 /*
- * WardenOne Google Search cleanup pre-paint CSS.
- * Registered dynamically only when Hide Google AI & sponsored results is on.
- * The content script still performs the careful shell collapse; this file exists
- * to stop AI/sponsored modules from flashing during first paint.
+ * Legacy combined Google Search cleanup CSS, retained as a packaged core file.
+ * background.js unregisters its former script and registers the separate
+ * search-ai-cleanup.css and search-sponsored-cleanup.css stylesheets instead.
  */
 #tads,
 #tadsb,
