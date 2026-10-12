@@ -122,7 +122,7 @@ const BRIDGE_WATCHDOG = between(BRIDGE, '  /* The engine has to PROVE it is ther
 const BRIDGE_REPUTATION = between(BRIDGE, '  // A verdict is signed over its request id and its body', '\n  // Narrow MAIN-world -> background relay.', 'the reputation relay');
 const BRIDGE_RELAY = between(BRIDGE, '  // Narrow MAIN-world -> background relay.', '\n  // Cookie reload-loop escape.', 'the background relay');
 const SEND_TAIL = between(BRIDGE,
-  '    const pageConfig = mainWorldConfigForHost(clean, location.hostname);',
+  '    const pageConfig = mainWorldConfigForHost(clean, location.hostname, !BRIDGE_TOP_FRAME);',
   '\n  };', 'the config send');
 
 function loadBridge(worlds, options) {
@@ -147,6 +147,7 @@ function loadBridge(worlds, options) {
     safeBrowsingIntentAllowed: () => true,
     boundedBridgeDetail: (d) => d,
     bridgeConfigReady: true,
+    BRIDGE_TOP_FRAME: true,
     bridgeConfig: o.config || { enabled: true },
     mainWorldConfigForHost: (clean) => clean,
     chrome: {
