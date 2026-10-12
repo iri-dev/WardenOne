@@ -1,0 +1,1596 @@
+{
+ "meta": {
+  "commit": "7507f01",
+  "dirty": true,
+  "extensionVersion": "1.0.2",
+  "browser": "Edg/150.0.4078.48",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0",
+  "cpu": "12th Gen Intel(R) Core(TM) i5-12400F",
+  "cores": 12,
+  "memoryGB": 34,
+  "platform": "win32 10.0.19045",
+  "throttle": 1,
+  "runs": 7,
+  "variants": [
+   "on:logger-off",
+   "on"
+  ],
+  "pairedLogger": true,
+  "date": "2026-10-12T08:36:11.606Z",
+  "pages": [
+   "/image-frames.html"
+  ],
+  "readiness": {
+   "on:logger-off": {
+    "extensionId": "cbclhioddgbghebhfjjicdddpfgdgpia",
+    "workerVersion": "1.0.2",
+    "workerMetrics": false,
+    "remoteLists": {
+     "loaded": true,
+     "hosts": 3636,
+     "counts": {
+      "adultDomainsExtra": 3000,
+      "grabberDomainsExtra": 0,
+      "searchJunkDomainsExtra": 624,
+      "trustedPaymentHostsExtra": 12
+     }
+    },
+    "pageMarker": "1.0.2",
+    "frameLogger": {
+     "frames": 8,
+     "enabled": false
+    }
+   },
+   "on": {
+    "extensionId": "cbclhioddgbghebhfjjicdddpfgdgpia",
+    "workerVersion": "1.0.2",
+    "workerMetrics": false,
+    "remoteLists": {
+     "loaded": true,
+     "hosts": 3636,
+     "counts": {
+      "adultDomainsExtra": 3000,
+      "grabberDomainsExtra": 0,
+      "searchJunkDomainsExtra": 624,
+      "trustedPaymentHostsExtra": 12
+     }
+    },
+    "pageMarker": "1.0.2",
+    "frameLogger": {
+     "frames": 8,
+     "enabled": true
+    }
+   }
+  }
+ },
+ "summary": {
+  "on:logger-off": {
+   "/image-frames.html": {
+    "cold": {
+     "taskMs": {
+      "n": 7,
+      "median": 366.6,
+      "p90": 383.01,
+      "max": 386.72,
+      "min": 351.79,
+      "raw": [
+       380.54,
+       386.72,
+       351.79,
+       366.6,
+       363.65,
+       368.13,
+       359.89
+      ]
+     },
+     "scriptMs": {
+      "n": 7,
+      "median": 201.75,
+      "p90": 211.72,
+      "max": 214.14,
+      "min": 196.93,
+      "raw": [
+       214.14,
+       210.11,
+       196.93,
+       201.78,
+       201.75,
+       201.45,
+       201.11
+      ]
+     },
+     "layoutMs": {
+      "n": 7,
+      "median": 13.26,
+      "p90": 14.19,
+      "max": 14.92,
+      "min": 12.76,
+      "raw": [
+       14.92,
+       13.33,
+       13.12,
+       13.26,
+       13.04,
+       13.7,
+       12.76
+      ]
+     },
+     "styleMs": {
+      "n": 7,
+      "median": 6.35,
+      "p90": 6.91,
+      "max": 7.58,
+      "min": 6.09,
+      "raw": [
+       7.58,
+       6.34,
+       6.36,
+       6.12,
+       6.35,
+       6.47,
+       6.09
+      ]
+     },
+     "frameBatchMs": {
+      "n": 7,
+      "median": 530.8,
+      "p90": 549.72,
+      "max": 550.8,
+      "min": 499.2,
+      "raw": [
+       500.7,
+       550.8,
+       549,
+       533.8,
+       499.2,
+       530.8,
+       528.1
+      ]
+     },
+     "longTasks": {
+      "n": 7,
+      "median": 1,
+      "p90": 1,
+      "max": 1,
+      "min": 1,
+      "raw": [
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1
+      ]
+     },
+     "longTaskMs": {
+      "n": 7,
+      "median": 53,
+      "p90": 55.6,
+      "max": 58,
+      "min": 51,
+      "raw": [
+       58,
+       54,
+       52,
+       51,
+       53,
+       52,
+       53
+      ]
+     },
+     "dclMs": {
+      "n": 7,
+      "median": 54.1,
+      "p90": 56.02,
+      "max": 56.2,
+      "min": 51.6,
+      "raw": [
+       52.9,
+       55.9,
+       51.6,
+       54.9,
+       54.1,
+       52.6,
+       56.2
+      ]
+     },
+     "loadMs": {
+      "n": 7,
+      "median": 204.5,
+      "p90": 222.18,
+      "max": 224.7,
+      "min": 133,
+      "raw": [
+       224.7,
+       152.8,
+       204.5,
+       138,
+       211.1,
+       133,
+       220.5
+      ]
+     },
+     "wallMs": {
+      "n": 7,
+      "median": 2116,
+      "p90": 2192.6,
+      "max": 2216,
+      "min": 2109,
+      "raw": [
+       2216,
+       2123,
+       2112,
+       2114,
+       2109,
+       2116,
+       2177
+      ]
+     },
+     "heapAfterGcMB": {
+      "n": 7,
+      "median": 6.79,
+      "p90": 6.8,
+      "max": 6.8,
+      "min": 6.78,
+      "raw": [
+       6.8,
+       6.79,
+       6.8,
+       6.78,
+       6.79,
+       6.79,
+       6.8
+      ]
+     },
+     "domNodes": {
+      "n": 7,
+      "median": 17,
+      "p90": 17,
+      "max": 17,
+      "min": 17,
+      "raw": [
+       17,
+       17,
+       17,
+       17,
+       17,
+       17,
+       17
+      ]
+     },
+     "listeners": {
+      "n": 7,
+      "median": 550,
+      "p90": 561.6,
+      "max": 579,
+      "min": 550,
+      "raw": [
+       579,
+       550,
+       550,
+       550,
+       550,
+       550,
+       550
+      ]
+     },
+     "workerTaskMs": {
+      "n": 7,
+      "median": null,
+      "p90": null,
+      "max": null,
+      "min": null,
+      "raw": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ]
+     }
+    },
+    "warm": {
+     "taskMs": {
+      "n": 7,
+      "median": 344.9,
+      "p90": 351.74,
+      "max": 355.58,
+      "min": 338.66,
+      "raw": [
+       343.55,
+       339.37,
+       338.66,
+       349.18,
+       355.58,
+       344.9,
+       347.75
+      ]
+     },
+     "scriptMs": {
+      "n": 7,
+      "median": 203.81,
+      "p90": 207.43,
+      "max": 208.34,
+      "min": 197.06,
+      "raw": [
+       206.82,
+       197.06,
+       203.7,
+       203.81,
+       208.34,
+       202.81,
+       206.35
+      ]
+     },
+     "layoutMs": {
+      "n": 7,
+      "median": 5.7,
+      "p90": 5.81,
+      "max": 5.92,
+      "min": 5.23,
+      "raw": [
+       5.27,
+       5.92,
+       5.23,
+       5.74,
+       5.7,
+       5.54,
+       5.71
+      ]
+     },
+     "styleMs": {
+      "n": 7,
+      "median": 6.49,
+      "p90": 6.69,
+      "max": 6.73,
+      "min": 5.92,
+      "raw": [
+       6.09,
+       6.73,
+       5.92,
+       6.5,
+       6.49,
+       6.36,
+       6.66
+      ]
+     },
+     "frameBatchMs": {
+      "n": 7,
+      "median": 527.3,
+      "p90": 587.78,
+      "max": 610.4,
+      "min": 498,
+      "raw": [
+       610.4,
+       499.9,
+       572.7,
+       531.7,
+       498,
+       527.3,
+       524
+      ]
+     },
+     "longTasks": {
+      "n": 7,
+      "median": 0,
+      "p90": 0.4,
+      "max": 1,
+      "min": 0,
+      "raw": [
+       1,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "longTaskMs": {
+      "n": 7,
+      "median": 0,
+      "p90": 20,
+      "max": 50,
+      "min": 0,
+      "raw": [
+       50,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "dclMs": {
+      "n": 7,
+      "median": 63.8,
+      "p90": 66,
+      "max": 68.1,
+      "min": 60.9,
+      "raw": [
+       62.5,
+       60.9,
+       64.6,
+       63.8,
+       68.1,
+       64.3,
+       63.2
+      ]
+     },
+     "loadMs": {
+      "n": 7,
+      "median": 193.6,
+      "p90": 197.8,
+      "max": 202.3,
+      "min": 181.6,
+      "raw": [
+       194.8,
+       181.6,
+       194.7,
+       191.9,
+       202.3,
+       186.2,
+       193.6
+      ]
+     },
+     "wallMs": {
+      "n": 7,
+      "median": 2167,
+      "p90": 2171.6,
+      "max": 2174,
+      "min": 2144,
+      "raw": [
+       2167,
+       2144,
+       2162,
+       2174,
+       2168,
+       2163,
+       2170
+      ]
+     },
+     "heapAfterGcMB": {
+      "n": 7,
+      "median": 6.8,
+      "p90": 6.81,
+      "max": 6.82,
+      "min": 6.79,
+      "raw": [
+       6.82,
+       6.8,
+       6.81,
+       6.79,
+       6.8,
+       6.81,
+       6.8
+      ]
+     },
+     "domNodes": {
+      "n": 7,
+      "median": 17,
+      "p90": 17,
+      "max": 17,
+      "min": 17,
+      "raw": [
+       17,
+       17,
+       17,
+       17,
+       17,
+       17,
+       17
+      ]
+     },
+     "listeners": {
+      "n": 7,
+      "median": 585,
+      "p90": 586,
+      "max": 586,
+      "min": 585,
+      "raw": [
+       586,
+       585,
+       586,
+       585,
+       586,
+       585,
+       585
+      ]
+     },
+     "workerTaskMs": {
+      "n": 7,
+      "median": null,
+      "p90": null,
+      "max": null,
+      "min": null,
+      "raw": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ]
+     }
+    }
+   }
+  },
+  "on": {
+   "/image-frames.html": {
+    "cold": {
+     "taskMs": {
+      "n": 7,
+      "median": 388.18,
+      "p90": 403.96,
+      "max": 413.11,
+      "min": 383.92,
+      "raw": [
+       397.86,
+       389.78,
+       383.92,
+       385.77,
+       413.11,
+       384.22,
+       388.18
+      ]
+     },
+     "scriptMs": {
+      "n": 7,
+      "median": 220.38,
+      "p90": 224.36,
+      "max": 226.95,
+      "min": 217.13,
+      "raw": [
+       222.64,
+       220.94,
+       217.13,
+       218.93,
+       226.95,
+       220.38,
+       217.83
+      ]
+     },
+     "layoutMs": {
+      "n": 7,
+      "median": 13.38,
+      "p90": 14.39,
+      "max": 15.12,
+      "min": 12.85,
+      "raw": [
+       13.9,
+       13.09,
+       12.85,
+       13.52,
+       15.12,
+       13.38,
+       13.28
+      ]
+     },
+     "styleMs": {
+      "n": 7,
+      "median": 6.46,
+      "p90": 6.83,
+      "max": 6.91,
+      "min": 6.11,
+      "raw": [
+       6.46,
+       6.27,
+       6.11,
+       6.91,
+       6.77,
+       6.5,
+       6.44
+      ]
+     },
+     "frameBatchMs": {
+      "n": 7,
+      "median": 512.5,
+      "p90": 571.82,
+      "max": 596.9,
+      "min": 495,
+      "raw": [
+       532.3,
+       504.4,
+       555.1,
+       512.5,
+       495,
+       508.1,
+       596.9
+      ]
+     },
+     "longTasks": {
+      "n": 7,
+      "median": 1,
+      "p90": 1,
+      "max": 1,
+      "min": 1,
+      "raw": [
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1
+      ]
+     },
+     "longTaskMs": {
+      "n": 7,
+      "median": 54,
+      "p90": 54.4,
+      "max": 55,
+      "min": 53,
+      "raw": [
+       54,
+       54,
+       53,
+       54,
+       55,
+       54,
+       53
+      ]
+     },
+     "dclMs": {
+      "n": 7,
+      "median": 54.2,
+      "p90": 58.58,
+      "max": 60.8,
+      "min": 52.1,
+      "raw": [
+       57.1,
+       54.2,
+       53.7,
+       53.8,
+       60.8,
+       52.1,
+       55.8
+      ]
+     },
+     "loadMs": {
+      "n": 7,
+      "median": 153.3,
+      "p90": 213.04,
+      "max": 215.8,
+      "min": 143.8,
+      "raw": [
+       146.8,
+       156,
+       151.8,
+       215.8,
+       153.3,
+       211.2,
+       143.8
+      ]
+     },
+     "wallMs": {
+      "n": 7,
+      "median": 2123,
+      "p90": 2134,
+      "max": 2143,
+      "min": 2105,
+      "raw": [
+       2116,
+       2121,
+       2143,
+       2105,
+       2128,
+       2127,
+       2123
+      ]
+     },
+     "heapAfterGcMB": {
+      "n": 7,
+      "median": 6.88,
+      "p90": 6.88,
+      "max": 6.89,
+      "min": 6.87,
+      "raw": [
+       6.88,
+       6.89,
+       6.87,
+       6.88,
+       6.87,
+       6.88,
+       6.88
+      ]
+     },
+     "domNodes": {
+      "n": 7,
+      "median": 17,
+      "p90": 17,
+      "max": 17,
+      "min": 17,
+      "raw": [
+       17,
+       17,
+       17,
+       17,
+       17,
+       17,
+       17
+      ]
+     },
+     "listeners": {
+      "n": 7,
+      "median": 552,
+      "p90": 552,
+      "max": 552,
+      "min": 552,
+      "raw": [
+       552,
+       552,
+       552,
+       552,
+       552,
+       552,
+       552
+      ]
+     },
+     "workerTaskMs": {
+      "n": 7,
+      "median": null,
+      "p90": null,
+      "max": null,
+      "min": null,
+      "raw": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ]
+     }
+    },
+    "warm": {
+     "taskMs": {
+      "n": 7,
+      "median": 357.92,
+      "p90": 371.46,
+      "max": 374.02,
+      "min": 349.3,
+      "raw": [
+       369.75,
+       357.92,
+       374.02,
+       355.48,
+       367.18,
+       349.36,
+       349.3
+      ]
+     },
+     "scriptMs": {
+      "n": 7,
+      "median": 217.02,
+      "p90": 221.41,
+      "max": 221.99,
+      "min": 210.83,
+      "raw": [
+       221.03,
+       217.25,
+       221.99,
+       214.2,
+       217.02,
+       213.36,
+       210.83
+      ]
+     },
+     "layoutMs": {
+      "n": 7,
+      "median": 5.75,
+      "p90": 6.1,
+      "max": 6.26,
+      "min": 5.43,
+      "raw": [
+       5.78,
+       5.46,
+       6.26,
+       5.99,
+       5.75,
+       5.49,
+       5.43
+      ]
+     },
+     "styleMs": {
+      "n": 7,
+      "median": 6.2,
+      "p90": 6.65,
+      "max": 6.67,
+      "min": 6,
+      "raw": [
+       6.29,
+       6.2,
+       6.67,
+       6.14,
+       6.63,
+       6,
+       6
+      ]
+     },
+     "frameBatchMs": {
+      "n": 7,
+      "median": 587.8,
+      "p90": 616.2,
+      "max": 625.2,
+      "min": 507.1,
+      "raw": [
+       542.9,
+       625.2,
+       507.1,
+       587.8,
+       534.6,
+       595,
+       610.2
+      ]
+     },
+     "longTasks": {
+      "n": 7,
+      "median": 0,
+      "p90": 0,
+      "max": 0,
+      "min": 0,
+      "raw": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "longTaskMs": {
+      "n": 7,
+      "median": 0,
+      "p90": 0,
+      "max": 0,
+      "min": 0,
+      "raw": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "dclMs": {
+      "n": 7,
+      "median": 62.7,
+      "p90": 64.34,
+      "max": 64.7,
+      "min": 60.7,
+      "raw": [
+       64.7,
+       62.7,
+       62.9,
+       62.4,
+       64.1,
+       60.7,
+       60.8
+      ]
+     },
+     "loadMs": {
+      "n": 7,
+      "median": 192.4,
+      "p90": 197.18,
+      "max": 198.8,
+      "min": 183.3,
+      "raw": [
+       198.8,
+       192.4,
+       196.1,
+       183.3,
+       193.3,
+       185.2,
+       184.1
+      ]
+     },
+     "wallMs": {
+      "n": 7,
+      "median": 2156,
+      "p90": 2162.8,
+      "max": 2167,
+      "min": 2146,
+      "raw": [
+       2151,
+       2160,
+       2154,
+       2157,
+       2167,
+       2156,
+       2146
+      ]
+     },
+     "heapAfterGcMB": {
+      "n": 7,
+      "median": 6.89,
+      "p90": 6.89,
+      "max": 6.89,
+      "min": 6.85,
+      "raw": [
+       6.86,
+       6.85,
+       6.88,
+       6.89,
+       6.89,
+       6.89,
+       6.89
+      ]
+     },
+     "domNodes": {
+      "n": 7,
+      "median": 17,
+      "p90": 17,
+      "max": 17,
+      "min": 17,
+      "raw": [
+       17,
+       17,
+       17,
+       17,
+       17,
+       17,
+       17
+      ]
+     },
+     "listeners": {
+      "n": 7,
+      "median": 583,
+      "p90": 587.8,
+      "max": 589,
+      "min": 578,
+      "raw": [
+       583,
+       587,
+       583,
+       589,
+       578,
+       581,
+       580
+      ]
+     },
+     "workerTaskMs": {
+      "n": 7,
+      "median": null,
+      "p90": null,
+      "max": null,
+      "min": null,
+      "raw": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ]
+     }
+    }
+   }
+  }
+ },
+ "deltas": {},
+ "featureBase": "on:logger-off",
+ "featureDeltas": {
+  "/image-frames.html": {
+   "cold": {
+    "taskMs": {
+     "medianDelta": 21.58,
+     "p90Delta": 20.95,
+     "pct": 5.89
+    },
+    "scriptMs": {
+     "medianDelta": 18.63,
+     "p90Delta": 12.64,
+     "pct": 9.23
+    },
+    "layoutMs": {
+     "medianDelta": 0.12,
+     "p90Delta": 0.2,
+     "pct": 0.9
+    },
+    "styleMs": {
+     "medianDelta": 0.11,
+     "p90Delta": -0.08,
+     "pct": 1.73
+    },
+    "frameBatchMs": {
+     "medianDelta": -18.3,
+     "p90Delta": 22.1,
+     "pct": -3.45
+    },
+    "longTasks": {
+     "medianDelta": 0,
+     "p90Delta": 0,
+     "pct": 0
+    },
+    "longTaskMs": {
+     "medianDelta": 1,
+     "p90Delta": -1.2,
+     "pct": 1.89
+    },
+    "dclMs": {
+     "medianDelta": 0.1,
+     "p90Delta": 2.56,
+     "pct": 0.18
+    },
+    "loadMs": {
+     "medianDelta": -51.2,
+     "p90Delta": -9.14,
+     "pct": -25.04
+    },
+    "wallMs": {
+     "medianDelta": 7,
+     "p90Delta": -58.6,
+     "pct": 0.33
+    },
+    "heapAfterGcMB": {
+     "medianDelta": 0.09,
+     "p90Delta": 0.08,
+     "pct": 1.33
+    },
+    "domNodes": {
+     "medianDelta": 0,
+     "p90Delta": 0,
+     "pct": 0
+    },
+    "listeners": {
+     "medianDelta": 2,
+     "p90Delta": -9.6,
+     "pct": 0.36
+    },
+    "workerTaskMs": {
+     "medianDelta": null,
+     "p90Delta": null,
+     "pct": null
+    }
+   },
+   "warm": {
+    "taskMs": {
+     "medianDelta": 13.02,
+     "p90Delta": 19.72,
+     "pct": 3.78
+    },
+    "scriptMs": {
+     "medianDelta": 13.21,
+     "p90Delta": 13.98,
+     "pct": 6.48
+    },
+    "layoutMs": {
+     "medianDelta": 0.05,
+     "p90Delta": 0.29,
+     "pct": 0.88
+    },
+    "styleMs": {
+     "medianDelta": -0.29,
+     "p90Delta": -0.04,
+     "pct": -4.47
+    },
+    "frameBatchMs": {
+     "medianDelta": 60.5,
+     "p90Delta": 28.42,
+     "pct": 11.47
+    },
+    "longTasks": {
+     "medianDelta": 0,
+     "p90Delta": -0.4,
+     "pct": null
+    },
+    "longTaskMs": {
+     "medianDelta": 0,
+     "p90Delta": -20,
+     "pct": null
+    },
+    "dclMs": {
+     "medianDelta": -1.1,
+     "p90Delta": -1.66,
+     "pct": -1.72
+    },
+    "loadMs": {
+     "medianDelta": -1.2,
+     "p90Delta": -0.62,
+     "pct": -0.62
+    },
+    "wallMs": {
+     "medianDelta": -11,
+     "p90Delta": -8.8,
+     "pct": -0.51
+    },
+    "heapAfterGcMB": {
+     "medianDelta": 0.09,
+     "p90Delta": 0.08,
+     "pct": 1.32
+    },
+    "domNodes": {
+     "medianDelta": 0,
+     "p90Delta": 0,
+     "pct": 0
+    },
+    "listeners": {
+     "medianDelta": -2,
+     "p90Delta": 1.8,
+     "pct": -0.34
+    },
+    "workerTaskMs": {
+     "medianDelta": null,
+     "p90Delta": null,
+     "pct": null
+    }
+   }
+  }
+ },
+ "raw": {
+  "on:logger-off": {
+   "/image-frames.html": {
+    "cold": [
+     {
+      "taskMs": 380.53800000000007,
+      "scriptMs": 214.139,
+      "layoutMs": 14.923,
+      "styleMs": 7.579000000000001,
+      "longTasks": 1,
+      "longTaskMs": 58,
+      "dclMs": 52.899999998509884,
+      "loadMs": 224.70000000298023,
+      "wallMs": 2216,
+      "frameBatchMs": 500.6999999731779,
+      "heapAfterGcMB": 6.799003601074219,
+      "domNodes": 17,
+      "listeners": 579,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 386.72200000000004,
+      "scriptMs": 210.10799999999998,
+      "layoutMs": 13.331000000000001,
+      "styleMs": 6.341,
+      "longTasks": 1,
+      "longTaskMs": 54,
+      "dclMs": 55.900000005960464,
+      "loadMs": 152.80000000447035,
+      "wallMs": 2123,
+      "frameBatchMs": 550.799999974668,
+      "heapAfterGcMB": 6.786170959472656,
+      "domNodes": 17,
+      "listeners": 550,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 351.791,
+      "scriptMs": 196.926,
+      "layoutMs": 13.124,
+      "styleMs": 6.356000000000001,
+      "longTasks": 1,
+      "longTaskMs": 52,
+      "dclMs": 51.600000001490116,
+      "loadMs": 204.5,
+      "wallMs": 2112,
+      "frameBatchMs": 549.0000000521541,
+      "heapAfterGcMB": 6.797603607177734,
+      "domNodes": 17,
+      "listeners": 550,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 366.6,
+      "scriptMs": 201.78199999999998,
+      "layoutMs": 13.263,
+      "styleMs": 6.119999999999999,
+      "longTasks": 1,
+      "longTaskMs": 51,
+      "dclMs": 54.899999998509884,
+      "loadMs": 138,
+      "wallMs": 2114,
+      "frameBatchMs": 533.8000000417233,
+      "heapAfterGcMB": 6.781883239746094,
+      "domNodes": 17,
+      "listeners": 550,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 363.647,
+      "scriptMs": 201.746,
+      "layoutMs": 13.040000000000001,
+      "styleMs": 6.353,
+      "longTasks": 1,
+      "longTaskMs": 53,
+      "dclMs": 54.100000001490116,
+      "loadMs": 211.10000000149012,
+      "wallMs": 2109,
+      "frameBatchMs": 499.200000025332,
+      "heapAfterGcMB": 6.7905120849609375,
+      "domNodes": 17,
+      "listeners": 550,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 368.132,
+      "scriptMs": 201.45,
+      "layoutMs": 13.697000000000001,
+      "styleMs": 6.466,
+      "longTasks": 1,
+      "longTaskMs": 52,
+      "dclMs": 52.599999994039536,
+      "loadMs": 133,
+      "wallMs": 2116,
+      "frameBatchMs": 530.7999999970198,
+      "heapAfterGcMB": 6.785316467285156,
+      "domNodes": 17,
+      "listeners": 550,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 359.887,
+      "scriptMs": 201.10500000000002,
+      "layoutMs": 12.76,
+      "styleMs": 6.093,
+      "longTasks": 1,
+      "longTaskMs": 53,
+      "dclMs": 56.20000000298023,
+      "loadMs": 220.5,
+      "wallMs": 2177,
+      "frameBatchMs": 528.100000038743,
+      "heapAfterGcMB": 6.797996520996094,
+      "domNodes": 17,
+      "listeners": 550,
+      "workerTaskMs": null
+     }
+    ],
+    "warm": [
+     {
+      "taskMs": 343.54999999999995,
+      "scriptMs": 206.819,
+      "layoutMs": 5.272999999999998,
+      "styleMs": 6.0920000000000005,
+      "longTasks": 1,
+      "longTaskMs": 50,
+      "dclMs": 62.5,
+      "loadMs": 194.79999999701977,
+      "wallMs": 2167,
+      "frameBatchMs": 610.3999999836087,
+      "heapAfterGcMB": 6.820686340332031,
+      "domNodes": 17,
+      "listeners": 586,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 339.37300000000005,
+      "scriptMs": 197.063,
+      "layoutMs": 5.923999999999999,
+      "styleMs": 6.729,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 60.899999998509884,
+      "loadMs": 181.60000000149012,
+      "wallMs": 2144,
+      "frameBatchMs": 499.90000000596046,
+      "heapAfterGcMB": 6.8028411865234375,
+      "domNodes": 17,
+      "listeners": 585,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 338.6600000000001,
+      "scriptMs": 203.70400000000004,
+      "layoutMs": 5.233999999999999,
+      "styleMs": 5.917999999999999,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 64.60000000149012,
+      "loadMs": 194.70000000298023,
+      "wallMs": 2162,
+      "frameBatchMs": 572.6999999731779,
+      "heapAfterGcMB": 6.8074951171875,
+      "domNodes": 17,
+      "listeners": 586,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 349.17699999999996,
+      "scriptMs": 203.807,
+      "layoutMs": 5.739999999999998,
+      "styleMs": 6.503000000000001,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 63.80000000447035,
+      "loadMs": 191.89999999850988,
+      "wallMs": 2174,
+      "frameBatchMs": 531.7000000476837,
+      "heapAfterGcMB": 6.790447235107422,
+      "domNodes": 17,
+      "listeners": 585,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 355.583,
+      "scriptMs": 208.34199999999998,
+      "layoutMs": 5.699999999999998,
+      "styleMs": 6.486,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 68.10000000149012,
+      "loadMs": 202.30000000447035,
+      "wallMs": 2168,
+      "frameBatchMs": 498.00000001490116,
+      "heapAfterGcMB": 6.797660827636719,
+      "domNodes": 17,
+      "listeners": 586,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 344.9,
+      "scriptMs": 202.81400000000002,
+      "layoutMs": 5.5409999999999995,
+      "styleMs": 6.359,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 64.30000000447035,
+      "loadMs": 186.20000000298023,
+      "wallMs": 2163,
+      "frameBatchMs": 527.3000000417233,
+      "heapAfterGcMB": 6.8084869384765625,
+      "domNodes": 17,
+      "listeners": 585,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 347.75100000000003,
+      "scriptMs": 206.347,
+      "layoutMs": 5.707000000000002,
+      "styleMs": 6.662999999999999,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 63.19999999552965,
+      "loadMs": 193.60000000149012,
+      "wallMs": 2170,
+      "frameBatchMs": 524.0000000298023,
+      "heapAfterGcMB": 6.800708770751953,
+      "domNodes": 17,
+      "listeners": 585,
+      "workerTaskMs": null
+     }
+    ]
+   }
+  },
+  "on": {
+   "/image-frames.html": {
+    "cold": [
+     {
+      "taskMs": 397.863,
+      "scriptMs": 222.635,
+      "layoutMs": 13.904,
+      "styleMs": 6.457,
+      "longTasks": 1,
+      "longTaskMs": 54,
+      "dclMs": 57.100000001490116,
+      "loadMs": 146.80000000447035,
+      "wallMs": 2116,
+      "frameBatchMs": 532.2999999821186,
+      "heapAfterGcMB": 6.877536773681641,
+      "domNodes": 17,
+      "listeners": 552,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 389.784,
+      "scriptMs": 220.94,
+      "layoutMs": 13.089,
+      "styleMs": 6.268,
+      "longTasks": 1,
+      "longTaskMs": 54,
+      "dclMs": 54.19999999552965,
+      "loadMs": 156,
+      "wallMs": 2121,
+      "frameBatchMs": 504.4000000283122,
+      "heapAfterGcMB": 6.889110565185547,
+      "domNodes": 17,
+      "listeners": 552,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 383.91800000000006,
+      "scriptMs": 217.126,
+      "layoutMs": 12.848,
+      "styleMs": 6.106999999999999,
+      "longTasks": 1,
+      "longTaskMs": 53,
+      "dclMs": 53.69999999552965,
+      "loadMs": 151.79999999701977,
+      "wallMs": 2143,
+      "frameBatchMs": 555.1000000238419,
+      "heapAfterGcMB": 6.868526458740234,
+      "domNodes": 17,
+      "listeners": 552,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 385.76700000000005,
+      "scriptMs": 218.92600000000002,
+      "layoutMs": 13.518,
+      "styleMs": 6.908,
+      "longTasks": 1,
+      "longTaskMs": 54,
+      "dclMs": 53.80000000447035,
+      "loadMs": 215.80000000447035,
+      "wallMs": 2105,
+      "frameBatchMs": 512.5000000149012,
+      "heapAfterGcMB": 6.8794403076171875,
+      "domNodes": 17,
+      "listeners": 552,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 413.11,
+      "scriptMs": 226.95000000000002,
+      "layoutMs": 15.12,
+      "styleMs": 6.774,
+      "longTasks": 1,
+      "longTaskMs": 55,
+      "dclMs": 60.80000000447035,
+      "loadMs": 153.30000000447035,
+      "wallMs": 2128,
+      "frameBatchMs": 495.00000005215406,
+      "heapAfterGcMB": 6.869297027587891,
+      "domNodes": 17,
+      "listeners": 552,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 384.216,
+      "scriptMs": 220.381,
+      "layoutMs": 13.379999999999999,
+      "styleMs": 6.497,
+      "longTasks": 1,
+      "longTaskMs": 54,
+      "dclMs": 52.100000001490116,
+      "loadMs": 211.19999999552965,
+      "wallMs": 2127,
+      "frameBatchMs": 508.1000000163913,
+      "heapAfterGcMB": 6.8794097900390625,
+      "domNodes": 17,
+      "listeners": 552,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 388.182,
+      "scriptMs": 217.82999999999998,
+      "layoutMs": 13.283999999999999,
+      "styleMs": 6.44,
+      "longTasks": 1,
+      "longTaskMs": 53,
+      "dclMs": 55.79999999701977,
+      "loadMs": 143.79999999701977,
+      "wallMs": 2123,
+      "frameBatchMs": 596.8999999910593,
+      "heapAfterGcMB": 6.8774261474609375,
+      "domNodes": 17,
+      "listeners": 552,
+      "workerTaskMs": null
+     }
+    ],
+    "warm": [
+     {
+      "taskMs": 369.754,
+      "scriptMs": 221.03,
+      "layoutMs": 5.784000000000001,
+      "styleMs": 6.287,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 64.70000000298023,
+      "loadMs": 198.80000000447035,
+      "wallMs": 2151,
+      "frameBatchMs": 542.8999999836087,
+      "heapAfterGcMB": 6.8629150390625,
+      "domNodes": 17,
+      "listeners": 583,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 357.91800000000006,
+      "scriptMs": 217.25499999999997,
+      "layoutMs": 5.455999999999999,
+      "styleMs": 6.200999999999999,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 62.69999999552965,
+      "loadMs": 192.39999999850988,
+      "wallMs": 2160,
+      "frameBatchMs": 625.1999999433756,
+      "heapAfterGcMB": 6.849918365478516,
+      "domNodes": 17,
+      "listeners": 587,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 374.017,
+      "scriptMs": 221.98499999999999,
+      "layoutMs": 6.260000000000002,
+      "styleMs": 6.666,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 62.899999998509884,
+      "loadMs": 196.09999999403954,
+      "wallMs": 2154,
+      "frameBatchMs": 507.1000000461936,
+      "heapAfterGcMB": 6.879276275634766,
+      "domNodes": 17,
+      "listeners": 583,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 355.482,
+      "scriptMs": 214.199,
+      "layoutMs": 5.988999999999998,
+      "styleMs": 6.135000000000001,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 62.399999998509884,
+      "loadMs": 183.29999999701977,
+      "wallMs": 2157,
+      "frameBatchMs": 587.7999999672174,
+      "heapAfterGcMB": 6.886222839355469,
+      "domNodes": 17,
+      "listeners": 589,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 367.177,
+      "scriptMs": 217.02100000000002,
+      "layoutMs": 5.7509999999999994,
+      "styleMs": 6.632,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 64.09999999403954,
+      "loadMs": 193.29999999701977,
+      "wallMs": 2167,
+      "frameBatchMs": 534.6000000014901,
+      "heapAfterGcMB": 6.886348724365234,
+      "domNodes": 17,
+      "listeners": 578,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 349.36,
+      "scriptMs": 213.35700000000003,
+      "layoutMs": 5.487000000000002,
+      "styleMs": 5.999,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 60.69999999552965,
+      "loadMs": 185.19999999552965,
+      "wallMs": 2156,
+      "frameBatchMs": 594.9999999254942,
+      "heapAfterGcMB": 6.886539459228516,
+      "domNodes": 17,
+      "listeners": 581,
+      "workerTaskMs": null
+     },
+     {
+      "taskMs": 349.3,
+      "scriptMs": 210.826,
+      "layoutMs": 5.432999999999999,
+      "styleMs": 5.999,
+      "longTasks": 0,
+      "longTaskMs": 0,
+      "dclMs": 60.80000000447035,
+      "loadMs": 184.10000000149012,
+      "wallMs": 2146,
+      "frameBatchMs": 610.1999999582767,
+      "heapAfterGcMB": 6.8914031982421875,
+      "domNodes": 17,
+      "listeners": 580,
+      "workerTaskMs": null
+     }
+    ]
+   }
+  }
+ }
+}

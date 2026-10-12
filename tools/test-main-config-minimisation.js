@@ -16,7 +16,7 @@ assert(start >= 0 && end > start, 'MAIN config projection moved');
 assert(/const message = signed\('config', JSON\.stringify\(pageConfig\), \{[^}]*overrides: pageConfig \}\);[\s\S]{0,400}postToPage\(message\);/.test(source),
   'the signed MAIN message bypasses the projected config');
 const ctx = {
-  Object, Array, String,
+  Object, Array, String, Set,
   normalizeBridgeHost: (raw) => String(raw || '').replace(/^www\./, '').toLowerCase(),
   bridgeHostMatchesList: (host, list) => Array.isArray(list) && list.some((entry) => host === entry || host.endsWith('.' + entry)),
 };
@@ -49,4 +49,25 @@ assert.deepStrictEqual(Array.from(own.allowlist), ['sub.shop.example']);
 assert(!JSON.stringify(own).includes('sensitive.bank.example'));
 assert.deepStrictEqual(sensitive.allowlist, ['sensitive.bank.example', 'shop.example'],
   'projection changed the isolated config used by other scripts');
+
+const frameFields = [
+  'enabled', 'allowlist', 'frameSite', 'frameNoise', 'webglDisabled',
+  'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
+  'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
+  'blockThirdPartyCookies', 'blockSupercookies', 'storageAccessGuard',
+  'blockAllStorageAccess', 'commandPasteGuard', 'permissionChainGuard',
+  'adShield', 'twitchAdBlock', 'twitchSteadyPlayback',
+];
+const full = Object.fromEntries(frameFields.map((key) => [key, key === 'allowlist' ? ['shop.example'] : false]));
+full.articleOnlySetting = 'unrelated';
+full.mediaShield = true;
+const frame = ctx.project(full, 'sub.shop.example', true);
+assert.deepStrictEqual(Object.keys(frame).sort(), frameFields.slice().sort(),
+  'child-frame config dropped a guard setting or retained a top-page setting');
+assert.deepStrictEqual(Array.from(frame.allowlist), ['sub.shop.example']);
+assert.strictEqual(frame.blockTokenExfil, false);
+assert.strictEqual(ctx.project(full, 'sub.shop.example').mediaShield, true,
+  'the top-frame engine lost its full settings');
+assert(/mainWorldConfigForHost\(clean, location\.hostname, !BRIDGE_TOP_FRAME\)/.test(source),
+  'the frame-only projection is not used for child frames');
 console.log('MAIN config minimisation tests passed');

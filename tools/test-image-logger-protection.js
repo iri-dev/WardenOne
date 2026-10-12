@@ -158,6 +158,10 @@ function frameImageRig() {
   const events = [];
   const listeners = new Map();
   const observers = [];
+  let parsedUrls = 0;
+  class CountingURL extends URL {
+    constructor(value, base) { super(value, base); parsedUrls++; }
+  }
   let state = { enabled: false, site: 'widget.example' };
   const image = (tagName, attrs, parentElement, currentSrc = '') => ({
     nodeType: 1, tagName, parentElement, currentSrc,
@@ -167,13 +171,20 @@ function frameImageRig() {
   const initial = image('IMG', { src: 'https://iplogger.frame.test/a?token=PRIVATE' });
   const document = {
     baseURI: 'https://widget.example/',
+    extraImages: [],
     addEventListener(name, fn) { listeners.set(name, fn); },
     removeEventListener(name, fn) { if (listeners.get(name) === fn) listeners.delete(name); },
-    querySelectorAll() { return [initial]; },
+    baseElements: [],
+    baseQueries: 0,
+    querySelectorAll(selector) {
+      if (selector !== 'base') return [initial, ...this.extraImages];
+      this.baseQueries++;
+      return this.baseElements;
+    },
   };
   class Observer {
     constructor(fn) { this.fn = fn; observers.push(this); this.active = false; }
-    observe(_root, options) { this.active = true; this.options = options; }
+    observe(target, options) { this.active = true; this.target = target; this.options = options; }
     disconnect() { this.active = false; }
   }
   vm.runInNewContext(read('frame-image-logger.js'), {
@@ -181,13 +192,59 @@ function frameImageRig() {
     document, location: { href: document.baseURI }, MutationObserver: Observer,
     siteIdentity: (host) => String(host).split('.').slice(-2).join('.'),
     chrome: { runtime: { lastError: null, sendMessage(message, cb) { events.push(message); cb(); } } },
-    URL, Set,
+    URL: CountingURL, Set,
   });
   const refresh = () => listeners.get('wo-bridge-config-ready')();
   const mutate = (records) => { for (const observer of observers) if (observer.active) observer.fn(records); };
   return { document, events, observers, refresh, mutate, image,
+    hasListener(type) { return listeners.has(type); },
+    get parsedUrls() { return parsedUrls; },
+    mutateBase(target) { for (const observer of observers) if (observer.active && observer.target === target) observer.fn(); },
     settle(type, target) { const fn = listeners.get(type); if (fn) fn({ target }); },
     setState(next) { state = next; refresh(); } };
+}
+
+{
+  const r = frameImageRig();
+  r.setState({ enabled: true, site: 'widget.example' });
+  const parsed = r.parsedUrls;
+  for (let i = 0; i < 12; i++) {
+    const ordinary = r.image('IMG', { src: '/pixel.png?v=' + i });
+    r.mutate([{ type: 'attributes', target: ordinary }]);
+  }
+  assert.equal(r.parsedUrls, parsed, 'ordinary changing images bypass URL parsing');
+  r.settle('load', { tagName: 'IMG', currentSrc: 'https://images.example/photo.jpg',
+    getAttribute() { throw new Error('ordinary image should not need attributes'); } });
+  assert.equal(r.events.length, 1, 'ordinary image loads need no further inspection');
+  for (const host of ['iplogger.encoded.test', 'iplogger.unicode.test']) {
+    const value = host.includes('encoded') ? 'https://%69plogger.encoded.test/a'
+      : 'https://ｉｐｌｏｇｇｅｒ.unicode.test/a';
+    r.mutate([{ type: 'attributes', target: r.image('IMG', { src: value }) }]);
+    assert.equal(r.events.at(-1).detail.matched, host, 'normalized logger host stays detectable');
+  }
+  const selectedImage = r.image('IMG', { srcset: 'https://%69plogger.selected.test/a 1x' }, null,
+    'https://iplogger.selected.test/a');
+  r.mutate([{ type: 'attributes', target: selectedImage }]);
+  r.settle('load', selectedImage);
+  assert.equal(r.events.at(-1).detail.matched, 'iplogger.selected.test',
+    'a selected responsive logger still reaches the parser');
+  r.document.baseURI = 'https://outside.example/iplogger/abc1234567/path';
+  r.mutate([{ type: 'attributes', target: r.image('IMG', { src: '?v=1' }) }]);
+  assert.equal(r.events.at(-1).detail.matched, 'outside.example',
+    'a relative URL inherits a suspicious path from the base URL');
+}
+{
+  const r = frameImageRig();
+  r.setState({ enabled: true, site: 'widget.example' });
+  assert.equal(r.hasListener('load'), false);
+  const fallback = r.image('IMG', { srcset: '/ordinary.png 1x', src: 'https://iplogger.fallback.test/a' },
+    null, 'https://widget.example/ordinary.png');
+  r.mutate([{ type: 'attributes', target: fallback }]);
+  assert.equal(r.hasListener('load'), true, 'a suspicious src fallback arms responsive selection');
+  fallback.currentSrc = 'https://iplogger.fallback.test/a';
+  r.settle('load', fallback);
+  assert.equal(r.events.at(-1).detail.matched, 'iplogger.fallback.test',
+    'a selected src fallback remains detectable');
 }
 
 {
@@ -195,6 +252,7 @@ function frameImageRig() {
   assert.equal(r.events.length, 0, 'the frame detector waits for an enabled config');
   r.setState({ enabled: true, site: 'widget.example' });
   assert.equal(r.events.length, 1, 'an existing frame image is checked after config arrives');
+  assert.equal(r.hasListener('load'), false, 'ordinary frame images do not arm the load observer');
   assert.deepEqual(Object.keys(r.events[0].detail).sort(), ['matched', 'quiet']);
   assert.equal(r.events[0].detail.matched, 'iplogger.frame.test');
   assert(!JSON.stringify(r.events).includes('PRIVATE'), 'the frame sends only the hostname');
@@ -207,6 +265,7 @@ function frameImageRig() {
   r.mutate([{ type: 'attributes', target: ordinary }, { type: 'attributes', target: sameSite },
     { type: 'attributes', target: changed }]);
   assert.equal(r.events.length, 1, 'unused srcset, ordinary and same-site images stay quiet');
+  assert.equal(r.hasListener('load'), true, 'a candidate in srcset arms selection monitoring');
   changed.currentSrc = 'https://grabify.other.test/two.png';
   r.settle('load', changed);
   assert.equal(r.events.length, 2, 'a selected frame candidate is reported');
@@ -225,8 +284,82 @@ function frameImageRig() {
   assert.equal(r.events[3].detail.matched, 'outside.example');
   r.setState({ enabled: false, site: 'widget.example' });
   assert.equal(observer.active, false, 'turning the protection off disconnects the observer');
+  assert.equal(r.hasListener('load'), false, 'turning the protection off removes selection monitoring');
   r.mutate([{ type: 'attributes', target: r.image('IMG', { src: 'https://iplogger.off.test/x' }) }]);
   assert.equal(r.events.length, 4, 'disabled frames stay quiet');
+}
+{
+  const r = frameImageRig();
+  const responsive = r.image('IMG', { srcset: '?v=1 1x' }, null, 'https://widget.example/pixel.png');
+  r.document.extraImages.push(responsive);
+  r.setState({ enabled: true, site: 'widget.example' });
+  assert.equal(r.hasListener('load'), false, 'ordinary relative srcset does not arm a page-wide listener');
+  r.document.baseURI = 'https://iplogger.base.test/a?x=1';
+  r.mutate([{ type: 'childList', addedNodes: [] }]);
+  assert.equal(r.hasListener('load'), true, 'a new base URL can arm selection monitoring');
+  responsive.currentSrc = 'https://iplogger.base.test/a?v=1';
+  r.settle('load', responsive);
+  assert.equal(r.events.at(-1).detail.matched, 'iplogger.base.test',
+    'responsive selection after a base change remains detectable');
+}
+{
+  const r = frameImageRig();
+  const firstBaseWithoutHref = { tagName: 'BASE' };
+  const base = { tagName: 'BASE' };
+  r.document.baseElements.push(firstBaseWithoutHref, base);
+  r.document.extraImages.push(r.image('IMG', { srcset: '?v=1 1x' }, null,
+    'https://widget.example/pixel.png'));
+  r.setState({ enabled: true, site: 'widget.example' });
+  assert.equal(r.hasListener('load'), false);
+  r.document.baseURI = 'https://iplogger.updated-base.test/a';
+  r.mutateBase(base);
+  assert.equal(r.hasListener('load'), true, 'a later base href change arms selection monitoring');
+}
+{
+  const r = frameImageRig();
+  r.setState({ enabled: true, site: 'widget.example' });
+  const picture = { tagName: 'PICTURE' };
+  r.mutate([{ type: 'childList', addedNodes: [r.image('IMG', { src: '/photo.png' }, picture)] }]);
+  assert.equal(r.hasListener('load'), true, 'picture images keep selection monitoring');
+}
+{
+  const r = frameImageRig();
+  r.setState({ enabled: true, site: 'widget.example' });
+  for (const value of ['https://ip\tlogger.split.test/a', 'https://grab\nify.split.test/a']) {
+    r.mutate([{ type: 'attributes', target: r.image('IMG', { src: value }) }]);
+  }
+  assert.deepEqual(r.events.slice(-2).map((event) => event.detail.matched),
+    ['iplogger.split.test', 'grabify.split.test'],
+    'a logger host split by a tab or newline is parsed, because the browser joins it');
+}
+{
+  const r = frameImageRig();
+  r.setState({ enabled: true, site: 'widget.example' });
+  const queries = r.document.baseQueries;
+  const body = { nodeType: 1, tagName: 'BODY', parentNode: null };
+  let scans = 0;
+  const element = (tagName, parentNode) => ({ nodeType: 1, tagName, parentNode, firstElementChild: {},
+    getAttribute() { return null; }, querySelectorAll() { scans++; return []; } });
+  const container = element('SECTION', body);
+  const child = element('DIV', container);
+  const grandchild = element('DIV', child);
+  const sibling = element('ASIDE', body);
+  r.mutate([{ type: 'childList', addedNodes: [child] }, { type: 'childList', addedNodes: [container] },
+    { type: 'childList', addedNodes: [grandchild, sibling] }]);
+  assert.equal(scans, 2, 'nested additions are covered by the outermost added node’s scan');
+  assert.equal(r.document.baseQueries, queries, 'ordinary structural changes do not re-list base elements');
+  const base = { nodeType: 1, tagName: 'BASE', parentNode: body, getAttribute() { return null; } };
+  r.document.baseElements.push(base);
+  r.mutate([{ type: 'childList', addedNodes: [base] }]);
+  assert.equal(r.document.baseQueries, queries + 1, 'an added base element is listed and watched');
+  r.document.extraImages.push(r.image('IMG', { srcset: '?v=1 1x' }, null, 'https://widget.example/pixel.png'));
+  r.document.baseURI = 'https://iplogger.added-base.test/a';
+  r.mutateBase(base);
+  assert.equal(r.hasListener('load'), true, 'a later href change on an added base is seen');
+  base.isConnected = false;
+  r.document.baseElements.length = 0;
+  r.mutate([{ type: 'childList', addedNodes: [] }]);
+  assert.equal(r.document.baseQueries, queries + 2, 'a watched base that leaves the document is re-listed');
 }
 
 const bg = read('background.js');
