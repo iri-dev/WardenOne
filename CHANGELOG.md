@@ -34,6 +34,7 @@
 
 ### Fixed
 
+- Embedded image-logger reporting now recovers its eight-host warning budget over 30 minutes and when frame protection is reset or the frame site changes. Long-lived frames can report later suspicious hosts without flooding Activity.
 - Embedded frames no longer receive the engine's host lists. Each frame used to fetch about 50 KB of adult, logger and payment hosts that only the top-page engine reads, then re-check, sign and verify them. On the top page, those lists now carry their own signature beside the settings, so only the engine checks them; the other in-page guards verify a few kilobytes instead of about 56 KB.
 - The overlay cleaner checks whether a box is positioned before reading its text, asks about each candidate once, and reuses its check of shared parent elements. The click-layer sweep checks for a player before examining each page element, and the bridge no longer parses list hosts that are already in canonical form. Consent Auto-Reject's mutation filter does less work per added element.
 - With the remote lists loaded, WardenOne's added main-thread time on the profile pages fell by about 45% with eight frames, 20-26% on a page that rebuilds its DOM, and 10-14% on an ordinary article. Results and the remaining costs are in `docs/perf/README.md`.
