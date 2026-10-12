@@ -10,7 +10,9 @@
   const possibleGrabberUrl = /ip-?logger|grabify|%|[^\x00-\x7f]/i;
   const possibleOrSplit = /ip-?logger|grabify|[%\t\n\r]|[^\x00-\x7f]/i;
   const parserRemoved = /[\t\n\r]/g;
-  const warned = new Set();
+  const warned = new Map();
+  const warningWindowMs = 30 * 60 * 1000;
+  const maxWarnedHosts = 8;
   const hostCache = new Map();
   let observer = null;
   let baseObserver = null;
@@ -54,8 +56,13 @@
 
   function inspectUrl(value, selected) {
     const host = candidateHost(value);
-    if (!host || warned.has(host) || warned.size >= 8) return;
-    warned.add(host);
+    if (!host) return;
+    const now = Date.now();
+    for (const [seenHost, at] of warned) {
+      if (now - at >= warningWindowMs) warned.delete(seenHost);
+    }
+    if (warned.has(host) || warned.size >= maxWarnedHosts) return;
+    warned.set(host, now);
     try {
       chrome.runtime.sendMessage({ kind: 'rg-block', type: 'detected_grabber_image_candidate',
         detail: selected ? { matched: host, quiet: true, selected: true }
@@ -187,10 +194,14 @@
       observer = null;
       settleListening = false;
       hostCache.clear();
+      warned.clear();
       return;
     }
     const nextSite = typeof state.site === 'string' ? state.site : '';
-    if (frameSite !== nextSite) hostCache.clear();
+    if (frameSite !== nextSite) {
+      hostCache.clear();
+      warned.clear();
+    }
     frameSite = nextSite;
     if (observer) return;
     activeBase = document.baseURI || location.href;
