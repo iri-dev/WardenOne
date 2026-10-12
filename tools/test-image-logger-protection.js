@@ -159,6 +159,7 @@ function frameImageRig() {
   const listeners = new Map();
   const observers = [];
   let parsedUrls = 0;
+  let now = 1000000;
   class CountingURL extends URL {
     constructor(value, base) { super(value, base); parsedUrls++; }
   }
@@ -192,16 +193,58 @@ function frameImageRig() {
     document, location: { href: document.baseURI }, MutationObserver: Observer,
     siteIdentity: (host) => String(host).split('.').slice(-2).join('.'),
     chrome: { runtime: { lastError: null, sendMessage(message, cb) { events.push(message); cb(); } } },
-    URL: CountingURL, Set,
+    URL: CountingURL, Set, Map, Date: { now: () => now },
   });
   const refresh = () => listeners.get('wo-bridge-config-ready')();
   const mutate = (records) => { for (const observer of observers) if (observer.active) observer.fn(records); };
   return { document, events, observers, refresh, mutate, image,
+    advance(ms) { now += ms; },
     hasListener(type) { return listeners.has(type); },
     get parsedUrls() { return parsedUrls; },
     mutateBase(target) { for (const observer of observers) if (observer.active && observer.target === target) observer.fn(); },
     settle(type, target) { const fn = listeners.get(type); if (fn) fn({ target }); },
     setState(next) { state = next; refresh(); } };
+}
+
+{
+  const r = frameImageRig();
+  r.setState({ enabled: true, site: 'widget.example' });
+  r.advance(10 * 60 * 1000);
+  for (let i = 1; i < 8; i++) {
+    r.mutate([{ type: 'attributes', target: r.image('IMG',
+      { src: 'https://iplogger.' + i + '.test/pixel' }) }]);
+  }
+  assert.equal(r.events.length, 8, 'the frame sends at most eight distinct hosts per window');
+  const ninth = r.image('IMG', { src: 'https://iplogger.ninth.test/pixel' });
+  r.mutate([{ type: 'attributes', target: ninth }]);
+  assert.equal(r.events.length, 8, 'a ninth host is held back during the warning window');
+  r.advance(20 * 60 * 1000 - 1);
+  r.mutate([{ type: 'attributes', target: ninth }]);
+  assert.equal(r.events.length, 8, 'the warning budget does not reopen early');
+  r.advance(1);
+  r.mutate([{ type: 'attributes', target: ninth }]);
+  assert.equal(r.events.length, 9, 'an expired budget admits a later host in a long-lived frame');
+  r.mutate([{ type: 'attributes', target: ninth }]);
+  assert.equal(r.events.length, 9, 'the same host stays deduplicated in the new window');
+  const tenth = r.image('IMG', { src: 'https://iplogger.tenth.test/pixel' });
+  r.mutate([{ type: 'attributes', target: tenth }]);
+  assert.equal(r.events.length, 9, 'seven more recent hosts still hold the rolling budget');
+  r.advance(10 * 60 * 1000);
+  r.mutate([{ type: 'attributes', target: tenth }]);
+  assert.equal(r.events.length, 10, 'the next expired hosts free another budget slot');
+}
+
+{
+  const r = frameImageRig();
+  r.setState({ enabled: true, site: 'widget.example' });
+  assert.equal(r.events.length, 1);
+  r.setState({ enabled: false, site: 'widget.example' });
+  r.setState({ enabled: true, site: 'widget.example' });
+  assert.equal(r.events.length, 2, 're-enabling protection starts a fresh warning budget');
+  r.setState({ enabled: true, site: 'another.example' });
+  r.mutate([{ type: 'attributes', target: r.image('IMG',
+    { src: 'https://iplogger.frame.test/a' }) }]);
+  assert.equal(r.events.length, 3, 'a changed frame site starts a fresh warning budget');
 }
 
 {
