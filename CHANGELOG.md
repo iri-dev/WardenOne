@@ -24,6 +24,8 @@
 
 ### Changed
 
+- The iframe image warning detector now listens for image load and error events only when a responsive source or picture may need selection checking. Ordinary image source changes still receive immediate inspection. On the image-heavy profile page under 4x CPU throttling, the detector's added main-thread time fell from about +185 / +123 ms to +96 / +72 ms (cold / warm). It also scans only the outermost of the elements a frame adds together, and looks for `<base>` elements only when one is added or removed rather than on every page change, which brings a player-like frame that updates its clock text down to the cost of the observer itself. A URL split by a tab or newline, which the browser joins before loading, is still checked.
+- Child frames now receive a compact signed settings message containing the switches their guards use. This reduces repeated settings verification work during frame startup and cut about 40 ms (15%) from WardenOne's added main-thread time on the eight-frame profile page; the current profile and comparison are in `docs/perf/README.md`.
 - Notification sounds now use layered, filtered tones with shaped attacks, decays and gentle
   overlap, giving routine, warning and critical notices distinct earcons without adding media files.
 - Fresh installs and the Recommended profile now stop WardenOne's narrow high-confidence

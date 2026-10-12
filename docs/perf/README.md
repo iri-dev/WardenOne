@@ -51,6 +51,97 @@ or the same cache benefit when every image URL is unique. The before and after r
 separate browser sessions, so their within-session on/off differences are more reliable than
 comparing absolute task times across the two builds.
 
+## Iframe image selection checks (2026-10-12)
+
+The [current-build normal-speed profile](image-frame-current-2026-10-12.md) and
+[4x profile](image-frame-current-x4-2026-10-12.md) repeated the paired image fixture after the
+frame-settings change, with 3,636 remote hosts loaded. A trace attributed about 19 ms across
+eight frames to roughly 7,900 image load/error callbacks; most images had ordinary URLs and
+did not need responsive selection checks. The detector now attaches its document-level
+load/error handlers only after a candidate-bearing `srcset` appears or a `<picture>` image needs
+selection monitoring. An existing or newly changed `<base>` is watched so relative responsive
+sources remain detectable after base-URL changes. Ordinary `src` changes remain checked by the
+source-attribute observer. A cheap URL hint rejects ordinary values before URL parsing, while
+encoded and non-ASCII values use the full parser. The real browser image-warning test still
+detects direct, responsive and cross-origin frame candidates.
+
+The first before and after runs ([before](image-frame-current-2026-10-12.md),
+[before 4x](image-frame-current-x4-2026-10-12.md), [changed](image-frame-conditional-final-2026-10-12.md),
+[changed 4x](image-frame-conditional-final-x4-2026-10-12.md)) were taken while the machine was
+busy. Several runs waited about 22 seconds for the fixture to finish, and the same stalls showed
+up on other fixtures with no extension loaded. At 4x the stalled runs carried roughly 200 ms more
+background work, enough to swing the result from +4 to +189 ms. Both builds were profiled again
+later, interleaved on an otherwise idle machine, and no run stalled. Median extra main-thread task
+time with the iframe warning switch on, compared with off:
+
+| Eight image frames | Before (`7507f01`) | Conditional selection checks |
+| --- | ---: | ---: |
+| Normal CPU, cold / warm (7 runs) | +12 / +20 ms | +22 / +13 ms |
+| 4x CPU, cold / warm (5 runs) | +184 / +123 ms | +96 / +72 ms |
+
+At normal speed both builds cost 10-20 ms, and the difference between them is within the
+run-to-run spread. At 4x the change roughly halves the detector's cost. The two builds ran in
+separate browser sessions, so the comparison between columns is weaker than each column's own
+on/off difference. The raw runs are in the [before](image-frame-quiet-head-2026-10-12.md),
+[before 4x](image-frame-quiet-head-x4-2026-10-12.md), [changed](image-frame-quiet-2026-10-12.md)
+and [changed 4x](image-frame-quiet-x4-2026-10-12.md) profiles.
+
+The 2026-10-11 normal-speed figures above (+51 / +44 ms) were skewed. The remote lists arrived
+part-way through that session and lifted every later run by about 170 ms, and more of the
+switch-on runs came after them. At 4x that build measured about +190 ms, close to what `7507f01`
+measures here.
+
+A changed-build trace had no image load-handler calls on this ordinary-URL fixture, versus 7,933
+before the change, and the added listener count fell from about 18 to 2. Mutation callbacks
+still inspect added image subtrees and changed sources; this fixture generated 96 such callbacks
+across the frames in the changed trace.
+
+## Iframe image detector scans (2026-10-12)
+
+The image fixture above changes images in place, so it barely touches two other paths the
+detector runs in every child frame. The iframe warning is on by default, so those paths run in
+the ad frames, embedded players and widgets of most pages.
+
+- Every added element's subtree was queried. A frame that adds a container and then its
+  children, one record each, scanned its deepest images once per added ancestor. Now only the
+  outermost added nodes are scanned, because the nested ones are inside that scan, and added
+  nodes without element children skip the subtree query.
+- The base-URL watch above re-listed the frame's `<base>` elements with a whole-document query
+  after every structural change, so a player rewriting its clock text walked its whole DOM on
+  every update. The list is now refreshed only when a `<base>` is added or a watched one leaves
+  the document. `document.baseURI` is still compared on every batch, and its hint test runs once
+  per base change rather than once per image.
+- The URL hint above missed one parser rule. The URL parser deletes tabs and newlines, so
+  `ip<TAB>logger.example` loads from `iplogger.example` while containing neither marker. A value
+  with a tab or newline is now also tested with them removed. `7507f01` parsed every URL, so this
+  gap existed only in the hint.
+
+`node tools/bench-frame-image-logger.js --compare <git-rev|file>` measures the detector alone. It
+loads each version into a fresh same-origin frame on a cross-origin-isolated page and times the
+DOM work there, observer callbacks included. "Floor" is a MutationObserver with the same options
+that only walks its records, the price of observing at all. Median extra time per frame over no
+detector, normal CPU / 4x CPU, 15 and 12 runs per cell
+([normal](frame-image-logger-bench-2026-10-12.json), [4x](frame-image-logger-bench-x4-2026-10-12.json)).
+"Before" is the detector as it was before this change, recorded as
+`previous-frame-image-logger.js`:
+
+| Frame shape | Floor | Before | After |
+| --- | ---: | ---: | ---: |
+| The image fixture: 64 images changing src/srcset, 12 rounds | +0.3 / +2.4 ms | +0.6 / +4.3 ms | +0.7 / +4.5 ms |
+| A 1,093-element tree appended parent-first into 2,000 nodes, 6 times | +2.7 / +43.7 ms | +10.8 / +64.6 ms | +6.1 / +55.6 ms |
+| 300 clock-text updates in a 3,000-node DOM | +0.5 / +2.2 ms | +4.8 / +23.7 ms | +0.5 / +2.3 ms |
+| A lazy loader setting src and srcset on 300 images, 5 times | +3.6 / +9.3 ms | +5.3 / +26.2 ms | +3.3 / +19.1 ms |
+
+The clock-update case falls to the floor, and the framework build loses about half of the
+detector's own work. The lazy-loader difference is inside its run-to-run spread. The image fixture
+does not move, because almost all of its cost is the observer itself, and the warning cannot drop
+that without missing changed images. Paired whole-page profiles of that fixture agree
+([before](image-frame-scan-previous-2026-10-12.md), [after](image-frame-scan-new-2026-10-12.md),
+[before 4x](image-frame-scan-previous-x4-2026-10-12.md), [after 4x](image-frame-scan-new-x4-2026-10-12.md)).
+At normal speed the switch cost +9 / +20 ms before and +16 / +1 ms after, cold / warm, both
+within the spread. At 4x it cost +120 / +117 ms before and +99 / +66 ms after. The same "before"
+build measured +96 / +72 ms in the session above, so that gap is not established either.
+
 ## Current page cost and consent scanning (2026-10-11)
 
 The [current-build baseline](profile-current-baseline-2026-10-11.md) reruns the original article,
@@ -129,6 +220,62 @@ JavaScript runs before V8 has optimised the code. A variant with the hash's rota
 only 15-20% faster in that state, so it was not worth changing seven security-critical copies.
 These are synthetic pages, so the numbers are evidence for these shapes rather than a site-wide
 guarantee. The JSON beside each summary keeps every run and readiness check.
+
+## Current reprofile and child-frame settings (2026-10-12)
+
+The [fresh profile](profile-2026-10-12-reprofile.md) measured commit `7507f01` before this
+change, with all 3,636 remote hosts loaded. Five cold navigations and five warm reloads per
+variant added a median 175/170 ms on the article, 332/330 ms on DOM churn, and 265/264 ms on
+the eight-frame page. The old ~900 ms churn and ~60 ms per-frame findings describe earlier
+builds; they are not the current baseline.
+
+The trace still showed repeated signing and verification of the child-frame settings. Each
+child received the top page's broad settings even though only its popup, credential, permission,
+fingerprint and player guards run there. The bridge now signs only the fields those guards read
+in a child. Projecting the default settings this way cuts the JSON from about 4.3 KB to
+0.5 KB; the top frame still receives its full settings. The
+[before/after profile](profile-2026-10-12-frame-prune.md)
+and [reversed-order profile](profile-2026-10-12-frame-prune-swapped.md) retain the raw runs and
+readiness checks. In the first comparison's frame trace, the combined anti-redirect and
+fingerprint config handlers fell from 46 to 17 ms across eight frames, while the bridge's
+config reply fell from 42 to 33 ms.
+
+Whole-page task-time medians were noisy across browser sessions. With the baseline run first,
+the changed build measured 31 ms *higher* on eight frames; with the order reversed it measured
+75 ms *lower*. The unchanged article and churn workloads also swung substantially with order.
+The traces establish less repeated settings work, but these runs do not establish a stable
+whole-page speedup. The new projection preserves the signed settings used by frame guards and
+removes fields that only the top-page engine reads.
+
+## Quiet-machine reprofile (2026-10-12)
+
+Later the same day, with nothing else running, the browser without WardenOne was itself 15-25%
+faster than in the morning profiles above, and the five runs in each cell agreed to within a few
+milliseconds. Two profiles of the working tree, the [first](profile-2026-10-12-current.md) off then
+on and the [second](profile-2026-10-12-current-swapped.md) on then off, all 3,636 remote hosts
+loaded. Edge 150, i5-12400F. Median extra main-thread task time over the browser without
+WardenOne (first / second):
+
+| Fixture | Cold | Warm |
+| --- | ---: | ---: |
+| Article | +134 / +136 ms | +117 / +117 ms |
+| DOM churn | +242 / +250 ms | +234 / +232 ms |
+| Eight frames | +167 / +165 ms | +156 / +157 ms |
+
+These replace the +177 / +338 / +278 ms figures above as the current cost. Most of the drop is
+the quieter machine rather than code. Profiled in the same session as a copy of `7507f01`
+([first](profile-2026-10-12-current-vs-head.md), [reversed](profile-2026-10-12-current-vs-head-swapped.md)),
+the article and churn pages measured within 10 ms of it in both orders. The eight-frame page
+measured 39-41 ms lower cold and 36-40 ms lower warm in both orders, about 15%, with 0.3 MB less
+heap after GC. That is the child-frame settings change; the morning comparison above was too
+noisy to show it.
+
+Script accounts for most of what remains: about 100 of the article's ~135 ms, 190-200 of the
+churn page's ~245 ms and 120-125 of the frame page's ~165 ms. Each page still has one cold long
+task, about 70 ms on the article, which is mostly the engine compiling and starting, and about
+50 ms on the other two. Heap after GC is +2.3 MB on the article, +2.5 MB on the churn page and
++4.7 MB with eight frames. These are synthetic pages, so the numbers are evidence for these shapes
+rather than a site-wide guarantee.
 
 ## Cold worker wakes
 

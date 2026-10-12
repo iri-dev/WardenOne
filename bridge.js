@@ -2142,7 +2142,7 @@
     }, true);
   } catch (_) {}
 
-  function mainWorldConfigForHost(source, host) {
+  function mainWorldConfigForHost(source, host, frameOnly) {
     const clean = Object.assign({}, source || {});
     const current = normalizeBridgeHost(host);
     clean.allowlist = current && bridgeHostMatchesList(current, clean.allowlist) ? [current] : [];
@@ -2153,6 +2153,18 @@
     delete clean.rebindQuarantine;
     for (const field of Object.keys(clean)) {
       if (/ByHost$|Key$/.test(field)) delete clean[field];
+    }
+    if (frameOnly) {
+      /* Child frames have no engine. Keep only settings read by their MAIN-world guards. */
+      const fields = new Set([
+        'enabled', 'allowlist', 'frameSite', 'frameNoise', 'webglDisabled',
+        'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
+        'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
+        'blockThirdPartyCookies', 'blockSupercookies', 'storageAccessGuard',
+        'blockAllStorageAccess', 'commandPasteGuard', 'permissionChainGuard',
+        'adShield', 'twitchAdBlock', 'twitchSteadyPlayback',
+      ]);
+      for (const field of Object.keys(clean)) if (!fields.has(field)) delete clean[field];
     }
     return clean;
   }
@@ -2244,7 +2256,7 @@
     // carries no site, and a value that arrived inside overrides would be a second opinion on
     // who this frame is. Inside the signed copy, so the page cannot supply one either (SEC-07).
     clean.frameSite = bridgeFrameSite;
-    const pageConfig = mainWorldConfigForHost(clean, location.hostname);
+    const pageConfig = mainWorldConfigForHost(clean, location.hostname, !BRIDGE_TOP_FRAME);
     const message = signed('config', JSON.stringify(pageConfig), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: pageConfig });
     if (hostLists) {
       message.lists = hostLists;
