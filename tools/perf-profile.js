@@ -21,7 +21,7 @@ const NODE_MIN = 22;
 
 /* ---- arguments ---------------------------------------------------------------------------- */
 function parseArgs(argv) {
-  const out = { runs: 5, throttle: 1, variants: ['off', 'on'], out: '', edge: '', trace: false, expectRegression: false, assertOverheadMs: 0, keepProfiles: false, imageFrames: false, pairedLogger: false };
+  const out = { runs: 5, throttle: 1, variants: ['off', 'on'], out: '', edge: '', trace: false, traceDir: '', expectRegression: false, assertOverheadMs: 0, keepProfiles: false, imageFrames: false, pairedLogger: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -31,6 +31,7 @@ function parseArgs(argv) {
     else if (a === '--out') out.out = String(next() || '');
     else if (a === '--edge') out.edge = String(next() || '');
     else if (a === '--trace') out.trace = true;
+    else if (a === '--trace-dir') out.traceDir = String(next() || '');
     else if (a === '--expect-regression') out.expectRegression = true;
     else if (a === '--assert-overhead-ms') out.assertOverheadMs = Number(next()) || 0;
     else if (a === '--keep-profiles') out.keepProfiles = true;
@@ -727,7 +728,7 @@ async function main() {
   const edge = edgePath(args.edge);
   const outDir = path.join(ROOT, 'docs', 'perf');
   fs.mkdirSync(outDir, { recursive: true });
-  const traceDir = path.join(outDir, 'traces');
+  const traceDir = args.traceDir ? path.resolve(ROOT, args.traceDir) : path.join(outDir, 'traces');
   if (args.trace) fs.mkdirSync(traceDir, { recursive: true });
   const outBase = args.out ? path.resolve(ROOT, args.out).replace(/\.json$/, '') : path.join(outDir, 'profile-' + commit + (args.throttle > 1 ? '-x' + args.throttle : ''));
 

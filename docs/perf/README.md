@@ -277,6 +277,53 @@ task, about 70 ms on the article, which is mostly the engine compiling and start
 +4.7 MB with eight frames. These are synthetic pages, so the numbers are evidence for these shapes
 rather than a site-wide guarantee.
 
+### Frame startup attribution
+
+A fresh single-run trace of the current working tree (Edge 150, eight-frame fixture, all 3,636
+remote hosts loaded) separated script evaluation from later callbacks. Across the top page and
+eight frames, `EvaluateScript` took 12.9 ms for `bridge.js`, 12.4 ms for `anti-redirect.js` and
+1.3 ms for `fingerprint-realm.js`; top-frame `content.min.js` took 10.4 ms. Later `FunctionCall`
+events attributed 24.8 ms to 26 `bridge.js` config replies and 13.6 ms to 63 anonymous
+`anti-redirect.js` callbacks. The top-frame engine accounted for another 47.7 ms of callbacks.
+The frame image detector took 0.5 ms to evaluate across nine frames, with less than 0.1 ms in
+image-settlement callbacks on this quiet fixture. These are inclusive event durations from one
+trace, not additive pieces of the measured 165 ms extension overhead or a causal estimate of
+what removing a script would save.
+
+The trace was captured with `node tools/perf-profile.js --variants on --runs 1 --trace
+--trace-dir docs/perf/traces/f3-startup --out docs/perf/traces/f3-startup/profile.json`.
+Raw traces stay local under the ignored `docs/perf/traces/` directory. The separate local
+live-site review checked playback and page usability on YouTube, Twitch, Discord's login page
+and a Wikimedia Commons gallery, but did not establish a repeatable whole-site CPU improvement.
+Short, unpaired live-site traces also found the frame scripts running on YouTube: the bridge
+evaluated for 13.7 ms and handled config replies for 14.9 ms, while the redirect guard evaluated
+for 12.0 ms. The page showed two iframes at sampling time, but navigations caused eight bridge
+evaluations across six frame IDs. Commons had no iframe at sampling time; its bridge and redirect
+guard each took about 7.5 ms to evaluate. Both traces continued for five seconds after the
+extension's ready marker, so their callback totals include page activity after startup. In
+particular, repeated Consent Auto-Reject scans occupied much more time on these pages than the
+frame image detector. These runs do not isolate a safe delay for any startup guard.
+No guard has been deferred on this evidence: the MAIN-world redirect and fingerprint guards must
+initialize before page scripts, and the trace does not show a safe later point for config handling.
+
+### Consent polling on a real page
+
+On Wikimedia Commons' featured mammals gallery, the consent scanner kept its 95 ms startup poll
+active because a small offscreen "Cookie statement" footer item looked like a banner candidate.
+The broad CookieYes `cky` selector also matched unrelated `sticky` classes. The scanner now
+recognises CookieYes class tokens and keeps the rapid poll for visible or hidden banner candidates
+with actionable consent controls, while ignoring small passive footer links. A compact named
+banner with a reject button and a hidden banner that reveals through CSS both remain covered by
+the consent regression test.
+
+In a fresh Edge trace spanning page startup and five seconds after the extension's ready marker,
+the scanner ran once for about 10 ms, versus 29 scans totalling about 249 ms in the earlier trace.
+These are unpaired live-site traces, so the difference describes the scanner's work on this page,
+not a controlled whole-page CPU improvement. The frame-config projection was also changed to
+select child guard fields directly. A five-run synthetic frame profile measured 2.9 / 4.9 ms less
+task time cold / warm, but the reverse-order run measured only 0.7 / 0.7 ms less; that difference
+is too small to establish a reliable page-level speedup.
+
 ## Cold worker wakes
 
 The worker stops after about thirty quiet seconds, and the next tab close, popup open or
