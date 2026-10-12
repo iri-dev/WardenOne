@@ -140,8 +140,11 @@
     '[class*="qc-cmp" i]',
     '[id*="cookieyes" i]',
     '[class*="cookieyes" i]',
-    '[id*="cky" i]',
-    '[class*="cky" i]',
+    '[id="cky" i]',
+    '[id^="cky-" i]',
+    '[class~="cky" i]',
+    '[class^="cky-" i]',
+    '[class*=" cky-" i]',
     '[id*="osano" i]',
     '[class*="osano" i]',
     '[id*="termly" i]',
@@ -378,7 +381,6 @@
   }
 
   function looksLikeConsentContainer(el) {
-    if (!el || !isVisible(el)) return false;
     const text = elementText(el);
     if (protectedContainerContext(el, null)) return false;
     if (hasConsentLanguage(text)) return true;
@@ -412,10 +414,22 @@
     roots.forEach((root) => {
       try {
         const list = root.querySelectorAll(CONTAINER_SELECTOR);
-        if (list.length && noteCandidate) noteCandidate();
         for (let i = 0; i < list.length; i++) {
           const el = list[i];
-          if (looksLikeConsentContainer(el)) out.push(el);
+          const box = el.getBoundingClientRect();
+          const bannerSized = box.width >= Math.min(200, innerWidth * 0.65) && box.height >= 40;
+          const hasAction = !bannerSized && CONSENT_ACTION_TEXT_RE.test(elementText(el));
+          if (!isVisible(el)) {
+            const inViewport = !box.width || !box.height || (box.bottom > 0 && box.right > 0
+              && box.top < innerHeight && box.left < innerWidth);
+            if (noteCandidate && (bannerSized || hasAction || inViewport)) noteCandidate();
+            continue;
+          }
+          if (!bannerSized && !hasAction) continue;
+          if (looksLikeConsentContainer(el)) {
+            if (noteCandidate) noteCandidate();
+            out.push(el);
+          }
         }
       } catch (_) {}
     });
