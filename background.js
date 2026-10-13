@@ -3475,6 +3475,12 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
   return result;
 }
 
+function cosmeticForPlayerPage(rawHost, cfg) {
+  if (!normalizeAllowlistHost(rawHost)) return { ok: true, selectors: [], invalidHost: true };
+  if (cfg && cfg.adShield === false) return { ok: true, selectors: [], disabled: true };
+  return { ok: true, selectors: [], procedural: [], scriptlets: [] };
+}
+
 // Dynamic rule IDs live in a high range so they never collide with the static
 // rules.json (which uses 1..162).
 const DYNAMIC_RULE_BASE = 10000;
@@ -3997,6 +4003,8 @@ const LOGIN_COMPAT_RESOURCE_TYPES = ALL_DNR_RESOURCE_TYPES;
 // hosts users expect to work.
 const LOGIN_COMPAT_FILTERS = [
   '||accounts.google.com',
+  '||accounts.google.co.uk',
+  '||auth.openai.com',
   '||accounts.google.com/gsi/',
   '||oauth2.googleapis.com',
   '||apis.google.com',
@@ -4069,6 +4077,8 @@ const LOGIN_COMPAT_FILTERS = [
 
 const LOGIN_COMPAT_NEVER_BLOCK_DOMAINS = [
   'accounts.google.com',
+  'accounts.google.co.uk',
+  'auth.openai.com',
   'oauth2.googleapis.com',
   'apis.google.com',
   'identitytoolkit.googleapis.com',
@@ -4120,6 +4130,8 @@ function isLoginCompatibilityUrl(rawUrl) {
     if (!host) return false;
     const authPageDomains = [
       'accounts.google.com',
+      'accounts.google.co.uk',
+      'auth.openai.com',
       'oauth2.googleapis.com',
       'apis.google.com',
       'identitytoolkit.googleapis.com',
@@ -7766,6 +7778,22 @@ async function pruneStorageIfNeeded(reason) {
 
   const after = await storageGetBytesInUse(null);
   return writeStorageTelemetry(reason, { pruned: actions.length > 0, actions, beforeBytes: before, afterBytes: after });
+}
+
+function storedBlockedDomainPrefix(securityDomains, allDomains) {
+  const domains = [];
+  for (const domain of securityDomains) {
+    if (domains.length >= BLOCKED_DOMAIN_STORAGE_MAX) break;
+    domains.push(domain);
+  }
+  const securityCount = domains.length;
+  if (domains.length < BLOCKED_DOMAIN_STORAGE_MAX) {
+    for (const domain of allDomains) {
+      if (domains.length >= BLOCKED_DOMAIN_STORAGE_MAX) break;
+      if (!securityDomains.has(domain)) domains.push(domain);
+    }
+  }
+  return { domains, securityCount };
 }
 
 async function persistBlockedDomainsForStorage(domains, securityCount) {
@@ -12057,6 +12085,8 @@ const CONSENT_REJECT_SCRIPT_ID = 'wo-consent-reject-dynamic';
 // inherit content.min.js's manifest exclude_matches, so we mirror them here (+ payment hosts).
 const CONSENT_REJECT_EXCLUDE_MATCHES = [
   'https://accounts.google.com/*', 'https://*.accounts.google.com/*',
+  'https://accounts.google.co.uk/*', 'https://*.accounts.google.co.uk/*',
+  'https://auth.openai.com/*',
   'https://oauth2.googleapis.com/*', 'https://apis.google.com/*',
   'https://login.microsoftonline.com/*', 'https://login.live.com/*',
   'https://appleid.apple.com/*',
@@ -13961,9 +13991,11 @@ function applyScriptShieldRules(mode, trustedHosts) {
       const trusted = requestedTrusted == null ? await getTrustedScriptHosts() : requestedTrusted;
       if (cfg.enabled === false || resolvedMode !== 'smart') resetSmartScriptRecoveryState();
       const plan = buildScriptShieldRulePlan(resolvedMode, cfg.enabled !== false, trusted, smartScriptRecoveredTabEntries());
+      // A full dynamic read also deserializes the large remote blocklist.
+      const ruleIds = Array.from({ length: SCRIPT_SHIELD_RULE_MAX }, (_, index) => SCRIPT_SHIELD_RULE_BASE + index);
       const [dynamicRules, sessionRules] = await Promise.all([
-        chrome.declarativeNetRequest.getDynamicRules(),
-        chrome.declarativeNetRequest.getSessionRules(),
+        chrome.declarativeNetRequest.getDynamicRules({ ruleIds }),
+        chrome.declarativeNetRequest.getSessionRules({ ruleIds }),
       ]);
       const inScriptShieldBand = (rule) => rule.id >= SCRIPT_SHIELD_RULE_BASE
         && rule.id < SCRIPT_SHIELD_RULE_BASE + SCRIPT_SHIELD_RULE_MAX;
@@ -14960,17 +14992,17 @@ const MEDIA_COMPAT_DOMAINS = new Set([
   'twitchcdn.net',
   'usher.ttvnw.net',
 ]);
+const MEDIA_COMPAT_SUFFIXES = Array.from(MEDIA_COMPAT_DOMAINS, (domain) => '.' + domain);
 
-function isMediaCompatDomain(domain) {
-  const d = String(domain || '').replace(/^www\./, '').toLowerCase();
+function isMediaCompatDomainLowercase(d) {
   if (!d) return false;
   if (MEDIA_COMPAT_DOMAINS.has(d)) return true;
-  /* Each parent at a label boundary, the same answer as endsWith('.' + entry) for every entry
-     (see isNeverBlockDomain for why it matters). */
-  for (let dot = d.indexOf('.'); dot !== -1; dot = d.indexOf('.', dot + 1)) {
-    if (MEDIA_COMPAT_DOMAINS.has(d.slice(dot + 1))) return true;
-  }
+  for (const suffix of MEDIA_COMPAT_SUFFIXES) if (d.endsWith(suffix)) return true;
   return false;
+}
+
+function isMediaCompatDomain(domain) {
+  return isMediaCompatDomainLowercase(String(domain || '').toLowerCase());
 }
 
 // Globally-trusted infrastructure that must NEVER be turned into a block rule,
@@ -15256,9 +15288,12 @@ function networkRulePatternHost(pattern) {
 function parseNetworkRules(text, ruleStartId, maxRules) {
   const rules = [];
   let id = ruleStartId;
-  const lines = String(text || '').split('\n');
-  for (let i = 0; i < lines.length && rules.length < maxRules; i++) {
-    let line = lines[i].trim();
+  const source = String(text || '');
+  let at = 0;
+  while (at <= source.length && rules.length < maxRules) {
+    const end = source.indexOf('\n', at);
+    let line = source.slice(at, end < 0 ? source.length : end).trim();
+    at = end < 0 ? source.length + 1 : end + 1;
     if (!line || line[0] === '!' || line[0] === '#' || line[0] === '[') continue;
     if (line.includes('##') || line.includes('#@#') || line.includes('#?#') || line.includes('#$#') || line.includes('#%#')) continue;
     const dollar = line.indexOf('$');
@@ -15394,7 +15429,7 @@ function parseList(text) {
 
     // reject bare IPs -- DNR urlFilter ||x is for domains, not IP literals
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(line)) return;
-    if (isMediaCompatDomain(line)) return;
+    if (isMediaCompatDomainLowercase(line)) return;
     if (isNeverBlockDomain(line)) return; // GitHub & other vetted infra: never blocklist-block
     if (isFeedFalsePositiveDomain(line)) return; // one feed's disputed listing, not a safe verdict (see above)
     if (domainRe.test(line) && !seen.has(line)) {
@@ -15460,19 +15495,33 @@ async function parseListInSlices(text) {
   const source = String(text || '');
   const trimmed = source.trim();
   if (trimmed.startsWith('{') || /^\[\s*(?:["[{\]\d-]|true|false|null)/.test(trimmed)) return parseList(source);
-  const lines = source.split(/\r?\n/);
-  if (lines.length <= LIST_PARSE_SLICE_LINES) return parseList(source);
+  let next = 0;
+  for (let i = 0; i < LIST_PARSE_SLICE_LINES; i++) {
+    const end = source.indexOf('\n', next);
+    if (end < 0) return parseList(source);
+    next = end + 1;
+  }
   const out = [];
   const seen = new Set();
-  for (let at = 0; at < lines.length; at += LIST_PARSE_SLICE_LINES) {
+  let at = 0;
+  while (at <= source.length) {
+    let end = at;
+    let complete = false;
+    for (let i = 0; i < LIST_PARSE_SLICE_LINES; i++) {
+      const newline = source.indexOf('\n', end);
+      if (newline < 0) { end = source.length; complete = true; break; }
+      end = newline + 1;
+    }
     /* The leading comment keeps a slice that happens to open with "[" or "{" from being tried
        as JSON: parseList skips it like any other comment line. */
-    for (const host of parseList('!\n' + lines.slice(at, at + LIST_PARSE_SLICE_LINES).join('\n'))) {
+    for (const host of parseList('!\n' + source.slice(at, complete ? end : end - 1))) {
       if (seen.has(host)) continue;
       seen.add(host);
       out.push(host);
     }
     await new Promise((resolve) => setTimeout(resolve, 0));
+    if (complete) break;
+    at = end;
   }
   return out;
 }
@@ -16591,17 +16640,14 @@ async function updateRemoteListsCore(reason) {
         sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
       };
     }
-    BLOCKED_DOMAINS = new Set(merged);
-    SECURITY_DOMAINS = new Set(domainBuckets.security);
-    /* Security first, then everything else. Same membership as before -- only the order
-       changes -- so BLOCKED_DOMAINS restores exactly as it always did, while the leading
-       run stays identifiable by count alone. */
-    const securityFirst = [...domainBuckets.security];
-    for (const d of merged) if (!domainBuckets.security.has(d)) securityFirst.push(d);
+    BLOCKED_DOMAINS = merged;
+    SECURITY_DOMAINS = domainBuckets.security;
+    /* Storage uses a security-first prefix; every fallback cap is at most this length. */
+    const storagePrefix = storedBlockedDomainPrefix(domainBuckets.security, merged);
     let storedDomains = { ok: false, storedCount: 0 };
     try {
-      storedDomains = await persistBlockedDomainsForStorage(securityFirst,
-        Math.min(domainBuckets.security.size, securityFirst.length));
+      storedDomains = await persistBlockedDomainsForStorage(storagePrefix.domains,
+        storagePrefix.securityCount);
     } catch (e) {
       console.warn('[WardenOne] blocked-domain storage failed:', e);
     }
@@ -22684,11 +22730,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'adshield-cosmetic' && msg.hostname) {
     (async () => {
       try {
-        // Served from the in-memory blob + per-host memo (getCosmeticMem /
-        // computeCosmeticForHost): avoids re-reading and re-deserialising the
-        // multi-MB cosmetic blob, and re-walking it, on every page and frame.
-        const mem = await getCosmeticMem();
-        const out = computeCosmeticForHost(msg.hostname, mem, msg.playerPage === true) || {};
+        let out;
+        if (msg.playerPage === true) {
+          const store = await localGet('wardenone_config');
+          out = cosmeticForPlayerPage(msg.hostname, store && store.wardenone_config);
+        } else {
+          const mem = await getCosmeticMem();
+          out = computeCosmeticForHost(msg.hostname, mem, false) || {};
+        }
         /* Carried on the same reply, in a field of their own.
            The engine clears the AdShield stylesheet when a site is allowlisted
            or the shield is off, and these must survive both: "do not block ads

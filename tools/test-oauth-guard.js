@@ -124,6 +124,20 @@ function check(name, condition, extra) {
 }
 
 const googleUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=client&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive';
+const googleUkUrl = googleUrl.replace('accounts.google.com', 'accounts.google.co.uk');
+
+{
+  const oauthScript = MANIFEST.content_scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('oauth-guard.js'));
+  check('Google UK account pages load the same grant guard',
+    !!oauthScript && oauthScript.matches.includes('https://accounts.google.co.uk/*'));
+  const state = runCase({
+    url: googleUkUrl,
+    body: 'Example App wants to access your Google Account Select what Example App can access See, edit, create, and delete your Google Drive files',
+    actions: ['Cancel', 'Continue'],
+    headings: ['Example App wants to access your Google Account'],
+  });
+  check('Google UK grant consent is still reviewed', state.modals.length === 1 && state.reports.length > 0, state);
+}
 
 {
   const state = runCase({

@@ -24,6 +24,8 @@
 
 ### Changed
 
+- Network list refresh avoids whole-feed line arrays and full-size copies of the blocked-domain sets. Parsed rules, cooperative yields, and the security-first stored prefix stay the same.
+- Script Shield reads only its DNR rule band during reconciliation. Detected player pages skip loading the full cosmetic list when its response would be empty; reader-defined hidden elements and filters still apply.
 - Cosmetic list refresh parses each fetched source without first combining every list and splitting the combined text into an array of lines. Rule order and exceptions stay the same, with less temporary memory needed during a refresh.
 - Consent Auto-Reject no longer treats small cookie or privacy footer links as banners that need rapid full-page polling. CookieYes class matching is restricted to its `cky` class tokens, while hidden and compact actionable banners still receive checks. Child-frame config projection now selects guard settings directly.
 - The iframe image warning detector now listens for image load and error events only when a responsive source or picture may need selection checking. Ordinary image source changes still receive immediate inspection. On the image-heavy profile page under 4x CPU throttling, the detector's added main-thread time fell from about +185 / +123 ms to +96 / +72 ms (cold / warm). It also scans only the outermost of the elements a frame adds together, and looks for `<base>` elements only when one is added or removed rather than on every page change, which brings a player-like frame that updates its clock text down to the cost of the observer itself. A URL split by a tab or newline, which the browser joins before loading, is still checked.
@@ -36,6 +38,7 @@
 
 ### Fixed
 
+- WardenOne no longer interrupts the ChatGPT → OpenAI sign-in challenge or Google sign-in returns from `accounts.google.co.uk`. Both official authentication hosts receive sign-in compatibility handling.
 - Embedded image-logger reporting now recovers its eight-host warning budget over 30 minutes and when frame protection is reset or the frame site changes. Long-lived frames can report later suspicious hosts without flooding Activity.
 - Embedded frames no longer receive the engine's host lists. Each frame used to fetch about 50 KB of adult, logger and payment hosts that only the top-page engine reads, then re-check, sign and verify them. On the top page, those lists now carry their own signature beside the settings, so only the engine checks them; the other in-page guards verify a few kilobytes instead of about 56 KB.
 - The overlay cleaner checks whether a box is positioned before reading its text, asks about each candidate once, and reuses its check of shared parent elements. The click-layer sweep checks for a player before examining each page element, and the bridge no longer parses list hosts that are already in canonical form. Consent Auto-Reject's mutation filter does less work per added element.

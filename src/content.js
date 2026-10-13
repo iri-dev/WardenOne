@@ -2419,7 +2419,7 @@
         if(!u||"https:"!==u.protocol)return!1;
         const host=regDomain(u.hostname),
         path=(u.pathname+u.search).toLowerCase();
-        if(/(^|\.)(accounts\.google\.com|oauth2\.googleapis\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|okta\.com|oktacdn\.com|oktapreview\.com|okta-emea\.com|auth0\.com|onelogin\.com|duosecurity\.com|openathens\.net|shibboleth\.net|pingidentity\.com|pingone\.(com|eu|asia|ca)|forgerock\.(io|com)|b2clogin\.com|ciamlogin\.com|amazoncognito\.com)$/.test(host))return!0;
+        if(/(^|\.)(accounts\.google\.(?:com|co\.uk)|auth\.openai\.com|oauth2\.googleapis\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|okta\.com|oktacdn\.com|oktapreview\.com|okta-emea\.com|auth0\.com|onelogin\.com|duosecurity\.com|openathens\.net|shibboleth\.net|pingidentity\.com|pingone\.(com|eu|asia|ca)|forgerock\.(io|com)|b2clogin\.com|ciamlogin\.com|amazoncognito\.com)$/.test(host))return!0;
         if(["samlrequest",
         "samlresponse",
         "relaystate",

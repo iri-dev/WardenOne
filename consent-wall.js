@@ -93,7 +93,7 @@
 
   // Mirrors the sign-in, captcha and payment origins consent-reject stays off. A full-viewport
   // high-z element on an OAuth or checkout page is the flow itself, not a wall.
-  const HOST_BLOCK_RE = /(^|\.)(accounts\.google\.com|oauth2\.googleapis\.com|apis\.google\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|okta\.com|oktacdn\.com|auth0\.com|onelogin\.com|duosecurity\.com|hcaptcha\.com|recaptcha\.net|challenges\.cloudflare\.com|turnstile\.cloudflare\.com|amazoncognito\.com|github\.com|shopify\.com|paypal\.com|stripe\.com|checkout\.com|adyen\.com|braintreepayments\.com|braintreegateway\.com|klarna\.com|squareup\.com|cash\.app)$/i;
+  const HOST_BLOCK_RE = /(^|\.)(accounts\.google\.(?:com|co\.uk)|auth\.openai\.com|oauth2\.googleapis\.com|apis\.google\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|okta\.com|oktacdn\.com|auth0\.com|onelogin\.com|duosecurity\.com|hcaptcha\.com|recaptcha\.net|challenges\.cloudflare\.com|turnstile\.cloudflare\.com|amazoncognito\.com|github\.com|shopify\.com|paypal\.com|stripe\.com|checkout\.com|adyen\.com|braintreepayments\.com|braintreegateway\.com|klarna\.com|squareup\.com|cash\.app)$/i;
   const BLOCKED_HOST = (() => {
     try { return HOST_BLOCK_RE.test(String(location.hostname || '')); } catch (_) { return false; }
   })();

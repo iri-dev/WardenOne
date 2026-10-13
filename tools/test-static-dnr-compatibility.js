@@ -32,6 +32,8 @@ const FUNCTIONAL_RESOURCE_TYPES = [
 ];
 const AUTH_CHALLENGE_DOMAINS = [
   'accounts.google.com',
+  'accounts.google.co.uk',
+  'auth.openai.com',
   'oauth2.googleapis.com',
   'apis.google.com',
   'login.microsoftonline.com',
@@ -219,7 +221,11 @@ for (const forbidden of ['main_frame', 'ping', 'object']) {
 }
 assert(conditionMatches(authRule, 'js.hcaptcha.com', 'portal.ac.uk', 'script'));
 assert(conditionMatches(authRule, 'accounts.google.com', 'portal.ac.uk', 'sub_frame'));
+assert(conditionMatches(authRule, 'accounts.google.co.uk', 'portal.ac.uk', 'sub_frame'));
+assert(conditionMatches(authRule, 'auth.openai.com', 'chatgpt.com', 'sub_frame'));
 assert(!conditionMatches(authRule, 'accounts.google.com.evil.example', 'portal.ac.uk', 'sub_frame'));
+assert(!conditionMatches(authRule, 'accounts.google.co.uk.evil.example', 'portal.ac.uk', 'sub_frame'));
+assert(!conditionMatches(authRule, 'auth.openai.com.evil.example', 'chatgpt.com', 'sub_frame'));
 assert(!conditionMatches(authRule, 'accounts.google.com', 'portal.ac.uk', 'main_frame'));
 assert(!conditionMatches(authRule, 'hcaptcha.com', 'portal.ac.uk', 'ping'));
 

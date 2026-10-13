@@ -300,7 +300,7 @@
     catch (_) { return false; }
   }());
   const TRUSTED_BASE_DOMAINS = new Set([
-    'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'recaptcha.net',
+    'google.com', 'accounts.google.co.uk', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'recaptcha.net',
     'hcaptcha.com', 'facebook.com', 'fbcdn.net', 'apple.com', 'cdn-apple.com', 'icloud.com',
     'microsoft.com', 'microsoftonline.com', 'msauth.net', 'msftauth.net', 'live.com', 'office.com',
     'paypal.com', 'paypalobjects.com', 'stripe.com', 'stripe.network', 'braintreegateway.com',
@@ -965,6 +965,7 @@
       const host = regHost(u.hostname);
       const path = String(u.pathname || '').toLowerCase();
       const tail = (path + ' ' + String(u.search || '') + ' ' + String(u.hash || '')).toLowerCase();
+      if (host === 'auth.openai.com') return true;
       const params = new Set();
       u.searchParams.forEach((_value, key) => params.add(String(key || '').toLowerCase()));
       const has = (key) => params.has(key);
@@ -1006,7 +1007,7 @@
     // These are complex first-party applications and education/federation
     // surfaces. Leave their SDK-owned navigation primitives completely native.
     if (isGoogleAppSurface(host) || isUcasHost(host) || isEducationPortalHost(host)) return true;
-    if (/^(accounts\.google\.com|oauth2\.googleapis\.com|apis\.google\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseinstallations\.googleapis\.com|firebaseappcheck\.googleapis\.com|clientservices\.googleapis\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|appleid\.cdn-apple\.com|cdn\.auth0\.com|accounts\.spotify\.com|login\.spotify\.com|login5\.spotify\.com|challenges\.cloudflare\.com|turnstile\.cloudflare\.com)$/.test(host)) return true;
+    if (/^(accounts\.google\.com|accounts\.google\.co\.uk|oauth2\.googleapis\.com|apis\.google\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseinstallations\.googleapis\.com|firebaseappcheck\.googleapis\.com|clientservices\.googleapis\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|appleid\.cdn-apple\.com|cdn\.auth0\.com|accounts\.spotify\.com|login\.spotify\.com|login5\.spotify\.com|challenges\.cloudflare\.com|turnstile\.cloudflare\.com)$/.test(host)) return true;
     if (/(^|\.)(okta\.com|oktacdn\.com|oktapreview\.com|okta-emea\.com|auth0\.com|onelogin\.com|duosecurity\.com|hcaptcha\.com|recaptcha\.net|amazoncognito\.com|pingidentity\.com|pingone\.com|pingone\.eu|pingone\.asia|pingone\.ca|forgerock\.io|forgerock\.com|jumpcloud\.com|miniorange\.com|b2clogin\.com|ciamlogin\.com|msauth\.net|msftauth\.net|workos\.com|frontegg\.com|descope\.com|stytch\.com|openathens\.net|shibboleth\.net)$/.test(host)) return true;
     if (host === 'github.com' && path.indexOf('/login/oauth') === 0) return true;
     if ((host === 'discord.com' || host === 'discordapp.com') && /^\/(api\/)?oauth2\//.test(path)) return true;

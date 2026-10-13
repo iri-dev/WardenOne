@@ -69,6 +69,8 @@ function createHarness(options = {}) {
     sessionRules: Array.from(options.sessionRules || []),
     dynamicUpdates: [],
     sessionUpdates: [],
+    dynamicReads: [],
+    sessionReads: [],
     reloadCalls: [],
     reloadResponse: options.reloadResponse || { ok: true },
     errorObserver: null,
@@ -86,10 +88,20 @@ function createHarness(options = {}) {
     const removed = new Set(Array.from(update.removeRuleIds || []));
     return rules.filter((rule) => !removed.has(rule.id)).concat(Array.from(update.addRules || []));
   };
+  const readRules = (rules, filter) => {
+    const ids = filter && filter.ruleIds;
+    return Array.isArray(ids) ? rules.filter((rule) => ids.includes(rule.id)) : rules.slice();
+  };
   const chrome = {
     declarativeNetRequest: {
-      async getDynamicRules() { return state.dynamicRules.slice(); },
-      async getSessionRules() { return state.sessionRules.slice(); },
+      async getDynamicRules(filter) {
+        state.dynamicReads.push(filter);
+        return readRules(state.dynamicRules, filter);
+      },
+      async getSessionRules(filter) {
+        state.sessionReads.push(filter);
+        return readRules(state.sessionRules, filter);
+      },
       async updateDynamicRules(update) {
         state.dynamicUpdates.push(update);
         state.dynamicRules = replaceRules(state.dynamicRules, update);
@@ -206,6 +218,14 @@ function smartRule(state) {
 async function testModesAndTrustScope() {
   const { api, state } = createHarness({ trusted: ['trusted.example'] });
   assert.strictEqual(await api.applyScriptShieldRules('smart'), true);
+  const dynamicFilter = state.dynamicReads[0];
+  const sessionFilter = state.sessionReads[state.sessionReads.length - 1];
+  for (const filter of [dynamicFilter, sessionFilter]) {
+    assert(filter && Array.isArray(filter.ruleIds), 'Script Shield read all DNR bands');
+    assert.strictEqual(filter.ruleIds.length, 1000, 'Script Shield read outside its rule band');
+    assert.strictEqual(filter.ruleIds[0], 930000);
+    assert.strictEqual(filter.ruleIds[999], 930999);
+  }
   assert(!state.dynamicRules.some((rule) => rule.id >= 930000 && rule.id < 931000),
     'stale dynamic Smart block/allow rules survived migration');
   const rule = smartRule(state);

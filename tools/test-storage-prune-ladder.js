@@ -141,6 +141,33 @@ const everything = () => {
 // 1. Under the limit: nothing happens at all.
 // ---------------------------------------------------------------------------
 (async () => {
+  const prefixContext = { BLOCKED_DOMAIN_STORAGE_MAX: 7 };
+  vm.createContext(prefixContext);
+  vm.runInContext(lift('function storedBlockedDomainPrefix')
+    + '\nthis.prefix = storedBlockedDomainPrefix;', prefixContext);
+  for (const [name, securityItems, allItems] of [
+    ['security exceeds the storage cap',
+      ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'], ['s1', 'ad1', 's2', 'ad2']],
+    ['mixed domains exceed the storage cap',
+      ['s1', 's2', 's3'], ['ad1', 's1', 'ad2', 's2', 'ad3', 'ad4', 'ad5', 'ad6']],
+    ['mixed domains fit below the storage cap',
+      ['s1', 's2'], ['ad1', 's1', 'ad2', 's2']],
+    ['no security domains', [], ['ad1', 'ad2', 'ad3']],
+  ]) {
+    const security = new Set(securityItems);
+    const all = new Set([...securityItems, ...allItems]);
+    const expected = [...security, ...[...all].filter((domain) => !security.has(domain))];
+    const actual = prefixContext.prefix(security, all);
+    for (const cap of [7, 5, 3, 1]) {
+      const domains = Array.from(actual.domains.slice(0, cap));
+      check(name + ' preserves the first ' + cap + ' stored domains',
+        JSON.stringify(domains) === JSON.stringify(expected.slice(0, cap)),
+        JSON.stringify(domains));
+      check(name + ' preserves the first ' + cap + ' security count',
+        Math.min(actual.securityCount, domains.length) === Math.min(security.size, domains.length));
+    }
+  }
+
   const t = load({ wardenone_history: new Array(10).fill('x') });
   await t.run();
   check('under the soft limit nothing is pruned',

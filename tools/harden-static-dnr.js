@@ -32,6 +32,8 @@ const FUNCTIONAL_RESOURCE_TYPES = [
 
 const AUTH_CHALLENGE_DOMAINS = [
   'accounts.google.com',
+  'accounts.google.co.uk',
+  'auth.openai.com',
   'oauth2.googleapis.com',
   'apis.google.com',
   'login.microsoftonline.com',
