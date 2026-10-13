@@ -103,7 +103,7 @@ function loadCosmeticComputer() {
     COSMETIC_HOST_CACHE_MAX: 256,
     normalizeAllowlistHost: (value) => String(value || '').toLowerCase(),
     hostMatchesAllowlist: () => false,
-    isVideoPlatformHost: () => false,
+    isVideoPlatformHost: (host) => host === 'youtube.com',
     isXPlatformHost: () => false,
     hostMatchesCosmeticDomainList: () => false,
     isSafeVideoPlatformCosmeticSelector: () => true,
@@ -117,9 +117,10 @@ function loadCosmeticComputer() {
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween(BACKGROUND, 'function computeCosmeticForHost', '\n// Dynamic rule IDs')
-      + '\nthis.__compute = computeCosmeticForHost;',
+      + '\nthis.__compute = computeCosmeticForHost; this.__player = cosmeticForPlayerPage;',
     sandbox,
   );
+  sandbox.__compute.player = sandbox.__player;
   return sandbox.__compute;
 }
 
@@ -553,6 +554,21 @@ test('player-page cosmetic responses omit every list-driven mutation and popup s
     'player mode still returned a list popup matcher that can alter player control flow');
 });
 
+test('player-page fast path matches the full cosmetic response without loading list data', () => {
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  for (const [host, cfg] of [
+    ['youtube.com', { adShield: true }],
+    ['embed.player.example', { adShield: true }],
+    ['disabled.example', { adShield: false }],
+    ['', { adShield: true }],
+  ]) {
+    const compute = loadCosmeticComputer();
+    const mem = mutationHeavyCosmeticMemory(host);
+    mem.cfg = cfg;
+    assert.deepStrictEqual(plain(compute.player(host, cfg)), plain(compute(host, mem, true)), host || 'invalid host');
+  }
+});
+
 test('ordinary pages retain generic, specific, procedural and scriptlet protection', () => {
   const compute = loadCosmeticComputer();
   const host = 'ordinary.example';
@@ -600,9 +616,11 @@ test('content requests carry player mode through to background cosmetic computat
     "if (msg && msg.kind === 'adshield-cosmetic' && msg.hostname)",
     '\n  // ---- Check an extension before installing it ----',
   );
-  assert(/msg\.playerPage/.test(handler)
-    && /computeCosmeticForHost\(\s*msg\.hostname\s*,\s*mem\s*,/.test(handler),
-  'background cosmetic handler does not pass player mode into computation');
+  assert(/if \(msg\.playerPage === true\)\s*\{[\s\S]*?cosmeticForPlayerPage\(msg\.hostname,/.test(handler)
+    && /else\s*\{\s*const mem = await getCosmeticMem\(\);\s*out = computeCosmeticForHost\(msg\.hostname, mem, false\)/.test(handler),
+  'background cosmetic handler must skip the full list only on detected player pages');
+  assert(handler.includes('out.userSelectors = hiddenSelectorsForHost') && handler.includes('const bundle = await userFilterBundle()'),
+    'player fast path lost the reader\'s hidden elements or custom cosmetic filters');
 });
 
 test('page runtime checks scriptletEngine before executing served scriptlets', () => {

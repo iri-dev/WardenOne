@@ -27,7 +27,10 @@ const { installEngineAmbient } = require('./lib/engine-ambient.js');
 const ROOT = path.resolve(__dirname, '..');
 const CONTENT = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 const ANTI_REDIRECT = fs.readFileSync(path.join(ROOT, 'anti-redirect.js'), 'utf8');
+const DOMAIN_UTILS = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+const RULES = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules.json'), 'utf8'));
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -272,6 +275,7 @@ function installContentNavigationHarness(pageUrl) {
 
 function installAntiRedirect(pageUrl) {
   const h = makeBrowserSandbox(pageUrl);
+  vm.runInContext(DOMAIN_UTILS, h.sandbox, { filename: 'domain-utils.js' });
   vm.runInContext(ANTI_REDIRECT, h.sandbox, { filename: 'anti-redirect.js' });
   h.link = woAuth.handshake(h.dispatchDoc, (data) => h.fire('message', { source: h.innerWindow, data }), { token: 'compat-test-token' });
   return h;
@@ -408,6 +412,89 @@ test('Drive can programmatically hand an unauthenticated user to Google Account 
   );
   if (h.state.assigned.length !== 1) {
     throw new Error('navigation was intercepted: ' + JSON.stringify(h.state.logs));
+  }
+});
+
+test('Google UK account pages keep the same sign-in boundaries as Google com', () => {
+  const ukUrl = 'https://accounts.google.co.uk/accounts/ServiceLogin?continue=https%3A%2F%2Fapp.example%2F';
+  const app = installContentNavigationHarness('https://app.example/login');
+  app.sandbox.Location.prototype.assign.call(app.sandbox.location, ukUrl);
+  if (app.state.assigned.length !== 1) throw new Error('content guard blocked navigation to Google UK');
+
+  const appRedirect = installAntiRedirect('https://app.example/login');
+  appRedirect.link.sendConfig({ enabled: true, blockGesturelessNav: true });
+  appRedirect.sandbox.Location.prototype.assign.call(appRedirect.sandbox.location, ukUrl);
+  if (appRedirect.state.assigned.length !== 1) throw new Error('anti-redirect blocked Google UK sign-in');
+
+  const google = installAntiRedirect(ukUrl);
+  if (google.sandbox.Location.prototype.assign !== google.originals.assign
+      || google.sandbox.open !== google.originals.open) {
+    throw new Error('anti-redirect wrapped Google UK sign-in primitives');
+  }
+
+  const compatScripts = MANIFEST.content_scripts.filter((entry) =>
+    Array.isArray(entry.js) && (entry.js.includes('content.min.js') || entry.js.includes('fingerprint-realm.js')));
+  if (compatScripts.length !== 2 || compatScripts.some((entry) =>
+    !entry.exclude_matches.includes('https://accounts.google.co.uk/*')
+    || !entry.exclude_matches.includes('https://*.accounts.google.co.uk/*'))) {
+    throw new Error('a main-world script still runs on the Google UK account page');
+  }
+
+  const filters = extractArrayLiteral(BACKGROUND, 'LOGIN_COMPAT_FILTERS');
+  const neverBlock = extractArrayLiteral(BACKGROUND, 'LOGIN_COMPAT_NEVER_BLOCK_DOMAINS');
+  if (!filters.includes('||accounts.google.co.uk') || !neverBlock.includes('accounts.google.co.uk')) {
+    throw new Error('Google UK is missing from the network sign-in protections');
+  }
+  const staticAuth = RULES.find((rule) => rule.id === 167);
+  if (!staticAuth || !staticAuth.condition.requestDomains.includes('accounts.google.co.uk')) {
+    throw new Error('the packaged sign-in allow rule misses Google UK');
+  }
+  if (!BACKGROUND.includes("'https://accounts.google.co.uk/*', 'https://*.accounts.google.co.uk/*'")) {
+    throw new Error('auto consent guards can still run on the Google UK account page');
+  }
+});
+
+test('ChatGPT can hand a sign-in to the OpenAI challenge without navigation hooks', () => {
+  const loginUrl = 'https://chatgpt.com/auth/login_with?provider=google';
+  const challengeUrl = 'https://auth.openai.com/mfa-challenge/one-time-state';
+  const page = installContentNavigationHarness(loginUrl);
+  page.sandbox.Location.prototype.assign.call(page.sandbox.location, challengeUrl);
+  if (page.state.assigned.length !== 1) throw new Error('content guard blocked the OpenAI challenge');
+
+  const redirect = installAntiRedirect(loginUrl);
+  redirect.link.sendConfig({ enabled: true, blockGesturelessNav: true });
+  redirect.sandbox.Location.prototype.assign.call(redirect.sandbox.location, challengeUrl);
+  if (redirect.state.assigned.length !== 1) throw new Error('anti-redirect blocked the OpenAI challenge');
+
+  const spoof = installAntiRedirect(loginUrl);
+  spoof.link.sendConfig({ enabled: true, blockGesturelessNav: true });
+  spoof.sandbox.Location.prototype.assign.call(spoof.sandbox.location,
+    'https://auth.openai.com.evil.example/mfa-challenge/one-time-state');
+  if (spoof.state.assigned.length !== 0) throw new Error('a lookalike OpenAI host borrowed the sign-in exemption');
+
+  const authPage = installAntiRedirect(challengeUrl);
+  if (authPage.sandbox.Location.prototype.assign !== authPage.originals.assign
+      || authPage.sandbox.open !== authPage.originals.open) {
+    throw new Error('anti-redirect wrapped the OpenAI challenge page');
+  }
+
+  const compatScripts = MANIFEST.content_scripts.filter((entry) =>
+    Array.isArray(entry.js) && (entry.js.includes('content.min.js') || entry.js.includes('fingerprint-realm.js')));
+  if (compatScripts.length !== 2 || compatScripts.some((entry) =>
+    !entry.exclude_matches.includes('https://auth.openai.com/*'))) {
+    throw new Error('a main-world compatibility-sensitive script still runs on OpenAI auth');
+  }
+  const filters = extractArrayLiteral(BACKGROUND, 'LOGIN_COMPAT_FILTERS');
+  const neverBlock = extractArrayLiteral(BACKGROUND, 'LOGIN_COMPAT_NEVER_BLOCK_DOMAINS');
+  if (!filters.includes('||auth.openai.com') || !neverBlock.includes('auth.openai.com')) {
+    throw new Error('OpenAI auth is missing network sign-in protection');
+  }
+  const staticAuth = RULES.find((rule) => rule.id === 167);
+  if (!staticAuth || !staticAuth.condition.requestDomains.includes('auth.openai.com')) {
+    throw new Error('the packaged sign-in allow rule misses OpenAI auth');
+  }
+  if (!BACKGROUND.includes("'https://auth.openai.com/*'")) {
+    throw new Error('auto consent guards can still run on OpenAI auth');
   }
 });
 
