@@ -422,7 +422,7 @@
     {
       id: 'google',
       name: 'Google',
-      hosts: ['accounts.google.com'],
+      hosts: ['accounts.google.com', 'accounts.google.co.uk'],
       settings: 'https://myaccount.google.com/permissions',
       likely: (u) => /\/o\/oauth2|\/signin\/oauth|\/oauth/i.test(u.pathname) || (u.searchParams.has('client_id') && (u.searchParams.has('scope') || u.searchParams.has('redirect_uri'))),
     },

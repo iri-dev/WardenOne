@@ -35,7 +35,11 @@ assert(cleanFrom >= 0 && cleanTo > cleanFrom, 'messageCleanHost moved in backgro
 const adTargetFrom = BG.indexOf('function chainAbuseTld(host) {');
 const adTargetTo = BG.indexOf('/* A page can open a popup through a form target', adTargetFrom);
 assert(adTargetFrom >= 0 && adTargetTo > adTargetFrom, 'embedded-player ad target classifier moved in background.js');
-const SLICE = BG.slice(adTargetFrom, adTargetTo) + '\n'
+const authFrom = BG.indexOf('function isLoginCompatibilityUrl(');
+const authTo = BG.indexOf('\nfunction isYouTubeFrameUrl(', authFrom);
+assert(authFrom >= 0 && authTo > authFrom, 'the worker login compatibility predicate moved');
+const SLICE = BG.slice(authFrom, authTo) + '\n'
+  + BG.slice(adTargetFrom, adTargetTo) + '\n'
   + BG.slice(cleanFrom, cleanTo + 2) + '\n' + BG.slice(from, to);
 
 let passed = 0;
@@ -71,7 +75,6 @@ function world(options) {
     redirectWarningPageUrl: (info) => 'chrome-extension://x/redirect-warning.html?to=' +
       encodeURIComponent(info.targetUrl) + '&why=' + encodeURIComponent(info.why),
     chrome: { tabs: { update: (id, props) => { updates.push({ id, props }); return Promise.resolve(); } } },
-    isLoginCompatibilityUrl: (u) => /accounts\.google|login\.microsoftonline|\/oauth|\/saml/i.test(String(u || '')),
     URL, Object, Date, String, Number, Promise,
   };
   vm.createContext(sandbox);
@@ -606,6 +609,48 @@ async function main() {
     w.committed(1, 'https://app.example/');
     await w.forced(1, 'https://accounts.google.com/oauth/authorize?client_id=x');
     check('federated login is left alone', w.updates.length === 0, w.updates);
+  }
+
+  {
+    const w = world();
+    w.committed(1, 'https://accounts.google.co.uk/accounts/SetSID');
+    await w.forced(1, 'https://auth.openai.com/mfa-challenge/one-time-state');
+    check('Google UK returning to an app challenge does not show a redirect warning',
+      w.updates.length === 0 && w.history.length === 0, w.updates);
+  }
+
+  {
+    const w = world();
+    for (const [from, to] of [
+      ['https://chatgpt.com/auth/login_with?provider=google', 'https://auth.openai.com/mfa-challenge/one-time-state'],
+      ['https://auth.openai.com/authorize', 'https://accounts.google.co.uk/AccountChooser'],
+      ['https://accounts.google.co.uk/accounts/SetSID', 'https://auth.openai.com/mfa-challenge/one-time-state'],
+      ['https://auth.openai.com/mfa-challenge/one-time-state', 'https://chatgpt.com/'],
+    ]) {
+      w.committed(1, from);
+      await w.forced(1, to);
+    }
+    check('the ChatGPT, OpenAI and Google sign-in handoffs stay uninterrupted',
+      w.updates.length === 0 && w.history.length === 0, w.updates);
+  }
+
+  for (const source of [
+    'https://accounts.google.co.uk.evil.example/accounts/SetSID',
+    'https://accounts.google.evil.example/accounts/SetSID',
+  ]) {
+    const w = world();
+    w.committed(1, source);
+    await w.forced(1, 'https://landing.example/');
+    check('a Google-looking source cannot bypass the redirect warning: ' + new URL(source).hostname,
+      w.updates.length === 1 && w.history.length === 1, w.updates);
+  }
+
+  {
+    const w = world();
+    w.committed(1, 'https://chatgpt.com/auth/login_with?provider=google');
+    await w.forced(1, 'https://auth.openai.com.evil.example/mfa-challenge/one-time-state');
+    check('an OpenAI-looking destination is still treated as a forced redirect',
+      w.updates.length === 1 && w.history.length === 1, w.updates);
   }
 
   {

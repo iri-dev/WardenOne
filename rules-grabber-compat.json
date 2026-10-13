@@ -107,6 +107,8 @@
     "condition": {
       "requestDomains": [
         "accounts.google.com",
+        "accounts.google.co.uk",
+        "auth.openai.com",
         "oauth2.googleapis.com",
         "apis.google.com",
         "login.microsoftonline.com",

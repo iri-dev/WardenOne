@@ -48,26 +48,30 @@ function arrayConstant(name) {
   return vm.runInNewContext(match[1]);
 }
 
-function loadNetworkParsers() {
+function loadNetworkParsers(realMedia = false) {
   const yields = { count: 0 };
   const sandbox = {
     URL,
     isMediaCompatFilter: () => false,
-    isMediaCompatDomain: () => false,
     isNeverBlockDomain: () => false,
     setTimeout(callback, ms) {
       yields.count++;
       return setTimeout(callback, ms);
     },
   };
+  if (!realMedia) sandbox.isMediaCompatDomainLowercase = () => false;
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
+  if (realMedia) {
+    vm.runInContext(sourceBetween('const MEDIA_COMPAT_DOMAINS', '\n// Globally-trusted')
+      + '\nthis.__media = { domains: Array.from(MEDIA_COMPAT_DOMAINS), isMediaCompatDomain, isMediaCompatDomainLowercase };', sandbox);
+  }
   vm.runInContext(
     sourceBetween('const UBO_TYPE_MAP', '\nfunction getListMeta')
       + '\nthis.__api = { parseList, parseListInSlices, parseNetworkRules };',
     sandbox,
   );
-  return Object.assign({ yields }, sandbox.__api);
+  return Object.assign({ yields, media: sandbox.__media }, sandbox.__api);
 }
 
 function loadRedirectPolicy() {
@@ -223,6 +227,41 @@ test('simple-list parser accepts only unambiguous whole hosts', () => {
   ]);
 });
 
+test('media-domain suffix matching preserves exact, child, case, and deceptive-host behavior', () => {
+  const real = loadNetworkParsers(true);
+  const unfiltered = loadNetworkParsers();
+  const known = new Set(real.media.domains);
+  const previous = (raw) => {
+    const d = String(raw || '').replace(/^www\./, '').toLowerCase();
+    if (!d) return false;
+    if (known.has(d)) return true;
+    for (let dot = d.indexOf('.'); dot !== -1; dot = d.indexOf('.', dot + 1)) {
+      if (known.has(d.slice(dot + 1))) return true;
+    }
+    return false;
+  };
+  const entries = [];
+  for (const domain of known) {
+    entries.push([domain, true], [domain.toUpperCase(), true],
+      ['www.' + domain, true], ['WWW.' + domain.toUpperCase(), true],
+      ['a.' + domain, true], ['a.b.' + domain, true],
+      ['not' + domain, previous('not' + domain)], [domain + '.evil.example', false],
+      [domain + '-evil.example', false]);
+  }
+  entries.push(['', false], ['googlevideo.com.evil', false], ['googlevideo-com.example', false],
+    ['a.googlevideo.com.evil.example', false], ['a.youtubei.googleapis.com', true]);
+  for (const [host, expected] of entries) {
+    assert.strictEqual(real.media.isMediaCompatDomain(host), previous(host), 'old/new mismatch: ' + host);
+    assert.strictEqual(real.media.isMediaCompatDomain(host), expected, 'unexpected media verdict: ' + host);
+    assert.strictEqual(real.media.isMediaCompatDomainLowercase(host.toLowerCase()), expected,
+      'normalized path mismatch: ' + host);
+  }
+  const feed = entries.filter(([host]) => host).map(([host]) => '0.0.0.0 ' + host).join('\n');
+  const expectedFeed = Array.from(unfiltered.parseList(feed)).filter((host) => !previous(host));
+  assert.deepStrictEqual(Array.from(real.parseList(feed)), expectedFeed,
+    'the full feed parser changed which media and deceptive hosts it keeps');
+});
+
 /* Reported 2026-10-02: Google results for SteamRIP said "On a malware and scam blocklist", and the
    site itself was blocked. Only one of the sixteen security feeds lists steamrip.com; the fakes
    that copy its name are listed by others. The site and its www. host come out however a feed
@@ -295,6 +334,46 @@ test('a long feed parsed in slices gives the worker back and yields exactly pars
   const short = 'one.example\ntwo.example';
   assert.deepStrictEqual(Array.from(await parseListInSlices(short)), Array.from(parseList(short)), 'a short feed changed');
   assert.strictEqual(yields.count, 0, 'a JSON or short feed was sliced');
+});
+
+test('line scanning preserves slice boundaries, CRLF, and a trailing empty line', async () => {
+  const { parseList, parseListInSlices, yields } = loadNetworkParsers();
+  const hosts = Array.from({ length: 4000 }, (_, i) => 'host-' + i + '.example');
+  yields.count = 0;
+  const exact = hosts.join('\r\n');
+  assert.deepStrictEqual(Array.from(await parseListInSlices(exact)), Array.from(parseList(exact)));
+  assert.strictEqual(yields.count, 0, 'exactly 4000 lines should stay on the short-list path');
+
+  const over = hosts.join('\r\n') + '\r\n';
+  yields.count = 0;
+  assert.deepStrictEqual(Array.from(await parseListInSlices(over)), Array.from(parseList(over)));
+  assert.strictEqual(yields.count, 2, 'the trailing empty line is the 4001st line');
+
+  const boundary = hosts.join('\r\n') + '\r\n[section] CRLF boundary\r\nlast.example';
+  yields.count = 0;
+  assert.deepStrictEqual(Array.from(await parseListInSlices(boundary)), Array.from(parseList(boundary)));
+  assert.strictEqual(yields.count, 2);
+});
+
+test('network-rule line scanning keeps order, scope, cap, and final unterminated line', () => {
+  const { parseNetworkRules } = loadNetworkParsers();
+  const feed = [
+    '! heading',
+    '||first.example^$script,third-party',
+    '||ignored.example^$script,redirect=noop',
+    '@@||allowed.example^$script,domain=site.example',
+    '||last.example^$image,first-party',
+  ].join('\r\n');
+  const full = Array.from(parseNetworkRules(feed, 700, 10));
+  assert.deepStrictEqual(full.map((rule) => rule.id), [700, 701, 702]);
+  assert.deepStrictEqual(full.map((rule) => rule.condition.urlFilter), [
+    '||first.example^', '||allowed.example^', '||last.example^',
+  ]);
+  assert.deepStrictEqual(full.map((rule) => rule.condition.domainType), [
+    'thirdParty', undefined, 'firstParty',
+  ]);
+  assert.strictEqual(full[1].action.type, 'allow');
+  assert.deepStrictEqual(Array.from(parseNetworkRules(feed + '\r\n', 700, 2)), full.slice(0, 2));
 });
 
 test('JSON list parsing does not broaden URLs, options, or allowlist entries', () => {
