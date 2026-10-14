@@ -131,7 +131,7 @@ function workerRealm(options) {
   const to = BG.indexOf(END, from + START.length);
   assert(from >= 0 && to > from, 'the forced-redirect guard moved in background.js');
   const adTargetFrom = BG.indexOf('function chainAbuseTld(host) {');
-  const adTargetTo = BG.indexOf('/* A page can open a popup through a form target', adTargetFrom);
+  const adTargetTo = BG.indexOf('async function maybeCloseSuspiciousFramePopup(details) {', adTargetFrom);
   assert(adTargetFrom >= 0 && adTargetTo > adTargetFrom, 'the player ad-target classifier moved in background.js');
   const updates = [];
   const history = [];

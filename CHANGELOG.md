@@ -39,6 +39,7 @@
 
 ### Fixed
 
+- Recognised ad-auction popups opened from a top-level page are closed before their redirect chain can create a WardenOne warning tab. Ordinary links and sign-in popups remain available.
 - WardenOne no longer interrupts the ChatGPT → OpenAI sign-in challenge or Google sign-in returns from `accounts.google.co.uk`. Both official authentication hosts receive sign-in compatibility handling.
 - Embedded image-logger reporting now recovers its eight-host warning budget over 30 minutes and when frame protection is reset or the frame site changes. Long-lived frames can report later suspicious hosts without flooding Activity.
 - Embedded frames no longer receive the engine's host lists. Each frame used to fetch about 50 KB of adult, logger and payment hosts that only the top-page engine reads, then re-check, sign and verify them. On the top page, those lists now carry their own signature beside the settings, so only the engine checks them; the other in-page guards verify a few kilobytes instead of about 56 KB.

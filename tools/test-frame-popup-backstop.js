@@ -39,6 +39,7 @@ function world(config = {}, sourceUrl = 'https://playmogo.com/d/1s8i3o0preys', w
     activeAllowlist: c => c.allowlist || [],
     hostMatchesAllowlist: (h, list) => list.some(d => h === d || h.endsWith('.' + d)),
     hostMatchesSite: (h, d) => h === d || h.endsWith('.' + d),
+    isLoginCompatibilityUrl: url => new URL(url).hostname === 'accounts.google.com',
     queueHistory: item => history.push(item),
     POPUP_OVERLAY_AT: Object.create(null),
     PLAYER_GESTURE_AT: Object.create(null),
@@ -63,6 +64,24 @@ const attempt = (w, overrides = {}, armed = true) => {
   w = world();
   await attempt(w, { url: 'https://eu2.glaza-bolyat.online/click/?campaign_id=4' });
   assert.deepStrictEqual(w.removed, [12], 'an embedded-player click broker popup is closed without relying on its TLD');
+  const auctionUrl = 'https://armvupzc.in/dfulal/maxo/dz?payload=' + 'x'.repeat(1700)
+    + Array.from({ length: 28 }, (_, n) => '&r' + n + '=' + n).join('');
+  w = world({}, 'https://pawchive.pw/patreon/user/4618037');
+  await attempt(w, { sourceFrameId: 0, url: auctionUrl }, false);
+  assert.deepStrictEqual(w.removed, [12], 'a top-frame ad-auction popup closes without a player gesture');
+  assert.strictEqual(w.history[0]?.detail.why, 'A page opened an ad-auction popup.');
+  w = world({}, 'https://pawchive.pw/patreon/user/4618037');
+  await attempt(w, { sourceFrameId: 0, url: 'https://accounts.google.com/o/oauth2/auth?state=' + 'x'.repeat(1100) }, false);
+  assert.deepStrictEqual(w.removed, [], 'a long OAuth popup remains available');
+  w = world({}, 'https://pawchive.pw/patreon/user/4618037');
+  await attempt(w, { sourceFrameId: 0, url: auctionUrl.replace('armvupzc.in/dfulal/maxo/dz', 'accounts.google.com/o/oauth2/auth') }, false);
+  assert.deepStrictEqual(w.removed, [], 'a dense known-auth URL remains available');
+  w = world({}, 'https://pawchive.pw/patreon/user/4618037');
+  await attempt(w, { sourceFrameId: 0, url: 'https://armvupzc.in/dfulal/maxo/dz?payload=short&r0=1' }, false);
+  assert.deepStrictEqual(w.removed, [], 'short links do not trigger the auction backstop');
+  w = world({}, 'https://pawchive.pw/patreon/user/4618037');
+  await attempt(w, { sourceFrameId: 0, url: 'https://example.com/path?payload=' + 'x'.repeat(1700) }, false);
+  assert.deepStrictEqual(w.removed, [], 'one long query value is not enough to close a popup');
   w = world();
   await attempt(w, { url: 'https://example.online/watch/episode' });
   assert.deepStrictEqual(w.removed, [], 'an ordinary online-domain popup is not classified by its TLD alone');
@@ -87,6 +106,11 @@ const attempt = (w, overrides = {}, armed = true) => {
   ]) {
     w = world(config); await attempt(w);
     assert.deepStrictEqual(w.removed, [], 'reader exemption must be honoured: ' + JSON.stringify(config));
+  }
+  for (const config of [{ enabled: false }, { blockForcedPopups: false }, { strictPopupShield: false }, { allowlist: ['pawchive.pw'] }]) {
+    w = world(config, 'https://pawchive.pw/patreon/user/4618037');
+    await attempt(w, { sourceFrameId: 0, url: auctionUrl }, false);
+    assert.deepStrictEqual(w.removed, [], 'top-frame auction backstop respects the reader switch: ' + JSON.stringify(config));
   }
   w = world();
   assert.strictEqual(await w.sandbox.maybeCloseOverlaySpawnedPopup({ id: 12, openerTabId: 11, url: 'about:blank' }), false,
