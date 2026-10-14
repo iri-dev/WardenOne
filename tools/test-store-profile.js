@@ -151,6 +151,8 @@ section('the Store tree', () => {
   check('the runtime is', ['manifest.json', 'background.js', 'content.min.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'build-profile.js', 'domain-utils.js', 'psl-private.js', 'bridge.js', 'anti-redirect.js', 'LICENSE', 'NOTICE', 'PRIVACY.md'].every((f) => TREE.files.has(f)));
   /* Every document in the package is there on purpose (REL-03): the repository's own notes are not. */
   check('the changelog, the security policy and the support note are not in the package', ['CHANGELOG.md', 'SECURITY.md', 'SUPPORT.md', 'README.md'].every((f) => !TREE.files.has(f) && TREE.removed.includes(f)));
+  check('the icon note stays in the repository', TREE.removed.includes('icons/README.md') && !TREE.files.has('icons/README.md')
+    && /^icons\/README\.md export-ignore$/m.test(ATTRIBUTES));
   check('the manifest no longer injects Twitch Rewind', !TREE.manifest.content_scripts.some((e) => (e.js || []).some((f) => /rewind/.test(f))));
   check('...and every other content script survived', TREE.manifest.content_scripts.length >= 6 && TREE.manifest.content_scripts.some((e) => (e.js || []).includes('anti-redirect.js')));
   check('the profile inside the package says store and carries no replay entry', /profile: 'store'/.test(TREE.files.get('build-profile.js'))
