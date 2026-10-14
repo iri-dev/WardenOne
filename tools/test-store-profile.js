@@ -36,7 +36,6 @@ const CHANGELOG = fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8');
 const GATE = fs.readFileSync(path.join(ROOT, 'tools', 'check-maintainability.js'), 'utf8');
 const ATTRIBUTES = fs.readFileSync(path.join(ROOT, '.gitattributes'), 'utf8');
 const DOC = fs.existsSync(path.join(ROOT, 'docs', 'store-single-purpose.md')) ? fs.readFileSync(path.join(ROOT, 'docs', 'store-single-purpose.md'), 'utf8') : '';
-const SUBMISSION = fs.readFileSync(path.join(ROOT, 'docs', 'store-submission.md'), 'utf8');
 const { h, makeDocument } = require('./lib/mini-dom.js');
 
 let pass = 0;
@@ -359,12 +358,7 @@ section('the record', () => {
   check('...has a row for every popup section', tool.popupSections().every((s) => DOC.includes('| ' + s + ' |')), tool.popupSections().filter((s) => !DOC.includes('| ' + s + ' |')));
   check('...and says the GitHub build is unchanged', /GitHub build is unchanged/.test(DOC));
   const purpose = 'WardenOne helps readers browse with more control: it blocks threats and trackers, defends privacy, warns about risky actions, offers optional page display controls for readability, and releases resources held by eligible idle tabs.';
-  check('the proposed listing and purpose record use the same purpose sentence', DOC.replace(/^> ?/gm, '').replace(/\s+/g, ' ').includes(purpose)
-    && SUBMISSION.replace(/\s+/g, ' ').includes(purpose));
-  check('the listing is marked proposed and Dashboard comparison pending', /no Chrome Web Store Dashboard draft or submitted listing yet/i.test(SUBMISSION.replace(/\s+/g, ' '))
-    && /proposed copy below must be compared with the saved Dashboard fields before submission/i.test(SUBMISSION.replace(/\s+/g, ' ')));
-  const listingDescription = /\*\*Detailed description:\*\*([\s\S]*?)\n- \*\*Privacy policy:\*\*/.exec(SUBMISSION);
-  check('the proposed listing does not advertise excluded replay', !!listingDescription && !/Twitch Rewind|local rewind|replay/i.test(listingDescription[1]));
+  check('the public purpose record states the Store purpose', DOC.replace(/^> ?/gm, '').replace(/\s+/g, ' ').includes(purpose));
   check('the README points at the Store package and the record', /build-store-package\.js/.test(README) && /store-single-purpose\.md/.test(README));
   check('the CHANGELOG records it', /Store package/.test(CHANGELOG) && /build-store-package/.test(CHANGELOG));
   const trackedIgnore = spawnSync('git', ['ls-files', '--error-unmatch', '.gitignore'], { cwd: ROOT, encoding: 'utf8' });

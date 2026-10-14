@@ -18,5 +18,5 @@ fails, and does not disable rules because a publisher date is old. The next usef
 the last time each accepted source's content hash actually changed; that would distinguish an old
 header on changing content from a genuinely unchanged edition. Then compare old-source domains
 against recently updated feeds and inspect any unique domains for false positives. Do not remove
-or replace a source solely because it crossed 30 days; new upstream inputs also require the
-existing [rights review](store-rights-research.md) before a Store candidate can use them.
+or replace a source solely because it crossed 30 days; new upstream inputs also require
+source-rights review before a Store candidate can use them.

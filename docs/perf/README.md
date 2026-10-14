@@ -10,15 +10,9 @@ the actual release ZIP. These are size and rule-count checks. The browser profil
 measures execution time and heap with the worker held awake; what a worker wake costs the browser
 is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 
-Each `profile-<commit>.json` here is an enabled-versus-disabled measurement of that release
-candidate in a real browser with the real extension loaded, produced by
-`node tools/perf-profile.js`; the `.md` beside it is the readable summary, and the JSON keeps the
-raw per-run values, the readiness evidence and the metadata (commit, browser and extension
-versions, CPU, throttle, date). Raw DevTools traces from `--trace` land in `traces/`, which is
-not tracked (tens of MB each).
-
-The separate [YouTube memory review](youtube-memory-review-2026-10-01.md) records the owner's
-1.2 GB Brave warning, controlled playback measurements, and what remains unproven.
+`node tools/perf-profile.js` measures the extension in a real browser. Per-run profiles,
+machine metadata, video investigations and DevTools traces stay local; this page records
+the conclusions needed to understand release performance decisions.
 
 ## Iframe image logger observer (2026-10-11)
 
@@ -31,7 +25,7 @@ large between-session variation seen when comparing separate fresh browser profi
 
 Median extra main-thread task time with the warning switch on, compared with off:
 
-| Edge 150, i5-12400F | Before cache | With bounded URL cache |
+| Edge 150, desktop test CPU | Before cache | With bounded URL cache |
 | --- | ---: | ---: |
 | Normal CPU, cold / warm (7 runs each) | +73 / +95 ms | +51 / +44 ms |
 | 4x CPU throttle, cold / warm (5 runs each) | +472 / +469 ms | +191 / +209 ms |
@@ -39,10 +33,10 @@ Median extra main-thread task time with the warning switch on, compared with off
 The detector added no median long tasks in these runs. With the cache, median fixture completion
 was 25/16 ms later at normal speed and 57/55 ms later at 4x throttle. The cache holds up to
 64 URL classifications in isolated script memory and is cleared when the detector is disabled
-or the frame's site changes. The [normal-speed baseline](image-frame-observer-paired-2026-10-11.md),
-[normal-speed cached run](image-frame-observer-cached-2026-10-11.md),
-[throttled baseline](image-frame-observer-paired-x4-2026-10-11.md), and
-[throttled cached run](image-frame-observer-cached-x4-2026-10-11.md) include per-run JSON beside
+or the frame's site changes. The normal-speed baseline,
+normal-speed cached run,
+throttled baseline, and
+throttled cached run have per-run JSON retained locally
 each summary.
 
 This is a synthetic image-heavy page with repeated local URLs. It confirms measurable work from
@@ -53,8 +47,8 @@ comparing absolute task times across the two builds.
 
 ## Iframe image selection checks (2026-10-12)
 
-The [current-build normal-speed profile](image-frame-current-2026-10-12.md) and
-[4x profile](image-frame-current-x4-2026-10-12.md) repeated the paired image fixture after the
+The current-build normal-speed profile and
+4x profile repeated the paired image fixture after the
 frame-settings change, with 3,636 remote hosts loaded. A trace attributed about 19 ms across
 eight frames to roughly 7,900 image load/error callbacks; most images had ordinary URLs and
 did not need responsive selection checks. The detector now attaches its document-level
@@ -65,9 +59,9 @@ source-attribute observer. A cheap URL hint rejects ordinary values before URL p
 encoded and non-ASCII values use the full parser. The real browser image-warning test still
 detects direct, responsive and cross-origin frame candidates.
 
-The first before and after runs ([before](image-frame-current-2026-10-12.md),
-[before 4x](image-frame-current-x4-2026-10-12.md), [changed](image-frame-conditional-final-2026-10-12.md),
-[changed 4x](image-frame-conditional-final-x4-2026-10-12.md)) were taken while the machine was
+The first before and after runs (before,
+before 4x, changed,
+changed 4x) were taken while the machine was
 busy. Several runs waited about 22 seconds for the fixture to finish, and the same stalls showed
 up on other fixtures with no extension loaded. At 4x the stalled runs carried roughly 200 ms more
 background work, enough to swing the result from +4 to +189 ms. Both builds were profiled again
@@ -82,9 +76,9 @@ time with the iframe warning switch on, compared with off:
 At normal speed both builds cost 10-20 ms, and the difference between them is within the
 run-to-run spread. At 4x the change roughly halves the detector's cost. The two builds ran in
 separate browser sessions, so the comparison between columns is weaker than each column's own
-on/off difference. The raw runs are in the [before](image-frame-quiet-head-2026-10-12.md),
-[before 4x](image-frame-quiet-head-x4-2026-10-12.md), [changed](image-frame-quiet-2026-10-12.md)
-and [changed 4x](image-frame-quiet-x4-2026-10-12.md) profiles.
+on/off difference. The raw runs are in the before,
+before 4x, changed
+and changed 4x profiles.
 
 The 2026-10-11 normal-speed figures above (+51 / +44 ms) were skewed. The remote lists arrived
 part-way through that session and lifted every later run by about 170 ms, and more of the
@@ -121,7 +115,7 @@ loads each version into a fresh same-origin frame on a cross-origin-isolated pag
 DOM work there, observer callbacks included. "Floor" is a MutationObserver with the same options
 that only walks its records, the price of observing at all. Median extra time per frame over no
 detector, normal CPU / 4x CPU, 15 and 12 runs per cell
-([normal](frame-image-logger-bench-2026-10-12.json), [4x](frame-image-logger-bench-x4-2026-10-12.json)).
+(normal, 4x).
 "Before" is the detector as it was before this change, recorded as
 `previous-frame-image-logger.js`:
 
@@ -136,16 +130,16 @@ The clock-update case falls to the floor, and the framework build loses about ha
 detector's own work. The lazy-loader difference is inside its run-to-run spread. The image fixture
 does not move, because almost all of its cost is the observer itself, and the warning cannot drop
 that without missing changed images. Paired whole-page profiles of that fixture agree
-([before](image-frame-scan-previous-2026-10-12.md), [after](image-frame-scan-new-2026-10-12.md),
-[before 4x](image-frame-scan-previous-x4-2026-10-12.md), [after 4x](image-frame-scan-new-x4-2026-10-12.md)).
+(before, after,
+before 4x, after 4x).
 At normal speed the switch cost +9 / +20 ms before and +16 / +1 ms after, cold / warm, both
 within the spread. At 4x it cost +120 / +117 ms before and +99 / +66 ms after. The same "before"
 build measured +96 / +72 ms in the session above, so that gap is not established either.
 
 ## Current page cost and consent scanning (2026-10-11)
 
-The [current-build baseline](profile-current-baseline-2026-10-11.md) reruns the original article,
-DOM-churn and eight-frame fixtures with the working tree at `fd160f9`. Edge 150 on an i5-12400F
+The current-build baseline reruns the original article,
+DOM-churn and eight-frame fixtures with the working tree at `fd160f9`. Edge 150 on a desktop test CPU
 measured five cold navigations and five warm reloads per variant. A browser trace attributed the
 largest repeated churn cost to Consent Auto-Reject's page-wide scans: its generic fallback was
 measuring ordinary controls before checking whether their labels could be reject actions.
@@ -153,7 +147,7 @@ measuring ordinary controls before checking whether their labels could be reject
 The scanner now filters labels before visibility checks. On pages without a possible banner, its
 short startup polls reuse that result until a relevant DOM mutation arrives. It still polls a
 hidden named or obfuscated candidate for CSS-only reveals, and its later slow poll still runs.
-The [optimized profile](profile-consent-poll-2026-10-11.md) used the same machine and five-run
+The optimized profile used the same machine and five-run
 method. Median extra main-thread task time with WardenOne on:
 
 | Fixture | Baseline cold / warm | Optimized cold / warm |
@@ -167,8 +161,8 @@ between-session variation; frame startup remains expensive, with about 6.8 MB of
 heap after GC and roughly 370 ms of task-time overhead across eight frames. The traces show much
 of that cost in per-frame configuration delivery and always-on guard startup, which this consent
 change does not remove. These are synthetic pages and separate browser sessions, so the table is
-evidence for this workload rather than a site-wide performance guarantee. The JSON files beside
-both summaries retain every run and browser-readiness check.
+evidence for this workload rather than a site-wide performance guarantee. Local JSON captures
+retain every run and browser-readiness check.
 
 ## Remote lists, frame config and overlay sweeps (2026-10-12)
 
@@ -200,9 +194,9 @@ form or with the URL parser.
 
 `perf-profile.js --baseline <dir> --variants off,base,on` measured the change against a copy of
 the tree from before it, which already had the consent-scan change above. The
-[first profile](profile-frame-config-2026-10-12.md) ran off, baseline, changed; the
-[second](profile-frame-config-swapped-2026-10-12.md) ran off, changed, baseline, so an
-order effect would show as disagreement. Edge 150, i5-12400F, five runs per cell. Median extra
+first profile ran off, baseline, changed; the
+second ran off, changed, baseline, so an
+order effect would show as disagreement. Edge 150, desktop test CPU, five runs per cell. Median extra
 main-thread task time over the browser without WardenOne, cold navigation:
 
 | Fixture | Baseline (first / second) | Changed (first / second) |
@@ -219,11 +213,11 @@ starting and checking a 5.7 KB signed settings message three times per frame. Ha
 JavaScript runs before V8 has optimised the code. A variant with the hash's rotations inlined was
 only 15-20% faster in that state, so it was not worth changing seven security-critical copies.
 These are synthetic pages, so the numbers are evidence for these shapes rather than a site-wide
-guarantee. The JSON beside each summary keeps every run and readiness check.
+guarantee. Local JSON captures keep every run and readiness check.
 
 ## Current reprofile and child-frame settings (2026-10-12)
 
-The [fresh profile](profile-2026-10-12-reprofile.md) measured commit `7507f01` before this
+The fresh profile measured commit `7507f01` before this
 change, with all 3,636 remote hosts loaded. Five cold navigations and five warm reloads per
 variant added a median 175/170 ms on the article, 332/330 ms on DOM churn, and 265/264 ms on
 the eight-frame page. The old ~900 ms churn and ~60 ms per-frame findings describe earlier
@@ -234,8 +228,8 @@ child received the top page's broad settings even though only its popup, credent
 fingerprint and player guards run there. The bridge now signs only the fields those guards read
 in a child. Projecting the default settings this way cuts the JSON from about 4.3 KB to
 0.5 KB; the top frame still receives its full settings. The
-[before/after profile](profile-2026-10-12-frame-prune.md)
-and [reversed-order profile](profile-2026-10-12-frame-prune-swapped.md) retain the raw runs and
+before/after profile
+and reversed-order profile retain the raw runs and
 readiness checks. In the first comparison's frame trace, the combined anti-redirect and
 fingerprint config handlers fell from 46 to 17 ms across eight frames, while the bridge's
 config reply fell from 42 to 33 ms.
@@ -251,9 +245,9 @@ removes fields that only the top-page engine reads.
 
 Later the same day, with nothing else running, the browser without WardenOne was itself 15-25%
 faster than in the morning profiles above, and the five runs in each cell agreed to within a few
-milliseconds. Two profiles of the working tree, the [first](profile-2026-10-12-current.md) off then
-on and the [second](profile-2026-10-12-current-swapped.md) on then off, all 3,636 remote hosts
-loaded. Edge 150, i5-12400F. Median extra main-thread task time over the browser without
+milliseconds. Two profiles of the working tree, the first off then
+on and the second on then off, all 3,636 remote hosts
+loaded. Edge 150, desktop test CPU. Median extra main-thread task time over the browser without
 WardenOne (first / second):
 
 | Fixture | Cold | Warm |
@@ -264,7 +258,7 @@ WardenOne (first / second):
 
 These replace the +177 / +338 / +278 ms figures above as the current cost. Most of the drop is
 the quieter machine rather than code. Profiled in the same session as a copy of `7507f01`
-([first](profile-2026-10-12-current-vs-head.md), [reversed](profile-2026-10-12-current-vs-head-swapped.md)),
+(first, reversed),
 the article and churn pages measured within 10 ms of it in both orders. The eight-frame page
 measured 39-41 ms lower cold and 36-40 ms lower warm in both orders, about 15%, with 0.3 MB less
 heap after GC. That is the child-frame settings change; the morning comparison above was too
@@ -334,7 +328,7 @@ popup, each on a sleeping worker, and fails on any UI-thread stall answering a r
 on more than 300 ms of UI-thread stalls in all. It needs Edge and network access and takes about
 three minutes, so it is not part of the gate.
 
-Measured on 2026-10-01 (Edge 150, i5-12400F, 22,134 dynamic rules). Six appliers read every
+Measured on 2026-10-01 (Edge 150, desktop test CPU, 22,134 dynamic rules). Six appliers read every
 dynamic rule on each wake to filter their own band; Chrome builds each reply on the UI thread in
 170-270 ms and sends it as a ~21.8 MB message. Closing a tab on a sleeping worker froze the UI
 thread six times, 1,123 ms in all; dragging the popup's scrollbar straight after opening it saw a
@@ -369,7 +363,7 @@ a tool measure a wake.
 
 ## 1.0.1 at 4cd3119 (2026-09-20)
 
-Edge 150, i5-12400F, no CPU throttle, 5 runs per cell. Main-thread task time, cold, median:
+Edge 150, desktop test CPU, no CPU throttle, 5 runs per cell. Main-thread task time, cold, median:
 article 43 ms off / 95 ms on (+52 ms); churn stress page 192 ms / 1,094 ms (+902 ms, one long
 task of ~170 ms); eight frames 50 ms / 546 ms (+496 ms). Heap after GC: +0.8 MB on the article,
 +2.5 MB on the churn page, +5.9 MB with eight frames. The known regression showed as 1,458 ms
