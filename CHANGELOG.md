@@ -338,9 +338,8 @@ as the work happened.
   the commit and the browser version. It refuses to measure unless the extension is
   loaded and its engine has stamped the page, and it carries a deliberately broken
   variant so it can prove it sees a known regression before its numbers are trusted.
-  The profile of this build is in `docs/perf/profile-4cd3119.md`; its clearest
-  finding is the per-frame cost of the scripts that run in every frame, recorded
-  there for the next profile to be measured against.
+  The profile of this build showed the per-frame cost of scripts that run in
+  every frame; its raw measurements are retained locally.
 - A Store package, and a build that knows which package it is. Chrome's Web
   Store allows an extension one narrow purpose; EyeShield, Memory Shield, Tab
   Limit and Twitch Rewind are separate goals from protection, so
