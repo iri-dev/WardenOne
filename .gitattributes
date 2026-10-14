@@ -32,6 +32,7 @@ tools/ export-ignore
 src/ export-ignore
 .github/ export-ignore
 README.md export-ignore
+# The README.md rule also matches nested files; name the icon note explicitly.
 icons/README.md export-ignore
 # Defence in depth for private maintainer notes: the gate rejects these names,
 # while export-ignore also keeps them out if somebody force-adds one.
