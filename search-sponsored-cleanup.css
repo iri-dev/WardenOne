@@ -27,6 +27,7 @@ div[aria-label="Sponsored"],
   pointer-events: none !important;
 }
 
+/* Keep related questions visible when their labels resemble ad labels. */
 :is(html, #rso, #search, #res, #center_col) .related-question-pair :is(div[aria-label="Sponsored"], div[aria-label="Ads"]) {
   display: block !important;
   visibility: visible !important;
