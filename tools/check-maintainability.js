@@ -424,6 +424,8 @@ function checkContentBuild() {
   'tools/build-settings-data.js',
   'tools/test-toast-dedupe.js',
   'tools/test-download-links.js',
+  'tools/release-changes.js',
+  'tools/test-release-changes.js',
   'tools/test-health-honesty.js',
   'tools/test-eyeshield-fetch-scope.js',
   // Compares what the extension loads against what `git archive` ships. The staged store ZIP was
@@ -719,6 +721,7 @@ checkCommand('workflow action pinning tests', ['tools/test-workflow-pinning.js']
 checkCommand('education site compatibility tests', ['tools/test-education-compat.js']);
 checkCommand('toast dedupe tests', ['tools/test-toast-dedupe.js']);
 checkCommand('download link tests', ['tools/test-download-links.js']);
+checkCommand('release change notes tests', ['tools/test-release-changes.js']);
 checkCommand('health honesty tests', ['tools/test-health-honesty.js']);
 checkCommand('EyeShield fetch scope tests', ['tools/test-eyeshield-fetch-scope.js']);
 checkCommand('engine config ownership tests', ['tools/test-engine-config-ownership.js']);
