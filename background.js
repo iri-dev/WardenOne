@@ -1174,23 +1174,42 @@ function embeddedPlayerAdTarget(rawUrl) {
   if (chainAbuseTld(target.hostname.toLowerCase())) return true;
   return /(?:^|\/)(?:click|redirect)(?:\.php)?(?:\/|$)/i.test(target.pathname);
 }
-/* A page can open a popup through a form target or a fresh frame's Window.open,
-   bypassing the player frame's MAIN-world hook. Chrome still reports the source
-   frame and first destination here. A suspicious destination is not proof of
-   abuse: require a recent signed player or overlay signal from the source tab too. */
+/* The observed auction rotates its parameter names. Its long query, many fields,
+   and one opaque payload together distinguish it from ordinary links and OAuth. */
+function popupAuctionPayload(rawUrl) {
+  let target;
+  try { target = new URL(String(rawUrl || '')); } catch (_) { return false; }
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
+  if (target.search.length < 1500) return false;
+  if (isLoginCompatibilityUrl(target.href)) return false;
+  let fields = 0;
+  let opaquePayload = false;
+  for (const [, value] of target.searchParams) {
+    fields += 1;
+    if (value.length >= 150) opaquePayload = true;
+    if (fields >= 25 && opaquePayload) return true;
+  }
+  return false;
+}
+/* Browser events catch popups that bypass in-page hooks. Embedded frames need
+   a signed player signal; top-frame auction payloads are specific enough alone. */
 async function maybeCloseSuspiciousFramePopup(details) {
   if (!details || !Number.isInteger(details.tabId) || details.tabId < 0
       || !Number.isInteger(details.sourceTabId) || details.sourceTabId < 0
-      || !Number.isInteger(details.sourceFrameId) || details.sourceFrameId <= 0) return;
+      || !Number.isInteger(details.sourceFrameId) || details.sourceFrameId < 0) return;
   let targetHost = '';
   try {
     const target = new URL(String(details.url || ''));
     if (target.protocol !== 'https:' && target.protocol !== 'http:') return;
     targetHost = target.hostname.toLowerCase();
   } catch (_) { return; }
-  if (!embeddedPlayerAdTarget(details.url)) return;
-  const signalAt = Math.max(PLAYER_GESTURE_AT[details.sourceTabId] || 0, POPUP_OVERLAY_AT[details.sourceTabId] || 0);
-  if (!signalAt || Date.now() - signalAt > 8000) return;
+  const topAuction = details.sourceFrameId === 0 && popupAuctionPayload(details.url);
+  if (!topAuction && !embeddedPlayerAdTarget(details.url)) return;
+  if (!topAuction) {
+    if (details.sourceFrameId === 0) return;
+    const signalAt = Math.max(PLAYER_GESTURE_AT[details.sourceTabId] || 0, POPUP_OVERLAY_AT[details.sourceTabId] || 0);
+    if (!signalAt || Date.now() - signalAt > 8000) return;
+  }
   let cfg = {};
   try { const stored = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {}); } catch (_) { return; }
   if (cfg.enabled === false || cfg.blockForcedPopups === false || cfg.strictPopupShield === false) return;
@@ -1208,7 +1227,7 @@ async function maybeCloseSuspiciousFramePopup(details) {
     await chrome.tabs.remove(details.tabId);
     queueHistory({
       type: 'blocked_popup',
-      detail: { matched: targetHost, why: 'An embedded frame opened a suspicious popup.' },
+      detail: { matched: targetHost, why: topAuction ? 'A page opened an ad-auction popup.' : 'An embedded frame opened a suspicious popup.' },
       url: String(details.url || '').slice(0, 300),
       at: Date.now(),
     });
