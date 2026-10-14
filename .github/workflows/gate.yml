@@ -263,22 +263,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PREV_TAG="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
-          PREV="$(git rev-parse -q --verify "$PREV_TAG" 2>/dev/null || true)"
-          if [ -n "$PREV" ] && [ "$PREV" != "$GITHUB_SHA" ]; then
-            git log --no-merges --format='- %s' "$PREV..HEAD" > changes.txt
-          else
-            # First build, or nothing moved: fall back to recent history rather
-            # than printing an empty section.
-            git log --no-merges --max-count=10 --format='- %s' > changes.txt
-          fi
-          # Cap it so a long gap does not produce a wall of text.
-          if [ "$(wc -l < changes.txt)" -gt 25 ]; then
-            EXTRA=$(( $(wc -l < changes.txt) - 25 ))
-            head -n 25 changes.txt > capped.txt
-            echo "- ...and $EXTRA more changes" >> capped.txt
-            mv capped.txt changes.txt
-          fi
-          [ -s changes.txt ] || echo '- Repackaged with no code changes' > changes.txt
+          node tools/release-changes.js "$PREV_TAG" > changes.txt
 
           {
             echo "## What's new"

@@ -24,6 +24,7 @@
 
 ### Changed
 
+- Latest build notes list commits since the prior release only when its tag belongs to the current history. After a history rewrite, they summarize the new build instead of presenting the entire repository history as new work.
 - Network list refresh avoids whole-feed line arrays and full-size copies of the blocked-domain sets. Parsed rules, cooperative yields, and the security-first stored prefix stay the same.
 - Script Shield reads only its DNR rule band during reconciliation. Detected player pages skip loading the full cosmetic list when its response would be empty; reader-defined hidden elements and filters still apply.
 - Cosmetic list refresh parses each fetched source without first combining every list and splitting the combined text into an array of lines. Rule order and exceptions stay the same, with less temporary memory needed during a refresh.
