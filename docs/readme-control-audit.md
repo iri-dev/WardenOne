@@ -15,7 +15,7 @@ Each row links to the README section that explains the behavior, sometimes as pa
 - Added descriptions for high-confidence phishing blocks, behavioural detection, risky-site mode, script drift, warnings for redirecting and shortened links, third-party logging warnings, click-to-load social embeds, tracker supercookie cleanup, De-AMP, and opt-in fraud-script blocking.
 - Clarified the distinct VirusTotal URL-content hash check and WhoisXML choices, Twitch buffering and the two rewind modes, Tab Limit, Forget Me history cleanup, notification sound controls, diagnostics, and WardenOne data erasure. Updated the OAuth provider examples.
 - Documented the popup's manual VirusTotal URL scanner separately from automatic download checks. Corrected the privacy policy's VirusTotal disclosure and removed URL credentials from automatic VirusTotal requests.
-- The 108 count remains correct. The README now uses the supplied current popup and expanded-site screenshots. Other feature screenshots may still show earlier builds.
+- The 108 count remains correct. The popup and Health images were recaptured directly from the extension, and new Settings, arrangement, privacy, fingerprinting and Resource Saver images accompany their descriptions. Other feature screenshots may still show earlier builds.
 
 ## Switch and control inventory
 
@@ -297,4 +297,12 @@ These are the page IDs in `settings.js`, including the two overview subviews tha
 
 ## Verification
 
-The protection count test checks the registry against popup switches and all published totals. The new README audit test checks the 141-entry inventory, 21 Settings controls, 23 Settings pages, UI labels, and README links. Download and privacy tests cover the VirusTotal paths. The full maintainability gate passed with 279 suites. These checks do not prove all protections work against live sites, and the screenshots have not been recaptured.
+The protection count test checks the registry against popup switches and all published totals. The new README audit test checks the 141-entry inventory, 21 Settings controls, 23 Settings pages, UI labels, and README links. Download and privacy tests cover the VirusTotal paths. The full maintainability gate passed with 279 suites. These checks do not prove all protections work against live sites.
+
+## Screenshot refresh
+
+Seven images were captured from the actual extension at `4b5892a41cb5b9aba79cbd9d02268d06a00b0cd8` in a disposable Edge 150.0.4078.48 profile on 16 October 2026. The popup used `example.com`; Settings used the default Recommended configuration. The fresh profile had built-in rules active and no downloaded-list timestamp, which the Health images show. No protection counts or events were fabricated.
+
+The popup captures use a 348 CSS-pixel width at 2× resolution. Settings captures use a 1280 CSS-pixel viewport at 1.5× resolution; Resource Saver and fingerprinting focus on complete main panels. Browser chrome and scrollbars are excluded. The lossless WebP copies preserve the source pixels. Every previously linked feature image remains available, with the two poor popup images replaced in place and five new feature images added.
+
+A local Markdown preview loaded every image. The default view has 23 visible feature images, compared with 18 in the original README. The popup, expanded Health, Settings overview, section arrangement and Resource Saver captures were inspected at their README display sizes.
