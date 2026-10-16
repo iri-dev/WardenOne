@@ -1538,12 +1538,40 @@ asks first (mouse or keyboard).
 The Hidden elements page lists saved removals so you can bring back one item without clearing the
 others.
 
+Start **Element Zapper** from the popup or WardenOne's right-click menu. Point at the unwanted
+element and check the outline before clicking. Use `↑` to select a larger containing element or
+`↓` to narrow it down. Keep clicking to hide more items, then press **Done** or `Esc` to close
+the tool. `Ctrl+Z` restores the most recent removal while that page is still open.
+
+**Before:** the newsletter card takes up the right side of this example page.
+
 <p align="center">
-  <a href="docs/screenshots/13-element-zapper.webp">
-    <img src="docs/screenshots/13-element-zapper.webp" alt="The Element Zapper outlines whatever the pointer is over and explains that each removal is remembered for this site" width="900">
+  <a href="docs/screenshots/16-element-zapper-before-2026-10.webp">
+    <img src="docs/screenshots/16-element-zapper-before-2026-10.webp" alt="Before using Element Zapper: an article shares the page with a purple newsletter signup card" width="900">
   </a>
 </p>
-<p align="center"><em>Point, click, gone. It's remembered for that site, and <code>Ctrl+Z</code> still works after the tool closes.</em></p>
+
+**After:** one click hides the card, and this page's layout gives the article the available width.
+The removal stays in place after reloading and only changes what you see in your own browser.
+
+<p align="center">
+  <a href="docs/screenshots/16-element-zapper-after-2026-10.webp">
+    <img src="docs/screenshots/16-element-zapper-after-2026-10.webp" alt="After using Element Zapper on the same page: the newsletter card is hidden and the article fills the available width" width="900">
+  </a>
+</p>
+<p align="center"><em>The same demonstration page, captured before and after using WardenOne's actual Element Zapper.</em></p>
+
+<details>
+<summary>See the selection outline and controls</summary>
+
+<p align="center">
+  <a href="docs/screenshots/16-element-zapper-select-2026-10.webp">
+    <img src="docs/screenshots/16-element-zapper-select-2026-10.webp" alt="Element Zapper outlines the newsletter card and shows its selection, keyboard and undo controls" width="900">
+  </a>
+</p>
+<p align="center"><em>The outline shows what your next click will hide. Saved removals can be restored individually from Hidden elements.</em></p>
+
+</details>
 
 ## Cryptojacking protection
 
