@@ -243,6 +243,25 @@
   .link-card p { margin: 0; color: var(--ink-soft); font-size: 13px; }
   .link-card .chev { margin-left: auto; color: var(--ink-faint); flex: none; }
 
+  .feature-guide { margin-top: 30px; }
+  .feature-guide h3 { margin: 0 0 8px; font: 900 24px/1.2 var(--display); }
+  .guide-catalog > summary { padding: 12px 0; color: var(--plum-deep); font-weight: 900; cursor: pointer; }
+  .guide-intro, .guide-results { color: var(--ink-soft); font-size: 13.5px; }
+  .guide-search-label { display: block; margin: 18px 0 6px; font-weight: 900; }
+  .guide-search { width: 100%; min-height: 46px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; }
+  .guide-search:focus-visible, .guide-group a:focus-visible, .guide-group summary:focus-visible { outline: 3px solid var(--plum); outline-offset: 3px; }
+  .guide-group { margin: 10px 0; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); overflow: hidden; }
+  .guide-group summary { padding: 15px 18px; cursor: pointer; color: var(--plum-deep); font-weight: 900; }
+  .guide-group summary small { display: block; margin: 3px 0 0 18px; color: var(--ink-soft); font: 400 13px/1.4 var(--body); }
+  .guide-list { list-style: none; padding: 0 18px 8px; margin: 0; }
+  .guide-item { padding: 14px 0; border-top: 1px solid var(--line); }
+  .guide-item-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-weight: 900; }
+  .guide-item p { margin: 5px 0 0; color: var(--ink-soft); font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
+  .guide-tag { font: 800 10px/1.3 var(--body); padding: 3px 7px; border-radius: 20px; background: var(--paper-2); color: var(--plum); border: 1px solid var(--line); }
+  .guide-links { display: flex; gap: 8px 16px; flex-wrap: wrap; margin-top: 8px; }
+  .guide-links a { color: var(--plum-deep); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
+  .guide-group[hidden], .guide-item[hidden] { display: none; }
+
   .site-layout-choice { margin: 24px 0; }
   .site-layout-choice h3 { margin: 0 0 4px; font: 900 19px/1.2 var(--display); color: var(--ink); }
   .site-layout-choice > p { margin: 0; color: var(--ink-soft); font-size: 13.5px; }
@@ -505,7 +524,7 @@
           <div>
             <div class="eyebrow"><span class="pip"></span> Installed and ready</div>
             <h1>Welcome to <span class="accent">WardenOne</span>.</h1>
-            <p class="lead">WardenOne is now protecting this browser. Take a minute to pin it, switch on the recommended protection, and see everything it covers.</p>
+            <p class="lead">Choose your protection, pin the controls, and explore what WardenOne can do. Core protections start on fresh installs; optional tools and stricter settings are yours to choose.</p>
             <div class="byline">
               <span>Built by <a href="https://iri.dev" target="_blank" rel="noopener noreferrer">iri.dev</a></span>
               <span class="sep" aria-hidden="true"></span>
@@ -578,13 +597,14 @@
       <!-- ===== Scene 3: Protection ===== -->
       <section class="scene" data-scene="protect" hidden tabindex="-1">
         <div class="eyebrow"><span class="pip"></span> Step 2 of 3 &middot; Protection</div>
-        <h2>Comprehensive protection, on by default.</h2>
-        <p class="lead">WardenOne runs 40+ always-on protections, and can check high-risk activity against up to 8 professional threat feeds you enable &mdash; with no telemetry, and without breaking everyday sign-ins.</p>
+        <h2>Choose your protection.</h2>
+        <p class="lead">Core security starts on fresh installs. WardenOne offers <span id="onboarding-total">108</span> protections, plus tools for privacy, page cleanup and performance. Optional reputation providers add outside checks when you enable them.</p>
         <div class="stats">
-          <div class="stat"><b>40+</b><span>active guards, always on</span></div>
-          <div class="stat"><b>8</b><span>threat-intel feeds available</span></div>
-          <div class="stat"><b>0</b><span>trackers &middot; 0 telemetry</span></div>
+          <div class="stat"><b id="onboarding-total-stat">108</b><span>protections available</span></div>
+          <div class="stat"><b>7</b><span>optional reputation providers</span></div>
+          <div class="stat"><b>0</b><span>WardenOne telemetry</span></div>
         </div>
+        <p class="guide-intro"><span id="onboarding-switchable">105</span> protections have their own switch; <span id="onboarding-watch-only">3</span> watch-only protections record activity. These totals describe available features, not a diagnosis of this page. Most work locally; optional provider checks contact the services you choose. <a href="api-keys.html"><u>Providers and keys</u></a> &middot; <a href="settings.html#page=about"><u>Privacy and project information</u></a></p>
         <div class="feature-grid">
           <article class="feat g1">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7c4 1 10 1 14 0M5 12c4 1 10 1 14 0M5 17c4 1 10 1 14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m16 4 4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0"/></svg></div>
@@ -593,8 +613,8 @@
           </article>
           <article class="feat g2">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <h3>Download Guard</h3>
-            <p>Scores files before they run and skips past fake download pages.</p>
+            <h3>Download Shield &amp; File Shield</h3>
+            <p>Grades browser downloads by context and reputation. File Shield separately inspects a local file you choose, without running or uploading it.</p>
           </article>
           <article class="feat g3">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8h11a4 4 0 0 1 0 8H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="m8 4-4 4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -604,7 +624,7 @@
           <article class="feat g4">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="8" cy="14" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="m10.2 11.8 8-8M16 6l2 2M13.5 8.5l1.6 1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
             <h3>Session &amp; token guard</h3>
-            <p>Stops token theft and keeps your logins from being lifted.</p>
+            <p>Checks session-token requests, skimmers, payment forms, clipboard tricks and risky OAuth grants.</p>
           </article>
           <article class="feat g5">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.6" stroke="currentColor" stroke-width="1.8"/></svg></div>
@@ -619,7 +639,7 @@
           <article class="feat g7">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.8"/></svg></div>
             <h3>Fingerprint shield</h3>
-            <p>Blurs the details sites measure to recognise you &mdash; canvas, GPU, fonts, hardware.</p>
+            <p>Blocks known fingerprinting scripts and detects probes. Active noise is optional and can affect graphics or audio.</p>
           </article>
           <article class="feat g8">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 20h8M12 17v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
@@ -633,7 +653,7 @@
           </article>
         </div>
 
-        <div class="more-head">Everything else WardenOne covers</div>
+        <div class="more-head">More protection highlights</div>
         <div class="cover-frame">
         <div class="cover-wrap" tabindex="0" role="group" aria-label="Additional protections">
           <div class="cover-grid">
@@ -648,7 +668,7 @@
             <div class="cover"><span class="d"></span><span>Back-button traps stopped</span></div>
             <div class="cover"><span class="d"></span><span>Link-shortener checks</span></div>
             <div class="cover"><span class="d"></span><span>IP-grabber &amp; logger blocking</span></div>
-            <div class="cover"><span class="d"></span><span>WebRTC IP-leak shield</span></div>
+            <div class="cover"><span class="d"></span><span>IP lookup blocking; WebRTC hardening <span class="optin">opt-in</span></span></div>
             <div class="cover"><span class="d a"></span><span>Paste-to-terminal scam guard</span></div>
             <div class="cover"><span class="d a"></span><span>Clipboard-swap guard</span></div>
             <div class="cover"><span class="d a"></span><span>Form-trap detector</span></div>
@@ -658,7 +678,7 @@
             <div class="cover"><span class="d b"></span><span>Background-report log</span></div>
             <div class="cover"><span class="d b"></span><span>Hardware-access visibility</span></div>
             <div class="cover"><span class="d b"></span><span>Full-screen cookie walls <span class="optin">opt-in</span></span></div>
-            <div class="cover"><span class="d b"></span><span>Forget-me-when-I-leave</span></div>
+            <div class="cover"><span class="d b"></span><span>Forget-me-when-I-leave <span class="optin">opt-in</span></span></div>
             <div class="cover"><span class="d b"></span><span>Breach &amp; password checks <span class="optin">opt-in</span></span></div>
             <div class="cover"><span class="d g"></span><span>Certificate &amp; TLS-error guard</span></div>
             <div class="cover"><span class="d g"></span><span>Stale-login age checks</span></div>
@@ -673,11 +693,13 @@
         </div>
         </div>
 
+        <div class="note">There is more to explore: Element Zapper, GIF pausing, WebGL controls, streaming tools, section arrangement, and every protection switch are in the full guide on the next step. <button class="btn ghost" id="explore-features" type="button">Explore every feature &rarr;</button></div>
+
         <div class="scene-actions">
           <button class="btn primary" id="apply" type="button">Turn on recommended protection</button>
           <button class="btn" id="apply-max" type="button">Maximum privacy</button>
         </div>
-        <div class="note" id="maxprivacy-note"><b>Recommended</b> is the safe default. <b>Maximum privacy</b> also turns on the hardened set &mdash; active anti&#8209;fingerprinting, first&#8209;party tracker blocking, breach &amp; password checks, clipboard guard, and referrer/AMP trimming. Strongest protection, but it <b>can affect some sites</b> (canvas&#8209;heavy pages, some first&#8209;party analytics). You can undo any of it from the popup anytime.</div>
+        <div class="note" id="maxprivacy-note"><b>Recommended</b> applies the core security baseline. <b>Maximum privacy</b> also enables fingerprint noise, fraud and bot-check script blocking, first-party tracker blocking, breach checks, clipboard protection, WebRTC hardening, Client Hint reduction, referrer protection, tracker cache protection and De-AMP. These choices <b>can affect calls, screen sharing, graphics, sign-ins or purchases</b>. Switching back to Recommended preserves advanced choices you already enabled; turn individual settings off in <a href="settings.html#page=privacy"><u>Settings</u></a> to undo them.</div>
 
         <div class="mode-row" role="radiogroup" aria-label="Notification style">
           <button class="seg active" id="normal-mode" type="button" role="radio" aria-checked="true">
@@ -689,14 +711,14 @@
             <span>Protection keeps running; non-critical popups and badges stay hidden.</span>
           </button>
         </div>
-        <div class="note" id="mode-note">Login compatibility stays on and your saved keys, allowlists, and trusted download sites are left untouched. You can change any of this later from the popup.</div>
+        <div class="note" id="mode-note">Your saved keys, allowlists, trusted download sites and other choices are preserved. Review or change them in Settings whenever you need to.</div>
       </section>
 
       <!-- ===== Scene 4: Explore / Finish ===== -->
       <section class="scene" data-scene="explore" hidden tabindex="-1">
         <div class="eyebrow"><span class="pip"></span> Step 3 of 3 &middot; Explore</div>
         <h2>You're all set.</h2>
-        <p class="lead">Here is what you'll see when you open WardenOne from the toolbar.</p>
+        <p class="lead">Open the popup for quick actions, or Settings for the full controls. Browse the complete feature guide below whenever you want to learn more.</p>
         <div class="site-layout-choice" aria-labelledby="onboarding-site-card-title">
           <h3 id="onboarding-site-card-title">Choose your site card</h3>
           <p>The top card shows what WardenOne has done on the website you're visiting. Pick the view you prefer.</p>
@@ -721,6 +743,16 @@
         </div>
         <p class="lead">Open any of these whenever you need them.</p>
         <div class="link-grid">
+          <a class="link-card" href="settings.html#page=overview">
+            <span class="ic" aria-hidden="true">&#9881;</span>
+            <span class="meta"><h3>Open Settings</h3><p>Search every control, star favorites, review changes and manage site exceptions.</p></span>
+            <span class="chev" aria-hidden="true">&rarr;</span>
+          </a>
+          <a class="link-card" href="settings.html#page=arrange">
+            <span class="ic" aria-hidden="true">&#8645;</span>
+            <span class="meta"><h3>Arrange sections</h3><p>Move popup sections into your preferred order without changing their switches.</p></span>
+            <span class="chev" aria-hidden="true">&rarr;</span>
+          </a>
           <button class="link-card" id="open-popup-explore" type="button">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
             <span class="meta"><h3>Open controls</h3><p>Quick allowlists, scans, EyeShield, and the on/off switches.</p></span>
@@ -742,7 +774,19 @@
             <span class="chev" aria-hidden="true">&rarr;</span>
           </a>
         </div>
-        <div class="note">Tip: open a normal site and check the popup's scan. If a page ever breaks, allowlist it from the popup.</div>
+        <div class="feature-guide" id="feature-guide" aria-labelledby="feature-guide-title">
+          <h3 id="feature-guide-title">Explore every protection and tool</h3>
+          <p class="guide-intro">Open a group to see what each feature does and where to find it. Default labels describe a fresh install; your saved choices may differ. Optional controls can change how sites work, so choose them individually.</p>
+          <details class="guide-catalog" id="feature-catalog">
+          <summary>Browse the full feature guide</summary>
+          <label class="guide-search-label" for="feature-search">Find a feature</label>
+          <input class="guide-search" id="feature-search" type="search" placeholder="Try GIFs, WebGL, Zapper, Twitch, backup..." autocomplete="off" aria-controls="feature-groups">
+          <p class="guide-results" id="feature-results" role="status" aria-live="polite"></p>
+          <div id="feature-groups"></div>
+          </details>
+          <noscript><p>Open <a href="settings.html">Settings</a> or the <a href="https://github.com/iri-dev/WardenOne#readme" target="_blank" rel="noopener noreferrer">full user guide</a> to browse the features.</p></noscript>
+        </div>
+        <div class="note">If a page breaks, use its Site Dashboard to pause protection or adjust that site's switches. Settings &rarr; Sites &amp; exceptions lists your saved choices. Check Protection Health for diagnostics before using Verify and Repair.</div>
       </section>
 
       <!-- ===== Done state ===== -->
@@ -750,8 +794,8 @@
         <div class="done-badge">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
-        <h2>You're protected.</h2>
-        <p class="lead" style="text-align:center;">WardenOne runs in the background. Open it from the toolbar any time to review activity or change settings.</p>
+        <h2>Setup saved.</h2>
+        <p class="lead" style="text-align:center;">Open the controls to check the master switch, review activity, or change settings. Finishing this guide preserves the protection choices you made.</p>
         <div class="hero-actions" style="justify-content:center;">
           <button class="btn primary" id="open-popup-done" type="button">Open controls</button>
           <a class="btn ghost" href="history.html">See activity</a>
@@ -774,7 +818,7 @@
           </svg>
         </div>
         <h2>You can close this tab now.</h2>
-        <p class="lead" style="text-align:center;">Setup is complete and your settings are saved. WardenOne keeps protecting your browser in the background &mdash; it's safe to close this tab.</p>
+        <p class="lead" style="text-align:center;">Setup is complete and your choices are saved. Open WardenOne from the toolbar whenever you want to review protection or use a tool.</p>
         <div class="hero-actions" style="justify-content:center;">
           <button class="btn primary" id="close-tab" type="button">Close this tab</button>
           <button class="btn ghost" id="open-popup-closed" type="button">Open controls</button>
@@ -795,6 +839,7 @@
   </div>
 
   <script src="config-lock.js"></script>
+  <script src="settings-data.js"></script>
   <script src="onboarding.js"></script>
 </body>
 </html>

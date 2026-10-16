@@ -76,10 +76,11 @@ reporting a problem; the version stays the same between rolling builds.
 
 ## First run
 
-Pick **Recommended** if you want it to work without breaking sites. **Maximum Privacy** is
-stricter. It turns on the extra fingerprinting, first-party tracking, breach, clipboard, referrer
-and link protections, so a few sites might act a bit differently. You can change all of it later
-anyway.
+Pick **Recommended** for the core security baseline. **Maximum Privacy** adds fingerprint noise,
+fraud and bot-check script blocking, first-party tracker blocking, breach and clipboard checks,
+WebRTC hardening, and header/link protections. These can affect calls, screen sharing, graphics,
+sign-ins or purchases. Choosing Recommended again preserves advanced choices you already enabled;
+use the individual switches in Settings to undo them.
 
 Then pick **Normal** notifications or **Silent mode**. Silent mode still protects you, it just
 hides the routine pop-ups and badges. Everything's still in the Notification Centre if you want
@@ -88,19 +89,27 @@ to look.
 The on-page badge shows selected page protections, such as blocked pop-ups and overlays. It does
 not count every network rule; open WardenOne's Site Dashboard in the toolbar for network blocks.
 
+The final setup step links Settings and section arrangement, and has a searchable guide to every
+protection, popup control and tool. Open a group or search for something like GIFs, WebGL, Zapper
+or backup to read what it does, see its fresh-install default, and find its controls.
+
 <p align="center">
-  <a href="docs/screenshots/11-onboarding-protection.webp">
-    <img src="docs/screenshots/11-onboarding-protection.webp" alt="WardenOne onboarding explains its default protection and the available threat-intelligence feeds" width="900">
+  <a href="docs/screenshots/11-onboarding-feature-guide-2026-10.webp">
+    <img src="docs/screenshots/11-onboarding-feature-guide-2026-10.webp" alt="Onboarding's full feature guide finds GIF pausing, explains its default and links directly to Settings" width="900">
   </a>
 </p>
-<p align="center"><em>First run. What's switched on and what never leaves your device.</em></p>
+<p align="center"><em>The full feature guide is searchable, with explanations, default labels and links to the controls.</em></p>
 
 <details>
 <summary><strong>See the complete first-run journey</strong></summary>
 
 <p align="center">
-  <a href="docs/screenshots/11-onboarding-welcome.webp"><img src="docs/screenshots/11-onboarding-welcome.webp" alt="Welcome to WardenOne, with no account and no telemetry" width="440"></a>
-  <a href="docs/screenshots/11-onboarding-explore.webp"><img src="docs/screenshots/11-onboarding-explore.webp" alt="The final onboarding step linking WardenOne's controls, local activity, permissions and network guide" width="440"></a>
+  <a href="docs/screenshots/11-onboarding-welcome-2026-10.webp"><img src="docs/screenshots/11-onboarding-welcome-2026-10.webp" alt="Welcome to WardenOne, with theme choices, no account and no telemetry" width="440"></a>
+  <a href="docs/screenshots/11-onboarding-explore-2026-10.webp"><img src="docs/screenshots/11-onboarding-explore-2026-10.webp" alt="The final onboarding step shows site-card previews, Settings, section arrangement and the full feature guide" width="440"></a>
+</p>
+
+<p align="center">
+  <a href="docs/screenshots/11-onboarding-protection-2026-10.webp"><img src="docs/screenshots/11-onboarding-protection-2026-10.webp" alt="The protection step explains the 108 available protections, seven optional providers and the compatibility choices in each preset" width="900"></a>
 </p>
 
 </details>

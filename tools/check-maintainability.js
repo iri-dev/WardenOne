@@ -408,6 +408,7 @@ function checkContentBuild() {
   'tools/test-arrange-drag.js',
   'tools/test-onboarding-site-card.js',
   'tools/test-onboarding-pin-guidance.js',
+  'tools/test-onboarding-coverage.js',
   'tools/test-settings-change-log.js',
   'tools/test-settings-page.js',
   'tools/test-security-scan-coverage.js',
@@ -714,6 +715,7 @@ checkCommand('site card fold tests', ['tools/test-site-card-fold.js']);
 checkCommand('arrange drag tests', ['tools/test-arrange-drag.js']);
 checkCommand('onboarding site card tests', ['tools/test-onboarding-site-card.js']);
 checkCommand('onboarding pin guidance tests', ['tools/test-onboarding-pin-guidance.js']);
+checkCommand('onboarding feature coverage tests', ['tools/test-onboarding-coverage.js']);
 checkCommand('settings change log tests', ['tools/test-settings-change-log.js']);
 checkCommand('settings-data.js is current with the popup and the worker', ['tools/build-settings-data.js', '--check']);
 checkCommand('Settings page tests', ['tools/test-settings-page.js']);
