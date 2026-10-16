@@ -50,6 +50,18 @@
 
 ### Fixed
 
+- Element Zapper guidance now describes continuous selection, Done and Escape, Undo last, and the page-lifetime Ctrl+Z shortcut.
+- Protection rule reconciliation now merges asynchronously prepared rule changes before writing to the browser, with independent failure fallback and a bounded wait for stalled owners.
+
+- Consent and tracking cookie cleanup now requires an exact ad-vendor hostname or a real subdomain before removing generic cookies such as `uid` and `c`, preserving account state on suffix lookalikes.
+- Privacy Self-Test grades native WebRTC addresses against the optional hardening switch, its dependency, master state and site exceptions. IP lookup endpoint blocking is listed separately as untested.
+- The engine now honours the saved WebRTC hardening choice instead of forcing it off. It remains off by default and requires IP lookup blocking; the existing media-site exemptions remain in place.
+- Restored individual site exceptions by loading the shared hostname matcher through a distinct asset for the isolated bridge. Both world copies are generated from the same source and checked for exact equality.
+
+- Site erase now coordinates with pending Settings saves and records its changes so an older private-window save cannot restore erased site exceptions.
+- Optional fingerprint noise keeps the browser's opaque media device IDs usable for camera and microphone selection while hiding device labels and group IDs.
+- Script Shield mode changes now run in request order across the mode picker, global JavaScript controls and site controls. A delayed older change can no longer remove a newer Smart mode selection; failed rule updates are reported.
+
 - Recognised ad-auction popups opened from a top-level page are closed before their redirect chain can create a WardenOne warning tab. Ordinary links and sign-in popups remain available.
 - A click on plain page (text, a heading, empty space) can no longer open a popup to another site. Popunder scripts that spend the first click anywhere on a page, such as Pawchive's Clickadu loader, are refused before their tab opens, so the ad tab no longer flashes open and closed. Links, buttons and other controls keep their one popup per click.
 - Ad-auction popups are now refused inside the page before their tab exists, instead of being closed by the worker after it had already opened.

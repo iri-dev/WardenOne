@@ -153,8 +153,10 @@ function buildChecks(data) {
       return { verdict: 'protected', why: 'The page was given no local addresses, while the same probe without WardenOne found ' + bareIps.length + '.' };
     }
     if (!localIps.length) return { verdict: 'minimal', why: 'No local address reached the page. Nothing without WardenOne either, so this browser was not offering them here.' };
-    if (!set.blockWebRTCLeak) return { verdict: 'design', why: 'The page read ' + localIps.length + ' local address(es). WebRTC leak protection is switched off.' };
-    return { verdict: 'exposed', why: 'The page read ' + localIps.length + ' local address(es) with WebRTC leak protection on.' };
+    if (set.enabled === false || set.allowlisted) return { verdict: 'design', why: 'The page read ' + localIps.length + ' local address(es). WardenOne is off or paused on this site.' };
+    if (!set.blockWebRTCLeak) return { verdict: 'design', why: 'The page read ' + localIps.length + ' local address(es). Native WebRTC hardening is inactive because its IP lookup blocking dependency is off.' };
+    if (set.blockSuspiciousWebRTC !== true) return { verdict: 'design', why: 'The page read ' + localIps.length + ' local address(es). Native WebRTC hardening is off; IP lookup blocking leaves native WebRTC available for calls.' };
+    return { verdict: 'exposed', why: 'The page read ' + localIps.length + ' local address(es) with native WebRTC hardening selected.' };
   })(), { 'addresses the page saw': localIps.length, 'without WardenOne': bareIps.length });
 
   add('Battery level', (function () {
@@ -213,6 +215,9 @@ function buildChecks(data) {
   })(), { 'utm removed': String(!!(s.historyParams && s.historyParams.utmGone)) });
 
   /* ---- honestly out of reach ---------------------------------------------- */
+  add('IP lookup services', { verdict: 'untested',
+    why: 'The local WebRTC probe does not test requests to IP lookup services. This test contacts no external endpoint, so it cannot confirm their blocking.' }, null);
+
   add('Referrer sent to another site', { verdict: 'untested',
     why: 'What a third party receives can only be measured by a third party. WardenOne has no server to ask, and reporting a result from what this page can see would be describing something else entirely.' },
   { 'referrer visible to this page': String(!!(s.page && s.page.referrerPresent)) });

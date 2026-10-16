@@ -17,6 +17,8 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
+assert.strictEqual(fs.readFileSync(path.join(ROOT, 'domain-utils-isolated.js'), 'utf8'), DOMAIN,
+  'both worlds use the canonical matching rules');
 const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const ANTI = fs.readFileSync(path.join(ROOT, 'anti-redirect.js'), 'utf8');
 const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
@@ -122,7 +124,9 @@ assert.deepStrictEqual(antiEntry.js.slice(-2), ['domain-utils.js', 'anti-redirec
 const bridgeEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('bridge.js'));
 assert(bridgeEntry, 'bridge content-script entry is missing');
 assert.deepStrictEqual(bridgeEntry.js.slice(0, 3),
-  ['domain-utils.js', 'bridge.js', 'frame-image-logger.js']);
+  ['domain-utils-isolated.js', 'bridge.js', 'frame-image-logger.js']);
+assert.strictEqual(bridgeEntry.world, 'ISOLATED');
+assert.strictEqual(antiEntry.world, 'MAIN');
 
 // Repair no longer injects files into live tabs (it reloads them, SEC-03), so the manifest is
 // the only place the shared identity helper's ordering is decided.

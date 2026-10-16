@@ -149,6 +149,18 @@ check('the classifier can say yes to something', disposable('_ga', 'example.com'
   check('c on an adtech host is removed', disposable('c', 'crwdcntrl.net') === true);
   check('c on an ordinary site is kept', disposable('c', 'blog.example') === false);
   check('consent on an ordinary site is kept', disposable('consent', 'shop.example') === false);
+  const generic = ['c', 'uid', 'uids', 'ug', 'gckp', 'consent', 'cookie_consent'];
+  for (const domain of ['adnxs.net', '.ADNXS.NET', 'sync.adnxs.net', 'doubleclick.com',
+    'doubleclick.net', 'ads.doubleclick.net', 'crwdcntrl.net', 'sync.criteo.com']) {
+    for (const name of generic) check('generic vendor cookie removed: ' + name + ' on ' + domain,
+      disposable(name, domain) === true);
+  }
+  for (const domain of ['notadnxs.net', '.notadnxs.net', 'notdoubleclick.com', 'returndoubleclick.net',
+    'sync.notadnxs.net', 'notcrwdcntrl.net', 'adnxs.net.shop.example', 'doubleclick.com.example',
+    'adnxs.netx', 'doubleclick.net.io']) {
+    for (const name of generic) check('generic lookalike cookie kept: ' + name + ' on ' + domain,
+      disposable(name, domain) === false);
+  }
 }
 
 // ---------------------------------------------------------------------------

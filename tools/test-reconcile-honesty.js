@@ -59,7 +59,7 @@ const HEALTH_BLOCK = between('  let enabledRulesets = null;', '  // The tab the 
 
 /* the applier names the orchestrator runs, read from the source rather than restated. Each is
    handed over as a thunk since BUG-08, so one that throws fails alone. */
-const RUN_CALLS = [...ORCHESTRATOR.matchAll(/run\('([A-Za-z]+)', \(\) => ([A-Za-z]+)\(/g)].map((m) => ({ name: m[1], fn: m[2] }));
+const RUN_CALLS = [...ORCHESTRATOR.matchAll(/run\('([A-Za-z]+)', \((?:submitRules)?\) => ([A-Za-z]+)\(/g)].map((m) => ({ name: m[1], fn: m[2] }));
 
 function fakeSession() {
   const store = {};

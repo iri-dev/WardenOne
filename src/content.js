@@ -888,7 +888,7 @@
       blockScreenCapture:gate(cfg.blockScreenCapture),
       blockGeolocation:gate(!0===cfg.blockGeolocation),
       blockAutoplayMedia:gate(cfg.blockAutoplayMedia),
-      blockSuspiciousWebRTC:!1,
+      blockSuspiciousWebRTC:gate(cfg.blockWebRTCLeak&&!0===cfg.blockSuspiciousWebRTC),
       showBadge:cfg.showBadge,
       showDownloadBar:cfg.showDownloadBar,
       showToasts:cfg.showToasts,
@@ -17691,11 +17691,12 @@
         if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices){
           const origEnum=navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
           navigator.mediaDevices.enumerateDevices=function(){
-            return Promise.resolve(origEnum()).then(list=>(list||[]).map((d,
-            i)=>({
+            /* Device IDs are also camera/microphone selection constraints. Keep the
+               browser's opaque IDs usable while hiding descriptive metadata. */
+            return Promise.resolve(origEnum()).then(list=>(list||[]).map(d=>({
               kind:String(d&&d.kind||""),
               label:"",
-              deviceId:String(d&&d.kind||"device")+"-"+i,
+              deviceId:String(d&&d.deviceId||""),
               groupId:"",
               toJSON(){
                 return{
