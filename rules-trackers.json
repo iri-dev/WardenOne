@@ -1190,5 +1190,67 @@
         "other"
       ]
     }
+  },
+  {
+    "id": 47,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "phonydepth.com",
+        "armvupzc.in"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 48,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "dnhfi5nn2dt67.cloudfront.net",
+        "blockadsnot.com",
+        "xlxchtas.com",
+        "ejfiynnbu.com",
+        "gillyspencie.com",
+        "briggie.org"
+      ],
+      "initiatorDomains": [
+        "playmogo.com"
+      ],
+      "resourceTypes": [
+        "script"
+      ]
+    }
+  },
+  {
+    "id": 49,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "npilkasacdu.in",
+        "excavatenearbywand.com",
+        "phonydepth.com",
+        "armvupzc.in",
+        "onxgaladrj.in"
+      ],
+      "initiatorDomains": [
+        "pawchive.pw"
+      ],
+      "resourceTypes": [
+        "script",
+        "sub_frame"
+      ]
+    }
   }
 ]

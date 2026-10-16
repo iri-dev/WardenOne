@@ -14,6 +14,22 @@ is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 machine metadata, video investigations and DevTools traces stay local; this page records
 the conclusions needed to understand release performance decisions.
 
+## IDN helper scope (2026-10-13)
+
+The phishing detector's Unicode lookalike table now loads in the top-page engine and worker.
+It was previously part of `domain-utils.js`, which is injected into both worlds of every child
+frame. The shared helper shrank from 26,927 to 8,721 bytes, removing 18,206 bytes of script
+source from each frame injection. The phishing differential and Unicode data checks still cover
+encoded lookalikes and ordinary IDNs. The package budget permits one additional top-only script
+entry; its script-byte and overall package limits are unchanged.
+
+In two Edge 150 comparisons (three cold and three warm runs per build in each order), the
+eight-frame fixture retained 0.01-0.03 MB less page JavaScript heap after GC with the new scope.
+The article fixture showed no heap difference. Main-thread task time moved in both directions
+between runs, so these measurements do not establish a page-level speedup. A separate Node V8
+check across 80 fresh contexts retained 0.506 MB with the old shared helper and 0.163 MB with
+the reduced one after GC. Neither heap measure is a Chrome Task Manager process MB estimate.
+
 ## Iframe image logger observer (2026-10-11)
 
 `node tools/perf-profile.js --paired-logger` measures the image logger warning switch with the

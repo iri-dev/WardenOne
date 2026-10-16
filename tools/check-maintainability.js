@@ -295,6 +295,7 @@ function checkContentBuild() {
   'tools/test-smart-script-recovery.js',
   'tools/test-script-popup-shield.js',
   'tools/test-frame-popup-backstop.js',
+  'tools/test-page-notice-carry.js',
   'tools/test-site-compatibility.js',
   'tools/test-streaming-compatibility.js',
   'tools/test-token-exfil-trust.js',
@@ -453,6 +454,7 @@ function checkContentBuild() {
   'consent-reject.js',
   'consent-wall.js',
   'domain-utils.js',
+  'idn-utils.js',
   'psl-private.js',
   'build-profile.js',
   'build-update.js',
@@ -801,6 +803,8 @@ checkCommand('runtime idempotence tests', ['tools/test-runtime-idempotence.js'])
 checkCommand('anti redirect tests', ['tools/test-anti-redirect.js']);
 checkCommand('frame-driven redirect tests', ['tools/test-frame-redirect-guard.js']);
 checkCommand('frame popup backstop tests', ['tools/test-frame-popup-backstop.js']);
+checkCommand('page notice carry-over tests', ['tools/test-page-notice-carry.js']);
+checkCommand('targeted ad resource notice tests', ['tools/test-targeted-ad-notices.js']);
 checkCommand('beacon logging tests', ['tools/test-beacon-logging.js']);
 checkCommand('clear-on-leave tests', ['tools/test-clear-on-leave.js']);
 checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js']);

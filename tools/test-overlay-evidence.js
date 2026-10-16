@@ -135,6 +135,28 @@ const el = (o) => Object.assign({ className: '', id: '', attrs: '', text: '' }, 
   });
   check('a large sidebar is not removed for containing the words',
     strongAdEvidence(sidebar) === false);
+  const narrowRail = el({
+    width: 400, height: 900,
+    className: 'right-sidebar',
+    text: 'Sponsored tournaments and Download now news',
+  });
+  check('a tall narrow sidebar is not removed for its article text',
+    strongAdEvidence(narrowRail) === false);
+  const compactRail = Object.assign({}, narrowRail, { width: 250, height: 700 });
+  check('a compact tall sidebar is not removed for its article text',
+    strongAdEvidence(compactRail) === false);
+  check('an explicitly named ad rail is still removed',
+    strongAdEvidence(Object.assign({}, narrowRail, { className: 'advertisement-rail' })) === true);
+}());
+
+(function logiclyComponentPalette() {
+  const palette = el({
+    width: 250, height: 700,
+    className: 'ui push left visible sidebar',
+    text: 'Input Controls Toggle Switch Push Button Clock Output Controls Light Bulb Logic Gates',
+  });
+  check('a narrow component palette with a Push Button is not a notification prompt',
+    strongAdEvidence(palette) === false);
 }());
 
 // --- what must still be caught ---------------------------------------------
@@ -144,6 +166,9 @@ const el = (o) => Object.assign({ className: '', id: '', attrs: '', text: '' }, 
      underneath to lose. These are the things the cleaner exists for. */
   const pushNag = el({ width: 380, height: 160, text: 'Allow notifications to subscribe for updates' });
   check('a small push-notification nag is still removed', strongAdEvidence(pushNag) === true);
+
+  const pushPrompt = el({ width: 300, height: 120, text: 'Enable push notifications' });
+  check('an explicit push-notification prompt is still removed', strongAdEvidence(pushPrompt) === true);
 
   const downloadBait = el({ width: 300, height: 120, text: 'Download now to continue' });
   check('a small download-bait widget is still removed', strongAdEvidence(downloadBait) === true);
@@ -175,14 +200,13 @@ const el = (o) => Object.assign({ className: '', id: '', attrs: '', text: '' }, 
 (function theThresholdIsWhereItSays() {
   const wide = (w, h) => el({ width: w, height: h, text: 'Sponsored content here' });
   check('just under the threshold still trusts text',
-    strongAdEvidence(wide(950, 320)) === true, 'below half the viewport width');
+    strongAdEvidence(wide(950, 320)) === true, 'below 15% of viewport area');
   check('at the threshold it stops trusting text',
-    strongAdEvidence(wide(960, 324)) === false, 'half the width and a third the height');
-  /* Tall but narrow, or wide but short, is a banner or a rail -- not the page. */
-  check('a wide but short banner still trusts text',
-    strongAdEvidence(wide(1800, 200)) === true);
-  check('a narrow but tall rail still trusts text',
-    strongAdEvidence(wide(400, 900)) === true);
+    strongAdEvidence(wide(960, 324)) === false, '15% of viewport area');
+  check('a wide header is protected from content-text matches',
+    strongAdEvidence(wide(1800, 200)) === false);
+  check('a narrow tall rail is protected from content-text matches',
+    strongAdEvidence(wide(400, 900)) === false);
 }());
 
 (function itShipped() {

@@ -21,13 +21,14 @@ const mb = (bytes) => Math.round(bytes / 1048576 * 100) / 100;
 
 function argsOf(argv) {
   const args = { sites: Object.keys(SITES), variants: ['head', 'current'], seconds: 120,
-    warmup: 20, out: path.join(ROOT, 'docs', 'perf', 'real-sites-2026-10-12.json') };
+    warmup: 20, skipRemoteWait: false, out: path.join(ROOT, 'docs', 'perf', 'real-sites-2026-10-12.json') };
   for (let i = 0; i < argv.length; i++) {
     const value = () => argv[++i];
     if (argv[i] === '--sites') args.sites = value().split(',');
     else if (argv[i] === '--variants') args.variants = value().split(',');
     else if (argv[i] === '--seconds') args.seconds = Number(value());
     else if (argv[i] === '--warmup') args.warmup = Number(value());
+    else if (argv[i] === '--skip-remote-wait') args.skipRemoteWait = true;
     else if (argv[i] === '--out') args.out = path.resolve(ROOT, value());
     else throw new Error('unknown option ' + argv[i]);
   }
@@ -122,12 +123,16 @@ async function processState(cdp) {
     privateMB: mb(items.reduce((sum, item) => sum + Number(item.PrivateMemorySize64 || 0), 0)) };
 }
 
-async function sample(cdp, page) {
+async function sample(cdp, page, workerSessions) {
   const metrics = await cdp.send('Performance.getMetrics', {}, page);
   const values = Object.fromEntries((metrics.metrics || []).map((item) => [item.name, item.value]));
   const [state, processes] = await Promise.all([pageState(cdp, page), processState(cdp)]);
+  const workerHeaps = await Promise.all(Array.from(workerSessions || []).filter((session) => session !== page)
+    .map((session) => cdp.send('Runtime.getHeapUsage', {}, session).catch(() => null)));
   return { elapsedMs: Date.now(), taskSeconds: values.TaskDuration || 0,
     scriptSeconds: values.ScriptDuration || 0, heapMB: mb(values.JSHeapUsedSize || 0),
+    playerWorkerHeapMB: mb(workerHeaps.reduce((total, heap) => total + Number(heap && heap.usedSize || 0), 0)),
+    playerWorkerCount: workerHeaps.filter(Boolean).length,
     domNodes: values.Nodes || 0, listeners: values.JSEventListeners || 0,
     state, processes };
 }
@@ -150,7 +155,7 @@ async function waitRemoteHosts(cdp, workerSession) {
   return 0;
 }
 
-async function runOne(site, variant, seconds, warmup, extensionDir, version) {
+async function runOne(site, variant, seconds, warmup, extensionDir, version, skipRemoteWait) {
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-real-sites-'));
   const port = await browser.freePort();
   let cdp;
@@ -161,12 +166,50 @@ async function runOne(site, variant, seconds, warmup, extensionDir, version) {
     await cdp.connect();
     const extension = await browser.extensionReady(cdp, port, version);
     await browser.closeExtensionTabs(cdp, port, extension.id);
-    const remoteHostsStart = await waitRemoteHosts(cdp, extension.attachedSession);
+    const remoteHostsStart = skipRemoteWait ? await remoteHostCount(cdp, extension.attachedSession)
+      : await waitRemoteHosts(cdp, extension.attachedSession);
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
     await cdp.send('Page.enable', {}, sessionId);
     await cdp.send('Runtime.enable', {}, sessionId);
     await cdp.send('Performance.enable', {}, sessionId);
+    await cdp.send('Network.enable', {}, sessionId);
+    const responses = new Map();
+    const networkSessions = new Set([sessionId]);
+    const network = { playlist: { count: 0, bytes: 0, maxBytes: 0 },
+      media: { count: 0, bytes: 0, maxBytes: 0 }, json: { count: 0, bytes: 0, maxBytes: 0 } };
+    const offNetwork = cdp.on((message) => {
+      if (message.method === 'Target.attachedToTarget' && message.sessionId === sessionId
+          && message.params && message.params.targetInfo
+          && ['worker', 'shared_worker'].includes(message.params.targetInfo.type)) {
+        const child = message.params.sessionId;
+        networkSessions.add(child);
+        cdp.send('Network.enable', {}, child).catch(() => networkSessions.delete(child));
+        return;
+      }
+      if (!networkSessions.has(message.sessionId) || !message.params) return;
+      const params = message.params;
+      const requestKey = message.sessionId + ':' + params.requestId;
+      if (message.method === 'Network.responseReceived') {
+        const url = String(params.response && params.response.url || '');
+        const mime = String(params.response && params.response.mimeType || '').toLowerCase();
+        const kind = /\.m3u8(?:[?#]|$)/i.test(url) || /mpegurl/.test(mime) ? 'playlist'
+          : /(?:\.ts|\.m4s|\.mp4|\.aac)(?:[?#]|$)/i.test(url)
+            || /googlevideo\.com\/videoplayback/i.test(url) || /video\/|audio\//.test(mime) ? 'media'
+            : /json/.test(mime) ? 'json' : null;
+        if (kind) responses.set(requestKey, kind);
+      } else if (message.method === 'Network.loadingFinished') {
+        const kind = responses.get(requestKey);
+        responses.delete(requestKey);
+        if (!kind) return;
+        const bytes = Number(params.encodedDataLength) || 0;
+        network[kind].count++;
+        network[kind].bytes += bytes;
+        network[kind].maxBytes = Math.max(network[kind].maxBytes, bytes);
+      } else if (message.method === 'Network.loadingFailed') responses.delete(requestKey);
+    });
+    await cdp.send('Target.setAutoAttach', { autoAttach: true,
+      waitForDebuggerOnStart: false, flatten: true }, sessionId).catch(() => {});
     const navigationStart = Date.now();
     await cdp.send('Page.navigate', { url: SITES[site] }, sessionId);
     const readiness = await waitForSite(cdp, sessionId, site, navigationStart, warmup);
@@ -177,17 +220,17 @@ async function runOne(site, variant, seconds, warmup, extensionDir, version) {
       })()` }, sessionId).catch(() => {});
     }
     await cdp.send('HeapProfiler.collectGarbage', {}, sessionId).catch(() => {});
-    const samples = [await sample(cdp, sessionId)];
+    const samples = [await sample(cdp, sessionId, networkSessions)];
     for (let elapsed = 0; elapsed < seconds; elapsed += 30) {
       if (site === 'images') {
         await cdp.send('Runtime.evaluate', { expression: 'window.scrollBy(0, innerHeight * 1.5)' }, sessionId).catch(() => {});
       }
       await sleep(Math.min(30, seconds - elapsed) * 1000);
-      samples.push(await sample(cdp, sessionId));
+      samples.push(await sample(cdp, sessionId, networkSessions));
       console.log(site + ' ' + variant + ': ' + Math.min(elapsed + 30, seconds) + '/' + seconds + ' s');
     }
     await cdp.send('HeapProfiler.collectGarbage', {}, sessionId).catch(() => {});
-    const afterGc = await sample(cdp, sessionId);
+    const afterGc = await sample(cdp, sessionId, networkSessions);
     const remoteHostsEnd = await remoteHostCount(cdp, extension.attachedSession);
     const first = samples[0], last = samples.at(-1);
     const cpuMax = new Map();
@@ -198,8 +241,10 @@ async function runOne(site, variant, seconds, warmup, extensionDir, version) {
     }
     const browserCpuSeconds = [...cpuMax].reduce((sum, [pid, value]) =>
       sum + Math.max(0, value - (first.processes.cpuByPid[pid] || 0)), 0);
+    offNetwork();
     return { site, variant, url: SITES[site], browser: edge.Browser, readiness,
       remoteHostsStart, remoteHostsEnd,
+      network, networkTargetCount: networkSessions.size,
       durationSeconds: (last.elapsedMs - first.elapsedMs) / 1000,
       taskMs: Math.round((last.taskSeconds - first.taskSeconds) * 1000),
       scriptMs: Math.round((last.scriptSeconds - first.scriptSeconds) * 1000),
@@ -232,7 +277,7 @@ async function main() {
         console.log('Starting ' + site + ' ' + variant);
         try {
           report.results.push(await runOne(site, variant, args.seconds, args.warmup,
-            variant === 'head' ? headDir : ROOT, version));
+            variant === 'head' ? headDir : ROOT, version, args.skipRemoteWait));
         } catch (error) {
           report.results.push({ site, variant, error: String(error && error.message || error) });
           console.error(site + ' ' + variant + ': ' + error);

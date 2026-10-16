@@ -70,6 +70,9 @@ Then pick **Normal** notifications or **Silent mode**. Silent mode still protect
 hides the routine pop-ups and badges. Everything's still in the Notification Centre if you want
 to look.
 
+The on-page badge shows selected page protections, such as blocked pop-ups and overlays. It does
+not count every network rule; open WardenOne's Site Dashboard in the toolbar for network blocks.
+
 <p align="center">
   <a href="docs/screenshots/11-onboarding-protection.webp">
     <img src="docs/screenshots/11-onboarding-protection.webp" alt="WardenOne onboarding explains its default protection and the available threat-intelligence feeds" width="900">
@@ -295,6 +298,10 @@ Forced pop-ups and pop-unders. Ad tabs that open on a timer. Redirects you never
 chains, meta-refresh bounces, download pages hidden behind ads, fake confirm boxes, frames that
 steal your click and send it somewhere else. They're all related but each one gets handled on its
 own.
+
+If a clearly labeled new-tab download link opens an unrelated ad tab instead, WardenOne closes
+the ad and opens the link you pressed when the intended tab did not open on its own. It follows
+the link shown by the page; it cannot verify a file host hidden behind later redirects.
 
 You can remove overlays on the page and there's an Undo chip if you change your mind. It tries to
 leave real payment forms, CAPTCHAs, logins and media controls alone. If WardenOne stops a jump

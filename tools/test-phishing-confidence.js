@@ -38,11 +38,7 @@ const SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
-const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
-const idnStart = DOMAIN.indexOf('const WARDENONE_IDN_CONFUSABLES');
-const idnEnd = DOMAIN.indexOf('function regDomain(', idnStart);
-assert(idnStart >= 0 && idnEnd > idnStart, 'shared IDN helper has moved');
-const idnScript = new vm.Script(DOMAIN.slice(idnStart, idnEnd));
+const idnScript = new vm.Script(fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8'));
 const lines = SRC.split('\n');
 
 let pass = 0;

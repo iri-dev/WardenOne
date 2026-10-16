@@ -25,7 +25,9 @@ assert.equal(sourceCommit(profile), '', 'an unpacked source tree has no GitHub b
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-build-identity-'));
 let archiveCommit = '';
 function git(args, encoding = 'utf8') {
-  const result = spawnSync('git', args, { cwd: dir, encoding, maxBuffer: 4 * 1024 * 1024 });
+  const env = { ...process.env };
+  delete env.GIT_INDEX_FILE;
+  const result = spawnSync('git', args, { cwd: dir, encoding, env, maxBuffer: 4 * 1024 * 1024 });
   assert.equal(result.status, 0, String(result.stderr || result.stdout));
   return result.stdout;
 }

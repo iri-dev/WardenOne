@@ -33,6 +33,7 @@ const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
+const ACTIVE_BLOCK_TOAST_TYPES = new Set(JSON.parse(/ACTIVE_BLOCK_TOAST_TYPES=new Set\((\[[^\]]+\])\)/.exec(CONTENT)[1]));
 
 let pass = 0;
 const failures = [];
@@ -74,7 +75,8 @@ function loadWholeQuietRule() {
     else if (CONTENT[end] === '}') { depth--; if (!depth) break; }
   }
   const body = CONTENT.slice(open + 1, end);
-  const sandbox = { WO: {}, Object, Number, Date, String, location: { hostname: 'example.com' }, __quiet: null };
+  const sandbox = { WO: {}, Object, Number, Date, String, ACTIVE_BLOCK_TOAST_TYPES,
+    location: { hostname: 'example.com' }, __quiet: null };
   vm.createContext(sandbox);
   return (type, detail, wo) => {
     sandbox.WO = wo || {};
@@ -113,6 +115,19 @@ function loadWholeQuietRule() {
   check('an expired mute stops silencing', isMuted({ warned_service_worker: past }, 'warned_service_worker') !== true);
   check('an unrelated type is unaffected', isMuted({ warned_service_worker: 0 }, 'blocked_popup') !== true);
   check('no mutes at all is not an error', isMuted(undefined, 'blocked_popup') !== true);
+}());
+
+(function actionBlocksStayVisibleUnlessMuted() {
+  const quiet = loadWholeQuietRule();
+  const recent = Date.now() - 60000;
+  check('a confirmed popup is not quieted by the thirty-minute memory',
+    quiet('blocked_popup', {}, { toastMemory: { 'blocked_popup|example.com': recent } }) !== true);
+  check('a confirmed redirect is not quieted by the thirty-minute memory',
+    quiet('blocked_gestureless_nav', {}, { toastMemory: { 'blocked_gestureless_nav|example.com': recent } }) !== true);
+  check('an explicit mute still quiets a blocked popup',
+    quiet('blocked_popup', {}, { toastMutes: { blocked_popup: 0 } }) === true);
+  check('passive warnings still respect the thirty-minute memory',
+    quiet('warned_logger_api', {}, { toastMemory: { 'warned_logger_api|example.com': recent } }) === true);
 }());
 
 // --- what a page is allowed to ask for --------------------------------------
