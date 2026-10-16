@@ -20,11 +20,13 @@ async function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-dnr-'));
   let cdp = null;
   try {
-    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir,
+      ['--host-resolver-rules=MAP * ~NOTFOUND']);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
     const extension = await profile.extensionReady(cdp, port, version);
+    await profile.closeExtensionTabs(cdp, port, extension.id);
     const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: extension.workerTargetId, flatten: true });
     await cdp.send('Runtime.enable', {}, sessionId);
     const evaluate = async (expression) => {
@@ -32,6 +34,50 @@ async function run() {
       if (value.exceptionDetails) throw new Error(value.exceptionDetails.text || 'worker evaluation failed');
       return value.result && value.result.value;
     };
+    const warmup = await evaluate(`(async () => {
+      globalThis.__woDnrAwaitGeneration=async after=>{
+        const deadline=Date.now()+30000;
+        while(Date.now()<deadline){
+          if(__refreshExtensionStateGeneration>after&&__refreshExtensionStateLastKey
+            &&!__refreshExtensionStateInFlightKey&&!__refreshExtensionStateQueued
+            &&!__refreshExtensionStateTimer&&!__remoteListUpdateInFlight&&!__remoteListUpdateQueuedReason)return;
+          await new Promise(r=>setTimeout(r,50));
+        }
+        throw Error('DNR reconcile did not settle: '+JSON.stringify({after,generation:__refreshExtensionStateGeneration,
+          inFlight:__refreshExtensionStateInFlightKey,queued:__refreshExtensionStateQueued,
+          degraded:await readReconcileDegraded()}));
+      };
+      const deadline=Date.now()+15000;
+      while(!(await chrome.storage.local.get('wardenone_config')).wardenone_config){
+        if(Date.now()>deadline)throw Error('Install did not initialize configuration');
+        await new Promise(r=>setTimeout(r,50));
+      }
+      const dnr=chrome.declarativeNetRequest,original=dnr.getSessionRules.bind(dnr);
+      let delayedReads=0;
+      // Deliberately exceed the old fixed sleep before measuring any settings change.
+      dnr.getSessionRules=async(...args)=>{
+        const rules=await original(...args);
+        delayedReads++;
+        await new Promise(r=>setTimeout(r,2500));
+        return rules;
+      };
+      try{
+        let before=__refreshExtensionStateGeneration;
+        await updateStoredConfig(cfg=>Object.assign(cfg,{enabled:true,autoUpdateLists:false,adShield:true,
+          safeSearch:cfg.safeSearch!==true,loginCompatibility:true,blockFingerprintScripts:true,blockFraudVendorScripts:false,
+          blockSearchAiAnswers:false,blockSponsoredSearchResults:false,googleSearchResultCleanup:false}));
+        refreshExtensionState();
+        await __woDnrAwaitGeneration(before);
+        if((await chrome.storage.local.get('wardenone_config')).wardenone_config.safeSearch===true){
+          before=__refreshExtensionStateGeneration;
+          await updateStoredConfig(cfg=>Object.assign(cfg,{safeSearch:false}));
+          await __woDnrAwaitGeneration(before);
+        }
+        await Promise.all([...__subsystemQueues.values()]);
+        return {generation:__refreshExtensionStateGeneration,delayedReads};
+      }finally{dnr.getSessionRules=original;}
+    })()`);
+    if (!warmup || warmup.delayedReads < 1) throw new Error('Delayed startup was not exercised');
     const seeded = await evaluate(`(async () => {
       const dnr=chrome.declarativeNetRequest;
       const [dynamic,session]=await Promise.all([dnr.getDynamicRules(),dnr.getSessionRules()]);
@@ -84,24 +130,28 @@ async function run() {
     })()`);
     const unrelated = await evaluate(`(async () => {
       const p=globalThis.__woDnrProfile;
+      let before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:{...p.config,blockSearchAiAnswers:!p.config.blockSearchAiAnswers}});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const counts={...p.counts};
+      before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:p.config});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
+      const restoredCounts={...p.counts};
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.timings={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.traces=[];
-      return counts;
+      return {changed:counts,restored:restoredCounts};
     })()`);
-    if (Object.values(unrelated || {}).some((count) => count !== 0)) {
+    if (!unrelated || Object.values(unrelated).some((counts) => Object.values(counts).some((count) => count !== 0))) {
       throw new Error('Unrelated search appearance setting caused DNR work: ' + JSON.stringify(unrelated));
     }
     const toggled = await evaluate(`(async () => {
       const p=globalThis.__woDnrProfile;
       const started=performance.now();
+      const before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:!p.config.safeSearch}});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const counts={...p.counts};
       const timings={...p.timings};
       const traces=p.traces.slice();
@@ -116,8 +166,9 @@ async function run() {
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.timings={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       const started=performance.now();
+      const before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:p.config});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const counts={...p.counts};
       const timings={...p.timings};
       const band=(await chrome.declarativeNetRequest.getSessionRules())
@@ -129,12 +180,14 @@ async function run() {
     const combined = await evaluate(`(async () => {
       const p=globalThis.__woDnrProfile;
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      let before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:true,loginCompatibility:false}});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const changed={...p.counts};
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:p.config});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const restoredCounts={...p.counts};
       const session=await chrome.declarativeNetRequest.getSessionRules();
       const safe=session.filter(r=>r.id>=743000&&r.id<743040).sort((a,b)=>a.id-b.id);
@@ -150,14 +203,16 @@ async function run() {
       p.delayedReads={};
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.traces=[];
+      let before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:{...p.config,blockFingerprintScripts:false,googleSearchResultCleanup:true}});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const changed={...p.counts};
       const traces=p.traces.slice();
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.delayBand=931500;
+      before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:p.config});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const restoredCounts={...p.counts};
       p.delayBand=0;
       const dynamic=await chrome.declarativeNetRequest.getDynamicRules();
@@ -174,16 +229,18 @@ async function run() {
     const rapid = await evaluate(`(async () => {
       const p=globalThis.__woDnrProfile;
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      let before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:true}});
       await new Promise(r=>setTimeout(r,40));
       await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:false}});
       await new Promise(r=>setTimeout(r,40));
       await chrome.storage.local.set({wardenone_config:{...p.config,safeSearch:true}});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const applied={...p.counts};
       const active=(await chrome.declarativeNetRequest.getSessionRules()).filter(r=>r.id>=743000&&r.id<743040).length;
+      before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:p.config});
-      await new Promise(r=>setTimeout(r,2200));
+      await __woDnrAwaitGeneration(before);
       const restored=(await chrome.declarativeNetRequest.getSessionRules())
         .filter(r=>r.id>=743000&&r.id<743040).sort((a,b)=>a.id-b.id);
       return {applied,active,exact:JSON.stringify(restored)===p.band};
@@ -191,7 +248,7 @@ async function run() {
     if (!rapid || !rapid.exact || rapid.active < 1 || rapid.applied.sessionWrites !== 1) {
       throw new Error('Rapid settings did not settle to the newest generation: ' + JSON.stringify(rapid));
     }
-    console.log(JSON.stringify({ seeded, baseline, unrelated, toggled, restored, combined, dynamicCombined, rapid }));
+    console.log(JSON.stringify({ browser:browser.Browser,warmup,seeded,baseline,unrelated,toggled,restored,combined,dynamicCombined,rapid }));
     console.log('[ok] near-limit browser toggle restored the exact SafeSearch rule band');
     await evaluate(`chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds:Array.from({length:${seeded.seeded}},(_,i)=>5000000+i),addRules:[]})`);
