@@ -24,6 +24,7 @@
 
 ### Changed
 
+- The README's Element Zapper section now shows a sharp before-and-after comparison from the actual tool, with selection controls and instructions for hiding and restoring elements.
 - The README now maps every protection and popup control to its documented feature, brings newer controls into the main guide, and corrects the explanation of Twitch's two rewind modes. A separate audit records the full control inventory and the older screenshots.
 - Recaptured the README's popup and Protection Health images directly from the extension at high resolution, with complete panels and no browser borders. Fresh image filenames avoid reusing cached earlier captures. Added current Settings, section arrangement, privacy, fingerprinting and Resource Saver screenshots, and kept the original guide's layout with images beside the descriptions.
 - Documented the manual VirusTotal URL scanner and automatic download lookups separately, corrected the privacy policy, and stripped URL credentials before automatic VirusTotal requests.
