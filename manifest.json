@@ -351,6 +351,7 @@
         "https://id.twitch.tv/oauth2/authorize*"
       ],
       "js": [
+        "idn-utils.js",
         "content.min.js",
         "permission-chain.js"
       ],

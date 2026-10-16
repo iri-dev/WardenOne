@@ -15,11 +15,13 @@
  *    the destination must be a known login/payment provider, or the clicked
  *    control must clearly read as a login/checkout action. This is what stops
  *    "click play on a video -> tab is forced to another site".
- *  - POPUPS (window.open): a fresh gesture on a plain element still allows ONE
- *    popup to a non-suspicious target (keeps legit "open dashboard/maps/app"
- *    buttons working), but strict mode does not let a media-player gesture
- *    authorize a popup. The generic allowance is single-use and briefly
- *    suspended after a confirmed hijack attempt.
+ *  - POPUPS (window.open): a fresh press on a control (a link, a button,
+ *    anything drawn as clickable) still allows ONE popup to a non-suspicious
+ *    target (keeps legit "open dashboard/maps/app" buttons working), but strict
+ *    mode does not let a media-player gesture, or a press on plain page (text,
+ *    empty space -- the popunder's "first click anywhere"), authorize a popup.
+ *    The generic allowance is single-use and briefly suspended after a
+ *    confirmed hijack attempt.
  *  - CLICK LAYER: page-generated (untrusted) clicks on cross-site links,
  *    invisible cross-site links, page-covering overlay links, links layered
  *    over the video player, and mousedown->click href bait-and-switch are all
@@ -264,11 +266,23 @@
   // dispatched right now.
   let lastPressSiteControl = null;
   let siteControlClickActive = false;
-  // Snapshot of the link under the pointer at press time, to catch pages that
-  // swap a link's destination between mousedown and click.
+  // Snapshot the pressed link before a page can retarget the click; the worker
+  // also uses a signed same-site link press to judge browser-native popups.
   let pressAnchor = null;
   let pressAnchorHost = '';
   let pressAnchorHref = '';
+  let pressAnchorAt = 0;
+  let recoverableDownloadPress = false;
+  let lastLinkPressBeaconHost = '';
+  let lastLinkPressBeaconUrl = '';
+  let lastLinkPressBeaconAt = 0;
+  // The innermost element the last press or key activation landed on, judged only when
+  // that gesture asks for a cross-site popup (gestureOnPageBackground).
+  let gestureTarget = null;
+  let gestureTargetAt = 0;
+  // The last popup the window.open hook handed through to the browser, for the tab-under guard:
+  // { at, url, copy, handle } -- copy as popupCopy reads it.
+  let lastPopupLetThrough = null;
 
   const DEFAULT_WINDOW_MS = 2400;
   const HOSTILE_TTL_MS = 3000;
@@ -489,6 +503,30 @@
     }
   }
 
+  // A player's own resume prompt: "Resume playing? Welcome back! You left off at 0:03:57.
+  // Would you like to resume watching where you left off? [Yes, please] [No, thanks]" --
+  // DoodStream's #checkresume_div, drawn over the video on a return visit (Playmogo,
+  // 2026-10-16). Short, unexplained-looking, with a generic Yes: the sweep removed it as bait,
+  // and the reader lost the choice the player was waiting on. Bait has no reason to name a
+  // place in the video or to offer a way out, so this one is told apart by doing both: a
+  // player page, a resume question carrying the position it would resume from, and a decline
+  // beside the answer. "Please Confirm To Continue [OK]" on the same page still goes.
+  const RESUME_QUESTION = /\b(?:resume|continue\s+watching|pick\s+up\s+where|left\s+off)\b/i;
+  const RESUME_POSITION = /\b\d{1,2}:\d{2}(?::\d{2})?\b/;
+  const RESUME_DECLINE = /^(?:no\b|cancel\b|not\s+now|start\s+over|restart|(?:play\s+)?from\s+the\s+(?:start|beginning))/i;
+  function playerResumePrompt(overlay, text) {
+    try {
+      if (!text || text.length > 300 || !RESUME_QUESTION.test(text) || !RESUME_POSITION.test(text)) return false;
+      if (!playerDocument()) return false;
+      const controls = overlayControls(overlay);
+      if (controls.length < 2 || controls.length > 3) return false;
+      return controls.some((c) => RESUME_DECLINE.test(c.text))
+        && controls.some((c) => !RESUME_DECLINE.test(c.text) && BAIT_CONTROL.test(c.text));
+    } catch (_) {
+      return false;
+    }
+  }
+
   // anonymousFrame means this box arrived in a frame the page BUILT -- no address
   // of its own, nothing for a filter list to match. That matters because it is the
   // only thing separating this from a real age gate.
@@ -507,6 +545,7 @@
     try {
       if (!overlay) return false;
       const text = String(overlay.innerText || '').replace(/\s+/g, ' ').trim();
+      if (playerResumePrompt(overlay, text)) return false;
       /* A long player advert can explain itself and still harvest a generic OK.
          Require both the promotion language and the Cancel/OK shape. */
       const playerPromotion = playerPromotionOverlay(overlay, text);
@@ -877,10 +916,11 @@
       lastGestureBeacon = now;
     }
     const host = extra && typeof extra.host === 'string' ? extra.host : '';
+    const url = kind === 'link-press' && extra && typeof extra.url === 'string' ? extra.url : '';
     navSignalSeq += 1;
     const detail = Object.assign({ token, kind }, extra || {}, {
       seq: navSignalSeq,
-      mac: __woAuth.hmac(woKey, 'nav-signal\n' + navSignalSeq + '\n' + kind + '\n' + host),
+      mac: __woAuth.hmac(woKey, 'nav-signal\n' + navSignalSeq + '\n' + kind + '\n' + host + (url ? '\n' + url : '')),
     });
     try {
       document.dispatchEvent(new CustomEvent('wo-nav-signal', { detail }));
@@ -894,6 +934,30 @@
 
   function strictPopupEnabled() {
     return popupEnabled() && (configReady() ? cfg() : popupBootstrapConfig).strictPopupShield === true;
+  }
+
+  // Nothing from the bridge yet: neither the full config nor the signed bootstrap. That is a few
+  // milliseconds when the worker is idle, and seconds when it is busy -- just reloaded, rebuilding
+  // its lists -- which is when a reader's first click on pawchive and playmogo landed: the popup
+  // was let through for the worker to close after it had opened, and the tab was sent to the
+  // advert. Until the settings say otherwise, the popup policy and the tab-under guard
+  // (guardTabUnder) apply the shipped defaults; only a reader's own off switch or allowlist
+  // entry would have let those through, and that answer arrives with the settings. The player
+  // and frame guards still wait for the settings, as before.
+  // For a while only. A frame whose settings never come (somebody else's ad frame, where the
+  // bridge may never finish its handshake) would otherwise apply the defaults for good, over an
+  // allowlist entry or an off switch the reader chose. Fifteen seconds covers a busy worker;
+  // after that, a frame still without settings goes back to standing aside.
+  const SETTINGS_GRACE_MS = 15000;
+  const guardStartedAt = Date.now();
+  function settingsNotYetKnown() {
+    return !configReady() && !popupBootstrapConfig && Date.now() - guardStartedAt < SETTINGS_GRACE_MS;
+  }
+  function popupPolicyApplies() {
+    return popupEnabled() || settingsNotYetKnown();
+  }
+  function strictPopupPolicyApplies() {
+    return strictPopupEnabled() || settingsNotYetKnown();
   }
 
   function playerDocument() {
@@ -1149,6 +1213,26 @@
     }
   }
 
+  // Does an address carry the link that was just pressed? The pressed link may wrap it (an
+  // out-link redirector), or it may wrap the pressed link's destination. For a link to another
+  // site, naming that site's host is enough. For a link to this site's own page it is not: ad
+  // networks put the referring page in every auction address, so a popup that mentions this
+  // site proves nothing -- on pawchive, a press on a post let the Clickadu popup through on
+  // that alone. There only the pressed page's own address counts.
+  function popupCarriesPressedLink(rawTarget) {
+    if (!pressAnchorHref) return false;
+    if (redirectWrapperPointsAt(pressAnchorHref, rawTarget)) return true;
+    if (!sameParty(pressAnchorHost, location.hostname)) return redirectWrapperPointsAt(rawTarget, pressAnchorHref);
+    try {
+      const pressed = new URL(pressAnchorHref, location.href);
+      const page = (pressed.host + pressed.pathname + pressed.search).toLowerCase().replace(/\/$/, '');
+      if (page.length <= pressed.host.length + 1) return false;
+      return decodedUrlishText(String(rawTarget || '')).toLowerCase().indexOf(page) >= 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function sameSiteTarget(rawTarget) {
     const targetHost = hostOf(rawTarget);
     return !targetHost || sameParty(targetHost, location.hostname);
@@ -1219,7 +1303,7 @@
     // the inner layers. .zip/.mov are filename-confusable; the rest are bulk-registered malvertising/
     // malware TLDs.
     if (/\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|mom|hair|tattoo|skin|beauty|makeup|bond|autos|boats|christmas)$/i.test(targetHost)) return true;
-    if (/(^|\.)(popads|popcash|propellerads|adsterra|hilltopads|exoclick|juicyads|trafficjunky|mgid|revcontent|adcash|clickadu|ad-maven|admaven|onclickads|onclicka|popmyads|adnxs|popunder[a-z]*|bidvertiser|clickaine|adskeeper|galaksion|coinzilla|adexchangeprime|hookgate|adventurefeeds)\.[a-z.]+$/i.test(targetHost)) return true;
+    if (/(^|\.)(popads|popcash|propellerads|adsterra|hilltopads|exoclick|juicyads|trafficjunky|mgid|revcontent|adcash|clickadu|ad-maven|admaven|onclickads|onclicka|popmyads|adnxs|popunder[a-z]*|bidvertiser|clickaine|adskeeper|galaksion|coinzilla|adexchangeprime|hookgate|adventurefeeds|tsyndicate|trafficstars)\.[a-z.]+$/i.test(targetHost)) return true;
     // A redirect that carries its real destination as a parameter arrives percent-
     // encoded, so "utm_source%3Dads" never matched "utm_source=ad" and neither did
     // an encoded aff_id or clickid. That is the ORDINARY shape of an ad hop, not an
@@ -1378,20 +1462,85 @@
       // Keyboard activation is a new, untainted gesture with a fresh popup allowance.
       lastGestureTainted = false;
       nonExplicitPopupSpent = false;
+      pressAnchorAt = 0;
+      if (TOP_FRAME && lastLinkPressBeaconUrl) {
+        signal('link-press', { host: lastLinkPressBeaconHost, url: '' });
+        lastLinkPressBeaconUrl = '';
+      }
     }
     lastGestureAt = Date.now();
     const target = event && event.target && event.target.nodeType === 1 ? event.target : document.activeElement;
     const isPress = !!event && (event.type === 'pointerdown' || event.type === 'mousedown' || event.type === 'touchstart');
+    if (isPress || (event && event.type === 'keydown')) {
+      // A listener on the window sees a shadow host as the target; the path names what was pressed.
+      let inner = target;
+      try {
+        const path = typeof event.composedPath === 'function' ? event.composedPath() : null;
+        if (path && path[0] && path[0].nodeType === 1) inner = path[0];
+      } catch (_) {}
+      gestureTarget = inner;
+      gestureTargetAt = Date.now();
+    }
     if (isPress) {
       nonExplicitPopupSpent = false;
       pressAnchor = target && target.closest ? target.closest('a[href],area[href]') : null;
       pressAnchorHost = '';
       pressAnchorHref = '';
+      pressAnchorAt = 0;
+      recoverableDownloadPress = false;
       if (pressAnchor) {
         try {
           pressAnchorHref = String(pressAnchor.href || pressAnchor.getAttribute('href') || '');
           pressAnchorHost = hostOf(pressAnchorHref);
+          if (pressAnchorHost) {
+            pressAnchorAt = Date.now();
+            const rawHref = String(pressAnchor.getAttribute('href') || '').trim();
+            const plainPress = TOP_FRAME && event.button === 0
+              && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+              && pressAnchorHref.length <= 2048;
+            recoverableDownloadPress = TOP_FRAME && event.button === 0
+              && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+              && String(pressAnchor.target || '').toLowerCase() === '_blank'
+              && pressAnchorHref.length <= 2048 && !sameParty(pressAnchorHost, location.hostname);
+            if (recoverableDownloadPress) {
+              const label = String(pressAnchor.textContent || '').slice(0, 120);
+              recoverableDownloadPress = pressAnchor.hasAttribute('download')
+                || /\b(?:download|torrent|get file|mirror)\b/i.test(label);
+            }
+            const parsed = new URL(pressAnchorHref);
+            let sameSiteLinkPress = plainPress && !!rawHref && /^https?:$/.test(parsed.protocol)
+              && sameParty(pressAnchorHost, location.hostname)
+              && !/^(?:#|javascript:|data:)/i.test(rawHref)
+              && !/(?:^|\/)(?:log(?:in|out)|sign(?:in|up)|register|oauth|sso|auth|account|checkout|pay|billing)(?:\/|$)/i.test(parsed.pathname)
+              && !/\b(?:log[ -]?in|sign[ -]?in|sign[ -]?up|register|oauth|sso|account|checkout|pay|billing)\b/i.test(String(pressAnchor.textContent || '').slice(0, 120));
+            if (recoverableDownloadPress || sameSiteLinkPress) {
+              const pt = coordsOf(event);
+              const rect = pressAnchor.getBoundingClientRect();
+              const style = getComputedStyle(pressAnchor);
+              if (parsed.username || parsed.password || !pressAnchor.isConnected || !pt
+                  || rect.width < 16 || rect.height < 12 || pt.x < rect.left || pt.x >= rect.right
+                  || pt.y < rect.top || pt.y >= rect.bottom || Number(style.opacity) < 0.2
+                  || style.visibility === 'hidden' || style.display === 'none') {
+                recoverableDownloadPress = false;
+                sameSiteLinkPress = false;
+              }
+            }
+            const beaconUrl = recoverableDownloadPress || sameSiteLinkPress ? pressAnchorHref : '';
+            if (TOP_FRAME && (beaconUrl || lastLinkPressBeaconUrl) && popupEnabled()
+                && (lastLinkPressBeaconHost !== pressAnchorHost
+                || lastLinkPressBeaconUrl !== beaconUrl
+                || pressAnchorAt - lastLinkPressBeaconAt > 200)) {
+              signal('link-press', { host: pressAnchorHost, url: beaconUrl });
+              lastLinkPressBeaconHost = pressAnchorHost;
+              lastLinkPressBeaconUrl = beaconUrl;
+              lastLinkPressBeaconAt = pressAnchorAt;
+            }
+          }
         } catch (_) {}
+      }
+      if (TOP_FRAME && !pressAnchorHost && lastLinkPressBeaconUrl) {
+        signal('link-press', { host: lastLinkPressBeaconHost, url: '' });
+        lastLinkPressBeaconUrl = '';
       }
     }
     const pt = coordsOf(event);
@@ -1614,8 +1763,60 @@
     return true;
   }
 
+  // A popunder script listens on the whole document and spends the first press wherever it
+  // lands -- on a heading, a paragraph, the empty margin. A site's own popup comes from a
+  // control: a link, a button, something focusable or drawn with a clickable cursor. So a
+  // cross-site popup from a press on plain page is the popunder, and the one-popup allowance
+  // a press on a control keeps is not for it. Anything that cannot be judged -- a node the
+  // press removed, a custom element whose insides are closed -- counts as a control.
+  const GESTURE_CONTROL = 'a[href],area[href],button,input,select,textarea,label,summary,option,'
+    + 'iframe,video,audio,canvas,embed,object,[onclick],[contenteditable],[tabindex]:not([tabindex="-1"]),'
+    + '[role="button"],[role="link"],[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"],'
+    + '[role="option"],[role="tab"],[role="switch"],[role="checkbox"],[role="radio"],[role="treeitem"],'
+    + '[role="gridcell"],[role="combobox"],[role="slider"]';
+  function gestureOnPageBackground() {
+    const el = gestureTarget;
+    if (!el || Date.now() - gestureTargetAt > gestureWindowMs()) return false;
+    try {
+      if (el.nodeType !== 1 || el.isConnected !== true || el.closest(GESTURE_CONTROL)) return false;
+      for (let node = el, depth = 0; node && node.nodeType === 1 && depth < 4; node = node.parentElement, depth++) {
+        if (String(node.tagName || '').indexOf('-') >= 0) return false;
+      }
+      // cursor is inherited, so a clickable card drawn as one answers for its children.
+      const cs = getComputedStyle(el);
+      const cursor = String(cs.cursor || '');
+      if (/^(?:auto|text|vertical-text)$/.test(cursor)) return true;
+      // An app's own controls are often drawn with the default arrow on purpose -- and then
+      // their text is made unselectable, which a page's own text is not. So the arrow over
+      // selectable text is plain page; over unselectable text it may be a control, and is left.
+      if (cursor !== 'default') return false;
+      const select = String(cs.userSelect || cs.webkitUserSelect || '');
+      return select !== 'none';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // The ad auction the worker closes once its tab exists (popupAuctionPayload in background.js,
+  // kept identical by tools/test-anti-redirect.js T44c): a long query of many rotating
+  // fields carrying one opaque payload. Refused here, the tab never flashes open.
+  function popupAuctionPayload(rawTarget) {
+    let target;
+    try { target = new URL(String(rawTarget || ''), location.href); } catch (_) { return false; }
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
+    if (target.search.length < 1500 || federationUrlShape(target.href)) return false;
+    let fields = 0;
+    let opaquePayload = false;
+    for (const [, value] of target.searchParams) {
+      fields += 1;
+      if (value.length >= 150) opaquePayload = true;
+      if (fields >= 25 && opaquePayload) return true;
+    }
+    return false;
+  }
+
   function corePopupPolicy(rawTarget, context) {
-    if (!popupEnabled()) return false;
+    if (!popupPolicyApplies()) return false;
     if (blankPopupTarget(rawTarget)) {
       // Real OAuth/SSO SDKs reserve a blank WindowProxy synchronously from a
       // recognisable auth/payment control. A generic click gets an inert handle
@@ -1626,15 +1827,24 @@
     if (!freshGesture()) return 'no recent user gesture';
     if (!targetHost || sameParty(targetHost, location.hostname)) return false;
     if (suspiciousRedirectTarget(rawTarget)) return 'confirmed suspicious popup target';
+    if (strictPopupPolicyApplies() && popupAuctionPayload(rawTarget)) return 'ad-auction popup';
     if (intentWasExplicit && intendedHost && sameParty(targetHost, intendedHost)) return false;
     if ((isTrustedHost(targetHost) || federationUrlShape(rawTarget)) && authIntentAllows()) return false;
-    if (strictPopupEnabled()) {
+    // The press can start on a real link before a page swaps the click target.
+    // Its named destination still limits what popup this gesture may open.
+    if (pressAnchorAt && Date.now() - pressAnchorAt < 1500 && pressAnchorHost
+        && !sameParty(targetHost, pressAnchorHost) && !authIntentAllows()
+        && !popupCarriesPressedLink(rawTarget)) {
+      return 'popup did not match the link pressed';
+    }
+    if (strictPopupPolicyApplies()) {
       if (lastGestureTainted && !authIntentAllows()) return 'popup triggered by a player/media click';
       // Ad-supported embeds often attach a popup to an otherwise legitimate
       // server/play control.  The popup must be blocked without treating that
       // control as permission to open an unrelated site.
       if (playerDocument() && !authIntentAllows()) return 'cross-site popup triggered by a player page';
       if (pageHostile() && !authIntentAllows()) return 'popup retry after a blocked hijack';
+      if (gestureOnPageBackground() && !authIntentAllows()) return 'a click on an empty part of the page tried to open another site';
     }
     if (!intentWasExplicit) {
       if (nonExplicitPopupSpent) return 'more than one popup from one gesture';
@@ -1647,7 +1857,7 @@
   popupMatcherEntries.set('core:popup-policy', corePopupPolicy);
 
   function popupBlockMatch(rawTarget) {
-    if (!masterEnabled() && !popupEnabled()) return null;
+    if (!masterEnabled() && !popupPolicyApplies()) return null;
     const match = popupMatcherApi.match(rawTarget, {
       topFrame: TOP_FRAME,
       freshGesture: freshGesture(),
@@ -1662,7 +1872,7 @@
     // Registry matching is public and therefore deliberately side-effect-free.
     // Spend the single-use allowance only when our own window.open hook is
     // actually about to hand a real popup through to the native implementation.
-    if (popupEnabled()) {
+    if (popupPolicyApplies()) {
       if (blankPopupTarget(rawTarget)) {
         consumeBlankPopupAllowance(true);
       } else {
@@ -1677,10 +1887,17 @@
 
   function noteBlockedPopup(rawTarget, match) {
     markHostile();
+    const popupHost = hostOf(rawTarget);
+    if (match && match.id === 'core:popup-policy' && recoverableDownloadPress
+        && pressAnchorHost && popupHost && !sameParty(popupHost, pressAnchorHost)
+        && pressAnchorAt && Date.now() - pressAnchorAt < 1500
+        && pressAnchor && pressAnchor.isConnected && pressAnchor.href === pressAnchorHref) {
+      signal('download-hijack');
+    }
     emit('blocked_popup', {
       kind: 'open',
       url: String(rawTarget || '').slice(0, 500),
-      matched: hostOf(rawTarget),
+      matched: popupHost,
       why: (match && match.reason) || 'popup policy',
       matcher: match && match.id,
       silent: true,
@@ -2270,7 +2487,7 @@
   // Click-layer guard: cancels hijack clicks whose default action navigates
   // natively (so the window.open/location hooks below never see them).
   function guardClick(event) {
-    if (!masterEnabled() && !popupEnabled()) return;
+    if (!masterEnabled() && !popupPolicyApplies()) return;
     const el = event && event.target && event.target.nodeType === 1 ? event.target : null;
     const a = el && el.closest ? el.closest('a[href],area[href]') : null;
     if (!a) return;
@@ -2311,14 +2528,14 @@
     // branch popup-only, and never consume the underlying media/iframe click.
     if (opensPopup) {
       if (!host && blankPopupTarget(raw)) {
-        if (!popupEnabled()) return;
+        if (!popupPolicyApplies()) return;
         if (event.isTrusted !== false && consumeBlankPopupAllowance(false)) return;
         return cancel('blank popup opened from the page', true, true);
       }
       if (!host || sameParty(host, location.hostname)) return;
       if ((isTrustedHost(host) || federationUrlShape(raw)) && authIntentAllows()) return;
       const pt = coordsOf(event);
-      const coversPlayer = !!(strictPopupEnabled() && pt && pointOnVideo(pt.x, pt.y) && !popupAnchorOwnsPlayer(a));
+      const coversPlayer = !!(strictPopupPolicyApplies() && pt && pointOnVideo(pt.x, pt.y) && !popupAnchorOwnsPlayer(a));
       const matcherHit = popupMatcherApi.match(raw, {
         nativeAnchor: true,
         topFrame: TOP_FRAME,
@@ -2336,14 +2553,14 @@
         }
         return cancel('popup matcher: ' + matcherHit.reason, true, true);
       }
-      if (!popupEnabled()) return;
+      if (!popupPolicyApplies()) return;
       if (event.isTrusted === false) {
         let isDownload = false;
         try { isDownload = !!(a.hasAttribute && a.hasAttribute('download')); } catch (_) {}
         if (isDownload && !suspiciousRedirectTarget(raw)) return;
         return cancel('page-generated popup link', true, true);
       }
-      if (!strictPopupEnabled()) return;
+      if (!strictPopupPolicyApplies()) return;
       if (coversPlayer) {
         try { event.stopImmediatePropagation(); } catch (_) {}
         neutralizePopupOverlay(a, event);
@@ -2428,6 +2645,63 @@
     }
   }
   try { woOn(window, 'click', guardClick, true); } catch (_) {}
+
+  // A link the page never put in the document -- made in script, given target=_blank and an
+  // advert's address, and clicked -- opens its popup natively, and its click never travels to
+  // the window, where guardClick listens. Pawchive's Clickadu loader does exactly that on the
+  // first press when it does not use window.open. It is a script opening a popup, so it is
+  // judged as window.open would be, before the browser acts on it: a press on a control keeps
+  // its one popup (sites open outbound links this way), a press on plain page, no press, or an
+  // advert's address does not. A link in the document is left to guardClick, which sees it.
+  function detachedLinkPopupRefused(el) {
+    try {
+      const a = el && el.nodeType === 1 && el.closest ? el.closest('a[href],area[href]') : null;
+      if (!a || a.isConnected) return false;
+      const targetName = String((a.getAttribute && a.getAttribute('target')) || a.target || '').trim();
+      const t = targetName.toLowerCase();
+      if (!t || t === '_self' || t === '_top' || t === '_parent' || existingNamedFrameTarget(targetName)) return false;
+      const raw = String(a.href || a.getAttribute('href') || '');
+      const match = popupBlockMatch(raw);
+      if (match) {
+        noteBlockedPopup(raw, match);
+        return true;
+      }
+      if (TOP_FRAME) lastPopupLetThrough = { at: Date.now(), url: raw, copy: popupCopy(raw), handle: null };
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+  // The wrappers this guard installs, in this realm or a child's, so a second look can tell its
+  // own from a method a fresh document brought with it.
+  const guardWrappers = new WeakSet();
+  function guardDetachedLinkClicks(realm) {
+    try {
+      const proto = realm.HTMLElement && realm.HTMLElement.prototype;
+      const realClick = proto && proto.click;
+      if (typeof realClick === 'function' && !guardWrappers.has(realClick)) {
+        const click = function () {
+          if (detachedLinkPopupRefused(this)) return undefined;
+          return realClick.apply(this, arguments);
+        };
+        guardWrappers.add(click);
+        proto.click = click;
+      }
+    } catch (_) {}
+    try {
+      const proto = realm.EventTarget && realm.EventTarget.prototype;
+      const realDispatch = proto && proto.dispatchEvent;
+      if (typeof realDispatch === 'function' && !guardWrappers.has(realDispatch)) {
+        const dispatchEvent = function (event) {
+          if (event && event.type === 'click' && this && this.nodeType === 1 && detachedLinkPopupRefused(this)) return false;
+          return realDispatch.apply(this, arguments);
+        };
+        guardWrappers.add(dispatchEvent);
+        proto.dispatchEvent = dispatchEvent;
+      }
+    } catch (_) {}
+  }
+  guardDetachedLinkClicks(window);
   try { woOn(window, 'auxclick', guardClick, true); } catch (_) {}
 
   // A top-level capture listener on ad players can steal control presses before
@@ -2583,21 +2857,163 @@
     } catch (_) {}
   }
 
+  // A tab-under. In the moment of a press the page opens a copy of itself, or the post that was
+  // pressed, in a new tab, and sends THIS tab to the advert from script: the reader's page seems
+  // to come back in a new tab while the one they were using lands on the ad (pawchive.pw, a
+  // TrafficStars direct link). A popunder whose popup was refused falls back to the same move.
+  // Chrome's Location members are unforgeable, so the assign/replace/href hooks below never see
+  // it; the navigate event does, cancellably, for every navigation script starts in this tab.
+  // Acted on only with that evidence in hand -- a popup this page just opened or was just refused
+  // -- and never for the site itself, a sign-in, or a destination the press named.
+  const TAB_UNDER_MS = 3000;
+  // Is a popup the tab-under's copy -- this page itself ('page'), or the link just pressed
+  // ('pressed')? Those two are its mark: the content moves to the new tab so the old one can
+  // go to the advert. Any other page of the same site opened in a new tab is just that.
+  function popupCopy(rawTarget) {
+    try {
+      if (blankPopupTarget(rawTarget) || !sameSiteTarget(rawTarget)) return '';
+      const opened = new URL(String(rawTarget), location.href).href.split('#')[0];
+      if (opened === String(location.href).split('#')[0]) return 'page';
+      if (pressAnchorHref && pressAnchorAt && Date.now() - pressAnchorAt < TAB_UNDER_MS
+          && opened === new URL(pressAnchorHref, location.href).href.split('#')[0]) return 'pressed';
+    } catch (_) {}
+    return '';
+  }
+  function tabUnderDestinationNamed(url, host) {
+    if (intentWasExplicit && intendedHost && sameParty(host, intendedHost)) return true;
+    if (popupCarriesPressedLink(url)) return true;
+    if (authIntentAllows() || isTrustedHost(host) || federationUrlShape(url)) return true;
+    try {
+      const control = gestureTarget && gestureTarget.closest ? gestureTarget.closest(SITE_CONTROL) : null;
+      if (control) for (const named of hostsNamedBy(control)) if (sameParty(host, named)) return true;
+    } catch (_) {}
+    return false;
+  }
+  function guardTabUnder(event) {
+    try {
+      if (!event || !event.cancelable || event.userInitiated || event.hashChange || event.downloadRequest || event.formData) return;
+      if (event.navigationType === 'reload' || event.navigationType === 'traverse') return;
+      const destination = event.destination;
+      if (!destination || destination.sameDocument) return;
+      const url = String(destination.url || '');
+      if (!/^https?:/i.test(url) || sameSiteTarget(url)) return;
+      if (!settingsNotYetKnown() && (!popupEnabled() || !frameTopRedirectEnabled())) return;
+      const opened = lastPopupLetThrough && Date.now() - lastPopupLetThrough.at < TAB_UNDER_MS ? lastPopupLetThrough : null;
+      const refused = pageHostile();
+      if (!opened && !refused) return;
+      const host = hostOf(url);
+      if (!host || tabUnderDestinationNamed(url, host)) return;
+      // The copy is the tab-under's own mark. Otherwise -- a popup to some other site, or one
+      // refused -- the jump has to be one the press could not have asked for: a press on plain
+      // page, on a link to somewhere else, or a destination shaped like an advert. A download
+      // button that opens an ad and then goes to its file host keeps working.
+      const adShaped = suspiciousRedirectTarget(url) || popupAuctionPayload(url);
+      if (!(opened && opened.copy) && !adShaped && !intentWasExplicit && !gestureOnPageBackground()) return;
+      event.preventDefault();
+      markHostile();
+      // A copy of this very page, or one opened from a press on plain page, was only ever the
+      // decoy; a post the reader pressed is left open for them.
+      if (opened && (opened.copy === 'page' || (opened.copy && gestureOnPageBackground()))
+          && opened.handle && typeof opened.handle.close === 'function') {
+        try { opened.handle.close(); } catch (_) {}
+      }
+      lastPopupLetThrough = null;
+      emit('blocked_gestureless_nav', {
+        kind: 'tab-under',
+        url: url.slice(0, 500),
+        matched: host,
+        why: opened
+          ? 'the page opened a new tab and tried to send this one to another site'
+          : 'the page tried to send this tab to another site after its popup was blocked',
+        silent: true,
+      });
+    } catch (_) {}
+  }
+  if (TOP_FRAME && !MEDIA_APP_HOST) {
+    try {
+      const nav = window.navigation;
+      if (nav && typeof nav.addEventListener === 'function') woOn(nav, 'navigate', guardTabUnder);
+    } catch (_) {}
+  }
+
+  function guardedOpen(realOpenFn, self, args) {
+    const url = args[0];
+    const name = args[1];
+    const features = args[2];
+    const rawTarget = url || 'about:blank';
+    if (existingNamedFrameTarget(name) && !openerIsolationRequested(features)) {
+      return realOpenFn.apply(self, args);
+    }
+    const match = popupBlockMatch(rawTarget);
+    if (match) {
+      noteBlockedPopup(rawTarget, match);
+      return inertWindowFacade(playerDocument());
+    }
+    const handle = realOpenFn.apply(self, args);
+    if (TOP_FRAME) {
+      lastPopupLetThrough = {
+        at: Date.now(),
+        url: String(rawTarget),
+        copy: popupCopy(rawTarget),
+        handle,
+      };
+    }
+    return handle;
+  }
   try {
     const realOpen = window.open;
     window.open = function (url, name, features) {
-      const rawTarget = url || 'about:blank';
-      if (existingNamedFrameTarget(name) && !openerIsolationRequested(features)) {
-        return realOpen.apply(this, arguments);
-      }
-      const match = popupBlockMatch(rawTarget);
-      if (match) {
-        noteBlockedPopup(rawTarget, match);
-        return inertWindowFacade(playerDocument());
-      }
-      return realOpen.apply(this, arguments);
+      return guardedOpen(realOpen, this, arguments);
     };
   } catch (_) {}
+
+  // A frame Chrome injects nothing into -- an iframe whose src is javascript:false -- keeps a
+  // window.open of its own that this hook never sees. PopAds builds one at start-up and opens its
+  // about:blank pop-out window through it (Playmogo's player, 2026-10-16). A same-origin child
+  // with no guard of its own has its open judged here instead, in the document the press landed
+  // in, by the same policy and with the same decoy handle; a child that runs its own copy of this
+  // script guards itself. Children are reached two ways: when page code reads an iframe's window,
+  // and at each press, through window.frames, which an indexed read would otherwise slip past.
+  // Judged afresh each time rather than remembered per window: a frame keeps its window handle
+  // when it loads a new document, and the new document brings a native open and click of its
+  // own. The same realm's detached-link click is covered too -- a link made in the helper frame
+  // and clicked there is the same popup by another door.
+  function guardChildWindowOpen(win) {
+    try {
+      if (!win || win === window || win.__wardenOneAntiRedirectHardener) return;
+      const childOpen = win.open;
+      if (typeof childOpen === 'function' && !guardWrappers.has(childOpen)) {
+        const open = function (url, name, features) {
+          return guardedOpen(childOpen, this, arguments);
+        };
+        guardWrappers.add(open);
+        win.open = open;
+      }
+      guardDetachedLinkClicks(win);
+    } catch (_) {}
+  }
+  function guardChildFrames() {
+    try {
+      const n = Math.min(Number(window.frames.length) || 0, 32);
+      for (let i = 0; i < n; i++) guardChildWindowOpen(window.frames[i]);
+    } catch (_) {}
+  }
+  try {
+    for (const proto of [HTMLIFrameElement.prototype, HTMLFrameElement.prototype]) {
+      const desc = Object.getOwnPropertyDescriptor(proto, 'contentWindow');
+      if (!desc || typeof desc.get !== 'function') continue;
+      Object.defineProperty(proto, 'contentWindow', Object.assign({}, desc, {
+        get() {
+          const win = desc.get.call(this);
+          if (win) guardChildWindowOpen(win);
+          return win;
+        },
+      }));
+    }
+  } catch (_) {}
+  try { woOn(window, 'pointerdown', guardChildFrames, true); } catch (_) {}
+  try { woOn(window, 'mousedown', guardChildFrames, true); } catch (_) {}
+  try { woOn(window, 'touchstart', guardChildFrames, true); } catch (_) {}
 
   if (TOP_FRAME) try {
     const proto = Location.prototype;

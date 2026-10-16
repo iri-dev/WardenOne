@@ -100,6 +100,7 @@ function arrayConstant(source, name) {
 function loadCosmeticComputer() {
   const sandbox = {
     __cosmeticHostCache: new Map(),
+    __cosmeticGenericSelectors: new WeakMap(),
     COSMETIC_HOST_CACHE_MAX: 256,
     normalizeAllowlistHost: (value) => String(value || '').toLowerCase(),
     hostMatchesAllowlist: () => false,
@@ -110,6 +111,7 @@ function loadCosmeticComputer() {
     scriptletMayRunOnHost: () => true,
     Set,
     Map,
+    WeakMap,
     Array,
     Object,
   };
@@ -583,6 +585,35 @@ test('ordinary pages retain generic, specific, procedural and scriptlet protecti
     ['no-window-open-if', 'no-fetch-if', 'json-prune', 'remove-class'],
     'ordinary-page scriptlet protection was weakened by player compatibility',
   );
+});
+
+test('generic cosmetic selectors share storage without crossing host or list boundaries', () => {
+  const compute = loadCosmeticComputer();
+  const mem = {
+    cfg: { adShield: true, scriptletEngine: true },
+    data: {
+      generic: ['.global-ad', '.global-promo'],
+      specific: { 'scoped.example': ['.scoped-ad'] },
+      exceptions: { '': ['.global-promo'], 'except.example': ['.global-ad'] },
+      genericHideExclusions: [], procedural: {}, scriptlets: {},
+    },
+  };
+  const first = compute('first.example', mem);
+  const second = compute('second.example', mem);
+  assert.strictEqual(first.selectors, second.selectors,
+    'identical generic responses retained separate selector arrays');
+  assert.deepStrictEqual(Array.from(second.selectors), ['.global-ad'],
+    'global cosmetic exceptions changed while sharing selectors');
+  assert.deepStrictEqual(Array.from(compute('scoped.example', mem).selectors),
+    ['.global-ad', '.scoped-ad'], 'specific selectors were lost');
+  assert.deepStrictEqual(Array.from(compute('except.example', mem).selectors), [],
+    'host-specific exceptions were lost');
+  const replacement = { cfg: mem.cfg, data: { ...mem.data, generic: ['.new-rule'] } };
+  const fresh = compute('fresh.example', replacement);
+  assert.deepStrictEqual(Array.from(fresh.selectors), ['.new-rule'],
+    'the shared array crossed a cosmetic-list replacement');
+  assert.notStrictEqual(fresh.selectors, first.selectors,
+    'a new list reused the previous list selector array');
 });
 
 test('cosmetic memoization distinguishes player and ordinary responses for one host', () => {

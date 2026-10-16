@@ -344,12 +344,12 @@
     return true;
   };
   let bridgeEventSeq = 0;
-  /* The bridge's own notices -- the answer to a right-click check the reader asked for -- go out
-     signed as the 'bridge' sender, so the engine's notice card believes them like any other. It is
-     reachable only from this extension's own world (the worker runs a one-line script there); the
-     page cannot see or call it. */
+  /* Only extension-owned notices are signed here. A page cannot call this isolated-world function
+     or forge the resulting event, and the worker's popup event can now reach the page card. */
+  const LOCAL_NOTICE_TYPES = new Set(['detected_manual_check', 'blocked_popup',
+    'blocked_gestureless_nav', 'blocked_meta_refresh', 'blocked_redirect_chain']);
   const dispatchLocalNotice = (type, detail) => {
-    if (!KEY_PADS || !/^detected_manual_check$/.test(String(type || ''))) return false;
+    if (!KEY_PADS || !LOCAL_NOTICE_TYPES.has(String(type || ''))) return false;
     bridgeEventSeq += 1;
     const safe = boundedBridgeDetail(detail || {});
     try {
@@ -2440,8 +2440,8 @@
       } catch (_) {
         // background may be asleep; it's fine, the badge is best-effort
       }
-      // silent === true means the hardener kept the user on their page (forced
-      // redirect / popunder / overlay click) — no interstitial, just the badge.
+      // silent === true keeps the user on their page without an interstitial.
+      // A child-frame block reaches the top page through the worker's notice path.
       if (type === 'blocked_gestureless_nav' && d.detail && d.detail.url && d.detail.why !== 'no recent user gesture' && d.detail.silent !== true) {
         // And only the guard may ask for one (SEC-15); the badge above already has the block.
         if (!interstitialRequestSigned(d.detail)) return;
@@ -2468,18 +2468,28 @@
   woOn(document, 'wo-nav-signal', (e) => {
     const d = (e && e.detail) || {};
     if (d.token !== TOKEN) return;
-    const kind = d.kind === 'player-gesture' || d.kind === 'popup-overlay' || d.kind === 'top-nav-authorized' || d.kind === 'gesture'
+    const kind = d.kind === 'player-gesture' || d.kind === 'popup-overlay' || d.kind === 'top-nav-authorized' || d.kind === 'gesture' || (BRIDGE_TOP_FRAME && (d.kind === 'link-press' || d.kind === 'download-hijack'))
       ? d.kind : '';
     if (!kind) return;
-    const host = kind === 'top-nav-authorized' ? String(d.host || '').toLowerCase() : '';
-    if (kind === 'top-nav-authorized' && !/^[a-z0-9.-]{1,253}$/.test(host)) return;
+    const host = kind === 'top-nav-authorized' || kind === 'link-press' ? String(d.host || '').toLowerCase() : '';
+    if (host && !/^[a-z0-9.-]{1,253}$/.test(host)) return;
+    if ((kind === 'top-nav-authorized' || kind === 'link-press') && !host) return;
+    const url = kind === 'link-press' && typeof d.url === 'string' ? d.url : '';
+    if (url) {
+      if (url.length > 2048) return;
+      try {
+        const parsed = new URL(url);
+        if (!/^https?:$/.test(parsed.protocol) || parsed.hostname.toLowerCase() !== host
+            || parsed.username || parsed.password) return;
+      } catch (_) { return; }
+    }
     const seq = Number(d.seq);
     if (!Number.isInteger(seq) || seq <= navSignalSeqSeen) return;
-    if (!KEY || !__woAuth.same(d.mac, engineMac('nav-signal', seq + '\n' + kind + '\n' + host))) return;
+    if (!KEY || !__woAuth.same(d.mac, engineMac('nav-signal', seq + '\n' + kind + '\n' + host + (url ? '\n' + url : '')))) return;
     navSignalSeqSeen = seq;
     if (!bridgeRateOk('wo-nav-signal', 180, 60000)) return;
     try {
-      chrome.runtime.sendMessage({ kind: 'wo-nav-signal', signal: kind, host }, () => { void chrome.runtime.lastError; });
+      chrome.runtime.sendMessage({ kind: 'wo-nav-signal', signal: kind, host, url }, () => { void chrome.runtime.lastError; });
     } catch (_) {}
   });
 
@@ -2670,6 +2680,14 @@
     const smartFrameReloadedUrls = new Set();
     woOnMessage((msg, _sender, sendResponse) => {
       if (msg && msg.kind === 'config-update' && msg.overrides) sendConfig(msg.overrides);
+      if (msg && msg.kind === 'wo-blocked-action' && window === window.top) {
+        const d = msg.detail && typeof msg.detail === 'object' ? msg.detail : {};
+        const shown = dispatchLocalNotice(msg.type, {
+          why: String(d.why || '').slice(0, 200), matched: String(d.matched || '').slice(0, 120),
+        });
+        try { sendResponse({ ok: shown }); } catch (_) {}
+        return true;
+      }
       // Repair asks whether the engine answers the signed challenge; a page cannot answer for it.
       if (msg && msg.kind === 'wo-engine-status' && window === window.top) {
         let alive = false;

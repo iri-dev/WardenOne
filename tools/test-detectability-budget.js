@@ -143,7 +143,7 @@ check('no MAIN module publishes a disposer except the host-scoped Twitch blocker
 const engineMin = read('content.min.js');
 const guard = read('anti-redirect.js');
 check('a navigation signal counts only with the bridge\'s signature (SEC-13)',
-  /engineMac\('nav-signal', seq \+ '\\n' \+ kind \+ '\\n' \+ host\)/.test(BRIDGE));
+  /engineMac\('nav-signal', seq \+ '\\n' \+ kind \+ '\\n' \+ host \+ \(url \? '\\n' \+ url : ''\)\)/.test(BRIDGE));
 check('an interstitial request counts only with the bridge\'s signature (SEC-15)', /interstitialRequestSigned\(d\.detail\)/.test(BRIDGE));
 check('"installed" and "pong" count only signed', /engineMac\('installed', TOKEN\)/.test(BRIDGE) && /engineMac\('pong', bridgePendingPong\.nonce\)/.test(BRIDGE));
 check('the engine applies a config only after verifying its signature', /__woVerify\("config",JSON\.stringify\(m\.overrides\),m\)/.test(engineMin));

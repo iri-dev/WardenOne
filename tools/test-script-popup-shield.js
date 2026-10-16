@@ -369,10 +369,16 @@ test('manifest runs the lightweight popup guard in all frames without widening t
     'full content engine was widened to subframes or still bundles anti-redirect');
 });
 
-test('guard fails open until authenticated configuration is ready', () => {
+/* It used to fail open here. A worker busy after a reload answered seconds late, and a reader's
+   first click inside that window opened the advert (pawchive.pw, playmogo.com). The shipped
+   defaults apply until the settings arrive; the reader's own "off" applies once they have. */
+test('until authenticated configuration is ready, the shipped defaults apply', () => {
   const h = buildHarness({ config: readyConfig({ __configReady: false }) });
   const popup = h.open('https://popads.net/landing');
-  assert(popup && popup.native === true && h.state.opened.length === 1, 'pre-config popup was blocked');
+  assert(h.state.opened.length === 0 && !(popup && popup.native === true), 'pre-config ad popup was let through');
+  const off = buildHarness({ config: readyConfig({ blockForcedPopups: false }) });
+  const allowed = off.open('https://popads.net/landing');
+  assert(allowed && allowed.native === true && off.state.opened.length === 1, 'a ready config with popup blocking off was not honoured');
 });
 
 test('ready strict shield suppresses player-triggered window.open ads', () => {

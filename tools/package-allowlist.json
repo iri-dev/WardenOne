@@ -24,6 +24,7 @@
   "cryptominer-detect.js",
   "cryptominer-domains.json",
   "domain-utils.js",
+  "idn-utils.js",
   "download-review.html",
   "download-review.js",
   "element-picker.js",

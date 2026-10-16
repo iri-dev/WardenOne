@@ -20,6 +20,8 @@ importScripts('domain-utils.js');
 // platform and not just the 26 the curated table names (SEC-07). Worker only -- frames are told
 // their own site with the content config rather than carrying 87 KB each.
 importScripts('psl-private.js');
+// IDN lookalike data is needed by startup checks, not by every page frame.
+importScripts('idn-utils.js');
 // Which separable utilities this package carries (CWS-03). The Store package includes EyeShield,
 // Memory Shield and Tab Limit, and applies the package's utility omissions. Every guard
 // below that reads woFeatureOmitted() is what lets this worker run without them.
@@ -644,6 +646,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     }
     void maybePollTallyNetwork();
     const normalized = normalizeTabBlockMessage(msg, sender);
+    relayFrameBlockNotice(tabId, Number(sender.frameId), normalized);
+    // The top page draws its own card; remembered in case the page leaves before it is seen.
+    if (Number(sender.frameId) === 0) noteRecentPageNotice(tabId, normalized.type, normalized.detail);
     // warnings (warned_*) are informational -- log them but don't inflate the
     // red "blocked" badge, which should reflect actual blocks/gates only. The
     // download-gate detection is also informational (we deliberately left the ad
@@ -1231,36 +1236,380 @@ async function maybeCloseSuspiciousFramePopup(details) {
       url: String(details.url || '').slice(0, 300),
       at: Date.now(),
     });
+    notifyBlockedPopup(details.sourceTabId, {
+      matched: targetHost,
+      why: topAuction ? 'A page opened an ad-auction popup.' : 'An embedded frame opened a suspicious popup.',
+    });
   } catch (_) {}
 }
-/* A confirmed transparent link over a real player can also open a staged
-   about:blank window. webNavigation has no destination to judge at creation,
-   so close a tab spawned from that signed overlay gesture after the content
-   script has identified the bait. Ordinary blank OAuth windows have no such
-   signal and stay open. */
+
+/* Native target=_blank navigation can bypass window.open hooks. A signed press on a
+   visible link names the host the reader chose; an immediate popup to a different
+   site is not that choice, even when the page retargets the click event. */
+function notePressedLinkTarget(details) {
+  if (!details || details.sourceFrameId !== 0) return;
+  const source = details.sourceTabId;
+  const at = PRESSED_LINK_AT[source];
+  if (!at || Date.now() - at > 1500) return;
+  try {
+    if (siteIdentityBg(new URL(String(details.url || '')).hostname) === PRESSED_LINK_HOST[source]) {
+      PRESSED_LINK_TARGET_AT[source] = at;
+    }
+  } catch (_) {}
+}
+
+function schedulePressedDownloadRestore(sourceTabId) {
+  const at = PRESSED_LINK_AT[sourceTabId];
+  const url = PRESSED_LINK_URL[sourceTabId];
+  const sourceUrl = PRESSED_LINK_SOURCE_URL[sourceTabId];
+  if (!at || !url || !sourceUrl || Date.now() - at > 1500
+      || PRESSED_LINK_RESTORE_AT[sourceTabId] === at) return;
+  PRESSED_LINK_RESTORE_AT[sourceTabId] = at;
+  setTimeout(async () => {
+    if (PRESSED_LINK_AT[sourceTabId] !== at || PRESSED_LINK_TARGET_AT[sourceTabId] === at) return;
+    let tab, cfg;
+    try {
+      tab = await chrome.tabs.get(sourceTabId);
+      const stored = await localGet('wardenone_config');
+      cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {});
+    } catch (_) { return; }
+    if (!tab || tab.url !== sourceUrl || cfg.enabled === false || cfg.blockForcedPopups === false) return;
+    const sourceHost = new URL(sourceUrl).hostname.toLowerCase();
+    if (hostMatchesAllowlist(sourceHost, activeAllowlist(cfg))) return;
+    const overrides = cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
+    for (const pattern of Object.keys(overrides)) {
+      if (hostMatchesSite(sourceHost, pattern) && overrides[pattern]?.blockForcedPopups === false) return;
+    }
+    if (PRESSED_LINK_AT[sourceTabId] !== at || PRESSED_LINK_TARGET_AT[sourceTabId] === at) return;
+    try {
+      PRESSED_LINK_TARGET_AT[sourceTabId] = at;
+      await chrome.tabs.create({ url, windowId: tab.windowId, active: true });
+    } catch (_) { delete PRESSED_LINK_TARGET_AT[sourceTabId]; }
+  }, 750);
+}
+
+function customSignInPopup(rawUrl) {
+  try {
+    const target = new URL(String(rawUrl || ''));
+    return /^https?:$/.test(target.protocol)
+      && /(^|[.-])(?:login|signin|auth|sso|idp|identity|accounts?|adfs|cas)([.-]|$)/i.test(target.hostname)
+      && /(?:^|\/)(?:authorize|oauth2?|oidc|saml2?|sso|login|signin|auth)(?:\/|$)/i.test(target.pathname);
+  } catch (_) { return false; }
+}
+
+const FRAME_ACTION_NOTICE_TYPES = new Set([
+  'blocked_popup', 'blocked_gestureless_nav', 'blocked_meta_refresh', 'blocked_redirect_chain',
+]);
+function sendBlockedActionNotice(tabId, type, detail, documentId) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  if (!FRAME_ACTION_NOTICE_TYPES.has(type)) return;
+  const why = String(detail && detail.why || '').slice(0, 200);
+  const matched = String(detail && detail.matched || '').slice(0, 120);
+  try {
+    chrome.tabs.sendMessage(tabId, {
+      kind: 'wo-blocked-action', type, detail: { why, matched },
+    }, documentId ? { documentId } : { frameId: 0 }, () => { void chrome.runtime.lastError; });
+  } catch (_) {}
+}
+function notifyBlockedAction(tabId, type, detail) {
+  noteRecentPageNotice(tabId, type, detail);
+  sendBlockedActionNotice(tabId, type, detail);
+}
+/* A card drawn just before the page navigates is drawn on a page that is already leaving. The
+   popunder that fires on a link press is refused, then sends the tab on to the link itself, and
+   the "Popup blocked" card went with the page it was drawn on -- the reader saw nothing. So a
+   block the top page reported, or one relayed to it, followed within a moment by a new page in
+   the same tab is drawn once more on the page that replaced it, once that page can draw. */
+const PAGE_NOTICE_CARRY_MS = 1500;
+const RECENT_PAGE_NOTICE = Object.create(null);
+const CARRIED_PAGE_NOTICE = Object.create(null);
+function noteRecentPageNotice(tabId, type, detail) {
+  if (!Number.isInteger(tabId) || tabId < 0 || !FRAME_ACTION_NOTICE_TYPES.has(type)) return;
+  RECENT_PAGE_NOTICE[tabId] = {
+    type,
+    why: String(detail && detail.why || '').slice(0, 200),
+    matched: String(detail && detail.matched || '').slice(0, 120),
+    at: Date.now(),
+  };
+}
+/* The page that replaced it, and no other: a prerendered page committing in the background is not
+   the one the reader is looking at, so it neither takes the notice nor gets it, and the notice
+   goes to the exact document that committed, by its id, once that document has loaded. */
+function pageNoticeDocument(details) {
+  if (!details || details.frameId !== 0 || !Number.isInteger(details.tabId)) return false;
+  if (details.documentLifecycle && details.documentLifecycle !== 'active') return false;
+  if (details.frameType && details.frameType !== 'outermost_frame') return false;
+  return true;
+}
+function carryPageNoticeOnCommit(details) {
+  if (!pageNoticeDocument(details)) return;
+  const notice = RECENT_PAGE_NOTICE[details.tabId];
+  delete RECENT_PAGE_NOTICE[details.tabId];
+  delete CARRIED_PAGE_NOTICE[details.tabId];
+  if (notice && Date.now() - notice.at < PAGE_NOTICE_CARRY_MS) {
+    CARRIED_PAGE_NOTICE[details.tabId] = Object.assign({}, notice, { documentId: details.documentId || '' });
+  }
+}
+function deliverCarriedPageNotice(details) {
+  if (!pageNoticeDocument(details)) return;
+  const notice = CARRIED_PAGE_NOTICE[details.tabId];
+  if (!notice) return;
+  if (notice.documentId && details.documentId && notice.documentId !== details.documentId) return;
+  delete CARRIED_PAGE_NOTICE[details.tabId];
+  sendBlockedActionNotice(details.tabId, notice.type, notice, notice.documentId || details.documentId || '');
+}
+function forgetPageNotices(tabId) {
+  delete RECENT_PAGE_NOTICE[tabId];
+  delete CARRIED_PAGE_NOTICE[tabId];
+}
+function notifyBlockedPopup(tabId, detail) {
+  notifyBlockedAction(tabId, 'blocked_popup', detail);
+}
+function relayFrameBlockNotice(tabId, frameId, finding) {
+  if (!Number.isInteger(frameId) || frameId <= 0 || !finding || !FRAME_ACTION_NOTICE_TYPES.has(finding.type)) return;
+  notifyBlockedAction(tabId, finding.type, finding.detail);
+}
+
+/* These site-scoped domains host observed popup loaders. A confirmed client
+   block is recorded even when another browser shield wins before our rule.
+   The rules are the trackers ruleset's block rules scoped to these sites (initiatorDomains), read
+   from the ruleset itself rather than named by rule number here, so the data can be renumbered or
+   extended without this code. And the listener for blocked requests is registered once those
+   rules are known, for their ad domains only: registered for <all_urls>, every script or frame
+   blocked anywhere in the browser woke the worker to be turned away here. */
+const TARGETED_AD_SITES = ['playmogo.com', 'pawchive.pw'];
+const TARGETED_AD_NOTICE_PENDING = new Set();
+const TARGETED_AD_NOTICE_RECENT = new Map();
+const TARGETED_AD_EVIDENCE_PENDING = new Set();
+const TARGETED_AD_DEBUG_MATCHES = new Map();
+let targetedAdRulesPromise = null;
+// Rule id -> { site, condition } once the ruleset has been read.
+let targetedAdRuleMap = null;
+function targetedAdRuleInfo(rule) {
+  if (!rule || rule.rulesetId !== 'trackers' || !targetedAdRuleMap) return null;
+  const entry = targetedAdRuleMap.get(Number(rule.ruleId));
+  return entry ? { id: Number(rule.ruleId), site: entry.site } : null;
+}
+function targetedAdRules() {
+  if (!targetedAdRulesPromise) targetedAdRulesPromise = fetch(chrome.runtime.getURL('rules-trackers.json'))
+    .then((response) => response.json())
+    .then((rules) => {
+      const map = new Map();
+      for (const rule of Array.isArray(rules) ? rules : []) {
+        if (!rule || rule.action?.type !== 'block') continue;
+        const initiators = rule.condition && Array.isArray(rule.condition.initiatorDomains) ? rule.condition.initiatorDomains : [];
+        const site = TARGETED_AD_SITES.find((candidate) => initiators.includes(candidate));
+        if (site) map.set(Number(rule.id), { site, condition: rule.condition });
+      }
+      targetedAdRuleMap = map;
+      return map;
+    })
+    .catch(() => { targetedAdRuleMap = new Map(); return targetedAdRuleMap; });
+  return targetedAdRulesPromise;
+}
+function targetedAdRequestPatterns(map) {
+  const patterns = new Set();
+  for (const { condition } of map.values()) {
+    for (const domain of (condition && condition.requestDomains) || []) {
+      if (/^[a-z0-9.-]{1,253}$/i.test(String(domain))) patterns.add('*://*.' + String(domain).toLowerCase() + '/*');
+    }
+  }
+  return [...patterns];
+}
+function noteTargetedAdResource(tabId, site, requestUrl, wardenOneMatched) {
+  if (!site || !Number.isInteger(tabId) || tabId < 0 || TARGETED_AD_NOTICE_PENDING.has(tabId)) return;
+  TARGETED_AD_NOTICE_PENDING.add(tabId);
+  setTimeout(async () => {
+    TARGETED_AD_NOTICE_PENDING.delete(tabId);
+    let tab, requestHost;
+    try {
+      tab = await chrome.tabs.get(tabId);
+      requestHost = new URL(requestUrl).hostname.toLowerCase();
+    } catch (_) { return; }
+    const topUrl = String(tab && tab.url || '');
+    let topHost;
+    try { topHost = new URL(topUrl).hostname.toLowerCase(); } catch (_) { return; }
+    if (!hostMatchesSite(topHost, site)) return;
+    const key = tabId + '|' + topUrl;
+    const now = Date.now();
+    if (now - (TARGETED_AD_NOTICE_RECENT.get(key) || 0) < 30000) return;
+    TARGETED_AD_NOTICE_RECENT.set(key, now);
+    if (TARGETED_AD_NOTICE_RECENT.size > 200) TARGETED_AD_NOTICE_RECENT.delete(TARGETED_AD_NOTICE_RECENT.keys().next().value);
+    const why = wardenOneMatched
+      ? 'WardenOne blocked an ad script or frame from this page.'
+      : 'The browser blocked an ad script or frame from this page.';
+    queueHistory({ type: 'blocked_ad_resource', detail: { matched: requestHost, why }, url: 'https://' + topHost + '/', at: now });
+  }, 1000);
+}
+function noteTargetedAdRule(tabId, rule, requestUrl) {
+  const target = targetedAdRuleInfo(rule);
+  if (target) noteTargetedAdResource(tabId, target.site, requestUrl, true);
+}
+function attachTargetedAdNoticeListeners() {
+  try {
+    chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
+      if (!targetedAdRuleInfo(info && info.rule) || !info.request?.requestId) return;
+      TARGETED_AD_DEBUG_MATCHES.set(info.request.requestId, {
+        tabId: info.request.tabId, rule: info.rule, url: info.request.url, at: Date.now(),
+      });
+      if (TARGETED_AD_DEBUG_MATCHES.size > 200) TARGETED_AD_DEBUG_MATCHES.delete(TARGETED_AD_DEBUG_MATCHES.keys().next().value);
+    });
+  } catch (_) { /* Packaged builds use matched-rule evidence after a blocked request. */ }
+  /* After the rules load, which is a packaged-file read: the worker is awake for these pages
+     anyway, since their bridges ask it for settings as they start. */
+  return targetedAdRules().then((map) => {
+    const urls = targetedAdRequestPatterns(map);
+    if (!urls.length) return;
+    chrome.webRequest.onErrorOccurred.addListener(onTargetedAdRequestBlocked, { urls, types: ['script', 'sub_frame'] });
+  }).catch(() => {});
+}
+function onTargetedAdRequestBlocked(details) {
+  if (!details || !/BLOCKED_BY_CLIENT/i.test(String(details.error || ''))
+      || !Number.isInteger(details.tabId) || details.tabId < 0) return;
+  const debug = TARGETED_AD_DEBUG_MATCHES.get(details.requestId);
+  if (debug) {
+    TARGETED_AD_DEBUG_MATCHES.delete(details.requestId);
+    if (debug.tabId === details.tabId && debug.url === details.url && Date.now() - debug.at < 5000) {
+      void noteTargetedAdRule(details.tabId, debug.rule, details.url);
+      return;
+    }
+  }
+  if (TARGETED_AD_NOTICE_PENDING.has(details.tabId) || TARGETED_AD_EVIDENCE_PENDING.has(details.tabId)) return;
+  void (async () => {
+    let requestHost, initiatorHost;
+    try {
+      requestHost = new URL(details.url).hostname.toLowerCase();
+      initiatorHost = new URL(details.initiator || details.documentUrl).hostname.toLowerCase();
+    } catch (_) { return; }
+    const rules = await targetedAdRules();
+    const candidates = [...rules].filter(([, { site, condition }]) => hostMatchesSite(initiatorHost, site)
+      && ((condition && condition.requestDomains) || []).some((domain) => hostMatchesSite(requestHost, domain)));
+    if (!candidates.length) return;
+    TARGETED_AD_EVIDENCE_PENDING.add(details.tabId);
+    const at = Number(details.timeStamp) || Date.now();
+    try {
+      let match;
+      try {
+        const evidence = await readMatchedRuleEvidence({ tabId: details.tabId,
+          minTimeStamp: at - 1500, requiredAt: at }, 'event');
+        if (evidence.ok) match = evidence.matches.find((item) => candidates.some(([id]) => item.rule?.rulesetId === 'trackers'
+          && Number(item.rule.ruleId) === id && Math.abs(Number(item.timeStamp) - at) <= 1500));
+      } catch (_) { /* The blocked request remains confirmed when rule feedback is unavailable. */ }
+      if (match) noteTargetedAdRule(details.tabId, match.rule, details.url);
+      else noteTargetedAdResource(details.tabId, candidates[0][1].site, details.url, false);
+    } finally { TARGETED_AD_EVIDENCE_PENDING.delete(details.tabId); }
+  })().catch(() => {});
+}
+
+async function maybeCloseMismatchedLinkPopup(details) {
+  if (!details || !Number.isInteger(details.tabId) || details.tabId < 0
+      || !Number.isInteger(details.sourceTabId) || details.sourceTabId < 0
+      || !Number.isInteger(details.sourceFrameId) || details.sourceFrameId < 0) return false;
+  const at = PRESSED_LINK_AT[details.sourceTabId];
+  const sourceUrl = PRESSED_LINK_SOURCE_URL[details.sourceTabId];
+  if (!at || !sourceUrl || Date.now() - at > 1500) return false;
+  let target;
+  try { target = new URL(String(details.url || '')); } catch (_) { return false; }
+  if (!/^https?:$/.test(target.protocol)) return false;
+  const targetSite = siteIdentityBg(target.hostname);
+  const pressedSite = PRESSED_LINK_HOST[details.sourceTabId];
+  let sourceSite = '';
+  try { sourceSite = siteIdentityBg(new URL(sourceUrl).hostname); } catch (_) { return false; }
+  const sameSitePress = sourceSite === pressedSite;
+  if (details.sourceFrameId !== 0 && !sameSitePress) return false;
+  if (!targetSite || !pressedSite || targetSite === pressedSite) return false;
+  if (isLoginCompatibilityUrl(details.url) || customSignInPopup(details.url)) return false;
+  let cfg = {};
+  try { const stored = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {}); }
+  catch (_) { return false; }
+  if (cfg.enabled === false || cfg.blockForcedPopups === false) return false;
+  let sourceHost = '';
+  try { sourceHost = new URL((await chrome.tabs.get(details.sourceTabId)).url).hostname.toLowerCase(); }
+  catch (_) { return false; }
+  if (!sourceHost || siteIdentityBg(sourceHost) !== sourceSite
+      || hostMatchesAllowlist(sourceHost, activeAllowlist(cfg))) return false;
+  const overrides = cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
+  for (const pattern of Object.keys(overrides)) {
+    if (!hostMatchesSite(sourceHost, pattern)) continue;
+    if (overrides[pattern] && overrides[pattern].blockForcedPopups === false) return false;
+  }
+  try {
+    await chrome.tabs.remove(details.tabId);
+    queueHistory({
+      type: 'blocked_popup',
+      detail: { matched: target.hostname, why: 'Popup did not match the link pressed.' },
+      url: String(details.url || '').slice(0, 300),
+      at: Date.now(),
+    });
+    notifyBlockedPopup(details.sourceTabId, {
+      matched: target.hostname, why: 'Popup did not match the link pressed.',
+    });
+    schedulePressedDownloadRestore(details.sourceTabId);
+    return true;
+  } catch (_) { return false; }
+}
+/* The tab event can beat the signed press beacon, and an about:blank popup can
+   acquire its destination after creation. Recheck the live target briefly. */
+function recheckMismatchedLinkPopup(details) {
+  let closed = false;
+  let pending = Promise.resolve(false);
+  const check = (refreshTarget) => {
+    pending = pending.then(async () => {
+      if (closed) return true;
+      let candidate = details;
+      if (refreshTarget) {
+        let tab;
+        try { tab = await chrome.tabs.get(details.tabId); } catch (_) { return false; }
+        const currentUrl = tab.pendingUrl || tab.url;
+        if (typeof currentUrl === 'string' && /^https?:/i.test(currentUrl)) {
+          candidate = Object.assign({}, details, { url: currentUrl });
+        }
+      }
+      closed = await maybeCloseMismatchedLinkPopup(candidate);
+      return closed;
+    }).catch(() => false);
+    return pending;
+  };
+  const first = check(false);
+  setTimeout(() => check(true), 100);
+  setTimeout(() => check(true), 450);
+  return first;
+}
+/* A player ad can stage an about:blank window before choosing its destination.
+   The signed overlay signal works across sites; the less specific player-press
+   signal closes blanks only on the observed Playmogo player. */
 async function maybeCloseOverlaySpawnedPopup(tab) {
   if (!tab || !Number.isInteger(tab.id) || tab.id < 0) return false;
+  const blank = (!tab.url || tab.url === 'about:blank')
+    && (!tab.pendingUrl || tab.pendingUrl === 'about:blank');
   let sourceTabId = tab.openerTabId;
   if (!Number.isInteger(sourceTabId) || sourceTabId < 0) {
     // Chrome omits openerTabId for some noopener windows. Never infer an opener
     // for a normal tab: only a newly created blank popup window, and only when
-    // exactly one tab has reported the signed overlay gesture, can be paired.
-    if ((tab.url && tab.url !== 'about:blank') || (tab.pendingUrl && tab.pendingUrl !== 'about:blank')) return false;
+    // exactly one tab has reported a signed player or overlay gesture, can be paired.
+    if (!blank) return false;
     let win;
     try { win = await chrome.windows.get(tab.windowId); } catch (_) { return false; }
     if (!win || win.type !== 'popup') return false;
-    const recent = Object.keys(POPUP_OVERLAY_AT).filter((id) => Date.now() - POPUP_OVERLAY_AT[id] < 8000);
-    if (recent.length !== 1) return false;
-    sourceTabId = Number(recent[0]);
+    const recent = new Set(Object.keys(POPUP_OVERLAY_AT).filter((id) => Date.now() - POPUP_OVERLAY_AT[id] < 8000));
+    for (const id of Object.keys(PLAYER_GESTURE_AT)) {
+      if (Date.now() - PLAYER_GESTURE_AT[id] < 2000) recent.add(id);
+    }
+    if (recent.size !== 1) return false;
+    sourceTabId = Number([...recent][0]);
   }
-  const at = POPUP_OVERLAY_AT[sourceTabId];
-  if (!at || Date.now() - at > 8000) return false;
+  const overlayAt = POPUP_OVERLAY_AT[sourceTabId];
+  const overlayFresh = !!overlayAt && Date.now() - overlayAt <= 8000;
+  const playerAt = PLAYER_GESTURE_AT[sourceTabId];
+  const playerFresh = blank && !!playerAt && Date.now() - playerAt <= 2000;
+  if (!overlayFresh && !playerFresh) return false;
   let cfg = {};
   try { const stored = await localGet('wardenone_config'); cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {}); } catch (_) { return false; }
   if (cfg.enabled === false || cfg.blockForcedPopups === false || cfg.strictPopupShield === false) return false;
   let sourceHost = '';
   try { sourceHost = new URL((await chrome.tabs.get(sourceTabId)).url).hostname.toLowerCase(); } catch (_) { return false; }
   if (!sourceHost || hostMatchesAllowlist(sourceHost, activeAllowlist(cfg))) return false;
+  if (!overlayFresh && sourceHost !== 'playmogo.com') return false;
   const overrides = cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
   for (const pattern of Object.keys(overrides)) {
     if (!hostMatchesSite(sourceHost, pattern)) continue;
@@ -1271,9 +1620,16 @@ async function maybeCloseOverlaySpawnedPopup(tab) {
     await chrome.tabs.remove(tab.id);
     queueHistory({
       type: 'blocked_popup',
-      detail: { why: 'A transparent cross-site link over a player opened a window.' },
+      detail: { why: overlayFresh
+        ? 'A transparent cross-site link over a player opened a window.'
+        : 'A Playmogo player press opened a staged blank popup.' },
       url: String(tab.pendingUrl || tab.url || 'about:blank').slice(0, 300),
       at: Date.now(),
+    });
+    notifyBlockedPopup(sourceTabId, {
+      why: overlayFresh
+        ? 'A transparent cross-site link over a player opened a window.'
+        : 'A Playmogo player press opened a staged blank popup.',
     });
     return true;
   } catch (_) { return false; }
@@ -1605,6 +1961,12 @@ const TOP_NAV_OWNED_AT = Object.create(null);
 const TOP_NAV_OWNED_HOST = Object.create(null);
 const LAST_TOP_URL = Object.create(null);
 const LAST_GESTURE_AT = Object.create(null);
+const PRESSED_LINK_AT = Object.create(null);
+const PRESSED_LINK_HOST = Object.create(null);
+const PRESSED_LINK_URL = Object.create(null);
+const PRESSED_LINK_SOURCE_URL = Object.create(null);
+const PRESSED_LINK_TARGET_AT = Object.create(null);
+const PRESSED_LINK_RESTORE_AT = Object.create(null);
 const FRAME_REDIRECT_WINDOW_MS = 1500;
 const FORCED_NAV_GESTURE_MS = 5000;
 
@@ -1613,7 +1975,7 @@ const FORCED_NAV_GESTURE_MS = 5000;
 // produce one (SEC-13). An authorisation is bound to the host the in-page guard let the
 // navigation go to: it explains a navigation to that host and no other, so a page cannot arm
 // it with a decoy and spend it on a jump somewhere else. Without a host it is not recorded.
-function noteNavSignal(tabId, signal, host) {
+function noteNavSignal(tabId, signal, host, url, sourceUrl) {
   if (tabId == null || tabId < 0) return { ok: true };
   if (signal === 'player-gesture') PLAYER_GESTURE_AT[tabId] = Date.now();
   else if (signal === 'popup-overlay') POPUP_OVERLAY_AT[tabId] = Date.now();
@@ -1624,6 +1986,37 @@ function noteNavSignal(tabId, signal, host) {
     TOP_NAV_OWNED_HOST[tabId] = siteIdentityBg(clean) || clean;
   }
   else if (signal === 'gesture') LAST_GESTURE_AT[tabId] = Date.now();
+  else if (signal === 'link-press') {
+    const clean = messageCleanHost(host);
+    if (!clean) return { ok: false };
+    delete PRESSED_LINK_AT[tabId];
+    delete PRESSED_LINK_HOST[tabId];
+    delete PRESSED_LINK_URL[tabId];
+    delete PRESSED_LINK_SOURCE_URL[tabId];
+    delete PRESSED_LINK_TARGET_AT[tabId];
+    delete PRESSED_LINK_RESTORE_AT[tabId];
+    // The signed empty URL revokes intent when the next press is not that link.
+    if (!url) return { ok: true };
+    if (typeof url !== 'string' || url.length > 2048
+        || typeof sourceUrl !== 'string' || sourceUrl.length > 8192) return { ok: false };
+    let pressed, source;
+    try { pressed = new URL(url); source = new URL(sourceUrl); } catch (_) { return { ok: false }; }
+    if (!/^https?:$/.test(pressed.protocol) || !/^https?:$/.test(source.protocol)
+        || pressed.username || pressed.password || pressed.hostname.toLowerCase() !== clean) return { ok: false };
+    PRESSED_LINK_AT[tabId] = Date.now();
+    PRESSED_LINK_HOST[tabId] = siteIdentityBg(clean) || clean;
+    PRESSED_LINK_SOURCE_URL[tabId] = sourceUrl;
+    if (siteIdentityBg(source.hostname) !== PRESSED_LINK_HOST[tabId]) PRESSED_LINK_URL[tabId] = url;
+    const at = PRESSED_LINK_AT[tabId];
+    setTimeout(() => {
+      if (PRESSED_LINK_AT[tabId] !== at) return;
+      delete PRESSED_LINK_AT[tabId];
+      delete PRESSED_LINK_HOST[tabId];
+      delete PRESSED_LINK_URL[tabId];
+      delete PRESSED_LINK_SOURCE_URL[tabId];
+    }, 3000);
+  }
+  else if (signal === 'download-hijack') schedulePressedDownloadRestore(tabId);
   return { ok: true };
 }
 // Whether our own top-frame hooks announced a navigation to THIS host within the window.
@@ -1654,6 +2047,17 @@ function adAuctionClickUrl(rawUrl) {
   let hits = 0;
   while (field.exec(query)) { hits++; if (hits >= 2) return true; }
   return false;
+}
+
+function knownInviteRedirect(fromUrl, toUrl) {
+  let from;
+  let to;
+  try { from = new URL(String(fromUrl || '')); to = new URL(String(toUrl || '')); }
+  catch (_) { return false; }
+  if (from.protocol !== 'https:' || to.protocol !== 'https:') return false;
+  if (from.hostname !== 'join.gamedrive.org' || !/^\/discord\/?$/i.test(from.pathname)) return false;
+  return (to.hostname === 'discord.gg' && /^\/[A-Za-z0-9_-]+\/?$/.test(to.pathname))
+    || (to.hostname === 'discord.com' && /^\/invite\/[A-Za-z0-9_-]+\/?$/.test(to.pathname));
 }
 
 // Attribute a cross-site top-level hop to a real tab gesture instead of a
@@ -1687,6 +2091,7 @@ async function maybeBlockForcedTopRedirect(details) {
   const fromHost = siteIdentityBg(fromParsed.hostname) || '';
   const toHost = siteIdentityBg(toUrl.hostname) || '';
   if (!fromHost || !toHost || fromHost === toHost) return;
+  if (knownInviteRedirect(fromUrl, details.url)) return;
   const now = Date.now();
   if (now - (LAST_GESTURE_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS) return;
   if (topNavOwnedFor(tabId, toHost, now, FORCED_NAV_GESTURE_MS)) return;
@@ -1738,6 +2143,22 @@ function forgetNavSignals(tabId) {
   delete TOP_NAV_OWNED_AT[tabId];
   delete TOP_NAV_OWNED_HOST[tabId];
   delete LAST_GESTURE_AT[tabId];
+  // A post link can commit its same-site page before Chrome reports the ad tab
+  // spawned by that click. Keep only that signed link intent for its short TTL.
+  let keepSameSitePress = false;
+  try {
+    const sourceSite = siteIdentityBg(new URL(PRESSED_LINK_SOURCE_URL[tabId]).hostname);
+    keepSameSitePress = !PRESSED_LINK_URL[tabId] && Date.now() - PRESSED_LINK_AT[tabId] < 1500
+      && sourceSite === PRESSED_LINK_HOST[tabId]
+      && siteIdentityBg(new URL(LAST_TOP_URL[tabId]).hostname) === sourceSite;
+  } catch (_) {}
+  if (keepSameSitePress) return;
+  delete PRESSED_LINK_AT[tabId];
+  delete PRESSED_LINK_HOST[tabId];
+  delete PRESSED_LINK_URL[tabId];
+  delete PRESSED_LINK_SOURCE_URL[tabId];
+  delete PRESSED_LINK_TARGET_AT[tabId];
+  delete PRESSED_LINK_RESTORE_AT[tabId];
 }
 
 // The other half of the engine watchdog. bridge.js runs in the ISOLATED world, which a page
@@ -2033,7 +2454,9 @@ registerListener('redirect-chain warnings', () => {
 registerListener('popup tracking', () => {
   chrome.webNavigation?.onCreatedNavigationTarget?.addListener((details) => {
     if (details && details.sourceTabId != null && details.sourceTabId >= 0) POPUP_OPENED_AT[details.sourceTabId] = Date.now();
+    notePressedLinkTarget(details);
     maybeCloseSuspiciousFramePopup(details).catch(() => {});
+    recheckMismatchedLinkPopup(details).catch(() => {});
   });
 });
 registerListener('player overlay popup cleanup', () => {
@@ -2113,6 +2536,11 @@ registerListener('forced-redirect guard', () => {
 // reset a count that was already zero. The census of tabs.onUpdated listeners, and why
 // their number is what it is, is at the Forget-Me listener further down.
 
+registerListener('blocked-notice carry-over', () => {
+  chrome.webNavigation?.onCommitted?.addListener(carryPageNoticeOnCommit);
+  chrome.webNavigation?.onDOMContentLoaded?.addListener(deliverCarriedPageNotice);
+});
+
 // Clean up when a tab closes.
 chrome.tabs.onRemoved.addListener((tabId) => {
   /* Through removeBadge, not a raw delete.
@@ -2125,6 +2553,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
      queued increment for that tab would bring it back. */
   removeBadge(tabId);
   clearTabMessageRates(tabId);
+  forgetPageNotices(tabId);
   clearSmartScriptRecoveryForTab(tabId);
   void forgetTabTally(tabId);
 });
@@ -2825,7 +3254,7 @@ const TOKEN_AND_SCAM_LISTS = [
 // false-positive screening.
 const MALWARE_LISTS = [
   'https://raw.githubusercontent.com/manic-code/Emerging-Malicious-Domain-Blocklist/main/hosts.txt',
-  'https://phishing.army/download/phishing_army_blocklist_extended.txt',
+  'https://phishing.army/download/phishing-army-domains.txt',
   'https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-hosts.txt',
   // uBlock Origin's stock badware risks list
   'https://ublockorigin.github.io/uAssets/filters/badware.txt',
@@ -3327,6 +3756,7 @@ async function updateAdShieldCosmetics() {
 // it evaporates for free whenever the idle service worker is torn down.
 let __cosmeticMem = null;             // { data, cfg, allow } once loaded; null = needs (re)load
 let __cosmeticHostCache = new Map();  // host -> serve result (insertion order = LRU recency)
+let __cosmeticGenericSelectors = new WeakMap(); // one generic array per loaded list, shared by ordinary hosts
 const COSMETIC_HOST_CACHE_MAX = 256;  // a single page rarely spans more distinct hosts than this
 // Same two additions as the config cache above, for the same two reasons (M18): one in-flight load
 // shared by concurrent callers, and a generation so a load that started before an invalidation
@@ -3339,6 +3769,7 @@ let __cosmeticLoad = null;
 function invalidateCosmeticCache() {
   __cosmeticMem = null;
   __cosmeticHostCache.clear();
+  __cosmeticGenericSelectors = new WeakMap();
   __cosmeticGeneration++;
   __cosmeticLoad = null;
 }
@@ -3432,25 +3863,32 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
   // hide its React login/dialog shell before the next list refresh.
   const genericHideExcluded = isXPlatformHost(host)
     || hostMatchesCosmeticDomainList(host, data.genericHideExclusions || []);
-  const sel = new Set(videoPlatform || playerMode || genericHideExcluded ? [] : (data.generic || []));
   const specific = data.specific || {};
   const exceptions = data.exceptions || {};
   const hostParts = host.split('.');
   const candidates = [];
   for (let i = 0; i < hostParts.length - 1; i++) candidates.push(hostParts.slice(i).join('.'));
-  if (!playerMode) {
-    candidates.forEach((d) => { (specific[d] || []).forEach((s) => sel.add(s)); });
-  }
-  // remove exceptions that apply to this host
-  const ex = new Set();
-  candidates.forEach((d) => { (exceptions[d] || []).forEach((s) => ex.add(s)); });
-  ex.forEach((s) => sel.delete(s));
-  // generic exceptions (domain '') also apply
-  (exceptions[''] || []).forEach((s) => sel.delete(s));
-  if (videoPlatform) {
-    for (const s of Array.from(sel)) {
-      if (!isSafeVideoPlatformCosmeticSelector(s, host)) sel.delete(s);
+  const shareGeneric = !videoPlatform && !playerMode && !genericHideExcluded
+    && candidates.every((d) => !specific[d] && !exceptions[d]);
+  let selectors = shareGeneric ? __cosmeticGenericSelectors.get(mem) : null;
+  if (!selectors) {
+    const sel = new Set(videoPlatform || playerMode || genericHideExcluded ? [] : (data.generic || []));
+    if (!playerMode) {
+      candidates.forEach((d) => { (specific[d] || []).forEach((s) => sel.add(s)); });
     }
+    // remove exceptions that apply to this host
+    const ex = new Set();
+    candidates.forEach((d) => { (exceptions[d] || []).forEach((s) => ex.add(s)); });
+    ex.forEach((s) => sel.delete(s));
+    // generic exceptions (domain '') also apply
+    (exceptions[''] || []).forEach((s) => sel.delete(s));
+    if (videoPlatform) {
+      for (const s of Array.from(sel)) {
+        if (!isSafeVideoPlatformCosmeticSelector(s, host)) sel.delete(s);
+      }
+    }
+    selectors = Array.from(sel).slice(0, 20000);
+    if (shareGeneric) __cosmeticGenericSelectors.set(mem, selectors);
   }
   // collect procedural rules for this host (domain-scoped, capped per page)
   const procedural = data.procedural || {};
@@ -3480,7 +3918,8 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
     (scriptletsByDomain['*'] || []).forEach(pushScriptlet);
     candidates.forEach((d) => { (scriptletsByDomain[d] || []).forEach(pushScriptlet); });
   }
-  const result = { ok: true, selectors: Array.from(sel).slice(0, 20000), procedural: procRules, scriptlets };
+  // Each host gets its own response object; only identical generic selector arrays are shared.
+  const result = { ok: true, selectors, procedural: procRules, scriptlets };
 
   // Answer the caller either way, but only memoise a result computed from data that is still
   // current. Otherwise a load that started before an allowlist edit would repopulate the host
@@ -5776,6 +6215,8 @@ function logDetach() {
   logReset();
   LOG_SEQ = 0;
 }
+
+attachTargetedAdNoticeListeners();
 
 /* A port, not a message, because a port tells us when the page goes away. The
    listeners come off the moment the last logger tab closes -- no page should pay
@@ -21546,7 +21987,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'wo-nav-signal' && messageSenderIsTab(sender)) {
-    respond(noteNavSignal(sender && sender.tab && sender.tab.id, msg.signal, msg.host), sendResponse);
+    respond(noteNavSignal(sender && sender.tab && sender.tab.id, msg.signal, msg.host, msg.url,
+      sender && sender.tab && sender.tab.url), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'redirect-warning' && messageSenderIsTab(sender)) {
@@ -23607,7 +24049,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'idn-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-grabber-resources.json', 'rules-grabber-navigation.json',
             'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
             'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',

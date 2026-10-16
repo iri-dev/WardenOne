@@ -14,8 +14,8 @@
     "stagedZipBytes": 2430000,
     "unpackedBytes": 11500000,
     "staticDnrRules": 30000,
-    "manifestScriptEntries": 17,
-    "manifestScriptFiles": 15,
+    "manifestScriptEntries": 18,
+    "manifestScriptFiles": 16,
     "manifestScriptBytes": 1750000,
     "workerSourceBytes": 1600000
   }

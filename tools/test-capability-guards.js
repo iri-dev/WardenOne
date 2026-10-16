@@ -60,6 +60,7 @@ function backWorld(options) {
   const logs = [];
   const listeners = Object.create(null);
   const pushed = [];
+  const reloaded = [];
   let href = o.href || 'https://scary-alert.example/page';
   const clock = { now: 1000 };
   const moved = [];
@@ -83,7 +84,7 @@ function backWorld(options) {
     WO: { backTrapGuard: o.enabled !== false },
     WO_TOP: o.top !== false,
     history,
-    location: { get href() { return href; } },
+    location: { get href() { return href; }, reload() { reloaded.push(href); } },
     log(type, detail) { logs.push({ type, detail }); },
     woOn(target, type, fn) { listeners[type] = fn; },
     Date: { now: () => clock.now },
@@ -99,18 +100,84 @@ function backWorld(options) {
   return {
     logs,
     pushed,
+    reloaded,
     moved,
     back() { if (listeners.popstate) listeners.popstate(); },
     push(url) { return sandbox.history.pushState(null, '', url); },
     replace(url) { return sandbox.history.replaceState(null, '', url); },
     /* Any ordinary interaction vouches for the pushes that follow it. The guard listens for
        several; one stands in for all of them here. */
-    gesture() { if (listeners.pointerdown) listeners.pointerdown(); },
+    gesture() { if (listeners.pointerdown) listeners.pointerdown({ type: 'pointerdown', isTrusted: true, target: { closest: () => null } }); },
+    linkGesture(href) {
+      const link = { href, target: '', hasAttribute: () => false };
+      if (listeners.pointerdown) listeners.pointerdown({ type: 'pointerdown', isTrusted: true, target: { closest: () => link } });
+    },
+    leave() { if (listeners.pagehide) listeners.pagehide(); },
+    restore(persisted = true) { if (listeners.pageshow) listeners.pageshow({ persisted }); },
     forward() { return sandbox.history.forward(); },
     go(n) { return sandbox.history.go(n); },
     advance(ms) { clock.now += ms; },
     setHref(v) { href = v; },
   };
+}
+
+{
+  const creator = 'https://pawchive.pw/patreon/user/4618037';
+  const post = creator + '/post/172291325';
+  const w = backWorld({ href: creator });
+  w.linkGesture(post);
+  w.leave();
+  w.restore();
+  w.replace(creator);
+  w.push(post);
+  check('a restored page cannot replay the link just left after Back', w.pushed.length === 1, w.pushed);
+  check('the restored-page trap reports the refused stale request', w.logs.length === 1
+    && /delayed request/.test(w.logs[0].detail.why), w.logs);
+  check('a restored page refreshes once to discard the stale DOM swap', w.reloaded.length === 1
+    && w.reloaded[0] === creator, w.reloaded);
+  w.push(post);
+  check('a second stale callback cannot add another entry or refresh again', w.pushed.length === 1
+    && w.reloaded.length === 1, { pushed: w.pushed, reloaded: w.reloaded });
+}
+
+for (const [name, beforePush] of [
+  ['an ordinary page load', w => w.restore(false)],
+  ['a later push', w => { w.restore(); w.advance(1500); }],
+  ['a new click on that link', w => { w.restore(); w.linkGesture('https://pawchive.pw/patreon/user/4618037/post/172291325'); }],
+]) {
+  const creator = 'https://pawchive.pw/patreon/user/4618037';
+  const post = creator + '/post/172291325';
+  const w = backWorld({ href: creator });
+  w.linkGesture(post);
+  w.leave();
+  beforePush(w);
+  w.push(post);
+  check(name + ' can still push the link', w.pushed.length === 1 && w.logs.length === 0
+    && w.reloaded.length === 0, w.pushed);
+}
+
+{
+  const creator = 'https://pawchive.pw/patreon/user/4618037';
+  const post = creator + '/post/172291325';
+  const w = backWorld({ href: creator });
+  w.linkGesture(post);
+  w.leave();
+  w.restore();
+  w.gesture();
+  w.push(post);
+  check('an unrelated click cannot authorize the stale post replay', w.pushed.length === 0
+    && w.reloaded.length === 1, w.pushed);
+}
+
+{
+  const creator = 'https://pawchive.pw/patreon/user/4618037';
+  const w = backWorld({ href: creator });
+  w.linkGesture(creator + '/post/172291325');
+  w.leave();
+  w.restore();
+  w.push('/patreon/user/4618037/post/other');
+  check('a restored page can still push a different route', w.pushed.length === 1 && w.logs.length === 0
+    && w.reloaded.length === 0, w.pushed);
 }
 
 {
@@ -566,11 +633,9 @@ function capWorld(options) {
     check('Activity Center names ' + type, new RegExp(type + ": '").test(HISTORY));
     check('the in-page notice explains ' + type, new RegExp(type + ':\\{').test(SOURCE));
   }
-  /* This used to forbid the string history.go outright. The back-trap guard now WRAPS go and
-     forward so a page cannot shove you forward the instant you press Back -- which is the
-     opposite of moving you: it declines a move the page asked for. The invariant worth holding
-     was never "does not mention history.go", it is "never navigates you itself". */
-  check('neither guard ever moves you itself',
+  /* The back-trap guard may reload a BFCache page after refusing a stale route push so the
+     URL and visible body agree. It still never selects a different history entry. */
+  check('neither guard selects a different history entry',
     !/history\.back\(|\.go\(\s*-|location\.(?:assign|replace)\(|location\.href\s*=/.test(BACK_TRAP + CAPABILITY),
     'declining to ADD an entry is the fix; unwinding somebody history from underneath them would be worse than the trap');
   check('and neither cancels a page event or throws into the page',

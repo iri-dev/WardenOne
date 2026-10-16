@@ -15,10 +15,7 @@ const { installEngineAmbient } = require('./lib/engine-ambient.js');
 const ROOT = path.resolve(__dirname, '..');
 const CONTENT = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const STARTUP = fs.readFileSync(path.join(ROOT, 'background-startup.js'), 'utf8');
-const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
-const idnStart = DOMAIN.indexOf('const WARDENONE_IDN_CONFUSABLES');
-const idnEnd = DOMAIN.indexOf('function regDomain(', idnStart);
-assert(idnStart >= 0 && idnEnd > idnStart, 'shared IDN helper has moved');
+const IDN = fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8');
 const PATHS = ['/login', '/verify', '/account', '/oauth'];
 
 function regDomainBg(host) {
@@ -40,7 +37,7 @@ const workerWorld = {
 };
 workerWorld.globalThis = workerWorld;
 vm.createContext(workerWorld);
-vm.runInContext(DOMAIN.slice(idnStart, idnEnd), workerWorld);
+vm.runInContext(IDN, workerWorld);
 installEngineAmbient(workerWorld);
 vm.runInContext(STARTUP + '\nglobalThis.verdict = loginRiskVerdict;', workerWorld,
   { filename: 'background-startup.js' });

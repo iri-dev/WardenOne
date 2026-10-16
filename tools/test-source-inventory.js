@@ -34,9 +34,8 @@ function check(name, condition, extra) {
   console.error('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
-// Every https URL the source arrays actually carry, read straight out of the file rather than
-// from the generator -- so a generator that silently skipped an array would be caught here.
-function urlsInSourceArrays() {
+// Read runtime feed URLs independently of the generator so omitted constants are caught.
+function urlsInRuntimeFeeds() {
   const names = ['REMOTE_LISTS', 'TOKEN_AND_SCAM_LISTS', 'MALWARE_LISTS', 'TRACKER_LISTS',
     'ADSHIELD_NET_LISTS', 'ADSHIELD_COSMETIC_LISTS', 'SUPPLEMENTAL_LIST_SOURCES'];
   const urls = new Set();
@@ -47,10 +46,13 @@ function urlsInSourceArrays() {
     const block = BACKGROUND.slice(start, end);
     (block.match(/'https?:\/\/[^']+'/g) || []).forEach((q) => urls.add(q.slice(1, -1)));
   }
+  const direct = BACKGROUND.match(/const OPENPHISH_FEED_URL\s*=\s*'(https?:\/\/[^']+)'/);
+  check('the direct OpenPhish feed constant still exists', !!direct);
+  if (direct) urls.add(direct[1]);
   return urls;
 }
 
-const declared = urlsInSourceArrays();
+const declared = urlsInRuntimeFeeds();
 const recorded = new Set(INVENTORY.sources.map((s) => s.url));
 
 check('the source arrays are still findable', declared.size > 20, declared.size + ' urls');
@@ -97,6 +99,12 @@ check('the CREDITS block is marked generated, so it is not hand-edited into drif
 const asserted = INVENTORY.sources.filter((s) => s.licence && !s.licenceVerified);
 check('no licence is recorded as fact without being marked verified',
   asserted.length === 0, asserted.map((s) => s.project).join(', '));
+const publisherGrants = INVENTORY.sources.filter((s) => s.publisherPermission === 'granted');
+check('publisher grants retain reply evidence',
+  publisherGrants.every((s) => !!s.permissionEvidence),
+  publisherGrants.filter((s) => !s.permissionEvidence).map((s) => s.project).join(', '));
+check('publisher grants remain visible in the generated credits',
+  !publisherGrants.length || CREDITS.includes('Publisher permission received; source terms under review'));
 check('unverified terms are visible in CREDITS rather than silently empty',
   !INVENTORY.sources.some((s) => !s.licenceVerified) || /_not yet verified_/.test(CREDITS));
 
